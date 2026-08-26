@@ -135,6 +135,32 @@
     "artifact.generate_mind_map": {
       "call_policy": "stateful_start",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "mind_map.generate_note"
+        },
+        {
+          "allowed_variants": [
+            "plain"
+          ],
+          "operation": "note.create"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "note.update"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "note.delete"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -166,7 +192,8 @@
           "rpc_method": "DELETE_NOTE",
           "variant": null
         }
-      ]
+      ],
+      "service_owned": true
     },
     "artifact.generate_quiz": {
       "call_policy": "stateful_start",
@@ -243,6 +270,20 @@
     "artifact.get": {
       "call_policy": "read",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "artifact.catalog"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "mind_map.list"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -256,11 +297,26 @@
           "rpc_method": "GET_NOTES_AND_MIND_MAPS",
           "variant": null
         }
-      ]
+      ],
+      "service_owned": true
     },
     "artifact.list": {
       "call_policy": "read",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "artifact.catalog"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "mind_map.list"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -274,7 +330,8 @@
           "rpc_method": "GET_NOTES_AND_MIND_MAPS",
           "variant": null
         }
-      ]
+      ],
+      "service_owned": true
     },
     "artifact.patch_title": {
       "call_policy": "mutation",
@@ -753,6 +810,18 @@
           "idempotency_policy": "idempotent_set_op",
           "role": "idempotent interactive delete",
           "rpc_method": "DELETE_ARTIFACT",
+          "variant": null
+        }
+      ]
+    },
+    "mind_map.generate": {
+      "call_policy": "stateful_start",
+      "known_divergence": null,
+      "native_bindings": [
+        {
+          "idempotency_policy": "probe_then_create",
+          "role": "resolved-source tree generation",
+          "rpc_method": "GENERATE_MIND_MAP",
           "variant": null
         }
       ]
@@ -2470,8 +2539,6 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_mind_map.py:LegacyNoteBackedService.create_note",
-        "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
         "_web/bindings/notes.py:NOTE_CREATE"
       ],
       "golden_disposition": "golden_covered",
@@ -2744,8 +2811,6 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_mind_map.py:LegacyNoteBackedService.delete_note",
-        "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
         "_web/bindings/notes.py:NOTE_DELETE"
       ],
       "golden_disposition": "golden_exempt",
@@ -2919,7 +2984,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
+        "_web/bindings/mind_maps.py:MIND_MAP_GENERATE",
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE"
       ],
       "golden_disposition": "golden_covered",
@@ -2948,10 +3013,10 @@
       "override_honored": true,
       "owners": [
         "MindMapFamilyService",
-        "MindMapService"
+        "MindMapService",
+        "NoteBackedMindMapFamilyService"
       ],
       "response_decoders": [
-        "_web/codec/mind_maps.py:decode_artifact_mind_map_leaf",
         "_web/codec/mind_maps.py:decode_generated_tree"
       ],
       "response_projectors": [],
@@ -2962,6 +3027,7 @@
       "rpc_method": "GENERATE_MIND_MAP",
       "semantic_operations": [
         "artifact.generate_mind_map",
+        "mind_map.generate",
         "mind_map.generate_note"
       ],
       "variant": null
@@ -3127,7 +3193,6 @@
       "execution_authorities": [
         "_notebooks.py:NotebooksAPI.get_raw",
         "_web/bindings/chat.py:CHAT_CONFIGURE",
-        "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
@@ -3251,9 +3316,6 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_mind_map.py:LegacyNoteBackedService.fetch_note_rows",
-        "_web/bindings/mind_maps.py:ARTIFACT_GET",
-        "_web/bindings/mind_maps.py:ARTIFACT_LIST",
         "_web/bindings/mind_maps.py:MIND_MAP_LIST",
         "_web/bindings/notes.py:NOTE_GET",
         "_web/bindings/notes.py:NOTE_LIST",
@@ -3616,8 +3678,6 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/mind_maps.py:ARTIFACT_GET",
-        "_web/bindings/mind_maps.py:ARTIFACT_LIST",
         "_web/bindings/studio.py:ARTIFACT_CATALOG",
         "_web/bindings/studio.py:ARTIFACT_DOWNLOAD",
         "_web/bindings/studio.py:ARTIFACT_WAIT"
@@ -4657,8 +4717,6 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_mind_map.py:LegacyNoteBackedService.update_note",
-        "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
         "_web/bindings/notes.py:NOTE_UPDATE"
       ],
       "golden_disposition": "golden_exempt",
@@ -5218,32 +5276,32 @@
       "execution_authorities": [
         {
           "binding": "CREATE_NOTE:plain",
-          "discriminator": "persist generated JSON through the legacy note family",
-          "site": "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
+          "discriminator": "persist generated JSON through the semantic note leaf",
+          "site": "_web/bindings/notes.py:NOTE_CREATE",
           "transport_kind": "rpc"
         },
         {
           "binding": "DELETE_NOTE:<default>",
           "discriminator": "cancelled generated-note cleanup",
-          "site": "_mind_map.py:LegacyNoteBackedService.delete_note",
+          "site": "_web/bindings/notes.py:NOTE_DELETE",
           "transport_kind": "rpc"
         },
         {
           "binding": "GENERATE_MIND_MAP:<default>",
-          "discriminator": "semantic facade",
-          "site": "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
+          "discriminator": "semantic facade via leaf",
+          "site": "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
           "transport_kind": "rpc"
         },
         {
           "binding": "GET_NOTEBOOK:<default>",
-          "discriminator": "source_ids is None",
-          "site": "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
+          "discriminator": "source_ids is None via leaf",
+          "site": "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
           "transport_kind": "rpc"
         },
         {
           "binding": "UPDATE_NOTE:<default>",
           "discriminator": "persist generated JSON and title",
-          "site": "_mind_map.py:LegacyNoteBackedService.update_note",
+          "site": "_web/bindings/notes.py:NOTE_UPDATE",
           "transport_kind": "rpc"
         }
       ],
@@ -5265,7 +5323,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP"
+            "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE"
           ],
           "condition": "one only when source_ids is omitted",
           "maximum_calls": 1,
@@ -5283,7 +5341,6 @@
         "_row_adapters/sources.py:SourceRow.from_entry",
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
-        "_web/codec/mind_maps.py:decode_artifact_mind_map_leaf",
         "_web/codec/mind_maps.py:decode_generated_tree",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
@@ -5574,14 +5631,14 @@
       "execution_authorities": [
         {
           "binding": "GET_NOTES_AND_MIND_MAPS:<default>",
-          "discriminator": "select note-backed mind map",
-          "site": "_web/bindings/mind_maps.py:ARTIFACT_GET",
+          "discriminator": "select note-backed mind map via leaf",
+          "site": "_web/bindings/mind_maps.py:MIND_MAP_LIST",
           "transport_kind": "rpc"
         },
         {
           "binding": "LIST_ARTIFACTS:<default>",
-          "discriminator": "select artifact for get/get_or_none/get_prompt",
-          "site": "_web/bindings/mind_maps.py:ARTIFACT_GET",
+          "discriminator": "select artifact for get/get_or_none/get_prompt via leaf",
+          "site": "_web/bindings/studio.py:ARTIFACT_CATALOG",
           "transport_kind": "rpc"
         }
       ],
@@ -5625,14 +5682,14 @@
       "execution_authorities": [
         {
           "binding": "GET_NOTES_AND_MIND_MAPS:<default>",
-          "discriminator": "merge note-backed mind maps",
-          "site": "_web/bindings/mind_maps.py:ARTIFACT_LIST",
+          "discriminator": "merge note-backed mind maps via leaf",
+          "site": "_web/bindings/mind_maps.py:MIND_MAP_LIST",
           "transport_kind": "rpc"
         },
         {
           "binding": "LIST_ARTIFACTS:<default>",
-          "discriminator": "heterogeneous list",
-          "site": "_web/bindings/mind_maps.py:ARTIFACT_LIST",
+          "discriminator": "heterogeneous list via leaf",
+          "site": "_web/bindings/studio.py:ARTIFACT_CATALOG",
           "transport_kind": "rpc"
         }
       ],
@@ -6846,6 +6903,37 @@
       "web_paths": []
     },
     {
+      "app_callers": [],
+      "composite_behavior": "P9.2 primitive: one mind-map generation native on an already-resolved source set.",
+      "disposition": "semantic",
+      "execution_authorities": [
+        {
+          "binding": "GENERATE_MIND_MAP:<default>",
+          "discriminator": "resolved source set",
+          "site": "_web/bindings/mind_maps.py:MIND_MAP_GENERATE",
+          "transport_kind": "rpc"
+        }
+      ],
+      "key": "mind_map.generate",
+      "known_divergence": null,
+      "known_divergence_kind": null,
+      "native_bindings": [
+        "GENERATE_MIND_MAP:<default>"
+      ],
+      "owner": "NoteBackedMindMapFamilyService",
+      "policy": "stateful_start",
+      "public_methods": [],
+      "recency_contract": [],
+      "recency_effect": "none",
+      "response_decoders_projectors": [
+        "_web/codec/mind_maps.py:decode_generated_tree"
+      ],
+      "route_context": "notebook+source-set",
+      "tier": "primitive",
+      "unsupported_reason": null,
+      "web_paths": []
+    },
+    {
       "app_callers": [
         "_app/generate.py:execute_generation._generate_mind_map"
       ],
@@ -6873,7 +6961,7 @@
         {
           "binding": "LIST_ARTIFACTS:<default>",
           "discriminator": "post-create settle/id match",
-          "site": "_web/bindings/mind_maps.py:ARTIFACT_LIST",
+          "site": "_web/bindings/studio.py:ARTIFACT_CATALOG",
           "transport_kind": "rpc"
         }
       ],
@@ -6998,7 +7086,6 @@
         "_row_adapters/sources.py:SourceRow.from_entry",
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
-        "_web/codec/mind_maps.py:decode_artifact_mind_map_leaf",
         "_web/codec/mind_maps.py:decode_generated_tree",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
@@ -7031,7 +7118,7 @@
         {
           "binding": "LIST_ARTIFACTS:<default>",
           "discriminator": "auto-detect/select interactive id",
-          "site": "_web/bindings/mind_maps.py:ARTIFACT_LIST",
+          "site": "_web/bindings/studio.py:ARTIFACT_CATALOG",
           "transport_kind": "rpc"
         }
       ],
@@ -7086,7 +7173,7 @@
         {
           "binding": "LIST_ARTIFACTS:<default>",
           "discriminator": "filter interactive maps",
-          "site": "_web/bindings/mind_maps.py:ARTIFACT_LIST",
+          "site": "_web/bindings/studio.py:ARTIFACT_CATALOG",
           "transport_kind": "rpc"
         }
       ],

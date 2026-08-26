@@ -5,8 +5,8 @@ is the sole authority for the native it dispatches, so the method the policy
 ledger audits is the method that runs.  The rows are module-level assignments
 because the operation-catalog walker derives execution authorities from them.
 ``NoteService`` sequences ``NOTE_CREATE``/``NOTE_UPDATE``/``NOTE_DELETE`` above
-the port; ``LegacyNoteBackedService`` still reaches the same natives through
-the row-scoped ``InvokerRpcCaller`` for the deferred compatibility rows.
+the port, and is the only thing that does: the deferred raw note-row service
+that reached these natives through a row-scoped caller is gone (P10 R4.2).
 """
 
 from __future__ import annotations

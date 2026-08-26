@@ -11,10 +11,6 @@ from notebooklm._operations import CallPolicy, Operation
 from notebooklm._records import (
     ARTIFACT_GENERATE_FLASHCARDS_DEF,
     ARTIFACT_GENERATE_QUIZ_DEF,
-    ARTIFACT_GET_DEF,
-    ARTIFACT_LIST_DEF,
-    ArtifactGetResult,
-    ArtifactListResult,
     ArtifactRecord,
     ArtifactUserStateRecord,
     GenerationStatusRecord,
@@ -23,7 +19,7 @@ from notebooklm._records import (
     InteractiveMetadataRecord,
 )
 from notebooklm._studio import InteractiveFamilyService, StudioCatalog
-from tests._fixtures.recording_backend import RecordingBackend
+from tests._fixtures.recording_backend import RecordingBackend, set_studio_catalog
 
 
 def _interactive(
@@ -119,8 +115,7 @@ async def test_family_catalog_preserves_flashcard_and_quiz_user_state_without_re
     flashcards = _interactive("cards", "flashcards", user_state=flashcard_state)
     quiz = _interactive("quiz", "quiz", user_state=quiz_state)
     backend = RecordingBackend()
-    backend.set_result(ARTIFACT_LIST_DEF, ArtifactListResult((flashcards, quiz)))
-    backend.set_result(ARTIFACT_GET_DEF, ArtifactGetResult(flashcards))
+    set_studio_catalog(backend, (flashcards, quiz))
     service = InteractiveFamilyService(backend, StudioCatalog(backend))
 
     listed_cards = await service.list_flashcards("nb")
@@ -132,10 +127,12 @@ async def test_family_catalog_preserves_flashcard_and_quiz_user_state_without_re
     assert selected is flashcards
     assert InteractiveFamilyService.metadata(flashcards).user_state == flashcard_state
     assert InteractiveFamilyService.metadata(quiz).user_state == quiz_state
+    # Two family listings skip the note-backed merge; the identity read cannot.
     assert [item.operation for item in backend.invocations] == [
-        Operation.ARTIFACT_LIST,
-        Operation.ARTIFACT_LIST,
-        Operation.ARTIFACT_GET,
+        Operation.ARTIFACT_CATALOG,
+        Operation.ARTIFACT_CATALOG,
+        Operation.ARTIFACT_CATALOG,
+        Operation.MIND_MAP_LIST,
     ]
 
 

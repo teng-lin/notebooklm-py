@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._settings import SettingsAPI
 from notebooklm.rpc import RPCMethod
@@ -110,7 +109,6 @@ async def test_prompt_recency_is_exactly_conditional_and_report_has_none() -> No
         drain=core,
         lifecycle=core,
         notebooks=MagicMock(),
-        mind_maps=MagicMock(spec=NoteBackedMindMapService),
         _backend=backend,
     )
     await artifacts.suggest_reports("nb")

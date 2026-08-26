@@ -765,6 +765,15 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         recency_effect="one GET_NOTEBOOK when source_ids is omitted",
     ),
     OperationSpec(
+        Operation.MIND_MAP_GENERATE,
+        CallPolicy.STATEFUL_START,
+        "NoteBackedMindMapFamilyService",
+        "notebook+source-set",
+        "P9.2 primitive: one mind-map generation native on an already-resolved source set.",
+        (),
+        (_b(RPCMethod.GENERATE_MIND_MAP),),
+    ),
+    OperationSpec(
         Operation.MIND_MAP_GENERATE_INTERACTIVE,
         CallPolicy.STATEFUL_START,
         "MindMapFamilyService",

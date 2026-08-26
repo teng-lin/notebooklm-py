@@ -50,7 +50,6 @@ import pytest
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._collections import CollectionsAPI
 from notebooklm._labels import LabelsAPI
-from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._notes import NotesAPI
@@ -95,15 +94,12 @@ def _make_artifacts_api() -> ArtifactsAPI:
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(), get_source_ids=AsyncMock(return_value=[]))
-    mind_maps = MagicMock(spec=NoteBackedMindMapService)
-    mind_maps.list_mind_maps = AsyncMock(return_value=[])
     notebooks = MagicMock()
     notebooks.get_source_ids = AsyncMock(return_value=[])
     return ArtifactsAPI(
         drain=core,
         lifecycle=core,
         notebooks=notebooks,
-        mind_maps=mind_maps,
         _backend=build_web_backend(core.rpc_executor),
     )
 
@@ -118,7 +114,7 @@ def _make_notes_api() -> NotesAPI:
     core = make_fake_core(rpc_call=AsyncMock(return_value=None))
     from tests._fixtures.note_stack import make_note_stack
 
-    return make_note_stack(core)[3]
+    return make_note_stack(core)[1]
 
 
 def _make_mind_maps_api() -> MindMapsAPI:

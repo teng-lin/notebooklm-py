@@ -20,12 +20,9 @@ from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._records import (
     ARTIFACT_DOWNLOAD_DEF,
-    ARTIFACT_GET_DEF,
     ArtifactDownloadInput,
-    ArtifactGetResult,
     ArtifactRecord,
 )
 from notebooklm.exceptions import (
@@ -53,7 +50,7 @@ from notebooklm.types import (
     MindMapResult,
     UnknownTypeWarning,
 )
-from tests._fixtures.recording_backend import RecordingBackend
+from tests._fixtures.recording_backend import RecordingBackend, set_studio_catalog
 from tests._fixtures.web_backend import build_web_backend
 
 pytestmark = pytest.mark.allow_no_vcr
@@ -476,18 +473,17 @@ class TestArtifactsAPI:
             drain=core,
             lifecycle=core,
             notebooks=MagicMock(),
-            mind_maps=MagicMock(spec=NoteBackedMindMapService),
         )
 
-        with patch.object(
-            api._mind_maps,
-            "list_mind_maps",
-            new=AsyncMock(return_value=[mind_map]),
-        ) as list_mind_maps:
-            artifacts = await api.list("nb_123")
+        artifacts = await api.list("nb_123")
 
+        # Two leaves, one workflow: the Studio catalog read and the
+        # supplemental note-backed merge.
         assert core.rpc_call.await_count == 2
-        list_mind_maps.assert_not_awaited()
+        assert [call.args[0] for call in core.rpc_call.await_args_list] == [
+            RPCMethod.LIST_ARTIFACTS,
+            RPCMethod.GET_NOTES_AND_MIND_MAPS,
+        ]
         assert [artifact.id for artifact in artifacts] == ["art_001", "mind_map_001"]
 
     @pytest.mark.asyncio
@@ -503,39 +499,31 @@ class TestArtifactsAPI:
             drain=core,
             lifecycle=core,
             notebooks=MagicMock(),
-            mind_maps=MagicMock(spec=NoteBackedMindMapService),
         )
 
-        with patch.object(
-            api._mind_maps,
-            "list_mind_maps",
-            new=AsyncMock(),
-        ) as list_mind_maps:
-            artifacts = await api.list("nb_123", ArtifactType.REPORT)
+        artifacts = await api.list("nb_123", ArtifactType.REPORT)
 
         assert [artifact.id for artifact in artifacts] == ["art_001"]
-        list_mind_maps.assert_not_awaited()
+        # The merge is skipped entirely, not fetched and filtered away.
+        assert [call.args[0] for call in core.rpc_call.await_args_list] == [
+            RPCMethod.LIST_ARTIFACTS
+        ]
 
     @pytest.mark.asyncio
     async def test_get_uses_semantic_catalog_and_preserves_public_miss(self):
         """get() projects the typed catalog result and keeps the public miss error."""
         backend = RecordingBackend()
-        backend.set_result(
-            ARTIFACT_GET_DEF,
-            ArtifactGetResult(ArtifactRecord("art_found", "Found", "report", "completed")),
-        )
+        set_studio_catalog(backend, (ArtifactRecord("art_found", "Found", "report", "completed"),))
         api = ArtifactsAPI(
             drain=MagicMock(),
             lifecycle=MagicMock(),
             notebooks=MagicMock(),
-            mind_maps=MagicMock(spec=NoteBackedMindMapService),
             _backend=backend,
         )
 
         result = await api.get("nb_123", "art_found")
         assert result.id == "art_found"
 
-        backend.set_result(ARTIFACT_GET_DEF, ArtifactGetResult(None))
         with pytest.raises(ArtifactNotFoundError):
             await api.get("nb_123", "art_missing")
 

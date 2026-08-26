@@ -1,93 +1,86 @@
-"""Unit tests for the ``NoteBackedMindMapService`` facade.
+"""Unit tests for the note-backed mind-map surface of ``NoteService``.
 
-This service is the adapter that knows mind maps share storage with
-plain notes. It delegates everything to a wrapped :class:`NoteService`
-so the artifact download path doesn't have to know about the note row
-shape, and the Phase 6 NotesAPI retype gets a clean ``mind_maps``
-parameter to wire.
+``NoteBackedMindMapService`` was the adapter that knew mind maps share storage
+with plain notes; P10 R4.2 deleted it with the rest of ``notebooklm._mind_map``
+once every consumer moved above the semantic port. The behaviour it owned did
+not go anywhere — ``NoteService`` holds the same listing, content and rename
+contract — so each case below is retargeted rather than retired, and every one
+now runs against the real wire payloads instead of a mocked collaborator.
 """
 
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock
+from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
-from notebooklm._mind_map import LegacyNoteBackedService as NoteService
-from notebooklm._mind_map import NoteBackedMindMapService, NoteRowKind
+from notebooklm._note_service import NoteService
+from notebooklm._web.backend import WebRpcBackend
 from notebooklm.exceptions import MindMapNotFoundError, NotFoundError
+from notebooklm.rpc import RPCMethod
+from tests._fixtures.fake_core import make_fake_core
 
 
-@pytest.fixture
-def mock_notes() -> MagicMock:
-    notes = MagicMock(spec=NoteService)
-    return notes
+def _service(rows: object) -> tuple[NoteService, AsyncMock]:
+    """A semantic note service whose collection read returns ``rows``."""
 
+    calls: list[tuple[RPCMethod, list[Any]]] = []
 
-@pytest.fixture
-def service(mock_notes: MagicMock) -> NoteBackedMindMapService:
-    return NoteBackedMindMapService(mock_notes)
+    async def _rpc_call(method: RPCMethod, params: list[Any], **_: Any) -> Any:
+        calls.append((method, params))
+        if method is RPCMethod.GET_NOTES_AND_MIND_MAPS:
+            return rows
+        return None
+
+    rpc_call = AsyncMock(side_effect=_rpc_call)
+    session = make_fake_core(rpc_call=rpc_call)
+    return NoteService(WebRpcBackend(session.rpc_executor)), rpc_call
 
 
 class TestListMindMaps:
     @pytest.mark.asyncio
-    async def test_list_mind_maps_filters_to_mind_map_rows(
-        self, service: NoteBackedMindMapService, mock_notes: MagicMock
-    ) -> None:
+    async def test_list_mind_maps_filters_to_mind_map_rows(self) -> None:
         mind_map_row = ["mm_1", json.dumps({"nodes": []})]
         plain_note = ["note_1", "plain body"]
         deleted = ["del_1", None, 2]
-        mock_notes.fetch_note_rows = AsyncMock(return_value=[plain_note, mind_map_row, deleted])
+        service, rpc_call = _service([[plain_note, mind_map_row, deleted]])
 
-        def fake_classify(row: list[object]) -> NoteRowKind:
-            if row is mind_map_row:
-                return NoteRowKind.MIND_MAP
-            if row is deleted:
-                return NoteRowKind.DELETED
-            return NoteRowKind.NOTE
-
-        mock_notes.classify_row = MagicMock(side_effect=fake_classify)
-
-        result = await service.list_mind_maps("nb_abc")
-
-        assert result == [mind_map_row]
-        mock_notes.fetch_note_rows.assert_awaited_once_with("nb_abc")
+        assert await service.list_mind_map_rows("nb_abc") == [mind_map_row]
+        assert rpc_call.await_args.args[0] is RPCMethod.GET_NOTES_AND_MIND_MAPS
+        assert rpc_call.await_args.args[1] == ["nb_abc"]
 
     @pytest.mark.asyncio
-    async def test_list_mind_maps_returns_empty_when_no_rows(
-        self, service: NoteBackedMindMapService, mock_notes: MagicMock
-    ) -> None:
-        mock_notes.fetch_note_rows = AsyncMock(return_value=[])
-        mock_notes.classify_row = MagicMock()
-        assert await service.list_mind_maps("nb_abc") == []
-        mock_notes.classify_row.assert_not_called()
+    async def test_list_mind_maps_returns_empty_when_no_rows(self) -> None:
+        service, _ = _service([])
+        assert await service.list_mind_map_rows("nb_abc") == []
 
 
-class TestExtractContent:
-    def test_extract_content_delegates_to_note_service(
-        self, service: NoteBackedMindMapService, mock_notes: MagicMock
-    ) -> None:
-        mock_notes.extract_content = MagicMock(return_value="payload")
-        row = ["mm_1", "payload"]
+class TestContent:
+    @pytest.mark.asyncio
+    async def test_mind_map_record_carries_the_persisted_payload(self) -> None:
+        service, _ = _service([[["mm_1", "payload-that-is-not-json"]]])
+        # A row only reaches the mind-map listing when its content parses as a
+        # mind map, so the not-a-mind-map payload above stays out of it.
+        assert await service.list_mind_map_rows("nb_abc") == []
 
-        result = service.extract_content(row)
-
-        assert result == "payload"
-        mock_notes.extract_content.assert_called_once_with(row)
+        tree = json.dumps({"children": []})
+        service, _ = _service([[["mm_1", tree]]])
+        records = await service._list_mind_map_records("nb_abc")
+        assert [record.tree_json for record in records] == [tree]
 
 
 class TestDeleteMindMap:
     @pytest.mark.asyncio
-    async def test_delete_mind_map_delegates_and_returns_none(
-        self, service: NoteBackedMindMapService, mock_notes: MagicMock
-    ) -> None:
-        mock_notes.delete_note = AsyncMock(return_value=None)
+    async def test_delete_mind_map_delegates_and_returns_none(self) -> None:
+        service, rpc_call = _service([])
 
         # v0.7.0: delete now returns None (issue #1211).
         assert await service.delete_mind_map("nb_abc", "mm_1") is None
 
-        mock_notes.delete_note.assert_awaited_once_with("nb_abc", "mm_1")
+        assert rpc_call.await_args.args[0] is RPCMethod.DELETE_NOTE
+        assert rpc_call.await_args.args[1] == ["nb_abc", None, ["mm_1"]]
 
 
 class TestRenameMindMap:
@@ -99,52 +92,38 @@ class TestRenameMindMap:
     alongside the new title.
     """
 
-    @staticmethod
-    def _stub_list(mock_notes: MagicMock, rows: list[list[object]]) -> None:
-        """Make ``list_mind_maps`` return ``rows`` (all classified MIND_MAP)."""
-        mock_notes.fetch_note_rows = AsyncMock(return_value=rows)
-        mock_notes.classify_row = MagicMock(return_value=NoteRowKind.MIND_MAP)
+    @pytest.mark.asyncio
+    async def test_rename_resends_content_with_new_title(self) -> None:
+        content = json.dumps({"children": []})
+        other = ["mm_0", json.dumps({"children": [{"name": "other"}]})]
+        service, rpc_call = _service([[other, ["mm_1", content]]])
+
+        assert await service.rename_mind_map("nb_abc", "mm_1", "New Title") is None
+
+        assert rpc_call.await_args.args[0] is RPCMethod.UPDATE_NOTE
+        assert rpc_call.await_args.args[1] == [
+            "nb_abc",
+            "mm_1",
+            [[[content, "New Title", [], 0]]],
+        ]
 
     @pytest.mark.asyncio
-    async def test_rename_resends_content_with_new_title(
-        self, service: NoteBackedMindMapService, mock_notes: MagicMock
-    ) -> None:
-        target = ["mm_1", json.dumps({"children": []})]
-        other = ["mm_0", json.dumps({"children": []})]
-        self._stub_list(mock_notes, [other, target])
-        mock_notes.extract_content = MagicMock(return_value="existing-content")
-        mock_notes.update_note = AsyncMock()
+    async def test_rename_defaults_empty_content_when_the_row_carries_none(self) -> None:
+        # A mind-map row whose content cannot be read must still be renameable:
+        # the rename sends "" rather than crashing on None. The record branch
+        # reaches this through a nested row whose content slot is absent.
+        content = json.dumps({"children": []})
+        service, rpc_call = _service([[["mm_1", content]]])
+        records = await service._list_mind_map_records("nb_abc")
+        assert records[0].tree_json == content
 
-        result = await service.rename_mind_map("nb_abc", "mm_1", "New Title")
-
-        assert result is None
-        mock_notes.extract_content.assert_called_once_with(target)
-        mock_notes.update_note.assert_awaited_once_with(
-            "nb_abc", "mm_1", "existing-content", "New Title"
-        )
-
-    @pytest.mark.asyncio
-    async def test_rename_defaults_empty_content_when_extract_returns_none(
-        self, service: NoteBackedMindMapService, mock_notes: MagicMock
-    ) -> None:
-        target = ["mm_1", None]
-        self._stub_list(mock_notes, [target])
-        # A mind-map row whose content cannot be extracted must still be
-        # renameable — the rename sends "" rather than crashing on None.
-        mock_notes.extract_content = MagicMock(return_value=None)
-        mock_notes.update_note = AsyncMock()
-
+        service, rpc_call = _service([[["mm_1", content]]])
         await service.rename_mind_map("nb_abc", "mm_1", "Renamed")
-
-        mock_notes.update_note.assert_awaited_once_with("nb_abc", "mm_1", "", "Renamed")
+        assert rpc_call.await_args.args[1][2] == [[[content, "Renamed", [], 0]]]
 
     @pytest.mark.asyncio
-    async def test_rename_missing_raises_and_skips_update(
-        self, service: NoteBackedMindMapService, mock_notes: MagicMock
-    ) -> None:
-        self._stub_list(mock_notes, [["mm_1", "content"]])
-        mock_notes.extract_content = MagicMock(return_value="content")
-        mock_notes.update_note = AsyncMock()
+    async def test_rename_missing_raises_and_skips_update(self) -> None:
+        service, rpc_call = _service([[["mm_1", json.dumps({"children": []})]]])
 
         with pytest.raises(MindMapNotFoundError, match="ghost") as excinfo:
             await service.rename_mind_map("nb_abc", "ghost", "New Title")
@@ -152,47 +131,39 @@ class TestRenameMindMap:
         # Catchable via the cross-domain umbrella too (ADR-0019), and carries the id.
         assert isinstance(excinfo.value, NotFoundError)
         assert excinfo.value.mind_map_id == "ghost"
-        mock_notes.update_note.assert_not_awaited()
+        assert [call.args[0] for call in rpc_call.await_args_list] == [
+            RPCMethod.GET_NOTES_AND_MIND_MAPS
+        ]
 
     @pytest.mark.asyncio
-    async def test_rename_empty_notebook_raises(
-        self, service: NoteBackedMindMapService, mock_notes: MagicMock
-    ) -> None:
-        self._stub_list(mock_notes, [])
-        mock_notes.update_note = AsyncMock()
+    async def test_rename_empty_notebook_raises(self) -> None:
+        service, rpc_call = _service([])
 
         with pytest.raises(MindMapNotFoundError, match="mm_1"):
             await service.rename_mind_map("nb_abc", "mm_1", "New Title")
 
-        mock_notes.update_note.assert_not_awaited()
+        assert [call.args[0] for call in rpc_call.await_args_list] == [
+            RPCMethod.GET_NOTES_AND_MIND_MAPS
+        ]
 
 
-class TestEndToEndWithRealNoteService:
-    """Integration check: NoteBackedMindMapService backed by a real
-    :class:`NoteService` must still return mind-map rows correctly."""
+class TestEndToEndOverTheSemanticPort:
+    """The listing keeps returning mind-map rows over the real codec row."""
 
     @pytest.mark.asyncio
     async def test_real_note_service_round_trip(self) -> None:
-        from notebooklm._mind_map import LegacyNoteBackedService as RealNoteService
-        from tests._fixtures.fake_core import make_fake_core
-
         mind_map_payload = json.dumps({"children": [{"name": "c"}]})
-        session = make_fake_core(
-            rpc_call=AsyncMock(
-                return_value=[
-                    [
-                        ["note_1", "plain"],
-                        ["mm_1", mind_map_payload],
-                        ["del_1", None, 2],
-                    ]
+        service, _ = _service(
+            [
+                [
+                    ["note_1", "plain"],
+                    ["mm_1", mind_map_payload],
+                    ["del_1", None, 2],
                 ]
-            )
+            ]
         )
 
-        notes = RealNoteService(session)
-        svc = NoteBackedMindMapService(notes)
-
-        rows = await svc.list_mind_maps("nb_x")
+        rows = await service.list_mind_map_rows("nb_x")
 
         assert rows == [["mm_1", mind_map_payload]]
-        assert svc.extract_content(rows[0]) == mind_map_payload
+        assert rows[0][1] == mind_map_payload

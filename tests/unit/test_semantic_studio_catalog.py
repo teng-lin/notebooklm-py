@@ -10,14 +10,21 @@ from notebooklm import ArtifactType
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import CallPolicy, Operation
 from notebooklm._records import (
+    ARTIFACT_CATALOG_DEF,
     ARTIFACT_GET_DEF,
     ARTIFACT_LIST_DEF,
+    MIND_MAP_LIST_DEF,
+    ArtifactCatalogInput,
+    ArtifactCatalogResult,
     ArtifactGetInput,
     ArtifactGetResult,
     ArtifactListInput,
     ArtifactListResult,
     ArtifactMediaRecord,
     ArtifactRecord,
+    MindMapListInput,
+    MindMapListResult,
+    MindMapRecord,
 )
 from notebooklm._studio import StudioCatalog
 from tests._fixtures.recording_backend import RecordingBackend
@@ -49,27 +56,40 @@ def test_artifact_records_are_frozen_slotted_and_definitions_are_closed() -> Non
     assert "example.invalid" not in repr(record)
 
 
+def _merge_backend(
+    *,
+    artifacts: tuple[ArtifactRecord, ...] = (),
+    mind_maps: tuple[MindMapRecord, ...] = (),
+) -> RecordingBackend:
+    backend = RecordingBackend()
+    backend.set_result(ARTIFACT_CATALOG_DEF, ArtifactCatalogResult(artifacts))
+    backend.set_result(MIND_MAP_LIST_DEF, MindMapListResult(mind_maps))
+    return backend
+
+
 @pytest.mark.asyncio
-async def test_catalog_filters_neutral_records_and_records_one_typed_invocation() -> None:
+async def test_catalog_filters_neutral_records_and_skips_the_merge_for_one_family() -> None:
     audio = ArtifactRecord("audio-id", "Audio", "audio", "completed")
     report = ArtifactRecord("report-id", "Report", "report", "completed")
     deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: 11.0)
-    backend = RecordingBackend()
-    backend.set_result(ARTIFACT_LIST_DEF, ArtifactListResult((audio, report)))
+    backend = _merge_backend(artifacts=(audio, report))
     catalog = StudioCatalog(backend)
 
     assert [item.id for item in await catalog.list("notebook-id", "audio", deadline=deadline)] == [
         "audio-id"
     ]
-    assert backend.invocations[0].value == ArtifactListInput("notebook-id", "audio")
+    assert [invocation.operation for invocation in backend.invocations] == [
+        Operation.ARTIFACT_CATALOG
+    ]
+    assert backend.invocations[0].value == ArtifactCatalogInput("notebook-id")
     assert backend.invocations[0].deadline is deadline
 
 
 @pytest.mark.asyncio
-async def test_catalog_get_projects_optional_result_without_a_second_invocation() -> None:
-    record = ArtifactRecord("mind-map-id", "Map", "mind_map", "completed")
-    backend = RecordingBackend()
-    backend.set_result(ARTIFACT_GET_DEF, ArtifactGetResult(record))
+async def test_catalog_get_selects_a_note_backed_identity_from_the_merge() -> None:
+    backend = _merge_backend(
+        mind_maps=(MindMapRecord("mind-map-id", "notebook-id", "Map", "note_backed"),)
+    )
     catalog = StudioCatalog(backend)
 
     artifact = await catalog.get_or_none("notebook-id", "mind-map-id")
@@ -77,4 +97,8 @@ async def test_catalog_get_projects_optional_result_without_a_second_invocation(
     assert artifact is not None
     assert artifact.id == "mind-map-id"
     assert artifact.kind is ArtifactType.MIND_MAP
-    assert len(backend.invocations) == 1
+    assert [invocation.operation for invocation in backend.invocations] == [
+        Operation.ARTIFACT_CATALOG,
+        Operation.MIND_MAP_LIST,
+    ]
+    assert backend.invocations[1].value == MindMapListInput("notebook-id", supplemental=True)

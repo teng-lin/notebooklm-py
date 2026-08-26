@@ -4,9 +4,8 @@ Provides operations for creating, updating, listing, and deleting
 user-created notes in notebooks. Notes are distinct from artifacts -
 they are user-created content, not AI-generated.
 
-Note-row primitives live in :mod:`_note_service` and the
-mind-map-only facade lives in :mod:`_mind_map` as
-:class:`NoteBackedMindMapService`. Saving a chat answer as a
+Note-row primitives and the note-backed mind-map surface both live in
+:mod:`_note_service`. Saving a chat answer as a
 citation-rich note lives on :class:`ChatAPI` as ``save_answer_as_note``
 (refactor-history.md Step 8, ADR-0013); the former
 ``NotesAPI.create_from_chat`` forwarder was removed in v0.7.0.
@@ -19,9 +18,8 @@ import logging
 from typing import Any
 
 from ._backend import BackendError
-from ._backend_compat import project_backend_error
+from ._backend_compat import project_backend_call, project_backend_error
 from ._lookup import unwrap_or_raise
-from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteService
 from ._row_adapters.notes import NoteRow
 from .exceptions import NoteNotFoundError
@@ -51,19 +49,16 @@ class NotesAPI:
         self,
         *,
         notes: NoteService,
-        mind_maps: NoteBackedMindMapService,
     ):
         """Initialize the notes API.
 
         Args:
             notes: Transport-neutral plain-note service. Owns typed
-                list/get/create/update/delete dispatch through the semantic backend.
-            mind_maps: Mind-map-only facade backed by ``notes``. Owns
-                the ``list_mind_maps`` / ``delete_mind_map`` paths the
+                list/get/create/update/delete dispatch through the semantic
+                backend, including the raw note-backed mind-map listings the
                 public ``NotesAPI`` surface forwards through.
         """
         self._notes = notes
-        self._mind_maps = mind_maps
 
     async def list(self, notebook_id: str) -> list[Note]:
         """List all text notes in the notebook.
@@ -255,7 +250,7 @@ class NotesAPI:
         Returns:
             List of raw mind map data.
         """
-        return await self._mind_maps.list_mind_maps(notebook_id)
+        return await project_backend_call(self._notes.list_mind_map_rows(notebook_id))
 
     async def delete_mind_map(self, notebook_id: str, mind_map_id: str) -> None:
         """Delete a mind map from the notebook.
@@ -272,7 +267,7 @@ class NotesAPI:
             **Breaking change:** previously returned a hardcoded ``True``;
             now returns ``None`` (issue #1211).
         """
-        await self._mind_maps.delete_mind_map(notebook_id, mind_map_id)
+        await project_backend_call(self._notes.delete_mind_map(notebook_id, mind_map_id))
 
     # =========================================================================
     # Private Helpers
@@ -280,7 +275,7 @@ class NotesAPI:
 
     async def _get_all_notes_and_mind_maps(self, notebook_id: str) -> builtins.list[Any]:
         """Fetch all notes and mind maps from the API."""
-        return await self._mind_maps._fetch_all_rows(notebook_id)
+        return await project_backend_call(self._notes.list_note_rows(notebook_id))
 
     def _is_deleted(self, item: builtins.list[Any]) -> bool:
         """Check if a note/mind map item is deleted (status=2).

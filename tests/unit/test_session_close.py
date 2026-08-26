@@ -92,8 +92,6 @@ async def test_session_close_drains_artifact_poll_hook() -> None:
     """``close()`` cancels in-flight poll tasks within 1s and tears down cleanly."""
     from unittest.mock import MagicMock
 
-    from notebooklm._mind_map import NoteBackedMindMapService
-
     core = NotebookLMClient(_auth())
     # ``ArtifactsAPI`` consumes its three runtime collaborators
     # (``rpc`` + ``drain`` + ``lifecycle``) directly — mirrors production
@@ -103,7 +101,6 @@ async def test_session_close_drains_artifact_poll_hook() -> None:
         drain=core._backend._drain_tracker,
         lifecycle=core._provider._lifecycle,
         notebooks=MagicMock(),
-        mind_maps=MagicMock(spec=NoteBackedMindMapService),
     )
     assert (
         core._backend._drain_tracker._drain_hooks["artifacts.polls"]

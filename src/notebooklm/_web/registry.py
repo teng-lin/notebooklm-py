@@ -59,6 +59,7 @@ from .._records import (
     LABEL_UPDATE_DEF,
     LEGACY_SHARE_ARTIFACT_DEF,
     MIND_MAP_DELETE_DEF,
+    MIND_MAP_GENERATE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,
     MIND_MAP_GET_DEF,
@@ -194,8 +195,7 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
         Operation.MIND_MAP_GENERATE_INTERACTIVE: MIND_MAP_GENERATE_INTERACTIVE_DEF,
         Operation.MIND_MAP_UPDATE: MIND_MAP_UPDATE_DEF,
         Operation.MIND_MAP_DELETE: MIND_MAP_DELETE_DEF,
-        Operation.ARTIFACT_LIST: ARTIFACT_LIST_DEF,
-        Operation.ARTIFACT_GET: ARTIFACT_GET_DEF,
+        Operation.MIND_MAP_GENERATE: MIND_MAP_GENERATE_DEF,
         Operation.ARTIFACT_CATALOG: ARTIFACT_CATALOG_DEF,
         Operation.ARTIFACT_PATCH_TITLE: ARTIFACT_PATCH_TITLE_DEF,
         Operation.ARTIFACT_GENERATE_AUDIO: ARTIFACT_GENERATE_AUDIO_DEF,
@@ -206,7 +206,6 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
         Operation.ARTIFACT_GENERATE_INFOGRAPHIC: ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
         Operation.ARTIFACT_GENERATE_SLIDE_DECK: ARTIFACT_GENERATE_SLIDE_DECK_DEF,
         Operation.ARTIFACT_GENERATE_DATA_TABLE: ARTIFACT_GENERATE_DATA_TABLE_DEF,
-        Operation.ARTIFACT_GENERATE_MIND_MAP: ARTIFACT_GENERATE_MIND_MAP_DEF,
         Operation.ARTIFACT_EXPORT: ARTIFACT_EXPORT_DEF,
         Operation.LABEL_LIST: LABEL_LIST_DEF,
         Operation.LABEL_GET: LABEL_GET_DEF,
@@ -257,6 +256,9 @@ _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = 
         Operation.SHARING_UPDATE_USERS: SHARING_UPDATE_USERS_DEF,
         Operation.SHARING_SET_VIEW_LEVEL: SHARING_SET_VIEW_LEVEL_DEF,
         Operation.ARTIFACT_RENAME: ARTIFACT_RENAME_DEF,
+        Operation.ARTIFACT_LIST: ARTIFACT_LIST_DEF,
+        Operation.ARTIFACT_GET: ARTIFACT_GET_DEF,
+        Operation.ARTIFACT_GENERATE_MIND_MAP: ARTIFACT_GENERATE_MIND_MAP_DEF,
         Operation.NOTEBOOK_CREATE: NOTEBOOK_CREATE_DEF,
         Operation.NOTEBOOK_UPDATE: NOTEBOOK_UPDATE_DEF,
     }
@@ -298,6 +300,18 @@ _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.ARTIFACT_RENAME: (
             "service-owned since P9.2-10: StudioManagementService.rename sequences "
             "artifact.patch_title and artifact.catalog"
+        ),
+        Operation.ARTIFACT_LIST: (
+            "service-owned since P10 R4.2: StudioCatalog.list_records sequences "
+            "artifact.catalog and the supplemental mind_map.list merge"
+        ),
+        Operation.ARTIFACT_GET: (
+            "service-owned since P10 R4.2: StudioCatalog.get_record selects one identity "
+            "from the artifact.catalog and mind_map.list merge"
+        ),
+        Operation.ARTIFACT_GENERATE_MIND_MAP: (
+            "service-owned since P10 R4.2: NoteBackedMindMapFamilyService.generate sequences "
+            "mind_map.generate_note and the note.create/note.update/note.delete persistence"
         ),
         Operation.NOTEBOOK_CREATE: (
             "service-owned since P9.2-12: NotebookMutationService.create sequences "
@@ -347,13 +361,13 @@ _UNSUPPORTED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
     }
 )
 
-# The frozen catalog currently contains 96 operations (87 product members plus nine
+# The frozen catalog currently contains 97 operations (87 product members plus ten
 # P9.2 primitives). This assertion is repeated at
 # the runtime registry boundary: a new enum member must not silently inherit an
 # unsupported disposition without a web-registry review.
-_EXPECTED_OPERATION_COUNT: Final = 96
-_EXPECTED_SUPPORTED_COUNT: Final = 80
-_EXPECTED_SERVICE_OWNED_COUNT: Final = 11
+_EXPECTED_OPERATION_COUNT: Final = 97
+_EXPECTED_SUPPORTED_COUNT: Final = 78
+_EXPECTED_SERVICE_OWNED_COUNT: Final = 14
 
 
 def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:

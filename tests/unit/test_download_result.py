@@ -66,14 +66,14 @@ def test_artifacts_module_preserves_download_patch_targets():
     re-exports were removed from ``_artifacts.py``. The artifact
     exception classes now resolve only from their canonical home
     (``notebooklm.exceptions``); ``_artifacts`` no longer carries
-    ``ArtifactDownloadError`` as an attribute. ``DownloadResult`` and
-    the ``_mind_map`` re-export remain because ``_artifacts.py`` uses
-    them internally.
+    ``ArtifactDownloadError`` as an attribute. ``DownloadResult`` remains
+    because ``_artifacts.py`` uses it internally; the ``_mind_map`` re-export
+    went with the module itself in P10 R4.2.
     """
     import notebooklm._artifacts as artifacts_module
 
     assert artifacts_module.DownloadResult is DownloadResult
-    assert artifacts_module._mind_map is not None
+    assert not hasattr(artifacts_module, "_mind_map")
     assert not hasattr(artifacts_module, "load_httpx_cookies")
     # The exception classes are no longer reachable through `_artifacts`.
     assert not hasattr(artifacts_module, "ArtifactDownloadError")
@@ -88,7 +88,6 @@ def test_artifacts_module_preserves_download_patch_targets():
 def mock_artifacts_api(tmp_path):
     """Minimal ArtifactsAPI with a mocked core for download tests."""
     from notebooklm._artifacts import ArtifactsAPI
-    from notebooklm._mind_map import NoteBackedMindMapService
 
     mock_core = MagicMock()
     api = ArtifactsAPI(
@@ -96,7 +95,6 @@ def mock_artifacts_api(tmp_path):
         drain=mock_core,
         lifecycle=mock_core,
         notebooks=MagicMock(),
-        mind_maps=MagicMock(spec=NoteBackedMindMapService),
         storage_path=tmp_path / "storage.json",
     )
     return api, mock_core

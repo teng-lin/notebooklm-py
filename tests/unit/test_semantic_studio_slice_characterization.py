@@ -40,7 +40,6 @@ from notebooklm._artifact._download_client import (
     _make_download_client,
 )
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._types.artifacts import (
     _TERMINAL_GENERATION_STATES,
     _warned_artifact_types,
@@ -69,20 +68,22 @@ from tests._helpers.signature_inspection import signature_parameters
 def _make_api(
     rpc_call: AsyncMock | None = None,
     list_mind_maps_return: list[Any] | None = None,
-) -> tuple[ArtifactsAPI, Any, MagicMock]:
-    """Construct an ArtifactsAPI instance with isolated mock collaborators."""
+) -> tuple[ArtifactsAPI, Any, AsyncMock]:
+    """Construct an ArtifactsAPI instance with isolated mock collaborators.
+
+    The note-backed half of a catalog listing is the supplemental
+    ``GET_NOTES_AND_MIND_MAPS`` read the Studio catalog merges in, so the
+    returned ``AsyncMock`` stands in for that one native and a test drives the
+    partial-availability policy by giving it a ``side_effect``.
+    """
     studio_rpc_call = rpc_call or AsyncMock(return_value=[])
     mock_notebooks = MagicMock()
     mock_notebooks.get_source_ids = AsyncMock(return_value=[])
-    mock_mind_maps = MagicMock(spec=NoteBackedMindMapService)
-    if list_mind_maps_return is not None:
-        mock_mind_maps.list_mind_maps = AsyncMock(return_value=list_mind_maps_return)
-    else:
-        mock_mind_maps.list_mind_maps = AsyncMock(return_value=[])
+    note_rows = AsyncMock(return_value=list_mind_maps_return or [])
 
     async def routed_rpc_call(method: RPCMethod, params: list[Any], **kwargs: Any) -> Any:
         if method is RPCMethod.GET_NOTES_AND_MIND_MAPS:
-            return [await mock_mind_maps.list_mind_maps(params[0])]
+            return [await note_rows(params[0])]
         return await studio_rpc_call(method, params, **kwargs)
 
     mock_core = make_fake_core(
@@ -93,10 +94,9 @@ def _make_api(
         drain=mock_core,
         lifecycle=mock_core,
         notebooks=mock_notebooks,
-        mind_maps=mock_mind_maps,
         _backend=build_web_backend(mock_core),
     )
-    return api, mock_core, mock_mind_maps
+    return api, mock_core, note_rows
 
 
 def _build_full_studio_row(
@@ -379,7 +379,7 @@ async def test_list_and_get_populate_every_artifact_field_and_nested_value_witho
     )
 
     rpc_call = AsyncMock(return_value=[[audio_row, slide_row, info_row]])
-    api, mock_core, mock_mind_maps = _make_api(rpc_call=rpc_call)
+    api, mock_core, note_rows = _make_api(rpc_call=rpc_call)
 
     # 1. Test api.list()
     artifacts = await api.list("nb-1")
@@ -388,7 +388,7 @@ async def test_list_and_get_populate_every_artifact_field_and_nested_value_witho
     # Assert exactly 1 LIST_ARTIFACTS call and 1 GET_NOTES_AND_MIND_MAPS sub-fetch
     assert rpc_call.await_count == 1
     assert rpc_call.await_args_list[0][0][0] == RPCMethod.LIST_ARTIFACTS
-    mock_mind_maps.list_mind_maps.assert_awaited_once_with("nb-1")
+    note_rows.assert_awaited_once_with("nb-1")
 
     # 2. Verify all Audio fields and nested values
     audio = artifacts[0]
@@ -452,21 +452,21 @@ async def test_list_and_get_populate_every_artifact_field_and_nested_value_witho
 
     # 5. Test api.get() and get_or_none() populate identical fields without extra per-artifact fetch
     rpc_call.reset_mock()
-    mock_mind_maps.list_mind_maps.reset_mock()
+    note_rows.reset_mock()
     rpc_call.return_value = [[audio_row]]
 
     got = await api.get("nb-1", "art-audio")
     assert got == audio
     assert rpc_call.await_count == 1
     # get() delegates to list() to discover studio + note-backed mind maps
-    mock_mind_maps.list_mind_maps.assert_awaited_once_with("nb-1")
+    note_rows.assert_awaited_once_with("nb-1")
 
     rpc_call.reset_mock()
-    mock_mind_maps.list_mind_maps.reset_mock()
+    note_rows.reset_mock()
     got_none = await api.get_or_none("nb-1", "art-audio")
     assert got_none == audio
     assert rpc_call.await_count == 1
-    mock_mind_maps.list_mind_maps.assert_awaited_once_with("nb-1")
+    note_rows.assert_awaited_once_with("nb-1")
 
 
 @pytest.mark.asyncio
@@ -482,7 +482,7 @@ async def test_note_backed_mind_map_populates_artifact_from_note_row() -> None:
             "Mind Map Title",
         ],
     ]
-    api, _, mock_mind_maps = _make_api(
+    api, _, _note_rows = _make_api(
         rpc_call=AsyncMock(return_value=[]),
         list_mind_maps_return=[mind_map_note],
     )
@@ -946,27 +946,25 @@ async def test_mind_map_dual_backing_and_partial_availability() -> None:
     assert {a.id for a in artifacts} == {"mm-studio", "mm-note"}
 
     # 2. ADR-0019 partial-availability: transient transport error in mind-map sub-fetch returns studio rows
-    api, _, mock_mind_maps = _make_api(rpc_call=AsyncMock(return_value=[[interactive_row]]))
-    mock_mind_maps.list_mind_maps = AsyncMock(side_effect=RPCError("temporary endpoint error"))
+    api, _, note_rows = _make_api(rpc_call=AsyncMock(return_value=[[interactive_row]]))
+    note_rows.side_effect = RPCError("temporary endpoint error")
     degraded = await api.list("nb-1")
     assert len(degraded) == 1
     assert degraded[0].id == "mm-studio"
 
     # The legacy partial-availability boundary never swallowed the executor's
     # translated NetworkError; preserve that exact public behavior.
-    mock_mind_maps.list_mind_maps = AsyncMock(side_effect=NetworkError("connection reset"))
+    note_rows.side_effect = NetworkError("connection reset")
     with pytest.raises(NetworkError, match="connection reset"):
         await api.list("nb-1")
 
     # 3. ADR-0019 schema drift in mind-map sub-fetch propagates DecodingError
-    mock_mind_maps.list_mind_maps = AsyncMock(
-        side_effect=DecodingError("corrupt mind map note shape")
-    )
+    note_rows.side_effect = DecodingError("corrupt mind map note shape")
     with pytest.raises(DecodingError, match="corrupt mind map"):
         await api.list("nb-1")
 
     # 4. get_prompt returns generation prompt for studio mind maps, None for note-backed, raises on unknown
-    api, _, mock_mind_maps = _make_api(
+    api, _, _note_rows = _make_api(
         rpc_call=AsyncMock(return_value=[[interactive_row]]),
         list_mind_maps_return=[note_backed_row],
     )

@@ -44,6 +44,7 @@ REVIEWED_PRIMITIVE_OPERATIONS = frozenset(
         Operation.ARTIFACT_PATCH_TITLE,
         Operation.LABEL_ALLOCATE,
         Operation.LABEL_MUTATE,
+        Operation.MIND_MAP_GENERATE,
         Operation.NOTEBOOK_ALLOCATE,
         Operation.NOTEBOOK_PATCH,
         Operation.SHARING_MUTATE,
@@ -129,12 +130,12 @@ def test_reviewed_primitive_set_matches_the_live_definition_tiers() -> None:
     )
 
     assert live == REVIEWED_PRIMITIVE_OPERATIONS
-    assert len(primitive_definition_names()) == len(REVIEWED_PRIMITIVE_OPERATIONS) == 9
+    assert len(primitive_definition_names()) == len(REVIEWED_PRIMITIVE_OPERATIONS) == 10
 
 
 def test_product_operation_count_excludes_the_primitives() -> None:
-    """96 vocabulary members are 87 product operations plus nine leaves."""
-    assert len(Operation) == 96
+    """97 vocabulary members are 87 product operations plus ten leaves."""
+    assert len(Operation) == 97
     assert len(product_operations()) == 87
     assert product_operations().isdisjoint(REVIEWED_PRIMITIVE_OPERATIONS)
     assert product_operations() | REVIEWED_PRIMITIVE_OPERATIONS == frozenset(Operation)

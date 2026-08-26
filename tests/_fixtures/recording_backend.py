@@ -18,6 +18,14 @@ from notebooklm._backend import (
 )
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation, OperationDef
+from notebooklm._records import (
+    ARTIFACT_CATALOG_DEF,
+    MIND_MAP_LIST_DEF,
+    ArtifactCatalogResult,
+    ArtifactRecord,
+    MindMapListResult,
+    MindMapRecord,
+)
 
 InputT = TypeVar("InputT")
 OutputT = TypeVar("OutputT")
@@ -230,4 +238,25 @@ class RecordingBackend:
         self.closed = True
 
 
-__all__ = ["BackendInvocation", "RecordingBackend", "scripted_error"]
+def set_studio_catalog(
+    backend: RecordingBackend,
+    artifacts: Sequence[ArtifactRecord] = (),
+    mind_maps: Sequence[MindMapRecord] = (),
+) -> None:
+    """Register the two leaves ``StudioCatalog`` merges into one Studio listing.
+
+    A complete catalog read is ``artifact.catalog`` plus the supplemental
+    ``mind_map.list`` merge, so a service test that drives any catalog-backed
+    listing has to supply both.
+    """
+
+    backend.set_result(ARTIFACT_CATALOG_DEF, ArtifactCatalogResult(tuple(artifacts)))
+    backend.set_result(MIND_MAP_LIST_DEF, MindMapListResult(tuple(mind_maps)))
+
+
+__all__ = [
+    "BackendInvocation",
+    "RecordingBackend",
+    "scripted_error",
+    "set_studio_catalog",
+]
