@@ -10,7 +10,6 @@ from urllib.parse import urlparse
 
 import pytest
 
-import notebooklm._url_utils
 from notebooklm._url_utils import (
     contains_google_auth_redirect,
     extract_youtube_video_id,
@@ -485,14 +484,17 @@ class TestExtractYoutubeVideoId:
     def test_a_parse_failure_is_logged_and_reported_as_no_video_id(
         self,
         caplog: pytest.LogCaptureFixture,
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """The diagnostic stays on the *caller's* logger, which is why it is a parameter."""
+        """The diagnostic stays on the *caller's* logger, which is why it is a parameter.
+
+        ``http://[`` is a genuinely unparseable URL -- ``urlparse`` raises
+        ``ValueError: Invalid IPv6 URL`` on it -- so this exercises the real
+        failure branch without monkeypatching a module global (ADR-0007).
+        """
         logger = logging.getLogger("notebooklm._sources")
-        monkeypatch.setattr(notebooklm._url_utils, "urlparse", _raising(ValueError("parse error")))
 
         with caplog.at_level(logging.DEBUG, logger=logger.name):
-            assert extract_youtube_video_id("https://youtu.be/abc", logger=logger) is None
+            assert extract_youtube_video_id("http://[", logger=logger) is None
 
         assert [record.name for record in caplog.records] == [logger.name]
         assert "Failed to parse YouTube URL" in caplog.records[0].getMessage()

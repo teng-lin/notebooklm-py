@@ -345,8 +345,13 @@ async def test_an_empty_echo_names_the_title_that_was_not_created() -> None:
 
 
 def test_only_the_residual_rpc_family_is_wrapped() -> None:
-    """The wrapped set is the reviewed catch, not "everything RPC-shaped"."""
-    from notebooklm._source_service import _TEXT_WRAPPED_FAILURE_KINDS
+    """The wrapped set is the reviewed catch, not "everything RPC-shaped".
+
+    P10 R3.3 found ``add_url`` shared this catch ordering with ``add_text``
+    verbatim below the port, so the constant is now named and owned for both
+    hoisted workflows rather than kept as a text-only artifact.
+    """
+    from notebooklm._source_service import _WRAPPED_REGISTRATION_FAILURE_KINDS
 
     assert {
         SourceAddFailureKind.RPC,
@@ -354,7 +359,7 @@ def test_only_the_residual_rpc_family_is_wrapped() -> None:
         SourceAddFailureKind.DECODING,
         SourceAddFailureKind.RESPONSE_TOO_LARGE,
         SourceAddFailureKind.UNKNOWN_RPC_METHOD,
-    } == _TEXT_WRAPPED_FAILURE_KINDS
+    } == _WRAPPED_REGISTRATION_FAILURE_KINDS
     for unwrapped in (
         SourceAddFailureKind.AUTH,
         SourceAddFailureKind.RATE_LIMIT,
@@ -362,7 +367,7 @@ def test_only_the_residual_rpc_family_is_wrapped() -> None:
         SourceAddFailureKind.NETWORK,
         SourceAddFailureKind.RPC_TIMEOUT,
     ):
-        assert unwrapped not in _TEXT_WRAPPED_FAILURE_KINDS
+        assert unwrapped not in _WRAPPED_REGISTRATION_FAILURE_KINDS
 
 
 @pytest.mark.asyncio

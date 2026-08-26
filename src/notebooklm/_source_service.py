@@ -65,7 +65,6 @@ from ._records import (
     SourceGuideInput,
     SourceGuideResult,
     SourceListInput,
-    SourceListResult,
     SourcePatchTitleInput,
     SourceProgressCallback,
     SourceRecord,
@@ -403,7 +402,15 @@ class SourceService:
                     operation=workflow,
                 )
             try:
-                current = await self._url_probe_snapshot(notebook_id, deadline=deadline)
+                # Same leaf, same request as the pre-create baseline — but the
+                # two reads answer different questions and fail differently
+                # (the baseline degrades, the probe aborts), so they are
+                # separable phases rather than one repeated call.
+                current = await self._backend.invoke(
+                    SOURCE_LIST_DEF,
+                    SourceListInput(notebook_id),
+                    deadline=deadline,
+                )
             except BackendError as leaf_error:
                 raise self._url_probe_failure(
                     workflow,
@@ -538,24 +545,6 @@ class SourceService:
                     else SourceAddTitleState.RENAME_FAILED
                 ),
             ),
-        )
-
-    async def _url_probe_snapshot(
-        self,
-        notebook_id: str,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> SourceListResult:
-        """The reconciling snapshot, named apart from the pre-create baseline.
-
-        Same leaf, same request — but the two reads answer different questions
-        and fail differently (the baseline degrades, the probe aborts), so they
-        are separable phases rather than one repeated call.
-        """
-        return await self._backend.invoke(
-            SOURCE_LIST_DEF,
-            SourceListInput(notebook_id),
-            deadline=deadline,
         )
 
     async def _url_baseline(

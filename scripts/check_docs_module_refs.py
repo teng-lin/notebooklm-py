@@ -97,6 +97,12 @@ _ALLOWLIST: dict[str, str] = {
     # `_web/bindings/_invoker_caller.py` in P9.4b; the refactor plan names it as
     # history (the P9 entry record and the P9.1/P9.4 slice text).
     "docs/plan/2026-08-13-semantic-backend-refactor.md:_web/deadline_rpc.py": "historical: P6 caller deleted in P9.4b, named by the plan's slice record",
+    # `_mutation_services.py` was the P2.3 pass-through module I1's seed count
+    # named as part of the original 13-module semantic-service allowlist; P10
+    # R3.3 hoisted its only method (`SourceUrlMutationService.add_url`) and
+    # deleted it. The plan text is the invariant's seed record as of its
+    # authoring date, not a claim the module still exists.
+    "docs/plan/2026-08-25-p10-semantic-remediation.md:_mutation_services.py": "historical: P10 R3.3 deleted the module, named by I1's original seed-count record",
 }
 
 
