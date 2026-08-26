@@ -1102,6 +1102,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_studio/classifiers.py` | Closed neutral-artifact family classifier shared by Studio catalog selection. |
 | `_studio/data_views.py` | P5.6 typed data-table and mind-map generation plus dual-backing catalog selection. |
 | `_studio/exports.py` | P5.6 explicit Drive-export service over the typed semantic operation. |
+| `_studio/generation.py` | Service-level resolution of the eight `artifact.generate_*` inputs: the documented "no sources means every source" and "no language means the environment default" defaults, plus the reviewed option vocabularies, so the port takes pre-resolved records (ADR-0035 addendum D1(a)). |
 | `_studio/management.py` | Management, slide revision, retry, and report-suggestion services; owns artifact rename's patch-then-catalog sequence, deadline identity, not-found evidence, and post-write uncertainty. |
 | `_studio/lifecycle.py` | P5.8 lifecycle status service and unchanged public lifecycle-terminal polling coordination. |
 | `_studio/representations.py` | P5.8 neutral artifact/mind-map representation selection and dispatch to P5.7 retrieval/serialization clients. |
@@ -1324,6 +1325,7 @@ src/notebooklm/
 │   ├── visuals.py               # Infographic/slide-deck generation/readiness family (P5.5)
 │   ├── data_views.py            # Data-table/mind-map generation and catalog family (P5.6)
 │   ├── exports.py               # Explicit Drive companion export service (P5.6)
+│   ├── generation.py            # Source/language/option resolution for the generate families (P10 R5.1a)
 │   ├── downloads.py             # Trusted remote representation byte client (P5.7)
 │   ├── serialization.py         # RPC-free local representation serializers (P5.7)
 │   ├── management.py            # Revision/retry/rename/delete + suggestions (P5.8)

@@ -11,6 +11,7 @@ import pytest
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import CallPolicy, Operation
+from notebooklm._read_services import NotebookReadService
 from notebooklm._records import (
     ARTIFACT_GENERATE_REPORT_DEF,
     ARTIFACT_GENERATE_VIDEO_DEF,
@@ -25,6 +26,7 @@ from notebooklm._records import (
     ReportGenerateResult,
     ReportMetadataRecord,
     VideoGenerateInput,
+    VideoGenerateRequest,
     VideoGenerateResult,
     VideoMetadataRecord,
 )
@@ -32,9 +34,15 @@ from notebooklm._studio import (
     DocumentOptionError,
     ReportFamilyService,
     StudioCatalog,
+    StudioGenerationInputs,
     VideoFamilyService,
 )
 from tests._fixtures.recording_backend import RecordingBackend
+
+
+def _generation_inputs(backend: RecordingBackend) -> StudioGenerationInputs:
+    """The R5.1a resolver every generate family now takes."""
+    return StudioGenerationInputs(NotebookReadService(backend))
 
 
 def _artifact(
@@ -80,9 +88,9 @@ def test_document_records_are_frozen_slotted_typed_and_redacted() -> None:
     )
     report = ReportGenerateInput(
         "nb",
-        "custom",
         ("src",),
         "en",
+        "custom",
         "Private custom prompt",
         "Private extras",
     )
@@ -164,11 +172,11 @@ async def test_video_service_normalizes_prompt_and_preserves_deadline_identity()
         ARTIFACT_GENERATE_VIDEO_DEF,
         VideoGenerateResult(GenerationStatusRecord("task", "pending")),
     )
-    service = VideoFamilyService(backend, StudioCatalog(backend))
+    service = VideoFamilyService(backend, StudioCatalog(backend), _generation_inputs(backend))
     deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: 11.0)
 
     result = await service.generate(
-        VideoGenerateInput(
+        VideoGenerateRequest(
             "nb",
             ("src",),
             video_style="custom",
@@ -188,23 +196,23 @@ async def test_video_service_normalizes_prompt_and_preserves_deadline_identity()
 @pytest.mark.parametrize(
     ("value", "message"),
     [
-        (VideoGenerateInput("nb", (), video_style="custom"), "style_prompt is required"),
+        (VideoGenerateRequest("nb", (), video_style="custom"), "style_prompt is required"),
         (
-            VideoGenerateInput("nb", (), video_format="short", video_style="anime"),
+            VideoGenerateRequest("nb", (), video_format="short", video_style="anime"),
             "not supported for short videos",
         ),
         (
-            VideoGenerateInput("nb", (), video_style="anime", style_prompt="Ink"),
+            VideoGenerateRequest("nb", (), video_style="anime", style_prompt="Ink"),
             "style_prompt requires",
         ),
     ],
 )
 async def test_video_behavior_rejects_invalid_options_before_backend(
-    value: VideoGenerateInput,
+    value: VideoGenerateRequest,
     message: str,
 ) -> None:
     backend = RecordingBackend()
-    service = VideoFamilyService(backend, StudioCatalog(backend))
+    service = VideoFamilyService(backend, StudioCatalog(backend), _generation_inputs(backend))
 
     with pytest.raises(DocumentOptionError, match=message):
         await service.generate(value)
@@ -219,8 +227,12 @@ async def test_report_and_video_services_filter_catalog_records_without_extra_fe
     list_backend = RecordingBackend()
     list_backend.set_result(ARTIFACT_LIST_DEF, ArtifactListResult((video, report)))
 
-    videos = await VideoFamilyService(list_backend, StudioCatalog(list_backend)).list("nb")
-    reports = await ReportFamilyService(list_backend, StudioCatalog(list_backend)).list("nb")
+    videos = await VideoFamilyService(
+        list_backend, StudioCatalog(list_backend), _generation_inputs(list_backend)
+    ).list("nb")
+    reports = await ReportFamilyService(
+        list_backend, StudioCatalog(list_backend), _generation_inputs(list_backend)
+    ).list("nb")
 
     assert videos == (video,)
     assert reports == (report,)
@@ -228,7 +240,9 @@ async def test_report_and_video_services_filter_catalog_records_without_extra_fe
 
     get_backend = RecordingBackend()
     get_backend.set_result(ARTIFACT_GET_DEF, ArtifactGetResult(report))
-    video_service = VideoFamilyService(get_backend, StudioCatalog(get_backend))
+    video_service = VideoFamilyService(
+        get_backend, StudioCatalog(get_backend), _generation_inputs(get_backend)
+    )
     assert await video_service.get("nb", "report") is None
     assert len(get_backend.invocations) == 1
 

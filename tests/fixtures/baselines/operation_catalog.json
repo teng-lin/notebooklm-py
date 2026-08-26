@@ -65,12 +65,6 @@
       "known_divergence": null,
       "native_bindings": [
         {
-          "idempotency_policy": "idempotent_set_op",
-          "role": "conditional default-source resolution",
-          "rpc_method": "GET_NOTEBOOK",
-          "variant": null
-        },
-        {
           "idempotency_policy": "probe_then_create",
           "role": "audio artifact allocation",
           "rpc_method": "CREATE_ARTIFACT",
@@ -82,12 +76,6 @@
       "call_policy": "stateful_start",
       "known_divergence": null,
       "native_bindings": [
-        {
-          "idempotency_policy": "idempotent_set_op",
-          "role": "optional source-set read",
-          "rpc_method": "GET_NOTEBOOK",
-          "variant": null
-        },
         {
           "idempotency_policy": "probe_then_create",
           "role": "data-table kickoff",
@@ -101,12 +89,6 @@
       "known_divergence": null,
       "native_bindings": [
         {
-          "idempotency_policy": "idempotent_set_op",
-          "role": "conditional default-source resolution",
-          "rpc_method": "GET_NOTEBOOK",
-          "variant": null
-        },
-        {
           "idempotency_policy": "probe_then_create",
           "role": "flashcards artifact allocation",
           "rpc_method": "CREATE_ARTIFACT",
@@ -118,12 +100,6 @@
       "call_policy": "stateful_start",
       "known_divergence": null,
       "native_bindings": [
-        {
-          "idempotency_policy": "idempotent_set_op",
-          "role": "optional all-source resolution",
-          "rpc_method": "GET_NOTEBOOK",
-          "variant": null
-        },
         {
           "idempotency_policy": "probe_then_create",
           "role": "guarded infographic kickoff",
@@ -173,12 +149,6 @@
       "known_divergence": null,
       "native_bindings": [
         {
-          "idempotency_policy": "idempotent_set_op",
-          "role": "conditional default-source resolution",
-          "rpc_method": "GET_NOTEBOOK",
-          "variant": null
-        },
-        {
           "idempotency_policy": "probe_then_create",
           "role": "quiz artifact allocation",
           "rpc_method": "CREATE_ARTIFACT",
@@ -190,12 +160,6 @@
       "call_policy": "stateful_start",
       "known_divergence": null,
       "native_bindings": [
-        {
-          "idempotency_policy": "idempotent_set_op",
-          "role": "optional all-source resolution",
-          "rpc_method": "GET_NOTEBOOK",
-          "variant": null
-        },
         {
           "idempotency_policy": "probe_then_create",
           "role": "guarded report kickoff",
@@ -209,12 +173,6 @@
       "known_divergence": null,
       "native_bindings": [
         {
-          "idempotency_policy": "idempotent_set_op",
-          "role": "optional all-source resolution",
-          "rpc_method": "GET_NOTEBOOK",
-          "variant": null
-        },
-        {
           "idempotency_policy": "probe_then_create",
           "role": "guarded slide-deck kickoff",
           "rpc_method": "CREATE_ARTIFACT",
@@ -226,12 +184,6 @@
       "call_policy": "stateful_start",
       "known_divergence": null,
       "native_bindings": [
-        {
-          "idempotency_policy": "idempotent_set_op",
-          "role": "optional all-source resolution",
-          "rpc_method": "GET_NOTEBOOK",
-          "variant": null
-        },
         {
           "idempotency_policy": "probe_then_create",
           "role": "guarded video kickoff",
@@ -2379,7 +2331,7 @@
         "VisualFamilyService"
       ],
       "response_decoders": [
-        "_web/codec/generation.py:decode_generation_kickoff",
+        "_web/codec/generation.py:_kickoff_status",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/studio_documents.py:decode_generation_status"
       ],
@@ -3161,15 +3113,7 @@
         "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
         "_web/bindings/sources.py:SOURCE_GET",
         "_web/bindings/sources.py:SOURCE_LIST",
-        "_web/bindings/sources.py:SOURCE_WAIT",
-        "_web/bindings/studio.py:ARTIFACT_GENERATE_AUDIO",
-        "_web/bindings/studio.py:ARTIFACT_GENERATE_DATA_TABLE",
-        "_web/bindings/studio.py:ARTIFACT_GENERATE_FLASHCARDS",
-        "_web/bindings/studio.py:ARTIFACT_GENERATE_INFOGRAPHIC",
-        "_web/bindings/studio.py:ARTIFACT_GENERATE_QUIZ",
-        "_web/bindings/studio.py:ARTIFACT_GENERATE_REPORT",
-        "_web/bindings/studio.py:ARTIFACT_GENERATE_SLIDE_DECK",
-        "_web/bindings/studio.py:ARTIFACT_GENERATE_VIDEO"
+        "_web/bindings/sources.py:SOURCE_WAIT"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -4984,7 +4928,7 @@
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "source_ids is None",
-          "site": "_web/bindings/studio.py:ARTIFACT_GENERATE_AUDIO",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_GET",
           "transport_kind": "rpc"
         }
       ],
@@ -5003,7 +4947,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/bindings/studio.py:ARTIFACT_GENERATE_AUDIO"
+            "_web/bindings/notebooks.py:NOTEBOOK_GET"
           ],
           "condition": "one only when source_ids is omitted",
           "maximum_calls": 1,
@@ -5021,7 +4965,7 @@
         "_row_adapters/sources.py:SourceRow.from_entry",
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
-        "_web/codec/generation.py:decode_generation_kickoff",
+        "_web/codec/generation.py:_kickoff_status",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
@@ -5050,7 +4994,7 @@
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "source_ids is None",
-          "site": "_web/bindings/studio.py:ARTIFACT_GENERATE_DATA_TABLE",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_GET",
           "transport_kind": "rpc"
         }
       ],
@@ -5069,7 +5013,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/bindings/studio.py:ARTIFACT_GENERATE_DATA_TABLE"
+            "_web/bindings/notebooks.py:NOTEBOOK_GET"
           ],
           "condition": "one only when source_ids is omitted",
           "maximum_calls": 1,
@@ -5087,7 +5031,7 @@
         "_row_adapters/sources.py:SourceRow.from_entry",
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
-        "_web/codec/generation.py:decode_generation_kickoff",
+        "_web/codec/generation.py:_kickoff_status",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
@@ -5116,7 +5060,7 @@
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "source_ids is None",
-          "site": "_web/bindings/studio.py:ARTIFACT_GENERATE_FLASHCARDS",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_GET",
           "transport_kind": "rpc"
         }
       ],
@@ -5135,7 +5079,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/bindings/studio.py:ARTIFACT_GENERATE_FLASHCARDS"
+            "_web/bindings/notebooks.py:NOTEBOOK_GET"
           ],
           "condition": "one only when source_ids is omitted",
           "maximum_calls": 1,
@@ -5153,7 +5097,7 @@
         "_row_adapters/sources.py:SourceRow.from_entry",
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
-        "_web/codec/generation.py:decode_generation_kickoff",
+        "_web/codec/generation.py:_kickoff_status",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
@@ -5182,7 +5126,7 @@
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "source_ids is None",
-          "site": "_web/bindings/studio.py:ARTIFACT_GENERATE_INFOGRAPHIC",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_GET",
           "transport_kind": "rpc"
         }
       ],
@@ -5201,7 +5145,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/bindings/studio.py:ARTIFACT_GENERATE_INFOGRAPHIC"
+            "_web/bindings/notebooks.py:NOTEBOOK_GET"
           ],
           "condition": "one only when source_ids is omitted",
           "maximum_calls": 1,
@@ -5219,7 +5163,7 @@
         "_row_adapters/sources.py:SourceRow.from_entry",
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
-        "_web/codec/generation.py:decode_generation_kickoff",
+        "_web/codec/generation.py:_kickoff_status",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
@@ -5335,7 +5279,7 @@
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "source_ids is None",
-          "site": "_web/bindings/studio.py:ARTIFACT_GENERATE_QUIZ",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_GET",
           "transport_kind": "rpc"
         }
       ],
@@ -5354,7 +5298,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/bindings/studio.py:ARTIFACT_GENERATE_QUIZ"
+            "_web/bindings/notebooks.py:NOTEBOOK_GET"
           ],
           "condition": "one only when source_ids is omitted",
           "maximum_calls": 1,
@@ -5372,7 +5316,7 @@
         "_row_adapters/sources.py:SourceRow.from_entry",
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
-        "_web/codec/generation.py:decode_generation_kickoff",
+        "_web/codec/generation.py:_kickoff_status",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
@@ -5401,7 +5345,7 @@
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "source_ids is None",
-          "site": "_web/bindings/studio.py:ARTIFACT_GENERATE_REPORT",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_GET",
           "transport_kind": "rpc"
         }
       ],
@@ -5421,7 +5365,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/bindings/studio.py:ARTIFACT_GENERATE_REPORT"
+            "_web/bindings/notebooks.py:NOTEBOOK_GET"
           ],
           "condition": "one only when source_ids is omitted",
           "maximum_calls": 1,
@@ -5440,7 +5384,7 @@
         "_row_adapters/sources.py:SourceRow.from_entry",
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
-        "_web/codec/generation.py:decode_generation_kickoff",
+        "_web/codec/generation.py:_kickoff_status",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
@@ -5469,7 +5413,7 @@
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "source_ids is None",
-          "site": "_web/bindings/studio.py:ARTIFACT_GENERATE_SLIDE_DECK",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_GET",
           "transport_kind": "rpc"
         }
       ],
@@ -5488,7 +5432,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/bindings/studio.py:ARTIFACT_GENERATE_SLIDE_DECK"
+            "_web/bindings/notebooks.py:NOTEBOOK_GET"
           ],
           "condition": "one only when source_ids is omitted",
           "maximum_calls": 1,
@@ -5506,7 +5450,7 @@
         "_row_adapters/sources.py:SourceRow.from_entry",
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
-        "_web/codec/generation.py:decode_generation_kickoff",
+        "_web/codec/generation.py:_kickoff_status",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
@@ -5535,7 +5479,7 @@
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "source_ids is None",
-          "site": "_web/bindings/studio.py:ARTIFACT_GENERATE_VIDEO",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_GET",
           "transport_kind": "rpc"
         }
       ],
@@ -5555,7 +5499,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/bindings/studio.py:ARTIFACT_GENERATE_VIDEO"
+            "_web/bindings/notebooks.py:NOTEBOOK_GET"
           ],
           "condition": "one only when source_ids is omitted",
           "maximum_calls": 1,
@@ -5574,7 +5518,7 @@
         "_row_adapters/sources.py:SourceRow.from_entry",
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
-        "_web/codec/generation.py:decode_generation_kickoff",
+        "_web/codec/generation.py:_kickoff_status",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
@@ -6969,7 +6913,7 @@
         "_web/codec/artifacts.py:decode_interactive_content",
         "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/chat.py:decode_get_settings_result",
-        "_web/codec/generation.py:decode_generation_kickoff",
+        "_web/codec/generation.py:_kickoff_status",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/mind_maps.py:extract_interactive_tree_leaf",
         "_web/codec/notebooks.py:decode_notebook_get",

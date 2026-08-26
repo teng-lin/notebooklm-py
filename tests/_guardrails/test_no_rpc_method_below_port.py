@@ -136,7 +136,7 @@ ALLOWLIST: tuple[str, ...] = (
     "_web/codec/artifacts.py:decode_studio_rows",
     "_web/codec/chat.py:decode_get_settings_result",
     "_web/codec/chat_stream.py:_extract_next_turn_content",
-    "_web/codec/generation.py:decode_generation_kickoff",
+    "_web/codec/generation.py:_kickoff_status",
     "_web/codec/labels.py:decode_label_generate_result",
     "_web/codec/labels.py:decode_label_set_list_result",
     "_web/codec/mind_maps.py:decode_artifact_mind_map_leaf",

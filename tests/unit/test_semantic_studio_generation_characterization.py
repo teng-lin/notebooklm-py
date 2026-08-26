@@ -1,10 +1,11 @@
 """P10 R5.1a: what the Studio generation hoist must preserve.
 
-The eight ``artifact.generate_*`` operations resolve their inputs below the
-port today: ``source_ids is None`` triggers a ``GET_NOTEBOOK`` read, ``language
-is None`` falls back to :func:`notebooklm._env.get_default_language`, and the
-option vocabularies are validated inside ``_web/codec/generation.py``.  Under
-ADR-0035 addendum D1(a) all three become service concerns.
+The eight ``artifact.generate_*`` operations used to resolve their inputs below
+the port: ``source_ids is None`` triggered a ``GET_NOTEBOOK`` read, ``language
+is None`` fell back to :func:`notebooklm._env.get_default_language`, and the
+option vocabularies were validated inside ``_web/codec/generation.py``.  Under
+ADR-0035 addendum D1(a) all three are service concerns, owned by
+``_studio/generation.py``.
 
 These tests observe the behaviour through the ``_studio`` family services — the
 one surface that exists on both sides of the move — and pin:
@@ -33,14 +34,15 @@ from typing import Any
 import pytest
 
 from notebooklm._backend import BackendAdapter, BackendContractError
+from notebooklm._read_services import NotebookReadService
 from notebooklm._records import (
-    AudioGenerateInput,
-    DataTableGenerateInput,
-    InfographicGenerateInput,
-    InteractiveGenerateInput,
-    ReportGenerateInput,
-    SlideDeckGenerateInput,
-    VideoGenerateInput,
+    AudioGenerateRequest,
+    DataTableGenerateRequest,
+    InfographicGenerateRequest,
+    InteractiveGenerateRequest,
+    ReportGenerateRequest,
+    SlideDeckGenerateRequest,
+    VideoGenerateRequest,
 )
 from notebooklm._studio import (
     AudioFamilyService,
@@ -48,6 +50,7 @@ from notebooklm._studio import (
     InteractiveFamilyService,
     ReportFamilyService,
     StudioCatalog,
+    StudioGenerationInputs,
     VideoFamilyService,
     VisualFamilyService,
 )
@@ -97,44 +100,48 @@ class _RecordingExecutor:
 _Generate = Callable[[BackendAdapter, Any], Awaitable[object]]
 
 
+def _inputs(backend: BackendAdapter) -> StudioGenerationInputs:
+    return StudioGenerationInputs(NotebookReadService(backend))
+
+
 def _audio(backend: BackendAdapter, value: Any) -> Awaitable[object]:
-    return AudioFamilyService(backend, StudioCatalog(backend)).generate(value, deadline=None)
+    service = AudioFamilyService(backend, StudioCatalog(backend), _inputs(backend))
+    return service.generate(value, deadline=None)
 
 
 def _quiz(backend: BackendAdapter, value: Any) -> Awaitable[object]:
-    return InteractiveFamilyService(backend, StudioCatalog(backend)).generate_quiz(
-        value, deadline=None
-    )
+    service = InteractiveFamilyService(backend, StudioCatalog(backend), _inputs(backend))
+    return service.generate_quiz(value, deadline=None)
 
 
 def _flashcards(backend: BackendAdapter, value: Any) -> Awaitable[object]:
-    return InteractiveFamilyService(backend, StudioCatalog(backend)).generate_flashcards(
-        value, deadline=None
-    )
+    service = InteractiveFamilyService(backend, StudioCatalog(backend), _inputs(backend))
+    return service.generate_flashcards(value, deadline=None)
 
 
 def _infographic(backend: BackendAdapter, value: Any) -> Awaitable[object]:
-    return VisualFamilyService(backend, StudioCatalog(backend)).generate_infographic(
-        value, deadline=None
-    )
+    service = VisualFamilyService(backend, StudioCatalog(backend), _inputs(backend))
+    return service.generate_infographic(value, deadline=None)
 
 
 def _slide_deck(backend: BackendAdapter, value: Any) -> Awaitable[object]:
-    return VisualFamilyService(backend, StudioCatalog(backend)).generate_slide_deck(
-        value, deadline=None
-    )
+    service = VisualFamilyService(backend, StudioCatalog(backend), _inputs(backend))
+    return service.generate_slide_deck(value, deadline=None)
 
 
 def _data_table(backend: BackendAdapter, value: Any) -> Awaitable[object]:
-    return DataTableFamilyService(backend, StudioCatalog(backend)).generate(value, deadline=None)
+    service = DataTableFamilyService(backend, StudioCatalog(backend), _inputs(backend))
+    return service.generate(value, deadline=None)
 
 
 def _report(backend: BackendAdapter, value: Any) -> Awaitable[object]:
-    return ReportFamilyService(backend, StudioCatalog(backend)).generate(value, deadline=None)
+    service = ReportFamilyService(backend, StudioCatalog(backend), _inputs(backend))
+    return service.generate(value, deadline=None)
 
 
 def _video(backend: BackendAdapter, value: Any) -> Awaitable[object]:
-    return VideoFamilyService(backend, StudioCatalog(backend)).generate(value, deadline=None)
+    service = VideoFamilyService(backend, StudioCatalog(backend), _inputs(backend))
+    return service.generate(value, deadline=None)
 
 
 GENERATE: dict[str, _Generate] = {
@@ -153,19 +160,19 @@ def _input(family: str, source_ids: tuple[str, ...] | None, options: dict[str, A
     """Build one family's service input; ``language`` defaults to unresolved."""
     language = options.pop("language", None)
     if family == "audio":
-        return AudioGenerateInput("nb", source_ids, language, **options)
+        return AudioGenerateRequest("nb", source_ids, language, **options)
     if family in {"quiz", "flashcards"}:
-        return InteractiveGenerateInput("nb", source_ids, **options)
+        return InteractiveGenerateRequest("nb", source_ids, **options)
     if family == "infographic":
-        return InfographicGenerateInput("nb", source_ids, language, **options)
+        return InfographicGenerateRequest("nb", source_ids, language, **options)
     if family == "slide_deck":
-        return SlideDeckGenerateInput("nb", source_ids, language, **options)
+        return SlideDeckGenerateRequest("nb", source_ids, language, **options)
     if family == "data_table":
-        return DataTableGenerateInput("nb", source_ids, language, **options)
+        return DataTableGenerateRequest("nb", source_ids, language, **options)
     if family == "report":
-        return ReportGenerateInput("nb", source_ids=source_ids, language=language, **options)
+        return ReportGenerateRequest("nb", source_ids=source_ids, language=language, **options)
     if family == "video":
-        return VideoGenerateInput("nb", source_ids, language, **options)
+        return VideoGenerateRequest("nb", source_ids, language, **options)
     raise AssertionError(family)
 
 

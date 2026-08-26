@@ -8,6 +8,7 @@ import pytest
 
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import CallPolicy, Operation
+from notebooklm._read_services import NotebookReadService
 from notebooklm._records import (
     ARTIFACT_GENERATE_FLASHCARDS_DEF,
     ARTIFACT_GENERATE_QUIZ_DEF,
@@ -19,11 +20,21 @@ from notebooklm._records import (
     ArtifactUserStateRecord,
     GenerationStatusRecord,
     InteractiveGenerateInput,
+    InteractiveGenerateRequest,
     InteractiveGenerateResult,
     InteractiveMetadataRecord,
 )
-from notebooklm._studio import InteractiveFamilyService, StudioCatalog
+from notebooklm._studio import (
+    InteractiveFamilyService,
+    StudioCatalog,
+    StudioGenerationInputs,
+)
 from tests._fixtures.recording_backend import RecordingBackend
+
+
+def _generation_inputs(backend: RecordingBackend) -> StudioGenerationInputs:
+    """The R5.1a resolver every generate family now takes."""
+    return StudioGenerationInputs(NotebookReadService(backend))
 
 
 def _interactive(
@@ -87,12 +98,13 @@ async def test_generation_methods_record_exact_operation_value_and_deadline() ->
     result = InteractiveGenerateResult(GenerationStatusRecord("task", "pending"))
     backend.set_result(ARTIFACT_GENERATE_QUIZ_DEF, result)
     backend.set_result(ARTIFACT_GENERATE_FLASHCARDS_DEF, result)
-    service = InteractiveFamilyService(backend, StudioCatalog(backend))
+    service = InteractiveFamilyService(backend, StudioCatalog(backend), _generation_inputs(backend))
     deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: 11.0)
+    request = InteractiveGenerateRequest("nb", ("src",), "Focus", "fewer", "hard")
     value = InteractiveGenerateInput("nb", ("src",), "Focus", "fewer", "hard")
 
-    quiz = await service.generate_quiz(value, deadline=deadline)
-    flashcards = await service.generate_flashcards(value, deadline=deadline)
+    quiz = await service.generate_quiz(request, deadline=deadline)
+    flashcards = await service.generate_flashcards(request, deadline=deadline)
 
     assert quiz == flashcards == result
     assert [item.operation for item in backend.invocations] == [
@@ -121,7 +133,7 @@ async def test_family_catalog_preserves_flashcard_and_quiz_user_state_without_re
     backend = RecordingBackend()
     backend.set_result(ARTIFACT_LIST_DEF, ArtifactListResult((flashcards, quiz)))
     backend.set_result(ARTIFACT_GET_DEF, ArtifactGetResult(flashcards))
-    service = InteractiveFamilyService(backend, StudioCatalog(backend))
+    service = InteractiveFamilyService(backend, StudioCatalog(backend), _generation_inputs(backend))
 
     listed_cards = await service.list_flashcards("nb")
     listed_quizzes = await service.list_quizzes("nb")

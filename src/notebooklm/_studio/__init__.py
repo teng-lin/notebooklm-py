@@ -5,6 +5,7 @@ from .catalog import StudioCatalog
 from .data_views import DataTableFamilyService, NoteBackedMindMapFamilyService
 from .documents import DocumentOptionError, ReportFamilyService, VideoFamilyService
 from .exports import DriveExportService
+from .generation import StudioGenerationInputs
 from .interactive import InteractiveFamilyService
 from .lifecycle import ArtifactLifecycleService
 from .management import ReportSuggestionService, StudioManagementService
@@ -25,6 +26,7 @@ __all__ = [
     "ReportFamilyService",
     "ReportSuggestionService",
     "StudioCatalog",
+    "StudioGenerationInputs",
     "StudioManagementService",
     "VideoFamilyService",
     "VisualFamilyService",
