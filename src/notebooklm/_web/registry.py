@@ -164,7 +164,6 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
         Operation.NOTEBOOK_REMOVE_RECENT: NOTEBOOK_REMOVE_RECENT_DEF,
         Operation.NOTEBOOK_SUMMARIZE: NOTEBOOK_SUMMARIZE_DEF,
         Operation.NOTEBOOK_DESCRIBE: NOTEBOOK_DESCRIBE_DEF,
-        Operation.SOURCE_ADD_URL: SOURCE_ADD_URL_DEF,
         Operation.SOURCE_ADD_URL_BATCH: SOURCE_ADD_URL_BATCH_DEF,
         Operation.SOURCE_ADD_DRIVE: SOURCE_ADD_DRIVE_DEF,
         Operation.SOURCE_ADD_FILE: SOURCE_ADD_FILE_DEF,
@@ -253,6 +252,7 @@ _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = 
         Operation.LABEL_UPDATE: LABEL_UPDATE_DEF,
         Operation.COLLECTION_CREATE: COLLECTION_CREATE_DEF,
         Operation.COLLECTION_UPDATE: COLLECTION_UPDATE_DEF,
+        Operation.SOURCE_ADD_URL: SOURCE_ADD_URL_DEF,
         Operation.SOURCE_ADD_TEXT: SOURCE_ADD_TEXT_DEF,
         Operation.SOURCE_UPDATE: SOURCE_UPDATE_DEF,
         Operation.SHARING_SET_PUBLIC: SHARING_SET_PUBLIC_DEF,
@@ -280,6 +280,11 @@ _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.COLLECTION_UPDATE: (
             "service-owned since P9.2-3: LabelSetService.update sequences collection.get and "
             "label.mutate"
+        ),
+        Operation.SOURCE_ADD_URL: (
+            "service-owned since P10 R3.3: SourceService.add_url sequences the source.list "
+            "baseline, one source.register url allocation, the reconciling source.list probe "
+            "and the source.patch_title finalise"
         ),
         Operation.SOURCE_ADD_TEXT: (
             "service-owned since P10 R3.2: SourceService.add_text refuses a non-idempotent "
@@ -358,8 +363,8 @@ _UNSUPPORTED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
 # the runtime registry boundary: a new enum member must not silently inherit an
 # unsupported disposition without a web-registry review.
 _EXPECTED_OPERATION_COUNT: Final = 97
-_EXPECTED_SUPPORTED_COUNT: Final = 80
-_EXPECTED_SERVICE_OWNED_COUNT: Final = 12
+_EXPECTED_SUPPORTED_COUNT: Final = 79
+_EXPECTED_SERVICE_OWNED_COUNT: Final = 13
 
 
 def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:

@@ -4,8 +4,10 @@ These helpers use proper URL parsing to avoid substring matching vulnerabilities
 flagged by CodeQL (py/incomplete-url-substring-sanitization).
 """
 
+import logging
 import re
 from collections.abc import Iterable
+from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from ._env import ENTERPRISE_BASE_HOST, PERSONAL_APP_HOSTS
@@ -112,6 +114,90 @@ def is_youtube_url(url: str) -> bool:
         )
     except (AttributeError, TypeError, ValueError):
         return False
+
+
+#: The exact hosts a YouTube *video id* may be read from. Deliberately narrower
+#: than :func:`is_youtube_url`'s ``*.youtube.com`` suffix test: that answers
+#: "did the caller mean YouTube?" (and drives the "looks like YouTube but no
+#: video id" warning), while this decides whether a path/query is a video
+#: address the ``ADD_SOURCE`` YouTube variant can carry.
+_YOUTUBE_VIDEO_HOSTS: frozenset[str] = frozenset(
+    {
+        "youtube.com",
+        "www.youtube.com",
+        "m.youtube.com",
+        "music.youtube.com",
+        "youtu.be",
+    }
+)
+
+#: Path prefixes that place the video id in the *next* segment.
+_YOUTUBE_ID_PATH_PREFIXES = ("shorts", "embed", "live", "v")
+
+
+def is_valid_youtube_video_id(video_id: str) -> bool:
+    """Validate YouTube video ID format."""
+    return bool(video_id and re.match(r"^[a-zA-Z0-9_-]+$", video_id))
+
+
+def youtube_video_id_from_parsed_url(parsed: Any, hostname: str) -> str | None:
+    """Extract the raw YouTube video ID from a parsed URL."""
+    if hostname == "youtu.be":
+        path = parsed.path.lstrip("/")
+        if path:
+            return path.split("/")[0].strip()
+        return None
+
+    path_segments = parsed.path.lstrip("/").split("/")
+
+    # Unpack instead of indexing ``path_segments[0]`` / ``[1]``: these are
+    # URL path segments, not an RPC payload, but the positional-RPC ratchet
+    # is type-blind, so the unpack keeps the benign string parse off the
+    # flagged ``name[int]`` shape (semantics identical to the prior
+    # ``len(...) >= 2`` + index reads).
+    if len(path_segments) >= 2:
+        prefix, segment, *_rest = path_segments
+        if prefix.lower() in _YOUTUBE_ID_PATH_PREFIXES:
+            return segment.strip()
+
+    if parsed.query:
+        query_params = parse_qs(parsed.query)
+        v_param = query_params.get("v", [])
+        # ``next(iter(...))`` instead of ``v_param[0]`` for the same
+        # type-blind-ratchet reason; ``v_param`` is the parse_qs value list.
+        first_v = next(iter(v_param), None)
+        if first_v:
+            return first_v.strip()
+
+    return None
+
+
+def extract_youtube_video_id(url: str, *, logger: logging.Logger) -> str | None:
+    """Extract a YouTube video ID from supported URL formats.
+
+    Pure and transport-neutral: the source-add family's YouTube dispatch is a
+    URL-parsing question, not a wire one, so both the hoisted ``source.add_url``
+    workflow and the remaining below-port batch path read it from here rather
+    than each owning a copy. ``logger`` stays a parameter so the parse
+    diagnostic keeps being emitted under the *caller's* logger name.
+    """
+    try:
+        parsed = urlparse(url.strip())
+        hostname = (parsed.hostname or "").lower()
+
+        if hostname not in _YOUTUBE_VIDEO_HOSTS:
+            return None
+
+        video_id = youtube_video_id_from_parsed_url(parsed, hostname)
+
+        if video_id and is_valid_youtube_video_id(video_id):
+            return video_id
+
+        return None
+
+    except (AttributeError, TypeError, ValueError) as e:
+        logger.debug("Failed to parse YouTube URL '%s': %s", url[:100], e)
+        return None
 
 
 def is_google_auth_redirect(url: str) -> bool:

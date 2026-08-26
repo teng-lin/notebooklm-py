@@ -650,35 +650,41 @@ def legacy_vcr_add_url_baseline(monkeypatch):
     ``tests/integration/test_sources_idempotency.py``, so nothing here is its
     only coverage. Mirrors :func:`legacy_vcr_follow_up_probe`.
     """
-    from notebooklm._source.add import SourceAddService
+    from notebooklm._source_service import SourceService
 
-    original_add_url = SourceAddService.add_url
+    # P10 R3.3 hoisted the workflow above the semantic port: the baseline and
+    # the probe are now two named phases of ``SourceService.add_url`` over the
+    # same ``source.list`` leaf, so the stub replaces the phases rather than the
+    # injected ``list_sources`` callable the retired below-port service took.
+    baseline_calls = 0
 
-    async def _add_url(self, notebook_id, url, *, list_sources, **kwargs):
-        calls = 0
+    async def _url_baseline(self, notebook_id, *, deadline):
+        nonlocal baseline_calls
+        baseline_calls += 1
+        return set(), None, None
 
-        async def _list_sources(nb_id: str):
-            nonlocal calls
-            calls += 1
-            if calls > 1:
-                raise AssertionError(
-                    "legacy_vcr_add_url_baseline: the idempotency probe fired, so this "
-                    "cassette's create did not succeed. The stubbed empty baseline would "
-                    "decide the probe's answer — record the probe's GET_NOTEBOOK instead "
-                    "of stubbing the baseline."
-                )
-            return []
-
-        result = await original_add_url(
-            self, notebook_id, url, list_sources=_list_sources, **kwargs
+    async def _url_probe_snapshot(self, notebook_id, *, deadline):
+        raise AssertionError(
+            "legacy_vcr_add_url_baseline: the idempotency probe fired, so this "
+            "cassette's create did not succeed. The stubbed empty baseline would "
+            "decide the probe's answer — record the probe's GET_NOTEBOOK instead "
+            "of stubbing the baseline."
         )
-        assert calls == 1, (
+
+    original_add_url = SourceService.add_url
+
+    async def _add_url(self, notebook_id, url, **kwargs):
+        before = baseline_calls
+        result = await original_add_url(self, notebook_id, url, **kwargs)
+        assert baseline_calls == before + 1, (
             "legacy_vcr_add_url_baseline: add_url no longer captures a pre-create "
             "baseline, so this fixture is stale — drop it."
         )
         return result
 
-    monkeypatch.setattr(SourceAddService, "add_url", _add_url)
+    monkeypatch.setattr(SourceService, "_url_baseline", _url_baseline)
+    monkeypatch.setattr(SourceService, "_url_probe_snapshot", _url_probe_snapshot)
+    monkeypatch.setattr(SourceService, "add_url", _add_url)
 
 
 @pytest.fixture

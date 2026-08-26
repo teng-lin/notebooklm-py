@@ -18,19 +18,21 @@ from notebooklm._idempotency_create import (
     idempotent_create,
     semantic_may_have_committed,
 )
+from notebooklm._operations import Operation
 from notebooklm._records import (
-    SOURCE_ADD_URL_DEF,
-    SourceAddCommitState,
-    SourceAddTitleState,
-    SourceAddUrlReceipt,
-    SourceAddUrlResult,
+    SOURCE_GET_DEF,
+    SOURCE_LIST_DEF,
+    SOURCE_PATCH_TITLE_DEF,
+    SOURCE_REGISTER_DEF,
+    SourceGetResult,
+    SourceListResult,
+    SourcePatchTitleResult,
     SourceRecord,
 )
-from notebooklm._source.add import SourceAddService
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import NetworkError, ServerError
 from notebooklm.types import Source
-from tests._fixtures.recording_backend import RecordingBackend
+from tests._fixtures.recording_backend import RecordingBackend, scripted_error
 
 
 @pytest.mark.asyncio
@@ -86,35 +88,41 @@ async def test_idempotent_create_reraises_last_exception_by_identity() -> None:
 
 @pytest.mark.asyncio
 async def test_probed_url_result_preserves_one_facade_wait() -> None:
-    """A ``PROBED`` ``add_url`` result receives exactly one facade wait.
+    """A recovered URL add still waits exactly once, and honors the title.
 
-    #1988 skipped the rename for every ``PROBED`` result because a probe match
-    could not be proven to be the caller's own — renaming a stranger's source
-    would be a surprise. #2204 filters ``add_url`` probe matches against a
-    baseline captured before the create, so a match now *is* provably fresh and
-    the requested title must win (the same flip #2113 made for ``add_drive``).
-
-    The semantic handler never polls. The neutral request carries ``wait`` only
-    so title application can be deferred; the public facade owns the one wait.
+    #2204 flipped ``add_url`` to honoring a requested title on a ``PROBED``
+    result, because its baseline diff proves the match is this call's. P10 R3.3
+    hoisted the workflow above the port, so the probe is now a ``source.list``
+    the service sequences — but the facade contract is unchanged: exactly one
+    ``wait_until_ready``, and the deferred title applied through
+    ``finalize_title`` afterwards.
     """
     backend = RecordingBackend()
-    backend.set_result(
-        SOURCE_ADD_URL_DEF,
-        SourceAddUrlResult(
-            SourceRecord(
-                id="existing",
-                title="Retitle me",
-                url="https://example.test",
-            ),
-            SourceAddUrlReceipt(
-                SourceAddCommitState.RECONCILED,
-                SourceAddTitleState.RENAMED,
-            ),
+    existing = SourceRecord(id="existing", title="Upstream", url="https://example.test")
+    renamed = SourceRecord(id="existing", title="Retitle me", url=existing.url)
+    backend.set_sequence(
+        SOURCE_LIST_DEF,
+        [
+            # Baseline (empty) then probe: the source must be absent before the
+            # create for the probe to claim it as this call's own (#2204).
+            SourceListResult(()),
+            SourceListResult((existing,)),
+        ],
+    )
+    backend.set_error(
+        SOURCE_REGISTER_DEF,
+        scripted_error(
+            BackendErrorReason.SERVER,
+            operation=Operation.SOURCE_REGISTER,
+            dispatched=True,
         ),
     )
+    backend.set_result(SOURCE_PATCH_TITLE_DEF, SourcePatchTitleResult(renamed))
+    backend.set_result(SOURCE_GET_DEF, SourceGetResult(renamed))
+    backend.set_workflows(Operation.SOURCE_ADD_URL)
     api = SourcesAPI(MagicMock(), uploader=MagicMock(), _backend=backend)
     api.wait_until_ready = AsyncMock(  # type: ignore[method-assign]
-        return_value=Source(id="existing", title="Retitle me")
+        return_value=Source(id="existing", title="Upstream")
     )
 
     result = await api.add_url(
@@ -125,60 +133,13 @@ async def test_probed_url_result_preserves_one_facade_wait() -> None:
     )
 
     assert result.title == "Retitle me"
-    assert len(backend.invocations) == 1
-    invocation = backend.invocations[0]
-    assert invocation.operation is SOURCE_ADD_URL_DEF.key
-    assert invocation.value.wait is True
-    assert invocation.value.requested_title == "Retitle me"
+    assert [invocation.operation for invocation in backend.invocations] == [
+        Operation.SOURCE_LIST,
+        Operation.SOURCE_REGISTER,
+        Operation.SOURCE_LIST,
+        Operation.SOURCE_PATCH_TITLE,
+    ]
     api.wait_until_ready.assert_awaited_once_with("nb", "existing", timeout=120.0)
-
-
-@pytest.mark.asyncio
-async def test_private_service_default_return_remains_source() -> None:
-    service = SourceAddService()
-    source = Source(id="fresh", title="Upstream")
-
-    result = await service.add_url(
-        "nb",
-        "https://example.test",
-        add_youtube_source=AsyncMock(),
-        add_url_source=AsyncMock(return_value=source),
-        list_sources=AsyncMock(return_value=[]),
-        wait_until_ready=AsyncMock(),
-        extract_youtube_video_id=MagicMock(return_value=None),
-        is_youtube_url=MagicMock(return_value=False),
-        logger=MagicMock(),
-    )
-
-    assert isinstance(result, Source)
-    assert result.id == source.id
-
-
-@pytest.mark.asyncio
-async def test_private_service_preserves_probe_provenance_through_wait() -> None:
-    service = SourceAddService()
-    existing = Source(id="existing", title="Upstream", url="https://example.test")
-    ready = Source(id="existing", title="Ready", url=existing.url)
-
-    result = await service.add_url(
-        "nb",
-        existing.url,
-        wait=True,
-        add_youtube_source=AsyncMock(),
-        add_url_source=AsyncMock(side_effect=NetworkError("lost response")),
-        # Baseline (empty) then probe: the source must be absent before the
-        # create for the probe to claim it as this call's own (#2204).
-        list_sources=AsyncMock(side_effect=[[], [existing]]),
-        wait_until_ready=AsyncMock(return_value=ready),
-        extract_youtube_video_id=MagicMock(return_value=None),
-        is_youtube_url=MagicMock(return_value=False),
-        logger=MagicMock(),
-        return_result=True,
-    )
-
-    assert isinstance(result, _IdempotentCreateResult)
-    assert result.kind is _CreateResultKind.PROBED
-    assert result.value is ready
 
 
 @pytest.mark.asyncio

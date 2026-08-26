@@ -52,8 +52,8 @@ class AppAuthoritySourceContract:
 SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRule, ...]] = {
     (Operation.SOURCE_ADD_URL, _b(RPCMethod.ADD_SOURCE, "url")): _rules(
         (
-            "_web/bindings/sources.py:SOURCE_ADD_URL",
-            "web or YouTube URL payload selected by semantic flag",
+            "_web/bindings/primitives.py:SOURCE_REGISTER",
+            "web or YouTube URL allocation via the source.register leaf",
         ),
     ),
     (Operation.SOURCE_ADD_URL_BATCH, _b(RPCMethod.ADD_SOURCE, "url")): _rules(
@@ -129,9 +129,13 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
     ),
     (Operation.SOURCE_ADD_URL, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         (
-            "_web/bindings/sources.py:SOURCE_ADD_URL",
-            "unconditional baseline plus ambiguity probes",
-        )
+            "_web/bindings/sources.py:SOURCE_LIST",
+            "unconditional baseline plus ambiguity probes via source.list",
+        ),
+        (
+            "_web/bindings/sources.py:SOURCE_GET",
+            "null UPDATE_SOURCE echo only via source.get",
+        ),
     ),
     (Operation.SOURCE_ADD_URL_BATCH, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         (
@@ -455,7 +459,7 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
             "public_call",
             "one baseline plus ambiguity probes and, when wait=True, one snapshot per "
             "facade-owned readiness poll tick",
-            ("_web/bindings/sources.py:SOURCE_ADD_URL",),
+            (_GET_SOURCE_LIST, _GET_SOURCE),
         ),
     ),
     Operation.SOURCE_ADD_DRIVE: (
@@ -828,8 +832,8 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.SOURCE_ADD_URL, _b(RPCMethod.UPDATE_SOURCE)): _rules(
             (
-                "_web/bindings/sources.py:SOURCE_ADD_URL",
-                "optional post-create title",
+                "_web/bindings/primitives.py:SOURCE_PATCH_TITLE",
+                "optional post-create title via source.patch_title",
             )
         ),
         (Operation.SOURCE_ADD_DRIVE, _b(RPCMethod.UPDATE_SOURCE)): _rules(
