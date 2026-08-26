@@ -1116,7 +1116,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/codec/source_ids.py` | P9.4b: the one `GET_NOTEBOOK` source-id decoder every input-defaulting row shares, with an explicit per-family `SourceIdDiagnostics` mode (silent / warn / guarded) that preserves each family's schema-drift warning surface. |
 | `_web/codec/notes.py` | P6.3 mixed note-row codec: normalizes flat/wrapped envelopes, classifies deleted and note-backed mind-map rows, preserves exact-id selection, and emits only neutral `NoteRecord` values; since P9.3 also the row-facing `encode_note_*`/`decode_note_*` helpers behind `_web/bindings/notes.py`. |
 | `_web/codec/labels.py` | P6.4 shared source-label/collection codec: owns both wire dialects behind `LabelKind` and emits only neutral `LabelRecord` values; since P9.3 also the row-facing `encode_*`/`decode_*_result` payload builders and the dialect/scope contract guards. |
-| `_web/codec/research.py` | P6.2 DiscoverSources codec: owns fast/deep start, poll, cancel, and report-before-web import request grammar and decodes responses into neutral Research records without selecting or dispatching an RPC. |
+| `_web/codec/research.py` | P6.2 DiscoverSources codec: owns fast/deep start, poll, cancel, and report-before-web import request grammar and decodes responses into neutral Research records without selecting or dispatching an RPC. Since P10 also owns the poll projection from the retained `_research_task_parser` models onto those records. |
 | `_web/codec/settings.py` | P6.6 account settings/limits/language request grammar and tolerant neutral decoders. |
 | `_web/codec/suggestions.py` | P6.6 prompt/report suggestion request grammar and neutral decoders. |
 | `scripts/audit_operation_catalog.py` | Single build/audit CLI for the deterministic ADR-0022 projection: exact semantic authorities, native bindings, public/root-client dispositions, evidence, omissions, and divergences. |
@@ -1314,7 +1314,6 @@ src/notebooklm/
 │   ├── operations.py            # Closed semantic operation/call-policy vocabulary (P0)
 │   └── projectors.py            # Neutral record-to-public compatibility projectors (P2/P3/P5/P6)
 ├── _source_upload_port.py       # Neutral upload callback contract + UploadLifecycleHooks (R3.1)
-├── _research_neutral.py         # Research public-model to neutral-record conversion helpers
 ├── _chat/                       # Chat facade and transport-neutral service
 │   └── workflow.py              # Stateful transport-neutral chat workflow service (P10 R2.3)
 ├── _studio/                     # Private Studio family package
