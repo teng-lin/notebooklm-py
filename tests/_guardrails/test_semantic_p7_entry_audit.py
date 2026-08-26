@@ -240,7 +240,7 @@ MIGRATED_FEATURE_RPC_NEUTRAL_MODULES = frozenset(
         "_artifact/listing.py",
         "_artifacts.py",
         "_chat/api.py",
-        "_chat/service.py",
+        "_chat/workflow.py",
         "_collections.py",
         "_label_service.py",
         "_labels.py",

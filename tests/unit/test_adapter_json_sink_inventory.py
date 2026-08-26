@@ -123,7 +123,7 @@ def test_inventory_covers_every_current_terminal_adapter_site() -> None:
 def test_private_dto_catalog_covers_every_annotation_proven_public_model_path() -> None:
     rows = discover_private_dataclass_projection_paths()
 
-    assert len(rows) == 32
+    assert len(rows) == 34
     triples = {(row.private_model, row.field_path, row.public_model) for row in rows}
     assert (
         "notebooklm._app.source_mutations.SourceRenameResult",
@@ -1345,7 +1345,7 @@ def test_checked_in_reachability_allocations_are_exact() -> None:
     )
     assert contract["site_count"] == 350
     private_paths = contract["private_dataclass_projection_paths"]
-    assert len(private_paths) == 32
+    assert len(private_paths) == 34
     provider_auth_paths = [
         path
         for path in private_paths

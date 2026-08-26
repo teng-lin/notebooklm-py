@@ -52,7 +52,7 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_web"
 #: Sharing, artifact-rename, and notebook create/update hoists removed six
 #: custom rows; the label- and collection-create hoists removed the final two
 #: handlers from the P9.2 stop/go baseline.
-RESIDUAL_COMPOSITE_CEILING = 20
+RESIDUAL_COMPOSITE_CEILING = 19
 #: Exact custom-row counts per justification category: the source-add rows, the
 #: Studio generation/prompt rows and the notebook/mind-map/catalog composites.
 #: P10 R2.2 removed ``CHAT_ASK`` from ``protocol`` when it became service-owned.
