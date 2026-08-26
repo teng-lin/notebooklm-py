@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._mind_maps_api import MindMapsAPI, extract_interactive_tree_leaf
+from notebooklm._records import ArtifactRecord, MindMapGenerateOutcomeRecord
 from notebooklm._row_adapters.notes import NoteRow
 from notebooklm.exceptions import (
     ArtifactError,
@@ -17,17 +18,31 @@ from notebooklm.exceptions import (
     UnknownRPCMethodError,
 )
 from notebooklm.rpc.types import RPCMethod
-from notebooklm.types import Artifact, MindMap, MindMapKind
+from notebooklm.types import MindMap, MindMapKind
 
 
-def _interactive_artifact(artifact_id: str, title: str = "INT") -> Artifact:
-    return Artifact(id=artifact_id, title=title, _artifact_type=4, status=3, _variant=4)
+def _interactive_artifact(artifact_id: str, title: str = "INT") -> ArtifactRecord:
+    return ArtifactRecord(
+        id=artifact_id,
+        title=title,
+        family="mind_map",
+        status="completed",
+        variant="interactive_mind_map",
+    )
 
 
-def _pending_type4_artifact(artifact_id: str, title: str = "INT") -> Artifact:
-    # Just-created interactive map: completed (status=3) but the variant slot
-    # at [9][1][0] is not yet populated, so _variant reads None.
-    return Artifact(id=artifact_id, title=title, _artifact_type=4, status=3, _variant=None)
+def _pending_type4_artifact(artifact_id: str, title: str = "INT") -> ArtifactRecord:
+    # Just-created interactive map: completed but the catalog row's variant
+    # slot is not yet populated (settling window) — confirmed only as
+    # "pending", not yet the hard "interactive_mind_map" variant.
+    return ArtifactRecord(
+        id=artifact_id,
+        title=title,
+        family="mind_map",
+        status="completed",
+        variant=None,
+        interactive_variant_pending=True,
+    )
 
 
 def _make_api(*, note_rows=None, interactive=None):
@@ -53,16 +68,11 @@ def _make_api(*, note_rows=None, interactive=None):
                 tree=parsed if isinstance(parsed, dict) else None,
             )
         )
+    # Matches MindMapFamilyService.list_mind_maps'/.get_or_none's own filter:
+    # only a confirmed "interactive_mind_map" variant counts (a settling
+    # pending-variant row is excluded here too).
     interactive_maps = [
-        MindMap(
-            id=artifact.id,
-            notebook_id="nb",
-            title=artifact.title,
-            kind=MindMapKind.INTERACTIVE,
-            created_at=artifact.created_at,
-        )
-        for artifact in interactive or []
-        if artifact.is_interactive_mind_map
+        record for record in interactive or [] if record.variant == "interactive_mind_map"
     ]
     mind_maps = MagicMock()
     mind_maps.list_mind_maps = AsyncMock(return_value=note_maps)
@@ -260,11 +270,9 @@ async def test_generate_note_backed_delegates():
 @pytest.mark.asyncio
 async def test_generate_interactive_creates_polls_and_fetches_tree():
     api, _, _, studio, _ = _make_api(interactive=[_interactive_artifact("new_int", "T")])
-    studio.generate.return_value = MindMap(
-        "new_int",
-        "nb",
-        "T",
-        MindMapKind.INTERACTIVE,
+    studio.generate.return_value = MindMapGenerateOutcomeRecord(
+        mind_map_id="new_int",
+        record=_interactive_artifact("new_int", "T"),
         tree={"name": "I", "children": []},
     )
     mm = await api.generate("nb", kind=MindMapKind.INTERACTIVE, wait=True)
@@ -278,7 +286,11 @@ async def test_generate_interactive_creates_polls_and_fetches_tree():
 @pytest.mark.asyncio
 async def test_generate_interactive_wait_false_skips_tree():
     api, _, _, studio, _ = _make_api(interactive=[_interactive_artifact("new_int")])
-    studio.generate.return_value = MindMap("new_int", "nb", "INT", MindMapKind.INTERACTIVE)
+    studio.generate.return_value = MindMapGenerateOutcomeRecord(
+        mind_map_id="new_int",
+        record=_interactive_artifact("new_int", "INT"),
+        tree=None,
+    )
     mm = await api.generate("nb", ["s1"], kind=MindMapKind.INTERACTIVE, wait=False)
     assert mm.tree is None  # pending; no tree fetched
     studio.generate.assert_awaited_once_with("nb", ["s1"], None, wait=False)
@@ -290,7 +302,11 @@ async def test_generate_interactive_threads_instructions_into_create_params():
     # [9][1][2] (the slot quiz/flashcards use; server-verified to steer variant
     # 4). generate(instructions=...) must thread it there rather than drop it.
     api, _, _, studio, _ = _make_api(interactive=[_interactive_artifact("new_int")])
-    studio.generate.return_value = MindMap("new_int", "nb", "T", MindMapKind.INTERACTIVE)
+    studio.generate.return_value = MindMapGenerateOutcomeRecord(
+        mind_map_id="new_int",
+        record=_interactive_artifact("new_int", "T"),
+        tree=None,
+    )
     await api.generate(
         "nb", ["s1"], kind=MindMapKind.INTERACTIVE, instructions="focus on X", wait=False
     )
@@ -301,7 +317,11 @@ async def test_generate_interactive_threads_instructions_into_create_params():
 async def test_generate_interactive_without_instructions_keeps_bare_variant():
     # No prompt → byte-identical [None, [4]] options block (unchanged request).
     api, _, _, studio, _ = _make_api(interactive=[_interactive_artifact("new_int")])
-    studio.generate.return_value = MindMap("new_int", "nb", "T", MindMapKind.INTERACTIVE)
+    studio.generate.return_value = MindMapGenerateOutcomeRecord(
+        mind_map_id="new_int",
+        record=_interactive_artifact("new_int", "T"),
+        tree=None,
+    )
     await api.generate("nb", ["s1"], kind=MindMapKind.INTERACTIVE, wait=False)
     studio.generate.assert_awaited_once_with("nb", ["s1"], None, wait=False)
 
@@ -392,11 +412,9 @@ def test_extract_interactive_tree_leaf_helper():
 async def test_find_interactive_matches_pending_variant_none_by_id():
     """generate(wait=True) must keep the real title during the settling window."""
     api, _, _, studio, _ = _make_api(interactive=[_pending_type4_artifact("new_int", "Real Title")])
-    studio.generate.return_value = MindMap(
-        "new_int",
-        "nb",
-        "Real Title",
-        MindMapKind.INTERACTIVE,
+    studio.generate.return_value = MindMapGenerateOutcomeRecord(
+        mind_map_id="new_int",
+        record=_pending_type4_artifact("new_int", "Real Title"),
         tree={"name": "I", "children": []},
     )
     mm = await api.generate("nb", kind=MindMapKind.INTERACTIVE, wait=True)
@@ -410,7 +428,11 @@ async def test_find_interactive_matches_pending_variant_none_by_id():
 async def test_generate_interactive_unresolved_id_falls_back_to_placeholder():
     """If even the unfiltered list never shows the id, fall back gracefully."""
     api, _, _, studio, _ = _make_api(interactive=[])
-    studio.generate.return_value = MindMap("ghost_int", "nb", "Mind Map", MindMapKind.INTERACTIVE)
+    studio.generate.return_value = MindMapGenerateOutcomeRecord(
+        mind_map_id="ghost_int",
+        record=None,
+        tree=None,
+    )
     mm = await api.generate("nb", kind=MindMapKind.INTERACTIVE, wait=True)
     assert mm.id == "ghost_int"
     assert mm.title == "Mind Map"  # placeholder fallback preserved

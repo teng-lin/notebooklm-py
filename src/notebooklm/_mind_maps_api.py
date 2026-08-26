@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from ._backend_compat import project_backend_call
 from ._lookup import unwrap_or_raise
+from ._projectors import project_artifact
 from ._types.mind_maps import MindMap, MindMapKind
 from ._web.codec.mind_maps import (
     decode_created_interactive_id,
@@ -18,6 +19,7 @@ from .exceptions import MindMapNotFoundError
 
 if TYPE_CHECKING:
     from ._note_service import NoteService
+    from ._records import ArtifactRecord, MindMapGenerateOutcomeRecord
     from ._studio import MindMapFamilyService
 
 _T = TypeVar("_T")
@@ -59,6 +61,44 @@ class MindMapsAPI:
     async def _backend_call(awaitable: Awaitable[_T]) -> _T:
         return await project_backend_call(awaitable)
 
+    @staticmethod
+    def _project(
+        record: ArtifactRecord,
+        notebook_id: str,
+        *,
+        tree: dict[str, Any] | None = None,
+    ) -> MindMap:
+        # Keep the public Artifact compatibility projection in this boundary:
+        # P0 pins its causal contribution to adapter MindMap envelopes even
+        # though wire decoding and family selection use neutral records.
+        # Projection itself moved here from the semantic service (P10 I1):
+        # the record identity and logic are unchanged.
+        artifact = project_artifact(record)
+        return MindMap(
+            id=artifact.id,
+            notebook_id=notebook_id,
+            title=artifact.title,
+            kind=MindMapKind.INTERACTIVE,
+            created_at=artifact.created_at,
+            tree=tree,
+        )
+
+    @classmethod
+    def _project_generated(
+        cls,
+        outcome: MindMapGenerateOutcomeRecord,
+        notebook_id: str,
+    ) -> MindMap:
+        if outcome.record is not None:
+            return cls._project(outcome.record, notebook_id, tree=outcome.tree)
+        return MindMap(
+            id=outcome.mind_map_id,
+            notebook_id=notebook_id,
+            title="Mind Map",
+            kind=MindMapKind.INTERACTIVE,
+            tree=outcome.tree,
+        )
+
     async def list_note_backed(self, notebook_id: str) -> builtins.list[MindMap]:
         """List note-backed mind maps without consulting the Studio catalog."""
         return await self._backend_call(self._notes.list_mind_maps(notebook_id))
@@ -66,7 +106,8 @@ class MindMapsAPI:
     async def list(self, notebook_id: str) -> builtins.list[MindMap]:
         """List both representations in stable note-backed-then-interactive order."""
         result = list(await self.list_note_backed(notebook_id))
-        result.extend(await self._backend_call(self._studio.list_mind_maps(notebook_id)))
+        records = await self._backend_call(self._studio.list_mind_maps(notebook_id))
+        result.extend(self._project(record, notebook_id) for record in records)
         return result
 
     async def get(self, notebook_id: str, mind_map_id: str) -> MindMap:
@@ -105,7 +146,7 @@ class MindMapsAPI:
                     instructions,
                 )
             )
-        return await self._backend_call(
+        outcome = await self._backend_call(
             self._studio.generate(
                 notebook_id,
                 source_ids,
@@ -113,6 +154,7 @@ class MindMapsAPI:
                 wait=wait,
             )
         )
+        return self._project_generated(outcome, notebook_id)
 
     async def rename(
         self,

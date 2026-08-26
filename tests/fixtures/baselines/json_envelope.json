@@ -7521,13 +7521,13 @@
           {
             "contribution_semantics": "Artifact.id constructs MindMap.id and is emitted as note_id; the raw create-id fallback emits the same wrapper without a public Artifact contribution",
             "evidence": [
-              "notebooklm/_studio/mind_maps.py:artifact = project_artifact(record)",
-              "notebooklm/_studio/mind_maps.py:return MindMap(",
+              "notebooklm/_mind_maps_api.py:artifact = project_artifact(record)",
+              "notebooklm/_mind_maps_api.py:return MindMap(",
               "notebooklm/cli/generate_cmd.py:_output_mind_map_result"
             ],
             "evidence_shape_fingerprints": {
-              "notebooklm/_studio/mind_maps.py:artifact = project_artifact(record)": "sha256:5b1002c94e5fa7a54c74df9520d6cb6213847d6e2704f1971a335c67452ea1b8",
-              "notebooklm/_studio/mind_maps.py:return MindMap(": "sha256:4c045d40b7874552463573a810afe0d9b7605a1d3b6bb5b4b75e2249f88c7421",
+              "notebooklm/_mind_maps_api.py:artifact = project_artifact(record)": "sha256:5b1002c94e5fa7a54c74df9520d6cb6213847d6e2704f1971a335c67452ea1b8",
+              "notebooklm/_mind_maps_api.py:return MindMap(": "sha256:047b3f7528e7175ccbdd5a4a8c663ee0478ebb82f9d34d9c082d9f43efcaaa03",
               "notebooklm/cli/generate_cmd.py:_output_mind_map_result": "sha256:d2680ea672181b764845d049e04f982a15dae5b043a669c16a34c99b279cf6de"
             },
             "id": "cli.Artifact.transitive-interactive-mind-map-generation-final-contribution",
@@ -11389,13 +11389,13 @@
           {
             "contribution_semantics": "Artifact.id constructs MindMap.id and is emitted as mind_map_id; the raw create-id fallback emits the same wrapper without a public Artifact contribution",
             "evidence": [
-              "notebooklm/_studio/mind_maps.py:artifact = project_artifact(record)",
-              "notebooklm/_studio/mind_maps.py:return MindMap(",
+              "notebooklm/_mind_maps_api.py:artifact = project_artifact(record)",
+              "notebooklm/_mind_maps_api.py:return MindMap(",
               "notebooklm/mcp/tools/_studio_payloads.py:_mind_map_id"
             ],
             "evidence_shape_fingerprints": {
-              "notebooklm/_studio/mind_maps.py:artifact = project_artifact(record)": "sha256:5b1002c94e5fa7a54c74df9520d6cb6213847d6e2704f1971a335c67452ea1b8",
-              "notebooklm/_studio/mind_maps.py:return MindMap(": "sha256:4c045d40b7874552463573a810afe0d9b7605a1d3b6bb5b4b75e2249f88c7421",
+              "notebooklm/_mind_maps_api.py:artifact = project_artifact(record)": "sha256:5b1002c94e5fa7a54c74df9520d6cb6213847d6e2704f1971a335c67452ea1b8",
+              "notebooklm/_mind_maps_api.py:return MindMap(": "sha256:047b3f7528e7175ccbdd5a4a8c663ee0478ebb82f9d34d9c082d9f43efcaaa03",
               "notebooklm/mcp/tools/_studio_payloads.py:_mind_map_id": "sha256:19790ad71c4f564641f76c3b54b161e34a5834edf5b7329e32b028a397787668"
             },
             "id": "mcp.Artifact.transitive-interactive-mind-map-generation-final-contribution",
@@ -11441,11 +11441,11 @@
           {
             "contribution_semantics": "Artifact id and interactive kind (backed by _artifact_type/_variant) construct the matching MindMap whose membership sets is_mind_map and the fallback type; this scan can contribute on the full-UUID resolver-miss branch as well as the resolved-Artifact branch",
             "evidence": [
-              "notebooklm/_studio/mind_maps.py:artifact = project_artifact(record)",
+              "notebooklm/_mind_maps_api.py:artifact = project_artifact(record)",
               "notebooklm/mcp/tools/studio.py:is_mind_map"
             ],
             "evidence_shape_fingerprints": {
-              "notebooklm/_studio/mind_maps.py:artifact = project_artifact(record)": "sha256:5b1002c94e5fa7a54c74df9520d6cb6213847d6e2704f1971a335c67452ea1b8",
+              "notebooklm/_mind_maps_api.py:artifact = project_artifact(record)": "sha256:5b1002c94e5fa7a54c74df9520d6cb6213847d6e2704f1971a335c67452ea1b8",
               "notebooklm/mcp/tools/studio.py:is_mind_map": "sha256:1613f8faaa2b14a386d826d5fd7ec417693f9b403c8e7639a21ac436a8af13ab"
             },
             "id": "mcp.Artifact.transitive-mind-map-rename-membership-final-contribution",
@@ -14915,13 +14915,13 @@
           {
             "contribution_semantics": "Artifact id/title/created_at construct the recursively emitted MindMap while _artifact_type/_variant qualify the row as interactive (or the known-id unclassified settling case); the raw create-id fallback has no Artifact",
             "evidence": [
-              "notebooklm/_studio/mind_maps.py:artifact = project_artifact(record)",
-              "notebooklm/_studio/mind_maps.py:return MindMap(",
+              "notebooklm/_mind_maps_api.py:artifact = project_artifact(record)",
+              "notebooklm/_mind_maps_api.py:return MindMap(",
               "notebooklm/server/routes/artifacts.py:payload[\"mind_map\"] = to_jsonable"
             ],
             "evidence_shape_fingerprints": {
-              "notebooklm/_studio/mind_maps.py:artifact = project_artifact(record)": "sha256:5b1002c94e5fa7a54c74df9520d6cb6213847d6e2704f1971a335c67452ea1b8",
-              "notebooklm/_studio/mind_maps.py:return MindMap(": "sha256:4c045d40b7874552463573a810afe0d9b7605a1d3b6bb5b4b75e2249f88c7421",
+              "notebooklm/_mind_maps_api.py:artifact = project_artifact(record)": "sha256:5b1002c94e5fa7a54c74df9520d6cb6213847d6e2704f1971a335c67452ea1b8",
+              "notebooklm/_mind_maps_api.py:return MindMap(": "sha256:047b3f7528e7175ccbdd5a4a8c663ee0478ebb82f9d34d9c082d9f43efcaaa03",
               "notebooklm/server/routes/artifacts.py:payload[\"mind_map\"] = to_jsonable": "sha256:cb093a06a8e0c9c0d5735d14adbb4d815a3c23613382f7b1926cd49e714127ca"
             },
             "id": "rest.Artifact.transitive-interactive-mind-map-generation-final-contribution",
@@ -14954,11 +14954,11 @@
           {
             "contribution_semantics": "Artifact id and interactive kind (backed by _artifact_type/_variant) construct the matching MindMap whose membership sets is_mind_map; unmatched regular artifacts use the same terminal without this contribution",
             "evidence": [
-              "notebooklm/_studio/mind_maps.py:artifact = project_artifact(record)",
+              "notebooklm/_mind_maps_api.py:artifact = project_artifact(record)",
               "notebooklm/server/routes/artifacts.py:is_mind_map"
             ],
             "evidence_shape_fingerprints": {
-              "notebooklm/_studio/mind_maps.py:artifact = project_artifact(record)": "sha256:5b1002c94e5fa7a54c74df9520d6cb6213847d6e2704f1971a335c67452ea1b8",
+              "notebooklm/_mind_maps_api.py:artifact = project_artifact(record)": "sha256:5b1002c94e5fa7a54c74df9520d6cb6213847d6e2704f1971a335c67452ea1b8",
               "notebooklm/server/routes/artifacts.py:is_mind_map": "sha256:b325dc19b1490f4c5aa90d0c0ddffb769995013c2dd7622f7935cc2bb51808b3"
             },
             "id": "rest.Artifact.transitive-mind-map-rename-membership-final-contribution",
