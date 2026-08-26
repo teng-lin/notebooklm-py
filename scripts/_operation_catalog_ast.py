@@ -1973,7 +1973,7 @@ ACTIVE_BACKEND_INVOKE_SITES = frozenset(
         "_suggestion_service.py:SuggestionService.suggest_reports",
         "_source_service.py:SourceService._patch_title",
         "_source_service.py:SourceService._url_baseline",
-        "_source_service.py:SourceService.add_url.probe",
+        "_source_service.py:SourceService._url_probe_snapshot",
         "_source_service.py:SourceService.add_url.register",
         "_source_service.py:SourceService.add_drive",
         "_source_service.py:SourceService.add_drive_file",
@@ -2392,6 +2392,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_source_service.py", "_records", "SourceAddUrlReceipt"),
         ("_source_service.py", "_records", "SourceAddUrlResult"),
         ("_source_service.py", "_records", "SourceListInput"),
+        ("_source_service.py", "_records", "SourceListResult"),
     }
 )
 

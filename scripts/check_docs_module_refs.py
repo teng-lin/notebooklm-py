@@ -97,6 +97,11 @@ _ALLOWLIST: dict[str, str] = {
     # `_web/bindings/_invoker_caller.py` in P9.4b; the refactor plan names it as
     # history (the P9 entry record and the P9.1/P9.4 slice text).
     "docs/plan/2026-08-13-semantic-backend-refactor.md:_web/deadline_rpc.py": "historical: P6 caller deleted in P9.4b, named by the plan's slice record",
+    # `_mutation_services.py` was the P2.3 `source.add_url` pass-through deleted
+    # in P10 R3.3, which hoisted its one method into `SourceService`. The P10
+    # plan names it in the I1 seed record it was written against; that record is
+    # history, not a live path.
+    "docs/plan/2026-08-25-p10-semantic-remediation.md:_mutation_services.py": "historical: P2.3 pass-through deleted in P10 R3.3, named by the plan's I1 seed record",
 }
 
 

@@ -52,7 +52,10 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_web"
 #: Sharing, artifact-rename, and notebook create/update hoists removed six
 #: custom rows; the label- and collection-create hoists removed the final two
 #: handlers from the P9.2 stop/go baseline.
-RESIDUAL_COMPOSITE_CEILING = 20
+# Tightened 20 -> 18 to match the two rows P10 R3.2 and R3.3 already hoisted
+# (``source.add_text`` and ``source.add_url``); the ratchet asserts equality, so
+# leaving it at 20 left this gate red under the ``repo_lint`` marker.
+RESIDUAL_COMPOSITE_CEILING = 18
 #: Exact custom-row counts per justification category: five source-add rows,
 #: ``CHAT_ASK``, the Studio
 #: generation/prompt rows and the notebook/mind-map/catalog composites.
