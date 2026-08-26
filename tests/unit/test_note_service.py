@@ -30,10 +30,10 @@ from unittest.mock import AsyncMock, call
 import pytest
 
 from notebooklm._note_service import NoteService
+from notebooklm._records import NoteRecord
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm.exceptions import DecodingError, RPCError
 from notebooklm.rpc import RPCMethod
-from notebooklm.types import Note
 from tests._fixtures.fake_core import FakeSession, make_fake_core
 
 
@@ -230,7 +230,7 @@ class TestContentExtraction:
     ) -> None:
         tree = json.dumps({"children": []})
         mock_session.rpc_executor.rpc_call.return_value = [[["mm_1", tree]]]
-        records = await service._list_mind_map_records("nb_123")
+        records = await service.list_mind_maps("nb_123")
         assert [record.tree_json for record in records] == [tree]
 
 
@@ -243,13 +243,16 @@ class TestCrud:
     ) -> None:
         mock_session.rpc_executor.rpc_call.side_effect = [[["note_123"]], None]
 
-        note = await service.create_note(
+        note = await service.create_note_record(
             "nb_123",
             title="Mind Map",
             content='{"children":[]}',
         )
 
-        assert note == Note(
+        # R6.6: the service returns the neutral allocation record. The public
+        # ``Note`` this projects to is asserted at the facade, in
+        # ``test_notes_unit.py::test_create_projects_the_allocation_record``.
+        assert note == NoteRecord(
             id="note_123",
             notebook_id="nb_123",
             title="Mind Map",
@@ -278,7 +281,7 @@ class TestCrud:
         # An unparseable CREATE_NOTE payload must surface as an error
         # rather than a success-shaped ``Note(id="")`` (issue #1162).
         with pytest.raises(Exception, match="no usable note id"):
-            await service.create_note("nb_123", title="T", content="body")
+            await service.create_note_record("nb_123", title="T", content="body")
 
         # Only CREATE_NOTE should fire; bailing before UPDATE_NOTE avoids
         # poisoning a non-existent row.
@@ -289,7 +292,7 @@ class TestCrud:
         # The saved-from-chat variant belongs to ``chat.save_note``; the plain
         # note service never allocated it and must not start now.
         with pytest.raises(ValueError):
-            await service.create_note("nb_123", operation_variant="saved_from_chat")
+            await service.create_note_record("nb_123", operation_variant="saved_from_chat")
 
     @pytest.mark.asyncio
     async def test_update_note_sends_existing_payload(
@@ -371,7 +374,9 @@ class TestCreateNoteCancellation:
         )
         service = NoteService(WebRpcBackend(session.rpc_executor))
 
-        task = asyncio.create_task(service.create_note("nb_123", title="Title", content="body"))
+        task = asyncio.create_task(
+            service.create_note_record("nb_123", title="Title", content="body")
+        )
         await asyncio.wait_for(update_started.wait(), timeout=1)
 
         task.cancel()
@@ -413,7 +418,7 @@ class TestCreateNoteCancellation:
         )
         service = NoteService(WebRpcBackend(session.rpc_executor))
 
-        task = asyncio.create_task(service.create_note("nb_123", title="T", content="b"))
+        task = asyncio.create_task(service.create_note_record("nb_123", title="T", content="b"))
         await asyncio.wait_for(update_started.wait(), timeout=1)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -448,25 +453,42 @@ _WIRE_ROOTS = frozenset({"rpc", "_row_adapters"})
 _PROJECTION_ROOTS = frozenset({"_backend_compat", "_projectors", "_types", "_web", "types"})
 
 
+def _parse_outside_type_checking(path: Path) -> ast.Module:
+    """Parse ``path`` with every ``if TYPE_CHECKING:`` body removed.
+
+    A type-only import couples nothing at runtime, which is the property both
+    audits below measure.
+    """
+
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in ast.walk(tree):
+        for field in ("body", "orelse", "finalbody"):
+            statements = getattr(node, field, None)
+            if not isinstance(statements, list):
+                continue
+            setattr(
+                node,
+                field,
+                [
+                    statement
+                    for statement in statements
+                    if not (
+                        isinstance(statement, ast.If)
+                        and any(
+                            isinstance(name, ast.Name) and name.id == "TYPE_CHECKING"
+                            for name in ast.walk(statement.test)
+                        )
+                    )
+                ],
+            )
+    return tree
+
+
 def _runtime_import_roots(path: Path) -> set[str]:
     """Return the first-party roots ``path`` imports outside ``TYPE_CHECKING``."""
 
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    guarded = {
-        node
-        for branch in ast.walk(tree)
-        if isinstance(branch, ast.If)
-        and any(
-            isinstance(name, ast.Name) and name.id == "TYPE_CHECKING"
-            for name in ast.walk(branch.test)
-        )
-        for statement in branch.body
-        for node in ast.walk(statement)
-    }
     roots: set[str] = set()
-    for node in ast.walk(tree):
-        if node in guarded:
-            continue
+    for node in ast.walk(_parse_outside_type_checking(path)):
         if isinstance(node, ast.ImportFrom) and node.level == 1 and node.module:
             roots.add(node.module.split(".")[0])
         elif isinstance(node, ast.Import):
@@ -476,25 +498,104 @@ def _runtime_import_roots(path: Path) -> set[str]:
     return roots
 
 
+#: ``src/notebooklm``, the package root every first-party target resolves under.
+_PACKAGE_ROOT = _NOTE_SERVICE_PATH.parent
+
+
+def _runtime_import_targets(path: Path) -> set[str]:
+    """Dotted first-party targets ``path`` imports outside ``TYPE_CHECKING``.
+
+    Like :func:`_runtime_import_roots` but keeps the whole dotted name
+    (``rpc.decoder``) and resolves a relative import against the importing
+    file's own package, so the walk below works from any depth.
+    """
+
+    parts = list(path.relative_to(_PACKAGE_ROOT).parts)
+    package = parts[:-1] if path.name != "__init__.py" else parts[:-1]
+    targets: set[str] = set()
+    for node in ast.walk(_parse_outside_type_checking(path)):
+        if isinstance(node, ast.ImportFrom):
+            if node.level:
+                base = package[: len(package) - (node.level - 1)]
+                base = [*base, node.module] if node.module else base
+            elif node.module and node.module.startswith("notebooklm."):
+                base = node.module.split(".")[1:]
+            else:
+                continue
+            if base:
+                targets.add(".".join(base))
+            targets.update(".".join([*base, alias.name]) for alias in node.names)
+        elif isinstance(node, ast.Import):
+            targets.update(
+                alias.name[len("notebooklm.") :]
+                for alias in node.names
+                if alias.name.startswith("notebooklm.")
+            )
+    return targets
+
+
+def _reachable_wire_modules(path: Path) -> set[str]:
+    """Wire modules reachable from ``path`` through runtime first-party imports.
+
+    The direct-import pins cannot see this: ``_projectors`` and
+    ``notebooklm.types`` each pull the whole wire layer in one hop, which is
+    why R4.1's measurement of removing either one alone came out at zero.
+    """
+
+    def resolve(dotted: str) -> Path | None:
+        relative = dotted.replace(".", "/")
+        module = _PACKAGE_ROOT / f"{relative}.py"
+        if module.is_file():
+            return module
+        package = _PACKAGE_ROOT / relative / "__init__.py"
+        return package if package.is_file() else None
+
+    seen: set[str] = set()
+    pending = [path]
+    wire: set[str] = set()
+    while pending:
+        for dotted in _runtime_import_targets(pending.pop()):
+            if dotted in seen:
+                continue
+            seen.add(dotted)
+            if dotted.split(".")[0] in _WIRE_ROOTS:
+                wire.add(dotted)
+            resolved = resolve(dotted)
+            if resolved is not None:
+                pending.append(resolved)
+    return wire
+
+
 class TestSemanticNoteServiceCarriesNoWireImports:
-    """R4.1 acceptance: the semantic note module names no wire module."""
+    """R4.1/R6.6 acceptance: the semantic note module names no wire module."""
 
     def test_note_service_module_imports_no_rpc_or_row_adapter_module(self) -> None:
         """``NoteRow``/``safe_index``/``RPCMethod`` left with the legacy class."""
 
         assert not (_runtime_import_roots(_NOTE_SERVICE_PATH) & _WIRE_ROOTS)
 
-    def test_only_the_projection_pair_survives_for_r66_to_remove(self) -> None:
-        """Pin the residue so R4.1's gain cannot be silently given back.
+    def test_no_projection_root_survives(self) -> None:
+        """R6.6 drained the residue R4.1 pinned; the set shrinks, never grows.
 
-        ``_note_service`` still reaches ``rpc``/``_row_adapters`` *transitively*
-        through these two, which is why the module stays on the I1 seed
-        allowlist until R6.6 switches ``NoteService`` to record returns. The
-        set shrinks; it must never grow.
+        R4.1 left ``{_projectors, types}`` here and measured that dropping
+        either alone changed nothing: each one reaches the whole wire layer
+        transitively on its own. R6.6 dropped both together by moving
+        projection to ``NotesAPI``/``MindMapsAPI``, so the residue is empty and
+        ``_note_service.py`` left the I1 seed allowlist.
         """
 
-        survivors = _runtime_import_roots(_NOTE_SERVICE_PATH) & _PROJECTION_ROOTS
-        assert survivors == {"_projectors", "types"}
+        assert not (_runtime_import_roots(_NOTE_SERVICE_PATH) & _PROJECTION_ROOTS)
+
+    def test_no_wire_module_is_reachable_transitively(self) -> None:
+        """The point of the two removals: nothing wire-side is imported at all.
+
+        The direct-import pins above cannot see the transitive reach that made
+        R4.1's gain unmeasurable, so walk the runtime import graph. Both
+        ``_projectors`` and ``notebooklm.types`` still reach every one of these
+        modules, which is why R6.6 had to remove them together.
+        """
+
+        assert _reachable_wire_modules(_NOTE_SERVICE_PATH) == set()
 
 
 def test_decoding_error_is_still_the_drift_signal() -> None:

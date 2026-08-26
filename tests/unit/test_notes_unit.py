@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm.exceptions import NoteNotFoundError, RPCError
+from notebooklm.types import Note
 
 
 @pytest.fixture
@@ -467,6 +468,24 @@ class TestCreateNote:
         assert result.id == "new_note_123"
         assert result.title == "Title"
         assert result.content == "Content"
+
+    @pytest.mark.asyncio
+    async def test_create_projects_the_allocation_record(self, notes_api, mock_core):
+        """The exact public value ``create`` returns, projected at the facade.
+
+        R6.6 moved projection out of ``NoteService`` — it now returns a
+        ``NoteRecord`` — so the exact-value assertion that used to live in
+        ``test_note_service.py::test_create_note_does_create_then_update``
+        belongs here, where the public ``Note`` is actually constructed.
+        """
+        mock_core.rpc_executor.rpc_call.side_effect = [[["note_123"]], None]
+
+        assert await notes_api.create("nb_123", "Mind Map", '{"children":[]}') == Note(
+            id="note_123",
+            notebook_id="nb_123",
+            title="Mind Map",
+            content='{"children":[]}',
+        )
 
     @pytest.mark.asyncio
     async def test_create_with_flat_result(self, notes_api, mock_core):

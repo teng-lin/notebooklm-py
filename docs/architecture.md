@@ -598,7 +598,7 @@ Beyond the backend-owned runtime graph, feature APIs are implemented via dedicat
 
 | Service / Module | Module | Responsibility |
 |-------------------|--------|----------------|
-| `NoteService` | [`_note_service.py`](../src/notebooklm/_note_service.py) | Backend-neutral plain-note and note-backed-mind-map workflows, including shielded create finalization and cancellation cleanup. Carries no wire imports. |
+| `NoteService` | [`_note_service.py`](../src/notebooklm/_note_service.py) | Backend-neutral plain-note and note-backed-mind-map workflows, including shielded create finalization and cancellation cleanup. Carries no wire imports and returns neutral `NoteRecord`/`MindMapRecord` values — `NotesAPI`/`MindMapsAPI` own the `_projectors.py` call (P10 invariant I1). |
 | `ArtifactRepresentationService` | [`_studio/representations.py`](../src/notebooklm/_studio/representations.py) | Backend-neutral P5.8 representation discovery, family selection, trusted remote byte dispatch, and local serialization orchestration. |
 | `StudioDownloadClient` | [`_studio/downloads.py`](../src/notebooklm/_studio/downloads.py) | Trusted remote byte retrieval with shared factory/allowlist and per-hop redirect validation for both httpx and curl_cffi. |
 | `StudioSerializationClient` | [`_studio/serialization.py`](../src/notebooklm/_studio/serialization.py) | RPC-free local text, JSON, and CSV representation serialization. |
