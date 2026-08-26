@@ -62,7 +62,6 @@ _ARTIFACT_SERVICE_MODULES = [
 _SOURCE_SERVICE_MODULES = [
     "_source/listing.py",
     "_source/polling.py",
-    "_source/add.py",
     "_source/upload.py",
     "_source/content.py",
 ]

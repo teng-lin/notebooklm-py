@@ -243,7 +243,8 @@ def test_source_add_error_with_transient_cause_stays_fatal() -> None:
     """A ``SourceAddError`` wrapping a *transient/server* bare-RPCError cause stays FATAL.
 
     ``rpc/decoder.py`` can raise a bare ``RPCError`` with an infra ``rpc_code`` (e.g. a
-    null-result-with-status INTERNAL 13, or an HTTP 5xx) that ``_source/add.py`` wraps as
+    null-result-with-status INTERNAL 13, or an HTTP 5xx) that the source-add
+    workflows (``_source_service.py``) wrap as
     ``SourceAddError``. Isolating that as a per-item error would mask a rate-limit/5xx and
     let a batch add report partial success instead of aborting for retry/backoff (#1905
     review). So it must NOT be SOURCE_ADD.

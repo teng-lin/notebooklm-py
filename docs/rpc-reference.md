@@ -29,7 +29,7 @@
 | `rLM1Ne` | GET_NOTEBOOK | Get notebook details + sources | `_notebooks.py` |
 | `s0tc2d` | RENAME_NOTEBOOK | Rename, chat config, share access | `_notebooks.py`, `_chat/api.py` |
 | `WWINqb` | DELETE_NOTEBOOK | Delete a notebook | `_notebooks.py` |
-| `izAoDd` | ADD_SOURCE | Add URL/text/YouTube/Drive source | `_source/add.py` via `_sources.py` |
+| `izAoDd` | ADD_SOURCE | Add URL/text/YouTube/Drive source | `_web/codec/sources.py` via `_source_service.py` |
 | `o4cbdc` | ADD_SOURCE_FILE | Register uploaded file (PDF, DOCX, EPUB, etc.) | `_source/upload.py`, `_source/upload_payloads.py` |
 | `tGMBJ` | DELETE_SOURCE | Delete a source | `_sources.py` |
 | `b7Wfje` | UPDATE_SOURCE | Rename source | `_sources.py` |
@@ -450,8 +450,8 @@ button (`mattooltip='Close source view'`).
 
 ### RPC: ADD_SOURCE (izAoDd) - URL
 
-**Sources:** `_source/add.py::SourceAddService.add_url_source()` (single item),
-`_source/batch.py::SourceBatchAddService.add_urls()` (true batch)
+**Sources:** `_source_service.py::SourceService.add_url()` (single item),
+`_source_service.py::SourceService.add_urls_batch()` (true batch)
 
 ```python
 # URL goes at position [2] in an 11-element source spec.
@@ -475,7 +475,7 @@ recovery unchanged.
 
 ### RPC: ADD_SOURCE (izAoDd) - Text
 
-**Source:** `_source/add.py::SourceAddService.add_text()`
+**Source:** `_source_service.py::SourceService.add_text()`
 
 ```python
 # [title, content] at position [1] in an 11-element source spec; slot [3] is
@@ -489,7 +489,7 @@ params = [
 
 ### RPC: ADD_SOURCE (izAoDd) - YouTube
 
-**Source:** `_source/add.py::SourceAddService.add_youtube_source()`
+**Source:** `_source_service.py::SourceService.add_url()` (YouTube URLs take the same path)
 
 ```python
 # YouTube URL at position [7] in the source spec (different from regular URL).
@@ -503,7 +503,7 @@ params = [
 
 ### RPC: ADD_SOURCE (izAoDd) - Google Drive
 
-**Source:** `_source/add.py::SourceAddService.add_drive()`
+**Source:** `_source_service.py::SourceService.add_drive()`
 
 ```python
 # Drive source structure - single-wrapped (not double!)

@@ -20,8 +20,8 @@ from notebooklm._records import (
     SourceAddUrlResult,
     SourceRecord,
 )
-from notebooklm._source.add import honor_requested_title
 from notebooklm._sources import SourcesAPI
+from notebooklm._web.bindings.sources import _honor_requested_title
 from notebooklm.exceptions import (
     NetworkError,
 )
@@ -204,13 +204,15 @@ async def test_add_rename_failure_is_non_fatal(caplog: pytest.LogCaptureFixture)
 
     P10 R3.4 retired ``honor_requested_title_if_fresh`` with the last probed
     registration row; the freshness wrapper had no production caller left, and
-    the non-fatal contract it delegated lives in ``honor_requested_title``.
+    the non-fatal contract it delegated lives in ``_honor_requested_title``,
+    which now sits in ``_web/bindings/sources.py`` beside the only row that
+    reaches it.
     """
     source = Source(id="d1", title="Drive Name")
     rename = AsyncMock(side_effect=NetworkError("boom"))
 
     with caplog.at_level(logging.WARNING):
-        result = await honor_requested_title(
+        result = await _honor_requested_title(
             rename,
             "nb_1",
             source,

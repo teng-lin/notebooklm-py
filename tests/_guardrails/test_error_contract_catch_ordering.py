@@ -12,9 +12,8 @@ a rate-limited operation. ADR-0019's retry guidance states the general rule:
 handle the *narrow* transport exceptions, "never the broad ``RPCError``", when
 the broad clause would change what the caller sees.
 
-The sanctioned pattern is the one ``add_url`` / ``add_drive``
-(``src/notebooklm/_source/add.py``) and ``register_file_source``
-(``src/notebooklm/_source/upload.py``) use::
+The sanctioned pattern is the one ``register_file_source``
+(``src/notebooklm/_source/upload.py``) uses::
 
     try:
         result = await rpc.rpc_call(...)
@@ -281,8 +280,8 @@ def test_no_unordered_broad_rpc_error_wrap_in_feature_tree() -> None:
         "SUBCLASS RPCError. Precede the broad clause, in the same `try`, with\n"
         "    except (AuthError, RateLimitError, ServerError, NetworkError):\n"
         "        raise\n"
-        "so they propagate unwrapped — copy the add_url/add_drive pattern in "
-        "src/notebooklm/_source/add.py (see ADR-0019 'Cross-cutting' row + "
+        "so they propagate unwrapped — copy the register_file_source pattern "
+        "in src/notebooklm/_source/upload.py (see ADR-0019 'Cross-cutting' row + "
         "retry guidance, docs/adr/0019-error-and-return-contract.md).\n\n"
         + "\n".join(
             f"  src/notebooklm/{f}: "
