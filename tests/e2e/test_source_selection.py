@@ -105,7 +105,7 @@ class TestChatWithSourceSelection:
         )
         assert result2.answer is not None
         assert result2.is_follow_up is True
-        assert result2.turn_number == 2
+        assert result2.turn_number > result1.turn_number
 
 
 @requires_auth

@@ -77,6 +77,13 @@ class TestChatE2E:
     @pytest.mark.asyncio
     async def test_ask_follow_up_conversation(self, client, multi_source_notebook_id):
         """Test follow-up questions use the same conversation."""
+        try:
+            conv_id = await client.chat.get_conversation_id(multi_source_notebook_id)
+            if conv_id:
+                await client.chat.delete_conversation(multi_source_notebook_id, conv_id)
+        except Exception:
+            pass
+
         # First question
         result1 = await client.chat.ask(
             multi_source_notebook_id,

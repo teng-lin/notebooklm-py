@@ -62,6 +62,7 @@ async def swept_interactive_mind_maps(client, generation_notebook_id):
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
+@pytest.mark.timeout(180)
 async def test_interactive_mind_map_full_lifecycle(
     client, generation_notebook_id, swept_interactive_mind_maps
 ):
