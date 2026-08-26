@@ -14,9 +14,15 @@ verbatim, the constructors that wrap a record in a ``SOURCE_ADD`` report, and
 :class:`GuardedRegistration` — everything that differs between the two probed
 registrations, so the algorithm they share can live exactly once.
 
-It is transport-neutral by construction: nothing here imports ``_projectors``,
-``notebooklm.types``, ``_types.*``, ``_backend_compat``, ``rpc.*``,
-``_row_adapters.*``, ``_web.*`` or ``httpx``.
+It exists as its own module because ``_source_service.py`` would otherwise
+exceed the 1500-line ``MODULE_SIZE_BUDGET``, which outside ``_auth/`` has no
+exception. That split must not move the vocabulary out from under the guard
+that keeps it neutral, so P10 invariant I1's *import* half governs this module
+too (``tests/_guardrails/test_service_boundary.py``): nothing here may import
+``_projectors``, ``notebooklm.types``, ``_types.*``, ``_backend_compat``,
+``rpc.*``, ``_row_adapters.*``, ``_web.*`` or ``httpx``. I1's *return* half
+does not apply — these are not service methods, and their constructors return
+the port's own ``BackendError``, which a service raises rather than returns.
 """
 
 from __future__ import annotations
