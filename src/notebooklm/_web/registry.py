@@ -1,10 +1,11 @@
 """Closed web dispositions for the semantic operation vocabulary.
 
 Direct P2 notebook/source operations, P5 Studio family operations, and P6.1–P6.7 domain
-workflows have executable rows from ``_web.bindings``. P9.2 service-owned workflows keep their
-canonical definition but no direct web binding. Every other operation has an unsupported
-disposition, and the count assertions force a deliberate registry update when the closed
-:class:`Operation` enum changes.
+workflows have executable rows from ``_web.bindings``. Service-owned workflows (P9.2's
+decomposition plus P10 R6.4's two research workflows) keep their canonical definition but no
+direct web binding. Every other operation has an unsupported disposition, and the count
+assertions force a deliberate registry update when the closed :class:`Operation` enum
+changes.
 """
 
 from __future__ import annotations
@@ -82,8 +83,10 @@ from .._records import (
     NOTEBOOK_UPDATE_DEF,
     RESEARCH_CANCEL_DEF,
     RESEARCH_IMPORT_DEF,
+    RESEARCH_IMPORT_VERIFY_DEF,
     RESEARCH_POLL_DEF,
     RESEARCH_START_DEF,
+    RESEARCH_WAIT_DEF,
     SETTINGS_GET_DEF,
     SETTINGS_GET_LIMITS_DEF,
     SETTINGS_SET_LANGUAGE_DEF,
@@ -242,10 +245,13 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
 # that this key set is exactly the directly executable definition set.
 _ROW_BACKED_OPERATIONS: Final[frozenset[Operation]] = frozenset(WEB_BINDING_ROWS)
 
-# P9.2 service-owned workflows: the semantic service sequences the leaves named
-# in ``_web/policy.py``'s workflow ledger; ``capabilities.supports()`` reports
+# Service-owned workflows: the semantic service sequences the leaves named in
+# ``_web/policy.py``'s workflow ledger; ``capabilities.supports()`` reports
 # ``False`` because ``invoke()`` refuses them (the port's ``supports`` means
-# invokable). Each entry names the owning service call site.
+# invokable), while ``capabilities.available()`` reports ``True``. Each entry
+# names the owning service call site. Eleven arrived with P9.2's decomposition;
+# the two research workflows joined in P10 R6.4, which gave them the typed
+# definitions their UNSUPPORTED disposition was waiting on.
 _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = MappingProxyType(
     {
         Operation.LABEL_CREATE: LABEL_CREATE_DEF,
@@ -259,6 +265,8 @@ _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = 
         Operation.ARTIFACT_RENAME: ARTIFACT_RENAME_DEF,
         Operation.NOTEBOOK_CREATE: NOTEBOOK_CREATE_DEF,
         Operation.NOTEBOOK_UPDATE: NOTEBOOK_UPDATE_DEF,
+        Operation.RESEARCH_WAIT: RESEARCH_WAIT_DEF,
+        Operation.RESEARCH_IMPORT_VERIFY: RESEARCH_IMPORT_VERIFY_DEF,
     }
 )
 _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
@@ -307,6 +315,15 @@ _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
             "service-owned since P9.2-11: NotebookMutationService.update sequences "
             "notebook.patch and notebook.get"
         ),
+        Operation.RESEARCH_WAIT: (
+            "service-owned since P10 R6.4: ResearchService.wait_for_completion polls "
+            "research.poll under its own total budget and cadence"
+        ),
+        Operation.RESEARCH_IMPORT_VERIFY: (
+            "service-owned since P10 R6.4: "
+            "ResearchService.import_sources_with_verification sequences research.import "
+            "and source.list within one max_elapsed"
+        ),
     }
 )
 
@@ -335,16 +352,6 @@ _UNSUPPORTED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
             "collection's membership ids against the public notebook listing client-side and "
             "issues no native call of its own"
         ),
-        Operation.RESEARCH_WAIT: (
-            "facade/service workflow without a typed def: ResearchService polls research.poll "
-            "under its own total budget; R6.4 adds typed inputs/results and flips it to "
-            "service-owned"
-        ),
-        Operation.RESEARCH_IMPORT_VERIFY: (
-            "facade/service workflow without a typed def: ResearchService sequences "
-            "research.import and a source-listing probe within one budget; R6.4 adds typed "
-            "inputs/results and flips it to service-owned"
-        ),
     }
 )
 
@@ -354,7 +361,10 @@ _UNSUPPORTED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
 # unsupported disposition without a web-registry review.
 _EXPECTED_OPERATION_COUNT: Final = 96
 _EXPECTED_SUPPORTED_COUNT: Final = 80
-_EXPECTED_SERVICE_OWNED_COUNT: Final = 11
+# 11 from P9.2 + the two research workflows R6.4 typed. The vocabulary and the
+# directly-supported row set are unchanged by that flip: it moves two members
+# from UNSUPPORTED to SERVICE_OWNED, which is a disposition change only.
+_EXPECTED_SERVICE_OWNED_COUNT: Final = 13
 
 
 def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:

@@ -426,23 +426,6 @@
       },
       {
         "allocation": {
-          "projection_ids": [
-            "cli.ResearchSource.transitive-import-selection-final-contribution",
-            "mcp.ResearchSource.transitive-import-source-count-contribution",
-            "rest.ResearchSource.transitive-import-source-count-contribution"
-          ],
-          "terminal_locators": [
-            "cli --json|notebooklm/cli/research_cmd.py|_render_import_result|json_output_response|1",
-            "mcp tool result|notebooklm/mcp/tools/research.py|register.research_import|return|1",
-            "rest response|notebooklm/server/routes/research.py|import_research|return|1"
-          ]
-        },
-        "field_path": "source_models[]",
-        "private_model": "notebooklm._research_import._ImportProbeOutcome",
-        "public_model": "notebooklm.types.ResearchSource"
-      },
-      {
-        "allocation": {
           "review_note": "ValidatedSessionConfig carries ConnectionLimits only through client runtime construction into the HTTP transport pool; no adapter serializer receives this private configuration DTO or its limits field.",
           "source_evidence": [
             {
@@ -10399,11 +10382,11 @@
           },
           {
             "evidence": [
-              "notebooklm/_research_import.py:def _imported_source_entry",
+              "notebooklm/_research.py:def _imported_entry",
               "notebooklm/cli/research_cmd.py:imported_sources"
             ],
             "evidence_shape_fingerprints": {
-              "notebooklm/_research_import.py:def _imported_source_entry": "sha256:d127a795a06eee7e7e507b0b433b9dee73b277164cc5426506bd64d6e62af40b",
+              "notebooklm/_research.py:def _imported_entry": "sha256:777fee34f2c564326418cc96a0d9f874ff49410f230859da3a0bee74999108e3",
               "notebooklm/cli/research_cmd.py:imported_sources": "sha256:098f5e10296cc109af459dc5c7ac84bac3d73b99a1e8406de6cf937c47dbc05e"
             },
             "id": "cli.Source.transitive-research-import-new-source-projection",
@@ -10412,15 +10395,15 @@
               "title"
             ],
             "mode": "transitive-research-import-new-source-projection",
-            "shape_derivation": "ast-dict:notebooklm/_research_import.py:_imported_source_entry"
+            "shape_derivation": "ast-dict:notebooklm/_research.py:_imported_entry"
           },
           {
             "evidence": [
-              "notebooklm/_research_import.py:def _partition_requested_sources",
+              "notebooklm/_research.py:def _project_import_verification",
               "notebooklm/cli/research_cmd.py:already_present_sources"
             ],
             "evidence_shape_fingerprints": {
-              "notebooklm/_research_import.py:def _partition_requested_sources": "sha256:3694a6430f162820e892d991cdfe5c9bff5bb815f836d04e0c66ac2887f51d67",
+              "notebooklm/_research.py:def _project_import_verification": "sha256:396f4751f9486df92752bd3b8b839df043e00dab1d1cbd52973016621a3480d2",
               "notebooklm/cli/research_cmd.py:already_present_sources": "sha256:48166351b1e38eb59fe9f78351f3e25f7fc07ffdff4abd517c212b36fd0be4e0"
             },
             "id": "cli.Source.transitive-research-import-existing-source-projection",
@@ -10430,7 +10413,7 @@
               "url"
             ],
             "mode": "transitive-research-import-existing-source-projection",
-            "shape_derivation": "ast-dict:notebooklm/_research_import.py:_partition_requested_sources"
+            "shape_derivation": "ast-dict:notebooklm/_research.py:_project_import_verification"
           },
           {
             "evidence": [
@@ -14122,11 +14105,11 @@
           },
           {
             "evidence": [
-              "notebooklm/_research_import.py:def _imported_source_entry",
+              "notebooklm/_research.py:def _imported_entry",
               "notebooklm/mcp/tools/research.py:newly_imported = to_jsonable(outcome.newly_imported)"
             ],
             "evidence_shape_fingerprints": {
-              "notebooklm/_research_import.py:def _imported_source_entry": "sha256:d127a795a06eee7e7e507b0b433b9dee73b277164cc5426506bd64d6e62af40b",
+              "notebooklm/_research.py:def _imported_entry": "sha256:777fee34f2c564326418cc96a0d9f874ff49410f230859da3a0bee74999108e3",
               "notebooklm/mcp/tools/research.py:newly_imported = to_jsonable(outcome.newly_imported)": "sha256:e5348b7b7793528b7943147859195bf9e56ce5425147534131eb14e0f3c1e5f2"
             },
             "id": "mcp.Source.transitive-research-import-new-source-projection",
@@ -14135,15 +14118,15 @@
               "title"
             ],
             "mode": "transitive-research-import-new-source-projection",
-            "shape_derivation": "ast-dict:notebooklm/_research_import.py:_imported_source_entry"
+            "shape_derivation": "ast-dict:notebooklm/_research.py:_imported_entry"
           },
           {
             "evidence": [
-              "notebooklm/_research_import.py:def _partition_requested_sources",
+              "notebooklm/_research.py:def _project_import_verification",
               "notebooklm/mcp/tools/research.py:already_present = to_jsonable(outcome.already_present)"
             ],
             "evidence_shape_fingerprints": {
-              "notebooklm/_research_import.py:def _partition_requested_sources": "sha256:3694a6430f162820e892d991cdfe5c9bff5bb815f836d04e0c66ac2887f51d67",
+              "notebooklm/_research.py:def _project_import_verification": "sha256:396f4751f9486df92752bd3b8b839df043e00dab1d1cbd52973016621a3480d2",
               "notebooklm/mcp/tools/research.py:already_present = to_jsonable(outcome.already_present)": "sha256:134a913e09ca473d856588176d2515c6a7fbdb0e2223d51d263b72b7de2c43fd"
             },
             "id": "mcp.Source.transitive-research-import-existing-source-projection",
@@ -14153,7 +14136,7 @@
               "url"
             ],
             "mode": "transitive-research-import-existing-source-projection",
-            "shape_derivation": "ast-dict:notebooklm/_research_import.py:_partition_requested_sources"
+            "shape_derivation": "ast-dict:notebooklm/_research.py:_project_import_verification"
           },
           {
             "contribution_semantics": "Each Source title/url and kind (backed by _type_code) constructs a public SourceSummary recursively serialized under metadata.sources; an empty metadata source list has no Source contribution",

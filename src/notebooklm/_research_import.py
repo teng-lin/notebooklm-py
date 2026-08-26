@@ -2,24 +2,40 @@
 
 Extracted under the ADR-0008 module-size ratchet so the ``import_sources`` /
 ``import_sources_with_verification`` machinery — URL normalization for import
-verification, the report-source predicate, the imported-entry / merge helpers,
-the #1961 idempotency pre-filter + its ``already_present`` side-channel carrier,
-and the #2187 batch-scaled read timeout + retry-time FAILED_PRECONDITION
-predicate — lives in one cohesive place.
+verification, the provenance check, the imported-entry / merge helpers, the
+#1961 idempotency pre-filter, and the #2187 batch-scaled read timeout — lives
+in one cohesive place.
 
 Every one of these is backend-neutral policy, so they are consumed by
 ``_research_service.py`` rather than by the ``_research.py`` facade, and this
 module is their only import home. (P6.2 retired the pass-through re-exports the
 facade used to carry; reference them here.)
+
+The retry-time ``FAILED_PRECONDITION`` predicate that used to live here reads a
+neutral :class:`~notebooklm._backend.BackendStatus` rather than a wire status
+code, so it moved to ``_research_service.py`` beside the reason sets it is
+branched on with (P10 R6.4). R6.4 also retyped every helper here onto the
+neutral record vocabulary — a batch is a tuple of
+:class:`~notebooklm._records.ResearchImportCandidate`, the probe reads
+``SourceRecord`` rows, and the results are ``ResearchImportedSourceRecord`` /
+``ResearchPresentSourceRecord``. The public-shape concerns those replaced (the
+``ResearchSource | Mapping`` union, the report predicate that inspects it, and
+the ``list[dict[str, str]]`` side-channel carrier) belong to ``_research.py``.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 from urllib.parse import urlsplit, urlunsplit
 
+from ._records import (
+    ResearchImportCandidate,
+    ResearchImportedSourceRecord,
+    ResearchPresentSourceRecord,
+    ResearchSourceRecord,
+    SourceRecord,
+)
 from ._runtime.config import (
     AUTO_READ_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT,
@@ -28,16 +44,11 @@ from ._runtime.config import (
     DEFAULT_TIMEOUT,
     compose_builtin_read_timeout,
 )
-from ._types.research import ResearchSource, ResearchSourceInput
-from .exceptions import ResearchTaskMismatchError, RPCError, ValidationError
-from .rpc import GrpcStatusCode, normalize_grpc_status
-
-if TYPE_CHECKING:
-    from .types import Source
+from .exceptions import ResearchTaskMismatchError, ValidationError
 
 
 def _validate_research_task_provenance(
-    source_models: Sequence[ResearchSource], task_id: str
+    candidates: Sequence[ResearchImportCandidate], task_id: str
 ) -> str:
     """Validate per-source research-task provenance; return the effective task id.
 
@@ -53,15 +64,17 @@ def _validate_research_task_provenance(
     rejected even when its URL is already present in the notebook and would
     otherwise be dropped without ever reaching :meth:`ResearchAPI.import_sources`.
     """
-    for source in source_models:
-        source_task_id = source.research_task_id
+    for candidate in candidates:
+        source_task_id = candidate.source.research_task_id
         if source_task_id and source_task_id != task_id:
             raise ResearchTaskMismatchError(
                 task_id=task_id,
                 source_research_task_id=source_task_id,
             )
     research_task_ids = {
-        source.research_task_id for source in source_models if source.research_task_id
+        candidate.source.research_task_id
+        for candidate in candidates
+        if candidate.source.research_task_id
     }
     if len(research_task_ids) > 1:
         raise ValidationError("Cannot import sources from multiple research tasks in one batch.")
@@ -89,89 +102,44 @@ def _normalize_import_verification_url(url: str) -> str:
     )
 
 
-def _source_import_verification_url(source: ResearchSource) -> str | None:
+def _source_import_verification_url(source: ResearchSourceRecord) -> str | None:
     url = source.url
     if not url:
         return None
     return _normalize_import_verification_url(url)
 
 
-def _requested_import_verification_urls(sources: Sequence[ResearchSource]) -> set[str]:
-    return {url for source in sources if (url := _source_import_verification_url(source))}
+def _candidate_import_verification_url(candidate: ResearchImportCandidate) -> str | None:
+    return _source_import_verification_url(candidate.source)
 
 
-def _no_import_verification_url_entry_count(sources: Sequence[ResearchSource]) -> int:
-    return sum(1 for source in sources if _source_import_verification_url(source) is None)
+def _requested_import_verification_urls(
+    candidates: Sequence[ResearchImportCandidate],
+) -> set[str]:
+    return {url for c in candidates if (url := _candidate_import_verification_url(c))}
 
 
-def _is_importable_report_source(
-    source_input: ResearchSourceInput,
-    source: ResearchSource,
-) -> bool:
-    """Preserve the public-dict report predicate from the legacy importer."""
-    if not source.is_report or not source.report_markdown:
-        return False
-    if isinstance(source_input, ResearchSource):
-        return isinstance(source.title, str)
-    return isinstance(source_input.get("title"), str) and isinstance(
-        source_input.get("report_markdown"), str
-    )
+def _no_import_verification_url_entry_count(
+    candidates: Sequence[ResearchImportCandidate],
+) -> int:
+    return sum(1 for c in candidates if _candidate_import_verification_url(c) is None)
 
 
-def _imported_source_entry(source: Source) -> dict[str, str]:
-    return {"id": source.id or "", "title": source.title or source.url or ""}
+def _imported_source_entry(source: SourceRecord) -> ResearchImportedSourceRecord:
+    return ResearchImportedSourceRecord(id=source.id or "", title=source.title or source.url or "")
 
 
 def _merge_imported_sources(
-    imported: list[dict[str, str]],
-    verified_imported: list[dict[str, str]],
+    imported: Sequence[ResearchImportedSourceRecord],
+    verified_imported: Sequence[ResearchImportedSourceRecord],
     verified_imported_ids: set[str],
-) -> list[dict[str, str]]:
+) -> tuple[ResearchImportedSourceRecord, ...]:
     if not verified_imported:
-        return imported
-    return [
+        return tuple(imported)
+    return (
         *verified_imported,
-        *(entry for entry in imported if entry.get("id") not in verified_imported_ids),
-    ]
-
-
-class _ImportedResearchSources(list):
-    """Newly-imported source entries carrying the already-present ones (#1961).
-
-    :meth:`ResearchAPI.import_sources_with_verification` pre-filters requested
-    sources whose (normalized) URL already exists in the notebook so a repeat
-    import does not duplicate them. This ``list`` subclass keeps every list
-    behavior existing callers rely on (iteration, ``len``, indexing, JSON
-    serialization) — the wrapped items ARE the newly-imported entries — while
-    exposing the deduped ``already_present`` entries as a side channel for
-    callers (the ``_app`` import wrapper) that want an idempotency report.
-
-    The public method's return annotation stays ``list[dict[str, str]]`` on
-    purpose: the annotation is what the public-API compat gate inspects, so this
-    runtime-only subclass adds the side channel without a return-type break.
-    """
-
-    already_present: list[dict[str, str]]
-
-    def __init__(
-        self,
-        iterable: Sequence[dict[str, str]] = (),
-        already_present: Sequence[dict[str, str]] | None = None,
-    ) -> None:
-        super().__init__(iterable)
-        self.already_present = list(already_present or [])
-
-
-def _imported_result(
-    imported: list[dict[str, str]],
-    already_present: list[dict[str, str]],
-) -> list[dict[str, str]]:
-    """Wrap newly-imported entries in the side-channel carrier (#1961).
-
-    Returns a :class:`_ImportedResearchSources` typed as the historical
-    ``list[dict[str, str]]`` so callers see no annotation change.
-    """
-    return _ImportedResearchSources(imported, already_present)
+        *(entry for entry in imported if entry.id not in verified_imported_ids),
+    )
 
 
 @dataclass
@@ -193,24 +161,22 @@ class _ImportProbeOutcome:
     to the FAILED_PRECONDITION case.
     """
 
-    fully_verified_entries: list[dict[str, str]] | None
-    newly_verified: list[dict[str, str]] = field(default_factory=list)
+    fully_verified_entries: list[ResearchImportedSourceRecord] | None
+    newly_verified: list[ResearchImportedSourceRecord] = field(default_factory=list)
     filtered: bool = False
     removed_count: int = 0
-    source_inputs: list[ResearchSourceInput] = field(default_factory=list)
-    source_models: list[ResearchSource] = field(default_factory=list)
+    candidates: list[ResearchImportCandidate] = field(default_factory=list)
     requested_urls_norm: set[str] = field(default_factory=set)
     requested_no_url_count: int = 0
 
 
 def _reconcile_import_probe(
     *,
-    current: Sequence[Source],
+    current: Sequence[SourceRecord],
     baseline_ids: set[str] | None,
     requested_urls_norm: set[str],
     requested_no_url_count: int,
-    source_inputs: list[ResearchSourceInput],
-    source_models: list[ResearchSource],
+    candidates: list[ResearchImportCandidate],
     already_verified_ids: set[str],
     allow_duplicate: bool,
 ) -> _ImportProbeOutcome:
@@ -237,7 +203,7 @@ def _reconcile_import_probe(
     # here since this path now also resolves FAILED_PRECONDITION, not just
     # RPCTimeoutError (claude review).
     if baseline_ids is not None and requested_urls_norm.issubset(new_urls_norm):
-        entries: list[dict[str, str]] = []
+        entries: list[ResearchImportedSourceRecord] = []
         remaining_no_url = requested_no_url_count
         for src in new_sources:
             if src.url and _normalize_import_verification_url(src.url) in requested_urls_norm:
@@ -247,9 +213,8 @@ def _reconcile_import_probe(
                 remaining_no_url -= 1
         return _ImportProbeOutcome(fully_verified_entries=entries)
 
-    source_norms = [
-        (source_input, source, _source_import_verification_url(source))
-        for source_input, source in zip(source_inputs, source_models, strict=True)
+    candidate_norms = [
+        (candidate, _candidate_import_verification_url(candidate)) for candidate in candidates
     ]
     # Filter for retry: drop already-present URLs. Also, when *any* URL
     # committed, drop no-URL entries (deep-research reports are appended
@@ -268,17 +233,16 @@ def _reconcile_import_probe(
     # done" (#1961 codex review). #1934 safety holds in both modes: a URL
     # committed by this attempt is never retried.
     retry_present_urls = new_urls_norm if allow_duplicate else current_urls_norm
-    filtered_source_pairs = [
-        (source_input, source)
-        for source_input, source, url in source_norms
+    filtered_candidates = [
+        candidate
+        for candidate, url in candidate_norms
         if url not in retry_present_urls and not (drop_no_url_entries and url is None)
     ]
 
-    if len(filtered_source_pairs) == len(source_models):
+    if len(filtered_candidates) == len(candidates):
         return _ImportProbeOutcome(
             fully_verified_entries=None,
-            source_inputs=source_inputs,
-            source_models=source_models,
+            candidates=candidates,
             requested_urls_norm=requested_urls_norm,
             requested_no_url_count=requested_no_url_count,
         )
@@ -290,47 +254,37 @@ def _reconcile_import_probe(
         and _normalize_import_verification_url(src.url) in committed_urls_norm
         and src.id not in already_verified_ids
     ]
-    filtered_source_inputs = [source_input for source_input, _ in filtered_source_pairs]
-    filtered_source_models = [source for _, source in filtered_source_pairs]
     return _ImportProbeOutcome(
-        fully_verified_entries=[] if not filtered_source_models else None,
+        fully_verified_entries=[] if not filtered_candidates else None,
         newly_verified=newly_verified,
         filtered=True,
-        removed_count=len(source_models) - len(filtered_source_pairs),
-        source_inputs=filtered_source_inputs,
-        source_models=filtered_source_models,
-        requested_urls_norm=_requested_import_verification_urls(filtered_source_models),
-        requested_no_url_count=_no_import_verification_url_entry_count(filtered_source_models),
+        removed_count=len(candidates) - len(filtered_candidates),
+        candidates=filtered_candidates,
+        requested_urls_norm=_requested_import_verification_urls(filtered_candidates),
+        requested_no_url_count=_no_import_verification_url_entry_count(filtered_candidates),
     )
 
 
 def _partition_requested_sources(
-    source_inputs: list[ResearchSourceInput],
-    source_models: list[ResearchSource],
-    existing_by_norm_url: dict[str, Source],
-) -> tuple[list[ResearchSourceInput], list[ResearchSource], list[dict[str, str]]]:
-    """Split requested sources into (new, already-present) by normalized URL.
+    candidates: list[ResearchImportCandidate],
+    existing_by_norm_url: dict[str, SourceRecord],
+) -> tuple[list[ResearchImportCandidate], list[ResearchPresentSourceRecord]]:
+    """Split requested candidates into (new, already-present) by normalized URL.
 
-    Report entries (:func:`_is_importable_report_source`) and any source without
-    a dedupable URL are always kept as *new* — reports/pasted text cannot be
-    URL-deduped, so they follow existing behavior. Only a non-report source
-    whose normalized URL already exists in the notebook is treated as
-    already-present.
+    Report candidates (``candidate.report``, the facade's verdict on the public
+    report predicate) and any source without a dedupable URL are always kept as
+    *new* — reports/pasted text cannot be URL-deduped, so they follow existing
+    behavior. Only a non-report source whose normalized URL already exists in
+    the notebook is treated as already-present.
 
-    Returns ``(new_inputs, new_models, already_present)`` where the parallel
-    ``new_*`` lists stay index-aligned and ``already_present`` holds an
-    ``{id, title, url}`` entry for the EXISTING notebook source that matched.
+    Returns ``(new_candidates, already_present)``, where ``already_present``
+    describes the EXISTING notebook source that matched.
     """
-    new_inputs: list[ResearchSourceInput] = []
-    new_models: list[ResearchSource] = []
-    already_present: list[dict[str, str]] = []
+    new_candidates: list[ResearchImportCandidate] = []
+    already_present: list[ResearchPresentSourceRecord] = []
     already_present_ids: set[str] = set()
-    for source_input, source in zip(source_inputs, source_models, strict=True):
-        norm = (
-            None
-            if _is_importable_report_source(source_input, source)
-            else _source_import_verification_url(source)
-        )
+    for candidate in candidates:
+        norm = None if candidate.report else _candidate_import_verification_url(candidate)
         existing = existing_by_norm_url.get(norm) if norm is not None else None
         if existing is not None:
             # Skip every matching input, but report each existing source once —
@@ -339,16 +293,15 @@ def _partition_requested_sources(
             if existing_id not in already_present_ids:
                 already_present_ids.add(existing_id)
                 already_present.append(
-                    {
-                        "id": existing_id,
-                        "title": existing.title or existing.url or "",
-                        "url": existing.url or "",
-                    }
+                    ResearchPresentSourceRecord(
+                        id=existing_id,
+                        title=existing.title or existing.url or "",
+                        url=existing.url or "",
+                    )
                 )
             continue
-        new_inputs.append(source_input)
-        new_models.append(source)
-    return new_inputs, new_models, already_present
+        new_candidates.append(candidate)
+    return new_candidates, already_present
 
 
 def _import_research_read_timeout(
@@ -412,32 +365,3 @@ def _import_research_read_timeout(
     if remaining_budget is None:
         return window
     return remaining_budget if window is None else min(window, remaining_budget)
-
-
-def _is_import_research_failed_precondition(exc: RPCError) -> bool:
-    """True when ``exc`` is IMPORT_RESEARCH's documented retry-time FAILED_PRECONDITION.
-
-    The server rejects an ``IMPORT_RESEARCH`` call against a ``task_id`` whose
-    state an earlier attempt against that same id already partially mutated —
-    commonly this method's own prior (client-timed-out) call within the same
-    retry loop, but not necessarily; documented backend behavior, not a novel
-    failure (issue #1926, item F2b). ``import_sources_with_verification``
-    shares its post-error ``sources.list`` probe with :class:`RPCTimeoutError`
-    for this one specific, well-understood code, but — unlike a timeout —
-    only a fully-verified success is accepted; a partial/no match re-raises
-    rather than retrying the rejected task_id. Every other ``RPCError``
-    propagates immediately without probing.
-
-    This is a pure ``rpc_code`` check with no awareness of which RPC produced
-    it — correct today because ``import_sources`` issues exactly one RPC
-    inside the guarded ``try``. A future ``import_sources`` change that adds a
-    second RPC call there would need this predicate revisited.
-
-    Note: the verification probe (like the pre-existing RPCTimeoutError one it
-    shares) confirms a matching source *exists*, not that *this* IMPORT_RESEARCH
-    call is what created it — an unrelated concurrent addition of the same URL
-    could coincidentally satisfy it. That race is inherent to ID/URL-based
-    verification and pre-dates this predicate; it is not made more likely by
-    extending verification to cover FAILED_PRECONDITION alongside timeouts.
-    """
-    return normalize_grpc_status(exc.rpc_code) is GrpcStatusCode.FAILED_PRECONDITION

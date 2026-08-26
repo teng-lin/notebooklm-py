@@ -316,13 +316,6 @@
       "terminal_locators": ["cli --json|notebooklm/cli/chat_cmd.py|register_chat_commands.ask_cmd._run|json_output_response|1", "mcp tool result|notebooklm/mcp/tools/chat.py|register.chat_ask|return|1", "rest response|notebooklm/server/routes/chat.py|ask|return|1"]
     },
     {
-      "private_model": "notebooklm._research_import._ImportProbeOutcome",
-      "field_path": "source_models[]",
-      "public_model": "notebooklm.types.ResearchSource",
-      "projection_ids": ["cli.ResearchSource.transitive-import-selection-final-contribution", "mcp.ResearchSource.transitive-import-source-count-contribution", "rest.ResearchSource.transitive-import-source-count-contribution"],
-      "terminal_locators": ["cli --json|notebooklm/cli/research_cmd.py|_render_import_result|json_output_response|1", "mcp tool result|notebooklm/mcp/tools/research.py|register.research_import|return|1", "rest response|notebooklm/server/routes/research.py|import_research|return|1"]
-    },
-    {
       "private_model": "notebooklm._runtime.init.ValidatedSessionConfig",
       "field_path": "limits",
       "public_model": "notebooklm.types.ConnectionLimits",

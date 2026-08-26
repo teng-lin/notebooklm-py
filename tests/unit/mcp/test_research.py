@@ -1266,7 +1266,7 @@ async def test_research_alias_and_canonical_conflict_rejected(mcp_call, mock_cli
 
 async def test_research_import_already_imported_when_all_present(mcp_call, mock_client) -> None:
     """A repeat import (everything already present) adds nothing and reports it."""
-    from notebooklm._research_import import _imported_result
+    from notebooklm._research import _imported_result
 
     mock_client.research.poll = AsyncMock(
         return_value=FakeResearchTask(

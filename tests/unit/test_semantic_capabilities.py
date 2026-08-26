@@ -65,12 +65,29 @@ def test_service_owned_workflow_is_available_but_not_directly_supported() -> Non
     assert capabilities.supports(Operation.NOTEBOOK_CREATE) is False
 
 
-def test_research_wait_stays_unavailable_until_it_gains_a_typed_definition() -> None:
-    """``research.wait`` has an enum member but no def; R6.4 flips it."""
+def test_the_research_workflows_are_available_once_they_carry_a_typed_def() -> None:
+    """R6.4 flipped both: PR1 left them UNSUPPORTED pending typed definitions.
+
+    This is the N2 distinction on its hardest case. Nothing about how the two
+    run changed — ``ResearchService`` has always sequenced them from
+    ``research.poll`` / ``research.import`` / ``source.list`` — but until they
+    had typed inputs and results the registry could only say "unsupported",
+    which is indistinguishable from a feature the backend lacks. They now say
+    "available, but not through ``invoke``".
+    """
     capabilities = build_web_backend(_RefusingExecutor()).capabilities
 
-    assert capabilities.available(Operation.RESEARCH_WAIT) is False
-    assert capabilities.supports(Operation.RESEARCH_WAIT) is False
+    for operation in (Operation.RESEARCH_WAIT, Operation.RESEARCH_IMPORT_VERIFY):
+        assert capabilities.available(operation) is True
+        assert capabilities.supports(operation) is False
+        assert operation in WEB_SERVICE_OWNED_OPERATIONS
+        definition = WEB_OPERATION_REGISTRY[operation].definition
+        assert definition is not None
+        assert definition.key is operation
+
+    # The leaves they are sequenced from stay directly invokable.
+    for leaf in (Operation.RESEARCH_POLL, Operation.RESEARCH_IMPORT, Operation.SOURCE_LIST):
+        assert capabilities.supports(leaf) is True
 
 
 def test_product_operations_are_the_vocabulary_minus_the_nine_primitives() -> None:
@@ -158,6 +175,21 @@ async def test_recording_backend_mirrors_the_workflow_view_without_accepting_it(
         await backend.invoke(NOTEBOOK_CREATE_DEF, NotebookCreateInput("Title"), deadline=None)
 
 
+def test_every_service_owned_workflow_names_the_service_call_that_runs_it() -> None:
+    """A workflow disposition has to say who sequences it, not merely that one does."""
+    reasons = {
+        operation.value: WEB_OPERATION_REGISTRY[operation].unsupported_reason
+        for operation in WEB_SERVICE_OWNED_OPERATIONS
+    }
+
+    assert len(set(reasons.values())) == len(reasons)
+    for operation_value, reason in reasons.items():
+        assert reason is not None
+        assert reason.startswith("service-owned since "), operation_value
+    assert "ResearchService.wait_for_completion" in reasons["research.wait"]
+    assert "ResearchService.import_sources_with_verification" in reasons["research.import_verify"]
+
+
 def test_every_unsupported_operation_states_why_rather_than_a_generic_string() -> None:
     """N2: each closed disposition names what runs the operation today."""
     reasons = {
@@ -165,19 +197,18 @@ def test_every_unsupported_operation_states_why_rather_than_a_generic_string() -
         for operation in _unsupported_operations()
     }
 
+    # ``research.wait`` / ``research.import_verify`` left this set in R6.4 when
+    # they gained typed definitions; the three that remain are still facade
+    # compositions over public methods, with nothing for ``invoke`` to accept.
     assert set(reasons) == {
         "notebook.metadata",
         "label.sources",
         "collection.notebooks",
-        "research.wait",
-        "research.import_verify",
     }
     assert len(set(reasons.values())) == len(reasons)
     for operation_value, reason in reasons.items():
         assert reason is not None
         assert "without a typed def" in reason, operation_value
-    assert "R6.4" in reasons["research.wait"]
-    assert "R6.4" in reasons["research.import_verify"]
     # R6.2 resolved notebook.metadata rather than deferring it: the composition
     # runs over two replaceable public-model seams, so its reason names them
     # instead of pointing at a later slice.
