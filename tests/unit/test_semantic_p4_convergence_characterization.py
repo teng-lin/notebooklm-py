@@ -77,6 +77,7 @@ from notebooklm._records import (
     LABEL_MUTATE_DEF,
     LEGACY_SHARE_ARTIFACT_DEF,
     MIND_MAP_DELETE_DEF,
+    MIND_MAP_GENERATE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,
     MIND_MAP_GET_DEF,
@@ -320,6 +321,7 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         ),
         MIND_MAP_UPDATE_DEF: (Operation.MIND_MAP_UPDATE, CallPolicy.MUTATION),
         MIND_MAP_DELETE_DEF: (Operation.MIND_MAP_DELETE, CallPolicy.MUTATION),
+        MIND_MAP_GENERATE_DEF: (Operation.MIND_MAP_GENERATE, CallPolicy.STATEFUL_START),
         # P6.4 migrates labels and collections as one slice: they are a single
         # wire surface addressed through an explicit kind discriminator, so each
         # dialect's key carries the same policy as its twin.
@@ -634,6 +636,11 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             MIND_MAP_GET_DEF,
             [(RPCMethod.GET_INTERACTIVE_HTML, None)],
             [IdempotencyPolicy.IDEMPOTENT_SET_OP],
+        ),
+        (
+            MIND_MAP_GENERATE_DEF,
+            [(RPCMethod.GENERATE_MIND_MAP, None)],
+            [IdempotencyPolicy.PROBE_THEN_CREATE],
         ),
         (
             MIND_MAP_GENERATE_NOTE_DEF,

@@ -34,6 +34,7 @@ from ..._records import (
     ARTIFACT_GET_DEF,
     ARTIFACT_LIST_DEF,
     MIND_MAP_DELETE_DEF,
+    MIND_MAP_GENERATE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,
     MIND_MAP_GET_DEF,
@@ -87,6 +88,13 @@ MIND_MAP_DELETE = CodecBinding(
     encode=mind_maps_codec.encode_mind_map_delete,
     decode=mind_maps_codec.decode_mind_map_delete,
     native=NativeCallSpec.constant(RPCMethod.DELETE_ARTIFACT),
+)
+
+MIND_MAP_GENERATE = CodecBinding(
+    definition=MIND_MAP_GENERATE_DEF,
+    encode=mind_maps_codec.encode_mind_map_generate,
+    decode=mind_maps_codec.decode_mind_map_generate,
+    native=NativeCallSpec.constant(RPCMethod.GENERATE_MIND_MAP),
 )
 
 
@@ -344,6 +352,7 @@ MIND_MAP_ROWS: Mapping[Operation, Binding] = MappingProxyType(
         MIND_MAP_GET.definition.key: MIND_MAP_GET,
         MIND_MAP_UPDATE.definition.key: MIND_MAP_UPDATE,
         MIND_MAP_DELETE.definition.key: MIND_MAP_DELETE,
+        MIND_MAP_GENERATE.definition.key: MIND_MAP_GENERATE,
         MIND_MAP_GENERATE_NOTE.definition.key: MIND_MAP_GENERATE_NOTE,
         MIND_MAP_GENERATE_INTERACTIVE.definition.key: MIND_MAP_GENERATE_INTERACTIVE,
         ARTIFACT_GENERATE_MIND_MAP.definition.key: ARTIFACT_GENERATE_MIND_MAP,
@@ -357,6 +366,7 @@ __all__ = [
     "ARTIFACT_GET",
     "ARTIFACT_LIST",
     "MIND_MAP_DELETE",
+    "MIND_MAP_GENERATE",
     "MIND_MAP_GENERATE_INTERACTIVE",
     "MIND_MAP_GENERATE_NOTE",
     "MIND_MAP_GET",

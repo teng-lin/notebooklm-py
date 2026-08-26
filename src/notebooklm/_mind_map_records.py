@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from ._operations import CallPolicy, Operation, OperationDef
+from ._operations import CallPolicy, Operation, OperationDef, OperationTier
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +62,32 @@ class MindMapGenerateNoteInput:
 @dataclass(frozen=True, slots=True)
 class MindMapGenerateNoteResult:
     """Generated note-backed tree before semantic note persistence."""
+
+    tree_json: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class MindMapGenerateTreeInput:
+    """Resolved note-backed generation request for the ``mind_map.generate`` leaf.
+
+    ``source_ids`` is required: a primitive never resolves a default source set
+    of its own, so the sequencing service supplies the exact set the native is
+    called with.
+    """
+
+    notebook_id: str
+    source_ids: tuple[str, ...]
+    language: str | None = "en"
+    instructions: str | None = field(default=None, repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class MindMapGenerateTreeResult:
+    """Serialized tree the generation native produced, or ``None`` when absent.
+
+    Only the JSON text crosses the port. The parsed tree and its display title
+    are derived above the port so no public value is decoded below it.
+    """
 
     tree_json: str | None
 
@@ -164,6 +190,17 @@ MIND_MAP_GENERATE_NOTE_DEF: OperationDef[MindMapGenerateNoteInput, MindMapGenera
 )
 
 
+MIND_MAP_GENERATE_DEF: OperationDef[MindMapGenerateTreeInput, MindMapGenerateTreeResult] = (
+    OperationDef(
+        Operation.MIND_MAP_GENERATE,
+        CallPolicy.STATEFUL_START,
+        MindMapGenerateTreeInput,
+        MindMapGenerateTreeResult,
+        tier=OperationTier.PRIMITIVE,
+    )
+)
+
+
 MIND_MAP_GENERATE_INTERACTIVE_DEF: OperationDef[
     MindMapGenerateInteractiveInput, MindMapGenerateInteractiveResult
 ] = OperationDef(
@@ -192,6 +229,7 @@ MIND_MAP_DELETE_DEF: OperationDef[MindMapDeleteInput, MindMapDeleteResult] = Ope
 
 __all__ = [
     "MIND_MAP_DELETE_DEF",
+    "MIND_MAP_GENERATE_DEF",
     "MIND_MAP_GENERATE_INTERACTIVE_DEF",
     "MIND_MAP_GENERATE_NOTE_DEF",
     "MIND_MAP_GET_DEF",
@@ -205,6 +243,8 @@ __all__ = [
     "MindMapGenerateNoteInput",
     "MindMapGenerateNoteResult",
     "MindMapGenerateResult",
+    "MindMapGenerateTreeInput",
+    "MindMapGenerateTreeResult",
     "MindMapGetInput",
     "MindMapGetResult",
     "MindMapListInput",

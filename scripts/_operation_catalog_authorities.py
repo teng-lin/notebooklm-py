@@ -198,6 +198,12 @@ SHARED_RPC_AUTHORITY_RULES.update(
                 "kind=NOTE_BACKED",
             )
         ),
+        (Operation.MIND_MAP_GENERATE, _b(RPCMethod.GENERATE_MIND_MAP)): _rules(
+            (
+                "_web/bindings/mind_maps.py:MIND_MAP_GENERATE",
+                "resolved source set",
+            )
+        ),
         (Operation.ARTIFACT_GENERATE_MIND_MAP, _b(RPCMethod.CREATE_NOTE, "plain")): _rules(
             (
                 "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",

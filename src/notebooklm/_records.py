@@ -153,6 +153,7 @@ from ._label_records import (
 )
 from ._mind_map_records import (
     MIND_MAP_DELETE_DEF,
+    MIND_MAP_GENERATE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,
     MIND_MAP_GET_DEF,
@@ -166,6 +167,8 @@ from ._mind_map_records import (
     MindMapGenerateNoteInput,
     MindMapGenerateNoteResult,
     MindMapGenerateResult,
+    MindMapGenerateTreeInput,
+    MindMapGenerateTreeResult,
     MindMapGetInput,
     MindMapGetResult,
     MindMapListInput,
@@ -449,6 +452,7 @@ __all__ = [
     "NOTE_LIST_DEF",
     "NOTE_UPDATE_DEF",
     "MIND_MAP_DELETE_DEF",
+    "MIND_MAP_GENERATE_DEF",
     "MIND_MAP_GENERATE_INTERACTIVE_DEF",
     "MIND_MAP_GENERATE_NOTE_DEF",
     "MIND_MAP_GET_DEF",
@@ -570,6 +574,8 @@ __all__ = [
     "NotebookUpdateResult",
     "MindMapGenerateInput",
     "MindMapGenerateResult",
+    "MindMapGenerateTreeInput",
+    "MindMapGenerateTreeResult",
     "MindMapDeleteInput",
     "MindMapDeleteResult",
     "MindMapGenerateInteractiveInput",

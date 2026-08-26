@@ -686,6 +686,16 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
             CallPolicy.MUTATION,
             (_native(RPCMethod.DELETE_ARTIFACT, _IDEMPOTENT, "idempotent interactive delete"),),
         ),
+        Operation.MIND_MAP_GENERATE: WebCallPolicyBinding(
+            CallPolicy.STATEFUL_START,
+            (
+                _native(
+                    RPCMethod.GENERATE_MIND_MAP,
+                    _PROBE_CREATE,
+                    "resolved-source tree generation",
+                ),
+            ),
+        ),
         Operation.SHARING_GET: WebCallPolicyBinding(
             CallPolicy.READ,
             (_native(RPCMethod.GET_SHARE_STATUS, _IDEMPOTENT, "sharing status read"),),

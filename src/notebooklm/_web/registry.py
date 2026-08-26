@@ -59,6 +59,7 @@ from .._records import (
     LABEL_UPDATE_DEF,
     LEGACY_SHARE_ARTIFACT_DEF,
     MIND_MAP_DELETE_DEF,
+    MIND_MAP_GENERATE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,
     MIND_MAP_GET_DEF,
@@ -194,6 +195,7 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
         Operation.MIND_MAP_GENERATE_INTERACTIVE: MIND_MAP_GENERATE_INTERACTIVE_DEF,
         Operation.MIND_MAP_UPDATE: MIND_MAP_UPDATE_DEF,
         Operation.MIND_MAP_DELETE: MIND_MAP_DELETE_DEF,
+        Operation.MIND_MAP_GENERATE: MIND_MAP_GENERATE_DEF,
         Operation.ARTIFACT_LIST: ARTIFACT_LIST_DEF,
         Operation.ARTIFACT_GET: ARTIFACT_GET_DEF,
         Operation.ARTIFACT_CATALOG: ARTIFACT_CATALOG_DEF,
@@ -347,12 +349,12 @@ _UNSUPPORTED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
     }
 )
 
-# The frozen catalog currently contains 96 operations (87 product members plus nine
+# The frozen catalog currently contains 97 operations (87 product members plus ten
 # P9.2 primitives). This assertion is repeated at
 # the runtime registry boundary: a new enum member must not silently inherit an
 # unsupported disposition without a web-registry review.
-_EXPECTED_OPERATION_COUNT: Final = 96
-_EXPECTED_SUPPORTED_COUNT: Final = 80
+_EXPECTED_OPERATION_COUNT: Final = 97
+_EXPECTED_SUPPORTED_COUNT: Final = 81
 _EXPECTED_SERVICE_OWNED_COUNT: Final = 11
 
 

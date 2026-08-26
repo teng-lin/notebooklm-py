@@ -16,6 +16,8 @@ from ..._records import (
     MindMapGenerateInteractiveInput,
     MindMapGenerateNoteInput,
     MindMapGenerateNoteResult,
+    MindMapGenerateTreeInput,
+    MindMapGenerateTreeResult,
     MindMapGetInput,
     MindMapGetResult,
     MindMapListInput,
@@ -218,6 +220,27 @@ def decode_mind_map_generate_note(result: Any) -> MindMapGenerateNoteResult:
     return MindMapGenerateNoteResult(decode_generated_tree(result))
 
 
+def encode_mind_map_generate(value: MindMapGenerateTreeInput) -> CodecPayload:
+    """Payload for the ``mind_map.generate`` leaf (already-resolved source set)."""
+    return CodecPayload(
+        params=build_mind_map_params(
+            list(value.source_ids),
+            language=(get_default_language() if value.language is None else value.language),
+            instructions=value.instructions,
+        ),
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
+    )
+
+
+def decode_mind_map_generate(
+    value: MindMapGenerateTreeInput, result: Any
+) -> MindMapGenerateTreeResult:
+    """Row decoder for ``mind_map.generate``; only the serialized tree crosses."""
+    del value
+    return MindMapGenerateTreeResult(decode_generated_tree(result))
+
+
 def encode_mind_map_generate_interactive(
     value: MindMapGenerateInteractiveInput, source_ids: tuple[str, ...]
 ) -> CodecPayload:
@@ -285,12 +308,14 @@ __all__ = [
     "decode_generated_tree",
     "decode_interactive_tree",
     "decode_mind_map_delete",
+    "decode_mind_map_generate",
     "decode_mind_map_generate_note",
     "decode_mind_map_get",
     "decode_mind_map_list",
     "decode_mind_map_update",
     "encode_artifact_mind_map_generate",
     "encode_mind_map_delete",
+    "encode_mind_map_generate",
     "encode_mind_map_generate_interactive",
     "encode_mind_map_generate_note",
     "encode_mind_map_get",

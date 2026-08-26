@@ -757,6 +757,18 @@
         }
       ]
     },
+    "mind_map.generate": {
+      "call_policy": "stateful_start",
+      "known_divergence": null,
+      "native_bindings": [
+        {
+          "idempotency_policy": "probe_then_create",
+          "role": "resolved-source tree generation",
+          "rpc_method": "GENERATE_MIND_MAP",
+          "variant": null
+        }
+      ]
+    },
     "mind_map.generate_interactive": {
       "call_policy": "stateful_start",
       "known_divergence": null,
@@ -2920,6 +2932,7 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
+        "_web/bindings/mind_maps.py:MIND_MAP_GENERATE",
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE"
       ],
       "golden_disposition": "golden_covered",
@@ -2948,7 +2961,8 @@
       "override_honored": true,
       "owners": [
         "MindMapFamilyService",
-        "MindMapService"
+        "MindMapService",
+        "NoteBackedMindMapFamilyService"
       ],
       "response_decoders": [
         "_web/codec/mind_maps.py:decode_artifact_mind_map_leaf",
@@ -2962,6 +2976,7 @@
       "rpc_method": "GENERATE_MIND_MAP",
       "semantic_operations": [
         "artifact.generate_mind_map",
+        "mind_map.generate",
         "mind_map.generate_note"
       ],
       "variant": null
@@ -6842,6 +6857,38 @@
       "response_decoders_projectors": [],
       "route_context": "notebook+mind-map",
       "tier": "product",
+      "unsupported_reason": null,
+      "web_paths": []
+    },
+    {
+      "app_callers": [],
+      "composite_behavior": "P9.2 primitive: one mind-map generation native on an already-resolved source set.",
+      "disposition": "semantic",
+      "execution_authorities": [
+        {
+          "binding": "GENERATE_MIND_MAP:<default>",
+          "discriminator": "resolved source set",
+          "site": "_web/bindings/mind_maps.py:MIND_MAP_GENERATE",
+          "transport_kind": "rpc"
+        }
+      ],
+      "key": "mind_map.generate",
+      "known_divergence": null,
+      "known_divergence_kind": null,
+      "native_bindings": [
+        "GENERATE_MIND_MAP:<default>"
+      ],
+      "owner": "NoteBackedMindMapFamilyService",
+      "policy": "stateful_start",
+      "public_methods": [],
+      "recency_contract": [],
+      "recency_effect": "none",
+      "response_decoders_projectors": [
+        "_web/codec/mind_maps.py:decode_artifact_mind_map_leaf",
+        "_web/codec/mind_maps.py:decode_generated_tree"
+      ],
+      "route_context": "notebook+source-set",
+      "tier": "primitive",
       "unsupported_reason": null,
       "web_paths": []
     },
