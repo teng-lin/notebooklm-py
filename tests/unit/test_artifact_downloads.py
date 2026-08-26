@@ -25,11 +25,13 @@ from tests._fixtures.web_backend import build_web_backend
 def _representations(rows):
     """Decode raw ``LIST_ARTIFACTS`` rows into the neutral prefetch handoff.
 
-    P10 R1.1 deleted the facade's raw-row fallback: ``download_<x>(...,
-    artifacts_data=)`` now takes the decoded ``ArtifactRepresentationRecord``s
-    its production producer (``ArtifactsAPI._list_for_download``) already
-    holds. These tests keep their recorded wire rows and run them through the
-    same codec the producer does, so the decode step stays characterized here.
+    The production producer (``ArtifactsAPI._list_for_download``) always
+    hands ``download_<x>(..., artifacts_data=)`` already-decoded
+    ``ArtifactRepresentationRecord``s (``_representation_records`` is a
+    no-op tuple freeze on that path). These tests keep their recorded wire
+    rows and run them through the same codec the producer does, so the
+    decode step stays characterized here — direct public callers passing
+    raw rows are covered separately in ``test_artifact_listing.py``.
     """
     return [decode_artifact_representation(row) for row in rows]
 

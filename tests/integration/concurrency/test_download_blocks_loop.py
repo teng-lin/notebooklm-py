@@ -103,10 +103,11 @@ def _assert_offloaded_to_worker_thread(
 def _representations(rows: list) -> list:
     """Decode raw ``LIST_ARTIFACTS`` rows into the neutral prefetch handoff.
 
-    P10 R1.1 deleted the facade's raw-row fallback, so ``artifacts_data=`` /
-    ``mind_maps=`` take the decoded records the production producer
-    (``ArtifactsAPI._list_for_download``) already holds. These tests keep
-    their recorded wire rows and run them through the same codec.
+    The production producer (``ArtifactsAPI._list_for_download``) always
+    hands ``artifacts_data=`` / ``mind_maps=`` already-decoded records
+    (``_representation_records`` / ``_mind_map_records`` are a no-op tuple
+    freeze on that path). These tests keep their recorded wire rows and run
+    them through the same codec.
     """
     return [decode_artifact_representation(row) for row in rows]
 

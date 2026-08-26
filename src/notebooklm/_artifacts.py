@@ -1252,10 +1252,25 @@ class ArtifactsAPI:
     def _representation_records(
         rows: builtins.list[Any] | None,
     ) -> tuple[ArtifactRepresentationRecord, ...] | None:
-        """Freeze the neutral download prefetch handoff (already decoded)."""
+        """Freeze the download prefetch handoff, decoding any raw wire rows.
+
+        The shared CLI/MCP/REST prefetch producer (``_list_for_download``)
+        always hands over already-decoded records, so this is a no-op tuple
+        freeze on that path. It stays permissive for direct public callers of
+        ``download_<x>(..., artifacts_data=...)``, who may still pass raw
+        ``LIST_ARTIFACTS`` rows as they always could (public surface — see
+        P10 PR1 review finding 1).
+        """
         if rows is None:
             return None
-        return tuple(rows)
+        from ._web.codec.artifacts import decode_artifact_representation
+
+        return tuple(
+            row
+            if isinstance(row, ArtifactRepresentationRecord)
+            else decode_artifact_representation(row)
+            for row in rows
+        )
 
     @staticmethod
     def _artifact_records(
@@ -1278,10 +1293,29 @@ class ArtifactsAPI:
     def _mind_map_records(
         rows: builtins.list[Any] | None,
     ) -> tuple[MindMapRepresentationRecord, ...] | None:
-        """Freeze the neutral mind-map prefetch handoff (already decoded)."""
+        """Freeze the mind-map prefetch handoff, decoding any raw wire rows.
+
+        See ``_representation_records`` above — permissive for direct public
+        callers of ``download_mind_map(..., mind_maps=...)`` passing raw note
+        rows. Rows that decode to ``None`` (deleted / non-mind-map notes) are
+        filtered out, matching ``decode_mind_map_representations``.
+        """
         if rows is None:
             return None
-        return tuple(rows)
+        from ._web.codec.artifacts import decode_mind_map_representation
+
+        return tuple(
+            record
+            for row in rows
+            if (
+                record := (
+                    row
+                    if isinstance(row, MindMapRepresentationRecord)
+                    else decode_mind_map_representation(row)
+                )
+            )
+            is not None
+        )
 
     def _get_artifact_type_name(self, artifact_type: int) -> str:
         """Human-readable name for an ``ArtifactTypeCode``, else the raw int as str."""
