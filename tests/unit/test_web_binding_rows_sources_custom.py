@@ -1,6 +1,6 @@
 """P9.4b: the source-add family dispatches as ``CustomBinding`` rows exactly as the handlers did.
 
-``SOURCE_ADD_URL_BATCH`` and ``SOURCE_ADD_FILE`` declare their natives under spec
+``SOURCE_ADD_FILE`` declares its natives under spec
 keys and sequence them through the row-scoped invoker.  These tests pin the
 conversion oracles: the partition and categories, the identical keyword set per
 phase (including explicit ``False``/``None`` values, ``disable_internal_retries``
@@ -24,7 +24,6 @@ import pytest
 
 from notebooklm._backend import (
     BackendContractError,
-    BackendDeadlineExceededError,
     BackendError,
     BackendErrorReason,
 )
@@ -35,10 +34,8 @@ from notebooklm._idempotency import mark_unconfirmed
 from notebooklm._operations import Operation
 from notebooklm._records import (
     SOURCE_ADD_FILE_DEF,
-    SOURCE_ADD_URL_BATCH_DEF,
     SourceAddFailureRecord,
     SourceAddFileInput,
-    SourceAddUrlBatchInput,
     SourceFileInputKind,
 )
 from notebooklm._source._upload_decode import raise_partial_upload_failure
@@ -49,7 +46,6 @@ from notebooklm._web.bindings import sources as source_rows
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY
 from notebooklm.exceptions import (
     NetworkError,
-    RPCTimeoutError,
     ServerError,
     ValidationError,
 )
@@ -153,13 +149,6 @@ class _Uploader:
 
 def test_source_add_rows_replace_their_handlers_with_declared_specs() -> None:
     expected = {
-        Operation.SOURCE_ADD_URL_BATCH: (
-            source_rows.SOURCE_ADD_URL_BATCH,
-            "protocol",
-            ErrorMode.TRANSLATE,
-            {("create", RPCMethod.ADD_SOURCE, "url"), ("snapshot", RPCMethod.GET_NOTEBOOK, None)},
-            ("capture_public_failure",),
-        ),
         Operation.SOURCE_ADD_FILE: (
             source_rows.SOURCE_ADD_FILE,
             "protocol",
@@ -207,36 +196,6 @@ def test_source_add_rows_replace_their_handlers_with_declared_specs() -> None:
     backend = build_web_backend(_RecordingExecutor())
     for operation, (row, *_rest) in expected.items():
         assert backend._bindings[operation] is row
-
-
-# --- phase sequences and identical kwargs -----------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_add_url_batch_create_then_reconciliation_snapshot() -> None:
-    good = "https://good.example/"
-    missing = "https://missing.example/"
-    executor = _RecordingExecutor(
-        [_source_entry("good", title="Good", url=good)],
-        _snapshot(_source_entry("ghost", title="Ghost", url=missing, status=3)),
-    )
-
-    result = await build_web_backend(executor).invoke(
-        SOURCE_ADD_URL_BATCH_DEF, SourceAddUrlBatchInput(_NB, (good, missing)), deadline=None
-    )
-
-    create, snapshot = executor.calls
-    assert create.method is RPCMethod.ADD_SOURCE
-    assert create.kwargs == {
-        **_BASE_KWARGS,
-        "source_path": _ROUTE,
-        "disable_internal_retries": True,
-        "operation_variant": "url",
-    }
-    assert snapshot.method is RPCMethod.GET_NOTEBOOK
-    assert snapshot.kwargs == {**_BASE_KWARGS, "source_path": _ROUTE}
-    assert result.items[0].source is not None and result.items[0].source.id == "good"
-    assert result.items[1].error is not None
 
 
 # --- open item 1: the upload pipeline runs through the row's invoker ------------------------
@@ -464,41 +423,3 @@ async def test_add_file_replays_a_rejected_title_as_validation_error(tmp_path: P
     replayed = project_backend_error(caught.value)
     assert type(replayed) is ValidationError
     assert str(replayed) == "Title cannot be empty or whitespace-only"
-
-
-@pytest.mark.asyncio
-async def test_add_url_batch_rename_free_timeout_after_expiry_is_not_a_deadline_error() -> None:
-    clock = [11.0]
-    native = RPCTimeoutError("slow", method_id=RPCMethod.ADD_SOURCE.value)
-    executor = _RecordingExecutor(native)
-    backend = build_web_backend(executor)
-    deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: clock[0])
-
-    async def rpc_call(method: RPCMethod, params: list[Any], **kwargs: Any) -> Any:
-        clock[0] = 16.0
-        return await _RecordingExecutor.rpc_call(executor, method, params, **kwargs)
-
-    backend._runtime = type("Runtime", (), {"rpc_call": staticmethod(rpc_call)})()  # type: ignore[assignment]
-
-    # The batch service marks the whole write unconfirmed and re-raises the native
-    # timeout with a rewritten message; the row claims it as its own SOURCE_ADD
-    # failure, so the head never projects it as a deadline error.
-    with pytest.raises(BackendError) as caught:
-        await backend.invoke(
-            SOURCE_ADD_URL_BATCH_DEF,
-            SourceAddUrlBatchInput(_NB, ("https://a.example/",)),
-            deadline=deadline,
-        )
-    assert not isinstance(caught.value, BackendDeadlineExceededError)
-    _assert_neutral_source_add_failure(
-        caught.value,
-        operation=Operation.SOURCE_ADD_URL_BATCH,
-        native=native,
-        outcome_unknown=True,
-    )
-    replayed = project_backend_error(caught.value)
-    assert isinstance(replayed, RPCTimeoutError)
-    assert replayed.unconfirmed is True  # type: ignore[attr-defined]
-    assert native.args[0].startswith("UNRESOLVED")
-    assert native.dispatched is True  # type: ignore[attr-defined]
-    assert native.binding_native.method is RPCMethod.ADD_SOURCE  # type: ignore[attr-defined]

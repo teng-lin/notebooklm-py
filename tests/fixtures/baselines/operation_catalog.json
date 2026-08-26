@@ -1468,6 +1468,20 @@
     "source.add_url_batch": {
       "call_policy": "mutation",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "url"
+          ],
+          "operation": "source.register"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "source.list"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "probe_then_create",
@@ -1481,7 +1495,8 @@
           "rpc_method": "GET_NOTEBOOK",
           "variant": null
         }
-      ]
+      ],
+      "service_owned": true
     },
     "source.check_freshness": {
       "call_policy": "read",
@@ -2207,8 +2222,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/primitives.py:SOURCE_REGISTER",
-        "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH"
+        "_web/bindings/primitives.py:SOURCE_REGISTER"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -3217,7 +3231,6 @@
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
         "_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS",
         "_web/bindings/sources.py:SOURCE_ADD_FILE",
-        "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
         "_web/bindings/sources.py:SOURCE_GET",
         "_web/bindings/sources.py:SOURCE_LIST",
         "_web/bindings/sources.py:SOURCE_WAIT",
@@ -8884,19 +8897,19 @@
     },
     {
       "app_callers": [],
-      "composite_behavior": "Sends validated URL/YouTube entries once, never blindly replays an uncertain write, and reconciles omitted positions against exact URL identities.",
+      "composite_behavior": "Service-owned since P10 R3.5: SourceService.add_urls_batch sends validated URL/YouTube entries once through one source.register url write, never blindly replays an uncertain write, and reconciles omitted positions against exact URL identities plus a source.list of ERROR rows.",
       "disposition": "semantic",
       "execution_authorities": [
         {
           "binding": "ADD_SOURCE:url",
-          "discriminator": "one non-replayed batch payload",
-          "site": "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
+          "discriminator": "one non-replayed batch payload via the source.register leaf",
+          "site": "_web/bindings/primitives.py:SOURCE_REGISTER",
           "transport_kind": "rpc"
         },
         {
           "binding": "GET_NOTEBOOK:<default>",
-          "discriminator": "one snapshot only for omitted-row reconciliation",
-          "site": "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
+          "discriminator": "one snapshot only for omitted-row reconciliation via source.list",
+          "site": "_web/bindings/sources.py:SOURCE_LIST",
           "transport_kind": "rpc"
         }
       ],
@@ -8913,7 +8926,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH"
+            "_web/bindings/sources.py:SOURCE_LIST"
           ],
           "condition": "one snapshot only when ADD_SOURCE omits positional outcomes",
           "maximum_calls": 1,

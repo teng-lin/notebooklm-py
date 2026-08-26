@@ -153,9 +153,11 @@ I2_FORBIDDEN_DOMAIN_PACKAGES: frozenset[str] = frozenset(
 #: paths relative to ``src/notebooklm/_web``. ``codec/chat_stream.py`` and
 #: ``codec/chat.py`` retire in R2.1, ``backend.py`` in R2.3 (R3.1 already took
 #: its ``_source.upload`` edge behind ``_source_upload_port``),
-#: ``bindings/mind_maps.py`` in R4.2 and ``bindings/sources.py`` in R3.5 (R3.1
-#: took its ``_source.upload`` edge; ``_source.add``/``_source.batch`` go with
-#: the hoists).
+#: ``bindings/mind_maps.py`` in R4.2 and ``bindings/sources.py`` last of all
+#: (R3.1 took its ``_source.upload`` edge and R3.5 its ``_source.batch`` one;
+#: the surviving ``_source.add`` edge is ``honor_requested_title``, which the
+#: permanent ``SOURCE_ADD_FILE`` row reaches under decision D4, so retiring the
+#: entry needs that helper relocated to a neutral module — not another hoist).
 I2_SEED_ALLOWLIST: frozenset[str] = frozenset(
     {
         "backend.py",

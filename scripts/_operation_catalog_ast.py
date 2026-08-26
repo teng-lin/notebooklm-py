@@ -1978,7 +1978,8 @@ ACTIVE_BACKEND_INVOKE_SITES = frozenset(
         "_source_service.py:SourceService.add_drive_file",
         "_source_service.py:SourceService.add_file",
         "_source_service.py:SourceService.add_text",
-        "_source_service.py:SourceService.add_urls_batch",
+        "_source_batch_service.py:run_url_batch_registration",
+        "_source_batch_service.py:_batch_error_rows",
         "_source_service.py:SourceService.finalize_file_title",
         "_source_service.py:SourceService.check_freshness",
         "_source_service.py:SourceService.delete",
@@ -2390,6 +2391,49 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_source_service.py", "_records", "SourceAddUrlReceipt"),
         ("_source_service.py", "_records", "SourceAddUrlResult"),
         ("_source_service.py", "_records", "SourceListInput"),
+        ("_source_service.py", "_records", "SourceListResult"),
+    }
+)
+
+# P10 R3.5: source.add_url_batch becomes service-owned. The last source-add
+# protocol row whose workflow the plan hoists, its typed input/result and the
+# positional outcome record leave _web; SourceService gains the one non-replayed
+# batch write over source.register and the ERROR-row reconciliation over
+# source.list.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_source_service.py", "_records", "SOURCE_ADD_URL_BATCH_DEF"),
+        ("_source_service.py", "_records", "SourceAddUrlBatchInput"),
+        ("_web/backend.py", "_records", "SourceAddFailureRecord"),
+        ("_web/bindings/sources.py", "_records", "SOURCE_ADD_URL_BATCH_DEF"),
+        ("_web/bindings/sources.py", "_records", "SourceAddUrlBatchInput"),
+        ("_web/bindings/sources.py", "_records", "SourceAddUrlBatchResult"),
+        ("_web/bindings/sources.py", "_records", "SourceUrlBatchItemRecord"),
+    }
+)
+# The workflow body sits beside ``_source_service.py`` rather than in it: four
+# hoisted source-add workflows put that module over the ADR-0008 size budget.
+# The two report builders it shares with them are R3.4's
+# ``_source_add_reports.py``, already reviewed above.
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_source_batch_service.py", "_backend", "BackendAdapter"),
+        ("_source_batch_service.py", "_backend", "BackendContractError"),
+        ("_source_batch_service.py", "_backend", "BackendDeadlineExceededError"),
+        ("_source_batch_service.py", "_backend", "BackendError"),
+        ("_source_batch_service.py", "_backend", "BackendErrorReason"),
+        ("_source_batch_service.py", "_backend", "rebind_operation"),
+        ("_source_batch_service.py", "_records", "SOURCE_ADD_URL_BATCH_DEF"),
+        ("_source_batch_service.py", "_records", "SOURCE_LIST_DEF"),
+        ("_source_batch_service.py", "_records", "SOURCE_REGISTER_DEF"),
+        ("_source_batch_service.py", "_records", "SourceAddFailureKind"),
+        ("_source_batch_service.py", "_records", "SourceAddFailureRecord"),
+        ("_source_batch_service.py", "_records", "SourceAddUrlBatchResult"),
+        ("_source_batch_service.py", "_records", "SourceListInput"),
+        ("_source_batch_service.py", "_records", "SourceRecord"),
+        ("_source_batch_service.py", "_records", "SourceRegisterInput"),
+        ("_source_batch_service.py", "_records", "SourceRegisterKind"),
+        ("_source_batch_service.py", "_records", "SourceUrlBatchItemRecord"),
     }
 )
 

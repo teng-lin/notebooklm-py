@@ -29,7 +29,6 @@ from notebooklm.rpc import RPCMethod
 _EXPECTED_CLIENT_TIMEOUT_OPERATIONS = frozenset(
     {
         Operation.NOTEBOOK_SUGGEST_PROMPTS,
-        Operation.SOURCE_ADD_URL_BATCH,
         Operation.ARTIFACT_LIST,
         Operation.ARTIFACT_GET,
         Operation.ARTIFACT_GENERATE_AUDIO,

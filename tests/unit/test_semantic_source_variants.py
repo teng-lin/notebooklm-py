@@ -14,7 +14,6 @@ from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
 from notebooklm._records import (
     SOURCE_ADD_FILE_DEF,
-    SOURCE_ADD_URL_BATCH_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
     SOURCE_DELETE_DEF,
     SOURCE_GET_GUIDE_DEF,
@@ -23,12 +22,8 @@ from notebooklm._records import (
     SOURCE_REFRESH_DEF,
     SOURCE_REGISTER_DEF,
     SOURCE_WAIT_DEF,
-    SourceAddFailureKind,
-    SourceAddFailureRecord,
     SourceAddFileInput,
     SourceAddFileResult,
-    SourceAddUrlBatchInput,
-    SourceAddUrlBatchResult,
     SourceDeleteInput,
     SourceFileInputKind,
     SourceFreshnessInput,
@@ -40,7 +35,6 @@ from notebooklm._records import (
     SourceRegisterInput,
     SourceRegisterKind,
     SourceRegisterResult,
-    SourceUrlBatchItemRecord,
     SourceWaitSnapshotInput,
     SourceWaitSnapshotResult,
 )
@@ -173,26 +167,15 @@ def test_source_wait_snapshot_records_are_transport_neutral() -> None:
 @pytest.mark.asyncio
 async def test_neutral_service_materializes_batch_and_hides_sensitive_inputs() -> None:
     backend = RecordingBackend()
-    source = SourceRecord("src", "Title", status="ready")
-    # P10 R3.2: source.add_text is a service-owned workflow over one leaf.
-    backend.set_result(SOURCE_REGISTER_DEF, SourceRegisterResult((source,)))
-    backend.set_workflows(Operation.SOURCE_ADD_TEXT)
-    backend.set_result(
-        SOURCE_ADD_URL_BATCH_DEF,
-        SourceAddUrlBatchResult(
-            (
-                SourceUrlBatchItemRecord("https://ok.example", source=source),
-                SourceUrlBatchItemRecord(
-                    "https://bad.example",
-                    error=SourceAddFailureRecord(
-                        SourceAddFailureKind.SOURCE_ADD,
-                        "Failed to add URL source",
-                        url="https://bad.example",
-                    ),
-                ),
-            )
-        ),
+    source = SourceRecord("src", "Title", url="https://ok.example", status="ready")
+    # P10 R3.2 / R3.5: source.add_text and source.add_url_batch are both
+    # service-owned workflows over the one source.register leaf.
+    backend.set_sequence(
+        SOURCE_REGISTER_DEF,
+        [SourceRegisterResult((source,)), SourceRegisterResult((source,))],
     )
+    backend.set_result(SOURCE_LIST_DEF, SourceListResult(()))
+    backend.set_workflows(Operation.SOURCE_ADD_TEXT, Operation.SOURCE_ADD_URL_BATCH)
     service = SourceService(backend)
 
     text_result = await service.add_text(
@@ -210,16 +193,21 @@ async def test_neutral_service_materializes_batch_and_hides_sensitive_inputs() -
 
     assert text_result.source == source
     assert len(batch_result.items) == 2
+    assert batch_result.items[0].source is source
+    assert batch_result.items[1].error is not None
     assert [call.operation for call in backend.invocations] == [
         Operation.SOURCE_REGISTER,
-        Operation.SOURCE_ADD_URL_BATCH,
+        Operation.SOURCE_REGISTER,
+        Operation.SOURCE_LIST,
     ]
     text_input = backend.invocations[0].value
     batch_input = backend.invocations[1].value
     assert isinstance(text_input, SourceRegisterInput)
     assert text_input.kind is SourceRegisterKind.TEXT
     assert "Secret title" not in repr(text_input) and "secret body" not in repr(text_input)
-    assert isinstance(batch_input, SourceAddUrlBatchInput)
+    assert isinstance(batch_input, SourceRegisterInput)
+    assert batch_input.kind is SourceRegisterKind.URL
+    # The retired batch input hid its URLs; the leaf that replaced it keeps that.
     assert "ok.example" not in repr(batch_input)
 
 
@@ -268,24 +256,13 @@ async def test_text_and_drive_wait_timeouts_remain_polling_only_facade_budgets()
 async def test_facade_projects_positional_batch_records_without_rpc_vocabulary() -> None:
     backend = RecordingBackend()
     backend.set_result(
-        SOURCE_ADD_URL_BATCH_DEF,
-        SourceAddUrlBatchResult(
-            (
-                SourceUrlBatchItemRecord(
-                    "https://ok.example",
-                    source=SourceRecord("src", "Ready", status="ready"),
-                ),
-                SourceUrlBatchItemRecord(
-                    "https://bad.example",
-                    error=SourceAddFailureRecord(
-                        SourceAddFailureKind.SOURCE_ADD,
-                        "bad URL",
-                        url="https://bad.example",
-                    ),
-                ),
-            )
+        SOURCE_REGISTER_DEF,
+        SourceRegisterResult(
+            (SourceRecord("src", "Ready", url="https://ok.example", status="ready"),)
         ),
     )
+    backend.set_result(SOURCE_LIST_DEF, SourceListResult(()))
+    backend.set_workflows(Operation.SOURCE_ADD_URL_BATCH)
     uploader = MagicMock()
     api = SourcesAPI(MagicMock(), uploader=uploader, _backend=backend)
 
@@ -301,7 +278,7 @@ async def test_facade_projects_positional_batch_records_without_rpc_vocabulary()
 
 
 @pytest.mark.asyncio
-async def test_batch_web_binding_is_one_shot_and_reconciles_omissions_once() -> None:
+async def test_batch_workflow_is_one_shot_and_reconciles_omissions_once() -> None:
     good = "https://good.example/"
     missing = "https://missing.example/"
     executor = _RecordingExecutor(
@@ -309,14 +286,13 @@ async def test_batch_web_binding_is_one_shot_and_reconciles_omissions_once() -> 
         [["Notebook", [_source_entry("ghost", title="Ghost", url=missing, status=3)], "nb"]],
     )
 
-    result = await _web_backend(executor).invoke(
-        SOURCE_ADD_URL_BATCH_DEF,
-        SourceAddUrlBatchInput("nb", (good, missing)),
-        deadline=None,
-    )
+    result = await SourceService(_web_backend(executor)).add_urls_batch("nb", (good, missing))
 
     assert [call[0] for call in executor.calls] == [RPCMethod.ADD_SOURCE, RPCMethod.GET_NOTEBOOK]
-    assert executor.calls[0][2]["disable_internal_retries"] is True
+    # The leaf leaves the caller flag False; the reviewed ``(ADD_SOURCE, "url")``
+    # PROBE_THEN_CREATE row forces the inner retry loop off, so the effective
+    # dispatch — and the request body — is the retired row's.
+    assert executor.calls[0][2]["disable_internal_retries"] is False
     assert executor.calls[0][2]["operation_variant"] == "url"
     assert result.items[0].source is not None and result.items[0].source.id == "good"
     assert result.items[1].error is not None

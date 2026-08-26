@@ -92,7 +92,6 @@ from notebooklm._records import (
     SHARING_MUTATE_DEF,
     SHARING_PATCH_VIEW_LEVEL_DEF,
     SOURCE_ADD_FILE_DEF,
-    SOURCE_ADD_URL_BATCH_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
     SOURCE_DELETE_DEF,
     SOURCE_GET_DEF,
@@ -135,7 +134,8 @@ from notebooklm._records import (
     SlideDeckGenerateInput,
     SourceAddFailureKind,
     SourceAddFailureRecord,
-    SourceAddUrlBatchInput,
+    SourceAddFileInput,
+    SourceFileInputKind,
     SourceGetInput,
     SourceListInput,
     VideoGenerateInput,
@@ -234,12 +234,14 @@ def test_row_collaborator_names_are_exactly_what_the_rows_declare() -> None:
     slice R0.1; this pin is the ratchet that keeps the two sides equal.
 
     The plan's target is ``{"source_uploader"}``: ``capture_public_failure``
-    leaves with the last source-add hoist (R3.5) and the three ``chat_*``
-    names leave when ``chat.ask`` becomes service-owned (R2.2). Removing an
-    entry here is expected; adding one is not.
+    left with the last source-add hoist (R3.5) — ``SOURCE_ADD_URL_BATCH``'s
+    per-item captures were its final consumer, and ``SOURCE_ADD_FILE``, which
+    is permanent under D4, imports the same ``_web.failure_projection``
+    function directly instead. The three ``chat_*`` names leave when
+    ``chat.ask`` becomes service-owned (R2.2). Removing an entry here is
+    expected; adding one is not.
     """
     expected = {
-        "capture_public_failure",
         "chat_reqid",
         "chat_timeout",
         "chat_transport_composed",
@@ -329,7 +331,6 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.ARTIFACT_DELETE,
         Operation.ARTIFACT_DOWNLOAD,
         Operation.ARTIFACT_WAIT,
-        Operation.SOURCE_ADD_URL_BATCH,
         Operation.SOURCE_ADD_FILE,
         Operation.SOURCE_DELETE,
         Operation.SOURCE_PATCH_TITLE,
@@ -413,7 +414,6 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.ARTIFACT_DELETE: ARTIFACT_DELETE_DEF,
         Operation.ARTIFACT_DOWNLOAD: ARTIFACT_DOWNLOAD_DEF,
         Operation.ARTIFACT_WAIT: ARTIFACT_WAIT_DEF,
-        Operation.SOURCE_ADD_URL_BATCH: SOURCE_ADD_URL_BATCH_DEF,
         Operation.SOURCE_ADD_FILE: SOURCE_ADD_FILE_DEF,
         Operation.SOURCE_DELETE: SOURCE_DELETE_DEF,
         Operation.SOURCE_PATCH_TITLE: SOURCE_PATCH_TITLE_DEF,
@@ -1506,12 +1506,12 @@ async def test_expired_custom_row_fails_before_the_handler_and_names_no_native()
 
     with pytest.raises(BackendDeadlineExceededError) as caught:
         await _backend(executor).invoke(
-            SOURCE_ADD_URL_BATCH_DEF,
-            SourceAddUrlBatchInput("nb", ("https://a.example/",)),
+            SOURCE_ADD_FILE_DEF,
+            SourceAddFileInput("nb", SourceFileInputKind.LOCAL, file_path="doc.pdf"),
             deadline=deadline,
         )
 
-    assert caught.value.operation is Operation.SOURCE_ADD_URL_BATCH
+    assert caught.value.operation is Operation.SOURCE_ADD_FILE
     assert caught.value.reason is BackendErrorReason.TIMEOUT
     assert caught.value.diagnostics == {
         "timeout": 2.0,

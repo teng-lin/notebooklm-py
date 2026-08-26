@@ -1,9 +1,10 @@
 """Neutral vocabulary for reporting a source-add failure above the port.
 
-``source.add_url``, ``source.add_text`` and ``source.add_drive`` are hoisted
-workflows (P10 R3.2–R3.4): they sequence typed leaves in
-:class:`~notebooklm._source_service.SourceService` and can therefore neither
-raise a public exception nor read one.  What they report instead is a
+``source.add_url``, ``source.add_text``, ``source.add_drive`` and
+``source.add_url_batch`` are hoisted workflows (P10 R3.2–R3.5): they sequence
+typed leaves in :class:`~notebooklm._source_service.SourceService` (the batch
+in ``_source_batch_service``, which the module-size budget split off) and can
+therefore neither raise a public exception nor read one.  What they report instead is a
 :class:`~notebooklm._source_records.SourceAddFailureRecord` — the bounded,
 serializable capture of the public graph the retired custom rows let escape —
 which ``_backend_compat`` replays as an *equal* public exception at the facade.

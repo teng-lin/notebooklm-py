@@ -135,18 +135,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
             CallPolicy.MUTATION,
             (_native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "read with recency side effect"),),
         ),
-        Operation.SOURCE_ADD_URL_BATCH: WebCallPolicyBinding(
-            CallPolicy.MUTATION,
-            (
-                _native(
-                    RPCMethod.ADD_SOURCE,
-                    _PROBE_CREATE,
-                    "single non-replayed URL/YouTube batch write",
-                    variant="url",
-                ),
-                _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "conditional reconciliation read"),
-            ),
-        ),
         Operation.SOURCE_ADD_FILE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (
@@ -857,6 +845,22 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                     _leaf(Operation.SOURCE_LIST, None),
                     _leaf(Operation.SOURCE_REGISTER, "drive"),
                     _leaf(Operation.SOURCE_PATCH_TITLE, None),
+                ),
+            ),
+            Operation.SOURCE_ADD_URL_BATCH: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(
+                        RPCMethod.ADD_SOURCE,
+                        _PROBE_CREATE,
+                        "single non-replayed URL/YouTube batch write",
+                        variant="url",
+                    ),
+                    _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "conditional reconciliation read"),
+                ),
+                (
+                    _leaf(Operation.SOURCE_REGISTER, "url"),
+                    _leaf(Operation.SOURCE_LIST, None),
                 ),
             ),
             Operation.SOURCE_ADD_TEXT: WorkflowPolicyBinding(

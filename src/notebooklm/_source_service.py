@@ -31,7 +31,6 @@ from ._records import (
     SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
     SOURCE_ADD_TEXT_DEF,
-    SOURCE_ADD_URL_BATCH_DEF,
     SOURCE_ADD_URL_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
     SOURCE_DELETE_DEF,
@@ -52,7 +51,6 @@ from ._records import (
     SourceAddFileResult,
     SourceAddTextResult,
     SourceAddTitleState,
-    SourceAddUrlBatchInput,
     SourceAddUrlBatchResult,
     SourceAddUrlReceipt,
     SourceAddUrlResult,
@@ -96,6 +94,7 @@ from ._source_add_reports import (
     url_baseline_ambiguity,
     url_match_ambiguity,
 )
+from ._source_batch_service import run_url_batch_registration
 from ._url_utils import extract_youtube_video_id, is_youtube_url
 
 # The same logger name and level the retired rows logged under.
@@ -879,10 +878,29 @@ class SourceService:
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> SourceAddUrlBatchResult:
-        return await self._backend.invoke(
-            SOURCE_ADD_URL_BATCH_DEF,
-            SourceAddUrlBatchInput(notebook_id, urls),
-            deadline=deadline,
+        """Register many URLs in one write and attribute the response positionally.
+
+        The gate, the empty short-circuit and the one aggregate budget; the
+        workflow itself is ``_source_batch_service.run_url_batch_registration``,
+        which lives next door because this module is at the ADR-0008 size budget
+        with three hoisted workflows in it. This stays the single entry point —
+        the facade and the MCP/REST adapters reach the batch only through it.
+        """
+        # Both leaves are checked before the write, exactly as ``add_url``
+        # checks its finalise leaves: a backend must never register the sources
+        # and only then discover it cannot run the reconciliation.
+        require_leaves(self._backend, SOURCE_REGISTER_DEF.key, SOURCE_LIST_DEF.key)
+        if not urls:
+            return SourceAddUrlBatchResult(())
+        # One absolute budget for the write and its reconciliation, minted here
+        # for the same reason ``add_url`` mints one: the retired row ran under
+        # the deadline ``WebRpcBackend`` seeded for the whole ``CLIENT_TIMEOUT``
+        # operation, and the workflow is that operation's owner now.
+        return await run_url_batch_registration(
+            self._backend,
+            notebook_id,
+            urls,
+            deadline=self._start_deadline(deadline),
         )
 
     async def add_text(
