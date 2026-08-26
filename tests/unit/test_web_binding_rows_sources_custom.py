@@ -1,11 +1,10 @@
 """P9.4b: the source-add family dispatches as ``CustomBinding`` rows exactly as the handlers did.
 
-``SOURCE_ADD_URL_BATCH``, ``SOURCE_ADD_DRIVE`` and
-``SOURCE_ADD_FILE`` declare their natives under spec
+``SOURCE_ADD_URL_BATCH`` and ``SOURCE_ADD_FILE`` declare their natives under spec
 keys and sequence them through the row-scoped invoker.  These tests pin the
 conversion oracles: the partition and categories, the identical keyword set per
 phase (including explicit ``False``/``None`` values, ``disable_internal_retries``
-on the guarded creates, ``allow_null`` on the Drive create and the rename), the
+on the guarded create and ``allow_null`` on the rename), the
 raw passthrough of the established public leaves, the ``dispatched`` marker on
 the one translated row, failure tagging with the selected spec, the deadline
 projection, and — plan open item 1 — that the upload pipeline's callbacks run
@@ -28,7 +27,6 @@ from notebooklm._backend import (
     BackendDeadlineExceededError,
     BackendError,
     BackendErrorReason,
-    may_have_committed,
 )
 from notebooklm._backend_compat import project_backend_error
 from notebooklm._binding import CustomBinding, ErrorMode
@@ -36,10 +34,8 @@ from notebooklm._deadline import RuntimeDeadline
 from notebooklm._idempotency import mark_unconfirmed
 from notebooklm._operations import Operation
 from notebooklm._records import (
-    SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
     SOURCE_ADD_URL_BATCH_DEF,
-    SourceAddDriveInput,
     SourceAddFailureRecord,
     SourceAddFileInput,
     SourceAddUrlBatchInput,
@@ -164,17 +160,6 @@ def test_source_add_rows_replace_their_handlers_with_declared_specs() -> None:
             {("create", RPCMethod.ADD_SOURCE, "url"), ("snapshot", RPCMethod.GET_NOTEBOOK, None)},
             ("capture_public_failure",),
         ),
-        Operation.SOURCE_ADD_DRIVE: (
-            source_rows.SOURCE_ADD_DRIVE,
-            "protocol",
-            ErrorMode.TRANSLATE,
-            {
-                ("create", RPCMethod.ADD_SOURCE, "drive"),
-                ("snapshot", RPCMethod.GET_NOTEBOOK, None),
-                ("rename", RPCMethod.UPDATE_SOURCE, None),
-            },
-            (),
-        ),
         Operation.SOURCE_ADD_FILE: (
             source_rows.SOURCE_ADD_FILE,
             "protocol",
@@ -209,7 +194,6 @@ def test_source_add_rows_replace_their_handlers_with_declared_specs() -> None:
     for name in (
         "_source_add_url",
         "_source_add_url_batch",
-        "_source_add_drive",
         "_source_add_file",
         "_source_public_snapshot",
         "_source_upload_list",
@@ -253,35 +237,6 @@ async def test_add_url_batch_create_then_reconciliation_snapshot() -> None:
     assert snapshot.kwargs == {**_BASE_KWARGS, "source_path": _ROUTE}
     assert result.items[0].source is not None and result.items[0].source.id == "good"
     assert result.items[1].error is not None
-
-
-@pytest.mark.asyncio
-async def test_add_drive_guarded_null_tolerant_create_then_rename_without_hydration() -> None:
-    executor = _RecordingExecutor(
-        _snapshot(),
-        [[_source_entry("drv", title="Upstream")]],
-        None,  # rename echoes nothing: no hydration on the Drive path
-    )
-
-    result = await build_web_backend(executor).invoke(
-        SOURCE_ADD_DRIVE_DEF,
-        SourceAddDriveInput(_NB, "file-id", "Requested", "application/pdf"),
-        deadline=None,
-    )
-
-    snapshot, create, rename = executor.calls
-    assert result.source.id == "drv"
-    assert snapshot.method is RPCMethod.GET_NOTEBOOK
-    assert create.method is RPCMethod.ADD_SOURCE
-    assert create.kwargs == {
-        **_BASE_KWARGS,
-        "source_path": _ROUTE,
-        "allow_null": True,
-        "disable_internal_retries": True,
-        "operation_variant": "drive",
-    }
-    assert rename.method is RPCMethod.UPDATE_SOURCE
-    assert rename.kwargs == {**_BASE_KWARGS, "source_path": _ROUTE, "allow_null": True}
 
 
 # --- open item 1: the upload pipeline runs through the row's invoker ------------------------
@@ -547,20 +502,3 @@ async def test_add_url_batch_rename_free_timeout_after_expiry_is_not_a_deadline_
     assert native.args[0].startswith("UNRESOLVED")
     assert native.dispatched is True  # type: ignore[attr-defined]
     assert native.binding_native.method is RPCMethod.ADD_SOURCE  # type: ignore[attr-defined]
-
-
-@pytest.mark.asyncio
-async def test_add_drive_pre_dispatch_expiry_is_not_dispatched() -> None:
-    executor = _RecordingExecutor()
-    deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: 16.0)
-
-    with pytest.raises(BackendDeadlineExceededError) as caught:
-        await build_web_backend(executor).invoke(
-            SOURCE_ADD_DRIVE_DEF,
-            SourceAddDriveInput(_NB, "file-id", "T", "application/pdf"),
-            deadline=deadline,
-        )
-
-    assert executor.calls == []
-    assert caught.value.dispatched is False
-    assert may_have_committed(caught.value) is False

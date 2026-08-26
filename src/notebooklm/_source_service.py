@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from types import MappingProxyType
 
@@ -22,6 +22,7 @@ from ._backend import (
 from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from ._idempotency_create import (
     _CreateResultKind,
+    _IdempotentCreateResult,
     idempotent_create,
     semantic_may_have_committed,
 )
@@ -44,7 +45,6 @@ from ._records import (
     SOURCE_UPDATE_DEF,
     SOURCE_WAIT_DEF,
     SourceAddCommitState,
-    SourceAddDriveInput,
     SourceAddDriveResult,
     SourceAddFailureKind,
     SourceAddFailureRecord,
@@ -76,177 +76,30 @@ from ._records import (
     SourceWaitSnapshotInput,
     SourceWaitSnapshotResult,
 )
+from ._source_add_reports import (
+    CREATE_CONTEXT_FAILURE,
+    DEFAULT_ADD_FAILURE_MESSAGE,
+    DIRECT_PROBE_REASONS,
+    DRIVE_BLANK_FILE_ID_MESSAGE,
+    DRIVE_NULL_RESULT_MESSAGE,
+    RENAME_SWALLOWED_REASONS,
+    TEXT_NON_IDEMPOTENT_MESSAGE,
+    WRAPPED_REGISTRATION_FAILURE_KINDS,
+    GuardedRegistration,
+    degraded_failure_record,
+    drive_baseline_ambiguity,
+    drive_match_ambiguity,
+    drive_subject,
+    failure_type_name,
+    leaf_failure_record,
+    source_add_failure,
+    url_baseline_ambiguity,
+    url_match_ambiguity,
+)
 from ._url_utils import extract_youtube_video_id, is_youtube_url
 
-# The pre-P10 ``source.add_text`` row reached this message through
-# ``SourceAddService``; the workflow that replaces the row owns it verbatim so
-# the public ``NonIdempotentRetryError`` text is unchanged.
-_TEXT_NON_IDEMPOTENT_MESSAGE = (
-    "add_text cannot be marked idempotent: text sources have no "
-    "reliable server-side dedupe key (titles non-unique, content "
-    "not exposed). For idempotent text imports, embed a UUID in "
-    "the title and dedupe client-side. See "
-    "docs/python-api.md#idempotency."
-)
-
-#: Failure kinds the pre-P10 registration handlers' ``except RPCError`` wrapped
-#: into a ``SourceAddError``. It is deliberately *not* "every RPC-shaped
-#: reason": ``AuthError``/``RateLimitError``/``ServerError``/``NetworkError``
-#: (and ``RPCTimeoutError``, a ``NetworkError`` subclass) were caught first and
-#: re-raised unwrapped under ADR-0019, so callers can still act on the specific
-#: type. Anything outside this set keeps the leaf's own public identity.
-#:
-#: ``add_text`` and ``add_url`` shared this catch ordering verbatim below the
-#: port, so the hoisted workflows share one definition of it rather than each
-#: re-deriving which leaves survive as themselves.
-_WRAPPED_REGISTRATION_FAILURE_KINDS = frozenset(
-    {
-        SourceAddFailureKind.RPC,
-        SourceAddFailureKind.CLIENT,
-        SourceAddFailureKind.DECODING,
-        SourceAddFailureKind.RESPONSE_TOO_LARGE,
-        SourceAddFailureKind.UNKNOWN_RPC_METHOD,
-    }
-)
-
-#: ``SourceAddError``'s own default message, owned verbatim so the hoisted URL
-#: workflow reports the text the retired row's ``SourceAddError(url)`` did
-#: without naming a public exception type above the port.
-_URL_ADD_FAILURE_MESSAGE = (
-    "Failed to add source: {url}\n"
-    "Possible causes:\n"
-    "  - URL is invalid or inaccessible\n"
-    "  - Content is behind a paywall or requires authentication\n"
-    "  - Page content is empty or could not be parsed\n"
-    "  - Rate limiting or quota exceeded"
-)
-
-#: Neutral reasons the pre-P10 probe re-raised *unwrapped* after marking the
-#: outcome unknown: exactly the ``(AuthError, RateLimitError, ServerError,
-#: NetworkError)`` tuple its ``except`` named, plus ``TIMEOUT`` because
-#: ``RPCTimeoutError`` is a ``NetworkError`` subclass. Anything else means the
-#: probe could not answer for a non-transport reason and becomes the UNRESOLVED
-#: ``SourceAddError``.
-_DIRECT_PROBE_REASONS = frozenset(
-    {
-        BackendErrorReason.AUTH,
-        BackendErrorReason.NETWORK,
-        BackendErrorReason.RATE_LIMIT,
-        BackendErrorReason.SERVER,
-        BackendErrorReason.TIMEOUT,
-    }
-)
-
-#: Neutral reasons whose replayed public exception is an ``RPCError`` or a
-#: ``NetworkError`` — exactly the two families ``honor_requested_title``'s
-#: ``except (RPCError, NetworkError)`` swallowed below the port. The post-create
-#: rename is non-fatal by contract: the add already succeeded, so a rename
-#: failure keeps the added source and logs a warning (#1960). Every other
-#: reason still aborts, so a genuinely new failure mode cannot be silently
-#: absorbed by the title phase.
-_RENAME_SWALLOWED_REASONS = frozenset(
-    {
-        BackendErrorReason.AUTH,
-        BackendErrorReason.CLIENT,
-        BackendErrorReason.DECODING,
-        BackendErrorReason.NETWORK,
-        BackendErrorReason.NOTEBOOK_NOT_FOUND,
-        BackendErrorReason.RATE_LIMIT,
-        BackendErrorReason.RESPONSE_TOO_LARGE,
-        BackendErrorReason.RPC,
-        BackendErrorReason.SERVER,
-        BackendErrorReason.SOURCE_NOT_FOUND,
-        BackendErrorReason.TIMEOUT,
-        BackendErrorReason.UNKNOWN_RPC_METHOD,
-    }
-)
-
-#: Diagnostics key ``_backend_compat`` reads to restore the implicit context a
-#: probe inherits from the create it was run to reconcile. ``_capture_public_
-#: failure`` deliberately refuses to descend into a private ``BackendError``
-#: context, so a sequencing workflow carries that earlier public failure itself.
-_CREATE_CONTEXT_FAILURE = "create_context_failure"
-
-# The same logger name and level the retired row logged under.
+# The same logger name and level the retired rows logged under.
 _source_logger = logging.getLogger("notebooklm").getChild("_sources")
-
-
-def _source_add_failure(
-    operation: Operation,
-    record: SourceAddFailureRecord,
-    *,
-    outcome_unknown: bool = False,
-    dispatched: bool = False,
-) -> BackendError:
-    """Report one source-add failure as bounded neutral evidence.
-
-    ``_backend_compat`` replays an *equal* public exception at the facade from
-    ``record`` alone, so a transport-neutral workflow never has to name — or
-    construct — a public exception type.
-    """
-    return BackendError(
-        message=record.message,
-        operation=operation,
-        outcome_unknown=outcome_unknown,
-        diagnostics=MappingProxyType({"source_add_failure": record}),
-        reason=BackendErrorReason.SOURCE_ADD,
-        dispatched=dispatched,
-    )
-
-
-def _leaf_failure_record(error: BackendError) -> SourceAddFailureRecord | None:
-    """Return the leaf's captured public graph, if the backend captured one.
-
-    Capturing it is a *web* convention, not a port requirement: another adapter
-    may report a closed reason and nothing else, and the compatibility projector
-    reconstructs a public exception from the reason alone in that case. ``None``
-    therefore means "project by reason", not "malformed". A value of the wrong
-    type is malformed, and fails closed.
-    """
-    record = (error.diagnostics or {}).get("public_error_failure")
-    if record is None:
-        return None
-    if not isinstance(record, SourceAddFailureRecord):
-        raise BackendContractError(
-            "source registration failure has invalid public-error evidence",
-            operation=error.operation,
-        ) from error
-    return record
-
-
-def _degraded_failure_record(error: BaseException) -> SourceAddFailureRecord | None:
-    """The captured graph of a failure the workflow deliberately continued past.
-
-    Unlike :func:`_leaf_failure_record` this never fails closed. The pre-create
-    baseline read runs before anything is written, so proceeding without it is
-    safe and it degrades rather than aborting; escalating malformed evidence
-    there would convert the one read that is allowed to fail into a hard one.
-    """
-    if not isinstance(error, BackendError):
-        return None
-    record = (error.diagnostics or {}).get("public_error_failure")
-    return record if isinstance(record, SourceAddFailureRecord) else None
-
-
-def _failure_type_name(error: BaseException) -> str:
-    """The public exception class name a neutral failure was translated from.
-
-    The ambiguity and UNRESOLVED messages name the failure the caller would
-    otherwise have seen; a web adapter raises its ``BackendError`` *from* that
-    public leaf, so the cause carries the name the pre-P10 messages printed.
-    """
-    cause = error.__cause__
-    return type(cause).__name__ if cause is not None else type(error).__name__
-
-
-def _describe_sources(sources: Sequence[SourceRecord]) -> str:
-    """Render matched sources as ``id (title)`` for an ambiguity message.
-
-    The ambiguity raises tell the caller to go check the notebook's source
-    list; naming the exact rows saves them diffing a list by eye against a URL
-    that, by definition, appears in it more than once.
-    """
-    return ", ".join(f"{source.id} ({source.title!r})" for source in sources)
 
 
 class SourceService:
@@ -354,122 +207,27 @@ class SourceService:
                 url[:100],
             )
 
-        baseline_ids, baseline_failure, baseline_error_name = await self._url_baseline(
-            notebook_id,
-            deadline=deadline,
-        )
-        last_create_error: BackendError | None = None
-
-        async def register() -> SourceRecord:
-            nonlocal last_create_error
-            try:
-                registered = await self._backend.invoke(
-                    SOURCE_REGISTER_DEF,
-                    SourceRegisterInput(
+        try:
+            created = await self._guarded_registration(
+                notebook_id,
+                GuardedRegistration(
+                    workflow=workflow,
+                    label="add_url",
+                    identity=url,
+                    subject=f"URL source {url!r}",
+                    payload=SourceRegisterInput(
                         notebook_id,
                         SourceRegisterKind.URL,
                         urls=(url,),
                         youtube_flags=(bool(video_id),),
                     ),
-                    deadline=deadline,
-                )
-            except BackendError as leaf_error:
-                # Transport reasons keep their own public identity so
-                # ``semantic_may_have_committed`` can still see the commit
-                # uncertainty and run the probe; only the residual RPC family
-                # is wrapped, exactly as the retired ``except RPCError`` did.
-                error = self._url_registration_failure(workflow, url, leaf_error)
-                last_create_error = error
-                raise error from leaf_error.__cause__
-            source = next(iter(registered.sources), None)
-            if source is None:
-                message = f"API returned no data for URL: {url}"
-                raise _source_add_failure(
-                    workflow,
-                    SourceAddFailureRecord(
-                        kind=SourceAddFailureKind.SOURCE_ADD,
-                        message=message,
-                        args=(message,),
-                        url=url,
-                    ),
-                )
-            return source
-
-        async def probe() -> SourceRecord | None:
-            create_error = last_create_error
-            if create_error is None:
-                raise BackendError(
-                    "source.add_url reconciliation started without a registration failure",
-                    operation=workflow,
-                )
-            try:
-                current = await self._url_probe_snapshot(notebook_id, deadline=deadline)
-            except BackendError as leaf_error:
-                raise self._url_probe_failure(
-                    workflow,
-                    url,
-                    leaf_error,
-                    create_error,
-                ) from leaf_error.__cause__
-            except Exception as error:
-                _source_logger.warning(
-                    "add_url: probe list() failed with a non-transport error (%s); the "
-                    "create cannot be confirmed, so it will not be retried",
-                    type(error).__name__,
-                    exc_info=True,
-                )
-                raise self._unresolved_url_error(
-                    workflow,
-                    url,
-                    create_error,
-                    probe_failure=None,
-                    failure_name=type(error).__name__,
-                ) from error
-
-            matches = [source for source in current.sources if source.url == url]
-            if baseline_ids is not None:
-                matches = [source for source in matches if source.id not in baseline_ids]
-            elif matches:
-                # Without a baseline a match may predate this add. Both halves
-                # of the ambiguity are worth stating: the match may predate the
-                # add, or it may BE the add, in which case the create landed and
-                # the caller will otherwise never learn its id.
-                raise self._unconfirmed_url_error(
-                    workflow,
-                    url,
-                    # Action first: MCP and REST truncate at 300 chars, while
-                    # the URL + matched-row description are unbounded.
-                    "UNRESOLVED — check the notebook source list before retrying. "
-                    f"Cannot disambiguate URL source {url!r}: the pre-create baseline "
-                    f"snapshot failed ({baseline_error_name}), so "
-                    f"{_describe_sources(matches)} may either predate this add or be "
-                    "the source it just created.",
-                    create_error,
-                    cause=baseline_failure,
-                )
-            if len(matches) == 1:
-                (match,) = matches  # exactly one (len==1 guard); unpack, not matches[0]
-                return match
-            if len(matches) > 1:
-                raise self._unconfirmed_url_error(
-                    workflow,
-                    url,
-                    # ``_describe_sources`` grows with every match; keep the
-                    # manual-reconciliation instruction inside [:300].
-                    "UNRESOLVED — check the notebook source list before retrying. "
-                    f"Cannot disambiguate URL source {url!r}: probe found "
-                    f"{len(matches)} new sources with this URL after a transport "
-                    f"failure ({_describe_sources(matches)}).",
-                    create_error,
-                )
-            return None
-
-        try:
-            created = await idempotent_create(
-                register,
-                probe,
-                may_have_committed=semantic_may_have_committed,
-                label=f"sources.add_url[{url[:40]}]",
+                    matches=lambda source: source.url == url,
+                    null_result_message=f"API returned no data for URL: {url}",
+                    baseline_ambiguity=partial(url_baseline_ambiguity, url),
+                    match_ambiguity=partial(url_match_ambiguity, url),
+                    idempotency_label=f"sources.add_url[{url[:40]}]",
+                ),
+                deadline=deadline,
             )
         except BackendError as error:
             raise self._url_add_failure(workflow, error) from error.__cause__
@@ -487,6 +245,8 @@ class SourceService:
                 source_before_title,
                 requested_title,
                 deadline=deadline,
+                workflow=workflow,
+                hydrate_on_null=True,
             )
         )
         if not normalized_title:
@@ -526,6 +286,8 @@ class SourceService:
             source,
             requested_title,
             deadline=deadline,
+            workflow=SOURCE_ADD_URL_DEF.key,
+            hydrate_on_null=True,
         )
         normalized_title = requested_title.strip()
         return SourceAddUrlResult(
@@ -540,7 +302,141 @@ class SourceService:
             ),
         )
 
-    async def _url_probe_snapshot(
+    async def _guarded_registration(
+        self,
+        notebook_id: str,
+        variant: GuardedRegistration,
+        *,
+        deadline: RuntimeDeadline | None,
+    ) -> _IdempotentCreateResult[SourceRecord]:
+        """Baseline, register, and reconcile one guarded source create.
+
+        The algorithm both probed registrations run, with ``variant`` supplying
+        everything that differs between them:
+
+        1. one unconditional ``source.list`` baseline of source ids, captured
+           before the first create so a probe match can be attributed to *this*
+           call — neither a URL nor a Drive ``documentId`` is unique within a
+           notebook (#2204, #2113), so an unfiltered match could hand back a
+           pre-existing copy as if it were the one just created;
+        2. one ``source.register`` write;
+        3. on commit uncertainty only, a reconciling ``source.list`` probe
+           filtered against that baseline, with four failure branches.
+
+        .. note::
+           **A probe that cannot answer aborts the add (#2220).** The probe
+           returns ``None`` only when it has affirmatively established that no
+           matching source exists; ``None`` is read by ``idempotent_create`` as
+           evidence the create did not land, and acted on by repeating it. A
+           broken probe is not that evidence, and retrying anyway would silently
+           turn a ``PROBE_THEN_CREATE`` operation into an at-least-once one at
+           the exact moment its guarantee matters.
+        """
+        workflow = variant.workflow
+        baseline_ids, baseline_failure, baseline_error_name = await self._add_baseline(
+            notebook_id,
+            deadline=deadline,
+            label=variant.label,
+        )
+        last_create_error: BackendError | None = None
+
+        async def register() -> SourceRecord:
+            nonlocal last_create_error
+            try:
+                registered = await self._backend.invoke(
+                    SOURCE_REGISTER_DEF,
+                    variant.payload,
+                    deadline=deadline,
+                )
+            except BackendError as leaf_error:
+                # Transport reasons keep their own public identity so
+                # ``semantic_may_have_committed`` can still see the commit
+                # uncertainty and run the probe; only the residual RPC family
+                # is wrapped, exactly as the retired ``except RPCError`` did.
+                error = self._registration_failure(workflow, variant.identity, leaf_error)
+                last_create_error = error
+                raise error from leaf_error.__cause__
+            source = next(iter(registered.sources), None)
+            if source is None:
+                raise source_add_failure(
+                    workflow,
+                    SourceAddFailureRecord(
+                        kind=SourceAddFailureKind.SOURCE_ADD,
+                        message=variant.null_result_message,
+                        args=(variant.null_result_message,),
+                        url=variant.identity,
+                    ),
+                )
+            return source
+
+        async def probe() -> SourceRecord | None:
+            create_error = last_create_error
+            if create_error is None:
+                raise BackendError(
+                    f"{workflow.value} reconciliation started without a registration failure",
+                    operation=workflow,
+                )
+            try:
+                current = await self._probe_snapshot(notebook_id, deadline=deadline)
+            except BackendError as leaf_error:
+                raise self._probe_failure(
+                    workflow,
+                    variant.identity,
+                    variant.subject,
+                    leaf_error,
+                    create_error,
+                    label=variant.label,
+                ) from leaf_error.__cause__
+            except Exception as error:
+                _source_logger.warning(
+                    "%s: probe list() failed with a non-transport error (%s); the "
+                    "create cannot be confirmed, so it will not be retried",
+                    variant.label,
+                    type(error).__name__,
+                    exc_info=True,
+                )
+                raise self._unresolved_add_error(
+                    workflow,
+                    variant.identity,
+                    variant.subject,
+                    create_error,
+                    probe_failure=None,
+                    failure_name=type(error).__name__,
+                ) from error
+
+            matches = [source for source in current.sources if variant.matches(source)]
+            if baseline_ids is not None:
+                matches = [source for source in matches if source.id not in baseline_ids]
+            elif matches:
+                # Without a baseline a match may predate this add; adopting it
+                # would report a create that never landed.
+                raise self._unconfirmed_add_error(
+                    workflow,
+                    variant.identity,
+                    variant.baseline_ambiguity(matches, baseline_error_name),
+                    create_error,
+                    cause=baseline_failure,
+                )
+            if len(matches) == 1:
+                (match,) = matches  # exactly one (len==1 guard); unpack, not matches[0]
+                return match
+            if len(matches) > 1:
+                raise self._unconfirmed_add_error(
+                    workflow,
+                    variant.identity,
+                    variant.match_ambiguity(matches),
+                    create_error,
+                )
+            return None
+
+        return await idempotent_create(
+            register,
+            probe,
+            may_have_committed=semantic_may_have_committed,
+            label=variant.idempotency_label,
+        )
+
+    async def _probe_snapshot(
         self,
         notebook_id: str,
         *,
@@ -558,11 +454,12 @@ class SourceService:
             deadline=deadline,
         )
 
-    async def _url_baseline(
+    async def _add_baseline(
         self,
         notebook_id: str,
         *,
         deadline: RuntimeDeadline | None,
+        label: str,
     ) -> tuple[set[str] | None, SourceAddFailureRecord | None, str | None]:
         """Snapshot source ids before the first create, or degrade to ``None``.
 
@@ -570,6 +467,11 @@ class SourceService:
         to guess. The read runs before anything is written, so proceeding
         without it is safe — but the failure is retained so the ambiguity
         report can say what went wrong long after this line ran.
+
+        ``label`` is the workflow's own name in the diagnostic. The URL and
+        Drive baselines are the same read of the same leaf answering the same
+        question, so they share one implementation; the log line still names
+        which add lost its probe, exactly as the two below-port copies did.
         """
         try:
             baseline = await self._backend.invoke(
@@ -586,28 +488,36 @@ class SourceService:
             # probe for the whole call AND turns a recoverable transport error
             # into a hard ambiguity error.
             _source_logger.warning(
-                "add_url: baseline list() failed (%s); the idempotency probe can no "
+                "%s: baseline list() failed (%s); the idempotency probe can no "
                 "longer tell a source this call created from one that was already "
                 "there, so a transport failure will surface as an ambiguity error "
                 "instead of recovering",
-                _failure_type_name(error),
+                label,
+                failure_type_name(error),
                 exc_info=True,
             )
-            return None, _degraded_failure_record(error), _failure_type_name(error)
+            return None, degraded_failure_record(error), failure_type_name(error)
         return {source.id for source in baseline.sources}, None, None
 
     @classmethod
-    def _url_registration_failure(
+    def _registration_failure(
         cls,
         workflow: Operation,
-        url: str,
+        identity: str,
         error: BackendError,
     ) -> BackendError:
-        """Rebind one URL registration failure, wrapping only the RPC leaf.
+        """Rebind one probed registration failure, wrapping only the RPC leaf.
 
         The reason is deliberately preserved on everything this does not wrap:
         it is what ``semantic_may_have_committed`` reads to decide whether the
         write may have landed, and therefore whether the probe runs at all.
+
+        ``identity`` is what the retired handler passed as ``SourceAddError``'s
+        first argument — the URL for ``add_url``, the requested title for
+        ``add_drive`` — and is both the record's ``url`` field and the value
+        the default message interpolates. The two handlers ran the identical
+        ``except RPCError as e: raise SourceAddError(<identity>, cause=e) from
+        e``, so one implementation covers both.
         """
         if isinstance(error, BackendContractError) or error.reason is None:
             return error
@@ -615,22 +525,22 @@ class SourceService:
             # An expiry keeps its subclass; a *dispatched* one is still
             # commit-uncertain, so re-attributing it leaves the probe reachable.
             return rebind_operation(error, workflow)
-        leaf = _leaf_failure_record(error)
-        if leaf is None or leaf.kind not in _WRAPPED_REGISTRATION_FAILURE_KINDS:
+        leaf = leaf_failure_record(error)
+        if leaf is None or leaf.kind not in WRAPPED_REGISTRATION_FAILURE_KINDS:
             # The transport four-tuple and every other public leaf keep their
             # own type, message and fields (ADR-0019 catch ordering); a backend
             # that captured no graph is re-attributed and projected by reason.
             return rebind_operation(error, workflow)
-        message = _URL_ADD_FAILURE_MESSAGE.format(url=url)
-        return _source_add_failure(
+        message = DEFAULT_ADD_FAILURE_MESSAGE.format(url=identity)
+        return source_add_failure(
             workflow,
             SourceAddFailureRecord(
                 kind=SourceAddFailureKind.SOURCE_ADD,
                 message=message,
                 args=(message,),
-                url=url,
+                url=identity,
                 cause=leaf,
-                # ``raise SourceAddError(url, cause=e) from e`` inside ``except
+                # ``raise SourceAddError(identity, cause=e) from e`` inside ``except
                 # RPCError as e``: the RPC error is the explicit cause, the
                 # implicit context, and the reason the context is suppressed.
                 context_is_cause=True,
@@ -642,21 +552,30 @@ class SourceService:
         )
 
     @classmethod
-    def _url_probe_failure(
+    def _probe_failure(
         cls,
         workflow: Operation,
-        url: str,
+        identity: str,
+        subject: str,
         leaf_error: BackendError,
         create_error: BackendError,
+        *,
+        label: str,
     ) -> BackendError:
-        """Report a probe that could not settle whether the create committed."""
+        """Report a probe that could not settle whether the create committed.
+
+        ``identity`` is the ``SourceAddError`` first argument (the URL, or the
+        Drive requested title); ``subject`` is how the UNRESOLVED message names
+        the thing that could not be confirmed, which for Drive is the *file id*
+        rather than that identity. ``label`` names the workflow in the log line.
+        """
         error = rebind_operation(leaf_error, workflow)
         if isinstance(leaf_error, BackendDeadlineExceededError):
             # An aggregate budget running out is the caller's own answer, not a
             # source-add failure: keep the subclass and only record that the
             # create's outcome is now unconfirmed.
             return mark_backend_outcome_unknown(cls._attach_create_context(error, create_error))
-        if error.reason in _DIRECT_PROBE_REASONS:
+        if error.reason in DIRECT_PROBE_REASONS:
             # Transport- and auth-level probe failures propagate with their own
             # public type, so "re-authenticate" / "connectivity" stay readable.
             # They are re-reported from the leaf's captured graph rather than
@@ -669,11 +588,11 @@ class SourceService:
             # ServerError/RateLimitError here classifies as the *retriable*
             # SERVER/RATE_LIMITED with the hint "retry after a short delay" —
             # and the caller retries the ADD, not the probe.
-            leaf = _leaf_failure_record(error)
+            leaf = leaf_failure_record(error)
             if leaf is None:
                 return mark_backend_outcome_unknown(cls._attach_create_context(error, create_error))
             return cls._attach_create_context(
-                _source_add_failure(
+                source_add_failure(
                     workflow,
                     leaf,
                     outcome_unknown=True,
@@ -686,39 +605,48 @@ class SourceService:
         # retry safe. Returning "no match" here would claim "the create did not
         # land" on no evidence and re-issue it.
         _source_logger.warning(
-            "add_url: probe list() failed with a non-transport error (%s); the "
+            "%s: probe list() failed with a non-transport error (%s); the "
             "create cannot be confirmed, so it will not be retried",
-            _failure_type_name(leaf_error),
+            label,
+            failure_type_name(leaf_error),
             exc_info=True,
         )
-        return cls._unresolved_url_error(
+        return cls._unresolved_add_error(
             workflow,
-            url,
+            identity,
+            subject,
             create_error,
-            probe_failure=_leaf_failure_record(leaf_error),
-            failure_name=_failure_type_name(leaf_error),
+            probe_failure=leaf_failure_record(leaf_error),
+            failure_name=failure_type_name(leaf_error),
         )
 
     @classmethod
-    def _unresolved_url_error(
+    def _unresolved_add_error(
         cls,
         workflow: Operation,
-        url: str,
+        identity: str,
+        subject: str,
         create_error: BackendError,
         *,
         probe_failure: SourceAddFailureRecord | None,
         failure_name: str,
     ) -> BackendError:
-        """The #2220 "probe could not answer" report, chain and all."""
-        return cls._unconfirmed_url_error(
+        """The #2220 "probe could not answer" report, chain and all.
+
+        The URL and Drive handlers wrote this message word for word alike apart
+        from ``subject`` (``URL source <url>`` / ``Drive source <file id>``), so
+        it is one string with one hole rather than two near-copies that can
+        drift apart.
+        """
+        return cls._unconfirmed_add_error(
             workflow,
-            url,
+            identity,
             # Front-loaded on purpose: the MCP and REST surfaces truncate
             # messages at 300 characters, which cut the closing instruction
             # mid-word on a realistic URL. The action comes first; the
             # narrative can be lost.
             "UNRESOLVED — do not blindly retry; check the notebook "
-            f"source list first. Cannot confirm URL source {url!r}: "
+            f"source list first. Cannot confirm {subject}: "
             "the create failed at the transport level and may or may "
             "not have committed, and the idempotency probe that would "
             f"settle it failed too ({failure_name}). No FURTHER attempt "
@@ -731,10 +659,10 @@ class SourceService:
         )
 
     @classmethod
-    def _unconfirmed_url_error(
+    def _unconfirmed_add_error(
         cls,
         workflow: Operation,
-        url: str,
+        identity: str,
         message: str,
         create_error: BackendError,
         *,
@@ -755,16 +683,16 @@ class SourceService:
           cause is an *attribute* only, ``__cause__`` stays unset, and the
           create is the report's own implicit context.
         """
-        create_failure = _degraded_failure_record(create_error)
+        create_failure = degraded_failure_record(create_error)
         if explicit and cause is not None and create_failure is not None:
             cause = replace(cause, context=create_failure)
-        error = _source_add_failure(
+        error = source_add_failure(
             workflow,
             SourceAddFailureRecord(
                 kind=SourceAddFailureKind.SOURCE_ADD,
                 message=message,
                 args=(message,),
-                url=url,
+                url=identity,
                 cause=cause,
                 context_is_cause=explicit,
                 explicit_cause=explicit,
@@ -788,14 +716,14 @@ class SourceService:
         run inside the create's ``except`` is not captured at the leaf. The
         sequencing workflow supplies it, and ``_backend_compat`` restores it.
         """
-        failure = _degraded_failure_record(create_error)
+        failure = degraded_failure_record(create_error)
         if failure is None:
             return error
-        return annotate_backend_error(error, **{_CREATE_CONTEXT_FAILURE: failure})
+        return annotate_backend_error(error, **{CREATE_CONTEXT_FAILURE: failure})
 
     @classmethod
-    def _url_add_failure(cls, workflow: Operation, error: BackendError) -> BackendError:
-        """Report one failed add: the retired row's receipt, and its full graph.
+    def _add_failure(cls, workflow: Operation, error: BackendError) -> BackendError:
+        """Report one failed add with its full public graph, not just a reason.
 
         A create failure the workflow re-attributed rather than wrapped still
         carries only its closed *reason* at this point, because the reason is
@@ -803,34 +731,44 @@ class SourceService:
         The probe has finished by the time this runs, so the leaf's captured
         public graph can be reported instead — which is how fields no reason
         can express (``source_id`` / ``stage`` on a tagged partial failure)
-        reach the facade, exactly as they did when the retired row captured the
-        escaping exception itself.
+        reach the facade, exactly as they did when the retired rows captured the
+        escaping exception themselves.
         """
         leaf = (
-            None if isinstance(error, BackendDeadlineExceededError) else _leaf_failure_record(error)
+            None if isinstance(error, BackendDeadlineExceededError) else leaf_failure_record(error)
         )
-        if leaf is not None:
-            reported = _source_add_failure(
-                workflow,
-                leaf,
-                outcome_unknown=error.outcome_unknown,
-                dispatched=error.dispatched,
-            )
-            leaf_operation = (error.diagnostics or {}).get("leaf_operation")
-            if leaf_operation is not None:
-                error = annotate_backend_error(reported, leaf_operation=leaf_operation)
-            else:
-                error = reported
+        if leaf is None:
+            return error
+        reported = source_add_failure(
+            workflow,
+            leaf,
+            outcome_unknown=error.outcome_unknown,
+            dispatched=error.dispatched,
+        )
+        leaf_operation = (error.diagnostics or {}).get("leaf_operation")
+        if leaf_operation is None:
+            return reported
+        return annotate_backend_error(reported, leaf_operation=leaf_operation)
+
+    @classmethod
+    def _url_add_failure(cls, workflow: Operation, error: BackendError) -> BackendError:
+        """One failed URL add: its full graph, plus the retired row's receipt.
+
+        Only the URL result type carries a receipt, so only its failures carry
+        one; a Drive failure reports the same graph with nothing attached, as
+        the Drive row did.
+        """
+        reported = cls._add_failure(workflow, error)
         return annotate_backend_error(
-            error,
+            reported,
             receipt=SourceAddUrlReceipt(
                 commit_state=(
                     SourceAddCommitState.UNKNOWN
-                    if error.outcome_unknown
+                    if reported.outcome_unknown
                     else SourceAddCommitState.FAILED
                 ),
                 title_state=SourceAddTitleState.NOT_ATTEMPTED,
-                outcome_unknown=error.outcome_unknown,
+                outcome_unknown=reported.outcome_unknown,
             ),
         )
 
@@ -841,6 +779,8 @@ class SourceService:
         requested_title: str | None,
         *,
         deadline: RuntimeDeadline | None,
+        workflow: Operation,
+        hydrate_on_null: bool,
     ) -> SourceRecord:
         """Best-effort post-add rename so an explicit title survives re-derivation.
 
@@ -865,9 +805,11 @@ class SourceService:
                 source.id,
                 requested,
                 deadline=deadline,
+                workflow=workflow,
+                hydrate_on_null=hydrate_on_null,
             )
         except BackendError as error:
-            if error.reason not in _RENAME_SWALLOWED_REASONS:
+            if error.reason not in RENAME_SWALLOWED_REASONS:
                 raise
             _source_logger.warning(
                 "Source %s added but rename to %r failed; keeping upstream title %r",
@@ -889,8 +831,18 @@ class SourceService:
         new_title: str,
         *,
         deadline: RuntimeDeadline | None,
+        workflow: Operation,
+        hydrate_on_null: bool,
     ) -> SourceRecord | None:
-        """One title set-op, hydrating a null echo through ``source.get``."""
+        """One title set-op, hydrating a null echo through ``source.get``.
+
+        ``hydrate_on_null`` is per-workflow because the retired rows differed:
+        the URL row read the renamed source back, while the Drive row took the
+        null echo as the answer and let the caller keep the requested title.
+        Hydrating on the Drive path would add a ``GET_NOTEBOOK`` — and with it a
+        recency write and a new ``SourceNotFoundError`` failure mode — to a
+        phase that never had either.
+        """
         patched = await self._backend.invoke(
             SOURCE_PATCH_TITLE_DEF,
             SourcePatchTitleInput(notebook_id, source_id, new_title),
@@ -898,6 +850,8 @@ class SourceService:
         )
         if patched.source is not None:
             return patched.source
+        if not hydrate_on_null:
+            return None
         hydrated = await self._backend.invoke(
             SOURCE_GET_DEF,
             SourceGetInput(notebook_id, source_id),
@@ -906,7 +860,7 @@ class SourceService:
         if hydrated.source is None:
             raise BackendError(
                 message=f"Source not found: {source_id}",
-                operation=SOURCE_ADD_URL_DEF.key,
+                operation=workflow,
                 diagnostics=MappingProxyType({"source_id": source_id, "raw_response": None}),
                 reason=BackendErrorReason.SOURCE_NOT_FOUND,
             )
@@ -966,12 +920,12 @@ class SourceService:
         if idempotent:
             # Checked before the leaf gate: refusing a replay writes nothing,
             # and the pre-P10 handler refused before it looked at anything else.
-            raise _source_add_failure(
+            raise source_add_failure(
                 workflow,
                 SourceAddFailureRecord(
                     kind=SourceAddFailureKind.NON_IDEMPOTENT_RETRY,
-                    message=_TEXT_NON_IDEMPOTENT_MESSAGE,
-                    args=(_TEXT_NON_IDEMPOTENT_MESSAGE,),
+                    message=TEXT_NON_IDEMPOTENT_MESSAGE,
+                    args=(TEXT_NON_IDEMPOTENT_MESSAGE,),
                 ),
             )
         require_leaves(self._backend, SOURCE_REGISTER_DEF.key)
@@ -993,7 +947,7 @@ class SourceService:
 
         source = next(iter(registered.sources), None)
         if source is None:
-            raise _source_add_failure(
+            raise source_add_failure(
                 workflow,
                 SourceAddFailureRecord(
                     kind=SourceAddFailureKind.SOURCE_ADD,
@@ -1025,22 +979,22 @@ class SourceService:
             # not a source-add failure: keep the subclass and only re-attribute
             # it, exactly as ``update`` does.
             return rebind_operation(error, workflow)
-        leaf = _leaf_failure_record(error)
+        leaf = leaf_failure_record(error)
         if leaf is None:
             # Nothing to wrap and nothing to replay: re-attribute the reason and
             # let the compatibility projector build the public exception from it.
             return rebind_operation(error, workflow)
-        if leaf.kind not in _WRAPPED_REGISTRATION_FAILURE_KINDS:
+        if leaf.kind not in WRAPPED_REGISTRATION_FAILURE_KINDS:
             # ADR-0019 catch ordering: the transport four-tuple and every other
             # public leaf keep their own type, message and fields.
-            return _source_add_failure(
+            return source_add_failure(
                 workflow,
                 leaf,
                 outcome_unknown=error.outcome_unknown,
                 dispatched=error.dispatched,
             )
         message = f"Failed to add text source '{title}'"
-        return _source_add_failure(
+        return source_add_failure(
             workflow,
             SourceAddFailureRecord(
                 kind=SourceAddFailureKind.SOURCE_ADD,
@@ -1068,18 +1022,137 @@ class SourceService:
         wait_timeout: float,
         deadline: RuntimeDeadline | None = None,
     ) -> SourceAddDriveResult:
-        return await self._backend.invoke(
-            SOURCE_ADD_DRIVE_DEF,
-            SourceAddDriveInput(
-                notebook_id,
-                file_id,
-                title,
-                mime_type,
-                wait=wait,
-                wait_timeout=wait_timeout,
-            ),
-            deadline=deadline,
+        """Import one native Google Drive document behind a probe-then-create.
+
+        The workflow the P9.4b ``source.add_drive`` row owned, sequenced over
+        typed leaves instead: one ``source.list`` baseline, one
+        ``source.register`` drive allocation, a reconciling ``source.list``
+        probe when that allocation may have committed, and a best-effort
+        ``source.patch_title`` finalise.
+
+        The probe matches on :attr:`SourceRecord.drive_document_id`, the Drive
+        ``documentId`` the backend echoes back in the source metadata.
+        Drive-backed sources carry **no** URL, so the URL-shaped probe this
+        replaced could never match one and silently duplicated the source on
+        every retry until #2113.
+
+        A ``documentId`` is **not** unique within a notebook — the repo's own
+        ``sources_check_freshness_drive`` capture holds two source ids sharing
+        one — so probe matches are filtered against a baseline of source ids
+        taken **before** the first create attempt, and an unavailable baseline
+        or an ambiguous multi-match is reported as an unresolved failure rather
+        than guessed at.
+
+        .. note::
+           The baseline snapshot is taken on *every* call and is a
+           ``GET_NOTEBOOK`` on the web, which the backend answers by **writing**
+           ``lastViewedTime`` (#2126) — so every ``add_drive`` promotes the
+           notebook in the user's *Recent* list. Accepted, and unchanged by the
+           hoist: source ids are published only inside that payload, and
+           ``source.get`` cannot substitute for ``source.list`` — the baseline
+           set and the reconcile both need the *whole* id set, which a single-id
+           result cannot express.
+
+        .. warning::
+           The baseline establishes *when* a matching source appeared, not
+           *who* created it. If two callers add the same Drive file to one
+           notebook concurrently and one create fails before committing, the
+           failed caller's probe can attribute the other caller's source to
+           itself. The wire carries no client-supplied idempotency key, so
+           serialize concurrent adds of the same file into a notebook if you
+           need that guarantee.
+
+        .. note::
+           The ``title`` is sent on the wire but **ignored** for native Drive
+           imports: NotebookLM re-derives the display title from live Drive
+           metadata. The finalise phase is what makes an explicit ``title``
+           stick (#1960).
+
+        ``wait``/``wait_timeout`` are accepted for signature stability and are
+        the public facade's: readiness polling never crossed the port, and the
+        retired row failed closed on any attempt to take it below one.
+        """
+        del wait_timeout  # readiness polling is the facade's; see the docstring.
+        workflow = SOURCE_ADD_DRIVE_DEF.key
+        if not file_id or not file_id.strip():
+            # Checked before the leaf gate and before the baseline read, exactly
+            # where the pre-P10 handler checked it: a blank Drive id is also
+            # unmatchable by the probe below (a row's ``drive_document_id`` is
+            # never ``""``), so without this guard a transport failure would
+            # retry the blank add and could leave two garbage sources behind.
+            raise source_add_failure(
+                workflow,
+                SourceAddFailureRecord(
+                    kind=SourceAddFailureKind.VALIDATION,
+                    message=DRIVE_BLANK_FILE_ID_MESSAGE,
+                    args=(DRIVE_BLANK_FILE_ID_MESSAGE,),
+                ),
+            )
+        # The title leaf is checked up front even when no title was requested,
+        # for the reason ``add_url`` states: a backend must never register the
+        # source and only then discover it cannot run the promised finalise.
+        # ``source.get`` is absent on purpose — the Drive finalise does not
+        # hydrate a null echo.
+        require_leaves(
+            self._backend,
+            SOURCE_LIST_DEF.key,
+            SOURCE_REGISTER_DEF.key,
+            SOURCE_PATCH_TITLE_DEF.key,
         )
+        # One absolute budget for every phase, minted here now that the workflow
+        # owns the ``CLIENT_TIMEOUT`` operation the retired row ran under.
+        deadline = self._start_deadline(deadline)
+
+        _source_logger.debug("Adding Drive source to notebook %s: %s", notebook_id, title)
+
+        try:
+            created = await self._guarded_registration(
+                notebook_id,
+                GuardedRegistration(
+                    workflow=workflow,
+                    label="add_drive",
+                    identity=title,
+                    subject=drive_subject(file_id),
+                    payload=SourceRegisterInput(
+                        notebook_id,
+                        SourceRegisterKind.DRIVE,
+                        title=title,
+                        file_id=file_id,
+                        mime_type=mime_type,
+                    ),
+                    # Exact equality — not a substring test — so neither an
+                    # interior substring nor a prefix collision (``abc`` vs
+                    # ``abcdef``) can produce a false positive, and non-Drive
+                    # rows (``drive_document_id is None``) never match.
+                    matches=lambda source: source.drive_document_id == file_id,
+                    null_result_message=DRIVE_NULL_RESULT_MESSAGE.format(
+                        title=title, mime_type=mime_type
+                    ),
+                    baseline_ambiguity=partial(drive_baseline_ambiguity, file_id),
+                    match_ambiguity=partial(drive_match_ambiguity, file_id),
+                    idempotency_label=f"sources.add_drive[{file_id}]",
+                ),
+                deadline=deadline,
+            )
+        except BackendError as error:
+            raise self._add_failure(workflow, error) from error.__cause__
+
+        # A probed result is attributable to this call — the baseline diff is
+        # what proves it — so the requested title is honored either way. Under
+        # ``wait`` the facade renames after readiness (``finalize_drive_title``).
+        source = (
+            created.value
+            if wait
+            else await self._honor_requested_title(
+                notebook_id,
+                created.value,
+                title,
+                deadline=deadline,
+                workflow=workflow,
+                hydrate_on_null=False,
+            )
+        )
+        return SourceAddDriveResult(source)
 
     async def finalize_drive_title(
         self,
@@ -1088,18 +1161,17 @@ class SourceService:
         requested_title: str,
     ) -> SourceAddDriveResult:
         """Apply a waited Drive title under the original add operation."""
-
-        return await self._backend.invoke(
-            SOURCE_ADD_DRIVE_DEF,
-            SourceAddDriveInput(
-                notebook_id,
-                "",
-                requested_title,
-                "application/vnd.google-apps.document",
-                finalize_source=source,
-            ),
-            deadline=None,
+        require_leaves(self._backend, SOURCE_PATCH_TITLE_DEF.key)
+        deadline = self._start_deadline(None)
+        renamed = await self._honor_requested_title(
+            notebook_id,
+            source,
+            requested_title,
+            deadline=deadline,
+            workflow=SOURCE_ADD_DRIVE_DEF.key,
+            hydrate_on_null=False,
         )
+        return SourceAddDriveResult(renamed)
 
     async def add_file(
         self,

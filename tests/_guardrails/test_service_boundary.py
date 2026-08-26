@@ -109,6 +109,16 @@ I1_SEED_ALLOWLIST: frozenset[str] = frozenset(
 #: deferred to a separate download-transport slice (plan §0, §8).
 I1_PERMANENT_EXEMPTIONS: frozenset[str] = frozenset({"_studio/downloads.py"})
 
+#: Governed by I1's *import* half only. ``_source_add_reports.py`` holds no
+#: service methods: it is the neutral failure-report vocabulary P10 R3.4 split
+#: out of ``_source_service.py``, and its constructors return the port's own
+#: ``BackendError`` — which services *raise* rather than return, so the return
+#: half's neutral vocabulary deliberately excludes it. Keeping the module under
+#: the import half is the point of listing it at all; widening the return
+#: vocabulary to admit ``BackendError`` would weaken the check for every real
+#: service.
+I1_RETURN_ARM_EXEMPTIONS: frozenset[str] = frozenset({"_source_add_reports.py"})
+
 #: Built-in scalars and collection constructors a neutral service may name in a
 #: return annotation. Deliberately minimal: widening it is a reviewed change,
 #: which is the point of the invariant.
@@ -275,6 +285,13 @@ def _semantic_service_modules() -> tuple[Path, ...]:
             {
                 *root_services,
                 SRC_ROOT / "_read_services.py",
+                # P10 R3.4 split the source-add family's neutral report
+                # vocabulary out of ``_source_service.py`` to keep it inside the
+                # module-size budget. It is service code by every other measure,
+                # so I1 governs it too — otherwise the split would have moved
+                # the workflows' vocabulary out from under the guard that keeps
+                # it transport-neutral.
+                SRC_ROOT / "_source_add_reports.py",
                 *chat_services,
                 *studio,
             }
@@ -465,7 +482,11 @@ def test_conforming_semantic_services_return_only_neutral_types() -> None:
     offenders: dict[str, list[tuple[str, str]]] = {}
     for path in _semantic_service_modules():
         module = _relative(path, SRC_ROOT)
-        if module in I1_SEED_ALLOWLIST or module in I1_PERMANENT_EXEMPTIONS:
+        if (
+            module in I1_SEED_ALLOWLIST
+            or module in I1_PERMANENT_EXEMPTIONS
+            or module in I1_RETURN_ARM_EXEMPTIONS
+        ):
             continue
         bad = [
             (qualname, annotation)
@@ -479,6 +500,25 @@ def test_conforming_semantic_services_return_only_neutral_types() -> None:
         "*Result, a neutral enum, a built-in scalar or collection thereof, or "
         f"None (P10 invariant I1): {offenders}"
     )
+
+
+def test_the_return_arm_exemption_is_exactly_what_still_needs_it() -> None:
+    """A return-arm exemption must name a module that would otherwise fail it."""
+    permitted = I1_PERMITTED_RETURN_BUILTINS | _neutral_enum_names()
+    public_models = _public_model_names()
+    governed = {_relative(path, SRC_ROOT) for path in _semantic_service_modules()}
+    assert governed >= I1_RETURN_ARM_EXEMPTIONS, (
+        "a return-arm exemption names a module I1 does not govern: "
+        f"{sorted(I1_RETURN_ARM_EXEMPTIONS - governed)}"
+    )
+    for module in sorted(I1_RETURN_ARM_EXEMPTIONS):
+        annotations = _public_return_annotations(SRC_ROOT / module)
+        assert any(
+            atom not in permitted
+            and not (atom.endswith(("Record", "Result")) and atom not in public_models)
+            for _qualname, _annotation, atoms in annotations
+            for atom in atoms
+        ), f"{module} no longer needs its return-arm exemption; drop it"
 
 
 def test_the_neutral_return_vocabulary_is_discovered_not_empty() -> None:

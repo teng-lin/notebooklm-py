@@ -13,17 +13,16 @@ import pytest
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
 from notebooklm._records import (
-    SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
     SOURCE_ADD_URL_BATCH_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
     SOURCE_DELETE_DEF,
     SOURCE_GET_GUIDE_DEF,
+    SOURCE_LIST_DEF,
+    SOURCE_PATCH_TITLE_DEF,
     SOURCE_REFRESH_DEF,
     SOURCE_REGISTER_DEF,
     SOURCE_WAIT_DEF,
-    SourceAddDriveInput,
-    SourceAddDriveResult,
     SourceAddFailureKind,
     SourceAddFailureRecord,
     SourceAddFileInput,
@@ -34,6 +33,8 @@ from notebooklm._records import (
     SourceFileInputKind,
     SourceFreshnessInput,
     SourceGuideInput,
+    SourceListResult,
+    SourcePatchTitleResult,
     SourceRecord,
     SourceRefreshInput,
     SourceRegisterInput,
@@ -226,9 +227,10 @@ async def test_neutral_service_materializes_batch_and_hides_sensitive_inputs() -
 async def test_text_and_drive_wait_timeouts_remain_polling_only_facade_budgets() -> None:
     backend = RecordingBackend()
     source = SourceRecord("src", "Title", status="ready")
+    backend.set_result(SOURCE_LIST_DEF, SourceListResult(()))
     backend.set_result(SOURCE_REGISTER_DEF, SourceRegisterResult((source,)))
-    backend.set_result(SOURCE_ADD_DRIVE_DEF, SourceAddDriveResult(source))
-    backend.set_workflows(Operation.SOURCE_ADD_TEXT)
+    backend.set_result(SOURCE_PATCH_TITLE_DEF, SourcePatchTitleResult(None))
+    backend.set_workflows(Operation.SOURCE_ADD_TEXT, Operation.SOURCE_ADD_DRIVE)
     api = SourcesAPI(MagicMock(), uploader=MagicMock(), _backend=backend)
     api.wait_until_ready = AsyncMock(  # type: ignore[method-assign]
         return_value=Source(id="src", title="Title", status=SourceStatus.READY)
@@ -243,13 +245,19 @@ async def test_text_and_drive_wait_timeouts_remain_polling_only_facade_budgets()
         wait_timeout=0.01,
     )
 
-    assert [invocation.deadline for invocation in backend.invocations] == [None, None]
-    # No absolute deadline is started for either add, and nothing below the
-    # facade polls. The Drive request still carries the caller's ordering choice
-    # so its handler can defer title work; the hoisted text workflow needs no
-    # such flag on the wire — the registration leaf has no title phase.
+    # No absolute deadline is started for either add (the facade supplies none
+    # and neither service holds a factory), and nothing below the facade polls.
+    # ``wait_timeout`` never leaves the facade: the hoisted Drive workflow drops
+    # it, and under ``wait`` it defers the title to ``finalize_drive_title``
+    # rather than carrying an ordering flag on the wire.
+    assert [invocation.deadline for invocation in backend.invocations] == [None, None, None]
+    assert [invocation.operation for invocation in backend.invocations] == [
+        Operation.SOURCE_REGISTER,
+        Operation.SOURCE_LIST,
+        Operation.SOURCE_REGISTER,
+    ]
     assert backend.invocations[0].value.kind is SourceRegisterKind.TEXT
-    assert backend.invocations[1].value.wait is True
+    assert backend.invocations[2].value.kind is SourceRegisterKind.DRIVE
     assert api.wait_until_ready.await_args_list == [
         call("nb", "src", timeout=0.01),
         call("nb", "src", timeout=0.01),
@@ -414,18 +422,13 @@ async def test_waited_url_title_finalize_keeps_add_attribution_and_null_hydratio
 
 @pytest.mark.asyncio
 async def test_waited_drive_title_finalize_keeps_add_attribution_without_null_hydration() -> None:
+    """The hoisted finalise still takes a null echo as the answer (no ``source.get``)."""
     executor = _RecordingExecutor(None)
 
-    result = await _web_backend(executor).invoke(
-        SOURCE_ADD_DRIVE_DEF,
-        SourceAddDriveInput(
-            "nb",
-            "",
-            "Requested",
-            "application/vnd.google-apps.document",
-            finalize_source=SourceRecord("drive", "Upstream", status="ready"),
-        ),
-        deadline=None,
+    result = await SourceService(_web_backend(executor)).finalize_drive_title(
+        "nb",
+        SourceRecord("drive", "Upstream", status="ready"),
+        "Requested",
     )
 
     assert result.source.title == "Requested"

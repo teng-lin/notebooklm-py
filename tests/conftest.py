@@ -652,18 +652,18 @@ def legacy_vcr_add_url_baseline(monkeypatch):
     """
     from notebooklm._source_service import SourceService
 
-    # P10 R3.3 hoisted the workflow above the semantic port: the baseline and
-    # the probe are now two named phases of ``SourceService.add_url`` over the
-    # same ``source.list`` leaf, so the stub replaces the phases rather than the
-    # injected ``list_sources`` callable the retired below-port service took.
+    # P10 R3.3 hoisted the workflow above the semantic port, and R3.4 made its
+    # baseline and probe the phases the Drive workflow shares: the stub replaces
+    # those two named phases rather than the injected ``list_sources`` callable
+    # the retired below-port service took.
     baseline_calls = 0
 
-    async def _url_baseline(self, notebook_id, *, deadline):
+    async def _add_baseline(self, notebook_id, *, deadline, label):
         nonlocal baseline_calls
         baseline_calls += 1
         return set(), None, None
 
-    async def _url_probe_snapshot(self, notebook_id, *, deadline):
+    async def _probe_snapshot(self, notebook_id, *, deadline):
         raise AssertionError(
             "legacy_vcr_add_url_baseline: the idempotency probe fired, so this "
             "cassette's create did not succeed. The stubbed empty baseline would "
@@ -682,8 +682,8 @@ def legacy_vcr_add_url_baseline(monkeypatch):
         )
         return result
 
-    monkeypatch.setattr(SourceService, "_url_baseline", _url_baseline)
-    monkeypatch.setattr(SourceService, "_url_probe_snapshot", _url_probe_snapshot)
+    monkeypatch.setattr(SourceService, "_add_baseline", _add_baseline)
+    monkeypatch.setattr(SourceService, "_probe_snapshot", _probe_snapshot)
     monkeypatch.setattr(SourceService, "add_url", _add_url)
 
 

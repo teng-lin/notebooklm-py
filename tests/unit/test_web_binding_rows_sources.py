@@ -184,16 +184,16 @@ def test_source_leaves_are_rows_and_composites_stay_handlers() -> None:
     # P9.4b: the remaining source-add family are custom rows in the same module.
     for operation in (
         Operation.SOURCE_ADD_URL_BATCH,
-        Operation.SOURCE_ADD_DRIVE,
         Operation.SOURCE_ADD_FILE,
     ):
         binding = WEB_OPERATION_REGISTRY[operation]
         assert isinstance(binding.row, CustomBinding)
-    # P9.2-4 / P10 R3.2 / P10 R3.3: these are sequenced above the port instead.
+    # P9.2-4 / P10 R3.2–R3.4: these are sequenced above the port instead.
     for service_owned in (
         Operation.SOURCE_UPDATE,
         Operation.SOURCE_ADD_TEXT,
         Operation.SOURCE_ADD_URL,
+        Operation.SOURCE_ADD_DRIVE,
     ):
         assert WEB_OPERATION_REGISTRY[service_owned].service_owned is True
         assert WEB_OPERATION_REGISTRY[service_owned].row is None

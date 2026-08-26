@@ -30,7 +30,6 @@ _EXPECTED_CLIENT_TIMEOUT_OPERATIONS = frozenset(
     {
         Operation.NOTEBOOK_SUGGEST_PROMPTS,
         Operation.SOURCE_ADD_URL_BATCH,
-        Operation.SOURCE_ADD_DRIVE,
         Operation.ARTIFACT_LIST,
         Operation.ARTIFACT_GET,
         Operation.ARTIFACT_GENERATE_AUDIO,

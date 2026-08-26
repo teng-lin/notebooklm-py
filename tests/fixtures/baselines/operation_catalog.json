@@ -1321,6 +1321,26 @@
     "source.add_drive": {
       "call_policy": "mutation",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "source.list"
+        },
+        {
+          "allowed_variants": [
+            "drive"
+          ],
+          "operation": "source.register"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "source.patch_title"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "probe_then_create",
@@ -1340,7 +1360,8 @@
           "rpc_method": "UPDATE_SOURCE",
           "variant": null
         }
-      ]
+      ],
+      "service_owned": true
     },
     "source.add_file": {
       "call_policy": "mutation",
@@ -2093,8 +2114,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/primitives.py:SOURCE_REGISTER",
-        "_web/bindings/sources.py:SOURCE_ADD_DRIVE"
+        "_web/bindings/primitives.py:SOURCE_REGISTER"
       ],
       "golden_disposition": "not_recorded",
       "golden_evidence": [],
@@ -3196,7 +3216,6 @@
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
         "_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS",
-        "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
         "_web/bindings/sources.py:SOURCE_ADD_FILE",
         "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
         "_web/bindings/sources.py:SOURCE_GET",
@@ -4772,7 +4791,6 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_web/bindings/primitives.py:SOURCE_PATCH_TITLE",
-        "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
         "_web/bindings/sources.py:SOURCE_ADD_FILE"
       ],
       "golden_disposition": "golden_covered",
@@ -8556,25 +8574,25 @@
       "app_callers": [
         "_app/source_mutations.py:execute_source_add_drive"
       ],
-      "composite_behavior": "Takes an unconditional source-id baseline and reconciles by new exact Drive document id.",
+      "composite_behavior": "Service-owned since P10 R3.4: SourceService.add_drive takes an unconditional source-id baseline over source.list, allocates the Drive document through one source.register drive write, reconciles an uncertain commit against that baseline by exact new Drive document id, and applies an optional title through source.patch_title afterward.",
       "disposition": "semantic",
       "execution_authorities": [
         {
           "binding": "ADD_SOURCE:drive",
-          "discriminator": "native Drive-document payload",
-          "site": "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
+          "discriminator": "native Drive-document allocation via the source.register leaf",
+          "site": "_web/bindings/primitives.py:SOURCE_REGISTER",
           "transport_kind": "rpc"
         },
         {
           "binding": "GET_NOTEBOOK:<default>",
-          "discriminator": "unconditional baseline plus ambiguity probes",
-          "site": "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
+          "discriminator": "unconditional baseline plus ambiguity probes via source.list",
+          "site": "_web/bindings/sources.py:SOURCE_LIST",
           "transport_kind": "rpc"
         },
         {
           "binding": "UPDATE_SOURCE:<default>",
-          "discriminator": "optional post-create title",
-          "site": "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
+          "discriminator": "optional post-create title via source.patch_title",
+          "site": "_web/bindings/primitives.py:SOURCE_PATCH_TITLE",
           "transport_kind": "rpc"
         }
       ],
@@ -8594,7 +8612,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/bindings/sources.py:SOURCE_ADD_DRIVE"
+            "_web/bindings/sources.py:SOURCE_LIST"
           ],
           "condition": "one baseline plus ambiguity probes and, when wait=True, one snapshot per facade-owned readiness poll tick",
           "maximum_calls": null,
