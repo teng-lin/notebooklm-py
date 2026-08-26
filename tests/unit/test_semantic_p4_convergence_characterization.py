@@ -117,11 +117,7 @@ from notebooklm._records import (
     SHARING_GET_DEF,
     SHARING_MUTATE_DEF,
     SHARING_PATCH_VIEW_LEVEL_DEF,
-    SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
-    SOURCE_ADD_TEXT_DEF,
-    SOURCE_ADD_URL_BATCH_DEF,
-    SOURCE_ADD_URL_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
     SOURCE_DELETE_DEF,
     SOURCE_GET_DEF,
@@ -130,6 +126,7 @@ from notebooklm._records import (
     SOURCE_LIST_DEF,
     SOURCE_PATCH_TITLE_DEF,
     SOURCE_REFRESH_DEF,
+    SOURCE_REGISTER_DEF,
     SOURCE_WAIT_DEF,
     NotebookGetInput,
     NotebookGetResult,
@@ -220,7 +217,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         ),
         SOURCE_LIST_DEF: (Operation.SOURCE_LIST, CallPolicy.MUTATION),
         SOURCE_GET_DEF: (Operation.SOURCE_GET, CallPolicy.MUTATION),
-        SOURCE_ADD_URL_DEF: (Operation.SOURCE_ADD_URL, CallPolicy.MUTATION),
         CHAT_STREAM_ANSWER_DEF: (Operation.CHAT_STREAM_ANSWER, CallPolicy.STREAM),
         CHAT_GET_CONVERSATION_DEF: (Operation.CHAT_GET_CONVERSATION, CallPolicy.READ),
         CHAT_GET_HISTORY_DEF: (Operation.CHAT_GET_HISTORY, CallPolicy.READ),
@@ -251,9 +247,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             Operation.ARTIFACT_SUGGEST_REPORTS,
             CallPolicy.STATEFUL_START,
         ),
-        SOURCE_ADD_URL_BATCH_DEF: (Operation.SOURCE_ADD_URL_BATCH, CallPolicy.MUTATION),
-        SOURCE_ADD_TEXT_DEF: (Operation.SOURCE_ADD_TEXT, CallPolicy.MUTATION),
-        SOURCE_ADD_DRIVE_DEF: (Operation.SOURCE_ADD_DRIVE, CallPolicy.MUTATION),
         SOURCE_ADD_FILE_DEF: (Operation.SOURCE_ADD_FILE, CallPolicy.MUTATION),
         SOURCE_DELETE_DEF: (Operation.SOURCE_DELETE, CallPolicy.MUTATION),
         SOURCE_REFRESH_DEF: (Operation.SOURCE_REFRESH, CallPolicy.MUTATION),
@@ -341,6 +334,7 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         LABEL_MUTATE_DEF: (Operation.LABEL_MUTATE, CallPolicy.MUTATION),
         LABEL_ALLOCATE_DEF: (Operation.LABEL_ALLOCATE, CallPolicy.MUTATION),
         SHARING_MUTATE_DEF: (Operation.SHARING_MUTATE, CallPolicy.MUTATION),
+        SOURCE_REGISTER_DEF: (Operation.SOURCE_REGISTER, CallPolicy.MUTATION),
     }
 
     for op_def, (expected_key, expected_policy) in expected_migrated.items():
@@ -390,19 +384,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             SOURCE_GET_DEF,
             [(RPCMethod.GET_NOTEBOOK, None)],
             [IdempotencyPolicy.IDEMPOTENT_SET_OP],
-        ),
-        (
-            SOURCE_ADD_URL_DEF,
-            [
-                (RPCMethod.GET_NOTEBOOK, None),
-                (RPCMethod.ADD_SOURCE, "url"),
-                (RPCMethod.UPDATE_SOURCE, None),
-            ],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.PROBE_THEN_CREATE,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-            ],
         ),
         (
             SETTINGS_GET_DEF,
@@ -890,9 +871,9 @@ def test_the_parity_audit_reports_two_distinguishable_columns() -> None:
     assert chat_ask["known_divergence"] is not None
 
     assert report["summary"] == {
-        "direct_rows": 80,
+        "direct_rows": 77,
         "direct_row_divergences": 0,
-        "service_owned_workflows": 12,
+        "service_owned_workflows": 16,
         "end_to_end_divergences": 1,
     }
 

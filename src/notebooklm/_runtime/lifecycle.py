@@ -71,6 +71,7 @@ import httpx
 
 from .._cookie_persistence import SaveCookiesToStorage
 from .._kernel import Kernel
+from .._source_upload_port import UploadLifecycleHooks
 from ..auth import AuthTokens
 from .config import CORE_LOGGER_NAME
 
@@ -78,7 +79,6 @@ if TYPE_CHECKING:
     from .._cookie_persistence import CookiePersistence
     from .._reqid_counter import ReqidCounter
     from .._rpc_semaphore import RpcSemaphore
-    from .._source.upload import SourceUploadPipeline
     from .._transport_drain import TransportDrainTracker
     from ..types import ConnectionLimits
     from .auth import AuthRefreshCoordinator
@@ -258,7 +258,7 @@ class ClientLifecycle:
         reqid: ReqidCounter,
         cookie_persistence: CookiePersistence,
         rpc_semaphore: RpcSemaphore,
-        uploader: SourceUploadPipeline,
+        uploader: UploadLifecycleHooks,
         chat: ChatLifecycleHooks,
     ) -> None:
         """Open the HTTP client connection.

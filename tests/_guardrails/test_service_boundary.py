@@ -8,8 +8,8 @@ once and a new one fails immediately:
 
 **I1 — semantic service modules stay neutral.** A semantic service module
 (``src/notebooklm/_*_service.py``, ``_read_services.py``,
-``_mutation_services.py``, ``_chat/service.py`` — later ``_chat/workflow.py`` —
-and ``_studio/*.py``) may import none of ``_projectors``,
+``_chat/service.py`` — later ``_chat/workflow.py`` — and ``_studio/*.py``) may
+import none of ``_projectors``,
 ``notebooklm.types``, ``_types.*``, ``_backend_compat``, ``rpc.*``,
 ``_row_adapters.*``, ``_web.*`` or ``httpx``, and its public methods must
 return ``*Record`` / ``*Result`` types, neutral enums, built-in scalars or
@@ -41,9 +41,9 @@ authority for one ceiling.
 
 This module also carries, verbatim, the five assertions of the retired
 ``test_semantic_read_boundary.py``. I1 subsumes that guard's *intent* but not
-all of its checks: it pinned the exact import sets of ``_read_services.py`` and
-``_mutation_services.py`` (tighter than I1's forbidden-list rule, and
-``_read_services.py`` is an I1 seed so I1 does not inspect it at all), and it
+all of its checks: it pinned the exact import sets of ``_read_services.py`` (tighter than I1's
+forbidden-list rule, and ``_read_services.py`` is an I1 seed so I1 does not
+inspect it at all), and it
 also constrained ``_projectors.py``, which is not a service module. Those
 checks are ported below under "Read-core pins" so no assertion is lost.
 """
@@ -109,6 +109,16 @@ I1_SEED_ALLOWLIST: frozenset[str] = frozenset(
 #: deferred to a separate download-transport slice (plan §0, §8).
 I1_PERMANENT_EXEMPTIONS: frozenset[str] = frozenset({"_studio/downloads.py"})
 
+#: Governed by I1's *import* half only. ``_source_add_reports.py`` holds no
+#: service methods: it is the neutral failure-report vocabulary P10 R3.4 split
+#: out of ``_source_service.py``, and its constructors return the port's own
+#: ``BackendError`` — which services *raise* rather than return, so the return
+#: half's neutral vocabulary deliberately excludes it. Keeping the module under
+#: the import half is the point of listing it at all; widening the return
+#: vocabulary to admit ``BackendError`` would weaken the check for every real
+#: service.
+I1_RETURN_ARM_EXEMPTIONS: frozenset[str] = frozenset({"_source_add_reports.py"})
+
 #: Built-in scalars and collection constructors a neutral service may name in a
 #: return annotation. Deliberately minimal: widening it is a reviewed change,
 #: which is the point of the invariant.
@@ -142,11 +152,16 @@ I2_FORBIDDEN_DOMAIN_PACKAGES: frozenset[str] = frozenset(
 #: Shrinking seed: the ``_web`` files that import a domain package today, as
 #: paths relative to ``src/notebooklm/_web``. ``codec/chat_stream.py`` and
 #: ``codec/chat.py`` retired in R2.1 (the codec now owns the streamed-ask wire
-#: and emits records); ``backend.py`` retires in R2.3/R3.1,
-#: ``bindings/mind_maps.py`` in R4.2 and ``bindings/sources.py`` in R3.5.
+#: and emits records), and ``backend.py`` retired once R2.3 drained its
+#: ``_chat`` edge and R3.1 put its ``_source.upload`` edge behind
+#: ``_source_upload_port``. ``bindings/mind_maps.py`` retires in R4.2, and
+#: ``bindings/sources.py`` last of all (R3.1 took its ``_source.upload`` edge
+#: and R3.5 its ``_source.batch`` one; the surviving ``_source.add`` edge is
+#: ``honor_requested_title``, which the permanent ``SOURCE_ADD_FILE`` row
+#: reaches under decision D4, so retiring the entry needs that helper relocated
+#: to a neutral module — not another hoist).
 I2_SEED_ALLOWLIST: frozenset[str] = frozenset(
     {
-        "backend.py",
         "bindings/mind_maps.py",
         "bindings/sources.py",
     }
@@ -271,7 +286,13 @@ def _semantic_service_modules() -> tuple[Path, ...]:
             {
                 *root_services,
                 SRC_ROOT / "_read_services.py",
-                SRC_ROOT / "_mutation_services.py",
+                # P10 R3.4 split the source-add family's neutral report
+                # vocabulary out of ``_source_service.py`` to keep it inside the
+                # module-size budget. It is service code by every other measure,
+                # so I1 governs it too — otherwise the split would have moved
+                # the workflows' vocabulary out from under the guard that keeps
+                # it transport-neutral.
+                SRC_ROOT / "_source_add_reports.py",
                 *chat_services,
                 *studio,
             }
@@ -462,7 +483,11 @@ def test_conforming_semantic_services_return_only_neutral_types() -> None:
     offenders: dict[str, list[tuple[str, str]]] = {}
     for path in _semantic_service_modules():
         module = _relative(path, SRC_ROOT)
-        if module in I1_SEED_ALLOWLIST or module in I1_PERMANENT_EXEMPTIONS:
+        if (
+            module in I1_SEED_ALLOWLIST
+            or module in I1_PERMANENT_EXEMPTIONS
+            or module in I1_RETURN_ARM_EXEMPTIONS
+        ):
             continue
         bad = [
             (qualname, annotation)
@@ -476,6 +501,25 @@ def test_conforming_semantic_services_return_only_neutral_types() -> None:
         "*Result, a neutral enum, a built-in scalar or collection thereof, or "
         f"None (P10 invariant I1): {offenders}"
     )
+
+
+def test_the_return_arm_exemption_is_exactly_what_still_needs_it() -> None:
+    """A return-arm exemption must name a module that would otherwise fail it."""
+    permitted = I1_PERMITTED_RETURN_BUILTINS | _neutral_enum_names()
+    public_models = _public_model_names()
+    governed = {_relative(path, SRC_ROOT) for path in _semantic_service_modules()}
+    assert governed >= I1_RETURN_ARM_EXEMPTIONS, (
+        "a return-arm exemption names a module I1 does not govern: "
+        f"{sorted(I1_RETURN_ARM_EXEMPTIONS - governed)}"
+    )
+    for module in sorted(I1_RETURN_ARM_EXEMPTIONS):
+        annotations = _public_return_annotations(SRC_ROOT / module)
+        assert any(
+            atom not in permitted
+            and not (atom.endswith(("Record", "Result")) and atom not in public_models)
+            for _qualname, _annotation, atoms in annotations
+            for atom in atoms
+        ), f"{module} no longer needs its return-arm exemption; drop it"
 
 
 def test_the_neutral_return_vocabulary_is_discovered_not_empty() -> None:
@@ -573,7 +617,6 @@ def test_the_i9_deletion_targets_stay_separate_from_the_exemptions() -> None:
 
 _PROJECTORS = SRC_ROOT / "_projectors.py"
 _SERVICES = SRC_ROOT / "_read_services.py"
-_MUTATION_SERVICES = SRC_ROOT / "_mutation_services.py"
 
 _FORBIDDEN_MODULE_PARTS = frozenset(
     {
@@ -626,23 +669,13 @@ def test_read_services_depend_only_on_semantic_port_records_deadline_and_project
 
 
 def test_read_core_has_no_transport_wire_or_adapter_dependencies() -> None:
-    for path in (_MUTATION_SERVICES, _PROJECTORS, _SERVICES):
+    for path in (_PROJECTORS, _SERVICES):
         assert not {
             module
             for module in _imported_modules(path)
             if any(part in _FORBIDDEN_MODULE_PARTS for part in module.split("."))
         }
         assert not (_identifiers(path) & _FORBIDDEN_IDENTIFIERS)
-
-
-def test_url_mutation_service_depends_only_on_semantic_port_deadline_and_records() -> None:
-    assert _imported_modules(_MUTATION_SERVICES) <= {
-        "__future__",
-        "_backend",
-        "_deadline",
-        "_records",
-    }
-    assert not any(isinstance(node, ast.Subscript) for node in ast.walk(_tree(_MUTATION_SERVICES)))
 
 
 def test_projectors_use_normal_public_constructors_without_wire_factories() -> None:

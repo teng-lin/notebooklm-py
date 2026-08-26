@@ -29,6 +29,10 @@ from .._records import (
     SHARING_SET_PUBLIC_DEF,
     SHARING_SET_VIEW_LEVEL_DEF,
     SHARING_UPDATE_USERS_DEF,
+    SOURCE_ADD_DRIVE_DEF,
+    SOURCE_ADD_TEXT_DEF,
+    SOURCE_ADD_URL_BATCH_DEF,
+    SOURCE_ADD_URL_DEF,
     SOURCE_UPDATE_DEF,
 )
 from .bindings import WEB_BINDING_ROWS
@@ -93,6 +97,10 @@ _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = 
         Operation.LABEL_UPDATE: LABEL_UPDATE_DEF,
         Operation.COLLECTION_CREATE: COLLECTION_CREATE_DEF,
         Operation.COLLECTION_UPDATE: COLLECTION_UPDATE_DEF,
+        Operation.SOURCE_ADD_URL: SOURCE_ADD_URL_DEF,
+        Operation.SOURCE_ADD_URL_BATCH: SOURCE_ADD_URL_BATCH_DEF,
+        Operation.SOURCE_ADD_TEXT: SOURCE_ADD_TEXT_DEF,
+        Operation.SOURCE_ADD_DRIVE: SOURCE_ADD_DRIVE_DEF,
         Operation.SOURCE_UPDATE: SOURCE_UPDATE_DEF,
         Operation.SHARING_SET_PUBLIC: SHARING_SET_PUBLIC_DEF,
         Operation.SHARING_UPDATE_USERS: SHARING_UPDATE_USERS_DEF,
@@ -120,6 +128,25 @@ _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.COLLECTION_UPDATE: (
             "service-owned since P9.2-3: LabelSetService.update sequences collection.get and "
             "label.mutate"
+        ),
+        Operation.SOURCE_ADD_URL: (
+            "service-owned since P10 R3.3: SourceService.add_url sequences the source.list "
+            "baseline, one source.register url allocation, the reconciling source.list probe "
+            "and the source.patch_title finalise"
+        ),
+        Operation.SOURCE_ADD_URL_BATCH: (
+            "service-owned since P10 R3.5: SourceService.add_urls_batch runs one non-replayed "
+            "source.register url batch write and reconciles the entries its echo omitted "
+            "against a source.list of ERROR rows"
+        ),
+        Operation.SOURCE_ADD_TEXT: (
+            "service-owned since P10 R3.2: SourceService.add_text refuses a non-idempotent "
+            "replay and runs one source.register text allocation"
+        ),
+        Operation.SOURCE_ADD_DRIVE: (
+            "service-owned since P10 R3.4: SourceService.add_drive sequences the source.list "
+            "baseline, one source.register drive allocation, the reconciling source.list probe "
+            "matched on drive_document_id and the source.patch_title finalise"
         ),
         Operation.SOURCE_UPDATE: (
             "service-owned since P9.2-4: SourceService.update sequences source.patch_title and "
@@ -194,13 +221,14 @@ _UNSUPPORTED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
     }
 )
 
-# The frozen catalog currently contains 97 operations (87 product members plus the
-# nine P9.2 primitives and the P10 R2.2 streamed-answer leaf). This assertion is repeated at
+# The frozen catalog currently contains 98 operations (87 product members plus the
+# eleven decomposition primitives: the nine P9.2 leaves, P10 R2.2's streamed-answer
+# leaf, and P10 R3.2's source-registration leaf). This assertion is repeated at
 # the runtime registry boundary: a new enum member must not silently inherit an
 # unsupported disposition without a web-registry review.
-_EXPECTED_OPERATION_COUNT: Final = 97
-_EXPECTED_SUPPORTED_COUNT: Final = 80
-_EXPECTED_SERVICE_OWNED_COUNT: Final = 12
+_EXPECTED_OPERATION_COUNT: Final = 98
+_EXPECTED_SUPPORTED_COUNT: Final = 77
+_EXPECTED_SERVICE_OWNED_COUNT: Final = 16
 
 
 def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:

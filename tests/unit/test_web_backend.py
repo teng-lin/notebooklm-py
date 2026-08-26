@@ -91,11 +91,7 @@ from notebooklm._records import (
     SHARING_GET_DEF,
     SHARING_MUTATE_DEF,
     SHARING_PATCH_VIEW_LEVEL_DEF,
-    SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
-    SOURCE_ADD_TEXT_DEF,
-    SOURCE_ADD_URL_BATCH_DEF,
-    SOURCE_ADD_URL_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
     SOURCE_DELETE_DEF,
     SOURCE_GET_DEF,
@@ -104,6 +100,7 @@ from notebooklm._records import (
     SOURCE_LIST_DEF,
     SOURCE_PATCH_TITLE_DEF,
     SOURCE_REFRESH_DEF,
+    SOURCE_REGISTER_DEF,
     SOURCE_WAIT_DEF,
     ArtifactDeleteInput,
     ArtifactDownloadInput,
@@ -135,17 +132,14 @@ from notebooklm._records import (
     NoteUpdateInput,
     ReportGenerateInput,
     SlideDeckGenerateInput,
-    SourceAddCommitState,
     SourceAddFailureKind,
     SourceAddFailureRecord,
-    SourceAddTitleState,
-    SourceAddUrlInput,
-    SourceAddUrlReceipt,
+    SourceAddFileInput,
+    SourceFileInputKind,
     SourceGetInput,
     SourceListInput,
     VideoGenerateInput,
 )
-from notebooklm._source.upload_payloads import build_template_block
 from notebooklm._transport_errors import TransportRateLimited, TransportServerError
 from notebooklm._web.backend import (
     ROW_COLLABORATOR_NAMES,
@@ -239,13 +233,15 @@ def test_row_collaborator_names_are_exactly_what_the_rows_declare() -> None:
     declares. ``deadline_factory`` was exactly that, and was dropped in P10
     slice R0.1; this pin is the ratchet that keeps the two sides equal.
 
-    The plan's target is ``{"source_uploader"}``: ``capture_public_failure``
-    leaves with the last source-add hoist (R3.5). P10 R2.2 drained the three
-    ``chat_*`` names when ``chat.ask`` became service-owned. Removing an entry
-    here is expected; adding one is not.
+    The plan's target is ``{"source_uploader"}``, and this merge is where it
+    lands: ``capture_public_failure`` left with the last source-add hoist
+    (R3.5) — ``SOURCE_ADD_URL_BATCH``'s per-item captures were its final
+    consumer, and ``SOURCE_ADD_FILE``, which is permanent under D4, imports the
+    same ``_web.failure_projection`` function directly instead. The three
+    ``chat_*`` names left when ``chat.ask`` became service-owned (R2.2).
+    Removing an entry here is expected; adding one is not.
     """
     expected = {
-        "capture_public_failure",
         "source_uploader",
     }
     provided = set(ROW_COLLABORATOR_NAMES)
@@ -280,7 +276,6 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.NOTEBOOK_DESCRIBE,
         Operation.SOURCE_LIST,
         Operation.SOURCE_GET,
-        Operation.SOURCE_ADD_URL,
         Operation.NOTE_LIST,
         Operation.NOTE_GET,
         Operation.NOTE_CREATE,
@@ -333,12 +328,10 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.ARTIFACT_DELETE,
         Operation.ARTIFACT_DOWNLOAD,
         Operation.ARTIFACT_WAIT,
-        Operation.SOURCE_ADD_URL_BATCH,
-        Operation.SOURCE_ADD_TEXT,
-        Operation.SOURCE_ADD_DRIVE,
         Operation.SOURCE_ADD_FILE,
         Operation.SOURCE_DELETE,
         Operation.SOURCE_PATCH_TITLE,
+        Operation.SOURCE_REGISTER,
         Operation.SOURCE_REFRESH,
         Operation.SOURCE_CHECK_FRESHNESS,
         Operation.SOURCE_GET_GUIDE,
@@ -366,7 +359,6 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.NOTEBOOK_DESCRIBE: NOTEBOOK_DESCRIBE_DEF,
         Operation.SOURCE_LIST: SOURCE_LIST_DEF,
         Operation.SOURCE_GET: SOURCE_GET_DEF,
-        Operation.SOURCE_ADD_URL: SOURCE_ADD_URL_DEF,
         Operation.NOTE_LIST: NOTE_LIST_DEF,
         Operation.NOTE_GET: NOTE_GET_DEF,
         Operation.NOTE_CREATE: NOTE_CREATE_DEF,
@@ -419,12 +411,10 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.ARTIFACT_DELETE: ARTIFACT_DELETE_DEF,
         Operation.ARTIFACT_DOWNLOAD: ARTIFACT_DOWNLOAD_DEF,
         Operation.ARTIFACT_WAIT: ARTIFACT_WAIT_DEF,
-        Operation.SOURCE_ADD_URL_BATCH: SOURCE_ADD_URL_BATCH_DEF,
-        Operation.SOURCE_ADD_TEXT: SOURCE_ADD_TEXT_DEF,
-        Operation.SOURCE_ADD_DRIVE: SOURCE_ADD_DRIVE_DEF,
         Operation.SOURCE_ADD_FILE: SOURCE_ADD_FILE_DEF,
         Operation.SOURCE_DELETE: SOURCE_DELETE_DEF,
         Operation.SOURCE_PATCH_TITLE: SOURCE_PATCH_TITLE_DEF,
+        Operation.SOURCE_REGISTER: SOURCE_REGISTER_DEF,
         Operation.SOURCE_REFRESH: SOURCE_REFRESH_DEF,
         Operation.SOURCE_CHECK_FRESHNESS: SOURCE_CHECK_FRESHNESS_DEF,
         Operation.SOURCE_GET_GUIDE: SOURCE_GET_GUIDE_DEF,
@@ -444,7 +434,6 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         for binding in WEB_OPERATION_REGISTRY.values()
         if not binding.is_supported
     )
-    assert WEB_OPERATION_REGISTRY[Operation.SOURCE_ADD_URL].definition is SOURCE_ADD_URL_DEF
 
 
 @pytest.mark.asyncio
@@ -1470,208 +1459,6 @@ async def test_source_handlers_reuse_source_lister_and_apply_semantic_filters() 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("url", "kind", "source_spec"),
-    [
-        (
-            "https://example.com/article",
-            5,
-            [
-                None,
-                None,
-                ["https://example.com/article"],
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                1,
-            ],
-        ),
-        (
-            "https://youtu.be/dQw4w9WgXcQ",
-            9,
-            [
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                ["https://youtu.be/dQw4w9WgXcQ"],
-                None,
-                None,
-                1,
-            ],
-        ),
-    ],
-)
-async def test_live_url_handler_preserves_regular_and_hidden_youtube_payloads(
-    url: str,
-    kind: int,
-    source_spec: list[object],
-) -> None:
-    executor = _RecordingExecutor(
-        [["Notebook", [], "nb"]],
-        _source_result("src-new", title="Upstream", url=url, kind=kind),
-    )
-
-    result = await _backend(executor).invoke(
-        SOURCE_ADD_URL_DEF,
-        SourceAddUrlInput("nb", url),
-        deadline=None,
-    )
-
-    assert (result.source.id, result.source.url) == ("src-new", url)
-    assert result.receipt == SourceAddUrlReceipt(
-        SourceAddCommitState.CREATED,
-        SourceAddTitleState.NOT_REQUESTED,
-    )
-    assert [call.method for call in executor.calls] == [
-        RPCMethod.GET_NOTEBOOK,
-        RPCMethod.ADD_SOURCE,
-    ]
-    assert executor.calls[1].params == [[source_spec], "nb", build_template_block()]
-    assert executor.calls[1].kwargs["disable_internal_retries"] is True
-    assert executor.calls[1].kwargs["operation_variant"] == "url"
-
-
-@pytest.mark.asyncio
-async def test_url_handler_reconciles_only_one_new_exact_url_and_renames_without_repost() -> None:
-    url = "https://example.com/article"
-    old = _source_entry("src-old", title="Old", url=url, status=2)
-    recovered = _source_entry("src-new", title="Upstream", url=url, status=2)
-    executor = _RecordingExecutor(
-        [["Notebook", [old], "nb"]],
-        ServerError("lost response", status_code=502),
-        [["Notebook", [old, recovered], "nb"]],
-        [["src-new"], "Requested"],
-    )
-
-    result = await _backend(executor).invoke(
-        SOURCE_ADD_URL_DEF,
-        SourceAddUrlInput("nb", url, requested_title="  Requested  "),
-        deadline=None,
-    )
-
-    assert (result.source.id, result.source.title, result.source.url) == (
-        "src-new",
-        "Requested",
-        url,
-    )
-    assert result.receipt == SourceAddUrlReceipt(
-        SourceAddCommitState.RECONCILED,
-        SourceAddTitleState.RENAMED,
-    )
-    assert [call.method for call in executor.calls] == [
-        RPCMethod.GET_NOTEBOOK,
-        RPCMethod.ADD_SOURCE,
-        RPCMethod.GET_NOTEBOOK,
-        RPCMethod.UPDATE_SOURCE,
-    ]
-    assert sum(call.method is RPCMethod.ADD_SOURCE for call in executor.calls) == 1
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "probe_response",
-    [
-        [
-            "Notebook",
-            [
-                _source_entry("src-one", url="https://example.com/article"),
-                _source_entry("src-two", url="https://example.com/article"),
-            ],
-            "nb",
-        ],
-        DecodingError("probe could not decode"),
-    ],
-)
-async def test_url_handler_fails_closed_when_reconciliation_is_ambiguous_or_unanswered(
-    probe_response: object,
-) -> None:
-    executor = _RecordingExecutor(
-        [["Notebook", [], "nb"]],
-        ServerError("lost response", status_code=502),
-        [probe_response] if isinstance(probe_response, list) else probe_response,
-    )
-
-    with pytest.raises(BackendError) as caught:
-        await _backend(executor).invoke(
-            SOURCE_ADD_URL_DEF,
-            SourceAddUrlInput("nb", "https://example.com/article"),
-            deadline=None,
-        )
-
-    assert caught.value.outcome_unknown is True
-    assert caught.value.reason is BackendErrorReason.SOURCE_ADD
-    assert caught.value.diagnostics is not None
-    assert caught.value.diagnostics["receipt"] == SourceAddUrlReceipt(
-        SourceAddCommitState.UNKNOWN,
-        SourceAddTitleState.NOT_ATTEMPTED,
-        outcome_unknown=True,
-    )
-    failure = caught.value.diagnostics["source_add_failure"]
-    assert failure.message == str(caught.value)
-    assert failure.unconfirmed is True
-    assert sum(call.method is RPCMethod.ADD_SOURCE for call in executor.calls) == 1
-
-
-@pytest.mark.asyncio
-async def test_url_handler_title_failure_is_best_effort_and_never_reposts() -> None:
-    url = "https://example.com/article"
-    executor = _RecordingExecutor(
-        [["Notebook", [], "nb"]],
-        _source_result("src-new", title="Upstream", url=url),
-        ServerError("rename failed", status_code=503),
-    )
-
-    result = await _backend(executor).invoke(
-        SOURCE_ADD_URL_DEF,
-        SourceAddUrlInput("nb", url, requested_title="Requested"),
-        deadline=None,
-    )
-
-    assert result.source.title == "Upstream"
-    assert result.receipt.title_state is SourceAddTitleState.RENAME_FAILED
-    assert [call.method for call in executor.calls] == [
-        RPCMethod.GET_NOTEBOOK,
-        RPCMethod.ADD_SOURCE,
-        RPCMethod.UPDATE_SOURCE,
-    ]
-
-
-@pytest.mark.asyncio
-async def test_url_wait_is_deferred_to_facade_and_does_not_consume_backend_deadline() -> None:
-    url = "https://example.com/article"
-    executor = _RecordingExecutor(
-        [["Notebook", [], "nb"]],
-        _source_result("src-new", title="Upstream", url=url),
-    )
-    deadline = RuntimeDeadline(timeout=30.0, started_at=10.0, monotonic=lambda: 12.0)
-
-    result = await _backend(executor).invoke(
-        SOURCE_ADD_URL_DEF,
-        SourceAddUrlInput("nb", url, wait=True, wait_timeout=17.0, requested_title="Requested"),
-        deadline=deadline,
-    )
-
-    assert [call.method for call in executor.calls] == [
-        RPCMethod.GET_NOTEBOOK,
-        RPCMethod.ADD_SOURCE,
-    ]
-    baseline, create = executor.calls
-    assert baseline.kwargs["_retry_deadline"] is deadline
-    assert create.kwargs["_retry_deadline"] is deadline
-    assert baseline.kwargs["read_timeout"] == create.kwargs["read_timeout"] == 28.0
-    assert result.source.title == "Upstream"
-    assert result.receipt.title_state is SourceAddTitleState.NOT_ATTEMPTED
-
-
-@pytest.mark.asyncio
 async def test_absolute_deadline_is_forwarded_unchanged_with_remaining_read_timeout() -> None:
     executor = _RecordingExecutor([[]])
     deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: 12.0)
@@ -1716,12 +1503,12 @@ async def test_expired_custom_row_fails_before_the_handler_and_names_no_native()
 
     with pytest.raises(BackendDeadlineExceededError) as caught:
         await _backend(executor).invoke(
-            SOURCE_ADD_URL_DEF,
-            SourceAddUrlInput("nb", "https://example.com"),
+            SOURCE_ADD_FILE_DEF,
+            SourceAddFileInput("nb", SourceFileInputKind.LOCAL, file_path="doc.pdf"),
             deadline=deadline,
         )
 
-    assert caught.value.operation is Operation.SOURCE_ADD_URL
+    assert caught.value.operation is Operation.SOURCE_ADD_FILE
     assert caught.value.reason is BackendErrorReason.TIMEOUT
     assert caught.value.diagnostics == {
         "timeout": 2.0,
@@ -2182,7 +1969,6 @@ def test_only_migrated_feature_runtime_reads_private_backend() -> None:
         package / "_notebooks.py",
         package / "_notebook_guide_service.py",
         package / "_notebook_mutation_service.py",
-        package / "_mutation_services.py",
         package / "_note_service.py",
         package / "_read_services.py",
         package / "_sharing.py",

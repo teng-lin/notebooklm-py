@@ -43,7 +43,7 @@ def test_operation_definition_is_inert_frozen_slotted_vocabulary() -> None:
 def test_operation_and_call_policy_vocabularies_are_total_non_vacuous_and_alias_free() -> None:
     rows = catalog.build_operation_catalog()["operations"]
 
-    assert len(Operation.__members__) == len(Operation) == len(catalog.OPERATION_SPECS) == 97
+    assert len(Operation.__members__) == len(Operation) == len(catalog.OPERATION_SPECS) == 98
     assert {row["policy"] for row in rows} == {policy.value for policy in CallPolicy}
     assert next(row for row in rows if row["key"] == "chat.ask")["policy"] == "stream"
 
@@ -261,10 +261,7 @@ def test_rpc_ast_walk_distinguishes_calls_from_decoder_references() -> None:
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
         "_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS",
-        "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
         "_web/bindings/sources.py:SOURCE_ADD_FILE",
-        "_web/bindings/sources.py:SOURCE_ADD_URL",
-        "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
         "_web/bindings/sources.py:SOURCE_GET",
         "_web/bindings/sources.py:SOURCE_LIST",
         "_web/bindings/sources.py:SOURCE_WAIT",

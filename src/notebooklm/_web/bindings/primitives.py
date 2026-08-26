@@ -8,11 +8,14 @@ the two patch leaves: ``SOURCE_PATCH_TITLE`` (one ``UPDATE_SOURCE`` title
 set-op) and ``SHARING_PATCH_VIEW_LEVEL`` (one ``RENAME_NOTEBOOK`` viewer-scope
 field mask).
 
-``CHAT_STREAM_ANSWER`` (P10 R2.2) is the one leaf whose native is a
-:class:`StreamNative`: it dispatches the streamed ``GenerateFreeFormStreamed``
-POST that ``chat.ask`` sequences ahead of its conversation-id readback.  A
-streamed verb is not a method on the wire enum, so the row declares no
-``RPCMethod`` at all and contributes nothing to the policy ledger's native set.
+P10 adds two leaves.  ``SOURCE_REGISTER`` (R3.2) is one ``ADD_SOURCE``
+allocation whose variant — and therefore whose reviewed retry classification —
+is chosen from the request's registration kind.  ``CHAT_STREAM_ANSWER`` (R2.2)
+is the one leaf whose native is a :class:`StreamNative`: it dispatches the
+streamed ``GenerateFreeFormStreamed`` POST that ``chat.ask`` sequences ahead of
+its conversation-id readback.  A streamed verb is not a method on the wire
+enum, so that row declares no ``RPCMethod`` at all and contributes nothing to
+the policy ledger's native set.
 
 Each row is ``encode → one native → decode``; the :class:`NativeCallSpec`
 is the sole authority for the native it dispatches, so the method the policy
@@ -34,11 +37,13 @@ from ..._records import (
     SHARING_MUTATE_DEF,
     SHARING_PATCH_VIEW_LEVEL_DEF,
     SOURCE_PATCH_TITLE_DEF,
+    SOURCE_REGISTER_DEF,
     LabelAllocateInput,
     LabelAllocateResult,
     LabelMutateInput,
     SourcePatchTitleInput,
     SourcePatchTitleResult,
+    SourceRegisterInput,
 )
 from ...rpc import RPCMethod
 from ..codec import chat as chat_codec
@@ -126,6 +131,44 @@ SOURCE_PATCH_TITLE = CodecBinding(
     native=_SOURCE_PATCH_TITLE_NATIVE,
 )
 
+_REGISTER_URL = RpcNative(RPCMethod.ADD_SOURCE, "url")
+_REGISTER_TEXT = RpcNative(RPCMethod.ADD_SOURCE, "text")
+_REGISTER_DRIVE = RpcNative(RPCMethod.ADD_SOURCE, "drive")
+_REGISTER_CHOICES: Mapping[str, RpcNative[RPCMethod]] = MappingProxyType(
+    {
+        "url": _REGISTER_URL,
+        "text": _REGISTER_TEXT,
+        "drive": _REGISTER_DRIVE,
+    }
+)
+
+
+def _select_register(value: SourceRegisterInput) -> RpcNative[RPCMethod]:
+    """Pick the one ``ADD_SOURCE`` variant a registration request dispatches under."""
+    return _REGISTER_CHOICES[sources_codec.source_register_variant(value)]
+
+
+# ``forward_disable_internal_retries`` stays False deliberately.  It is one
+# row-level boolean, but the three choices carry two different reviewed retry
+# classifications, and both of them (PROBE_THEN_CREATE, NON_IDEMPOTENT_NO_RETRY)
+# already force the inner retry loop off in
+# ``resolve_effective_disable_internal_retries`` — keyed on ``(method,
+# variant)``, which is exactly the ``NativeChoice`` this row selects.  Leaving
+# the caller flag False therefore preserves the effective behaviour of all three
+# registrations *and* keeps that resolution's unknown-variant guard live, which
+# an explicit caller ``True`` would short-circuit.
+SOURCE_REGISTER = CodecBinding(
+    definition=SOURCE_REGISTER_DEF,
+    encode=sources_codec.encode_source_register,
+    decode=sources_codec.decode_source_register,
+    native=NativeCallSpec.keyed(
+        _select_register,
+        _REGISTER_URL,
+        _REGISTER_TEXT,
+        _REGISTER_DRIVE,
+    ),
+)
+
 SHARING_PATCH_VIEW_LEVEL = CodecBinding(
     definition=SHARING_PATCH_VIEW_LEVEL_DEF,
     encode=sharing_codec.encode_sharing_patch_view_level,
@@ -148,6 +191,7 @@ PRIMITIVE_ROWS: Mapping[Operation, Binding] = MappingProxyType(
         LABEL_ALLOCATE.definition.key: LABEL_ALLOCATE,
         SHARING_MUTATE.definition.key: SHARING_MUTATE,
         SOURCE_PATCH_TITLE.definition.key: SOURCE_PATCH_TITLE,
+        SOURCE_REGISTER.definition.key: SOURCE_REGISTER,
         SHARING_PATCH_VIEW_LEVEL.definition.key: SHARING_PATCH_VIEW_LEVEL,
         CHAT_STREAM_ANSWER.definition.key: CHAT_STREAM_ANSWER,
     }
@@ -160,5 +204,6 @@ __all__ = [
     "PRIMITIVE_ROWS",
     "SHARING_MUTATE",
     "SOURCE_PATCH_TITLE",
+    "SOURCE_REGISTER",
     "SHARING_PATCH_VIEW_LEVEL",
 ]

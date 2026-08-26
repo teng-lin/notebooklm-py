@@ -108,32 +108,39 @@ def _row(mode: ErrorMode) -> CustomBinding[Any, Any, str]:
 @pytest.mark.parametrize(
     ("row", "expected"),
     [
-        (None, (False, None)),
-        (_row(ErrorMode.TRANSLATE), (False, False)),
-        (_row(ErrorMode.TRANSLATE_SCRUBBED), (False, True)),
-        (_row(ErrorMode.RAW_PASSTHROUGH), (True, False)),
+        (None, None),
+        (_row(ErrorMode.TRANSLATE), False),
+        (_row(ErrorMode.TRANSLATE_SCRUBBED), True),
     ],
-    ids=["handler-backed", "translate", "translate-scrubbed", "raw-passthrough"],
+    ids=["handler-backed", "translate", "translate-scrubbed"],
 )
 def test_the_head_projects_each_error_mode(
     row: CustomBinding[Any, Any, str] | None,
-    expected: tuple[bool, bool | None],
+    expected: bool | None,
 ) -> None:
     assert _row_error_projection(row, Operation.SHARING_SET_PUBLIC) == expected
 
 
-def test_source_add_rows_carry_the_raw_passthrough_projection() -> None:
-    for operation in (
-        Operation.SOURCE_ADD_URL_BATCH,
-        Operation.SOURCE_ADD_TEXT,
-        Operation.SOURCE_ADD_DRIVE,
-        Operation.SOURCE_ADD_FILE,
-    ):
-        assert _row_error_projection(WEB_BINDING_ROWS[operation], operation) == (True, False)
-        assert _row_error_projection(None, operation) == (False, None)
-    assert _row_error_projection(
-        WEB_BINDING_ROWS[Operation.SOURCE_ADD_URL], Operation.SOURCE_ADD_URL
-    ) == (False, False)
+def test_the_source_add_rows_all_translate() -> None:
+    """P10 invariant I8: every source-add row owns its public compatibility leaf.
+
+    The head no longer has a raw-passthrough branch, so ``_row_error_projection``
+    answers only "scrub request URLs?" — ``False`` for every one of these rows.
+    ``source.add_text``, ``source.add_url``, ``source.add_drive`` and
+    ``source.add_url_batch`` are absent because R3.2-R3.5 hoisted them: none
+    has a custom row left, and the ``SOURCE_REGISTER`` leaf all four share is a
+    codec row, which carries no ``error_mode`` at all (``None`` — the shared
+    translator's own default).
+    """
+    assert (
+        _row_error_projection(
+            WEB_BINDING_ROWS[Operation.SOURCE_REGISTER], Operation.SOURCE_REGISTER
+        )
+        is None
+    )
+    for operation in (Operation.SOURCE_ADD_FILE,):
+        assert _row_error_projection(WEB_BINDING_ROWS[operation], operation) is False
+        assert _row_error_projection(None, operation) is None
 
 
 def _custom_row_with_collaborators(*names: str) -> CustomBinding[Any, Any, Any]:

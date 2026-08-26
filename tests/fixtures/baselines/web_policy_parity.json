@@ -908,23 +908,6 @@
       ],
       "reviewed_streams": []
     },
-    "source.add_drive": {
-      "call_policy": "mutation",
-      "derived_natives": [
-        "ADD_SOURCE:drive",
-        "GET_NOTEBOOK:<default>",
-        "UPDATE_SOURCE:<default>"
-      ],
-      "derived_streams": [],
-      "known_divergence": null,
-      "parity": "match",
-      "reviewed_natives": [
-        "ADD_SOURCE:drive",
-        "GET_NOTEBOOK:<default>",
-        "UPDATE_SOURCE:<default>"
-      ],
-      "reviewed_streams": []
-    },
     "source.add_file": {
       "call_policy": "mutation",
       "derived_natives": [
@@ -941,51 +924,6 @@
         "GET_NOTEBOOK:<default>",
         "GET_USER_SETTINGS:<default>",
         "UPDATE_SOURCE:<default>"
-      ],
-      "reviewed_streams": []
-    },
-    "source.add_text": {
-      "call_policy": "mutation",
-      "derived_natives": [
-        "ADD_SOURCE:text"
-      ],
-      "derived_streams": [],
-      "known_divergence": null,
-      "parity": "match",
-      "reviewed_natives": [
-        "ADD_SOURCE:text"
-      ],
-      "reviewed_streams": []
-    },
-    "source.add_url": {
-      "call_policy": "mutation",
-      "derived_natives": [
-        "ADD_SOURCE:url",
-        "GET_NOTEBOOK:<default>",
-        "UPDATE_SOURCE:<default>"
-      ],
-      "derived_streams": [],
-      "known_divergence": null,
-      "parity": "match",
-      "reviewed_natives": [
-        "ADD_SOURCE:url",
-        "GET_NOTEBOOK:<default>",
-        "UPDATE_SOURCE:<default>"
-      ],
-      "reviewed_streams": []
-    },
-    "source.add_url_batch": {
-      "call_policy": "mutation",
-      "derived_natives": [
-        "ADD_SOURCE:url",
-        "GET_NOTEBOOK:<default>"
-      ],
-      "derived_streams": [],
-      "known_divergence": null,
-      "parity": "match",
-      "reviewed_natives": [
-        "ADD_SOURCE:url",
-        "GET_NOTEBOOK:<default>"
       ],
       "reviewed_streams": []
     },
@@ -1090,6 +1028,23 @@
       "parity": "match",
       "reviewed_natives": [
         "REFRESH_SOURCE:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "source.register": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "ADD_SOURCE:drive",
+        "ADD_SOURCE:text",
+        "ADD_SOURCE:url"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "ADD_SOURCE:drive",
+        "ADD_SOURCE:text",
+        "ADD_SOURCE:url"
       ],
       "reviewed_streams": []
     },
@@ -1305,6 +1260,78 @@
         "SHARE_NOTEBOOK:<default>"
       ]
     },
+    "source.add_drive": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "ADD_SOURCE:drive",
+        "GET_NOTEBOOK:<default>",
+        "UPDATE_SOURCE:<default>"
+      ],
+      "leaf_operations": [
+        "source.list",
+        "source.register",
+        "source.patch_title"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "ADD_SOURCE:drive",
+        "GET_NOTEBOOK:<default>",
+        "UPDATE_SOURCE:<default>"
+      ]
+    },
+    "source.add_text": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "ADD_SOURCE:text"
+      ],
+      "leaf_operations": [
+        "source.register"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "ADD_SOURCE:text"
+      ]
+    },
+    "source.add_url": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "ADD_SOURCE:url",
+        "GET_NOTEBOOK:<default>",
+        "UPDATE_SOURCE:<default>"
+      ],
+      "leaf_operations": [
+        "source.list",
+        "source.register",
+        "source.patch_title",
+        "source.get"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "ADD_SOURCE:url",
+        "GET_NOTEBOOK:<default>",
+        "UPDATE_SOURCE:<default>"
+      ]
+    },
+    "source.add_url_batch": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "ADD_SOURCE:url",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "leaf_operations": [
+        "source.register",
+        "source.list"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "ADD_SOURCE:url",
+        "GET_NOTEBOOK:<default>"
+      ]
+    },
     "source.update": {
       "call_policy": "mutation",
       "known_divergence": null,
@@ -1325,8 +1352,8 @@
   },
   "summary": {
     "direct_row_divergences": 0,
-    "direct_rows": 80,
+    "direct_rows": 77,
     "end_to_end_divergences": 1,
-    "service_owned_workflows": 12
+    "service_owned_workflows": 16
   }
 }

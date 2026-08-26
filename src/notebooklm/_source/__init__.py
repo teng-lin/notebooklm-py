@@ -6,7 +6,6 @@ directly (``from .._source.upload import SourceUploadPipeline``).
 """
 
 from . import add, content, drive_import, listing, polling, upload, upload_payloads
-from .add import SourceAddService
 from .content import SourceContentRenderer
 from .drive_import import DriveFetcher, DriveImportService
 from .listing import SourceLister
@@ -29,7 +28,6 @@ __all__ = [
     "upload_payloads",
     "DriveFetcher",
     "DriveImportService",
-    "SourceAddService",
     "SourceContentRenderer",
     "SourceLister",
     "SourcePoller",

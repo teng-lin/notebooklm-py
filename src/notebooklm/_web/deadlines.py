@@ -28,9 +28,6 @@ SEMANTIC_DEADLINE_AUTHORITIES: Final[MappingProxyType[Operation, SemanticDeadlin
     MappingProxyType(
         {
             Operation.NOTEBOOK_SUGGEST_PROMPTS: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.SOURCE_ADD_URL: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.SOURCE_ADD_URL_BATCH: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.SOURCE_ADD_DRIVE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.ARTIFACT_LIST: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.ARTIFACT_GET: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.ARTIFACT_GENERATE_AUDIO: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
@@ -58,6 +55,8 @@ SEMANTIC_DEADLINE_AUTHORITIES: Final[MappingProxyType[Operation, SemanticDeadlin
             Operation.CHAT_CONFIGURE: SemanticDeadlineAuthority.BRANCH_EXCLUSIVE,
             # P9.2 primitive: one UPDATE_LABEL call per input, variant chosen from it.
             Operation.LABEL_MUTATE: SemanticDeadlineAuthority.BRANCH_EXCLUSIVE,
+            # P10 primitive: one ADD_SOURCE call per input, variant chosen from it.
+            Operation.SOURCE_REGISTER: SemanticDeadlineAuthority.BRANCH_EXCLUSIVE,
         }
     )
 )

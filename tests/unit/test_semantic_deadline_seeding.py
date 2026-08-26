@@ -29,9 +29,6 @@ from notebooklm.rpc import RPCMethod
 _EXPECTED_CLIENT_TIMEOUT_OPERATIONS = frozenset(
     {
         Operation.NOTEBOOK_SUGGEST_PROMPTS,
-        Operation.SOURCE_ADD_URL,
-        Operation.SOURCE_ADD_URL_BATCH,
-        Operation.SOURCE_ADD_DRIVE,
         Operation.ARTIFACT_LIST,
         Operation.ARTIFACT_GET,
         Operation.ARTIFACT_GENERATE_AUDIO,
@@ -57,7 +54,12 @@ _EXPECTED_WORKFLOW_OWNED_OPERATIONS = frozenset(
     }
 )
 _EXPECTED_BRANCH_EXCLUSIVE_OPERATIONS = frozenset(
-    {Operation.ARTIFACT_DOWNLOAD, Operation.CHAT_CONFIGURE, Operation.LABEL_MUTATE}
+    {
+        Operation.ARTIFACT_DOWNLOAD,
+        Operation.CHAT_CONFIGURE,
+        Operation.LABEL_MUTATE,
+        Operation.SOURCE_REGISTER,
+    }
 )
 
 

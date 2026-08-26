@@ -202,8 +202,10 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         CallPolicy.MUTATION,
         "SourceService",
         "notebook",
-        "Takes an unconditional source-id baseline, routes YouTube URLs to their wire shape, "
-        "uses exact new-row reconciliation, and applies an optional title afterward.",
+        "Service-owned since P10 R3.3: SourceService.add_url takes an unconditional source-id "
+        "baseline over source.list, routes YouTube URLs to their wire shape through one "
+        "source.register url allocation, reconciles an uncertain commit against that baseline, "
+        "and applies an optional title through source.patch_title afterward.",
         _p("sources", "add_url"),
         (
             _b(RPCMethod.ADD_SOURCE, "url"),
@@ -220,8 +222,10 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         CallPolicy.MUTATION,
         "SourceService",
         "notebook",
-        "Sends validated URL/YouTube entries once, never blindly replays an uncertain write, "
-        "and reconciles omitted positions against exact URL identities.",
+        "Service-owned since P10 R3.5: SourceService.add_urls_batch sends validated "
+        "URL/YouTube entries once through one source.register url write, never blindly "
+        "replays an uncertain write, and reconciles omitted positions against exact URL "
+        "identities plus a source.list of ERROR rows.",
         native_bindings=(
             _b(RPCMethod.ADD_SOURCE, "url"),
             _b(RPCMethod.GET_NOTEBOOK),
@@ -236,7 +240,8 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         CallPolicy.MUTATION,
         "SourceService",
         "notebook",
-        "Creates text without a safe probe key; idempotent=True is rejected up front.",
+        "Service-owned since P10 R3.2: SourceService.add_text rejects idempotent=True up front "
+        "and runs one source.register text allocation, which has no safe probe key.",
         _p("sources", "add_text"),
         (_b(RPCMethod.ADD_SOURCE, "text"),),
         recency_effect=(
@@ -249,7 +254,10 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         CallPolicy.MUTATION,
         "SourceService",
         "notebook",
-        "Takes an unconditional source-id baseline and reconciles by new exact Drive document id.",
+        "Service-owned since P10 R3.4: SourceService.add_drive takes an unconditional source-id "
+        "baseline over source.list, allocates the Drive document through one source.register "
+        "drive write, reconciles an uncertain commit against that baseline by exact new Drive "
+        "document id, and applies an optional title through source.patch_title afterward.",
         _p("sources", "add_drive"),
         (
             _b(RPCMethod.ADD_SOURCE, "drive"),
@@ -310,6 +318,20 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         "service-owned source.update workflow.",
         (),
         (_b(RPCMethod.UPDATE_SOURCE),),
+    ),
+    OperationSpec(
+        Operation.SOURCE_REGISTER,
+        CallPolicy.MUTATION,
+        "SourceService",
+        "notebook",
+        "P10 primitive: one ADD_SOURCE allocation whose wire variant — and therefore whose "
+        "reviewed retry classification — is chosen from the request's registration kind.",
+        (),
+        (
+            _b(RPCMethod.ADD_SOURCE, "url"),
+            _b(RPCMethod.ADD_SOURCE, "text"),
+            _b(RPCMethod.ADD_SOURCE, "drive"),
+        ),
     ),
     OperationSpec(
         Operation.SOURCE_REFRESH,

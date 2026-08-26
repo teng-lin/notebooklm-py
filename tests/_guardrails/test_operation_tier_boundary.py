@@ -4,7 +4,7 @@
 back a public client method; the ``PRIMITIVE`` members are the decomposition
 leaves a semantic service sequences to run a product workflow — the nine P9.2
 leaves (``docs/plan/2026-08-24-p9-composite-gate-table.md`` §5) plus the P10
-R2.2 streamed-answer leaf.
+R2.2 streamed-answer leaf and the P10 R3.2 source-registration leaf.
 
 Two things must stay true, and neither is self-enforcing:
 
@@ -37,9 +37,14 @@ pytestmark = pytest.mark.repo_lint
 
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
 
+#: Prose prefixes a reviewed spec uses to mark a leaf. The programme that
+#: introduced the leaf is part of the sentence, so the set grows with each one.
+PRIMITIVE_PROSE_PREFIXES = ("P9.2 primitive:", "P10 primitive:")
+
 #: The decomposition leaves: the nine P9.2 members, verbatim from the gate
-#: table's §5 vocabulary, plus the P10 R2.2 streamed-answer leaf. Adding one is
-#: a vocabulary decision, not a refactor.
+#: table's §5 vocabulary, plus P10 R2.2's streamed-answer leaf and R3.2's
+#: source-registration leaf. Adding another is a vocabulary decision, not a
+#: refactor.
 REVIEWED_PRIMITIVE_OPERATIONS = frozenset(
     {
         Operation.ARTIFACT_CATALOG,
@@ -52,6 +57,7 @@ REVIEWED_PRIMITIVE_OPERATIONS = frozenset(
         Operation.SHARING_MUTATE,
         Operation.SHARING_PATCH_VIEW_LEVEL,
         Operation.SOURCE_PATCH_TITLE,
+        Operation.SOURCE_REGISTER,
     }
 )
 
@@ -132,12 +138,12 @@ def test_reviewed_primitive_set_matches_the_live_definition_tiers() -> None:
     )
 
     assert live == REVIEWED_PRIMITIVE_OPERATIONS
-    assert len(primitive_definition_names()) == len(REVIEWED_PRIMITIVE_OPERATIONS) == 10
+    assert len(primitive_definition_names()) == len(REVIEWED_PRIMITIVE_OPERATIONS) == 11
 
 
 def test_product_operation_count_excludes_the_primitives() -> None:
-    """97 vocabulary members are 87 product operations plus ten leaves."""
-    assert len(Operation) == 97
+    """98 vocabulary members are 87 product operations plus eleven leaves."""
+    assert len(Operation) == 98
     assert len(product_operations()) == 87
     assert product_operations().isdisjoint(REVIEWED_PRIMITIVE_OPERATIONS)
     assert product_operations() | REVIEWED_PRIMITIVE_OPERATIONS == frozenset(Operation)
@@ -150,7 +156,7 @@ def test_reviewed_catalog_prose_marks_exactly_the_primitive_tier() -> None:
         for spec in OPERATION_SPECS
         # The slice that introduced the leaf names itself in the prose; the
         # marker is the ``<slice> primitive:`` prefix, not the P9.2 number.
-        if spec.composite_behavior.startswith(("P9.2 primitive:", "P10 primitive:"))
+        if spec.composite_behavior.startswith(PRIMITIVE_PROSE_PREFIXES)
     )
 
     assert prose_marked == REVIEWED_PRIMITIVE_OPERATIONS

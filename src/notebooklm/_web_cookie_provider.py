@@ -13,11 +13,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
 from ._auth.cookie_types import CookieJar
+from ._source_upload_port import UploadLifecycleHooks
 
 if TYPE_CHECKING:
     from ._auth.profile_store import ProfileStore
     from ._runtime.contracts import ChatLifecycleHooks
-    from ._source.upload import SourceUploadPipeline
     from .auth import AuthTokens
 
 
@@ -131,7 +131,7 @@ class WebCookieProvider(Protocol):
         """Return whether the provider acquisition session is open."""
         ...
 
-    async def open(self, *, uploader: SourceUploadPipeline, chat: ChatLifecycleHooks) -> None:
+    async def open(self, *, uploader: UploadLifecycleHooks, chat: ChatLifecycleHooks) -> None:
         """Open provider-owned acquisition and persistence resources."""
         ...
 

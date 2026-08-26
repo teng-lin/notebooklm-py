@@ -919,7 +919,6 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/bindings/sources.py", "_backend", "BackendErrorReason"),
         ("_web/bindings/sources.py", "_binding", "CodecPayload"),
         ("_web/bindings/sources.py", "_binding", "CustomBinding"),
-        ("_web/bindings/sources.py", "_binding", "ErrorMode"),
         ("_web/bindings/sources.py", "_binding", "RowInvoker"),
         ("_web/bindings/sources.py", "_projectors", "project_source"),
         ("_web/bindings/sources.py", "_records", "SOURCE_ADD_DRIVE_DEF"),
@@ -1260,7 +1259,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_research_service.py", "_records", "ResearchStartInput"),
         ("_source/listing.py", "_projectors", "project_source"),
         ("_source/listing.py", "_records", "SourceRecord"),
-        ("_source/upload.py", "_records", "SourceFileRegistrationRecord"),
+        ("_source_upload_port.py", "_records", "SourceFileRegistrationRecord"),
         ("_sources.py", "_backend", "BackendAdapter"),
         ("_sources.py", "_backend", "BackendError"),
         ("_sources.py", "_backend_compat", "project_backend_call"),
@@ -1874,7 +1873,6 @@ _REVIEWED_BACKEND_IMPORT_MODULES = frozenset(
         "_binding",
         "_backend_compat",
         "_label_service",
-        "_mutation_services",
         "_note_service",
         "_notebook_mutation_service",
         "_projectors",
@@ -1904,7 +1902,6 @@ _REVIEWED_BACKEND_IMPORT_PREFIXES = (
     "notebooklm._backend",
     "notebooklm._binding",
     "notebooklm._label_service",
-    "notebooklm._mutation_services",
     "notebooklm._notebook_mutation_service",
     "notebooklm._projectors",
     "notebooklm._read_services",
@@ -1975,7 +1972,6 @@ ACTIVE_BACKEND_INVOKE_SITES = frozenset(
         "_studio/representations.py:ArtifactRepresentationService._get_content",
         "_studio/representations.py:ArtifactRepresentationService._list_mind_maps",
         "_studio/representations.py:ArtifactRepresentationService._list_representations",
-        "_mutation_services.py:SourceUrlMutationService.add_url",
         "_sharing_service.py:SharingService.get_status",
         "_sharing_service.py:SharingService._mutate_then_read_status",
         "_sharing_service.py:SharingService._patch_view_level_then_read_status",
@@ -1985,13 +1981,15 @@ ACTIVE_BACKEND_INVOKE_SITES = frozenset(
         "_settings_service.py:SettingsService.set_output_language",
         "_suggestion_service.py:SuggestionService.suggest_prompts",
         "_suggestion_service.py:SuggestionService.suggest_reports",
-        "_mutation_services.py:SourceUrlMutationService.finalize_title",
-        "_source_service.py:SourceService.add_drive",
+        "_source_service.py:SourceService._patch_title",
+        "_source_service.py:SourceService._add_baseline",
+        "_source_service.py:SourceService._guarded_registration.register",
+        "_source_service.py:SourceService._probe_snapshot",
         "_source_service.py:SourceService.add_drive_file",
         "_source_service.py:SourceService.add_file",
         "_source_service.py:SourceService.add_text",
-        "_source_service.py:SourceService.add_urls_batch",
-        "_source_service.py:SourceService.finalize_drive_title",
+        "_source_batch_service.py:run_url_batch_registration",
+        "_source_batch_service.py:_batch_error_rows",
         "_source_service.py:SourceService.finalize_file_title",
         "_source_service.py:SourceService.check_freshness",
         "_source_service.py:SourceService.delete",
@@ -2336,6 +2334,147 @@ ACTIVE_BACKEND_INVOKE_SITES |= frozenset(
 )
 
 
+# P10 R3.2: the SOURCE_REGISTER primitive leaf. One ADD_SOURCE allocation whose
+# wire variant, and therefore whose reviewed retry classification, is chosen
+# from the request's registration kind.
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_web/bindings/primitives.py", "_records", "SOURCE_REGISTER_DEF"),
+        ("_web/bindings/primitives.py", "_records", "SourceRegisterInput"),
+        ("_web/codec/sources.py", "_backend", "BackendContractError"),
+        ("_web/codec/sources.py", "_records", "SourceRegisterInput"),
+        ("_web/codec/sources.py", "_records", "SourceRegisterKind"),
+        ("_web/codec/sources.py", "_records", "SourceRegisterResult"),
+        ("_web/registry.py", "_records", "SOURCE_REGISTER_DEF"),
+    }
+)
+
+# P10 R3.2: source.add_text becomes service-owned. The custom row and its typed
+# input/result leave _web; SourceService gains the workflow and the neutral
+# failure evidence it reports instead of a public exception.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_source_service.py", "_records", "SourceAddTextInput"),
+        ("_web/bindings/sources.py", "_records", "SOURCE_ADD_TEXT_DEF"),
+        ("_web/bindings/sources.py", "_records", "SourceAddTextInput"),
+        ("_web/bindings/sources.py", "_records", "SourceAddTextResult"),
+    }
+)
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_source_service.py", "_backend", "BackendContractError"),
+        ("_source_service.py", "_records", "SOURCE_REGISTER_DEF"),
+        ("_source_service.py", "_records", "SourceAddFailureKind"),
+        ("_source_service.py", "_records", "SourceAddFailureRecord"),
+        ("_source_service.py", "_records", "SourceRegisterInput"),
+        ("_source_service.py", "_records", "SourceRegisterKind"),
+    }
+)
+
+# P10 R3.3: source.add_url becomes service-owned. The protocol custom row, the
+# ``_mutation_services.py`` pass-through it was reached through, and their typed
+# input/result leave _web; SourceService gains the baseline/register/probe/
+# finalise workflow over source.list, source.register, source.patch_title and
+# source.get.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_mutation_services.py", "_backend", "BackendAdapter"),
+        ("_mutation_services.py", "_records", "SOURCE_ADD_URL_DEF"),
+        ("_mutation_services.py", "_records", "SourceAddUrlInput"),
+        ("_mutation_services.py", "_records", "SourceAddUrlResult"),
+        ("_mutation_services.py", "_records", "SourceRecord"),
+        ("_sources.py", "_mutation_services", "SourceUrlMutationService"),
+        ("_web/bindings/sources.py", "_records", "SOURCE_ADD_URL_DEF"),
+        ("_web/bindings/sources.py", "_records", "SourceAddCommitState"),
+        ("_web/bindings/sources.py", "_records", "SourceAddTitleState"),
+        ("_web/bindings/sources.py", "_records", "SourceAddUrlInput"),
+        ("_web/bindings/sources.py", "_records", "SourceAddUrlReceipt"),
+        ("_web/bindings/sources.py", "_records", "SourceAddUrlResult"),
+    }
+)
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_source_service.py", "_backend", "annotate_backend_error"),
+        ("_source_service.py", "_records", "SOURCE_ADD_URL_DEF"),
+        ("_source_service.py", "_records", "SOURCE_LIST_DEF"),
+        ("_source_service.py", "_records", "SourceAddCommitState"),
+        ("_source_service.py", "_records", "SourceAddTitleState"),
+        ("_source_service.py", "_records", "SourceAddUrlReceipt"),
+        ("_source_service.py", "_records", "SourceAddUrlResult"),
+        ("_source_service.py", "_records", "SourceListInput"),
+        ("_source_service.py", "_records", "SourceListResult"),
+    }
+)
+
+# P10 R3.5: source.add_url_batch becomes service-owned. The last source-add
+# protocol row whose workflow the plan hoists, its typed input/result and the
+# positional outcome record leave _web; SourceService gains the one non-replayed
+# batch write over source.register and the ERROR-row reconciliation over
+# source.list.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_source_service.py", "_records", "SOURCE_ADD_URL_BATCH_DEF"),
+        ("_source_service.py", "_records", "SourceAddUrlBatchInput"),
+        ("_web/backend.py", "_records", "SourceAddFailureRecord"),
+        ("_web/bindings/sources.py", "_records", "SOURCE_ADD_URL_BATCH_DEF"),
+        ("_web/bindings/sources.py", "_records", "SourceAddUrlBatchInput"),
+        ("_web/bindings/sources.py", "_records", "SourceAddUrlBatchResult"),
+        ("_web/bindings/sources.py", "_records", "SourceUrlBatchItemRecord"),
+    }
+)
+# The workflow body sits beside ``_source_service.py`` rather than in it: four
+# hoisted source-add workflows put that module over the ADR-0008 size budget.
+# The two report builders it shares with them are R3.4's
+# ``_source_add_reports.py``, already reviewed above.
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_source_batch_service.py", "_backend", "BackendAdapter"),
+        ("_source_batch_service.py", "_backend", "BackendContractError"),
+        ("_source_batch_service.py", "_backend", "BackendDeadlineExceededError"),
+        ("_source_batch_service.py", "_backend", "BackendError"),
+        ("_source_batch_service.py", "_backend", "BackendErrorReason"),
+        ("_source_batch_service.py", "_backend", "rebind_operation"),
+        ("_source_batch_service.py", "_records", "SOURCE_ADD_URL_BATCH_DEF"),
+        ("_source_batch_service.py", "_records", "SOURCE_LIST_DEF"),
+        ("_source_batch_service.py", "_records", "SOURCE_REGISTER_DEF"),
+        ("_source_batch_service.py", "_records", "SourceAddFailureKind"),
+        ("_source_batch_service.py", "_records", "SourceAddFailureRecord"),
+        ("_source_batch_service.py", "_records", "SourceAddUrlBatchResult"),
+        ("_source_batch_service.py", "_records", "SourceListInput"),
+        ("_source_batch_service.py", "_records", "SourceRecord"),
+        ("_source_batch_service.py", "_records", "SourceRegisterInput"),
+        ("_source_batch_service.py", "_records", "SourceRegisterKind"),
+        ("_source_batch_service.py", "_records", "SourceUrlBatchItemRecord"),
+    }
+)
+
+# P10 R3.4: source.add_drive becomes service-owned. The last probed-registration
+# protocol row and its typed input/result leave _web; ``SourceService`` gains the
+# baseline/register/probe/finalise workflow over source.list, source.register and
+# source.patch_title, and the neutral report vocabulary the three hoisted
+# source-add workflows share moves to ``_source_add_reports.py`` so the service
+# stays inside the module-size budget.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_source_service.py", "_records", "SourceAddDriveInput"),
+        ("_web/bindings/sources.py", "_records", "SOURCE_ADD_DRIVE_DEF"),
+        ("_web/bindings/sources.py", "_records", "SourceAddDriveInput"),
+        ("_web/bindings/sources.py", "_records", "SourceAddDriveResult"),
+    }
+)
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_source_add_reports.py", "_backend", "BackendContractError"),
+        ("_source_add_reports.py", "_backend", "BackendError"),
+        ("_source_add_reports.py", "_backend", "BackendErrorReason"),
+        ("_source_add_reports.py", "_records", "SourceAddFailureKind"),
+        ("_source_add_reports.py", "_records", "SourceAddFailureRecord"),
+        ("_source_add_reports.py", "_records", "SourceRecord"),
+        ("_source_add_reports.py", "_records", "SourceRegisterInput"),
+        ("_source_service.py", "_records", "SourceListResult"),
+    }
+)
+
 # P10 R2.2: ``chat.ask`` becomes a service-owned workflow over two leaves — the
 # streamed ``CHAT_STREAM_ANSWER`` primitive row and the conversation-id readback
 # — so the custom row, its handler imports and the ``StreamSpec`` family go, and
@@ -2383,9 +2522,11 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
     }
 )
 # P10 R2.5 (invariant I7): ``_web/registry.py`` derives its directly supported
-# definition set from ``WEB_BINDING_ROWS`` instead of naming all 80 ``*_DEF``
-# objects, so those imports are gone. The twelve service-owned definitions stay
-# imported — no row carries them.
+# definition set from ``WEB_BINDING_ROWS`` instead of naming every directly
+# supported ``*_DEF`` object, so those imports are gone. Only the service-owned
+# definitions stay imported — no row carries them — which after R3.2–R3.5 keeps
+# the four hoisted ``SOURCE_ADD_*`` definitions and drops ``SOURCE_REGISTER_DEF``
+# (the R3.2 primitive row carries it).
 REVIEWED_BACKEND_IMPORTS -= frozenset(
     {
         ("_web/registry.py", "_records", "ARTIFACT_CATALOG_DEF"),
@@ -2454,11 +2595,7 @@ REVIEWED_BACKEND_IMPORTS -= frozenset(
         ("_web/registry.py", "_records", "SHARING_GET_DEF"),
         ("_web/registry.py", "_records", "SHARING_MUTATE_DEF"),
         ("_web/registry.py", "_records", "SHARING_PATCH_VIEW_LEVEL_DEF"),
-        ("_web/registry.py", "_records", "SOURCE_ADD_DRIVE_DEF"),
         ("_web/registry.py", "_records", "SOURCE_ADD_FILE_DEF"),
-        ("_web/registry.py", "_records", "SOURCE_ADD_TEXT_DEF"),
-        ("_web/registry.py", "_records", "SOURCE_ADD_URL_BATCH_DEF"),
-        ("_web/registry.py", "_records", "SOURCE_ADD_URL_DEF"),
         ("_web/registry.py", "_records", "SOURCE_CHECK_FRESHNESS_DEF"),
         ("_web/registry.py", "_records", "SOURCE_DELETE_DEF"),
         ("_web/registry.py", "_records", "SOURCE_GET_DEF"),
@@ -2467,6 +2604,7 @@ REVIEWED_BACKEND_IMPORTS -= frozenset(
         ("_web/registry.py", "_records", "SOURCE_LIST_DEF"),
         ("_web/registry.py", "_records", "SOURCE_PATCH_TITLE_DEF"),
         ("_web/registry.py", "_records", "SOURCE_REFRESH_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_REGISTER_DEF"),
         ("_web/registry.py", "_records", "SOURCE_WAIT_DEF"),
     }
 )
@@ -2569,7 +2707,6 @@ def audit_inert_p1_backend_dataflow(
                             "_binding",
                             "_backend_compat",
                             "_label_service",
-                            "_mutation_services",
                             "_notebook_mutation_service",
                             "_projectors",
                             "_read_services",

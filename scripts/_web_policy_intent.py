@@ -161,59 +161,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
             CallPolicy.MUTATION,
             (_native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "read with recency side effect"),),
         ),
-        Operation.SOURCE_ADD_URL: WebCallPolicyBinding(
-            CallPolicy.MUTATION,
-            (
-                _native(
-                    RPCMethod.GET_NOTEBOOK,
-                    _IDEMPOTENT,
-                    "baseline/probe or title null-echo readback",
-                ),
-                _native(
-                    RPCMethod.ADD_SOURCE,
-                    _PROBE_CREATE,
-                    "guarded generic/YouTube create",
-                    variant="url",
-                ),
-                _native(RPCMethod.UPDATE_SOURCE, _IDEMPOTENT, "optional title readback"),
-            ),
-        ),
-        Operation.SOURCE_ADD_URL_BATCH: WebCallPolicyBinding(
-            CallPolicy.MUTATION,
-            (
-                _native(
-                    RPCMethod.ADD_SOURCE,
-                    _PROBE_CREATE,
-                    "single non-replayed URL/YouTube batch write",
-                    variant="url",
-                ),
-                _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "conditional reconciliation read"),
-            ),
-        ),
-        Operation.SOURCE_ADD_TEXT: WebCallPolicyBinding(
-            CallPolicy.MUTATION,
-            (
-                _native(
-                    RPCMethod.ADD_SOURCE,
-                    _NO_RETRY,
-                    "non-idempotent pasted-text allocation",
-                    variant="text",
-                ),
-            ),
-        ),
-        Operation.SOURCE_ADD_DRIVE: WebCallPolicyBinding(
-            CallPolicy.MUTATION,
-            (
-                _native(
-                    RPCMethod.ADD_SOURCE,
-                    _PROBE_CREATE,
-                    "Drive-document allocation with baseline probe",
-                    variant="drive",
-                ),
-                _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "baseline/probe read"),
-                _native(RPCMethod.UPDATE_SOURCE, _IDEMPOTENT, "optional title set-op"),
-            ),
-        ),
         Operation.SOURCE_ADD_FILE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (
@@ -234,6 +181,35 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
         Operation.SOURCE_PATCH_TITLE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (_native(RPCMethod.UPDATE_SOURCE, _IDEMPOTENT, "source title set-op"),),
+        ),
+        # P10 primitive: one ADD_SOURCE allocation, the variant chosen from the
+        # request's registration kind. The three choices deliberately carry two
+        # different reviewed retry classifications — the registry keys on
+        # (method, variant), so collapsing the source-add family onto one leaf
+        # cannot flatten text's NON_IDEMPOTENT_NO_RETRY into the url/drive
+        # PROBE_THEN_CREATE the way a method-keyed ledger would.
+        Operation.SOURCE_REGISTER: WebCallPolicyBinding(
+            CallPolicy.MUTATION,
+            (
+                _native(
+                    RPCMethod.ADD_SOURCE,
+                    _PROBE_CREATE,
+                    "guarded generic/YouTube create (single or true batch)",
+                    variant="url",
+                ),
+                _native(
+                    RPCMethod.ADD_SOURCE,
+                    _NO_RETRY,
+                    "non-idempotent pasted-text allocation",
+                    variant="text",
+                ),
+                _native(
+                    RPCMethod.ADD_SOURCE,
+                    _PROBE_CREATE,
+                    "guarded Drive-document allocation",
+                    variant="drive",
+                ),
+            ),
         ),
         Operation.SOURCE_REFRESH: WebCallPolicyBinding(
             CallPolicy.MUTATION,
@@ -850,6 +826,75 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                     _leaf(Operation.COLLECTION_GET, None),
                     _leaf(Operation.LABEL_MUTATE, None, "add_notebooks", "remove_notebooks"),
                 ),
+            ),
+            Operation.SOURCE_ADD_URL: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(
+                        RPCMethod.GET_NOTEBOOK,
+                        _IDEMPOTENT,
+                        "baseline/probe or title null-echo readback",
+                    ),
+                    _native(
+                        RPCMethod.ADD_SOURCE,
+                        _PROBE_CREATE,
+                        "guarded generic/YouTube create",
+                        variant="url",
+                    ),
+                    _native(RPCMethod.UPDATE_SOURCE, _IDEMPOTENT, "optional title readback"),
+                ),
+                (
+                    _leaf(Operation.SOURCE_LIST, None),
+                    _leaf(Operation.SOURCE_REGISTER, "url"),
+                    _leaf(Operation.SOURCE_PATCH_TITLE, None),
+                    _leaf(Operation.SOURCE_GET, None),
+                ),
+            ),
+            Operation.SOURCE_ADD_DRIVE: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(
+                        RPCMethod.ADD_SOURCE,
+                        _PROBE_CREATE,
+                        "Drive-document allocation with baseline probe",
+                        variant="drive",
+                    ),
+                    _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "baseline/probe read"),
+                    _native(RPCMethod.UPDATE_SOURCE, _IDEMPOTENT, "optional title set-op"),
+                ),
+                (
+                    _leaf(Operation.SOURCE_LIST, None),
+                    _leaf(Operation.SOURCE_REGISTER, "drive"),
+                    _leaf(Operation.SOURCE_PATCH_TITLE, None),
+                ),
+            ),
+            Operation.SOURCE_ADD_URL_BATCH: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(
+                        RPCMethod.ADD_SOURCE,
+                        _PROBE_CREATE,
+                        "single non-replayed URL/YouTube batch write",
+                        variant="url",
+                    ),
+                    _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "conditional reconciliation read"),
+                ),
+                (
+                    _leaf(Operation.SOURCE_REGISTER, "url"),
+                    _leaf(Operation.SOURCE_LIST, None),
+                ),
+            ),
+            Operation.SOURCE_ADD_TEXT: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(
+                        RPCMethod.ADD_SOURCE,
+                        _NO_RETRY,
+                        "non-idempotent pasted-text allocation",
+                        variant="text",
+                    ),
+                ),
+                (_leaf(Operation.SOURCE_REGISTER, "text"),),
             ),
             Operation.SOURCE_UPDATE: WorkflowPolicyBinding(
                 CallPolicy.MUTATION,
