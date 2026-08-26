@@ -84,7 +84,6 @@ KNOWN_WEB_PACKAGE_FIRST_PARTY_IMPORTS: frozenset[str] = frozenset(
         "_auth_refresh_retry",
         "_backend",
         "_binding",
-        "_chat",
         "_client_metrics",
         "_deadline",
         "_env",

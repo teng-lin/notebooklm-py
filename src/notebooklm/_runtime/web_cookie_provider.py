@@ -37,8 +37,8 @@ from .auth import AuthRefreshCoordinator
 from .lifecycle import ClientLifecycle
 
 if TYPE_CHECKING:
-    from .._chat import ChatAPI
     from .._source.upload import SourceUploadPipeline
+    from .contracts import ChatLifecycleHooks
 
 RefreshSession = Callable[..., Awaitable[AuthTokens]]
 T = TypeVar("T")
@@ -195,7 +195,7 @@ class RuntimeWebCookieProvider(LoopBoundPrimitive):
                 raise RuntimeError("web cookie provider is closing")
             return self._current_generation
 
-    async def open(self, *, uploader: SourceUploadPipeline, chat: ChatAPI) -> None:
+    async def open(self, *, uploader: SourceUploadPipeline, chat: ChatLifecycleHooks) -> None:
         """Open the provider-owned acquisition lifecycle."""
         if self.is_open:
             return
