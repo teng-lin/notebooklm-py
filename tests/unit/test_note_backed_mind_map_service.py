@@ -67,7 +67,7 @@ class TestContent:
 
         tree = json.dumps({"children": []})
         service, _ = _service([[["mm_1", tree]]])
-        records = await service._list_mind_map_records("nb_abc")
+        records = await service.list_mind_maps("nb_abc")
         assert [record.tree_json for record in records] == [tree]
 
 
@@ -114,7 +114,7 @@ class TestRenameMindMap:
         # reaches this through a nested row whose content slot is absent.
         content = json.dumps({"children": []})
         service, rpc_call = _service([[["mm_1", content]]])
-        records = await service._list_mind_map_records("nb_abc")
+        records = await service.list_mind_maps("nb_abc")
         assert records[0].tree_json == content
 
         service, rpc_call = _service([[["mm_1", content]]])

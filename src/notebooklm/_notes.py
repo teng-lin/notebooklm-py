@@ -21,6 +21,7 @@ from ._backend import BackendError
 from ._backend_compat import project_backend_call, project_backend_error
 from ._lookup import unwrap_or_raise
 from ._note_service import NoteService
+from ._projectors import project_note
 from ._row_adapters.notes import NoteRow
 from .exceptions import NoteNotFoundError
 from .types import Note
@@ -76,9 +77,11 @@ class NotesAPI:
         logger.debug("Listing notes in notebook: %s", notebook_id)
         public_error: Exception | None = None
         try:
-            return await self._notes.list_notes(notebook_id)
+            records = await self._notes.list_notes(notebook_id)
         except BackendError as error:
             public_error = project_backend_error(error)
+        else:
+            return [project_note(record) for record in records]
         assert public_error is not None
         raise public_error
 
@@ -124,9 +127,11 @@ class NotesAPI:
         """
         public_error: Exception | None = None
         try:
-            return await self._notes.get_note_or_none(notebook_id, note_id)
+            record = await self._notes.get_note_or_none(notebook_id, note_id)
         except BackendError as error:
             public_error = project_backend_error(error)
+        else:
+            return None if record is None else project_note(record)
         assert public_error is not None
         raise public_error
 
@@ -152,13 +157,15 @@ class NotesAPI:
         """
         public_error: Exception | None = None
         try:
-            return await self._notes.create_note(
+            record = await self._notes.create_note_record(
                 notebook_id,
                 title=title,
                 content=content,
             )
         except BackendError as error:
             public_error = project_backend_error(error)
+        else:
+            return project_note(record)
         assert public_error is not None
         raise public_error
 

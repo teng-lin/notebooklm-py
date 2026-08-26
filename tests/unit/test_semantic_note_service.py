@@ -31,7 +31,7 @@ from tests._fixtures.recording_backend import BackendInvocation, RecordingBacken
 
 
 @pytest.mark.asyncio
-async def test_note_service_uses_only_typed_operations_and_projects_notes() -> None:
+async def test_note_service_uses_only_typed_operations_and_returns_note_records() -> None:
     backend = RecordingBackend()
     record = NoteRecord("note", "notebook", "Title", "Body")
     backend.set_result(NOTE_LIST_DEF, NoteListResult((record,)))
@@ -47,7 +47,7 @@ async def test_note_service_uses_only_typed_operations_and_projects_notes() -> N
     ]
     selected = await service.get_note_or_none("notebook", "note")
     assert selected is not None and selected.id == "note"
-    created = await service.create_note("notebook", "Title", "Body")
+    created = await service.create_note_record("notebook", "Title", "Body")
     assert created.id == "note"
     assert await service.update_note("notebook", "note", "New body", "New title") is None
     assert await service.delete_note("notebook", "note") is None

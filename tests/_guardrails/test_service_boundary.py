@@ -97,7 +97,6 @@ I1_FORBIDDEN_FIRST_PARTY_ROOTS: frozenset[str] = frozenset(
 #: public argument validation moved up to ``ResearchAPI``.
 I1_SEED_ALLOWLIST: frozenset[str] = frozenset(
     {
-        "_note_service.py",
         "_studio/catalog.py",
         "_studio/lifecycle.py",
         "_studio/mind_maps.py",
@@ -124,6 +123,14 @@ I1_RETURN_ARM_EXEMPTIONS: frozenset[str] = frozenset({"_source_add_reports.py"})
 #: Built-in scalars and collection constructors a neutral service may name in a
 #: return annotation. Deliberately minimal: widening it is a reviewed change,
 #: which is the point of the invariant.
+#:
+#: ``object`` was added in R6.6 for the two raw-row compatibility listings
+#: ``NoteService.list_mind_map_rows`` / ``list_note_rows``, whose elements are
+#: undecoded wire rows the frozen public ``NotesAPI.list_mind_maps ->
+#: list[Any]`` contract republishes verbatim. It is the opaque top type, not
+#: the unchecked ``Any``: a service may say "this element has no known type",
+#: which the already-permitted bare ``list`` / ``dict`` spellings say too, but
+#: it still may not annotate a return ``Any`` and wave anything through.
 I1_PERMITTED_RETURN_BUILTINS: frozenset[str] = frozenset(
     {
         "None",
@@ -134,6 +141,7 @@ I1_PERMITTED_RETURN_BUILTINS: frozenset[str] = frozenset(
         "frozenset",
         "int",
         "list",
+        "object",
         "set",
         "str",
         "tuple",
