@@ -259,8 +259,10 @@ def test_rpc_ast_walk_distinguishes_calls_from_decoder_references() -> None:
         "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
+        # P10 R5.1a/R5.1c: the prompt-suggestion and the eight generate rows no
+        # longer dispatch GET_NOTEBOOK — their default-source read is the
+        # service-owned NOTEBOOK_GET row above.
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
-        "_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS",
         "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
         "_web/bindings/sources.py:SOURCE_ADD_FILE",
         "_web/bindings/sources.py:SOURCE_ADD_URL",
@@ -268,14 +270,6 @@ def test_rpc_ast_walk_distinguishes_calls_from_decoder_references() -> None:
         "_web/bindings/sources.py:SOURCE_GET",
         "_web/bindings/sources.py:SOURCE_LIST",
         "_web/bindings/sources.py:SOURCE_WAIT",
-        "_web/bindings/studio.py:ARTIFACT_GENERATE_AUDIO",
-        "_web/bindings/studio.py:ARTIFACT_GENERATE_DATA_TABLE",
-        "_web/bindings/studio.py:ARTIFACT_GENERATE_FLASHCARDS",
-        "_web/bindings/studio.py:ARTIFACT_GENERATE_INFOGRAPHIC",
-        "_web/bindings/studio.py:ARTIFACT_GENERATE_QUIZ",
-        "_web/bindings/studio.py:ARTIFACT_GENERATE_REPORT",
-        "_web/bindings/studio.py:ARTIFACT_GENERATE_SLIDE_DECK",
-        "_web/bindings/studio.py:ARTIFACT_GENERATE_VIDEO",
     ]
     assert any("_row_adapters/" in site for site in references[RPCMethod.GET_NOTEBOOK]["decoders"])
     assert references[RPCMethod.SUGGEST_PROMPTS]["decoders"] == [
@@ -578,9 +572,13 @@ def test_operation_authorities_are_exact_discriminated_and_include_non_rpc_paths
     projection = catalog.build_operation_catalog()
     rows = {row["key"]: row for row in projection["operations"]}
 
+    # Since P10 R5.1a the kickoff is the row's only native; the default-source
+    # read is an end-to-end authority the row does not dispatch itself, carried
+    # by the service-owned NOTEBOOK_GET row (the ``chat.ask`` model).
     audio = rows["artifact.generate_audio"]["execution_authorities"]
     assert {row["site"] for row in audio} == {
         "_web/bindings/studio.py:ARTIFACT_GENERATE_AUDIO",
+        "_web/bindings/notebooks.py:NOTEBOOK_GET",
     }
     assert all(row["discriminator"] for row in audio)
     assert not any("MindMapsAPI.generate" in row["site"] for row in audio)
@@ -592,6 +590,7 @@ def test_operation_authorities_are_exact_discriminated_and_include_non_rpc_paths
         authorities = rows[operation]["execution_authorities"]
         assert {row["site"] for row in authorities} == {
             f"_web/bindings/studio.py:{row_name}",
+            "_web/bindings/notebooks.py:NOTEBOOK_GET",
         }
         assert all(row["discriminator"] for row in authorities)
 

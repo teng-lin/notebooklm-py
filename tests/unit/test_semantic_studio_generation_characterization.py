@@ -34,6 +34,7 @@ from typing import Any
 import pytest
 
 from notebooklm._backend import BackendAdapter, BackendContractError
+from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from notebooklm._read_services import NotebookReadService
 from notebooklm._records import (
     AudioGenerateRequest,
@@ -425,3 +426,89 @@ async def test_the_cinematic_video_route_keeps_its_own_kickoff() -> None:
         _digest(executor.kickoff_params())
         == "055d9546c0411c992508c0219530271cf7ba16f3bc4a30b80a87804c026cc996"
     )
+
+
+# --- the aggregate budget -----------------------------------------------------
+
+#: ``family -> (service class, generate method)``.  These build their own service
+#: so the deadline factory can be injected, which ``GENERATE`` above does not do.
+_BUDGET_FAMILIES: dict[str, tuple[Any, str]] = {
+    "audio": (AudioFamilyService, "generate"),
+    "quiz": (InteractiveFamilyService, "generate_quiz"),
+    "flashcards": (InteractiveFamilyService, "generate_flashcards"),
+    "infographic": (VisualFamilyService, "generate_infographic"),
+    "slide_deck": (VisualFamilyService, "generate_slide_deck"),
+    "data_table": (DataTableFamilyService, "generate"),
+    "report": (ReportFamilyService, "generate"),
+    "video": (VideoFamilyService, "generate"),
+}
+
+
+class _KwargRecordingExecutor(_RecordingExecutor):
+    """Also keep each call's keyword set, which carries ``_retry_deadline``."""
+
+    def __init__(self, *responses: object) -> None:
+        super().__init__(*responses)
+        self.kwargs: list[dict[str, Any]] = []
+
+    async def rpc_call(self, method: RPCMethod, params: list[Any], **kwargs: Any) -> Any:
+        self.kwargs.append(kwargs)
+        return await super().rpc_call(method, params, **kwargs)
+
+
+def _budget_service(family: str, backend: BackendAdapter, inputs: StudioGenerationInputs) -> Any:
+    service_class, _method = _BUDGET_FAMILIES[family]
+    return service_class(backend, StudioCatalog(backend), inputs)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("family", sorted(_BUDGET_FAMILIES))
+async def test_the_default_source_read_and_the_kickoff_share_one_client_budget(
+    family: str,
+) -> None:
+    """The operation left the multi-native deadline ledger in R5.1a, so the family
+    service captures the budget ``WebRpcBackend`` used to seed for the row: one
+    absolute identity spans ``GET_NOTEBOOK`` and ``CREATE_ARTIFACT``.
+    """
+    executor = _KwargRecordingExecutor(_NOTEBOOK_WITH_SOURCES, _KICKOFF)
+    backend = build_web_backend(executor)
+    inputs = StudioGenerationInputs(
+        NotebookReadService(backend),
+        deadline_factory=RuntimeDeadlineFactory.fixed(30.0, monotonic=lambda: 10.0),
+    )
+    service = _budget_service(family, backend, inputs)
+
+    await getattr(service, _BUDGET_FAMILIES[family][1])(unresolved(family), deadline=None)
+
+    assert executor.methods == [RPCMethod.GET_NOTEBOOK, RPCMethod.CREATE_ARTIFACT]
+    read, kickoff = executor.kwargs
+    assert isinstance(read["_retry_deadline"], RuntimeDeadline)
+    assert read["_retry_deadline"] is kickoff["_retry_deadline"]
+
+
+@pytest.mark.asyncio
+async def test_an_explicit_deadline_is_never_replaced_by_the_captured_one() -> None:
+    executor = _KwargRecordingExecutor(_NOTEBOOK_WITH_SOURCES, _KICKOFF)
+    backend = build_web_backend(executor)
+    caller = RuntimeDeadline(timeout=40.0, started_at=10.0, monotonic=lambda: 11.0)
+    inputs = StudioGenerationInputs(
+        NotebookReadService(backend),
+        deadline_factory=RuntimeDeadlineFactory.fixed(30.0, monotonic=lambda: 10.0),
+    )
+    service = AudioFamilyService(backend, StudioCatalog(backend), inputs)
+
+    await service.generate(unresolved("audio"), deadline=caller)
+
+    assert [kwargs["_retry_deadline"] for kwargs in executor.kwargs] == [caller, caller]
+
+
+@pytest.mark.asyncio
+async def test_without_a_factory_the_generate_families_stay_unbounded() -> None:
+    """A client with no configured timeout must not acquire one here."""
+    executor = _KwargRecordingExecutor(_NOTEBOOK_WITH_SOURCES, _KICKOFF)
+    backend = build_web_backend(executor)
+    service = AudioFamilyService(backend, StudioCatalog(backend), _inputs(backend))
+
+    await service.generate(unresolved("audio"), deadline=None)
+
+    assert [kwargs["_retry_deadline"] for kwargs in executor.kwargs] == [None, None]

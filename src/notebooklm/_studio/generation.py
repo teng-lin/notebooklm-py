@@ -24,7 +24,7 @@ from __future__ import annotations
 from typing import Final, Protocol
 
 from .._backend import BackendContractError
-from .._deadline import RuntimeDeadline
+from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from .._env import get_default_language
 from .._operations import Operation
 from .._read_services import NotebookReadService
@@ -203,10 +203,18 @@ def _validate_report_format(request: ReportGenerateRequest) -> None:
 class StudioGenerationInputs:
     """Turn one caller's generation request into the port's pre-resolved input."""
 
-    __slots__ = ("_notebooks",)
+    __slots__ = ("_deadline_factory", "_notebooks")
 
-    def __init__(self, notebooks: NotebookReadService) -> None:
+    def __init__(
+        self,
+        notebooks: NotebookReadService,
+        *,
+        deadline_factory: RuntimeDeadlineFactory | None = None,
+    ) -> None:
         self._notebooks = notebooks
+        # The default-source read and the kickoff it feeds are one caller
+        # operation, so they share one budget — see :func:`_generation_budget`.
+        self._deadline_factory = deadline_factory
 
     async def audio(
         self, request: AudioGenerateRequest, *, deadline: RuntimeDeadline | None
@@ -360,6 +368,24 @@ class StudioGenerationInputs:
     def _language(language: str | None) -> str:
         """``None`` language means the environment default (never ``"en"`` here)."""
         return get_default_language() if language is None else language
+
+
+def _generation_budget(
+    inputs: StudioGenerationInputs, deadline: RuntimeDeadline | None
+) -> RuntimeDeadline | None:
+    """Capture the one client budget a generate call spends, before the read.
+
+    Until P10 R5.1a the row itself issued both natives, so ``WebRpcBackend``
+    seeded the client timeout once for the whole operation (the multi-native
+    deadline ledger).  The rows are single-native now and the default-source
+    read happens up here, so the family service captures that budget instead —
+    the same absolute identity reaches ``NOTEBOOK_GET`` and ``CREATE_ARTIFACT``.
+    Package-private: the families import it, but a public callable returning a
+    ``RuntimeDeadline`` would breach P10 invariant I1.
+    """
+    if deadline is not None or inputs._deadline_factory is None:
+        return deadline
+    return inputs._deadline_factory.start()
 
 
 __all__ = ["StudioGenerationInputs"]

@@ -12,7 +12,7 @@ from .._records import (
     AudioMetadataRecord,
 )
 from .catalog import StudioCatalog
-from .generation import StudioGenerationInputs
+from .generation import StudioGenerationInputs, _generation_budget
 
 
 class AudioFamilyService:
@@ -36,6 +36,7 @@ class AudioFamilyService:
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> AudioGenerateResult:
+        deadline = _generation_budget(self._inputs, deadline)
         return await self._backend.invoke(
             ARTIFACT_GENERATE_AUDIO_DEF,
             await self._inputs.audio(request, deadline=deadline),

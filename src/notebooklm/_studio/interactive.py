@@ -15,7 +15,7 @@ from .._records import (
     InteractiveMetadataRecord,
 )
 from .catalog import StudioCatalog
-from .generation import StudioGenerationInputs
+from .generation import StudioGenerationInputs, _generation_budget
 
 
 class InteractiveFamilyService:
@@ -39,6 +39,7 @@ class InteractiveFamilyService:
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> InteractiveGenerateResult:
+        deadline = _generation_budget(self._inputs, deadline)
         return await self._backend.invoke(
             ARTIFACT_GENERATE_QUIZ_DEF,
             await self._inputs.quiz(request, deadline=deadline),
@@ -51,6 +52,7 @@ class InteractiveFamilyService:
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> InteractiveGenerateResult:
+        deadline = _generation_budget(self._inputs, deadline)
         return await self._backend.invoke(
             ARTIFACT_GENERATE_FLASHCARDS_DEF,
             await self._inputs.flashcards(request, deadline=deadline),

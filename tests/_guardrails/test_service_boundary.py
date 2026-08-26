@@ -450,10 +450,13 @@ def test_conforming_semantic_services_return_only_neutral_types() -> None:
     def is_neutral(atom: str) -> bool:
         if atom in permitted:
             return True
-        # A private neutral record/result. The public-model exclusion matters:
-        # ``AskResult`` and ``MindMapResult`` are exported models that the
-        # bare suffix rule would otherwise wave through.
-        return atom.endswith(("Record", "Result")) and atom not in public_models
+        # A private neutral record/result/operation input. ``*Input`` joined the
+        # vocabulary in P10 R5.1a: a service that resolves a port input above the
+        # port (``StudioGenerationInputs``) returns one, and those records live in
+        # the same neutral modules as ``*Record``. The public-model exclusion
+        # matters: ``AskResult`` and ``MindMapResult`` are exported models that
+        # the bare suffix rule would otherwise wave through.
+        return atom.endswith(("Input", "Record", "Result")) and atom not in public_models
 
     offenders: dict[str, list[tuple[str, str]]] = {}
     for path in _semantic_service_modules():

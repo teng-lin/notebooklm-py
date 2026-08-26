@@ -16,7 +16,7 @@ from .._records import (
     VisualMetadataRecord,
 )
 from .catalog import StudioCatalog
-from .generation import StudioGenerationInputs
+from .generation import StudioGenerationInputs, _generation_budget
 
 
 class VisualFamilyService:
@@ -40,6 +40,7 @@ class VisualFamilyService:
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> VisualGenerateResult:
+        deadline = _generation_budget(self._inputs, deadline)
         return await self._backend.invoke(
             ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
             await self._inputs.infographic(request, deadline=deadline),
@@ -52,6 +53,7 @@ class VisualFamilyService:
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> VisualGenerateResult:
+        deadline = _generation_budget(self._inputs, deadline)
         return await self._backend.invoke(
             ARTIFACT_GENERATE_SLIDE_DECK_DEF,
             await self._inputs.slide_deck(request, deadline=deadline),

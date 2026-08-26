@@ -32,14 +32,9 @@ SEMANTIC_DEADLINE_AUTHORITIES: Final[MappingProxyType[Operation, SemanticDeadlin
             Operation.SOURCE_ADD_DRIVE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.ARTIFACT_LIST: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.ARTIFACT_GET: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GENERATE_AUDIO: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GENERATE_VIDEO: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GENERATE_REPORT: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GENERATE_QUIZ: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GENERATE_FLASHCARDS: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GENERATE_INFOGRAPHIC: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GENERATE_SLIDE_DECK: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GENERATE_DATA_TABLE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
+            # P10 R5.1a took the eight ``artifact.generate_*`` operations out of
+            # this ledger: their rows are single-native now, and the family
+            # service captures the one budget the read and the kickoff share.
             Operation.ARTIFACT_GENERATE_MIND_MAP: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.MIND_MAP_GENERATE_NOTE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.MIND_MAP_GENERATE_INTERACTIVE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,

@@ -14,7 +14,7 @@ from .._records import (
     MindMapGenerateResult,
 )
 from .catalog import StudioCatalog
-from .generation import StudioGenerationInputs
+from .generation import StudioGenerationInputs, _generation_budget
 
 
 class DataTableFamilyService:
@@ -38,6 +38,7 @@ class DataTableFamilyService:
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> DataTableGenerateResult:
+        deadline = _generation_budget(self._inputs, deadline)
         return await self._backend.invoke(
             ARTIFACT_GENERATE_DATA_TABLE_DEF,
             await self._inputs.data_table(request, deadline=deadline),

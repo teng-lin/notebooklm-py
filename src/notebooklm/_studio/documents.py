@@ -18,7 +18,7 @@ from .._records import (
     VideoMetadataRecord,
 )
 from .catalog import StudioCatalog
-from .generation import StudioGenerationInputs
+from .generation import StudioGenerationInputs, _generation_budget
 
 _REPORT_FORMATS_BY_KIND = {
     "Briefing Doc": "briefing_doc",
@@ -55,6 +55,7 @@ class VideoFamilyService:
         deadline: RuntimeDeadline | None = None,
     ) -> VideoGenerateResult:
         normalized = self._normalize_options(request)
+        deadline = _generation_budget(self._inputs, deadline)
         return await self._backend.invoke(
             ARTIFACT_GENERATE_VIDEO_DEF,
             await self._inputs.video(normalized, deadline=deadline),
@@ -144,6 +145,7 @@ class ReportFamilyService:
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> ReportGenerateResult:
+        deadline = _generation_budget(self._inputs, deadline)
         return await self._backend.invoke(
             ARTIFACT_GENERATE_REPORT_DEF,
             await self._inputs.report(request, deadline=deadline),
