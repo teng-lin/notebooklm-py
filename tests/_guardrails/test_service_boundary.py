@@ -27,7 +27,7 @@ Since R6.5 this is a hard rule with exactly one named exemption,
 **I2 — ``_web/**`` imports no domain package.** The web backend may not import
 ``_chat``, ``_source``, ``_studio``, ``_artifact`` or any
 semantic service module. Neutral helper modules (``_semantic.records``,
-``_research_neutral``, ``_deadline``, ``_request_types``, ``_markdown``) stay
+``_deadline``, ``_request_types``, ``_markdown``) stay
 permitted and are asserted as such below, so the rule cannot be widened into
 one that forbids the neutral direction too. **Met.** The seed drained to empty
 and R6.5's successor slice deleted it, so this is a hard rule with no exemption
@@ -164,9 +164,6 @@ I1_PERMITTED_RETURN_BUILTINS: frozenset[str] = frozenset(
 #: module in it defines part of what a service may return.
 RECORDS_ROOT = SRC_ROOT / "_semantic" / "records"
 
-#: Neutral record/enum modules outside :data:`RECORDS_ROOT`.
-NEUTRAL_RECORD_MODULE_NAMES: frozenset[str] = frozenset({"_research_neutral.py"})
-
 # --- I2: the web backend takes no domain dependency --------------------------
 
 #: Domain *packages* above the semantic port. ``_web`` consumes their neutral
@@ -207,7 +204,6 @@ I2_PERMITTED_NEUTRAL_HELPERS: frozenset[str] = frozenset(
         "_deadline",
         "_markdown",
         "_request_types",
-        "_research_neutral",
         "_semantic.records",
     }
 )
@@ -444,7 +440,6 @@ def _neutral_enum_names() -> frozenset[str]:
     """Enum classes defined in the neutral record modules."""
     modules = sorted(RECORDS_ROOT.glob("*.py"))
     assert modules, "no _semantic/records module found; neutral discovery is broken"
-    modules += [SRC_ROOT / name for name in sorted(NEUTRAL_RECORD_MODULE_NAMES)]
     names: set[str] = set()
     for path in modules:
         for node in _tree(path).body:

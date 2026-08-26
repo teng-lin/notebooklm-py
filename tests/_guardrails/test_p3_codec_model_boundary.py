@@ -46,6 +46,18 @@ _REVIEWED_CODEC_VALUE_IMPORTS = {
         ("_types.documents", "_utf16_slice"),
         ("_types.documents", "utf16_len"),
     },
+    # The poll decoder runs the retained ``_research_task_parser`` and flattens
+    # its models onto ``ResearchTaskRecord``; both the models it consumes and
+    # the two search-source tags it encodes with are named here rather than
+    # re-exported through a root-level projection module. The codec reads these
+    # values and constructs no public model -- the Research facade still owns
+    # the projection back onto ``ResearchTask`` / ``ResearchSource``.
+    "research.py": {
+        ("_types.research", "RESEARCH_SOURCE_TYPE_DRIVE"),
+        ("_types.research", "RESEARCH_SOURCE_TYPE_WEB"),
+        ("_types.research", "ResearchSource"),
+        ("_types.research", "ResearchTask"),
+    },
 }
 
 
