@@ -11,10 +11,10 @@ from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from typing import Any, TypeVar, cast
 
-from .._backend_compat import project_backend_call
 from .._deadline import Monotonic, RuntimeDeadline, Sleep
-from .._projectors import project_generation_status
-from .._records import (
+from .._semantic.compat import project_backend_call
+from .._semantic.projectors import project_generation_status
+from .._semantic.records import (
     ArtifactReviseSlideInput,
     AudioGenerateRequest,
     DataTableGenerateRequest,

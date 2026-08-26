@@ -8,12 +8,12 @@ import pytest
 from notebooklm._backend import BackendError, BackendErrorReason
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._operations import CallPolicy, Operation
-from notebooklm._sharing_manager import ShareManager, build_share_url
-from notebooklm._sharing_records import (
+from notebooklm._semantic.records.sharing import (
     LEGACY_SHARE_ARTIFACT_DEF,
     LegacyShareArtifactInput,
     LegacyShareArtifactResult,
 )
+from notebooklm._sharing_manager import ShareManager, build_share_url
 from notebooklm._web.codec.sharing import build_legacy_share_artifact_params
 from notebooklm.exceptions import ServerError
 from notebooklm.rpc.decoder import decode_response

@@ -25,7 +25,9 @@ import pytest
 import notebooklm._research_service as _research_mod
 from notebooklm._backend import BackendError
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._research import _import_candidates
+from notebooklm._research_service import ResearchService
+from notebooklm._semantic.records import (
     ResearchImportCandidate,
     ResearchImportedSourceRecord,
     ResearchImportVerifyInput,
@@ -33,8 +35,6 @@ from notebooklm._records import (
     ResearchPresentSourceRecord,
     SourceRecord,
 )
-from notebooklm._research import _import_candidates
-from notebooklm._research_service import ResearchService
 from notebooklm._web.errors import translate_web_error
 from notebooklm.exceptions import NetworkError, RPCError, RPCTimeoutError
 from tests._fixtures.web_backend import build_web_backend

@@ -9,7 +9,7 @@ from typing import Any
 from ..._backend import BackendContractError
 from ..._binding import CodecPayload
 from ..._operations import Operation
-from ..._records import (
+from ..._semantic.records import (
     LegacyShareArtifactInput,
     LegacyShareArtifactResult,
     ShareAccessLevel,

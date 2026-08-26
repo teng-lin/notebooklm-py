@@ -36,14 +36,14 @@ from typing import Any, cast
 
 import pytest
 
-from notebooklm._backend_compat import project_backend_call
 from notebooklm._deadline import RuntimeDeadlineFactory
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._note_service import NoteService
 from notebooklm._notebook_payloads import build_get_notebook_params
 from notebooklm._read_services import NotebookReadService
-from notebooklm._records import MindMapGenerateInput
 from notebooklm._rpc_executor import RpcExecutor
+from notebooklm._semantic.compat import project_backend_call
+from notebooklm._semantic.records import MindMapGenerateInput
 from notebooklm._studio import (
     MindMapFamilyService,
     NoteBackedMindMapFamilyService,

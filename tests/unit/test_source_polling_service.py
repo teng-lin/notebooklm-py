@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     SourceRecord,
     SourceWaitSnapshotResult,
 )

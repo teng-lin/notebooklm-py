@@ -40,7 +40,7 @@ from ..._binding import (
     NativeChoice,
 )
 from ..._operations import Operation
-from ..._records import (
+from ..._semantic.records import (
     MIND_MAP_DELETE_DEF,
     MIND_MAP_GENERATE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,

@@ -13,7 +13,14 @@ from typing import Any
 from ..._backend import BackendContractError, BackendError, BackendErrorReason
 from ..._binding import CodecPayload
 from ..._operations import Operation
-from ..._records import (
+from ..._row_adapters.sources import (
+    SourceFulltextRow,
+    SourceGuideRow,
+    SourceRow,
+    interpret_source_freshness,
+    unwrap_add_source_rows,
+)
+from ..._semantic.records import (
     SourceDeleteInput,
     SourceDeleteResult,
     SourceFileRegistrationRecord,
@@ -39,13 +46,6 @@ from ..._records import (
     SourceRegisterResult,
     SourceWaitSnapshotInput,
     SourceWaitSnapshotResult,
-)
-from ..._row_adapters.sources import (
-    SourceFulltextRow,
-    SourceGuideRow,
-    SourceRow,
-    interpret_source_freshness,
-    unwrap_add_source_rows,
 )
 from ..._url_utils import pdf_url_display_title
 from ...exceptions import SourceNotFoundError

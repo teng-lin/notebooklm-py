@@ -42,7 +42,7 @@ from .._conversation_cache import ConversationCache
 from .._deadline import RuntimeDeadline
 from .._loop_bound import LoopBoundPrimitive
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
-from .._records import (
+from .._semantic.records import (
     CHAT_ASK_DEF,
     CHAT_CONFIGURE_DEF,
     CHAT_DELETE_HISTORY_DEF,

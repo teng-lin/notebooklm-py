@@ -1,10 +1,10 @@
 """Sharing operations API."""
 
 from ._backend import BackendAdapter
-from ._backend_compat import project_backend_call
 from ._deadline import RuntimeDeadlineFactory
-from ._projectors import project_share_status
-from ._records import SharePermissionLevel, ShareViewScope
+from ._semantic.compat import project_backend_call
+from ._semantic.projectors import project_share_status
+from ._semantic.records import SharePermissionLevel, ShareViewScope
 from ._sharing_service import SharingService
 from .rpc.types import SharePermission, ShareViewLevel
 from .types import ShareStatus

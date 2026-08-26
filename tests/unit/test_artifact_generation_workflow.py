@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from notebooklm._artifact.generation_workflow import ArtifactGenerationWorkflow
-from notebooklm._records import AudioGenerateResult, GenerationStatusRecord
+from notebooklm._semantic.records import AudioGenerateResult, GenerationStatusRecord
 from notebooklm.exceptions import RateLimitError
 
 

@@ -12,7 +12,7 @@ import pytest
 
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     SOURCE_ADD_FILE_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
     SOURCE_DELETE_DEF,

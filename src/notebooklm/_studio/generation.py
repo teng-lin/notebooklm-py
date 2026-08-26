@@ -28,7 +28,7 @@ from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from .._env import get_default_language
 from .._operations import Operation
 from .._read_services import NotebookReadService
-from .._records import (
+from .._semantic.records import (
     AudioGenerateInput,
     AudioGenerateRequest,
     DataTableGenerateInput,

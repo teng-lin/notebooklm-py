@@ -17,10 +17,10 @@ from notebooklm._backend import (
     BackendErrorReason,
     UnsupportedOperationError,
 )
-from notebooklm._backend_compat import project_backend_error
 from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.records import (
     SHARING_GET_DEF,
     SHARING_MUTATE_DEF,
     SHARING_SET_PUBLIC_DEF,
@@ -366,7 +366,7 @@ def test_label_allocate_decoder_gets_method_id_from_its_binding_native(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The codec body has no primitive-specific ``RPCMethod`` authority."""
-    from notebooklm._records import LabelAllocateInput, LabelKind
+    from notebooklm._semantic.records import LabelAllocateInput, LabelKind
     from notebooklm._web.bindings import primitives
     from notebooklm._web.codec import labels as label_codec
 

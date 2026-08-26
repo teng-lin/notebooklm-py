@@ -14,7 +14,7 @@ import httpx
 
 from .._backend import BackendContractError, BackendError
 from .._operations import Operation
-from .._records import SourceAddFailureKind, SourceAddFailureRecord
+from .._semantic.records import SourceAddFailureKind, SourceAddFailureRecord
 from .._transport_errors import (
     TransportAuthExpired,
     TransportRateLimited,

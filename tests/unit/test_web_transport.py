@@ -11,7 +11,7 @@ from notebooklm._backend import BackendContractError, BackendDeadlineExceededErr
 from notebooklm._binding import CodecPayload, RpcNative
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
-from notebooklm._records import NOTEBOOK_LIST_DEF
+from notebooklm._semantic.records import NOTEBOOK_LIST_DEF
 from notebooklm._web.codec.chat_stream import ChatStreamRequestData
 from notebooklm._web.transport import WebRequest, WebStreamRequest, WebTransport
 from notebooklm.exceptions import NetworkError, ServerError

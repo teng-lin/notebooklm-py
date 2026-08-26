@@ -55,8 +55,8 @@ from ..._binding import (
 )
 from ..._deadline import RuntimeDeadline
 from ..._operations import Operation
-from ..._projectors import project_source
-from ..._records import (
+from ..._semantic.projectors import project_source
+from ..._semantic.records import (
     SOURCE_ADD_FILE_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
     SOURCE_DELETE_DEF,

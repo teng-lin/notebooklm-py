@@ -18,13 +18,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._operations import CallPolicy, Operation
-from notebooklm._projectors import (
+from notebooklm._semantic.projectors import (
     _SHARE_ACCESS,
     _SHARE_PERMISSIONS,
     _SHARE_VIEW_LEVELS,
     project_share_status,
 )
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     LEGACY_SHARE_ARTIFACT_DEF,
     SHARING_GET_DEF,
     SHARING_PATCH_VIEW_LEVEL_DEF,

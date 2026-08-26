@@ -16,13 +16,13 @@ from notebooklm._backend import (
     BackendError,
     BackendErrorReason,
 )
-from notebooklm._backend_compat import (
+from notebooklm._operations import Operation
+from notebooklm._semantic.compat import (
     project_backend_call,
     project_backend_error,
     project_local_not_found,
 )
-from notebooklm._operations import Operation
-from notebooklm._records import SourceAddFailureKind, SourceAddFailureRecord
+from notebooklm._semantic.records import SourceAddFailureKind, SourceAddFailureRecord
 from notebooklm._web.errors import translate_web_error
 from notebooklm.exceptions import (
     ArtifactFeatureUnavailableError,

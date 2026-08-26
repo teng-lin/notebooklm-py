@@ -533,7 +533,7 @@ async def test_backend_closes_only_a_provider_it_created() -> None:
 async def test_backend_rejects_work_after_close() -> None:
     """A closed backend fails loudly rather than reviving its session."""
     from notebooklm._operations import Operation
-    from notebooklm._records import NotebookListInput
+    from notebooklm._semantic.records import NotebookListInput
     from notebooklm._web.registry import WEB_OPERATION_REGISTRY
 
     backend = build_web_backend(object())

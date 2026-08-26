@@ -8,7 +8,15 @@ from typing import Any
 
 from ..._binding import CodecPayload, StreamRequestPayload
 from ..._notebook_payloads import build_get_notebook_params
-from ..._records import (
+from ..._row_adapters.chat import (
+    ConversationTurnRow,
+    SavedChatNoteRow,
+    unwrap_chat_settings,
+    unwrap_conversation_turns,
+    unwrap_last_conversation_id,
+)
+from ..._row_adapters.notes import NoteRow
+from ..._semantic.records import (
     ChatConfigureAction,
     ChatConfigureInput,
     ChatConfigureResult,
@@ -32,14 +40,6 @@ from ..._records import (
     ChatStreamResult,
     ChatTurnDecodeErrorRecord,
 )
-from ..._row_adapters.chat import (
-    ConversationTurnRow,
-    SavedChatNoteRow,
-    unwrap_chat_settings,
-    unwrap_conversation_turns,
-    unwrap_last_conversation_id,
-)
-from ..._row_adapters.notes import NoteRow
 from ...exceptions import UnknownRPCMethodError
 from ...rpc import RPCMethod, safe_index
 from .chat_saved_note import build_save_note_params as _encode_save_note_params

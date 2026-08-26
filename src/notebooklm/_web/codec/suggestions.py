@@ -6,7 +6,12 @@ from collections.abc import Sequence
 from typing import Any
 
 from ..._binding import CodecPayload
-from ..._records import (
+from ..._row_adapters.artifacts import (
+    ReportSuggestionRow,
+    unwrap_artifact_rows,
+)
+from ..._row_adapters.notebooks import PromptSuggestionRow, unwrap_prompt_suggestions
+from ..._semantic.records import (
     ArtifactSuggestReportsInput,
     ArtifactSuggestReportsResult,
     NotebookSuggestPromptsInput,
@@ -14,11 +19,6 @@ from ..._records import (
     PromptSuggestionRecord,
     ReportSuggestionRecord,
 )
-from ..._row_adapters.artifacts import (
-    ReportSuggestionRow,
-    unwrap_artifact_rows,
-)
-from ..._row_adapters.notebooks import PromptSuggestionRow, unwrap_prompt_suggestions
 from ...rpc import RPCMethod, nest_source_ids
 
 

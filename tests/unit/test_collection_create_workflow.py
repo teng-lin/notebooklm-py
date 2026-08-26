@@ -22,12 +22,12 @@ from notebooklm._backend import (
     BackendErrorReason,
     UnsupportedOperationError,
 )
-from notebooklm._backend_compat import project_backend_error
 from notebooklm._collections import CollectionsAPI
 from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from notebooklm._label_service import LabelSetService
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.records import (
     COLLECTION_CREATE_DEF,
     COLLECTION_LIST_DEF,
     LABEL_ALLOCATE_DEF,

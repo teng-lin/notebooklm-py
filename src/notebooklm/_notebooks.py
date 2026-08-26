@@ -4,7 +4,6 @@ import logging
 from typing import Any
 
 from ._backend import BackendAdapter, BackendError
-from ._backend_compat import project_backend_call, project_backend_error
 from ._deadline import RuntimeDeadlineFactory
 from ._notebook_guide_service import NotebookGuideService
 from ._notebook_metadata import (
@@ -13,13 +12,14 @@ from ._notebook_metadata import (
 )
 from ._notebook_mutation_service import NotebookMutationService
 from ._notebook_payloads import build_create_notebook_params as build_create_notebook_params
-from ._projectors import (
+from ._read_services import NotebookReadService, SourceReadService
+from ._semantic.compat import project_backend_call, project_backend_error
+from ._semantic.projectors import (
     project_notebook,
     project_notebook_description,
     project_prompt_suggestions,
     project_source,
 )
-from ._read_services import NotebookReadService, SourceReadService
 from ._sharing_manager import ShareManager
 from ._suggestion_service import PROMPT_SUGGESTIONS_DEFAULT_MODE, SuggestionService
 from .exceptions import (
@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 class _SemanticSourceLister:
     """Adapt the neutral source read service to the public lister protocol.
 
-    ``SourceReadService`` returns :class:`~notebooklm._records.SourceRecord`
+    ``SourceReadService`` returns :class:`~notebooklm._semantic.records.SourceRecord`
     values; :class:`NotebookSourceLister` — shared with the injected
     :class:`SourcesAPI` — is a public-model contract. Projection is a facade
     responsibility, so the notebook facade owns it here for the

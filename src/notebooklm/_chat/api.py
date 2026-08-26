@@ -18,22 +18,22 @@ from collections.abc import Awaitable
 from typing import Any, TypeVar
 
 from .._backend import BackendAdapter, BackendError
-from .._backend_compat import project_backend_error
 from .._conversation_cache import ConversationCache
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
-from .._projectors import (
+from .._runtime.contracts import LoopGuard
+from .._semantic.compat import project_backend_error
+from .._semantic.projectors import (
     chat_reference_record,
     project_chat_ask_result,
     project_chat_saved_note,
     project_chat_settings,
     project_chat_turns_legacy,
 )
-from .._records import (
+from .._semantic.records import (
     ChatConfigureAction,
     ChatConfigureInput,
     ChatSaveNoteInput,
 )
-from .._runtime.contracts import LoopGuard
 from ..exceptions import ChatError, NetworkError, ValidationError
 from ..types import (
     AskResult,

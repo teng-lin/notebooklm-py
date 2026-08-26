@@ -41,7 +41,7 @@ import pytest
 import notebooklm.rpc as rpc_module
 from notebooklm import correlation_id
 from notebooklm._chat.workflow import ChatWorkflowService
-from notebooklm._records import ChatAskInput
+from notebooklm._semantic.records import ChatAskInput
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.exceptions import DecodingError

@@ -25,7 +25,7 @@ from notebooklm._backend import (
 from notebooklm._binding import CodecBinding, CodecPayload, DeadlineMode
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     LEGACY_SHARE_ARTIFACT_DEF,
     SHARING_GET_DEF,
     LegacyShareArtifactInput,

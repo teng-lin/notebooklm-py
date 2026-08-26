@@ -35,11 +35,11 @@ from notebooklm._backend import (
     UnsupportedOperationError,
     may_have_committed,
 )
-from notebooklm._backend_compat import project_backend_error
 from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.records import (
     SOURCE_ADD_TEXT_DEF,
     SOURCE_REGISTER_DEF,
     SourceAddFailureKind,

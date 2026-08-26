@@ -6,7 +6,7 @@ from typing import cast
 
 from ._backend import BackendAdapter
 from ._deadline import RuntimeDeadline
-from ._records import (
+from ._semantic.records import (
     SETTINGS_GET_DEF,
     SETTINGS_GET_LIMITS_DEF,
     SETTINGS_SET_LANGUAGE_DEF,

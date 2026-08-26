@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ._records import ResearchSourceRecord, ResearchTaskRecord
 from ._research_task_parser import parse_research_task_models
+from ._semantic.records import ResearchSourceRecord, ResearchTaskRecord
 from ._types.research import (
     RESEARCH_SOURCE_TYPE_DRIVE,
     RESEARCH_SOURCE_TYPE_WEB,

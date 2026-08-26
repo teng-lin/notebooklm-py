@@ -13,7 +13,7 @@ import pytest
 from notebooklm._backend import BackendContractError, BackendError, BackendErrorReason
 from notebooklm._binding import CodecPayload
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     ArtifactDeleteInput,
     ArtifactDeleteResult,
     ArtifactDownloadInput,

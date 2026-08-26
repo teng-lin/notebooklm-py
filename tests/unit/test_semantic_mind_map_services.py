@@ -9,7 +9,7 @@ import pytest
 
 from notebooklm._note_service import NoteService
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     MIND_MAP_DELETE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,

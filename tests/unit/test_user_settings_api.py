@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from notebooklm._records import AccountLimitsRecord
+from notebooklm._semantic.records import AccountLimitsRecord
 from notebooklm._settings import SettingsAPI
 from notebooklm._web.codec.settings import (
     _extract_language,

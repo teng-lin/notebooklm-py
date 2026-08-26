@@ -5,7 +5,7 @@ is a label carrying a type discriminator (``3``) and no notebook parent, so both
 reuse the four label RPC ids verbatim (``agX4Bc`` / ``I3xc3c`` / ``le8sX`` /
 ``GyzE7e``).  Splitting them across two modules split one wire surface, so every
 request array and every response envelope for both dialects terminates here and
-returns neutral :class:`~notebooklm._records.LabelRecord` values.
+returns neutral :class:`~notebooklm._semantic.records.LabelRecord` values.
 
 Three wire differences separate the dialects (owner-captured on the live
 Gemini-Notebook UI, issues #2006/#2009):
@@ -28,7 +28,8 @@ from typing import Any
 from ..._backend import BackendContractError
 from ..._binding import CodecPayload
 from ..._operations import Operation
-from ..._records import (
+from ..._row_adapters.labels import CollectionRow, LabelRow
+from ..._semantic.records import (
     LabelAllocateInput,
     LabelAllocateResult,
     LabelDeleteInput,
@@ -44,7 +45,6 @@ from ..._records import (
     LabelMutateResult,
     LabelRecord,
 )
-from ..._row_adapters.labels import CollectionRow, LabelRow
 from ...exceptions import UnknownRPCMethodError
 from ...rpc import RPCMethod
 

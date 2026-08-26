@@ -29,9 +29,9 @@ from notebooklm._backend import (
     require_leaves,
 )
 from notebooklm._binding import OperationDisposition
-from notebooklm._notebook_records import NotebookCreateInput
 from notebooklm._operations import Operation, OperationTier
-from notebooklm._records import NOTEBOOK_CREATE_DEF
+from notebooklm._semantic.records import NOTEBOOK_CREATE_DEF
+from notebooklm._semantic.records.notebook import NotebookCreateInput
 from notebooklm._web.registry import (
     WEB_OPERATION_REGISTRY,
     WEB_SERVICE_OWNED_OPERATIONS,

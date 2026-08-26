@@ -20,14 +20,18 @@ from ._artifact.downloads import DownloadResult
 from ._artifact.generation_workflow import ArtifactGenerationWorkflow
 from ._artifact.listing import ArtifactListingService
 from ._backend import BackendAdapter, BackendContractError, BackendError, BackendErrorReason
-from ._backend_compat import project_backend_call, project_backend_error
 from ._deadline import RuntimeDeadlineFactory
 from ._lookup import unwrap_or_raise
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
-from ._projectors import project_artifact, project_generation_status, project_report_suggestion
 from ._read_services import NotebookReadService
-from ._records import (
+from ._semantic.compat import project_backend_call, project_backend_error
+from ._semantic.projectors import (
+    project_artifact,
+    project_generation_status,
+    project_report_suggestion,
+)
+from ._semantic.records import (
     ArtifactDeleteInput,
     ArtifactRecord,
     ArtifactRenameInput,

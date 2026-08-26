@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from ..._binding import CodecPayload
-from ..._records import (
+from ..._row_adapters.notes import NoteRow
+from ..._semantic.records import (
     MindMapRecord,
     NoteCreateInput,
     NoteCreateResult,
@@ -19,7 +20,6 @@ from ..._records import (
     NoteUpdateInput,
     NoteUpdateResult,
 )
-from ..._row_adapters.notes import NoteRow
 from ...exceptions import DecodingError, RPCError
 from ...rpc import RPCMethod, safe_index
 

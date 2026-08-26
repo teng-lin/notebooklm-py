@@ -38,7 +38,7 @@ from ._backend import (
 )
 from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from ._operations import OperationDef
-from ._records import (
+from ._semantic.records import (
     COLLECTION_CREATE_DEF,
     COLLECTION_DELETE_DEF,
     COLLECTION_GET_DEF,

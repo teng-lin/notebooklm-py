@@ -12,7 +12,7 @@ from notebooklm._backend import (
     UnsupportedOperationError,
 )
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     NOTEBOOK_GET_DEF,
     NOTEBOOK_LIST_DEF,
     NotebookGetInput,

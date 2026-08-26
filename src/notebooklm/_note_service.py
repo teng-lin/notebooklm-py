@@ -22,7 +22,7 @@ from ._backend import BackendAdapter
 from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from ._env import get_default_language
 from ._read_services import NotebookReadService
-from ._records import (
+from ._semantic.records import (
     MIND_MAP_GENERATE_NOTE_DEF,
     MIND_MAP_LIST_DEF,
     NOTE_CREATE_DEF,

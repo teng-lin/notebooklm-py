@@ -5,7 +5,7 @@
 typed leaves in :class:`~notebooklm._source_service.SourceService` (the batch
 in ``_source_batch_service``, which the module-size budget split off) and can
 therefore neither raise a public exception nor read one.  What they report instead is a
-:class:`~notebooklm._source_records.SourceAddFailureRecord` — the bounded,
+:class:`~notebooklm._semantic.records.source.SourceAddFailureRecord` — the bounded,
 serializable capture of the public graph the retired custom rows let escape —
 which ``_backend_compat`` replays as an *equal* public exception at the facade.
 
@@ -38,7 +38,7 @@ from ._backend import (
     BackendErrorReason,
 )
 from ._operations import Operation
-from ._records import (
+from ._semantic.records import (
     SourceAddFailureKind,
     SourceAddFailureRecord,
     SourceRecord,

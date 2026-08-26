@@ -40,7 +40,7 @@ from notebooklm._app.download import (
     select_artifact,
 )
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     ARTIFACT_DOWNLOAD_DEF,
     ArtifactDownloadResult,
     ArtifactRecord,

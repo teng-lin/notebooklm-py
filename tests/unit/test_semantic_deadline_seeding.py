@@ -11,7 +11,7 @@ from notebooklm._binding import CodecBinding, CustomBinding
 from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from notebooklm._notebook_mutation_service import NotebookMutationService
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     SOURCE_WAIT_DEF,
     SourceWaitSnapshotInput,
 )

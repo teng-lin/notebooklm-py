@@ -8,7 +8,7 @@ from .._backend import BackendAdapter, BackendError, rebind_operation, require_l
 from .._deadline import RuntimeDeadline
 from .._note_service import NoteService
 from .._operations import Operation
-from .._records import (
+from .._semantic.records import (
     ARTIFACT_GENERATE_DATA_TABLE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,
     NOTE_CREATE_DEF,

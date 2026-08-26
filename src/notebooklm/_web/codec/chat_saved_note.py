@@ -12,7 +12,7 @@ import logging
 import re
 from typing import Any
 
-from ..._records import ChatReferenceRecord
+from ..._semantic.records import ChatReferenceRecord
 from ..._types.documents import utf16_len
 
 logger = logging.getLogger(__name__)

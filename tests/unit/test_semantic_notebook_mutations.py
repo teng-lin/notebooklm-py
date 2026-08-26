@@ -10,7 +10,7 @@ import pytest
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._notebook_mutation_service import NotebookMutationService
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     NOTEBOOK_ALLOCATE_DEF,
     NOTEBOOK_DELETE_DEF,
     NOTEBOOK_GET_DEF,

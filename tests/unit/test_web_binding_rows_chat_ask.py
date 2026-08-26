@@ -41,7 +41,7 @@ from notebooklm._binding import CodecBinding, NativeCallSpec, StreamNative, Stre
 from notebooklm._chat.workflow import ChatWorkflowService
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation, OperationTier
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     CHAT_ASK_DEF,
     CHAT_STREAM_ANSWER_DEF,
     ChatAskInput,
@@ -540,7 +540,7 @@ async def test_missing_conversation_id_after_a_non_empty_answer_is_a_chat_error(
 
     # ...and the compatibility projector reproduces the public exception the
     # retired row raised directly, character for character.
-    from notebooklm._backend_compat import project_backend_error
+    from notebooklm._semantic.compat import project_backend_error
 
     public = project_backend_error(error)
     assert type(public) is ChatError

@@ -30,7 +30,7 @@ from types import MappingProxyType
 
 from ..._binding import Binding, CodecBinding, NativeCallSpec, RpcNative
 from ..._operations import Operation
-from ..._records import (
+from ..._semantic.records import (
     CHAT_STREAM_ANSWER_DEF,
     LABEL_ALLOCATE_DEF,
     LABEL_MUTATE_DEF,

@@ -24,7 +24,7 @@ from notebooklm._binding import (
     invoke_binding,
 )
 from notebooklm._operations import Operation
-from notebooklm._records import SHARING_SET_PUBLIC_DEF, SharingSetPublicInput
+from notebooklm._semantic.records import SHARING_SET_PUBLIC_DEF, SharingSetPublicInput
 from notebooklm._web.backend import (
     ROW_COLLABORATOR_NAMES,
     _build_binding_table,

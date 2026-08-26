@@ -17,7 +17,7 @@ from types import MappingProxyType
 
 from ..._binding import Binding, CodecBinding, NativeCallSpec
 from ..._operations import Operation
-from ..._records import (
+from ..._semantic.records import (
     COLLECTION_DELETE_DEF,
     COLLECTION_GET_DEF,
     COLLECTION_LIST_DEF,

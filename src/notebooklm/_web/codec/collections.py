@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..._records import CollectionRecord
+from ..._semantic.records import CollectionRecord
 from ...exceptions import UnknownRPCMethodError
 from ...rpc import safe_index
 

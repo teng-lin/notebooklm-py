@@ -25,7 +25,7 @@ from notebooklm._backend import (
 from notebooklm._binding import CodecBinding, DeadlineMode, RpcNative
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     RESEARCH_CANCEL_DEF,
     RESEARCH_IMPORT_DEF,
     RESEARCH_POLL_DEF,

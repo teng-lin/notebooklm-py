@@ -9,7 +9,7 @@ from typing import Any, TypeVar, cast
 from ..._backend import BackendContractError, BackendError, BackendErrorReason
 from ..._binding import CodecPayload
 from ..._operations import Operation
-from ..._records import (
+from ..._semantic.records import (
     ArtifactRetryInput,
     ArtifactRetryResult,
     ArtifactReviseSlideInput,

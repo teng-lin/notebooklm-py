@@ -19,7 +19,7 @@ from types import MappingProxyType
 from ..._backend import BackendError, BackendErrorReason
 from ..._binding import Binding, CodecBinding, NativeCallSpec, NativeChoice, RpcNative
 from ..._operations import Operation
-from ..._records import (
+from ..._semantic.records import (
     RESEARCH_CANCEL_DEF,
     RESEARCH_IMPORT_DEF,
     RESEARCH_POLL_DEF,

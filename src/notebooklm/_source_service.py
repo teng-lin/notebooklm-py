@@ -27,7 +27,7 @@ from ._idempotency_create import (
     semantic_may_have_committed,
 )
 from ._operations import Operation
-from ._records import (
+from ._semantic.records import (
     SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
     SOURCE_ADD_TEXT_DEF,

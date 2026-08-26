@@ -392,74 +392,6 @@
       },
       {
         "allocation": {
-          "projection_ids": [
-            "cli.StructuredDocument.transitive-chat-reference-full-contribution",
-            "mcp.StructuredDocument.transitive-chat-reference-full-contribution",
-            "rest.StructuredDocument.transitive-chat-reference-full-contribution"
-          ],
-          "terminal_locators": [
-            "cli --json|notebooklm/cli/chat_cmd.py|register_chat_commands.ask_cmd._run|json_output_response|1",
-            "mcp tool result|notebooklm/mcp/tools/chat.py|register.chat_ask|return|1",
-            "rest response|notebooklm/server/routes/chat.py|ask|return|1"
-          ]
-        },
-        "field_path": "result.answer_document",
-        "private_model": "notebooklm._chat_records.ChatAskOutcomeRecord",
-        "public_model": "notebooklm._types.documents.StructuredDocument"
-      },
-      {
-        "allocation": {
-          "projection_ids": [
-            "cli.StructuredDocument.transitive-chat-reference-full-contribution",
-            "mcp.StructuredDocument.transitive-chat-reference-full-contribution",
-            "rest.StructuredDocument.transitive-chat-reference-full-contribution"
-          ],
-          "terminal_locators": [
-            "cli --json|notebooklm/cli/chat_cmd.py|register_chat_commands.ask_cmd._run|json_output_response|1",
-            "mcp tool result|notebooklm/mcp/tools/chat.py|register.chat_ask|return|1",
-            "rest response|notebooklm/server/routes/chat.py|ask|return|1"
-          ]
-        },
-        "field_path": "answer_document",
-        "private_model": "notebooklm._chat_records.ChatAskResultRecord",
-        "public_model": "notebooklm._types.documents.StructuredDocument"
-      },
-      {
-        "allocation": {
-          "projection_ids": [
-            "cli.StructuredDocument.transitive-chat-reference-full-contribution",
-            "mcp.StructuredDocument.transitive-chat-reference-full-contribution",
-            "rest.StructuredDocument.transitive-chat-reference-full-contribution"
-          ],
-          "terminal_locators": [
-            "cli --json|notebooklm/cli/chat_cmd.py|register_chat_commands.ask_cmd._run|json_output_response|1",
-            "mcp tool result|notebooklm/mcp/tools/chat.py|register.chat_ask|return|1",
-            "rest response|notebooklm/server/routes/chat.py|ask|return|1"
-          ]
-        },
-        "field_path": "answer_document",
-        "private_model": "notebooklm._chat_records.ChatStreamAnswerRecord",
-        "public_model": "notebooklm._types.documents.StructuredDocument"
-      },
-      {
-        "allocation": {
-          "projection_ids": [
-            "cli.StructuredDocument.transitive-chat-reference-full-contribution",
-            "mcp.StructuredDocument.transitive-chat-reference-full-contribution",
-            "rest.StructuredDocument.transitive-chat-reference-full-contribution"
-          ],
-          "terminal_locators": [
-            "cli --json|notebooklm/cli/chat_cmd.py|register_chat_commands.ask_cmd._run|json_output_response|1",
-            "mcp tool result|notebooklm/mcp/tools/chat.py|register.chat_ask|return|1",
-            "rest response|notebooklm/server/routes/chat.py|ask|return|1"
-          ]
-        },
-        "field_path": "answer.answer_document",
-        "private_model": "notebooklm._chat_records.ChatStreamResult",
-        "public_model": "notebooklm._types.documents.StructuredDocument"
-      },
-      {
-        "allocation": {
           "review_note": "ValidatedSessionConfig carries ConnectionLimits only through client runtime construction into the HTTP transport pool; no adapter serializer receives this private configuration DTO or its limits field.",
           "source_evidence": [
             {
@@ -487,17 +419,70 @@
       {
         "allocation": {
           "projection_ids": [
-            "mcp.Source.transitive-batch-added-item-final-wrapper",
-            "rest.Source.transitive-batch-added-item-final-wrapper"
+            "cli.StructuredDocument.transitive-chat-reference-full-contribution",
+            "mcp.StructuredDocument.transitive-chat-reference-full-contribution",
+            "rest.StructuredDocument.transitive-chat-reference-full-contribution"
           ],
           "terminal_locators": [
-            "mcp tool result|notebooklm/mcp/tools/sources.py|register.source_add|return|1",
-            "rest response|notebooklm/server/routes/sources.py|add_batch|return|1"
+            "cli --json|notebooklm/cli/chat_cmd.py|register_chat_commands.ask_cmd._run|json_output_response|1",
+            "mcp tool result|notebooklm/mcp/tools/chat.py|register.chat_ask|return|1",
+            "rest response|notebooklm/server/routes/chat.py|ask|return|1"
           ]
         },
-        "field_path": "source",
-        "private_model": "notebooklm._source.batch.SourceUrlBatchItem",
-        "public_model": "notebooklm.types.Source"
+        "field_path": "result.answer_document",
+        "private_model": "notebooklm._semantic.records.chat.ChatAskOutcomeRecord",
+        "public_model": "notebooklm._types.documents.StructuredDocument"
+      },
+      {
+        "allocation": {
+          "projection_ids": [
+            "cli.StructuredDocument.transitive-chat-reference-full-contribution",
+            "mcp.StructuredDocument.transitive-chat-reference-full-contribution",
+            "rest.StructuredDocument.transitive-chat-reference-full-contribution"
+          ],
+          "terminal_locators": [
+            "cli --json|notebooklm/cli/chat_cmd.py|register_chat_commands.ask_cmd._run|json_output_response|1",
+            "mcp tool result|notebooklm/mcp/tools/chat.py|register.chat_ask|return|1",
+            "rest response|notebooklm/server/routes/chat.py|ask|return|1"
+          ]
+        },
+        "field_path": "answer_document",
+        "private_model": "notebooklm._semantic.records.chat.ChatAskResultRecord",
+        "public_model": "notebooklm._types.documents.StructuredDocument"
+      },
+      {
+        "allocation": {
+          "projection_ids": [
+            "cli.StructuredDocument.transitive-chat-reference-full-contribution",
+            "mcp.StructuredDocument.transitive-chat-reference-full-contribution",
+            "rest.StructuredDocument.transitive-chat-reference-full-contribution"
+          ],
+          "terminal_locators": [
+            "cli --json|notebooklm/cli/chat_cmd.py|register_chat_commands.ask_cmd._run|json_output_response|1",
+            "mcp tool result|notebooklm/mcp/tools/chat.py|register.chat_ask|return|1",
+            "rest response|notebooklm/server/routes/chat.py|ask|return|1"
+          ]
+        },
+        "field_path": "answer_document",
+        "private_model": "notebooklm._semantic.records.chat.ChatStreamAnswerRecord",
+        "public_model": "notebooklm._types.documents.StructuredDocument"
+      },
+      {
+        "allocation": {
+          "projection_ids": [
+            "cli.StructuredDocument.transitive-chat-reference-full-contribution",
+            "mcp.StructuredDocument.transitive-chat-reference-full-contribution",
+            "rest.StructuredDocument.transitive-chat-reference-full-contribution"
+          ],
+          "terminal_locators": [
+            "cli --json|notebooklm/cli/chat_cmd.py|register_chat_commands.ask_cmd._run|json_output_response|1",
+            "mcp tool result|notebooklm/mcp/tools/chat.py|register.chat_ask|return|1",
+            "rest response|notebooklm/server/routes/chat.py|ask|return|1"
+          ]
+        },
+        "field_path": "answer.answer_document",
+        "private_model": "notebooklm._semantic.records.chat.ChatStreamResult",
+        "public_model": "notebooklm._types.documents.StructuredDocument"
       },
       {
         "allocation": {
@@ -508,7 +493,7 @@
                 "document=record.document"
               ],
               "semantic_fingerprint": "sha256:9159b7f807076d02138c0c7f34171de13f39bdc53fddfcb8d0671ad99d1e4f2e",
-              "symbol": "notebooklm._projectors.project_source_fulltext"
+              "symbol": "notebooklm._semantic.projectors.project_source_fulltext"
             },
             {
               "required_ast_fragments": [
@@ -530,7 +515,7 @@
           "unreachable_category": "adapter-dropped-public-field"
         },
         "field_path": "document",
-        "private_model": "notebooklm._source_records.SourceFulltextRecord",
+        "private_model": "notebooklm._semantic.records.source.SourceFulltextRecord",
         "public_model": "notebooklm._types.documents.StructuredDocument"
       },
       {
@@ -542,7 +527,7 @@
                 "document=record.document"
               ],
               "semantic_fingerprint": "sha256:9159b7f807076d02138c0c7f34171de13f39bdc53fddfcb8d0671ad99d1e4f2e",
-              "symbol": "notebooklm._projectors.project_source_fulltext"
+              "symbol": "notebooklm._semantic.projectors.project_source_fulltext"
             },
             {
               "required_ast_fragments": [
@@ -564,8 +549,23 @@
           "unreachable_category": "adapter-dropped-public-field"
         },
         "field_path": "fulltext.document",
-        "private_model": "notebooklm._source_records.SourceFulltextResult",
+        "private_model": "notebooklm._semantic.records.source.SourceFulltextResult",
         "public_model": "notebooklm._types.documents.StructuredDocument"
+      },
+      {
+        "allocation": {
+          "projection_ids": [
+            "mcp.Source.transitive-batch-added-item-final-wrapper",
+            "rest.Source.transitive-batch-added-item-final-wrapper"
+          ],
+          "terminal_locators": [
+            "mcp tool result|notebooklm/mcp/tools/sources.py|register.source_add|return|1",
+            "rest response|notebooklm/server/routes/sources.py|add_batch|return|1"
+          ]
+        },
+        "field_path": "source",
+        "private_model": "notebooklm._source.batch.SourceUrlBatchItem",
+        "public_model": "notebooklm.types.Source"
       },
       {
         "allocation": {

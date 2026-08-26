@@ -27,10 +27,12 @@ from typing import Any
 
 from . import research as _research_pub
 from ._backend import BackendAdapter
-from ._backend_compat import project_backend_call
-from ._projectors import project_research_task
 from ._read_services import SourceReadService
-from ._records import (
+from ._research_service import ResearchService, SourceRecordLister
+from ._runtime.config import AUTO_READ_TIMEOUT, DEFAULT_TIMEOUT
+from ._semantic.compat import project_backend_call
+from ._semantic.projectors import project_research_task
+from ._semantic.records import (
     ResearchImportBatchInput,
     ResearchImportCandidate,
     ResearchImportedSourceRecord,
@@ -44,8 +46,6 @@ from ._records import (
     ResearchWaitInput,
     SourceRecord,
 )
-from ._research_service import ResearchService, SourceRecordLister
-from ._runtime.config import AUTO_READ_TIMEOUT, DEFAULT_TIMEOUT
 from ._types.research import (
     ResearchSource,
     ResearchSourceInput,

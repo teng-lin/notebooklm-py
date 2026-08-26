@@ -32,7 +32,7 @@ from notebooklm._notebook_payloads import (
     build_update_notebook_params,
 )
 from notebooklm._operations import CallPolicy, Operation
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     NOTEBOOK_ALLOCATE_DEF,
     NOTEBOOK_DELETE_DEF,
     NOTEBOOK_DESCRIBE_DEF,

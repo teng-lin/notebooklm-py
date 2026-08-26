@@ -28,7 +28,7 @@ from notebooklm._backend import (
 from notebooklm._binding import CodecBinding, DeadlineMode
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     COLLECTION_DELETE_DEF,
     COLLECTION_GET_DEF,
     COLLECTION_LIST_DEF,

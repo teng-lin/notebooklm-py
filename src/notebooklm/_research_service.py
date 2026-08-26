@@ -1,7 +1,7 @@
 """Backend-neutral research service (start / poll / wait / cancel / import).
 
 Consumes the private semantic port: every wire call this domain makes is one
-typed :mod:`notebooklm._records` operation invoked on a
+typed :mod:`notebooklm._semantic.records` operation invoked on a
 :class:`~notebooklm._backend.BackendAdapter`.  What stays here is the part that
 is not protocol-specific -- task selection and ambiguity, the wait loop's
 deadline and cadence, and the import batch's provenance validation, idempotency
@@ -38,7 +38,22 @@ from ._backend import (
 )
 from ._deadline import RuntimeDeadline
 from ._operations import OperationDef
-from ._records import (
+from ._research_import import (
+    _import_research_read_timeout,
+    _merge_imported_sources,
+    _no_import_verification_url_entry_count,
+    _normalize_import_verification_url,
+    _partition_requested_sources,
+    _reconcile_import_probe,
+    _requested_import_verification_urls,
+    _validate_research_task_provenance,
+)
+from ._runtime.config import (
+    AUTO_READ_TIMEOUT,
+    DEFAULT_TIMEOUT,
+    MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT,
+)
+from ._semantic.records import (
     RESEARCH_CANCEL_DEF,
     RESEARCH_IMPORT_DEF,
     RESEARCH_POLL_DEF,
@@ -62,21 +77,6 @@ from ._records import (
     ResearchTaskStatus,
     ResearchWaitInput,
     SourceRecord,
-)
-from ._research_import import (
-    _import_research_read_timeout,
-    _merge_imported_sources,
-    _no_import_verification_url_entry_count,
-    _normalize_import_verification_url,
-    _partition_requested_sources,
-    _reconcile_import_probe,
-    _requested_import_verification_urls,
-    _validate_research_task_provenance,
-)
-from ._runtime.config import (
-    AUTO_READ_TIMEOUT,
-    DEFAULT_TIMEOUT,
-    MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT,
 )
 from .exceptions import AmbiguousResearchTaskError, ResearchTimeoutError
 

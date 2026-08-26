@@ -18,7 +18,7 @@ from notebooklm._backend import (
 )
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation, OperationDef
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     ARTIFACT_CATALOG_DEF,
     MIND_MAP_LIST_DEF,
     ArtifactCatalogResult,

@@ -30,7 +30,7 @@ from ..._binding import (
     RpcNative,
 )
 from ..._operations import Operation
-from ..._records import (
+from ..._semantic.records import (
     ARTIFACT_CATALOG_DEF,
     ARTIFACT_DELETE_DEF,
     ARTIFACT_DOWNLOAD_DEF,

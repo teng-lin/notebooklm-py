@@ -8,7 +8,7 @@ from .._artifact.polling import ArtifactPollingService, PollStatusCallback, Stat
 from .._backend import BackendAdapter
 from .._deadline import RuntimeDeadline
 from .._polling_registry import PollRegistry
-from .._records import ARTIFACT_WAIT_DEF, ArtifactPollInput, GenerationStatusRecord
+from .._semantic.records import ARTIFACT_WAIT_DEF, ArtifactPollInput, GenerationStatusRecord
 
 if TYPE_CHECKING:
     from .._artifact.polling import OperationScopeProvider

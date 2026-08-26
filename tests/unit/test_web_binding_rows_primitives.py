@@ -38,7 +38,7 @@ from notebooklm._binding import CodecBinding, DeadlineMode
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     LABEL_ALLOCATE_DEF,
     LABEL_MUTATE_DEF,
     SHARING_MUTATE_DEF,

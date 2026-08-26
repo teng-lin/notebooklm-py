@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from notebooklm._binding import CodecPayload
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     ChatConfigureAction,
     ChatConfigureInput,
     ChatDeleteHistoryInput,

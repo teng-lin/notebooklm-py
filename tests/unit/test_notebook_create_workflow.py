@@ -16,11 +16,11 @@ from notebooklm._backend import (
     BackendErrorReason,
     UnsupportedOperationError,
 )
-from notebooklm._backend_compat import project_backend_error
 from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from notebooklm._notebook_mutation_service import NotebookMutationService
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.records import (
     NOTEBOOK_ALLOCATE_DEF,
     NOTEBOOK_CREATE_DEF,
     NOTEBOOK_LIST_DEF,

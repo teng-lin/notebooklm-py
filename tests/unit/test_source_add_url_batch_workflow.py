@@ -40,11 +40,12 @@ from notebooklm._backend import (
     BackendErrorReason,
     UnsupportedOperationError,
 )
-from notebooklm._backend_compat import project_backend_error, project_source_add_failure
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy, mark_unconfirmed
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._row_adapters.sources import unwrap_add_source_rows
+from notebooklm._semantic.compat import project_backend_error, project_source_add_failure
+from notebooklm._semantic.records import (
     SOURCE_ADD_URL_BATCH_DEF,
     SOURCE_LIST_DEF,
     SOURCE_REGISTER_DEF,
@@ -53,7 +54,6 @@ from notebooklm._records import (
     SourceRegisterKind,
     SourceRegisterResult,
 )
-from notebooklm._row_adapters.sources import unwrap_add_source_rows
 from notebooklm._source_batch_service import (
     _ALL_REJECTED_RPC_CODE,
     _ERROR_SOURCE_STATUS,

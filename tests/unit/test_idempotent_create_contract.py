@@ -19,7 +19,7 @@ from notebooklm._idempotency_create import (
     semantic_may_have_committed,
 )
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     SOURCE_GET_DEF,
     SOURCE_LIST_DEF,
     SOURCE_PATCH_TITLE_DEF,

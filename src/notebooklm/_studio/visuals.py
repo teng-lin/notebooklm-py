@@ -6,7 +6,7 @@ from typing import Literal
 
 from .._backend import BackendAdapter
 from .._deadline import RuntimeDeadline
-from .._records import (
+from .._semantic.records import (
     ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
     ARTIFACT_GENERATE_SLIDE_DECK_DEF,
     ArtifactRecord,

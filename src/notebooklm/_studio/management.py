@@ -15,7 +15,7 @@ from .._backend import (
 )
 from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from .._operations import Operation
-from .._records import (
+from .._semantic.records import (
     ARTIFACT_CATALOG_DEF,
     ARTIFACT_DELETE_DEF,
     ARTIFACT_PATCH_TITLE_DEF,

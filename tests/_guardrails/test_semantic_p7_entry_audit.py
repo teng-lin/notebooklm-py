@@ -250,7 +250,6 @@ MIGRATED_FEATURE_RPC_NEUTRAL_MODULES = frozenset(
 # the P0 measurement. Every survivor has a named compatibility/protocol role;
 # a feature facade is never admitted here as a convenient exception.
 CLASSIFIED_NON_WEB_RPC_METHOD_IMPORTS: dict[str, str] = {
-    "_backend_compat.py": "legacy public exception diagnostic projector",
     "_notebooks.py": "documented public raw-RPC compatibility owner",
     "_research_task_parser.py": "legacy research wire decoder",
     "_row_adapters/artifacts.py": "artifact positional row decoder",
@@ -258,6 +257,7 @@ CLASSIFIED_NON_WEB_RPC_METHOD_IMPORTS: dict[str, str] = {
     "_row_adapters/notes.py": "note positional row decoder",
     "_row_adapters/research.py": "research positional row decoder",
     "_row_adapters/sources.py": "source positional row decoder",
+    "_semantic/compat.py": "legacy public exception diagnostic projector",
     "_runtime/contracts.py": "web RPC protocol type declaration",
     "_types/notebooks.py": "legacy notebook wire decoder",
     "_types/sharing.py": "legacy sharing wire decoder",

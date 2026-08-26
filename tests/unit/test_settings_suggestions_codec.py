@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from notebooklm._binding import CodecPayload
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     AccountLimitsRecord,
     ArtifactSuggestReportsInput,
     SettingsGetInput,

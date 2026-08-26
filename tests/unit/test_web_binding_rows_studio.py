@@ -27,7 +27,7 @@ from notebooklm._backend import (
 from notebooklm._binding import CodecBinding, DeadlineMode, RpcNative
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     ARTIFACT_CATALOG_DEF,
     ARTIFACT_DELETE_DEF,
     ARTIFACT_DOWNLOAD_DEF,

@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from notebooklm._projectors import project_source_fulltext, project_source_guide
+from notebooklm._semantic.projectors import project_source_fulltext, project_source_guide
 from notebooklm._source.content import SourceContentRenderer
 from notebooklm._web.codec.sources import (
     decode_source_fulltext,

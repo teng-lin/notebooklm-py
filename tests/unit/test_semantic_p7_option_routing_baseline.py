@@ -21,8 +21,8 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from notebooklm._records import SourceAddFileResult, SourceRecord
 from notebooklm._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
+from notebooklm._semantic.records import SourceAddFileResult, SourceRecord
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.types import ConnectionLimits, RpcTelemetryEvent, Source

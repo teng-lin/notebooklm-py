@@ -20,13 +20,13 @@ from collections.abc import Awaitable, Callable
 from typing import Literal
 
 from ._backend import BackendAdapter, BackendError
-from ._backend_compat import project_backend_error, project_local_not_found
 from ._deadline import RuntimeDeadlineFactory
 from ._label_service import LabelSetService, require_member_ids
 from ._lookup import unwrap_or_raise
 from ._operations import Operation
-from ._projectors import project_label
-from ._records import LabelKind
+from ._semantic.compat import project_backend_error, project_local_not_found
+from ._semantic.projectors import project_label
+from ._semantic.records import LabelKind
 from .types import Label, Source
 
 logger = logging.getLogger(__name__)

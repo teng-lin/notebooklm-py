@@ -11,7 +11,7 @@ import logging
 
 import pytest
 
-from notebooklm._records import SuggestedTopicRecord
+from notebooklm._semantic.records import SuggestedTopicRecord
 from notebooklm._web.codec.notebooks import _decode_summary, _decode_topics
 from notebooklm.exceptions import UnknownRPCMethodError
 

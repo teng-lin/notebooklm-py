@@ -30,7 +30,7 @@ from unittest.mock import AsyncMock, call
 import pytest
 
 from notebooklm._note_service import NoteService
-from notebooklm._records import NoteRecord
+from notebooklm._semantic.records import NoteRecord
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm.exceptions import DecodingError, RPCError
 from notebooklm.rpc import RPCMethod

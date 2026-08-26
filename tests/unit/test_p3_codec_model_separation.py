@@ -8,7 +8,7 @@ from dataclasses import fields
 
 import pytest
 
-from notebooklm._projectors import (
+from notebooklm._semantic.projectors import (
     project_artifact,
     project_collection,
     project_label,

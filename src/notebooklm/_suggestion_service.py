@@ -5,7 +5,7 @@ from __future__ import annotations
 from ._backend import BackendAdapter
 from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from ._read_services import NotebookReadService
-from ._records import (
+from ._semantic.records import (
     ARTIFACT_SUGGEST_REPORTS_DEF,
     NOTEBOOK_SUGGEST_PROMPTS_DEF,
     ArtifactSuggestReportsInput,

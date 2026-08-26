@@ -40,7 +40,6 @@ from notebooklm._backend import (
     BackendError,
     BackendErrorReason,
 )
-from notebooklm._backend_compat import project_backend_error
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._idempotency import (
     IDEMPOTENCY_REGISTRY,
@@ -50,7 +49,8 @@ from notebooklm._idempotency import (
 from notebooklm._notebook_mutation_service import NotebookMutationService
 from notebooklm._operations import CallPolicy, Operation, OperationDef
 from notebooklm._read_services import NotebookReadService, SourceReadService
-from notebooklm._records import (
+from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.records import (
     ARTIFACT_CATALOG_DEF,
     ARTIFACT_DELETE_DEF,
     ARTIFACT_DOWNLOAD_DEF,

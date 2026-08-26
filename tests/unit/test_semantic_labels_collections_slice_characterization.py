@@ -25,13 +25,13 @@ from notebooklm._backend import (
     BackendErrorReason,
     UnsupportedOperationError,
 )
-from notebooklm._backend_compat import project_backend_error
 from notebooklm._collections import CollectionsAPI
 from notebooklm._label_service import LabelSetService, require_member_ids
 from notebooklm._labels import LabelsAPI
 from notebooklm._operations import CallPolicy, Operation
-from notebooklm._projectors import project_collection, project_label
-from notebooklm._records import (
+from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.projectors import project_collection, project_label
+from notebooklm._semantic.records import (
     COLLECTION_CREATE_DEF,
     COLLECTION_DELETE_DEF,
     COLLECTION_GET_DEF,

@@ -7,7 +7,7 @@ keep one import surface while each domain owns its own definitions.
 
 from __future__ import annotations
 
-from ._artifact_records import (
+from .artifact import (
     ARTIFACT_CATALOG_DEF,
     ARTIFACT_DELETE_DEF,
     ARTIFACT_DOWNLOAD_DEF,
@@ -91,7 +91,7 @@ from ._artifact_records import (
     VisualMetadataRecord,
     sanitize_artifact_parse_text,
 )
-from ._chat_records import (
+from .chat import (
     CHAT_ASK_DEF,
     CHAT_CONFIGURE_DEF,
     CHAT_DELETE_HISTORY_DEF,
@@ -130,7 +130,7 @@ from ._chat_records import (
     ChatTurnDecodeErrorRecord,
     ChatTurnKeyRecord,
 )
-from ._label_records import (
+from .label import (
     COLLECTION_CREATE_DEF,
     COLLECTION_DELETE_DEF,
     COLLECTION_GET_DEF,
@@ -164,7 +164,7 @@ from ._label_records import (
     LabelUpdateInput,
     LabelUpdateResult,
 )
-from ._mind_map_records import (
+from .mind_map import (
     MIND_MAP_DELETE_DEF,
     MIND_MAP_GENERATE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
@@ -194,7 +194,7 @@ from ._mind_map_records import (
     MindMapUpdateInput,
     MindMapUpdateResult,
 )
-from ._note_records import (
+from .note import (
     NOTE_CREATE_DEF,
     NOTE_DELETE_DEF,
     NOTE_GET_DEF,
@@ -212,7 +212,7 @@ from ._note_records import (
     NoteUpdateInput,
     NoteUpdateResult,
 )
-from ._notebook_records import (
+from .notebook import (
     NOTEBOOK_ALLOCATE_DEF,
     NOTEBOOK_CREATE_DEF,
     NOTEBOOK_DELETE_DEF,
@@ -253,7 +253,7 @@ from ._notebook_records import (
     SourceIdDiagnostics,
     SuggestedTopicRecord,
 )
-from ._research_records import (
+from .research import (
     RESEARCH_CANCEL_DEF,
     RESEARCH_IMPORT_DEF,
     RESEARCH_IMPORT_VERIFY_DEF,
@@ -285,7 +285,7 @@ from ._research_records import (
     ResearchTaskStatus,
     ResearchWaitInput,
 )
-from ._settings_records import (
+from .settings import (
     SETTINGS_GET_DEF,
     SETTINGS_GET_LIMITS_DEF,
     SETTINGS_SET_LANGUAGE_DEF,
@@ -298,7 +298,7 @@ from ._settings_records import (
     SettingsSetLanguageResult,
     UserSettingsRecord,
 )
-from ._sharing_records import (
+from .sharing import (
     LEGACY_SHARE_ARTIFACT_DEF,
     SHARING_GET_DEF,
     SHARING_MUTATE_DEF,
@@ -329,7 +329,7 @@ from ._sharing_records import (
     SharingUserGrant,
     SharingVisibility,
 )
-from ._source_records import (
+from .source import (
     SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
     SOURCE_ADD_TEXT_DEF,

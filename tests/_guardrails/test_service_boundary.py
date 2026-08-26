@@ -13,8 +13,8 @@ all.
 **I1 — semantic service modules stay neutral.** A semantic service module
 (``src/notebooklm/_*_service.py``, ``_read_services.py``,
 ``_chat/service.py`` — later ``_chat/workflow.py`` — and ``_studio/*.py``) may
-import none of ``_projectors``,
-``notebooklm.types``, ``_types.*``, ``_backend_compat``, ``rpc.*``,
+import none of ``_semantic.projectors``,
+``notebooklm.types``, ``_types.*``, ``_semantic.compat``, ``rpc.*``,
 ``_row_adapters.*``, ``_web.*`` or ``httpx``, and its public methods must
 return ``*Record`` / ``*Result`` types, neutral enums, built-in scalars or
 collections thereof, or ``None``. Projection to public models is a *facade*
@@ -26,7 +26,7 @@ Since R6.5 this is a hard rule with exactly one named exemption,
 
 **I2 — ``_web/**`` imports no domain package.** The web backend may not import
 ``_chat``, ``_source``, ``_studio``, ``_artifact`` or any
-semantic service module. Neutral helper modules (``_records*``,
+semantic service module. Neutral helper modules (``_semantic.records``,
 ``_research_neutral``, ``_deadline``, ``_request_types``, ``_markdown``) stay
 permitted and are asserted as such below, so the rule cannot be widened into
 one that forbids the neutral direction too. **Met.** The seed drained to empty
@@ -43,8 +43,8 @@ standing as somewhere to reclassify a new violation into. The two stay named in
 :data:`I9_DELETED_TARGETS`, which fails if either class comes back.
 
 **I10 is deliberately not enforced here.** The plan's tenth invariant caps
-``src/notebooklm/_records.py`` at 1,500 lines; that is already
-:mod:`tests._guardrails.test_module_size_ratchet`'s job — ``_records.py``
+``src/notebooklm/_semantic/records/__init__.py`` at 1,500 lines; that is already
+:mod:`tests._guardrails.test_module_size_ratchet`'s job — the record hub
 measures exactly ``MODULE_SIZE_BUDGET`` lines and is not in
 ``ALLOWLISTED_CEILINGS``, so ``test_no_module_exceeds_the_size_budget`` fails
 on the first line of growth. Duplicating it here would create a second
@@ -67,8 +67,8 @@ import ast
 from pathlib import Path
 
 import notebooklm
-import notebooklm._projectors as projector_module
 import notebooklm._read_services as service_module
+import notebooklm._semantic.projectors as projector_module
 import notebooklm.types as public_types
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -78,16 +78,22 @@ APP_ROOT = SRC_ROOT / "_app"
 
 # --- I1: semantic service modules -------------------------------------------
 
-#: Top-level ``notebooklm`` targets a semantic service may never import. Every
-#: entry is either wire (``rpc``, ``_row_adapters``, ``_web``, ``httpx``), a
-#: public model surface (``types``, ``_types``), or the projection/legacy
-#: compatibility layer (``_projectors``, ``_backend_compat``) that belongs to
-#: the facade above the service.
-I1_FORBIDDEN_FIRST_PARTY_ROOTS: frozenset[str] = frozenset(
+#: ``notebooklm`` targets a semantic service may never import, as dotted
+#: prefixes: an entry forbids the module it names and everything under it.
+#: Every entry is either wire (``rpc``, ``_row_adapters``, ``_web``, ``httpx``),
+#: a public model surface (``types``, ``_types``), or the projection/legacy
+#: compatibility layer (``_semantic.projectors``, ``_semantic.compat``) that
+#: belongs to the facade above the service.
+#:
+#: P10 R7.1 moved the projection layer under ``_semantic/``, which is why two
+#: entries are dotted rather than top-level roots: the rest of that package —
+#: the neutral records and the port — is exactly what a service *must* keep
+#: reaching, so the ban has to name the two modules and not their parent.
+I1_FORBIDDEN_FIRST_PARTY_PREFIXES: frozenset[str] = frozenset(
     {
-        "_backend_compat",
-        "_projectors",
         "_row_adapters",
+        "_semantic.compat",
+        "_semantic.projectors",
         "_types",
         "_web",
         "rpc",
@@ -149,8 +155,12 @@ I1_PERMITTED_RETURN_BUILTINS: frozenset[str] = frozenset(
     }
 )
 
-#: Modules that define the neutral record/enum vocabulary services return.
-NEUTRAL_RECORD_MODULE_NAMES: frozenset[str] = frozenset({"_records.py", "_research_neutral.py"})
+#: The package P10 R7.1 moved the neutral record/enum vocabulary into; every
+#: module in it defines part of what a service may return.
+RECORDS_ROOT = SRC_ROOT / "_semantic" / "records"
+
+#: Neutral record/enum modules outside :data:`RECORDS_ROOT`.
+NEUTRAL_RECORD_MODULE_NAMES: frozenset[str] = frozenset({"_research_neutral.py"})
 
 # --- I2: the web backend takes no domain dependency --------------------------
 
@@ -191,17 +201,17 @@ I2_PERMITTED_NEUTRAL_HELPERS: frozenset[str] = frozenset(
     {
         "_deadline",
         "_markdown",
-        "_records",
         "_request_types",
         "_research_neutral",
+        "_semantic.records",
     }
 )
 
 # --- I9: no legacy classes below the application layer -----------------------
 
 #: Enumerated I9 exemptions as ``<path relative to src/notebooklm>::<class>``.
-#: The ``_sharing_records`` / ``_chat_records`` entries are legacy-*mapping*
-#: records reachable only from ``_backend_compat`` and the projectors; the
+#: The ``_semantic/records`` entries are legacy-*mapping* records reachable
+#: only from ``_semantic/compat.py`` and the projectors; the
 #: ``_cookie_persistence`` / ``_auth`` entries are auth storage migration.
 I9_EXEMPT_LEGACY_CLASSES: frozenset[str] = frozenset(
     {
@@ -210,11 +220,11 @@ I9_EXEMPT_LEGACY_CLASSES: frozenset[str] = frozenset(
         "_auth/profile_migration.py::LegacyAccountMigrator",
         "_auth/profile_migration.py::LegacyPromotionScheduler",
         "_auth/profile_migration.py::NoLegacyRecord",
-        "_chat_records.py::ChatLegacyMappingRecord",
-        "_chat_records.py::ChatLegacySequenceRecord",
+        "_semantic/records/chat.py::ChatLegacyMappingRecord",
+        "_semantic/records/chat.py::ChatLegacySequenceRecord",
         "_cookie_persistence.py::_LegacySnapshotAdapter",
-        "_sharing_records.py::LegacyShareArtifactInput",
-        "_sharing_records.py::LegacyShareArtifactResult",
+        "_semantic/records/sharing.py::LegacyShareArtifactInput",
+        "_semantic/records/sharing.py::LegacyShareArtifactResult",
     }
 )
 
@@ -332,10 +342,15 @@ def _service_module_roots() -> frozenset[str]:
     )
 
 
+def _under(dotted: str, prefix: str) -> bool:
+    """Whether ``dotted`` is ``prefix`` itself or a module under it."""
+    return dotted == prefix or dotted.startswith(f"{prefix}.")
+
+
 def _is_i1_forbidden(dotted: str, first_party: bool) -> bool:
     if not first_party:
-        return dotted == "httpx" or dotted.startswith("httpx.")
-    return dotted.partition(".")[0] in I1_FORBIDDEN_FIRST_PARTY_ROOTS
+        return _under(dotted, "httpx")
+    return any(_under(dotted, prefix) for prefix in I1_FORBIDDEN_FIRST_PARTY_PREFIXES)
 
 
 def _i1_import_violations() -> dict[str, list[tuple[int, str]]]:
@@ -357,7 +372,7 @@ def _i1_import_violations() -> dict[str, list[tuple[int, str]]]:
 def _is_i2_forbidden(dotted: str, first_party: bool) -> bool:
     """Whether one import names a domain package or a semantic service module."""
     forbidden = I2_FORBIDDEN_DOMAIN_PACKAGES | _service_module_roots()
-    return first_party and dotted.partition(".")[0] in forbidden
+    return first_party and any(_under(dotted, prefix) for prefix in forbidden)
 
 
 def _i2_domain_violations(
@@ -422,7 +437,8 @@ def _annotation_atoms(node: ast.expr) -> frozenset[str]:
 
 def _neutral_enum_names() -> frozenset[str]:
     """Enum classes defined in the neutral record modules."""
-    modules = sorted(SRC_ROOT.glob("_*_records.py"))
+    modules = sorted(RECORDS_ROOT.glob("*.py"))
+    assert modules, "no _semantic/records module found; neutral discovery is broken"
     modules += [SRC_ROOT / name for name in sorted(NEUTRAL_RECORD_MODULE_NAMES)]
     names: set[str] = set()
     for path in modules:
@@ -518,12 +534,14 @@ def test_i1_governs_every_service_family_and_its_detector_fires() -> None:
         "no _chat service module is governed; I1's chat arm would be vacuous"
     )
 
-    for root in I1_FORBIDDEN_FIRST_PARTY_ROOTS:
-        assert _is_i1_forbidden(root, True), root
-        assert _is_i1_forbidden(f"{root}.submodule", True), root
+    for prefix in I1_FORBIDDEN_FIRST_PARTY_PREFIXES:
+        assert _is_i1_forbidden(prefix, True), prefix
+        assert _is_i1_forbidden(f"{prefix}.submodule", True), prefix
     assert _is_i1_forbidden("httpx", False)
     assert _is_i1_forbidden("httpx._client", False)
-    for neutral in ("_backend", "_deadline", "_operations", "_records"):
+    # The neutral half of ``_semantic`` is what a service is *supposed* to
+    # import, so the two forbidden modules under it must not ban their parent.
+    for neutral in ("_backend", "_deadline", "_operations", "_semantic.records"):
         assert not _is_i1_forbidden(neutral, True), neutral
     # ``types`` is forbidden only as the first-party public module; the stdlib
     # module of the same name has to stay reachable.
@@ -654,7 +672,7 @@ def test_i2_governs_the_whole_web_tree_and_its_detector_fires(tmp_path: Path) ->
     web_root = tmp_path / "_web"
     (web_root / "bindings").mkdir(parents=True)
     (web_root / "clean.py").write_text(
-        "from .._records import SourceRecord\nfrom .._deadline import RuntimeDeadline\n",
+        "from .._semantic.records import SourceRecord\nfrom .._deadline import RuntimeDeadline\n",
         encoding="utf-8",
     )
     (web_root / "bindings" / "offender.py").write_text(
@@ -675,12 +693,16 @@ def test_i2_leaves_the_neutral_helper_direction_open() -> None:
         f"{sorted(I2_PERMITTED_NEUTRAL_HELPERS & forbidden)}"
     )
     imported = {
-        dotted.partition(".")[0]
+        dotted
         for path in WEB_ROOT.rglob("*.py")
         for _, dotted, first_party in _imports(path)
         if first_party
     }
-    vanished = sorted(I2_PERMITTED_NEUTRAL_HELPERS - imported)
+    vanished = sorted(
+        helper
+        for helper in I2_PERMITTED_NEUTRAL_HELPERS
+        if not any(_under(dotted, helper) for dotted in imported)
+    )
     assert not vanished, (
         "a permitted neutral helper is no longer imported by _web; confirm it "
         f"was not renamed out from under this assertion: {vanished}"
@@ -724,7 +746,7 @@ def test_no_legacy_class_p10_deleted_returns_under_its_old_name() -> None:
 
 # --- Read-core pins (ported from the retired test_semantic_read_boundary.py) --
 
-_PROJECTORS = SRC_ROOT / "_projectors.py"
+_PROJECTORS = SRC_ROOT / "_semantic" / "projectors.py"
 _SERVICES = SRC_ROOT / "_read_services.py"
 
 _FORBIDDEN_MODULE_PARTS = frozenset(
@@ -767,7 +789,7 @@ def test_read_services_depend_only_on_semantic_port_records_and_deadline() -> No
     """The read services import strictly less than the retired pin allowed.
 
     R6.1 moved projection up to ``NotebooksAPI`` / ``SourcesAPI``, so
-    ``_projectors`` and the public ``types`` module leave this set, and with
+    ``_semantic.projectors`` and the public ``types`` module leave this set, and with
     them the ``typing.TYPE_CHECKING`` block that guarded the public model
     names — a tightening of the ported pin, not a loosening. ``builtins``
     stays: ``get_source_ids`` still spells its return ``builtins.list[str]``
@@ -778,7 +800,7 @@ def test_read_services_depend_only_on_semantic_port_records_and_deadline() -> No
         "builtins",
         "_backend",
         "_deadline",
-        "_records",
+        "_semantic.records",
     }
     assert not (_identifiers(_SERVICES) & _FORBIDDEN_IDENTIFIERS)
 
@@ -810,7 +832,7 @@ def test_projectors_use_normal_public_constructors_without_wire_factories() -> N
 
 
 def test_read_core_remains_private_and_does_not_expand_public_package_exports() -> None:
-    assert projector_module.__name__ == "notebooklm._projectors"
+    assert projector_module.__name__ == "notebooklm._semantic.projectors"
     assert service_module.__name__ == "notebooklm._read_services"
     assert not (set(projector_module.__all__) | set(service_module.__all__)) & set(
         notebooklm.__all__

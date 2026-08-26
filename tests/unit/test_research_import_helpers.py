@@ -15,12 +15,6 @@ import pytest
 
 from notebooklm._backend import BackendError, BackendErrorReason
 from notebooklm._operations import Operation
-from notebooklm._records import (
-    ResearchImportCandidate,
-    ResearchImportedSourceRecord,
-    ResearchSourceRecord,
-    SourceRecord,
-)
 from notebooklm._research_import import (
     _import_research_read_timeout,
     _reconcile_import_probe,
@@ -30,6 +24,12 @@ from notebooklm._runtime.config import (
     DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT,
+)
+from notebooklm._semantic.records import (
+    ResearchImportCandidate,
+    ResearchImportedSourceRecord,
+    ResearchSourceRecord,
+    SourceRecord,
 )
 from notebooklm._web.errors import translate_web_error
 from notebooklm.exceptions import RPCError

@@ -6,13 +6,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, unique
 
-from ._logging import scrub_secrets
-from ._mind_map_records import (
+from ..._logging import scrub_secrets
+from ..._operations import CallPolicy, Operation, OperationDef, OperationTier
+from .mind_map import (
     MindMapGenerateInput,
     MindMapGenerateResult,
     MindMapRepresentationRecord,
 )
-from ._operations import CallPolicy, Operation, OperationDef, OperationTier
 
 
 def sanitize_artifact_parse_text(value: object) -> str:

@@ -5,7 +5,7 @@ Before P9.4b six near-identical resolvers read the embedded source ids out of a
 ``_data_source_ids``, ``_generation_source_ids``, ``_visual_source_selection``
 and the prompt-suggestion resolver).  They differed only in what they said about a
 malformed payload, so :func:`decode_notebook_source_ids` takes that as an explicit
-per-family :class:`~notebooklm._records.SourceIdDiagnostics` mode and the
+per-family :class:`~notebooklm._semantic.records.SourceIdDiagnostics` mode and the
 ``notebooklm._notebooks`` warning surface of every family is preserved byte for
 byte.
 
@@ -20,8 +20,8 @@ import logging
 from typing import Any
 
 from ..._binding import CodecPayload
-from ..._records import SourceIdDiagnostics
 from ..._row_adapters.sources import SourceRow
+from ..._semantic.records import SourceIdDiagnostics
 from ...rpc import RPCMethod, safe_index
 
 logger = logging.getLogger("notebooklm._notebooks")

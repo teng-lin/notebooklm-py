@@ -8,13 +8,13 @@ import pytest
 
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import CallPolicy, Operation
-from notebooklm._projectors import (
+from notebooklm._semantic.projectors import (
     project_account_limits,
     project_prompt_suggestions,
     project_report_suggestions,
     project_user_settings,
 )
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     ARTIFACT_SUGGEST_REPORTS_DEF,
     NOTEBOOK_SUGGEST_PROMPTS_DEF,
     SETTINGS_GET_DEF,

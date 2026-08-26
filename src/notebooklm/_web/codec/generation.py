@@ -18,7 +18,7 @@ from typing import Any, Literal
 
 from ..._binding import CodecPayload
 from ..._operations import Operation
-from ..._records import (
+from ..._semantic.records import (
     AudioGenerateInput,
     AudioGenerateResult,
     DataTableGenerateInput,

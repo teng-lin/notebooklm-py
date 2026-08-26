@@ -24,7 +24,7 @@ from notebooklm._backend import (
 from notebooklm._binding import CodecBinding, DeadlineMode
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     ARTIFACT_SUGGEST_REPORTS_DEF,
     SETTINGS_GET_DEF,
     SETTINGS_GET_LIMITS_DEF,

@@ -9,7 +9,17 @@ from typing import Any
 from ..._backend import BackendContractError
 from ..._binding import CodecPayload
 from ..._operations import Operation
-from ..._records import (
+from ..._row_adapters.artifacts import (
+    ArtifactRow,
+    ReportSuggestionRow,
+    _ArtifactUserStateValue,
+    _AudioUserStateValue,
+    _FlashcardUserStateValue,
+    _UnknownUserStateValue,
+    unwrap_artifact_rows,
+)
+from ..._row_adapters.notes import NoteRow
+from ..._semantic.records import (
     ArtifactCatalogInput,
     ArtifactCatalogResult,
     ArtifactDeleteInput,
@@ -35,16 +45,6 @@ from ..._records import (
     ReportSuggestionRecord,
     sanitize_artifact_parse_text,
 )
-from ..._row_adapters.artifacts import (
-    ArtifactRow,
-    ReportSuggestionRow,
-    _ArtifactUserStateValue,
-    _AudioUserStateValue,
-    _FlashcardUserStateValue,
-    _UnknownUserStateValue,
-    unwrap_artifact_rows,
-)
-from ..._row_adapters.notes import NoteRow
 from ...exceptions import ArtifactParseError, DecodingError, UnknownRPCMethodError
 from ...rpc import ARTIFACT_STATUS_SUGGESTED_WIRE_NAME, ExportType, RPCMethod, safe_index
 from ...rpc.types import ArtifactStatus, ArtifactTypeCode, artifact_status_to_str

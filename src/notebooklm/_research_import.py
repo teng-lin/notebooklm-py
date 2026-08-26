@@ -16,7 +16,7 @@ neutral :class:`~notebooklm._backend.BackendStatus` rather than a wire status
 code, so it moved to ``_research_service.py`` beside the reason sets it is
 branched on with (P10 R6.4). R6.4 also retyped every helper here onto the
 neutral record vocabulary — a batch is a tuple of
-:class:`~notebooklm._records.ResearchImportCandidate`, the probe reads
+:class:`~notebooklm._semantic.records.ResearchImportCandidate`, the probe reads
 ``SourceRecord`` rows, and the results are ``ResearchImportedSourceRecord`` /
 ``ResearchPresentSourceRecord``. The public-shape concerns those replaced (the
 ``ResearchSource | Mapping`` union, the report predicate that inspects it, and
@@ -29,13 +29,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit, urlunsplit
 
-from ._records import (
-    ResearchImportCandidate,
-    ResearchImportedSourceRecord,
-    ResearchPresentSourceRecord,
-    ResearchSourceRecord,
-    SourceRecord,
-)
 from ._runtime.config import (
     AUTO_READ_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT,
@@ -43,6 +36,13 @@ from ._runtime.config import (
     DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT,
     DEFAULT_TIMEOUT,
     compose_builtin_read_timeout,
+)
+from ._semantic.records import (
+    ResearchImportCandidate,
+    ResearchImportedSourceRecord,
+    ResearchPresentSourceRecord,
+    ResearchSourceRecord,
+    SourceRecord,
 )
 from .exceptions import ResearchTaskMismatchError, ValidationError
 

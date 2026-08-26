@@ -20,7 +20,7 @@ from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     ARTIFACT_DOWNLOAD_DEF,
     ArtifactDownloadInput,
     ArtifactRecord,

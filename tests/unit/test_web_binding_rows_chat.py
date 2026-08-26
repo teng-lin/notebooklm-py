@@ -30,7 +30,7 @@ from notebooklm._backend import (
 from notebooklm._binding import CodecBinding, DeadlineMode, RpcNative
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     CHAT_CONFIGURE_DEF,
     CHAT_DELETE_HISTORY_DEF,
     CHAT_GET_CONVERSATION_DEF,

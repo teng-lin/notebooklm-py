@@ -7,8 +7,8 @@ from datetime import datetime
 from enum import Enum, unique
 from typing import TypeAlias
 
-from ._operations import CallPolicy, Operation, OperationDef, OperationTier
-from ._types.documents import StructuredDocument
+from ..._operations import CallPolicy, Operation, OperationDef, OperationTier
+from ..._types.documents import StructuredDocument
 
 ChatLegacyScalar: TypeAlias = str | int | float | bool | None
 

@@ -27,12 +27,12 @@ from notebooklm._backend import (
     BackendError,
     BackendErrorReason,
 )
-from notebooklm._backend_compat import project_backend_error
 from notebooklm._binding import CustomBinding, ErrorMode
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._idempotency import mark_unconfirmed
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.records import (
     SOURCE_ADD_FILE_DEF,
     SourceAddFailureRecord,
     SourceAddFileInput,

@@ -34,7 +34,7 @@ from ._backend import (
 )
 from ._deadline import RuntimeDeadline
 from ._operations import Operation
-from ._records import (
+from ._semantic.records import (
     SOURCE_ADD_URL_BATCH_DEF,
     SOURCE_LIST_DEF,
     SOURCE_REGISTER_DEF,

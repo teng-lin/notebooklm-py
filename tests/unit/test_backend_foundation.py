@@ -20,7 +20,7 @@ from notebooklm._backend import (
 )
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import CallPolicy, Operation, OperationDef
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     MIND_MAP_DELETE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,

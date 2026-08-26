@@ -12,7 +12,7 @@ pytestmark = pytest.mark.repo_lint
 _ROOT = Path(__file__).resolve().parents[2]
 _SRC = _ROOT / "src" / "notebooklm"
 _CODECS = _SRC / "_web" / "codec"
-_PROJECTORS = _SRC / "_projectors.py"
+_PROJECTORS = _SRC / "_semantic" / "projectors.py"
 
 _PUBLIC_FACTORY_CALLS = {
     ("Notebook", "from_api_response"),

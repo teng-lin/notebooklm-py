@@ -22,7 +22,7 @@ from .._backend import (
 )
 from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from .._operations import Operation
-from .._records import (
+from .._semantic.records import (
     ARTIFACT_CATALOG_DEF,
     MIND_MAP_LIST_DEF,
     SUPPLEMENTAL_TRANSPORT_FAILURE,

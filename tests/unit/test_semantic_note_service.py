@@ -9,7 +9,7 @@ import pytest
 
 from notebooklm._note_service import NoteService
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     NOTE_CREATE_DEF,
     NOTE_DELETE_DEF,
     NOTE_GET_DEF,

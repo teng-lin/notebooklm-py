@@ -16,7 +16,7 @@ from notebooklm._backend import (
     UnsupportedOperationError,
 )
 from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     ARTIFACT_DOWNLOAD_DEF,
     ArtifactDownloadInput,
     ArtifactRecord,

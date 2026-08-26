@@ -20,7 +20,7 @@ from types import MappingProxyType
 
 from ..._binding import Binding, CodecBinding, NativeCallSpec, RpcNative
 from ..._operations import Operation
-from ..._records import (
+from ..._semantic.records import (
     CHAT_CONFIGURE_DEF,
     CHAT_DELETE_HISTORY_DEF,
     CHAT_GET_CONVERSATION_DEF,

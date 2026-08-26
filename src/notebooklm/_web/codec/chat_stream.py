@@ -22,7 +22,6 @@ from urllib.parse import quote, urlencode
 
 from ..._auth.account import format_authuser_value
 from ..._env import get_default_bl, get_default_language
-from ..._records import ChatNextStepRecord, ChatReferenceRecord, ChatTurnKeyRecord
 from ..._row_adapters.chat import (
     AnswerRow,
     CitationDetail,
@@ -32,6 +31,7 @@ from ..._row_adapters.chat import (
     StreamFrameRow,
 )
 from ..._row_adapters.documents import build_blocks
+from ..._semantic.records import ChatNextStepRecord, ChatReferenceRecord, ChatTurnKeyRecord
 from ..._types.documents import (
     DocumentAnnotation,
     StructuredDocument,

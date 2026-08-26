@@ -36,7 +36,7 @@ from ._backend import (
 )
 from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from ._operations import Operation
-from ._records import (
+from ._semantic.records import (
     SHARING_GET_DEF,
     SHARING_MUTATE_DEF,
     SHARING_PATCH_VIEW_LEVEL_DEF,

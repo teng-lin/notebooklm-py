@@ -20,7 +20,7 @@ from types import MappingProxyType
 from ..._backend import BackendError, BackendErrorReason
 from ..._binding import Binding, CodecBinding, NativeCallSpec, NativeChoice
 from ..._operations import Operation
-from ..._records import (
+from ..._semantic.records import (
     NOTEBOOK_ALLOCATE_DEF,
     NOTEBOOK_DELETE_DEF,
     NOTEBOOK_DESCRIBE_DEF,
