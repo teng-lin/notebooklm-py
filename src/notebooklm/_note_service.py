@@ -24,6 +24,8 @@ from ._records import (
     NOTE_GET_DEF,
     NOTE_LIST_DEF,
     NOTE_UPDATE_DEF,
+    RAW_ALL_NOTE_ROWS,
+    RAW_MIND_MAP_ROWS,
     MindMapGenerateNoteInput,
     MindMapListInput,
     MindMapRecord,
@@ -176,6 +178,29 @@ class NoteService:
         return [
             project_mind_map(record) for record in await self._list_mind_map_records(notebook_id)
         ]
+
+    async def list_mind_map_rows(self, notebook_id: str) -> list[Any]:
+        """Return the active note-backed mind-map rows exactly as the wire sent them.
+
+        The raw compatibility listing ``NotesAPI.list_mind_maps`` publishes: the
+        same rows, in the same order, with the same fields the deferred raw
+        note-row service returned.
+        """
+
+        return await self._list_raw_rows(notebook_id, RAW_MIND_MAP_ROWS)
+
+    async def list_note_rows(self, notebook_id: str) -> list[Any]:
+        """Return the whole raw note+mind-map row collection, deletions included."""
+
+        return await self._list_raw_rows(notebook_id, RAW_ALL_NOTE_ROWS)
+
+    async def _list_raw_rows(self, notebook_id: str, scope: str) -> list[Any]:
+        result = await self._backend.invoke(
+            MIND_MAP_LIST_DEF,
+            MindMapListInput(notebook_id, raw_rows=scope),
+            deadline=None,
+        )
+        return list(result.rows)
 
     async def _list_mind_map_records(self, notebook_id: str) -> tuple[MindMapRecord, ...]:
         """Keep exact persisted JSON available for title-only updates."""

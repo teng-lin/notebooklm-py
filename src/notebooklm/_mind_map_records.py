@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 from ._operations import CallPolicy, Operation, OperationDef, OperationTier
 
@@ -20,18 +21,38 @@ class MindMapRecord:
     tree_json: str | None = None
 
 
+#: ``MindMapListInput.raw_rows``: return the mind-map rows only.
+RAW_MIND_MAP_ROWS = "mind_maps"
+#: ``MindMapListInput.raw_rows``: return the whole normalized row collection.
+RAW_ALL_NOTE_ROWS = "all"
+
+
 @dataclass(frozen=True, slots=True)
 class MindMapListInput:
-    """Notebook whose active note-backed mind maps are requested."""
+    """Notebook whose active note-backed mind maps are requested.
+
+    ``raw_rows`` selects the undecoded compatibility branch that
+    ``NotesAPI.list_mind_maps`` and ``NotesAPI._get_all_notes_and_mind_maps``
+    publish: :data:`RAW_MIND_MAP_ROWS` yields the normalized mind-map rows and
+    :data:`RAW_ALL_NOTE_ROWS` the whole normalized collection, both exactly as
+    the wire produced them.  ``None`` is the record branch every semantic
+    caller uses.
+    """
 
     notebook_id: str
+    raw_rows: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class MindMapListResult:
-    """Active note-backed mind maps in backend order."""
+    """Active note-backed mind maps in backend order.
+
+    ``rows`` carries the undecoded payload for ``raw_rows`` requests only and
+    stays empty on the record branch, which in turn leaves ``mind_maps`` empty.
+    """
 
     mind_maps: tuple[MindMapRecord, ...]
+    rows: tuple[Any, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,4 +274,6 @@ __all__ = [
     "MindMapRepresentationRecord",
     "MindMapUpdateInput",
     "MindMapUpdateResult",
+    "RAW_ALL_NOTE_ROWS",
+    "RAW_MIND_MAP_ROWS",
 ]

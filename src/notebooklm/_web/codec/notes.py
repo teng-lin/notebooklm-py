@@ -120,14 +120,33 @@ def decode_note(result: Any, notebook_id: str, note_id: str) -> NoteRecord | Non
     return None
 
 
+def _is_active_mind_map_row(row: list[Any]) -> bool:
+    note = NoteRow(row)
+    return not note.is_deleted and NoteRow.is_mind_map_content(note.content)
+
+
+def decode_note_row_collection(result: Any, *, mind_maps_only: bool) -> tuple[list[Any], ...]:
+    """Return the normalized rows undecoded, for the raw compatibility surface.
+
+    The rows are exactly what the envelope normalizer produced — the same
+    ``[id, content, metadata, None, title]`` shape the raw note-row helpers
+    published — so nothing positional runs on them here.
+    """
+
+    rows = _decode_note_rows(result)
+    if not mind_maps_only:
+        return rows
+    return tuple(row for row in rows if _is_active_mind_map_row(row))
+
+
 def decode_note_backed_mind_maps(result: Any, notebook_id: str) -> tuple[MindMapRecord, ...]:
     """Decode active note-backed rows without exposing the mixed wire collection."""
 
     records: list[MindMapRecord] = []
     for row in _decode_note_rows(result):
-        note = NoteRow(row)
-        if note.is_deleted or not NoteRow.is_mind_map_content(note.content):
+        if not _is_active_mind_map_row(row):
             continue
+        note = NoteRow(row)
         records.append(
             MindMapRecord(
                 id=note.id,

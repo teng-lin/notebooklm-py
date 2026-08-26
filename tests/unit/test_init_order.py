@@ -230,10 +230,7 @@ def test_artifacts_rejects_legacy_notes_api_kwarg(mock_auth: AuthTokens) -> None
     from notebooklm._note_service import NoteService
 
     core = MagicMock()
-    notes = NotesAPI(
-        notes=MagicMock(spec=NoteService),
-        mind_maps=MagicMock(spec=NoteBackedMindMapService),
-    )
+    notes = NotesAPI(notes=MagicMock(spec=NoteService))
     with pytest.raises(TypeError):
         ArtifactsAPI(  # type: ignore[call-arg]
             core,
@@ -265,10 +262,7 @@ def test_artifacts_before_notes_construction_order(mock_auth: AuthTokens) -> Non
         )
 
     def _make_notes() -> NotesAPI:
-        return NotesAPI(
-            notes=MagicMock(spec=NoteService),
-            mind_maps=MagicMock(spec=NoteBackedMindMapService),
-        )
+        return NotesAPI(notes=MagicMock(spec=NoteService))
 
     artifacts_first = _make_artifacts()
     notes_first = _make_notes()

@@ -297,10 +297,7 @@ def compose_client(
         notebooks=client.notebooks,
         created_chat_sessions=client.notebooks,
     )
-    client.notes = NotesAPI(
-        notes=note_service,
-        mind_maps=mind_maps,
-    )
+    client.notes = NotesAPI(notes=note_service)
     # Unified mind-map surface over two semantic services. Note-backed flows
     # share the client-scoped NoteService; interactive flows use the Studio
     # family and its typed MIND_MAP_* bindings. The legacy adapter above remains

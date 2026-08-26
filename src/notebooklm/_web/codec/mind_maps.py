@@ -10,6 +10,7 @@ from typing import Any
 from ..._binding import CodecPayload
 from ..._env import get_default_language
 from ..._records import (
+    RAW_MIND_MAP_ROWS,
     MindMapDeleteInput,
     MindMapDeleteResult,
     MindMapGenerateInput,
@@ -32,7 +33,7 @@ from .artifact_payloads import (
     build_interactive_mind_map_artifact_params,
     build_mind_map_params,
 )
-from .notes import decode_note_backed_mind_maps
+from .notes import decode_note_backed_mind_maps, decode_note_row_collection
 
 logger = logging.getLogger("notebooklm._mind_maps_api")
 
@@ -165,7 +166,16 @@ def encode_mind_map_delete(value: MindMapDeleteInput) -> CodecPayload:
 
 
 def decode_mind_map_list(value: MindMapListInput, data: Any) -> MindMapListResult:
-    """Row decoder for ``mind_map.list``."""
+    """Row decoder for ``mind_map.list``; the input selects the raw-row branch."""
+    if value.raw_rows is not None:
+        # Undecoded compatibility branch. ``NotesAPI.list_mind_maps`` and
+        # ``NotesAPI._get_all_notes_and_mind_maps`` publish the wire rows, so no
+        # record projection may run here — it would turn a row those helpers
+        # returned verbatim into a record that drops fields they exposed.
+        return MindMapListResult(
+            (),
+            decode_note_row_collection(data, mind_maps_only=value.raw_rows == RAW_MIND_MAP_ROWS),
+        )
     return MindMapListResult(decode_note_backed_mind_maps(data, value.notebook_id))
 
 

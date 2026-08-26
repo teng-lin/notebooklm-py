@@ -19,7 +19,7 @@ def make_note_stack(
     notes = NoteService(backend)
     legacy = LegacyNoteBackedService(core)
     mind_maps = NoteBackedMindMapService(legacy)
-    return notes, legacy, mind_maps, NotesAPI(notes=notes, mind_maps=mind_maps)
+    return notes, legacy, mind_maps, NotesAPI(notes=notes)
 
 
 __all__ = ["make_note_stack"]
