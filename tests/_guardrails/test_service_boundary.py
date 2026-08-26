@@ -1,10 +1,18 @@
 """Service-boundary guardrails for programme P10 (invariants I1, I2, I9).
 
 Governed by :doc:`ADR-0035 <../../docs/adr/0035-semantic-backend-boundary>` and
-``docs/plan/remediation-plan.md`` (the P10 remediation plan). Three of that
-plan's target invariants are enforced here; each is a **ratchet with a seed
-allowlist that shrinks only**, so a violation that exists today is recorded
-once and a new one fails immediately:
+``docs/plan/2026-08-25-p10-semantic-remediation.md`` (the P10 remediation
+plan). Three of that plan's target invariants are enforced here, and P10's
+final purge (R6.5) leaves them in two different shapes:
+
+* **I1 and I9 are hard rules.** Their migrations are finished, so there is no
+  seed allowlist left to park a new violation in: a breach fails on the commit
+  that introduces it. I1's only escape is the single *named permanent*
+  exemption below, and widening it is an ADR-level decision (ADR-0035 addendum
+  **D7**) rather than a test edit; I9's only escape is its enumerated set.
+* **I2 is still a shrink-only ratchet**, because its seed is not empty yet: one
+  ``_web`` file still imports a domain package. See :data:`I2_SEED_ALLOWLIST`
+  for which and why. It converts to a hard rule when that entry drains.
 
 **I1 — semantic service modules stay neutral.** A semantic service module
 (``src/notebooklm/_*_service.py``, ``_read_services.py``,
@@ -17,6 +25,8 @@ collections thereof, or ``None``. Projection to public models is a *facade*
 responsibility — the ADR's Decision lists "public model projectors" among the
 dependencies a service may take, so I1 is authorised by the plan's decision
 **D7** (an ADR-0035 addendum landed in R0.0), not by the unamended ADR.
+Since R6.5 this is a hard rule with exactly one named exemption,
+``_studio/downloads.py``.
 
 **I2 — ``_web/**`` imports no domain package.** The web backend may not import
 ``_chat``, ``_source``, ``_studio``, ``_artifact`` or any
@@ -27,10 +37,12 @@ one that forbids the neutral direction too.
 
 **I9 — no ``Legacy*`` class below ``_app``** except the enumerated exemptions:
 the legacy-mapping records consumed only by ``_backend_compat``/the projectors
-and the auth storage-migration types. The deletion targets that P10 owns are
-recorded separately from the exemptions so they cannot be quietly reclassified
-as permanent. ``NotebookLegacyRpc`` left that set in R6.2 when
-``NotebooksAPI.get_raw`` moved onto the ``NOTEBOOK_GET`` row.
+and the auth storage-migration types. **Met.** Both deletion targets P10 owned
+are gone — ``LegacyNoteBackedService`` in R4.2, and ``NotebookLegacyRpc`` in
+R6.2 when ``NotebooksAPI.get_raw`` moved onto the ``NOTEBOOK_GET`` row — so
+R6.5 deleted the separate deletion-target set rather than leave an empty one
+standing as somewhere to reclassify a new violation into. The two stay named in
+:data:`I9_DELETED_TARGETS`, which fails if either class comes back.
 
 **I10 is deliberately not enforced here.** The plan's tenth invariant caps
 ``src/notebooklm/_records.py`` at 1,500 lines; that is already
@@ -85,17 +97,20 @@ I1_FORBIDDEN_FIRST_PARTY_ROOTS: frozenset[str] = frozenset(
     }
 )
 
-#: Shrinking seed: the semantic service modules that violate I1. Entries leave
-#: as their retiring slice lands, and nothing may be added. The plan's §6 target
-#: is an empty set beside the permanent exemption below, and P10 reaches it:
-#: R6.1-R6.6 drained the root services and R5.2 the four ``_studio/*`` modules
-#: (``catalog.py``, ``lifecycle.py``, ``mind_maps.py``, ``representations.py``).
-I1_SEED_ALLOWLIST: frozenset[str] = frozenset()
-
-#: Permanent, *named* exemption — not a shrinking seed. ``_studio/downloads.py``
-#: owns the byte-download clients (``httpx`` plus ``_curl_cffi_transport``);
-#: moving that transport under ``_web`` is explicitly out of P10 scope and is
-#: deferred to a separate download-transport slice (plan §0, §8).
+#: The one **permanent, named** exemption to I1 — deliberately not a seed, and
+#: not a place to park the next violation. ``_studio/downloads.py`` owns the
+#: byte-download clients (``httpx`` plus ``_curl_cffi_transport``); relocating
+#: that transport under ``_web`` is explicitly out of P10 scope and is deferred
+#: to a separate download-transport slice (plan §0, §8), which is also when this
+#: entry retires.
+#:
+#: There is no other escape. P10's shrink-only seed drained to empty — R6.1-R6.6
+#: took the root services and R5.2 the four ``_studio/*`` modules (``catalog``,
+#: ``lifecycle``, ``mind_maps``, ``representations``) — and R6.5 deleted it, so
+#: I1 is a hard rule. Adding an entry here is an ADR-level decision, not a test
+#: edit: ADR-0035 addendum D7 is what authorises I1, and it names "the
+#: byte-download clients" as the exemption it carries, so a second exemption
+#: needs a second addendum.
 I1_PERMANENT_EXEMPTIONS: frozenset[str] = frozenset({"_studio/downloads.py"})
 
 #: Governed by I1's *import* half only. ``_source_add_reports.py`` holds no
@@ -199,18 +214,17 @@ I9_EXEMPT_LEGACY_CLASSES: frozenset[str] = frozenset(
     }
 )
 
-#: P10 deletion targets, recorded separately from the exemptions so neither can
-#: be reclassified as permanent by editing one set. Both named targets are now
-#: gone, so the invariant is met and the target set is empty:
-#: ``LegacyNoteBackedService`` went in R4.2 (its wire graph moved above the port
-#: with the mind-map workflows, and ``_mind_map.py``, the module R4.1 had moved
-#: it to, went with it), and ``NotebookLegacyRpc`` went in R6.2
-#: (``NotebooksAPI.get_raw`` reads through the ``NOTEBOOK_GET`` row, so the
-#: facade needs no raw-call collaborator at all).
-I9_DELETION_TARGETS: frozenset[str] = frozenset()
-
-#: Already deleted by their owning slice. Kept named so a reintroduction under
-#: an old name is a visible edit here rather than a silent revival.
+#: Deleted by their owning slice, kept named so a reintroduction under an old
+#: name is a visible edit here rather than a silent revival.
+#:
+#: These were P10's two I9 deletion targets, and both are gone:
+#: ``LegacyNoteBackedService`` in R4.2 (its wire graph moved above the port with
+#: the mind-map workflows, and ``_mind_map.py``, the module R4.1 had moved it
+#: to, went with it) and ``NotebookLegacyRpc`` in R6.2 (``NotebooksAPI.get_raw``
+#: reads through the ``NOTEBOOK_GET`` row, so the facade needs no raw-call
+#: collaborator at all). R6.5 therefore deleted the separate deletion-target
+#: set: an empty "targets" list is indistinguishable from a parking space, and
+#: I9 now stands as a hard rule over the enumerated exemptions alone.
 I9_DELETED_TARGETS: frozenset[str] = frozenset(
     {
         "_mind_map.py::LegacyNoteBackedService",
@@ -433,48 +447,80 @@ def _public_return_annotations(path: Path) -> list[tuple[str, str, frozenset[str
 # --- I1 ---------------------------------------------------------------------
 
 
-def test_i1_seed_and_exemption_lists_are_disjoint_and_name_real_modules() -> None:
-    assert not (I1_SEED_ALLOWLIST & I1_PERMANENT_EXEMPTIONS), (
-        "a module is both a shrinking seed and a permanent exemption"
-    )
+def test_the_i1_permanent_exemption_names_a_governed_service_module() -> None:
     governed = {_relative(path, SRC_ROOT) for path in _semantic_service_modules()}
-    ungoverned = sorted((I1_SEED_ALLOWLIST | I1_PERMANENT_EXEMPTIONS) - governed)
-    assert not ungoverned, (
-        f"allowlisted modules that are not semantic service modules: {ungoverned}"
-    )
+    ungoverned = sorted(I1_PERMANENT_EXEMPTIONS - governed)
+    assert not ungoverned, f"exempted modules that are not semantic service modules: {ungoverned}"
 
 
-def test_no_new_semantic_service_module_imports_wire_public_or_projection_modules() -> None:
-    """I1, growth half: nothing outside the seed may take a forbidden import."""
+def test_no_semantic_service_module_imports_wire_public_or_projection_modules() -> None:
+    """I1, import half — a hard rule: only the named exemption may violate it."""
     violations = _i1_import_violations()
     unexpected = {
         module: found
         for module, found in violations.items()
-        if module not in I1_SEED_ALLOWLIST and module not in I1_PERMANENT_EXEMPTIONS
+        if module not in I1_PERMANENT_EXEMPTIONS
     }
     assert not unexpected, (
         "semantic service module(s) took a forbidden import. A service may not "
         "name _projectors, notebooklm.types, _types.*, _backend_compat, rpc.*, "
-        f"_row_adapters.*, _web.* or httpx (P10 invariant I1): {unexpected}"
+        "_row_adapters.*, _web.* or httpx (P10 invariant I1). There is no seed "
+        "allowlist to add to: hoist the dependency above the port, or take an "
+        f"ADR-0035 addendum for a second permanent exemption: {unexpected}"
     )
 
 
-def test_the_i1_allowlist_carries_no_module_that_already_conforms() -> None:
-    """I1, ratchet half: a seed that no longer violates must be removed."""
+def test_the_i1_permanent_exemption_is_exactly_what_still_needs_it() -> None:
+    """An exemption must name a module that would otherwise fail the hard rule."""
     violations = _i1_import_violations()
-    stale = sorted(I1_SEED_ALLOWLIST - violations.keys())
-    assert not stale, (
-        "I1 seed entries that no longer violate the invariant — the allowlist "
-        f"shrinks only, so delete them from I1_SEED_ALLOWLIST: {stale}"
-    )
     assert sorted(I1_PERMANENT_EXEMPTIONS) == sorted(I1_PERMANENT_EXEMPTIONS & violations.keys()), (
         "the named permanent exemption no longer violates I1; retire it "
         "together with the download-transport slice it is reserved for"
     )
 
 
+def test_i1_governs_every_service_family_and_its_detector_fires() -> None:
+    """Non-vacuity: the scan reaches real modules and the predicate really bites.
+
+    A boundary rule that scans nothing passes for free, and this repo has
+    shipped exactly that before — a ``_chat/`` import ban whose scan never
+    covered ``_chat/``. A hard rule earns less scrutiny than a ratchet (there is
+    no shrinking seed whose entries prove it fires), so pin three things: the
+    governed set holds a module from every family I1 names, the forbidden
+    predicate answers correctly for each banned root *and* for the neutral names
+    a service must keep reaching, and the end-to-end walk still finds a real
+    forbidden import in live source.
+    """
+    governed = {_relative(path, SRC_ROOT) for path in _semantic_service_modules()}
+    assert {
+        "_note_service.py",
+        "_read_services.py",
+        "_source_add_reports.py",
+        "_studio/catalog.py",
+    } <= governed
+    assert any(module.startswith("_chat/") for module in governed), (
+        "no _chat service module is governed; I1's chat arm would be vacuous"
+    )
+
+    for root in I1_FORBIDDEN_FIRST_PARTY_ROOTS:
+        assert _is_i1_forbidden(root, True), root
+        assert _is_i1_forbidden(f"{root}.submodule", True), root
+    assert _is_i1_forbidden("httpx", False)
+    assert _is_i1_forbidden("httpx._client", False)
+    for neutral in ("_backend", "_deadline", "_operations", "_records"):
+        assert not _is_i1_forbidden(neutral, True), neutral
+    # ``types`` is forbidden only as the first-party public module; the stdlib
+    # module of the same name has to stay reachable.
+    assert not _is_i1_forbidden("types", False)
+
+    assert _i1_import_violations(), (
+        "the I1 walk found no forbidden import anywhere in src, not even in the "
+        "named exemption — the detector has stopped firing on live source"
+    )
+
+
 def test_conforming_semantic_services_return_only_neutral_types() -> None:
-    """I1, return half: no public method leaks a public model out of a service."""
+    """I1, return half — a hard rule too: no service leaks a public model out."""
     permitted = I1_PERMITTED_RETURN_BUILTINS | _neutral_enum_names()
     public_models = _public_model_names()
 
@@ -492,11 +538,7 @@ def test_conforming_semantic_services_return_only_neutral_types() -> None:
     offenders: dict[str, list[tuple[str, str]]] = {}
     for path in _semantic_service_modules():
         module = _relative(path, SRC_ROOT)
-        if (
-            module in I1_SEED_ALLOWLIST
-            or module in I1_PERMANENT_EXEMPTIONS
-            or module in I1_RETURN_ARM_EXEMPTIONS
-        ):
+        if module in I1_PERMANENT_EXEMPTIONS or module in I1_RETURN_ARM_EXEMPTIONS:
             continue
         bad = [
             (qualname, annotation)
@@ -601,10 +643,11 @@ def test_no_unenumerated_legacy_class_exists_below_the_application_layer() -> No
     """I9: the ``Legacy`` inventory below ``_app`` is exactly the enumerated set."""
     found = _legacy_classes(SRC_ROOT)
     below_app = {key: where for key, where in found.items() if not where[0].startswith("_app/")}
-    assert set(below_app) == I9_EXEMPT_LEGACY_CLASSES | I9_DELETION_TARGETS, (
-        "the Legacy class inventory below _app drifted (P10 invariant I9). "
-        f"Unenumerated: {sorted(set(below_app) - I9_EXEMPT_LEGACY_CLASSES - I9_DELETION_TARGETS)}; "
-        f"gone: {sorted((I9_EXEMPT_LEGACY_CLASSES | I9_DELETION_TARGETS) - set(below_app))}"
+    assert set(below_app) == I9_EXEMPT_LEGACY_CLASSES, (
+        "the Legacy class inventory below _app drifted (P10 invariant I9). There "
+        "is no deletion-target set left to park a new one in. Unenumerated: "
+        f"{sorted(set(below_app) - I9_EXEMPT_LEGACY_CLASSES)}; "
+        f"gone: {sorted(I9_EXEMPT_LEGACY_CLASSES - set(below_app))}"
     )
 
 
@@ -616,10 +659,7 @@ def test_the_application_layer_defines_no_legacy_class_at_all() -> None:
     )
 
 
-def test_the_i9_deletion_targets_stay_separate_from_the_exemptions() -> None:
-    assert not (I9_EXEMPT_LEGACY_CLASSES & I9_DELETION_TARGETS), (
-        "a P10 deletion target was reclassified as a permanent I9 exemption"
-    )
+def test_no_legacy_class_p10_deleted_returns_under_its_old_name() -> None:
     assert not (I9_EXEMPT_LEGACY_CLASSES & I9_DELETED_TARGETS), (
         "a deleted P10 target came back as a permanent I9 exemption"
     )

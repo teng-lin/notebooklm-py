@@ -187,22 +187,27 @@ R7 last
 
 ## 6. Definition of done — measurable
 
+"Now" is measured from the live tree at R6.5 (2026-08-26), after PR1–PR6; the
+pre-programme figures it replaces are in the revision history. Ten of the
+fourteen rows are at target; the four that are not are marked **short** and
+say what is left.
+
 | Metric | Now | Target |
 |---|---|---|
-| Custom rows (protocol / compatibility / deferred-product) | 5 / 4 / 11 | 1 (upload) / 0 / 0 |
-| `ROW_COLLABORATOR_NAMES` | 6 | exactly `{"source_uploader"}` |
-| I1 allowlist | 13 | 1 (`_studio/downloads.py`, named exemption) |
-| I2 allowlist | 10 | 0 (`backend.py:69` retired by R3.1's `UploadLifecycleHooks`) |
-| `RAW_PASSTHROUGH` rows / enum member | 4 / exists | 0 / deleted |
-| `RPCMethod` tokens in `_web/policy.py` | 148 | 0 (module deleted; reviewed intent lives in `scripts/_web_policy_intent.py`) |
-| `_web/registry.py` hand-written direct defs | 80 | 0 |
-| `WebRpcBackend.__init__` parameters | 15 | 13 (`transport_factory` dead — R1.2; `chat_reqid` duplicate — R2.2; `reqid` feeds the transport) |
-| `_chat/api.py` lines | 830 | ≤ 350 |
-| I9 deletion targets (`LegacyNoteBackedService` in R4.2, `NotebookLegacyRpc` in R6.2) | 2 | 0 |
-| `capabilities.available()` true for service-owned ops (incl. research wait/import_verify after R6.4) | no | yes |
-| `Operation` members / product members | 96 / — | 99 under D1(a), 109 under D1(b) / 87 |
-| Root-level `_*_service.py` / `_*_records.py` modules | 27 | 0 |
-| Public API, cassettes, adapter payload baselines | — | unchanged |
+| Custom rows (protocol / compatibility / deferred-product) | 1 / 0 / 1 — **short**: `mind_map.generate_note` stays deferred-product (input-defaulting; hoisting it needs a resolved-input primitive for the note) | 1 (upload) / 0 / 0 |
+| `ROW_COLLABORATOR_NAMES` | 1 — exactly `{"source_uploader"}` | exactly `{"source_uploader"}` |
+| I1 allowlist | 1 — the named exemption only; R6.5 deleted the drained seed and I1 is now a hard rule | 1 (`_studio/downloads.py`, named exemption) |
+| I2 allowlist | 1 — **short**: `bindings/sources.py`, whose surviving `_source.add` edge is `honor_requested_title`, reached by the permanent `SOURCE_ADD_FILE` row under D4; draining it needs that helper relocated to a neutral module, so I2 stays a shrink-only ratchet | 0 (`backend.py:69` retired by R3.1's `UploadLifecycleHooks`) |
+| `RAW_PASSTHROUGH` rows / enum member | 0 / deleted (`ErrorMode` is `{TRANSLATE, TRANSLATE_SCRUBBED}`) | 0 / deleted |
+| `RPCMethod` tokens in `_web/policy.py` | 0 — module deleted; the reviewed intent moved as planned | 0 (module deleted; reviewed intent lives in `scripts/_web_policy_intent.py`) |
+| `_web/registry.py` hand-written direct defs | 0 — the supported set is derived from the row table | 0 |
+| `WebRpcBackend.__init__` parameters | 13 | 13 (`transport_factory` dead — R1.2; `chat_reqid` duplicate — R2.2; `reqid` feeds the transport) |
+| `_chat/api.py` lines | 517 — **short** of the ceiling, though down from 830 | ≤ 350 |
+| I9 deletion targets (`LegacyNoteBackedService` in R4.2, `NotebookLegacyRpc` in R6.2) | 0 — both deleted; R6.5 removed the target set itself and restated I9 as a hard rule over its enumerated exemptions | 0 |
+| `capabilities.available()` true for service-owned ops (incl. research wait/import_verify after R6.4) | yes | yes |
+| `Operation` members / product members | 99 / 87 (12 primitives) | 99 under D1(a), 109 under D1(b) / 87 |
+| Root-level `_*_service.py` / `_*_records.py` modules | 10 / 10 — **short**: this is R7's structure work, which has not landed | 0 |
+| Public API, cassettes, adapter payload baselines | unchanged — no cassette and no public-surface baseline moved; `json_envelope.json` moved only in its private-model provenance (`evidence`, `shape_derivation`, `private_dataclass_projection_paths`), with every emitted key set and projection id identical | unchanged |
 
 ---
 
