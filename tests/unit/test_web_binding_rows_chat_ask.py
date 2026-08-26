@@ -27,6 +27,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from scripts._web_policy_intent import SERVICE_OWNED_WORKFLOW_BINDINGS, WEB_CALL_POLICY_BINDINGS
 
 from notebooklm._backend import (
     BackendContractError,
@@ -51,7 +52,6 @@ from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import primitives as primitive_rows
 from notebooklm._web.codec.chat_stream import ChatStreamRequestData
 from notebooklm._web.failure_projection import _capture_public_failure
-from notebooklm._web.policy import SERVICE_OWNED_WORKFLOW_BINDINGS, WEB_CALL_POLICY_BINDINGS
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY
 from notebooklm._web.transport import WebStreamRequest
 from notebooklm.exceptions import ChatError, NetworkError, ServerError

@@ -850,8 +850,11 @@ def derive_row_authorities(
 
 
 def audit_row_bindings(rows: Sequence[BindingRowSite] | None = None) -> list[str]:
-    """Fail closed when a binding row's declared natives disagree with the policy ledger."""
-    from notebooklm._web.policy import WEB_CALL_POLICY_BINDINGS
+    """Fail closed when a binding row's declared natives disagree with the reviewed intent."""
+    if __package__:
+        from ._web_policy_intent import WEB_CALL_POLICY_BINDINGS
+    else:  # pragma: no cover - direct script execution
+        from _web_policy_intent import WEB_CALL_POLICY_BINDINGS
 
     errors: list[str] = []
     seen: dict[Operation, str] = {}
@@ -2377,6 +2380,94 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/transport.py", "_binding", "StreamNative"),
         ("_web/transport.py", "_binding", "StreamRequestPayload"),
         ("_web/transport.py", "codec.chat_stream", "ChatStreamRequestData"),
+    }
+)
+# P10 R2.5 (invariant I7): ``_web/registry.py`` derives its directly supported
+# definition set from ``WEB_BINDING_ROWS`` instead of naming all 80 ``*_DEF``
+# objects, so those imports are gone. The twelve service-owned definitions stay
+# imported — no row carries them.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_web/registry.py", "_records", "ARTIFACT_CATALOG_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_DELETE_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_DOWNLOAD_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_EXPORT_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_AUDIO_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_DATA_TABLE_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_FLASHCARDS_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_INFOGRAPHIC_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_MIND_MAP_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_QUIZ_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_REPORT_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_SLIDE_DECK_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_VIDEO_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GET_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_LIST_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_PATCH_TITLE_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_RETRY_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_REVISE_SLIDE_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_SUGGEST_REPORTS_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_WAIT_DEF"),
+        ("_web/registry.py", "_records", "CHAT_CONFIGURE_DEF"),
+        ("_web/registry.py", "_records", "CHAT_DELETE_HISTORY_DEF"),
+        ("_web/registry.py", "_records", "CHAT_GET_CONVERSATION_DEF"),
+        ("_web/registry.py", "_records", "CHAT_GET_HISTORY_DEF"),
+        ("_web/registry.py", "_records", "CHAT_SAVE_NOTE_DEF"),
+        ("_web/registry.py", "_records", "CHAT_STREAM_ANSWER_DEF"),
+        ("_web/registry.py", "_records", "COLLECTION_DELETE_DEF"),
+        ("_web/registry.py", "_records", "COLLECTION_GET_DEF"),
+        ("_web/registry.py", "_records", "COLLECTION_LIST_DEF"),
+        ("_web/registry.py", "_records", "LABEL_ALLOCATE_DEF"),
+        ("_web/registry.py", "_records", "LABEL_DELETE_DEF"),
+        ("_web/registry.py", "_records", "LABEL_GENERATE_DEF"),
+        ("_web/registry.py", "_records", "LABEL_GET_DEF"),
+        ("_web/registry.py", "_records", "LABEL_LIST_DEF"),
+        ("_web/registry.py", "_records", "LABEL_MUTATE_DEF"),
+        ("_web/registry.py", "_records", "LEGACY_SHARE_ARTIFACT_DEF"),
+        ("_web/registry.py", "_records", "MIND_MAP_DELETE_DEF"),
+        ("_web/registry.py", "_records", "MIND_MAP_GENERATE_INTERACTIVE_DEF"),
+        ("_web/registry.py", "_records", "MIND_MAP_GENERATE_NOTE_DEF"),
+        ("_web/registry.py", "_records", "MIND_MAP_GET_DEF"),
+        ("_web/registry.py", "_records", "MIND_MAP_LIST_DEF"),
+        ("_web/registry.py", "_records", "MIND_MAP_UPDATE_DEF"),
+        ("_web/registry.py", "_records", "NOTEBOOK_ALLOCATE_DEF"),
+        ("_web/registry.py", "_records", "NOTEBOOK_DELETE_DEF"),
+        ("_web/registry.py", "_records", "NOTEBOOK_DESCRIBE_DEF"),
+        ("_web/registry.py", "_records", "NOTEBOOK_GET_DEF"),
+        ("_web/registry.py", "_records", "NOTEBOOK_LIST_DEF"),
+        ("_web/registry.py", "_records", "NOTEBOOK_PATCH_DEF"),
+        ("_web/registry.py", "_records", "NOTEBOOK_REMOVE_RECENT_DEF"),
+        ("_web/registry.py", "_records", "NOTEBOOK_SUGGEST_PROMPTS_DEF"),
+        ("_web/registry.py", "_records", "NOTEBOOK_SUMMARIZE_DEF"),
+        ("_web/registry.py", "_records", "NOTE_CREATE_DEF"),
+        ("_web/registry.py", "_records", "NOTE_DELETE_DEF"),
+        ("_web/registry.py", "_records", "NOTE_GET_DEF"),
+        ("_web/registry.py", "_records", "NOTE_LIST_DEF"),
+        ("_web/registry.py", "_records", "NOTE_UPDATE_DEF"),
+        ("_web/registry.py", "_records", "RESEARCH_CANCEL_DEF"),
+        ("_web/registry.py", "_records", "RESEARCH_IMPORT_DEF"),
+        ("_web/registry.py", "_records", "RESEARCH_POLL_DEF"),
+        ("_web/registry.py", "_records", "RESEARCH_START_DEF"),
+        ("_web/registry.py", "_records", "SETTINGS_GET_DEF"),
+        ("_web/registry.py", "_records", "SETTINGS_GET_LIMITS_DEF"),
+        ("_web/registry.py", "_records", "SETTINGS_SET_LANGUAGE_DEF"),
+        ("_web/registry.py", "_records", "SHARING_GET_DEF"),
+        ("_web/registry.py", "_records", "SHARING_MUTATE_DEF"),
+        ("_web/registry.py", "_records", "SHARING_PATCH_VIEW_LEVEL_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_ADD_DRIVE_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_ADD_FILE_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_ADD_TEXT_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_ADD_URL_BATCH_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_ADD_URL_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_CHECK_FRESHNESS_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_DELETE_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_GET_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_GET_FULLTEXT_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_GET_GUIDE_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_LIST_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_PATCH_TITLE_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_REFRESH_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_WAIT_DEF"),
     }
 )
 ACTIVE_BACKEND_INVOKE_SITES |= frozenset(

@@ -1,7 +1,8 @@
 """Closed web dispositions for the semantic operation vocabulary.
 
 Direct P2 notebook/source operations, P5 Studio family operations, and P6.1–P6.7 domain
-workflows have executable rows from ``_web.bindings``. P9.2 service-owned workflows keep their
+workflows have executable rows from ``_web.bindings``, and the directly supported definition set
+is derived from that row table rather than re-listed here. P9.2 service-owned workflows keep their
 canonical definition but no direct web binding. Every other operation has an unsupported
 disposition, and the count assertions force a deliberate registry update when the closed
 :class:`Operation` enum changes.
@@ -17,101 +18,20 @@ from typing import Any, Final
 from .._binding import Binding, OperationDisposition
 from .._operations import Operation, OperationDef
 from .._records import (
-    ARTIFACT_CATALOG_DEF,
-    ARTIFACT_DELETE_DEF,
-    ARTIFACT_DOWNLOAD_DEF,
-    ARTIFACT_EXPORT_DEF,
-    ARTIFACT_GENERATE_AUDIO_DEF,
-    ARTIFACT_GENERATE_DATA_TABLE_DEF,
-    ARTIFACT_GENERATE_FLASHCARDS_DEF,
-    ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
-    ARTIFACT_GENERATE_MIND_MAP_DEF,
-    ARTIFACT_GENERATE_QUIZ_DEF,
-    ARTIFACT_GENERATE_REPORT_DEF,
-    ARTIFACT_GENERATE_SLIDE_DECK_DEF,
-    ARTIFACT_GENERATE_VIDEO_DEF,
-    ARTIFACT_GET_DEF,
-    ARTIFACT_LIST_DEF,
-    ARTIFACT_PATCH_TITLE_DEF,
     ARTIFACT_RENAME_DEF,
-    ARTIFACT_RETRY_DEF,
-    ARTIFACT_REVISE_SLIDE_DEF,
-    ARTIFACT_SUGGEST_REPORTS_DEF,
-    ARTIFACT_WAIT_DEF,
     CHAT_ASK_DEF,
-    CHAT_CONFIGURE_DEF,
-    CHAT_DELETE_HISTORY_DEF,
-    CHAT_GET_CONVERSATION_DEF,
-    CHAT_GET_HISTORY_DEF,
-    CHAT_SAVE_NOTE_DEF,
-    CHAT_STREAM_ANSWER_DEF,
     COLLECTION_CREATE_DEF,
-    COLLECTION_DELETE_DEF,
-    COLLECTION_GET_DEF,
-    COLLECTION_LIST_DEF,
     COLLECTION_UPDATE_DEF,
-    LABEL_ALLOCATE_DEF,
     LABEL_CREATE_DEF,
-    LABEL_DELETE_DEF,
-    LABEL_GENERATE_DEF,
-    LABEL_GET_DEF,
-    LABEL_LIST_DEF,
-    LABEL_MUTATE_DEF,
     LABEL_UPDATE_DEF,
-    LEGACY_SHARE_ARTIFACT_DEF,
-    MIND_MAP_DELETE_DEF,
-    MIND_MAP_GENERATE_INTERACTIVE_DEF,
-    MIND_MAP_GENERATE_NOTE_DEF,
-    MIND_MAP_GET_DEF,
-    MIND_MAP_LIST_DEF,
-    MIND_MAP_UPDATE_DEF,
-    NOTE_CREATE_DEF,
-    NOTE_DELETE_DEF,
-    NOTE_GET_DEF,
-    NOTE_LIST_DEF,
-    NOTE_UPDATE_DEF,
-    NOTEBOOK_ALLOCATE_DEF,
     NOTEBOOK_CREATE_DEF,
-    NOTEBOOK_DELETE_DEF,
-    NOTEBOOK_DESCRIBE_DEF,
-    NOTEBOOK_GET_DEF,
-    NOTEBOOK_LIST_DEF,
-    NOTEBOOK_PATCH_DEF,
-    NOTEBOOK_REMOVE_RECENT_DEF,
-    NOTEBOOK_SUGGEST_PROMPTS_DEF,
-    NOTEBOOK_SUMMARIZE_DEF,
     NOTEBOOK_UPDATE_DEF,
-    RESEARCH_CANCEL_DEF,
-    RESEARCH_IMPORT_DEF,
-    RESEARCH_POLL_DEF,
-    RESEARCH_START_DEF,
-    SETTINGS_GET_DEF,
-    SETTINGS_GET_LIMITS_DEF,
-    SETTINGS_SET_LANGUAGE_DEF,
-    SHARING_GET_DEF,
-    SHARING_MUTATE_DEF,
-    SHARING_PATCH_VIEW_LEVEL_DEF,
     SHARING_SET_PUBLIC_DEF,
     SHARING_SET_VIEW_LEVEL_DEF,
     SHARING_UPDATE_USERS_DEF,
-    SOURCE_ADD_DRIVE_DEF,
-    SOURCE_ADD_FILE_DEF,
-    SOURCE_ADD_TEXT_DEF,
-    SOURCE_ADD_URL_BATCH_DEF,
-    SOURCE_ADD_URL_DEF,
-    SOURCE_CHECK_FRESHNESS_DEF,
-    SOURCE_DELETE_DEF,
-    SOURCE_GET_DEF,
-    SOURCE_GET_FULLTEXT_DEF,
-    SOURCE_GET_GUIDE_DEF,
-    SOURCE_LIST_DEF,
-    SOURCE_PATCH_TITLE_DEF,
-    SOURCE_REFRESH_DEF,
     SOURCE_UPDATE_DEF,
-    SOURCE_WAIT_DEF,
 )
 from .bindings import WEB_BINDING_ROWS
-from .policy import audit_web_call_policy_bindings
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,97 +74,17 @@ class WebOperationBinding:
         return OperationDisposition.UNSUPPORTED
 
 
+# P10 R2.5 (invariant I7): the row table is the sole authority for what the web
+# backend can execute directly, so the supported definitions are *derived* from
+# it rather than re-listed here. ``_assemble_rows`` already rejects duplicate
+# operations and rows that do not carry their canonical definition, which is
+# what the two hand-maintained cross-checks used to prove.
 _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = MappingProxyType(
-    {
-        Operation.NOTEBOOK_LIST: NOTEBOOK_LIST_DEF,
-        Operation.NOTEBOOK_GET: NOTEBOOK_GET_DEF,
-        Operation.NOTEBOOK_ALLOCATE: NOTEBOOK_ALLOCATE_DEF,
-        Operation.NOTEBOOK_PATCH: NOTEBOOK_PATCH_DEF,
-        Operation.NOTEBOOK_DELETE: NOTEBOOK_DELETE_DEF,
-        Operation.NOTEBOOK_REMOVE_RECENT: NOTEBOOK_REMOVE_RECENT_DEF,
-        Operation.NOTEBOOK_SUMMARIZE: NOTEBOOK_SUMMARIZE_DEF,
-        Operation.NOTEBOOK_DESCRIBE: NOTEBOOK_DESCRIBE_DEF,
-        Operation.SOURCE_ADD_URL: SOURCE_ADD_URL_DEF,
-        Operation.SOURCE_ADD_URL_BATCH: SOURCE_ADD_URL_BATCH_DEF,
-        Operation.SOURCE_ADD_TEXT: SOURCE_ADD_TEXT_DEF,
-        Operation.SOURCE_ADD_DRIVE: SOURCE_ADD_DRIVE_DEF,
-        Operation.SOURCE_ADD_FILE: SOURCE_ADD_FILE_DEF,
-        Operation.SOURCE_DELETE: SOURCE_DELETE_DEF,
-        Operation.SOURCE_PATCH_TITLE: SOURCE_PATCH_TITLE_DEF,
-        Operation.SOURCE_REFRESH: SOURCE_REFRESH_DEF,
-        Operation.SOURCE_CHECK_FRESHNESS: SOURCE_CHECK_FRESHNESS_DEF,
-        Operation.SOURCE_GET_GUIDE: SOURCE_GET_GUIDE_DEF,
-        Operation.SOURCE_GET_FULLTEXT: SOURCE_GET_FULLTEXT_DEF,
-        Operation.SOURCE_LIST: SOURCE_LIST_DEF,
-        Operation.SOURCE_GET: SOURCE_GET_DEF,
-        Operation.CHAT_GET_CONVERSATION: CHAT_GET_CONVERSATION_DEF,
-        Operation.CHAT_GET_HISTORY: CHAT_GET_HISTORY_DEF,
-        Operation.CHAT_DELETE_HISTORY: CHAT_DELETE_HISTORY_DEF,
-        Operation.CHAT_CONFIGURE: CHAT_CONFIGURE_DEF,
-        Operation.CHAT_SAVE_NOTE: CHAT_SAVE_NOTE_DEF,
-        Operation.CHAT_STREAM_ANSWER: CHAT_STREAM_ANSWER_DEF,
-        Operation.SOURCE_WAIT: SOURCE_WAIT_DEF,
-        Operation.NOTE_LIST: NOTE_LIST_DEF,
-        Operation.NOTE_GET: NOTE_GET_DEF,
-        Operation.NOTE_CREATE: NOTE_CREATE_DEF,
-        Operation.NOTE_UPDATE: NOTE_UPDATE_DEF,
-        Operation.NOTE_DELETE: NOTE_DELETE_DEF,
-        Operation.MIND_MAP_LIST: MIND_MAP_LIST_DEF,
-        Operation.MIND_MAP_GET: MIND_MAP_GET_DEF,
-        Operation.MIND_MAP_GENERATE_NOTE: MIND_MAP_GENERATE_NOTE_DEF,
-        Operation.MIND_MAP_GENERATE_INTERACTIVE: MIND_MAP_GENERATE_INTERACTIVE_DEF,
-        Operation.MIND_MAP_UPDATE: MIND_MAP_UPDATE_DEF,
-        Operation.MIND_MAP_DELETE: MIND_MAP_DELETE_DEF,
-        Operation.ARTIFACT_LIST: ARTIFACT_LIST_DEF,
-        Operation.ARTIFACT_GET: ARTIFACT_GET_DEF,
-        Operation.ARTIFACT_CATALOG: ARTIFACT_CATALOG_DEF,
-        Operation.ARTIFACT_PATCH_TITLE: ARTIFACT_PATCH_TITLE_DEF,
-        Operation.ARTIFACT_GENERATE_AUDIO: ARTIFACT_GENERATE_AUDIO_DEF,
-        Operation.ARTIFACT_GENERATE_QUIZ: ARTIFACT_GENERATE_QUIZ_DEF,
-        Operation.ARTIFACT_GENERATE_FLASHCARDS: ARTIFACT_GENERATE_FLASHCARDS_DEF,
-        Operation.ARTIFACT_GENERATE_REPORT: ARTIFACT_GENERATE_REPORT_DEF,
-        Operation.ARTIFACT_GENERATE_VIDEO: ARTIFACT_GENERATE_VIDEO_DEF,
-        Operation.ARTIFACT_GENERATE_INFOGRAPHIC: ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
-        Operation.ARTIFACT_GENERATE_SLIDE_DECK: ARTIFACT_GENERATE_SLIDE_DECK_DEF,
-        Operation.ARTIFACT_GENERATE_DATA_TABLE: ARTIFACT_GENERATE_DATA_TABLE_DEF,
-        Operation.ARTIFACT_GENERATE_MIND_MAP: ARTIFACT_GENERATE_MIND_MAP_DEF,
-        Operation.ARTIFACT_EXPORT: ARTIFACT_EXPORT_DEF,
-        Operation.LABEL_LIST: LABEL_LIST_DEF,
-        Operation.LABEL_GET: LABEL_GET_DEF,
-        Operation.LABEL_GENERATE: LABEL_GENERATE_DEF,
-        Operation.LABEL_DELETE: LABEL_DELETE_DEF,
-        Operation.LABEL_MUTATE: LABEL_MUTATE_DEF,
-        Operation.LABEL_ALLOCATE: LABEL_ALLOCATE_DEF,
-        Operation.COLLECTION_LIST: COLLECTION_LIST_DEF,
-        Operation.COLLECTION_GET: COLLECTION_GET_DEF,
-        Operation.COLLECTION_DELETE: COLLECTION_DELETE_DEF,
-        Operation.SHARING_GET: SHARING_GET_DEF,
-        Operation.LEGACY_SHARE_ARTIFACT: LEGACY_SHARE_ARTIFACT_DEF,
-        Operation.SHARING_MUTATE: SHARING_MUTATE_DEF,
-        Operation.SHARING_PATCH_VIEW_LEVEL: SHARING_PATCH_VIEW_LEVEL_DEF,
-        Operation.RESEARCH_START: RESEARCH_START_DEF,
-        Operation.RESEARCH_POLL: RESEARCH_POLL_DEF,
-        Operation.RESEARCH_CANCEL: RESEARCH_CANCEL_DEF,
-        Operation.RESEARCH_IMPORT: RESEARCH_IMPORT_DEF,
-        Operation.NOTEBOOK_SUGGEST_PROMPTS: NOTEBOOK_SUGGEST_PROMPTS_DEF,
-        Operation.ARTIFACT_SUGGEST_REPORTS: ARTIFACT_SUGGEST_REPORTS_DEF,
-        Operation.SETTINGS_GET: SETTINGS_GET_DEF,
-        Operation.SETTINGS_GET_LIMITS: SETTINGS_GET_LIMITS_DEF,
-        Operation.SETTINGS_SET_LANGUAGE: SETTINGS_SET_LANGUAGE_DEF,
-        Operation.ARTIFACT_REVISE_SLIDE: ARTIFACT_REVISE_SLIDE_DEF,
-        Operation.ARTIFACT_RETRY: ARTIFACT_RETRY_DEF,
-        Operation.ARTIFACT_DELETE: ARTIFACT_DELETE_DEF,
-        Operation.ARTIFACT_DOWNLOAD: ARTIFACT_DOWNLOAD_DEF,
-        Operation.ARTIFACT_WAIT: ARTIFACT_WAIT_DEF,
-    }
+    {operation: row.definition for operation, row in WEB_BINDING_ROWS.items()}
 )
 
-# ``_web.bindings`` assembles every directly supported row; the registry checks
-# that this key set is exactly the directly executable definition set.
-_ROW_BACKED_OPERATIONS: Final[frozenset[Operation]] = frozenset(WEB_BINDING_ROWS)
-
-# P9.2 service-owned workflows: the semantic service sequences the leaves named
-# in ``_web/policy.py``'s workflow ledger; ``capabilities.supports()`` reports
+# P9.2 service-owned workflows: the semantic service sequences the workflow's
+# leaf operations; ``capabilities.supports()`` reports
 # ``False`` because ``invoke()`` refuses them (the port's ``supports`` means
 # invokable). Each entry names the owning service call site.
 _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = MappingProxyType(
@@ -364,13 +204,6 @@ _EXPECTED_SERVICE_OWNED_COUNT: Final = 12
 
 
 def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:
-    if set(_SUPPORTED_DEFINITIONS) != _ROW_BACKED_OPERATIONS:
-        raise RuntimeError("web definitions and binding rows disagree")
-    for operation, row in WEB_BINDING_ROWS.items():
-        if row.definition is not _SUPPORTED_DEFINITIONS[operation]:
-            raise RuntimeError(
-                f"{operation.value} binding row does not carry its canonical definition"
-            )
     if set(_SERVICE_OWNED_DEFINITIONS) != set(_SERVICE_OWNED_REASONS):
         raise RuntimeError("service-owned web definitions and reasons disagree")
     if set(_SUPPORTED_DEFINITIONS) & set(_SERVICE_OWNED_DEFINITIONS):
@@ -395,10 +228,6 @@ def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:
             "every operation without a web row or a service-owned workflow needs its own "
             "reviewed unsupported reason"
         )
-    if policy_errors := audit_web_call_policy_bindings(
-        _SUPPORTED_DEFINITIONS, workflows=_SERVICE_OWNED_DEFINITIONS
-    ):
-        raise RuntimeError("web call-policy binding drift:\n- " + "\n- ".join(policy_errors))
 
     registry: dict[Operation, WebOperationBinding] = {}
     for operation in Operation:

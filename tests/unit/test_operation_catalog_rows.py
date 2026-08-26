@@ -251,7 +251,7 @@ def test_row_audit_compares_declared_natives_with_the_policy_ledger() -> None:
         ]
     ) == ["settings.get has more than one binding row: x.py:A, y.py:B"]
     # An operation outside the active web ledger cannot have a web row.
-    from notebooklm._web.policy import WEB_CALL_POLICY_BINDINGS
+    from scripts._web_policy_intent import WEB_CALL_POLICY_BINDINGS
 
     inactive = next(op for op in Operation if op not in WEB_CALL_POLICY_BINDINGS)
     assert catalog_ast.audit_row_bindings(

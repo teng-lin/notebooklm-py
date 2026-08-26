@@ -1,0 +1,1332 @@
+{
+  "direct_row_parity": {
+    "artifact.catalog": {
+      "call_policy": "read",
+      "derived_natives": [
+        "LIST_ARTIFACTS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "LIST_ARTIFACTS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.delete": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "DELETE_ARTIFACT:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "DELETE_ARTIFACT:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.download": {
+      "call_policy": "read",
+      "derived_natives": [
+        "GET_INTERACTIVE_HTML:<default>",
+        "GET_NOTES_AND_MIND_MAPS:<default>",
+        "LIST_ARTIFACTS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": "_app/download.py owns selection/conflict/filesystem choreography while the facade owns network reads. P4.2 starts a separate budget at each facade list/download operation; P5 keeps one backend execution path.",
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_INTERACTIVE_HTML:<default>",
+        "GET_NOTES_AND_MIND_MAPS:<default>",
+        "LIST_ARTIFACTS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.export": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "EXPORT_ARTIFACT:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "EXPORT_ARTIFACT:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.generate_audio": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "CREATE_ARTIFACT:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_ARTIFACT:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.generate_data_table": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "CREATE_ARTIFACT:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_ARTIFACT:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.generate_flashcards": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "CREATE_ARTIFACT:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_ARTIFACT:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.generate_infographic": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "CREATE_ARTIFACT:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_ARTIFACT:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.generate_mind_map": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "CREATE_NOTE:plain",
+        "DELETE_NOTE:<default>",
+        "GENERATE_MIND_MAP:<default>",
+        "GET_NOTEBOOK:<default>",
+        "UPDATE_NOTE:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_NOTE:plain",
+        "DELETE_NOTE:<default>",
+        "GENERATE_MIND_MAP:<default>",
+        "GET_NOTEBOOK:<default>",
+        "UPDATE_NOTE:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.generate_quiz": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "CREATE_ARTIFACT:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_ARTIFACT:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.generate_report": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "CREATE_ARTIFACT:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_ARTIFACT:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.generate_slide_deck": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "CREATE_ARTIFACT:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_ARTIFACT:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.generate_video": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "CREATE_ARTIFACT:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_ARTIFACT:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.get": {
+      "call_policy": "read",
+      "derived_natives": [
+        "GET_NOTES_AND_MIND_MAPS:<default>",
+        "LIST_ARTIFACTS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_NOTES_AND_MIND_MAPS:<default>",
+        "LIST_ARTIFACTS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.list": {
+      "call_policy": "read",
+      "derived_natives": [
+        "GET_NOTES_AND_MIND_MAPS:<default>",
+        "LIST_ARTIFACTS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_NOTES_AND_MIND_MAPS:<default>",
+        "LIST_ARTIFACTS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.patch_title": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "RENAME_ARTIFACT:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "RENAME_ARTIFACT:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.retry": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "RETRY_ARTIFACT:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "RETRY_ARTIFACT:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.revise_slide": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "REVISE_SLIDE:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "REVISE_SLIDE:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.suggest_reports": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "GET_SUGGESTED_REPORTS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_SUGGESTED_REPORTS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "artifact.wait": {
+      "call_policy": "read",
+      "derived_natives": [
+        "LIST_ARTIFACTS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "LIST_ARTIFACTS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "chat.configure": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "GET_NOTEBOOK:<default>",
+        "RENAME_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_NOTEBOOK:<default>",
+        "RENAME_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "chat.delete_history": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "DELETE_CONVERSATION:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "DELETE_CONVERSATION:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "chat.get_conversation": {
+      "call_policy": "read",
+      "derived_natives": [
+        "GET_LAST_CONVERSATION_ID:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_LAST_CONVERSATION_ID:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "chat.get_history": {
+      "call_policy": "read",
+      "derived_natives": [
+        "GET_CONVERSATION_TURNS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_CONVERSATION_TURNS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "chat.save_note": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "CREATE_NOTE:saved_from_chat"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_NOTE:saved_from_chat"
+      ],
+      "reviewed_streams": []
+    },
+    "chat.stream_answer": {
+      "call_policy": "stream",
+      "derived_natives": [],
+      "derived_streams": [
+        "chat.ask"
+      ],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [],
+      "reviewed_streams": [
+        "chat.ask"
+      ]
+    },
+    "collection.delete": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "DELETE_LABEL:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "DELETE_LABEL:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "collection.get": {
+      "call_policy": "read",
+      "derived_natives": [
+        "LIST_LABELS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "LIST_LABELS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "collection.list": {
+      "call_policy": "read",
+      "derived_natives": [
+        "LIST_LABELS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "LIST_LABELS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "label.allocate": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "CREATE_LABEL:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_LABEL:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "label.delete": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "DELETE_LABEL:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "DELETE_LABEL:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "label.generate": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "CREATE_LABEL:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_LABEL:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "label.get": {
+      "call_policy": "read",
+      "derived_natives": [
+        "LIST_LABELS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "LIST_LABELS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "label.list": {
+      "call_policy": "read",
+      "derived_natives": [
+        "LIST_LABELS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "LIST_LABELS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "label.mutate": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "UPDATE_LABEL:<default>",
+        "UPDATE_LABEL:add_notebooks",
+        "UPDATE_LABEL:add_sources",
+        "UPDATE_LABEL:remove_notebooks",
+        "UPDATE_LABEL:remove_sources"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "UPDATE_LABEL:<default>",
+        "UPDATE_LABEL:add_notebooks",
+        "UPDATE_LABEL:add_sources",
+        "UPDATE_LABEL:remove_notebooks",
+        "UPDATE_LABEL:remove_sources"
+      ],
+      "reviewed_streams": []
+    },
+    "mind_map.delete": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "DELETE_ARTIFACT:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "DELETE_ARTIFACT:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "mind_map.generate_interactive": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "CREATE_ARTIFACT:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_ARTIFACT:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "mind_map.generate_note": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "GENERATE_MIND_MAP:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GENERATE_MIND_MAP:<default>",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "mind_map.get": {
+      "call_policy": "read",
+      "derived_natives": [
+        "GET_INTERACTIVE_HTML:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_INTERACTIVE_HTML:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "mind_map.list": {
+      "call_policy": "read",
+      "derived_natives": [
+        "GET_NOTES_AND_MIND_MAPS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_NOTES_AND_MIND_MAPS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "mind_map.update": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "RENAME_ARTIFACT:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "RENAME_ARTIFACT:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "note.create": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "CREATE_NOTE:plain"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_NOTE:plain"
+      ],
+      "reviewed_streams": []
+    },
+    "note.delete": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "DELETE_NOTE:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "DELETE_NOTE:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "note.get": {
+      "call_policy": "read",
+      "derived_natives": [
+        "GET_NOTES_AND_MIND_MAPS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_NOTES_AND_MIND_MAPS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "note.list": {
+      "call_policy": "read",
+      "derived_natives": [
+        "GET_NOTES_AND_MIND_MAPS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_NOTES_AND_MIND_MAPS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "note.update": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "UPDATE_NOTE:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "UPDATE_NOTE:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "notebook.allocate": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "CREATE_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "notebook.delete": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "DELETE_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "DELETE_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "notebook.describe": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "SUMMARIZE:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "SUMMARIZE:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "notebook.get": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "GET_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "notebook.list": {
+      "call_policy": "read",
+      "derived_natives": [
+        "LIST_NOTEBOOKS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "LIST_NOTEBOOKS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "notebook.patch": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "RENAME_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "RENAME_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "notebook.remove_recent": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "REMOVE_RECENTLY_VIEWED:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "REMOVE_RECENTLY_VIEWED:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "notebook.suggest_prompts": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "GET_NOTEBOOK:<default>",
+        "SUGGEST_PROMPTS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_NOTEBOOK:<default>",
+        "SUGGEST_PROMPTS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "notebook.summarize": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "SUMMARIZE:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "SUMMARIZE:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "research.cancel": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "CANCEL_RESEARCH:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "CANCEL_RESEARCH:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "research.import": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "IMPORT_RESEARCH:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "IMPORT_RESEARCH:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "research.poll": {
+      "call_policy": "read",
+      "derived_natives": [
+        "POLL_RESEARCH:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "POLL_RESEARCH:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "research.start": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "START_DEEP_RESEARCH:<default>",
+        "START_FAST_RESEARCH:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "START_DEEP_RESEARCH:<default>",
+        "START_FAST_RESEARCH:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "settings.get": {
+      "call_policy": "read",
+      "derived_natives": [
+        "GET_USER_SETTINGS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_USER_SETTINGS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "settings.get_limits": {
+      "call_policy": "read",
+      "derived_natives": [
+        "GET_USER_SETTINGS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_USER_SETTINGS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "settings.set_language": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "SET_USER_SETTINGS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "SET_USER_SETTINGS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "sharing.get": {
+      "call_policy": "read",
+      "derived_natives": [
+        "GET_SHARE_STATUS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_SHARE_STATUS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "sharing.legacy_share_artifact": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "SHARE_ARTIFACT:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "SHARE_ARTIFACT:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "sharing.mutate": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "SHARE_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "SHARE_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "sharing.patch_view_level": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "RENAME_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "RENAME_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "source.add_drive": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "ADD_SOURCE:drive",
+        "GET_NOTEBOOK:<default>",
+        "UPDATE_SOURCE:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "ADD_SOURCE:drive",
+        "GET_NOTEBOOK:<default>",
+        "UPDATE_SOURCE:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "source.add_file": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "ADD_SOURCE_FILE:<default>",
+        "GET_NOTEBOOK:<default>",
+        "GET_USER_SETTINGS:<default>",
+        "UPDATE_SOURCE:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "ADD_SOURCE_FILE:<default>",
+        "GET_NOTEBOOK:<default>",
+        "GET_USER_SETTINGS:<default>",
+        "UPDATE_SOURCE:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "source.add_text": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "ADD_SOURCE:text"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "ADD_SOURCE:text"
+      ],
+      "reviewed_streams": []
+    },
+    "source.add_url": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "ADD_SOURCE:url",
+        "GET_NOTEBOOK:<default>",
+        "UPDATE_SOURCE:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "ADD_SOURCE:url",
+        "GET_NOTEBOOK:<default>",
+        "UPDATE_SOURCE:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "source.add_url_batch": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "ADD_SOURCE:url",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "ADD_SOURCE:url",
+        "GET_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "source.check_freshness": {
+      "call_policy": "read",
+      "derived_natives": [
+        "CHECK_SOURCE_FRESHNESS:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "CHECK_SOURCE_FRESHNESS:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "source.delete": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "DELETE_SOURCE:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "DELETE_SOURCE:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "source.get": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "GET_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "source.get_fulltext": {
+      "call_policy": "read",
+      "derived_natives": [
+        "GET_SOURCE:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_SOURCE:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "source.get_guide": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "GET_SOURCE_GUIDE:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_SOURCE_GUIDE:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "source.list": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "GET_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "source.patch_title": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "UPDATE_SOURCE:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "UPDATE_SOURCE:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "source.refresh": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "REFRESH_SOURCE:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": "Semantic mutation is backed by AT_LEAST_ONCE_ACCEPTED native retry; P4 records parity but must not change behavior.",
+      "parity": "match",
+      "reviewed_natives": [
+        "REFRESH_SOURCE:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "source.wait": {
+      "call_policy": "mutation",
+      "derived_natives": [
+        "GET_NOTEBOOK:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_NOTEBOOK:<default>"
+      ],
+      "reviewed_streams": []
+    }
+  },
+  "end_to_end_authority": {
+    "artifact.rename": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "LIST_ARTIFACTS:<default>",
+        "RENAME_ARTIFACT:<default>"
+      ],
+      "leaf_operations": [
+        "artifact.patch_title",
+        "artifact.catalog"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "LIST_ARTIFACTS:<default>",
+        "RENAME_ARTIFACT:<default>"
+      ]
+    },
+    "chat.ask": {
+      "call_policy": "stream",
+      "known_divergence": "GET_NOTEBOOK is the facade's NOTEBOOK_GET recency read, not a native the CHAT_ASK row dispatches",
+      "leaf_derived_natives": [
+        "GET_LAST_CONVERSATION_ID:<default>"
+      ],
+      "leaf_operations": [
+        "chat.stream_answer",
+        "chat.get_conversation"
+      ],
+      "parity": "recorded_divergence",
+      "reviewed_natives": [
+        "GET_LAST_CONVERSATION_ID:<default>",
+        "GET_NOTEBOOK:<default>"
+      ]
+    },
+    "collection.create": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "CREATE_LABEL:<default>",
+        "LIST_LABELS:<default>"
+      ],
+      "leaf_operations": [
+        "collection.list",
+        "label.allocate"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_LABEL:<default>",
+        "LIST_LABELS:<default>"
+      ]
+    },
+    "collection.update": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "LIST_LABELS:<default>",
+        "UPDATE_LABEL:<default>",
+        "UPDATE_LABEL:add_notebooks",
+        "UPDATE_LABEL:remove_notebooks"
+      ],
+      "leaf_operations": [
+        "collection.get",
+        "label.mutate"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "LIST_LABELS:<default>",
+        "UPDATE_LABEL:<default>",
+        "UPDATE_LABEL:add_notebooks",
+        "UPDATE_LABEL:remove_notebooks"
+      ]
+    },
+    "label.create": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "CREATE_LABEL:<default>",
+        "LIST_LABELS:<default>"
+      ],
+      "leaf_operations": [
+        "label.list",
+        "label.allocate"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_LABEL:<default>",
+        "LIST_LABELS:<default>"
+      ]
+    },
+    "label.update": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "LIST_LABELS:<default>",
+        "UPDATE_LABEL:<default>",
+        "UPDATE_LABEL:add_sources",
+        "UPDATE_LABEL:remove_sources"
+      ],
+      "leaf_operations": [
+        "label.get",
+        "label.mutate"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "LIST_LABELS:<default>",
+        "UPDATE_LABEL:<default>",
+        "UPDATE_LABEL:add_sources",
+        "UPDATE_LABEL:remove_sources"
+      ]
+    },
+    "notebook.create": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "CREATE_NOTEBOOK:<default>",
+        "GET_USER_SETTINGS:<default>",
+        "LIST_NOTEBOOKS:<default>"
+      ],
+      "leaf_operations": [
+        "notebook.list",
+        "notebook.allocate",
+        "settings.get_limits"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_NOTEBOOK:<default>",
+        "GET_USER_SETTINGS:<default>",
+        "LIST_NOTEBOOKS:<default>"
+      ]
+    },
+    "notebook.update": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "GET_NOTEBOOK:<default>",
+        "RENAME_NOTEBOOK:<default>"
+      ],
+      "leaf_operations": [
+        "notebook.patch",
+        "notebook.get"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_NOTEBOOK:<default>",
+        "RENAME_NOTEBOOK:<default>"
+      ]
+    },
+    "sharing.set_public": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "GET_SHARE_STATUS:<default>",
+        "SHARE_NOTEBOOK:<default>"
+      ],
+      "leaf_operations": [
+        "sharing.mutate",
+        "sharing.get"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_SHARE_STATUS:<default>",
+        "SHARE_NOTEBOOK:<default>"
+      ]
+    },
+    "sharing.set_view_level": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "GET_SHARE_STATUS:<default>",
+        "RENAME_NOTEBOOK:<default>"
+      ],
+      "leaf_operations": [
+        "sharing.patch_view_level",
+        "sharing.get"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_SHARE_STATUS:<default>",
+        "RENAME_NOTEBOOK:<default>"
+      ]
+    },
+    "sharing.update_users": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "GET_SHARE_STATUS:<default>",
+        "SHARE_NOTEBOOK:<default>"
+      ],
+      "leaf_operations": [
+        "sharing.mutate",
+        "sharing.get"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_SHARE_STATUS:<default>",
+        "SHARE_NOTEBOOK:<default>"
+      ]
+    },
+    "source.update": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "GET_NOTEBOOK:<default>",
+        "UPDATE_SOURCE:<default>"
+      ],
+      "leaf_operations": [
+        "source.patch_title",
+        "source.get"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_NOTEBOOK:<default>",
+        "UPDATE_SOURCE:<default>"
+      ]
+    }
+  },
+  "summary": {
+    "direct_row_divergences": 0,
+    "direct_rows": 80,
+    "end_to_end_divergences": 1,
+    "service_owned_workflows": 12
+  }
+}
