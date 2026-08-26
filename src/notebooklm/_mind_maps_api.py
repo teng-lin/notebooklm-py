@@ -18,8 +18,8 @@ from ._web.codec.mind_maps import (
 from .exceptions import MindMapNotFoundError
 
 if TYPE_CHECKING:
-    from ._note_service import NoteService
     from ._semantic.records import ArtifactRecord, MindMapGenerateOutcomeRecord
+    from ._semantic.services.note import NoteService
     from ._studio import MindMapFamilyService
 
 _T = TypeVar("_T")

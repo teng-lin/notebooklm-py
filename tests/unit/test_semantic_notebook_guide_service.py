@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from notebooklm._deadline import RuntimeDeadline
-from notebooklm._notebook_guide_service import NotebookGuideService
 from notebooklm._operations import Operation
 from notebooklm._semantic.records import (
     NOTEBOOK_DESCRIBE_DEF,
@@ -18,6 +17,7 @@ from notebooklm._semantic.records import (
     NotebookGuideResult,
     SuggestedTopicRecord,
 )
+from notebooklm._semantic.services.notebook_guide import NotebookGuideService
 from tests._fixtures.recording_backend import BackendInvocation, RecordingBackend
 
 
@@ -55,7 +55,14 @@ async def test_guide_service_preserves_distinct_operations_deadline_and_projecti
 
 
 def test_guide_service_is_transport_neutral() -> None:
-    path = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_notebook_guide_service.py"
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "src"
+        / "notebooklm"
+        / "_semantic"
+        / "services"
+        / "notebook_guide.py"
+    )
     tree = ast.parse(path.read_text(encoding="utf-8"))
     imported_modules = {
         node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)

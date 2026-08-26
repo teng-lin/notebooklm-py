@@ -18,11 +18,11 @@ import json
 import logging
 from typing import Any
 
-from ._backend import BackendAdapter
-from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from ._env import get_default_language
-from ._read_services import NotebookReadService
-from ._semantic.records import (
+from ..._backend import BackendAdapter
+from ..._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from ..._env import get_default_language
+from ...exceptions import MindMapNotFoundError
+from ..records import (
     MIND_MAP_GENERATE_NOTE_DEF,
     MIND_MAP_LIST_DEF,
     NOTE_CREATE_DEF,
@@ -43,7 +43,7 @@ from ._semantic.records import (
     NoteUpdateInput,
     SourceIdDiagnostics,
 )
-from .exceptions import MindMapNotFoundError
+from .read import NotebookReadService
 
 __all__ = ["NoteService"]
 

@@ -30,7 +30,6 @@ import pytest
 from notebooklm import MindMap, Note
 from notebooklm._backend import BackendError, BackendErrorReason
 from notebooklm._mind_maps_api import MindMapsAPI, extract_interactive_tree_leaf
-from notebooklm._note_service import NoteService, _cleanup_tasks
 from notebooklm._notes import NotesAPI
 from notebooklm._row_adapters.notes import NoteRow
 from notebooklm._semantic.records import (
@@ -39,6 +38,7 @@ from notebooklm._semantic.records import (
     MindMapRecord,
     NoteRecord,
 )
+from notebooklm._semantic.services.note import NoteService, _cleanup_tasks
 from notebooklm._types.mind_maps import MindMapKind
 from notebooklm.exceptions import (
     ArtifactFeatureUnavailableError,

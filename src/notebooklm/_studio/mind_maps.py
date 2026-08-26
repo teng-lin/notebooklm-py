@@ -7,7 +7,6 @@ from collections.abc import Awaitable, Callable
 
 from .._backend import BackendAdapter
 from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from .._read_services import NotebookReadService
 from .._semantic.records import (
     MIND_MAP_DELETE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
@@ -22,6 +21,7 @@ from .._semantic.records import (
     MindMapUpdateInput,
     SourceIdDiagnostics,
 )
+from .._semantic.services.read import NotebookReadService
 from .catalog import StudioCatalog
 
 WaitForCompletion = Callable[[str, str], Awaitable[object]]

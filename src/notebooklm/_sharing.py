@@ -5,7 +5,7 @@ from ._deadline import RuntimeDeadlineFactory
 from ._semantic.compat import project_backend_call
 from ._semantic.projectors import project_share_status
 from ._semantic.records import SharePermissionLevel, ShareViewScope
-from ._sharing_service import SharingService
+from ._semantic.services.sharing import SharingService
 from .rpc.types import SharePermission, ShareViewLevel
 from .types import ShareStatus
 

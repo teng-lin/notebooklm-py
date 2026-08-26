@@ -32,7 +32,6 @@ from notebooklm._backend import (
 )
 from notebooklm._binding import CodecBinding, CustomBinding, RpcNative
 from notebooklm._operations import Operation
-from notebooklm._read_services import NotebookReadService
 from notebooklm._semantic.records import (
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,
@@ -40,6 +39,7 @@ from notebooklm._semantic.records import (
     MindMapGenerateInteractiveInput,
     MindMapGenerateNoteInput,
 )
+from notebooklm._semantic.services.read import NotebookReadService
 from notebooklm._studio import (
     NoteBackedMindMapFamilyService,
     StudioCatalog,

@@ -50,7 +50,7 @@ from notebooklm._semantic.records import (
     SourceRegisterKind,
     SourceRegisterResult,
 )
-from notebooklm._source_service import SourceService
+from notebooklm._semantic.services.source import SourceService
 from notebooklm._web.deadlines import SEMANTIC_DEADLINE_AUTHORITIES
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SERVICE_OWNED_OPERATIONS
 from notebooklm.exceptions import (
@@ -354,7 +354,7 @@ def test_only_the_residual_rpc_family_is_wrapped() -> None:
     to ``_source_add_reports`` with the rest of the shared failure vocabulary
     as ``add_drive`` became the third workflow to share it.
     """
-    from notebooklm._source_add_reports import WRAPPED_REGISTRATION_FAILURE_KINDS
+    from notebooklm._semantic.services.source_add_reports import WRAPPED_REGISTRATION_FAILURE_KINDS
 
     assert {
         SourceAddFailureKind.RPC,

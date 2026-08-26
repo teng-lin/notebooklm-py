@@ -11,7 +11,6 @@ from notebooklm._backend import BackendErrorReason
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._operations import Operation
-from notebooklm._read_services import NotebookReadService, SourceReadService
 from notebooklm._semantic.projectors import project_notebook, project_source
 from notebooklm._semantic.records import (
     NOTEBOOK_GET_DEF,
@@ -32,6 +31,7 @@ from notebooklm._semantic.records import (
     SourceListResult,
     SourceRecord,
 )
+from notebooklm._semantic.services.read import NotebookReadService, SourceReadService
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import NetworkError
 from notebooklm.types import (

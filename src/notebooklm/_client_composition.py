@@ -24,10 +24,8 @@ from ._collections import CollectionsAPI
 from ._deadline import RuntimeDeadlineFactory
 from ._labels import LabelsAPI
 from ._mind_maps_api import MindMapsAPI
-from ._note_service import NoteService
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
-from ._read_services import SourceReadService
 from ._research import ResearchAPI
 from ._runtime.config import (
     AUTO_READ_TIMEOUT,
@@ -42,6 +40,8 @@ from ._runtime.config import (
 )
 from ._runtime.init import build_web_runtime
 from ._runtime.lifecycle import CookieRotator, CookieSaver
+from ._semantic.services.note import NoteService
+from ._semantic.services.read import SourceReadService
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
 from ._sharing_manager import ShareManager

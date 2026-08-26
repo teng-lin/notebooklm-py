@@ -26,7 +26,6 @@ from notebooklm._backend import (
     UnsupportedOperationError,
 )
 from notebooklm._collections import CollectionsAPI
-from notebooklm._label_service import LabelSetService, require_member_ids
 from notebooklm._labels import LabelsAPI
 from notebooklm._operations import CallPolicy, Operation
 from notebooklm._semantic.compat import project_backend_error
@@ -48,6 +47,7 @@ from notebooklm._semantic.records import (
     LabelRecord,
     LabelUpdateInput,
 )
+from notebooklm._semantic.services.label import LabelSetService, require_member_ids
 from notebooklm._web.codec.labels import decode_label_create_echo, decode_label_list
 from notebooklm.exceptions import (
     CollectionError,

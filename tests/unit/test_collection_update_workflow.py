@@ -28,7 +28,6 @@ from notebooklm._backend import (
 )
 from notebooklm._collections import CollectionsAPI
 from notebooklm._deadline import RuntimeDeadlineFactory
-from notebooklm._label_service import NOT_FOUND_PHASE_KEY, NOT_FOUND_PREFLIGHT, LabelSetService
 from notebooklm._operations import Operation
 from notebooklm._semantic.compat import project_backend_error
 from notebooklm._semantic.records import (
@@ -41,6 +40,11 @@ from notebooklm._semantic.records import (
     LabelMutateResult,
     LabelRecord,
     LabelUpdateInput,
+)
+from notebooklm._semantic.services.label import (
+    NOT_FOUND_PHASE_KEY,
+    NOT_FOUND_PREFLIGHT,
+    LabelSetService,
 )
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SERVICE_OWNED_OPERATIONS
 from notebooklm.exceptions import CollectionNotFoundError, RPCTimeoutError

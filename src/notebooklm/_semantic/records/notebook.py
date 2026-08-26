@@ -242,7 +242,7 @@ class NotebookSuggestPromptsInput:
     """Notebook prompt-suggestion request whose source scope is already resolved.
 
     ``source_ids`` is required: "no scope given means every source" is a
-    service-level default (:class:`~notebooklm._suggestion_service.SuggestionService`
+    service-level default (:class:`~notebooklm._semantic.services.suggestion.SuggestionService`
     resolves the notebook's full source set through ``NOTEBOOK_GET`` before
     invoking), not something the backend re-derives below the port.
     """

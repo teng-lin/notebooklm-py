@@ -38,7 +38,7 @@ from notebooklm._semantic.records import (
     SourceWaitSnapshotInput,
     SourceWaitSnapshotResult,
 )
-from notebooklm._source_service import SourceService
+from notebooklm._semantic.services.source import SourceService
 from notebooklm._sources import SourcesAPI
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.codec.sources import (

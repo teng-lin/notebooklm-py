@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from notebooklm._note_service import NoteService
+from notebooklm._semantic.services.note import NoteService
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm.exceptions import MindMapNotFoundError, NotFoundError
 from notebooklm.rpc import RPCMethod

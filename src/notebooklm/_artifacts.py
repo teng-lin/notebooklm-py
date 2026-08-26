@@ -24,7 +24,6 @@ from ._deadline import RuntimeDeadlineFactory
 from ._lookup import unwrap_or_raise
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
-from ._read_services import NotebookReadService
 from ._semantic.compat import project_backend_call, project_backend_error
 from ._semantic.projectors import (
     project_artifact,
@@ -42,6 +41,7 @@ from ._semantic.records import (
     MindMapGenerateInput,
     MindMapRepresentationRecord,
 )
+from ._semantic.services.read import NotebookReadService
 from ._studio import (
     ArtifactLifecycleService,
     ArtifactRepresentationService,

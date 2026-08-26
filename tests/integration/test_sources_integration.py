@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pytest_httpx import HTTPXMock
 
-import notebooklm._source_service as _source_service_mod
+import notebooklm._semantic.services.source as _source_service_mod
 import notebooklm._sources as _sources_mod
 import notebooklm._url_utils as _url_utils_mod
 from notebooklm import NotebookLMClient, Source, SourceType

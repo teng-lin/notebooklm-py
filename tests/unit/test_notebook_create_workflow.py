@@ -17,7 +17,6 @@ from notebooklm._backend import (
     UnsupportedOperationError,
 )
 from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from notebooklm._notebook_mutation_service import NotebookMutationService
 from notebooklm._operations import Operation
 from notebooklm._semantic.compat import project_backend_error
 from notebooklm._semantic.records import (
@@ -34,6 +33,7 @@ from notebooklm._semantic.records import (
     NotebookRecord,
     SettingsGetLimitsResult,
 )
+from notebooklm._semantic.services.notebook_mutation import NotebookMutationService
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SERVICE_OWNED_OPERATIONS
 from notebooklm.exceptions import NotebookLimitError, RPCError
 from notebooklm.rpc import RPCMethod

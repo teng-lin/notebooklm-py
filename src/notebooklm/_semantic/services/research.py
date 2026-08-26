@@ -29,16 +29,16 @@ import time
 from collections.abc import Sequence
 from typing import Any, Protocol
 
-from ._backend import (
+from ..._backend import (
     BACKEND_STATUS_DIAGNOSTIC,
     BackendAdapter,
     BackendError,
     BackendErrorReason,
     BackendStatus,
 )
-from ._deadline import RuntimeDeadline
-from ._operations import OperationDef
-from ._research_import import (
+from ..._deadline import RuntimeDeadline
+from ..._operations import OperationDef
+from ..._research_import import (
     _import_research_read_timeout,
     _merge_imported_sources,
     _no_import_verification_url_entry_count,
@@ -48,12 +48,13 @@ from ._research_import import (
     _requested_import_verification_urls,
     _validate_research_task_provenance,
 )
-from ._runtime.config import (
+from ..._runtime.config import (
     AUTO_READ_TIMEOUT,
     DEFAULT_TIMEOUT,
     MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT,
 )
-from ._semantic.records import (
+from ...exceptions import AmbiguousResearchTaskError, ResearchTimeoutError
+from ..records import (
     RESEARCH_CANCEL_DEF,
     RESEARCH_IMPORT_DEF,
     RESEARCH_POLL_DEF,
@@ -78,7 +79,6 @@ from ._semantic.records import (
     ResearchWaitInput,
     SourceRecord,
 )
-from .exceptions import AmbiguousResearchTaskError, ResearchTimeoutError
 
 # Keep research diagnostics on the historical logger channel so existing log
 # filters see the same records after the service extraction.

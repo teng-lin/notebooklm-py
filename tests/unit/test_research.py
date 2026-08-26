@@ -9,7 +9,7 @@ from urllib.parse import parse_qs
 
 import pytest
 
-import notebooklm._research_service as research_service_module
+import notebooklm._semantic.services.research as research_service_module
 from notebooklm import (
     AmbiguousResearchTaskError,
     CitedSourceSelection,

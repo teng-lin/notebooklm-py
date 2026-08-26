@@ -36,7 +36,6 @@ from notebooklm._binding import CodecBinding, CustomBinding, RpcNative
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._notebook_payloads import build_get_notebook_params
 from notebooklm._operations import Operation
-from notebooklm._read_services import NotebookReadService
 from notebooklm._semantic.records import (
     ARTIFACT_GENERATE_AUDIO_DEF,
     ARTIFACT_GENERATE_DATA_TABLE_DEF,
@@ -58,6 +57,7 @@ from notebooklm._semantic.records import (
     SourceIdDiagnostics,
     VideoGenerateInput,
 )
+from notebooklm._semantic.services.read import NotebookReadService
 from notebooklm._studio import (
     DataTableFamilyService,
     StudioCatalog,

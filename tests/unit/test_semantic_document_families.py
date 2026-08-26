@@ -11,7 +11,6 @@ import pytest
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import CallPolicy, Operation
-from notebooklm._read_services import NotebookReadService
 from notebooklm._semantic.records import (
     ARTIFACT_GENERATE_REPORT_DEF,
     ARTIFACT_GENERATE_VIDEO_DEF,
@@ -26,6 +25,7 @@ from notebooklm._semantic.records import (
     VideoGenerateResult,
     VideoMetadataRecord,
 )
+from notebooklm._semantic.services.read import NotebookReadService
 from notebooklm._studio import (
     DocumentOptionError,
     ReportFamilyService,

@@ -735,7 +735,9 @@ def test_notebook_create_catalog_has_no_phantom_get_notebook_recency() -> None:
 
     backend_tree = catalog_ast._parse(catalog_ast.SRC_ROOT / "_web" / "backend.py")
     assert catalog_ast._find_class_method(backend_tree, "WebRpcBackend", "_notebook_create") is None
-    service_tree = catalog_ast._parse(catalog_ast.SRC_ROOT / "_notebook_mutation_service.py")
+    service_tree = catalog_ast._parse(
+        catalog_ast.SRC_ROOT / "_semantic" / "services" / "notebook_mutation.py"
+    )
     create_workflow = catalog_ast._find_class_method(
         service_tree,
         "NotebookMutationService",

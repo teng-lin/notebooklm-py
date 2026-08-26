@@ -35,8 +35,8 @@ from notebooklm._semantic.records import (
     SharingUpdateUsersInput,
     SharingUserGrant,
 )
+from notebooklm._semantic.services.sharing import SharingService
 from notebooklm._sharing import SharingAPI
-from notebooklm._sharing_service import SharingService
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SERVICE_OWNED_OPERATIONS
 from notebooklm.exceptions import RPCTimeoutError
 from notebooklm.rpc import RPCMethod

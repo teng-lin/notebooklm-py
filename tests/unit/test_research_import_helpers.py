@@ -19,7 +19,6 @@ from notebooklm._research_import import (
     _import_research_read_timeout,
     _reconcile_import_probe,
 )
-from notebooklm._research_service import _is_import_research_failed_precondition
 from notebooklm._runtime.config import (
     DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT,
@@ -31,6 +30,7 @@ from notebooklm._semantic.records import (
     ResearchSourceRecord,
     SourceRecord,
 )
+from notebooklm._semantic.services.research import _is_import_research_failed_precondition
 from notebooklm._web.errors import translate_web_error
 from notebooklm.exceptions import RPCError
 

@@ -29,7 +29,7 @@
 | `rLM1Ne` | GET_NOTEBOOK | Get notebook details + sources | `_notebooks.py` |
 | `s0tc2d` | RENAME_NOTEBOOK | Rename, chat config, share access | `_notebooks.py`, `_chat/api.py` |
 | `WWINqb` | DELETE_NOTEBOOK | Delete a notebook | `_notebooks.py` |
-| `izAoDd` | ADD_SOURCE | Add URL/text/YouTube/Drive source | `_web/codec/sources.py` via `_source_service.py` |
+| `izAoDd` | ADD_SOURCE | Add URL/text/YouTube/Drive source | `_web/codec/sources.py` via `_semantic/services/source.py` |
 | `o4cbdc` | ADD_SOURCE_FILE | Register uploaded file (PDF, DOCX, EPUB, etc.) | `_source/upload.py`, `_source/upload_payloads.py` |
 | `tGMBJ` | DELETE_SOURCE | Delete a source | `_sources.py` |
 | `b7Wfje` | UPDATE_SOURCE | Rename source | `_sources.py` |

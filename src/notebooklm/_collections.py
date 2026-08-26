@@ -22,12 +22,12 @@ from collections.abc import Awaitable, Callable
 
 from ._backend import BackendAdapter, BackendError
 from ._deadline import RuntimeDeadlineFactory
-from ._label_service import LabelSetService, require_member_ids
 from ._lookup import unwrap_or_raise
 from ._operations import Operation
 from ._semantic.compat import project_backend_error, project_local_not_found
 from ._semantic.projectors import project_collection
 from ._semantic.records import LabelKind
+from ._semantic.services.label import LabelSetService, require_member_ids
 from .types import Collection, Notebook
 
 logger = logging.getLogger(__name__)

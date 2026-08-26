@@ -2,7 +2,7 @@
 
 ``source.add_url``, ``source.add_text``, ``source.add_drive`` and
 ``source.add_url_batch`` are hoisted workflows (P10 R3.2–R3.5): they sequence
-typed leaves in :class:`~notebooklm._source_service.SourceService` (the batch
+typed leaves in :class:`~notebooklm._semantic.services.source.SourceService` (the batch
 in ``_source_batch_service``, which the module-size budget split off) and can
 therefore neither raise a public exception nor read one.  What they report instead is a
 :class:`~notebooklm._semantic.records.source.SourceAddFailureRecord` — the bounded,
@@ -32,13 +32,13 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from ._backend import (
+from ..._backend import (
     BackendContractError,
     BackendError,
     BackendErrorReason,
 )
-from ._operations import Operation
-from ._semantic.records import (
+from ..._operations import Operation
+from ..records import (
     SourceAddFailureKind,
     SourceAddFailureRecord,
     SourceRecord,

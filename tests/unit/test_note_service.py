@@ -3,7 +3,7 @@
 Until P10 R4.2 these tests drove ``LegacyNoteBackedService``, the deferred raw
 note-row implementation in ``notebooklm._mind_map``. That class and its module
 are gone: every note and note-backed mind-map path now runs on
-:class:`notebooklm._note_service.NoteService` over the semantic port, so each
+:class:`notebooklm._semantic.services.note.NoteService` over the semantic port, so each
 case below is retargeted at the surviving authority rather than retired.
 
 * the envelope normalizer that ``fetch_note_rows`` owned is the ``mind_map.list``
@@ -29,8 +29,8 @@ from unittest.mock import AsyncMock, call
 
 import pytest
 
-from notebooklm._note_service import NoteService
 from notebooklm._semantic.records import NoteRecord
+from notebooklm._semantic.services.note import NoteService
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm.exceptions import DecodingError, RPCError
 from notebooklm.rpc import RPCMethod
@@ -441,8 +441,15 @@ class TestPrivacy:
         assert "NoteRowKind" not in dir(notebooklm.types)
 
 
-#: ``src/notebooklm/_note_service.py``, located from this test file.
-_NOTE_SERVICE_PATH = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_note_service.py"
+#: ``src/notebooklm/_semantic/services/note.py``, located from this test file.
+_NOTE_SERVICE_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "notebooklm"
+    / "_semantic"
+    / "services"
+    / "note.py"
+)
 
 #: The top-level ``notebooklm`` roots a neutral semantic service may not import,
 #: mirroring ``tests/_guardrails/test_service_boundary.py``'s I1 rule. Repeated

@@ -5,14 +5,11 @@ from typing import Any
 
 from ._backend import BackendAdapter, BackendError
 from ._deadline import RuntimeDeadlineFactory
-from ._notebook_guide_service import NotebookGuideService
 from ._notebook_metadata import (
     NotebookMetadataService,
     NotebookSourceLister,
 )
-from ._notebook_mutation_service import NotebookMutationService
 from ._notebook_payloads import build_create_notebook_params as build_create_notebook_params
-from ._read_services import NotebookReadService, SourceReadService
 from ._semantic.compat import project_backend_call, project_backend_error
 from ._semantic.projectors import (
     project_notebook,
@@ -20,8 +17,11 @@ from ._semantic.projectors import (
     project_prompt_suggestions,
     project_source,
 )
+from ._semantic.services.notebook_guide import NotebookGuideService
+from ._semantic.services.notebook_mutation import NotebookMutationService
+from ._semantic.services.read import NotebookReadService, SourceReadService
+from ._semantic.services.suggestion import PROMPT_SUGGESTIONS_DEFAULT_MODE, SuggestionService
 from ._sharing_manager import ShareManager
-from ._suggestion_service import PROMPT_SUGGESTIONS_DEFAULT_MODE, SuggestionService
 from .exceptions import (
     ClientError,
     NotebookNotFoundError,

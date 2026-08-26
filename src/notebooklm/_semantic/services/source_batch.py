@@ -5,7 +5,7 @@ the positional attribution of its response, and — only when that response omit
 entries — one ``source.list`` of ERROR rows to name the ghosts behind them.
 
 Deliberately *not* the single-item ``source.add_url`` contract, which
-:class:`~notebooklm._source_service.SourceService` owns next door. The batch
+:class:`~notebooklm._semantic.services.source.SourceService` owns next door. The batch
 write is never automatically replayed: a transport failure can occur after an
 arbitrary subset committed, so retrying the request would duplicate it.
 
@@ -24,7 +24,7 @@ from collections import Counter, defaultdict, deque
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
-from ._backend import (
+from ..._backend import (
     BackendAdapter,
     BackendContractError,
     BackendDeadlineExceededError,
@@ -32,9 +32,10 @@ from ._backend import (
     BackendErrorReason,
     rebind_operation,
 )
-from ._deadline import RuntimeDeadline
-from ._operations import Operation
-from ._semantic.records import (
+from ..._deadline import RuntimeDeadline
+from ..._operations import Operation
+from ..._url_utils import extract_youtube_video_id, url_identity
+from ..records import (
     SOURCE_ADD_URL_BATCH_DEF,
     SOURCE_LIST_DEF,
     SOURCE_REGISTER_DEF,
@@ -47,8 +48,7 @@ from ._semantic.records import (
     SourceRegisterKind,
     SourceUrlBatchItemRecord,
 )
-from ._source_add_reports import leaf_failure_record, source_add_failure
-from ._url_utils import extract_youtube_video_id, url_identity
+from .source_add_reports import leaf_failure_record, source_add_failure
 
 # The same logger name and level the retired row logged under.
 _source_logger = logging.getLogger("notebooklm").getChild("_sources")

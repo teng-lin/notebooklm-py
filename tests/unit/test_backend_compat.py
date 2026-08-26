@@ -119,7 +119,7 @@ _COMPATIBILITY_FACADES = (
     "_mind_maps_api.py",
     "_notebooks.py",
     "_notes.py",
-    "_research_service.py",
+    "_semantic/services/research.py",
     "_settings.py",
     "_sharing.py",
     "_sharing_manager.py",

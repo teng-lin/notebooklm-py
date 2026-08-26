@@ -54,12 +54,12 @@ from notebooklm._semantic.records import (
     SourceRegisterKind,
     SourceRegisterResult,
 )
-from notebooklm._source_batch_service import (
+from notebooklm._semantic.services.source import SourceService
+from notebooklm._semantic.services.source_batch import (
     _ALL_REJECTED_RPC_CODE,
     _ERROR_SOURCE_STATUS,
     _normalized_rpc_code,
 )
-from notebooklm._source_service import SourceService
 from notebooklm._url_utils import url_identity
 from notebooklm._web.deadlines import SEMANTIC_DEADLINE_AUTHORITIES
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SERVICE_OWNED_OPERATIONS

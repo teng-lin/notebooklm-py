@@ -62,7 +62,7 @@ def test_kernel_http_client_is_read_only_property() -> None:
 
 def test_phase8_source_read_facade_wiring_is_current() -> None:
     """The public facade owns a neutral read service, not a wire-level lister."""
-    from notebooklm._read_services import SourceReadService
+    from notebooklm._semantic.services.read import SourceReadService
     from notebooklm._sources import SourcesAPI
 
     core = MagicMock()
@@ -223,7 +223,7 @@ def test_artifacts_constructible_without_notes_api(mock_auth: AuthTokens) -> Non
 def test_artifacts_rejects_legacy_notes_api_kwarg(mock_auth: AuthTokens) -> None:
     """The legacy ``notes_api=`` kwarg was removed in Phase 3
     (docs/refactor-history.md Step 4). Passing it must raise ``TypeError``."""
-    from notebooklm._note_service import NoteService
+    from notebooklm._semantic.services.note import NoteService
 
     core = MagicMock()
     notes = NotesAPI(notes=MagicMock(spec=NoteService))
@@ -242,7 +242,7 @@ def test_artifacts_before_notes_construction_order(mock_auth: AuthTokens) -> Non
     dependency on each other; this test pins that building either one
     first still yields working APIs.
     """
-    from notebooklm._note_service import NoteService
+    from notebooklm._semantic.services.note import NoteService
 
     core = MagicMock()
 

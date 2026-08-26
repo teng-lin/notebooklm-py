@@ -6,7 +6,6 @@ import json
 
 from .._backend import BackendAdapter, BackendError, rebind_operation, require_leaves
 from .._deadline import RuntimeDeadline
-from .._note_service import NoteService
 from .._operations import Operation
 from .._semantic.records import (
     ARTIFACT_GENERATE_DATA_TABLE_DEF,
@@ -21,6 +20,7 @@ from .._semantic.records import (
     MindMapGenerateInput,
     MindMapGenerateResult,
 )
+from .._semantic.services.note import NoteService
 from .catalog import StudioCatalog
 from .generation import StudioGenerationInputs, _generation_budget
 

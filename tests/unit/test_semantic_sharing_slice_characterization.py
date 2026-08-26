@@ -38,8 +38,8 @@ from notebooklm._semantic.records import (
     ShareStatusRecord,
     ShareViewScope,
 )
+from notebooklm._semantic.services.sharing import SharingService
 from notebooklm._sharing import _PERMISSION_LEVELS, _VIEW_SCOPES, SharingAPI
-from notebooklm._sharing_service import SharingService
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import primitives as primitive_rows
 from notebooklm._web.bindings import sharing as sharing_rows

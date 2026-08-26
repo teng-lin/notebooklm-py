@@ -5,7 +5,7 @@ and importing discovered sources into notebooks.
 
 This module is the public-facing compatibility facade. Every research
 operation is executed by the backend-neutral
-:class:`~notebooklm._research_service.ResearchService`, which invokes typed
+:class:`~notebooklm._semantic.services.research.ResearchService`, which invokes typed
 semantic operations on the private backend port; the wire grammar those
 operations encode and decode lives in ``_web/codec/research.py``.
 
@@ -27,8 +27,6 @@ from typing import Any
 
 from . import research as _research_pub
 from ._backend import BackendAdapter
-from ._read_services import SourceReadService
-from ._research_service import ResearchService, SourceRecordLister
 from ._runtime.config import AUTO_READ_TIMEOUT, DEFAULT_TIMEOUT
 from ._semantic.compat import project_backend_call
 from ._semantic.projectors import project_research_task
@@ -46,6 +44,8 @@ from ._semantic.records import (
     ResearchWaitInput,
     SourceRecord,
 )
+from ._semantic.services.read import SourceReadService
+from ._semantic.services.research import ResearchService, SourceRecordLister
 from ._types.research import (
     ResearchSource,
     ResearchSourceInput,
@@ -277,7 +277,7 @@ class ResearchAPI:
                 :meth:`import_sources_with_verification` to snapshot baseline
                 source records before the import call and probe sources on
                 failure. Production construction injects the semantic
-                :class:`~notebooklm._read_services.SourceReadService` at the
+                :class:`~notebooklm._semantic.services.read.SourceReadService` at the
                 client composition root; left unset with a backend present, one
                 is built over that backend, because reconciling an import
                 against the notebook's own sources is not an optional

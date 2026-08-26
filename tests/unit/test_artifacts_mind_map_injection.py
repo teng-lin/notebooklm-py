@@ -31,7 +31,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._note_service import NoteService
+from notebooklm._semantic.services.note import NoteService
 from tests._fixtures.web_backend import build_web_backend
 
 

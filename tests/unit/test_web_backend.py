@@ -23,7 +23,6 @@ from notebooklm._notebook_payloads import (
     build_get_notebook_params,
 )
 from notebooklm._operations import CallPolicy, Operation, OperationDef
-from notebooklm._read_services import NotebookReadService
 from notebooklm._semantic.compat import project_backend_error
 from notebooklm._semantic.records import (
     ARTIFACT_CATALOG_DEF,
@@ -145,6 +144,7 @@ from notebooklm._semantic.records import (
     VideoGenerateInput,
     VideoGenerateRequest,
 )
+from notebooklm._semantic.services.read import NotebookReadService
 from notebooklm._studio import (
     AudioFamilyService,
     InteractiveFamilyService,
@@ -2006,24 +2006,15 @@ def test_only_migrated_feature_runtime_reads_private_backend() -> None:
         package / "_client_composition.py",
         package / "_artifacts.py",
         package / "client.py",  # annotation-only declaration
-        package / "_label_service.py",
         package / "_notebooks.py",
-        package / "_notebook_guide_service.py",
-        package / "_notebook_mutation_service.py",
-        package / "_note_service.py",
-        package / "_read_services.py",
         package / "_sharing.py",
         package / "_sharing_manager.py",
-        package / "_sharing_service.py",
         package / "_research.py",
-        package / "_research_service.py",
         package / "_settings.py",
-        package / "_settings_service.py",
         package / "_sources.py",
-        package / "_suggestion_service.py",
-        package / "_source_service.py",
         package / "_chat" / "workflow.py",
     }
+    allowed.update((package / "_semantic" / "services").rglob("*.py"))
     allowed.update((package / "_studio").rglob("*.py"))
     allowed.update((package / "_web").rglob("*.py"))
     violations: list[str] = []

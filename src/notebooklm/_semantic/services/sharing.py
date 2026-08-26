@@ -26,7 +26,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import replace
 
-from ._backend import (
+from ..._backend import (
     BackendAdapter,
     BackendDeadlineExceededError,
     BackendError,
@@ -34,9 +34,9 @@ from ._backend import (
     rebind_operation,
     require_leaves,
 )
-from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from ._operations import Operation
-from ._semantic.records import (
+from ..._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from ..._operations import Operation
+from ..records import (
     SHARING_GET_DEF,
     SHARING_MUTATE_DEF,
     SHARING_PATCH_VIEW_LEVEL_DEF,

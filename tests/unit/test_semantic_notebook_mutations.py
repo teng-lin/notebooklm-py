@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from notebooklm._deadline import RuntimeDeadline
-from notebooklm._notebook_mutation_service import NotebookMutationService
 from notebooklm._operations import Operation
 from notebooklm._semantic.records import (
     NOTEBOOK_ALLOCATE_DEF,
@@ -34,6 +33,7 @@ from notebooklm._semantic.records import (
     NotebookRemoveRecentResult,
     SettingsGetLimitsResult,
 )
+from notebooklm._semantic.services.notebook_mutation import NotebookMutationService
 from notebooklm.exceptions import ValidationError
 from tests._fixtures.recording_backend import BackendInvocation, RecordingBackend
 
@@ -126,7 +126,12 @@ async def test_empty_title_remains_a_valid_legacy_mutation_value() -> None:
 
 def test_mutation_service_is_transport_neutral_and_never_descends_raw_rows() -> None:
     path = (
-        Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_notebook_mutation_service.py"
+        Path(__file__).resolve().parents[2]
+        / "src"
+        / "notebooklm"
+        / "_semantic"
+        / "services"
+        / "notebook_mutation.py"
     )
     tree = ast.parse(path.read_text(encoding="utf-8"))
     imported_modules = {

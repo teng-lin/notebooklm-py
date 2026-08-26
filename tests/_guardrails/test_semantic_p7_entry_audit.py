@@ -215,8 +215,8 @@ MIGRATED_SOURCE_MODULES = frozenset(
         "_source/polling.py",
         "_source/upload.py",
         "_notebook_metadata.py",
-        "_read_services.py",
-        "_source_service.py",
+        "_semantic/services/read.py",
+        "_semantic/services/source.py",
         "_sources.py",
     }
 )
@@ -231,17 +231,17 @@ MIGRATED_FEATURE_RPC_NEUTRAL_MODULES = frozenset(
         "_chat/api.py",
         "_chat/workflow.py",
         "_collections.py",
-        "_label_service.py",
         "_labels.py",
         "_mind_maps_api.py",
         "_notes.py",
         "_research.py",
-        "_research_service.py",
+        "_semantic/services/label.py",
+        "_semantic/services/research.py",
+        "_semantic/services/settings.py",
+        "_semantic/services/sharing.py",
+        "_semantic/services/source.py",
         "_settings.py",
-        "_settings_service.py",
         "_sharing.py",
-        "_sharing_service.py",
-        "_source_service.py",
         "_sources.py",
     }
 )

@@ -30,8 +30,8 @@ from notebooklm._semantic.records import (
     SettingsSetLanguageResult,
     UserSettingsRecord,
 )
-from notebooklm._settings_service import SettingsService
-from notebooklm._suggestion_service import SuggestionService
+from notebooklm._semantic.services.settings import SettingsService
+from notebooklm._semantic.services.suggestion import SuggestionService
 from notebooklm.exceptions import ValidationError
 from notebooklm.types import AccountLimits, PromptSuggestion, ReportSuggestion, UserSettings
 from tests._fixtures.recording_backend import RecordingBackend

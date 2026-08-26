@@ -24,7 +24,6 @@ from notebooklm._backend import (
 )
 from notebooklm._collections import CollectionsAPI
 from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from notebooklm._label_service import LabelSetService
 from notebooklm._operations import Operation
 from notebooklm._semantic.compat import project_backend_error
 from notebooklm._semantic.records import (
@@ -39,6 +38,7 @@ from notebooklm._semantic.records import (
     LabelListResult,
     LabelRecord,
 )
+from notebooklm._semantic.services.label import LabelSetService
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SERVICE_OWNED_OPERATIONS
 from notebooklm.exceptions import CollectionError, RPCTimeoutError, ServerError
 from notebooklm.rpc import RPCMethod

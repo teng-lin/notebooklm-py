@@ -61,7 +61,7 @@ from notebooklm._semantic.records import (
     SourceRegisterKind,
     SourceRegisterResult,
 )
-from notebooklm._source_service import SourceService
+from notebooklm._semantic.services.source import SourceService
 from notebooklm._web.deadlines import SEMANTIC_DEADLINE_AUTHORITIES
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SERVICE_OWNED_OPERATIONS
 from notebooklm.exceptions import (
