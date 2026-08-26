@@ -35,9 +35,9 @@ from typing import Any
 
 import pytest
 
-from notebooklm._projectors import project_chat_reference
 from notebooklm._row_adapters.chat import AnswerRow, CitationDetail, CitationRow
 from notebooklm._row_adapters.documents import build_blocks, build_document
+from notebooklm._semantic.projectors import project_chat_reference
 from notebooklm._types import documents as documents_types
 from notebooklm._web.codec.chat_stream import (
     attach_answer_anchors,

@@ -23,12 +23,11 @@ from __future__ import annotations
 
 from typing import Final, Protocol
 
-from .._backend import BackendContractError
 from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from .._env import get_default_language
-from .._operations import Operation
-from .._read_services import NotebookReadService
-from .._records import (
+from .._semantic.backend import BackendContractError
+from .._semantic.operations import Operation
+from .._semantic.records import (
     AudioGenerateInput,
     AudioGenerateRequest,
     DataTableGenerateInput,
@@ -47,6 +46,7 @@ from .._records import (
     VideoGenerateInput,
     VideoGenerateRequest,
 )
+from .._semantic.services.read import NotebookReadService
 
 #: The reviewed neutral option vocabularies.  ``tests/unit/test_generation_option_vocabularies.py``
 #: pins each one against the wire-enum map the codec keys by the same strings, so

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from .._backend import BackendAdapter
 from .._deadline import RuntimeDeadline
-from .._records import ARTIFACT_EXPORT_DEF, DriveExportInput, DriveExportResult
+from .._semantic.backend import BackendAdapter
+from .._semantic.records import ARTIFACT_EXPORT_DEF, DriveExportInput, DriveExportResult
 
 
 class DriveExportService:

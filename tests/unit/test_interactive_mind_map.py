@@ -94,7 +94,7 @@ def test_list_unknown_excludes_interactive_but_keeps_genuine_unknown():
 
 from unittest.mock import AsyncMock, MagicMock  # noqa: E402
 
-from notebooklm._records import (  # noqa: E402
+from notebooklm._semantic.records import (  # noqa: E402
     ARTIFACT_DOWNLOAD_DEF,
     ArtifactDownloadInput,
     ArtifactDownloadResult,

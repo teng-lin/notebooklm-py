@@ -10,10 +10,10 @@ import httpx
 import pytest
 
 from notebooklm._auth.cookie_types import CookieJar
-from notebooklm._backend import BackendError, BackendErrorReason
 from notebooklm._kernel import Kernel
-from notebooklm._records import MIND_MAP_LIST_DEF, MindMapListInput
 from notebooklm._runtime.web_backend_session import WebBackendSession
+from notebooklm._semantic.backend import BackendError, BackendErrorReason
+from notebooklm._semantic.records import MIND_MAP_LIST_DEF, MindMapListInput
 from notebooklm._studio import StudioCatalog
 from notebooklm._web_cookie_provider import WebCookieGeneration
 from notebooklm.exceptions import (

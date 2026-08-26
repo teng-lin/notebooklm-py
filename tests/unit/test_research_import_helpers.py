@@ -13,24 +13,24 @@ from __future__ import annotations
 
 import pytest
 
-from notebooklm._backend import BackendError, BackendErrorReason
-from notebooklm._operations import Operation
-from notebooklm._records import (
-    ResearchImportCandidate,
-    ResearchImportedSourceRecord,
-    ResearchSourceRecord,
-    SourceRecord,
-)
 from notebooklm._research_import import (
     _import_research_read_timeout,
     _reconcile_import_probe,
 )
-from notebooklm._research_service import _is_import_research_failed_precondition
 from notebooklm._runtime.config import (
     DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT,
 )
+from notebooklm._semantic.backend import BackendError, BackendErrorReason
+from notebooklm._semantic.operations import Operation
+from notebooklm._semantic.records import (
+    ResearchImportCandidate,
+    ResearchImportedSourceRecord,
+    ResearchSourceRecord,
+    SourceRecord,
+)
+from notebooklm._semantic.services.research import _is_import_research_failed_precondition
 from notebooklm._web.errors import translate_web_error
 from notebooklm.exceptions import RPCError
 
@@ -65,7 +65,7 @@ class TestIsImportResearchFailedPrecondition:
     """P10 R6.4 moved the predicate above the wire; the codes it accepts did not.
 
     The predicate now reads the adapter-normalized
-    :class:`~notebooklm._backend.BackendStatus` instead of a raw ``rpc_code``,
+    :class:`~notebooklm._semantic.backend.BackendStatus` instead of a raw ``rpc_code``,
     so each case starts from the ``RPCError`` the transport actually raises and
     runs it through :func:`translate_web_error`. That covers both halves of the
     new contract at once: the adapter normalizing the wire code, and the

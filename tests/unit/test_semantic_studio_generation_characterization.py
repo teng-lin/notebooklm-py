@@ -33,10 +33,9 @@ from typing import Any
 
 import pytest
 
-from notebooklm._backend import BackendAdapter, BackendContractError
 from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from notebooklm._read_services import NotebookReadService
-from notebooklm._records import (
+from notebooklm._semantic.backend import BackendAdapter, BackendContractError
+from notebooklm._semantic.records import (
     AudioGenerateRequest,
     DataTableGenerateRequest,
     InfographicGenerateRequest,
@@ -45,6 +44,7 @@ from notebooklm._records import (
     SlideDeckGenerateRequest,
     VideoGenerateRequest,
 )
+from notebooklm._semantic.services.read import NotebookReadService
 from notebooklm._studio import (
     AudioFamilyService,
     DataTableFamilyService,

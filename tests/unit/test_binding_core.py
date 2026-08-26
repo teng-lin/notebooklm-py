@@ -9,8 +9,9 @@ from typing import Any
 
 import pytest
 
-from notebooklm._backend import BackendContractError, BackendDeadlineExceededError
-from notebooklm._binding import (
+from notebooklm._deadline import RuntimeDeadline
+from notebooklm._semantic.backend import BackendContractError, BackendDeadlineExceededError
+from notebooklm._semantic.binding import (
     BindingAuditError,
     BindingTable,
     CodecBinding,
@@ -25,9 +26,8 @@ from notebooklm._binding import (
     audit_bindings,
     invoke_binding,
 )
-from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.operations import Operation
+from notebooklm._semantic.records import (
     ARTIFACT_GENERATE_AUDIO_DEF,
     NOTEBOOK_GET_DEF,
     NOTEBOOK_LIST_DEF,
@@ -584,8 +584,8 @@ async def test_invoke_dispatches_through_the_table_without_getattr() -> None:
 # --- typed dispatch ----------------------------------------------------------
 
 _MYPY_SNIPPET = """
-from notebooklm._binding import CodecBinding, CodecPayload, NativeCallSpec
-from notebooklm._records import (
+from notebooklm._semantic.binding import CodecBinding, CodecPayload, NativeCallSpec
+from notebooklm._semantic.records import (
     ARTIFACT_GENERATE_AUDIO_DEF,
     AudioGenerateInput,
     AudioGenerateResult,

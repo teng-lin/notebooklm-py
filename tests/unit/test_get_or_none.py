@@ -23,7 +23,7 @@ from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._lookup import unwrap_or_raise
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._notebooks import NotebooksAPI
-from notebooklm._records import ArtifactRecord, NoteRecord
+from notebooklm._semantic.records import ArtifactRecord, NoteRecord
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import ClientError, NotebookNotFoundError, RPCError
 from notebooklm.types import MindMap, MindMapKind, Note, Source

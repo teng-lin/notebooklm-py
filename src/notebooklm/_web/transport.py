@@ -30,11 +30,11 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from .._backend import BackendContractError, BackendDeadlineExceededError
-from .._binding import CodecPayload, RpcNative, StreamNative, StreamRequestPayload
 from .._deadline import RuntimeDeadline
 from .._logging import get_request_id, reset_request_id, set_request_id
-from .._operations import Operation, OperationDef
+from .._semantic.backend import BackendContractError, BackendDeadlineExceededError
+from .._semantic.binding import CodecPayload, RpcNative, StreamNative, StreamRequestPayload
+from .._semantic.operations import Operation, OperationDef
 from ..exceptions import NetworkError
 from ..rpc import RPCMethod
 from .chat_transport import chat_aware_authed_post

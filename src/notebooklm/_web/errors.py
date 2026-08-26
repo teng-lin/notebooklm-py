@@ -1,7 +1,7 @@
 """Shared native-to-neutral failure translation for the web backend.
 
 ``translate_web_error`` is the one place a reviewed transport exception
-becomes a :class:`~notebooklm._backend.BackendError`.  ``WebRpcBackend``
+becomes a :class:`~notebooklm._semantic.backend.BackendError`.  ``WebRpcBackend``
 delegates its ``_translate_error`` classmethod here, and binding rows whose
 ``map_error`` needs the shared translation of the failing native (the
 ``RESEARCH_START`` unavailable case) call it directly, so no row module has to
@@ -13,13 +13,13 @@ from __future__ import annotations
 
 from types import MappingProxyType
 
-from .._backend import (
+from .._semantic.backend import (
     BACKEND_STATUS_DIAGNOSTIC,
     BackendContractError,
     BackendError,
     BackendErrorReason,
 )
-from .._operations import Operation
+from .._semantic.operations import Operation
 from ..exceptions import ChatError, IdempotencyVariantError, NetworkError, RPCError
 from .error_policy import SAFE_REASON_DIAGNOSTICS, WEB_ERROR_REASONS, web_backend_status
 from .failure_projection import _CHAT_OPERATIONS, _capture_public_failure

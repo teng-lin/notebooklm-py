@@ -10,29 +10,29 @@ from typing import IO, Any, Final, Literal, cast
 
 import httpx
 
-from ._backend import BackendAdapter, BackendError
-from ._backend_compat import (
+from ._deadline import RuntimeDeadlineFactory
+from ._lookup import unwrap_or_raise
+from ._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
+from ._semantic.backend import BackendAdapter, BackendError
+from ._semantic.compat import (
     project_backend_call,
     project_backend_error,
     project_source_add_failure,
 )
-from ._deadline import RuntimeDeadlineFactory
-from ._lookup import unwrap_or_raise
-from ._projectors import (
+from ._semantic.projectors import (
     project_source,
     project_source_fulltext,
     project_source_guide,
     record_source,
 )
-from ._read_services import SourceReadService
-from ._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
+from ._semantic.services.read import SourceReadService
+from ._semantic.services.source import SourceService
 from ._source import upload as _source_upload
 from ._source.batch import SourceUrlBatchItem
 from ._source.content import SourceContentRenderer
 from ._source.listing import _snapshot_enum_filter
 from ._source.polling import SourcePoller
 from ._source.upload import SourceUploadPipeline
-from ._source_service import SourceService
 from ._types.research import SourceGuide
 from ._url_utils import (
     extract_youtube_video_id,

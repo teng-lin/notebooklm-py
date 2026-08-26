@@ -8,8 +8,8 @@ from datetime import datetime
 from enum import Enum, unique
 from pathlib import Path
 
-from ._operations import CallPolicy, Operation, OperationDef, OperationTier
-from ._types.documents import StructuredDocument
+from ..._types.documents import StructuredDocument
+from ..operations import CallPolicy, Operation, OperationDef, OperationTier
 
 
 @dataclass(frozen=True, slots=True)

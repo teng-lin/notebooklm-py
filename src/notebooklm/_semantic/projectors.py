@@ -6,43 +6,9 @@ import json
 from typing import Any, cast
 from urllib.parse import quote
 
-from ._env import get_base_url
-from ._records import (
-    AccountLimitsRecord,
-    ArtifactRecord,
-    ArtifactUserStateRecord,
-    ChatAskResultRecord,
-    ChatGetHistoryResult,
-    ChatLegacyMappingRecord,
-    ChatLegacySequenceRecord,
-    ChatLegacyValue,
-    ChatReferenceRecord,
-    ChatSavedNoteRecord,
-    ChatSettingsRecord,
-    CollectionRecord,
-    GenerationStatusRecord,
-    LabelKind,
-    LabelRecord,
-    MindMapRecord,
-    NotebookDescriptionRecord,
-    NotebookRecord,
-    NoteRecord,
-    PromptSuggestionRecord,
-    ReportSuggestionRecord,
-    ResearchSourceRecord,
-    ResearchTaskRecord,
-    ShareAccessLevel,
-    SharedUserRecord,
-    SharePermissionLevel,
-    ShareStatusRecord,
-    ShareViewScope,
-    SourceFulltextRecord,
-    SourceGuideRecord,
-    SourceRecord,
-    UserSettingsRecord,
-)
-from ._types.research import SourceGuide
-from .types import (
+from .._env import get_base_url
+from .._types.research import SourceGuide
+from ..types import (
     AccountLimits,
     Artifact,
     ArtifactInfographic,
@@ -88,6 +54,40 @@ from .types import (
     SuggestedTopic,
     UnknownArtifactUserState,
     UserSettings,
+)
+from .records import (
+    AccountLimitsRecord,
+    ArtifactRecord,
+    ArtifactUserStateRecord,
+    ChatAskResultRecord,
+    ChatGetHistoryResult,
+    ChatLegacyMappingRecord,
+    ChatLegacySequenceRecord,
+    ChatLegacyValue,
+    ChatReferenceRecord,
+    ChatSavedNoteRecord,
+    ChatSettingsRecord,
+    CollectionRecord,
+    GenerationStatusRecord,
+    LabelKind,
+    LabelRecord,
+    MindMapRecord,
+    NotebookDescriptionRecord,
+    NotebookRecord,
+    NoteRecord,
+    PromptSuggestionRecord,
+    ReportSuggestionRecord,
+    ResearchSourceRecord,
+    ResearchTaskRecord,
+    ShareAccessLevel,
+    SharedUserRecord,
+    SharePermissionLevel,
+    ShareStatusRecord,
+    ShareViewScope,
+    SourceFulltextRecord,
+    SourceGuideRecord,
+    SourceRecord,
+    UserSettingsRecord,
 )
 
 _NOTEBOOK_ROLES = {

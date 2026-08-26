@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal
 
-from notebooklm._projectors import project_source_fulltext, project_source_guide
+from notebooklm._semantic.projectors import project_source_fulltext, project_source_guide
 from notebooklm._types.research import SourceGuide
 from notebooklm._web.codec.sources import decode_source_fulltext, decode_source_guide
 from notebooklm.exceptions import SourceNotFoundError

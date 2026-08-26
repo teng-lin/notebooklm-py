@@ -6,8 +6,8 @@ import json
 from collections.abc import Sequence
 
 from .._artifact.formatters import _extract_app_data, _format_interactive_content
-from .._backend import BackendAdapter
-from .._records import (
+from .._semantic.backend import BackendAdapter
+from .._semantic.records import (
     ARTIFACT_DOWNLOAD_DEF,
     ArtifactDownloadInput,
     ArtifactParseFailureKind,

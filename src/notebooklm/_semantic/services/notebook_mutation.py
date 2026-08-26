@@ -5,7 +5,10 @@ from __future__ import annotations
 import logging
 from types import MappingProxyType
 
-from ._backend import (
+from ..._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from ..._idempotency_create import idempotent_create, semantic_may_have_committed
+from ...exceptions import ValidationError
+from ..backend import (
     BackendAdapter,
     BackendDeadlineExceededError,
     BackendError,
@@ -15,10 +18,8 @@ from ._backend import (
     rebind_operation,
     require_leaves,
 )
-from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from ._idempotency_create import idempotent_create, semantic_may_have_committed
-from ._operations import Operation
-from ._records import (
+from ..operations import Operation
+from ..records import (
     NOTEBOOK_ALLOCATE_DEF,
     NOTEBOOK_CREATE_DEF,
     NOTEBOOK_DELETE_DEF,
@@ -39,7 +40,6 @@ from ._records import (
     NotebookUpdateInput,
     SettingsGetLimitsInput,
 )
-from .exceptions import ValidationError
 
 logger = logging.getLogger("notebooklm._notebooks")
 

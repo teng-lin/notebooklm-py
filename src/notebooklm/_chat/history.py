@@ -1,6 +1,6 @@
 """Record-based conversation-history helpers.
 
-Everything here consumes :mod:`notebooklm._records` values and nothing else:
+Everything here consumes :mod:`notebooklm._semantic.records` values and nothing else:
 no row adapters, no wire vocabulary, no web package. That is deliberate — the
 live ``ask`` path (turn counting and question/answer pairing) reads only this
 module, so the chat workflow service can depend on it without acquiring a
@@ -17,7 +17,7 @@ import reprlib
 from collections.abc import Awaitable
 from typing import Protocol
 
-from .._records import ChatGetHistoryResult, ChatTurnDecodeErrorRecord
+from .._semantic.records import ChatGetHistoryResult, ChatTurnDecodeErrorRecord
 from ..exceptions import ChatError, UnknownRPCMethodError
 
 _TURN_COUNT_INITIAL_LIMIT = 100

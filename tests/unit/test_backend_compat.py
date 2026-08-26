@@ -11,18 +11,18 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm._backend import (
+from notebooklm._semantic.backend import (
     BackendContractError,
     BackendError,
     BackendErrorReason,
 )
-from notebooklm._backend_compat import (
+from notebooklm._semantic.compat import (
     project_backend_call,
     project_backend_error,
     project_local_not_found,
 )
-from notebooklm._operations import Operation
-from notebooklm._records import SourceAddFailureKind, SourceAddFailureRecord
+from notebooklm._semantic.operations import Operation
+from notebooklm._semantic.records import SourceAddFailureKind, SourceAddFailureRecord
 from notebooklm._web.errors import translate_web_error
 from notebooklm.exceptions import (
     ArtifactFeatureUnavailableError,
@@ -119,7 +119,7 @@ _COMPATIBILITY_FACADES = (
     "_mind_maps_api.py",
     "_notebooks.py",
     "_notes.py",
-    "_research_service.py",
+    "_semantic/services/research.py",
     "_settings.py",
     "_sharing.py",
     "_sharing_manager.py",

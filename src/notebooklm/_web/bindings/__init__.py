@@ -11,8 +11,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from ..._binding import Binding
-from ..._operations import Operation
+from ..._semantic.binding import Binding
+from ..._semantic.operations import Operation
 from .chat import CHAT_ROWS
 from .labels import LABEL_ROWS
 from .mind_maps import MIND_MAP_ROWS

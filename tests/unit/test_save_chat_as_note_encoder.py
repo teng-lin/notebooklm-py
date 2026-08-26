@@ -24,8 +24,8 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm._projectors import chat_reference_record
-from notebooklm._records import ChatReferenceRecord
+from notebooklm._semantic.projectors import chat_reference_record
+from notebooklm._semantic.records import ChatReferenceRecord
 from notebooklm._web.codec.chat_saved_note import (
     _CITATION_MARKER_RE,
     _strip_citation_markers,

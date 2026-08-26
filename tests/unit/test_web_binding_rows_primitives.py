@@ -27,18 +27,18 @@ from scripts._web_policy_intent import (
     WEB_CALL_POLICY_BINDINGS,
 )
 
-from notebooklm._backend import (
+from notebooklm._deadline import RuntimeDeadline
+from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
+from notebooklm._semantic.backend import (
     BackendContractError,
     BackendDeadlineExceededError,
     BackendError,
     BackendErrorReason,
     may_have_committed,
 )
-from notebooklm._binding import CodecBinding, DeadlineMode
-from notebooklm._deadline import RuntimeDeadline
-from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
-from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.binding import CodecBinding, DeadlineMode
+from notebooklm._semantic.operations import Operation
+from notebooklm._semantic.records import (
     LABEL_ALLOCATE_DEF,
     LABEL_MUTATE_DEF,
     SHARING_MUTATE_DEF,

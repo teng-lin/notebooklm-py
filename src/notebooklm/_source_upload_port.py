@@ -26,7 +26,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from ._records import SourceFileRegistrationRecord
+from ._semantic.records import SourceFileRegistrationRecord
 from .types import Source
 
 #: One recency-writing notebook snapshot, projected to public sources.

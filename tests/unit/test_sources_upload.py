@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from notebooklm._auth.cookie_types import Cookie, CookieJar
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     SourceAddCommitState,
     SourceAddDriveResult,
     SourceAddFileResult,

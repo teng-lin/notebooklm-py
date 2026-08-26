@@ -36,12 +36,12 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from notebooklm._backend import BackendDeadlineExceededError
 from notebooklm._chat import ChatAPI
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._notebook_payloads import build_get_notebook_params
-from notebooklm._operations import Operation
-from notebooklm._records import ChatAskInput
+from notebooklm._semantic.backend import BackendDeadlineExceededError
+from notebooklm._semantic.operations import Operation
+from notebooklm._semantic.records import ChatAskInput
 from notebooklm._streaming_post import stream_post_with_size_cap
 from notebooklm._transport_errors import TransportAuthExpired, TransportServerError
 from notebooklm._web.codec import chat as chat_codec

@@ -10,9 +10,8 @@ import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import CallPolicy, Operation
-from notebooklm._read_services import NotebookReadService
-from notebooklm._records import (
+from notebooklm._semantic.operations import CallPolicy, Operation
+from notebooklm._semantic.records import (
     ARTIFACT_GENERATE_AUDIO_DEF,
     ArtifactMediaRecord,
     ArtifactRecord,
@@ -22,6 +21,7 @@ from notebooklm._records import (
     AudioMetadataRecord,
     GenerationStatusRecord,
 )
+from notebooklm._semantic.services.read import NotebookReadService
 from notebooklm._studio import (
     AudioFamilyService,
     StudioCatalog,

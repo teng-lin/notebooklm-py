@@ -7,9 +7,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from notebooklm._note_service import NoteService
-from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.operations import Operation
+from notebooklm._semantic.records import (
     MIND_MAP_DELETE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,
@@ -42,6 +41,7 @@ from notebooklm._records import (
     NoteUpdateInput,
     NoteUpdateResult,
 )
+from notebooklm._semantic.services.note import NoteService
 from notebooklm._studio import MindMapFamilyService, StudioCatalog
 from notebooklm.types import MindMapKind
 from tests._fixtures.recording_backend import (

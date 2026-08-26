@@ -652,7 +652,7 @@ def legacy_vcr_add_url_baseline(monkeypatch):
     ``tests/integration/test_sources_idempotency.py``, so nothing here is its
     only coverage. Mirrors :func:`legacy_vcr_follow_up_probe`.
     """
-    from notebooklm._source_service import SourceService
+    from notebooklm._semantic.services.source import SourceService
 
     # P10 R3.3 hoisted the workflow above the semantic port, and R3.4 made its
     # baseline and probe the phases the Drive workflow shares: the stub replaces

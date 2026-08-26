@@ -23,7 +23,7 @@ from typing import Any
 
 import pytest
 
-from notebooklm._operations import Operation
+from notebooklm._semantic.operations import Operation
 from notebooklm._web.registry import WEB_SERVICE_OWNED_OPERATIONS, WEB_SUPPORTED_OPERATIONS
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -215,8 +215,8 @@ MIGRATED_SOURCE_MODULES = frozenset(
         "_source/polling.py",
         "_source/upload.py",
         "_notebook_metadata.py",
-        "_read_services.py",
-        "_source_service.py",
+        "_semantic/services/read.py",
+        "_semantic/services/source.py",
         "_sources.py",
     }
 )
@@ -231,17 +231,17 @@ MIGRATED_FEATURE_RPC_NEUTRAL_MODULES = frozenset(
         "_chat/api.py",
         "_chat/workflow.py",
         "_collections.py",
-        "_label_service.py",
         "_labels.py",
         "_mind_maps_api.py",
         "_notes.py",
         "_research.py",
-        "_research_service.py",
+        "_semantic/services/label.py",
+        "_semantic/services/research.py",
+        "_semantic/services/settings.py",
+        "_semantic/services/sharing.py",
+        "_semantic/services/source.py",
         "_settings.py",
-        "_settings_service.py",
         "_sharing.py",
-        "_sharing_service.py",
-        "_source_service.py",
         "_sources.py",
     }
 )
@@ -250,7 +250,6 @@ MIGRATED_FEATURE_RPC_NEUTRAL_MODULES = frozenset(
 # the P0 measurement. Every survivor has a named compatibility/protocol role;
 # a feature facade is never admitted here as a convenient exception.
 CLASSIFIED_NON_WEB_RPC_METHOD_IMPORTS: dict[str, str] = {
-    "_backend_compat.py": "legacy public exception diagnostic projector",
     "_notebooks.py": "documented public raw-RPC compatibility owner",
     "_research_task_parser.py": "legacy research wire decoder",
     "_row_adapters/artifacts.py": "artifact positional row decoder",
@@ -258,6 +257,7 @@ CLASSIFIED_NON_WEB_RPC_METHOD_IMPORTS: dict[str, str] = {
     "_row_adapters/notes.py": "note positional row decoder",
     "_row_adapters/research.py": "research positional row decoder",
     "_row_adapters/sources.py": "source positional row decoder",
+    "_semantic/compat.py": "legacy public exception diagnostic projector",
     "_runtime/contracts.py": "web RPC protocol type declaration",
     "_types/notebooks.py": "legacy notebook wire decoder",
     "_types/sharing.py": "legacy sharing wire decoder",

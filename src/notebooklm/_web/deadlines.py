@@ -6,7 +6,7 @@ from enum import Enum, unique
 from types import MappingProxyType
 from typing import Final
 
-from .._operations import Operation
+from .._semantic.operations import Operation
 
 
 @unique

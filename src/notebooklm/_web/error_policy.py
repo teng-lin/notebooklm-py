@@ -1,6 +1,6 @@
 """Closed native-to-semantic error policy for the web backend."""
 
-from .._backend import BackendErrorReason, BackendStatus
+from .._semantic.backend import BackendErrorReason, BackendStatus
 from ..exceptions import (
     AuthError,
     ChatError,

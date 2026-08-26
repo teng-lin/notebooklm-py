@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .._records import ArtifactRecord
+from .._semantic.records import ArtifactRecord
 
 ARTIFACT_FAMILIES = frozenset(
     {

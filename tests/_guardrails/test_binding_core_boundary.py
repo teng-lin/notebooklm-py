@@ -1,6 +1,6 @@
 """P9.0: the neutral binding core imports nothing wire-specific.
 
-``_binding.py`` is what lets dispatch be type-checked end to end, and that
+``_semantic/binding.py`` is what lets dispatch be type-checked end to end, and that
 neutrality is only worth something if it is pinned.  The allowed import set is
 an exact literal: adding a module is a reviewed derivation change, never a
 loosening.
@@ -12,7 +12,7 @@ import ast
 from pathlib import Path
 
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
-BINDING_PATH = SRC_ROOT / "_binding.py"
+BINDING_PATH = SRC_ROOT / "_semantic" / "binding.py"
 
 ALLOWED_STDLIB_IMPORTS = frozenset(
     {
@@ -24,7 +24,10 @@ ALLOWED_STDLIB_IMPORTS = frozenset(
         "typing",
     }
 )
-ALLOWED_FIRST_PARTY_IMPORTS = frozenset({"_backend", "_deadline", "_operations"})
+# P10 R7.3 put the port in one package, so two of the three are siblings
+# now: ``backend`` and ``operations`` are ``_semantic`` members, while
+# ``_deadline`` is still reached from the package root.
+ALLOWED_FIRST_PARTY_IMPORTS = frozenset({"backend", "_deadline", "operations"})
 FORBIDDEN_PREFIXES = ("_web", "rpc", "_auth", "httpx", "_runtime")
 
 

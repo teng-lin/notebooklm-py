@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from notebooklm._projectors import chat_reference_record, project_chat_saved_note
-from notebooklm._records import CHAT_SAVE_NOTE_DEF, ChatSaveNoteInput
+from notebooklm._semantic.projectors import chat_reference_record, project_chat_saved_note
+from notebooklm._semantic.records import CHAT_SAVE_NOTE_DEF, ChatSaveNoteInput
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import ChatReference
 from tests._fixtures.fake_core import FakeSession, make_fake_core

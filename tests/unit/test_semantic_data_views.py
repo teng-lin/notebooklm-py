@@ -8,12 +8,11 @@ from typing import Any
 
 import pytest
 
-from notebooklm._backend import BackendError, BackendErrorReason
-from notebooklm._backend_compat import project_backend_error
 from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import Operation
-from notebooklm._read_services import NotebookReadService
-from notebooklm._records import (
+from notebooklm._semantic.backend import BackendError, BackendErrorReason
+from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.operations import Operation
+from notebooklm._semantic.records import (
     ARTIFACT_EXPORT_DEF,
     ARTIFACT_GENERATE_DATA_TABLE_DEF,
     DataTableGenerateInput,
@@ -21,6 +20,7 @@ from notebooklm._records import (
     DriveExportInput,
     MindMapGenerateInput,
 )
+from notebooklm._semantic.services.read import NotebookReadService
 from notebooklm._studio import (
     DataTableFamilyService,
     NoteBackedMindMapFamilyService,

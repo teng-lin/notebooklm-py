@@ -11,16 +11,16 @@ import pytest
 from scripts._web_policy_intent import SERVICE_OWNED_WORKFLOW_BINDINGS, WEB_CALL_POLICY_BINDINGS
 from scripts.audit_operation_catalog import derive_workflow_natives
 
-from notebooklm._backend import (
+from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from notebooklm._semantic.backend import (
     BackendDeadlineExceededError,
     BackendError,
     BackendErrorReason,
     UnsupportedOperationError,
 )
-from notebooklm._backend_compat import project_backend_error
-from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.operations import Operation
+from notebooklm._semantic.records import (
     SHARING_GET_DEF,
     SHARING_MUTATE_DEF,
     SHARING_SET_PUBLIC_DEF,
@@ -34,8 +34,8 @@ from notebooklm._records import (
     SharingSetPublicInput,
     SharingVisibility,
 )
+from notebooklm._semantic.services.sharing import SharingService
 from notebooklm._sharing import SharingAPI
-from notebooklm._sharing_service import SharingService
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SERVICE_OWNED_OPERATIONS
 from notebooklm.exceptions import RPCTimeoutError, ServerError
 from notebooklm.rpc import RPCMethod
@@ -366,7 +366,7 @@ def test_label_allocate_decoder_gets_method_id_from_its_binding_native(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The codec body has no primitive-specific ``RPCMethod`` authority."""
-    from notebooklm._records import LabelAllocateInput, LabelKind
+    from notebooklm._semantic.records import LabelAllocateInput, LabelKind
     from notebooklm._web.bindings import primitives
     from notebooklm._web.codec import labels as label_codec
 

@@ -25,7 +25,7 @@ from notebooklm._idempotency import (
     IDEMPOTENCY_REGISTRY,
     resolve_effective_disable_internal_retries,
 )
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     SourceAddCommitState,
     SourceAddTitleState,
     SourceAddUrlReceipt,

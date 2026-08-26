@@ -2,7 +2,7 @@
 
 Owns the sharing domain's policy — which permissions a caller may send, whether
 a grant batch is coherent, and what each intent logs — and invokes only typed
-operation definitions through :class:`~notebooklm._backend.BackendAdapter`. It
+operation definitions through :class:`~notebooklm._semantic.backend.BackendAdapter`. It
 holds no wire vocabulary: the ``SHARE_NOTEBOOK`` / ``GET_SHARE_STATUS`` /
 ``MutateProject`` grammar lives in ``_web/codec/sharing.py``.
 
@@ -26,7 +26,8 @@ import logging
 from collections.abc import Sequence
 from dataclasses import replace
 
-from ._backend import (
+from ..._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from ..backend import (
     BackendAdapter,
     BackendDeadlineExceededError,
     BackendError,
@@ -34,9 +35,8 @@ from ._backend import (
     rebind_operation,
     require_leaves,
 )
-from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from ._operations import Operation
-from ._records import (
+from ..operations import Operation
+from ..records import (
     SHARING_GET_DEF,
     SHARING_MUTATE_DEF,
     SHARING_PATCH_VIEW_LEVEL_DEF,

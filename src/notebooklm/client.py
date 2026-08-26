@@ -45,7 +45,6 @@ from ._deprecation import warn_deprecated
 from ._env import get_base_url as get_base_url
 from ._labels import LabelsAPI
 from ._mind_maps_api import MindMapsAPI
-from ._note_service import NoteService as NoteService  # noqa: F401
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
 from ._research import ResearchAPI
@@ -58,6 +57,7 @@ from ._runtime.config import (
     DEFAULT_TIMEOUT,
 )
 from ._runtime.lifecycle import CookieRotator, CookieSaver
+from ._semantic.services.note import NoteService as NoteService  # noqa: F401
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
 from ._source.upload import SourceUploadPipeline

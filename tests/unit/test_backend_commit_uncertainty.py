@@ -12,7 +12,7 @@ from types import MappingProxyType
 
 import pytest
 
-from notebooklm._backend import (
+from notebooklm._semantic.backend import (
     COMMIT_UNCERTAIN_REASONS,
     BackendContractError,
     BackendDeadlineExceededError,
@@ -25,8 +25,8 @@ from notebooklm._backend import (
     rebind_operation,
     require_leaves,
 )
-from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.operations import Operation
+from notebooklm._semantic.records import (
     NOTEBOOK_GET_DEF,
     NOTEBOOK_LIST_DEF,
     NotebookGetResult,

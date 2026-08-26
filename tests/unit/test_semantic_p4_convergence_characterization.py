@@ -35,22 +35,20 @@ from scripts.audit_operation_catalog import (
 from notebooklm import artifacts as artifact_helpers
 from notebooklm._app.errors import ErrorCategory, classify
 from notebooklm._artifact.polling import ArtifactPollingService
-from notebooklm._backend import (
-    BackendDeadlineExceededError,
-    BackendError,
-    BackendErrorReason,
-)
-from notebooklm._backend_compat import project_backend_error
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._idempotency import (
     IDEMPOTENCY_REGISTRY,
     IdempotencyPolicy,
     resolve_effective_disable_internal_retries,
 )
-from notebooklm._notebook_mutation_service import NotebookMutationService
-from notebooklm._operations import CallPolicy, Operation, OperationDef
-from notebooklm._read_services import NotebookReadService, SourceReadService
-from notebooklm._records import (
+from notebooklm._semantic.backend import (
+    BackendDeadlineExceededError,
+    BackendError,
+    BackendErrorReason,
+)
+from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.operations import CallPolicy, Operation, OperationDef
+from notebooklm._semantic.records import (
     ARTIFACT_CATALOG_DEF,
     ARTIFACT_DELETE_DEF,
     ARTIFACT_DOWNLOAD_DEF,
@@ -134,6 +132,8 @@ from notebooklm._records import (
     SourceListResult,
     SourceRecord,
 )
+from notebooklm._semantic.services.notebook_mutation import NotebookMutationService
+from notebooklm._semantic.services.read import NotebookReadService, SourceReadService
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS

@@ -7,15 +7,12 @@ from typing import Any, TypeVar, cast
 
 import httpx
 
-from ._backend import BackendContractError, BackendError, BackendErrorReason
-from ._operations import Operation
-from ._records import LabelKind, SourceAddFailureKind, SourceAddFailureRecord
-from ._transport_errors import (
+from .._transport_errors import (
     TransportAuthExpired,
     TransportRateLimited,
     TransportServerError,
 )
-from .exceptions import (
+from ..exceptions import (
     ArtifactFeatureUnavailableError,
     ArtifactNotFoundError,
     AuthError,
@@ -46,7 +43,10 @@ from .exceptions import (
     UnknownRPCMethodError,
     ValidationError,
 )
-from .rpc import RPCMethod
+from ..rpc import RPCMethod
+from .backend import BackendContractError, BackendError, BackendErrorReason
+from .operations import Operation
+from .records import LabelKind, SourceAddFailureKind, SourceAddFailureRecord
 
 _T = TypeVar("_T")
 

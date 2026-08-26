@@ -7,9 +7,8 @@ from dataclasses import FrozenInstanceError, replace
 import pytest
 
 from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import CallPolicy, Operation
-from notebooklm._read_services import NotebookReadService
-from notebooklm._records import (
+from notebooklm._semantic.operations import CallPolicy, Operation
+from notebooklm._semantic.records import (
     ARTIFACT_GENERATE_FLASHCARDS_DEF,
     ARTIFACT_GENERATE_QUIZ_DEF,
     ArtifactRecord,
@@ -20,6 +19,7 @@ from notebooklm._records import (
     InteractiveGenerateResult,
     InteractiveMetadataRecord,
 )
+from notebooklm._semantic.services.read import NotebookReadService
 from notebooklm._studio import (
     InteractiveFamilyService,
     StudioCatalog,

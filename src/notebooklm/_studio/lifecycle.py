@@ -5,10 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .._artifact.polling import ArtifactPollingService, PollStatusCallback, StatusChangeCallback
-from .._backend import BackendAdapter
 from .._deadline import RuntimeDeadline
 from .._polling_registry import PollRegistry
-from .._records import ARTIFACT_WAIT_DEF, ArtifactPollInput, GenerationStatusRecord
+from .._semantic.backend import BackendAdapter
+from .._semantic.records import ARTIFACT_WAIT_DEF, ArtifactPollInput, GenerationStatusRecord
 
 if TYPE_CHECKING:
     from .._artifact.polling import OperationScopeProvider

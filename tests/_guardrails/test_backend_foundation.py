@@ -7,13 +7,13 @@ from pathlib import Path
 from typing import get_type_hints
 
 import notebooklm
-import notebooklm._backend as backend_module
-import notebooklm._records as records_module
-from notebooklm._backend import BackendAdapter
+import notebooklm._semantic.backend as backend_module
+import notebooklm._semantic.records as records_module
+from notebooklm._semantic.backend import BackendAdapter
 
 _ROOT = Path(__file__).resolve().parents[2]
-_BACKEND = _ROOT / "src" / "notebooklm" / "_backend.py"
-_RECORDS = _ROOT / "src" / "notebooklm" / "_records.py"
+_BACKEND = _ROOT / "src" / "notebooklm" / "_semantic" / "backend.py"
+_RECORDS = _ROOT / "src" / "notebooklm" / "_semantic" / "records" / "__init__.py"
 _FAKE = _ROOT / "tests" / "_fixtures" / "recording_backend.py"
 
 _FORBIDDEN_MODULE_PARTS = frozenset({"httpx", "cookie", "protobuf", "cli", "mcp", "server", "rpc"})
@@ -62,8 +62,8 @@ def test_backend_protocol_annotations_contain_no_adapter_or_wire_shapes() -> Non
 
 
 def test_foundation_modules_are_private_and_define_no_public_package_exports() -> None:
-    assert backend_module.__name__ == "notebooklm._backend"
-    assert records_module.__name__ == "notebooklm._records"
+    assert backend_module.__name__ == "notebooklm._semantic.backend"
+    assert records_module.__name__ == "notebooklm._semantic.records"
     assert not (set(backend_module.__all__) | set(records_module.__all__)) & set(notebooklm.__all__)
 
 

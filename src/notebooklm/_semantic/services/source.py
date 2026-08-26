@@ -8,7 +8,15 @@ from functools import partial
 from pathlib import Path
 from types import MappingProxyType
 
-from ._backend import (
+from ..._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from ..._idempotency_create import (
+    _CreateResultKind,
+    _IdempotentCreateResult,
+    idempotent_create,
+    semantic_may_have_committed,
+)
+from ..._url_utils import extract_youtube_video_id, is_youtube_url
+from ..backend import (
     BackendAdapter,
     BackendContractError,
     BackendDeadlineExceededError,
@@ -19,15 +27,8 @@ from ._backend import (
     rebind_operation,
     require_leaves,
 )
-from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from ._idempotency_create import (
-    _CreateResultKind,
-    _IdempotentCreateResult,
-    idempotent_create,
-    semantic_may_have_committed,
-)
-from ._operations import Operation
-from ._records import (
+from ..operations import Operation
+from ..records import (
     SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
     SOURCE_ADD_TEXT_DEF,
@@ -74,7 +75,7 @@ from ._records import (
     SourceWaitSnapshotInput,
     SourceWaitSnapshotResult,
 )
-from ._source_add_reports import (
+from .source_add_reports import (
     CREATE_CONTEXT_FAILURE,
     DEFAULT_ADD_FAILURE_MESSAGE,
     DIRECT_PROBE_REASONS,
@@ -94,8 +95,7 @@ from ._source_add_reports import (
     url_baseline_ambiguity,
     url_match_ambiguity,
 )
-from ._source_batch_service import run_url_batch_registration
-from ._url_utils import extract_youtube_video_id, is_youtube_url
+from .source_batch import run_url_batch_registration
 
 # The same logger name and level the retired rows logged under.
 _source_logger = logging.getLogger("notebooklm").getChild("_sources")

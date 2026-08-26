@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from .._backend import BackendAdapter
 from .._deadline import RuntimeDeadline
-from .._records import (
+from .._semantic.backend import BackendAdapter
+from .._semantic.records import (
     ARTIFACT_GENERATE_AUDIO_DEF,
     ArtifactRecord,
     AudioGenerateRequest,

@@ -15,8 +15,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 import pytest
 
 from notebooklm import MagicArtifactType, NextStepSuggestion
-from notebooklm._projectors import project_chat_reference
-from notebooklm._records import ChatTurnKeyRecord
+from notebooklm._semantic.projectors import project_chat_reference
+from notebooklm._semantic.records import ChatTurnKeyRecord
 from notebooklm._web.codec.chat_stream import (
     StreamingChatParseResult,
     encode_ask_stream,
@@ -682,7 +682,7 @@ def test_skipped_citation_row_leaves_numbering_hole_for_markers(caplog) -> None:
     the skipped row leaves a hole: marker ``[2]`` resolves to ``None`` and
     its anchor is dropped — never mis-anchored.
     """
-    from notebooklm._projectors import chat_reference_record
+    from notebooklm._semantic.projectors import chat_reference_record
     from notebooklm._web.codec.chat_saved_note import _resolve_reference
 
     good_1 = _citation(source_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", chunk_id="chunk-1")

@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._mind_maps_api import MindMapsAPI, extract_interactive_tree_leaf
-from notebooklm._records import ArtifactRecord, MindMapGenerateOutcomeRecord, MindMapRecord
 from notebooklm._row_adapters.notes import NoteRow
+from notebooklm._semantic.records import ArtifactRecord, MindMapGenerateOutcomeRecord, MindMapRecord
 from notebooklm.exceptions import (
     ArtifactError,
     ArtifactFeatureUnavailableError,

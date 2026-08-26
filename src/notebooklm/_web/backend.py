@@ -16,7 +16,9 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
-from .._backend import (
+from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from .._runtime.config import assert_resolved_read_timeout
+from .._semantic.backend import (
     BackendCapabilities,
     BackendContractError,
     BackendDeadlineExceededError,
@@ -25,7 +27,7 @@ from .._backend import (
     BackendKind,
     UnsupportedOperationError,
 )
-from .._binding import (
+from .._semantic.binding import (
     Binding,
     BindingAuditError,
     BindingTable,
@@ -36,9 +38,7 @@ from .._binding import (
     invoke_binding,
     row_invoker,
 )
-from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from .._operations import CallPolicy, Operation, OperationDef
-from .._runtime.config import assert_resolved_read_timeout
+from .._semantic.operations import CallPolicy, Operation, OperationDef
 from .._source_upload_port import UploadLifecycleHooks
 from .._web_cookie_provider import WebCookieProvider, WebCookieSession
 from ..exceptions import (

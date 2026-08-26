@@ -1,6 +1,6 @@
 """Neutral binding vocabulary shared by every semantic backend.
 
-A binding row ties one closed :class:`~notebooklm._operations.OperationDef` to
+A binding row ties one closed :class:`~notebooklm._semantic.operations.OperationDef` to
 the way a backend executes it. Two row kinds exist:
 
 * :class:`CodecBinding` — ``encode → one native → decode``; the row's
@@ -29,9 +29,9 @@ from enum import Enum, unique
 from types import MappingProxyType
 from typing import Any, Final, Generic, Literal, Protocol, TypeAlias, TypeVar
 
-from ._backend import BackendContractError, BackendDeadlineExceededError, BackendError
-from ._deadline import RuntimeDeadline
-from ._operations import Operation, OperationDef
+from .._deadline import RuntimeDeadline
+from .backend import BackendContractError, BackendDeadlineExceededError, BackendError
+from .operations import Operation, OperationDef
 
 InputT = TypeVar("InputT")
 OutputT = TypeVar("OutputT")

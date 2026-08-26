@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from notebooklm._note_service import NoteService
 from notebooklm._notes import NotesAPI
+from notebooklm._semantic.services.note import NoteService
 from notebooklm._web.backend import WebRpcBackend
 
 from .fake_core import FakeSession

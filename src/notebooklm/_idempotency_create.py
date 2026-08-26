@@ -9,7 +9,7 @@ Two predicates exist for its one implementation:
   adapter-owned callers that still consume raw ``RateLimitError`` /
   ``ServerError`` / ``NetworkError`` by design; and
 * the neutral :func:`semantic_may_have_committed`, which semantic services pass
-  once they probe on :class:`~notebooklm._backend.BackendError` records.
+  once they probe on :class:`~notebooklm._semantic.backend.BackendError` records.
 
 This module deliberately imports neither ``_idempotency`` (whose import seeds
 the ``RPCMethod``-keyed registry) nor anything under ``rpc``/``_web``, so a
@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Generic, TypeVar
 
-from ._backend import BackendError, may_have_committed
+from ._semantic.backend import BackendError, may_have_committed
 
 # The probe-then-retry log surface predates this module and is pinned by
 # callers and tests under the ``notebooklm._idempotency`` logger name.
@@ -119,7 +119,7 @@ CommitUncertaintyPredicate = Callable[[BaseException], bool]
 
 
 def semantic_may_have_committed(exc: BaseException) -> bool:
-    """Neutral predicate over :class:`~notebooklm._backend.BackendError` records.
+    """Neutral predicate over :class:`~notebooklm._semantic.backend.BackendError` records.
 
     Anything that is not a backend record — a cancellation, a contract error
     raised by the service itself — never triggers a probe.

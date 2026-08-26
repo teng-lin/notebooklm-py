@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, call
 import pytest
 
 from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.operations import Operation
+from notebooklm._semantic.records import (
     SOURCE_ADD_FILE_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
     SOURCE_DELETE_DEF,
@@ -38,7 +38,7 @@ from notebooklm._records import (
     SourceWaitSnapshotInput,
     SourceWaitSnapshotResult,
 )
-from notebooklm._source_service import SourceService
+from notebooklm._semantic.services.source import SourceService
 from notebooklm._sources import SourcesAPI
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.codec.sources import (

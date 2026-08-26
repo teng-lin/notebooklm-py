@@ -7,9 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm._note_service import NoteService
-from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.operations import Operation
+from notebooklm._semantic.records import (
     NOTE_CREATE_DEF,
     NOTE_DELETE_DEF,
     NOTE_GET_DEF,
@@ -27,6 +26,7 @@ from notebooklm._records import (
     NoteUpdateInput,
     NoteUpdateResult,
 )
+from notebooklm._semantic.services.note import NoteService
 from tests._fixtures.recording_backend import BackendInvocation, RecordingBackend
 
 
@@ -75,7 +75,14 @@ async def test_note_service_uses_only_typed_operations_and_returns_note_records(
 
 
 def test_semantic_note_service_class_is_transport_neutral() -> None:
-    path = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_note_service.py"
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "src"
+        / "notebooklm"
+        / "_semantic"
+        / "services"
+        / "note.py"
+    )
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     service = next(
         node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "NoteService"

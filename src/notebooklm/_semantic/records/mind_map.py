@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from ._operations import CallPolicy, Operation, OperationDef, OperationTier
+from ..operations import CallPolicy, Operation, OperationDef, OperationTier
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +91,7 @@ class MindMapGenerateNoteInput:
     ``source_ids`` and ``language`` are both required.  "No scope given means
     every source in the notebook" and "no language given means the environment
     default" are service-level defaults (P10 R5.1b, ADR-0035 addendum D1(a)):
-    :class:`~notebooklm._note_service.NoteService` and
+    :class:`~notebooklm._semantic.services.note.NoteService` and
     :class:`~notebooklm._studio.NoteBackedMindMapFamilyService` resolve both
     above the port, so the row never re-derives them below it.
     """

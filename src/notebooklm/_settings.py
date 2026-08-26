@@ -2,10 +2,10 @@
 
 import logging
 
-from ._backend import BackendAdapter
-from ._backend_compat import project_backend_call
-from ._projectors import project_account_limits, project_user_settings
-from ._settings_service import SettingsService
+from ._semantic.backend import BackendAdapter
+from ._semantic.compat import project_backend_call
+from ._semantic.projectors import project_account_limits, project_user_settings
+from ._semantic.services.settings import SettingsService
 from .types import AccountLimits, UserSettings
 
 logger = logging.getLogger(__name__)

@@ -7,13 +7,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._backend import BackendErrorReason
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._notebooks import NotebooksAPI
-from notebooklm._operations import Operation
-from notebooklm._projectors import project_notebook, project_source
-from notebooklm._read_services import NotebookReadService, SourceReadService
-from notebooklm._records import (
+from notebooklm._semantic.backend import BackendErrorReason
+from notebooklm._semantic.operations import Operation
+from notebooklm._semantic.projectors import project_notebook, project_source
+from notebooklm._semantic.records import (
     NOTEBOOK_GET_DEF,
     NOTEBOOK_LIST_DEF,
     SOURCE_GET_DEF,
@@ -32,6 +31,7 @@ from notebooklm._records import (
     SourceListResult,
     SourceRecord,
 )
+from notebooklm._semantic.services.read import NotebookReadService, SourceReadService
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import NetworkError
 from notebooklm.types import (

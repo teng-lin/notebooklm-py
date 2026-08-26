@@ -21,8 +21,14 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from ..._binding import CodecPayload
-from ..._records import (
+from ..._research_neutral import (
+    RESEARCH_SOURCE_TYPE_DRIVE,
+    RESEARCH_SOURCE_TYPE_WEB,
+    decode_research_task_records,
+)
+from ..._row_adapters.research import ImportedSourceRow, ResearchStartRow, unwrap_import_rows
+from ..._semantic.binding import CodecPayload
+from ..._semantic.records import (
     ResearchCancelInput,
     ResearchCancelResult,
     ResearchImportedSourceRecord,
@@ -38,12 +44,6 @@ from ..._records import (
     ResearchStartResult,
     ResearchTaskRecord,
 )
-from ..._research_neutral import (
-    RESEARCH_SOURCE_TYPE_DRIVE,
-    RESEARCH_SOURCE_TYPE_WEB,
-    decode_research_task_records,
-)
-from ..._row_adapters.research import ImportedSourceRow, ResearchStartRow, unwrap_import_rows
 from ...exceptions import DecodingError
 
 _SEARCH_SOURCE_CODES = {

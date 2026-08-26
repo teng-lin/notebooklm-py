@@ -19,16 +19,16 @@ from typing import Any
 
 import pytest
 
-from notebooklm._backend import (
+from notebooklm._deadline import RuntimeDeadline
+from notebooklm._semantic.backend import (
     BackendDeadlineExceededError,
     BackendError,
     BackendErrorReason,
     may_have_committed,
 )
-from notebooklm._binding import CodecBinding, CodecPayload, CustomBinding, DeadlineMode
-from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.binding import CodecBinding, CodecPayload, CustomBinding, DeadlineMode
+from notebooklm._semantic.operations import Operation
+from notebooklm._semantic.records import (
     SOURCE_CHECK_FRESHNESS_DEF,
     SOURCE_DELETE_DEF,
     SOURCE_GET_DEF,
@@ -48,7 +48,7 @@ from notebooklm._records import (
     SourceRefreshResult,
     SourceWaitSnapshotInput,
 )
-from notebooklm._source_service import SourceService
+from notebooklm._semantic.services.source import SourceService
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import sources as source_rows

@@ -5,10 +5,9 @@ from __future__ import annotations
 import json
 from collections.abc import Awaitable, Callable
 
-from .._backend import BackendAdapter
 from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from .._read_services import NotebookReadService
-from .._records import (
+from .._semantic.backend import BackendAdapter
+from .._semantic.records import (
     MIND_MAP_DELETE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
     MIND_MAP_GET_DEF,
@@ -22,6 +21,7 @@ from .._records import (
     MindMapUpdateInput,
     SourceIdDiagnostics,
 )
+from .._semantic.services.read import NotebookReadService
 from .catalog import StudioCatalog
 
 WaitForCompletion = Callable[[str, str], Awaitable[object]]

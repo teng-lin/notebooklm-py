@@ -8,11 +8,11 @@ from typing import Any
 
 import httpx
 
-from .._backend_compat import project_local_not_found
-from .._operations import Operation
-from .._projectors import project_artifact
 from .._row_adapters.artifacts import ArtifactRow
 from .._row_adapters.notes import NoteRow
+from .._semantic.compat import project_local_not_found
+from .._semantic.operations import Operation
+from .._semantic.projectors import project_artifact
 from .._web.codec.artifacts import decode_artifact, decode_mind_map_artifact
 from ..exceptions import DecodingError
 from ..rpc import (

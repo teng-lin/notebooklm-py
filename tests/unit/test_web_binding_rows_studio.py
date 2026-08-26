@@ -17,17 +17,17 @@ from typing import Any
 
 import pytest
 
-from notebooklm._backend import (
+from notebooklm._deadline import RuntimeDeadline
+from notebooklm._semantic.backend import (
     BackendContractError,
     BackendDeadlineExceededError,
     BackendError,
     BackendErrorReason,
     may_have_committed,
 )
-from notebooklm._binding import CodecBinding, DeadlineMode, RpcNative
-from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.binding import CodecBinding, DeadlineMode, RpcNative
+from notebooklm._semantic.operations import Operation
+from notebooklm._semantic.records import (
     ARTIFACT_CATALOG_DEF,
     ARTIFACT_DELETE_DEF,
     ARTIFACT_DOWNLOAD_DEF,

@@ -32,18 +32,18 @@ import pytest
 from scripts._web_policy_intent import SERVICE_OWNED_WORKFLOW_BINDINGS
 from scripts.audit_operation_catalog import derive_workflow_natives
 
-from notebooklm._backend import (
+from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
+from notebooklm._semantic.backend import (
     BackendDeadlineExceededError,
     BackendError,
     BackendErrorReason,
     UnsupportedOperationError,
     may_have_committed,
 )
-from notebooklm._backend_compat import project_backend_error
-from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
-from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.operations import Operation
+from notebooklm._semantic.records import (
     SOURCE_ADD_URL_DEF,
     SOURCE_GET_DEF,
     SOURCE_LIST_DEF,
@@ -63,8 +63,8 @@ from notebooklm._records import (
     SourceRegisterKind,
     SourceRegisterResult,
 )
+from notebooklm._semantic.services.source import SourceService
 from notebooklm._source.upload_payloads import build_template_block
-from notebooklm._source_service import SourceService
 from notebooklm._web.deadlines import SEMANTIC_DEADLINE_AUTHORITIES
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SERVICE_OWNED_OPERATIONS
 from notebooklm.exceptions import (
@@ -873,7 +873,7 @@ def test_only_rpc_and_network_shaped_reasons_are_swallowed_by_the_rename() -> No
     Every member must replay as one of those two families, or the non-fatal
     title phase would be absorbing a failure the caller needed to see.
     """
-    from notebooklm._source_add_reports import RENAME_SWALLOWED_REASONS
+    from notebooklm._semantic.services.source_add_reports import RENAME_SWALLOWED_REASONS
 
     # The two not-found reasons name their subject in diagnostics; the rest
     # project from the reason alone.

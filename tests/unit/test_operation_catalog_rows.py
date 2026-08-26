@@ -11,15 +11,15 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from notebooklm._operations import Operation
+from notebooklm._semantic.operations import Operation
 from notebooklm.rpc import RPCMethod
 from scripts import _operation_catalog_ast as catalog_ast
 from scripts import audit_operation_catalog as catalog
 
 _ROW_MODULE = """
-from notebooklm._binding import BindingTable, CodecBinding, CustomBinding, NativeCallSpec, RpcNative
-from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.binding import BindingTable, CodecBinding, CustomBinding, NativeCallSpec, RpcNative
+from notebooklm._semantic.operations import Operation
+from notebooklm._semantic.records import (
     LABEL_UPDATE_DEF,
     NOTE_GET_DEF,
     NOTE_LIST_DEF,

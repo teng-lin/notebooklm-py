@@ -28,18 +28,18 @@ import pytest
 from scripts._web_policy_intent import SERVICE_OWNED_WORKFLOW_BINDINGS
 from scripts.audit_operation_catalog import derive_workflow_natives
 
-from notebooklm._backend import (
+from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
+from notebooklm._semantic.backend import (
     BackendDeadlineExceededError,
     BackendError,
     BackendErrorReason,
     UnsupportedOperationError,
     may_have_committed,
 )
-from notebooklm._backend_compat import project_backend_error
-from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
-from notebooklm._operations import Operation
-from notebooklm._records import (
+from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.operations import Operation
+from notebooklm._semantic.records import (
     SOURCE_ADD_TEXT_DEF,
     SOURCE_REGISTER_DEF,
     SourceAddFailureKind,
@@ -50,7 +50,7 @@ from notebooklm._records import (
     SourceRegisterKind,
     SourceRegisterResult,
 )
-from notebooklm._source_service import SourceService
+from notebooklm._semantic.services.source import SourceService
 from notebooklm._web.deadlines import SEMANTIC_DEADLINE_AUTHORITIES
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SERVICE_OWNED_OPERATIONS
 from notebooklm.exceptions import (
@@ -354,7 +354,7 @@ def test_only_the_residual_rpc_family_is_wrapped() -> None:
     to ``_source_add_reports`` with the rest of the shared failure vocabulary
     as ``add_drive`` became the third workflow to share it.
     """
-    from notebooklm._source_add_reports import WRAPPED_REGISTRATION_FAILURE_KINDS
+    from notebooklm._semantic.services.source_add_reports import WRAPPED_REGISTRATION_FAILURE_KINDS
 
     assert {
         SourceAddFailureKind.RPC,

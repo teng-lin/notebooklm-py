@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from ..._binding import CodecPayload
-from ..._records import (
+from ..._semantic.binding import CodecPayload
+from ..._semantic.records import (
     AccountLimitsRecord,
     SettingsGetInput,
     SettingsGetLimitsInput,

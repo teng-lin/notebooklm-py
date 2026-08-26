@@ -7,9 +7,9 @@ import json
 from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Any, TypeVar
 
-from ._backend_compat import project_backend_call
 from ._lookup import unwrap_or_raise
-from ._projectors import project_artifact, project_mind_map
+from ._semantic.compat import project_backend_call
+from ._semantic.projectors import project_artifact, project_mind_map
 from ._types.mind_maps import MindMap, MindMapKind
 from ._web.codec.mind_maps import (
     decode_created_interactive_id,
@@ -18,8 +18,8 @@ from ._web.codec.mind_maps import (
 from .exceptions import MindMapNotFoundError
 
 if TYPE_CHECKING:
-    from ._note_service import NoteService
-    from ._records import ArtifactRecord, MindMapGenerateOutcomeRecord
+    from ._semantic.records import ArtifactRecord, MindMapGenerateOutcomeRecord
+    from ._semantic.services.note import NoteService
     from ._studio import MindMapFamilyService
 
 _T = TypeVar("_T")

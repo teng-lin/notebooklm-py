@@ -134,9 +134,9 @@ def test_delete_copies_the_id_list() -> None:
 
 
 def test_row_payloads_for_source_labels_carry_the_notebook_route() -> None:
-    from notebooklm._backend import BackendContractError
-    from notebooklm._binding import CodecPayload
-    from notebooklm._records import (
+    from notebooklm._semantic.backend import BackendContractError
+    from notebooklm._semantic.binding import CodecPayload
+    from notebooklm._semantic.records import (
         LabelDeleteInput,
         LabelGenerateInput,
         LabelGetInput,
@@ -180,8 +180,13 @@ def test_row_payloads_for_source_labels_carry_the_notebook_route() -> None:
 
 
 def test_row_payloads_for_collections_carry_the_account_route() -> None:
-    from notebooklm._binding import CodecPayload
-    from notebooklm._records import LabelDeleteInput, LabelGetInput, LabelKind, LabelListInput
+    from notebooklm._semantic.binding import CodecPayload
+    from notebooklm._semantic.records import (
+        LabelDeleteInput,
+        LabelGetInput,
+        LabelKind,
+        LabelListInput,
+    )
     from notebooklm._web.codec.labels import (
         _collection_opts,
         encode_collection_delete,

@@ -14,9 +14,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from ..._binding import Binding, CodecBinding, NativeCallSpec
-from ..._operations import Operation
-from ..._records import (
+from ..._semantic.binding import Binding, CodecBinding, NativeCallSpec
+from ..._semantic.operations import Operation
+from ..._semantic.records import (
     LEGACY_SHARE_ARTIFACT_DEF,
     SHARING_GET_DEF,
 )

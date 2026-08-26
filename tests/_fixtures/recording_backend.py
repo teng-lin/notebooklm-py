@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TypeVar, cast
 
-from notebooklm._backend import (
+from notebooklm._deadline import RuntimeDeadline
+from notebooklm._semantic.backend import (
     BackendCapabilities,
     BackendContractError,
     BackendDeadlineExceededError,
@@ -16,9 +17,8 @@ from notebooklm._backend import (
     BackendKind,
     UnsupportedOperationError,
 )
-from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import Operation, OperationDef
-from notebooklm._records import (
+from notebooklm._semantic.operations import Operation, OperationDef
+from notebooklm._semantic.records import (
     ARTIFACT_CATALOG_DEF,
     MIND_MAP_LIST_DEF,
     ArtifactCatalogResult,

@@ -18,21 +18,21 @@ from typing import Any
 
 import pytest
 
-from notebooklm._backend import (
-    BackendDeadlineExceededError,
-    BackendError,
-    BackendErrorReason,
-    may_have_committed,
-)
-from notebooklm._binding import CodecBinding, CodecPayload, DeadlineMode
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._notebook_payloads import (
     build_create_notebook_params,
     build_get_notebook_params,
     build_update_notebook_params,
 )
-from notebooklm._operations import CallPolicy, Operation
-from notebooklm._records import (
+from notebooklm._semantic.backend import (
+    BackendDeadlineExceededError,
+    BackendError,
+    BackendErrorReason,
+    may_have_committed,
+)
+from notebooklm._semantic.binding import CodecBinding, CodecPayload, DeadlineMode
+from notebooklm._semantic.operations import CallPolicy, Operation
+from notebooklm._semantic.records import (
     NOTEBOOK_ALLOCATE_DEF,
     NOTEBOOK_DELETE_DEF,
     NOTEBOOK_DESCRIBE_DEF,

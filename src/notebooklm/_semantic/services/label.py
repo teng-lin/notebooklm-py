@@ -26,7 +26,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
-from ._backend import (
+from ..._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from ..backend import (
     BackendAdapter,
     BackendContractError,
     BackendDeadlineExceededError,
@@ -36,9 +37,8 @@ from ._backend import (
     rebind_operation,
     require_leaves,
 )
-from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from ._operations import OperationDef
-from ._records import (
+from ..operations import OperationDef
+from ..records import (
     COLLECTION_CREATE_DEF,
     COLLECTION_DELETE_DEF,
     COLLECTION_GET_DEF,

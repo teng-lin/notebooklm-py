@@ -6,8 +6,8 @@ import builtins
 from collections.abc import Awaitable, Callable, Collection, Sequence
 from typing import TypeVar
 
-from .._projectors import project_source
-from .._records import SourceRecord
+from .._semantic.projectors import project_source
+from .._semantic.records import SourceRecord
 from ..rpc.types import SourceStatus
 from ..types import Source, SourceType
 

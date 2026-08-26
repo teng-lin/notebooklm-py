@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum, unique
 from typing import Final
 
-from ._operations import CallPolicy, Operation, OperationDef
+from ..operations import CallPolicy, Operation, OperationDef
 
 
 @dataclass(frozen=True, slots=True)

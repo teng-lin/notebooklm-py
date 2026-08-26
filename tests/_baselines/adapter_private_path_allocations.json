@@ -246,28 +246,28 @@
       ]
     },
     {
-      "private_model": "notebooklm._chat_records.ChatAskOutcomeRecord",
+      "private_model": "notebooklm._semantic.records.chat.ChatAskOutcomeRecord",
       "field_path": "result.answer_document",
       "public_model": "notebooklm._types.documents.StructuredDocument",
       "projection_ids": ["cli.StructuredDocument.transitive-chat-reference-full-contribution", "mcp.StructuredDocument.transitive-chat-reference-full-contribution", "rest.StructuredDocument.transitive-chat-reference-full-contribution"],
       "terminal_locators": ["cli --json|notebooklm/cli/chat_cmd.py|register_chat_commands.ask_cmd._run|json_output_response|1", "mcp tool result|notebooklm/mcp/tools/chat.py|register.chat_ask|return|1", "rest response|notebooklm/server/routes/chat.py|ask|return|1"]
     },
     {
-    "private_model": "notebooklm._chat_records.ChatAskResultRecord",
+    "private_model": "notebooklm._semantic.records.chat.ChatAskResultRecord",
       "field_path": "answer_document",
       "public_model": "notebooklm._types.documents.StructuredDocument",
       "projection_ids": ["cli.StructuredDocument.transitive-chat-reference-full-contribution", "mcp.StructuredDocument.transitive-chat-reference-full-contribution", "rest.StructuredDocument.transitive-chat-reference-full-contribution"],
       "terminal_locators": ["cli --json|notebooklm/cli/chat_cmd.py|register_chat_commands.ask_cmd._run|json_output_response|1", "mcp tool result|notebooklm/mcp/tools/chat.py|register.chat_ask|return|1", "rest response|notebooklm/server/routes/chat.py|ask|return|1"]
     },
     {
-    "private_model": "notebooklm._chat_records.ChatStreamAnswerRecord",
+    "private_model": "notebooklm._semantic.records.chat.ChatStreamAnswerRecord",
       "field_path": "answer_document",
       "public_model": "notebooklm._types.documents.StructuredDocument",
       "projection_ids": ["cli.StructuredDocument.transitive-chat-reference-full-contribution", "mcp.StructuredDocument.transitive-chat-reference-full-contribution", "rest.StructuredDocument.transitive-chat-reference-full-contribution"],
       "terminal_locators": ["cli --json|notebooklm/cli/chat_cmd.py|register_chat_commands.ask_cmd._run|json_output_response|1", "mcp tool result|notebooklm/mcp/tools/chat.py|register.chat_ask|return|1", "rest response|notebooklm/server/routes/chat.py|ask|return|1"]
     },
     {
-      "private_model": "notebooklm._chat_records.ChatStreamResult",
+      "private_model": "notebooklm._semantic.records.chat.ChatStreamResult",
       "field_path": "answer.answer_document",
       "public_model": "notebooklm._types.documents.StructuredDocument",
       "projection_ids": ["cli.StructuredDocument.transitive-chat-reference-full-contribution", "mcp.StructuredDocument.transitive-chat-reference-full-contribution", "rest.StructuredDocument.transitive-chat-reference-full-contribution"],
@@ -314,14 +314,14 @@
       "terminal_locators": ["mcp tool result|notebooklm/mcp/tools/sources.py|register.source_add|return|1", "rest response|notebooklm/server/routes/sources.py|add_batch|return|1"]
     },
     {
-      "private_model": "notebooklm._source_records.SourceFulltextRecord",
+      "private_model": "notebooklm._semantic.records.source.SourceFulltextRecord",
       "field_path": "document",
       "public_model": "notebooklm._types.documents.StructuredDocument",
       "unreachable_category": "adapter-dropped-public-field",
       "review_note": "The neutral full-text record carries StructuredDocument into public SourceFulltext, but CLI serialization selects scalar full-text fields and the shared MCP/REST read core selects only content and char_count; no adapter emits the document field.",
       "source_evidence": [
         {
-          "symbol": "notebooklm._projectors.project_source_fulltext",
+          "symbol": "notebooklm._semantic.projectors.project_source_fulltext",
           "required_ast_fragments": ["document=record.document"],
           "semantic_fingerprint": "sha256:9159b7f807076d02138c0c7f34171de13f39bdc53fddfcb8d0671ad99d1e4f2e"
         },
@@ -338,14 +338,14 @@
       ]
     },
     {
-      "private_model": "notebooklm._source_records.SourceFulltextResult",
+      "private_model": "notebooklm._semantic.records.source.SourceFulltextResult",
       "field_path": "fulltext.document",
       "public_model": "notebooklm._types.documents.StructuredDocument",
       "unreachable_category": "adapter-dropped-public-field",
       "review_note": "The semantic full-text result forwards its nested StructuredDocument into public SourceFulltext, but CLI serialization and the shared MCP/REST read core consume only scalar content metadata and never serialize the nested document.",
       "source_evidence": [
         {
-          "symbol": "notebooklm._projectors.project_source_fulltext",
+          "symbol": "notebooklm._semantic.projectors.project_source_fulltext",
           "required_ast_fragments": ["document=record.document"],
           "semantic_fingerprint": "sha256:9159b7f807076d02138c0c7f34171de13f39bdc53fddfcb8d0671ad99d1e4f2e"
         },

@@ -30,8 +30,8 @@ import pytest
 from scripts._operation_catalog_specs import OPERATION_SPECS
 from scripts.audit_operation_catalog import operation_tier, product_operations
 
-import notebooklm._records as records_module
-from notebooklm._operations import Operation, OperationDef, OperationTier
+import notebooklm._semantic.records as records_module
+from notebooklm._semantic.operations import Operation, OperationDef, OperationTier
 
 pytestmark = pytest.mark.repo_lint
 

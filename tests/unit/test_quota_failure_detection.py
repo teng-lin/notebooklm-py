@@ -41,8 +41,8 @@ import pytest
 
 from notebooklm._app.generate_retry import generation_outcome_from_status
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._backend import BackendAdapter
-from notebooklm._records import (
+from notebooklm._semantic.backend import BackendAdapter
+from notebooklm._semantic.records import (
     ARTIFACT_WAIT_DEF,
     ArtifactPollResult,
     GenerationStatusRecord,

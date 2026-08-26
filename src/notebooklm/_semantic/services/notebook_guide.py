@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from ._backend import BackendAdapter
-from ._deadline import RuntimeDeadline
-from ._records import (
+from ..._deadline import RuntimeDeadline
+from ..backend import BackendAdapter
+from ..records import (
     NOTEBOOK_DESCRIBE_DEF,
     NOTEBOOK_SUMMARIZE_DEF,
     NotebookDescriptionRecord,

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import builtins
 
-from ._backend import BackendAdapter
-from ._deadline import RuntimeDeadline
-from ._records import (
+from ..._deadline import RuntimeDeadline
+from ..backend import BackendAdapter
+from ..records import (
     NOTEBOOK_GET_DEF,
     NOTEBOOK_LIST_DEF,
     SOURCE_GET_DEF,

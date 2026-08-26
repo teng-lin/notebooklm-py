@@ -26,18 +26,17 @@ from typing import Any
 
 import pytest
 
-from notebooklm._backend import (
+from notebooklm._deadline import RuntimeDeadline
+from notebooklm._notebook_payloads import build_get_notebook_params
+from notebooklm._semantic.backend import (
     BackendDeadlineExceededError,
     BackendError,
     BackendErrorReason,
     may_have_committed,
 )
-from notebooklm._binding import CodecBinding, CustomBinding, RpcNative
-from notebooklm._deadline import RuntimeDeadline
-from notebooklm._notebook_payloads import build_get_notebook_params
-from notebooklm._operations import Operation
-from notebooklm._read_services import NotebookReadService
-from notebooklm._records import (
+from notebooklm._semantic.binding import CodecBinding, CustomBinding, RpcNative
+from notebooklm._semantic.operations import Operation
+from notebooklm._semantic.records import (
     ARTIFACT_GENERATE_AUDIO_DEF,
     ARTIFACT_GENERATE_DATA_TABLE_DEF,
     ARTIFACT_GENERATE_FLASHCARDS_DEF,
@@ -58,6 +57,7 @@ from notebooklm._records import (
     SourceIdDiagnostics,
     VideoGenerateInput,
 )
+from notebooklm._semantic.services.read import NotebookReadService
 from notebooklm._studio import (
     DataTableFamilyService,
     StudioCatalog,

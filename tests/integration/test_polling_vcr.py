@@ -78,7 +78,7 @@ import pytest
 import yaml
 
 from notebooklm import NotebookLMClient
-from notebooklm._records import ARTIFACT_CATALOG_DEF, ArtifactCatalogResult, ArtifactRecord
+from notebooklm._semantic.records import ARTIFACT_CATALOG_DEF, ArtifactCatalogResult, ArtifactRecord
 from notebooklm.rpc import RPCMethod
 from tests.integration.conftest import get_vcr_auth, skip_no_cassettes
 from tests.vcr_config import notebooklm_vcr

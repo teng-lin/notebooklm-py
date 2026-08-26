@@ -9,8 +9,8 @@ cannot silently change what reaches the transport.
 
 from __future__ import annotations
 
-from notebooklm._binding import CodecPayload
-from notebooklm._records import (
+from notebooklm._semantic.binding import CodecPayload
+from notebooklm._semantic.records import (
     ResearchCancelInput,
     ResearchCancelResult,
     ResearchImportEntry,

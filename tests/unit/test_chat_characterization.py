@@ -19,7 +19,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
-from notebooklm._records import CHAT_GET_HISTORY_DEF, ChatGetHistoryInput
+from notebooklm._semantic.records import CHAT_GET_HISTORY_DEF, ChatGetHistoryInput
 from notebooklm._web.codec.chat_stream import (
     extract_answer_and_refs_from_chunk,
     extract_text_passages,

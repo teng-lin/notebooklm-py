@@ -16,9 +16,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from ..._binding import Binding, CodecBinding, NativeCallSpec
-from ..._operations import Operation
-from ..._records import (
+from ..._semantic.binding import Binding, CodecBinding, NativeCallSpec
+from ..._semantic.operations import Operation
+from ..._semantic.records import (
     ARTIFACT_SUGGEST_REPORTS_DEF,
     NOTEBOOK_SUGGEST_PROMPTS_DEF,
     SETTINGS_GET_DEF,

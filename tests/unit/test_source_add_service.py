@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._app import source_add as cli_source_add
-from notebooklm._records import (
+from notebooklm._semantic.records import (
     SourceAddCommitState,
     SourceAddDriveResult,
     SourceAddTextResult,

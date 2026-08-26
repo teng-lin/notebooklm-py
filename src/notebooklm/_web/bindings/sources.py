@@ -43,8 +43,9 @@ from dataclasses import replace
 from types import MappingProxyType
 from typing import Any
 
-from ..._backend import BackendContractError, BackendError, BackendErrorReason
-from ..._binding import (
+from ..._deadline import RuntimeDeadline
+from ..._semantic.backend import BackendContractError, BackendError, BackendErrorReason
+from ..._semantic.binding import (
     Binding,
     CodecBinding,
     CodecPayload,
@@ -53,10 +54,9 @@ from ..._binding import (
     NativeCallSpec,
     RowInvoker,
 )
-from ..._deadline import RuntimeDeadline
-from ..._operations import Operation
-from ..._projectors import project_source
-from ..._records import (
+from ..._semantic.operations import Operation
+from ..._semantic.projectors import project_source
+from ..._semantic.records import (
     SOURCE_ADD_FILE_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
     SOURCE_DELETE_DEF,
