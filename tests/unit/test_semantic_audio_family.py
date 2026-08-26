@@ -11,6 +11,7 @@ import pytest
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import CallPolicy, Operation
+from notebooklm._read_services import NotebookReadService
 from notebooklm._records import (
     ARTIFACT_GENERATE_AUDIO_DEF,
     ARTIFACT_GET_DEF,
@@ -20,12 +21,22 @@ from notebooklm._records import (
     ArtifactMediaRecord,
     ArtifactRecord,
     AudioGenerateInput,
+    AudioGenerateRequest,
     AudioGenerateResult,
     AudioMetadataRecord,
     GenerationStatusRecord,
 )
-from notebooklm._studio import AudioFamilyService, StudioCatalog
+from notebooklm._studio import (
+    AudioFamilyService,
+    StudioCatalog,
+    StudioGenerationInputs,
+)
 from tests._fixtures.recording_backend import RecordingBackend
+
+
+def _generation_inputs(backend: RecordingBackend) -> StudioGenerationInputs:
+    """The R5.1a resolver every generate family now takes."""
+    return StudioGenerationInputs(NotebookReadService(backend))
 
 
 def _audio(
@@ -93,15 +104,17 @@ async def test_audio_generate_records_deadline_and_neutral_options() -> None:
         ARTIFACT_GENERATE_AUDIO_DEF,
         AudioGenerateResult(GenerationStatusRecord("task", "pending")),
     )
-    service = AudioFamilyService(backend, StudioCatalog(backend))
+    service = AudioFamilyService(backend, StudioCatalog(backend), _generation_inputs(backend))
     deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: 11.0)
-    value = AudioGenerateInput("nb", ("src",), "en", "Focus", "brief", "short")
+    request = AudioGenerateRequest("nb", ("src",), "en", "Focus", "brief", "short")
 
-    result = await service.generate(value, deadline=deadline)
+    result = await service.generate(request, deadline=deadline)
 
     assert result.status.task_id == "task"
     assert backend.invocations[0].operation is Operation.ARTIFACT_GENERATE_AUDIO
-    assert backend.invocations[0].value == value
+    assert backend.invocations[0].value == AudioGenerateInput(
+        "nb", ("src",), "en", "Focus", "brief", "short"
+    )
     assert backend.invocations[0].deadline is deadline
 
 
@@ -110,7 +123,7 @@ async def test_audio_get_reuses_one_catalog_fetch_and_rejects_other_family() -> 
     audio = _audio("audio")
     backend = RecordingBackend()
     backend.set_result(ARTIFACT_GET_DEF, ArtifactGetResult(audio))
-    service = AudioFamilyService(backend, StudioCatalog(backend))
+    service = AudioFamilyService(backend, StudioCatalog(backend), _generation_inputs(backend))
 
     assert await service.get("nb", "audio") == audio
     assert len(backend.invocations) == 1
@@ -120,7 +133,9 @@ async def test_audio_get_reuses_one_catalog_fetch_and_rejects_other_family() -> 
         ARTIFACT_GET_DEF,
         ArtifactGetResult(ArtifactRecord("report", "Report", "report", "completed")),
     )
-    report_service = AudioFamilyService(report_backend, StudioCatalog(report_backend))
+    report_service = AudioFamilyService(
+        report_backend, StudioCatalog(report_backend), _generation_inputs(report_backend)
+    )
     assert await report_service.get("nb", "report") is None
 
 
@@ -136,7 +151,7 @@ async def test_audio_catalog_and_download_metadata_use_exact_recency() -> None:
     )
     backend = RecordingBackend()
     backend.set_result(ARTIFACT_LIST_DEF, ArtifactListResult((older, newer)))
-    service = AudioFamilyService(backend, StudioCatalog(backend))
+    service = AudioFamilyService(backend, StudioCatalog(backend), _generation_inputs(backend))
 
     latest = await service.select_download("nb", None)
     empty_id = await service.select_download("nb", "")
@@ -166,7 +181,9 @@ async def test_audio_latest_selection_preserves_legacy_seconds_precision_and_sta
     backend = RecordingBackend()
     backend.set_result(ARTIFACT_LIST_DEF, ArtifactListResult((first, second)))
 
-    selected = await AudioFamilyService(backend, StudioCatalog(backend)).select_download("nb", None)
+    selected = await AudioFamilyService(
+        backend, StudioCatalog(backend), _generation_inputs(backend)
+    ).select_download("nb", None)
 
     assert selected is not None and selected.artifact_id == "first"
 

@@ -20,7 +20,6 @@ from ..._row_adapters.artifacts import (
 )
 from ..._row_adapters.notebooks import PromptSuggestionRow, unwrap_prompt_suggestions
 from ...rpc import RPCMethod, nest_source_ids
-from .source_ids import SourceIdDiagnostics, decode_notebook_source_ids
 
 
 def _prompt_suggestions_client_context() -> list[Any]:
@@ -63,13 +62,6 @@ def encode_artifact_suggest_reports(value: ArtifactSuggestReportsInput) -> Codec
         params=encode_report_suggestions(value.notebook_id),
         source_path=f"/notebook/{value.notebook_id}",
         allow_null=True,
-    )
-
-
-def decode_prompt_source_ids(data: Any, *, notebook_id: str) -> tuple[str, ...]:
-    """Decode the embedded source ids with the legacy tolerant (guarded) diagnostics."""
-    return decode_notebook_source_ids(
-        data, notebook_id=notebook_id, diagnostics=SourceIdDiagnostics.GUARDED
     )
 
 
@@ -152,7 +144,6 @@ def decode_artifact_suggest_reports(
 __all__ = [
     "decode_artifact_suggest_reports",
     "decode_notebook_suggest_prompts",
-    "decode_prompt_source_ids",
     "decode_prompt_suggestions",
     "decode_report_suggestions",
     "encode_artifact_suggest_reports",

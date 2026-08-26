@@ -29,6 +29,7 @@ from ._mind_map import NoteBackedMindMapService
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
 from ._projectors import project_artifact, project_generation_status, project_report_suggestion
+from ._read_services import NotebookReadService
 from ._records import (
     ArtifactDeleteInput,
     ArtifactRecord,
@@ -51,6 +52,7 @@ from ._studio import (
     ReportFamilyService,
     ReportSuggestionService,
     StudioCatalog,
+    StudioGenerationInputs,
     StudioManagementService,
     VideoFamilyService,
     VisualFamilyService,
@@ -155,9 +157,16 @@ class ArtifactsAPI:
         self._mind_maps = mind_maps
         self._backend = _backend
         self._catalog = StudioCatalog(_backend) if _backend is not None else None
+        # R5.1a: the generate families take pre-resolved inputs, so the source-set
+        # and language defaults are resolved here, above the port.
+        self._generation_inputs = (
+            StudioGenerationInputs(NotebookReadService(_backend)) if _backend is not None else None
+        )
         self._data_tables = (
-            DataTableFamilyService(_backend, self._catalog)
-            if _backend is not None and self._catalog is not None
+            DataTableFamilyService(_backend, self._catalog, self._generation_inputs)
+            if _backend is not None
+            and self._catalog is not None
+            and self._generation_inputs is not None
             else None
         )
         self._mind_map_family = (
@@ -167,28 +176,38 @@ class ArtifactsAPI:
         )
         self._drive_exports = DriveExportService(_backend) if _backend is not None else None
         self._audio = (
-            AudioFamilyService(_backend, self._catalog)
-            if _backend is not None and self._catalog is not None
+            AudioFamilyService(_backend, self._catalog, self._generation_inputs)
+            if _backend is not None
+            and self._catalog is not None
+            and self._generation_inputs is not None
             else None
         )
         self._interactive = (
-            InteractiveFamilyService(_backend, self._catalog)
-            if _backend is not None and self._catalog is not None
+            InteractiveFamilyService(_backend, self._catalog, self._generation_inputs)
+            if _backend is not None
+            and self._catalog is not None
+            and self._generation_inputs is not None
             else None
         )
         self._video = (
-            VideoFamilyService(_backend, self._catalog)
-            if _backend is not None and self._catalog is not None
+            VideoFamilyService(_backend, self._catalog, self._generation_inputs)
+            if _backend is not None
+            and self._catalog is not None
+            and self._generation_inputs is not None
             else None
         )
         self._reports = (
-            ReportFamilyService(_backend, self._catalog)
-            if _backend is not None and self._catalog is not None
+            ReportFamilyService(_backend, self._catalog, self._generation_inputs)
+            if _backend is not None
+            and self._catalog is not None
+            and self._generation_inputs is not None
             else None
         )
         self._visuals = (
-            VisualFamilyService(_backend, self._catalog)
-            if _backend is not None and self._catalog is not None
+            VisualFamilyService(_backend, self._catalog, self._generation_inputs)
+            if _backend is not None
+            and self._catalog is not None
+            and self._generation_inputs is not None
             else None
         )
         self._poll_registry = PollRegistry()

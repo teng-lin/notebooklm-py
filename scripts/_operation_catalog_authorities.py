@@ -153,6 +153,9 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
     ),
 }
 
+#: The typed notebook read every service-owned default-source resolution runs.
+_GET_TYPED = "_web/bindings/notebooks.py:NOTEBOOK_GET"
+
 _GENERATION_OPERATIONS = {
     Operation.ARTIFACT_GENERATE_AUDIO: "artifact_type=audio",
     Operation.ARTIFACT_GENERATE_VIDEO: "artifact_type=video|cinematic-video",
@@ -164,10 +167,13 @@ _GENERATION_OPERATIONS = {
     Operation.ARTIFACT_GENERATE_DATA_TABLE: "artifact_type=data-table",
 }
 for _operation, _discriminator in _GENERATION_OPERATIONS.items():
-    # P9.4b: every generate family is a ``CustomBinding`` row whose two specs
-    # (``sources`` GET_NOTEBOOK, ``create`` CREATE_ARTIFACT) are the authorities.
+    # P10 R5.1a: each generate family is a one-native codec row over
+    # CREATE_ARTIFACT.  Its default-source read is the service's own
+    # ``NOTEBOOK_GET`` invocation, exactly as ``chat.ask``'s is — an end-to-end
+    # authority the row itself does not dispatch (see the spec's
+    # ``known_divergence``).
     _create_site = f"_web/bindings/studio.py:{_operation.name}"
-    _source_site = _create_site
+    _source_site = _GET_TYPED
     SHARED_RPC_AUTHORITY_RULES[(_operation, _b(RPCMethod.CREATE_ARTIFACT))] = _rules(
         (_create_site, _discriminator)
     )
@@ -333,7 +339,6 @@ class RecencyRule:
     authority_sites: tuple[str, ...] = ()
 
 
-_GET_TYPED = "_web/bindings/notebooks.py:NOTEBOOK_GET"
 _UPDATE_TYPED = "_web/bindings/notebooks.py:NOTEBOOK_GET"
 _GET_RAW = "_notebooks.py:NotebooksAPI.get_raw"
 _GET_SOURCES = "_web/bindings/sources.py:SOURCE_LIST"
@@ -546,11 +551,13 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
 }
 
 for _operation in (*_GENERATION_OPERATIONS, Operation.ARTIFACT_GENERATE_MIND_MAP):
-    # P9.4b: every generate row reads default sources through its own declared spec.
+    # The mind-map row still reads default sources through its own declared
+    # spec (R5.1b); since R5.1a the eight artifact families read through the
+    # service-owned ``NOTEBOOK_GET`` row instead.
     _recency_site = (
         "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP"
         if _operation is Operation.ARTIFACT_GENERATE_MIND_MAP
-        else f"_web/bindings/studio.py:{_operation.name}"
+        else _GET_TYPED
     )
     RECENCY_CONTRACTS[_operation] = (
         RecencyRule(

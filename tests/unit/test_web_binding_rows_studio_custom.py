@@ -1,15 +1,20 @@
-"""P9.4b: the Studio generate families as custom rows, plus prompt suggestions.
+"""The Studio generate rows and the prompt-suggestion row.
 
-The eight ``CREATE_ARTIFACT`` generate members dispatch as ``CustomBinding``
-rows exactly as the P5/P6 handlers did; ``NOTEBOOK_SUGGEST_PROMPTS`` became an
-ordinary single-native codec row in P10 R5.1c, once its default-source read
-moved above the port into ``SuggestionService``.  These tests pin the conversion oracles: the identical keyword set
-reaches the runtime for every phase (the conditional default-source read and
-the guarded kickoff), option validation rejects an
-unreviewed input before any native call, the null-kickoff projection is the
-closed unavailable error, failures stay tagged with the selected spec and carry
-the ``dispatched`` marker, the deadline projection is the handler's, and the
-collapsed source-id decoder preserves each family's warning surface.
+Since P10 R5.1a the eight ``CREATE_ARTIFACT`` generate members are ordinary
+single-native codec rows: ``_studio/generation.py`` resolves their source set,
+language and option vocabulary above the port (ADR-0035 addendum D1(a)), so
+each row is one guarded kickoff.  R5.1c did the same for
+``NOTEBOOK_SUGGEST_PROMPTS``: its default-source read moved above the port into
+``SuggestionService``, so no ``deferred-product`` row is left in this file.
+
+These tests pin the row-level oracles that survive those moves: the exact
+keyword set reaching the runtime, the null-kickoff projection as the closed
+unavailable error, failures tagged with the selected spec and carrying the
+``dispatched`` marker, the deadline projection across the service-owned read
+and the kickoff, and the source-id decoder's three diagnostics modes.  The
+*ordering* of validation against the default-source read, the warning surface
+of that read and both service-level defaults are pinned one layer up, in
+``tests/unit/test_semantic_studio_generation_characterization.py``.
 """
 
 from __future__ import annotations
@@ -22,7 +27,6 @@ from typing import Any
 import pytest
 
 from notebooklm._backend import (
-    BackendContractError,
     BackendDeadlineExceededError,
     BackendError,
     BackendErrorReason,
@@ -32,6 +36,7 @@ from notebooklm._binding import CodecBinding, CustomBinding, RpcNative
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._notebook_payloads import build_get_notebook_params
 from notebooklm._operations import Operation
+from notebooklm._read_services import NotebookReadService
 from notebooklm._records import (
     ARTIFACT_GENERATE_AUDIO_DEF,
     ARTIFACT_GENERATE_DATA_TABLE_DEF,
@@ -44,18 +49,25 @@ from notebooklm._records import (
     NOTEBOOK_SUGGEST_PROMPTS_DEF,
     AudioGenerateInput,
     DataTableGenerateInput,
+    DataTableGenerateRequest,
     InfographicGenerateInput,
     InteractiveGenerateInput,
     NotebookSuggestPromptsInput,
     ReportGenerateInput,
     SlideDeckGenerateInput,
+    SourceIdDiagnostics,
     VideoGenerateInput,
+)
+from notebooklm._studio import (
+    DataTableFamilyService,
+    StudioCatalog,
+    StudioGenerationInputs,
 )
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import settings as settings_rows
 from notebooklm._web.bindings import studio as studio_rows
-from notebooklm._web.codec.source_ids import SourceIdDiagnostics, decode_notebook_source_ids
+from notebooklm._web.codec.source_ids import decode_notebook_source_ids
 from notebooklm._web.codec.suggestions import encode_prompt_suggestions
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY
 from notebooklm.exceptions import RPCTimeoutError, ServerError
@@ -98,8 +110,9 @@ class _RecordingExecutor:
         return response
 
 
+#: ``(definition, resolved-input factory, artifact type)`` for the eight rows.
 _GENERATE_CASES = [
-    (ARTIFACT_GENERATE_AUDIO_DEF, lambda ids: AudioGenerateInput("nb", ids), "audio"),
+    (ARTIFACT_GENERATE_AUDIO_DEF, lambda ids: AudioGenerateInput("nb", ids, "en"), "audio"),
     (
         ARTIFACT_GENERATE_QUIZ_DEF,
         lambda ids: InteractiveGenerateInput("nb", ids, None, None, None),
@@ -110,21 +123,21 @@ _GENERATE_CASES = [
         lambda ids: InteractiveGenerateInput("nb", ids, None, None, None),
         "flashcards",
     ),
-    (ARTIFACT_GENERATE_REPORT_DEF, lambda ids: ReportGenerateInput("nb", source_ids=ids), "report"),
-    (ARTIFACT_GENERATE_VIDEO_DEF, lambda ids: VideoGenerateInput("nb", ids), "video"),
+    (ARTIFACT_GENERATE_REPORT_DEF, lambda ids: ReportGenerateInput("nb", ids, "en"), "report"),
+    (ARTIFACT_GENERATE_VIDEO_DEF, lambda ids: VideoGenerateInput("nb", ids, "en"), "video"),
     (
         ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
-        lambda ids: InfographicGenerateInput("nb", ids),
+        lambda ids: InfographicGenerateInput("nb", ids, "en"),
         "infographic",
     ),
     (
         ARTIFACT_GENERATE_SLIDE_DECK_DEF,
-        lambda ids: SlideDeckGenerateInput("nb", ids),
+        lambda ids: SlideDeckGenerateInput("nb", ids, "en"),
         "slide deck",
     ),
     (
         ARTIFACT_GENERATE_DATA_TABLE_DEF,
-        lambda ids: DataTableGenerateInput("nb", ids),
+        lambda ids: DataTableGenerateInput("nb", ids, "en"),
         "data table",
     ),
 ]
@@ -134,7 +147,8 @@ _GENERATE_IDS = [definition.key.value for definition, _factory, _kind in _GENERA
 # --- registry partition ----------------------------------------------------------
 
 
-def test_generate_families_are_deferred_product_custom_rows() -> None:
+def test_generate_families_are_single_native_codec_rows() -> None:
+    """R5.1a: pre-resolved inputs leave one guarded kickoff per family."""
     rows = {
         Operation.ARTIFACT_GENERATE_AUDIO: studio_rows.ARTIFACT_GENERATE_AUDIO,
         Operation.ARTIFACT_GENERATE_QUIZ: studio_rows.ARTIFACT_GENERATE_QUIZ,
@@ -150,14 +164,10 @@ def test_generate_families_are_deferred_product_custom_rows() -> None:
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.is_supported
         assert binding.row is row
-        assert isinstance(row, CustomBinding)
+        assert isinstance(row, CodecBinding)
         assert row.definition is binding.definition
-        assert row.category == "deferred-product"
-        assert row.justification.strip()
-        assert row.collaborators == ()
-        assert [spec.key for spec in row.native] == ["sources", "create"]
-        assert row.spec("sources").select(None) == RpcNative(RPCMethod.GET_NOTEBOOK)
-        assert row.spec("create").select(None) == RpcNative(RPCMethod.CREATE_ARTIFACT)
+        assert row.native.select(None) == RpcNative(RPCMethod.CREATE_ARTIFACT)
+        assert row.native.is_constant
 
 
 def test_suggest_prompts_is_a_single_native_codec_row_over_a_resolved_input() -> None:
@@ -215,19 +225,16 @@ def test_emptied_chain_classes_are_gone_and_the_chain_re_links() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("definition", "factory", "_kind"), _GENERATE_CASES, ids=_GENERATE_IDS)
-async def test_generate_rows_resolve_default_sources_then_kick_off(
+async def test_generate_rows_dispatch_one_guarded_kickoff(
     definition: Any, factory: Any, _kind: str
 ) -> None:
-    executor = _RecordingExecutor(_NOTEBOOK_WITH_SOURCES, _KICKOFF)
+    executor = _RecordingExecutor(_KICKOFF)
     backend = build_web_backend(executor)
 
-    result = await backend.invoke(definition, factory(None), deadline=None)
+    result = await backend.invoke(definition, factory(("src-a",)), deadline=None)
 
     assert (result.status.task_id, result.status.status) == ("task-id", "pending")
-    read, create = executor.calls
-    assert read.method is RPCMethod.GET_NOTEBOOK
-    assert read.params == build_get_notebook_params("nb")
-    assert read.kwargs == {**_BASE_KWARGS, "source_path": "/notebook/nb"}
+    (create,) = executor.calls
     assert create.method is RPCMethod.CREATE_ARTIFACT
     assert create.kwargs == {
         **_BASE_KWARGS,
@@ -235,19 +242,6 @@ async def test_generate_rows_resolve_default_sources_then_kick_off(
         "allow_null": True,
         "raise_on_null_status": True,
     }
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(("definition", "factory", "_kind"), _GENERATE_CASES, ids=_GENERATE_IDS)
-async def test_generate_rows_skip_the_read_when_sources_are_explicit(
-    definition: Any, factory: Any, _kind: str
-) -> None:
-    executor = _RecordingExecutor(_KICKOFF)
-    backend = build_web_backend(executor)
-
-    await backend.invoke(definition, factory(("src-a",)), deadline=None)
-
-    assert [call.method for call in executor.calls] == [RPCMethod.CREATE_ARTIFACT]
 
 
 @pytest.mark.asyncio
@@ -279,7 +273,7 @@ async def test_null_task_id_projects_the_generic_artifact_unavailable_error() ->
 
     with pytest.raises(BackendError) as caught:
         await backend.invoke(
-            ARTIFACT_GENERATE_AUDIO_DEF, AudioGenerateInput("nb", ("src-a",)), deadline=None
+            ARTIFACT_GENERATE_AUDIO_DEF, AudioGenerateInput("nb", ("src-a",), "en"), deadline=None
         )
 
     assert caught.value.reason is BackendErrorReason.ARTIFACT_FEATURE_UNAVAILABLE
@@ -294,86 +288,12 @@ async def test_cinematic_video_names_its_own_artifact_type() -> None:
     with pytest.raises(BackendError) as caught:
         await backend.invoke(
             ARTIFACT_GENERATE_VIDEO_DEF,
-            VideoGenerateInput("nb", ("src-a",), cinematic_route=True),
+            VideoGenerateInput("nb", ("src-a",), "en", cinematic_route=True),
             deadline=None,
         )
 
     assert caught.value.diagnostics is not None
     assert caught.value.diagnostics["artifact_type"] == "cinematic video"
-
-
-# --- option validation before any native call ----------------------------------------
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("definition", "value", "match"),
-    [
-        (
-            ARTIFACT_GENERATE_AUDIO_DEF,
-            AudioGenerateInput("nb", None, audio_format="future"),
-            "unrecognized audio format",
-        ),
-        (
-            ARTIFACT_GENERATE_QUIZ_DEF,
-            InteractiveGenerateInput("nb", None, None, "dozens", None),
-            "unrecognized interactive quantity",
-        ),
-        (
-            ARTIFACT_GENERATE_FLASHCARDS_DEF,
-            InteractiveGenerateInput("nb", None, None, None, "impossible"),
-            "unrecognized interactive difficulty",
-        ),
-        (
-            ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
-            InfographicGenerateInput("nb", None, orientation="diagonal"),
-            "unrecognized visual orientation",
-        ),
-        (
-            ARTIFACT_GENERATE_SLIDE_DECK_DEF,
-            SlideDeckGenerateInput("nb", None, slide_length="epic"),
-            "unrecognized visual length",
-        ),
-    ],
-)
-async def test_media_families_reject_unreviewed_options_before_the_source_read(
-    definition: Any, value: Any, match: str
-) -> None:
-    executor = _RecordingExecutor()
-    backend = build_web_backend(executor)
-
-    with pytest.raises(BackendContractError, match=match):
-        await backend.invoke(definition, value, deadline=None)
-
-    assert executor.calls == []
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("definition", "value", "match"),
-    [
-        (
-            ARTIFACT_GENERATE_VIDEO_DEF,
-            VideoGenerateInput("nb", None, video_format="imax"),
-            "unrecognized video option",
-        ),
-        (
-            ARTIFACT_GENERATE_REPORT_DEF,
-            ReportGenerateInput("nb", "novel", source_ids=None),
-            "unrecognized report format",
-        ),
-    ],
-)
-async def test_document_families_validate_after_the_source_read_as_before(
-    definition: Any, value: Any, match: str
-) -> None:
-    executor = _RecordingExecutor(_NOTEBOOK_WITH_SOURCES)
-    backend = build_web_backend(executor)
-
-    with pytest.raises(BackendContractError, match=match):
-        await backend.invoke(definition, value, deadline=None)
-
-    assert [call.method for call in executor.calls] == [RPCMethod.GET_NOTEBOOK]
 
 
 # --- failure projection and deadline -----------------------------------------------------
@@ -382,7 +302,6 @@ async def test_document_families_validate_after_the_source_read_as_before(
 @pytest.mark.asyncio
 async def test_kickoff_server_error_is_translated_dispatched_and_tagged() -> None:
     executor = _RecordingExecutor(
-        _NOTEBOOK_WITH_SOURCES,
         ServerError("boom", method_id=RPCMethod.CREATE_ARTIFACT.value),
     )
     backend = build_web_backend(executor)
@@ -390,7 +309,7 @@ async def test_kickoff_server_error_is_translated_dispatched_and_tagged() -> Non
     with pytest.raises(BackendError) as caught:
         await backend.invoke(
             ARTIFACT_GENERATE_QUIZ_DEF,
-            InteractiveGenerateInput("nb", None, None, None, None),
+            InteractiveGenerateInput("nb", ("src-a",), None, None, None),
             deadline=None,
         )
 
@@ -406,6 +325,7 @@ async def test_kickoff_server_error_is_translated_dispatched_and_tagged() -> Non
 
 @pytest.mark.asyncio
 async def test_pre_dispatch_expiry_on_the_kickoff_is_not_commit_uncertain() -> None:
+    """The service-owned default-source read still spends the caller's budget."""
     clock = [11.0]
     executor = _RecordingExecutor(_NOTEBOOK_WITH_SOURCES)
     backend = build_web_backend(executor)
@@ -416,15 +336,20 @@ async def test_pre_dispatch_expiry_on_the_kickoff_is_not_commit_uncertain() -> N
         return await _RecordingExecutor.rpc_call(executor, method, params, **kwargs)
 
     backend._runtime = type("Runtime", (), {"rpc_call": staticmethod(rpc_call)})()  # type: ignore[assignment]
+    service = DataTableFamilyService(
+        backend, StudioCatalog(backend), StudioGenerationInputs(NotebookReadService(backend))
+    )
 
     with pytest.raises(BackendDeadlineExceededError) as caught:
-        await backend.invoke(
-            ARTIFACT_GENERATE_DATA_TABLE_DEF, DataTableGenerateInput("nb", None), deadline=deadline
-        )
+        await service.generate(DataTableGenerateRequest("nb", None), deadline=deadline)
 
+    read = executor.calls[0]
     assert [call.method for call in executor.calls] == [RPCMethod.GET_NOTEBOOK]
+    assert read.params == build_get_notebook_params("nb")
+    assert read.kwargs["source_path"] == "/notebook/nb"
+    assert read.kwargs["_retry_deadline"] is deadline  # the read shares the caller's budget
     assert caught.value.operation is Operation.ARTIFACT_GENERATE_DATA_TABLE
-    assert caught.value.outcome_unknown is False  # the handler never marked the kickoff phase
+    assert caught.value.outcome_unknown is False  # nothing marked the kickoff phase
     assert caught.value.dispatched is False
     assert caught.value.diagnostics is not None
     assert caught.value.diagnostics["method_id"] == RPCMethod.CREATE_ARTIFACT.value
@@ -447,7 +372,9 @@ async def test_post_dispatch_timeout_becomes_a_dispatched_deadline_error() -> No
 
     with pytest.raises(BackendDeadlineExceededError) as caught:
         await backend.invoke(
-            ARTIFACT_GENERATE_AUDIO_DEF, AudioGenerateInput("nb", ("src-a",)), deadline=deadline
+            ARTIFACT_GENERATE_AUDIO_DEF,
+            AudioGenerateInput("nb", ("src-a",), "en"),
+            deadline=deadline,
         )
 
     assert caught.value.dispatched is True
@@ -563,24 +490,3 @@ def test_guarded_mode_keeps_partial_ids_and_reports_the_guard_failure(
         decode_notebook_source_ids(
             _NOTEBOOK_WITH_SOURCES, notebook_id="nb-x", diagnostics=SourceIdDiagnostics.WARN
         )
-
-
-@pytest.mark.asyncio
-async def test_audio_default_read_is_silent_and_flashcards_read_warns(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    backend = build_web_backend(_RecordingExecutor(_NO_SOURCES_SLOT, _KICKOFF))
-    with caplog.at_level(logging.WARNING, logger="notebooklm._notebooks"):
-        await backend.invoke(
-            ARTIFACT_GENERATE_AUDIO_DEF, AudioGenerateInput("nb", None), deadline=None
-        )
-    assert caplog.records == []
-
-    backend = build_web_backend(_RecordingExecutor(_NO_SOURCES_SLOT, _KICKOFF))
-    with caplog.at_level(logging.WARNING, logger="notebooklm._notebooks"):
-        await backend.invoke(
-            ARTIFACT_GENERATE_FLASHCARDS_DEF,
-            InteractiveGenerateInput("nb", None, None, None, None),
-            deadline=None,
-        )
-    assert ["no sources slot for nb" in r.getMessage() for r in caplog.records] == [True]

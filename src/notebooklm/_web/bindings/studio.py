@@ -9,11 +9,12 @@ chosen from ``value.action`` (catalog read, note-backed mind-map read, or
 interactive content read).  ``ARTIFACT_WAIT`` inherits the caller's deadline —
 the polling loop lives above the port in ``_studio/lifecycle.py`` (gate table
 §6). ``ARTIFACT_PATCH_TITLE`` and ``ARTIFACT_CATALOG`` are the one-call leaves
-sequenced by the service-owned ``ARTIFACT_RENAME`` workflow. Since P9.4b the
-eight ``CREATE_ARTIFACT`` generate families are *deferred-product*
-:class:`CustomBinding` rows; ``ARTIFACT_GENERATE_MIND_MAP`` and the
-``ARTIFACT_LIST`` / ``ARTIFACT_GET`` catalog merge are custom rows in the
-mind-map binding module.
+sequenced by the service-owned ``ARTIFACT_RENAME`` workflow. Since P10 R5.1a
+the eight ``CREATE_ARTIFACT`` generate families are ordinary codec rows too:
+``_studio/generation.py`` resolves their source set, language and option
+vocabulary above the port (ADR-0035 addendum D1(a)), so each family is one
+guarded kickoff. ``ARTIFACT_GENERATE_MIND_MAP`` and the ``ARTIFACT_LIST`` /
+``ARTIFACT_GET`` catalog merge are custom rows in the mind-map binding module.
 """
 
 from __future__ import annotations
@@ -25,13 +26,9 @@ from ..._backend import BackendContractError
 from ..._binding import (
     Binding,
     CodecBinding,
-    CustomBinding,
     NativeCallSpec,
-    RowInvoker,
     RpcNative,
 )
-from ..._deadline import RuntimeDeadline
-from ..._env import get_default_language
 from ..._operations import Operation
 from ..._records import (
     ARTIFACT_CATALOG_DEF,
@@ -51,29 +48,11 @@ from ..._records import (
     ARTIFACT_REVISE_SLIDE_DEF,
     ARTIFACT_WAIT_DEF,
     ArtifactDownloadInput,
-    AudioGenerateInput,
-    AudioGenerateResult,
-    DataTableGenerateInput,
-    DataTableGenerateResult,
-    InfographicGenerateInput,
-    InteractiveGenerateInput,
-    InteractiveGenerateResult,
-    ReportGenerateInput,
-    ReportGenerateResult,
-    SlideDeckGenerateInput,
-    VideoGenerateInput,
-    VideoGenerateResult,
-    VisualGenerateResult,
 )
 from ...rpc import RPCMethod
 from ..codec import artifacts as artifacts_codec
 from ..codec import generation as generation_codec
 from ..codec import studio_documents as studio_documents_codec
-from ..codec.source_ids import (
-    SourceIdDiagnostics,
-    decode_notebook_source_ids,
-    encode_notebook_source_read,
-)
 
 _DOWNLOAD_CATALOG = RpcNative(RPCMethod.LIST_ARTIFACTS)
 _DOWNLOAD_MIND_MAPS = RpcNative(RPCMethod.GET_NOTES_AND_MIND_MAPS)
@@ -155,336 +134,64 @@ ARTIFACT_DOWNLOAD = CodecBinding(
     ),
 )
 
-# --- P9.4b custom rows -----------------------------------------------------------
-# Spec keys shared by every generate row: the conditional default-source read and
-# the guarded kickoff.
-_SOURCES = "sources"
-_CREATE = "create"
+# --- P10 R5.1a: the eight generate families as single-native codec rows ----------
+# Their inputs arrive pre-resolved from ``_studio/generation.py`` (ADR-0035
+# addendum D1(a)), so each family is one guarded ``CREATE_ARTIFACT`` kickoff.
 
-_INPUT_DEFAULTING = (
-    "Input-defaulting member kept adapter-owned under P9.2 contract 1; hoisting needs a "
-    "resolved-input primitive per family (gate table §3.17)."
-)
-
-
-async def _default_source_ids(
-    notebook_id: str,
-    source_ids: tuple[str, ...] | None,
-    *,
-    deadline: RuntimeDeadline | None,
-    invoke: RowInvoker,
-    diagnostics: SourceIdDiagnostics,
-) -> tuple[str, ...]:
-    """Resolve ``source_ids is None`` through the row's ``GET_NOTEBOOK`` spec."""
-    if source_ids is not None:
-        return source_ids
-    notebook = await invoke.call(
-        _SOURCES, encode_notebook_source_read(notebook_id), deadline=deadline
-    )
-    return decode_notebook_source_ids(notebook, notebook_id=notebook_id, diagnostics=diagnostics)
-
-
-def _language(language: str | None) -> str:
-    return get_default_language() if language is None else language
-
-
-async def _generate_audio(
-    value: AudioGenerateInput, deadline: RuntimeDeadline | None, invoke: RowInvoker
-) -> AudioGenerateResult:
-    generation_codec.validate_audio_options(value)
-    source_ids = await _default_source_ids(
-        value.notebook_id,
-        value.source_ids,
-        deadline=deadline,
-        invoke=invoke,
-        diagnostics=SourceIdDiagnostics.SILENT,
-    )
-    raw = await invoke.call(
-        _CREATE,
-        generation_codec.encode_audio_generation(
-            value, source_ids=source_ids, language=_language(value.language)
-        ),
-        deadline=deadline,
-    )
-    return AudioGenerateResult(
-        generation_codec.decode_generation_kickoff(
-            raw, operation=Operation.ARTIFACT_GENERATE_AUDIO, artifact_type="audio"
-        )
-    )
-
-
-async def _generate_interactive(
-    value: InteractiveGenerateInput,
-    deadline: RuntimeDeadline | None,
-    invoke: RowInvoker,
-    *,
-    operation: Operation,
-    family: generation_codec.InteractiveFamily,
-) -> InteractiveGenerateResult:
-    quantity, difficulty = generation_codec.validate_interactive_options(value, operation=operation)
-    source_ids = await _default_source_ids(
-        value.notebook_id,
-        value.source_ids,
-        deadline=deadline,
-        invoke=invoke,
-        diagnostics=SourceIdDiagnostics.WARN,
-    )
-    raw = await invoke.call(
-        _CREATE,
-        generation_codec.encode_interactive_generation(
-            value,
-            family=family,
-            source_ids=source_ids,
-            quantity=quantity,
-            difficulty=difficulty,
-        ),
-        deadline=deadline,
-    )
-    return InteractiveGenerateResult(
-        generation_codec.decode_generation_kickoff(raw, operation=operation, artifact_type=family)
-    )
-
-
-async def _generate_quiz(
-    value: InteractiveGenerateInput, deadline: RuntimeDeadline | None, invoke: RowInvoker
-) -> InteractiveGenerateResult:
-    return await _generate_interactive(
-        value, deadline, invoke, operation=Operation.ARTIFACT_GENERATE_QUIZ, family="quiz"
-    )
-
-
-async def _generate_flashcards(
-    value: InteractiveGenerateInput, deadline: RuntimeDeadline | None, invoke: RowInvoker
-) -> InteractiveGenerateResult:
-    return await _generate_interactive(
-        value,
-        deadline,
-        invoke,
-        operation=Operation.ARTIFACT_GENERATE_FLASHCARDS,
-        family="flashcards",
-    )
-
-
-async def _generate_infographic(
-    value: InfographicGenerateInput, deadline: RuntimeDeadline | None, invoke: RowInvoker
-) -> VisualGenerateResult:
-    orientation, detail_level, style = generation_codec.validate_infographic_options(value)
-    source_ids = await _default_source_ids(
-        value.notebook_id,
-        value.source_ids,
-        deadline=deadline,
-        invoke=invoke,
-        diagnostics=SourceIdDiagnostics.WARN,
-    )
-    raw = await invoke.call(
-        _CREATE,
-        generation_codec.encode_infographic_generation(
-            value,
-            source_ids=source_ids,
-            language=_language(value.language),
-            orientation=orientation,
-            detail_level=detail_level,
-            style=style,
-        ),
-        deadline=deadline,
-    )
-    return VisualGenerateResult(
-        generation_codec.decode_generation_kickoff(
-            raw, operation=Operation.ARTIFACT_GENERATE_INFOGRAPHIC, artifact_type="infographic"
-        )
-    )
-
-
-async def _generate_slide_deck(
-    value: SlideDeckGenerateInput, deadline: RuntimeDeadline | None, invoke: RowInvoker
-) -> VisualGenerateResult:
-    slide_format, slide_length = generation_codec.validate_slide_deck_options(value)
-    source_ids = await _default_source_ids(
-        value.notebook_id,
-        value.source_ids,
-        deadline=deadline,
-        invoke=invoke,
-        diagnostics=SourceIdDiagnostics.WARN,
-    )
-    raw = await invoke.call(
-        _CREATE,
-        generation_codec.encode_slide_deck_generation(
-            value,
-            source_ids=source_ids,
-            language=_language(value.language),
-            slide_format=slide_format,
-            slide_length=slide_length,
-        ),
-        deadline=deadline,
-    )
-    return VisualGenerateResult(
-        generation_codec.decode_generation_kickoff(
-            raw, operation=Operation.ARTIFACT_GENERATE_SLIDE_DECK, artifact_type="slide deck"
-        )
-    )
-
-
-async def _generate_data_table(
-    value: DataTableGenerateInput, deadline: RuntimeDeadline | None, invoke: RowInvoker
-) -> DataTableGenerateResult:
-    source_ids = await _default_source_ids(
-        value.notebook_id,
-        value.source_ids,
-        deadline=deadline,
-        invoke=invoke,
-        diagnostics=SourceIdDiagnostics.WARN,
-    )
-    raw = await invoke.call(
-        _CREATE,
-        generation_codec.encode_data_table_generation(
-            value, source_ids=source_ids, language=_language(value.language)
-        ),
-        deadline=deadline,
-    )
-    return DataTableGenerateResult(
-        generation_codec.decode_generation_kickoff(
-            raw, operation=Operation.ARTIFACT_GENERATE_DATA_TABLE, artifact_type="data table"
-        )
-    )
-
-
-async def _generate_report(
-    value: ReportGenerateInput, deadline: RuntimeDeadline | None, invoke: RowInvoker
-) -> ReportGenerateResult:
-    # The document families resolve sources before validating options (P5.4 order).
-    source_ids = await _default_source_ids(
-        value.notebook_id,
-        value.source_ids,
-        deadline=deadline,
-        invoke=invoke,
-        diagnostics=SourceIdDiagnostics.WARN,
-    )
-    raw = await invoke.call(
-        _CREATE,
-        generation_codec.encode_report_kickoff(
-            value, source_ids=source_ids, language=_language(value.language)
-        ),
-        deadline=deadline,
-    )
-    return ReportGenerateResult(
-        generation_codec.decode_generation_kickoff(
-            raw, operation=Operation.ARTIFACT_GENERATE_REPORT, artifact_type="report"
-        )
-    )
-
-
-async def _generate_video(
-    value: VideoGenerateInput, deadline: RuntimeDeadline | None, invoke: RowInvoker
-) -> VideoGenerateResult:
-    source_ids = await _default_source_ids(
-        value.notebook_id,
-        value.source_ids,
-        deadline=deadline,
-        invoke=invoke,
-        diagnostics=SourceIdDiagnostics.WARN,
-    )
-    raw = await invoke.call(
-        _CREATE,
-        generation_codec.encode_video_kickoff(
-            value, source_ids=source_ids, language=_language(value.language)
-        ),
-        deadline=deadline,
-    )
-    return VideoGenerateResult(
-        generation_codec.decode_generation_kickoff(
-            raw,
-            operation=Operation.ARTIFACT_GENERATE_VIDEO,
-            artifact_type="cinematic video" if value.cinematic_route else "video",
-        )
-    )
-
-
-ARTIFACT_GENERATE_AUDIO = CustomBinding(
+ARTIFACT_GENERATE_AUDIO = CodecBinding(
     definition=ARTIFACT_GENERATE_AUDIO_DEF,
-    handler=_generate_audio,
-    native=(
-        NativeCallSpec.constant(RPCMethod.GET_NOTEBOOK, key=_SOURCES),
-        NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT, key=_CREATE),
-    ),
-    justification=_INPUT_DEFAULTING,
-    category="deferred-product",
+    encode=generation_codec.encode_audio_generation,
+    decode=generation_codec.decode_audio_generation,
+    native=NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT),
 )
 
-ARTIFACT_GENERATE_QUIZ = CustomBinding(
+ARTIFACT_GENERATE_QUIZ = CodecBinding(
     definition=ARTIFACT_GENERATE_QUIZ_DEF,
-    handler=_generate_quiz,
-    native=(
-        NativeCallSpec.constant(RPCMethod.GET_NOTEBOOK, key=_SOURCES),
-        NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT, key=_CREATE),
-    ),
-    justification=_INPUT_DEFAULTING,
-    category="deferred-product",
+    encode=generation_codec.encode_quiz_generation,
+    decode=generation_codec.decode_quiz_generation,
+    native=NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT),
 )
 
-ARTIFACT_GENERATE_FLASHCARDS = CustomBinding(
+ARTIFACT_GENERATE_FLASHCARDS = CodecBinding(
     definition=ARTIFACT_GENERATE_FLASHCARDS_DEF,
-    handler=_generate_flashcards,
-    native=(
-        NativeCallSpec.constant(RPCMethod.GET_NOTEBOOK, key=_SOURCES),
-        NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT, key=_CREATE),
-    ),
-    justification=_INPUT_DEFAULTING,
-    category="deferred-product",
+    encode=generation_codec.encode_flashcards_generation,
+    decode=generation_codec.decode_flashcards_generation,
+    native=NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT),
 )
 
-ARTIFACT_GENERATE_REPORT = CustomBinding(
+ARTIFACT_GENERATE_REPORT = CodecBinding(
     definition=ARTIFACT_GENERATE_REPORT_DEF,
-    handler=_generate_report,
-    native=(
-        NativeCallSpec.constant(RPCMethod.GET_NOTEBOOK, key=_SOURCES),
-        NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT, key=_CREATE),
-    ),
-    justification=_INPUT_DEFAULTING,
-    category="deferred-product",
+    encode=generation_codec.encode_report_kickoff,
+    decode=generation_codec.decode_report_generation,
+    native=NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT),
 )
 
-ARTIFACT_GENERATE_VIDEO = CustomBinding(
+ARTIFACT_GENERATE_VIDEO = CodecBinding(
     definition=ARTIFACT_GENERATE_VIDEO_DEF,
-    handler=_generate_video,
-    native=(
-        NativeCallSpec.constant(RPCMethod.GET_NOTEBOOK, key=_SOURCES),
-        NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT, key=_CREATE),
-    ),
-    justification=_INPUT_DEFAULTING,
-    category="deferred-product",
+    encode=generation_codec.encode_video_kickoff,
+    decode=generation_codec.decode_video_generation_kickoff,
+    native=NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT),
 )
 
-ARTIFACT_GENERATE_INFOGRAPHIC = CustomBinding(
+ARTIFACT_GENERATE_INFOGRAPHIC = CodecBinding(
     definition=ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
-    handler=_generate_infographic,
-    native=(
-        NativeCallSpec.constant(RPCMethod.GET_NOTEBOOK, key=_SOURCES),
-        NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT, key=_CREATE),
-    ),
-    justification=_INPUT_DEFAULTING,
-    category="deferred-product",
+    encode=generation_codec.encode_infographic_generation,
+    decode=generation_codec.decode_infographic_generation,
+    native=NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT),
 )
 
-ARTIFACT_GENERATE_SLIDE_DECK = CustomBinding(
+ARTIFACT_GENERATE_SLIDE_DECK = CodecBinding(
     definition=ARTIFACT_GENERATE_SLIDE_DECK_DEF,
-    handler=_generate_slide_deck,
-    native=(
-        NativeCallSpec.constant(RPCMethod.GET_NOTEBOOK, key=_SOURCES),
-        NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT, key=_CREATE),
-    ),
-    justification=_INPUT_DEFAULTING,
-    category="deferred-product",
+    encode=generation_codec.encode_slide_deck_generation,
+    decode=generation_codec.decode_slide_deck_generation,
+    native=NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT),
 )
 
-ARTIFACT_GENERATE_DATA_TABLE = CustomBinding(
+ARTIFACT_GENERATE_DATA_TABLE = CodecBinding(
     definition=ARTIFACT_GENERATE_DATA_TABLE_DEF,
-    handler=_generate_data_table,
-    native=(
-        NativeCallSpec.constant(RPCMethod.GET_NOTEBOOK, key=_SOURCES),
-        NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT, key=_CREATE),
-    ),
-    justification=_INPUT_DEFAULTING,
-    category="deferred-product",
+    encode=generation_codec.encode_data_table_generation,
+    decode=generation_codec.decode_data_table_generation,
+    native=NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT),
 )
 
 STUDIO_ROWS: Mapping[Operation, Binding] = MappingProxyType(
