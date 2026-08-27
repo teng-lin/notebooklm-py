@@ -7,7 +7,7 @@ decode those positional structures are:
 
 * ``src/notebooklm/rpc/`` -- the RPC protocol layer (encoder/decoder/safe_index),
   the home of ``safe_index`` itself; and
-* ``src/notebooklm/_row_adapters/`` -- the typed row views (``ArtifactRow`` /
+* ``src/notebooklm/_web/rows/`` -- the typed row views (``ArtifactRow`` /
   ``NoteRow`` / ``SourceRow`` / the chat rows) that centralise position
   knowledge behind named properties.
 
@@ -23,7 +23,7 @@ carries signal for them:
 * **BELOW the facade (the feature/decode layer: ``_chat/``, ``_artifact/``,
   ``_source/``, ``_types/``, the ``_*.py`` facade internals, ...).** This is
   where decoded ``batchexecute`` payloads legitimately flow, so positional
-  decode must live behind ``rpc/`` + ``_row_adapters/`` + ``safe_index``. Both
+  decode must live behind ``rpc/`` + ``_web/rows/`` + ``safe_index``. Both
   positional-indexing gates apply here: the chained-descent gate and the
   single-level ``name[int]`` ratchet (whose allowlist is the remaining
   burndown).
@@ -107,13 +107,20 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / "src" / "notebooklm"
 
-# Top-level packages under ``src/notebooklm`` that are *allowed* to decode raw
-# positional RPC payloads: the RPC protocol layer and the typed row adapters.
-SANCTIONED_PACKAGES = frozenset({"rpc", "_row_adapters"})
+# Package paths under ``src/notebooklm`` that are allowed to decode raw
+# positional RPC payloads. ``_web/rows`` is sanctioned at subpackage
+# granularity so sibling web services remain protected by the gate.
+SANCTIONED_PACKAGE_PREFIXES = frozenset({("rpc",), ("_web", "rows")})
+
+
+def _is_sanctioned(path: Path) -> bool:
+    parts = path.relative_to(SRC_ROOT).parts
+    return any(parts[: len(prefix)] == prefix for prefix in SANCTIONED_PACKAGE_PREFIXES)
+
 
 # Baseline of feature files that open-code chained positional descent into RPC
 # payloads (issue #1377). The burndown (#1389) migrated every baselined file
-# behind ``_row_adapters/`` + ``safe_index`` (or bound the already-guarded inner
+# behind ``_web/rows/`` + ``safe_index`` (or bound the already-guarded inner
 # list to a named local so each leaf read is a single-level index), so the list
 # is now EMPTY and the gate re-protects the whole feature tree.
 #
@@ -135,7 +142,7 @@ SINGLE_LEVEL_EXCLUDED_FILES = frozenset({"utils.py", "_version_check.py"})
 # Baseline of BELOW-FACADE feature files that open-code a *single-level*
 # integer-literal subscript (``x[i]``) of a decoded RPC payload (issue #1491).
 # FULLY DRAINED (#1501 burndown): every below-facade file that open-coded a
-# ``name[int]`` read has been migrated behind ``_row_adapters/`` + ``safe_index``
+# ``name[int]`` read has been migrated behind ``_web/rows/`` + ``safe_index``
 # (or had its already-guarded inner read routed through ``safe_index`` so the leaf
 # can no longer drift silently), so this list is now EMPTY and the single-level
 # gate re-protects the whole below-facade feature tree with no exceptions.
@@ -272,17 +279,30 @@ def _feature_files() -> tuple[Path, ...]:
     shared across the multiple tests that walk the feature tree). Returns a tuple
     so the cached value cannot be mutated by a caller.
     """
-    return tuple(
-        sorted(
-            p
-            for p in SRC_ROOT.rglob("*.py")
-            if p.relative_to(SRC_ROOT).parts[0] not in SANCTIONED_PACKAGES
-        )
-    )
+    return tuple(sorted(p for p in SRC_ROOT.rglob("*.py") if not _is_sanctioned(p)))
 
 
 def _rel(path: Path) -> str:
     return path.relative_to(SRC_ROOT).as_posix()
+
+
+def test_types_do_not_execute_web_decode_primitives() -> None:
+    """Public dataclass modules keep only lazy shims, never wire decoding."""
+    offenders: dict[str, list[tuple[str, int]]] = {}
+    for path in sorted((SRC_ROOT / "_types").glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        hits = sorted(
+            (node.id, node.lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Name) and node.id in {"RPCMethod", "safe_index"}
+        )
+        if hits:
+            offenders[_rel(path)] = hits
+
+    assert offenders == {}, (
+        "_types contains executable web-wire decoding; move it under _web/rows and leave a "
+        f"lazy public factory shim only: {offenders}"
+    )
 
 
 @functools.cache
@@ -346,15 +366,15 @@ def test_no_unbaselined_chained_positional_rpc_indexing() -> None:
     This is the gate: a brand-new file (or a migrated file removed from the
     allowlist) that open-codes ``x[i][j]`` positional descent into an RPC
     payload fails here. Route the descent through ``rpc/_safe_index.safe_index``
-    or a ``_row_adapters/`` typed view instead.
+    or a ``_web/rows/`` typed view instead.
     """
     offenders = _offending_files()
     unbaselined = {f: lines for f, lines in offenders.items() if f not in ALLOWLIST}
     assert not unbaselined, (
         "Raw chained positional indexing of RPC payloads (`x[i][j]`) is forbidden "
-        "outside src/notebooklm/rpc/ and src/notebooklm/_row_adapters/ (see ADR-0011, "
+        "outside src/notebooklm/rpc/ and src/notebooklm/_web/rows/ (see ADR-0011, "
         "issue #1377). Decode through rpc/_safe_index.safe_index() or a typed "
-        "_row_adapters/ view so shape drift RAISES UnknownRPCMethodError instead of "
+        "_web/rows/ view so shape drift RAISES UnknownRPCMethodError instead of "
         "silently degrading to empty/wrong data.\n\n"
         + "\n".join(
             f"  src/notebooklm/{f}:{','.join(map(str, lines))}"
@@ -399,7 +419,7 @@ def test_no_unbaselined_single_level_positional_rpc_indexing() -> None:
     the chained-descent gate). It fails when a below-facade file that is NOT on
     :data:`SINGLE_LEVEL_ALLOWLIST` open-codes a *brand-new* integer-literal
     single-level subscript of an RPC payload. Route the read through a
-    ``_row_adapters/`` typed view so the position knowledge lives in one place
+    ``_web/rows/`` typed view so the position knowledge lives in one place
     and shape drift RAISES ``UnknownRPCMethodError`` via ``safe_index``.
 
     Scope (deliberate, like #1377): a *ratchet* over the BELOW-FACADE layer
@@ -424,9 +444,9 @@ def test_no_unbaselined_single_level_positional_rpc_indexing() -> None:
     unbaselined = {f: lines for f, lines in offenders.items() if f not in SINGLE_LEVEL_ALLOWLIST}
     assert not unbaselined, (
         "Raw single-level positional indexing of RPC payloads (`x[i]`) is forbidden "
-        "outside src/notebooklm/rpc/ and src/notebooklm/_row_adapters/ for files not "
+        "outside src/notebooklm/rpc/ and src/notebooklm/_web/rows/ for files not "
         "on SINGLE_LEVEL_ALLOWLIST (see ADR-0011, issue #1491). Decode through a typed "
-        "_row_adapters/ view so shape drift RAISES UnknownRPCMethodError instead of "
+        "_web/rows/ view so shape drift RAISES UnknownRPCMethodError instead of "
         "silently degrading to empty/wrong data. NOTE: binding the read to a named local "
         "does NOT satisfy this single-level gate (the local subscript `local[i]` is still "
         "flagged) — move the position knowledge into an adapter; or, for a deliberate "
@@ -481,7 +501,7 @@ def test_single_level_allowlist_has_no_above_facade_entries() -> None:
 
 
 def test_migrated_chat_wire_is_not_single_level_allowlisted() -> None:
-    """``_chat/wire.py`` was migrated behind ``_row_adapters/chat.py`` (issue #1491).
+    """``_chat/wire.py`` was migrated behind ``_web/rows/chat.py`` (issue #1491).
 
     Pins the headline #1491 outcome: the chat wire parser no longer open-codes
     any single-level RPC-payload subscript, so it is absent from

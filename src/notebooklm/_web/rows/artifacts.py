@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, ClassVar
 
-from .._types.artifact_content import (
+from ..._types.artifact_content import (
     ArtifactInfographic,
     ArtifactMedia,
     ArtifactMediaType,
@@ -16,10 +16,10 @@ from .._types.artifact_content import (
     FlashcardArtifactUserState,
     UnknownArtifactUserState,
 )
-from .._types.common import _datetime_from_timestamp
-from .._types.enums import FLASHCARDS_VARIANT, ArtifactStatus, ArtifactTypeCode
-from ..exceptions import UnknownRPCMethodError
-from ..rpc import RPCMethod, safe_index
+from ..._types.common import _datetime_from_timestamp
+from ..._types.enums import FLASHCARDS_VARIANT, ArtifactStatus, ArtifactTypeCode
+from ...exceptions import UnknownRPCMethodError
+from ...rpc import RPCMethod, safe_index
 
 __all__ = [
     "MIND_MAP_LEAF_ABSENT",

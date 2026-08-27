@@ -14,12 +14,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ..exceptions import UnknownRPCMethodError
-from ..rpc import safe_index
+from ...exceptions import UnknownRPCMethodError
+from ...rpc import safe_index
 
 __all__ = ["LabelRow"]
 
-_SRC = "_row_adapters.labels"
+_SRC = "_web.rows.labels"
 
 
 @dataclass(frozen=True)

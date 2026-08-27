@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, ClassVar
 
-from .._types.common import _datetime_from_timestamp
-from ..rpc import RPCMethod, safe_index
+from ..._types.common import _datetime_from_timestamp
+from ...rpc import RPCMethod, safe_index
 
 __all__ = ["NoteRow"]
 

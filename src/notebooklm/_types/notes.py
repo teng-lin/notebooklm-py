@@ -15,7 +15,7 @@ class Note:
     (export to Docs/Sheets, convert to source).
 
     Raw note rows are decoded through
-    :class:`notebooklm._row_adapters.notes.NoteRow` (the typed positional
+    :class:`notebooklm._web.rows.notes.NoteRow` (the typed positional
     view); :class:`Note` instances are constructed from those named
     properties in :meth:`notebooklm._notes.NotesAPI._parse_note`.
     """

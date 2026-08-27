@@ -8,8 +8,6 @@ from typing import Any
 
 import httpx
 
-from .._row_adapters.artifacts import ArtifactRow, unwrap_artifact_rows
-from .._row_adapters.notes import NoteRow
 from .._runtime.contracts import RpcCaller
 from .._types.enums import (
     ARTIFACT_STATUS_SUGGESTED_WIRE_NAME,
@@ -18,6 +16,8 @@ from .._types.enums import (
     QUIZ_VARIANT,
     ArtifactTypeCode,
 )
+from .._web.rows.artifacts import ArtifactRow, unwrap_artifact_rows
+from .._web.rows.notes import NoteRow
 from ..exceptions import DecodingError
 from ..rpc import (
     RPCError,
@@ -284,7 +284,7 @@ class ArtifactListingService:
 
         Position knowledge (``a[2]`` type, ``a[4]`` status, ``a[15][0]``
         timestamp) is delegated to
-        :class:`notebooklm._row_adapters.artifacts.ArtifactRow` — when Google
+        :class:`notebooklm._web.rows.artifacts.ArtifactRow` — when Google
         reshapes the wire, the position constants change there and this
         method adapts automatically.
 

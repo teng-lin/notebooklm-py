@@ -282,7 +282,7 @@ def _quiz_option_code(
     * But what the server picked is then **unobservable**. The stored options
       echo back as ``null`` / ``[]``, and the generated content is not carried
       in ``LIST_ARTIFACTS``, so a caller could not tell what they got — nor
-      could :attr:`~notebooklm._row_adapters.artifacts.ArtifactRow.quiz_options`,
+      could :attr:`~notebooklm._web.rows.artifacts.ArtifactRow.quiz_options`,
       the read-back added in #2195 precisely so this surface stops being
       fixture-only. Passing ``None`` through would trade a value we can name,
       echo and assert for one we cannot see at all.
@@ -330,7 +330,7 @@ def _quiz_option_pair(
     literals drifting apart, with the flashcards one transposed for long enough
     that ``docs/rpc-reference.md`` documented the inversion as intended. One
     expression cannot disagree with itself. The decode side is symmetric —
-    :class:`~notebooklm._row_adapters.artifacts.QuizOptionPair` reads the pair
+    :class:`~notebooklm._web.rows.artifacts.QuizOptionPair` reads the pair
     back through named fields rather than positions.
     """
     return [

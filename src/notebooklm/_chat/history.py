@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable
 from typing import Any, Protocol
 
-from .._row_adapters.chat import ConversationTurnRow, unwrap_conversation_turns
+from .._web.rows.chat import count_question_turn_rows
 from ..exceptions import ChatError
 
 _TURN_COUNT_INITIAL_LIMIT = 100
@@ -39,12 +39,11 @@ async def count_prior_server_turns(
     limit = _TURN_COUNT_INITIAL_LIMIT
     while True:
         turns_data = await fetch_turns(notebook_id, conversation_id, limit=limit)
-        turns = unwrap_conversation_turns(turns_data, source="_chat.ask.turn_count")
-        if len(turns) < limit:
-            return sum(
-                ConversationTurnRow(turn).role == ConversationTurnRow.ROLE_QUESTION
-                for turn in turns
-            )
+        row_count, question_count = count_question_turn_rows(
+            turns_data, source="_chat.ask.turn_count"
+        )
+        if row_count < limit:
+            return question_count
         if limit >= _TURN_COUNT_MAX_LIMIT:
             raise ChatError(
                 f"Conversation history filled the maximum {_TURN_COUNT_MAX_LIMIT:,}-row snapshot; "

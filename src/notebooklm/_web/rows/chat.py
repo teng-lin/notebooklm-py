@@ -73,7 +73,7 @@ Position contracts (pinned by ``tests/unit/test_chat_row_adapter.py``):
 
   The fragment's elements are ``StructuralElement`` rows shared with the
   source-content path; they are decoded by
-  :mod:`notebooklm._row_adapters.documents`, not by a chat-local adapter.
+  :mod:`notebooklm._web.rows.documents`, not by a chat-local adapter.
 
 * :class:`ConversationTurnRow` — one ``GET_CONVERSATION_TURNS`` turn row:
 
@@ -94,11 +94,11 @@ import reprlib
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from .._types.chat import ConversationTurnKey
-from .._types.documents import StructuredDocument
-from ..exceptions import UnknownRPCMethodError
-from ..rpc import RPCMethod, safe_index
-from ..rpc.decoder import sanitize_status_message
+from ..._types.chat import ConversationTurnKey
+from ..._types.documents import StructuredDocument
+from ...exceptions import UnknownRPCMethodError
+from ...rpc import RPCMethod, safe_index
+from ...rpc.decoder import sanitize_status_message
 from .documents import build_document
 
 __all__ = [
@@ -107,6 +107,7 @@ __all__ = [
     "CitationDetail",
     "ChatSettingsRow",
     "ConversationTurnRow",
+    "count_question_turn_rows",
     "ErrorPayloadRow",
     "NextStepSuggestionRow",
     "StreamEnvelopeRow",
@@ -539,6 +540,14 @@ class ConversationTurnRow:
         return str(self._raw[self._QUESTION_TEXT_POS] or "")
 
 
+def count_question_turn_rows(turns_data: Any, *, source: str) -> tuple[int, int]:
+    """Return ``(row_count, question_count)`` for a conversation-turn envelope."""
+    turns = unwrap_conversation_turns(turns_data, source=source)
+    return len(turns), sum(
+        ConversationTurnRow(turn).role == ConversationTurnRow.ROLE_QUESTION for turn in turns
+    )
+
+
 @dataclass(frozen=True)
 class StreamFrameRow:
     """Typed view of one streamed-chat envelope frame.
@@ -713,7 +722,7 @@ class ErrorPayloadRow:
         collapsed, length capped, non-string warned about) is shared with the
         ``batchexecute`` decoder via :func:`sanitize_status_message` so the two
         layers cannot drift in what users see; only the position is declared
-        twice, because ``rpc`` cannot import ``_row_adapters``.
+        twice, because ``rpc`` cannot import ``_web.rows``.
         """
         if len(self._raw) <= self._MESSAGE_POS:
             return None
@@ -1135,7 +1144,7 @@ class CitationDetail:
         level below at ``[0]``. Each element is a ``StructuralElement``
         (``[startIndex, endIndex, paragraph]``) sliced out of the source
         document — decode them with
-        :func:`notebooklm._row_adapters.documents.build_blocks`.
+        :func:`notebooklm._web.rows.documents.build_blocks`.
 
         Stopping at ``cite_inner[4]`` (the pre-#2120 behavior) yields the
         one-element wrapper instead, which is why ``cited_text`` covered only

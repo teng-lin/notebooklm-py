@@ -12,7 +12,6 @@ from urllib.parse import urlparse
 import httpx
 
 from ._lookup import unwrap_or_raise
-from ._row_adapters.sources import interpret_source_freshness
 from ._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
 from ._runtime.contracts import RpcCaller
 from ._settings import build_get_user_settings_params, extract_account_limits
@@ -27,6 +26,7 @@ from ._source.upload import SourceUploadPipeline
 from ._source.upload_payloads import build_rename_source_params
 from ._types.research import SourceGuide
 from ._url_utils import is_youtube_url
+from ._web.rows.sources import interpret_source_freshness
 from .exceptions import SourceNotFoundError
 from .rpc import RPCMethod
 from .types import (

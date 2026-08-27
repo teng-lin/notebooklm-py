@@ -42,12 +42,20 @@ BASE_MODULE_ALLOWLIST: frozenset[str] = frozenset()
 LAZY_WEB_IMPORT_ALLOWLIST = frozenset(
     {
         ("notebooklm._types.artifacts", "Artifact.from_api_response"),
+        ("notebooklm._types.artifacts", "Artifact.from_mind_map"),
+        ("notebooklm._types.artifacts", "_extract_artifact_url"),
+        ("notebooklm._types.artifacts", "_extract_audio_artifact_url"),
+        ("notebooklm._types.artifacts", "_extract_infographic_artifact_url"),
+        ("notebooklm._types.artifacts", "_extract_slide_deck_artifact_url"),
+        ("notebooklm._types.artifacts", "_extract_video_artifact_url"),
         ("notebooklm._types.collections", "Collection.from_api_response"),
         ("notebooklm._types.labels", "Label.from_api_response"),
         ("notebooklm._types.notebooks", "Notebook.from_api_response"),
         ("notebooklm._types.sharing", "ShareStatus.from_api_response"),
         ("notebooklm._types.sharing", "SharedUser.from_api_response"),
         ("notebooklm._types.sources", "Source.from_api_response"),
+        ("notebooklm._types.sources", "_extract_source_created_at"),
+        ("notebooklm._types.sources", "_extract_source_url"),
     }
 )
 
@@ -59,8 +67,28 @@ ALLOWED_WEB_IMPORTERS = frozenset(
         "notebooklm._runtime.init",
         "notebooklm.rpc",
         "notebooklm._artifact",
+        "notebooklm._artifact.downloads",
+        "notebooklm._artifact.generation",
+        "notebooklm._artifact.listing",
+        "notebooklm._artifact.polling",
+        "notebooklm._artifacts",
         "notebooklm._source",
+        "notebooklm._source.batch",
+        "notebooklm._source.content",
+        "notebooklm._source.listing",
+        "notebooklm._sources",
         "notebooklm._chat",
+        "notebooklm._chat.api",
+        "notebooklm._chat.history",
+        "notebooklm._chat.notes",
+        "notebooklm._chat.wire",
+        "notebooklm._mind_map",
+        "notebooklm._mind_maps_api",
+        "notebooklm._note_service",
+        "notebooklm._notebooks",
+        "notebooklm._notes",
+        "notebooklm._research",
+        "notebooklm.research",
     }
 )
 

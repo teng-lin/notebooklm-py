@@ -205,7 +205,7 @@ Backend: `0=UNKNOWN, 1=AUDIO_OVERVIEW, 2=TAILORED_REPORT, 3=EXPLAINER_VIDEO, 4=A
 ### 1.6 CRITICAL — `userDriveSourceStatus` is populated and silently dropped
 
 `SourceSettings.userDriveSourceStatus` (tag 4 → settings index 3) is read by nothing in our client;
-`_row_adapters/sources.py:152-153` reads index 1 only, and no `Source` field could hold it.
+`_web/rows/sources.py:152-153` reads index 1 only, and no `Source` field could hold it.
 
 Across 409 live source rows:
 
@@ -238,7 +238,7 @@ create/share/rename/read and byte-identical over gRPC. *(CONFIRMED-LIVE)*
 
 ### 1.8 HIGH — `Source` tags 6/7/8 dropped on 41 of 409 rows
 
-`_row_adapters/sources.py:149-153` reads indices 0–3 only. Mobile's `BuilderInfo` registers four
+`_web/rows/sources.py:149-153` reads indices 0–3 only. Mobile's `BuilderInfo` registers four
 named fields then six `addUnused()` slots — which are populated live:
 
 ```
@@ -376,7 +376,7 @@ against the 42 chars we return today.
 
 ### 1.17 HIGH — we invented two phantom artifact error fields, and the tests encode the fiction
 
-`_row_adapters/artifacts.py:117,119` documents index 3 as "failed-artifact plain error text" and
+`_web/rows/artifacts.py:117,119` documents index 3 as "failed-artifact plain error text" and
 index 5 as "failed-artifact nested error payload". **Both are wrong.** Index 3 is `Artifact.sources`
 (tag 4, repeated `ArtifactSource`) and index 5 is `isPubliclyReadable` (tag 6) — confirmed by the
 mobile proto and by gRPC (`tag 4: <42 sources>`, each `{1:{1:'<uuid>'}}`).
@@ -403,7 +403,7 @@ nothing.
 
 ### 1.18 MEDIUM — `is_answer` reads a negative index into a positional wire message
 
-`_row_adapters/chat.py:682,739-751` sets `_ANSWER_MARKER_POS = -1`, reading `first[4][-1]`.
+`_web/rows/chat.py:682,739-751` sets `_ANSWER_MARKER_POS = -1`, reading `first[4][-1]`.
 `first[4]` is `AnswerResponse.responseDoc` = `TailwindDoc`, whose `BuilderInfo` is `body=1`,
 (2,3 unused), `objects=4`, `type=5`. So `[-1]` lands on `TailwindDoc.type` **only because tag 5
 happens to be the last registered field today.**
@@ -480,7 +480,7 @@ All CONFIRMED-LIVE, from a 267-row artifact sweep:
 
 ### 1.24 HIGH — an unmapped `SourceStatus` doesn't degrade to "unknown", it asserts *healthy*
 
-`_row_adapters/sources.py:662-673` catches `ValueError` from `SourceStatus(code)` and returns
+`_web/rows/sources.py:662-673` catches `ValueError` from `SourceStatus(code)` and returns
 **`SourceStatus.READY`**. Verified by executing our own adapter directly:
 
 ```

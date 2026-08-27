@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 
 from notebooklm import ConversationTurnKey
-from notebooklm._row_adapters.chat import (
+from notebooklm._web.rows.chat import (
     AnswerRow,
     ChatSettingsRow,
     CitationDetail,

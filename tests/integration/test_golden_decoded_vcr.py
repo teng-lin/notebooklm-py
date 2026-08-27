@@ -12,7 +12,7 @@ recorded against one notebook replays for a different one — and we keep them.
 
 But that tolerance has one blind spot: a green cassette does **not** prove the
 *decoder* mapped the recorded bytes onto the right dataclass fields. A
-positional mis-map (the exact failure class the ``_row_adapters`` exist to
+positional mis-map (the exact failure class the ``_web.rows`` exist to
 prevent) or a leaf-shape drift can still replay green because the matcher never
 looks at the recorded *response* leaves — only the request shape. The rest of
 the VCR suite (``test_vcr_comprehensive.py``) mostly asserts

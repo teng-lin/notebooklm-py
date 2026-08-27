@@ -18,7 +18,13 @@ from urllib.parse import quote, urlencode
 
 from .._auth.account import format_authuser_value
 from .._env import get_default_bl, get_default_language
-from .._row_adapters.chat import (
+from .._types.documents import (
+    DocumentAnnotation,
+    StructuredDocument,
+    _utf16_slice,
+    utf16_len,
+)
+from .._web.rows.chat import (
     AnswerRow,
     CitationDetail,
     CitationRow,
@@ -26,13 +32,7 @@ from .._row_adapters.chat import (
     StreamEnvelopeRow,
     StreamFrameRow,
 )
-from .._row_adapters.documents import build_blocks
-from .._types.documents import (
-    DocumentAnnotation,
-    StructuredDocument,
-    _utf16_slice,
-    utf16_len,
-)
+from .._web.rows.documents import build_blocks
 from ..exceptions import ChatError, ChatResponseParseError, UnknownRPCMethodError
 from ..rpc._safe_index import safe_index
 from ..rpc.decoder import strip_anti_xssi
@@ -429,7 +429,7 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
     envelope was found AND its inner JSON decoded successfully — regardless of
     whether any answer text was extracted.
     :attr:`~_ChunkExtraction.suggests_drift` is the selected row's
-    :attr:`~notebooklm._row_adapters.chat.AnswerRow.suggests_wire_drift` verdict:
+    :attr:`~notebooklm._web.rows.chat.AnswerRow.suggests_wire_drift` verdict:
     whether an unmarked row looks like drift rather than a deliberate empty
     answer. Together these let the streaming parser distinguish two failure
     modes:
@@ -566,7 +566,7 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
                 # The populated record is wrapped in an ``AnswerRow`` so every
                 # leaf read (text / answer-marker / server-conv-id / citations)
                 # goes through one named position contract in
-                # ``_row_adapters/chat.py`` instead of scattered single-level
+                # ``_web/rows/chat.py`` instead of scattered single-level
                 # subscripts here (issue #1491). ``text`` is the load-bearing
                 # answer leaf; an absent/empty/non-string leaf legitimately means
                 # "no answer in this chunk" (heartbeat-ish), so fall through.

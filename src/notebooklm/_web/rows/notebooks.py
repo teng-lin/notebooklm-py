@@ -28,17 +28,59 @@ Position contract (pinned by ``tests/unit/test_notebooks_row_adapter.py``):
 
 from __future__ import annotations
 
+import logging
 import re
+import reprlib
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
-from ..rpc import RPCMethod, safe_index
+from ..._types.common import _datetime_from_timestamp
+from ...exceptions import UnknownRPCMethodError
+from ...rpc import RPCMethod, safe_index
+from ...rpc.types import ChatGoal, ChatResponseLength, SharePermission
+
+if TYPE_CHECKING:
+    from ..._types.notebooks import Notebook
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "PromptSuggestionRow",
     "ProjectRow",
+    "decode_notebook",
     "unwrap_prompt_suggestions",
 ]
+
+_NOTEBOOK_METHOD_ID = RPCMethod.LIST_NOTEBOOKS.value
+_NOTEBOOK_ROLES = frozenset(
+    {SharePermission.OWNER.value, SharePermission.EDITOR.value, SharePermission.VIEWER.value}
+)
+
+
+def _extract_notebook_sources_count(data: list[Any]) -> int:
+    """Extract the embedded source count from a notebook API payload."""
+    sources = (
+        safe_index(data, 1, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.sources_count")
+        if len(data) > 1
+        else None
+    )
+    return len(sources) if isinstance(sources, list) else 0
+
+
+def _role_from_wire(raw_role: Any, row: list[Any]) -> SharePermission | None:
+    """Map a raw ``userRole`` slot to :class:`SharePermission`, or ``None``."""
+    if raw_role is None:
+        return None
+    if isinstance(raw_role, int) and not isinstance(raw_role, bool):
+        if raw_role in _NOTEBOOK_ROLES:
+            return SharePermission(raw_role)
+    logger.warning(
+        "Notebook row userRole slot unmapped — reporting unknown role "
+        "(expected 1/2/3 at data[5][0], got %r; row=%s)",
+        raw_role,
+        reprlib.repr(row),
+    )
+    return None
 
 
 @dataclass(frozen=True)
@@ -106,6 +148,114 @@ class ProjectRow:
             for row in rows
             if isinstance(row, list) and row and isinstance(row[0], str) and row[0]
         ]
+
+
+def decode_notebook(
+    cls: type[Notebook],
+    data: list[Any],
+    *,
+    include_chat_settings: bool = False,
+) -> Notebook:
+    """Decode a web ``Project`` row into the requested public notebook class."""
+    from ..._types.chat import ChatSettings
+    from ..._types.notebooks import ChatSession, PremiumFeatureInfo
+    from .chat import unwrap_chat_settings
+
+    project = ProjectRow(data)
+    title_slot = (
+        safe_index(data, 0, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.title")
+        if data
+        else None
+    )
+    raw_title = title_slot if isinstance(title_slot, str) else ""
+    title = raw_title.replace("thought\n", "").strip()
+    sources_count = _extract_notebook_sources_count(data)
+
+    notebook_id = ""
+    if len(data) > 2:
+        raw_id = safe_index(data, 2, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.id")
+        if isinstance(raw_id, str):
+            notebook_id = raw_id
+        elif raw_id is not None:
+            logger.warning(
+                "Notebook row id slot malformed — fabricating empty id "
+                "(expected str at data[2], got %s; row=%s)",
+                type(raw_id).__name__,
+                reprlib.repr(data),
+            )
+
+    meta_slot = (
+        safe_index(data, 5, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.metadata")
+        if len(data) > 5
+        else None
+    )
+    meta = meta_slot if isinstance(meta_slot, list) else None
+
+    created_at = None
+    if meta is not None and len(meta) > 8:
+        created_ts = safe_index(
+            meta, 8, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.created_at"
+        )
+        if isinstance(created_ts, list) and created_ts:
+            created_at = _datetime_from_timestamp(
+                safe_index(
+                    created_ts, 0, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.created_at"
+                )
+            )
+
+    last_viewed_at = None
+    if meta is not None and len(meta) > 5:
+        viewed_ts = safe_index(
+            meta, 5, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.last_viewed_at"
+        )
+        if isinstance(viewed_ts, list) and viewed_ts:
+            last_viewed_at = _datetime_from_timestamp(
+                safe_index(
+                    viewed_ts,
+                    0,
+                    method_id=_NOTEBOOK_METHOD_ID,
+                    source="Notebook.last_viewed_at",
+                )
+            )
+
+    role = None
+    if meta:
+        raw_role = safe_index(meta, 0, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.role")
+        role = _role_from_wire(raw_role, data)
+
+    premium_features = None
+    premium_flags = project.premium_feature_flags
+    if premium_flags is not None:
+        premium_features = PremiumFeatureInfo(*premium_flags)
+
+    chat_settings = None
+    if include_chat_settings:
+        try:
+            settings_row = unwrap_chat_settings(data, source="Notebook.chat_settings")
+            chat_settings = ChatSettings(
+                goal=ChatGoal(settings_row.goal_code),
+                response_length=ChatResponseLength(settings_row.response_length_code),
+                custom_prompt=settings_row.custom_prompt,
+            )
+        except (UnknownRPCMethodError, ValueError):
+            logger.warning(
+                "Notebook row chat-settings slot could not be decoded — reporting unknown "
+                "settings (row=%s)",
+                reprlib.repr(data),
+            )
+
+    return cls(
+        id=notebook_id,
+        title=title,
+        created_at=created_at,
+        sources_count=sources_count,
+        role=role,
+        last_viewed_at=last_viewed_at,
+        emoji=project.emoji,
+        premium_features=premium_features,
+        chat_sessions=[ChatSession(id=session_id) for session_id in project.chat_session_ids],
+        chat_settings=chat_settings,
+    )
 
 
 # A single leading markdown *bullet* marker (``-``/``*``/``+``) plus its trailing
@@ -187,7 +337,7 @@ class PromptSuggestionRow:
 
     Short / malformed rows degrade to empty strings rather than raising — a
     suggestion list is best-effort UI sugar (the same permissive contract as
-    :class:`~notebooklm._row_adapters.artifacts.ReportSuggestionRow`). Positions
+    :class:`~notebooklm._web.rows.artifacts.ReportSuggestionRow`). Positions
     are pinned by ``tests/unit/test_notebooks_row_adapter.py``.
     """
 

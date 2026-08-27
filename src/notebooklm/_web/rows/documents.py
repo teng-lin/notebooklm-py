@@ -61,7 +61,7 @@ import reprlib
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, NamedTuple
 
-from .._types.documents import (
+from ..._types.documents import (
     BlockKind,
     BlockStyle,
     DocumentAnnotation,

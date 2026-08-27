@@ -19,9 +19,9 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from .._idempotency import mark_unconfirmed
-from .._row_adapters.sources import unwrap_add_source_rows
 from .._runtime.contracts import RpcCaller
 from .._types.enums import GrpcStatusCode, SourceStatus, normalize_rpc_code
+from .._web.rows.sources import unwrap_add_source_rows
 from ..exceptions import (
     AuthError,
     NetworkError,

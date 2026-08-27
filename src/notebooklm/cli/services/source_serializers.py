@@ -53,7 +53,7 @@ def source_row_payload(src: Source) -> dict[str, Any]:
       total bijection over :class:`~notebooklm.types.DriveSourceStatus`, and the
       one case where a raw code would earn its keep — a code this client cannot
       map — is precisely the case where
-      :attr:`notebooklm._row_adapters.sources.SourceRow.drive_status` has
+      :attr:`notebooklm._web.rows.sources.SourceRow.drive_status` has
       already replaced the wire value with the ``UNKNOWN`` (-1) client sentinel
       and sent the original to a log warning. It never reaches this row.
     * The code spaces collide adversarially. ``status_id`` 2 is ``ready`` and 3

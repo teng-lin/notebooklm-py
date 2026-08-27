@@ -17,9 +17,9 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any, Protocol
 
-from .._row_adapters.chat import SavedChatNoteRow
-from .._row_adapters.notes import NoteRow
 from .._types.documents import utf16_len
+from .._web.rows.chat import SavedChatNoteRow
+from .._web.rows.notes import NoteRow
 from ..rpc import RPCMethod
 from ..types import Note
 
@@ -346,7 +346,7 @@ async def save_chat_answer_as_note(
     # list (``[[note_id, ..., title, rich_content]]``), but some response
     # paths return the note flat (``[note_id, ...]``). The unwrap + the
     # ``note_data[0]`` id / ``note_data[4]`` server-title position knowledge
-    # lives in ``_row_adapters.chat.SavedChatNoteRow`` (SOFT — see
+    # lives in ``_web.rows.chat.SavedChatNoteRow`` (SOFT — see
     # ``create_note`` which handles both shapes). Slot [4] of the note carries
     # the server-stored title, which may differ from the requested title
     # (smart-title generation); absent → keep the requested ``title``.

@@ -1,7 +1,7 @@
 """Research row adapters for the ``POLL_RESEARCH`` (``e3bVqc``) payload.
 
 These adapters centralise the positional knowledge that
-``_research_task_parser.py`` previously open-coded as scattered single-level
+``_web/rows/research_task.py`` previously open-coded as scattered single-level
 subscripts (``result[0]``, ``src[1]``, ``bundle[0]``, ``task_info[1][0]`` …).
 The parser wraps the raw lists in the typed views below and reads named
 properties so a future Google reshape of the research wire format is a
@@ -67,15 +67,15 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, ClassVar
 
-from .._types.common import _datetime_from_timestamp
-from .._types.enums import DiscoveryMode
-from ..rpc import RPCMethod, safe_index
+from ..._types.common import _datetime_from_timestamp
+from ..._types.enums import DiscoveryMode
+from ...rpc import RPCMethod, safe_index
 
 logger = logging.getLogger(__name__)
 
 #: Unmapped ``DiscoveryMode`` codes already warned about, so a polled research
 #: task does not re-emit the same drift line on every poll. Sibling of
-#: ``_row_adapters/sources.py::_warned_drive_status_codes``, and keyed by
+#: ``_web/rows/sources.py::_warned_drive_status_codes``, and keyed by
 #: ``repr(value)`` for the same reason: a drifted slot can hold an unhashable
 #: payload, and ``repr`` keeps ``1`` and ``"1"`` distinct.
 _warned_discovery_modes: set[str] = set()
@@ -83,7 +83,7 @@ _warned_discovery_modes: set[str] = set()
 #: ``DISCOVERY_MODE_UNSPECIFIED`` — deliberately unmodelled on
 #: :class:`~notebooklm.rpc.types.DiscoveryMode` (see its docstring), so the
 #: decoder needs the bare wire value to normalize it to ``None``. Mirrors
-#: ``_row_adapters/sources.py::_DRIVE_STATUS_UNSPECIFIED``.
+#: ``_web/rows/sources.py::_DRIVE_STATUS_UNSPECIFIED``.
 _DISCOVERY_MODE_UNSPECIFIED: int = 0
 
 __all__ = [

@@ -21,7 +21,7 @@ from typing import Any
 from ._lookup import unwrap_or_raise
 from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteRowKind, NoteService
-from ._row_adapters.notes import NoteRow
+from ._web.rows.notes import NoteRow
 from .exceptions import NoteNotFoundError
 from .types import Note
 
@@ -295,7 +295,7 @@ class NotesAPI:
         Position knowledge (legacy ``[id, content]`` vs current
         ``[id, [id, content, metadata, None, title]]`` dispatch, and
         the title slot at ``raw[1][4]``) lives in
-        :class:`notebooklm._row_adapters.notes.NoteRow` — this method just
+        :class:`notebooklm._web.rows.notes.NoteRow` — this method just
         reads the named properties. ``content`` defaults to ``""``
         (not ``None``) here to preserve the v0.4.1 :class:`Note`
         contract.

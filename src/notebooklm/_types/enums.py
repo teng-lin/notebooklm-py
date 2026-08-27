@@ -534,7 +534,7 @@ class DriveSourceStatus(int, Enum):
     modelled here. proto3 omits zero-valued fields, so it normally arrives as
     an absent slot, and it means exactly what an absent slot means — "no claim".
     Modelling it would give that one state two representations (``None`` and a
-    falsy member), so :attr:`notebooklm._row_adapters.sources.SourceRow.drive_status`
+    falsy member), so :attr:`notebooklm._web.rows.sources.SourceRow.drive_status`
     normalizes an explicit ``0`` to ``None`` instead. Recorded in
     ``tests/_guardrails/_wire_contract.py::ENUM_GAPS``.
 

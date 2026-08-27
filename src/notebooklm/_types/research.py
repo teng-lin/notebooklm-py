@@ -7,7 +7,7 @@ back-compat bridge that warned in v0.7.0 was removed in v0.8.0, issue #1251).
 The ``to_public_dict()`` method survives — it builds the historical JSON shape
 for CLI output and is unrelated to the dropped subscript bridge.
 
-The models live here (rather than in ``_research_task_parser``) so they are
+The models live here (rather than in ``_web.rows.research_task``) so they are
 public typed surface; the parser re-imports them and stays the home of the
 wire-row parsing logic.
 """
@@ -125,7 +125,7 @@ def status_from_termination_reason(
     """Coarsen a termination reason into the lifecycle :class:`ResearchStatus`.
 
     The SINGLE source of truth for "which wire codes mean in-flight /
-    completed / failed". :func:`_research_task_parser._status_from_code` used to
+    completed / failed". :func:`_web.rows.research_task._status_from_code` used to
     carry a second, independent copy of that table written in bare literals;
     two tables meant a future code added to only one of them could produce a
     self-contradictory task (``status="completed"`` alongside

@@ -7,12 +7,12 @@ import logging
 import reprlib
 from typing import Any, Literal
 
-from .._row_adapters.documents import build_document
-from .._row_adapters.sources import SourceFulltextRow, SourceGuideRow
 from .._runtime.contracts import RpcCaller
 from .._types.documents import StructuredDocument
 from .._types.research import SourceGuide
 from .._types.sources import _disambiguate_type_code, _pdf_url_title_fallback
+from .._web.rows.documents import build_document
+from .._web.rows.sources import SourceFulltextRow, SourceGuideRow
 from ..rpc import RPCMethod
 from ..types import SourceFulltext, SourceNotFoundError, _extract_source_url
 
@@ -183,7 +183,7 @@ class SourceContentRenderer:
         The joins its caller applies insert separators the backend's character
         ranges never accounted for, which is why no citation offset can be used
         against the result (#2128). The offset-bearing parse of the same tree is
-        :func:`notebooklm._row_adapters.documents.build_document`, surfaced as
+        :func:`notebooklm._web.rows.documents.build_document`, surfaced as
         :attr:`SourceFulltext.document`; prefer it for anything that needs to
         know *where* text sits.
         """

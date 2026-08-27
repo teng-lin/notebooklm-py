@@ -61,7 +61,7 @@
       ]
     ]
   },
-  "mapper": "notebooklm._research_task_parser:parse_research_task_models",
+  "mapper": "notebooklm._web.rows.research_task:parse_research_task_models",
   "mapper_expected": [
     {
       "task_id": "SCRUBBED_RESEARCH_001",

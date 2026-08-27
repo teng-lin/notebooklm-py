@@ -10,8 +10,6 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Final
 
-from .._row_adapters.artifacts import ArtifactRow
-from .._row_adapters.notes import NoteRow
 from ..exceptions import UnknownRPCMethodError
 from .artifact_content import (
     ArtifactInfographic,
@@ -140,20 +138,28 @@ def _is_valid_artifact_url(value: Any) -> bool:
 
 
 def _extract_audio_artifact_url(data: list[Any]) -> str | None:
+    from .._web.rows.artifacts import ArtifactRow
+
     return ArtifactRow(data).artifact_url(ArtifactTypeCode.AUDIO.value, suppress_drift=True)
 
 
 def _extract_video_artifact_url(data: list[Any]) -> str | None:
+    from .._web.rows.artifacts import ArtifactRow
+
     return ArtifactRow(data).artifact_url(ArtifactTypeCode.VIDEO.value, suppress_drift=True)
 
 
 def _extract_infographic_artifact_url(data: list[Any]) -> str | None:
+    from .._web.rows.artifacts import ArtifactRow
+
     return ArtifactRow(data).artifact_url(ArtifactTypeCode.INFOGRAPHIC.value, suppress_drift=True)
 
 
 def _extract_slide_deck_artifact_url(data: list[Any]) -> str | None:
     """Extract the slide-deck PDF URL. The PPTX URL at ``data[16][4]`` is not
     surfaced — callers wanting PPTX should use ``download_slide_deck(output_format="pptx")``."""
+    from .._web.rows.artifacts import ArtifactRow
+
     return ArtifactRow(data).artifact_url(ArtifactTypeCode.SLIDE_DECK.value, suppress_drift=True)
 
 
@@ -161,6 +167,8 @@ def _extract_artifact_url(data: list[Any], artifact_type: int | None) -> str | N
     """Extract a public download URL from known artifact response shapes."""
     if artifact_type is None:
         return None
+    from .._web.rows.artifacts import ArtifactRow
+
     return ArtifactRow(data).artifact_url(artifact_type, suppress_drift=True)
 
 
@@ -241,7 +249,7 @@ class Artifact:
 
         Position knowledge for ``id`` / ``title`` / ``type`` / ``status``
         / ``variant`` / ``timestamp`` lives in
-        :class:`notebooklm._row_adapters.artifacts.ArtifactRow`. This factory wraps
+        :class:`notebooklm._web.rows.artifacts.ArtifactRow`. This factory wraps
         the raw row in an adapter and reads through its typed properties,
         so any wire-shape change touches the adapter constants only.
 
@@ -249,6 +257,8 @@ class Artifact:
         ``_extract_artifact_url`` helper remains only as a compatibility
         shim for downstream private imports.
         """
+        from .._web.rows.artifacts import ArtifactRow
+
         row = ArtifactRow(data)
         artifact_type = row.type_code
         # ``row.type_code`` is statically typed ``int`` and normalises
@@ -306,7 +316,7 @@ class Artifact:
         Mind-map rows ARE note-system rows (they come from
         ``GET_NOTES_AND_MIND_MAPS``), so the id slot, the title, and the
         deleted-tombstone predicate are read through
-        :class:`notebooklm._row_adapters.notes.NoteRow` — position knowledge
+        :class:`notebooklm._web.rows.notes.NoteRow` — position knowledge
         lives in the adapter, not here. A ``None`` content slot *without* the
         recognised ``[id, None, 2]`` tombstone is sentinel drift (a deleted
         mind map would otherwise silently leak as live): it logs a WARNING and
@@ -318,6 +328,8 @@ class Artifact:
         """
         if not isinstance(data, list) or len(data) < 1:
             return None
+
+        from .._web.rows.notes import NoteRow
 
         row = NoteRow(data)
 

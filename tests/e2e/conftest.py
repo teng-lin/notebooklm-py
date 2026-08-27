@@ -18,7 +18,7 @@ import pytest
 from notebooklm._env import get_base_url
 
 if TYPE_CHECKING:
-    from notebooklm._row_adapters.artifacts import QuizOptionPair
+    from notebooklm._web.rows.artifacts import QuizOptionPair
     from notebooklm.client import NotebookLMClient
 
 # Load .env file if python-dotenv is available
@@ -320,7 +320,7 @@ async def read_back_option_pair(
     Raises:
         AssertionError: If the row never appears or carries no option pair.
     """
-    from notebooklm._row_adapters.artifacts import ArtifactRow
+    from notebooklm._web.rows.artifacts import ArtifactRow
 
     assert family in ("quiz", "flashcards"), family
     for attempt in range(attempts):

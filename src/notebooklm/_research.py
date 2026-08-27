@@ -28,8 +28,6 @@ from ._research_import import (
     _requested_import_verification_urls,
     _validate_research_task_provenance,
 )
-from ._research_task_parser import parse_research_task_models
-from ._row_adapters.research import ImportedSourceRow, ResearchStartRow, unwrap_import_rows
 from ._runtime.config import (
     AUTO_READ_TIMEOUT,
     DEFAULT_TIMEOUT,
@@ -45,6 +43,8 @@ from ._types.research import (
     ResearchStatus,
     ResearchTask,
 )
+from ._web.rows.research import ImportedSourceRow, ResearchStartRow, unwrap_import_rows
+from ._web.rows.research_task import parse_research_task_models
 from .exceptions import (
     AmbiguousResearchTaskError,
     AuthError,

@@ -1,7 +1,7 @@
 """Unit tests for the source response adapters drained from raw positional reads.
 
 Covers the three additions that absorbed the ``_source/`` + ``_types/sources``
-raw ``name[int]`` RPC-payload reads behind the sanctioned ``_row_adapters``
+raw ``name[int]`` RPC-payload reads behind the sanctioned ``_web.rows``
 layer (the #1491 single-level burndown for the sources domain):
 
 * :meth:`SourceRow.url_from_metadata` / :meth:`SourceRow.created_at_from_metadata`
@@ -23,17 +23,17 @@ from __future__ import annotations
 
 import pytest
 
-from notebooklm._row_adapters.sources import (
+from notebooklm._types.common import _datetime_from_timestamp
+from notebooklm._types.sources import (
+    _extract_source_created_at,
+    _extract_source_url,
+)
+from notebooklm._web.rows.sources import (
     SourceFulltextRow,
     SourceGuideRow,
     SourceRow,
     _warned_drive_id_slots,
     _warned_drive_status_codes,
-)
-from notebooklm._types.common import _datetime_from_timestamp
-from notebooklm._types.sources import (
-    _extract_source_created_at,
-    _extract_source_url,
 )
 from notebooklm.rpc import RPCMethod
 from notebooklm.rpc.types import DriveSourceStatus, SourceStatus

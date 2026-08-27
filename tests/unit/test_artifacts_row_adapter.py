@@ -20,7 +20,7 @@ from typing import Any
 
 import pytest
 
-from notebooklm._row_adapters.artifacts import (
+from notebooklm._web.rows.artifacts import (
     MIND_MAP_LEAF_ABSENT,
     unwrap_artifact_rows,
     unwrap_mind_map_generation_leaf,

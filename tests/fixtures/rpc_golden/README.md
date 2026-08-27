@@ -37,7 +37,7 @@ ID changes without renaming the file.
     "expected_decoded": /* the python payload decode_response must return */
   },
 
-  "mapper": "notebooklm._research_task_parser:parse_research_task_models",
+  "mapper": "notebooklm._web.rows.research_task:parse_research_task_models",
   "mapper_expected": [/* the public-dict shape (or list thereof) produced by the mapper */],
 
   "drift_cases": [

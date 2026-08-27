@@ -13,10 +13,10 @@ from .._backoff import compute_backoff_delay
 from .._callbacks import maybe_await_callback
 from .._deadline import Monotonic, RuntimeDeadline, Sleep
 from .._polling_registry import PollRegistry
-from .._row_adapters.artifacts import ArtifactRow
 from .._runtime.contracts import LoopGuard
 from .._types.artifacts import _status_from_code
 from .._types.enums import ArtifactStatus, ArtifactTypeCode, artifact_status_to_str
+from .._web.rows.artifacts import ArtifactRow
 from ..exceptions import ArtifactInProgressTimeoutError, ArtifactPendingTimeoutError
 from ..rpc import (
     NetworkError,

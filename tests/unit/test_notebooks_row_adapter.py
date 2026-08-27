@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from notebooklm._row_adapters.notebooks import (
+from notebooklm._web.rows.notebooks import (
     ProjectRow,
     PromptSuggestionRow,
     unwrap_prompt_suggestions,

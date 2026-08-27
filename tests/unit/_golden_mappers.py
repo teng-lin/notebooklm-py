@@ -37,13 +37,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from notebooklm._row_adapters.artifacts import ReportSuggestionRow, unwrap_artifact_rows
-from notebooklm._row_adapters.notebooks import PromptSuggestionRow, unwrap_prompt_suggestions
 from notebooklm._types.artifacts import Artifact, ReportSuggestion
 from notebooklm._types.labels import Label
 from notebooklm._types.notebooks import Notebook, PromptSuggestion
 from notebooklm._types.sharing import ShareStatus
 from notebooklm._types.sources import Source
+from notebooklm._web.rows.artifacts import ReportSuggestionRow, unwrap_artifact_rows
+from notebooklm._web.rows.notebooks import PromptSuggestionRow, unwrap_prompt_suggestions
 from notebooklm.rpc.types import RPCMethod
 
 # Fixed notebook id used by the share-status / label mappers below. The

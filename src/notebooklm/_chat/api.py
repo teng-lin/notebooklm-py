@@ -19,18 +19,18 @@ from .._loop_bound import LoopBoundPrimitive
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
 from .._notebooks import build_get_notebook_params
 from .._request_types import AuthSnapshot
-from .._row_adapters.chat import (
-    ConversationTurnRow,
-    unwrap_chat_settings,
-    unwrap_conversation_turns,
-    unwrap_last_conversation_id,
-)
 from .._runtime.config import (
     DEFAULT_CHAT_RESPONSE_MAX_BYTES,
     DEFAULT_CHAT_TIMEOUT,
     assert_resolved_read_timeout,
 )
 from .._runtime.contracts import LoopGuard, RpcCaller
+from .._web.rows.chat import (
+    ConversationTurnRow,
+    unwrap_chat_settings,
+    unwrap_conversation_turns,
+    unwrap_last_conversation_id,
+)
 from ..exceptions import ChatError, NetworkError, UnknownRPCMethodError, ValidationError
 from .deleted_tracker import RecentlyDeletedConversations
 from .history import count_prior_server_turns
@@ -577,7 +577,7 @@ class ChatAPI(LoopBoundPrimitive):
 
         Returns:
             Raw turn data from API; the per-turn position contract lives in
-            :class:`~notebooklm._row_adapters.chat.ConversationTurnRow`.
+            :class:`~notebooklm._web.rows.chat.ConversationTurnRow`.
         """
         logger.debug(
             "Getting conversation turns for %s (conversation=%s, limit=%d)",
@@ -611,7 +611,7 @@ class ChatAPI(LoopBoundPrimitive):
             source_path=f"/notebook/{notebook_id}",
         )
         # Response [[[conv_id]]]: SOFT walk in
-        # ``_row_adapters.chat.unwrap_last_conversation_id`` (None if no row).
+        # ``_web.rows.chat.unwrap_last_conversation_id`` (None if no row).
         if raw and isinstance(raw, list):
             conversation_id = unwrap_last_conversation_id(raw)
             if conversation_id is not None:
@@ -675,7 +675,7 @@ class ChatAPI(LoopBoundPrimitive):
         Pairs are returned in the same order as the input data (newest-first
         from the API); callers reverse if oldest-first is needed. Each user
         question (role 1) is followed by its AI answer (role 2); per-turn
-        positions live in :class:`~notebooklm._row_adapters.chat.ConversationTurnRow`.
+        positions live in :class:`~notebooklm._web.rows.chat.ConversationTurnRow`.
 
         Drift handling (#1485): an empty/absent history parses to ``[]``; a
         truthy-but-malformed payload/container raises ``UnknownRPCMethodError``

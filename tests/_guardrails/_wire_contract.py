@@ -796,7 +796,7 @@ MAPPINGS: tuple[Mapping, ...] = (
     #   [[<user rows>], null, 1000, true, null, null, [3, true, true], false]
     Mapping(
         "sharing",
-        "ShareStatus",
+        "ShareStatusRow",
         "_PUBLIC_BLOCK_POS",
         "GetProjectDetailsResponse",
         "publicSettings",
@@ -805,7 +805,7 @@ MAPPINGS: tuple[Mapping, ...] = (
     ),
     Mapping(
         "sharing",
-        "ShareStatus",
+        "ShareStatusRow",
         "_IS_PUBLIC_INNER_POS",
         "ProjectPublicSettings",
         "isPubliclyReadable",
@@ -814,7 +814,7 @@ MAPPINGS: tuple[Mapping, ...] = (
     ),
     Mapping(
         "sharing",
-        "ShareStatus",
+        "ShareStatusRow",
         "_MAX_SHARE_LIMIT_POS",
         "GetProjectDetailsResponse",
         "maxIndividualsShareLimit",
@@ -827,7 +827,7 @@ MAPPINGS: tuple[Mapping, ...] = (
     ),
     Mapping(
         "sharing",
-        "ShareStatus",
+        "ShareStatusRow",
         "_PUBLIC_SHARING_ALLOWED_POS",
         "GetProjectDetailsResponse",
         "isPublicSharingAllowed",
@@ -959,6 +959,12 @@ UNMAPPED: tuple[Unmapped, ...] = (
     Unmapped("artifacts", "ReportSuggestionRow", "_DESCRIPTION_POS", _SHAPE_UNKNOWN),
     Unmapped("artifacts", "ReportSuggestionRow", "_PROMPT_POS", _SHAPE_UNKNOWN),
     Unmapped("artifacts", "ReportSuggestionRow", "_AUDIENCE_LEVEL_POS", _SHAPE_UNKNOWN),
+    # collections.py — account-level web collection tuples are not present in
+    # the recovered mobile schema.
+    Unmapped("collections", "CollectionRow", "_NAME_POS", _SHAPE_UNKNOWN),
+    Unmapped("collections", "CollectionRow", "_MEMBERS_POS", _SHAPE_UNKNOWN),
+    Unmapped("collections", "CollectionRow", "_ID_POS", _SHAPE_UNKNOWN),
+    Unmapped("collections", "CollectionRow", "_EMOJI_POS", _SHAPE_UNKNOWN),
     # chat.py
     Unmapped("chat", "SavedChatNoteRow", "_OUTER_NOTE_POS", _NESTED_LOCAL),
     Unmapped("chat", "SavedChatNoteRow", "_ID_POS", _SHAPE_UNKNOWN),
@@ -1054,7 +1060,7 @@ UNMAPPED: tuple[Unmapped, ...] = (
     # sharing.py (#2130)
     Unmapped(
         "sharing",
-        "ShareStatus",
+        "ShareStatusRow",
         "_USERS_POS",
         f"{_NO_SUCH_FIELD} the web GET_SHARE_STATUS response carries the shared-user "
         "rows at index 0 (proto tag 1), but the recovered mobile "
@@ -1064,6 +1070,14 @@ UNMAPPED: tuple[Unmapped, ...] = (
         "so this is a naming gap in the mobile schema, not a suspect read. "
         "Recorded honestly rather than mapped to a field that does not exist.",
     ),
+    # Nested web shared-user rows are likewise absent from the recovered
+    # GetProjectDetailsResponse schema, so record their established positions
+    # without inventing protobuf field names.
+    Unmapped("sharing", "SharedUserRow", "_EMAIL_POS", _SHAPE_UNKNOWN),
+    Unmapped("sharing", "SharedUserRow", "_PERMISSION_POS", _SHAPE_UNKNOWN),
+    Unmapped("sharing", "SharedUserRow", "_USER_INFO_POS", _SHAPE_UNKNOWN),
+    Unmapped("sharing", "SharedUserRow", "_DISPLAY_NAME_POS", _NESTED_LOCAL),
+    Unmapped("sharing", "SharedUserRow", "_AVATAR_URL_POS", _NESTED_LOCAL),
 )
 
 #: ``GET_SHARE_STATUS`` slots that are POPULATED on every live response and

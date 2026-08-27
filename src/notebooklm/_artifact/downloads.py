@@ -21,8 +21,8 @@ import httpx
 from .._auth.cookies import load_httpx_cookies
 from .._curl_cffi_transport import resolve_transport_factory
 from .._mind_maps_api import extract_interactive_tree_leaf
-from .._row_adapters.notes import NoteRow
 from .._types.enums import ArtifactTypeCode
+from .._web.rows.notes import NoteRow
 from ..exceptions import UnknownRPCMethodError, ValidationError
 from ..rpc import RPCMethod, safe_index
 from ..types import (
@@ -43,8 +43,8 @@ from .formatters import _extract_app_data, _format_interactive_content, _parse_d
 
 if TYPE_CHECKING:
     from .._mind_map import NoteBackedMindMapService
-    from .._row_adapters.artifacts import ArtifactRow
     from .._runtime.contracts import RpcCaller
+    from .._web.rows.artifacts import ArtifactRow
     from .listing import ArtifactListingService
 
 logger = logging.getLogger(__name__)

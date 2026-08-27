@@ -102,7 +102,7 @@ class ClientMetricsSnapshot:
     Bumped whenever the executor rejects a decoded RPC response as schema
     drift — a wrapped shape-drift error (bad JSON / missing key-or-index) or a
     surfaced ``DecodingError`` / ``UnknownRPCMethodError`` raised while decoding
-    the response envelope (``safe_index`` inside the decoder). Wire-schema drift
+    the response envelope. Wire-schema drift
     is the stated #1 breakage class, so this counter separates "Google reshaped
     a response" from an ordinary 5xx / network failure (which lands in
     ``rpc_calls_failed`` via the transport-leg ``MetricsMiddleware``). A decode
@@ -110,10 +110,10 @@ class ClientMetricsSnapshot:
     ultimately surfaces is.
 
     Scope note: this covers drift detected at the executor boundary. Positional
-    drift raised *later* by feature-layer ``safe_index`` navigation (after
-    ``rpc_call`` returns — e.g. ``_extract_summary``) propagates straight to the
-    caller and is not routed through this counter yet; broadening the counting
-    boundary to those sites is tracked as a follow-up.
+    drift raised *later* by checked feature-layer navigation (after ``rpc_call``
+    returns — e.g. ``_extract_summary``) propagates straight to the caller and
+    is not routed through this counter yet; broadening the counting boundary to
+    those sites is tracked as a follow-up.
     """
 
 

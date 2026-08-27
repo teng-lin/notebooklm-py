@@ -28,7 +28,7 @@ the time of this ADR, `src/notebooklm/` contains 14 public-named modules
 seam modules and subpackages (`_runtime/`, `_middleware/`, `_kernel.py`,
 `_request_types.py`, `_transport_errors.py`, `_streaming_post.py`,
 `_rpc_executor.py`, `_artifacts.py`, `_artifact/`, `_chat/`,
-`_source/`, `_row_adapters/`, the `_auth/` subpackage, etc.).
+`_source/`, `_web/rows/`, the `_auth/` subpackage, etc.).
 The seam modules carry the bulk of the implementation; the
 public-named modules are mostly thin re-export facades or lifecycle
 entry points.
@@ -162,7 +162,7 @@ src/notebooklm/
 ├── _chat/                       # ChatAPI implementation + chat helpers
 ├── _source/                     # per-concern source seams
 ├── _label/                      # label payload builders
-├── _row_adapters/               # strict positional RPC row adapters
+├── _web/rows/                   # strict positional RPC row adapters
 ├── _notebooks.py                # NotebooksAPI implementation
 ├── _sources.py, _notes.py, ...  # other feature implementations
 ├── _env.py                      # env-var resolvers (NOTEBOOKLM_*)

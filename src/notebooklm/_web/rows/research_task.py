@@ -2,9 +2,9 @@
 
 The public typed models (:class:`ResearchSource`, :class:`ResearchTask`,
 :class:`ResearchStatus`) live in ``_types/research.py`` (issue #1209); they are
-re-exported here so the historical import path
-``from ._research_task_parser import ResearchSource, ResearchTask`` keeps
-working and this module stays the home of the wire-row parsing logic.
+re-exported here as this module succeeds the historical
+``_research_task_parser`` implementation and stays the home of the wire-row
+parsing logic.
 """
 
 from __future__ import annotations
@@ -12,13 +12,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ._row_adapters.research import (
-    ResearchResultRow,
-    ResearchTaskInfoRow,
-    ResearchTaskRow,
-    unwrap_poll_tasks,
-)
-from ._types.research import (
+from ..._types.research import (
     RESEARCH_RESULT_TYPE_REPORT,
     RESEARCH_RESULT_TYPE_WEB,
     ResearchResultType,
@@ -29,7 +23,13 @@ from ._types.research import (
     status_from_termination_reason,
     termination_reason_from_code,
 )
-from .rpc import RPCMethod, safe_index
+from ...rpc import RPCMethod, safe_index
+from .research import (
+    ResearchResultRow,
+    ResearchTaskInfoRow,
+    ResearchTaskRow,
+    unwrap_poll_tasks,
+)
 
 __all__ = [
     "RESEARCH_RESULT_TYPE_REPORT",

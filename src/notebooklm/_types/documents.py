@@ -40,7 +40,7 @@ be read. :meth:`StructuredDocument.render` documents what separates them.
 
 The types here are transport-neutral and carry no positional knowledge; the
 ``TailwindDoc`` array positions live in
-:mod:`notebooklm._row_adapters.documents`.
+:mod:`notebooklm._web.rows.documents`.
 """
 
 from __future__ import annotations

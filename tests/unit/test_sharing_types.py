@@ -167,23 +167,23 @@ class TestShareStatusCapacityAndPolicyFields:
         """
         import logging
 
-        from notebooklm._types import sharing as sharing_mod
+        from notebooklm._web.rows import sharing as sharing_rows
 
-        sharing_mod._warned_malformed_share_slots.clear()
+        sharing_rows._warned_malformed_share_slots.clear()
 
-        with caplog.at_level(logging.WARNING, logger=sharing_mod.__name__):
+        with caplog.at_level(logging.WARNING, logger=sharing_rows.__name__):
             ShareStatus.from_api_response([[], None, "1000", "yes"], "nb-1")
         assert "maxIndividualsShareLimit" in caplog.text
         assert "isPublicSharingAllowed" in caplog.text
 
         # A short response is normal, not drift, and must stay quiet.
         caplog.clear()
-        with caplog.at_level(logging.WARNING, logger=sharing_mod.__name__):
+        with caplog.at_level(logging.WARNING, logger=sharing_rows.__name__):
             ShareStatus.from_api_response([[], None], "nb-1")
         assert caplog.text == ""
 
         # An explicit null is absence too.
-        with caplog.at_level(logging.WARNING, logger=sharing_mod.__name__):
+        with caplog.at_level(logging.WARNING, logger=sharing_rows.__name__):
             ShareStatus.from_api_response([[], None, None, None], "nb-1")
         assert caplog.text == ""
 
@@ -195,15 +195,15 @@ class TestShareStatusCapacityAndPolicyFields:
         server, an MCP session). Keying on the *type* bounds it by construction:
         feeding 500 distinct malformed values adds one entry per (field, type).
         """
-        from notebooklm._types import sharing as sharing_mod
+        from notebooklm._web.rows import sharing as sharing_rows
 
-        sharing_mod._warned_malformed_share_slots.clear()
+        sharing_rows._warned_malformed_share_slots.clear()
 
         for i in range(500):
             ShareStatus.from_api_response([[], None, f"cap-{i}", f"gate-{i}"], "nb-1")
 
         # Two fields, one type (str) each — not 1000 entries.
-        assert sharing_mod._warned_malformed_share_slots == {
+        assert sharing_rows._warned_malformed_share_slots == {
             ("maxIndividualsShareLimit", "str"),
             ("isPublicSharingAllowed", "str"),
         }
@@ -211,8 +211,8 @@ class TestShareStatusCapacityAndPolicyFields:
         # A genuinely different failure mode is still reported once more, so
         # bounding the cache did not cost the signal it exists to carry.
         ShareStatus.from_api_response([[], None, [1], [2]], "nb-1")
-        assert ("maxIndividualsShareLimit", "list") in sharing_mod._warned_malformed_share_slots
-        assert len(sharing_mod._warned_malformed_share_slots) == 4
+        assert ("maxIndividualsShareLimit", "list") in sharing_rows._warned_malformed_share_slots
+        assert len(sharing_rows._warned_malformed_share_slots) == 4
 
     def test_malformed_slot_warns_once_per_failure_mode(self, caplog):
         """A polled notebook must not re-emit the same drift line every decode.
@@ -222,11 +222,11 @@ class TestShareStatusCapacityAndPolicyFields:
         """
         import logging
 
-        from notebooklm._types import sharing as sharing_mod
+        from notebooklm._web.rows import sharing as sharing_rows
 
-        sharing_mod._warned_malformed_share_slots.clear()
+        sharing_rows._warned_malformed_share_slots.clear()
 
-        with caplog.at_level(logging.WARNING, logger=sharing_mod.__name__):
+        with caplog.at_level(logging.WARNING, logger=sharing_rows.__name__):
             for _ in range(5):
                 ShareStatus.from_api_response([[], None, "1000", True], "nb-1")
 

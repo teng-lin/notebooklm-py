@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm._research_task_parser import (
+from notebooklm._web.rows.research_task import (
     ResearchSource,
     ResearchTask,
     _extract_query_text,

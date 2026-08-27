@@ -7,7 +7,7 @@
     "ENUM_GAPS": 34,
     "MAPPINGS": 669,
     "PINNED": 114,
-    "UNMAPPED": 267
+    "UNMAPPED": 294
   },
   "tests/_guardrails/test_auth_cold_recovery_coordinator_boundary.py": {
     "_EXPECTED_IMPORTS": 225
@@ -63,6 +63,10 @@
   "tests/_guardrails/test_authtokens_jar_sync.py": {
     "_COOKIE_SHADOW_INVENTORY": 96,
     "_NON_AUTHTOKENS_CANDIDATES": 30
+  },
+  "tests/_guardrails/test_backend_boundaries.py": {
+    "ALLOWED_WEB_IMPORTERS": 28,
+    "LAZY_WEB_IMPORT_ALLOWLIST": 30
   },
   "tests/_guardrails/test_classify_error_handler_consistency.py": {
     "_EXEMPLARS": 22

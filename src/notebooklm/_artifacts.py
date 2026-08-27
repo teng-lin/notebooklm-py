@@ -25,7 +25,6 @@ from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteService
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
-from ._row_adapters import artifacts as _artifact_rows
 from ._runtime.contracts import RpcCaller
 from ._types.enums import (
     ArtifactTypeCode,
@@ -44,6 +43,7 @@ from ._types.enums import (
     VideoStyle,
 )
 from ._types.research import MindMapResult
+from ._web.rows import artifacts as _artifact_rows
 from .exceptions import ArtifactNotFoundError
 
 if TYPE_CHECKING:

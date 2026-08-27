@@ -36,7 +36,7 @@ class Label:
         method_id: str | None = None,
     ) -> Label:
         """Parse one label 4-tuple ``[name, sources, label_id, emoji]``."""
-        from .._row_adapters.labels import LabelRow
+        from .._web.rows.labels import LabelRow
 
         row = LabelRow.from_label_tuple(data, method_id=method_id)
         return cls(

@@ -502,7 +502,7 @@ class TestDeepResearchPollReplay:
         """
         # Imported here (not at module top) to keep the decode/parse
         # dependency local to this cassette-inspection helper.
-        from notebooklm._research_task_parser import parse_research_task_models
+        from notebooklm._web.rows.research_task import parse_research_task_models
         from notebooklm.rpc import decode_response
 
         assert CASSETTE_PATH.exists(), (

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from notebooklm._row_adapters.labels import LabelRow
+from notebooklm._web.rows.labels import LabelRow
 from notebooklm.exceptions import UnknownRPCMethodError
 
 

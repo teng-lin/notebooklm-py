@@ -11,7 +11,7 @@ duplicate, or a miscount.
 
 To be a real oracle, that comparison must come from an **independent** reading of
 the cassette. If this helper imported the production decoder
-(``notebooklm.rpc.decoder`` / ``notebooklm._row_adapters`` / ``notebooklm._types``)
+(``notebooklm.rpc.decoder`` / ``notebooklm._web.rows`` / ``notebooklm._types``)
 the assertion would be a tautology: "the CLI's decode equals the decoder's
 decode" proves nothing. So this module is built on **stdlib + ``yaml`` only** and
 re-implements just enough of the batchexecute envelope walk (copied as our own

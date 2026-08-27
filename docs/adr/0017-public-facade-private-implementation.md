@@ -51,7 +51,7 @@ source tree) are:
 | `urls.py`     | `_url_utils.py`        |
 | `io.py`       | `_atomic_io.py`        |
 | `log.py`      | `_logging.py`          |
-| `research.py` | `_research_task_parser.py` (plus public helpers) |
+| `research.py` | `_web/rows/research_task.py` (plus public helpers) |
 | `auth.py`     | `_auth/` package       |
 
 Single-purpose public helper modules (`artifacts.py`, `utils.py`,

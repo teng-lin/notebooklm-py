@@ -1,11 +1,18 @@
-"""Private positional-RPC-row adapter package.
+"""Web positional-row decoders and typed row views."""
 
-Cohesive cluster promoted from the former flat ``_row_adapters_*.py`` modules (issue #1328).
-Re-exports the typed row views; importers may also reach submodules directly
-(``from .._row_adapters.sources import SourceRow``).
-"""
-
-from . import artifacts, chat, documents, labels, notebooks, notes, research, sources
+from . import (
+    artifacts,
+    chat,
+    collections,
+    documents,
+    labels,
+    notebooks,
+    notes,
+    research,
+    research_task,
+    sharing,
+    sources,
+)
 from .artifacts import ArtifactRow, ReportSuggestionRow
 from .chat import (
     AnswerRow,
@@ -14,8 +21,10 @@ from .chat import (
     ConversationTurnRow,
     ErrorPayloadRow,
     StreamFrameRow,
+    count_question_turn_rows,
     unwrap_conversation_turns,
 )
+from .collections import CollectionRow
 from .documents import (
     AnnotationEntryRow,
     DocumentBodyRow,
@@ -37,22 +46,27 @@ from .research import (
     unwrap_import_rows,
     unwrap_poll_tasks,
 )
+from .sharing import SharedUserRow, ShareStatusRow
 from .sources import SourceRow, SourceRowShape
 
 __all__ = [
     "artifacts",
     "chat",
+    "collections",
     "documents",
     "labels",
     "notebooks",
     "notes",
     "research",
+    "research_task",
+    "sharing",
     "sources",
     "AnnotationEntryRow",
     "AnswerRow",
     "ArtifactRow",
     "CitationDetail",
     "CitationRow",
+    "CollectionRow",
     "ConversationTurnRow",
     "DocumentBodyRow",
     "ErrorPayloadRow",
@@ -66,6 +80,8 @@ __all__ = [
     "ResearchStartRow",
     "ResearchTaskInfoRow",
     "ResearchTaskRow",
+    "SharedUserRow",
+    "ShareStatusRow",
     "SourceRow",
     "SourceRowShape",
     "StreamFrameRow",
@@ -73,6 +89,7 @@ __all__ = [
     "TextRunRow",
     "build_blocks",
     "build_document",
+    "count_question_turn_rows",
     "unwrap_conversation_turns",
     "unwrap_import_rows",
     "unwrap_poll_tasks",

@@ -2,35 +2,14 @@
 
 from __future__ import annotations
 
-import logging
-import reprlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 from .._deprecation import warn_deprecated
-from .._row_adapters.notebooks import ProjectRow
-from ..exceptions import UnknownRPCMethodError
-from ..rpc import RPCMethod, safe_index
 from .chat import ChatSettings
-from .common import _datetime_from_timestamp
-from .enums import ChatGoal, ChatResponseLength, SharePermission, share_permission_to_str
+from .enums import SharePermission, share_permission_to_str
 from .sources import SourceType
-
-logger = logging.getLogger(__name__)
-
-# ``Notebook.from_api_response`` decodes rows from BOTH ``LIST_NOTEBOOKS`` (each
-# row in the list envelope) and ``GET_NOTEBOOK`` (the single ``nb_info`` row).
-# The positional descents below route through ``safe_index`` purely for the
-# shared schema-drift telemetry seam; every descent is *length-guarded first*
-# so ``safe_index`` is only ever invoked on a slot the guard already proved
-# present — it therefore cannot raise here, preserving the historical
-# "short / malformed rows soft-degrade to a default" contract (the same
-# length-guard-then-``safe_index`` style ``NoteRow`` uses). ``LIST_NOTEBOOKS``
-# is used as the representative ``method_id`` for diagnostics since the list
-# path is the primary producer; a drift diagnostic would still point at the
-# notebook-row family.
-_NOTEBOOK_METHOD_ID = RPCMethod.LIST_NOTEBOOKS.value
 
 
 @dataclass
@@ -48,55 +27,6 @@ class SourceSummary:
             "title": self.title,
             "url": self.url,
         }
-
-
-def _extract_notebook_sources_count(data: list[Any]) -> int:
-    """Extract the embedded source count from a notebook API payload."""
-    sources = (
-        safe_index(data, 1, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.sources_count")
-        if len(data) > 1
-        else None
-    )
-    return len(sources) if isinstance(sources, list) else 0
-
-
-#: Wire codes the ``userRole`` slot may legitimately carry, as plain ints —
-#: comparing ints to ints rather than relying on ``SharePermission`` hashing as
-#: its value, so the check cannot quietly start rejecting everything if the enum
-#: ever stops mixing in ``int``. ``SharePermission`` also owns ``_REMOVE = 4``
-#: (proto ``NOT_SHARED``), but that is a write-only sentinel for the
-#: share-mutation call — a notebook row never reports it (a revoked account gets
-#: ``PERMISSION_DENIED``, not role 4), so it is excluded here rather than
-#: surfaced as a nonsensical role.
-_NOTEBOOK_ROLES = frozenset(
-    {SharePermission.OWNER.value, SharePermission.EDITOR.value, SharePermission.VIEWER.value}
-)
-
-
-def _role_from_wire(raw_role: Any, row: list[Any]) -> SharePermission | None:
-    """Map a raw ``userRole`` slot to :class:`SharePermission`, or ``None``.
-
-    ``None`` means "not stated by this row" — an absent slot, or a value this
-    client does not recognize. Callers treat that as unknown rather than
-    guessing a level. An unmapped *present* value logs a WARNING because it is
-    the signature of protocol drift (#1485 absence-vs-malformed policy).
-    """
-    if raw_role is None:
-        return None
-    # ``bool`` is an ``int`` subclass, so ``SharePermission(True)`` would
-    # silently yield ``OWNER``. Reject booleans explicitly: they are the shape
-    # of the neighbouring has-sharing slot, i.e. exactly the drift we would
-    # most want to notice.
-    if isinstance(raw_role, int) and not isinstance(raw_role, bool):
-        if raw_role in _NOTEBOOK_ROLES:
-            return SharePermission(raw_role)
-    logger.warning(
-        "Notebook row userRole slot unmapped — reporting unknown role "
-        "(expected 1/2/3 at data[5][0], got %r; row=%s)",
-        raw_role,
-        reprlib.repr(row),
-    )
-    return None
 
 
 @dataclass(frozen=True)
@@ -306,159 +236,9 @@ class Notebook:
         ``GET_NOTEBOOK`` row should set ``include_chat_settings=True``; there an
         explicit ``null`` truthfully means the default configuration.
         """
-        project = ProjectRow(data)
-        title_slot = (
-            safe_index(data, 0, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.title")
-            if len(data) > 0
-            else None
-        )
-        raw_title = title_slot if isinstance(title_slot, str) else ""
-        title = raw_title.replace("thought\n", "").strip()
-        sources_count = _extract_notebook_sources_count(data)
-        # ``data[2]`` is the notebook id. A short row / ``None`` slot keeps
-        # the historical silent ``""``-degrade — this factory parses rows out
-        # of whole-list responses, so raising would abort sibling rows. A
-        # *present-but-malformed* slot (non-str, non-None) still degrades to
-        # ``""`` for the same reason, but now logs a WARNING: a silently
-        # fabricated empty id is otherwise indistinguishable from a real row
-        # (#1485 absence-vs-malformed policy).
-        notebook_id = ""
-        if len(data) > 2:
-            raw_id = safe_index(data, 2, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.id")
-            if isinstance(raw_id, str):
-                notebook_id = raw_id
-            elif raw_id is not None:
-                logger.warning(
-                    "Notebook row id slot malformed — fabricating empty id "
-                    "(expected str at data[2], got %s; row=%s)",
-                    type(raw_id).__name__,
-                    reprlib.repr(data),
-                )
+        from .._web.rows.notebooks import decode_notebook
 
-        # ``data[5]`` is the metadata block; bind it once so the timestamp and
-        # role descents read a single named local instead of re-chaining
-        # ``data[5][...]`` (the legitimately-absent block defaults below). The
-        # slot read goes through ``safe_index`` (length-guarded first, so it
-        # cannot raise) and the result is only retained when it is a list.
-        meta_slot = (
-            safe_index(data, 5, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.metadata")
-            if len(data) > 5
-            else None
-        )
-        meta = meta_slot if isinstance(meta_slot, list) else None
-
-        # ``meta[8]`` (``data[5][8][0]``, proto tag 9) is the CREATION instant:
-        # pinned across create / share / rename / read and byte-identical over
-        # the mobile gRPC surface (#2126 audit), so it is the one timestamp on
-        # this row that means what its name says.
-        created_at = None
-        if meta is not None and len(meta) > 8:
-            created_ts = safe_index(
-                meta, 8, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.created_at"
-            )
-            if isinstance(created_ts, list) and len(created_ts) > 0:
-                created_at = _datetime_from_timestamp(
-                    safe_index(
-                        created_ts, 0, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.created_at"
-                    )
-                )
-
-        # ``meta[5]`` (``data[5][5][0]``, proto tag 6) is ``lastViewedTime`` —
-        # NOT a modification time. It was surfaced as ``modified_at`` until
-        # #2126, on the belief that it tracked edits; it tracks *this account's
-        # reads*.
-        #
-        # Why the original probe got it wrong is worth recording, because the
-        # obvious re-run reproduces the error: that probe edited the notebook and
-        # then READ IT BACK to observe the slot, so every "edit" was confounded
-        # with a read. Isolating the read is what settles it — the #2126 audit
-        # (``docs/notes/web-rpc-vs-mobile-grpc-audit-2026-08-07.md`` §1.7) saw
-        # three consecutive reads with no mutation of any kind advance the slot
-        # (1786105463 -> 1786105467 -> 1786105471), and a single bare
-        # ``GET_NOTEBOOK`` move the notebook to index 0 of
-        # ``ListRecentlyViewedProjects``.
-        #
-        # Decoding it is free and read-only — the recency write happens
-        # server-side on the ``GET_NOTEBOOK`` we already issued — so the fix is
-        # the honest name plus the warning in the field docs, not a narrower
-        # decode. See ``Notebook.last_viewed_at``.
-        last_viewed_at = None
-        if meta is not None and len(meta) > 5:
-            viewed_ts = safe_index(
-                meta, 5, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.last_viewed_at"
-            )
-            if isinstance(viewed_ts, list) and len(viewed_ts) > 0:
-                last_viewed_at = _datetime_from_timestamp(
-                    safe_index(
-                        viewed_ts,
-                        0,
-                        method_id=_NOTEBOOK_METHOD_ID,
-                        source="Notebook.last_viewed_at",
-                    )
-                )
-
-        # ``meta[0]`` (``data[5][0]``) is ``ProjectMetadata.userRole`` — the
-        # CALLING account's permission level on this notebook (1 OWNER /
-        # 2 WRITER / 3 READER, value-identical to ``SharePermission``).
-        #
-        # This used to be read from ``meta[1]`` instead, on the belief that the
-        # slot was an owner flag. A two-account live probe (#2125) showed
-        # ``meta[1]`` actually tracks "this notebook has ANY sharing at all":
-        # it flipped ``False -> True`` the moment a collaborator was added to a
-        # notebook the account owned, and back on revoke. So the old expression
-        # evaluated to ``not (shared with anyone)`` and reported ``is_owner=False``
-        # for every notebook the user owned *and had shared*. ``meta[0]`` stayed
-        # pinned at ``1`` for the owner across every stage of that probe, and is
-        # present on 100% of ``LIST_NOTEBOOKS`` *and* ``GET_NOTEBOOK`` rows, so
-        # the correct read costs no extra RPC.
-        role = None
-        if meta is not None and len(meta) > 0:
-            raw_role = safe_index(meta, 0, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.role")
-            role = _role_from_wire(raw_role, data)
-
-        premium_features = None
-        premium_flags = project.premium_feature_flags
-        if premium_flags is not None:
-            premium_features = PremiumFeatureInfo(*premium_flags)
-
-        chat_settings = None
-        if include_chat_settings:
-            # Reuse the strict GET_NOTEBOOK decoder so the persona/config wire
-            # position has one owner. The general Notebook factory is softer
-            # than ChatAPI.get_settings because it also maps whole listings:
-            # one malformed optional config must not discard sibling notebooks.
-            from .._row_adapters.chat import unwrap_chat_settings
-
-            try:
-                settings_row = unwrap_chat_settings(data, source="Notebook.chat_settings")
-                chat_settings = ChatSettings(
-                    goal=ChatGoal(settings_row.goal_code),
-                    response_length=ChatResponseLength(settings_row.response_length_code),
-                    custom_prompt=settings_row.custom_prompt,
-                )
-            except (UnknownRPCMethodError, ValueError):
-                logger.warning(
-                    "Notebook row chat-settings slot could not be decoded — reporting unknown "
-                    "settings (row=%s)",
-                    reprlib.repr(data),
-                )
-
-        # ``is_owner`` is derived from ``role`` in ``__post_init__``. An unknown
-        # / absent role leaves the field's default of ``True``: the
-        # overwhelmingly common case is the caller's own notebook, and a short
-        # or malformed row must soft-degrade rather than mislabel every entry.
-        return cls(
-            id=notebook_id,
-            title=title,
-            created_at=created_at,
-            sources_count=sources_count,
-            role=role,
-            last_viewed_at=last_viewed_at,
-            emoji=project.emoji,
-            premium_features=premium_features,
-            chat_sessions=[ChatSession(id=session_id) for session_id in project.chat_session_ids],
-            chat_settings=chat_settings,
-        )
+        return decode_notebook(cls, data, include_chat_settings=include_chat_settings)
 
 
 @dataclass

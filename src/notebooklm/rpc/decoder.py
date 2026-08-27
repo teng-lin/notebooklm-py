@@ -156,7 +156,7 @@ _GRPC_STATUS_MESSAGES: dict[int, str] = {
 #                            models the same slot for streamed chat.
 #   ===== ================== ==================================================
 #
-# ``_row_adapters/chat.py`` models the same envelope for streamed chat. Its
+# ``_web/rows/chat.py`` models the same envelope for streamed chat. Its
 # POSITIONS are declared separately because it imports ``notebooklm.rpc``, so a
 # decoder-side import of it would close a cycle — this table is the shared
 # rationale for both. The normalising rule is NOT duplicated: both layers call
@@ -650,9 +650,9 @@ def sanitize_status_message(value: Any, *, source: str) -> str | None:
     """Normalize a raw ``google.rpc.Status.message`` slot into display text.
 
     Shared by the two layers that read the slot — this decoder for
-    ``batchexecute`` frames and ``_row_adapters.chat.ErrorPayloadRow`` for the
+    ``batchexecute`` frames and ``_web.rows.chat.ErrorPayloadRow`` for the
     streamed-chat envelope. Only the *positions* are declared per layer (the
-    ``rpc`` → ``_row_adapters`` import direction forbids sharing those); the
+    ``rpc`` → ``_web.rows`` import direction forbids sharing those); the
     sanitising rule is here so the two cannot drift in what users see.
 
     The rule is deliberately narrow, because **no captured response has ever

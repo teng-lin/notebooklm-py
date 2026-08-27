@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from notebooklm._app.errors import ErrorCategory, classify
-from notebooklm._row_adapters.sources import unwrap_add_source_rows
 from notebooklm._source.batch import SourceBatchAddService
+from notebooklm._web.rows.sources import unwrap_add_source_rows
 from notebooklm.exceptions import (
     AuthError,
     NetworkError,

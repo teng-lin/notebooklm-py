@@ -8,10 +8,10 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, ClassVar
 
-from .._types.common import _datetime_from_timestamp
-from .._types.enums import DriveSourceStatus, SourceStatus
-from ..exceptions import DecodingError
-from ..rpc import RPCMethod, safe_index
+from ..._types.common import _datetime_from_timestamp
+from ..._types.enums import DriveSourceStatus, SourceStatus
+from ...exceptions import DecodingError
+from ...rpc import RPCMethod, safe_index
 
 logger = logging.getLogger(__name__)
 
@@ -1333,7 +1333,7 @@ class SourceFulltextRow:
         suggests. ``_source/content.py`` derives two things from it — the legacy
         newline-joined ``SourceFulltext.content`` and, since #2128, the parsed
         ``SourceFulltext.document`` (via
-        :func:`notebooklm._row_adapters.documents.build_document`, which owns
+        :func:`notebooklm._web.rows.documents.build_document`, which owns
         every position below this one).
 
         Mirrors the legacy text-path guard: a falsy / non-list ``result[3]`` or

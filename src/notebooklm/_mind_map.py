@@ -21,7 +21,7 @@ from __future__ import annotations
 from typing import Any
 
 from ._note_service import NoteRowKind, NoteService
-from ._row_adapters.notes import NoteRow
+from ._web.rows.notes import NoteRow
 from .exceptions import MindMapNotFoundError
 
 

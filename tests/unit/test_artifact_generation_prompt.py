@@ -23,7 +23,7 @@ from notebooklm._artifact.listing import ArtifactListingService
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
-from notebooklm._row_adapters.artifacts import ArtifactRow
+from notebooklm._web.rows.artifacts import ArtifactRow
 from notebooklm.exceptions import ArtifactNotFoundError, UnknownRPCMethodError
 from notebooklm.rpc import (
     FLASHCARDS_VARIANT,

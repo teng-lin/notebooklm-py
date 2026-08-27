@@ -18,7 +18,7 @@ source of truth:
   ``constant == proto_tag - 1``. Entries marked ``known_bad`` are ``xfail`` and
   carry the issue reference; the fixing PR must drop the marker.
 * **B. No constant escapes review.** Every ``_*_POS``-style constant in
-  ``src/notebooklm/_row_adapters/`` appears in ``MAPPINGS`` or ``UNMAPPED``. A new
+  ``src/notebooklm/_web/rows/`` appears in ``MAPPINGS`` or ``UNMAPPED``. A new
   positional read cannot land without someone recording what it points at.
 * **C. Enum values agree.** Client enum members match the recovered backend enum,
   and known gaps stay declared.
@@ -87,14 +87,10 @@ _SRC = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
 #: Everything that decodes positional wire arrays. Widening this set is the
 #: intended way to bring more of the client under the contract — the coverage
 #: test will then demand a registry entry for each newly-visible constant.
-_SCANNED_DIRS = (_SRC / "_row_adapters",)
+_SCANNED_DIRS = (_SRC / "_web" / "rows",)
 _SCANNED_FILES = (
     _SRC / "_settings.py",
     _SRC / "_mind_maps_api.py",
-    # #2130 brought GET_SHARE_STATUS's positional reads under the contract. The
-    # parser used bare literals until then, so its indices made no checkable
-    # claim at all.
-    _SRC / "_types" / "sharing.py",
 )
 
 # Matches both `X: ClassVar[int] = 3` (class scope) and `X = 3` (module scope).

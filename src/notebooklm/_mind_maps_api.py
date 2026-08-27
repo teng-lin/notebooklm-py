@@ -19,8 +19,8 @@ from typing import TYPE_CHECKING, Any
 
 from ._artifact.payloads import build_interactive_mind_map_artifact_params
 from ._lookup import unwrap_or_raise
-from ._row_adapters.notes import NoteRow
 from ._types.mind_maps import MindMap, MindMapKind
+from ._web.rows.notes import NoteRow
 from .exceptions import (
     ArtifactFeatureUnavailableError,
     MindMapNotFoundError,

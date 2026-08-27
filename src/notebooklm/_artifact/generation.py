@@ -15,7 +15,6 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from .._env import get_default_language
-from .._row_adapters import artifacts as _artifact_rows
 from .._types.artifacts import _status_from_code
 from .._types.enums import (
     AudioFormat,
@@ -32,6 +31,7 @@ from .._types.enums import (
     VideoStyle,
 )
 from .._types.research import MindMapResult
+from .._web.rows import artifacts as _artifact_rows
 from ..exceptions import (
     ArtifactFeatureUnavailableError,
     DecodingError,

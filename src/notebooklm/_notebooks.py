@@ -18,12 +18,12 @@ from ._notebook_payloads import (
     build_prompt_suggestions_params,
     build_update_notebook_params,
 )
-from ._row_adapters.notebooks import PromptSuggestionRow, unwrap_prompt_suggestions
-from ._row_adapters.sources import SourceRow
 from ._runtime.contracts import RpcCaller
 from ._settings import build_get_user_settings_params, extract_account_limits
 from ._sharing_manager import ShareManager
 from ._types.enums import GrpcStatusCode, normalize_grpc_status
+from ._web.rows.notebooks import PromptSuggestionRow, unwrap_prompt_suggestions
+from ._web.rows.sources import SourceRow
 from .exceptions import (
     AuthError,
     ClientError,
@@ -287,7 +287,7 @@ class NotebooksAPI:
             below and converted to an empty list. Per-row id-envelope
             decoding (including the drive-backed ``[None, True, [id]]``
             shape) is delegated to
-            :class:`notebooklm._row_adapters.sources.SourceRow`; this method only
+            :class:`notebooklm._web.rows.sources.SourceRow`; this method only
             performs the envelope walk down to ``notebook[0][1]``.
         """
         notebook_data = await self.get_raw(notebook_id)
