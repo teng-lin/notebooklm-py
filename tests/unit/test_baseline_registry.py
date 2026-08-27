@@ -16,7 +16,13 @@ def _new_items(previous: object, current: object) -> list[str]:
     return [f"new item {item}" for item in current if item not in previous]
 
 
-def test_shrink_only_baseline_write_requires_explicit_growth(tmp_path: Path) -> None:
+def test_shrink_only_baseline_write_requires_explicit_growth(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Exercise the developer-only growth seam even when the surrounding test
+    # runner (for example GitHub Actions) exports CI=true. The next test keeps
+    # the fail-closed CI behavior covered independently.
+    monkeypatch.delenv("CI", raising=False)
     path = tmp_path / "baseline.json"
     state = [["existing"]]
     baseline = Baseline(
