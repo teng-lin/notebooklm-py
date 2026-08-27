@@ -15,6 +15,14 @@
 > historical; the
 > live runtime shape is documented in
 > [`docs/architecture.md`](../architecture.md).
+>
+> **Backend-subclass amendment (2026-08-27).** Rule 1's current-state table is
+> refined by the accepted web/mobile backend split: `LoopGuard` stays in the
+> transport-neutral `_runtime/contracts.py`, while web-only `RpcCaller` and
+> `Kernel` move to `_web` during Phase A. `RpcExecutor` and the concrete web
+> kernel remain their direct satisfiers. Backend-neutral public namespace bases
+> do not depend on those web contracts; each `Web*API` subclass receives the
+> web collaborator it needs. Rules 2–5 otherwise remain in force.
 
 ## Status
 

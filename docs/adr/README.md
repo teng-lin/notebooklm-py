@@ -69,6 +69,7 @@ The ADR Index table utilizes five eras of Status notation to reflect the lifecyc
 | [0032](0032-auth-domain-types.md) | Auth domain types (`Cookie`/`CookieJar`/`MasterToken`) + `AuthTokens` runway | Accepted; implementation remains incremental |
 | [0033](0033-auth-consolidation-policy.md) | `_auth` consolidation policy — sanctioned-merge ceilings + function-granular write boundary; amended by [ADR-0034](0034-auth-storage-object-model.md) | Accepted (#2156) |
 | [0034](0034-auth-storage-object-model.md) | Auth storage object model and incremental extraction | Accepted |
+| [0035](0035-mobile-resilience-transport.md) | Mobile backend as a resilience transport | Accepted |
 
 ADR-0007 ships alongside its enforcement substrate: the concrete fixtures (`tests/_fixtures/`) and meta-lint (`tests/_guardrails/test_no_forbidden_monkeypatches.py`) are added in the same PR (`arch-d1-fixtures-scaffolding`) so the record is grounded in working code rather than an empty placeholder.
 

@@ -18,6 +18,15 @@
 > `RpcCaller`, and `LoopGuard` in `_runtime/contracts.py`; `AuthMetadata` is
 > local to `_source/upload.py`, `OperationScopeProvider` is local to
 > `_artifact/polling.py`, and `AsyncWorkRuntime` was deleted.
+>
+> **Backend-subclass amendment (2026-08-27).** The accepted web/mobile backend
+> split narrows that location statement further. `LoopGuard` remains a shared,
+> transport-neutral contract in `_runtime/contracts.py`; the web-only
+> `RpcCaller` and `Kernel` contracts move under `_web` with the batchexecute
+> implementation in Phase A. Public namespace classes become transport-neutral
+> bases and therefore no longer take `RpcCaller`; their concrete `Web*API`
+> subclasses do. This amends the live-state descriptions in Decision §1–4
+> without changing the promotion rule or the historical decision.
 
 ## Status
 
