@@ -17,6 +17,9 @@ flags removed/changed exports vs the last release tag — it is blind to
   every ungated public module (`notebooklm`, `notebooklm.config`,
   `notebooklm.exceptions`, …).
 - The public CLI command tree, options, help, and aliases.
+- Module-size ceilings and lock-unavailable policy ownership, both shrink-only
+  ratchets whose frozen values are derived from the live tree.
+- The auth import graph and auth test patch-site inventory.
 
 Historically these were frozen as **hand-typed literals inside the test module**
 (`_FROZEN_TYPES_ALL`, `_UNGATED_PUBLIC_ALL_SNAPSHOT` in
@@ -47,6 +50,15 @@ it one clean regen command.
    - `ungated_surface` → `{module: collect_public_surface(module) …}` over
      `UNGATED_PUBLIC_MODULES` (ordered lists).
    - `cli_contract` → `build_cli_contract()` (dict, `sort_keys=True`).
+   - `module_size` → the global budget plus live measurements for authored
+     over-budget exemptions and ADR-0033 shrink locks. The JSON stores measured
+     ceilings; `tests/_baselines/module_size.py` remains the reviewed policy
+     source for which paths are exempt and why.
+   - `storage_transaction_policy` → direct AST-derived callers of the three
+     lock-unavailable policies.
+   - `auth_import_graph` / `auth_patch_sites` → their audit projections.
+   - `guardrail_inline_literals` → the grandfathered inventory of large
+     module-level container literals under `tests/_guardrails/`.
 
 2. **Committed JSON.** Baselines live under `tests/fixtures/baselines/`
    (`types_all.json`, `ungated_surface.json`); `cli_contract` keeps its
@@ -63,6 +75,19 @@ it one clean regen command.
    `tests/conftest.py`) flips the freeze test from *assert* to *write
    `derive()` → `path`*. `scripts/regen_baselines.py` is the discoverable wrapper
    that shells `pytest … --update-baselines`.
+
+5. **Shrink-only growth acknowledgement.** Registry entries may provide a
+   `growth_check(previous, current)` callback. Ordinary regeneration accepts
+   tightening and removal, but refuses ceiling increases, new policy callers,
+   and new or enlarged inline guardrail literals. After reviewing such a change,
+   a developer must acknowledge it explicitly with `python
+   scripts/regen_baselines.py --allow-growth`. CI rejects both regeneration flags.
+
+   Regeneration does not author module-size exceptions. A module above the
+   global budget must first be added to `OVER_BUDGET_EXEMPTIONS` with a durable
+   reason, while ADR-0033 shrink locks remain in `SHRINK_LOCKED_MODULES`.
+   Removing a live shrink lock is itself treated as growth, so `--allow-growth`
+   cannot accidentally turn a protected module back into an ordinary one.
 
 **Dev-only-regen invariant.** Regeneration only ever happens when a developer
 passes `--update-baselines`. **CI must NEVER pass the flag — it only diffs.**
@@ -93,6 +118,9 @@ detected (`CI` env var), failing loudly instead of silently rewriting a baseline
   literals.
 - **No copy drift.** The committed file and the gate derive from the *same*
   function; they cannot disagree by a typo.
+- **Ratchets keep their direction.** One-command regeneration cannot silently
+  bless growth in module ceilings or guardrail snapshot debt; those changes have
+  a separate explicit flag and therefore a conspicuous review diff.
 - **Same diff-visibility.** A surface addition still produces a reviewed diff
   line — the deliberate acknowledgement is preserved, just in JSON.
 

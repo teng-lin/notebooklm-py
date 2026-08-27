@@ -1,0 +1,117 @@
+{
+  "tests/_guardrails/_public_import_manifest.py": {
+    "_DOCUMENTED_PUBLIC_IMPORTS": 49
+  },
+  "tests/_guardrails/_wire_contract.py": {
+    "ENUM_BINDINGS": 156,
+    "ENUM_GAPS": 34,
+    "MAPPINGS": 669,
+    "PINNED": 114,
+    "UNMAPPED": 267
+  },
+  "tests/_guardrails/test_auth_cold_recovery_coordinator_boundary.py": {
+    "_EXPECTED_IMPORTS": 225
+  },
+  "tests/_guardrails/test_auth_cookie_docs.py": {
+    "AUTH_COOKIE_DEPRECATION_ROWS": 25
+  },
+  "tests/_guardrails/test_auth_cookie_filter_boundary.py": {
+    "_EXPECTED_IMPORTS": 25
+  },
+  "tests/_guardrails/test_auth_cookie_merge_boundary.py": {
+    "_EXPECTED_IMPORTS": 60
+  },
+  "tests/_guardrails/test_auth_master_token_bootstrap_boundary.py": {
+    "_ADAPTER_HASHES": 20,
+    "_EXPECTED_IMPORTS": 120,
+    "_METHOD_HASHES": 26
+  },
+  "tests/_guardrails/test_auth_master_token_file_boundary.py": {
+    "_EXPECTED_IMPORTS": 95
+  },
+  "tests/_guardrails/test_auth_master_token_types_boundary.py": {
+    "_EXPECTED_IMPORTS": 20
+  },
+  "tests/_guardrails/test_auth_mint_service_boundary.py": {
+    "_EXPECTED_IMPORTS": 55
+  },
+  "tests/_guardrails/test_auth_phase12c_boundaries.py": {
+    "_MODULE_HASHES": 34,
+    "_NODE_HASHES": 108
+  },
+  "tests/_guardrails/test_auth_profile_document_boundary.py": {
+    "_ALLOWED_IMPORTS": 52
+  },
+  "tests/_guardrails/test_auth_profile_store_boundary.py": {
+    "_EXPECTED_IMPORTS": 225,
+    "_NATIVE_REPLACE_CALLER_TESTS": 33
+  },
+  "tests/_guardrails/test_auth_storage_compatibility.py": {
+    "EXPECTED_ALIAS_CALLERS": 55,
+    "EXPECTED_DIRECT_CALLERS": 54,
+    "EXPECTED_SIGNATURES": 558,
+    "FACADE_INVENTORY_IDENTITIES": 23,
+    "LIVE_SIGNATURES": 61
+  },
+  "tests/_guardrails/test_auth_storage_lock_boundary.py": {
+    "_EXPECTED_IMPORTS": 95
+  },
+  "tests/_guardrails/test_auth_stored_auth_boundary.py": {
+    "_FORBIDDEN_TOKEN_CAPABILITIES": 35,
+    "_VALUE_FIELDS": 22
+  },
+  "tests/_guardrails/test_authtokens_jar_sync.py": {
+    "_COOKIE_SHADOW_INVENTORY": 96,
+    "_NON_AUTHTOKENS_CANDIDATES": 30
+  },
+  "tests/_guardrails/test_classify_error_handler_consistency.py": {
+    "_EXEMPLARS": 22
+  },
+  "tests/_guardrails/test_cli_boundary.py": {
+    "HELPERS_FACADE_ALLOWED_DEFS": 38
+  },
+  "tests/_guardrails/test_cli_vcr_coverage.py": {
+    "GROUP_COVERAGE": 24
+  },
+  "tests/_guardrails/test_error_contract_catch_ordering.py": {
+    "EXCLUDED_FROM_REQUIRED": 28
+  },
+  "tests/_guardrails/test_generation_kind_exhaustiveness.py": {
+    "EXPECTED_DURATION_HINT_BEHAVIOR": 22,
+    "KIND_TO_PAYLOAD_BUILDERS": 23,
+    "LOC": 42,
+    "_EXECUTOR_RAW_ARGS": 32
+  },
+  "tests/_guardrails/test_golden_decode_coverage.py": {
+    "GOLDEN_COVERAGE": 40
+  },
+  "tests/_guardrails/test_login_package_dag.py": {
+    "ALLOWED_EDGES": 43
+  },
+  "tests/_guardrails/test_mcp_classify_consistency.py": {
+    "_EXEMPLARS": 22
+  },
+  "tests/_guardrails/test_no_facade_reach_in.py": {
+    "_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES": 25
+  },
+  "tests/_guardrails/test_no_session_compat_bridges.py": {
+    "CARVE_OUT_MODULES": 21
+  },
+  "tests/_guardrails/test_public_surface.py": {
+    "AUTH_CROSS_BOUNDARY_NAMES": 23,
+    "_AUTH_DEBLESSED_KEEP_IMPORTABLE": 40
+  },
+  "tests/_guardrails/test_public_surface_manifest.py": {
+    "_AUTH_FIRST_PARTY_COMPATIBILITY_NAMES": 32,
+    "_REEXPORTED_RPC_ENUMS": 24,
+    "_RPC_LEGACY_REEXPORTS": 47,
+    "_TOP_LEVEL_EXCEPTION_EXPORTS": 50,
+    "_TOP_LEVEL_TYPE_EXPORTS": 60
+  },
+  "tests/_guardrails/test_server_classify_consistency.py": {
+    "_EXEMPLARS": 22
+  },
+  "tests/_guardrails/test_studio_enum_manifest.py": {
+    "_RPC_ENUM_SNAPSHOT": 290
+  }
+}

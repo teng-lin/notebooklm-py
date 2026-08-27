@@ -1,4 +1,4 @@
-"""Assert pyproject.toml `fail_under` matches `.github/workflows/test.yml` `--cov-fail-under`.
+"""Assert nightly CI ultimately enforces pyproject.toml's coverage threshold.
 
 Prevents the two values from drifting (e.g. CI passing at 70% while pyproject
 demands 90%, or vice versa) by failing CI whenever they disagree.
@@ -10,7 +10,7 @@ files that lag the project-wide 90% are guarded by this script.
 
 Usage:
     python scripts/check_coverage_thresholds.py
-    python scripts/check_coverage_thresholds.py --pyproject custom/pyproject.toml --workflow custom/test.yml
+    python scripts/check_coverage_thresholds.py --pyproject custom/pyproject.toml --workflow custom/nightly.yml
     python scripts/check_coverage_thresholds.py --coverage-json coverage.json
 
 Exit codes:
@@ -40,7 +40,7 @@ else:
 
 
 def _check_global_drift(pyproject_path: str, workflow_path: str) -> int:
-    """Compare pyproject ``fail_under`` against CI ``--cov-fail-under``."""
+    """Compare pyproject ``fail_under`` against CI's enforcing threshold."""
     try:
         with open(pyproject_path, "rb") as f:
             pp = tomllib.load(f)
@@ -67,7 +67,9 @@ def _check_global_drift(pyproject_path: str, workflow_path: str) -> int:
     # Scan line-by-line and ignore commented YAML lines so a stale
     # `# --cov-fail-under=90` doesn't shadow a real drift in the executed
     # command. Collect ALL occurrences so a workflow with multiple jobs
-    # cannot smuggle a divergent threshold past the check.
+    # cannot smuggle a divergent threshold past the check. A zero threshold is
+    # permitted for an intermediate ``--cov-append`` workflow step, but at
+    # least one later occurrence must enforce the configured project floor.
     thresholds: list[int] = []
     pattern = re.compile(r"(?<!\S)--cov-fail-under(?:=|\s+)(\d+)(?!\S)")
     for line in yml.splitlines():
@@ -82,7 +84,7 @@ def _check_global_drift(pyproject_path: str, workflow_path: str) -> int:
         return 2
 
     for ci_threshold in thresholds:
-        if pyproject_threshold != ci_threshold:
+        if ci_threshold not in {0, pyproject_threshold}:
             print(
                 f"DRIFT: pyproject.toml fail_under={pyproject_threshold} but "
                 f"{workflow_path} --cov-fail-under={ci_threshold}",
@@ -90,7 +92,15 @@ def _check_global_drift(pyproject_path: str, workflow_path: str) -> int:
             )
             return 1
 
-    print(f"OK: {len(thresholds)} occurrence(s), all at {pyproject_threshold}%")
+    if pyproject_threshold not in thresholds:
+        print(
+            f"DRIFT: {workflow_path} only defers coverage enforcement; no "
+            f"--cov-fail-under={pyproject_threshold} matches pyproject.toml",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"OK: {len(thresholds)} occurrence(s), final floor enforced at {pyproject_threshold}%")
     return 0
 
 
@@ -198,7 +208,7 @@ def _check_per_file_floors(pyproject_path: str, coverage_json_path: str) -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pyproject", default="pyproject.toml")
-    ap.add_argument("--workflow", default=".github/workflows/test.yml")
+    ap.add_argument("--workflow", default=".github/workflows/nightly.yml")
     ap.add_argument(
         "--coverage-json",
         default=None,

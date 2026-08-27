@@ -925,6 +925,11 @@ surface change is a deliberate, diff-visible act. These **regenerable baselines*
 | `types_all` | `notebooklm.types.__all__` | `tests/fixtures/baselines/types_all.json` |
 | `ungated_surface` | collected `__all__` of each ungated public module | `tests/fixtures/baselines/ungated_surface.json` |
 | `cli_contract` | `build_cli_contract()` | `tests/fixtures/cli_contract_baseline.json` |
+| `auth_import_graph` | static direct imports under `notebooklm._auth` | `tests/fixtures/baselines/auth_import_graph.json` |
+| `auth_patch_sites` | auth test patch-site audit | `tests/fixtures/baselines/auth_patch_sites.json` |
+| `module_size` | live over-budget and ADR-0033 shrink-locked LOC | `tests/fixtures/baselines/module_size.json` |
+| `storage_transaction_policy` | AST-derived lock-policy callers | `tests/fixtures/baselines/storage_transaction_policy.json` |
+| `guardrail_inline_literals` | grandfathered large guardrail literals | `tests/fixtures/baselines/guardrail_inline_literals.json` |
 
 The freeze test `test_baseline_matches_committed_file` (in
 `tests/_guardrails/test_public_surface_manifest.py`) asserts each committed file
@@ -935,6 +940,20 @@ the committed files in the **same PR**:
 ```bash
 python scripts/regen_baselines.py
 git diff tests/fixtures/baselines tests/fixtures/cli_contract_baseline.json
+```
+
+Shrink-only baselines reject weakening changes during ordinary regeneration.
+After reviewing an intentional ceiling increase, new policy caller, or new large
+guardrail literal, acknowledge it explicitly:
+
+```bash
+python scripts/regen_baselines.py --allow-growth
+```
+
+Run the complete AST/path/contract guard suite locally with:
+
+```bash
+make gates
 ```
 
 Review the diff — each changed line is the deliberate acknowledgement of the

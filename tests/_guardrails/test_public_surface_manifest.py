@@ -1231,12 +1231,10 @@ def test_ungated_public_surface_covers_exactly_the_unpinned_modules() -> None:
 # ---------------------------------------------------------------------------
 # Regenerable-baseline freeze (ADR-0022).
 #
-# Every registered :class:`~tests._baselines.registry.Baseline` (``types_all``,
-# ``ungated_surface``, ``cli_contract``) is frozen here: the committed JSON file
-# must equal ``derive()``. A name added to (or removed from) a public surface
-# fails until the committed file is regenerated in the SAME PR — that diff line
-# is the deliberate, reviewed acknowledgement. Regenerate after an intended
-# change with::
+# Every registered :class:`~tests._baselines.registry.Baseline` is frozen here:
+# the committed JSON file must equal ``derive()``. Public-surface snapshots and
+# shrink-only ratchets share the same reviewable regen seam; ratchet growth also
+# requires ``--allow-growth``. Regenerate after an intended change with::
 #
 #     python scripts/regen_baselines.py
 #
@@ -1255,6 +1253,9 @@ def test_baseline_registry_is_non_trivial() -> None:
     assert {
         "auth_import_graph",
         "auth_patch_sites",
+        "guardrail_inline_literals",
+        "module_size",
+        "storage_transaction_policy",
         "types_all",
         "ungated_surface",
         "cli_contract",
@@ -1264,7 +1265,11 @@ def test_baseline_registry_is_non_trivial() -> None:
 
 
 @pytest.mark.parametrize("baseline", BASELINES, ids=lambda b: b.name)
-def test_baseline_matches_committed_file(baseline: Baseline, update_baselines: bool) -> None:
+def test_baseline_matches_committed_file(
+    baseline: Baseline,
+    update_baselines: bool,
+    allow_baseline_growth: bool,
+) -> None:
     """The committed baseline JSON must equal ``derive()`` (CI-mode assertion).
 
     With ``--update-baselines`` (dev only — see ``tests/conftest.py``), the
@@ -1272,7 +1277,7 @@ def test_baseline_matches_committed_file(baseline: Baseline, update_baselines: b
     committed file from ``derive()`` and passes. CI must never set the flag.
     """
     if update_baselines:
-        baseline.write()
+        baseline.write(allow_growth=allow_baseline_growth)
         return
 
     assert baseline.path.is_file(), (

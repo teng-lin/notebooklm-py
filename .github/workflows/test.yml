@@ -159,21 +159,64 @@ jobs:
     - name: Verify e2e test fixtures
       run: uv run pytest tests/e2e --collect-only -q
 
+    - name: Assert cassettes are sanitized
+      # This repository-wide content scan runs once in the quality job instead
+      # of once per compatibility cell. ``--strict`` requires the repair
+      # allowlist to stay empty; ``--recursive`` includes nested cassettes.
+      run: uv run python tests/scripts/check_cassettes_clean.py --strict --recursive
+
+    - name: Check fixtures for credential leaks
+      # Golden RPC fixtures carry the same credential-shaped WIZ data as VCR
+      # cassettes. Scan their JSON/HTML/YAML once here rather than repeating the
+      # filesystem walk across every OS/Python compatibility cell.
+      run: uv run python tests/scripts/check_cassettes_clean.py --secrets-only --recursive tests/fixtures tests/unit/fixtures
+
   test:
     name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        # Linux carries the full supported Python range. One 3.12 cell on each
+        # secondary OS preserves platform compatibility without multiplying the
+        # entire suite into a 3-by-5 bottleneck. Canonical Ubuntu 3.12 owns
+        # Chromium, external-reality work, and the critical contract guards.
+        include:
+        - os: ubuntu-latest
+          python-version: "3.10"
+          canonical: false
+          windows_playwright: false
+        - os: ubuntu-latest
+          python-version: "3.11"
+          canonical: false
+          windows_playwright: false
+        - os: ubuntu-latest
+          python-version: "3.12"
+          canonical: true
+          windows_playwright: false
+        - os: ubuntu-latest
+          python-version: "3.13"
+          canonical: false
+          windows_playwright: false
+        - os: ubuntu-latest
+          python-version: "3.14"
+          canonical: false
+          windows_playwright: false
+        - os: macos-latest
+          python-version: "3.12"
+          canonical: false
+          windows_playwright: false
+        - os: windows-latest
+          python-version: "3.12"
+          canonical: false
+          windows_playwright: true
     env:
       # Pin Playwright's browser install dir to a single workspace-relative
       # path on every OS. The previous dual-path cache stanza (``~/.cache``
       # + ``~/AppData/Local``) intermittently failed the cache restore on
       # Windows with ``actions/cache@v5`` — the missing Linux path tripped
       # the post-restore validation on a cache hit. Pinning the path here
-      # lets the cache stanza below carry exactly one entry on every OS.
+      # lets the canonical browser cache stanza below carry exactly one entry.
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
 
     steps:
@@ -199,8 +242,8 @@ jobs:
       shell: bash
       run: |
         # Retry to ride out transient registry/network blips during dep
-        # resolution: a single PyPI/GitHub hiccup on one matrix entry was
-        # hard-failing the whole leg while the other 14 passed. `uv sync`
+        # resolution: a single PyPI/GitHub hiccup on one compatibility cell can
+        # hard-fail the whole required matrix while its siblings pass. `uv sync`
         # has no internal retry across the full resolve+download. A real
         # lockfile problem fails all 3 attempts identically, so this only
         # absorbs flakes — it never masks a genuine resolution error.
@@ -211,16 +254,16 @@ jobs:
         # `tests/unit/test_curl_cffi_transport_poc.py`) run in the main matrix
         # instead of being importorskip'd — that gives
         # `src/notebooklm/{mcp,server}/**` and `_curl_cffi_transport.py` real
-        # coverage in coverage.json (no 0% blind spot) across the full
-        # 3.10–3.14 × 3-OS matrix, which also proves curl_cffi's native wheels
-        # resolve on every OS/Python.
+        # coverage in nightly's coverage.json (no 0% blind spot). Installing
+        # them in every compatibility cell also proves curl_cffi's native wheels
+        # resolve across every supported Python version on Linux and on the
+        # representative Python 3.12 macOS/Windows cells.
         # `cookies` is now included since rookie-cookies supports all Python versions.
         #
-        # Tradeoff: the deleted MCP/server jobs each enforced a *scoped*
-        # `--cov=src/notebooklm/{mcp,server} --cov-fail-under=90`. mcp/server (and
-        # the curl_cffi adapter) are now covered only by the global aggregate gate
-        # below — no per-subpackage floor backfills them, so a subpackage could
-        # regress within the aggregate's headroom. Add entries to
+        # Tradeoff: the deleted MCP/server jobs each enforced a scoped 90% floor.
+        # mcp/server (and the curl_cffi adapter) are now covered only by nightly's
+        # global aggregate gate — no per-subpackage floor backfills them, so a
+        # subpackage could regress within the aggregate's headroom. Add entries to
         # `[tool.notebooklm.per_file_coverage_floors]` if that backstop is
         # wanted back.
         attempt=1; max=3
@@ -237,8 +280,8 @@ jobs:
     - name: Assert curl_cffi imports (native wheel; no silent skip)
       # The matrix installs --extra impersonate, so curl_cffi MUST import on every
       # OS/Python. It's a native wheel: if it installs but fails to import, the
-      # importorskip'd curl_cffi suites would silently skip in the coverage run
-      # rather than fail. This makes a broken native import a hard error.
+      # importorskip'd curl_cffi suites would silently skip rather than fail.
+      # This makes a broken native import a hard error in every compatibility cell.
       shell: bash
       run: uv run python -c "import curl_cffi"
 
@@ -254,12 +297,14 @@ jobs:
         assert callable(rookie_cookies.any_browser)"
 
     - name: Get Playwright version
+      if: matrix.canonical
       id: playwright-version
       shell: bash
       run: |
         echo "version=$(uv pip show playwright | grep '^Version:' | cut -d' ' -f2)" >> $GITHUB_OUTPUT
 
     - name: Cache Playwright browsers
+      if: matrix.canonical
       uses: actions/cache@v6
       # Tolerate transient cache-backend failures: a miss already falls
       # through to the install step below, and a backend hiccup should be
@@ -273,10 +318,11 @@ jobs:
         key: playwright-${{ matrix.os }}-${{ steps.playwright-version.outputs.version }}-ws
 
     - name: Install Playwright browsers
+      if: matrix.canonical
       run: uv run playwright install chromium
 
     - name: Install Playwright system dependencies (Linux)
-      if: runner.os == 'Linux'
+      if: matrix.canonical
       shell: bash
       run: |
         if ! timeout 180s uv run playwright install-deps chromium; then
@@ -285,55 +331,86 @@ jobs:
         fi
 
     - name: Run required external-reality probes
-      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+      if: matrix.canonical
       run: >-
         uv run pytest tests/unit/cli/test_playwright_login_coverage.py
         -m reality --require-reality
 
-    - name: Assert cassettes are sanitized
-      # Runs on all matrix entries (ubuntu, macos, windows × 5 Python versions).
-      # An earlier bash-only gate was replaced by a portable Python invocation
-      # so the check runs uniformly across the cross-platform test matrix.
-      #
-      # ``--strict`` flips the repair-allowlist from "best-effort suppressor"
-      # to "must be empty" — the phase-2 cassette cleanup is done, so any
-      # entry sneaking back in is a CI failure (P1-5).
-      # ``--recursive`` extends the scan from ``tests/cassettes/*.yaml`` to
-      # ``tests/cassettes/**/*.yaml`` so a recorder can't smuggle a leak
-      # into a nested folder like ``tests/cassettes/gzip_coverage/`` (P1-5).
-      run: uv run python tests/scripts/check_cassettes_clean.py --strict --recursive
+    - name: Run Playwright-dependent unit tests serially
+      if: matrix.canonical
+      # These tests exercise real Playwright driver subprocesses. Keep them out
+      # of xdist, but retain one complete PR lane instead of silently dropping
+      # them from the reduced compatibility matrix.
+      run: >-
+        uv run pytest tests/unit
+        -m "(requires_playwright or requires_chromium) and not reality"
+        -n 0 --no-cov
 
-    - name: Check fixtures for credential leaks
-      # The cassette guard above is scoped to ``tests/cassettes/*.yaml``. Golden
-      # RPC fixtures live under ``tests/fixtures/`` as ``.json`` (and one
-      # captured ``.html`` page), which embed the same WIZ_global_data shapes —
-      # a Google API key smuggled into a golden HTML fixture would otherwise
-      # slip past CI entirely (the GET_INTERACTIVE_HTML.json class). ``--secrets
-      # -only`` scans .json/.html/.yaml for high-severity credential shapes
-      # (Google auth tokens + API keys) without tripping on the intentional
-      # placeholder content (``"Scrubbed ..."`` names, test emails) that fills
-      # those fixtures.
-      run: uv run python tests/scripts/check_cassettes_clean.py --secrets-only --recursive tests/fixtures tests/unit/fixtures
+    - name: Run critical contract guards
+      if: matrix.canonical
+      # Keep the positive baseline/public/security/CI contracts on every PR
+      # while their expensive mutation variants live in the bounded manual
+      # repo-lint lane.
+      # This is one no-coverage lane, so it can use the runner's full worker set
+      # without recreating the old 15 simultaneous coverage jobs.
+      run: >-
+        uv run pytest -n auto --dist worksteal --timeout=180 --no-cov
+        tests/unit/test_ci_test_matrix.py
+        tests/_guardrails/test_public_surface_manifest.py::test_baseline_registry_is_non_trivial
+        tests/_guardrails/test_public_surface_manifest.py::test_baseline_matches_committed_file
+        tests/_guardrails/test_no_flat_cookies_on_the_wire.py::test_no_flat_cookie_projection_reaches_an_http_request
+        tests/_guardrails/test_master_token_minting_denylist.py::test_no_cli_module_imports_minting_primitives
+        tests/_guardrails/test_master_token_path_single_site.py::test_no_bare_master_token_derivation_outside_paths_module
+        tests/_guardrails/test_playwright_gateway.py::test_raw_sync_playwright_is_confined_to_policy_gateway
 
-    - name: Run tests with coverage
-      # ``-n auto --dist loadgroup`` parallelizes the ~11k-test suite across the
-      # runner's cores (pytest-xdist is already a dev dep). ``loadgroup`` honors
-      # ``@pytest.mark.xdist_group`` — the isolation escape hatch for tests touching
-      # process-global state (tests/integration/concurrency/conftest.py); unmarked
-      # tests distribute like ``load``. The suite is parallel-safe via per-test
-      # ``NOTEBOOKLM_HOME`` tmp isolation, and pytest-cov merges per-worker coverage
-      # automatically, so the coverage.json + per-file floors below are unaffected.
-      #
-      # Emit coverage.json so the per-file floor check below can read it without
-      # re-running the suite. ``term-missing`` is kept so build logs still show the
-      # missing-lines summary.
-      run: uv run pytest -n auto --dist loadgroup --cov=src/notebooklm --cov-report=term-missing --cov-report=json:coverage.json --cov-fail-under=90
+    - name: Run tests without coverage
+      # Every required compatibility cell runs the ordinary suite exactly once.
+      # Repository lint has a bounded manual lane, coverage and per-file floors
+      # run nightly, and real Playwright subprocesses stay outside xdist.
+      run: >-
+        uv run pytest -n auto --dist loadgroup
+        -m "not repo_lint and not requires_playwright and not requires_chromium"
+        --no-cov
 
-    - name: Assert per-file coverage floors
-      # Linux-only because ``coverage.json`` on Windows records backslash
-      # paths (e.g. ``src\notebooklm\cli\doctor.py``) that won't match the
-      # forward-slash keys in ``[tool.notebooklm.per_file_coverage_floors]``
-      # in pyproject.toml. macOS uses forward slashes and would also work,
-      # but a single OS is enough — the floors are platform-independent.
-      if: runner.os == 'Linux'
-      run: uv run python scripts/check_coverage_thresholds.py --coverage-json coverage.json
+    - name: Run Windows Playwright compatibility smoke serially
+      if: matrix.windows_playwright
+      # The #89 regression only needs the real Playwright driver process; it
+      # intentionally does not launch Chromium, so Windows needs no browser
+      # download/cache. ``-n 0`` makes the process-policy smoke explicitly serial.
+      run: >-
+        uv run pytest
+        tests/unit/test_windows_compatibility.py::TestPlaywrightSmokeTest::test_playwright_initializes_with_context_manager
+        -m requires_playwright -n 0 --no-cov
+
+  repo-lint:
+    name: Repository Lint (manual)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ inputs.custom_branch || github.ref }}
+        persist-credentials: false
+
+    - name: Set up Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.12"
+        cache: 'pip'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+
+    - name: Install dependencies
+      run: >-
+        uv sync --frozen --extra browser --extra dev --extra markdown
+        --extra mcp --extra server --extra impersonate --extra cookies
+
+    - name: Run repository lint tests
+      # Manual-only deep audits use the runner's available workers and a wider
+      # per-test timeout, but never collect coverage or slow pull requests.
+      run: >-
+        uv run pytest -n auto --dist loadgroup -m repo_lint
+        --timeout=180 --no-cov

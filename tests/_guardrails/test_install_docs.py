@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from scripts._tracked_files import tracked_files
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -38,6 +39,18 @@ INSTALLATION_LINK_RE = re.compile(r"\bdocs/installation\.md\b")
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _tracked_repository_files() -> list[Path]:
+    return tracked_files(REPO_ROOT, fallback_globs=("docs/**/*", "src/**/*", "*.md"))
+
+
+def _tracked_docs() -> list[Path]:
+    return [
+        path
+        for path in _tracked_repository_files()
+        if path.suffix == ".md" and path.is_relative_to(REPO_ROOT / "docs")
+    ]
 
 
 def _pyproject_extras() -> set[str]:
@@ -90,10 +103,6 @@ def test_no_wrong_package_name_anywhere() -> None:
     invalid PyPI package name. It must never appear in user-facing files.
     """
     bad_pattern = re.compile(r"notebooklm\[(browser|cookies|markdown)\]")
-    scan_dirs = [
-        REPO_ROOT / "docs",
-        REPO_ROOT / "src",
-    ]
     scan_files = [
         REPO_ROOT / "README.md",
         REPO_ROOT / "CONTRIBUTING.md",
@@ -103,27 +112,26 @@ def test_no_wrong_package_name_anywhere() -> None:
     ]
 
     hits: list[str] = []
+    tracked = set(_tracked_repository_files())
     for path in scan_files:
-        if path.is_file():
+        if path in tracked and path.is_file():
             for lineno, line in enumerate(_read(path).splitlines(), start=1):
                 if bad_pattern.search(line):
                     hits.append(f"{path.relative_to(REPO_ROOT)}:{lineno}: {line.strip()}")
 
-    for root in scan_dirs:
-        if not root.is_dir():
+    for path in tracked:
+        relative = path.relative_to(REPO_ROOT)
+        if not relative.parts or relative.parts[0] not in {"docs", "src"}:
             continue
-        for path in root.rglob("*"):
-            if not path.is_file():
-                continue
-            if path.suffix not in {".md", ".py", ".yml", ".yaml"}:
-                continue
-            try:
-                text = _read(path)
-            except (OSError, UnicodeDecodeError):
-                continue
-            for lineno, line in enumerate(text.splitlines(), start=1):
-                if bad_pattern.search(line):
-                    hits.append(f"{path.relative_to(REPO_ROOT)}:{lineno}: {line.strip()}")
+        if path.suffix not in {".md", ".py", ".yml", ".yaml"}:
+            continue
+        try:
+            text = _read(path)
+        except (OSError, UnicodeDecodeError):
+            continue
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            if bad_pattern.search(line):
+                hits.append(f"{relative}:{lineno}: {line.strip()}")
 
     assert not hits, (
         "Found `notebooklm[<extra>]` (missing `-py`) — should be `notebooklm-py[<extra>]`:\n"
@@ -220,7 +228,7 @@ def test_installation_md_internal_anchors_resolve() -> None:
     cross_link_re = re.compile(r"\(([^)]*installation\.md)#([a-z0-9-]+)\)")
 
     failures: list[str] = []
-    scan_files = list((REPO_ROOT / "docs").rglob("*.md"))
+    scan_files = _tracked_docs()
     scan_files += [
         REPO_ROOT / "README.md",
         REPO_ROOT / "CONTRIBUTING.md",
@@ -291,9 +299,7 @@ def test_no_uv_sync_all_extras_in_canonical_install_paths() -> None:
         AGENTS_MD,
         SKILL_MD,
     ]
-    forbidden_locations += [
-        p for p in (REPO_ROOT / "docs").rglob("*.md") if p.name not in {"installation.md"}
-    ]
+    forbidden_locations += [path for path in _tracked_docs() if path.name != "installation.md"]
 
     hits: list[str] = []
     for path in forbidden_locations:

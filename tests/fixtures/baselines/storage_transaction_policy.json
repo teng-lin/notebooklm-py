@@ -1,0 +1,14 @@
+{
+  "raise_on_lock_unavailable": [
+    "profile_store.ProfileStore._update_account_if_document_unchanged",
+    "profile_store.ProfileStore.replace_minted_session",
+    "profile_store.ProfileStore.update_account"
+  ],
+  "report_on_lock_unavailable": [
+    "profile_store.ProfileStore.replace_from_login",
+    "profile_store.ProfileStore.replace_from_remint"
+  ],
+  "skip_on_lock_unavailable": [
+    "profile_store.ProfileStore.clear_account"
+  ]
+}

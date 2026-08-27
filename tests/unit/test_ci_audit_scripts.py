@@ -159,7 +159,7 @@ def test_verify_package_e2e_retry_is_scoped_to_last_failed_e2e_tests():
 
 
 def test_coverage_thresholds_passes_on_real_state():
-    """Current pyproject.toml + test.yml agree on the coverage threshold."""
+    """Current pyproject.toml + nightly.yml agree on the coverage threshold."""
     result = _run([str(SCRIPTS / "check_coverage_thresholds.py")])
     assert result.returncode == 0, f"stderr: {result.stderr}\nstdout: {result.stdout}"
 
@@ -197,7 +197,7 @@ def test_coverage_thresholds_ignores_commented_cov_fail_under(tmp_path):
 
 
 def test_coverage_thresholds_catches_divergent_second_occurrence(tmp_path):
-    """Multiple --cov-fail-under occurrences must all match (not just the first)."""
+    """A nonzero divergent occurrence cannot hide behind a matching first one."""
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text("[tool.coverage.report]\nfail_under = 90\n")
     workflow = tmp_path / "test.yml"
@@ -219,6 +219,44 @@ def test_coverage_thresholds_catches_divergent_second_occurrence(tmp_path):
     assert result.returncode == 1
     assert "DRIFT" in result.stderr
     assert "--cov-fail-under=70" in result.stderr
+
+
+def test_coverage_thresholds_allows_zero_only_for_intermediate_collection(tmp_path):
+    """Split coverage may defer the floor, but a later command must enforce it."""
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text("[tool.coverage.report]\nfail_under = 90\n")
+    workflow = tmp_path / "test.yml"
+    workflow.write_text(
+        "jobs:\n"
+        "  coverage:\n"
+        "    steps:\n"
+        "      - run: pytest --cov-fail-under=0\n"
+        "      - run: pytest --cov-append --cov-fail-under=90\n"
+    )
+
+    result = _run(
+        [
+            str(SCRIPTS / "check_coverage_thresholds.py"),
+            "--pyproject",
+            str(pyproject),
+            "--workflow",
+            str(workflow),
+        ]
+    )
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    workflow.write_text("jobs:\n  coverage:\n    steps:\n      - run: pytest --cov-fail-under=0\n")
+    result = _run(
+        [
+            str(SCRIPTS / "check_coverage_thresholds.py"),
+            "--pyproject",
+            str(pyproject),
+            "--workflow",
+            str(workflow),
+        ]
+    )
+    assert result.returncode == 1
+    assert "only defers coverage enforcement" in result.stderr
 
 
 def test_coverage_thresholds_detects_drift(tmp_path):

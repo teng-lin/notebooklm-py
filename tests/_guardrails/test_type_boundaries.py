@@ -13,13 +13,13 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from scripts._tracked_files import tracked_files
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / "src" / "notebooklm"
 TYPES_PATH = SRC_ROOT / "types.py"
 PRIVATE_TYPES_ROOT = SRC_ROOT / "_types"
 CLI_ROOT = SRC_ROOT / "cli"
-PUBLIC_DOC_ROOTS = (PROJECT_ROOT / "README.md", PROJECT_ROOT / "docs")
 INTERNAL_ARCHITECTURE_DOCS = {
     PROJECT_ROOT / "docs" / "development.md",
     PROJECT_ROOT / "docs" / "rpc-development.md",
@@ -99,15 +99,14 @@ def _cli_private_types_import_offenders(path: Path) -> list[str]:
 
 
 def _iter_public_docs() -> list[Path]:
-    docs: list[Path] = []
-    for root in PUBLIC_DOC_ROOTS:
-        if root.is_file():
-            docs.append(root)
-        elif root.is_dir():
-            docs.extend(
-                path for path in root.rglob("*.md") if path not in INTERNAL_ARCHITECTURE_DOCS
-            )
-    return sorted(docs)
+    tracked = tracked_files(PROJECT_ROOT, fallback_globs=("README.md", "docs/**/*.md"))
+    return sorted(
+        path
+        for path in tracked
+        if path.suffix == ".md"
+        and (path == PROJECT_ROOT / "README.md" or path.is_relative_to(PROJECT_ROOT / "docs"))
+        and path not in INTERNAL_ARCHITECTURE_DOCS
+    )
 
 
 def _public_docs_private_import_offenders() -> list[str]:

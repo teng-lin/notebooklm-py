@@ -254,6 +254,15 @@ def pytest_addoption(parser):
         ),
     )
     parser.addoption(
+        "--allow-growth",
+        action="store_true",
+        default=False,
+        help=(
+            "DEV ONLY: explicitly acknowledge growth in shrink-only baselines. "
+            "Valid only together with --update-baselines."
+        ),
+    )
+    parser.addoption(
         "--require-reality",
         action="store_true",
         default=False,
@@ -282,8 +291,23 @@ def update_baselines(request) -> bool:
     return requested
 
 
+@pytest.fixture
+def allow_baseline_growth(request) -> bool:
+    """Whether shrink-only baseline growth was explicitly acknowledged."""
+    return bool(request.config.getoption("--allow-growth"))
+
+
 def pytest_configure(config):
     """Register custom markers and configure test environment."""
+    allow_growth = bool(config.getoption("--allow-growth"))
+    if allow_growth and not config.getoption("--update-baselines"):
+        raise pytest.UsageError("--allow-growth requires --update-baselines")
+    if allow_growth and os.environ.get("CI", "").strip():
+        raise pytest.UsageError(
+            "--allow-growth must not be used in CI: growth acknowledgement is a local, "
+            "reviewed baseline-regeneration action (ADR-0022)."
+        )
+
     xdist_active = (
         config.getoption("numprocesses", default=None) not in (None, 0)
         or config.getoption("dist", default="no") != "no"

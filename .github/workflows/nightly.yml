@@ -67,7 +67,9 @@ jobs:
       - uses: actions/checkout@v7
         if: steps.resolve.outputs.is_standard == 'true'
         with:
-          ref: ${{ steps.resolve.outputs.branch }}
+          # Qualify the namespace so a tag named ``release/...`` cannot pass
+          # the standard-branch string gate and reach secret-bearing E2E.
+          ref: refs/heads/${{ steps.resolve.outputs.branch }}
           fetch-depth: 1
           persist-credentials: false
 
@@ -81,6 +83,121 @@ jobs:
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "short_sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
           echo "Resolved commit: $SHA"
+
+  # Coverage is intentionally scheduled/manual only. It exercises the same
+  # ordinary suite as pull-request CI, but owns the global and per-file floors
+  # without delaying every PR compatibility cell.
+  coverage:
+    name: Coverage (${{ needs.resolve-branch.outputs.branch }}@${{ needs.resolve-branch.outputs.short_sha }})
+    needs: resolve-branch
+    if: needs.resolve-branch.outputs.is_standard == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.resolve-branch.outputs.sha }}
+        fetch-depth: 1
+        persist-credentials: false
+
+    - name: Stamp coverage target
+      env:
+        EXPECTED_SHA: ${{ needs.resolve-branch.outputs.sha }}
+        TARGET_BRANCH: ${{ needs.resolve-branch.outputs.branch }}
+      shell: bash
+      run: |
+        ACTUAL_SHA=$(git rev-parse HEAD)
+        if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+          echo "::error::Checked out $ACTUAL_SHA, expected $EXPECTED_SHA"
+          exit 1
+        fi
+        {
+          echo "### Coverage target"
+          echo "- Branch: \`$TARGET_BRANCH\`"
+          echo "- Commit: \`$ACTUAL_SHA\`"
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Set up Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.12"
+        cache: 'pip'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # @ v7.0.0
+
+    - name: Install dependencies
+      # Match the normal PR suite's optional surfaces so coverage cannot hide
+      # MCP, server, curl_cffi, or browser-cookie modules behind import skips.
+      shell: bash
+      run: |
+        attempt=1; max=3
+        until uv sync --frozen --extra browser --extra dev --extra markdown --extra mcp --extra server --extra impersonate --extra cookies; do
+          if [ "$attempt" -ge "$max" ]; then
+            echo "::error::uv sync failed after $max attempts" >&2
+            exit 1
+          fi
+          echo "::warning::uv sync attempt $attempt failed; retrying in $((attempt * 15))s" >&2
+          sleep $((attempt * 15))
+          attempt=$((attempt + 1))
+        done
+
+    - name: Install Playwright browsers
+      run: uv run playwright install chromium
+
+    - name: Install Playwright system dependencies (Linux)
+      run: uv run playwright install-deps chromium
+
+    - name: Run ordinary tests with coverage
+      run: >-
+        uv run pytest -n auto --dist loadgroup
+        -m "not repo_lint and not requires_playwright and not requires_chromium"
+        --cov=src/notebooklm --cov-report= --cov-fail-under=0
+
+    - name: Append Playwright-dependent unit coverage
+      run: >-
+        uv run pytest tests/unit
+        -m "(requires_playwright or requires_chromium) and not reality"
+        -n 0 --cov=src/notebooklm --cov-append
+        --cov-report=term-missing --cov-report=json:coverage.json
+        --cov-fail-under=90
+
+    - name: Assert per-file coverage floors
+      run: uv run python scripts/check_coverage_thresholds.py --coverage-json coverage.json
+
+  # AST-heavy repository audits are scheduled here once, while test.yml keeps
+  # a workflow_dispatch lane for feature-branch diagnosis.
+  repo-lint:
+    name: Repository Lint (${{ needs.resolve-branch.outputs.branch }}@${{ needs.resolve-branch.outputs.short_sha }})
+    needs: resolve-branch
+    if: needs.resolve-branch.outputs.is_standard == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.resolve-branch.outputs.sha }}
+        fetch-depth: 1
+        persist-credentials: false
+
+    - name: Set up Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.12"
+        cache: 'pip'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # @ v7.0.0
+
+    - name: Install dependencies
+      run: >-
+        uv sync --frozen --extra browser --extra dev --extra markdown
+        --extra mcp --extra server --extra impersonate --extra cookies
+
+    - name: Run repository lint tests
+      run: >-
+        uv run pytest -n auto --dist loadgroup -m repo_lint
+        --timeout=180 --no-cov
 
   # Run E2E tests on the resolved branch
   e2e:

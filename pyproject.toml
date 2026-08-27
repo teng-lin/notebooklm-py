@@ -178,7 +178,7 @@ markers = [
     "reality: tests that validate assumptions about external tools or environments; required lanes must execute them",
     "requires_playwright: tests requiring the Playwright Python package",
     "requires_chromium: tests requiring a launchable Chromium browser",
-    "repo_lint: repo-wide audit/compat checks (cassette shapes, public surface, release gates, doc-sync, CI script audits). Slow; skip locally with `-m \"not repo_lint\"`. CI still runs them by default.",
+    "repo_lint: repo-wide audit/compat checks (cassette shapes, public surface, release gates, doc-sync, CI script audits). Run locally with `make gates`; PR CI keeps critical contracts and nightly runs the full set.",
 ]
 
 [tool.coverage.run]

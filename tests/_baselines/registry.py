@@ -6,6 +6,8 @@ One place that knows, per *regenerable baseline*, how to:
 * where its committed JSON file lives (``Baseline.path``);
 * how to **serialize** it deterministically (``Baseline.dump`` /
   ``Baseline.sort_keys``).
+* for shrink-only ratchets, what counts as reviewed **growth**
+  (``Baseline.growth_check``).
 
 A baseline is a value the code already derives — e.g. ``notebooklm.types.__all__``
 or the collected public surface of the ungated public modules. The freeze tests
@@ -42,6 +44,8 @@ _BASELINES_DIR = _FIXTURES_DIR / "baselines"
 # ``scripts/audit_public_api_compat.py``). The collected public surface for a
 # module is ``__all__`` plus any *resolvable* allowlist extras not already in it.
 _ALLOWLIST_PATH = _PROJECT_ROOT / "scripts" / "api-compat-allowlist.json"
+
+GrowthCheck = Callable[[object, object], list[str]]
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +143,45 @@ def _derive_auth_import_graph() -> dict[str, object]:
     return build_projection()
 
 
+def _derive_module_size() -> dict[str, object]:
+    """Current module-size budget, allowlist ceilings, and shrink locks."""
+    from tests._baselines.module_size import derive_module_size
+
+    return derive_module_size()
+
+
+def _module_size_growth(previous: object, current: object) -> list[str]:
+    from tests._baselines.module_size import module_size_growth
+
+    return module_size_growth(previous, current)
+
+
+def _derive_storage_transaction_policy() -> dict[str, list[str]]:
+    """Direct callers of each profile-transaction lock-failure policy."""
+    from tests._baselines.storage_transaction_policy import derive_storage_transaction_policy
+
+    return derive_storage_transaction_policy()
+
+
+def _storage_transaction_policy_growth(previous: object, current: object) -> list[str]:
+    from tests._baselines.storage_transaction_policy import storage_transaction_policy_growth
+
+    return storage_transaction_policy_growth(previous, current)
+
+
+def _derive_guardrail_inline_literals() -> dict[str, dict[str, int]]:
+    """Large inline container literals still grandfathered in guardrail tests."""
+    from tests._baselines.guardrail_literals import inventory_large_inline_literals
+
+    return inventory_large_inline_literals()
+
+
+def _guardrail_inline_literal_growth(previous: object, current: object) -> list[str]:
+    from tests._baselines.guardrail_literals import guardrail_literal_growth
+
+    return guardrail_literal_growth(previous, current)
+
+
 # ---------------------------------------------------------------------------
 # Baseline registry
 # ---------------------------------------------------------------------------
@@ -150,8 +193,9 @@ class Baseline:
 
     ``derive`` returns the live value; ``path`` is the committed JSON file;
     ``sort_keys`` controls JSON key ordering on dump (lists always preserve
-    order — only dict *keys* are affected). ``load()`` reads the committed value;
-    ``write()`` rewrites it from ``derive()`` (dev-only, behind
+    order — only dict *keys* are affected). ``growth_check`` optionally protects
+    shrink-only state from accidental expansion. ``load()`` reads the committed
+    value; ``write()`` rewrites it from ``derive()`` (dev-only, behind
     ``--update-baselines``).
     """
 
@@ -159,6 +203,7 @@ class Baseline:
     path: Path
     derive: Callable[[], object]
     sort_keys: bool = False
+    growth_check: GrowthCheck | None = field(default=None, compare=False)
     # Extra metadata kept out of equality/hash; documents intent.
     description: str = field(default="", compare=False)
 
@@ -170,7 +215,7 @@ class Baseline:
         """The committed baseline value (parsed JSON)."""
         return json.loads(self.path.read_text(encoding="utf-8"))
 
-    def write(self) -> None:
+    def write(self, *, allow_growth: bool = False) -> None:
         """Rewrite the committed file from ``derive()``. Dev-only (regen seam).
 
         Enforces the dev-only-regen invariant at the seam itself (not only at the
@@ -182,11 +227,45 @@ class Baseline:
                 "refusing to regenerate baselines in CI: baselines are dev-only "
                 "regenerated and CI only diffs (ADR-0022)."
             )
+        derived = self.derive()
+        if self.growth_check is not None and self.path.is_file() and not allow_growth:
+            growth = self.growth_check(self.load(), derived)
+            if growth:
+                details = "\n  ".join(growth)
+                raise RuntimeError(
+                    f"refusing to grow the shrink-only {self.name} baseline:\n  {details}\n"
+                    "Review the growth, then rerun `python scripts/regen_baselines.py "
+                    "--allow-growth` to acknowledge it explicitly."
+                )
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(self.dump(self.derive()), encoding="utf-8")
+        self.path.write_text(self.dump(derived), encoding="utf-8")
 
 
 BASELINES: list[Baseline] = [
+    Baseline(
+        name="module_size",
+        path=_BASELINES_DIR / "module_size.json",
+        derive=_derive_module_size,
+        sort_keys=True,
+        growth_check=_module_size_growth,
+        description="Module-size budget plus live over-budget and shrink-locked ceilings.",
+    ),
+    Baseline(
+        name="storage_transaction_policy",
+        path=_BASELINES_DIR / "storage_transaction_policy.json",
+        derive=_derive_storage_transaction_policy,
+        sort_keys=True,
+        growth_check=_storage_transaction_policy_growth,
+        description="Direct owners of the profile transaction's lock-failure policies.",
+    ),
+    Baseline(
+        name="guardrail_inline_literals",
+        path=_BASELINES_DIR / "guardrail_inline_literals.json",
+        derive=_derive_guardrail_inline_literals,
+        sort_keys=True,
+        growth_check=_guardrail_inline_literal_growth,
+        description="Grandfathered large module-level literals in guardrail tests.",
+    ),
     Baseline(
         name="auth_patch_sites",
         path=_BASELINES_DIR / "auth_patch_sites.json",
@@ -237,6 +316,7 @@ def baseline_by_name(name: str) -> Baseline:
 __all__ = [
     "BASELINES",
     "Baseline",
+    "GrowthCheck",
     "UNGATED_PUBLIC_MODULES",
     "allowlist_extra_public_names",
     "baseline_by_name",
