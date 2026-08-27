@@ -30,6 +30,7 @@ from .._runtime.contracts import (
     Kernel,
     RpcCaller,
 )
+from .._types.enums import SourceStatus
 from ..exceptions import (
     AuthError,
     NetworkError,
@@ -38,7 +39,6 @@ from ..exceptions import (
     ValidationError,
 )
 from ..rpc import RPCError, RPCMethod, get_upload_url
-from ..rpc.types import SourceStatus
 from ..types import Source, SourceAddError
 
 # Decode/validation helpers live in ``_upload_decode``; re-exported here so the

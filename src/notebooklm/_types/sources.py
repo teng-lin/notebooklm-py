@@ -9,11 +9,11 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from .._url_utils import pdf_url_display_title
-from ..rpc.types import DriveSourceStatus, SourceStatus
 from .common import (
     UnknownTypeWarning,
 )
 from .documents import StructuredDocument
+from .enums import DriveSourceStatus, SourceStatus
 
 if TYPE_CHECKING:
     from .._row_adapters.sources import SourceRow

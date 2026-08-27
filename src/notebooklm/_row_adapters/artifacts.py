@@ -17,8 +17,9 @@ from .._types.artifact_content import (
     UnknownArtifactUserState,
 )
 from .._types.common import _datetime_from_timestamp
+from .._types.enums import FLASHCARDS_VARIANT, ArtifactStatus, ArtifactTypeCode
 from ..exceptions import UnknownRPCMethodError
-from ..rpc import FLASHCARDS_VARIANT, ArtifactStatus, ArtifactTypeCode, RPCMethod, safe_index
+from ..rpc import RPCMethod, safe_index
 
 __all__ = [
     "MIND_MAP_LEAF_ABSENT",

@@ -9,8 +9,8 @@ from typing import Any, TypeVar
 
 from .._row_adapters.sources import SourceRow
 from .._runtime.contracts import RpcCaller
+from .._types.enums import SourceStatus
 from ..rpc import RPCError, RPCMethod, safe_index
-from ..rpc.types import SourceStatus
 from ..types import Source, SourceType
 from .upload_payloads import build_template_block
 

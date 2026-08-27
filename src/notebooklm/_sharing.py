@@ -4,8 +4,8 @@ import logging
 from dataclasses import replace
 
 from ._runtime.contracts import RpcCaller
+from ._types.enums import ShareAccess, SharePermission, ShareViewLevel
 from .rpc import RPCMethod
-from .rpc.types import ShareAccess, SharePermission, ShareViewLevel
 from .types import ShareStatus
 
 logger = logging.getLogger(__name__)

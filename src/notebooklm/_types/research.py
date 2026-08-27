@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any
 
-from ..rpc.types import DiscoveryMode
+from .enums import DiscoveryMode
 
 logger = logging.getLogger(__name__)
 

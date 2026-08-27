@@ -133,7 +133,7 @@ LOC: Mapping[str, str] = {
     "DOWNLOAD_SPECS": _loc("cli/_download_specs.py", r"^DOWNLOAD_SPECS"),
     "ArtifactsAPI": _loc("_artifacts.py", r"^class ArtifactsAPI"),
     "ArtifactType": _loc("_types/artifacts.py", r"^class ArtifactType\("),
-    "ArtifactTypeCode": _loc("rpc/types.py", r"^class ArtifactTypeCode\("),
+    "ArtifactTypeCode": _loc("_types/enums.py", r"^class ArtifactTypeCode\("),
     "_ARTIFACT_TYPE_CODE_MAP": _loc("_types/artifacts.py", r"^_ARTIFACT_TYPE_CODE_MAP"),
     "artifact list --type": _loc("cli/artifact_cmd.py", r'^\s*"--type",'),
     "payloads module": _loc("_artifact/payloads.py", r"^def build_audio_artifact_params"),

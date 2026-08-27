@@ -17,13 +17,7 @@ from typing import TYPE_CHECKING, Any
 from .._env import get_default_language
 from .._row_adapters import artifacts as _artifact_rows
 from .._types.artifacts import _status_from_code
-from .._types.research import MindMapResult
-from ..exceptions import (
-    ArtifactFeatureUnavailableError,
-    DecodingError,
-    ValidationError,
-)
-from ..rpc import (
+from .._types.enums import (
     AudioFormat,
     AudioLength,
     InfographicDetail,
@@ -32,11 +26,19 @@ from ..rpc import (
     QuizDifficulty,
     QuizQuantity,
     ReportFormat,
-    RPCMethod,
     SlideDeckFormat,
     SlideDeckLength,
     VideoFormat,
     VideoStyle,
+)
+from .._types.research import MindMapResult
+from ..exceptions import (
+    ArtifactFeatureUnavailableError,
+    DecodingError,
+    ValidationError,
+)
+from ..rpc import (
+    RPCMethod,
     safe_index,
 )
 from ..types import GenerationStatus

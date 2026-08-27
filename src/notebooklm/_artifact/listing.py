@@ -11,13 +11,15 @@ import httpx
 from .._row_adapters.artifacts import ArtifactRow, unwrap_artifact_rows
 from .._row_adapters.notes import NoteRow
 from .._runtime.contracts import RpcCaller
-from ..exceptions import DecodingError
-from ..rpc import (
+from .._types.enums import (
     ARTIFACT_STATUS_SUGGESTED_WIRE_NAME,
     FLASHCARDS_VARIANT,
     INTERACTIVE_MIND_MAP_VARIANT,
     QUIZ_VARIANT,
     ArtifactTypeCode,
+)
+from ..exceptions import DecodingError
+from ..rpc import (
     RPCError,
     RPCMethod,
 )

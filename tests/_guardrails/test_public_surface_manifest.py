@@ -203,13 +203,14 @@ def test_cited_source_selection_is_on_public_surface():
 
 
 # ---------------------------------------------------------------------------
-# RPC enums re-exported via notebooklm.types
+# Domain enums re-exported via notebooklm.types
 #
 # CLI modules import these enums from ``notebooklm.types`` (the public surface)
 # rather than reaching into ``notebooklm.rpc`` directly. The re-exports must be
-# the exact same objects as the canonical definitions in ``notebooklm.rpc.types``
+# the exact same objects as the compatibility exports in ``notebooklm.rpc.types``
 # (identity, not just equality), so isinstance checks and equality both work
-# regardless of which import path callers use.
+# regardless of which import path callers use. Their canonical definitions live
+# in ``notebooklm._types.enums`` and are checked separately below.
 #
 # The explicit list below covers every public RPC enum re-exported by
 # ``notebooklm.types`` (see ``notebooklm.types.__all__``). Keep this list in
@@ -246,6 +247,12 @@ _REEXPORTED_RPC_ENUMS = [
     "VideoFormat",
     "VideoStyle",
 ]
+
+# Exact A1 inventory: these enums are canonically defined in the neutral
+# ``_types.enums`` module and remain available through both compatibility
+# facades. The two internal names are module attributes on ``notebooklm.types``
+# but intentionally absent from its ``__all__``.
+_NEUTRAL_DOMAIN_ENUMS = [*_REEXPORTED_RPC_ENUMS, "ArtifactTypeCode", "GrpcStatusCode"]
 
 # NOTE: the former hand-typed ``_FROZEN_TYPES_ALL`` snapshot of
 # ``notebooklm.types.__all__`` is gone — it is now the regenerable ``types_all``
@@ -452,6 +459,34 @@ def test_rpc_enum_reexports_are_identical(enum_name: str) -> None:
         f"notebooklm.types.{enum_name} must be the same object as "
         f"notebooklm.rpc.types.{enum_name} (identity, not equality)"
     )
+
+
+@pytest.mark.parametrize("enum_name", _NEUTRAL_DOMAIN_ENUMS)
+def test_domain_enum_compatibility_paths_are_identical(enum_name: str) -> None:
+    """All 26 domain enums resolve to their canonical neutral definitions."""
+    import notebooklm._types.enums as canonical_enums
+    import notebooklm.rpc.types as rpc_types
+    import notebooklm.types as public_types
+
+    canonical_enum = getattr(canonical_enums, enum_name)
+    assert getattr(public_types, enum_name) is canonical_enum
+    assert getattr(rpc_types, enum_name) is canonical_enum
+
+
+def test_neutral_domain_enum_manifest_is_complete() -> None:
+    """The A1 manifest covers exactly the 26 enums defined in the neutral module."""
+    import notebooklm._types.enums as canonical_enums
+
+    defined = {
+        name
+        for name, value in vars(canonical_enums).items()
+        if isinstance(value, type)
+        and value.__module__ == canonical_enums.__name__
+        and issubclass(value, enum.Enum)
+    }
+    assert len(_NEUTRAL_DOMAIN_ENUMS) == 26
+    assert len(set(_NEUTRAL_DOMAIN_ENUMS)) == 26
+    assert set(_NEUTRAL_DOMAIN_ENUMS) == defined
 
 
 def test_types_all_contract_is_frozen_in_order() -> None:

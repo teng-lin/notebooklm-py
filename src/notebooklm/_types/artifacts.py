@@ -13,7 +13,14 @@ from typing import Any, Final
 from .._row_adapters.artifacts import ArtifactRow
 from .._row_adapters.notes import NoteRow
 from ..exceptions import UnknownRPCMethodError
-from ..rpc.types import (
+from .artifact_content import (
+    ArtifactInfographic,
+    ArtifactMedia,
+    ArtifactSlide,
+    ArtifactUserState,
+)
+from .common import UnknownTypeWarning
+from .enums import (
     FLASHCARDS_VARIANT,
     INTERACTIVE_MIND_MAP_VARIANT,
     QUIZ_VARIANT,
@@ -22,13 +29,6 @@ from ..rpc.types import (
     ReportFormat,
     artifact_status_to_str,
 )
-from .artifact_content import (
-    ArtifactInfographic,
-    ArtifactMedia,
-    ArtifactSlide,
-    ArtifactUserState,
-)
-from .common import UnknownTypeWarning
 
 logger = logging.getLogger(__name__)
 

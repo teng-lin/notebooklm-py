@@ -68,8 +68,8 @@ from datetime import datetime
 from typing import Any, ClassVar
 
 from .._types.common import _datetime_from_timestamp
+from .._types.enums import DiscoveryMode
 from ..rpc import RPCMethod, safe_index
-from ..rpc.types import DiscoveryMode
 
 logger = logging.getLogger(__name__)
 

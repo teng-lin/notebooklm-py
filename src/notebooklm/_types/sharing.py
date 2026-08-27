@@ -10,7 +10,7 @@ from urllib.parse import quote
 
 from .._env import get_base_url
 from ..rpc import RPCMethod, safe_index
-from ..rpc.types import ShareAccess, SharePermission, ShareViewLevel
+from .enums import ShareAccess, SharePermission, ShareViewLevel
 
 logger = logging.getLogger(__name__)
 

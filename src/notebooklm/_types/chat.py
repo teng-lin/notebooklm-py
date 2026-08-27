@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from ..rpc.types import ChatGoal, ChatResponseLength, MagicArtifactType
 from .documents import StructuredDocument
+from .enums import ChatGoal, ChatResponseLength, MagicArtifactType
 
 
 class ChatMode(Enum):

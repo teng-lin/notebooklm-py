@@ -27,13 +27,7 @@ from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
 from ._row_adapters import artifacts as _artifact_rows
 from ._runtime.contracts import RpcCaller
-from ._types.research import MindMapResult
-from .exceptions import ArtifactNotFoundError
-
-if TYPE_CHECKING:
-    from ._runtime.lifecycle import ClientLifecycle
-    from ._transport_drain import TransportDrainTracker
-from .rpc import (
+from ._types.enums import (
     ArtifactTypeCode,
     AudioFormat,
     AudioLength,
@@ -44,11 +38,19 @@ from .rpc import (
     QuizDifficulty,
     QuizQuantity,
     ReportFormat,
-    RPCMethod,
     SlideDeckFormat,
     SlideDeckLength,
     VideoFormat,
     VideoStyle,
+)
+from ._types.research import MindMapResult
+from .exceptions import ArtifactNotFoundError
+
+if TYPE_CHECKING:
+    from ._runtime.lifecycle import ClientLifecycle
+    from ._transport_drain import TransportDrainTracker
+from .rpc import (
+    RPCMethod,
 )
 from .types import (
     Artifact,

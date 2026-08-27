@@ -1,6 +1,6 @@
-"""Frozen-snapshot gate for the wire integers of every RPC ``int``-Enum.
+"""Frozen-snapshot gate for every transport-neutral wire ``int``-Enum.
 
-The obfuscated wire integers in ``src/notebooklm/rpc/types.py`` (``VideoStyle``,
+The wire integers in ``src/notebooklm/_types/enums.py`` (``VideoStyle``,
 ``VideoFormat``, ``AudioFormat``, ``InfographicStyle``, …) are an *undocumented
 contract* with Google's backend. In #1597 Google changed ``VideoStyle``'s wire
 integers; our stale values produced **silent** wrong output — generation
@@ -25,6 +25,7 @@ import inspect
 
 import pytest
 
+import notebooklm._types.enums as domain_enums
 import notebooklm.rpc.types as rpc_types
 
 pytestmark = pytest.mark.repo_lint
@@ -32,7 +33,7 @@ pytestmark = pytest.mark.repo_lint
 # ---------------------------------------------------------------------------
 # Frozen wire-value snapshot.
 #
-# Every ``int``-valued ``Enum`` defined in ``notebooklm.rpc.types`` is pinned to
+# Every ``int``-valued ``Enum`` defined in ``notebooklm._types.enums`` is pinned to
 # its exact ``{member_name: value}`` map, INCLUDING value-aliases like
 # ``ArtifactTypeCode.QUIZ_FLASHCARD`` (the map is built from ``__members__``, so
 # aliases are frozen too — an alias whose wire value drifted independently would
@@ -183,7 +184,7 @@ _RPC_ENUM_SNAPSHOT: dict[str, dict[str, int]] = {
 
 
 def _discover_int_enums() -> dict[str, type[enum.Enum]]:
-    """Every ``int``-valued ``Enum`` class actually DEFINED in ``rpc/types.py``.
+    """Every ``int``-valued ``Enum`` class defined in ``_types/enums.py``.
 
     A wire enum is a class that subclasses both ``int`` and ``enum.Enum`` and is
     defined in this module (``__module__`` guard excludes anything imported in).
@@ -192,9 +193,9 @@ def _discover_int_enums() -> dict[str, type[enum.Enum]]:
     """
     return {
         name: obj
-        for name, obj in vars(rpc_types).items()
+        for name, obj in vars(domain_enums).items()
         if inspect.isclass(obj)
-        and obj.__module__ == rpc_types.__name__
+        and obj.__module__ == domain_enums.__name__
         and issubclass(obj, int)
         and issubclass(obj, enum.Enum)
     }
@@ -218,12 +219,13 @@ def test_rpc_enum_values_frozen(enum_name: str) -> None:
     These integers are an undocumented contract with Google's backend; a silent
     change produces wrong-output-without-error (see #1597, VideoStyle).
     """
-    enum_cls = getattr(rpc_types, enum_name, None)
+    enum_cls = getattr(domain_enums, enum_name, None)
     assert enum_cls is not None, (
         f"_RPC_ENUM_SNAPSHOT pins {enum_name}, but it no longer exists in "
-        "rpc/types.py. Remove it from _RPC_ENUM_SNAPSHOT in this PR (a removed "
+        "_types/enums.py. Remove it from _RPC_ENUM_SNAPSHOT in this PR (a removed "
         "wire enum is a deliberate, reviewed change)."
     )
+    assert getattr(rpc_types, enum_name) is enum_cls
     live = _live_value_map(enum_cls)
     assert live == _RPC_ENUM_SNAPSHOT[enum_name], (
         f"Wire values for {enum_name} changed.\n"
@@ -238,7 +240,7 @@ def test_rpc_enum_values_frozen(enum_name: str) -> None:
 
 
 def test_snapshot_covers_every_int_enum() -> None:
-    """Every int-Enum defined in rpc/types.py must be pinned in the snapshot.
+    """Every int-Enum defined in _types/enums.py must be pinned in the snapshot.
 
     Fails if someone adds a brand-new wire enum without freezing it. ``str``
     enums (``RPCMethod``, ``ReportFormat``) are excluded by construction.
@@ -253,7 +255,7 @@ def test_snapshot_covers_every_int_enum() -> None:
         "Add each with its exact {member_name: value} map so its wire contract is frozen."
     )
     assert not extra, (
-        f"_RPC_ENUM_SNAPSHOT pins enum(s) no longer defined in rpc/types.py: {sorted(extra)}."
+        f"_RPC_ENUM_SNAPSHOT pins enum(s) no longer defined in _types/enums.py: {sorted(extra)}."
     )
 
 

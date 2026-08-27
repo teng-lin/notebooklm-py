@@ -25,9 +25,9 @@ from ._runtime.config import (
     DEFAULT_TIMEOUT,
     compose_builtin_read_timeout,
 )
+from ._types.enums import GrpcStatusCode, normalize_grpc_status
 from ._types.research import ResearchSource, ResearchSourceInput
 from .exceptions import ResearchTaskMismatchError, RPCError, ValidationError
-from .rpc import GrpcStatusCode, normalize_grpc_status
 
 if TYPE_CHECKING:
     from .types import Source

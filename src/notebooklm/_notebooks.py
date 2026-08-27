@@ -23,6 +23,7 @@ from ._row_adapters.sources import SourceRow
 from ._runtime.contracts import RpcCaller
 from ._settings import build_get_user_settings_params, extract_account_limits
 from ._sharing_manager import ShareManager
+from ._types.enums import GrpcStatusCode, normalize_grpc_status
 from .exceptions import (
     AuthError,
     ClientError,
@@ -35,7 +36,7 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
-from .rpc import GrpcStatusCode, RPCMethod, normalize_grpc_status, safe_index
+from .rpc import RPCMethod, safe_index
 from .types import (
     AccountLimits,
     Notebook,

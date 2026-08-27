@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
 from .._deadline import RuntimeDeadline
-from ..rpc.types import SourceStatus
+from .._types.enums import SourceStatus
 from ..types import Source, SourceNotFoundError, SourceProcessingError, SourceTimeoutError
 
 # Source type codes where status=3 (ERROR) is transient rather than terminal.

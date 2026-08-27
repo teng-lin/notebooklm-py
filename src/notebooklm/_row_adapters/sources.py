@@ -9,9 +9,9 @@ from enum import Enum
 from typing import Any, ClassVar
 
 from .._types.common import _datetime_from_timestamp
+from .._types.enums import DriveSourceStatus, SourceStatus
 from ..exceptions import DecodingError
 from ..rpc import RPCMethod, safe_index
-from ..rpc.types import DriveSourceStatus, SourceStatus
 
 logger = logging.getLogger(__name__)
 

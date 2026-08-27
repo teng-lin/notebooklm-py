@@ -52,9 +52,8 @@ if TYPE_CHECKING:
     from .._reqid_counter import ReqidCounter
     from .._runtime.transport import RuntimeTransport
 from .._types.documents import StructuredDocument
+from .._types.enums import ChatGoal, ChatResponseLength
 from ..rpc import (
-    ChatGoal,
-    ChatResponseLength,
     RPCMethod,
     safe_index,
 )

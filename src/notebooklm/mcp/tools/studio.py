@@ -35,6 +35,7 @@ from ..._app import notes as note_core
 from ..._app.language import is_supported_language
 from ..._app.resolve import FULL_ID_PATTERN
 from ..._app.serialize import to_jsonable
+from ..._types.enums import GrpcStatusCode
 from ...exceptions import (
     ArtifactFeatureUnavailableError,
     AuthError,
@@ -46,7 +47,6 @@ from ...exceptions import (
     ServerError,
     ValidationError,
 )
-from ...rpc.types import GrpcStatusCode
 from .._coerce import coerce_list
 from .._confirm import DESTRUCTIVE, READ_ONLY, needs_confirmation
 from .._context import get_client, get_file_transfer

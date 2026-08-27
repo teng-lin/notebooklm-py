@@ -1,6 +1,6 @@
 """Data types for NotebookLM API client.
 
-This module contains all dataclasses and re-exports enums from rpc/types.py
+This module contains all dataclasses and re-exports transport-neutral enums
 for convenient access.
 
 Usage:
@@ -60,6 +60,50 @@ from ._types.documents import (
     TextSpan,
     utf16_len,
 )
+from ._types.enums import (
+    SOURCE_STATUS_LABELS,
+    ArtifactStatus,
+    AudioFormat,
+    AudioLength,
+    ChatGoal,
+    ChatResponseLength,
+    DiscoveryMode,
+    DriveMimeType,
+    DriveSourceStatus,
+    ExportType,
+    InfographicDetail,
+    InfographicOrientation,
+    InfographicStyle,
+    MagicArtifactType,
+    QuizDifficulty,
+    QuizQuantity,
+    ReportFormat,
+    ShareAccess,
+    SharePermission,
+    ShareViewLevel,
+    SlideDeckFormat,
+    SlideDeckLength,
+    SourceStatus,
+    VideoFormat,
+    VideoStyle,
+    artifact_status_to_str,
+    discovery_mode_to_str,
+    drive_source_status_to_str,
+    share_permission_to_str,
+    source_status_to_str,
+)
+from ._types.enums import (
+    ArtifactTypeCode as _ArtifactTypeCode,
+)
+from ._types.enums import (
+    GrpcStatusCode as _GrpcStatusCode,
+)
+from ._types.enums import (
+    normalize_grpc_status as _normalize_grpc_status,
+)
+from ._types.enums import (
+    normalize_rpc_code as _normalize_rpc_code,
+)
 from ._types.labels import Label
 from ._types.mind_maps import MindMap, MindMapKind
 from ._types.notebooks import (
@@ -110,52 +154,6 @@ from .exceptions import (
     SourceNotFoundError,
     SourceProcessingError,
     SourceTimeoutError,
-)
-
-# Re-export enums from rpc/types.py for convenience
-from .rpc.types import (
-    SOURCE_STATUS_LABELS,
-    ArtifactStatus,
-    AudioFormat,
-    AudioLength,
-    ChatGoal,
-    ChatResponseLength,
-    DiscoveryMode,
-    DriveMimeType,
-    DriveSourceStatus,
-    ExportType,
-    InfographicDetail,
-    InfographicOrientation,
-    InfographicStyle,
-    MagicArtifactType,
-    QuizDifficulty,
-    QuizQuantity,
-    ReportFormat,
-    ShareAccess,
-    SharePermission,
-    ShareViewLevel,
-    SlideDeckFormat,
-    SlideDeckLength,
-    SourceStatus,
-    VideoFormat,
-    VideoStyle,
-    artifact_status_to_str,
-    discovery_mode_to_str,
-    drive_source_status_to_str,
-    share_permission_to_str,
-    source_status_to_str,
-)
-from .rpc.types import (
-    ArtifactTypeCode as _ArtifactTypeCode,
-)
-from .rpc.types import (
-    GrpcStatusCode as _GrpcStatusCode,
-)
-from .rpc.types import (
-    normalize_grpc_status as _normalize_grpc_status,
-)
-from .rpc.types import (
-    normalize_rpc_code as _normalize_rpc_code,
 )
 
 # Keep private facade names that first-party tests and external callers have

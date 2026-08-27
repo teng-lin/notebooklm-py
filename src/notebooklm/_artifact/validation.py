@@ -18,8 +18,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .._types.enums import ReportFormat
 from ..exceptions import ValidationError
-from ..rpc import ReportFormat
 
 
 def coerce_report_format(report_format: Any) -> ReportFormat:

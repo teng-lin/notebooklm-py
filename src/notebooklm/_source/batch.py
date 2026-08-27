@@ -21,6 +21,7 @@ from urllib.parse import urlsplit, urlunsplit
 from .._idempotency import mark_unconfirmed
 from .._row_adapters.sources import unwrap_add_source_rows
 from .._runtime.contracts import RpcCaller
+from .._types.enums import GrpcStatusCode, SourceStatus, normalize_rpc_code
 from ..exceptions import (
     AuthError,
     NetworkError,
@@ -29,7 +30,6 @@ from ..exceptions import (
     SourceAddError,
 )
 from ..rpc import RPCError, RPCMethod
-from ..rpc.types import GrpcStatusCode, SourceStatus, normalize_rpc_code
 from ..types import Source
 from .upload_payloads import build_template_block
 

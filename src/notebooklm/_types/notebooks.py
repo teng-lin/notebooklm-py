@@ -12,9 +12,9 @@ from .._deprecation import warn_deprecated
 from .._row_adapters.notebooks import ProjectRow
 from ..exceptions import UnknownRPCMethodError
 from ..rpc import RPCMethod, safe_index
-from ..rpc.types import ChatGoal, ChatResponseLength, SharePermission, share_permission_to_str
 from .chat import ChatSettings
 from .common import _datetime_from_timestamp
+from .enums import ChatGoal, ChatResponseLength, SharePermission, share_permission_to_str
 from .sources import SourceType
 
 logger = logging.getLogger(__name__)

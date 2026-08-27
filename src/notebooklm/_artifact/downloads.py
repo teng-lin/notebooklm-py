@@ -22,8 +22,9 @@ from .._auth.cookies import load_httpx_cookies
 from .._curl_cffi_transport import resolve_transport_factory
 from .._mind_maps_api import extract_interactive_tree_leaf
 from .._row_adapters.notes import NoteRow
+from .._types.enums import ArtifactTypeCode
 from ..exceptions import UnknownRPCMethodError, ValidationError
-from ..rpc import ArtifactTypeCode, RPCMethod, safe_index
+from ..rpc import RPCMethod, safe_index
 from ..types import (
     Artifact,
     ArtifactDownloadError,
