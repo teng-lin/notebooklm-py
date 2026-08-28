@@ -27,7 +27,7 @@
 | `wXbhsf` | LIST_NOTEBOOKS | List all notebooks | `_web/notebooks.py` |
 | `CCqFvf` | CREATE_NOTEBOOK | Create new notebook | `_web/notebooks.py` |
 | `rLM1Ne` | GET_NOTEBOOK | Get notebook details + sources | `_web/notebooks.py` |
-| `s0tc2d` | RENAME_NOTEBOOK | Rename, chat config, share access | `_web/notebooks.py`, `_chat/api.py` |
+| `s0tc2d` | RENAME_NOTEBOOK | Rename, chat config, share access | `_web/notebooks.py`, `_web/chat.py` |
 | `WWINqb` | DELETE_NOTEBOOK | Delete a notebook | `_web/notebooks.py` |
 | `izAoDd` | ADD_SOURCE | Add URL/text/YouTube/Drive source | `_web/sources/add.py` via `_web/sources/__init__.py` |
 | `o4cbdc` | ADD_SOURCE_FILE | Register uploaded file (PDF, DOCX, EPUB, etc.) | `_web/sources/upload.py`, `_web/params/sources.py` |
@@ -44,9 +44,9 @@
 | `V5N4be` | DELETE_ARTIFACT | Delete artifact | `_web/artifacts.py` |
 | `KmcKPe` | REVISE_SLIDE | Revise an individual slide via prompt | `_web/artifacts.py` |
 | `Rytqqe` | RETRY_ARTIFACT | Retry a failed Studio artifact in place | `_web/artifacts.py` |
-| `hPTbtc` | GET_LAST_CONVERSATION_ID | Get most recent conversation ID | `_chat/api.py` |
-| `khqZz` | GET_CONVERSATION_TURNS | Get Q&A turns for a conversation | `_chat/api.py` |
-| `J7Gthc` | DELETE_CONVERSATION | Delete a conversation (web UI's "Delete history") | `_chat/api.py` |
+| `hPTbtc` | GET_LAST_CONVERSATION_ID | Get most recent conversation ID | `_web/chat.py` |
+| `khqZz` | GET_CONVERSATION_TURNS | Get Q&A turns for a conversation | `_web/chat.py` |
+| `J7Gthc` | DELETE_CONVERSATION | Delete a conversation (web UI's "Delete history") | `_web/chat.py` |
 | `otmP3b` | SUGGEST_PROMPTS | Get AI-suggested prompts for a notebook | `_web/notebooks.py` |
 | `CYK0Xb` | CREATE_NOTE | Create a note (placeholder) | `_notes.py` |
 | `cYAfTb` | UPDATE_NOTE | Update note content/title | `_notes.py` |
@@ -960,7 +960,7 @@ params = [
 
 ### RPC: RENAME_NOTEBOOK (s0tc2d) - Configure Chat
 
-**Source:** `_chat/api.py::configure()`
+**Source:** `_web/chat.py::WebChatAPI.configure()`
 
 ```python
 # Chat goal codes (ChatGoal enum)
@@ -987,7 +987,7 @@ params = [
 
 ### RPC: GET_LAST_CONVERSATION_ID (hPTbtc)
 
-**Source:** `_chat/api.py::get_conversation_id()`
+**Source:** `_web/chat.py::WebChatAPI.get_conversation_id()`
 
 Returns the most recent conversation ID for a notebook. The server always returns
 exactly one ID regardless of the `limit` param. Use `GET_CONVERSATION_TURNS` to
@@ -1016,7 +1016,7 @@ params = [
 
 ### RPC: GET_CONVERSATION_TURNS (khqZz)
 
-**Source:** `_chat/api.py::get_conversation_turns()`
+**Source:** `_web/chat.py::WebChatAPI.get_conversation_turns()`
 
 Returns the Q&A turns for a specific conversation. Turns are ordered newest-first.
 
@@ -1047,7 +1047,8 @@ params = [
 
 ### RPC: DELETE_CONVERSATION (J7Gthc)
 
-**Source:** `_chat/api.py::delete_conversation()`
+**Source:** shared `_chat/api.py::ChatAPI.delete_conversation()` orchestration,
+with the Web RPC send in `_web/chat.py::WebChatAPI._send_delete_conversation()`
 
 Deletes a conversation server-side. Mirrors the NotebookLM web UI's "Delete
 history" button. After the call, the next `ask()` with no `conversation_id`

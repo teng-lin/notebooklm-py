@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 from datetime import datetime
 from types import SimpleNamespace
@@ -19,6 +20,71 @@ from notebooklm.types import (
     ConversationTurn,
     Note,
 )
+
+# Raw ``__doc__`` fingerprints from the pre-split ChatAPI at de56890b. These
+# cover the effective runtime owner of every public method: shared workflows on
+# the neutral base and Web overrides for the abstract reads/configuration.
+_CHAT_DOCSTRING_SHA256 = {
+    ("ChatAPI", "<class>"): "125617c3294301ee5987a2e926fbc90f6ad6a4bbee91b0944c41a0c8fe46536d",
+    ("ChatAPI", "__init__"): "ae8476b2aa8120b15ea62eafd7efe67ea84e9a21175d212db6fb709b0176a2ea",
+    (
+        "ChatAPI",
+        "reset_after_open",
+    ): "561cee4e0504ee3cbcb413a4f34879d1a34fd5d096e9a08b0b5208d3943001b4",
+    ("ChatAPI", "ask"): "704583ce2f9eaf1b303ec68e196fbb7f07073636f5d25538de65e58240426907",
+    (
+        "ChatAPI",
+        "get_cached_turns",
+    ): "3cc05a18496555e0974363f13a275b638cb791aa31f2cd0ebde2751299d88993",
+    (
+        "ChatAPI",
+        "delete_conversation",
+    ): "a8d79dc920ff192411b105d70d3e2a27ec32fed94d793aba859535a7233fe9fb",
+    (
+        "ChatAPI",
+        "clear_cache",
+    ): "841e1bc228c61c0d08585966ccdcfe6c14fba1d7bcdfb4783c71fa5b35995776",
+    (
+        "ChatAPI",
+        "cache_size",
+    ): "d59415c6b3b9a129248d8dadf1f2eac518d775d6c0d1ae333460dc1d407b9e0b",
+    (
+        "ChatAPI",
+        "set_mode",
+    ): "7df6a33d66d207e57d9961f3fd733b079d3b88701bbe9bead3552b8495404e01",
+    (
+        "ChatAPI",
+        "save_answer_as_note",
+    ): "f78942e68ea2346928926a470ad1938e3a3f80fd36992cfccfb5e98d97ca2bc7",
+    (
+        "WebChatAPI",
+        "<class>",
+    ): "125617c3294301ee5987a2e926fbc90f6ad6a4bbee91b0944c41a0c8fe46536d",
+    (
+        "WebChatAPI",
+        "__init__",
+    ): "ae8476b2aa8120b15ea62eafd7efe67ea84e9a21175d212db6fb709b0176a2ea",
+    (
+        "WebChatAPI",
+        "get_conversation_turns",
+    ): "9ec5273e41fd0e0ea089eb78484011d268995601ce56779b9bd94a387f586a29",
+    (
+        "WebChatAPI",
+        "get_conversation_id",
+    ): "c5feb719c00d9c81edd1347a742de4c0b62d9e8ec2fb8e5557558b5d778712bd",
+    (
+        "WebChatAPI",
+        "get_history",
+    ): "4a683b206539a327bf2295e6413452115d9b74b972f8df02f97dc6e0409a7ead",
+    (
+        "WebChatAPI",
+        "configure",
+    ): "7a3547e5a56a08283b0572b8290b0d67e4a8d79a6b4de5eac9f560849eb319ab",
+    (
+        "WebChatAPI",
+        "get_settings",
+    ): "62723894d239d33ddf0384c496909da70c0e1740fcb32706127aab5443bfbf99",
+}
 
 
 class _FakeChatAPI(ChatAPI):
@@ -250,3 +316,19 @@ def test_web_public_override_signatures_match_base(method_name: str) -> None:
     assert inspect.signature(getattr(WebChatAPI, method_name)) == inspect.signature(
         getattr(ChatAPI, method_name)
     )
+
+
+@pytest.mark.parametrize(
+    ("owner_name", "member_name", "expected_sha256"),
+    [(*key, digest) for key, digest in _CHAT_DOCSTRING_SHA256.items()],
+)
+def test_chat_split_preserves_effective_runtime_docstrings(
+    owner_name: str,
+    member_name: str,
+    expected_sha256: str,
+) -> None:
+    """Public runtime documentation stays byte-identical across the split."""
+    owner = {"ChatAPI": ChatAPI, "WebChatAPI": WebChatAPI}[owner_name]
+    documented = owner if member_name == "<class>" else getattr(owner, member_name)
+    assert documented.__doc__ is not None
+    assert hashlib.sha256(documented.__doc__.encode()).hexdigest() == expected_sha256

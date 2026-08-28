@@ -111,7 +111,24 @@ async def save_chat_answer_as_note(
 
 
 class WebChatAPI(ChatAPI):
-    """Web ``batchexecute`` and streamed-query implementation of chat."""
+    """Operations for notebook chat/conversations.
+
+    Provides methods for asking questions to notebooks and managing
+    conversation history with follow-up support.
+
+    Usage:
+        async with NotebookLMClient.from_storage() as client:
+            # Ask a question
+            result = await client.chat.ask(notebook_id, "What is X?")
+            print(result.answer)
+
+            # Follow-up question
+            result = await client.chat.ask(
+                notebook_id,
+                "Can you elaborate?",
+                conversation_id=result.conversation_id
+            )
+    """
 
     def __init__(
         self,
@@ -126,28 +143,36 @@ class WebChatAPI(ChatAPI):
         conversation_cache: ConversationCache | None = None,
         created_chat_sessions: CreatedChatSessionProvider | None = None,
     ):
-        """Initialize the Web chat implementation.
+        """Initialize the chat API.
+
+        Per ADR-0014 Rule 2 Corollary, ``ChatAPI`` depends on the **direct**
+        collaborators it exercises (``rpc``, ``transport``, ``reqid``,
+        ``loop_guard``, ``notebooks``) rather than a chat-local Runtime Protocol
+        bundling them.
 
         Args:
-            rpc: RPC dispatch collaborator for conversation reads,
-                configuration, deletion, and saved-chat note persistence.
-            transport: Runtime transport owning the authenticated streaming
-                POST entry point used by :meth:`ask`.
-            reqid: Counter minting the per-attempt ``_reqid`` query parameter
-                for streamed chat requests.
-            loop_guard: Collaborator whose ``assert_bound_loop`` check runs
-                before shared workflows acquire conversation locks.
-            notebooks: Required source-ID resolver. The composition root passes
-                the client's shared notebooks API so this adapter never creates
-                a transport-specific notebook implementation implicitly.
-            chat_timeout: Per-read HTTP timeout in seconds for streamed chat.
-                ``None`` inherits the underlying transport timeout.
+            rpc: RPC dispatch collaborator for the ``get_conversation_*``,
+                ``configure``, ``delete_conversation``, and
+                ``save_answer_as_note`` round-trips.
+            transport: :class:`RuntimeTransport` owning the authed-POST entry
+                point used by :meth:`ask` via :func:`chat_aware_authed_post`.
+            reqid: :class:`ReqidCounter` minting the per-attempt ``_reqid``
+                query parameter for the streamed chat request.
+            loop_guard: :class:`LoopGuard` whose :meth:`assert_bound_loop` fires
+                before :meth:`ask` acquires the per-conversation lock, so a
+                cross-loop follow-up doesn't hang on a lock bound to a dead loop.
+            notebooks: Required source-id resolver. The composition root passes
+                the client's shared notebooks API so chat never constructs a
+                transport-specific notebook implementation implicitly.
+            chat_timeout: Per-read HTTP timeout (seconds) for the streamed chat
+                endpoint. ``None`` inherits the underlying transport timeout.
             chat_response_max_bytes: Maximum buffered streamed-chat response
-                size. ``None`` inherits the shared RPC response cap.
+                size in bytes. ``None`` inherits the shared RPC response cap.
             conversation_cache: Optional injected cache; defaults to a fresh
                 per-instance ``ConversationCache``.
             created_chat_sessions: Optional one-shot provider for the initial
-                session ID returned by notebook creation.
+                session id returned by ``CREATE_NOTEBOOK``. The assembled
+                client passes its shared ``NotebooksAPI`` instance.
         """
         self._rpc = rpc
         self._transport = transport
@@ -262,7 +287,18 @@ class WebChatAPI(ChatAPI):
         conversation_id: str,
         limit: int = 2,
     ) -> Any:
-        """Get newest-first Web conversation-turn rows."""
+        """Get turns (individual messages) for a specific conversation.
+
+        Args:
+            notebook_id: The notebook ID.
+            conversation_id: The conversation ID to fetch turns for.
+            limit: Maximum number of turns to retrieve. Turns are returned
+                newest-first, so limit=2 gives the latest Q&A pair.
+
+        Returns:
+            Raw turn data from API; the per-turn position contract lives in
+            :class:`~notebooklm._web.rows.chat.ConversationTurnRow`.
+        """
         logger.debug(
             "Getting conversation turns for %s (conversation=%s, limit=%d)",
             notebook_id,
@@ -277,7 +313,16 @@ class WebChatAPI(ChatAPI):
         )
 
     async def get_conversation_id(self, notebook_id: str) -> str | None:
-        """Get the most recent Web conversation ID."""
+        """Get the most recent conversation ID from the API.
+
+        The underlying RPC (hPTbtc) returns the last conversation ID for a notebook.
+
+        Args:
+            notebook_id: The notebook ID.
+
+        Returns:
+            The most recent conversation ID, or None if no conversations exist.
+        """
         logger.debug("Getting conversation ID for notebook %s", notebook_id)
         params: list[Any] = [[], None, notebook_id, 1]
         raw = await self._rpc.rpc_call(
@@ -310,7 +355,18 @@ class WebChatAPI(ChatAPI):
         limit: int = 100,
         conversation_id: str | None = None,
     ) -> list[tuple[str, str]]:
-        """Get decoded Q/A history oldest-first."""
+        """Get Q&A history for the most recent conversation.
+
+        Args:
+            notebook_id: The notebook ID.
+            limit: Maximum number of Q&A turns to retrieve.
+            conversation_id: Use this conversation ID instead of fetching it.
+                Defaults to the most recent conversation if not provided.
+
+        Returns:
+            List of (question, answer) pairs, oldest-first.
+            Returns an empty list if no conversations exist.
+        """
         logger.debug("Getting conversation history for notebook %s (limit=%d)", notebook_id, limit)
         conv_id = conversation_id or await self.get_conversation_id(notebook_id)
         if not conv_id:
@@ -332,7 +388,23 @@ class WebChatAPI(ChatAPI):
         response_length: ChatResponseLength | None = None,
         custom_prompt: str | None = None,
     ) -> None:
-        """Configure the Web chat persona and response length."""
+        """Configure chat persona and response settings for a notebook.
+
+        Writes the WHOLE chat-settings block with no server-side merge: an
+        omitted ``goal`` / ``response_length`` resets that field to its default.
+        This is the low-level primitive — for a partial, merge-preserving update
+        (CLI ``configure`` / MCP ``chat_configure``) go through
+        ``_app.chat.execute_configure``, which reads :meth:`get_settings` first.
+
+        Args:
+            notebook_id: The notebook ID.
+            goal: Chat persona/goal (ChatGoal enum: DEFAULT, CUSTOM, LEARNING_GUIDE).
+            response_length: Response verbosity (ChatResponseLength enum).
+            custom_prompt: Custom instructions (required if goal is CUSTOM).
+
+        Raises:
+            ValidationError: If goal is CUSTOM but custom_prompt is not provided.
+        """
         logger.debug("Configuring chat for notebook %s", notebook_id)
         if goal is None:
             goal = ChatGoal.DEFAULT
@@ -351,7 +423,26 @@ class WebChatAPI(ChatAPI):
         )
 
     async def get_settings(self, notebook_id: str) -> ChatSettings:
-        """Read and decode Web chat settings."""
+        """Read the notebook's current chat configuration.
+
+        Decodes the chat-settings block from ``GET_NOTEBOOK`` so a *partial*
+        ``configure`` can merge (read-modify-write) instead of clobbering the
+        fields it doesn't touch — the server stores the whole block with no
+        merge (see :meth:`configure`). A notebook that has never been configured
+        reads back as ``DEFAULT``/``DEFAULT`` with no persona.
+
+        Args:
+            notebook_id: The notebook ID.
+
+        Returns:
+            The current :class:`ChatSettings` (goal, response length, persona).
+
+        Raises:
+            UnknownRPCMethodError: if the GET_NOTEBOOK chat-settings block has
+                drifted from the expected shape — raised rather than silently
+                defaulting, which on the merge path would clobber a field the
+                caller meant to preserve (the #1751 footgun).
+        """
         params = build_get_notebook_params(notebook_id)
         result = await self._rpc.rpc_call(
             RPCMethod.GET_NOTEBOOK,

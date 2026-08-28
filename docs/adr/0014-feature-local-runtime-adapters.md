@@ -183,10 +183,11 @@ class ArtifactsRuntimeAdapter:
 parameters, so its adapter covers only the composite Protocol part).
 
 `ChatRuntime` does **not** get an adapter — the Rule 2 Corollary applies. Once
-`_chat_transport.chat_aware_authed_post` is refactored to take `SessionTransport`
-directly (Wave 4.1 Step 0), `ChatRuntime` has no remaining consumer and is
-deleted. `ChatAPI` takes the four underlying collaborators (`RpcExecutor`,
-`SessionTransport`, `ReqidCounter`, `ClientLifecycle`) as keyword-only
+the chat-aware POST helper takes `RuntimeTransport` directly, `ChatRuntime` has
+no remaining consumer and is deleted. The backend-neutral `ChatAPI` takes the
+`LoopGuard` and `NotebookSourceIdProvider` collaborators needed by shared
+orchestration. `WebChatAPI` adds the Web-specific `RpcCaller`,
+`RuntimeTransport`, and `ReqidCounter` collaborators as keyword-only
 constructor parameters.
 
 ### Rule 3 — `NotebookLMClient.__init__` is the composition root
@@ -330,11 +331,11 @@ holding an `_owner` reference.
 in `_source_upload.py`. They are concrete implementations of feature-local
 composite Protocols.
 
-The Chat feature gets no adapter (Rule 2 Corollary): once
-`_chat_transport.chat_aware_authed_post` is refactored to take `SessionTransport`
-directly, `ChatRuntime` has no remaining consumer and is deleted. `ChatAPI`
-takes the underlying collaborators as keyword-only constructor parameters
-instead.
+The Chat feature gets no adapter (Rule 2 Corollary): the Web chat-aware POST
+helper takes `RuntimeTransport` directly, so `ChatRuntime` has no remaining
+consumer and is deleted. Neutral `ChatAPI` takes only its shared-orchestration
+collaborators; `WebChatAPI` takes the Web RPC, transport, and request-ID
+collaborators as keyword-only constructor parameters.
 
 The ADR-0013 promotion rule (≥2 consumers ⇒ shared Protocol in
 `_runtime/contracts.py`) is unchanged. Adapters are _not_ promoted to the

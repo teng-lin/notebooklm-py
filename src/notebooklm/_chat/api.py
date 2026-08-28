@@ -108,19 +108,22 @@ def _prepare_note_citations(
 
 
 class ChatAPI(LoopBoundPrimitive, ABC):
-    """Backend-neutral operations for notebook chat and conversations.
+    """Operations for notebook chat/conversations.
 
-    Provides shared workflows for asking questions, managing conversation
-    history, and saving answers as notes. Concrete backends implement the
-    transport reads and the three protected send hooks.
+    Provides methods for asking questions to notebooks and managing
+    conversation history with follow-up support.
 
     Usage:
         async with NotebookLMClient.from_storage() as client:
+            # Ask a question
             result = await client.chat.ask(notebook_id, "What is X?")
+            print(result.answer)
+
+            # Follow-up question
             result = await client.chat.ask(
                 notebook_id,
                 "Can you elaborate?",
-                conversation_id=result.conversation_id,
+                conversation_id=result.conversation_id
             )
     """
 
@@ -132,17 +135,36 @@ class ChatAPI(LoopBoundPrimitive, ABC):
         conversation_cache: ConversationCache | None = None,
         created_chat_sessions: CreatedChatSessionProvider | None = None,
     ) -> None:
-        """Initialize backend-neutral chat state.
+        """Initialize the chat API.
+
+        Per ADR-0014 Rule 2 Corollary, ``ChatAPI`` depends on the **direct**
+        collaborators it exercises (``rpc``, ``transport``, ``reqid``,
+        ``loop_guard``, ``notebooks``) rather than a chat-local Runtime Protocol
+        bundling them.
 
         Args:
-            loop_guard: Collaborator whose ``assert_bound_loop`` check runs
-                before lock acquisition in shared ask/delete workflows.
-            notebooks: Required source-ID resolver. The composition root passes
-                the client's shared notebooks API.
+            rpc: RPC dispatch collaborator for the ``get_conversation_*``,
+                ``configure``, ``delete_conversation``, and
+                ``save_answer_as_note`` round-trips.
+            transport: :class:`RuntimeTransport` owning the authed-POST entry
+                point used by :meth:`ask` via :func:`chat_aware_authed_post`.
+            reqid: :class:`ReqidCounter` minting the per-attempt ``_reqid``
+                query parameter for the streamed chat request.
+            loop_guard: :class:`LoopGuard` whose :meth:`assert_bound_loop` fires
+                before :meth:`ask` acquires the per-conversation lock, so a
+                cross-loop follow-up doesn't hang on a lock bound to a dead loop.
+            notebooks: Required source-id resolver. The composition root passes
+                the client's shared notebooks API so chat never constructs a
+                transport-specific notebook implementation implicitly.
+            chat_timeout: Per-read HTTP timeout (seconds) for the streamed chat
+                endpoint. ``None`` inherits the underlying transport timeout.
+            chat_response_max_bytes: Maximum buffered streamed-chat response
+                size in bytes. ``None`` inherits the shared RPC response cap.
             conversation_cache: Optional injected cache; defaults to a fresh
                 per-instance ``ConversationCache``.
-            created_chat_sessions: Optional one-shot provider for an initial
-                session ID returned by notebook creation.
+            created_chat_sessions: Optional one-shot provider for the initial
+                session id returned by ``CREATE_NOTEBOOK``. The assembled
+                client passes its shared ``NotebooksAPI`` instance.
         """
         self._loop_guard = loop_guard
         self._notebooks = notebooks
@@ -166,7 +188,16 @@ class ChatAPI(LoopBoundPrimitive, ABC):
         self._new_conversation_locks.clear()
 
     def reset_after_open(self) -> None:
-        """Rebuild lazy conversation locks after a client reopen."""
+        """Discard the lazy conversation locks so a reopened client rebinds them.
+
+        Called from :meth:`ClientLifecycle.open` so a client closed and reopened
+        on a *different* event loop builds fresh ``asyncio.Lock`` instances on
+        the new loop instead of reusing stale ones bound to the dead loop (which
+        on 3.10/3.11 can raise "bound to a different event loop" or mispark
+        waiters). Clearing the two ``WeakValueDictionary`` maps suffices — each
+        per-key lock is rebuilt lazily on the next ``_get_*_lock`` call. Mirrors
+        ``SourceUploadPipeline.reset_after_open``.
+        """
         self._conversation_locks.clear()
         self._new_conversation_locks.clear()
 
@@ -212,7 +243,39 @@ class ChatAPI(LoopBoundPrimitive, ABC):
         source_ids: list[str] | None = None,
         conversation_id: str | None = None,
     ) -> AskResult:
-        """Ask a question while preserving conversation and cache semantics."""
+        """Ask the notebook a question.
+
+        Args:
+            notebook_id: The notebook ID.
+            question: The question to ask.
+            source_ids: Specific source IDs to query. If None, uses all sources.
+            conversation_id: Existing conversation ID for follow-up questions.
+                Omit (or pass ``None``) to continue the user's current
+                conversation on this notebook (or create one if none
+                exists) — matching the web UI's default behavior.
+
+        Returns:
+            AskResult with answer, server-recorded conversation_id, and
+            turn info. For new conversations the conversation_id is
+            fetched via ``hPTbtc`` post-ask (issue #659).
+
+        Raises:
+            ChatError: For a new conversation, if ``hPTbtc`` returns no
+                conversation_id after the ask (the server failed to record
+                the turn, or the API shape drifted). The full answer text
+                is logged at ERROR level before the raise so it survives
+                in the audit trail.
+            NetworkError / ChatError: If the post-ask ``hPTbtc`` round-trip
+                itself fails (transient network or auth issue). Same
+                logging contract — answer is logged before the raise.
+
+        Note:
+            Repeated ``ask()`` calls without ``conversation_id`` all extend
+            the same most-recent conversation. To force a fresh
+            conversation, first call ``delete_conversation(notebook_id,
+            last_conversation_id)`` — the server then has nothing to
+            extend and the next ``ask()`` starts a new conversation.
+        """
         self._loop_guard.assert_bound_loop()
         logger.debug(
             "Asking question in notebook %s (conversation=%s)",
@@ -352,7 +415,14 @@ class ChatAPI(LoopBoundPrimitive, ABC):
         )
 
     def get_cached_turns(self, conversation_id: str) -> list[ConversationTurn]:
-        """Return typed turns from the local conversation cache."""
+        """Get locally cached conversation turns.
+
+        Args:
+            conversation_id: The conversation ID.
+
+        Returns:
+            List of ConversationTurn objects.
+        """
         cached = self._cache.get_cached_conversation(conversation_id)
         return [
             ConversationTurn(
@@ -364,7 +434,23 @@ class ChatAPI(LoopBoundPrimitive, ABC):
         ]
 
     async def delete_conversation(self, notebook_id: str, conversation_id: str) -> None:
-        """Delete server turns, then clear local state atomically."""
+        """Delete a conversation from the server.
+
+        Mirrors the web UI's "Delete history" action. After deletion the next
+        ``ask()`` with no ``conversation_id`` starts a fresh server-side
+        conversation rather than extending the deleted one.
+
+        Args:
+            notebook_id: The notebook that owns the conversation.
+            conversation_id: The conversation to delete.
+
+        Returns:
+            ``None`` on success; any failure raises first.
+
+        .. versionchanged:: 0.8.0
+            **Breaking change:** returns ``None`` instead of the uninformative
+            always-``True`` value; the ``-> bool`` annotation is dropped (#1290).
+        """
         self._loop_guard.assert_bound_loop()
         logger.debug("Deleting conversation %s in notebook %s", conversation_id, notebook_id)
         async with self._get_conversation_lock(conversation_id):
@@ -374,15 +460,32 @@ class ChatAPI(LoopBoundPrimitive, ABC):
         return None
 
     def clear_cache(self, conversation_id: str | None = None) -> bool:
-        """Clear one cached conversation, or all cached conversations."""
+        """Clear conversation cache.
+
+        Args:
+            conversation_id: Clear specific conversation, or all if None.
+
+        Returns:
+            True if cache was cleared.
+        """
         return self._cache.clear(conversation_id)
 
     def cache_size(self) -> int:
-        """Return the number of cached conversations."""
+        """Return the number of conversations currently held in the cache.
+
+        Surfaced for CLI ``history --clear --json`` so the emitted envelope
+        can report how many conversations were dropped without reaching
+        into ``_cache`` from the CLI layer.
+        """
         return len(self._cache.conversations)
 
     async def set_mode(self, notebook_id: str, mode: ChatMode) -> None:
-        """Apply a predefined chat configuration."""
+        """Set chat mode using predefined configurations.
+
+        Args:
+            notebook_id: The notebook ID.
+            mode: Predefined ChatMode (DEFAULT, LEARNING_GUIDE, CONCISE, DETAILED).
+        """
         mode_configs = {
             ChatMode.DEFAULT: (ChatGoal.DEFAULT, ChatResponseLength.DEFAULT, None),
             ChatMode.LEARNING_GUIDE: (
@@ -403,7 +506,40 @@ class ChatAPI(LoopBoundPrimitive, ABC):
         *,
         title: str | None = None,
     ) -> Note:
-        """Save a chat answer as a citation-rich note."""
+        """Save a chat answer as a citation-rich note (issue #660).
+
+        Unlike :meth:`NotesAPI.create`, this preserves the ``[N]``
+        citation markers in the answer as interactive hover-anchored
+        references in the NotebookLM web UI. It mirrors the wire format
+        the web UI's "Save to note" button uses.
+
+        Args:
+            notebook_id: The notebook ID.
+            ask_result: Result from a prior ``client.chat.ask()`` call.
+                Must have non-empty ``references`` — otherwise this
+                method raises :class:`ValueError`.
+            title: Note title. When ``None`` (default), a title is
+                derived from the first 50 characters of the answer
+                (``AskResult`` does not currently carry the original
+                question, so the answer is used). An empty string
+                (``""``) is passed through verbatim — i.e. treated as
+                "use this exact (empty) title", NOT as "use default".
+                The NotebookLM server may apply smart-title generation
+                regardless; the returned ``Note.title`` reflects what
+                the server actually stored.
+
+        Returns:
+            The created ``Note``. ``Note.content`` holds the answer text
+            WITH ``[N]`` markers; the rich citation anchors live
+            server-side and surface via the NotebookLM web UI.
+
+        Raises:
+            ValueError: If ``ask_result.references`` is empty. Callers
+                without citations should fall back to
+                :meth:`NotesAPI.create` for plain-text notes — this
+                method raises rather than silently degrading so the
+                caller can decide.
+        """
         if not ask_result.references:
             raise ValueError(
                 "save_answer_as_note requires AskResult.references to be "

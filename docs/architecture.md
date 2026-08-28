@@ -166,17 +166,26 @@ pipeline.
 
 ### Chat ask path
 
-`ChatAPI.ask()` is the major transport-sharing exception to the pure
-`RpcExecutor` shape. Streaming chat has a custom request body and chat-flavored
-error mapping, so the first ask POST goes through:
+The neutral `ChatAPI.ask()` owns conversation, lock, cache, ID-recovery, and
+turn-number orchestration. Its single Web send/decode seam,
+`WebChatAPI._stream_answer()`, is the major transport-sharing exception to the
+pure `RpcExecutor` shape. Streaming chat has a custom request body and
+chat-flavored error mapping, so the first ask POST goes through:
 
 ```text
 +----------------------------------------------------------------+
 | ChatAPI.ask(...)                                               |
 |   - loop_guard.assert_bound_loop()                             |
 |   - source-id lookup                                           |
-|   - conversation lock / cache                                  |
+|   - conversation lock / prior-role and cache reads             |
+|   - delegate once to _stream_answer(...)                       |
++----------------------------------------------------------------+
+                                 |
+                                 v
++----------------------------------------------------------------+
+| WebChatAPI._stream_answer(...)                                 |
 |   - reqid.next_reqid()                                         |
+|   - build Web streaming request                                |
 +----------------------------------------------------------------+
                                  |
                                  v
@@ -203,6 +212,13 @@ error mapping, so the first ask POST goes through:
 +----------------------------------------------------------------+
 | streaming chat parser + citation/reference parser              |
 +----------------------------------------------------------------+
+                                 |
+                                 v  _PostedAsk returns to base
++----------------------------------------------------------------+
+| ChatAPI.ask(...)                                               |
+|   - recover authoritative conversation id                      |
+|   - update cache and construct AskResult                       |
++----------------------------------------------------------------+
 ```
 
 The neutral `ChatAPI` holds `loop_guard` and the base-typed `notebooks`
@@ -210,10 +226,12 @@ collaborator plus its cache/session-hint state. `WebChatAPI` adds `rpc`,
 `transport`, and `reqid`; there is no `ChatRuntime` composite or broad runtime
 transport indirection.
 
-For a new conversation, `ChatAPI.ask()` then calls `GET_LAST_CONVERSATION_ID`
-through the normal `RpcExecutor` path. Other chat methods such as
-`get_conversation_turns()` and `delete_conversation()` also use normal
-`rpc_call`.
+For a new conversation, `ChatAPI.ask()` then calls its abstract
+`get_conversation_id()` read; `WebChatAPI.get_conversation_id()` implements
+that read through `GET_LAST_CONVERSATION_ID` on the normal `RpcExecutor` path.
+Other Web chat reads use the same executor, while shared
+`ChatAPI.delete_conversation()` delegates its one RPC send to
+`WebChatAPI._send_delete_conversation()`.
 
 ### Uploads, downloads, and polling
 
