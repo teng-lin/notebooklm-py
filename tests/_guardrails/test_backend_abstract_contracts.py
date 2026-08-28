@@ -360,3 +360,13 @@ def test_backend_implementations_preserve_abstract_method_signatures() -> None:
             assert inspect.iscoroutinefunction(
                 implementation_method
             ) == inspect.iscoroutinefunction(base_method)
+
+
+def test_web_sharing_inherits_neutral_concrete_workflows() -> None:
+    """The two shared upsert projections must not fork in the web backend."""
+    from notebooklm._sharing import SharingAPI
+    from notebooklm._web.sharing import WebSharingAPI
+
+    for method_name in ("add_user", "update_user"):
+        assert method_name not in WebSharingAPI.__dict__
+        assert getattr(WebSharingAPI, method_name) is getattr(SharingAPI, method_name)

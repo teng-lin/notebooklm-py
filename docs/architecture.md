@@ -1355,6 +1355,9 @@ src/notebooklm/
 │   │   ├── generation.py        # Generation RPC dispatch
 │   │   ├── listing.py           # Listing and mind-map composition
 │   │   └── table.py             # Positional data-table decoding
+│   ├── notes.py                 # WebNotesAPI + NoteService
+│   ├── settings.py              # WebSettingsAPI + web settings helpers
+│   ├── sharing.py               # WebSharingAPI + legacy ShareManager
 │   ├── params/                   # Web batchexecute payload builders
 │   │   ├── artifacts.py         # Artifact RPC payload builders
 │   │   ├── chat_note.py         # Saved-chat CREATE_NOTE payload builder
@@ -1371,9 +1374,6 @@ src/notebooklm/
 ├── _notes.py                    # Backend-neutral abstract NotesAPI
 ├── _sharing.py                  # Backend-neutral abstract SharingAPI
 ├── _settings.py                 # Backend-neutral abstract SettingsAPI
-├── _web/notes.py                # WebNotesAPI + NoteService
-├── _web/sharing.py              # WebSharingAPI + legacy ShareManager
-├── _web/settings.py             # WebSettingsAPI + web settings helpers
 ├── _labels.py                   # LabelsAPI — client.labels (source labels: generate/create/list/…)
 ├── _collections.py              # CollectionsAPI — client.collections (account-level notebook groups; reuse label RPCs, type-3)
 ├── notebooklm_cli.py            # Entry-point assembler — imports + registers cli/ groups

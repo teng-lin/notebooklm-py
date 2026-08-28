@@ -36,7 +36,24 @@ class SharingAPI(ABC):
         notify: bool = True,
         welcome_message: str = "",
     ) -> ShareStatus:
-        """Share a notebook with one user through the batch upsert operation."""
+        """Share notebook with a user.
+
+        Intent wrapper over :meth:`set_users`. The underlying operation is an
+        upsert, so this also updates a user who already has access.
+
+        Args:
+            notebook_id: The notebook ID.
+            email: User's email address.
+            permission: EDITOR or VIEWER (cannot assign OWNER).
+            notify: Send email notification to user.
+            welcome_message: Optional welcome message for the user.
+
+        Returns:
+            Updated ShareStatus.
+
+        Raises:
+            ValueError: If permission is OWNER or _REMOVE.
+        """
         return await self.set_users(
             notebook_id,
             [(email, permission)],
@@ -60,7 +77,19 @@ class SharingAPI(ABC):
         email: str,
         permission: SharePermission,
     ) -> ShareStatus:
-        """Update one user's permission through the batch upsert operation."""
+        """Update a user's permission level.
+
+        Intent wrapper over :meth:`set_users`. The underlying operation is an
+        upsert, so this adds a user who does not have access yet.
+
+        Args:
+            notebook_id: The notebook ID.
+            email: User's email address.
+            permission: New permission level (EDITOR or VIEWER).
+
+        Returns:
+            Updated ShareStatus.
+        """
         logger.debug(
             "Updating user %s permission to %s in notebook %s",
             email,
