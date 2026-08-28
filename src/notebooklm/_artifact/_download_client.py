@@ -65,11 +65,12 @@ def _make_download_client(
     factory = resolve_transport_factory()
     resolved_credential_for = credential_for
     if resolved_credential_for is None:
+        cookie_jar = cookies if isinstance(cookies, httpx.Cookies) else httpx.Cookies(cookies)
 
         def _default_credential_for(_url: str) -> HopCredentials | None:
             parsed = urlparse(_url)
             if parsed.scheme == "https" and _is_trusted_download_host(parsed.hostname):
-                return HopCredentials(cookies=cookies)
+                return HopCredentials(cookies=cookie_jar)
             return None
 
         resolved_credential_for = _default_credential_for

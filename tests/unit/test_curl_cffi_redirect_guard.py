@@ -264,7 +264,13 @@ async def test_get_guarded_selected_jar_receives_redirect_set_cookie():
         seen_cookies.append(request.headers.get("cookie"))
         response = next(responses)
         if url.endswith("/start"):
-            response.headers["set-cookie"] = "ROTATED=next; Path=/; Secure"
+            response.headers = httpx.Headers(
+                [
+                    ("location", "https://storage.googleapis.com/final"),
+                    ("set-cookie", "ROTATED=next; Path=/; Secure"),
+                    ("set-cookie", "SECOND=two; Path=/; Secure"),
+                ]
+            )
         return response
 
     client._curl.get = fake_get
@@ -278,7 +284,11 @@ async def test_get_guarded_selected_jar_receives_redirect_set_cookie():
         await client.aclose()
 
     assert seen_cookies[0] == "SID=selected"
-    assert set(seen_cookies[1].split("; ")) == {"SID=selected", "ROTATED=next"}
+    assert set(seen_cookies[1].split("; ")) == {
+        "SID=selected",
+        "ROTATED=next",
+        "SECOND=two",
+    }
 
 
 async def test_get_guarded_structured_jar_domain_matches_each_redirect_host():

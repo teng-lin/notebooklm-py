@@ -33,11 +33,12 @@ _DOWNLOAD_WRITER_QUEUE_SIZE = 8
 
 def _credential_policy(cookies: Any) -> CredentialPolicy:
     """Return the web default: the jar on trusted hops, otherwise no credential."""
+    cookie_jar = cookies if isinstance(cookies, httpx.Cookies) else httpx.Cookies(cookies)
 
     def credential_for(url: str) -> HopCredentials | None:
         parsed = urlparse(url)
         if parsed.scheme == "https" and _is_trusted_download_host(parsed.hostname):
-            return HopCredentials(cookies=cookies)
+            return HopCredentials(cookies=cookie_jar)
         return None
 
     return credential_for

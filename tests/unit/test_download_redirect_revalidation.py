@@ -166,6 +166,31 @@ async def test_httpx_policy_jar_replaces_constructor_jar():
 
 
 @pytest.mark.asyncio
+async def test_httpx_default_policy_normalizes_mapping_cookie_input():
+    """Legacy cookie loaders may return a plain mapping rather than a Cookies jar."""
+    real_cls = httpx.AsyncClient
+    seen_cookies: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_cookies.append(request.headers.get("cookie"))
+        return httpx.Response(200, content=b"ok")
+
+    def client_factory(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real_cls(*args, **kwargs)
+
+    with patch.object(httpx, "AsyncClient", side_effect=client_factory):
+        client, get_guarded = _make_download_client(
+            {"SID": "mapping"},
+            timeout=30.0,
+        )
+        async with client:
+            await get_guarded(_TRUSTED_URL)
+
+    assert seen_cookies == ["SID=mapping"]
+
+
+@pytest.mark.asyncio
 async def test_httpx_none_policy_drops_first_hop_constructor_credentials():
     """A first-hop None result removes constructor cookies and bearer headers."""
     seen: list[tuple[str | None, str | None, str | None]] = []

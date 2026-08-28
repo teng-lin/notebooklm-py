@@ -76,6 +76,13 @@ def _strip(headers: Mapping[str, str]) -> dict[str, str]:
     return {k: v for k, v in headers.items() if k.lower() not in _STRIP_HEADERS}
 
 
+def _strip_preserving_duplicates(headers: Mapping[str, str]) -> list[tuple[str, str]]:
+    """Strip rebuffer-invalid headers without collapsing repeated fields."""
+    multi_items = getattr(headers, "multi_items", None)
+    items = multi_items() if callable(multi_items) else headers.items()
+    return [(key, value) for key, value in items if key.lower() not in _STRIP_HEADERS]
+
+
 async def _materialize(content: Any) -> bytes | None:
     """Collapse an httpx-style request body (bytes / sync- or async-iterable) to bytes.
 
@@ -348,7 +355,7 @@ class CurlCffiAsyncClient:
                 credentials.cookies.extract_cookies(
                     httpx.Response(
                         status_code=r.status_code,
-                        headers=_strip(r.headers),
+                        headers=_strip_preserving_duplicates(r.headers),
                         request=httpx.Request("GET", current),
                     )
                 )
