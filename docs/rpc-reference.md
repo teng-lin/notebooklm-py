@@ -37,7 +37,7 @@
 | `hizoJc` | GET_SOURCE | Get clean fulltext content of a source | `_web/sources/content.py` |
 | `agX4Bc` | CREATE_LABEL | AI-generate label groupings and create manual labels | `_labels.py` |
 | `I3xc3c` | LIST_LABELS | List source labels for a notebook | `_labels.py` |
-| `le8sX` | UPDATE_LABEL | Rename label, set emoji, add/remove sources | `_labels.py`, `_label/params.py` |
+| `le8sX` | UPDATE_LABEL | Rename label, set emoji, add/remove sources | `_labels.py`, `_web/params/labels.py` |
 | `GyzE7e` | DELETE_LABEL | Delete one or more labels (batch) | `_labels.py` |
 | `R7cb6c` | CREATE_ARTIFACT | Unified artifact generation | `_artifacts.py`, `_web/artifact/generation.py` |
 | `gArtLc` | LIST_ARTIFACTS | List artifacts in a notebook | `_web/artifacts.py` |
@@ -741,7 +741,7 @@ Live label-flow notes:
 
 ### RPC: CREATE_LABEL (agX4Bc)
 
-**Source:** `_labels.py::generate()`, `_labels.py::create()` (builders in `_label/params.py`)
+**Source:** `_labels.py::generate()`, `_labels.py::create()` (builders in `_web/params/labels.py`)
 
 A single multi-mode RPC; the mode is selected by which slot is populated. Slot
 `[4]` drives AI auto-labeling (`generate`); slot `[5]` creates manual labels
@@ -775,7 +775,7 @@ its source UUIDs, so one `list()` call gives the complete source→label mapping
 ### RPC: UPDATE_LABEL (le8sX)
 
 **Source:** `_labels.py::update()`, `rename()`, `set_emoji()`,
-`add_sources()`, `remove_sources()` (builder: `_label/params.py`)
+`add_sources()`, `remove_sources()` (builder: `_web/params/labels.py`)
 
 A unified label-update RPC covering rename, emoji, and source membership. Slot
 `[3]` is a fieldmask `[[name_emoji, sources_add, sources_remove]]`; populate

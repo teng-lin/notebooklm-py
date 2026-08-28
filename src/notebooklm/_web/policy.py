@@ -1,18 +1,324 @@
+"""Web RPC idempotency registry, resolution policy, and classifications."""
+
 from __future__ import annotations
 
-from ._idempotency import IdempotencyPolicy, IdempotencyRegistry
-from .rpc.types import RPCMethod
+import logging
+import time
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any
 
-__all__ = ["register_default_policies"]
+from ..exceptions import IdempotencyVariantError
+from ..rpc.types import RPCMethod
+
+logger = logging.getLogger("notebooklm._idempotency")
+
+
+class IdempotencyPolicy(str, Enum):
+    """Classification axis for mutating-RPC retry safety.
+
+    Five policies — no more, no fewer. The axis was sized to cover all
+    realistic NotebookLM RPC shapes without inventing per-method special
+    cases. See ADR-0005 (``docs/adr/0005-idempotency-taxonomy.md``) for
+    the derivation and the per-policy rationale.
+
+    Policies fall into three retry-safety bands:
+
+    * **Safe to retry inside the transport**:
+      :attr:`UNCLASSIFIED` (placeholder — preserves today's retries),
+      :attr:`IDEMPOTENT_SET_OP` (read-only, rename / delete / set-state
+      operations where replay leaves the same server state),
+      :attr:`AT_LEAST_ONCE_ACCEPTED` (caller has accepted at-least-once
+      semantics; WARN logged).
+
+    * **NOT safe to retry inside the transport**:
+      :attr:`PROBE_THEN_CREATE` (callers own the probe loop; transport
+      retry would race the probe), :attr:`NON_IDEMPOTENT_NO_RETRY`
+      (e.g. ``add_text`` — no probe key, must surface the first
+      failure).
+
+    The ``str`` mixin keeps the enum JSON-serializable and consistent
+    with :class:`~notebooklm.rpc.RPCMethod` (which also uses ``str,
+    Enum`` rather than ``StrEnum`` for 3.10 compatibility).
+    """
+
+    UNCLASSIFIED = "unclassified"
+    PROBE_THEN_CREATE = "probe_then_create"
+    IDEMPOTENT_SET_OP = "idempotent_set_op"
+    AT_LEAST_ONCE_ACCEPTED = "at_least_once_accepted"
+    NON_IDEMPOTENT_NO_RETRY = "non_idempotent_no_retry"
+
+
+# Policies that force ``effective_disable_internal_retries`` to True even
+# when the caller passed False. These RPCs cannot tolerate the transport's
+# inner retry loop because either (a) the caller owns a probe state
+# machine that races a blind retry (PROBE_THEN_CREATE), or (b) the write
+# has no server-side dedupe key and a retry would create a duplicate
+# (NON_IDEMPOTENT_NO_RETRY).
+_POLICIES_THAT_FORCE_DISABLE: frozenset[IdempotencyPolicy] = frozenset(
+    {
+        IdempotencyPolicy.PROBE_THEN_CREATE,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+    }
+)
+
+
+# ProbeKeyFn signature: takes the encoded ``params`` list and returns an
+# opaque, hashable probe key the caller can use to identify "is this the
+# write I issued?" Currently informational; future probe-loop work may plumb it
+# into create-probe state machines. ``None`` is the no-probe sentinel.
+ProbeKeyFn = Callable[[list[Any]], Any]
+
+
+@dataclass(frozen=True)
+class IdempotencyEntry:
+    """One row in :class:`IdempotencyRegistry`.
+
+    Attributes:
+        policy: Classification for the ``(RPCMethod, operation_variant)``
+            row this entry describes.
+        probe_key_fn: Optional probe-key extractor for PROBE_THEN_CREATE
+            entries. ``None`` for policies that don't probe. Future work may
+            wire this into the per-API probe loops.
+        notes: Free-form human-readable note. UNCLASSIFIED entries
+            registered without an explicit ``notes`` value receive the
+            placeholder marker that flags them for explicit classification;
+            all other policies default to an empty string.
+    """
+
+    policy: IdempotencyPolicy
+    probe_key_fn: ProbeKeyFn | None = None
+    notes: str = ""
+
+
+_UNCLASSIFIED_PLACEHOLDER_NOTE = "placeholder — must classify"
+
+
+class IdempotencyRegistry:
+    """Registry of :class:`IdempotencyEntry` keyed by
+    ``(RPCMethod, operation_variant | None)``.
+
+    Look-up semantics:
+
+    * ``get_entry(method)`` → returns the ``(method, None)`` entry.
+    * ``get_entry(method, operation_variant=v)`` with a variant entry
+      present → returns that variant entry.
+    * ``get_entry(method, operation_variant=v)`` when ``method`` has
+      ONLY a ``(method, None)`` entry (no variant table at all) →
+      silently falls back to ``(method, None)``.
+    * ``get_entry(method, operation_variant=v)`` when ``method`` has
+      explicit variant entries but ``v`` is not among them → raises
+      :class:`~notebooklm.exceptions.IdempotencyVariantError`. The
+      explicit variant table signals "this method is classified by variant" —
+      an unknown variant is almost certainly a caller typo or API drift, not
+      safe to mask via silent fallback.
+
+    Thread/loop-safety: the registry is populated at import time and is
+    intended to be effectively immutable in production. Tests may
+    construct fresh instances. There is no internal lock — concurrent
+    writes during a process's lifetime are not supported.
+    """
+
+    def __init__(self) -> None:
+        # Two-level shape: ``method`` → ``operation_variant | None`` →
+        # entry. The inner dict ALWAYS contains a ``None`` key (the
+        # default), populated by either :meth:`register` or
+        # :meth:`_seed_defaults`.
+        self._entries: dict[RPCMethod, dict[str | None, IdempotencyEntry]] = {}
+
+    def register(
+        self,
+        method: RPCMethod,
+        policy: IdempotencyPolicy,
+        *,
+        variant: str | None = None,
+        probe_key_fn: ProbeKeyFn | None = None,
+        notes: str | None = None,
+    ) -> None:
+        """Register (or overwrite) the entry for ``(method, variant)``.
+
+        Production code calls this once per method/variant at module import.
+        Tests may call it ad-hoc on a fresh :class:`IdempotencyRegistry`
+        instance to exercise specific policies.
+
+        Effective notes default: when ``policy == UNCLASSIFIED`` and the
+        caller did not pass ``notes=...``, the placeholder marker
+        ``"placeholder — must classify"`` is used. Any other
+        policy defaults to ``""``.
+        """
+        if notes is None:
+            notes = (
+                _UNCLASSIFIED_PLACEHOLDER_NOTE if policy is IdempotencyPolicy.UNCLASSIFIED else ""
+            )
+        entry = IdempotencyEntry(
+            policy=policy,
+            probe_key_fn=probe_key_fn,
+            notes=notes,
+        )
+        self._entries.setdefault(method, {})[variant] = entry
+
+    def get_entry(
+        self,
+        method: RPCMethod,
+        operation_variant: str | None = None,
+    ) -> IdempotencyEntry:
+        """Return the entry for ``(method, operation_variant)``.
+
+        See class docstring for fallback semantics. Raises
+        :class:`~notebooklm.exceptions.IdempotencyVariantError` when an
+        unknown non-None variant is requested on a method that has
+        explicit variant entries.
+        """
+        method_entries = self._entries.get(method)
+        if method_entries is None:
+            # Shouldn't happen with the seeded production registry, but
+            # makes the contract explicit for hand-built instances.
+            raise KeyError(
+                f"IdempotencyRegistry has no entry for {method.name!r}; "
+                "missing default (method, None) registration"
+            )
+
+        # Variant-specific lookup wins when present.
+        if operation_variant is not None:
+            variant_entry = method_entries.get(operation_variant)
+            if variant_entry is not None:
+                return variant_entry
+            # Unknown variant on a method that has an explicit variant
+            # table is treated as a caller typo / API drift; raise rather
+            # than silently fall back to (method, None). Methods that
+            # ONLY have a (method, None) entry tolerate any variant
+            # name (no typo to catch).
+            known = sorted(k for k in method_entries if k is not None)
+            if known:
+                raise IdempotencyVariantError(
+                    f"Unknown operation_variant {operation_variant!r} for "
+                    f"{method.name}; known variants: {known}"
+                )
+
+        # Fall back to the (method, None) default. Seeding guarantees it
+        # exists; raise loudly if a hand-built instance is missing it.
+        default = method_entries.get(None)
+        if default is None:
+            raise KeyError(f"IdempotencyRegistry has no (method, None) default for {method.name!r}")
+        return default
+
+    def iter_entries(self) -> Iterator[tuple[RPCMethod, str | None, IdempotencyEntry]]:
+        """Return an iterator over a snapshot of ``(method, variant, entry)`` rows."""
+        snapshot: list[tuple[RPCMethod, str | None, IdempotencyEntry]] = []
+        for method, method_entries in self._entries.items():
+            for variant, entry in method_entries.items():
+                snapshot.append((method, variant, entry))
+        return iter(snapshot)
+
+    def _seed_defaults(self) -> None:
+        """Populate missing :class:`~notebooklm.rpc.RPCMethod` defaults with
+        the UNCLASSIFIED placeholder.
+
+        Called once at module import to guarantee the registry is a total
+        function over ``RPCMethod``. The production registrations below
+        replace every current placeholder; guard tests fail if future enum
+        members are added without an explicit classification.
+        """
+        for method in RPCMethod:
+            # ``setdefault`` would lose the placeholder note if a future caller
+            # pre-registers a non-default entry. Use explicit absence check so
+            # we never overwrite a real classification.
+            if method not in self._entries or None not in self._entries[method]:
+                self.register(method, IdempotencyPolicy.UNCLASSIFIED)
+
+
+# ----------------------------------------------------------------------------
+# AT_LEAST_ONCE_ACCEPTED rate-limited WARN logger
+# ----------------------------------------------------------------------------
+#
+# Per-method timestamp ledger so the WARN log fires at most once per
+# ``_AT_LEAST_ONCE_LOG_INTERVAL`` seconds per ``(method, variant)``. This
+# keeps the registry behavior manageable under load: even if several hot-path
+# RPCs are AT_LEAST_ONCE_ACCEPTED, callers won't drown in WARN spam. The choice
+# of 30s mirrors the cadence of similar advisory-log throttles elsewhere in the
+# codebase.
+_AT_LEAST_ONCE_LOG_INTERVAL: float = 30.0
+# Single-loop-per-client invariant per ADR-0004; not safe for multi-loop fan-out.
+_at_least_once_last_logged: dict[tuple[RPCMethod, str | None], float] = {}
+
+
+def _maybe_log_at_least_once(method: RPCMethod, variant: str | None) -> None:
+    """Emit a rate-limited WARN that this RPC is AT_LEAST_ONCE_ACCEPTED.
+
+    Per-key throttle: at most one WARN per
+    ``_AT_LEAST_ONCE_LOG_INTERVAL`` seconds per ``(method, variant)``.
+    The first call always emits; subsequent calls inside the window are
+    silent. Tests rely on this to assert that 100 calls produce ≤2 lines.
+    """
+    key = (method, variant)
+    now = time.monotonic()
+    last = _at_least_once_last_logged.get(key)
+    if last is not None and (now - last) < _AT_LEAST_ONCE_LOG_INTERVAL:
+        return
+    _at_least_once_last_logged[key] = now
+    logger.warning(
+        "RPC %s%s classified AT_LEAST_ONCE_ACCEPTED — transport retries "
+        "may cause duplicate server-side commits; caller has opted in",
+        method.name,
+        f" (variant={variant!r})" if variant is not None else "",
+    )
+
+
+def resolve_effective_disable_internal_retries(
+    registry: IdempotencyRegistry,
+    method: RPCMethod,
+    *,
+    caller_disable_internal_retries: bool,
+    operation_variant: str | None,
+) -> bool:
+    """Resolve the effective ``disable_internal_retries`` flag for an RPC.
+
+    Precedence (caller wins):
+
+    1. ``caller_disable_internal_retries=True`` → returns True
+       regardless of policy. Explicit caller intent dominates registry
+       classification.
+    2. Policy is :attr:`IdempotencyPolicy.PROBE_THEN_CREATE` or
+       :attr:`IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY` → returns True.
+       These RPCs cannot tolerate the inner retry loop.
+    3. Policy is :attr:`IdempotencyPolicy.AT_LEAST_ONCE_ACCEPTED` →
+       emits a rate-limited WARN and returns ``caller_disable_internal_retries``
+       unchanged. Caller has accepted at-least-once semantics; retries
+       remain enabled.
+    4. All other policies (UNCLASSIFIED, IDEMPOTENT_SET_OP) → returns
+       ``caller_disable_internal_retries`` unchanged. UNCLASSIFIED is
+       silent (no log emission) and should appear only in hand-built
+       test registries, not in the production registry.
+
+    Raises :class:`~notebooklm.exceptions.IdempotencyVariantError` for
+    unknown variants on methods with explicit variant tables.
+    """
+    if caller_disable_internal_retries:
+        return True
+
+    entry = registry.get_entry(method, operation_variant=operation_variant)
+    policy = entry.policy
+
+    if policy in _POLICIES_THAT_FORCE_DISABLE:
+        return True
+
+    if policy is IdempotencyPolicy.AT_LEAST_ONCE_ACCEPTED:
+        _maybe_log_at_least_once(method, operation_variant)
+        return caller_disable_internal_retries
+
+    # UNCLASSIFIED / IDEMPOTENT_SET_OP: silent, caller value passes
+    # through unchanged.
+    return caller_disable_internal_retries
 
 
 def register_default_policies(registry: IdempotencyRegistry) -> None:
     """Register every production idempotency classification on ``registry``.
 
-    This is the declarative classification data extracted from
-    ``_idempotency.py`` (issue #1331). It is applied to the module-level
-    ``IDEMPOTENCY_REGISTRY`` singleton at ``_idempotency`` import time via a
-    bottom-of-module call. The two-pass shape is load-bearing: some
+    This is the declarative classification data extracted from the former
+    root policy modules (issue #1331). It is applied to the module-level
+    ``IDEMPOTENCY_REGISTRY`` singleton once at this module's import time. The
+    two-pass shape is load-bearing: some
     ``register`` calls run *before* :meth:`IdempotencyRegistry._seed_defaults`
     (so the seeder skips them), the seeder then fills ``UNCLASSIFIED`` for
     every remaining method, and the rest register *after* the seed (replacing
@@ -111,9 +417,9 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     # video, report, quiz, etc.; see the ``generate_*`` methods and the
     # ``_web.params.artifacts.build_*`` helpers). Every position is structural —
     # there is no caller-supplied client-token slot. The server allocates the
-    # artifact_id in the response
-    # (``ArtifactsAPI._parse_generation_result`` reads ``result[0][0]`` — see
-    # ``_artifacts.py``), so a token-dedupe strategy is impossible.
+    # artifact_id in the response (``ArtifactGenerationService`` decodes the
+    # result in ``_web/artifact/generation.py``), so a token-dedupe strategy is
+    # impossible.
     #
     # PROBE_THEN_CREATE forces ``effective_disable_internal_retries=True``,
     # which suppresses the retry middleware inside
@@ -140,7 +446,7 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     # slot.
     # Params are ``[source_ids_nested, None, None, None, None,
     # ["interactive_mindmap", [["[CONTEXT]", instructions]], language], None,
-    # [2, None, [1]]]`` (see ``ArtifactsAPI.generate_mind_map`` in
+    # [2, None, [1]]]`` (see ``ArtifactGenerationService.generate_mind_map`` in
     # ``_web/artifact/generation.py`` and
     # ``_web.params.artifacts.build_mind_map_params``).
     # Every slot is structural (sources, content config, language, mode
@@ -566,3 +872,21 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
             "semantics like remove_sources"
         ),
     )
+
+
+# The web policy owns the one production registry and its one import-time seed.
+# Keep this after ``register_default_policies`` so importing the module always
+# exposes a fully classified singleton without a neutral-to-web import cycle.
+IDEMPOTENCY_REGISTRY = IdempotencyRegistry()
+register_default_policies(IDEMPOTENCY_REGISTRY)
+
+
+__all__ = [
+    "IDEMPOTENCY_REGISTRY",
+    "IdempotencyEntry",
+    "IdempotencyPolicy",
+    "IdempotencyRegistry",
+    "ProbeKeyFn",
+    "register_default_policies",
+    "resolve_effective_disable_internal_retries",
+]

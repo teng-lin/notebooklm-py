@@ -17,10 +17,6 @@ import httpx
 from ..._auth.account import format_authuser_value
 from ..._deadline import RuntimeDeadline
 from ..._env import get_base_url, get_default_language
-from ..._idempotency import (
-    IDEMPOTENCY_REGISTRY,
-    resolve_effective_disable_internal_retries,
-)
 from ..._logging import get_request_id, reset_request_id, set_request_id
 from ...exceptions import DecodingError
 from ...rpc import (
@@ -36,6 +32,7 @@ from ...rpc import (
     get_batchexecute_url,
     resolve_rpc_id,
 )
+from ..policy import IDEMPOTENCY_REGISTRY, resolve_effective_disable_internal_retries
 from .auth_refresh_retry import RefreshBudget, refresh_and_count
 from .errors import (
     TransportAuthExpired,

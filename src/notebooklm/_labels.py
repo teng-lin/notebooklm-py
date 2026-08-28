@@ -14,15 +14,15 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
-from ._label.params import (
+from ._lookup import unwrap_or_raise
+from ._web.contracts import RpcCaller
+from ._web.params.labels import (
     build_create_label_params,
     build_delete_labels_params,
     build_generate_labels_params,
     build_list_labels_params,
     build_update_label_params,
 )
-from ._lookup import unwrap_or_raise
-from ._web.contracts import RpcCaller
 from .exceptions import LabelError, LabelNotFoundError, UnknownRPCMethodError
 from .rpc import RPCMethod
 from .types import Label, Source

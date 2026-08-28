@@ -96,7 +96,7 @@ Five details that shaped this ADR:
    by monkeypatching (ADR-0007).
 4. **Idempotency resolution happens *above* the chain.**
    `RpcExecutor.rpc_call` calls
-   `_idempotency.resolve_effective_disable_internal_retries(...)` and
+   `_web.policy.resolve_effective_disable_internal_retries(...)` and
    stuffs the resolved bool into `RpcRequest.context["disable_internal_retries"]`
    before chain entry. The `RetryMiddleware` (PR 12.7) reads the bool; it
    does not see the `IdempotencyPolicy` enum or know about
@@ -210,7 +210,7 @@ Per-position rationale:
 | Key | Type | Set by | Read by |
 |---|---|---|---|
 | `rpc_method` | `str \| None` | `RuntimeTransport.perform_authed_post` (receives the resolved method-name string from `RpcExecutor._execute_once`, which passes `method.name` — never the `RPCMethod` enum itself; chat-side callers pass `None`) | `MetricsMiddleware`, `TracingMiddleware` |
-| `disable_internal_retries` | `bool` | `RuntimeTransport.perform_authed_post` (receives the post-resolution boolean from `RpcExecutor._execute_once`, which calls `_idempotency.resolve_effective_disable_internal_retries(...)` before invoking the chain) | `RetryMiddleware`, `AuthRefreshMiddleware` (when set, skips the auth-refresh-and-retry replay so a non-idempotent / probe-then-create write is not re-issued after a mid-flight 401/403 — issue #1157) |
+| `disable_internal_retries` | `bool` | `RuntimeTransport.perform_authed_post` (receives the post-resolution boolean from `RpcExecutor._execute_once`, which calls `_web.policy.resolve_effective_disable_internal_retries(...)` before invoking the chain) | `RetryMiddleware`, `AuthRefreshMiddleware` (when set, skips the auth-refresh-and-retry replay so a non-idempotent / probe-then-create write is not re-issued after a mid-flight 401/403 — issue #1157) |
 | `build_request` | `BuildRequest` | `RuntimeTransport.perform_authed_post` (stashed before chain entry as the rebuild recipe) | `AuthRefreshMiddleware._rebuild_request_after_refresh`, `RuntimeTransport.refresh_request_for_current_auth`, `RuntimeTransport.terminal` |
 | `log_label` | `str` | `RuntimeTransport.perform_authed_post` | `DrainMiddleware`, `RetryMiddleware`, `ErrorInjectionMiddleware`, `AuthRefreshMiddleware`, `TracingMiddleware`, `RuntimeTransport.terminal` |
 | `auth_snapshot` | `AuthSnapshot` | `RuntimeTransport.perform_authed_post` (initial snapshot before chain entry); refreshed by `AuthRefreshMiddleware._rebuild_request_after_refresh` after a successful refresh, and replaced by `RuntimeTransport.refresh_request_for_current_auth` at the chain leaf when a freshness check detects auth moved while the request was queued | `RuntimeTransport.refresh_request_for_current_auth` (chain-terminal pre-POST freshness check); pair-mutated with the materialized envelope so middlewares never observe a torn `(snapshot, request)` pair |
@@ -230,7 +230,7 @@ below for the rationale and the policy that governs additions.
 
 > **Note on `operation_variant`.** Idempotency policy is resolved
 > **before chain entry** in `RpcExecutor._execute_once()` via
-> `_idempotency.resolve_effective_disable_internal_retries(...)`; the
+> `_web.policy.resolve_effective_disable_internal_retries(...)`; the
 > resolved boolean is what flows through the chain as
 > `disable_internal_retries`. The chain itself never needs the
 > per-request `operation_variant` selector, so it is intentionally

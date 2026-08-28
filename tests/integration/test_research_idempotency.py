@@ -38,7 +38,7 @@ import httpx
 import pytest
 
 from notebooklm import NotebookLMClient, ServerError
-from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
+from notebooklm._web.policy import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
 

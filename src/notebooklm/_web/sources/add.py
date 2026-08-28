@@ -182,7 +182,7 @@ class SourceAddService:
            anyway would silently turn a ``PROBE_THEN_CREATE`` operation into an
            at-least-once one at the exact moment its guarantee matters — and
            this codebase makes at-least-once an explicit, named opt-in
-           (:attr:`~notebooklm._idempotency.IdempotencyPolicy.AT_LEAST_ONCE_ACCEPTED`).
+           (:attr:`~notebooklm._web.policy.IdempotencyPolicy.AT_LEAST_ONCE_ACCEPTED`).
 
            The cost is real and was weighed: a decode blip on a create that
            never landed now surfaces as a hard failure the caller must retry by

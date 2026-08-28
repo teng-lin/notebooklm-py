@@ -32,7 +32,7 @@ Behavior:
   the legacy code.
 - **Same disable_internal_retries gate** — read from
   ``RPC_CONTEXT_DISABLE_INTERNAL_RETRIES`` (post-resolution bool produced
-  by ``_idempotency.resolve_effective_disable_internal_retries`` before
+  by ``_web.policy.resolve_effective_disable_internal_retries`` before
   chain entry; see ADR-0009 §"Per-request behavior").
 - **Optional read-timeout retry gate** —
   ``RPC_CONTEXT_DISABLE_READ_TIMEOUT_RETRIES`` suppresses retries for read-side
@@ -194,7 +194,7 @@ class RetryMiddleware:
         chain raw doesn't trip on a ``KeyError`` (matches DrainMiddleware's
         same fallback). ``disable_internal_retries`` defaults to ``False``
         — the production path always populates it from
-        :func:`_idempotency.resolve_effective_disable_internal_retries`.
+        :func:`_web.policy.resolve_effective_disable_internal_retries`.
         """
         log_label = request.context.get(RPC_CONTEXT_LOG_LABEL, "<unknown-chain-call>")
         # Post-resolution bool — see ADR-0009 §"Per-request behavior".

@@ -34,6 +34,8 @@ import notebooklm._types.enums as domain_enums
 pytestmark = pytest.mark.repo_lint
 
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
+NEUTRAL_IDEMPOTENCY_PATH = SRC_ROOT / "_idempotency.py"
+WEB_POLICY_PATH = SRC_ROOT / "_web" / "policy.py"
 
 DOMAIN_ENUM_NAMES = frozenset(
     name
@@ -299,6 +301,52 @@ def _defined_scopes(path: Path) -> frozenset[str]:
 def test_backend_direct_import_boundaries() -> None:
     imports = [direct for path in sorted(SRC_ROOT.rglob("*.py")) for direct in _scan_path(path)]
     assert _boundary_violations(imports) == []
+
+
+def test_idempotency_policy_has_one_web_owner_and_one_registry_seed() -> None:
+    """A12 keeps create probing neutral and seeds web policy exactly once."""
+    neutral_imports = _scan_path(NEUTRAL_IDEMPOTENCY_PATH)
+    forbidden = [
+        direct.target
+        for direct in neutral_imports
+        if _is_module_or_child(direct.target, "notebooklm._web")
+        or _is_module_or_child(direct.target, "notebooklm.rpc")
+    ]
+    assert forbidden == []
+    assert not (SRC_ROOT / "_idempotency_policy.py").exists()
+
+    neutral_tree = ast.parse(NEUTRAL_IDEMPOTENCY_PATH.read_text(encoding="utf-8"))
+    neutral_classes = {
+        node.name for node in ast.walk(neutral_tree) if isinstance(node, ast.ClassDef)
+    }
+    assert neutral_classes.isdisjoint(
+        {"IdempotencyEntry", "IdempotencyPolicy", "IdempotencyRegistry"}
+    )
+
+    policy_tree = ast.parse(WEB_POLICY_PATH.read_text(encoding="utf-8"))
+    registry_assignments = [
+        node
+        for node in ast.walk(policy_tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        and any(
+            isinstance(target, ast.Name) and target.id == "IDEMPOTENCY_REGISTRY"
+            for target in (
+                node.targets if isinstance(node, ast.Assign) else [node.target]
+            )
+        )
+    ]
+    seed_calls = [
+        node
+        for node in ast.walk(policy_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "register_default_policies"
+        and len(node.args) == 1
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id == "IDEMPOTENCY_REGISTRY"
+    ]
+    assert len(registry_assignments) == 1
+    assert len(seed_calls) == 1
 
 
 def test_backend_boundary_manifests_are_well_formed() -> None:

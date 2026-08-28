@@ -10,7 +10,7 @@ issue #2006 capture for those two shapes reproducibly failed on the wire.
 
 from __future__ import annotations
 
-from notebooklm._collection.params import (
+from notebooklm._web.params.collections import (
     _opts,
     _opts_create,
     build_create_collection_params,

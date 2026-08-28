@@ -307,7 +307,7 @@ the code).
 
 **The classification.** Every active RPC is classified into one of five
 retry-safety profiles by the `IdempotencyRegistry` in
-[`_idempotency.py`](../src/notebooklm/_idempotency.py):
+[`_web/policy.py`](../src/notebooklm/_web/policy.py):
 
 | Policy | Meaning | Effect on the inner retry loop |
 |--------|---------|--------------------------------|
@@ -494,7 +494,7 @@ the executor on direct collaborator dependencies.
 | `ClientMetrics` | [`_client_metrics.py`](../src/notebooklm/_client_metrics.py) | Per-instance counters (`ClientMetricsSnapshot`) + the `on_rpc_event` user callback. |
 | `ReqidCounter` | [`_web/transport/reqid_counter.py`](../src/notebooklm/_web/transport/reqid_counter.py) | Monotonic `_reqid` for the chat backend; lock-protected `next_reqid(...)`. |
 | `CookiePersistence` | [`_web/transport/cookie_persistence.py`](../src/notebooklm/_web/transport/cookie_persistence.py) | Per-canonical-path typed baseline state, ordered `ProfileStore` cookie merges, `__Secure-1PSIDTS` rotation, and the concrete v0.x snapshot adapter. First-party `_from_store` instances retain no `AuthTokens`; public-constructor instances preserve legacy save compatibility. |
-| `IdempotencyRegistry` | [`_idempotency.py`](../src/notebooklm/_idempotency.py) | Policy/classification registry keyed by `(RPCMethod, operation_variant)`. The production registry explicitly covers every active `RPCMethod`; `UNCLASSIFIED` is retained only as a placeholder for hand-built test/future registries. `RpcExecutor._execute_once()` consults it to resolve `effective_disable_internal_retries`. It is part of the RPC dispatch path, not lifecycle state. Side-effect probing (`idempotent_create(...)`) is a separate mechanism not owned by this registry. |
+| `IdempotencyRegistry` | [`_web/policy.py`](../src/notebooklm/_web/policy.py) | Web RPC policy/classification registry keyed by `(RPCMethod, operation_variant)`. The production registry explicitly covers every active `RPCMethod`; `UNCLASSIFIED` is retained only as a placeholder for hand-built test/future registries. `RpcExecutor._execute_once()` consults its single import-time-seeded singleton to resolve `effective_disable_internal_retries`. Transport-neutral side-effect probing (`_idempotency.idempotent_create(...)`) is separate. |
 | `_web/transport/request_types.py` | [`_web/transport/request_types.py`](../src/notebooklm/_web/transport/request_types.py) | Owns `AuthSnapshot`, `BuildRequest`, and request materialization shapes shared by RPC, chat, auth refresh, and the chain terminal. |
 | `_web/transport/errors.py` | [`_web/transport/errors.py`](../src/notebooklm/_web/transport/errors.py) | Owns transport-level exceptions, `Retry-After` parsing, and raw `Kernel.post` error mapping consumed by `RetryMiddleware` and `AuthRefreshMiddleware`. |
 | `_web/transport/streaming_post.py` | [`_web/transport/streaming_post.py`](../src/notebooklm/_web/transport/streaming_post.py) | Low-level streaming POST helper with the response-size cap used by `Kernel.post`. |
@@ -998,8 +998,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/transport/cookie_persistence.py` | Cookie-jar persistence + `__Secure-1PSIDTS` rotation |
 | `_runtime/contracts.py` | Transport-neutral `LoopGuard` Protocol |
 | `_web/contracts.py` | Web-only `Kernel` and `RpcCaller` Protocols |
-| `_idempotency.py` | Mutating-RPC idempotency policy registry and probe-then-retry wrapper; ADR-0005 is the taxonomy source |
-| `_idempotency_policy.py` | Declarative per-RPC idempotency classification data, applied to `IDEMPOTENCY_REGISTRY` via `register_default_policies` at `_idempotency` import time (#1331). Holds the load-bearing two-pass seeding order (pre-seed `register()` → `_seed_defaults()` → post-seed `register()` + the read/set-op loop). |
+| `_idempotency.py` | Transport-neutral probe-then-retry workflow and unconfirmed-write marker; imports neither `_web` nor `rpc` |
+| `_web/policy.py` | Web RPC idempotency types, declarative per-RPC classifications, resolution, and the one production `IDEMPOTENCY_REGISTRY` seed. Holds the load-bearing two-pass order (pre-seed `register()` → `_seed_defaults()` → post-seed `register()` + the read/set-op loop). |
 | `_atomic_io.py`, `io.py` | Atomic JSON write/update internals and public I/O re-export surface for CLI boundary compliance |
 | `exceptions.py` | Public exception hierarchy plus safe diagnostic preview/redaction helpers |
 | `paths.py`, `migration.py` | Profile-aware path resolution and locked migration from the legacy flat layout |
@@ -1035,6 +1035,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/params/artifacts.py` | Stable web `CREATE_ARTIFACT`, revise/retry, and mind-map positional request payload builders |
 | `_web/params/chat_stream.py` | Streamed-chat URL, form-body, and source/history request construction |
 | `_web/params/chat_note.py` | Saved-from-chat `CREATE_NOTE` positional payload and citation-anchor encoding |
+| `_web/params/labels.py` | Source-label CREATE/LIST/UPDATE/DELETE positional request builders |
+| `_web/params/collections.py` | Account-level collection request builders over the type-3 label wire family |
 | `_web/transport/chat.py` | Chat-specific HTTP/error mapping over the shared authenticated streaming transport |
 | `_web/wire/decoder.py` | Batchexecute response framing, status/error decoding, and process-wide byte-count drift telemetry; retains the established `notebooklm.rpc.decoder` logger category |
 | `_web/wire/encoder.py` | Batchexecute request envelope and form-body encoding helpers; retains the established `notebooklm.rpc.encoder` logger category |
@@ -1075,8 +1077,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/sources/upload.py` | Concurrency-gated upload pipeline for source files |
 | `_web/sources/_upload_decode.py` | Pure decode/validation helpers for the upload pipeline (URL redaction, ADD_SOURCE_FILE source-id extraction, content-type policy), extracted from `upload.py` |
 | `_web/params/sources.py` | Stable source upload registration, rename, and resumable-upload request builders |
-| `_label/params.py` | Stable CREATE_LABEL / LIST_LABELS / UPDATE_LABEL / DELETE_LABEL request payload builders (with the shared `_opts()` request-options wrapper) |
-| `_collection/params.py` | Collection request payload builders reusing the label RPCs — null notebook_id, type-3 discriminator, `[1,3]` opts tail; add/remove notebook-membership fieldmask and `create`'s options wrapper are live-captured (PR #2009) |
+| `_web/params/labels.py` | Stable CREATE_LABEL / LIST_LABELS / UPDATE_LABEL / DELETE_LABEL request payload builders (with the shared `_opts()` request-options wrapper) |
+| `_web/params/collections.py` | Collection request payload builders reusing the label RPCs — null notebook_id, type-3 discriminator, `[1,3]` opts tail; add/remove notebook-membership fieldmask and `create`'s options wrapper are live-captured (PR #2009) |
 | `_notebook_metadata.py` | Transport-neutral notebook metadata protocols and composition service; no concrete RPC/source-listing dependency |
 | `_url_utils.py`, `urls.py` | URL parsing/validation internals and the public URL helper facade |
 | `_sharing_manager.py` | Backend-neutral legacy share-URL builder |
@@ -1143,8 +1145,7 @@ src/notebooklm/
 ├── _deadline.py                 # RuntimeDeadline helper for aggregate timeouts
 ├── _deprecation.py              # Immutable auth-storage specs + gated deprecation emitters
 ├── _env.py                      # Runtime environment/default endpoint helpers
-├── _idempotency.py              # Mutating-RPC idempotency registry + wrappers
-├── _idempotency_policy.py       # Declarative per-RPC idempotency classification data (register_default_policies)
+├── _idempotency.py              # Transport-neutral create probe/retry helpers
 ├── _logging.py                  # Redaction + correlation logging internals
 ├── _secrets.py                  # Canonical runtime secret registry (cookie names + secure/host umbrellas + token/API-key shapes) the redaction patterns derive from
 ├── _lookup.py                   # unwrap_or_raise — shared single-row-lookup helper for get/get_or_none
@@ -1265,12 +1266,10 @@ src/notebooklm/
 │   ├── formatters.py            # Artifact formatting helpers
 │   ├── validation.py            # Facade input-validation guards (generate_report coercion, export exactly-one-of) (#1874)
 │   └── polling.py               # Decoded backend-neutral artifact polling coordinator
-├── _label/                      # Source-label feature subpackage: stable RPC payload builders
-│   ├── __init__.py              # Re-exports the label param builders
-│   └── params.py                # Source-label RPC payload builders (CREATE/LIST/UPDATE/DELETE_LABEL)
-├── _collection/                 # Collection feature subpackage: account-level notebook-group payload builders (reuse the label RPCs, type-3)
-│   ├── __init__.py              # Package marker for the collection param builders
-│   └── params.py                # Collection RPC payload builders (null notebook_id, type-3 tail, [1,3] opts)
+├── _label/                      # Legacy package marker after request-builder relocation
+│   └── __init__.py
+├── _collection/                 # Legacy package marker after request-builder relocation
+│   └── __init__.py
 ├── _web/rows/                   # Positional-RPC-row adapters subpackage (#1328)
 │   ├── __init__.py              # Re-exports the typed row views
 │   ├── artifacts.py             # Artifact + GET_SUGGESTED_REPORTS row adapters (ArtifactRow / ReportSuggestionRow)
@@ -1374,8 +1373,11 @@ src/notebooklm/
 │   │   ├── artifacts.py         # Artifact RPC payload builders
 │   │   ├── chat_note.py         # Saved-chat CREATE_NOTE payload builder
 │   │   ├── chat_stream.py       # Streamed-chat URL/form request builder
+│   │   ├── collections.py       # Collection RPC payload builders
+│   │   ├── labels.py            # Source-label RPC payload builders
 │   │   ├── notebooks.py         # Notebook RPC payload builders (SUGGEST_PROMPTS)
 │   │   └── sources.py           # Source RPC/upload payload builders
+│   ├── policy.py                 # Web RPC idempotency registry + one import-time seed
 │   ├── wire/                     # Batchexecute request/response codecs
 │   │   ├── decoder.py           # Response framing, status/error decoding, drift counter
 │   │   ├── encoder.py           # Request envelope and form-body encoding
@@ -1538,7 +1540,7 @@ src/notebooklm/
 - [ADR-0002](./adr/0002-capability-protocol-pattern.md) — Capability Protocol pattern (Superseded by ADR-0013).
 - [ADR-0003](./adr/0003-auth-facade-write-through.md) — `auth.py` write-through facade (Superseded — closed by [ADR-0014](./adr/0014-feature-local-runtime-adapters.md); `auth.py` is now almost pure re-exports with `enumerate_accounts` as the sole function-body exception).
 - [ADR-0004](./adr/0004-loop-affinity-contract.md) — Loop-affinity contract (Accepted; enforced by `_loop_affinity.assert_bound_loop`).
-- [ADR-0005](./adr/0005-idempotency-taxonomy.md) — Mutating-RPC idempotency taxonomy (Accepted; enforced by `_idempotency.IdempotencyRegistry`).
+- [ADR-0005](./adr/0005-idempotency-taxonomy.md) — Mutating-RPC idempotency taxonomy (Accepted; enforced by `_web.policy.IdempotencyRegistry`).
 - [ADR-0006](./adr/0006-vcr-scrubber-strategy.md) — VCR cassette scrubber strategy (Accepted).
 - [ADR-0007](./adr/0007-test-monkeypatch-policy.md) — Constructor-injection test pattern via `tests/_fixtures/` (Accepted; enforced by `tests/_guardrails/test_no_forbidden_monkeypatches.py`).
 - [ADR-0008](./adr/0008-cli-services-extraction-pattern.md) — `cli/services/` extraction pattern (Accepted).

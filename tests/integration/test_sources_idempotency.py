@@ -57,7 +57,7 @@ import pytest
 
 import notebooklm._runtime.helpers as _runtime_helpers
 from notebooklm import NotebookLMClient
-from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
+from notebooklm._web.policy import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
 from notebooklm.exceptions import (
     NetworkError,
     NotebookLMError,
@@ -1340,7 +1340,7 @@ def test_registry_has_variant_entries_for_add_source_and_add_source_file() -> No
     right policy classification.
 
     This guards against accidental regressions where a refactor drops the
-    registry registration in ``_idempotency.py`` but leaves the per-variant
+    registry registration in ``_web/policy.py`` but leaves the per-variant
     plumbing intact — the executor would silently fall back to UNCLASSIFIED
     (today's retries) and the duplicate-source bug would resurrect.
     """

@@ -7,7 +7,7 @@ classification shipped in tier-9 (B1 foundation + Wave-2 classifications
 across `b-research-notes`, `b-generation`, `b-sources`, and
 `b-side-effects`). This ADR is the canonical home for the rationale that
 previously lived in the now-gitignored tier-9 plan; the registry code in
-`src/notebooklm/_idempotency.py` references this ADR as ADR-0005.
+`src/notebooklm/_web/policy.py` references this ADR as ADR-0005.
 
 Amended on 2026-05-29 to remove the unregistered `CLIENT_TOKEN_DEDUPE`
 policy and executor token-injection hook. No current `RPCMethod` has a
@@ -18,9 +18,13 @@ Amended again on 2026-05-29 after the registry audit was completed:
 the production `IDEMPOTENCY_REGISTRY` now has an explicit entry for
 every active `RPCMethod`. `UNCLASSIFIED` remains only as a hand-built
 placeholder for tests and future development, not as the production
-classification for read-only RPCs. The live singleton still lives in
-`src/notebooklm/_idempotency.py`; the default policy table is now populated
-from `src/notebooklm/_idempotency_policy.py` at import time.
+classification for read-only RPCs.
+
+Amended on 2026-08-27 to make the backend boundary explicit. The live
+singleton, registry types, resolution function, and declarative table now live
+together in `src/notebooklm/_web/policy.py`, which owns the single import-time
+seed. The neutral `src/notebooklm/_idempotency.py` retains only create probing
+and the unconfirmed-write marker.
 
 ## Context
 
@@ -38,13 +42,13 @@ Five retry-safety profiles cover every verified NotebookLM RPC shape:
 | `AT_LEAST_ONCE_ACCEPTED` | Caller has accepted duplicate-side-effect cost | Retries enabled; rate-limited WARN emitted |
 | `NON_IDEMPOTENT_NO_RETRY` | No dedupe key, no probe; first failure must surface | Force-disable inner retries |
 
-The taxonomy and the production registry (`IDEMPOTENCY_REGISTRY` in `_idempotency.py`, seeded by `_idempotency_policy.py`) are consulted by `RpcExecutor` to compute the effective `disable_internal_retries` value. Variants (e.g. `ADD_SOURCE` `"url"` vs `"text"` vs `"drive"`, artifact generation/revise flows, and source-label `UPDATE_LABEL` `"add_sources"` / `"remove_sources"`) carry their own classifications when the wire-shape differs by call-site.
+The taxonomy and the production registry (`IDEMPOTENCY_REGISTRY` in `_web/policy.py`) are consulted by `RpcExecutor` to compute the effective `disable_internal_retries` value. Variants (e.g. `ADD_SOURCE` `"url"` vs `"text"` vs `"drive"`, artifact generation/revise flows, and source-label `UPDATE_LABEL` `"add_sources"` / `"remove_sources"`) carry their own classifications when the wire-shape differs by call-site.
 
 An internal architecture audit (disease D3) flagged ten references to "Wave 2" in the idempotency policy code whose design rationale lived only in internal planning notes. This ADR is the public home for that rationale; the in-code references now point here.
 
 ## Decision
 
-Every active `RPCMethod` is registered in `IDEMPOTENCY_REGISTRY` (the singleton in `_idempotency.py`, with defaults declared in `_idempotency_policy.py`) with one of five `IdempotencyPolicy` values, optionally per *operation variant* when the call-site shape differs. The registry is the single source of truth consumed by `RpcExecutor`, and the registry-audit tests fail if a new enum member keeps the default placeholder.
+Every active `RPCMethod` is registered in the `_web/policy.py` `IDEMPOTENCY_REGISTRY` singleton with one of five `IdempotencyPolicy` values, optionally per *operation variant* when the call-site shape differs. That module owns the only production seed. The registry is the single source of truth consumed by `RpcExecutor`, and the registry-audit tests fail if a new enum member keeps the default placeholder.
 
 The classification rules are:
 
@@ -60,7 +64,7 @@ The classification rules are:
 - **Mutating RPCs that produce visible side effects (emails, billing, notifications) and that the caller has explicitly opted into** classify as `AT_LEAST_ONCE_ACCEPTED`; retries are enabled but a rate-limited WARN is emitted so operators can observe the trade-off.
 - **Mutating RPCs with no dedupe key and no reliable probe** classify as `NON_IDEMPOTENT_NO_RETRY`; the inner retry loop is force-disabled and the first failure surfaces to the caller for manual disambiguation.
 
-The completed production classifications are recorded in `_idempotency_policy.py` (with the per-RPC rationale captured at the registration site). Future classifications continue to land in the same module without changes to the executor; the registry is intentionally extensible.
+The completed production classifications are recorded in `_web/policy.py` (with the per-RPC rationale captured at the registration site). Future classifications continue to land in the same module without changes to the executor; the registry is intentionally extensible.
 
 The five-policy axis is *closed*. Adding a sixth policy requires updating this ADR and the executor in lock-step.
 

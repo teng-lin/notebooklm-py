@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from notebooklm._label.params import (
+from notebooklm._web.params.labels import (
     _opts,
     build_create_label_params,
     build_delete_labels_params,

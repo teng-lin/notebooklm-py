@@ -189,7 +189,7 @@ class AuthRefreshMiddleware:
         - Refresh already done for this logical call → propagate.
         - ``disable_internal_retries`` is set on the context → propagate.
           The flag is the post-resolution effective bool produced by
-          :func:`_idempotency.resolve_effective_disable_internal_retries`
+          :func:`_web.policy.resolve_effective_disable_internal_retries`
           before chain entry, so a non-idempotent / probe-then-create
           method is NOT replayed after an auth error (issue #1157). A
           mid-flight 401/403 can land *after* the server committed the
@@ -235,7 +235,7 @@ class AuthRefreshMiddleware:
                 or bool(request.context.get(RPC_CONTEXT_DISABLE_INTERNAL_RETRIES, False))
             ):
                 # ``disable_internal_retries`` is the post-resolution
-                # effective bool (see :func:`_idempotency.
+                # effective bool (see :func:`_web.policy.
                 # resolve_effective_disable_internal_retries`). When set, the
                 # write is non-idempotent / probe-then-create and may have
                 # already committed before the auth error surfaced — replaying

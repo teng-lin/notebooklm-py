@@ -30,10 +30,6 @@ from types import SimpleNamespace
 import pytest
 
 from notebooklm import NotebookLMClient
-from notebooklm._idempotency import (
-    IDEMPOTENCY_REGISTRY,
-    resolve_effective_disable_internal_retries,
-)
 from notebooklm._research_import import _import_research_read_timeout
 from notebooklm._runtime.config import (
     AUTO_READ_TIMEOUT,
@@ -48,6 +44,10 @@ from notebooklm._runtime.config import (
     resolve_chat_read_timeout,
 )
 from notebooklm._web.chat import WebChatAPI
+from notebooklm._web.policy import (
+    IDEMPOTENCY_REGISTRY,
+    resolve_effective_disable_internal_retries,
+)
 from notebooklm.rpc import RPCMethod
 
 #: batchexecute puts the RPC id in the query string (``?rpcids=…``), so it

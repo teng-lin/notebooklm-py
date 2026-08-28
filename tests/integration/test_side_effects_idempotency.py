@@ -32,7 +32,7 @@ import pytest
 
 import notebooklm._runtime.helpers as _runtime_helpers
 from notebooklm import NetworkError, NotebookLMClient, RPCError
-from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
+from notebooklm._web.policy import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
 
@@ -282,9 +282,9 @@ async def test_refresh_source_emits_rate_limited_warn(
     ≤2 lines (mirrors the registry's per-(method, variant) throttle)."""
     # Clear the rate-limit ledger so a window tripped by a prior test
     # doesn't suppress the WARN we expect here.
-    import notebooklm._idempotency as idemp_mod
+    import notebooklm._web.policy as policy_mod
 
-    monkeypatch.setattr(idemp_mod, "_at_least_once_last_logged", {})
+    monkeypatch.setattr(policy_mod, "_at_least_once_last_logged", {})
 
     invocations = 5
     refresh_count = 0

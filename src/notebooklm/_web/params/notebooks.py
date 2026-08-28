@@ -1,7 +1,7 @@
 """Stable ``batchexecute`` notebook RPC request payload builders.
 
 Kept outside ``_web/notebooks.py`` so the web notebook implementation stays
-under the ADR-0008 module-size budget; mirrors the ``_settings`` /
+under the ADR-0008 module-size budget; mirrors the ``_web.settings`` /
 ``_web.params.sources`` split.
 """
 

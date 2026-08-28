@@ -720,7 +720,7 @@ class IdempotencyVariantError(NotebookLMError):
 
     Methods that only have a ``(method, None)`` entry tolerate any variant
     name (the variant table is effectively empty, so there is no typo to
-    catch). See :func:`notebooklm._idempotency.IdempotencyRegistry.get_entry`.
+    catch). See :func:`notebooklm._web.policy.IdempotencyRegistry.get_entry`.
     """
 
 

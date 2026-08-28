@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from notebooklm._idempotency import (
+from notebooklm._web.policy import (
     IDEMPOTENCY_REGISTRY,
     IdempotencyEntry,
     IdempotencyPolicy,
@@ -115,7 +115,7 @@ def test_register_default_policies_runs_the_totality_seed_pass() -> None:
     fires. A spy registry counts the ``_seed_defaults`` calls, and a separate
     fresh registry confirms the applied result is total over ``RPCMethod``.
     """
-    from notebooklm._idempotency_policy import register_default_policies
+    from notebooklm._web.policy import register_default_policies
 
     # (a) The seed pass fires exactly once during policy application.
     spy = SeedSpyRegistry()
@@ -496,9 +496,9 @@ def test_at_least_once_accepted_rate_limits_warn_log(
     rate-limited to avoid spamming under load (100 calls → ≤2 log lines)."""
     # Clear the module-level rate-limit ledger so a previously-tripped
     # window from another test doesn't suppress the first WARN here.
-    import notebooklm._idempotency as idemp_mod
+    import notebooklm._web.policy as policy_mod
 
-    monkeypatch.setattr(idemp_mod, "_at_least_once_last_logged", {})
+    monkeypatch.setattr(policy_mod, "_at_least_once_last_logged", {})
 
     registry = IdempotencyRegistry()
     registry.register(RPCMethod.LIST_NOTEBOOKS, IdempotencyPolicy.AT_LEAST_ONCE_ACCEPTED)

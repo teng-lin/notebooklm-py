@@ -5,7 +5,7 @@ notebooks (playlist-style) rather than sources within one notebook. On the wire
 a collection is a source-``Label`` of type ``3`` with a null notebook parent, so
 this API reuses the four label RPCs (``LIST_LABELS`` / ``CREATE_LABEL`` /
 ``UPDATE_LABEL`` / ``DELETE_LABEL``) via the collection-specific param builders
-in :mod:`notebooklm._collection.params`, always with ``source_path="/"`` (the
+in :mod:`notebooklm._web.params.collections`, always with ``source_path="/"`` (the
 account/home context — collections have no notebook scope).
 
 Like ``LabelsAPI`` it takes a narrow ``list_notebooks`` callable
@@ -21,15 +21,15 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from ._collection.params import (
+from ._lookup import unwrap_or_raise
+from ._web.contracts import RpcCaller
+from ._web.params.collections import (
     build_create_collection_params,
     build_delete_collections_params,
     build_list_collections_params,
     build_rename_collection_params,
     build_update_collection_notebooks_params,
 )
-from ._lookup import unwrap_or_raise
-from ._web.contracts import RpcCaller
 from .exceptions import CollectionError, CollectionNotFoundError, UnknownRPCMethodError
 from .rpc import RPCMethod
 from .types import Collection, Notebook
@@ -277,7 +277,7 @@ class CollectionsAPI:
         **Wire shape (live-captured, PR #2009):** the un-assign fieldmask keeps
         the notebook id in the SAME group as add, shifted one slot (``[3]`` ->
         ``[4]``) — see
-        :func:`~notebooklm._collection.params.build_update_collection_notebooks_params`.
+        :func:`~notebooklm._web.params.collections.build_update_collection_notebooks_params`.
         An earlier inferred shape (id moved to a second group) was a silent wire
         no-op; independently confirmed broken and then fixed on four accounts
         (thanks to contributors tomihe0720 and erricklong85-tech). Removing an

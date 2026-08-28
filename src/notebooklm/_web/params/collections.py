@@ -2,7 +2,7 @@
 
 A collection is a source-``Label`` of type ``3`` with **no notebook parent**, so
 these builders reuse the four label RPCs (``I3xc3c`` / ``agX4Bc`` / ``le8sX`` /
-``GyzE7e``) with three wire differences vs. :mod:`notebooklm._label.params`
+``GyzE7e``) with three wire differences vs. :mod:`notebooklm._web.params.labels`
 (owner-captured on the live Gemini-Notebook UI, issue #2006):
 
 1. ``notebook_id`` (label slot ``[1]``) is ``None`` — collections are
@@ -12,7 +12,7 @@ these builders reuse the four label RPCs (``I3xc3c`` / ``agX4Bc`` / ``le8sX`` /
    label wrapper's ``[1]``.
 
 Every builder returns a **fresh** structure per call so callers never alias a
-shared mutable wrapper (cf. :func:`notebooklm._label.params._opts`).
+shared mutable wrapper (cf. :func:`notebooklm._web.params.labels._opts`).
 """
 
 from __future__ import annotations
