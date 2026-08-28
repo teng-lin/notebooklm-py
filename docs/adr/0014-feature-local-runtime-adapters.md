@@ -5,9 +5,10 @@
 > existed. **`Session` and `_session.py` have since been deleted** (see
 > [Revision history](#revision-history) → "2026-05-28 — Session elimination"),
 > and the former `_session_*` / `_runtime_*` collaborators now live under the
-> `_runtime/` package (for example `_runtime/init.py`,
-> `_runtime/transport.py`; the `SessionTransport` / `SessionCollaborators`
-> classes are now `RuntimeTransport` / `RuntimeCollaborators`). The
+> `_runtime/` package or the web transport owner (for example
+> `_runtime/init.py` and `_web/transport/runtime.py`; the
+> `SessionTransport` / `SessionCollaborators` classes are now
+> `RuntimeTransport` / `RuntimeCollaborators`). The
 > feature-local composite Protocols and adapter dataclasses discussed below
 > were also retired when direct keyword-only collaborator injection proved
 > clearer for their single consumers. Treat in-body references to `Session`,
@@ -19,8 +20,9 @@
 > **Backend-subclass amendment (2026-08-27).** Rule 1's current-state table is
 > refined by the accepted web/mobile backend split: `LoopGuard` stays in the
 > transport-neutral `_runtime/contracts.py`, while web-only `RpcCaller` and
-> `Kernel` move to `_web` during Phase A. `RpcExecutor` and the concrete web
-> kernel remain their direct satisfiers. Backend-neutral public namespace bases
+> `Kernel` move to `_web` during Phase A, and `RuntimeTransport` lives at
+> `_web/transport/runtime.py`. `RpcExecutor` and the concrete web kernel remain
+> their direct satisfiers. Backend-neutral public namespace bases
 > do not depend on those web contracts; each `Web*API` subclass receives the
 > web collaborator it needs. Rules 2–5 otherwise remain in force.
 

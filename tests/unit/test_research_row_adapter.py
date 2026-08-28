@@ -553,14 +553,14 @@ class TestResearchTaskInfoRowDiscoveryMode:
         """``None`` means "no mode claimed"; ``UNKNOWN`` means "a mode we cannot
         read" — including a literal -1, which is a client sentinel and must not
         round-trip off the wire."""
-        with caplog.at_level(logging.WARNING, logger="notebooklm._web.rows.research"):
+        with caplog.at_level(logging.WARNING, logger="notebooklm._row_adapters.research"):
             assert ResearchTaskInfoRow.discovery_mode([None, ["q", 1], code]) is (
                 DiscoveryMode.UNKNOWN
             )
         assert len(caplog.records) == 1
 
     def test_unmapped_code_warns_once_per_value(self, caplog) -> None:
-        with caplog.at_level(logging.WARNING, logger="notebooklm._web.rows.research"):
+        with caplog.at_level(logging.WARNING, logger="notebooklm._row_adapters.research"):
             for _ in range(3):
                 ResearchTaskInfoRow.discovery_mode([None, ["q", 1], 99])
             ResearchTaskInfoRow.discovery_mode([None, ["q", 1], 98])

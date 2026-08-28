@@ -1303,7 +1303,7 @@ class TestDocumentDegradation:
         element = innermost
         for _ in range(60):
             element = [0, 5, None, None, [1, 1, [[0, 5, [[0, 5, [element]]]]]]]
-        with caplog.at_level(logging.WARNING, logger="notebooklm._web.rows.documents"):
+        with caplog.at_level(logging.WARNING, logger="notebooklm._row_adapters.documents"):
             blocks = build_blocks([element])
         assert blocks  # the outer levels still decoded
         assert "Max nesting depth" in caplog.text
@@ -1339,7 +1339,7 @@ class TestDocumentDegradation:
         #2128 defect class itself. It warns rather than raising because the
         document is an addition to a call whose load-bearing return is the text.
         """
-        with caplog.at_level(logging.WARNING, logger="notebooklm._web.rows.documents"):
+        with caplog.at_level(logging.WARNING, logger="notebooklm._row_adapters.documents"):
             document = build_document(["not-a-list-of-elements"])
         assert document == StructuredDocument()
         assert "expected a list" in caplog.text

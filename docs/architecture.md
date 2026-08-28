@@ -1031,12 +1031,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/sharing.py` | `WebSharingAPI` plus the legacy `SHARE_ARTIFACT` `ShareManager` |
 | `_web/params/` | Web `batchexecute` positional request payload builders, separated from backend-neutral namespace APIs |
 | `_web/params/notebooks.py` | Stable `batchexecute` notebook RPC request payload builders, including `SUGGEST_PROMPTS` |
-| `_web/params/sources.py` | Stable source registration, rename, template-block, and resumable-upload request payload builders |
-| `_web/params/artifacts.py` | Stable web `CREATE_ARTIFACT`, revise/retry, and mind-map positional request payload builders |
 | `_web/params/chat_stream.py` | Streamed-chat URL, form-body, and source/history request construction |
 | `_web/params/chat_note.py` | Saved-from-chat `CREATE_NOTE` positional payload and citation-anchor encoding |
-| `_web/params/labels.py` | Source-label CREATE/LIST/UPDATE/DELETE positional request builders |
-| `_web/params/collections.py` | Account-level collection request builders over the type-3 label wire family |
 | `_web/transport/chat.py` | Chat-specific HTTP/error mapping over the shared authenticated streaming transport |
 | `_web/wire/decoder.py` | Batchexecute response framing, status/error decoding, and process-wide byte-count drift telemetry; retains the established `notebooklm.rpc.decoder` logger category |
 | `_web/wire/encoder.py` | Batchexecute request envelope and form-body encoding helpers; retains the established `notebooklm.rpc.encoder` logger category |
@@ -1063,7 +1059,6 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_artifact/formatters.py` | Markdown, HTML, and plain text formatters for artifacts |
 | `_artifact/validation.py` | Input-validation guards for the `ArtifactsAPI` facade (`generate_report` format coercion, `export` exactly-one-of target), kept in a sibling module so the facade stays under the module-size ratchet (#1874) |
 | `_artifact/polling.py` | Backend-neutral poll coordination over a target-aware decoded studio projection |
-| `_web/artifacts.py` | Concrete web artifact namespace implementation |
 | `_web/artifact/downloads.py` | Web artifact selection, representation lookup, and raw content parsing |
 | `_web/artifact/generation.py` | Web generation RPC dispatch service |
 | `_web/artifact/listing.py` | Web listing, row decoding, and mind-map composition |
@@ -1083,10 +1078,9 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/params/collections.py` | Collection request payload builders reusing the label RPCs — null notebook_id, type-3 discriminator, `[1,3]` opts tail; add/remove notebook-membership fieldmask and `create`'s options wrapper are live-captured (PR #2009) |
 | `_notebook_metadata.py` | Transport-neutral notebook metadata protocols and composition service; no concrete RPC/source-listing dependency |
 | `_url_utils.py`, `urls.py` | URL parsing/validation internals and the public URL helper facade |
-| `_sharing_manager.py` | Backend-neutral legacy share-URL builder |
 | `_version_check.py` | Dynamic client-side version deprecation guard |
 | `_version_info.py` | Human-facing `version_string()` — package version + short git commit (embedded by `hatch_build.py` at build time, or live `git` from a checkout) |
-| `_chat/deleted_tracker.py` | Bounded `RecentlyDeletedConversations` set — `delete_conversation` records the id (under the conversation lock) so a concurrent null-conversation ask, after acquiring that lock, detects a mid-flight delete and drops `resolved_id_override` to recover the server's real conversation id post-POST (#1875) |
+| `_chat/api.py` | Abstract `ChatAPI`, shared chat orchestration, and its bounded recently-deleted-conversation tracker; `delete_conversation` records the id under the conversation lock so a concurrent null-conversation ask can recover the server's real post-POST conversation id (#1875) |
 | `_web/transport/middleware/chain.py` | Constructs the middleware chain in the canonical ADR-0009 order |
 | `_web/transport/middleware/*.py` | Modular middleware implementations (drain, metrics, semaphore, retry, auth, error injection, tracing) |
 | `rpc/types.py` | RPC method IDs (source of truth) |
@@ -1163,7 +1157,6 @@ src/notebooklm/
 ├── _mind_maps_api.py            # Backend-neutral abstract MindMapsAPI
 ├── _notebook_metadata.py        # Neutral metadata protocols + composition service
 ├── _url_utils.py                # URL validation helpers
-├── _sharing_manager.py          # Neutral legacy share-URL builder
 ├── _version_check.py            # Deprecation version guard
 ├── _version_info.py             # version_string(): version + short git commit
 ├── _redact.py                   # Transport-neutral secret/home-path/file-link scrubber (redact(msg, max_length)); shared chokepoint under both mcp/_errors.py and server/_errors.py
@@ -1267,10 +1260,6 @@ src/notebooklm/
 │   ├── formatters.py            # Artifact formatting helpers
 │   ├── validation.py            # Facade input-validation guards (generate_report coercion, export exactly-one-of) (#1874)
 │   └── polling.py               # Decoded backend-neutral artifact polling coordinator
-├── _label/                      # Legacy package marker after request-builder relocation
-│   └── __init__.py
-├── _collection/                 # Legacy package marker after request-builder relocation
-│   └── __init__.py
 ├── _web/rows/                   # Positional-RPC-row adapters subpackage (#1328)
 │   ├── __init__.py              # Re-exports the typed row views
 │   ├── artifacts.py             # Artifact + GET_SUGGESTED_REPORTS row adapters (ArtifactRow / ReportSuggestionRow)
@@ -1287,8 +1276,7 @@ src/notebooklm/
 │   └── sources.py               # Source row adapter
 ├── _chat/                       # Backend-neutral chat package
 │   ├── __init__.py              # Re-exports ChatAPI + lazy private turn-helper compatibility shim
-│   ├── api.py                   # Abstract ChatAPI + shared locks/cache/ask/delete/save-note orchestration
-│   └── deleted_tracker.py       # Bounded RecentlyDeletedConversations set — serializes null-ask vs delete (#1875)
+│   └── api.py                   # Abstract ChatAPI + shared locks/cache/ask/delete/save-note orchestration and deleted-id tracker
 ├── _auth/                       # Auth subpackage (forwarded through auth.py facade)
 │   ├── __init__.py
 │   ├── paths.py                 # Storage paths and filesystem helpers
@@ -1389,7 +1377,7 @@ src/notebooklm/
 │   │   ├── overrides.py         # Runtime RPC-ID override policy and shared cache/log state
 │   │   └── safe_index.py        # Strict positional payload access
 │   └── rows/                    # Typed positional wire-row decoders
-├── _notebooks.py                # Backend-neutral abstract NotebooksAPI
+├── _notebooks.py                # Backend-neutral NotebooksAPI + share-URL builder
 ├── _sources.py                  # Backend-neutral abstract SourcesAPI
 ├── _artifacts.py                # Backend-neutral abstract ArtifactsAPI
 ├── _research.py                 # Lazy ResearchAPI compatibility shim

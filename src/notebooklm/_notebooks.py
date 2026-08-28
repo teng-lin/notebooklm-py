@@ -4,12 +4,12 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import quote
 
 from ._env import get_base_url
 from ._idempotency import idempotent_create
 from ._idempotency import mark_unconfirmed as _unconfirmed
 from ._notebook_metadata import NotebookMetadataService, NotebookSourceLister
-from ._sharing_manager import build_share_url
 from .exceptions import (
     AuthError,
     NetworkError,
@@ -24,6 +24,19 @@ logger = logging.getLogger(__name__)
 
 
 ShareUrlBuilder = Callable[[str, str | None], str]
+
+
+def build_share_url(base_url: str, notebook_id: str, artifact_id: str | None = None) -> str:
+    """Build the legacy NotebookLM notebook or artifact share URL.
+
+    Both IDs are percent-encoded with ``safe=""`` so reserved characters
+    (``/``, ``?``, ``&``, ``#``) and whitespace cannot escape the path /
+    query position and rewrite the URL into another endpoint.
+    """
+    notebook_url = f"{base_url}/notebook/{quote(notebook_id, safe='')}"
+    if artifact_id:
+        return f"{notebook_url}?artifactId={quote(artifact_id, safe='')}"
+    return notebook_url
 
 
 def _build_default_share_url(notebook_id: str, artifact_id: str | None = None) -> str:

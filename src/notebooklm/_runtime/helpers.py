@@ -25,7 +25,7 @@ from collections.abc import Awaitable, Callable
 
 import httpx
 
-from ..rpc import (
+from ..exceptions import (
     AuthError,
     ClientError,
     NetworkError,

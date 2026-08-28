@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import notebooklm._notebooks as notebooks_module
-from notebooklm._sharing_manager import build_share_url
+from notebooklm._notebooks import build_share_url
 from notebooklm._web.notebooks import WebNotebooksAPI
 from notebooklm._web.sharing import ShareManager
 from notebooklm.rpc import RPCMethod
@@ -40,7 +40,15 @@ def _make_rpc() -> AsyncMock:
 def _make_manager() -> tuple[ShareManager, AsyncMock]:
     rpc = _make_rpc()
     core = make_fake_core(rpc_call=rpc)
-    return ShareManager(core.rpc_executor, base_url_provider=lambda: BASE_URL), rpc
+    return (
+        ShareManager(
+            core.rpc_executor,
+            share_url_builder=lambda notebook_id, artifact_id=None: build_share_url(
+                BASE_URL, notebook_id, artifact_id
+            ),
+        ),
+        rpc,
+    )
 
 
 def test_build_share_url_without_artifact() -> None:

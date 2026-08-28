@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from ..mind_maps import NoteBackedMindMapService
     from .listing import ArtifactListingService
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("notebooklm._artifact.downloads")
 
 # ``_PREFETCH_NOTE`` — referenced by the per-method docstrings below. Each
 # ``download_<x>`` accepts an optional pre-fetched list (``artifacts_data`` raw

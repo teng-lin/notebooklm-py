@@ -314,13 +314,20 @@ def test_artifact_class_constructor_docstrings_and_web_signature_are_pinned() ->
     )
 
 
-def test_artifact_logger_names_survive_web_module_moves() -> None:
-    """Existing log filters keep observing artifact events after ownership moves."""
+def test_logger_names_survive_web_module_moves() -> None:
+    """Existing log filters keep observing events after ownership moves."""
     expected = {
         "notebooklm._web.artifacts": "notebooklm._artifacts",
+        "notebooklm._web.artifact.downloads": "notebooklm._artifact.downloads",
         "notebooklm._web.artifact.generation": "notebooklm._artifact.generation",
         "notebooklm._web.artifact.listing": "notebooklm._artifact.listing",
         "notebooklm._web.artifact.table": "notebooklm._artifacts",
+        "notebooklm._web.rows.documents": "notebooklm._row_adapters.documents",
+        "notebooklm._web.rows.notebooks": "notebooklm._types.notebooks",
+        "notebooklm._web.rows.research": "notebooklm._row_adapters.research",
+        "notebooklm._web.rows.research_task": "notebooklm._research_task_parser",
+        "notebooklm._web.rows.sharing": "notebooklm._types.sharing",
+        "notebooklm._web.rows.sources": "notebooklm._row_adapters.sources",
     }
     actual = {module: importlib.import_module(module).logger.name for module in expected}
     assert actual == expected

@@ -233,7 +233,17 @@ class WebNotebooksAPI(NotebooksAPI):
 
             self._share_url_builder = injected_share_url
         else:
-            self._share_manager = ShareManager(self._rpc)
+
+            def default_share_url(
+                notebook_id: str,
+                artifact_id: str | None = None,
+            ) -> str:
+                return self.get_share_url(notebook_id, artifact_id)
+
+            self._share_manager = ShareManager(
+                self._rpc,
+                share_url_builder=default_share_url,
+            )
         # CREATE_NOTEBOOK volunteers its newly-created ChatSession, while
         # GET_NOTEBOOK omits it. Keep that one-shot hint until ChatAPI consumes
         # it so the first ask need not immediately re-fetch the same id through

@@ -15,7 +15,7 @@ from ...rpc import RPCMethod, safe_index
 if TYPE_CHECKING:
     from ..._types.sharing import SharedUser, ShareStatus
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("notebooklm._types.sharing")
 
 _SHARE_METHOD_ID = RPCMethod.GET_SHARE_STATUS.value
 _warned_malformed_share_slots: set[tuple[str, str]] = set()

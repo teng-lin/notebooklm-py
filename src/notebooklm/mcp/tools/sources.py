@@ -41,7 +41,6 @@ from ...exceptions import (
     SourceNotFoundError,
     ValidationError,
 )
-from ...rpc import RPCMethod
 from ...types import source_status_to_str
 from ...urls import is_youtube_url
 from .._coerce import coerce_list
@@ -934,7 +933,6 @@ async def _add_url_batch(
     if len(outcomes) != len(valid_urls):
         raise RPCError(
             "Internal source batch result count did not match validated input count",
-            method_id=RPCMethod.ADD_SOURCE.value,
         )
 
     # Keep each added item's Source alongside its result dict so a synchronously-ready
@@ -955,7 +953,6 @@ async def _add_url_batch(
             if src is None:  # pragma: no cover - SourceUrlBatchItem invariant
                 raise RPCError(
                     "Internal source batch outcome had neither source nor error",
-                    method_id=RPCMethod.ADD_SOURCE.value,
                 )
             # Deliberately NOT a ``_source_view`` row: this is a per-input
             # RESULT record for a source that was just created, so Drive health
@@ -982,7 +979,6 @@ async def _add_url_batch(
     if len(finalized) != len(urls):
         raise RPCError(
             "Internal source batch projection lost positional outcomes",
-            method_id=RPCMethod.ADD_SOURCE.value,
         )
     # Annotate any synchronously-ready web-page items with a thin / soft-404 warning
     # (concurrent; web-page-filtered; degrades any fetch failure to no warning).

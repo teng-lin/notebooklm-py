@@ -132,12 +132,12 @@ live-cookie authority**. The Phase-A audit is equality-pinned by
 
 | Owner | Shadow access | Role |
 |---|---|---|
-| `_kernel.py:Kernel._bootstrap_cookies` | reads `cookie_jar`, falling back to `cookies` | the one bootstrap hand-off; copied into kernel ownership during client composition |
+| `_web/transport/kernel.py:Kernel._bootstrap_cookies` | reads `cookie_jar`, falling back to `cookies` | the one bootstrap hand-off; copied into kernel ownership during client composition |
 | `_auth/tokens.py:AuthTokens.__post_init__` | reads/writes `cookies` and `cookie_jar` | public construction compatibility and normalization |
 | `_auth/tokens.py:AuthTokens.replace_cookie_jar` | writes `cookies` and `cookie_jar` | public v0.x sync-back only |
 | `_auth/tokens.py:AuthTokens._replace_profile_session` | calls `replace_cookie_jar` | syncs public shadows after an atomic stored-profile install |
 | `_auth/session.py:_try_storage_cookie_reload` | calls `replace_cookie_jar` in `finally` | syncs public shadows even when cancellation interrupts baseline adoption |
-| `_runtime/auth.py:AuthRefreshCoordinator.update_auth_headers` | calls `replace_cookie_jar` | syncs public shadows after refresh |
+| `_web/transport/auth.py:AuthRefreshCoordinator.update_auth_headers` | calls `replace_cookie_jar` | syncs public shadows after refresh |
 | `_auth/tokens.py:AuthTokens.__repr__` | reads both fields | redacted public representation only |
 | `_auth/tokens.py:AuthTokens.jar` | reads `cookie_jar` | public question/bootstrap migration projection only |
 | `_auth/tokens.py:AuthTokens._flat_cookie_projection` | reads `cookies` | warning-free implementation shared by lossy public compatibility projections |

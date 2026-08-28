@@ -7,6 +7,7 @@ import logging
 import re
 import weakref
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -27,7 +28,6 @@ from ..types import (
     NextStepSuggestion,
     Note,
 )
-from .deleted_tracker import RecentlyDeletedConversations
 
 logger = logging.getLogger("notebooklm._chat.api")
 notes_logger = logging.getLogger("notebooklm._chat.notes")
@@ -35,6 +35,36 @@ notes_logger = logging.getLogger("notebooklm._chat.notes")
 _TURN_COUNT_INITIAL_LIMIT = 100
 _TURN_COUNT_MAX_LIMIT = 12_800
 _CITATION_MARKER_RE = re.compile(r" ?\[(\d+)\]")
+_DELETED_CONVERSATION_CAPACITY = 1024
+
+
+class RecentlyDeletedConversations:
+    """FIFO-bounded membership set of recently deleted conversation ids.
+
+    A null-conversation ask resolves the current conversation before taking its
+    lock. If that conversation is deleted while the ask waits, the marker tells
+    the ask to recover the fresh conversation id returned by the server instead
+    of pinning its result to the deleted id. Conversation ids are never reused,
+    and only the brief lock-handoff window is relevant, so a bounded FIFO keeps
+    memory flat without losing a live marker.
+    """
+
+    def __init__(self, capacity: int = _DELETED_CONVERSATION_CAPACITY) -> None:
+        self._capacity = capacity
+        self._ids: OrderedDict[str, None] = OrderedDict()
+
+    def record(self, conversation_id: str) -> None:
+        """Mark ``conversation_id`` as deleted, evicting the oldest if over cap."""
+        self._ids[conversation_id] = None
+        self._ids.move_to_end(conversation_id)
+        while len(self._ids) > self._capacity:
+            self._ids.popitem(last=False)
+
+    def __contains__(self, conversation_id: str) -> bool:
+        return conversation_id in self._ids
+
+    def clear(self) -> None:
+        self._ids.clear()
 
 
 @dataclass(frozen=True)

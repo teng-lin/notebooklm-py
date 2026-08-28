@@ -75,7 +75,6 @@ _SOURCE_SERVICE_MODULES = [
 
 _NOTEBOOK_COMPOSITION_SERVICE_MODULES = [
     "_notebook_metadata.py",
-    "_sharing_manager.py",
 ]
 
 _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES = {
@@ -525,6 +524,18 @@ def test_retired_mind_map_service_module_is_not_importable() -> None:
     """The note-backed service moved atomically to the web mind-map backend."""
     assert not (SRC_ROOT / "_mind_map.py").exists()
     assert importlib.util.find_spec("notebooklm._mind_map") is None
+
+
+def test_retired_sharing_manager_module_is_not_importable() -> None:
+    """The sole share-URL helper now belongs to the neutral notebooks owner."""
+    assert not (SRC_ROOT / "_sharing_manager.py").exists()
+    assert importlib.util.find_spec("notebooklm._sharing_manager") is None
+
+
+def test_retired_chat_deleted_tracker_module_is_not_importable() -> None:
+    """The single-consumer deleted-id tracker now belongs to ChatAPI."""
+    assert not (SRC_ROOT / "_chat" / "deleted_tracker.py").exists()
+    assert importlib.util.find_spec("notebooklm._chat.deleted_tracker") is None
 
 
 def test_runtime_import_visitor_detects_nested_forbidden_modules() -> None:

@@ -97,7 +97,7 @@ __all__ = [
 #: Real documents nest one or two levels.
 _MAX_BLOCK_DEPTH = 20
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("notebooklm._row_adapters.documents")
 
 
 def _as_list(value: Any) -> list[Any] | None:

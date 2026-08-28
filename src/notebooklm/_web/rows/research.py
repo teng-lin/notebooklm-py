@@ -71,7 +71,7 @@ from ..._types.common import _datetime_from_timestamp
 from ..._types.enums import DiscoveryMode
 from ...rpc import RPCMethod, safe_index
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("notebooklm._row_adapters.research")
 
 #: Unmapped ``DiscoveryMode`` codes already warned about, so a polled research
 #: task does not re-emit the same drift line on every poll. Sibling of

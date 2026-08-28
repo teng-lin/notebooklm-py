@@ -42,7 +42,7 @@ from ...rpc import RPCMethod, safe_index
 if TYPE_CHECKING:
     from ..._types.notebooks import Notebook
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("notebooklm._types.notebooks")
 
 __all__ = [
     "PromptSuggestionRow",

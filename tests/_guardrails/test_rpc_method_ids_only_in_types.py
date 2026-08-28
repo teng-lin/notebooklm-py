@@ -65,6 +65,79 @@ def _feature_files() -> list[Path]:
     return sorted(p for p in SRC_ROOT.rglob("*.py") if p.relative_to(SRC_ROOT).parts[0] != "rpc")
 
 
+def _inside_type_checking(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
+    current = parents.get(node)
+    while current is not None:
+        if (
+            isinstance(current, ast.If)
+            and isinstance(current.test, ast.Name)
+            and current.test.id == "TYPE_CHECKING"
+        ):
+            return True
+        current = parents.get(current)
+    return False
+
+
+def _is_client_rpc_call_annotation(node: ast.Name, parents: dict[ast.AST, ast.AST]) -> bool:
+    argument = parents.get(node)
+    arguments = parents.get(argument) if isinstance(argument, ast.arg) else None
+    function = parents.get(arguments) if isinstance(arguments, ast.arguments) else None
+    owner = (
+        parents.get(function)
+        if isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef))
+        else None
+    )
+    return (
+        isinstance(argument, ast.arg)
+        and argument.arg == "method"
+        and isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and function.name == "rpc_call"
+        and isinstance(owner, ast.ClassDef)
+        and owner.name == "NotebookLMClient"
+    )
+
+
+def _rpc_method_reference_offenders(path: Path) -> list[str]:
+    """Find RPCMethod imports/runtime references outside the web owner."""
+    relative = path.relative_to(SRC_ROOT)
+    if relative.parts[0] == "_web" or relative == Path("rpc/types.py"):
+        return []
+
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                if alias.name != "RPCMethod":
+                    continue
+                facade_reexport = (
+                    relative == Path("rpc/__init__.py")
+                    and isinstance(node, ast.ImportFrom)
+                    and node.level == 1
+                    and node.module == "types"
+                )
+                client_annotation_import = relative == Path("client.py") and _inside_type_checking(
+                    node, parents
+                )
+                if not (facade_reexport or client_annotation_import):
+                    offenders.append(f"{relative}:{node.lineno}: imports RPCMethod")
+        elif (
+            isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id == "RPCMethod"
+        ):
+            if not (
+                relative == Path("client.py") and _is_client_rpc_call_annotation(node, parents)
+            ):
+                offenders.append(f"{relative}:{node.lineno}: references RPCMethod")
+        elif (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.ctx, ast.Load)
+            and node.attr == "RPCMethod"
+        ):
+            offenders.append(f"{relative}:{node.lineno}: references .RPCMethod")
+    return offenders
+
+
 def _repo_relative(path: Path) -> Path:
     return path.resolve().relative_to(PROJECT_ROOT)
 
@@ -142,6 +215,20 @@ def test_no_hardcoded_rpc_method_ids_outside_rpc_layer() -> None:
         "(the source of truth per CLAUDE.md). Reference them via the RPCMethod enum "
         "instead of hardcoding the obfuscated string; the only runtime escape hatch "
         "is _web/wire/overrides.py.\n\n" + "\n".join(offenders)
+    )
+
+
+def test_rpc_method_references_stay_in_the_web_backend() -> None:
+    """Executable RPCMethod knowledge belongs to rpc/types.py and _web only."""
+    offenders = [
+        offender
+        for path in sorted(SRC_ROOT.rglob("*.py"))
+        for offender in _rpc_method_reference_offenders(path)
+    ]
+    assert offenders == [], (
+        "RPCMethod references outside rpc/types.py must live under _web; only the public "
+        "rpc facade re-export and NotebookLMClient.rpc_call annotation are exempt:\n"
+        + "\n".join(offenders)
     )
 
 

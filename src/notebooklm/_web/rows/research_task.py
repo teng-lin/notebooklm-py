@@ -43,7 +43,7 @@ __all__ = [
     "parse_result_type",
 ]
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("notebooklm._research_task_parser")
 
 _POLL_SOURCE = "_research.poll"
 _POLL_METHOD_ID = RPCMethod.POLL_RESEARCH.value

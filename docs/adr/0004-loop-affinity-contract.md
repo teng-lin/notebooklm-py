@@ -20,9 +20,9 @@ The contract is enforced at two layers:
 
 - `src/notebooklm/_loop_affinity.py` exposes `assert_bound_loop(bound_loop)` which compares the current loop to the captured one and raises `RuntimeError` with an actionable diagnostic if they differ.
 - `src/notebooklm/_runtime/lifecycle.py::ClientLifecycle.open()` captures the loop with `asyncio.get_running_loop()` and exposes it as `get_bound_loop()`. It propagates the binding into collaborators that own loop-bound primitives.
-- `src/notebooklm/_runtime/transport.py::RuntimeTransport.perform_authed_post()` calls the injected loop check before it enters the middleware chain and before any loop-bound primitive is touched.
+- `src/notebooklm/_web/transport/runtime.py::RuntimeTransport.perform_authed_post()` calls the injected loop check before it enters the middleware chain and before any loop-bound primitive is touched.
 
-`ClientLifecycle.get_bound_loop()` returns `None` before `open()` is called, and `assert_bound_loop(None)` is a silent no-op. That keeps fresh test fixtures from being misclassified as cross-loop calls before they have opened a transport. The shared capability-Protocol surface that feature APIs depend on lives in `src/notebooklm/_runtime/contracts.py` (`Kernel`, `RpcCaller`, `LoopGuard`). Single-consumer protocols stay local to their owners, such as `AuthMetadata` in `src/notebooklm/_web/sources/upload.py` and `OperationScopeProvider` in `src/notebooklm/_artifact/polling.py`.
+`ClientLifecycle.get_bound_loop()` returns `None` before `open()` is called, and `assert_bound_loop(None)` is a silent no-op. That keeps fresh test fixtures from being misclassified as cross-loop calls before they have opened a transport. The neutral `LoopGuard` capability lives in `src/notebooklm/_runtime/contracts.py`; the web-only `Kernel` and `RpcCaller` capabilities live in `src/notebooklm/_web/contracts.py`. Single-consumer protocols stay local to their owners, such as `AuthMetadata` in `src/notebooklm/_web/sources/upload.py` and `OperationScopeProvider` in `src/notebooklm/_artifact/polling.py`.
 
 ## Decision
 

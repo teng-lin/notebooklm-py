@@ -33,7 +33,7 @@ src/notebooklm/
 ├── _web/contracts.py    # Web-only Kernel and RpcCaller Protocols
 ├── _web/transport/      # Web HTTP transport, executor, middleware, auth, persistence
 ├── _web/wire/           # Web batchexecute codecs, overrides, and strict indexing
-├── _notebooks.py        # Backend-neutral abstract NotebooksAPI
+├── _notebooks.py        # Backend-neutral NotebooksAPI + share-URL builder
 ├── _web/notebooks.py    # WebNotebooksAPI implementation
 ├── _sources.py          # Backend-neutral abstract SourcesAPI
 ├── _web/sources/        # WebSourcesAPI + concrete web source services
@@ -60,7 +60,6 @@ src/notebooklm/
 ├── _web/settings.py     # WebSettingsAPI + web settings helpers
 ├── _sharing.py          # Backend-neutral abstract SharingAPI
 ├── _web/sharing.py      # WebSharingAPI + legacy ShareManager
-├── _sharing_manager.py  # Neutral legacy share-URL builder
 ├── rpc/                 # Public power-user and compatibility facade
 │   ├── __init__.py
 │   └── types.py         # RPCMethod enum, constants, and compatibility re-exports
@@ -166,7 +165,7 @@ facades. They own cross-facade composition without importing sibling facades:
 `_notebook_metadata.py` composes notebook metadata through a narrow source
 lister without importing a concrete transport or lister; `_web/notebooks.py`
 owns the direct-construction web fallback. `_web/sharing.py` owns legacy
-`SHARE_ARTIFACT` mutation behavior while `_sharing_manager.py` keeps only the
+`SHARE_ARTIFACT` mutation behavior while `_notebooks.py` owns the
 transport-neutral URL builder, and
 `_web/mind_maps.py` owns the web note-backed mind-map rows shared by notes and artifacts;
 `_mind_maps_api.py` owns the transport-neutral unified workflows.

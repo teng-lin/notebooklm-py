@@ -178,19 +178,19 @@ class TestShareStatusCapacityAndPolicyFields:
 
         sharing_rows._warned_malformed_share_slots.clear()
 
-        with caplog.at_level(logging.WARNING, logger=sharing_rows.__name__):
+        with caplog.at_level(logging.WARNING, logger="notebooklm._types.sharing"):
             ShareStatus.from_api_response([[], None, "1000", "yes"], "nb-1")
         assert "maxIndividualsShareLimit" in caplog.text
         assert "isPublicSharingAllowed" in caplog.text
 
         # A short response is normal, not drift, and must stay quiet.
         caplog.clear()
-        with caplog.at_level(logging.WARNING, logger=sharing_rows.__name__):
+        with caplog.at_level(logging.WARNING, logger="notebooklm._types.sharing"):
             ShareStatus.from_api_response([[], None], "nb-1")
         assert caplog.text == ""
 
         # An explicit null is absence too.
-        with caplog.at_level(logging.WARNING, logger=sharing_rows.__name__):
+        with caplog.at_level(logging.WARNING, logger="notebooklm._types.sharing"):
             ShareStatus.from_api_response([[], None, None, None], "nb-1")
         assert caplog.text == ""
 
@@ -233,7 +233,7 @@ class TestShareStatusCapacityAndPolicyFields:
 
         sharing_rows._warned_malformed_share_slots.clear()
 
-        with caplog.at_level(logging.WARNING, logger=sharing_rows.__name__):
+        with caplog.at_level(logging.WARNING, logger="notebooklm._types.sharing"):
             for _ in range(5):
                 ShareStatus.from_api_response([[], None, "1000", True], "nb-1")
 

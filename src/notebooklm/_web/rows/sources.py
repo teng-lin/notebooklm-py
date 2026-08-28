@@ -13,7 +13,7 @@ from ..._types.enums import DriveSourceStatus, SourceStatus
 from ...exceptions import DecodingError
 from ...rpc import RPCMethod, safe_index
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("notebooklm._row_adapters.sources")
 
 #: Unmapped status codes already warned about, so a polled source does not
 #: re-emit the same drift line on every decode. Mirrors

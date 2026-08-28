@@ -12,8 +12,12 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from ._types.research import ResearchSource, ResearchSourceInput
-from ._web.rows.research_task import RESEARCH_RESULT_TYPE_REPORT, parse_result_type
+from ._types.research import (
+    RESEARCH_RESULT_TYPE_REPORT,
+    ResearchSource,
+    ResearchSourceInput,
+    parse_result_type,
+)
 from .types import CitedSourceSelection
 
 logger = logging.getLogger(__name__)

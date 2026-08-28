@@ -5,9 +5,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
 
-from .._env import get_base_url
 from .._sharing import SharingAPI
-from .._sharing_manager import build_share_url
 from .._types.enums import ShareAccess, SharePermission, ShareViewLevel
 from ..rpc import RPCMethod
 from ..types import ShareStatus
@@ -307,10 +305,11 @@ class ShareManager:
     def __init__(
         self,
         rpc: RpcCaller,
-        base_url_provider: Callable[[], str] = get_base_url,
+        *,
+        share_url_builder: Callable[[str, str | None], str],
     ) -> None:
         self._rpc = rpc
-        self._base_url_provider = base_url_provider
+        self._share_url_builder = share_url_builder
 
     async def share(
         self, notebook_id: str, public: bool = True, artifact_id: str | None = None
@@ -336,7 +335,7 @@ class ShareManager:
 
     def get_share_url(self, notebook_id: str, artifact_id: str | None = None) -> str:
         """Return the legacy share URL without toggling server-side sharing."""
-        return build_share_url(self._base_url_provider(), notebook_id, artifact_id)
+        return self._share_url_builder(notebook_id, artifact_id)
 
 
 __all__ = ["ShareManager", "WebSharingAPI"]

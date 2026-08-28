@@ -41,6 +41,12 @@ WEB_NAMESPACE_SHIMS = {
     "_labels.py": "notebooklm._web.labels",
     "_research.py": "notebooklm._web.research",
 }
+REMOVED_EMPTY_PACKAGE_SHELLS = (
+    "_collection",
+    "_label",
+    "_middleware",
+    "_row_adapters",
+)
 
 DOMAIN_ENUM_NAMES = frozenset(
     name
@@ -100,7 +106,6 @@ ALLOWED_WEB_IMPORTERS = frozenset(
         "notebooklm._artifact",
         "notebooklm._source",
         "notebooklm._chat",
-        "notebooklm.research",
     }
 )
 
@@ -251,8 +256,10 @@ def _boundary_violations(
             reason = "mobile backends must not import the web/RPC backend"
         elif importer_is_web and (target_is_mobile or target_is_protobuf):
             reason = "web backends must not import mobile/protobuf code"
-        elif not lazy_edge and direct.importer in base_modules and (
-            target_is_web or target_is_mobile or target_is_rpc
+        elif (
+            not lazy_edge
+            and direct.importer in base_modules
+            and (target_is_web or target_is_mobile or target_is_rpc)
         ):
             reason = "backend-neutral bases must not import backend implementations or rpc"
         elif importer_is_types and target_is_rpc:
@@ -378,19 +385,32 @@ def test_web_only_namespace_compatibility_modules_stay_thin_and_lazy(
     assert implementation_literals == {implementation}
 
 
+def test_relocated_package_shells_are_removed() -> None:
+    """Completed moves leave no Python package source at the old paths."""
+    stale = [
+        str(path.relative_to(SRC_ROOT))
+        for name in REMOVED_EMPTY_PACKAGE_SHELLS
+        for path in (SRC_ROOT / name).rglob("*.py")
+    ]
+    assert stale == []
+
+
 def test_backend_boundary_manifests_are_well_formed() -> None:
-    assert frozenset(
-        {
-            "notebooklm._artifacts",
-            "notebooklm._chat.api",
-            "notebooklm._mind_maps_api",
-            "notebooklm._notebooks",
-            "notebooklm._notes",
-            "notebooklm._settings",
-            "notebooklm._sharing",
-            "notebooklm._sources",
-        }
-    ) == BASE_MODULE_ALLOWLIST
+    assert (
+        frozenset(
+            {
+                "notebooklm._artifacts",
+                "notebooklm._chat.api",
+                "notebooklm._mind_maps_api",
+                "notebooklm._notebooks",
+                "notebooklm._notes",
+                "notebooklm._settings",
+                "notebooklm._sharing",
+                "notebooklm._sources",
+            }
+        )
+        == BASE_MODULE_ALLOWLIST
+    )
     assert not BASE_MODULE_ALLOWLIST & ALLOWED_WEB_IMPORTERS
 
     for module, scope in LAZY_WEB_IMPORT_ALLOWLIST:
