@@ -461,6 +461,9 @@ _DISPLAY_NAME_ALLOWLIST_ALT = "|".join(
 #
 # Anchoring strategy per shape:
 #
+#   * ``aas_et/`` — anchored on the durable master-token prefix. The prefix is
+#     distinctive enough that no length floor is needed, so even short fixture
+#     credentials are scrubbed.
 #   * ``g\.a000-`` — anchored on the literal ``g.a000-`` prefix (note the
 #     REQUIRED trailing ``-``). That prefix is itself distinctive enough that
 #     no length floor is needed: ``g.a000-<anything>`` in a cassette is a SID
@@ -474,6 +477,7 @@ _DISPLAY_NAME_ALLOWLIST_ALT = "|".join(
 # Anything matched collapses to ``SCRUBBED`` (which contains none of the
 # prefixes), so repeated passes are idempotent.
 _AUTH_TOKEN_PATTERNS: list[str] = [
+    r"aas_et/[A-Za-z0-9_\-]+",
     r"g\.a000-[A-Za-z0-9_\-]+",
     r"sidts-[A-Za-z0-9_\-]{10,}",
     r"ya29\.[A-Za-z0-9_\-]{20,}",
@@ -1179,7 +1183,7 @@ _DETECT_AUTHUSER_EMAIL_DOUBLE_ENCODED = re.compile(
 
 
 # Detectors with ZERO legitimate-occurrence risk anywhere in the repository:
-# raw Google auth-token shapes (``g.a000-`` / ``sidts-`` / ``ya29.``), the
+# raw Google auth-token shapes (``aas_et/`` / ``g.a000-`` / ``sidts-`` / ``ya29.``), the
 # canonical Google API-key shape (``AIza`` + 35 chars), and the double-encoded
 # ``authuser%3D<email>`` redirect-param shape (issue #1368). Unlike the
 # cookie-value / display-name / email heuristics that :func:`is_clean` also runs
@@ -1234,7 +1238,7 @@ _CREDENTIAL_DETECTORS: list[tuple[str, re.Pattern[str]]] = [
 # THE KNOWN-SHAPE BOUNDARY (residual-risk decision; ADR-0006, issue #1382).
 # ---------------------------------------------------------------------------
 # Everything ABOVE this point is *name-anchored* (cookie names, WIZ field IDs)
-# or *known-shape* (``g.a000-`` / ``sidts-`` / ``ya29.`` / ``AIza`` prefixes).
+# or *known-shape* (``aas_et/`` / ``g.a000-`` / ``sidts-`` / ``ya29.`` / ``AIza`` prefixes).
 # That makes the guard NECESSARY-but-not-SUFFICIENT: a credential family the
 # registry does not yet know about — a NOVEL token prefix, or a known secret
 # riding in an un-targeted JSON field — passes the targeted detectors silently.
@@ -1515,7 +1519,7 @@ def is_clean(text: str) -> tuple[bool, list[str]]:
         leaks.append(f"Leak (signed blob-capability URL): {match.group(0)!r}")
 
     # --- 8. Catch-all Google auth-token shapes -----------------------------
-    # ``g.a000-...`` / ``sidts-...`` / ``ya29....`` tokens are scrubbed to
+    # ``aas_et/...`` / ``g.a000-...`` / ``sidts-...`` / ``ya29....`` tokens are scrubbed to
     # ``SCRUBBED`` wherever they appear (cookie values on or off the allowlist,
     # response bodies, headers). Any surviving raw token is a leak by
     # definition — this is the cookie-name-agnostic backstop that closes the

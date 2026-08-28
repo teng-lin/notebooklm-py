@@ -23,12 +23,17 @@ from notebooklm._app.errors import ErrorCategory, classify
 from notebooklm._auth import master_token
 from notebooklm._auth.master_token_types import MasterToken
 from notebooklm._auth.mint_service import (
+    _CHROMECAST_OAUTH_SPEC,
     _KEEPALIVE_POKE_TIMEOUT,
     _KEEPALIVE_ROTATE_BODY,
     _KEEPALIVE_ROTATE_HEADERS,
     KEEPALIVE_ROTATE_URL,
+    MintedOAuthToken,
     MintService,
+    OAuthClientSpec,
+    OAuthMintError,
     _MintError,
+    _parse_oauth_expiry,
     _perform_oauth,
     _rotate_post,
     _rotate_post_sync,
@@ -183,11 +188,51 @@ def test_service_and_error_shapes_are_exact_and_stateless() -> None:
     assert str(inspect.signature(MintService.exchange)) == (
         "(self, email: 'str', oauth_token: 'str', android_id: 'str') -> 'MasterToken'"
     )
+    assert str(inspect.signature(MintService.mint_oauth)) == (
+        "(self, master_token: 'MasterToken', spec: 'OAuthClientSpec') -> 'MintedOAuthToken'"
+    )
     assert str(inspect.signature(MintService.mint)) == (
         "(self, token: 'MasterToken') -> 'httpx.Cookies'"
     )
     assert _MintError.__dict__.keys() >= {"__module__"}
     assert _MintError("safe").__dict__ == {}
+    assert OAuthMintError.__dict__.keys() >= {"__module__"}
+    assert OAuthMintError("safe").__dict__ == {}
+
+
+def test_oauth_value_shapes_are_immutable_and_secret_safe() -> None:
+    spec = OAuthClientSpec("oauth2:scope", "example.app", "certificate")
+    minted = MintedOAuthToken("ya29.MINTED-SECRET", 2_000_000_000)
+
+    assert repr(spec) == (
+        "OAuthClientSpec(service='oauth2:scope', app='example.app', client_sig='certificate')"
+    )
+    assert repr(minted) == "MintedOAuthToken(expires_at=2000000000)"
+    assert "ya29.MINTED-SECRET" not in repr(minted)
+    with pytest.raises(AttributeError):
+        spec.app = "changed"  # type: ignore[misc]
+    with pytest.raises(AttributeError):
+        minted.token = "changed"  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (None, None),
+        ("", None),
+        ("1700000000", 1_700_000_000),
+        ("0007", 7),
+        (1700000000, None),
+        (True, None),
+        ("١٧٠٠٠٠٠٠٠٠", None),
+        ("7.0", None),
+        ("9" * 10_000, None),
+    ],
+)
+def test_optional_oauth_expiry_parses_only_server_unix_seconds(
+    raw: object, expected: int | None
+) -> None:
+    assert _parse_oauth_expiry(raw) == expected
 
 
 def test_exchange_preserves_arguments_converts_truthy_secret_and_redacts(
@@ -389,6 +434,79 @@ def test_logger_suppression_mutex_serializes_concurrent_exchanges(
     assert failures == []
 
 
+@pytest.mark.asyncio
+async def test_mint_oauth_uses_exact_typed_spec_and_returns_sanitized_value(
+    fake_gpsoauth: types.ModuleType,
+) -> None:
+    spec = OAuthClientSpec(
+        service="oauth2:scope-one scope-two",
+        app="example.android.app",
+        client_sig="0123456789abcdef",
+    )
+    master_secret = "aas_et/MASTER-SECRET"
+    bearer_secret = "ya29.MINTED-BEARER-SECRET-1234567890"
+    fake_gpsoauth.oauth_return = {"Auth": bearer_secret, "Expiry": "2000000000"}
+
+    minted = await MintService().mint_oauth(
+        MasterToken("person@example.com", "android-1", master_secret), spec
+    )
+
+    assert minted.token == bearer_secret
+    assert minted.expires_at == 2_000_000_000
+    assert fake_gpsoauth.oauth_calls == [
+        (
+            ("person@example.com", master_secret, "android-1"),
+            {
+                "service": "oauth2:scope-one scope-two",
+                "app": "example.android.app",
+                "client_sig": "0123456789abcdef",
+            },
+        )
+    ]
+    assert master_secret not in repr(minted)
+    assert bearer_secret not in repr(minted)
+
+
+@pytest.mark.parametrize(
+    "response", [{"Auth": "ya29.SECRET"}, {"Auth": "ya29.SECRET", "Expiry": "bad"}]
+)
+@pytest.mark.asyncio
+async def test_mint_oauth_does_not_invent_expiry(
+    fake_gpsoauth: types.ModuleType, response: dict[str, str]
+) -> None:
+    fake_gpsoauth.oauth_return = response
+
+    minted = await MintService().mint_oauth(
+        MasterToken("person@example.com", "android-1", "aas_et/MASTER"),
+        OAuthClientSpec("oauth2:scope", "example.app", "certificate"),
+    )
+
+    assert minted.expires_at is None
+
+
+@pytest.mark.asyncio
+async def test_mint_oauth_errors_expose_no_input_or_returned_credentials(
+    fake_gpsoauth: types.ModuleType,
+) -> None:
+    master_secret = "aas_et/MASTER-SECRET"
+    bearer_secret = "ya29.MINTED-BEARER-SECRET-1234567890"
+    fake_gpsoauth.oauth_return = {"Auth": "", "Error": "rejected"}
+
+    with pytest.raises(OAuthMintError) as rejected:
+        await MintService().mint_oauth(
+            MasterToken("person@example.com", "android-1", master_secret),
+            OAuthClientSpec("oauth2:scope", "example.app", "certificate"),
+        )
+
+    surfaces = (str(rejected.value), repr(rejected.value), repr(rejected.value.args))
+    assert all(master_secret not in surface for surface in surfaces)
+    assert all(bearer_secret not in surface for surface in surfaces)
+    assert str(rejected.value) == (
+        "perform_oauth rejected the master token (Error=rejected). "
+        "Re-bootstrap with `notebooklm login --master-token`."
+    )
+
+
 @pytest.mark.no_default_keepalive_mock
 @pytest.mark.asyncio
 async def test_mint_exact_offload_http_order_configuration_and_cookie_fidelity(
@@ -427,7 +545,13 @@ async def test_mint_exact_offload_http_order_configuration_and_cookie_fidelity(
     assert offloads == [
         (
             _perform_oauth,
-            (fake_gpsoauth, "person@example.com", "master-secret", "android-1"),
+            (
+                fake_gpsoauth,
+                "person@example.com",
+                "master-secret",
+                "android-1",
+                _CHROMECAST_OAUTH_SPEC,
+            ),
             {},
         )
     ]

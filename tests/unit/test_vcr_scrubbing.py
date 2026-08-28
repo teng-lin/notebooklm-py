@@ -16,7 +16,8 @@ Two complementary hardenings closed the gap and are pinned here:
    :data:`SESSION_COOKIES`, so the cookie-header / storage_state scrubbers
    collapse their values to ``SCRUBBED`` like every other session cookie.
 2. **Catch-all token regexes (defense in depth).** ``scrub_string`` now scrubs
-   the raw Google credential shapes ``g.a000-...`` / ``sidts-...`` / ``ya29....``
+   the raw Google credential shapes ``aas_et/...`` / ``g.a000-...`` /
+   ``sidts-...`` / ``ya29....``
    wherever they appear — request/response BODIES, HEADERS, and cookie values
    carried by a name that is NOT on the allowlist. This backstop never depends
    on a cookie name being enumerated, so a future unknown login cookie cannot

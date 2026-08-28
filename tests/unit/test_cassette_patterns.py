@@ -417,6 +417,17 @@ def test_find_credential_leaks_flags_auth_token() -> None:
     assert any("auth token" in leak for leak in leaks)
 
 
+def test_find_credential_leaks_flags_durable_master_token() -> None:
+    """A raw ``aas_et/`` token is scrubbed and rejected outside known fields."""
+    master_token = "aas_et/mastertokenunderunknownfield"
+    raw = f'{{"unknown":"{master_token}"}}'
+
+    scrubbed = scrub_string(raw)
+
+    assert master_token not in scrubbed
+    assert any("auth token" in leak for leak in find_credential_leaks(raw))
+
+
 def test_find_credential_leaks_ignores_placeholder_fixture_content() -> None:
     """Placeholder content that trips ``is_clean`` is NOT flagged here.
 
@@ -448,7 +459,8 @@ def test_find_credential_leaks_ignores_placeholder_fixture_content() -> None:
 # source file carries NO contiguous static credential-shaped literal — a 64-char
 # hex or 40+ char base64 string written inline would itself trip secret scanning
 # (Betterleaks flags it as a generic API key). The shapes are also distinct from
-# the known g.a000-/sidts-/ya29./AIza prefixes, and the deterministic mixes keep
+# the known ``aas_et/`` / ``g.a000-`` / ``sidts-`` / ``ya29.`` / ``AIza``
+# prefixes, and the deterministic mixes keep
 # the base64 entropy well above the 4.0 bits/char floor.
 NOVEL_BASE64_TOKEN = "".join(
     ("kJ8sLm2NpQr5TvWx", "Yz0AbCdEfGhIjKlM", "nOpQrStUvWxYz123", "45678AbCdEf")

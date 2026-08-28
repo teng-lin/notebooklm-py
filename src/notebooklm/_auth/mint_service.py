@@ -7,6 +7,7 @@ import logging
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -44,6 +45,34 @@ class _MintError(Exception):
     pass
 
 
+class OAuthMintError(_MintError):
+    """A sanitized failure from the durable-token OAuth mint boundary."""
+
+
+@dataclass(frozen=True)
+class OAuthClientSpec:
+    """Immutable Google OAuth client identity supplied by a protocol adapter."""
+
+    service: str
+    app: str
+    client_sig: str
+
+
+@dataclass(frozen=True)
+class MintedOAuthToken:
+    """Short-lived OAuth credential plus an optional server-owned expiry."""
+
+    token: str = field(repr=False)
+    expires_at: int | None
+
+
+_CHROMECAST_OAUTH_SPEC = OAuthClientSpec(
+    service=_OAUTHLOGIN_SERVICE,
+    app=_MASTER_APP,
+    client_sig=_MASTER_SIG,
+)
+
+
 def _require_gpsoauth() -> Any:
     try:
         import gpsoauth  # noqa: PLC0415 (lazy optional [headless] dependency)
@@ -74,6 +103,7 @@ def _perform_oauth(
     email: str,
     master_token: str,
     android_id: str,
+    spec: OAuthClientSpec,
 ) -> Any:
     """Run the sole blocking mint exchange under logger suppression."""
     with _quiet_gpsoauth_logging():
@@ -81,10 +111,22 @@ def _perform_oauth(
             email,
             master_token,
             android_id,
-            service=_OAUTHLOGIN_SERVICE,
-            app=_MASTER_APP,
-            client_sig=_MASTER_SIG,
+            service=spec.service,
+            app=spec.app,
+            client_sig=spec.client_sig,
         )
+
+
+def _parse_oauth_expiry(value: Any) -> int | None:
+    """Parse the server's optional Unix-seconds expiry without guessing one."""
+    if not isinstance(value, str) or not value.isascii() or not value.isdecimal():
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        # Python rejects pathologically long integer strings. Treat that server
+        # value as unknown just like every other malformed optional expiry.
+        return None
 
 
 async def _rotate_post(client: httpx.AsyncClient) -> httpx.Response:
@@ -132,31 +174,51 @@ class MintService:
             )
         return MasterToken(email=email, android_id=android_id, secret=str(token))
 
-    async def mint(self, token: MasterToken) -> httpx.Cookies:
-        """Mint a fresh live transport jar from one durable master token."""
+    async def mint_oauth(
+        self,
+        master_token: MasterToken,
+        spec: OAuthClientSpec,
+    ) -> MintedOAuthToken:
+        """Mint one short-lived OAuth token for an immutable client identity."""
         try:
             gpsoauth = _require_gpsoauth()
         except BaseException:
-            # See ``exchange``: this dependency failure is public, so do not
-            # leave the durable master token in the escaping traceback frame.
-            del token
+            # A dependency failure is public and keeps its distinct type. Drop
+            # the durable credential from this escaping traceback frame.
+            del master_token
             raise
         try:
             oauth = await asyncio.to_thread(
                 _perform_oauth,
                 gpsoauth,
-                token.email,
-                token.secret,
-                token.android_id,
+                master_token.email,
+                master_token.secret,
+                master_token.android_id,
+                spec,
             )
         except Exception as exc:  # noqa: BLE001 (sanitize dependency/transport failures)
-            raise _MintError("perform_oauth failed (network or gpsoauth error).") from exc
+            raise OAuthMintError("perform_oauth failed (network or gpsoauth error).") from exc
         bearer = oauth.get("Auth")
         if not bearer:
-            raise _MintError(
+            raise OAuthMintError(
                 f"perform_oauth rejected the master token (Error={oauth.get('Error', 'unknown')}). "
                 "Re-bootstrap with `notebooklm login --master-token`."
             )
+        return MintedOAuthToken(
+            token=str(bearer),
+            expires_at=_parse_oauth_expiry(oauth.get("Expiry")),
+        )
+
+    async def mint(self, token: MasterToken) -> httpx.Cookies:
+        """Mint a fresh live transport jar from one durable master token."""
+        try:
+            oauth = await self.mint_oauth(token, _CHROMECAST_OAUTH_SPEC)
+        except MissingDependencyError:
+            # ``mint_oauth`` already scrubbed its own frame; retain the same
+            # dependency failure and traceback behavior at the web adapter.
+            del token
+            raise
+        bearer = oauth.token
 
         try:
             async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:

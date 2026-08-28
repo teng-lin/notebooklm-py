@@ -165,8 +165,8 @@ _SECURE_HOST_UMBRELLAS: tuple[re.Pattern[str], ...] = tuple(
     re.compile(p) for p in SECURE_HOST_UMBRELLA_PATTERNS
 )
 
-# Carrier-AGNOSTIC Google credential shapes (``g.a000-`` / ``sidts-`` /
-# ``ya29.`` tokens + the ``AIza…`` API key), compiled from the same registry.
+# Carrier-AGNOSTIC Google credential shapes (``aas_et/`` / ``g.a000-`` /
+# ``sidts-`` / ``ya29.`` tokens + the ``AIza…`` API key), compiled from the same registry.
 # Defense in depth: even when a secret rides under an UNKNOWN carrier name (a
 # cookie or field not on the alternation above), the raw credential shape is
 # redacted wherever it appears, so disclosure fails closed. The distinctive
@@ -228,8 +228,8 @@ _REDACT_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     # closed without enumeration. ``\1`` is the full cookie name; the value
     # (quoted or not) collapses to ``***`` via the shared replacement.
     *((umbrella, COOKIE_VALUE_REPLACEMENT) for umbrella in _SECURE_HOST_UMBRELLAS),
-    # Carrier-agnostic Google credential shapes (``g.a000-`` / ``sidts-`` /
-    # ``ya29.`` tokens + the ``AIza…`` API key) as defense in depth. These run
+    # Carrier-agnostic Google credential shapes (``aas_et/`` / ``g.a000-`` /
+    # ``sidts-`` / ``ya29.`` tokens + the ``AIza…`` API key) as defense in depth. These run
     # AFTER the name-anchored patterns so a recognized pair is already redacted,
     # but a secret riding under an unknown carrier name still fails closed here.
     *((shape, "***") for shape in _AUTH_TOKEN_SHAPES),
@@ -324,7 +324,7 @@ _THIRD_PARTY_LOGGERS: tuple[str, ...] = ("httpx", "urllib3")
 #     (``_secrets.SECURE_HOST_UMBRELLA_PATTERNS``) so ANY secure/host cookie —
 #     including a future name carrying an opaque (non-token-shaped) value —
 #     triggers the regex sweep (codex review of #1517).
-#   - "g.a000-", "sidts-", "ya29.", "aiza" cover the carrier-agnostic credential
+#   - "aas_et/", "g.a000-", "sidts-", "ya29.", "aiza" cover the carrier-agnostic credential
 #     shapes (``_secrets.AUTH_TOKEN_SHAPE_PATTERNS``) so a secret under an
 #     UNKNOWN carrier name still triggers the regex sweep. "sidts-" is subsumed
 #     by "sid" but kept as documentation of the token-shape coverage.
@@ -339,6 +339,7 @@ SECRET_FAST_PATH_TOKENS: tuple[str, ...] = (
     "snlm0e",
     "fdrfje",
     "af1_qpn-",
+    "aas_et/",
     "g.a000-",
     "sidts-",
     "ya29.",

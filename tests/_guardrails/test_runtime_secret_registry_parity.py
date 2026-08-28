@@ -27,7 +27,7 @@ motivated issue #1517 and the three findings from its codex security review:
 
 3. **Credential shapes.** The runtime ``AUTH_TOKEN_SHAPE_PATTERNS`` must be
    regex-string-EQUAL to the cassette registry's token-shape patterns plus its
-   Google API-key shape. If the cassette registry gains a fourth shape (e.g.
+   Google API-key shape. If the cassette registry gains another shape (e.g.
    an ``oauth2rt_…`` refresh-token pattern), this test fails until the runtime
    registry lists it too — closing the gap where runtime would silently miss a
    newly-recognized credential family in the refresh-DEBUG / ``data_at_failure``
@@ -102,9 +102,10 @@ def test_runtime_credential_shapes_equal_cassette_shapes() -> None:
     """Runtime shape patterns are regex-string-equal to the cassette set.
 
     The cassette registry's ``_AUTH_TOKEN_PATTERNS`` + ``_GOOGLE_API_KEY_PATTERN``
-    are the canonical Google credential shapes (``g.a000-`` / ``sidts-`` /
-    ``ya29.`` tokens + the ``AIza…`` API key). ``AUTH_TOKEN_SHAPE_PATTERNS`` must
-    list the SAME regex strings so the runtime redaction (refresh-cmd DEBUG sink,
+    are the canonical Google credential shapes (``aas_et/`` / ``g.a000-`` /
+    ``sidts-`` / ``ya29.`` tokens + the ``AIza…`` API key).
+    ``AUTH_TOKEN_SHAPE_PATTERNS`` must list the SAME regex strings so the runtime redaction
+    (refresh-cmd DEBUG sink,
     ``data_at_failure`` / ``payload_preview`` exception surfaces) cannot drift
     from the cassette scrubber. Set equality (not order) is asserted; if the
     cassette registry gains a new shape, add the identical regex here.
@@ -135,6 +136,9 @@ def test_runtime_registry_regression_anchors_present() -> None:
             f"{name!r} dropped from RUNTIME_SESSION_COOKIES (issue #1517)"
         )
     runtime_shapes = set(AUTH_TOKEN_SHAPE_PATTERNS)
+    assert r"aas_et/[A-Za-z0-9_\-]+" in runtime_shapes, (
+        "Durable master-token shape dropped from AUTH_TOKEN_SHAPE_PATTERNS (Phase B0c)"
+    )
     # The Google API-key shape is the codex-review finding-1 leak carrier; pin it.
     assert r"AIza[0-9A-Za-z_\-]{35,}" in runtime_shapes, (
         "Google API-key shape dropped from AUTH_TOKEN_SHAPE_PATTERNS (codex #1517 finding)"

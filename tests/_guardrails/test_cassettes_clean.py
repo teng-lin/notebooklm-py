@@ -121,8 +121,8 @@ def test_guard_detects_a_known_bad_cassette() -> None:
 def test_guard_detects_credential_shapes(tmp_path: Path) -> None:
     """Positive control for the ``--secrets-only`` path, across every shape.
 
-    Covers all four known credential-shape detectors (the Google API key plus
-    the ``g.a000-`` / ``sidts-`` / ``ya29.`` auth-token shapes), so a single
+    Covers all five known credential-shape detectors (the Google API key plus
+    the ``aas_et/`` / ``g.a000-`` / ``sidts-`` / ``ya29.`` auth-token shapes), so a single
     dead detector is caught. Shapes are assembled at runtime so this source file
     carries no static credential-shaped literal that the repo-wide secrets scan
     would flag. Asserting one reported leak *per shape* (not merely a non-zero
@@ -130,6 +130,7 @@ def test_guard_detects_credential_shapes(tmp_path: Path) -> None:
     """
     shapes = (
         "AIza" + "B" * 35,  # Google API key
+        "aas_" + "et/" + "M" * 20,  # durable master token
         "g.a" + "000-" + "D" * 20,  # g.a000- SID token
         "sid" + "ts-" + "E" * 20,  # sidts- rotation token
         "ya2" + "9." + "C" * 40,  # ya29. OAuth access token

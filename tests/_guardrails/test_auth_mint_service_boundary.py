@@ -27,6 +27,8 @@ _EXPECTED_IMPORTS = {
     ("module", "threading", "", 0, None),
     ("module", "collections.abc", "Iterator", 0, None),
     ("module", "contextlib", "contextmanager", 0, None),
+    ("module", "dataclasses", "dataclass", 0, None),
+    ("module", "dataclasses", "field", 0, None),
     ("module", "typing", "Any", 0, None),
     ("module", "httpx", "", 0, None),
     ("module", "exceptions", "MissingDependencyError", 2, None),
@@ -37,6 +39,7 @@ _EXPECTED_ASSIGNMENTS = {
     "_MASTER_APP",
     "_MASTER_SIG",
     "_OAUTHLOGIN_SERVICE",
+    "_CHROMECAST_OAUTH_SPEC",
     "_REQUIRED_MINTED_COOKIES",
     "KEEPALIVE_ROTATE_URL",
     "_KEEPALIVE_ROTATE_HEADERS",
@@ -99,10 +102,12 @@ _SECRET_NAMES = {
 }
 _ALLOWED_SECRET_CALLS = {
     "MasterToken",
+    "MintedOAuthToken",
     "asyncio.to_thread",
     "client.get",
     "gpsoauth.exchange_token",
     "gpsoauth.perform_oauth",
+    "self.mint_oauth",
     "str",
 }
 
@@ -287,7 +292,7 @@ def _contains_secret(node: ast.AST, tainted_names: set[str] | None = None) -> bo
         key = _static_string(node.args[0]) if node.func.attr == "get" and node.args else None
         if key in {"Token", "Auth"}:
             return True
-        if key == "Error":
+        if key in {"Error", "Expiry"}:
             return False
     return any(_contains_secret(child, names) for child in ast.iter_child_nodes(node))
 
@@ -466,7 +471,7 @@ def _tainted_names(tree: ast.Module) -> set[str]:
                 targets = [node.target]
                 additions = (
                     {name for target in targets for name in _target_names(target)}
-                    if _contains_secret(value, names)
+                    if value is not None and _contains_secret(value, names)
                     else set()
                 )
             elif isinstance(node, ast.For | ast.AsyncFor | ast.comprehension):
@@ -519,7 +524,7 @@ def _retention_violations(tree: ast.Module) -> set[str]:
         elif isinstance(node, ast.Assign | ast.AnnAssign | ast.AugAssign | ast.NamedExpr):
             value = node.value
             targets = list(node.targets) if isinstance(node, ast.Assign) else [node.target]
-            if _contains_secret(value, tainted_names):
+            if value is not None and _contains_secret(value, tainted_names):
                 if (
                     any(
                         isinstance(item, ast.Attribute | ast.Subscript)
@@ -580,7 +585,7 @@ def _retention_violations(tree: ast.Module) -> set[str]:
         ):
             allowed_worker_return = isinstance(node.value, ast.Call) and _qualified_name(
                 node.value.func
-            ) in {"MasterToken", "gpsoauth.perform_oauth"}
+            ) in {"MasterToken", "MintedOAuthToken", "gpsoauth.perform_oauth"}
             if not allowed_worker_return:
                 violations.add("secret-return")
         elif (
@@ -851,12 +856,39 @@ def _module_importers(module: str, root: Path = SRC_ROOT) -> set[str]:
     return importers
 
 
+def _production_perform_oauth_calls(root: Path = SRC_ROOT) -> set[tuple[str, str, str]]:
+    calls: set[tuple[str, str, str]] = set()
+    for path in sorted(root.rglob("*.py")):
+        tree = _tree(path)
+        parents = {
+            child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)
+        }
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and _qualified_name(node.func) == "gpsoauth.perform_oauth"
+            ):
+                continue
+            owner = "<module>"
+            current = parents.get(node)
+            while current is not None:
+                if isinstance(current, ast.FunctionDef | ast.AsyncFunctionDef):
+                    owner = current.name
+                    break
+                current = parents.get(current)
+            calls.add((path.relative_to(root).as_posix(), owner, ast.unparse(node)))
+    return calls
+
+
 def test_service_surface_imports_state_and_signatures_are_exact() -> None:
     tree = _tree(SERVICE_PATH)
     assert _imports(tree) == _EXPECTED_IMPORTS
     assert _top_level_assignments(tree) == _EXPECTED_ASSIGNMENTS
     assert {node.name for node in tree.body if isinstance(node, ast.ClassDef)} == {
         "_MintError",
+        "OAuthMintError",
+        "OAuthClientSpec",
+        "MintedOAuthToken",
         "MintService",
     }
     assert {
@@ -865,6 +897,7 @@ def test_service_surface_imports_state_and_signatures_are_exact() -> None:
         "_require_gpsoauth",
         "_quiet_gpsoauth_logging",
         "_perform_oauth",
+        "_parse_oauth_expiry",
         "_rotate_post",
         "_rotate_post_sync",
     }
@@ -872,10 +905,13 @@ def test_service_surface_imports_state_and_signatures_are_exact() -> None:
         node.name
         for node in _class(tree, "MintService").body
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
-    ] == ["exchange", "mint"]
+    ] == ["exchange", "mint_oauth", "mint"]
     assert inspect.signature(mint_service.MintService) == inspect.Signature()
     assert str(inspect.signature(mint_service.MintService.exchange)) == (
         "(self, email: 'str', oauth_token: 'str', android_id: 'str') -> 'MasterToken'"
+    )
+    assert str(inspect.signature(mint_service.MintService.mint_oauth)) == (
+        "(self, master_token: 'MasterToken', spec: 'OAuthClientSpec') -> 'MintedOAuthToken'"
     )
     assert str(inspect.signature(mint_service.MintService.mint)) == (
         "(self, token: 'MasterToken') -> 'httpx.Cookies'"
@@ -884,6 +920,15 @@ def test_service_surface_imports_state_and_signatures_are_exact() -> None:
     assert _stored_instance_attributes(tree) == set()
     assert issubclass(mint_service._MintError, Exception)
     assert mint_service._MintError("fixed").__dict__ == {}
+    assert issubclass(mint_service.OAuthMintError, mint_service._MintError)
+    assert mint_service.OAuthMintError("fixed").__dict__ == {}
+    assert mint_service.OAuthClientSpec.__dataclass_params__.frozen is True
+    assert mint_service.MintedOAuthToken.__dataclass_params__.frozen is True
+    token_field = mint_service.MintedOAuthToken.__dataclass_fields__["token"]
+    assert token_field.repr is False
+    assert mint_service.MintedOAuthToken("ya29.SECRET", None).__repr__() == (
+        "MintedOAuthToken(expires_at=None)"
+    )
     assert mint_service.logger.name == "notebooklm.auth.master_token"
 
 
@@ -892,17 +937,19 @@ def test_service_has_no_disk_upward_dynamic_or_scheduling_capability() -> None:
     assert _forbidden_capabilities(tree) == set()
     to_threads = [
         ast.unparse(node)
-        for node in ast.walk(_method(tree, "MintService", "mint"))
+        for node in ast.walk(_method(tree, "MintService", "mint_oauth"))
         if isinstance(node, ast.Call) and _qualified_name(node.func) == "asyncio.to_thread"
     ]
     assert to_threads == [
-        "asyncio.to_thread(_perform_oauth, gpsoauth, token.email, token.secret, token.android_id)"
+        "asyncio.to_thread(_perform_oauth, gpsoauth, master_token.email, "
+        "master_token.secret, master_token.android_id, spec)"
     ]
 
 
 def test_exchange_mint_http_and_error_shapes_are_exact() -> None:
     tree = _tree(SERVICE_PATH)
     exchange = _method(tree, "MintService", "exchange")
+    mint_oauth = _method(tree, "MintService", "mint_oauth")
     mint = _method(tree, "MintService", "mint")
     assert [
         ast.unparse(node)
@@ -931,10 +978,26 @@ def test_exchange_mint_http_and_error_shapes_are_exact() -> None:
         "'continue': 'https://www.google.com', 'uberauth': uberauth}, headers=authorization)",
         "_rotate_post(client)",
     ]
+    assert [
+        ast.unparse(node)
+        for node in sorted(
+            (item for item in ast.walk(mint_oauth) if isinstance(item, ast.Call)),
+            key=lambda item: (item.lineno, item.col_offset),
+        )
+        if _qualified_name(node.func) == "asyncio.to_thread"
+    ] == [
+        "asyncio.to_thread(_perform_oauth, gpsoauth, master_token.email, "
+        "master_token.secret, master_token.android_id, spec)"
+    ]
+    assert [
+        ast.unparse(node)
+        for node in ast.walk(mint)
+        if isinstance(node, ast.Call) and _qualified_name(node.func) == "self.mint_oauth"
+    ] == ["self.mint_oauth(token, _CHROMECAST_OAUTH_SPEC)"]
     raises: set[tuple[str, str]] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call):
-            if _qualified_name(node.exc.func) == "_MintError":
+            if _qualified_name(node.exc.func) in {"_MintError", "OAuthMintError"}:
                 raises.add((ast.unparse(node.exc), ast.unparse(node.cause) if node.cause else "-"))
     assert len(raises) == 7
     assert {cause for _expression, cause in raises} == {"-", "None", "exc"}
@@ -1011,7 +1074,18 @@ def test_service_importers_callers_and_lock_boundary_are_exact() -> None:
     }
 
 
-def test_live_service_has_only_the_two_sanctioned_secret_carriers() -> None:
+def test_source_tree_has_one_owned_perform_oauth_call_site() -> None:
+    assert _production_perform_oauth_calls() == {
+        (
+            "_auth/mint_service.py",
+            "_perform_oauth",
+            "gpsoauth.perform_oauth(email, master_token, android_id, service=spec.service, "
+            "app=spec.app, client_sig=spec.client_sig)",
+        )
+    }
+
+
+def test_live_service_has_only_the_sanctioned_secret_carriers() -> None:
     service_tree = _tree(SERVICE_PATH)
     adapter_tree = _tree(ADAPTER_PATH)
     assert _retention_violations(service_tree) == set()

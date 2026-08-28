@@ -180,6 +180,7 @@ def test_formatter_scrubs_issue_1517_session_cookies(cookie_name, secret):
 #: catch-all can redact these — defense in depth so disclosure fails closed
 #: regardless of which field carries the value (#1517).
 _AUTH_TOKEN_SHAPE_CASES = [
+    ("X_UNKNOWN", "aas_et/mastertokenunderunknownfield", "aas_et/"),
     ("X_UNKNOWN", "g.a000-leakytokenunderunknownfield", "g.a000-"),
     ("X_UNKNOWN", "sidts-1234567890abcdefghij", "sidts-"),
     ("X_UNKNOWN", "ya29.aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789", "ya29."),

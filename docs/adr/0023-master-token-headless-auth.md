@@ -156,3 +156,18 @@ v0.x boundary: public signatures and facade identities are unchanged, and its
 call-time bridges retain legacy account lookup, strict-loader, Android-ID, and
 default-verifier monkeypatch timing without importing runtime/client code into
 the coordinator.
+
+## Amendment (Phase B0c): typed OAuth mint boundary
+
+`MintService` now exposes the protocol-neutral `mint_oauth(master_token, spec)`
+seam. `OAuthClientSpec(service, app, client_sig)` is immutable, and the returned
+`MintedOAuthToken` excludes its token from `repr`. A valid server-supplied
+decimal `Expiry` is projected to Unix seconds; an absent or malformed value is
+`None`, with no fallback lifetime invented by the client.
+
+The existing web cookie mint supplies the frozen Chromecast/OAuthLogin spec and
+then performs OAuthLogin, MergeSession, and RotateCookies exactly as before.
+`gpsoauth` remains lazily imported, its logger mutation remains serialized, and
+the sole production `perform_oauth` call remains inside `_auth/mint_service.py`
+under `asyncio.to_thread`. Protocol adapters may consume the typed seam but may
+not import `gpsoauth`, duplicate the exchange, or persist the minted bearer.

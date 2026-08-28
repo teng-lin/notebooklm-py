@@ -36,11 +36,11 @@ Three complementary layers:
    (codex review of #1517: ``__Secure-NEWSESSION=opaqueBase64`` must not leak).
 
 3. **Carrier-agnostic shape catch-alls** (:data:`AUTH_TOKEN_SHAPE_PATTERNS`).
-   Defense in depth: the raw ``g.a000-`` / ``sidts-`` / ``ya29.`` credential
-   prefixes AND the Google API-key shape (``AIza…``) are redacted wherever they
-   appear — even under an UNKNOWN carrier name — so disclosure fails closed
-   regardless of which cookie/field carries the value. Ported from the cassette
-   registry's ``_AUTH_TOKEN_PATTERNS`` + ``_GOOGLE_API_KEY_PATTERN``.
+   Defense in depth: the raw ``aas_et/`` / ``g.a000-`` / ``sidts-`` / ``ya29.``
+   credential prefixes AND the Google API-key shape (``AIza…``) are redacted
+   wherever they appear — even under an UNKNOWN carrier name — so disclosure
+   fails closed regardless of which cookie/field carries the value. Ported from
+   the cassette registry's ``_AUTH_TOKEN_PATTERNS`` + ``_GOOGLE_API_KEY_PATTERN``.
 """
 
 from __future__ import annotations
@@ -133,6 +133,8 @@ SECURE_HOST_UMBRELLA_PATTERNS: tuple[str, ...] = (
 #     and OAuth flows. The prefix is distinctive enough to need no length floor;
 #     the REQUIRED trailing ``-`` keeps the bare account-prefix ``g.a000`` from
 #     matching.
+#   * ``aas_et/`` — the durable master-token prefix. It is distinctive enough
+#     to need no length floor, so even short test credentials fail closed.
 #   * ``sidts-`` / ``ya29.`` — less distinctive prefixes, so each carries a
 #     length floor (``{10,}`` / ``{20,}``) to avoid firing on an incidental
 #     short literal (a bare ``ya29`` mention in prose).
@@ -143,6 +145,7 @@ SECURE_HOST_UMBRELLA_PATTERNS: tuple[str, ...] = (
 #     (not ``{35}``) is greedy so a longer-than-canonical key is consumed whole,
 #     never leaving a re-matchable tail fragment (cassette-registry rationale).
 AUTH_TOKEN_SHAPE_PATTERNS: tuple[str, ...] = (
+    r"aas_et/[A-Za-z0-9_\-]+",
     r"g\.a000-[A-Za-z0-9_\-]+",
     r"sidts-[A-Za-z0-9_\-]{10,}",
     r"ya29\.[A-Za-z0-9_\-]{20,}",
