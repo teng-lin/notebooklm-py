@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 POLL_MAX_RETRIES = 3
 _IN_PROGRESS_STATUS = "in_progress"
 
-ListStudioCallback = Callable[[str], Awaitable[list[Artifact]]]
+ListStudioCallback = Callable[[str, str], Awaitable[list[Artifact]]]
 PollStatusCallback = Callable[[str, str], Awaitable[GenerationStatus]]
 StatusChangeCallback = Callable[[GenerationStatus], object]
 
@@ -105,7 +105,7 @@ class ArtifactPollingService:
     ) -> GenerationStatus:
         """Poll the status of a generation task."""
         # List all artifacts and find by ID (no poll-by-ID RPC exists).
-        artifacts = await list_studio(notebook_id)
+        artifacts = await list_studio(notebook_id, task_id)
         artifact = next((candidate for candidate in artifacts if candidate.id == task_id), None)
         if artifact is not None:
             status_code = artifact.status

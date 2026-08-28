@@ -400,7 +400,7 @@ async def _poll_with_status_code(code: int | None) -> GenerationStatus:
         url="https://example.test/artifact" if code == ArtifactStatus.COMPLETED else None,
     )
 
-    async def list_studio(_notebook_id: str) -> list[Artifact]:
+    async def list_studio(_notebook_id: str, _task_id: str) -> list[Artifact]:
         return [artifact]
 
     return await service.poll_status(
@@ -428,7 +428,7 @@ async def test_poll_status_decoded_failed_artifact_has_no_fabricated_error():
         status=ArtifactStatus.FAILED,
     )
 
-    async def list_studio(_notebook_id: str) -> list[Artifact]:
+    async def list_studio(_notebook_id: str, _task_id: str) -> list[Artifact]:
         return [artifact]
 
     status = await service.poll_status(
@@ -476,7 +476,7 @@ async def test_poll_status_completed_code_maps_to_completed():
 async def test_poll_status_missing_artifact_is_not_found_not_removed():
     service = _make_polling_service()
 
-    async def list_studio(_notebook_id: str) -> list[Artifact]:
+    async def list_studio(_notebook_id: str, _task_id: str) -> list[Artifact]:
         return []
 
     status = await service.poll_status(

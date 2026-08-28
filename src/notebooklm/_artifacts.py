@@ -92,8 +92,12 @@ class ArtifactsAPI(ABC):
         self._drain.register_drain_hook("artifacts.polls", self._polling.drain)
 
     @abstractmethod
-    async def _list_studio(self, notebook_id: str) -> builtins.list[Artifact]:
-        """List decoded studio artifacts without note-backed mind maps."""
+    async def _list_studio(
+        self,
+        notebook_id: str,
+        task_id: str,
+    ) -> builtins.list[Artifact]:
+        """List the decoded studio artifact matching a polling task, if present."""
 
     @abstractmethod
     async def list(

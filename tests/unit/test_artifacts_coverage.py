@@ -1010,6 +1010,36 @@ class TestPollStatusMediaReadiness:
         # Should remain in_progress (original status)
         assert status.status == "in_progress"
 
+    @pytest.mark.asyncio
+    async def test_poll_status_ignores_malformed_optional_data_on_unrelated_row(
+        self, mock_artifacts_api
+    ):
+        """Polling id-matches before decoding optional fields on another artifact."""
+        api, mock_core = mock_artifacts_api
+        mock_core.rpc_executor.rpc_call.return_value = [
+            [
+                [
+                    "unrelated",
+                    "Broken quiz",
+                    4,
+                    None,
+                    3,
+                    None,
+                    None,
+                    None,
+                    None,
+                    [],  # Incomplete variant envelope would fail full decoding.
+                ],
+                ["task_123", "Report", 2, None, 3],
+            ]
+        ]
+
+        status = await api.poll_status("nb_123", "task_123")
+
+        assert status.status == "completed"
+        assert status.url is None
+        mock_core.rpc_executor.rpc_call.assert_awaited_once()
+
 
 # =============================================================================
 # suggest_reports: unwrap heuristic for GET_SUGGESTED_REPORTS (issue #1243)

@@ -572,9 +572,17 @@ class WebArtifactsAPI(ArtifactsAPI):
         # still affect public listing paths that delegate into the service.
         return await self._listing.list_raw(notebook_id, rpc=self._rpc)
 
-    async def _list_studio(self, notebook_id: str) -> builtins.list[Artifact]:
-        """Return decoded studio artifacts without querying note-backed rows."""
-        return await self._listing.list_studio(notebook_id, list_raw=self._list_raw)
+    async def _list_studio(
+        self,
+        notebook_id: str,
+        task_id: str,
+    ) -> builtins.list[Artifact]:
+        """Return the target poll projection without querying note-backed rows."""
+        return await self._listing.list_studio(
+            notebook_id,
+            task_id,
+            list_raw=self._list_raw,
+        )
 
     def _select_artifact(
         self,

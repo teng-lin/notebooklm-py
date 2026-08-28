@@ -156,11 +156,31 @@ class ArtifactListingService:
     async def list_studio(
         self,
         notebook_id: str,
+        task_id: str,
         *,
         list_raw: ListRawCallback,
     ) -> list[Artifact]:
-        """List decoded studio artifacts from exactly one artifact-list call."""
-        return self._filter_studio_artifacts(await list_raw(notebook_id), None)
+        """Return the target's poll projection from exactly one artifact-list call.
+
+        Match the raw row by id before reading its status/type/URL. Polling did
+        this before the backend split, so malformed optional metadata on an
+        unrelated artifact must not change the requested task's result.
+        """
+        row = find_artifact_row_by_id(await list_raw(notebook_id), task_id)
+        if row is None:
+            return []
+        status = row.status
+        artifact_type = row.type_code
+        url = row.artifact_url(artifact_type, suppress_drift=True)
+        return [
+            Artifact(
+                id=row.id,
+                title="",
+                _artifact_type=artifact_type,
+                status=status,
+                url=url,
+            )
+        ]
 
     async def list_artifacts_with_raw(
         self,
