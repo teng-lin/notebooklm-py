@@ -19,9 +19,9 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
-from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
+from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm.exceptions import (
     ArtifactNotFoundError,
     RateLimitError,
@@ -404,7 +404,7 @@ class TestArtifactsAPI:
         from tests._fixtures.fake_core import make_fake_core
 
         core = make_fake_core(rpc_call=AsyncMock(return_value=[[]]))
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=core,
             drain=core,
             lifecycle=core,
@@ -437,7 +437,7 @@ class TestArtifactsAPI:
             ["art_002", "Audio Overview", 1, None, 3],
         ]
         core = make_fake_core(rpc_call=AsyncMock(return_value=artifact_rows))
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=core,
             drain=core,
             lifecycle=core,
@@ -461,7 +461,7 @@ class TestArtifactsAPI:
             ["mind_map_001", '{"name":"Map"}', [1, "user", [1704067200, 0]], None, "Map"],
         ]
         core = make_fake_core(rpc_call=AsyncMock(return_value=[[studio_artifact]]))
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=core,
             drain=core,
             lifecycle=core,
@@ -489,7 +489,7 @@ class TestArtifactsAPI:
         core = make_fake_core(
             rpc_call=AsyncMock(return_value=[[["art_001", "My Report", 2, None, 3]]])
         )
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=core,
             drain=core,
             lifecycle=core,
@@ -512,7 +512,7 @@ class TestArtifactsAPI:
     async def test_get_uses_public_list_callback(self):
         """get() delegates through the public list callback."""
         core = MagicMock()
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=core,
             drain=core,
             lifecycle=core,

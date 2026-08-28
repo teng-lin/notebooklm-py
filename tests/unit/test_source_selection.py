@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._chat import ChatAPI
+from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm.exceptions import ValidationError
 from notebooklm.rpc import (
     AudioFormat,
@@ -219,7 +219,7 @@ def mock_mind_map_service():
     mind-map services. The ``mind_maps`` + ``note_service`` parameters
     are both required (Phase 5 / refactor-history.md Migration Plan steps 6-7)
     so we return a dict of stand-in mocks that construction sites can
-    splat into ``ArtifactsAPI(...)`` calls via
+    splat into ``WebArtifactsAPI(...)`` calls via
     ``**mock_mind_map_service``.
     """
     from notebooklm._mind_map import NoteBackedMindMapService
@@ -320,7 +320,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_audio_with_explicit_source_ids(self, mock_core, mock_mind_map_service):
         """Test generate_audio with explicitly provided source_ids."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -372,7 +372,7 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         """Explicit audio format and length are encoded instead of API defaults."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -398,7 +398,7 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service, mock_notebooks_api
     ):
         """Test generate_audio with source_ids=None fetches all sources."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -434,7 +434,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_video_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_video has correct source encoding format."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -473,7 +473,7 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         """Explicit video format and style are encoded instead of API defaults."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -499,7 +499,7 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         """Test custom video style prompt is encoded like the live Web UI."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -524,7 +524,7 @@ class TestArtifactsSourceSelection:
     async def test_generate_video_custom_style_requires_prompt(
         self, mock_core, mock_mind_map_service
     ):
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -543,7 +543,7 @@ class TestArtifactsSourceSelection:
     async def test_generate_video_custom_style_rejects_empty_prompt(
         self, mock_core, mock_mind_map_service
     ):
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -563,7 +563,7 @@ class TestArtifactsSourceSelection:
     async def test_generate_video_custom_style_rejects_blank_prompt(
         self, mock_core, mock_mind_map_service
     ):
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -583,7 +583,7 @@ class TestArtifactsSourceSelection:
     async def test_generate_video_style_prompt_requires_custom_style(
         self, mock_core, mock_mind_map_service
     ):
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -603,7 +603,7 @@ class TestArtifactsSourceSelection:
     async def test_generate_video_cinematic_rejects_style_prompt(
         self, mock_core, mock_mind_map_service
     ):
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -622,7 +622,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_report_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_report has correct source encoding format."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -659,7 +659,7 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         """extra_instructions is appended to the built-in prompt with \\n\\n separator."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -688,7 +688,7 @@ class TestArtifactsSourceSelection:
         """extra_instructions has no effect when report_format is CUSTOM."""
         from notebooklm.rpc.types import ReportFormat
 
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -715,7 +715,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_quiz_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_quiz has correct source encoding format."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -750,7 +750,7 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         """Explicit quiz quantity and difficulty are encoded instead of defaults."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -773,7 +773,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_flashcards_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_flashcards has correct source encoding format."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -810,7 +810,7 @@ class TestArtifactsSourceSelection:
         pin. ``FEWER``/``HARD`` -> ``[1, 3]`` fails loudly if the pair is
         reversed, mirroring the quiz sibling above.
         """
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -834,7 +834,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_infographic_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_infographic has correct source encoding format."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -868,7 +868,7 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         """Test generate_infographic encodes explicit visual options in config slots."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -901,7 +901,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_slide_deck_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_slide_deck has correct source encoding format."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -932,7 +932,7 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         """Explicit slide deck format and length are encoded instead of defaults."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -956,7 +956,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_data_table_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_data_table has correct source encoding format."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -984,7 +984,7 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service, mock_notebooks_api
     ):
         """Test generate_mind_map has correct source encoding format."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -1027,7 +1027,7 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         """Test generate_mind_map passes language and instructions to RPC payload."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -1065,7 +1065,7 @@ class TestArtifactsSourceSelection:
         """Test suggest_reports uses GET_SUGGESTED_REPORTS RPC."""
         from notebooklm.rpc.types import RPCMethod
 
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -1097,7 +1097,7 @@ class TestArtifactValidationFootguns:
     positional coercion; C: export exactly-one-of + keyword-only content)."""
 
     def _api(self, mock_core, mock_mind_map_service):
-        return ArtifactsAPI(
+        return WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
@@ -1206,7 +1206,7 @@ class TestEmptySourceIds:
     @pytest.mark.asyncio
     async def test_generate_with_empty_source_list(self, mock_core, mock_mind_map_service):
         """Test generation with empty source_ids list produces empty arrays."""
-        api = ArtifactsAPI(
+        api = WebArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,

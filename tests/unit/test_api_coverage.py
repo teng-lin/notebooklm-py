@@ -4,11 +4,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._chat import ChatAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
 from notebooklm._runtime.contracts import LoopGuard
+from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm._web.notebooks import WebNotebooksAPI
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.rpc.types import (
@@ -193,7 +193,7 @@ class TestGetSuggestedReportFormats:
         ]
         rpc_call = AsyncMock(return_value=mock_response)
         core = make_fake_core(rpc_call=rpc_call)
-        artifacts = ArtifactsAPI(
+        artifacts = WebArtifactsAPI(
             rpc=core.rpc_executor,
             drain=core,
             lifecycle=core,

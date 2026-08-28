@@ -39,7 +39,6 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from ._artifacts import ArtifactsAPI
 from ._chat import ChatAPI
 from ._client_composed import ClientComposed
 from ._client_seams import resolve_client_seams
@@ -65,6 +64,7 @@ from ._runtime.init import compose_client_internals
 from ._runtime.lifecycle import CookieRotator, CookieSaver
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
+from ._web.artifacts import WebArtifactsAPI
 from ._web.notebooks import WebNotebooksAPI
 from ._web.sources import WebSourcesAPI
 from ._web.sources.upload import SourceUploadPipeline
@@ -364,7 +364,7 @@ def _assemble_client(
     # RPC dispatch; ``drain`` covers ``operation_scope`` and the
     # close-time ``register_drain_hook`` used by the polling
     # service; ``lifecycle`` covers ``assert_bound_loop``.
-    client.artifacts = ArtifactsAPI(
+    client.artifacts = WebArtifactsAPI(
         rpc=internals.executor,
         drain=internals.collaborators.drain_tracker,
         lifecycle=internals.collaborators.lifecycle,

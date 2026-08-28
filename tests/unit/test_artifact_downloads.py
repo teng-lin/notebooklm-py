@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from notebooklm._artifact import downloads as artifact_downloads
-from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm.types import (
     ArtifactDownloadError,
     ArtifactNotFoundError,
@@ -46,7 +46,7 @@ def mock_artifacts_api():
     # ``patch.object(api._mind_maps, "list_mind_maps", ...)``.
     note_service = NoteService(mock_core)
     mind_maps = NoteBackedMindMapService(note_service)
-    api = ArtifactsAPI(
+    api = WebArtifactsAPI(
         rpc=mock_core,
         drain=mock_core,
         lifecycle=mock_core,

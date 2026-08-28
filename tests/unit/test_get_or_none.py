@@ -19,12 +19,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._lookup import unwrap_or_raise
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._note_service import NoteService
 from notebooklm._notes import NotesAPI
+from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm._web.notebooks import WebNotebooksAPI
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.exceptions import ClientError, NotebookNotFoundError, RPCError
@@ -83,7 +83,7 @@ def artifacts_api():
     mind_maps.list_mind_maps = AsyncMock(return_value=[])
     notebooks = MagicMock()
     notebooks.get_source_ids = AsyncMock(return_value=[])
-    return ArtifactsAPI(
+    return WebArtifactsAPI(
         rpc=core,
         drain=core,
         lifecycle=core,

@@ -30,9 +30,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
+from notebooklm._web.artifacts import WebArtifactsAPI
 
 
 def _make_collaborators() -> tuple[MagicMock, MagicMock, MagicMock]:
@@ -63,7 +63,7 @@ async def test_list_mind_maps_delegates_to_injected_facade():
     fake_mind_maps.list_mind_maps = AsyncMock(return_value=["sentinel-row"])
     fake_note_service = MagicMock(spec=NoteService)
 
-    api = ArtifactsAPI(
+    api = WebArtifactsAPI(
         rpc=rpc,
         drain=drain,
         lifecycle=lifecycle,
@@ -86,15 +86,15 @@ def test_mind_maps_and_note_service_are_required():
 
     # Missing both.
     with pytest.raises(TypeError):
-        ArtifactsAPI(**kw)  # type: ignore[call-arg]
+        WebArtifactsAPI(**kw)  # type: ignore[call-arg]
 
     # Missing note_service.
     with pytest.raises(TypeError):
-        ArtifactsAPI(**kw, mind_maps=fake_mind_maps)  # type: ignore[call-arg]
+        WebArtifactsAPI(**kw, mind_maps=fake_mind_maps)  # type: ignore[call-arg]
 
     # Missing mind_maps.
     with pytest.raises(TypeError):
-        ArtifactsAPI(**kw, note_service=fake_note_service)  # type: ignore[call-arg]
+        WebArtifactsAPI(**kw, note_service=fake_note_service)  # type: ignore[call-arg]
 
 
 def test_mind_maps_and_note_service_are_keyword_only():
@@ -103,7 +103,7 @@ def test_mind_maps_and_note_service_are_keyword_only():
     fake_mind_maps = MagicMock(spec=NoteBackedMindMapService)
     fake_note_service = MagicMock(spec=NoteService)
     with pytest.raises(TypeError):
-        ArtifactsAPI(rpc, drain, lifecycle, MagicMock(), fake_mind_maps, fake_note_service)  # type: ignore[misc]
+        WebArtifactsAPI(rpc, drain, lifecycle, MagicMock(), fake_mind_maps, fake_note_service)  # type: ignore[misc]
 
 
 def test_legacy_mind_map_service_kwarg_is_rejected():
@@ -116,7 +116,7 @@ def test_legacy_mind_map_service_kwarg_is_rejected():
     fake_mind_maps = MagicMock(spec=NoteBackedMindMapService)
     fake_note_service = MagicMock(spec=NoteService)
     with pytest.raises(TypeError):
-        ArtifactsAPI(  # type: ignore[call-arg]
+        WebArtifactsAPI(  # type: ignore[call-arg]
             rpc=rpc,
             drain=drain,
             lifecycle=lifecycle,
@@ -135,7 +135,7 @@ def test_artifacts_no_longer_exposes_core_property_alias():
     ``_lifecycle`` rather than behind a single ``_runtime`` attribute.
     """
     rpc, drain, lifecycle = _make_collaborators()
-    api = ArtifactsAPI(
+    api = WebArtifactsAPI(
         rpc=rpc,
         drain=drain,
         lifecycle=lifecycle,

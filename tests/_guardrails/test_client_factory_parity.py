@@ -28,8 +28,10 @@ vacuous.
 
 from __future__ import annotations
 
+from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._sources import SourcesAPI
+from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm._web.notebooks import WebNotebooksAPI
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.auth import AuthTokens
@@ -148,6 +150,12 @@ def test_shared_wiring_identities_hold_on_both_paths() -> None:
         assert getattr(client._source_uploader, "_poller", _missing) is getattr(
             client.sources, "_poller", _missing
         ), f"{label}: sources and uploader must share one SourcePoller"
+        assert type(client.artifacts) is WebArtifactsAPI
+        assert isinstance(client.artifacts, ArtifactsAPI)
+        assert getattr(client.artifacts, "_rpc", _missing) is client._rpc_executor, (
+            f"{label}: artifacts (WebArtifactsAPI._rpc) must dispatch through the "
+            "client's shared RpcExecutor"
+        )
         assert getattr(client._source_uploader, "_auth", _missing) is client._auth, (
             f"{label}: the upload pipeline (SourceUploadPipeline._auth) must alias "
             "the client-owned AuthTokens (ADR-0016 Auth Instance Invariant)"

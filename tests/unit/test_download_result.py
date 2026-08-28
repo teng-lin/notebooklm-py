@@ -86,12 +86,12 @@ def test_artifacts_module_preserves_download_patch_targets():
 @pytest.fixture
 def mock_artifacts_api(tmp_path):
     """Minimal ArtifactsAPI with a mocked core for download tests."""
-    from notebooklm._artifacts import ArtifactsAPI
     from notebooklm._mind_map import NoteBackedMindMapService
     from notebooklm._note_service import NoteService
+    from notebooklm._web.artifacts import WebArtifactsAPI
 
     mock_core = MagicMock()
-    api = ArtifactsAPI(
+    api = WebArtifactsAPI(
         rpc=mock_core,
         drain=mock_core,
         lifecycle=mock_core,

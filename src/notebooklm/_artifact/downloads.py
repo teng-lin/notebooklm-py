@@ -44,8 +44,8 @@ from .formatters import _extract_app_data, _format_interactive_content, _parse_d
 if TYPE_CHECKING:
     from .._mind_map import NoteBackedMindMapService
     from .._runtime.contracts import RpcCaller
+    from .._web.artifact.listing import ArtifactListingService
     from .._web.rows.artifacts import ArtifactRow
-    from .listing import ArtifactListingService
 
 logger = logging.getLogger(__name__)
 

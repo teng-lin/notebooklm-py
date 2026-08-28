@@ -28,7 +28,7 @@ from notebooklm._types.artifacts import _status_from_code
 from notebooklm.cli.error_handler import _generation_status_extra
 from notebooklm.exceptions import ArtifactTimeoutError
 from notebooklm.rpc.types import _ARTIFACT_STATUS_MAP, ArtifactStatus, ArtifactTypeCode
-from notebooklm.types import GenerationState, GenerationStatus
+from notebooklm.types import Artifact, GenerationState, GenerationStatus
 
 # ---------------------------------------------------------------------------
 # Export surface + module identity
@@ -392,18 +392,21 @@ def _make_polling_service() -> ArtifactPollingService:
 
 async def _poll_with_status_code(code: int | None) -> GenerationStatus:
     service = _make_polling_service()
-    # Minimal LIST_ARTIFACTS row: [id, title, type_code, sources, status_code].
-    row = ["task1", "Title", 7, None, code]
+    artifact = Artifact(
+        id="task1",
+        title="Title",
+        _artifact_type=ArtifactTypeCode.INFOGRAPHIC.value,
+        status=code,
+        url="https://example.test/artifact" if code == ArtifactStatus.COMPLETED else None,
+    )
 
-    async def list_raw(_notebook_id: str) -> list:
-        return [row]
+    async def list_studio(_notebook_id: str) -> list[Artifact]:
+        return [artifact]
 
     return await service.poll_status(
         "nb1",
         "task1",
-        list_raw=list_raw,
-        is_media_ready=lambda *_: True,
-        get_artifact_type_name=lambda _code: "report",
+        list_studio=list_studio,
     )
 
 
@@ -414,60 +417,28 @@ async def test_poll_status_never_returns_removed(code: int):
     assert status.status is not GenerationState.REMOVED
 
 
-class _RecordingRow(list):
-    """A LIST_ARTIFACTS row that records which top-level indices are read."""
-
-    def __init__(self, values: list) -> None:
-        super().__init__(values)
-        self.read_indices: list[int] = []
-
-    def __getitem__(self, index):  # type: ignore[no-untyped-def]
-        if isinstance(index, int):
-            self.read_indices.append(index)
-        return super().__getitem__(index)
-
-
 @pytest.mark.asyncio
-async def test_poll_status_never_reads_the_non_error_slots():
-    """Polling a FAILED artifact must not touch row indices 3 or 5 (#2134).
-
-    Those slots are ``Artifact.sources`` and ``Artifact.isPubliclyReadable``,
-    not the "error text" / "nested error payload" the adapter used to claim, so
-    reading them can only produce a wrong answer. Asserting on ``error is None``
-    alone would be a tautology — the deleted read also returned ``None`` for a
-    list-at-3 / bool-at-5 row — so this records the indices actually read and
-    pins their absence, which does fail against the pre-removal code.
-
-    Evidence for "the resource carries no reason" is external: live, reported in
-    #2134 as 3/3 failed artifacts returning ``None``. This row is constructed.
-    """
+async def test_poll_status_decoded_failed_artifact_has_no_fabricated_error():
+    """Polling consumes decoded artifacts and never fabricates an error reason."""
     service = _make_polling_service()
-    row = _RecordingRow(
-        [
-            "task1",
-            "Title",
-            ArtifactTypeCode.REPORT.value,
-            [[["src-1"]]],  # [3] sources
-            ArtifactStatus.FAILED,
-            False,  # [5] isPubliclyReadable
-        ]
+    artifact = Artifact(
+        id="task1",
+        title="Title",
+        _artifact_type=ArtifactTypeCode.REPORT.value,
+        status=ArtifactStatus.FAILED,
     )
 
-    async def list_raw(_notebook_id: str) -> list:
-        return [row]
+    async def list_studio(_notebook_id: str) -> list[Artifact]:
+        return [artifact]
 
     status = await service.poll_status(
         "nb1",
         "task1",
-        list_raw=list_raw,
-        is_media_ready=lambda *_: True,
-        get_artifact_type_name=lambda _code: "report",
+        list_studio=list_studio,
     )
 
     assert status.status is GenerationState.FAILED
     assert status.error is None
-    assert 3 not in row.read_indices
-    assert 5 not in row.read_indices
 
 
 @pytest.mark.asyncio
@@ -505,15 +476,13 @@ async def test_poll_status_completed_code_maps_to_completed():
 async def test_poll_status_missing_artifact_is_not_found_not_removed():
     service = _make_polling_service()
 
-    async def list_raw(_notebook_id: str) -> list:
+    async def list_studio(_notebook_id: str) -> list[Artifact]:
         return []
 
     status = await service.poll_status(
         "nb1",
         "task1",
-        list_raw=list_raw,
-        is_media_ready=lambda *_: True,
-        get_artifact_type_name=lambda _code: "report",
+        list_studio=list_studio,
     )
     assert status.status is GenerationState.NOT_FOUND
     assert status.status is not GenerationState.REMOVED
@@ -525,7 +494,7 @@ async def _noop_operation_scope():
 
 
 def _make_parse_api():
-    from notebooklm._artifacts import ArtifactsAPI
+    from notebooklm._web.artifacts import WebArtifactsAPI
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(
@@ -535,7 +504,7 @@ def _make_parse_api():
     )
     notebooks = MagicMock()
     notebooks.get_source_ids = AsyncMock(return_value=[])
-    return ArtifactsAPI(
+    return WebArtifactsAPI(
         rpc=core,
         drain=core,
         lifecycle=core,

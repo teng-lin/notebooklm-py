@@ -13,9 +13,9 @@ from notebooklm import (
     correlation_id,
     get_request_id,
 )
-from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
+from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm._web.sources.upload import SourceUploadPipeline
 from notebooklm.auth import AuthTokens
@@ -247,7 +247,7 @@ async def test_drain_waits_for_artifact_poll_task(auth_tokens: AuthTokens) -> No
     # ``ArtifactsAPI`` consumes its three runtime collaborators
     # (``rpc`` + ``drain`` + ``lifecycle``) directly — mirrors production
     # wiring in ``NotebookLMClient.__init__``.
-    api = ArtifactsAPI(
+    api = WebArtifactsAPI(
         rpc=core._rpc_executor,
         drain=core._collaborators.drain_tracker,
         lifecycle=core._collaborators.lifecycle,
@@ -397,7 +397,7 @@ async def test_upload_progress_callback_receives_byte_counts(
 async def test_wait_for_completion_status_change_callback(auth_tokens: AuthTokens) -> None:
     core = build_client_shell_for_tests(auth_tokens)
     # ``ArtifactsAPI`` consumes its three runtime collaborators directly.
-    api = ArtifactsAPI(
+    api = WebArtifactsAPI(
         rpc=core._rpc_executor,
         drain=core._collaborators.drain_tracker,
         lifecycle=core._collaborators.lifecycle,

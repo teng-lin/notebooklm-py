@@ -40,7 +40,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._app.generate_retry import generation_outcome_from_status
-from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm.exceptions import ArtifactFeatureUnavailableError, RateLimitError, RPCError
 from notebooklm.rpc.decoder import decode_response, extract_rpc_result
 from notebooklm.rpc.types import ArtifactStatus, RPCMethod
@@ -79,7 +79,7 @@ def _make_api(rpc_call: AsyncMock | None = None):
     note_service = MagicMock(spec=NoteService)
     notebooks = MagicMock()
     notebooks.get_source_ids = AsyncMock(return_value=[])
-    return ArtifactsAPI(
+    return WebArtifactsAPI(
         rpc=core,
         drain=core,
         lifecycle=core,

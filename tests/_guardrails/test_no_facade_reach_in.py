@@ -54,7 +54,7 @@ _CORE_PRIVATE_GUARD_EXCLUDED_MODULES = {
 
 _ARTIFACT_SERVICE_MODULES = [
     "_artifact/formatters.py",
-    "_artifact/listing.py",
+    "_web/artifact/listing.py",
     "_artifact/downloads.py",
     "_artifact/generation.py",
     "_artifact/polling.py",
@@ -88,6 +88,7 @@ _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES = {
     "SettingsAPI",
     "SharingAPI",
     "SourcesAPI",
+    "WebArtifactsAPI",
     "WebNotebooksAPI",
     "WebSourcesAPI",
 }

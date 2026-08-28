@@ -26,6 +26,7 @@ import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._notes import NotesAPI
+from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from tests._fixtures.fake_core import FakeSession, make_fake_core
@@ -297,7 +298,7 @@ def test_artifacts_constructible_without_notes_api(mock_auth: AuthTokens) -> Non
     from notebooklm._note_service import NoteService
 
     core = MagicMock()
-    api = ArtifactsAPI(
+    api = WebArtifactsAPI(
         rpc=core,
         drain=core,
         lifecycle=core,
@@ -323,7 +324,7 @@ def test_artifacts_rejects_legacy_notes_api_kwarg(mock_auth: AuthTokens) -> None
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
     )
     with pytest.raises(TypeError):
-        ArtifactsAPI(  # type: ignore[call-arg]
+        WebArtifactsAPI(  # type: ignore[call-arg]
             core,
             notes_api=notes,
             notebooks=MagicMock(),
@@ -345,7 +346,7 @@ def test_artifacts_before_notes_construction_order(mock_auth: AuthTokens) -> Non
     core = MagicMock()
 
     def _make_artifacts() -> ArtifactsAPI:
-        return ArtifactsAPI(
+        return WebArtifactsAPI(
             rpc=core,
             drain=core,
             lifecycle=core,
@@ -435,7 +436,7 @@ def _build_artifacts_with_real_mind_map_service(core: FakeSession) -> ArtifactsA
 
     note_service = NoteService(core.rpc_executor)
     mind_maps = NoteBackedMindMapService(note_service)
-    return ArtifactsAPI(
+    return WebArtifactsAPI(
         rpc=core.rpc_executor,
         drain=core,
         lifecycle=core,

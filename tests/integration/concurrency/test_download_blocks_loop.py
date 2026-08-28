@@ -56,6 +56,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm.types import ArtifactDownloadError
 from tests._fixtures.fake_core import FakeSession, make_fake_core
 
@@ -121,7 +122,7 @@ def mock_artifacts_api(tmp_path: Path) -> tuple[ArtifactsAPI, FakeSession]:
     )
     note_service = NoteService(mock_core)
     mind_maps = NoteBackedMindMapService(note_service)
-    api = ArtifactsAPI(
+    api = WebArtifactsAPI(
         rpc=mock_core,
         drain=mock_core,
         lifecycle=mock_core,

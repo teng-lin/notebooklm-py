@@ -5,21 +5,16 @@ Re-exports the cluster's public service classes/builders; importers may also rea
 submodules directly (``from .._artifact.polling import ArtifactPollingService``).
 """
 
-from . import downloads, formatters, listing, payloads, polling
+from . import downloads, formatters, payloads, polling
 from .downloads import ArtifactDownloadService, DownloadResult
-from .listing import ArtifactListingService, find_artifact_row_by_id, iter_artifact_rows
 from .polling import ArtifactPollingService
 
 __all__ = [
     "downloads",
     "formatters",
-    "listing",
     "payloads",
     "polling",
     "ArtifactDownloadService",
     "DownloadResult",
-    "ArtifactListingService",
-    "find_artifact_row_by_id",
-    "iter_artifact_rows",
     "ArtifactPollingService",
 ]

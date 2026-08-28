@@ -15,9 +15,9 @@ import warnings
 
 import pytest
 
-from notebooklm._artifact.listing import _matches_artifact_type
 from notebooklm._types.artifacts import _map_artifact_kind, _warned_artifact_types
 from notebooklm._types.common import UnknownTypeWarning
+from notebooklm._web.artifact.listing import _matches_artifact_type
 from notebooklm.rpc.types import INTERACTIVE_MIND_MAP_VARIANT
 from notebooklm.types import Artifact, ArtifactType
 

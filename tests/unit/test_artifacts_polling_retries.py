@@ -5,8 +5,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from notebooklm._artifact.polling import ArtifactPollingService
-from notebooklm._artifacts import ArtifactsAPI, GenerationStatus
+from notebooklm._artifacts import GenerationStatus
 from notebooklm._polling_registry import PollRegistry
+from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm.exceptions import ArtifactPendingTimeoutError
 from notebooklm.rpc import AuthError, NetworkError, RPCTimeoutError
 
@@ -97,7 +98,7 @@ def api():
     core = _make_session_core()
     mock_notebooks = MagicMock()
     mock_notebooks.get_source_ids = AsyncMock(return_value=[])
-    return ArtifactsAPI(
+    return WebArtifactsAPI(
         rpc=core,
         drain=core,
         lifecycle=core,
@@ -486,7 +487,7 @@ async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_
     from notebooklm._note_service import NoteService
 
     core = _make_session_core()
-    api = ArtifactsAPI(
+    api = WebArtifactsAPI(
         rpc=core,
         drain=core,
         lifecycle=core,

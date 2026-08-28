@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from notebooklm._artifact.listing import ArtifactListingService
+from notebooklm._web.artifact.listing import ArtifactListingService
 from notebooklm.exceptions import DecodingError, RPCError
 
 

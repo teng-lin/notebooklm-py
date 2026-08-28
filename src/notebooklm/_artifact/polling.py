@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import builtins
 import logging
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
-from typing import Any, Protocol
+from typing import Protocol
 
 from .._backoff import compute_backoff_delay
 from .._callbacks import maybe_await_callback
@@ -16,15 +15,13 @@ from .._polling_registry import PollRegistry
 from .._runtime.contracts import LoopGuard
 from .._types.artifacts import _status_from_code
 from .._types.enums import ArtifactStatus, ArtifactTypeCode, artifact_status_to_str
-from .._web.rows.artifacts import ArtifactRow
 from ..exceptions import ArtifactInProgressTimeoutError, ArtifactPendingTimeoutError
 from ..rpc import (
     NetworkError,
     RPCTimeoutError,
     ServerError,
 )
-from ..types import GenerationState, GenerationStatus
-from .listing import find_artifact_row_by_id
+from ..types import Artifact, GenerationState, GenerationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +29,18 @@ logger = logging.getLogger(__name__)
 POLL_MAX_RETRIES = 3
 _IN_PROGRESS_STATUS = "in_progress"
 
-ListRawCallback = Callable[[str], Awaitable[builtins.list[Any]]]
+ListStudioCallback = Callable[[str], Awaitable[list[Artifact]]]
 PollStatusCallback = Callable[[str, str], Awaitable[GenerationStatus]]
-MediaReadyCallback = Callable[[builtins.list[Any], int], bool]
-ArtifactTypeNameCallback = Callable[[int], str]
 StatusChangeCallback = Callable[[GenerationStatus], object]
+
+_MEDIA_ARTIFACT_TYPE_CODES = frozenset(
+    {
+        ArtifactTypeCode.AUDIO.value,
+        ArtifactTypeCode.VIDEO.value,
+        ArtifactTypeCode.INFOGRAPHIC.value,
+        ArtifactTypeCode.SLIDE_DECK.value,
+    }
+)
 
 
 class OperationScopeProvider(Protocol):
@@ -97,25 +101,23 @@ class ArtifactPollingService:
         notebook_id: str,
         task_id: str,
         *,
-        list_raw: ListRawCallback,
-        is_media_ready: MediaReadyCallback,
-        get_artifact_type_name: ArtifactTypeNameCallback,
+        list_studio: ListStudioCallback,
     ) -> GenerationStatus:
         """Poll the status of a generation task."""
         # List all artifacts and find by ID (no poll-by-ID RPC exists).
-        artifacts_data = await list_raw(notebook_id)
-        row = find_artifact_row_by_id(artifacts_data, task_id)
-        if row is not None:
-            status_code = row.status
-            artifact_type = row.type_code
+        artifacts = await list_studio(notebook_id)
+        artifact = next((candidate for candidate in artifacts if candidate.id == task_id), None)
+        if artifact is not None:
+            status_code = artifact.status
+            artifact_type = artifact._artifact_type
             raw_status = artifact_status_to_str(status_code)
-            metadata: dict[str, Any] | None = None
+            metadata: dict[str, object] | None = None
 
             # For media artifacts, verify URL availability before reporting completion.
             # The API may set status=COMPLETED before media URLs are populated.
             if status_code == ArtifactStatus.COMPLETED:
-                if not is_media_ready(row.raw, artifact_type):
-                    type_name = get_artifact_type_name(artifact_type)
+                if artifact_type in _MEDIA_ARTIFACT_TYPE_CODES and artifact.url is None:
+                    type_name = _get_artifact_type_name(artifact_type)
                     metadata = {
                         "artifact_type": type_name,
                         "artifact_type_code": artifact_type,
@@ -132,12 +134,10 @@ class ArtifactPollingService:
                     # Downgrade to PROCESSING to continue polling.
                     status_code = ArtifactStatus.PROCESSING
 
-            url = row.artifact_url(artifact_type, suppress_drift=True)
-
             return GenerationStatus(
                 task_id=task_id,
                 status=_status_from_code(status_code),
-                url=url,
+                url=artifact.url,
                 metadata=metadata,
             )
 
@@ -480,21 +480,17 @@ def _get_artifact_type_name(artifact_type: int) -> str:
         return str(artifact_type)
 
 
-def _is_media_ready(art: builtins.list[Any], artifact_type: int) -> bool:
-    """Check if media artifact has URLs populated."""
+def _is_media_ready(artifact: Artifact, artifact_type: int) -> bool:
+    """Compatibility helper for decoded artifact readiness checks."""
     try:
-        if not isinstance(art, list):
-            return artifact_type not in ArtifactRow._MEDIA_ARTIFACT_TYPES
-        return ArtifactRow(art).is_media_ready(artifact_type)
-
-    except (IndexError, TypeError) as e:
-        # Defensive: if structure is unexpected, be conservative for media
-        # types. Media types need URLs, so return False to continue polling.
-        is_media = artifact_type in ArtifactRow._MEDIA_ARTIFACT_TYPES
-        logger.debug(
-            "Unexpected artifact structure for type %s (media=%s): %s",
-            artifact_type,
-            is_media,
-            e,
-        )
-        return not is_media
+        kind = ArtifactTypeCode(artifact_type)
+    except ValueError:
+        return True
+    if kind not in {
+        ArtifactTypeCode.AUDIO,
+        ArtifactTypeCode.VIDEO,
+        ArtifactTypeCode.INFOGRAPHIC,
+        ArtifactTypeCode.SLIDE_DECK,
+    }:
+        return True
+    return artifact.url is not None

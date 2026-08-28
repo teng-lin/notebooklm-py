@@ -8,22 +8,22 @@ from typing import Any
 
 import httpx
 
-from .._runtime.contracts import RpcCaller
-from .._types.enums import (
+from ..._runtime.contracts import RpcCaller
+from ..._types.enums import (
     ARTIFACT_STATUS_SUGGESTED_WIRE_NAME,
     FLASHCARDS_VARIANT,
     INTERACTIVE_MIND_MAP_VARIANT,
     QUIZ_VARIANT,
     ArtifactTypeCode,
 )
-from .._web.rows.artifacts import ArtifactRow, unwrap_artifact_rows
-from .._web.rows.notes import NoteRow
-from ..exceptions import DecodingError
-from ..rpc import (
+from ...exceptions import DecodingError
+from ...rpc import (
     RPCError,
     RPCMethod,
 )
-from ..types import Artifact, ArtifactNotFoundError, ArtifactNotReadyError, ArtifactType
+from ...types import Artifact, ArtifactNotFoundError, ArtifactNotReadyError, ArtifactType
+from ..rows.artifacts import ArtifactRow, unwrap_artifact_rows
+from ..rows.notes import NoteRow
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +152,15 @@ class ArtifactListingService:
             list_mind_maps=list_mind_maps,
         )
         return artifacts
+
+    async def list_studio(
+        self,
+        notebook_id: str,
+        *,
+        list_raw: ListRawCallback,
+    ) -> list[Artifact]:
+        """List decoded studio artifacts from exactly one artifact-list call."""
+        return self._filter_studio_artifacts(await list_raw(notebook_id), None)
 
     async def list_artifacts_with_raw(
         self,

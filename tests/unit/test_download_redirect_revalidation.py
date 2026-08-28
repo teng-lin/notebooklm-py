@@ -31,7 +31,7 @@ import httpx
 import pytest
 
 import notebooklm._artifact.downloads as _downloads_mod
-from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm.types import ArtifactDownloadError
 
 
@@ -46,7 +46,7 @@ def mock_artifacts_api(tmp_path):
         rpc_call=AsyncMock(),
         get_source_ids=AsyncMock(return_value=[]),
     )
-    api = ArtifactsAPI(
+    api = WebArtifactsAPI(
         rpc=mock_core,
         drain=mock_core,
         lifecycle=mock_core,
