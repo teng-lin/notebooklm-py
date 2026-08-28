@@ -205,7 +205,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         # overrides :meth:`_on_loop_rebind` to discard the cached
         # ``_upload_semaphore`` on a loop change. Cross-loop *use* is guarded by
         # the lifecycle's ``assert_bound_loop`` at the top of ``add_file``.
-        # Defaults; SourcesAPI replaces these via configure_source_lifecycle()
+        # Defaults; WebSourcesAPI replaces these via configure_source_lifecycle()
         # so the pipeline shares its lister/poller (single owner for the
         # source-lifecycle verbs). Direct callers keep these fresh instances.
         self._lister = lister if lister is not None else SourceLister(self._rpc)
@@ -222,12 +222,12 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         lister: SourceLister,
         poller: SourcePoller,
     ) -> None:
-        """Adopt ``SourcesAPI``'s shared lister/poller as the single owner.
+        """Adopt ``WebSourcesAPI``'s shared lister/poller as the single owner.
 
-        Called from ``SourcesAPI.__init__`` so the pipeline's source-lifecycle
+        Called from ``WebSourcesAPI.__init__`` so the pipeline's source-lifecycle
         verbs delegate to the SAME ``SourceLister`` / ``SourcePoller`` instances
-        the public ``SourcesAPI`` uses, not parallel copies. Direct callers that
-        never run through ``SourcesAPI`` keep the freshly-constructed defaults.
+        the public ``WebSourcesAPI`` uses, not parallel copies. Direct callers that
+        never run through ``WebSourcesAPI`` keep the freshly-constructed defaults.
         """
         self._lister = lister
         self._poller = poller

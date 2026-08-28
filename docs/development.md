@@ -187,7 +187,7 @@ The architecture tests encode the current layer contract:
   construct `SourcesAPI`; artifact/source/notebook composition services must
   not runtime-import facade APIs. Add new private services to those guard
   lists when they take ownership of cross-facade behavior. The construction /
-  init-order behaviour tests — `NotebookLMClient` constructs `SourcesAPI`
+  init-order behaviour tests — `NotebookLMClient` constructs `WebSourcesAPI`
   before `NotebooksAPI` and passes it through the legacy `sources_api=` slot,
   plus the mind-map decoupling flows — stay in
   `tests/unit/test_init_order.py`.
