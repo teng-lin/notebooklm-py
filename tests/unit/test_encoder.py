@@ -5,8 +5,13 @@ import json
 import pytest
 
 from notebooklm._web.params.notebooks import build_create_notebook_params
-from notebooklm.rpc.encoder import build_request_body, encode_rpc_request, nest_source_ids
+from notebooklm._web.wire import encoder as encoder_module
+from notebooklm._web.wire.encoder import build_request_body, encode_rpc_request, nest_source_ids
 from notebooklm.rpc.types import RPCMethod
+
+
+def test_encoder_keeps_legacy_logger_name() -> None:
+    assert encoder_module.logger.name == "notebooklm.rpc.encoder"
 
 
 class TestEncodeRPCRequest:

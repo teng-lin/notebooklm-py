@@ -11,7 +11,7 @@ class GrpcStatusCode(int, Enum):
     entry when an RPC returns null result data — the bare single-element form
     ``[code]`` observed in issues #114 and #294.
 
-    Deliberately distinct from :class:`notebooklm.rpc.decoder.RPCErrorCode`,
+    Deliberately distinct from :class:`notebooklm._web.wire.decoder.RPCErrorCode`,
     which is an HTTP-style namespace (``NOT_FOUND = 404``). The two share
     member names but not values, so code that compares a wire status must say
     which namespace it means: ``GrpcStatusCode.NOT_FOUND`` is ``5``.

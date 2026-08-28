@@ -288,7 +288,7 @@ class TestAuthLogoutCommand:
         Regression guard for the account-switch flow: leaving a stale notebook
         id in context.json caused mismatched 'not found' / permission errors
         after the user logged into a different Google account (see
-        ``_ACCOUNT_MISMATCH_HINT`` in ``rpc/decoder.py``).
+        ``_ACCOUNT_MISMATCH_HINT`` in ``_web/wire/decoder.py``).
         """
         _seed_storage_state(isolated_home)
         ctx_path = _seed_context(isolated_home, notebook_id="abc123")

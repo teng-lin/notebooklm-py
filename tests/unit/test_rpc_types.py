@@ -32,7 +32,7 @@ from notebooklm.rpc.types import (
 
 
 def test_rpc_types_does_not_own_runtime_override_policy() -> None:
-    """Runtime override env parsing belongs in rpc.overrides, not rpc.types."""
+    """Runtime override env parsing belongs in web wire, not rpc.types."""
     path = Path(__file__).parents[2] / "src/notebooklm/rpc/types.py"
     tree = ast.parse(path.read_text())
 
@@ -50,7 +50,7 @@ def test_rpc_types_does_not_own_runtime_override_policy() -> None:
             if node.module == "os":
                 imported_os.append(node.lineno)
             for alias in node.names:
-                if (node.module, node.level) == ("overrides", 1):
+                if (node.module, node.level) == ("_web.wire.overrides", 2):
                     override_aliases.add(alias.asname or alias.name)
         elif (
             isinstance(node, ast.Attribute)
@@ -369,14 +369,14 @@ class TestGrpcStatusCode:
         The two enums share member names, so anything comparing a wire status
         has to say which namespace it means. Pins that they did not get merged.
         """
-        from notebooklm.rpc.decoder import RPCErrorCode
+        from notebooklm._web.wire.decoder import RPCErrorCode
 
         assert RPCErrorCode.NOT_FOUND == 404
         assert GrpcStatusCode.NOT_FOUND == 5
 
     def test_decoder_status_labels_cover_every_member(self):
         """Every status has wording; a new member cannot go unlabelled."""
-        from notebooklm.rpc.decoder import _GRPC_STATUS_MESSAGES
+        from notebooklm._web.wire.decoder import _GRPC_STATUS_MESSAGES
 
         assert set(_GRPC_STATUS_MESSAGES) == {int(code) for code in GrpcStatusCode}
 

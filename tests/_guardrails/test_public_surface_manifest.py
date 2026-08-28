@@ -73,9 +73,12 @@ def test_public_facade_imports_are_identity_reexports() -> None:
     """Compatibility facades must keep returning the canonical public objects."""
     import notebooklm
     import notebooklm._auth.tokens as private_tokens
+    import notebooklm._web.wire.decoder as wire_decoder
+    import notebooklm._web.wire.encoder as wire_encoder
+    import notebooklm._web.wire.overrides as wire_overrides
+    import notebooklm._web.wire.safe_index as wire_safe_index
     import notebooklm.auth as public_auth
     import notebooklm.rpc as public_rpc
-    import notebooklm.rpc.overrides as rpc_overrides
     import notebooklm.rpc.types as rpc_types
     import notebooklm.types as public_types
 
@@ -83,7 +86,11 @@ def test_public_facade_imports_are_identity_reexports() -> None:
     assert public_auth.AuthTokens is private_tokens.AuthTokens
     assert notebooklm.ConnectionLimits is public_types.ConnectionLimits
     assert public_rpc.RPCMethod is rpc_types.RPCMethod
-    assert public_rpc.resolve_rpc_id is rpc_overrides.resolve_rpc_id
+    assert public_rpc.resolve_rpc_id is wire_overrides.resolve_rpc_id
+    assert rpc_types.resolve_rpc_id is wire_overrides.resolve_rpc_id
+    assert public_rpc.decode_response is wire_decoder.decode_response
+    assert public_rpc.encode_rpc_request is wire_encoder.encode_rpc_request
+    assert public_rpc.safe_index is wire_safe_index.safe_index
 
 
 # The names de-blessed from ``notebooklm.rpc.__all__`` in #1589. They were
@@ -157,6 +164,19 @@ def test_rpc_all_is_minimized_to_documented_power_user_imports() -> None:
     import notebooklm.rpc as public_rpc
 
     assert public_rpc.__all__ == ["RPCMethod", "resolve_rpc_id"]
+
+
+def test_rpc_has_no_deep_wire_compatibility_modules() -> None:
+    """The implementation move must not leave duplicate module state behind."""
+    rpc_dir = Path(__file__).parents[2] / "src" / "notebooklm" / "rpc"
+    former_modules = ("decoder", "encoder", "overrides", "_safe_index")
+
+    assert [name for name in former_modules if (rpc_dir / f"{name}.py").exists()] == []
+    assert [
+        name
+        for name in former_modules
+        if importlib.util.find_spec(f"notebooklm.rpc.{name}") is not None
+    ] == []
 
 
 def test_rpc_legacy_reexports_stay_importable_but_unblessed() -> None:

@@ -8,8 +8,8 @@ from urllib.parse import quote, urlencode
 
 from ..._auth.account import format_authuser_value
 from ..._env import get_default_bl, get_default_language
-from ...rpc.encoder import nest_source_ids
 from ...rpc.types import get_query_url
+from ..wire.encoder import nest_source_ids
 
 
 class AuthSnapshotLike(Protocol):

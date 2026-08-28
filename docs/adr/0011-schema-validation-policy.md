@@ -2,7 +2,7 @@
 
 > **Current state (2026-06-11).** The strict-default migration described below
 > completed. The legacy `NOTEBOOKLM_STRICT_DECODE=0` warn-and-return-`None`
-> soft-mode opt-out was retired in v0.7.0; `rpc/_safe_index.py` is now
+> soft-mode opt-out was retired in v0.7.0; `_web/wire/safe_index.py` is now
 > strict-only and raises `UnknownRPCMethodError` on schema drift regardless of
 > the env var.
 
@@ -23,7 +23,7 @@ silently degrades to whatever the surrounding code happened to do with
 `None`.
 
 The Tier-12 remediation introduced
-`notebooklm.rpc.safe_index` (`src/notebooklm/rpc/_safe_index.py`) as
+`notebooklm.rpc.safe_index` (`src/notebooklm/_web/wire/safe_index.py`) as
 the single shared schema-drift point: callers descend through it by
 integer indices, and on descent failure the helper raises
 `notebooklm.exceptions.UnknownRPCMethodError`. PR-12 era introduced the
@@ -88,7 +88,7 @@ environments that still set it; it no longer enables soft mode.
 
 ### Behavioural contract
 
-The single decision point is `rpc/_safe_index.py::safe_index`. It does
+The single decision point is `_web/wire/safe_index.py::safe_index`. It does
 not consult `_env`; it either returns the successfully descended value
 or raises `UnknownRPCMethodError` with `method_id`, `source`, `path`,
 and a truncated `data_at_failure` preview.

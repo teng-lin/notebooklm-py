@@ -161,7 +161,7 @@ class TestBuildSaveChatAsNoteParamsGolden:
         assert actual_params == expected_params
 
         # Serialize both with the same separators the rpc encoder uses
-        # (rpc/encoder.py:39: separators=(",", ":")) and compare strings.
+        # (_web/wire/encoder.py: separators=(",", ":")) and compare strings.
         # This is the strict byte-exact check.
         actual_json = json.dumps(actual_params, separators=(",", ":"))
         expected_json = json.dumps(expected_params, separators=(",", ":"))

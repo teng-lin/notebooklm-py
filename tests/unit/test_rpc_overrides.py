@@ -19,12 +19,16 @@ import httpx
 import pytest
 
 from notebooklm import _env
+from notebooklm._web.wire import overrides as rpc_overrides
+from notebooklm._web.wire.overrides import (
+    _load_rpc_overrides,
+    _parse_rpc_overrides,
+    resolve_rpc_id,
+)
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import RPCMethod
-from notebooklm.rpc import overrides as rpc_overrides
 from notebooklm.rpc import types as rpc_types
-from notebooklm.rpc.overrides import _load_rpc_overrides, _parse_rpc_overrides, resolve_rpc_id
 from tests._helpers.client_factory import build_client_shell_for_tests
 from tests.unit.conftest import install_post_as_stream
 
@@ -44,10 +48,14 @@ def _clear_override_caches():
 
 def test_rpc_overrides_direct_smoke_import() -> None:
     """The new private owner module exposes the runtime resolver and cached parser."""
-    from notebooklm.rpc.overrides import _parse_rpc_overrides, resolve_rpc_id
+    from notebooklm._web.wire.overrides import _parse_rpc_overrides, resolve_rpc_id
 
     assert callable(resolve_rpc_id)
     assert hasattr(_parse_rpc_overrides, "cache_clear")
+
+
+def test_rpc_overrides_keeps_legacy_logger_name() -> None:
+    assert rpc_overrides.logger.name == "notebooklm.rpc.overrides"
 
 
 def test_rpc_types_override_aliases_are_identity_compatible() -> None:
@@ -59,7 +67,7 @@ def test_rpc_types_override_aliases_are_identity_compatible() -> None:
 
 
 def test_rpc_types_keeps_override_env_parsing_out_of_protocol_enums() -> None:
-    """RPC enum definitions may expose legacy aliases, but env parsing lives in overrides.py."""
+    """RPC enum definitions may expose aliases, but env parsing lives in web wire."""
     assert RPC_TYPES_PATH.exists(), (
         f"Expected RPC types module at {RPC_TYPES_PATH}; update RPC_TYPES_PATH if the source "
         "layout changed."
@@ -92,10 +100,10 @@ def test_rpc_types_keeps_override_env_parsing_out_of_protocol_enums() -> None:
         f"{forbidden_imports}"
     )
     assert "NOTEBOOKLM_RPC_OVERRIDES" not in source, (
-        "Env-var name NOTEBOOKLM_RPC_OVERRIDES must live in overrides.py, not rpc/types.py"
+        "Env-var name NOTEBOOKLM_RPC_OVERRIDES must live in web wire, not rpc/types.py"
     )
     assert "RPC_OVERRIDES_ENV_VAR" not in source, (
-        "RPC_OVERRIDES_ENV_VAR must live in overrides.py, not rpc/types.py"
+        "RPC_OVERRIDES_ENV_VAR must live in web wire, not rpc/types.py"
     )
 
 
@@ -306,7 +314,7 @@ def test_resolve_rpc_id_logs_again_for_different_set(monkeypatch, caplog):
 
 def test_encode_rpc_request_default_uses_canonical():
     """No override → ``method.value`` is embedded in the request body."""
-    from notebooklm.rpc.encoder import encode_rpc_request
+    from notebooklm._web.wire.encoder import encode_rpc_request
 
     result = encode_rpc_request(RPCMethod.LIST_NOTEBOOKS, [None, 1])
     assert result[0][0][0] == RPCMethod.LIST_NOTEBOOKS.value
@@ -314,7 +322,7 @@ def test_encode_rpc_request_default_uses_canonical():
 
 def test_encode_rpc_request_override_replaces_id():
     """When ``rpc_id_override`` is provided, the override is embedded instead."""
-    from notebooklm.rpc.encoder import encode_rpc_request
+    from notebooklm._web.wire.encoder import encode_rpc_request
 
     result = encode_rpc_request(RPCMethod.LIST_NOTEBOOKS, [None, 1], rpc_id_override="OVERRIDE_v9")
     assert result[0][0][0] == "OVERRIDE_v9"
@@ -322,7 +330,7 @@ def test_encode_rpc_request_override_replaces_id():
 
 def test_encode_rpc_request_none_override_uses_canonical():
     """Explicit None override → falls back to canonical id (no surprise)."""
-    from notebooklm.rpc.encoder import encode_rpc_request
+    from notebooklm._web.wire.encoder import encode_rpc_request
 
     result = encode_rpc_request(RPCMethod.LIST_NOTEBOOKS, [None, 1], rpc_id_override=None)
     assert result[0][0][0] == RPCMethod.LIST_NOTEBOOKS.value

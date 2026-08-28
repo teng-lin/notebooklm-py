@@ -41,10 +41,12 @@ this layering) lives in [`docs/refactor-history.md`](./refactor-history.md).
 +----------------------------------------------------------+
                             ▼
 +----------------------------------------------------------+
-| RPC Layer (src/notebooklm/rpc/*)                         |
-|   types.py    method IDs + domain-enum re-exports        |
+| Web Wire Layer (src/notebooklm/_web/wire/*)              |
 |   encoder.py  request encoding                           |
 |   decoder.py  response parsing                           |
+| RPC Facade (src/notebooklm/rpc/*)                        |
+|   types.py    method IDs + domain-enum re-exports        |
+|   __init__.py public power-user + legacy name re-exports |
 +----------------------------------------------------------+
 ```
 
@@ -348,8 +350,8 @@ either crashes with raw `IndexError` from inside a feature module or
 silently degrades.
 
 The single helper that decoders use to navigate row shapes is
-`notebooklm.rpc.safe_index` in
-[`rpc/_safe_index.py`](../src/notebooklm/rpc/_safe_index.py). It always
+`notebooklm.rpc.safe_index`, re-exported from
+[`_web/wire/safe_index.py`](../src/notebooklm/_web/wire/safe_index.py). It always
 raises a typed shape-drift error: strict decoding is the only mode (the
 legacy soft-mode opt-out was retired in v0.7.0). The
 `RpcExecutor` decode path narrowly wraps
@@ -531,8 +533,9 @@ Beyond the client-owned runtime graph, several feature APIs are implemented via 
 | `_artifact_formatters` | [`_artifact/formatters.py`](../src/notebooklm/_artifact/formatters.py) | Markdown, HTML, and plain text formatters for artifacts. |
 | `_web/artifact/listing` | [`_web/artifact/listing.py`](../src/notebooklm/_web/artifact/listing.py) | Web artifact listing, raw-row decoding, and note-backed mind-map composition. |
 | `_web/artifact/table` | [`_web/artifact/table.py`](../src/notebooklm/_web/artifact/table.py) | Web positional data-table row extraction. |
-| `_web/` | [`_web/`](../src/notebooklm/_web) | Private home for the batchexecute web backend. Phase A moves web-wire row decoding, request construction, and concrete namespace implementations here while public namespace classes become transport-neutral bases. Direct imports are constrained by `tests/_guardrails/test_backend_boundaries.py`; the package is a skeleton until those ordered moves land. |
+| `_web/` | [`_web/`](../src/notebooklm/_web) | Private home for the batchexecute web backend. Phase A moves web-wire codecs and row decoding, request construction, and concrete namespace implementations here while public namespace classes become transport-neutral bases. Direct imports are constrained by `tests/_guardrails/test_backend_boundaries.py`. |
 | `_web/rows/*` | [`_web/rows/`](../src/notebooklm/_web/rows) | Web wire-shape adapters for artifacts, chat, collections, documents, labels, notebooks, notes, research, sharing, and sources. Public notebook/sharing/collection factories stay on their dataclasses as lazy shims into this package; deep-research task parsing and conversation-role decoding live here too. Strict decode behavior is pinned in the row-adapter, chat-history, research-parser, and wire-contract tests. |
+| `_web/wire/*` | [`_web/wire/`](../src/notebooklm/_web/wire) | Batchexecute envelope encoding, response/status decoding, strict positional access, and runtime RPC-ID overrides. `notebooklm.rpc` preserves the public power-user path and legacy root attributes as identity re-exports; no former deep `notebooklm.rpc.*` implementation modules remain. |
 | `_types/` | [`_types/`](../src/notebooklm/_types) | Private package holding the transport-neutral enum, dataclass, and `Protocol` implementations behind the public `types.py` / per-feature public schemas. Split per domain (`artifacts.py`, `artifact_content.py`, `chat.py`, `documents.py`, `enums.py`, `labels.py`, `mind_maps.py`, `notebooks.py`, `notes.py`, `research.py`, `sharing.py`, `sources.py`, plus `common.py` for shared shapes like `ConnectionLimits`). |
 
 ## Authentication subpackage
@@ -1033,6 +1036,10 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/params/chat_stream.py` | Streamed-chat URL, form-body, and source/history request construction |
 | `_web/params/chat_note.py` | Saved-from-chat `CREATE_NOTE` positional payload and citation-anchor encoding |
 | `_web/transport/chat.py` | Chat-specific HTTP/error mapping over the shared authenticated streaming transport |
+| `_web/wire/decoder.py` | Batchexecute response framing, status/error decoding, and process-wide byte-count drift telemetry; retains the established `notebooklm.rpc.decoder` logger category |
+| `_web/wire/encoder.py` | Batchexecute request envelope and form-body encoding helpers; retains the established `notebooklm.rpc.encoder` logger category |
+| `_web/wire/overrides.py` | Environment-driven runtime RPC-ID override policy, including the single cached parser and INFO-log deduplication state re-exported through `rpc/types.py` and `notebooklm.rpc` |
+| `_web/wire/safe_index.py` | Strict bounds-checked positional access for decoded web payloads, compatibility-re-exported as `notebooklm.rpc.safe_index` |
 | `artifacts.py`, `research.py`, `utils.py` | Public helper modules for artifact retry, research citation/report utilities, and common async helpers |
 | `_notebooks.py` | Backend-neutral abstract `NotebooksAPI`; owns shared create idempotency, lookup/update conveniences, metadata composition, and share-URL semantics |
 | `_sources.py` | Backend-neutral abstract `SourcesAPI`; owns source identity lookup and the four polling workflows over neutral `SourcePoller` |
@@ -1369,6 +1376,11 @@ src/notebooklm/
 │   │   ├── chat_stream.py       # Streamed-chat URL/form request builder
 │   │   ├── notebooks.py         # Notebook RPC payload builders (SUGGEST_PROMPTS)
 │   │   └── sources.py           # Source RPC/upload payload builders
+│   ├── wire/                     # Batchexecute request/response codecs
+│   │   ├── decoder.py           # Response framing, status/error decoding, drift counter
+│   │   ├── encoder.py           # Request envelope and form-body encoding
+│   │   ├── overrides.py         # Runtime RPC-ID override policy and shared cache/log state
+│   │   └── safe_index.py        # Strict positional payload access
 │   └── rows/                    # Typed positional wire-row decoders
 ├── _notebooks.py                # Backend-neutral abstract NotebooksAPI
 ├── _sources.py                  # Backend-neutral abstract SourcesAPI
@@ -1416,12 +1428,9 @@ src/notebooklm/
 │       ├── research.py          # research_start (client.research.start) + research_status (_app.research.poll_and_classify) + research_import
 │       ├── sharing.py           # share_status/set_access/set_user/remove_user (thin adapters over client.sharing; set_access folds public+view_level, set_user upserts add/update; string-labeled enums; view_level surfaced only when set)
 │       └── meta.py              # server_info — package version + auth-health over _app.auth_check (no notebook arg)
-├── rpc/                         # RPC protocol layer
-│   ├── types.py                 # Method IDs and enums
-│   ├── encoder.py               # Request encoding
-│   ├── decoder.py               # Response parsing
-│   ├── _safe_index.py           # Strict bounds-checked positional access for decoded RPC payloads
-│   └── overrides.py             # Runtime RPC ID override policy (env-driven)
+├── rpc/                         # Public RPC compatibility path
+│   ├── __init__.py              # Two-name public surface plus identity re-exports from _web/wire
+│   └── types.py                 # Method IDs and domain-enum compatibility re-exports
 ├── cli/                         # CLI implementation
     ├── __init__.py              # Re-exports click groups under historical names from *_cmd modules
     ├── _chromium_profiles.py    # Multi-user-data-profile cookie extraction for Chromium browsers

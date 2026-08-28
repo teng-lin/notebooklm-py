@@ -6,7 +6,7 @@ tolerated "absence" is a legitimately empty label (``sources`` slot is ``None``)
 — that is not drift. A drifted ``sources`` slot (non-list, malformed member,
 non-string id) always raises; there is no degrade-to-empty path. (The
 ``NOTEBOOKLM_STRICT_DECODE=0`` opt-out that older adapters honoured was retired
-in v0.7.0 — ``rpc/_safe_index.py`` is strict-only now.)
+in v0.7.0 — ``_web/wire/safe_index.py`` is strict-only now.)
 """
 
 from __future__ import annotations

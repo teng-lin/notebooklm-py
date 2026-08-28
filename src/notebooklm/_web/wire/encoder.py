@@ -5,9 +5,10 @@ import logging
 from typing import Any
 from urllib.parse import quote
 
-from .types import RPCMethod
+from ...rpc.types import RPCMethod
 
-logger = logging.getLogger(__name__)
+# Preserve the established logging category across the private module move.
+logger = logging.getLogger("notebooklm.rpc.encoder")
 
 
 def encode_rpc_request(

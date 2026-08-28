@@ -29,7 +29,10 @@ src/notebooklm/
 ├── types.py             # Dataclasses and type definitions
 ├── _app/                # Transport-neutral business logic shared by adapters
 ├── _client_composed.py  # Client-owned composition holder
-├── _runtime/            # Runtime contracts, config, lifecycle, auth, transport
+├── _runtime/            # Neutral runtime contracts, config, helpers, init, lifecycle
+├── _web/contracts.py    # Web-only Kernel and RpcCaller Protocols
+├── _web/transport/      # Web HTTP transport, executor, middleware, auth, persistence
+├── _web/wire/           # Web batchexecute codecs, overrides, and strict indexing
 ├── _notebooks.py        # Backend-neutral abstract NotebooksAPI
 ├── _web/notebooks.py    # WebNotebooksAPI implementation
 ├── _sources.py          # Backend-neutral abstract SourcesAPI
@@ -41,7 +44,7 @@ src/notebooklm/
 ├── _artifact/           # Neutral artifact polling, formatting, validation, and asset transfer
 ├── _web/artifacts.py    # WebArtifactsAPI implementation
 ├── _web/artifact/       # Web artifact listing/generation/download-selection services
-├── _chat/               # ChatAPI implementation (facade + chat helpers)
+├── _chat/               # Backend-neutral ChatAPI orchestration
 ├── _research.py         # ResearchAPI implementation
 ├── _notes.py            # Backend-neutral abstract NotesAPI
 ├── _web/notes.py        # WebNotesAPI + NoteService implementation
@@ -53,11 +56,9 @@ src/notebooklm/
 ├── _sharing.py          # Backend-neutral abstract SharingAPI
 ├── _web/sharing.py      # WebSharingAPI + legacy ShareManager
 ├── _sharing_manager.py  # Neutral legacy share-URL builder
-├── rpc/                 # RPC protocol layer
+├── rpc/                 # Public power-user and compatibility facade
 │   ├── __init__.py
-│   ├── types.py         # RPCMethod enum and constants
-│   ├── encoder.py       # Request encoding
-│   └── decoder.py       # Response parsing
+│   └── types.py         # RPCMethod enum, constants, and compatibility re-exports
 ├── cli/                 # Click adapter (`*_cmd.py`) plus `cli/services/`
 ├── mcp/                 # FastMCP adapter (optional `mcp` extra)
 └── server/              # FastAPI REST adapter (optional `server` extra)
@@ -88,8 +89,13 @@ src/notebooklm/
 └───────────────────────────┬─────────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────────┐
-│                        RPC Layer                            │
-│        encoder.py, decoder.py, types.py (RPCMethod)         │
+│                Web Wire Layer (`_web/wire/`)                │
+│      encoder, decoder, overrides, strict safe_index         │
+└───────────────────────────┬─────────────────────────────────┘
+                            │
+┌───────────────────────────▼─────────────────────────────────┐
+│               Power-user RPC Facade (`rpc/`)               │
+│                __init__.py, types.py (RPCMethod)            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -101,7 +107,8 @@ src/notebooklm/
 | **App core** | `_app/*.py` | Transport-neutral workflows reused by adapters |
 | **Client** | `client.py`, `_*.py` | High-level Python API, returns typed dataclasses |
 | **Runtime** | `client.py`, `_client_composed.py`, `_runtime/init.py`, `_web/transport/kernel.py`, runtime collaborators | `NotebookLMClient` composition root plus seam-module helpers (HTTP client lifecycle, RPC dispatch, metrics, drain bookkeeping, request-id counter, auth refresh, conversation cache, polling registry, cookie persistence) |
-| **RPC** | `rpc/*.py` | Protocol encoding/decoding, method IDs |
+| **Web wire** | `_web/wire/*.py` | Batchexecute encoding/decoding, runtime ID overrides, strict positional access |
+| **RPC facade** | `rpc/*.py` | Public power-user compatibility exports and method IDs |
 
 #### Runtime seam modules
 

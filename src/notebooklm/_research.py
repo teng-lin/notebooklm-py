@@ -98,7 +98,7 @@ def _coerce_research_sources(sources: Sequence[ResearchSourceInput]) -> list[Res
 def _is_deep_start_null_result_error(exc: RPCError) -> bool:
     method_id = RPCMethod.START_DEEP_RESEARCH.value
     # The decoder raises one of two stable messages for a wrb.fr null payload,
-    # with or without an attached status code (see ``rpc/decoder.py``). We match
+    # with or without an attached status code (see ``_web/wire/decoder.py``). We match
     # on those stable phrases rather than the obfuscated method id / raw status
     # code, which the decoder deliberately keeps OUT of the human-readable
     # message (#1921). If the wording drifts, fall through and re-raise the

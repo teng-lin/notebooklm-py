@@ -15,8 +15,8 @@ import warnings
 
 import pytest
 
+from notebooklm._web.wire.safe_index import safe_index
 from notebooklm.exceptions import UnknownRPCMethodError
-from notebooklm.rpc._safe_index import safe_index
 
 _STRICT_DECODE_ENV = "NOTEBOOKLM_STRICT_DECODE"
 

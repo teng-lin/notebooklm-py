@@ -41,8 +41,8 @@ import pytest
 
 from notebooklm._app.generate_retry import generation_outcome_from_status
 from notebooklm._web.artifacts import WebArtifactsAPI
+from notebooklm._web.wire.decoder import decode_response, extract_rpc_result
 from notebooklm.exceptions import ArtifactFeatureUnavailableError, RateLimitError, RPCError
-from notebooklm.rpc.decoder import decode_response, extract_rpc_result
 from notebooklm.rpc.types import ArtifactStatus, RPCMethod
 from notebooklm.types import GenerationStatus
 from tests._fixtures.rpc_error_frames import (

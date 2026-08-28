@@ -38,9 +38,9 @@ from notebooklm._web.rows.chat import (
     unwrap_conversation_turns,
     unwrap_last_conversation_id,
 )
+from notebooklm._web.wire.decoder import _MAX_STATUS_MESSAGE_CHARS
 from notebooklm.exceptions import UnknownRPCMethodError
 from notebooklm.rpc import RPCMethod
-from notebooklm.rpc.decoder import _MAX_STATUS_MESSAGE_CHARS
 
 #: Live ``GenerateFreeFormStreamedResponse`` capture (#2122) — the five chunks
 #: of one real answer stream, decoded from the ``wrb.fr`` frames exactly as the

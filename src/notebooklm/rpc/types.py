@@ -49,16 +49,16 @@ from .._types.enums import (  # noqa: F401 - compatibility re-exports
     share_permission_to_str,
     source_status_to_str,
 )
-from .overrides import (
+from .._web.wire.overrides import (
     _load_rpc_overrides as _load_rpc_overrides,
 )
-from .overrides import (
+from .._web.wire.overrides import (
     _logged_override_hashes as _logged_override_hashes,
 )
-from .overrides import (
+from .._web.wire.overrides import (
     _parse_rpc_overrides as _parse_rpc_overrides,
 )
-from .overrides import (
+from .._web.wire.overrides import (
     resolve_rpc_id as resolve_rpc_id,
 )
 

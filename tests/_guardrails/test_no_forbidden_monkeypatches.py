@@ -672,7 +672,7 @@ def test_deep_leaf_pattern_detects_known_shapes() -> None:
         _PATTERN_MOCK_PATCH_DEEP_PRIVATE,
     ) == [1]
     assert _match_lines(
-        'patch(target=r"notebooklm.rpc.decoder._extract_rows")',
+        'patch(target=r"notebooklm._web.wire.decoder._extract_rows")',
         _PATTERN_MOCK_PATCH_DEEP_PRIVATE,
     ) == [1]
     assert _match_lines(

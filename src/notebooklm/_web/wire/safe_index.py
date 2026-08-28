@@ -17,7 +17,7 @@ from __future__ import annotations
 import reprlib
 from typing import Any
 
-from ..exceptions import UnknownRPCMethodError
+from ...exceptions import UnknownRPCMethodError
 
 __all__ = ["safe_index"]
 

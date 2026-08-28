@@ -260,7 +260,7 @@ def test_decoder_null_result_error_does_not_leak_rpc_id_to_mcp_wire(
     numeric code nor a ``Found IDs`` dump — while the structured attributes are
     still preserved on the exception.
     """
-    from notebooklm.rpc.decoder import decode_response
+    from notebooklm._web.wire.decoder import decode_response
     from notebooklm.rpc.types import RPCMethod
 
     rpc_id = RPCMethod.GET_NOTEBOOK.value

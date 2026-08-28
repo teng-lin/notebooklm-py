@@ -5,8 +5,8 @@ Google's ``batchexecute`` responses are positional lists (the project's #1
 standing risk -- the shape can move without notice). The sanctioned places to
 decode those positional structures are:
 
-* ``src/notebooklm/rpc/`` -- the RPC protocol layer (encoder/decoder/safe_index),
-  the home of ``safe_index`` itself; and
+* ``src/notebooklm/_web/wire/`` -- the RPC protocol codecs and the home of
+  ``safe_index`` itself; and
 * ``src/notebooklm/_web/rows/`` -- the typed row views (``ArtifactRow`` /
   ``NoteRow`` / ``SourceRow`` / the chat rows) that centralise position
   knowledge behind named properties.
@@ -23,7 +23,7 @@ carries signal for them:
 * **BELOW the facade (the feature/decode layer: ``_chat/``, ``_artifact/``,
   ``_source/``, ``_types/``, the ``_*.py`` facade internals, ...).** This is
   where decoded ``batchexecute`` payloads legitimately flow, so positional
-  decode must live behind ``rpc/`` + ``_web/rows/`` + ``safe_index``. Both
+  decode must live behind ``_web/wire/`` + ``_web/rows/`` + ``safe_index``. Both
   positional-indexing gates apply here: the chained-descent gate and the
   single-level ``name[int]`` ratchet (whose allowlist is the remaining
   burndown).
@@ -108,9 +108,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / "src" / "notebooklm"
 
 # Package paths under ``src/notebooklm`` that are allowed to decode raw
-# positional RPC payloads. ``_web/rows`` is sanctioned at subpackage
-# granularity so sibling web services remain protected by the gate.
-SANCTIONED_PACKAGE_PREFIXES = frozenset({("rpc",), ("_web", "rows")})
+# positional RPC payloads. ``_web/rows`` and ``_web/wire`` are sanctioned at
+# subpackage granularity so sibling web services remain protected by the gate.
+SANCTIONED_PACKAGE_PREFIXES = frozenset({("_web", "rows"), ("_web", "wire")})
 
 
 def _is_sanctioned(path: Path) -> bool:
@@ -365,15 +365,15 @@ def test_no_unbaselined_chained_positional_rpc_indexing() -> None:
 
     This is the gate: a brand-new file (or a migrated file removed from the
     allowlist) that open-codes ``x[i][j]`` positional descent into an RPC
-    payload fails here. Route the descent through ``rpc/_safe_index.safe_index``
+    payload fails here. Route the descent through ``_web/wire/safe_index.safe_index``
     or a ``_web/rows/`` typed view instead.
     """
     offenders = _offending_files()
     unbaselined = {f: lines for f, lines in offenders.items() if f not in ALLOWLIST}
     assert not unbaselined, (
         "Raw chained positional indexing of RPC payloads (`x[i][j]`) is forbidden "
-        "outside src/notebooklm/rpc/ and src/notebooklm/_web/rows/ (see ADR-0011, "
-        "issue #1377). Decode through rpc/_safe_index.safe_index() or a typed "
+        "outside src/notebooklm/_web/wire/ and src/notebooklm/_web/rows/ (see ADR-0011, "
+        "issue #1377). Decode through _web/wire/safe_index.safe_index() or a typed "
         "_web/rows/ view so shape drift RAISES UnknownRPCMethodError instead of "
         "silently degrading to empty/wrong data.\n\n"
         + "\n".join(
@@ -444,7 +444,7 @@ def test_no_unbaselined_single_level_positional_rpc_indexing() -> None:
     unbaselined = {f: lines for f, lines in offenders.items() if f not in SINGLE_LEVEL_ALLOWLIST}
     assert not unbaselined, (
         "Raw single-level positional indexing of RPC payloads (`x[i]`) is forbidden "
-        "outside src/notebooklm/rpc/ and src/notebooklm/_web/rows/ for files not "
+        "outside src/notebooklm/_web/wire/ and src/notebooklm/_web/rows/ for files not "
         "on SINGLE_LEVEL_ALLOWLIST (see ADR-0011, issue #1491). Decode through a typed "
         "_web/rows/ view so shape drift RAISES UnknownRPCMethodError instead of "
         "silently degrading to empty/wrong data. NOTE: binding the read to a named local "

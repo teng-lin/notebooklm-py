@@ -4,10 +4,10 @@ This module pins, for every member of :class:`notebooklm.rpc.types.RPCMethod`:
 
 1. The string method ID itself (catches enum-value drift).
 2. The ``batchexecute`` ``f.req`` request envelope produced by
-   :func:`notebooklm.rpc.encoder.encode_rpc_request` for a representative
+   :func:`notebooklm._web.wire.encoder.encode_rpc_request` for a representative
    parameter list (catches encoder format drift and param-order regressions).
 3. The Python payload returned by
-   :func:`notebooklm.rpc.decoder.decode_response` when given a synthetic
+   :func:`notebooklm._web.wire.decoder.decode_response` when given a synthetic
    scrubbed response chunk for that method (catches decoder format drift).
 
 For methods that have a documented downstream parser / dataclass mapper,
@@ -63,6 +63,13 @@ from notebooklm._web.params.sources import (
 from notebooklm._web.rows.artifacts import ArtifactRow
 from notebooklm._web.rows.notes import NoteRow
 from notebooklm._web.rows.sources import SourceRow, SourceRowShape
+from notebooklm._web.wire.decoder import (
+    collect_rpc_ids,
+    decode_response,
+    parse_chunked_response,
+    strip_anti_xssi,
+)
+from notebooklm._web.wire.encoder import encode_rpc_request
 from notebooklm.exceptions import (
     ClientError,
     RateLimitError,
@@ -70,13 +77,6 @@ from notebooklm.exceptions import (
     UnknownRPCMethodError,
     ValidationError,
 )
-from notebooklm.rpc.decoder import (
-    collect_rpc_ids,
-    decode_response,
-    parse_chunked_response,
-    strip_anti_xssi,
-)
-from notebooklm.rpc.encoder import encode_rpc_request
 from notebooklm.rpc.types import (
     FLASHCARDS_VARIANT,
     INTERACTIVE_MIND_MAP_VARIANT,

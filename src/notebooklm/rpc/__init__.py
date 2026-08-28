@@ -6,12 +6,14 @@
 #
 # Every other imported name stays importable as a module attribute, because
 # first-party code imports several through this facade (e.g. ``safe_index``) and
-# external callers may already do ``from notebooklm.rpc import <name>``. But they
-# are deliberately kept OUT of ``__all__`` so the public-API compat gate stops
+# external callers may already do ``from notebooklm.rpc import <name>``. The
+# implementation lives in the private web-wire package; there are deliberately
+# no compatibility modules at the former deep ``notebooklm.rpc.*`` paths. These
+# names are deliberately kept OUT of ``__all__`` so the public-API compat gate stops
 # advertising them (#1589; one ``removed-export`` allowance each in
 # scripts/api-compat-allowlist.json). The ``noqa: F401`` directives suppress the
 # resulting "unused import" warnings on these re-export groups.
-from .decoder import (  # noqa: F401
+from .._web.wire.decoder import (  # noqa: F401
     AuthError,
     ClientError,
     NetworkError,
@@ -29,8 +31,12 @@ from .decoder import (  # noqa: F401
     safe_index,
     strip_anti_xssi,
 )
-from .encoder import build_request_body, encode_rpc_request, nest_source_ids  # noqa: F401
-from .overrides import resolve_rpc_id
+from .._web.wire.encoder import (  # noqa: F401
+    build_request_body,
+    encode_rpc_request,
+    nest_source_ids,
+)
+from .._web.wire.overrides import resolve_rpc_id
 from .types import (  # noqa: F401
     ARTIFACT_STATUS_SUGGESTED_WIRE_NAME,
     BATCHEXECUTE_URL,

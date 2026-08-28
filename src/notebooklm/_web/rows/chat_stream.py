@@ -22,10 +22,10 @@ from ..._types.documents import (
     utf16_len,
 )
 from ...exceptions import ChatError, ChatResponseParseError, UnknownRPCMethodError
-from ...rpc._safe_index import safe_index
-from ...rpc.decoder import strip_anti_xssi
 from ...rpc.types import RPCMethod
 from ...types import ChatReference, ConversationTurnKey, NextStepSuggestion
+from ..wire.decoder import strip_anti_xssi
+from ..wire.safe_index import safe_index
 from .chat import (
     AnswerRow,
     CitationDetail,
@@ -152,7 +152,7 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
     picks *between* marked answer chunks. The unmarked-text fallback and its
     drift diagnostics are unchanged.
     """
-    # Shared anti-XSSI stripper (rpc.decoder.strip_anti_xssi) is the single
+    # Shared anti-XSSI stripper (``_web.wire.decoder.strip_anti_xssi``) is the single
     # owner of the )]}' prefix removal. For the real chat wire format the
     # prefix is always followed by a newline, so the subsequent ``.strip()``
     # yields a byte-for-byte-identical result to the prior blind ``[4:]`` slice.

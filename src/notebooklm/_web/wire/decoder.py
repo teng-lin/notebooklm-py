@@ -7,10 +7,11 @@ import threading
 from enum import IntEnum
 from typing import Any
 
-from .._logging import _truncate_response_preview
+from ..._logging import _truncate_response_preview
+from ..._types.enums import GrpcStatusCode
 
 # Import exceptions from centralized module
-from ..exceptions import (
+from ...exceptions import (
     AuthError,
     ClientError,
     NetworkError,
@@ -20,10 +21,10 @@ from ..exceptions import (
     ServerError,
     UnknownRPCMethodError,
 )
-from ._safe_index import safe_index
-from .types import GrpcStatusCode, RPCMethod
+from ...rpc.types import RPCMethod
+from .safe_index import safe_index
 
-# Re-export for backward compatibility (imports from notebooklm.rpc.decoder still work)
+# Re-export through ``notebooklm.rpc`` for backward compatibility.
 __all__ = [
     "RPCError",
     "AuthError",
@@ -45,7 +46,8 @@ __all__ = [
     "reset_byte_count_mismatch_total",
 ]
 
-logger = logging.getLogger(__name__)
+# Preserve the established logging category across the private module move.
+logger = logging.getLogger("notebooklm.rpc.decoder")
 
 # Number of times ``parse_chunked_response`` has observed a declared byte-count
 # that did not match the UTF-8 byte length of the following payload. The

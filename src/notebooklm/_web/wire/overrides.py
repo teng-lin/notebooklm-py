@@ -7,7 +7,9 @@ import logging
 import os
 from functools import lru_cache
 
-logger = logging.getLogger(__name__)
+# Preserve the established logging category and its operator filters across
+# the private module move.
+logger = logging.getLogger("notebooklm.rpc.overrides")
 
 RPC_OVERRIDES_ENV_VAR = "NOTEBOOKLM_RPC_OVERRIDES"
 
@@ -19,7 +21,7 @@ _logged_override_hashes: set[int] = set()
 
 def _valid_rpc_method_names() -> set[str]:
     """Return valid RPCMethod member names without importing RPCMethod at module load."""
-    from .types import RPCMethod
+    from ...rpc.types import RPCMethod
 
     return set(RPCMethod.__members__)
 
@@ -122,7 +124,7 @@ def resolve_rpc_id(method_name: str, canonical_id: str) -> str:
     # ``_env`` is dependency-free, but the public package ``notebooklm``
     # imports ``rpc.types`` during init, and ``_env`` ships from the same
     # package.
-    from .._env import _ALLOWED_BASE_HOSTS, get_base_host
+    from ..._env import _ALLOWED_BASE_HOSTS, get_base_host
 
     try:
         host = get_base_host()

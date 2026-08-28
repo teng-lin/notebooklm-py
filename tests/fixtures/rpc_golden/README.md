@@ -149,7 +149,7 @@ this:
 
 The byte count is the UTF-8 byte length of the chunk's compact JSON
 serialisation. The reconstructed body is fed to
-`notebooklm.rpc.decoder.decode_response`, which strips the anti-XSSI
+`notebooklm._web.wire.decoder.decode_response`, which strips the anti-XSSI
 prefix, parses the chunks, and extracts the result for the requested RPC
 ID.
 

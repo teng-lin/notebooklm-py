@@ -27,18 +27,18 @@ import httpx
 
 from notebooklm._auth.cookies import _load_storage_state
 from notebooklm._auth.refresh import _fetch_tokens_with_jar
+from notebooklm._web.wire.decoder import (
+    collect_rpc_ids,
+    decode_response,
+    parse_chunked_response,
+    strip_anti_xssi,
+)
 from notebooklm.auth import AuthTokens, build_cookie_jar, extract_cookies_with_domains
 from notebooklm.rpc import (
     RPCMethod,
     build_request_body,
     encode_rpc_request,
     get_batchexecute_url,
-)
-from notebooklm.rpc.decoder import (
-    collect_rpc_ids,
-    decode_response,
-    parse_chunked_response,
-    strip_anti_xssi,
 )
 
 

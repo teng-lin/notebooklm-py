@@ -11,6 +11,7 @@ import pytest
 
 import notebooklm._artifact.downloads as _downloads
 from notebooklm._web.artifacts import WebArtifactsAPI
+from notebooklm._web.wire.decoder import RPCError
 from notebooklm.exceptions import (
     ArtifactInProgressTimeoutError,
     ArtifactPendingTimeoutError,
@@ -18,7 +19,6 @@ from notebooklm.exceptions import (
     UnknownRPCMethodError,
     ValidationError,
 )
-from notebooklm.rpc.decoder import RPCError
 from notebooklm.rpc.types import VideoFormat, VideoStyle
 from notebooklm.types import ArtifactDownloadError, GenerationStatus
 

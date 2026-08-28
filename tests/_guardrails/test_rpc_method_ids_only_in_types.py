@@ -2,7 +2,7 @@
 
 CLAUDE.md is explicit: ``src/notebooklm/rpc/types.py`` is the *source of truth*
 for every obfuscated batchexecute method ID, and the only escape hatch is the
-env-driven runtime override in ``rpc/overrides.py``. Nothing else in
+env-driven runtime override in ``_web/wire/overrides.py``. Nothing else in
 ``src/notebooklm/`` should hardcode a raw method-ID string.
 
 This AST lint enforces that invariant two ways:
@@ -141,7 +141,7 @@ def test_no_hardcoded_rpc_method_ids_outside_rpc_layer() -> None:
         "Batchexecute RPC method IDs must live only in src/notebooklm/rpc/types.py "
         "(the source of truth per CLAUDE.md). Reference them via the RPCMethod enum "
         "instead of hardcoding the obfuscated string; the only runtime escape hatch "
-        "is rpc/overrides.py.\n\n" + "\n".join(offenders)
+        "is _web/wire/overrides.py.\n\n" + "\n".join(offenders)
     )
 
 

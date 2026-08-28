@@ -98,7 +98,7 @@ from ..._types.chat import ConversationTurnKey
 from ..._types.documents import StructuredDocument
 from ...exceptions import UnknownRPCMethodError
 from ...rpc import RPCMethod, safe_index
-from ...rpc.decoder import sanitize_status_message
+from ..wire.decoder import sanitize_status_message
 from .documents import build_document
 
 __all__ = [

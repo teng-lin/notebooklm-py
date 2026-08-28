@@ -182,7 +182,7 @@ class RpcExecutor:
         ``allow_null=True``: it tells the decoder that a null result the server
         tagged with a non-OK ``google.rpc.Status`` is a rejection to raise on,
         not an empty-but-acceptable payload to swallow. See
-        :func:`notebooklm.rpc.decoder.decode_response` for why it is opt-in per
+        :func:`notebooklm._web.wire.decoder.decode_response` for why it is opt-in per
         call site (#2188).
         """
         # Pre-open guard — preserves the historical ``RuntimeError`` surface by

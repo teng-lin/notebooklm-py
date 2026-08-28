@@ -368,7 +368,7 @@ def _category_for(exc: BaseException) -> ErrorCategory:
         return ErrorCategory.CONFIG
 
     # --- gRPC status-5 (NOT_FOUND) surfaced as a bare ClientError -------------
-    # ``rpc/decoder.py`` raises ``ClientError(rpc_code=5)`` for a gRPC status-5
+    # ``_web/wire/decoder.py`` raises ``ClientError(rpc_code=5)`` for a gRPC status-5
     # result (a deliberate non-``NotFoundError`` choice to dodge the auth-retry
     # path), so a genuine missing resource would otherwise fall through to the
     # generic ``RPC`` catch-all -> 502. Map it to ``NOT_FOUND`` here, before that
@@ -397,7 +397,7 @@ def _category_for(exc: BaseException) -> ErrorCategory:
     # typed cause propagates unwrapped (with ``source_id``/``stage`` attached), so it
     # is classified by the earlier branches above and never reaches this one at all.
     # BUT a transient/server failure can still reach the wrap as a *bare* RPCError
-    # (the null-result-with-status path in ``rpc/decoder.py`` raises RPCError with an
+    # (the null-result-with-status path in ``_web/wire/decoder.py`` raises RPCError with an
     # infra ``rpc_code`` rather than a typed ServerError). Keep those FATAL so a batch
     # add aborts for retry/backoff instead of masking a rate-limit/5xx as a per-item
     # error. Must precede the LIBRARY catch-all to keep its distinct 4xx category.

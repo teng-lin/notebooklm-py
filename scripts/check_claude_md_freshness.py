@@ -146,7 +146,7 @@ def _top_level_notebooklm_modules(repo_root: Path) -> list[str]:
     """Return every ``src/notebooklm`` Python module and subpackage.
 
     Recurses through subpackages so that subpackage members (e.g.
-    ``_auth/tokens.py``, ``rpc/overrides.py``) must be documented too — not
+    ``_auth/tokens.py``, ``_web/wire/overrides.py``) must be documented too — not
     just direct top-level modules. ``__init__.py`` package markers are
     excluded from the required set; the enclosing package directory stands in
     for them.

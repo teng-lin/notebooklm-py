@@ -1,4 +1,4 @@
-"""Tests for ``notebooklm.rpc._safe_index.safe_index``.
+"""Tests for ``notebooklm._web.wire.safe_index.safe_index``.
 
 Covers happy descent, strict-mode raise (the only mode since the
 ``NOTEBOOKLM_STRICT_DECODE=0`` soft-mode opt-out was retired in v0.7.0), and
@@ -13,13 +13,13 @@ import warnings
 import pytest
 
 import notebooklm.rpc as rpc_pkg
+from notebooklm._web.wire.decoder import safe_index as safe_index_via_decoder
+from notebooklm._web.wire.safe_index import safe_index
 from notebooklm.exceptions import (
     DecodingError,
     RPCError,
     UnknownRPCMethodError,
 )
-from notebooklm.rpc._safe_index import safe_index
-from notebooklm.rpc.decoder import safe_index as safe_index_via_decoder
 
 
 def test_safe_index_helper_is_reexported_via_decoder():

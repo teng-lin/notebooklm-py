@@ -973,7 +973,7 @@ def test_chat_wire_static_import_guard() -> None:
         "notebooklm.client",
         "notebooklm._chat",
         "notebooklm._core",
-        "notebooklm.rpc.overrides",
+        "notebooklm._web.wire.overrides",
     }
     tree = ast.parse((SRC_ROOT / "_web" / "rows" / "chat_stream.py").read_text(encoding="utf-8"))
 
@@ -1000,7 +1000,7 @@ def test_chat_wire_runtime_import_does_not_request_forbidden_modules(monkeypatch
         "notebooklm.client",
         "notebooklm._chat",
         "notebooklm._core",
-        "notebooklm.rpc.overrides",
+        "notebooklm._web.wire.overrides",
     }
     sys.modules.pop("notebooklm._web.rows.chat_stream", None)
     real_import = builtins.__import__

@@ -34,7 +34,7 @@ Why both halves live here, not split into two modules:
   string surgery is a separate concern and benefits from being importable
   on its own (the bulk re-scrub script in ``scripts/`` imports both
   ``scrub_string`` AND ``recompute_chunk_prefix`` directly).
-- Decoder tolerance behavior in ``src/notebooklm/rpc/decoder.py`` (still
+- Decoder tolerance behavior in ``src/notebooklm/_web/wire/decoder.py`` (still
   parses the JSON on byte-count mismatch, now logging at DEBUG rather
   than WARNING — see #669) is what makes the recompute pass optional for
   correctness; these helpers exist so cassettes stay self-consistent for
@@ -135,7 +135,7 @@ from collections import Counter
 
 # XSSI anti-hijack prefix used by Google batchexecute responses.
 # Format: ")]}'" followed by two newlines, then alternating <count>\n<payload>\n
-# chunks. See ``src/notebooklm/rpc/decoder.py`` for the parser.
+# chunks. See ``src/notebooklm/_web/wire/decoder.py`` for the parser.
 _XSSI_PREFIX = ")]}'\n\n"
 
 # A "chunk header" line is a line consisting of ONLY ASCII digits — that's the
@@ -158,7 +158,7 @@ def recompute_chunk_prefix(body: str) -> str:
     1. ``tests/_guardrails/test_cassette_shapes.py`` byte-count assertion failures.
     2. ``decoder.py`` to emit ``Chunk at line N declares X bytes but payload is
        Y bytes`` DEBUG logs during replay (the JSON is still parsed — see
-       ``notebooklm.rpc.decoder.parse_chunked_response`` — but well-formed cassettes
+       ``notebooklm._web.wire.decoder.parse_chunked_response`` — but well-formed cassettes
        shouldn't trip the log at all).
 
     This helper walks the body, identifies every digit-only "header" line that
@@ -167,7 +167,7 @@ def recompute_chunk_prefix(body: str) -> str:
     "utf-8"))`` — matching the ``len(json_str.encode("utf-8"))`` calculation
     the decoder uses (which is what the cassette shape lint validates, even
     though Google's live framing appears to use a different unit; see the
-    Note: block on :func:`notebooklm.rpc.decoder.parse_chunked_response`).
+    Note: block on :func:`notebooklm._web.wire.decoder.parse_chunked_response`).
     For ASCII-only payloads (the common case for batchexecute JSON), this is
     identical to ``len(payload)``, so the shape-lint character-length
     assertion in ``test_cassette_shapes.py`` still passes.
