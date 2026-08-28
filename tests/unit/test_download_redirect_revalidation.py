@@ -31,7 +31,12 @@ import httpx
 import pytest
 
 import notebooklm._artifact.downloads as _downloads_mod
-from notebooklm._artifact._download_client import _make_download_client
+from notebooklm._artifact._download_client import (
+    _is_trusted_download_host,
+    _make_download_client,
+)
+from notebooklm._artifact._redirect_guard import redirect_revalidation_hooks
+from notebooklm._hop_credentials import HopCredentials
 from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm.types import ArtifactDownloadError
 
@@ -106,9 +111,9 @@ async def test_httpx_applies_cookie_policy_on_every_redirect_hop():
             return httpx.Response(302, headers={"location": "/final"})
         return httpx.Response(200, content=b"ok")
 
-    def credential_for(url: str) -> httpx.Cookies:
+    def credential_for(url: str) -> HopCredentials:
         policy_calls.append(url)
-        return cookies
+        return HopCredentials(cookies=cookies)
 
     def client_factory(*args, **kwargs):
         kwargs["transport"] = httpx.MockTransport(handler)
@@ -128,6 +133,168 @@ async def test_httpx_applies_cookie_policy_on_every_redirect_hop():
     assert policy_calls == expected
     assert [url for url, _cookie in seen_requests] == expected
     assert all(cookie == "SID=secret" for _url, cookie in seen_requests)
+
+
+@pytest.mark.asyncio
+async def test_httpx_policy_jar_replaces_constructor_jar():
+    """The selected jar is authoritative, rather than only an allow/drop signal."""
+    real_cls = httpx.AsyncClient
+    seen_cookies: list[str | None] = []
+    constructor_jar = httpx.Cookies()
+    constructor_jar.set("SID", "constructor", domain=".googleapis.com")
+    selected_jar = httpx.Cookies()
+    selected_jar.set("SID", "selected", domain=".googleapis.com")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_cookies.append(request.headers.get("cookie"))
+        return httpx.Response(200, content=b"ok")
+
+    def client_factory(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real_cls(*args, **kwargs)
+
+    with patch.object(httpx, "AsyncClient", side_effect=client_factory):
+        client, get_guarded = _make_download_client(
+            constructor_jar,
+            timeout=30.0,
+            credential_for=lambda _url: HopCredentials(cookies=selected_jar),
+        )
+        async with client:
+            await get_guarded(_TRUSTED_URL)
+
+    assert seen_cookies == ["SID=selected"]
+
+
+@pytest.mark.asyncio
+async def test_httpx_none_policy_drops_first_hop_constructor_credentials():
+    """A first-hop None result removes constructor cookies and bearer headers."""
+    seen: list[tuple[str | None, str | None, str | None]] = []
+    constructor_jar = httpx.Cookies()
+    constructor_jar.set("SID", "constructor", domain=".googleapis.com")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            (
+                request.headers.get("cookie"),
+                request.headers.get("authorization"),
+                request.headers.get("proxy-authorization"),
+            )
+        )
+        return httpx.Response(200, content=b"ok")
+
+    async with httpx.AsyncClient(
+        cookies=constructor_jar,
+        headers={
+            "Authorization": "Bearer constructor",
+            "Proxy-Authorization": "Bearer proxy-constructor",
+        },
+        event_hooks=redirect_revalidation_hooks(
+            _is_trusted_download_host,
+            lambda _url: None,
+        ),
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        await client.get(_TRUSTED_URL)
+
+    assert seen == [(None, None, None)]
+
+
+@pytest.mark.asyncio
+async def test_httpx_bearer_policy_attaches_then_drops_on_trusted_redirect():
+    """Policy headers are re-evaluated rather than inherited across trusted hops."""
+    seen: list[tuple[str, str | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((str(request.url), request.headers.get("authorization")))
+        if request.url.path == "/start":
+            return httpx.Response(302, headers={"location": "/final"})
+        return httpx.Response(200, content=b"ok")
+
+    def credential_for(url: str) -> HopCredentials | None:
+        if url.endswith("/start"):
+            return HopCredentials(headers={"Authorization": "Bearer selected"})
+        return None
+
+    async with httpx.AsyncClient(
+        follow_redirects=True,
+        event_hooks=redirect_revalidation_hooks(_is_trusted_download_host, credential_for),
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        await client.get(_TRUSTED_URL)
+
+    assert seen == [
+        (_TRUSTED_URL, "Bearer selected"),
+        (f"https://{_TRUSTED_HOST}/final", None),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_httpx_selected_jar_receives_redirect_set_cookie():
+    """A redirect response rotates the selected jar before the next hop."""
+    seen_cookies: list[str | None] = []
+    constructor_jar = httpx.Cookies()
+    constructor_jar.set("SID", "constructor", domain=".googleapis.com")
+    selected_jar = httpx.Cookies()
+    selected_jar.set("SID", "selected", domain=".googleapis.com")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_cookies.append(request.headers.get("cookie"))
+        if request.url.path == "/start":
+            return httpx.Response(
+                302,
+                headers={
+                    "location": "/final",
+                    "set-cookie": "ROTATED=next; Path=/; Secure",
+                },
+            )
+        return httpx.Response(200, content=b"ok")
+
+    async with httpx.AsyncClient(
+        cookies=constructor_jar,
+        follow_redirects=True,
+        event_hooks=redirect_revalidation_hooks(
+            _is_trusted_download_host,
+            lambda _url: HopCredentials(cookies=selected_jar),
+        ),
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        await client.get(_TRUSTED_URL)
+
+    assert seen_cookies[0] == "SID=selected"
+    assert set(seen_cookies[1].split("; ")) == {"SID=selected", "ROTATED=next"}
+
+
+@pytest.mark.asyncio
+async def test_httpx_selected_jar_domain_matches_each_redirect_host():
+    """A structured multi-domain jar emits only the cookie matching each hop."""
+    selected_jar = httpx.Cookies()
+    selected_jar.set("API", "api-cookie", domain=".googleapis.com")
+    selected_jar.set("MEDIA", "media-cookie", domain=".googleusercontent.com")
+    seen: list[tuple[str, str | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.url.host, request.headers.get("cookie")))
+        if request.url.path == "/start":
+            return httpx.Response(
+                302,
+                headers={"location": "https://lh3.googleusercontent.com/final"},
+            )
+        return httpx.Response(200, content=b"ok")
+
+    async with httpx.AsyncClient(
+        follow_redirects=True,
+        event_hooks=redirect_revalidation_hooks(
+            _is_trusted_download_host,
+            lambda _url: HopCredentials(cookies=selected_jar),
+        ),
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        await client.get(_TRUSTED_URL)
+
+    assert seen == [
+        ("storage.googleapis.com", "API=api-cookie"),
+        ("lh3.googleusercontent.com", "MEDIA=media-cookie"),
+    ]
 
 
 def _redirect_handler(

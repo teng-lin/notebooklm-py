@@ -63,7 +63,7 @@ if TYPE_CHECKING:
 
 from ..rows import artifacts as _artifact_rows
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("notebooklm._artifact.generation")
 
 
 class ArtifactGenerationService:

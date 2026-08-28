@@ -213,7 +213,7 @@ def test_chat_notebooks_dependency_is_required() -> None:
 
 @pytest.fixture
 def mock_mind_map_service():
-    """Bundle of stand-in services required by ``ArtifactsAPI.__init__``.
+    """Bundle of stand-in services required by ``WebArtifactsAPI.__init__``.
 
     These tests exercise generation/encoding paths that never call the
     mind-map services. The ``mind_maps`` + ``note_service`` parameters

@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import httpx
 import pytest
@@ -35,6 +37,7 @@ from notebooklm._artifact.downloads import (  # noqa: E402
     _make_download_client,
 )
 from notebooklm._curl_cffi_transport import CurlCffiAsyncClient  # noqa: E402
+from notebooklm._hop_credentials import HopCredentials  # noqa: E402
 
 
 def _trust_local(host: str | None) -> bool:
@@ -139,9 +142,9 @@ async def test_get_guarded_applies_cookie_policy_on_every_redirect_hop():
     jar.set("SID", "secret", domain=".googleapis.com")
     policy_calls: list[str] = []
 
-    def credential_for(url: str) -> httpx.Cookies:
+    def credential_for(url: str) -> HopCredentials:
         policy_calls.append(url)
-        return jar
+        return HopCredentials(cookies=jar)
 
     try:
         await client.get_guarded(
@@ -159,6 +162,161 @@ async def test_get_guarded_applies_cookie_policy_on_every_redirect_hop():
     assert policy_calls == expected
     assert [url for url, _kwargs in calls] == expected
     assert all(kwargs["cookies"] is jar.jar for _url, kwargs in calls)
+    assert all(kwargs["discard_cookies"] is True for _url, kwargs in calls)
+
+
+async def test_get_guarded_policy_replaces_constructor_credentials_then_drops_them():
+    """The selected jar/header wins on hop 1 and None is credential-free on hop 2."""
+    constructor_jar = httpx.Cookies()
+    constructor_jar.set("SID", "constructor", domain=".googleapis.com")
+    selected_jar = httpx.Cookies()
+    selected_jar.set("SID", "selected", domain=".googleapis.com")
+    client = CurlCffiAsyncClient(
+        cookies=constructor_jar,
+        headers={"Authorization": "Bearer constructor"},
+    )
+    calls: list = []
+    _stub_curl_get(
+        client,
+        [
+            _FakeResp(302, location="https://storage.googleapis.com/final"),
+            _FakeResp(200, content=b"ok", url="https://storage.googleapis.com/final"),
+        ],
+        calls,
+    )
+
+    def credential_for(url: str) -> HopCredentials | None:
+        if url.endswith("/start"):
+            return HopCredentials(
+                cookies=selected_jar,
+                headers={"Authorization": "Bearer selected"},
+            )
+        return None
+
+    try:
+        await client.get_guarded(
+            "https://storage.googleapis.com/start",
+            is_trusted_host=_trust_local,
+            credential_for=credential_for,
+        )
+    finally:
+        await client.aclose()
+
+    first_kwargs = calls[0][1]
+    second_kwargs = calls[1][1]
+    assert first_kwargs["cookies"] is selected_jar.jar
+    assert first_kwargs["headers"]["authorization"] == "Bearer selected"
+    assert first_kwargs["discard_cookies"] is True
+    assert second_kwargs["cookies"] == {}
+    assert "authorization" not in second_kwargs.get("headers", {})
+    assert second_kwargs["discard_cookies"] is True
+
+
+async def test_curl_discard_cookies_prevents_per_request_cookie_session_promotion():
+    """Exercise real curl_cffi parsing: hop credentials never enter session state."""
+    seen_cookies: list[str | None] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
+            seen_cookies.append(self.headers.get("Cookie"))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, _format: str, *args: object) -> None:
+            return
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    client = CurlCffiAsyncClient(cookies=None)
+    jar = httpx.Cookies()
+    jar.set("SID", "selected", domain="127.0.0.1")
+    url = f"http://127.0.0.1:{server.server_port}/"
+    try:
+        await client._curl.get(url, cookies=jar.jar, discard_cookies=True)
+        await client._curl.get(url, discard_cookies=True)
+    finally:
+        await client.aclose()
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+
+    assert seen_cookies == ["SID=selected", None]
+
+
+async def test_get_guarded_selected_jar_receives_redirect_set_cookie():
+    """curl preserves response rotation in the selected jar without session promotion."""
+    client = CurlCffiAsyncClient(cookies=None)
+    selected_jar = httpx.Cookies()
+    selected_jar.set("SID", "selected", domain=".googleapis.com")
+    responses = iter(
+        [
+            _FakeResp(302, location="https://storage.googleapis.com/final"),
+            _FakeResp(200, content=b"ok", url="https://storage.googleapis.com/final"),
+        ]
+    )
+    seen_cookies: list[str | None] = []
+
+    async def fake_get(url: str, **kwargs):
+        request = httpx.Request("GET", url)
+        httpx.Cookies(kwargs["cookies"]).set_cookie_header(request)
+        seen_cookies.append(request.headers.get("cookie"))
+        response = next(responses)
+        if url.endswith("/start"):
+            response.headers["set-cookie"] = "ROTATED=next; Path=/; Secure"
+        return response
+
+    client._curl.get = fake_get
+    try:
+        await client.get_guarded(
+            "https://storage.googleapis.com/start",
+            is_trusted_host=_trust_local,
+            credential_for=lambda _url: HopCredentials(cookies=selected_jar),
+        )
+    finally:
+        await client.aclose()
+
+    assert seen_cookies[0] == "SID=selected"
+    assert set(seen_cookies[1].split("; ")) == {"SID=selected", "ROTATED=next"}
+
+
+async def test_get_guarded_structured_jar_domain_matches_each_redirect_host():
+    """The curl request spy observes only the jar cookie matching each hop."""
+    client = CurlCffiAsyncClient(cookies=None)
+    selected_jar = httpx.Cookies()
+    selected_jar.set("API", "api-cookie", domain=".googleapis.com")
+    selected_jar.set("MEDIA", "media-cookie", domain=".googleusercontent.com")
+    responses = iter(
+        [
+            _FakeResp(302, location="https://lh3.googleusercontent.com/final"),
+            _FakeResp(200, content=b"ok", url="https://lh3.googleusercontent.com/final"),
+        ]
+    )
+    seen: list[tuple[str, str | None]] = []
+
+    async def fake_get(url: str, **kwargs):
+        # Production hands curl_cffi the structured CookieJar on every call;
+        # materialize its standard domain/path decision in the request spy.
+        request = httpx.Request("GET", url)
+        httpx.Cookies(kwargs["cookies"]).set_cookie_header(request)
+        seen.append((request.url.host, request.headers.get("cookie")))
+        return next(responses)
+
+    client._curl.get = fake_get
+    try:
+        await client.get_guarded(
+            "https://storage.googleapis.com/start",
+            is_trusted_host=_trust_local,
+            credential_for=lambda _url: HopCredentials(cookies=selected_jar),
+        )
+    finally:
+        await client.aclose()
+
+    assert seen == [
+        ("storage.googleapis.com", "API=api-cookie"),
+        ("lh3.googleusercontent.com", "MEDIA=media-cookie"),
+    ]
 
 
 async def test_get_guarded_blocks_untrusted_redirect_target():

@@ -19,8 +19,8 @@ These tests pin three contracts:
 3. Constructing without the new kwargs (or with the old name) raises
    ``TypeError``.
 
-``ArtifactsAPI`` consumes its three runtime collaborators (``rpc`` +
-``drain`` + ``lifecycle``) directly per ADR-0014 Rule 2; the tests here
+``WebArtifactsAPI`` consumes its Web and neutral collaborators directly per
+ADR-0014 Rule 2; the tests here
 do not exercise RPC traffic — they pin the constructor contract — so
 the collaborator stubs only need to silently accept the calls
 ``ArtifactsAPI.__init__`` makes (``drain.register_drain_hook``).

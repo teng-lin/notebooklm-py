@@ -18,6 +18,7 @@ import httpx
 
 from .._auth.cookies import load_httpx_cookies
 from .._curl_cffi_transport import resolve_transport_factory
+from .._hop_credentials import CredentialPolicy, HopCredentials
 from ..exceptions import ArtifactDownloadError
 from ._download_client import (
     _download_display_host,
@@ -28,16 +29,15 @@ from ._redirect_guard import redirect_revalidation_hooks
 
 logger = logging.getLogger(__name__)
 _DOWNLOAD_WRITER_QUEUE_SIZE = 8
-CredentialPolicy = Callable[[str], Any | None]
 
 
 def _credential_policy(cookies: Any) -> CredentialPolicy:
     """Return the web default: the jar on trusted hops, otherwise no credential."""
 
-    def credential_for(url: str) -> Any | None:
+    def credential_for(url: str) -> HopCredentials | None:
         parsed = urlparse(url)
         if parsed.scheme == "https" and _is_trusted_download_host(parsed.hostname):
-            return cookies
+            return HopCredentials(cookies=cookies)
         return None
 
     return credential_for

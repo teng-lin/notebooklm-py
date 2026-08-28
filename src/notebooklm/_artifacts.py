@@ -6,7 +6,6 @@ import builtins
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from . import _mind_map  # noqa: F401 -- private compatibility identity
@@ -45,7 +44,20 @@ logger = logging.getLogger(__name__)
 
 
 class ArtifactsAPI(ABC):
-    """Backend-neutral operations on generated notebook artifacts."""
+    """Operations on NotebookLM artifacts (studio content).
+
+    Artifacts are AI-generated content: Audio/Video Overviews, Reports,
+    Quizzes, Flashcards, Infographics, Slide Decks, Data Tables, and Mind Maps.
+
+    Usage::
+
+        async with NotebookLMClient.from_storage() as client:
+            status = await client.artifacts.generate_audio(notebook_id)
+            await client.artifacts.wait_for_completion(notebook_id, status.task_id)
+            await client.artifacts.download_audio(notebook_id, "output.mp4")
+            artifacts = await client.artifacts.list(notebook_id)
+            await client.artifacts.rename(notebook_id, artifact_id, "New Title")
+    """
 
     def __init__(
         self,
@@ -53,13 +65,24 @@ class ArtifactsAPI(ABC):
         drain: TransportDrainTracker,
         lifecycle: ClientLifecycle,
         notebooks: NotebookSourceIdProvider,
-        storage_path: Path | None = None,
+        asset_downloads: AssetDownloadService,
     ) -> None:
+        """Initialize the backend-neutral artifacts API.
+
+        Args:
+            drain: Transport drain coordinator. Owns ``operation_scope`` for
+                polling and ``register_drain_hook`` for close-time cleanup.
+            lifecycle: Client lifecycle seam. Owns ``assert_bound_loop`` used
+                before polling touches loop-bound state.
+            notebooks: Base-typed source-id resolver used by shared generation
+                workflows.
+            asset_downloads: Required backend-supplied neutral asset-transfer
+                service, configured with that backend's per-hop credential policy.
+        """
         self._drain = drain
         self._lifecycle = lifecycle
         self._notebooks = notebooks
-        self._storage_path = storage_path
-        self._asset_downloads = AssetDownloadService(storage_path=storage_path)
+        self._asset_downloads = asset_downloads
         self._poll_registry = PollRegistry()
         self._polling = ArtifactPollingService(
             loop_guard=self._lifecycle,

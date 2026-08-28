@@ -10,7 +10,7 @@ from ...exceptions import UnknownRPCMethodError
 from ...rpc import RPCMethod, safe_index
 from ...types import ArtifactParseError
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("notebooklm._artifacts")
 
 
 def _extract_cell_text(cell: Any) -> str:

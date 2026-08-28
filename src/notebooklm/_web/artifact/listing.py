@@ -25,7 +25,7 @@ from ...types import Artifact, ArtifactNotFoundError, ArtifactNotReadyError, Art
 from ..rows.artifacts import ArtifactRow, unwrap_artifact_rows
 from ..rows.notes import NoteRow
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("notebooklm._artifact.listing")
 
 ListRawCallback = Callable[[str], Awaitable[list[Any]]]
 ListMindMapsCallback = Callable[[str], Awaitable[list[Any]]]

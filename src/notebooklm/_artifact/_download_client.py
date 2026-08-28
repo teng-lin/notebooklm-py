@@ -15,6 +15,7 @@ from urllib.parse import ParseResult, urlparse
 import httpx
 
 from .._curl_cffi_transport import resolve_transport_factory
+from .._hop_credentials import CredentialPolicy, HopCredentials
 from ._redirect_guard import redirect_revalidation_hooks
 
 if TYPE_CHECKING:
@@ -50,7 +51,7 @@ def _download_display_host(parsed: ParseResult) -> str:
 def _make_download_client(
     cookies: Any,
     timeout: Any,
-    credential_for: Callable[[str], Any | None] | None = None,
+    credential_for: CredentialPolicy | None = None,
 ) -> tuple[Any, Callable[[str], Awaitable[httpx.Response]]]:
     """Build a download client + redirect-guarded GET for the active transport.
 
@@ -65,10 +66,10 @@ def _make_download_client(
     resolved_credential_for = credential_for
     if resolved_credential_for is None:
 
-        def _default_credential_for(_url: str) -> Any | None:
+        def _default_credential_for(_url: str) -> HopCredentials | None:
             parsed = urlparse(_url)
             if parsed.scheme == "https" and _is_trusted_download_host(parsed.hostname):
-                return cookies
+                return HopCredentials(cookies=cookies)
             return None
 
         resolved_credential_for = _default_credential_for

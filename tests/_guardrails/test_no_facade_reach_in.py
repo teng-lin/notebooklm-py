@@ -279,6 +279,8 @@ def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
 _REACH_IN_MIGRATED_MODULES: list[str] = [
     "_web/artifact/downloads.py",
     "_web/artifact/generation.py",
+    "_web/artifact/listing.py",
+    "_web/artifact/table.py",
 ]
 
 
@@ -302,11 +304,8 @@ class _ApiReachInVisitor(ast.NodeVisitor):
     visible to attribute access in nested closures and comprehensions.
 
     ``_REACH_IN_MIGRATED_MODULES`` enumerates helpers already migrated to
-    constructor injection; this guard is actively enforced for those
-    modules. The migrated artifact-service helpers are
-    ``_web/artifact/downloads.py`` and ``_web/artifact/generation.py`` (the latter
-    re-extracted from the ``ArtifactsAPI`` facade as a constructor-injected
-    ``ArtifactGenerationService``).
+    explicit collaborators; this guard is actively enforced for those modules.
+    It covers all Web artifact download, generation, listing, and table helpers.
     """
 
     def __init__(self, module_name: str) -> None:

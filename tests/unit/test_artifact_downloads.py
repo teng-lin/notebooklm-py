@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from notebooklm._artifact import downloads as asset_downloads
+from notebooklm._artifact.downloads import AssetDownloadService
+from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._web.artifact import downloads as artifact_downloads
 from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm.types import (
@@ -879,8 +881,6 @@ class TestStoragePathEncapsulation:
 
     @pytest.mark.asyncio
     async def test_download_urls_batch_uses_constructor_storage_path(self, tmp_path, monkeypatch):
-        from notebooklm._artifact.downloads import AssetDownloadService
-
         sentinel = tmp_path / "sentinel_storage.json"
         service = AssetDownloadService(storage_path=sentinel)
 
@@ -896,3 +896,33 @@ class TestStoragePathEncapsulation:
         await service.download_urls_batch([])
 
         assert captured == [sentinel]
+
+
+@pytest.mark.asyncio
+async def test_neutral_base_uses_injected_asset_download_service():
+    """A backend can supply its credential-configured neutral asset plane."""
+
+    async def concrete_method(self, *args, **kwargs):
+        return None
+
+    concrete_type = type(
+        "ConcreteArtifactsAPI",
+        (ArtifactsAPI,),
+        dict.fromkeys(ArtifactsAPI.__abstractmethods__, concrete_method),
+    )
+    asset_service = AsyncMock(spec=AssetDownloadService)
+    asset_service.download_url.return_value = "/tmp/result.bin"
+    drain = MagicMock()
+    api = concrete_type(
+        drain=drain,
+        lifecycle=MagicMock(),
+        notebooks=MagicMock(),
+        asset_downloads=asset_service,
+    )
+
+    result = await api._download_to_path("https://storage.googleapis.com/x", "/tmp/result.bin")
+
+    assert result == "/tmp/result.bin"
+    asset_service.download_url.assert_awaited_once_with(
+        "https://storage.googleapis.com/x", "/tmp/result.bin"
+    )

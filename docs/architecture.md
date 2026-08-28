@@ -223,7 +223,7 @@ Some feature workflows intentionally combine RPC with non-RPC HTTP work:
 | Source file upload | `WebSourcesAPI.add_file()` delegates to `SourceUploadPipeline.add_file()`. The pipeline opens an `operation_scope`, takes its own upload semaphore, registers the file source through `runtime.rpc_call(ADD_SOURCE_FILE)`, then uses a dedicated `httpx.AsyncClient` and live Kernel cookies for the Scotty resumable-upload start/finalize calls. Optional wait/rename steps return to `rpc_call`. |
 | Source URL/text/Drive add | `SourceAddService` wraps URL and Drive mutating RPCs in `idempotent_create(...)` because those flows have stable probes. Text-source adds are intentionally non-idempotent unless the caller handles dedupe externally. |
 | Artifact generation | The backend-neutral `ArtifactsAPI` owns validation, source/language resolution, and all ten `generate_*` workflows over the sole `_send_create_artifact` hook. `WebArtifactsAPI` implements that hook with `ArtifactGenerationService` (`_web/artifact/generation.py`), whose positional `CREATE_ARTIFACT` builders live in `_web/params/artifacts.py`; web-only revise/retry/mind-map paths use the same service. `ArtifactPollingService` owns leader/follower polling over the abstract studio-only decoded listing, with one `LIST_ARTIFACTS` and no note call per tick. |
-| Artifact download | Web-only `ArtifactDownloadService` (`_web/artifact/downloads.py`) selects artifacts and decodes raw rows/interactive HTML. The neutral `AssetDownloadService` (`_artifact/downloads.py`) owns byte transfer, rejection, staging, and atomic publication. Its streaming client applies the storage-cookie jar through a credential policy on every validated redirect hop for both httpx and curl_cffi, with client-side domain matching and no flat `Cookie` header. These transfers do not go through `RpcExecutor` or `Kernel.post`. |
+| Artifact download | Web-only `ArtifactDownloadService` (`_web/artifact/downloads.py`) selects artifacts and decodes raw rows/interactive HTML. The neutral `AssetDownloadService` (`_artifact/downloads.py`) owns byte transfer, rejection, staging, and atomic publication. Its streaming client applies a typed cookie-jar/header credential result on every validated redirect hop for both httpx and curl_cffi; Web supplies the storage-cookie jar, with client-side domain matching and no flat `Cookie` header. These transfers do not go through `RpcExecutor` or `Kernel.post`. |
 | Notes and mind maps | `NoteService` owns note-row CRUD/classification through `RpcCaller`. `NoteBackedMindMapService` adapts those note rows for artifact-facing mind-map behavior so notes and artifacts do not import each other. |
 
 ## Cross-cutting policies
@@ -381,7 +381,8 @@ multi-capability feature takes its collaborators by keyword-only
 constructor argument:
 
 - Backend-neutral `ArtifactsAPI` takes `drain: TransportDrainTracker`,
-  `lifecycle: ClientLifecycle`, and a base-typed notebook source-id provider;
+  `lifecycle: ClientLifecycle`, a base-typed notebook source-id provider, and
+  a required backend-configured neutral `AssetDownloadService`;
   `WebArtifactsAPI` additionally takes `rpc: RpcCaller`, mind-map, and note
   collaborators. `SourceUploadPipeline` takes `rpc: RpcCaller`, drain, and
   lifecycle collaborators.

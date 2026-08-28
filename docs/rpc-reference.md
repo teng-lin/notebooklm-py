@@ -1272,7 +1272,8 @@ and `result[0][4]`, which matches both live responses.
 
 #### Audio Overview (Type 1)
 
-**Source:** `_artifacts.py::ArtifactsAPI` (param builders: `_web/params/artifacts.py`)
+**Source:** `_artifacts.py::ArtifactsAPI.generate_audio()` orchestration;
+`_web/artifact/generation.py` RPC dispatch (param builders: `_web/params/artifacts.py`)
 
 ```python
 source_ids_triple = [[[sid]] for sid in source_ids]  # [[[s1]], [[s2]], ...]
@@ -1306,7 +1307,8 @@ params = [
 
 #### Video Overview (Type 3)
 
-**Source:** `_artifacts.py::generate_video()`
+**Source:** `_artifacts.py::ArtifactsAPI.generate_video()` orchestration;
+`_web/artifact/generation.py` RPC dispatch (param builders: `_web/params/artifacts.py`)
 
 ```python
 # Build the inner video config. Explainer and Brief expose visual styles;
@@ -1360,7 +1362,8 @@ custom visual-style prompt in the 7th slot:
 
 #### Cinematic Video Overview (Type 3, format=3)
 
-**Source:** `_artifacts.py::generate_cinematic_video()`
+**Source:** `_artifacts.py::ArtifactsAPI.generate_cinematic_video()` orchestration;
+`_web/artifact/generation.py` RPC dispatch (param builders: `_web/params/artifacts.py`)
 
 Cinematic videos use AI-generated documentary footage (Veo 3) instead of
 slide-deck animations. They share the standard video RPC (Type 3) but omit
@@ -1397,7 +1400,8 @@ params = [
 
 #### Report (Type 2)
 
-**Source:** `_artifacts.py::generate_report()`
+**Source:** `_artifacts.py::ArtifactsAPI.generate_report()` orchestration;
+`_web/artifact/generation.py` RPC dispatch (param builders: `_web/params/artifacts.py`)
 
 ```python
 params = [
@@ -1499,7 +1503,8 @@ params = [
 
 #### Infographic (Type 7)
 
-**Source:** `_artifacts.py::generate_infographic()`
+**Source:** `_artifacts.py::ArtifactsAPI.generate_infographic()` orchestration;
+`_web/artifact/generation.py` RPC dispatch (param builders: `_web/params/artifacts.py`)
 
 ```python
 # Orientation: 1=LANDSCAPE, 2=PORTRAIT, 3=SQUARE
@@ -1529,7 +1534,8 @@ infographic style preset feature; pass `None` to let the backend auto-select.
 
 #### Slide Deck (Type 8)
 
-**Source:** `_artifacts.py::generate_slide_deck()`
+**Source:** `_artifacts.py::ArtifactsAPI.generate_slide_deck()` orchestration;
+`_web/artifact/generation.py` RPC dispatch (param builders: `_web/params/artifacts.py`)
 
 ```python
 # Format: 1=DETAILED_DECK, 2=PRESENTER_SLIDES
@@ -1551,7 +1557,8 @@ params = [
 
 #### Data Table (Type 9)
 
-**Source:** `_artifacts.py::generate_data_table()`
+**Source:** `_artifacts.py::ArtifactsAPI.generate_data_table()` orchestration;
+`_web/artifact/generation.py` RPC dispatch (param builders: `_web/params/artifacts.py`)
 
 ```python
 params = [

@@ -7,7 +7,9 @@ so a new abstract read or hook is always an explicit review-visible diff.
 
 from __future__ import annotations
 
+import hashlib
 import importlib
+import inspect
 from dataclasses import dataclass
 
 import pytest
@@ -102,6 +104,22 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
 _WIRE_HOOK_PREFIXES = ("_send_",)
 _WIRE_HOOK_NAMES = frozenset({"_stream_answer"})
 
+_ARTIFACT_DOCSTRING_SHA256 = {
+    ("ArtifactsAPI", "class"): "a46bd93059bf56db9586a741a0df1aca8b49a30cf74007a74e27997166ebb482",
+    (
+        "ArtifactsAPI",
+        "__init__",
+    ): "09da024e21fc5f9c539de20764d3ef909ebf9796d16fee78b42b25b8e3f6d81a",
+    (
+        "WebArtifactsAPI",
+        "class",
+    ): "a46bd93059bf56db9586a741a0df1aca8b49a30cf74007a74e27997166ebb482",
+    (
+        "WebArtifactsAPI",
+        "__init__",
+    ): "513a71c5f23b3dcb71fb22fc2cb23b57833b48ec87fa350e7e9cceb74760cac7",
+}
+
 
 def test_backend_base_abstract_methods_and_wire_hooks_match_manifest() -> None:
     for contract in BASE_ABSTRACT_CONTRACTS:
@@ -168,3 +186,52 @@ def test_artifact_workflow_ownership_and_docstrings_are_preserved() -> None:
         web_doc = getattr(WebArtifactsAPI, name).__doc__
         assert base_doc
         assert web_doc == base_doc, f"WebArtifactsAPI.{name} docstring drifted"
+
+
+def test_artifact_class_constructor_docstrings_and_web_signature_are_pinned() -> None:
+    """Public runtime help and the concrete Web constructor remain stable."""
+    from notebooklm._artifacts import ArtifactsAPI
+    from notebooklm._web.artifacts import WebArtifactsAPI
+
+    owners = {"ArtifactsAPI": ArtifactsAPI, "WebArtifactsAPI": WebArtifactsAPI}
+    for (owner_name, member_name), expected in _ARTIFACT_DOCSTRING_SHA256.items():
+        owner = owners[owner_name]
+        target = owner if member_name == "class" else getattr(owner, member_name)
+        doc = inspect.getdoc(target)
+        assert doc is not None
+        assert hashlib.sha256(doc.encode()).hexdigest() == expected
+
+    base_parameters = inspect.signature(ArtifactsAPI).parameters
+    assert tuple(base_parameters) == ("drain", "lifecycle", "notebooks", "asset_downloads")
+    assert all(
+        parameter.kind is inspect.Parameter.KEYWORD_ONLY for parameter in base_parameters.values()
+    )
+    assert all(
+        parameter.default is inspect.Parameter.empty for parameter in base_parameters.values()
+    )
+
+    web_parameters = inspect.signature(WebArtifactsAPI).parameters
+    assert tuple(web_parameters) == (
+        "rpc",
+        "drain",
+        "lifecycle",
+        "notebooks",
+        "mind_maps",
+        "note_service",
+        "storage_path",
+    )
+    assert all(
+        parameter.kind is inspect.Parameter.KEYWORD_ONLY for parameter in web_parameters.values()
+    )
+
+
+def test_artifact_logger_names_survive_web_module_moves() -> None:
+    """Existing log filters keep observing artifact events after ownership moves."""
+    expected = {
+        "notebooklm._web.artifacts": "notebooklm._artifacts",
+        "notebooklm._web.artifact.generation": "notebooklm._artifact.generation",
+        "notebooklm._web.artifact.listing": "notebooklm._artifact.listing",
+        "notebooklm._web.artifact.table": "notebooklm._artifacts",
+    }
+    actual = {module: importlib.import_module(module).logger.name for module in expected}
+    assert actual == expected

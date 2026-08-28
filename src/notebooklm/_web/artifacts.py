@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from .. import _mind_map  # noqa: F401 — re-exported as facade attribute
 from .._artifact import polling as _artifact_polling
 from .._artifact import validation as _artifact_validation
+from .._artifact.downloads import AssetDownloadService
 from .._artifacts import ArtifactsAPI
 from .._mind_map import NoteBackedMindMapService
 from .._note_service import NoteService
@@ -42,7 +43,7 @@ if TYPE_CHECKING:
     from .._runtime.lifecycle import ClientLifecycle
     from .._transport_drain import TransportDrainTracker
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("notebooklm._artifacts")
 
 
 class WebArtifactsAPI(ArtifactsAPI):
@@ -98,7 +99,7 @@ class WebArtifactsAPI(ArtifactsAPI):
             drain=drain,
             lifecycle=lifecycle,
             notebooks=notebooks,
-            storage_path=storage_path,
+            asset_downloads=AssetDownloadService(storage_path=storage_path),
         )
         self._rpc = rpc
         self._mind_maps = mind_maps

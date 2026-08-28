@@ -80,7 +80,6 @@ ALLOWED_WEB_IMPORTERS = frozenset(
         "notebooklm._runtime.init",
         "notebooklm.rpc",
         "notebooklm._artifact",
-        "notebooklm._artifact.polling",
         "notebooklm._source",
         "notebooklm._chat",
         "notebooklm._chat.api",

@@ -962,8 +962,8 @@ Feature APIs depend on narrow per-capability Protocols defined in
 `notebooklm._runtime.contracts` rather than on a broad runtime facade.
 `ChatAPI`, `WebArtifactsAPI`, and `SourceUploadPipeline` each take their
 backend-specific collaborators by keyword-only constructor argument;
-the neutral `ArtifactsAPI` base takes lifecycle, drain, notebook-source, and
-storage collaborators only. The
+the neutral `ArtifactsAPI` base takes lifecycle, drain, notebook-source, and a
+required backend-configured asset-transfer collaborator only. The
 feature-local composite-runtime Protocols (`ChatRuntime`,
 `ArtifactsRuntime`, `UploadRuntime`) and their adapter dataclasses that
 previously bundled three collaborators apiece were retired once it was
