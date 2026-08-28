@@ -54,10 +54,12 @@ _CORE_PRIVATE_GUARD_EXCLUDED_MODULES = {
 
 _ARTIFACT_SERVICE_MODULES = [
     "_artifact/formatters.py",
-    "_web/artifact/listing.py",
     "_artifact/downloads.py",
-    "_artifact/generation.py",
     "_artifact/polling.py",
+    "_web/artifact/downloads.py",
+    "_web/artifact/generation.py",
+    "_web/artifact/listing.py",
+    "_web/artifact/table.py",
 ]
 
 _SOURCE_SERVICE_MODULES = [
@@ -267,7 +269,7 @@ def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
 # Artifact-service "reach-in" guard
 #
 # Modeled on the core-private-access guard above. Pins the invariant that
-# artifact-service helper modules (currently ``_artifact/downloads.py``)
+# web artifact-service helper modules (under ``_web/artifact/``)
 # do not retain or call back into the ``ArtifactsAPI`` facade. Each helper
 # migration PR appends the helper's module name to
 # ``_REACH_IN_MIGRATED_MODULES`` below.
@@ -275,8 +277,8 @@ def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
 
 
 _REACH_IN_MIGRATED_MODULES: list[str] = [
-    "_artifact/downloads.py",
-    "_artifact/generation.py",
+    "_web/artifact/downloads.py",
+    "_web/artifact/generation.py",
 ]
 
 
@@ -302,7 +304,7 @@ class _ApiReachInVisitor(ast.NodeVisitor):
     ``_REACH_IN_MIGRATED_MODULES`` enumerates helpers already migrated to
     constructor injection; this guard is actively enforced for those
     modules. The migrated artifact-service helpers are
-    ``_artifact/downloads.py`` and ``_artifact/generation.py`` (the latter
+    ``_web/artifact/downloads.py`` and ``_web/artifact/generation.py`` (the latter
     re-extracted from the ``ArtifactsAPI`` facade as a constructor-injected
     ``ArtifactGenerationService``).
     """

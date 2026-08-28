@@ -381,7 +381,7 @@ def test_declared_enum_gaps_still_exist(client_enum: str) -> None:
 def test_suggested_filter_constant_tracks_the_backend_enum_name() -> None:
     """The LIST_ARTIFACTS filter string stays tied to the code it excludes.
 
-    ``_artifact/listing.py`` sends ``NOT artifact.status = "<name>"`` using the
+    ``_web/artifact/listing.py`` sends ``NOT artifact.status = "<name>"`` using the
     symbolic backend enum-value name, which cannot be derived from the integer.
     Without this, a backend rename would fail ``test_enum_values_match_backend``
     on the binding, someone would update ``ENUM_BINDINGS``, and the filter

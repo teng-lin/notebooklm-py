@@ -91,7 +91,7 @@ _PROMPT_SUGGESTIONS_MODE_MAX = 10
 def _prompt_suggestions_client_context() -> list[Any]:
     """Return the field-1 client-context block for ``SUGGEST_PROMPTS``.
 
-    Same family as ``_artifact.payloads._artifact_client_options`` but WITHOUT
+    Same family as ``_web.params.artifacts._artifact_client_options`` but WITHOUT
     the trailing field-5 capability projection (``[[1, 4, 8, 2, 3, 6]]``): the
     live-verified ``otmP3b`` request carries only this 4-element capability
     envelope. Built fresh on each call so the returned (nested-mutable) list is
@@ -138,7 +138,7 @@ def build_prompt_suggestions_params(
         )
     # An empty / whitespace-only steer carries no signal — normalise to None so
     # the default request stays byte-identical and no blank prompt is sent
-    # (mirrors ``_artifact.payloads.build_interactive_mind_map_artifact_params``).
+    # (mirrors ``_web.params.artifacts.build_interactive_mind_map_artifact_params``).
     resolved_query = query if query and query.strip() else None
     return [
         _prompt_suggestions_client_context(),

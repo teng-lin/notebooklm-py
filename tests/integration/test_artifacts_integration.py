@@ -482,6 +482,35 @@ class TestArtifactsAPI:
         assert [artifact.id for artifact in artifacts] == ["art_001", "mind_map_001"]
 
     @pytest.mark.asyncio
+    async def test_poll_status_uses_one_studio_rpc_and_zero_note_calls(self):
+        """Each poll tick is exactly one LIST_ARTIFACTS, never the merged note listing."""
+        from tests._fixtures.fake_core import make_fake_core
+
+        studio_artifact = ["task_123", "My Report", 2, None, 3]
+        core = make_fake_core(rpc_call=AsyncMock(return_value=[[studio_artifact]]))
+        mind_maps = MagicMock(spec=NoteBackedMindMapService)
+        mind_maps.list_mind_maps = AsyncMock()
+        api = WebArtifactsAPI(
+            rpc=core,
+            drain=core,
+            lifecycle=core,
+            notebooks=MagicMock(),
+            mind_maps=mind_maps,
+            note_service=MagicMock(spec=NoteService),
+        )
+
+        status = await api.poll_status("nb_123", "task_123")
+
+        assert status.status == "completed"
+        core.rpc_call.assert_awaited_once_with(
+            RPCMethod.LIST_ARTIFACTS,
+            [[2], "nb_123", 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"'],
+            source_path="/notebook/nb_123",
+            allow_null=True,
+        )
+        mind_maps.list_mind_maps.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_list_skips_mind_map_callback_for_non_mind_map_filter(self):
         """Filtering to studio-only kinds must not fetch mind maps."""
         from tests._fixtures.fake_core import make_fake_core

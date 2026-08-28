@@ -960,8 +960,10 @@ compatibility shim was removed in v0.5.0.
 
 Feature APIs depend on narrow per-capability Protocols defined in
 `notebooklm._runtime.contracts` rather than on a broad runtime facade.
-`ChatAPI`, `ArtifactsAPI`, and `SourceUploadPipeline` each take
-their direct collaborators by keyword-only constructor argument. The
+`ChatAPI`, `WebArtifactsAPI`, and `SourceUploadPipeline` each take their
+backend-specific collaborators by keyword-only constructor argument;
+the neutral `ArtifactsAPI` base takes lifecycle, drain, notebook-source, and
+storage collaborators only. The
 feature-local composite-runtime Protocols (`ChatRuntime`,
 `ArtifactsRuntime`, `UploadRuntime`) and their adapter dataclasses that
 previously bundled three collaborators apiece were retired once it was

@@ -1,4 +1,4 @@
-"""Unit tests for module-level helpers in ``notebooklm._artifact.formatters``.
+"""Unit tests for Web positional data-table helpers.
 
 Focuses on ``_extract_data_table_rows`` — the named extractor that replaces
 the raw ``raw_data[0][0][0][0][4][2]`` deep-index chain in
@@ -15,7 +15,7 @@ import logging
 
 import pytest
 
-from notebooklm._artifact.formatters import (
+from notebooklm._web.artifact.table import (
     _extract_data_table_rows,
     _parse_data_table,
 )

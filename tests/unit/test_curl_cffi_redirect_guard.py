@@ -19,10 +19,16 @@ Two layers are pinned here:
 
 from __future__ import annotations
 
+import importlib.util
+import os
+
 import httpx
 import pytest
 
-pytest.importorskip("curl_cffi", reason="requires the optional [impersonate] extra")
+if importlib.util.find_spec("curl_cffi") is None:
+    if os.environ.get("CI"):
+        pytest.fail("CI must install the impersonate extra for curl credential-policy coverage")
+    pytest.skip("requires the optional [impersonate] extra", allow_module_level=True)
 
 from notebooklm._artifact.downloads import (  # noqa: E402
     _is_trusted_download_host,
@@ -115,6 +121,44 @@ async def test_get_guarded_follows_trusted_redirect_with_safe_flags():
         )
     finally:
         await client.aclose()
+
+
+async def test_get_guarded_applies_cookie_policy_on_every_redirect_hop():
+    """curl_cffi attaches the policy-selected jar per hop, never at session scope."""
+    client = CurlCffiAsyncClient(cookies=None)
+    calls: list = []
+    _stub_curl_get(
+        client,
+        [
+            _FakeResp(302, location="https://storage.googleapis.com/final"),
+            _FakeResp(200, content=b"ok", url="https://storage.googleapis.com/final"),
+        ],
+        calls,
+    )
+    jar = httpx.Cookies()
+    jar.set("SID", "secret", domain=".googleapis.com")
+    policy_calls: list[str] = []
+
+    def credential_for(url: str) -> httpx.Cookies:
+        policy_calls.append(url)
+        return jar
+
+    try:
+        await client.get_guarded(
+            "https://storage.googleapis.com/start",
+            is_trusted_host=_trust_local,
+            credential_for=credential_for,
+        )
+    finally:
+        await client.aclose()
+
+    expected = [
+        "https://storage.googleapis.com/start",
+        "https://storage.googleapis.com/final",
+    ]
+    assert policy_calls == expected
+    assert [url for url, _kwargs in calls] == expected
+    assert all(kwargs["cookies"] is jar.jar for _url, kwargs in calls)
 
 
 async def test_get_guarded_blocks_untrusted_redirect_target():

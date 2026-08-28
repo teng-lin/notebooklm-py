@@ -14,9 +14,9 @@ import json as json_module
 import logging
 from typing import TYPE_CHECKING, Any
 
-from .._env import get_default_language
-from .._types.artifacts import _status_from_code
-from .._types.enums import (
+from ..._env import get_default_language
+from ..._types.artifacts import _status_from_code
+from ..._types.enums import (
     AudioFormat,
     AudioLength,
     InfographicDetail,
@@ -30,19 +30,18 @@ from .._types.enums import (
     VideoFormat,
     VideoStyle,
 )
-from .._types.research import MindMapResult
-from .._web.rows import artifacts as _artifact_rows
-from ..exceptions import (
+from ..._types.research import MindMapResult
+from ...exceptions import (
     ArtifactFeatureUnavailableError,
     DecodingError,
     ValidationError,
 )
-from ..rpc import (
+from ...rpc import (
     RPCMethod,
     safe_index,
 )
-from ..types import GenerationStatus
-from .payloads import (
+from ...types import GenerationStatus
+from ..params.artifacts import (
     build_audio_artifact_params,
     build_cinematic_video_artifact_params,
     build_data_table_artifact_params,
@@ -58,9 +57,11 @@ from .payloads import (
 )
 
 if TYPE_CHECKING:
-    from .._note_service import NoteService
-    from .._notebook_metadata import NotebookSourceIdProvider
-    from .._runtime.contracts import RpcCaller
+    from ..._note_service import NoteService
+    from ..._notebook_metadata import NotebookSourceIdProvider
+    from ..._runtime.contracts import RpcCaller
+
+from ..rows import artifacts as _artifact_rows
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ logger = logging.getLogger(__name__)
 class ArtifactGenerationService:
     """Generation kickoff operations extracted from :class:`ArtifactsAPI`.
 
-    Peer to :class:`~notebooklm._artifact.downloads.ArtifactDownloadService`
+    Peer to :class:`~notebooklm._web.artifact.downloads.ArtifactDownloadService`
     and :class:`~notebooklm._artifact.polling.ArtifactPollingService`. Injected
     with the RPC caller, the source-id resolver, and the note-row service so the
     generate paths carry no other facade state.

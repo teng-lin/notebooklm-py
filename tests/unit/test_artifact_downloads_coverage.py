@@ -1,11 +1,11 @@
-"""Coverage-focused tests for ``_artifact.downloads`` error/edge branches.
+"""Coverage-focused tests for neutral and web artifact-download branches.
 These tests target branches not exercised by ``test_artifact_downloads.py`` /
 ``test_download_url.py``: module-level helpers, ``UnknownRPCMethodError`` /
 missing-URL handling per download type, format validation, interactive
 artifact-id lookup, parse-error wrapping, the batch non-HTTPS reject path,
 the streaming HTML-payload reject, the ``_await_writer_exit`` cancellation
 shield-loop, and the producer ``except``-block queue-drain.
-The ``ArtifactDownloadService`` is constructed directly with ``MagicMock``
+The web ``ArtifactDownloadService`` is constructed directly with ``MagicMock``
 collaborators (mirroring ``TestStoragePathEncapsulation`` in
 ``test_artifact_downloads.py``), and ``_select_artifact`` is stubbed to
 return a row whose typed accessors raise/return the value under test.
@@ -22,13 +22,14 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 import httpx
 import pytest
 
-from notebooklm._artifact import downloads as artifact_downloads
+from notebooklm._artifact import downloads as asset_downloads
 from notebooklm._artifact.downloads import (
-    ArtifactDownloadService,
     _await_writer_exit,
     _download_display_host,
     _is_trusted_download_host,
 )
+from notebooklm._web.artifact import downloads as artifact_downloads
+from notebooklm._web.artifact.downloads import ArtifactDownloadService
 from notebooklm.exceptions import UnknownRPCMethodError
 from notebooklm.types import (
     ArtifactDownloadError,
@@ -438,7 +439,7 @@ async def test_download_url_html_payload_rejected(tmp_path):
     output_path = tmp_path / "out.bin"
     with (
         patch.object(httpx, "AsyncClient", return_value=mock_client),
-        patch.object(artifact_downloads, "load_httpx_cookies", return_value=MagicMock()),
+        patch.object(asset_downloads, "load_httpx_cookies", return_value=MagicMock()),
         pytest.raises(ArtifactDownloadError, match="received HTML instead of media"),
     ):
         await service.download_url("https://storage.googleapis.com/x.bin", str(output_path))
@@ -613,9 +614,9 @@ async def test_download_url_error_path_drains_full_queue(tmp_path):
     try:
         with (
             patch.object(httpx, "AsyncClient", return_value=mock_client),
-            patch.object(artifact_downloads, "load_httpx_cookies", return_value=MagicMock()),
-            patch.object(artifact_downloads, "open", blocking_open, create=True),
-            patch.object(artifact_downloads.queue, "Queue", _capturing_queue),
+            patch.object(asset_downloads, "load_httpx_cookies", return_value=MagicMock()),
+            patch.object(asset_downloads, "open", blocking_open, create=True),
+            patch.object(asset_downloads.queue, "Queue", _capturing_queue),
             pytest.raises(RuntimeError, match="connection dropped"),
         ):
             await service.download_url("https://storage.googleapis.com/x.bin", str(output_path))
@@ -626,7 +627,7 @@ async def test_download_url_error_path_drains_full_queue(tmp_path):
     assert not output_path.exists()
     assert list(tmp_path.glob("out.bin.*.tmp")) == []
     # Sanity: the bounded queue size constant is what we relied on.
-    assert artifact_downloads._DOWNLOAD_WRITER_QUEUE_SIZE < 50
+    assert asset_downloads._DOWNLOAD_WRITER_QUEUE_SIZE < 50
 
 
 # ---------------------------------------------------------------------------
@@ -666,8 +667,8 @@ async def test_download_url_writer_failure_surfaced(tmp_path):
     output_path = tmp_path / "out.bin"
     with (
         patch.object(httpx, "AsyncClient", return_value=mock_client),
-        patch.object(artifact_downloads, "load_httpx_cookies", return_value=MagicMock()),
-        patch.object(artifact_downloads, "open", failing_open, create=True),
+        patch.object(asset_downloads, "load_httpx_cookies", return_value=MagicMock()),
+        patch.object(asset_downloads, "open", failing_open, create=True),
         pytest.raises(OSError, match="disk full"),
     ):
         await service.download_url("https://storage.googleapis.com/x.bin", str(output_path))
@@ -734,8 +735,8 @@ async def test_download_url_backpressure_to_thread_put(tmp_path):
     output_path = tmp_path / "out.bin"
     with (
         patch.object(httpx, "AsyncClient", return_value=mock_client),
-        patch.object(artifact_downloads, "load_httpx_cookies", return_value=MagicMock()),
-        patch.object(artifact_downloads, "open", slow_open, create=True),
+        patch.object(asset_downloads, "load_httpx_cookies", return_value=MagicMock()),
+        patch.object(asset_downloads, "open", slow_open, create=True),
     ):
         result = await service.download_url(
             "https://storage.googleapis.com/x.bin", str(output_path)
@@ -971,8 +972,8 @@ async def test_download_url_error_path_drain_observes_empty_queue(tmp_path):
     output_path = tmp_path / "out.bin"
     with (
         patch.object(httpx, "AsyncClient", return_value=mock_client),
-        patch.object(artifact_downloads, "load_httpx_cookies", return_value=MagicMock()),
-        patch.object(artifact_downloads.queue, "Queue", _RacyQueue),
+        patch.object(asset_downloads, "load_httpx_cookies", return_value=MagicMock()),
+        patch.object(asset_downloads.queue, "Queue", _RacyQueue),
         pytest.raises(RuntimeError, match="connection dropped"),
     ):
         await service.download_url("https://storage.googleapis.com/x.bin", str(output_path))

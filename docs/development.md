@@ -37,8 +37,10 @@ src/notebooklm/
 ├── _web/params/         # Web batchexecute payload builders
 ├── _notebook_metadata.py # Neutral metadata protocols + composition service
 ├── _source/             # Neutral source polling/Markdown + lazy shims
-├── _artifacts.py        # ArtifactsAPI implementation
-├── _artifact/           # Private artifact services
+├── _artifacts.py        # Backend-neutral abstract ArtifactsAPI
+├── _artifact/           # Neutral artifact polling, formatting, validation, and asset transfer
+├── _web/artifacts.py    # WebArtifactsAPI implementation
+├── _web/artifact/       # Web artifact listing/generation/download-selection services
 ├── _chat/               # ChatAPI implementation (facade + chat helpers)
 ├── _research.py         # ResearchAPI implementation
 ├── _notes.py            # NotesAPI implementation

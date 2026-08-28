@@ -40,7 +40,7 @@ Everything else is deliberately ignored:
   refresh-and-retry catch ends in ``raise``) or re-raises via a helper
   (``_web/notebooks.py`` ``_raise_quota_error_if_detected(exc)`` + ``raise``) —
   the caller still sees the original type;
-* a broad clause that **swallows and continues** (the ``_artifact/listing.py``
+* a broad clause that **swallows and continues** (the ``_web/artifact/listing.py``
   composite-lister partial-availability catch, the ``_research.py`` baseline
   probes, the ``upload.py`` post-upload rename) — deciding those is ADR-0019
   Rule-3 / Scope territory, explicitly out of this gate's contract;

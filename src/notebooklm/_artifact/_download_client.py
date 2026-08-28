@@ -10,7 +10,7 @@ auto-follow + event hook) or the opt-in curl_cffi (manual ``get_guarded`` loop).
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
-from urllib.parse import ParseResult
+from urllib.parse import ParseResult, urlparse
 
 import httpx
 
@@ -48,7 +48,9 @@ def _download_display_host(parsed: ParseResult) -> str:
 
 
 def _make_download_client(
-    cookies: Any, timeout: Any
+    cookies: Any,
+    timeout: Any,
+    credential_for: Callable[[str], Any | None] | None = None,
 ) -> tuple[Any, Callable[[str], Awaitable[httpx.Response]]]:
     """Build a download client + redirect-guarded GET for the active transport.
 
@@ -60,21 +62,40 @@ def _make_download_client(
     in both. The returned client is an async context manager.
     """
     factory = resolve_transport_factory()
+    resolved_credential_for = credential_for
+    if resolved_credential_for is None:
+
+        def _default_credential_for(_url: str) -> Any | None:
+            parsed = urlparse(_url)
+            if parsed.scheme == "https" and _is_trusted_download_host(parsed.hostname):
+                return cookies
+            return None
+
+        resolved_credential_for = _default_credential_for
     if factory is httpx.AsyncClient:
         client: Any = httpx.AsyncClient(
             cookies=cookies,
             follow_redirects=True,
             timeout=timeout,
-            event_hooks=redirect_revalidation_hooks(_is_trusted_download_host),  # #1521
+            event_hooks=redirect_revalidation_hooks(
+                _is_trusted_download_host,
+                resolved_credential_for,
+            ),  # #1521 + per-hop credentials
         )
 
         async def _get(url: str) -> httpx.Response:
             return await client.get(url)
     else:
         # curl_cffi: no auto-follow; get_guarded re-validates each hop (#1521).
-        client = factory(cookies=cookies, follow_redirects=False, timeout=timeout)
+        # Credentials are attached per hop inside ``get_guarded`` so a future
+        # narrower policy can drop them without a credential-bearing session.
+        client = factory(cookies=None, follow_redirects=False, timeout=timeout)
 
         async def _get(url: str) -> httpx.Response:
-            return await client.get_guarded(url, is_trusted_host=_is_trusted_download_host)
+            return await client.get_guarded(
+                url,
+                is_trusted_host=_is_trusted_download_host,
+                credential_for=resolved_credential_for,
+            )
 
     return client, _get

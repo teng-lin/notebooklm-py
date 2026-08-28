@@ -69,7 +69,7 @@ class QuizOptionPair:
     QuizDifficulty.HARD`` is ``True``, since ``QuizQuantity.MORE`` and
     ``QuizDifficulty.HARD`` are both ``3``. Compare against the enum matching
     the field you are reading. The encode side rejects that mix-up outright
-    (:func:`~notebooklm._artifact.payloads._quiz_option_code`); the decode side
+    (:func:`~notebooklm._web.params.artifacts._quiz_option_code`); the decode side
     cannot, because it has only the wire integer to go on.
     """
 
@@ -460,7 +460,7 @@ class ArtifactRow:
 
         This is the backend's own echo of the options the artifact was created
         with, so it is the only client-side read that can check a
-        :func:`~notebooklm._artifact.payloads.build_quiz_artifact_params`
+        :func:`~notebooklm._web.params.artifacts.build_quiz_artifact_params`
         payload against reality rather than against a fixture (#2195). It is
         deliberately a *decode* of what the server stored, never a
         reconstruction of what we sent.
@@ -549,7 +549,7 @@ class ArtifactRow:
         Exposed separately from :attr:`created_at` because callers that
         sort artifact rows by recency need a value that compares cleanly
         even when the timestamp is missing or ``None``. The
-        :meth:`~notebooklm._artifact.listing.ArtifactListingService.select_artifact`
+        :meth:`~notebooklm._web.artifact.listing.ArtifactListingService.select_artifact`
         sort key uses ``row.created_at_raw or 0`` to coerce missing
         values to ``0`` without crashing the comparison.
 
@@ -1082,13 +1082,13 @@ class ArtifactRow:
             completed_only: When ``True``, also require :attr:`status`
                 to equal :data:`ArtifactStatus.COMPLETED` (``3``). This
                 is the predicate used by
-                :meth:`~notebooklm._artifact.listing.ArtifactListingService.select_artifact`
+                :meth:`~notebooklm._web.artifact.listing.ArtifactListingService.select_artifact`
                 to pick downloadable artifacts.
 
         Note:
             This is a *raw* type-code match. The QUIZ vs FLASHCARDS vs
             interactive mind map (variant 4) distinction lives one layer up in
-            ``_artifact.listing._matches_artifact_type`` because it
+            ``_web.artifact.listing._matches_artifact_type`` because it
             operates on :class:`Artifact` objects (which know variant
             mapping), not raw rows. Keep that separation intentional —
             the adapter exposes the variant via :attr:`variant` if

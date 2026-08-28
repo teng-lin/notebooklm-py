@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 
 # Host-trust predicate signature: ``(hostname | None) -> bool``.
 _HostPredicate = Callable[[str | None], bool]
+_CredentialPolicy = Callable[[str], Any | None]
 
 
 def _assert_trusted_download_request(
@@ -56,7 +57,10 @@ def _assert_trusted_download_request(
         )
 
 
-def redirect_revalidation_hooks(is_trusted_host: _HostPredicate) -> dict[str, list[Any]]:
+def redirect_revalidation_hooks(
+    is_trusted_host: _HostPredicate,
+    credential_for: _CredentialPolicy | None = None,
+) -> dict[str, list[Any]]:
     """Build httpx ``event_hooks`` re-validating every redirect hop (#1521).
 
     ``is_trusted_host`` is the download module's host-allowlist predicate; it
@@ -66,5 +70,9 @@ def redirect_revalidation_hooks(is_trusted_host: _HostPredicate) -> dict[str, li
 
     async def _on_request(request: httpx.Request) -> None:
         _assert_trusted_download_request(request, is_trusted_host)
+        if credential_for is not None and credential_for(str(request.url)) is None:
+            # httpx built this header from its cookie jar before request hooks
+            # run. Dropping is safe; never flatten/rebuild a Cookie header.
+            request.headers.pop("cookie", None)
 
     return {"request": [_on_request]}

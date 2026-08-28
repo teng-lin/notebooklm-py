@@ -213,7 +213,7 @@ async def test_download_mind_map_runs_write_off_loop_thread(
     ``Path.write_text`` would silently miss the production ``json.dump``
     path.
     """
-    import notebooklm._artifact.downloads as artifact_downloads
+    import notebooklm._web.artifact.downloads as artifact_downloads
 
     api, _ = mock_artifacts_api
     output_path = tmp_path / "mindmap.json"
@@ -251,7 +251,7 @@ async def test_download_mind_map_runs_write_off_loop_thread(
             "list_mind_maps",
             new=AsyncMock(return_value=mind_map_rows),
         ),
-        # Patch the `json` module as imported by `_artifact.downloads` so the
+        # Patch the `json` module as imported by `_web.artifact.downloads` so the
         # closure inside `download_mind_map` resolves to the stub.
         patch.object(artifact_downloads.json, "dump", recording_json_dump),
         # Cover the legacy ``Path.write_text``-based path too so a
@@ -290,7 +290,7 @@ async def test_concurrent_downloads_both_offload_writes(
     thread. A regression on either path leaves its capture matching the
     loop thread and fails the assertion.
     """
-    import notebooklm._artifact.downloads as artifact_downloads
+    import notebooklm._web.artifact.downloads as artifact_downloads
 
     api, _ = mock_artifacts_api
     report_path = tmp_path / "report.md"

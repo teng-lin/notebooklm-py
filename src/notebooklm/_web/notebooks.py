@@ -486,7 +486,7 @@ class WebNotebooksAPI(NotebooksAPI):
         # LIST_NOTEBOOKS responses arrive as a single-element envelope whose
         # first element is the notebook-row list (``[[row1, row2, ...]]``).
         # The wrap probe mirrors the fail-loud dispatch in
-        # ``_artifact/listing.py::list_raw``: an empty/``None`` payload and a
+        # ``_web/artifact/listing.py::list_raw``: an empty/``None`` payload and a
         # ``None`` row-list slot are legitimate "no notebooks" shapes (soft
         # ``[]``), while a truthy payload that doesn't match the envelope — a
         # non-list payload, or a truthy non-list where the row list belongs —

@@ -222,8 +222,8 @@ Some feature workflows intentionally combine RPC with non-RPC HTTP work:
 |------|---------------|
 | Source file upload | `WebSourcesAPI.add_file()` delegates to `SourceUploadPipeline.add_file()`. The pipeline opens an `operation_scope`, takes its own upload semaphore, registers the file source through `runtime.rpc_call(ADD_SOURCE_FILE)`, then uses a dedicated `httpx.AsyncClient` and live Kernel cookies for the Scotty resumable-upload start/finalize calls. Optional wait/rename steps return to `rpc_call`. |
 | Source URL/text/Drive add | `SourceAddService` wraps URL and Drive mutating RPCs in `idempotent_create(...)` because those flows have stable probes. Text-source adds are intentionally non-idempotent unless the caller handles dedupe externally. |
-| Artifact generation | `ArtifactsAPI` delegates the `generate_*` / `revise_slide` / `retry_failed` kickoff paths to `ArtifactGenerationService` (`_artifact/generation.py`), which builds `CREATE_ARTIFACT` params (via the `_artifact/payloads.py` builders) and uses the normal `rpc_call` path; the facade keeps thin signature-preserving delegators. `ArtifactPollingService` owns leader/follower polling with `operation_scope(...)` and a feature-local `PollRegistry`; `ArtifactsAPI` registers a close-time drain hook for poll cleanup. |
-| Artifact download | `ArtifactDownloadService` lists/selects artifacts through `RpcCaller`, but media downloads use a separate streaming `httpx.AsyncClient` with storage cookies, trusted-host checks, and a producer/writer split. They do not go through `RpcExecutor` or `Kernel.post`. |
+| Artifact generation | The backend-neutral `ArtifactsAPI` owns validation, source/language resolution, and all ten `generate_*` workflows over the sole `_send_create_artifact` hook. `WebArtifactsAPI` implements that hook with `ArtifactGenerationService` (`_web/artifact/generation.py`), whose positional `CREATE_ARTIFACT` builders live in `_web/params/artifacts.py`; web-only revise/retry/mind-map paths use the same service. `ArtifactPollingService` owns leader/follower polling over the abstract studio-only decoded listing, with one `LIST_ARTIFACTS` and no note call per tick. |
+| Artifact download | Web-only `ArtifactDownloadService` (`_web/artifact/downloads.py`) selects artifacts and decodes raw rows/interactive HTML. The neutral `AssetDownloadService` (`_artifact/downloads.py`) owns byte transfer, rejection, staging, and atomic publication. Its streaming client applies the storage-cookie jar through a credential policy on every validated redirect hop for both httpx and curl_cffi, with client-side domain matching and no flat `Cookie` header. These transfers do not go through `RpcExecutor` or `Kernel.post`. |
 | Notes and mind maps | `NoteService` owns note-row CRUD/classification through `RpcCaller`. `NoteBackedMindMapService` adapts those note rows for artifact-facing mind-map behavior so notes and artifacts do not import each other. |
 
 ## Cross-cutting policies
@@ -380,8 +380,11 @@ composite-runtime unions or adapter dataclasses exist in production. Every
 multi-capability feature takes its collaborators by keyword-only
 constructor argument:
 
-- `ArtifactsAPI` and `SourceUploadPipeline` take `rpc: RpcCaller`,
-  `drain: TransportDrainTracker`, `lifecycle: ClientLifecycle`.
+- Backend-neutral `ArtifactsAPI` takes `drain: TransportDrainTracker`,
+  `lifecycle: ClientLifecycle`, and a base-typed notebook source-id provider;
+  `WebArtifactsAPI` additionally takes `rpc: RpcCaller`, mind-map, and note
+  collaborators. `SourceUploadPipeline` takes `rpc: RpcCaller`, drain, and
+  lifecycle collaborators.
 - `ChatAPI` takes `rpc: RpcCaller`, `transport: RuntimeTransport`,
   `reqid: ReqidCounter`, `loop_guard: LoopGuard`, and the base-typed
   `notebooks: NotebookSourceIdProvider`.
@@ -502,10 +505,12 @@ Beyond the client-owned runtime graph, several feature APIs are implemented via 
 |-------------------|--------|----------------|
 | `NoteService` | [`_note_service.py`](../src/notebooklm/_note_service.py) | Service layer managing note CRUD, note-backed content generation, and sync. |
 | `NoteBackedMindMapService` | [`_mind_map.py`](../src/notebooklm/_mind_map.py) | Specific adapter service representing mind-maps, backed by standard notebook notes. |
-| `ArtifactDownloadService` | [`_artifact/downloads.py`](../src/notebooklm/_artifact/downloads.py) | Asynchronous download coordinator for finished artifacts. |
-| `ArtifactGenerationService` | [`_artifact/generation.py`](../src/notebooklm/_artifact/generation.py) | Generation kickoff service (`generate_*`, `revise_slide`, `retry_failed`) extracted from `ArtifactsAPI`. |
+| `ArtifactDownloadService` | [`_web/artifact/downloads.py`](../src/notebooklm/_web/artifact/downloads.py) | Web raw-row selection and representation lookup for finished artifacts. |
+| `AssetDownloadService` | [`_artifact/downloads.py`](../src/notebooklm/_artifact/downloads.py) | Backend-neutral guarded byte transfer, staged writing, and atomic publication. |
+| `ArtifactGenerationService` | [`_web/artifact/generation.py`](../src/notebooklm/_web/artifact/generation.py) | Web `CREATE_ARTIFACT` dispatch plus revise/retry/mind-map generation. |
 | `_artifact_formatters` | [`_artifact/formatters.py`](../src/notebooklm/_artifact/formatters.py) | Markdown, HTML, and plain text formatters for artifacts. |
-| `_artifact/listing` | [`_artifact/listing.py`](../src/notebooklm/_artifact/listing.py) | Listing and filtering operations for notebook artifacts. |
+| `_web/artifact/listing` | [`_web/artifact/listing.py`](../src/notebooklm/_web/artifact/listing.py) | Web artifact listing, raw-row decoding, and note-backed mind-map composition. |
+| `_web/artifact/table` | [`_web/artifact/table.py`](../src/notebooklm/_web/artifact/table.py) | Web positional data-table row extraction. |
 | `_web/` | [`_web/`](../src/notebooklm/_web) | Private home for the batchexecute web backend. Phase A moves web-wire row decoding, request construction, and concrete namespace implementations here while public namespace classes become transport-neutral bases. Direct imports are constrained by `tests/_guardrails/test_backend_boundaries.py`; the package is a skeleton until those ordered moves land. |
 | `_web/rows/*` | [`_web/rows/`](../src/notebooklm/_web/rows) | Web wire-shape adapters for artifacts, chat, collections, documents, labels, notebooks, notes, research, sharing, and sources. Public notebook/sharing/collection factories stay on their dataclasses as lazy shims into this package; deep-research task parsing and conversation-role decoding live here too. Strict decode behavior is pinned in the row-adapter, chat-history, research-parser, and wire-contract tests. |
 | `_types/` | [`_types/`](../src/notebooklm/_types) | Private package holding the transport-neutral enum, dataclass, and `Protocol` implementations behind the public `types.py` / per-feature public schemas. Split per domain (`artifacts.py`, `artifact_content.py`, `chat.py`, `documents.py`, `enums.py`, `labels.py`, `mind_maps.py`, `notebooks.py`, `notes.py`, `research.py`, `sharing.py`, `sources.py`, plus `common.py` for shared shapes like `ConnectionLimits`). |
@@ -847,8 +852,9 @@ feature tests. The name is backward-compatible test vocabulary; it is
 not a production `Session` replacement. Multi-capability features
 (`ChatAPI`, `ArtifactsAPI`, `SourceUploadPipeline`) take their direct
 collaborators by keyword-only constructor argument, so unit tests can inject narrow
-`MagicMock(spec=RpcCaller, rpc_call=AsyncMock(...))`-style fakes
-directly via those constructors.
+`MagicMock(spec=RpcCaller, rpc_call=AsyncMock(...))`-style fakes directly via
+the concrete web constructors; neutral workflow tests subclass the abstract
+bases and implement their pinned hooks.
 
 The meta-lint at `tests/_guardrails/test_no_forbidden_monkeypatches.py`
 enforces the policy; the file-level allowlist shrinks as legacy tests
@@ -991,13 +997,16 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/rows/sources.py` | `SourceRow` / `SourceRowShape` typed views over raw positional source RPC rows |
 | `_web/notebooks.py` | `WebNotebooksAPI`, the concrete `batchexecute` notebook backend; preserves the shared executor identity and web-only decoding/quota/session-hint behavior, and owns the direct-construction `SourceLister` fallback |
 | `_web/sources/` | `WebSourcesAPI` and the concrete web source services: add/batch orchestration, source listing/content decoding, Drive import, and the resumable upload pipeline |
+| `_web/artifacts.py` | `WebArtifactsAPI`, the concrete `batchexecute` artifact backend; owns web listing, mutation, generation-hook, raw selection, export, and suggestion operations |
+| `_web/artifact/` | Web artifact services for listing, generation dispatch, raw download selection, and positional data-table decoding |
 | `_web/params/` | Web `batchexecute` positional request payload builders, separated from backend-neutral namespace APIs |
 | `_web/params/notebooks.py` | Stable `batchexecute` notebook RPC request payload builders, including `SUGGEST_PROMPTS` |
 | `_web/params/sources.py` | Stable source registration, rename, template-block, and resumable-upload request payload builders |
+| `_web/params/artifacts.py` | Stable web `CREATE_ARTIFACT`, revise/retry, and mind-map positional request payload builders |
 | `artifacts.py`, `research.py`, `utils.py` | Public helper modules for artifact retry, research citation/report utilities, and common async helpers |
 | `_notebooks.py` | Backend-neutral abstract `NotebooksAPI`; owns shared create idempotency, lookup/update conveniences, metadata composition, and share-URL semantics |
 | `_sources.py` | Backend-neutral abstract `SourcesAPI`; owns source identity lookup and the four polling workflows over neutral `SourcePoller` |
-| `_artifacts.py` | `client.artifacts` API — owns artifact generation orchestration directly (see ADR-0012) |
+| `_artifacts.py` | Backend-neutral abstract `ArtifactsAPI`; owns artifact generation orchestration, decoded polling, family lists, lookup, neutral formatting, and asset transfer |
 | `_chat/api.py` | `client.chat` API |
 | `_research.py` | `client.research` API |
 | `_research_import.py` | Free-function helpers for `ResearchAPI` source import + verification: URL normalization, the report-source predicate, imported-entry/merge helpers, and the #1961 idempotency pre-filter (skip already-present URLs) with its `already_present` side-channel carrier. Split out of `_research.py` under the ADR-0008 module-size ratchet. |
@@ -1009,15 +1018,18 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_note_service.py` | Service layer managing note CRUD, note-backed content generation, and sync |
 | `_mind_map.py` | Specific adapter service representing mind-maps, backed by standard notes |
 | `_mind_maps_api.py` | `client.mind_maps` API — unified surface over both mind-map backends (note-backed JSON + interactive studio-artifact), dispatching each op to the correct RPC family (#1256) |
-| `_artifact/downloads.py` | Asynchronous download coordinator for finished artifacts |
-| `_artifact/_redirect_guard.py` | Per-redirect-hop host/scheme revalidation for downloads — rejects off-allowlist / non-HTTPS redirect targets before the request is sent (#1521) |
-| `_artifact/_download_client.py` | Download trusted-host allowlist + transport-aware client factory — wires the #1521 redirect guard for httpx (event hook) or the opt-in curl_cffi (`get_guarded` manual loop) |
+| `_artifact/downloads.py` | Backend-neutral asset transfer service: guarded streaming, rejection, staging, and atomic publication |
+| `_artifact/_redirect_guard.py` | Per-redirect-hop host/scheme revalidation and credential-policy application for downloads — rejects off-allowlist / non-HTTPS redirect targets before the request is sent (#1521) |
+| `_artifact/_download_client.py` | Download trusted-host allowlist + transport-aware client factory — wires redirect validation and per-hop credentials for httpx or opt-in curl_cffi |
 | `_artifact/formatters.py` | Markdown, HTML, and plain text formatters for artifacts |
-| `_artifact/payloads.py` | Stable CREATE_ARTIFACT / GENERATE_MIND_MAP request payload builders |
 | `_artifact/validation.py` | Input-validation guards for the `ArtifactsAPI` facade (`generate_report` format coercion, `export` exactly-one-of target), kept in a sibling module so the facade stays under the module-size ratchet (#1874) |
-| `_artifact/generation.py` | Generation kickoff service (`generate_*`, `revise_slide`, `retry_failed`) extracted from `ArtifactsAPI`; the facade keeps thin delegators |
-| `_artifact/listing.py` | Listing and filtering operations for notebook artifacts |
-| `_artifact/polling.py` | Poll coordination service for artifact generation tasks |
+| `_artifact/polling.py` | Backend-neutral poll coordination over decoded studio artifacts |
+| `_web/artifacts.py` | Concrete web artifact namespace implementation |
+| `_web/artifact/downloads.py` | Web artifact selection, representation lookup, and raw content parsing |
+| `_web/artifact/generation.py` | Web generation RPC dispatch service |
+| `_web/artifact/listing.py` | Web listing, row decoding, and mind-map composition |
+| `_web/artifact/table.py` | Web positional data-table row extraction |
+| `_web/params/artifacts.py` | Stable web artifact RPC request payload builders |
 | `_web/sources/add.py` | Core service layer for adding text, URL, or Google Drive sources |
 | `_web/sources/batch.py` | True-batch URL `ADD_SOURCE` service for the existing MCP/REST batch endpoints: typed positional outcomes, omitted-row reconciliation, and fail-closed transport/duplicate ambiguity policy |
 | `_web/sources/drive_import.py` | Auto-route add-from-Drive (#1884): download + upload the upload-only Drive types (epub/docx/txt/…); native import (`add_drive`) instead takes Docs/Slides/Sheets + PDF by reference; header-first cookie-authed streaming fetch behind injected seams |
@@ -1171,8 +1183,20 @@ src/notebooklm/
 │   ├── source_research.py       # Click-free `source add-research` start/wait/import workflow + validate_add_research_flags (importer injected; SourceAddResearchPlan/Result)
 │   ├── source_wait.py           # Click-free `source wait` readiness-poll core: execute_source_wait + typed SourceWaitOutcome (wait_context injected) + wait_all_sources (single-snapshot loop via client.sources.wait_all_until_ready — one notebook poll per tick, order-preserving; #1870) shared by the MCP tool + REST route (#1871) + the MAX_WAIT_TIMEOUT / MAX_WAIT_SOURCE_IDS caps
 │   └── views.py                 # Transport-neutral output-projection views: share_status_view (access/permission/view_level enum→label), source_view (kind/status_label/drive_status_label + is_drive_degraded added), notebook_view (role_label added), notebook_viewed_keys (last_viewed_at + its deprecated modified_at alias, for hand-built CLI JSON envelopes), ask_result_view (raw_response debug blob stripped); shared by the MCP tools + REST routes so both emit the identical enriched shape (Option B)
-├── _web/                        # Private batchexecute web-backend implementation package (Phase A migration target)
-│   └── __init__.py              # Package boundary; concrete web implementations move here in ordered commits
+├── _web/                        # Private batchexecute web-backend implementation package
+│   ├── __init__.py              # Package boundary
+│   ├── notebooks.py             # WebNotebooksAPI
+│   ├── artifacts.py             # WebArtifactsAPI
+│   ├── artifact/                # Web artifact services
+│   │   ├── __init__.py
+│   │   ├── downloads.py         # Raw selection and representation decoding
+│   │   ├── generation.py        # Generation RPC dispatch
+│   │   ├── listing.py           # Listing and mind-map composition
+│   │   └── table.py             # Positional data-table decoding
+│   └── params/                  # Web batchexecute request builders
+│       ├── __init__.py
+│       ├── artifacts.py         # Artifact request payloads
+│       └── notebooks.py         # Notebook request payloads
 ├── _runtime/                    # Client-runtime subpackage (promoted from flat _runtime_*.py, #1328)
 │   ├── __init__.py              # Re-exports the cluster's public names
 │   ├── auth.py                  # AuthRefreshCoordinator (refresh task + auth-snapshot lock)
@@ -1201,15 +1225,12 @@ src/notebooklm/
 │   └── polling.py               # Source polling coordinator
 ├── _artifact/                   # Artifact-feature subpackage (promoted from flat _artifact_*.py, #1328)
 │   ├── __init__.py              # Re-exports the cluster's public service classes/builders
-│   ├── _download_client.py      # Download trusted-host allowlist + transport-aware client factory (httpx event hook / curl_cffi get_guarded)
-│   ├── _redirect_guard.py       # Per-redirect-hop host/scheme revalidation for downloads (#1521)
-│   ├── downloads.py             # Artifact download coordinator
+│   ├── _download_client.py      # Download trusted-host allowlist + transport-aware client factory with per-hop credentials
+│   ├── _redirect_guard.py       # Per-redirect-hop host/scheme and credential-policy enforcement (#1521)
+│   ├── downloads.py             # Neutral guarded asset transfer and atomic publication
 │   ├── formatters.py            # Artifact formatting helpers
-│   ├── generation.py            # Artifact generation kickoff service (generate_*, revise_slide, retry_failed)
-│   ├── payloads.py              # Stable artifact request payload builders
 │   ├── validation.py            # Facade input-validation guards (generate_report coercion, export exactly-one-of) (#1874)
-│   ├── listing.py               # Artifact listing helper
-│   └── polling.py               # Artifact polling coordinator
+│   └── polling.py               # Decoded backend-neutral artifact polling coordinator
 ├── _label/                      # Source-label feature subpackage: stable RPC payload builders
 │   ├── __init__.py              # Re-exports the label param builders
 │   └── params.py                # Source-label RPC payload builders (CREATE/LIST/UPDATE/DELETE_LABEL)
@@ -1307,13 +1328,20 @@ src/notebooklm/
 │   │   ├── listing.py           # GET_NOTEBOOK source listing decoder
 │   │   ├── upload.py            # Gated resumable source upload pipeline
 │   │   └── _upload_decode.py    # Upload URL/source-id/content-type validation
+│   ├── artifacts.py             # WebArtifactsAPI
+│   ├── artifact/                # Web artifact services
+│   │   ├── downloads.py         # Raw selection and representation decoding
+│   │   ├── generation.py        # Generation RPC dispatch
+│   │   ├── listing.py           # Listing and mind-map composition
+│   │   └── table.py             # Positional data-table decoding
 │   ├── params/                   # Web batchexecute payload builders
+│   │   ├── artifacts.py         # Artifact RPC payload builders
 │   │   ├── notebooks.py         # Notebook RPC payload builders (SUGGEST_PROMPTS)
 │   │   └── sources.py           # Source RPC/upload payload builders
 │   └── rows/                    # Typed positional wire-row decoders
 ├── _notebooks.py                # Backend-neutral abstract NotebooksAPI
 ├── _sources.py                  # Backend-neutral abstract SourcesAPI
-├── _artifacts.py                # ArtifactsAPI
+├── _artifacts.py                # Backend-neutral abstract ArtifactsAPI
 ├── _research.py                 # ResearchAPI
 ├── _notes.py                    # NotesAPI
 ├── _sharing.py                  # SharingAPI

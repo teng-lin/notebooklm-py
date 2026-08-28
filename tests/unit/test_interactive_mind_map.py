@@ -94,8 +94,8 @@ def test_list_unknown_excludes_interactive_but_keeps_genuine_unknown():
 
 from unittest.mock import AsyncMock, MagicMock  # noqa: E402
 
-from notebooklm._artifact.downloads import ArtifactDownloadService  # noqa: E402
 from notebooklm._runtime.contracts import RpcCaller  # noqa: E402
+from notebooklm._web.artifact.downloads import ArtifactDownloadService  # noqa: E402
 from notebooklm.rpc.types import RPCMethod  # noqa: E402
 from notebooklm.types import ArtifactNotReadyError  # noqa: E402
 

@@ -250,6 +250,7 @@ class CurlCffiAsyncClient:
         url: str,
         *,
         is_trusted_host: Callable[[str | None], bool],
+        credential_for: Callable[[str], Any | None] | None = None,
         max_redirects: int = 20,  # match httpx.AsyncClient's default for cross-transport parity
         **kwargs: Any,
     ) -> httpx.Response:
@@ -291,12 +292,22 @@ class CurlCffiAsyncClient:
                     request=httpx.Request("GET", current),
                 )
             try:
+                credentials = credential_for(current) if credential_for is not None else None
+                hop_kwargs = dict(kwargs)
+                if credential_for is not None:
+                    hop_kwargs["cookies"] = (
+                        credentials.jar
+                        if isinstance(credentials, httpx.Cookies)
+                        else credentials
+                        if credentials is not None
+                        else {}
+                    )
                 r = await self._curl.get(
                     current,
                     allow_redirects=False,
                     quote=False,
                     timeout=timeout,
-                    **kwargs,
+                    **hop_kwargs,
                 )
             except RequestsError as exc:
                 raise httpx.RequestError(str(exc), request=httpx.Request("GET", current)) from exc

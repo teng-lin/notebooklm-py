@@ -9,7 +9,7 @@ executor dispatch table (``_KIND_TO_METHOD``), the spinner duration hints
 (``_TYPICAL_DURATIONS``), the hand-written ``generate <kind>`` Click leaves,
 the ``DOWNLOAD_SPECS`` registry (which itself derives the ``download <kind>``
 leaves), the ``ArtifactsAPI`` ``generate_*`` / ``download_*`` facade method
-sets, the per-kind RPC payload builders (``_artifact/payloads.py``), and the
+sets, the per-kind RPC payload builders (``_web/params/artifacts.py``), and the
 type-decode chain (``ArtifactType`` -> ``ArtifactTypeCode`` ->
 ``_ARTIFACT_TYPE_CODE_MAP`` -> the ``artifact list --type`` filter choices).
 
@@ -72,7 +72,6 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
-from notebooklm import _artifact
 from notebooklm._app.generate import _KIND_TO_METHOD, execute_generation
 from notebooklm._app.generate_plans import (
     _BUILDERS,
@@ -84,6 +83,7 @@ from notebooklm._app.generate_plans import (
 from notebooklm._app.generate_retry import _TYPICAL_DURATIONS, _format_status_message
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._types.artifacts import _ARTIFACT_TYPE_CODE_MAP
+from notebooklm._web.params import artifacts as artifact_params
 from notebooklm.cli import artifact_cmd
 from notebooklm.cli._download_specs import DOWNLOAD_SPECS
 from notebooklm.cli.download_cmd import download as download_group
@@ -136,7 +136,7 @@ LOC: Mapping[str, str] = {
     "ArtifactTypeCode": _loc("_types/enums.py", r"^class ArtifactTypeCode\("),
     "_ARTIFACT_TYPE_CODE_MAP": _loc("_types/artifacts.py", r"^_ARTIFACT_TYPE_CODE_MAP"),
     "artifact list --type": _loc("cli/artifact_cmd.py", r'^\s*"--type",'),
-    "payloads module": _loc("_artifact/payloads.py", r"^def build_audio_artifact_params"),
+    "payloads module": _loc("_web/params/artifacts.py", r"^def build_audio_artifact_params"),
 }
 
 
@@ -295,7 +295,7 @@ FACADE_GENERATE_EXTRAS: Mapping[str, str] = {
     "generate_report(ReportFormat.STUDY_GUIDE); not a GenerationKind of its own",
 }
 
-#: Per-kind RPC payload builders in ``_artifact/payloads.py``. mind-map has TWO
+#: Per-kind RPC payload builders in ``_web/params/artifacts.py``. mind-map has TWO
 #: first-class backings (note-backed GENERATE_MIND_MAP + interactive studio
 #: CREATE_ARTIFACT variant) — both stay, neither is deprecated. revise-slide's
 #: builder has no "_artifact_" infix because it revises rather than creates.
@@ -821,14 +821,14 @@ def test_artifact_list_type_filter_covers_every_artifact_type() -> None:
 
 
 def test_payload_builders_exist_per_kind() -> None:
-    """Every kind has its RPC payload builder(s) in ``_artifact/payloads.py``.
+    """Every kind has its RPC payload builder(s) in ``_web/params/artifacts.py``.
 
     The KIND_TO_PAYLOAD_BUILDERS registry above is keyed by the axis (so a new
     kind fails here until its builder is named) and every named builder must
     exist; conversely every ``build_*`` function in the module must be claimed
     by a kind or documented as an extra — a new builder with no kind is drift.
     """
-    payloads = _artifact.payloads
+    payloads = artifact_params
     table = f"KIND_TO_PAYLOAD_BUILDERS (this guardrail; builders in {LOC['payloads module']})"
     _assert_parity(_check_kind_table(KIND_TO_PAYLOAD_BUILDERS, table=table))
 
@@ -839,7 +839,7 @@ def test_payload_builders_exist_per_kind() -> None:
         if not callable(getattr(payloads, name, None))
     )
     assert missing == [], (
-        f"{table} names builder(s) absent from src/notebooklm/_artifact/payloads.py: "
+        f"{table} names builder(s) absent from src/notebooklm/_web/params/artifacts.py: "
         + ", ".join(missing)
     )
 
@@ -849,7 +849,7 @@ def test_payload_builders_exist_per_kind() -> None:
         parity_failures(
             frozenset(claimed),
             actual,
-            table="build_* functions in src/notebooklm/_artifact/payloads.py",
+            table="build_* functions in src/notebooklm/_web/params/artifacts.py",
             axis_name="kind-claimed payload builders",
             axis_location="KIND_TO_PAYLOAD_BUILDERS in this guardrail",
             extras=PAYLOAD_BUILDER_EXTRAS,

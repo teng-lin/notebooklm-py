@@ -65,10 +65,9 @@
     "_NON_AUTHTOKENS_CANDIDATES": 30
   },
   "tests/_guardrails/test_backend_abstract_contracts.py": {
-    "BASE_ABSTRACT_CONTRACTS": 28
+    "BASE_ABSTRACT_CONTRACTS": 53
   },
   "tests/_guardrails/test_backend_boundaries.py": {
-    "ALLOWED_WEB_IMPORTERS": 23,
     "LAZY_WEB_IMPORT_ALLOWLIST": 30
   },
   "tests/_guardrails/test_classify_error_handler_consistency.py": {

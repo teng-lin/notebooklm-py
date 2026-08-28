@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Final, TypeVar
 
-from .._types.enums import (
+from ..._types.enums import (
     INTERACTIVE_MIND_MAP_VARIANT,
     ArtifactTypeCode,
     AudioFormat,
@@ -20,8 +20,8 @@ from .._types.enums import (
     VideoFormat,
     VideoStyle,
 )
-from ..exceptions import ValidationError
-from ..rpc import nest_source_ids
+from ...exceptions import ValidationError
+from ...rpc import nest_source_ids
 
 _STATIC_REPORT_CONFIGS: dict[ReportFormat, dict[str, str]] = {
     ReportFormat.BRIEFING_DOC: {

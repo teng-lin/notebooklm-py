@@ -32,11 +32,11 @@ import json
 
 import pytest
 
-from notebooklm._artifact.payloads import (
+from notebooklm._types.common import _datetime_from_timestamp
+from notebooklm._web.params.artifacts import (
     build_flashcards_artifact_params,
     build_quiz_artifact_params,
 )
-from notebooklm._types.common import _datetime_from_timestamp
 from notebooklm._web.rows.artifacts import ArtifactRow, QuizOptionPair, ReportSuggestionRow
 from notebooklm._web.rows.notes import NoteRow
 from notebooklm._web.rows.sources import (

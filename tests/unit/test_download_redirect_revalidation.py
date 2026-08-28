@@ -31,6 +31,7 @@ import httpx
 import pytest
 
 import notebooklm._artifact.downloads as _downloads_mod
+from notebooklm._artifact._download_client import _make_download_client
 from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm.types import ArtifactDownloadError
 
@@ -88,6 +89,45 @@ def _patch_real_client_with_transport(handler: Callable[[httpx.Request], httpx.R
 # A trusted host accepted by ``_is_trusted_download_host``.
 _TRUSTED_HOST = "storage.googleapis.com"
 _TRUSTED_URL = f"https://{_TRUSTED_HOST}/start"
+
+
+@pytest.mark.asyncio
+async def test_httpx_applies_cookie_policy_on_every_redirect_hop():
+    """httpx runs the same credential policy for the initial and redirected request."""
+    real_cls = httpx.AsyncClient
+    seen_requests: list[tuple[str, str | None]] = []
+    policy_calls: list[str] = []
+    cookies = httpx.Cookies()
+    cookies.set("SID", "secret", domain=".googleapis.com")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_requests.append((str(request.url), request.headers.get("cookie")))
+        if request.url.path == "/start":
+            return httpx.Response(302, headers={"location": "/final"})
+        return httpx.Response(200, content=b"ok")
+
+    def credential_for(url: str) -> httpx.Cookies:
+        policy_calls.append(url)
+        return cookies
+
+    def client_factory(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real_cls(*args, **kwargs)
+
+    with patch.object(httpx, "AsyncClient", side_effect=client_factory):
+        client, get_guarded = _make_download_client(
+            cookies,
+            timeout=30.0,
+            credential_for=credential_for,
+        )
+        async with client:
+            response = await get_guarded(_TRUSTED_URL)
+
+    expected = [_TRUSTED_URL, f"https://{_TRUSTED_HOST}/final"]
+    assert response.content == b"ok"
+    assert policy_calls == expected
+    assert [url for url, _cookie in seen_requests] == expected
+    assert all(cookie == "SID=secret" for _url, cookie in seen_requests)
 
 
 def _redirect_handler(

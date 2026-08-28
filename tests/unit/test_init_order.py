@@ -183,6 +183,8 @@ def test_phase7_artifact_download_patch_seams_are_current() -> None:
     import notebooklm._artifact.formatters as artifact_formatters
     import notebooklm._artifacts as artifacts
     import notebooklm._mind_map as mind_map
+    import notebooklm._web.artifact.downloads as web_downloads
+    import notebooklm._web.artifact.table as artifact_table
     import notebooklm.auth as auth
 
     tree = ast.parse((SRC_ROOT / "_artifact" / "downloads.py").read_text(encoding="utf-8"))
@@ -206,12 +208,27 @@ def test_phase7_artifact_download_patch_seams_are_current() -> None:
     assert artifacts._mind_map is mind_map
     assert not hasattr(artifact_downloads, "_artifact_seams")
     assert artifact_downloads.load_httpx_cookies is auth.load_httpx_cookies
-    assert artifact_downloads._extract_app_data is artifact_formatters._extract_app_data
+    assert web_downloads._extract_app_data is artifact_formatters._extract_app_data
     assert (
-        artifact_downloads._format_interactive_content
-        is artifact_formatters._format_interactive_content
+        web_downloads._format_interactive_content is artifact_formatters._format_interactive_content
     )
-    assert artifact_downloads._parse_data_table is artifact_formatters._parse_data_table
+    assert web_downloads._parse_data_table is artifact_table._parse_data_table
+
+
+def test_artifact_package_lazy_web_compatibility_exports_keep_identity() -> None:
+    """Moved package-level service exports stay lazy and preserve object identity."""
+    import notebooklm._artifact as artifact_package
+    from notebooklm._web.artifact import generation, listing
+    from notebooklm._web.artifact.downloads import ArtifactDownloadService
+    from notebooklm._web.params import artifacts as payloads
+
+    assert artifact_package.ArtifactDownloadService is ArtifactDownloadService
+    assert artifact_package.ArtifactListingService is listing.ArtifactListingService
+    assert artifact_package.find_artifact_row_by_id is listing.find_artifact_row_by_id
+    assert artifact_package.iter_artifact_rows is listing.iter_artifact_rows
+    assert artifact_package.generation is generation
+    assert artifact_package.listing is listing
+    assert artifact_package.payloads is payloads
 
 
 def test_notebooks_api_has_no_hidden_sources_api_runtime_dependency() -> None:

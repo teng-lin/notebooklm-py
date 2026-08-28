@@ -866,7 +866,7 @@ class TestGetNotebookFailsClosed:
 class TestListNotebooksPayloadDispatch:
     """``list()`` wrapped-envelope dispatch — absence soft, malformed raises.
 
-    Mirrors the ``_artifact/listing.py::list_raw`` fail-loud pattern (#1485):
+    Mirrors the ``_web/artifact/listing.py::list_raw`` fail-loud pattern (#1485):
     an empty/``None`` payload and a ``None`` row-list slot are legitimate "no
     notebooks" shapes, while a truthy payload that doesn't match the
     ``[[row, ...]]`` envelope is schema drift — it used to flow garbage rows

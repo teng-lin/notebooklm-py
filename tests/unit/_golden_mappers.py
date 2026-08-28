@@ -86,7 +86,7 @@ def list_artifacts(decoded: Any) -> list[Artifact]:
     """``LIST_ARTIFACTS`` -> one :class:`Artifact` per studio row.
 
     Mirrors ``ArtifactsAPI`` studio-row filtering
-    (``_artifact/listing.py::_filter_studio_artifacts``): the decoded payload
+    (``_web/artifact/listing.py::_filter_studio_artifacts``): the decoded payload
     is routed through the production ``unwrap_artifact_rows`` wrap-probe — which
     accepts both the wrapped ``[[row, ...]]`` envelope and an already-flat list —
     and each non-empty list row is built via :meth:`Artifact.from_api_response`.

@@ -12,12 +12,8 @@ from typing import TYPE_CHECKING, Any
 
 # ``_mind_map`` re-exported as ``_artifacts._mind_map`` for legacy monkeypatch seams (runtime uses injected services).
 from .. import _mind_map  # noqa: F401 — re-exported as facade attribute
-from .._artifact import formatters as _artifact_formatters
 from .._artifact import polling as _artifact_polling
 from .._artifact import validation as _artifact_validation
-from .._artifact.downloads import ArtifactDownloadService, DownloadResult
-from .._artifact.generation import ArtifactGenerationService
-from .._artifact.payloads import build_suggest_reports_params
 from .._artifacts import ArtifactsAPI
 from .._mind_map import NoteBackedMindMapService
 from .._note_service import NoteService
@@ -25,19 +21,7 @@ from .._notebook_metadata import NotebookSourceIdProvider
 from .._runtime.contracts import RpcCaller
 from .._types.enums import (
     ArtifactTypeCode,
-    AudioFormat,
-    AudioLength,
     ExportType,
-    InfographicDetail,
-    InfographicOrientation,
-    InfographicStyle,
-    QuizDifficulty,
-    QuizQuantity,
-    ReportFormat,
-    SlideDeckFormat,
-    SlideDeckLength,
-    VideoFormat,
-    VideoStyle,
 )
 from .._types.research import MindMapResult
 from ..exceptions import ArtifactNotFoundError
@@ -48,7 +32,10 @@ from ..types import (
     GenerationStatus,
     ReportSuggestion,
 )
+from .artifact.downloads import ArtifactDownloadService
+from .artifact.generation import ArtifactGenerationService
 from .artifact.listing import ArtifactListingService
+from .params.artifacts import build_suggest_reports_params
 from .rows import artifacts as _artifact_rows
 
 if TYPE_CHECKING:
@@ -101,7 +88,7 @@ class WebArtifactsAPI(ArtifactsAPI):
                 generation service.
             mind_maps: Note-backed mind-map facade (:class:`NoteBackedMindMapService`)
                 — owns the ``list_mind_maps`` / ``extract_content`` paths
-                consumed by ``_artifact.downloads.download_mind_map``.
+                consumed by ``_web.artifact.downloads.download_mind_map``.
             note_service: Backend note-row primitives — owns the ``create_note``
                 call site that the generation service's ``generate_mind_map``
                 uses to persist generated mind maps.
@@ -121,13 +108,26 @@ class WebArtifactsAPI(ArtifactsAPI):
             rpc=self._rpc,
             listing=self._listing,
             mind_maps=self._mind_maps,
-            storage_path=storage_path,
+            download_to_path=self._download_to_path,
+            download_urls_batch=self._download_urls_batch,
+            format_interactive_content=self._format_interactive_content,
         )
         self._generation = ArtifactGenerationService(
             rpc=self._rpc,
             notebooks=self._notebooks,
             note_service=self._note_service,
         )
+
+    async def _send_create_artifact(
+        self,
+        notebook_id: str,
+        family: str,
+        source_ids: builtins.list[str],
+        **options: Any,
+    ) -> GenerationStatus:
+        """Dispatch a validated creation request to the web generation service."""
+        generate = getattr(self._generation, f"generate_{family}")
+        return await generate(notebook_id, source_ids=source_ids, **options)
 
     # =========================================================================
     # List/Get Operations
@@ -178,170 +178,6 @@ class WebArtifactsAPI(ArtifactsAPI):
     # Generate Operations
     # =========================================================================
 
-    async def generate_audio(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
-        language: str | None = "en",
-        instructions: str | None = None,
-        audio_format: AudioFormat | None = None,
-        audio_length: AudioLength | None = None,
-    ) -> GenerationStatus:
-        """Generate an Audio Overview (podcast)."""
-        return await self._generation.generate_audio(
-            notebook_id,
-            source_ids=source_ids,
-            language=language,
-            instructions=instructions,
-            audio_format=audio_format,
-            audio_length=audio_length,
-        )
-
-    async def generate_video(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
-        language: str | None = "en",
-        instructions: str | None = None,
-        video_format: VideoFormat | None = None,
-        video_style: VideoStyle | None = None,
-        style_prompt: str | None = None,
-    ) -> GenerationStatus:
-        """Generate a Video Overview."""
-        return await self._generation.generate_video(
-            notebook_id,
-            source_ids=source_ids,
-            language=language,
-            instructions=instructions,
-            video_format=video_format,
-            video_style=video_style,
-            style_prompt=style_prompt,
-        )
-
-    async def generate_cinematic_video(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
-        language: str | None = "en",
-        instructions: str | None = None,
-    ) -> GenerationStatus:
-        """Generate a Cinematic Video Overview."""
-        return await self._generation.generate_cinematic_video(
-            notebook_id,
-            source_ids=source_ids,
-            language=language,
-            instructions=instructions,
-        )
-
-    async def generate_report(
-        self,
-        notebook_id: str,
-        report_format: ReportFormat = ReportFormat.BRIEFING_DOC,
-        source_ids: builtins.list[str] | None = None,
-        language: str | None = "en",
-        custom_prompt: str | None = None,
-        extra_instructions: str | None = None,
-    ) -> GenerationStatus:
-        """Generate a report artifact."""
-        report_format = _artifact_validation.coerce_report_format(report_format)
-        return await self._generation.generate_report(
-            notebook_id,
-            report_format=report_format,
-            source_ids=source_ids,
-            language=language,
-            custom_prompt=custom_prompt,
-            extra_instructions=extra_instructions,
-        )
-
-    async def generate_study_guide(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
-        language: str | None = "en",
-        extra_instructions: str | None = None,
-    ) -> GenerationStatus:
-        """Generate a study guide report."""
-        return await self._generation.generate_study_guide(
-            notebook_id,
-            source_ids=source_ids,
-            language=language,
-            extra_instructions=extra_instructions,
-        )
-
-    async def generate_quiz(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
-        instructions: str | None = None,
-        quantity: QuizQuantity | None = None,
-        difficulty: QuizDifficulty | None = None,
-    ) -> GenerationStatus:
-        """Generate a quiz."""
-        return await self._generation.generate_quiz(
-            notebook_id,
-            source_ids=source_ids,
-            instructions=instructions,
-            quantity=quantity,
-            difficulty=difficulty,
-        )
-
-    async def generate_flashcards(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
-        instructions: str | None = None,
-        quantity: QuizQuantity | None = None,
-        difficulty: QuizDifficulty | None = None,
-    ) -> GenerationStatus:
-        """Generate flashcards."""
-        return await self._generation.generate_flashcards(
-            notebook_id,
-            source_ids=source_ids,
-            instructions=instructions,
-            quantity=quantity,
-            difficulty=difficulty,
-        )
-
-    async def generate_infographic(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
-        language: str | None = "en",
-        instructions: str | None = None,
-        orientation: InfographicOrientation | None = None,
-        detail_level: InfographicDetail | None = None,
-        style: InfographicStyle | None = None,
-    ) -> GenerationStatus:
-        """Generate an infographic."""
-        return await self._generation.generate_infographic(
-            notebook_id,
-            source_ids=source_ids,
-            language=language,
-            instructions=instructions,
-            orientation=orientation,
-            detail_level=detail_level,
-            style=style,
-        )
-
-    async def generate_slide_deck(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
-        language: str | None = "en",
-        instructions: str | None = None,
-        slide_format: SlideDeckFormat | None = None,
-        slide_length: SlideDeckLength | None = None,
-    ) -> GenerationStatus:
-        """Generate a slide deck."""
-        return await self._generation.generate_slide_deck(
-            notebook_id,
-            source_ids=source_ids,
-            language=language,
-            instructions=instructions,
-            slide_format=slide_format,
-            slide_length=slide_length,
-        )
-
     async def revise_slide(
         self,
         notebook_id: str,
@@ -370,21 +206,6 @@ class WebArtifactsAPI(ArtifactsAPI):
         identified solely by ``artifact_id``.
         """
         return await self._generation.retry_failed(notebook_id, artifact_id)
-
-    async def generate_data_table(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
-        language: str | None = "en",
-        instructions: str | None = None,
-    ) -> GenerationStatus:
-        """Generate a data table."""
-        return await self._generation.generate_data_table(
-            notebook_id,
-            source_ids=source_ids,
-            language=language,
-            instructions=instructions,
-        )
 
     async def generate_mind_map(
         self,
@@ -476,23 +297,6 @@ class WebArtifactsAPI(ArtifactsAPI):
         """Download quiz or flashcard artifact."""
         return await self._downloads.download_interactive_artifact(
             notebook_id, output_path, artifact_id, output_format, artifact_type, artifacts=artifacts
-        )
-
-    def _format_interactive_content(
-        self,
-        app_data: dict,
-        title: str,
-        output_format: str,
-        html_content: str,
-        is_quiz: bool,
-    ) -> str:
-        """Format quiz (``is_quiz=True``) or flashcard content as json/markdown/html."""
-        return _artifact_formatters._format_interactive_content(
-            app_data,
-            title,
-            output_format,
-            html_content,
-            is_quiz,
         )
 
     async def download_report(
@@ -805,16 +609,6 @@ class WebArtifactsAPI(ArtifactsAPI):
             no_result_error_key,
             type_code=type_code,
         )
-
-    async def _download_urls_batch(
-        self, urls_and_paths: builtins.list[tuple[str, str]]
-    ) -> "DownloadResult":
-        """Download multiple files using httpx with proper cookie handling."""
-        return await self._downloads.download_urls_batch(urls_and_paths)
-
-    async def _download_url(self, url: str, output_path: str) -> str:
-        """Download a file from URL using streaming with proper cookie handling."""
-        return await self._downloads.download_url(url, output_path)
 
     def _parse_generation_result(
         self,

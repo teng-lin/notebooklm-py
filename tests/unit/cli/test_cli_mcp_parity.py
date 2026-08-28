@@ -641,13 +641,13 @@ def test_quiz_option_flag_default_matches_the_wire_default(
 
     Unlike the choice list, this one cannot be fixed by derivation: the layering
     guardrails (``test_app_boundary`` / ``test_cli_boundary``) forbid both
-    ``_app`` and ``cli`` from importing ``_artifact.payloads``, where the wire
+    ``_app`` and ``cli`` from importing ``_web.params.artifacts``, where the wire
     default lives. So the binding is enforced here instead — the same
     hardcode-plus-parity-test shape the MCP and REST option tuples already use.
     A test is allowed to import across layers precisely so it can check one.
     """
     from notebooklm._app import generate_plans as gp
-    from notebooklm._artifact.payloads import DEFAULT_QUIZ_DIFFICULTY, DEFAULT_QUIZ_QUANTITY
+    from notebooklm._web.params.artifacts import DEFAULT_QUIZ_DIFFICULTY, DEFAULT_QUIZ_QUANTITY
 
     generate = cli.commands["generate"]
     command = generate.commands[subcommand]  # type: ignore[attr-defined]

@@ -8,7 +8,7 @@
 > **Note:** Payload structures are extracted from the implementation builders in
 > `src/notebooklm/` and pinned by golden unit tests. Each payload includes a
 > reference to its owning source file. The CREATE_ARTIFACT payloads below were
-> re-verified against the live builders in `_artifact/payloads.py` on
+> re-verified against the live builders in `_web/params/artifacts.py` on
 > 2026-06-11 (AUDIO, VIDEO_EXPLAINER, VIDEO_BRIEF, VIDEO_CINEMATIC,
 > STUDY_GUIDE, BRIEFING_DOC, BLOG_POST, MIND_MAP, QUIZ, FLASHCARDS,
 > INFOGRAPHIC, SLIDE_DECK, DATA_TABLE). Read-only notebook/source/artifact/chat/
@@ -39,11 +39,11 @@
 | `I3xc3c` | LIST_LABELS | List source labels for a notebook | `_labels.py` |
 | `le8sX` | UPDATE_LABEL | Rename label, set emoji, add/remove sources | `_labels.py`, `_label/params.py` |
 | `GyzE7e` | DELETE_LABEL | Delete one or more labels (batch) | `_labels.py` |
-| `R7cb6c` | CREATE_ARTIFACT | Unified artifact generation | `_artifacts.py` |
-| `gArtLc` | LIST_ARTIFACTS | List artifacts in a notebook | `_artifacts.py` |
-| `V5N4be` | DELETE_ARTIFACT | Delete artifact | `_artifacts.py` |
-| `KmcKPe` | REVISE_SLIDE | Revise an individual slide via prompt | `_artifacts.py` |
-| `Rytqqe` | RETRY_ARTIFACT | Retry a failed Studio artifact in place | `_artifacts.py` |
+| `R7cb6c` | CREATE_ARTIFACT | Unified artifact generation | `_artifacts.py`, `_web/artifact/generation.py` |
+| `gArtLc` | LIST_ARTIFACTS | List artifacts in a notebook | `_web/artifacts.py` |
+| `V5N4be` | DELETE_ARTIFACT | Delete artifact | `_web/artifacts.py` |
+| `KmcKPe` | REVISE_SLIDE | Revise an individual slide via prompt | `_web/artifacts.py` |
+| `Rytqqe` | RETRY_ARTIFACT | Retry a failed Studio artifact in place | `_web/artifacts.py` |
 | `hPTbtc` | GET_LAST_CONVERSATION_ID | Get most recent conversation ID | `_chat/api.py` |
 | `khqZz` | GET_CONVERSATION_TURNS | Get Q&A turns for a conversation | `_chat/api.py` |
 | `J7Gthc` | DELETE_CONVERSATION | Delete a conversation (web UI's "Delete history") | `_chat/api.py` |
@@ -52,7 +52,7 @@
 | `cYAfTb` | UPDATE_NOTE | Update note content/title | `_notes.py` |
 | `AH0mwd` | DELETE_NOTE | Delete a note | `_notes.py` |
 | `cFji9` | GET_NOTES_AND_MIND_MAPS | List notes and mind maps | `_notes.py` |
-| `yyryJe` | GENERATE_MIND_MAP | Mind map generation | `_artifacts.py` |
+| `yyryJe` | GENERATE_MIND_MAP | Mind map generation | `_web/artifact/generation.py` |
 | `VfAZjd` | SUMMARIZE | Get notebook summary | `_web/notebooks.py` |
 | `FLmJqe` | REFRESH_SOURCE | Refresh URL/Drive source | `_web/sources/__init__.py` |
 | `yR9Yof` | CHECK_SOURCE_FRESHNESS | Check if source needs refresh | `_web/sources/__init__.py` |
@@ -61,13 +61,13 @@
 | `e3bVqc` | POLL_RESEARCH | Poll research status | `_research.py` |
 | `LBwxtb` | IMPORT_RESEARCH | Import research results | `_research.py` |
 | `Zbrupe` | CANCEL_RESEARCH | Cancel in-flight research run | `_research.py` |
-| `rc3d8d` | RENAME_ARTIFACT | Rename artifact | `_artifacts.py` |
-| `Krh3pd` | EXPORT_ARTIFACT | Export to Docs/Sheets | `_artifacts.py` |
+| `rc3d8d` | RENAME_ARTIFACT | Rename artifact | `_web/artifacts.py` |
+| `Krh3pd` | EXPORT_ARTIFACT | Export to Docs/Sheets | `_web/artifacts.py` |
 | `RGP97b` | SHARE_ARTIFACT | Legacy notebook/artifact share-link toggle | `_sharing_manager.py` |
 | `QDyure` | SHARE_NOTEBOOK | Set notebook visibility (restricted/public) | `_sharing.py` |
 | `JFMDGd` | GET_SHARE_STATUS | Get notebook share settings | `_sharing.py` |
-| `ciyUvf` | GET_SUGGESTED_REPORTS | Get AI-suggested report formats | `_artifacts.py` |
-| `v9rmvd` | GET_INTERACTIVE_HTML | Fetch quiz/flashcard HTML (`[0][9][0]`) / interactive mind-map tree (`[0][9][3]`) | `_artifact/downloads.py` |
+| `ciyUvf` | GET_SUGGESTED_REPORTS | Get AI-suggested report formats | `_web/artifacts.py` |
+| `v9rmvd` | GET_INTERACTIVE_HTML | Fetch quiz/flashcard HTML (`[0][9][0]`) / interactive mind-map tree (`[0][9][3]`) | `_web/artifact/downloads.py` |
 | `fejl7e` | REMOVE_RECENTLY_VIEWED | Remove notebook from recent list | `_web/notebooks.py` |
 | `ZwVcOc` | GET_USER_SETTINGS | Get user settings including output language | `_settings.py` |
 | `hT54vc` | SET_USER_SETTINGS | Set user settings (e.g., output language) | `_settings.py` |
@@ -1234,7 +1234,7 @@ await page.locator(".create-artifact-button-container[aria-label='Audio Overview
 
 **All artifact types use `R7cb6c` with different content type codes and nested configs.**
 
-**Source:** `_artifacts.py` (param builders: `_artifact/payloads.py`)
+**Source:** `_artifacts.py` and `_web/artifact/generation.py` (param builders: `_web/params/artifacts.py`)
 
 Live UI captures on 2026-06-15 for Data Table and interactive Mind Map showed
 the web client sending the full client-options block below as param `0` (not
@@ -1272,7 +1272,7 @@ and `result[0][4]`, which matches both live responses.
 
 #### Audio Overview (Type 1)
 
-**Source:** `_artifacts.py::ArtifactsAPI` (param builders: `_artifact/payloads.py`)
+**Source:** `_artifacts.py::ArtifactsAPI` (param builders: `_web/params/artifacts.py`)
 
 ```python
 source_ids_triple = [[[sid]] for sid in source_ids]  # [[[s1]], [[s2]], ...]
@@ -1430,7 +1430,7 @@ params = [
 
 #### Quiz (Type 4, Variant 2)
 
-**Source:** `_artifact/payloads.py::build_quiz_artifact_params()`
+**Source:** `_web/params/artifacts.py::build_quiz_artifact_params()`
 
 ```python
 params = [
@@ -1465,7 +1465,7 @@ params = [
 
 #### Flashcards (Type 4, Variant 1)
 
-**Source:** `_artifact/payloads.py::build_flashcards_artifact_params()`
+**Source:** `_web/params/artifacts.py::build_flashcards_artifact_params()`
 
 ```python
 params = [
@@ -1570,7 +1570,7 @@ params = [
 
 #### Mind Map (Type 5) - Uses GENERATE_MIND_MAP (yyryJe)
 
-**Source:** `_artifacts.py::generate_mind_map()`
+**Source:** `_web/artifact/generation.py::generate_mind_map()`
 
 **Note:** Mind map uses a different RPC method than other artifacts.
 
@@ -1596,7 +1596,7 @@ params = [
 
 #### Interactive Mind Map (Type 4 / variant 4) - Uses CREATE_ARTIFACT (R7cb6c)
 
-**Source:** `_artifact/payloads.py::build_interactive_mind_map_artifact_params()`,
+**Source:** `_web/params/artifacts.py::build_interactive_mind_map_artifact_params()`,
 `_mind_maps_api.py::MindMapsAPI.generate()`
 
 NotebookLM's web app now generates an **interactive** mind map — a studio
@@ -1637,7 +1637,7 @@ kinds behind a single `MindMapKind` discriminator.
 
 ### RPC: LIST_ARTIFACTS (gArtLc)
 
-**Source:** `_artifacts.py::list()`, `_artifacts.py::poll_status()`
+**Source:** `_web/artifacts.py::list()`, `_artifacts.py::poll_status()`
 
 ```python
 params = [
@@ -2762,7 +2762,7 @@ Common language codes include:
 
 ### RPC: RENAME_ARTIFACT (rc3d8d)
 
-**Source:** `_artifacts.py::rename()`
+**Source:** `_web/artifacts.py::rename()`
 
 Rename an artifact.
 
@@ -2782,7 +2782,7 @@ await rpc_call(
 
 ### RPC: EXPORT_ARTIFACT (Krh3pd)
 
-**Source:** `_artifacts.py::export_report()`, `_artifacts.py::export_data_table()`, `_artifacts.py::export()`
+**Source:** `_web/artifacts.py::export_report()`, `_web/artifacts.py::export_data_table()`, `_web/artifacts.py::export()`
 
 Export an artifact to Google Docs or Sheets.
 
@@ -2811,9 +2811,9 @@ await rpc_call(
 
 ### RPC: REVISE_SLIDE (KmcKPe)
 
-**Source:** `_artifacts.py::revise_slide()`,
-`_artifact/generation.py::ArtifactGenerationService.revise_slide()`,
-`_artifact/payloads.py::build_revise_slide_params()`
+**Source:** `_web/artifacts.py::revise_slide()`,
+`_web/artifact/generation.py::ArtifactGenerationService.revise_slide()`,
+`_web/params/artifacts.py::build_revise_slide_params()`
 
 Revise one slide in an existing completed slide deck. `slide_index` is
 zero-based and must be non-negative.
@@ -2841,7 +2841,7 @@ propagates as `RateLimitError` / `RPCError`; a null result raises
 
 ### RPC: RETRY_ARTIFACT (Rytqqe)
 
-**Source:** `_artifacts.py::retry_failed()`
+**Source:** `_web/artifacts.py::retry_failed()`
 
 Retry a failed Studio artifact in place — the equivalent of the NotebookLM web
 UI "Retry" button. The failed artifact is **not** deleted first; the same
@@ -2928,7 +2928,7 @@ await rpc_call(
 
 ### RPC: GET_INTERACTIVE_HTML (v9rmvd)
 
-**Source:** `_artifact/downloads.py::_get_artifact_content()` (quiz/flashcard HTML), `_artifact/downloads.py::_get_interactive_mind_map_tree()` (interactive mind-map tree)
+**Source:** `_web/artifact/downloads.py::_get_artifact_content()` (quiz/flashcard HTML), `_web/artifact/downloads.py::_get_interactive_mind_map_tree()` (interactive mind-map tree)
 
 Fetch the interactive payload for a studio artifact. Used both for quiz/flashcard
 HTML and for the **interactive** mind-map JSON node tree (issue #1256) — the same
@@ -2962,7 +2962,7 @@ await rpc_call(
 
 ### RPC: GET_SUGGESTED_REPORTS (ciyUvf)
 
-**Source:** `_artifacts.py::suggest_reports()`
+**Source:** `_web/artifacts.py::suggest_reports()`
 
 Get AI-suggested report formats based on notebook content.
 

@@ -26,6 +26,37 @@ class _AbstractContract:
 # A4-A9 append one contract per namespace split.
 BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
     _AbstractContract(
+        module="notebooklm._artifacts",
+        class_name="ArtifactsAPI",
+        abstract_methods=frozenset(
+            {
+                "_list_studio",
+                "_send_create_artifact",
+                "delete",
+                "download_audio",
+                "download_data_table",
+                "download_flashcards",
+                "download_infographic",
+                "download_mind_map",
+                "download_quiz",
+                "download_report",
+                "download_slide_deck",
+                "download_video",
+                "export",
+                "export_data_table",
+                "export_report",
+                "generate_mind_map",
+                "get_prompt",
+                "list",
+                "rename",
+                "retry_failed",
+                "revise_slide",
+                "suggest_reports",
+            }
+        ),
+        wire_hooks=frozenset({"_send_create_artifact"}),
+    ),
+    _AbstractContract(
         module="notebooklm._notebooks",
         class_name="NotebooksAPI",
         abstract_methods=frozenset(
@@ -91,3 +122,49 @@ def test_backend_base_abstract_methods_and_wire_hooks_match_manifest() -> None:
             f"{contract.class_name} wire hooks changed: "
             f"expected {sorted(contract.wire_hooks)}, got {sorted(actual_wire_hooks)}"
         )
+
+
+def test_artifact_workflow_ownership_and_docstrings_are_preserved() -> None:
+    """Moving workflows onto the neutral base must not shrink runtime help text."""
+    from notebooklm._artifacts import ArtifactsAPI
+    from notebooklm._web.artifacts import WebArtifactsAPI
+
+    inherited_workflows = {
+        "generate_audio",
+        "generate_cinematic_video",
+        "generate_data_table",
+        "generate_flashcards",
+        "generate_infographic",
+        "generate_quiz",
+        "generate_report",
+        "generate_slide_deck",
+        "generate_study_guide",
+        "generate_video",
+        "get",
+        "get_or_none",
+        "list_audio",
+        "list_data_tables",
+        "list_flashcards",
+        "list_infographics",
+        "list_quizzes",
+        "list_reports",
+        "list_slide_decks",
+        "list_video",
+        "poll_status",
+        "wait_for_completion",
+    }
+    web_overrides = ArtifactsAPI.__abstractmethods__ - {
+        "_list_studio",
+        "_send_create_artifact",
+    }
+
+    for name in inherited_workflows:
+        base_method = getattr(ArtifactsAPI, name)
+        assert getattr(WebArtifactsAPI, name) is base_method
+        assert base_method.__doc__, f"ArtifactsAPI.{name} lost its public docstring"
+
+    for name in web_overrides:
+        base_doc = getattr(ArtifactsAPI, name).__doc__
+        web_doc = getattr(WebArtifactsAPI, name).__doc__
+        assert base_doc
+        assert web_doc == base_doc, f"WebArtifactsAPI.{name} docstring drifted"

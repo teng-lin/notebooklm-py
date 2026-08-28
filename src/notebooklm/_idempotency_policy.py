@@ -109,7 +109,7 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     # shaped like ``[client_options, notebook_id, [None, None, type_code,
     # source_ids_triple, ..., config]]`` for every artifact variant (audio,
     # video, report, quiz, etc.; see the ``generate_*`` methods and the
-    # ``_artifact.payloads.build_*`` helpers). Every position is structural —
+    # ``_web.params.artifacts.build_*`` helpers). Every position is structural —
     # there is no caller-supplied client-token slot. The server allocates the
     # artifact_id in the response
     # (``ArtifactsAPI._parse_generation_result`` reads ``result[0][0]`` — see
@@ -141,7 +141,8 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     # Params are ``[source_ids_nested, None, None, None, None,
     # ["interactive_mindmap", [["[CONTEXT]", instructions]], language], None,
     # [2, None, [1]]]`` (see ``ArtifactsAPI.generate_mind_map`` in
-    # ``_artifacts.py`` and ``_artifact.payloads.build_mind_map_params``).
+    # ``_web/artifact/generation.py`` and
+    # ``_web.params.artifacts.build_mind_map_params``).
     # Every slot is structural (sources, content config, language, mode
     # triple). The response carries the mind-map JSON directly
     # (``generate_mind_map`` reads ``result[0][0]``) — there is no task_id to
