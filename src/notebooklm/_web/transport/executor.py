@@ -44,6 +44,7 @@ from .request_types import AuthSnapshot
 
 if TYPE_CHECKING:
     from ..._client_metrics import ClientMetrics
+    from ..._runtime.call_supervisor import CallSupervisor
     from ..contracts import RpcCaller
     from .auth import AuthRefreshCoordinator
     from .kernel import Kernel
@@ -101,6 +102,7 @@ class RpcExecutor:
         transport: RuntimeTransport,
         auth_refresh: AuthRefreshCoordinator,
         metrics: ClientMetrics,
+        call_supervisor: CallSupervisor,
         decode_response: DecodeResponse,
         is_auth_error: Callable[[Exception], bool],
         sleep: Callable[[float], Awaitable[Any]],
@@ -112,6 +114,7 @@ class RpcExecutor:
         self._transport = transport
         self._auth_refresh = auth_refresh
         self._metrics = metrics
+        self._call_supervisor = call_supervisor
         self._decode_response = decode_response
         self._is_auth_error = is_auth_error
         self._sleep = sleep
@@ -211,13 +214,13 @@ class RpcExecutor:
                 _retry_deadline=_retry_deadline,
             )
 
-        self._metrics.increment(rpc_calls_started=1)
+        self._call_supervisor.record_started(method.name)
         # ``rpc_calls_started`` and reqid stay HERE (outside the chain)
         # because they bracket the entire logical RPC including decode —
         # the chain wraps only the transport leg. Per-attempt latency,
         # ``rpc_calls_succeeded`` / ``rpc_calls_failed``, and
-        # ``emit_rpc_event`` live in ``MetricsMiddleware``; drain
-        # admission lives in ``DrainMiddleware``.
+        # ``CallSupervisor`` owns the terminal counters/events and drain
+        # admission around every transport leg.
         _reqid_token = None if get_request_id() is not None else set_request_id()
         try:
             return await self._execute_once(

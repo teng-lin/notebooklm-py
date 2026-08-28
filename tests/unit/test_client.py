@@ -805,6 +805,13 @@ class TestSessionRefreshCallback:
 # =============================================================================
 
 
+def _activate_call_supervisor(core: NotebookLMClient) -> None:
+    """Commit admission for tests that install Kernel state without ``open``."""
+    supervisor = core._collaborators.call_supervisor
+    supervisor.set_bound_loop(asyncio.get_running_loop())
+    supervisor.reset_after_open()
+
+
 class TestRpcCallAutoRetry:
     @pytest.mark.asyncio
     async def test_retries_on_http_401_error(self):
@@ -847,6 +854,7 @@ class TestRpcCallAutoRetry:
             return response
 
         install_http_client_for_test(core._collaborators.kernel, MagicMock())
+        _activate_call_supervisor(core)
         core._collaborators.kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._collaborators.kernel.get_http_client(), mock_post)
         core._collaborators.kernel.get_http_client().headers = {"Cookie": "old"}
@@ -900,6 +908,7 @@ class TestRpcCallAutoRetry:
             return response
 
         install_http_client_for_test(core._collaborators.kernel, MagicMock())
+        _activate_call_supervisor(core)
         core._collaborators.kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._collaborators.kernel.get_http_client(), mock_post)
         core._collaborators.kernel.get_http_client().headers = {"Cookie": "old"}
@@ -948,6 +957,7 @@ class TestRpcCallAutoRetry:
             return response
 
         install_http_client_for_test(core._collaborators.kernel, MagicMock())
+        _activate_call_supervisor(core)
         core._collaborators.kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._collaborators.kernel.get_http_client(), mock_post)
         core._collaborators.kernel.get_http_client().headers = {"Cookie": "old"}
@@ -978,6 +988,7 @@ class TestRpcCallAutoRetry:
             raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
 
         install_http_client_for_test(core._collaborators.kernel, MagicMock())
+        _activate_call_supervisor(core)
         core._collaborators.kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._collaborators.kernel.get_http_client(), mock_post)
 
@@ -1015,6 +1026,7 @@ class TestRpcCallAutoRetry:
             raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
 
         install_http_client_for_test(core._collaborators.kernel, MagicMock())
+        _activate_call_supervisor(core)
         core._collaborators.kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._collaborators.kernel.get_http_client(), mock_post)
         core._collaborators.kernel.get_http_client().headers = {"Cookie": "old"}
@@ -1061,6 +1073,7 @@ class TestRpcCallAutoRetry:
             raise httpx.HTTPStatusError("Server Error", request=request, response=response)
 
         install_http_client_for_test(core._collaborators.kernel, MagicMock())
+        _activate_call_supervisor(core)
         core._collaborators.kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._collaborators.kernel.get_http_client(), mock_post)
 
@@ -1092,6 +1105,7 @@ class TestRpcCallAutoRetry:
             raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
 
         install_http_client_for_test(core._collaborators.kernel, MagicMock())
+        _activate_call_supervisor(core)
         core._collaborators.kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._collaborators.kernel.get_http_client(), mock_post)
 
@@ -1141,6 +1155,7 @@ class TestRpcCallAutoRetry:
             return response
 
         install_http_client_for_test(core._collaborators.kernel, MagicMock())
+        _activate_call_supervisor(core)
         core._collaborators.kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._collaborators.kernel.get_http_client(), mock_post)
         core._collaborators.kernel.get_http_client().headers = {"Cookie": "old"}
@@ -1201,6 +1216,7 @@ class TestRpcCallAutoRetry:
             return response
 
         install_http_client_for_test(core._collaborators.kernel, MagicMock())
+        _activate_call_supervisor(core)
         core._collaborators.kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._collaborators.kernel.get_http_client(), mock_post)
         core._collaborators.kernel.get_http_client().headers = {"Cookie": "old"}
@@ -1236,6 +1252,7 @@ class TestRpcCallAutoRetry:
             raise httpx.HTTPStatusError("Bad Request", request=request, response=response)
 
         install_http_client_for_test(core._collaborators.kernel, MagicMock())
+        _activate_call_supervisor(core)
         core._collaborators.kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._collaborators.kernel.get_http_client(), mock_post)
 
@@ -1274,6 +1291,7 @@ class TestRpcCallAutoRetry:
             raise httpx.HTTPStatusError("Bad Request", request=request, response=response)
 
         install_http_client_for_test(core._collaborators.kernel, MagicMock())
+        _activate_call_supervisor(core)
         core._collaborators.kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._collaborators.kernel.get_http_client(), mock_post)
 

@@ -590,6 +590,7 @@ def _build_rpc_executor() -> Any:
         transport=transport,
         auth_refresh=auth_refresh,
         metrics=metrics,
+        call_supervisor=MagicMock(),
         decode_response=_decode,
         is_auth_error=_is_auth_error,
         sleep=_sleep,

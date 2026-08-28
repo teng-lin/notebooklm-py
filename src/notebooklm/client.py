@@ -359,6 +359,7 @@ class NotebookLMClient:
             composed=self._composed,
             uploader=self._source_uploader,
             chat=self.chat,
+            call_supervisor=self._collaborators.call_supervisor,
         )
         return self
 
@@ -392,11 +393,10 @@ class NotebookLMClient:
     async def drain(self, timeout: float | None = None) -> None:
         """Stop accepting new operations and wait for in-flight operations to finish.
 
-        Delegates directly to the :class:`TransportDrainTracker` that
-        owns the in-flight counter; the public client-side behavior
-        (drain semantics and timeout propagation) is unchanged.
+        Delegates to :class:`CallSupervisor`, the generation-aware admission
+        authority; public timeout propagation remains unchanged.
         """
-        await self._collaborators.drain_tracker.drain(timeout=timeout)
+        await self._collaborators.call_supervisor.drain(timeout=timeout)
 
     async def close(
         self,
@@ -490,7 +490,7 @@ class NotebookLMClient:
                 # arriving during the hook fire still routes through the I12
                 # shielded-close path below; ``run_drain_hooks`` itself never
                 # re-raises (it gathers with ``return_exceptions=True``).
-                await self._collaborators.drain_tracker.run_drain_hooks()
+                await self._collaborators.call_supervisor.run_drain_hooks()
                 await self.drain(timeout=drain_timeout)
             except TimeoutError as exc:
                 # Drain deadline missed. Hold onto the exception and
@@ -515,7 +515,7 @@ class NotebookLMClient:
                     await asyncio.shield(
                         self._collaborators.lifecycle.close(
                             auth_coord=self._collaborators.auth_coord,
-                            drain_tracker=self._collaborators.drain_tracker,
+                            drain_tracker=self._collaborators.call_supervisor,
                             cookie_persistence=self._collaborators.cookie_persistence,
                         )
                     )
@@ -540,7 +540,7 @@ class NotebookLMClient:
                 await asyncio.shield(
                     self._collaborators.lifecycle.close(
                         auth_coord=self._collaborators.auth_coord,
-                        drain_tracker=self._collaborators.drain_tracker,
+                        drain_tracker=self._collaborators.call_supervisor,
                         cookie_persistence=self._collaborators.cookie_persistence,
                     )
                 )
@@ -558,7 +558,7 @@ class NotebookLMClient:
             return
         await self._collaborators.lifecycle.close(
             auth_coord=self._collaborators.auth_coord,
-            drain_tracker=self._collaborators.drain_tracker,
+            drain_tracker=self._collaborators.call_supervisor,
             cookie_persistence=self._collaborators.cookie_persistence,
         )
 

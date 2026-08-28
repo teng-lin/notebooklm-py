@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import builtins
+import inspect
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -36,6 +37,7 @@ from .exceptions import ArtifactNotFoundError, ValidationError
 from .types import Artifact, ArtifactType, GenerationStatus, ReportSuggestion
 
 if TYPE_CHECKING:
+    from ._runtime.call_supervisor import CallSupervisor
     from ._runtime.lifecycle import ClientLifecycle
     from ._transport_drain import TransportDrainTracker
 
@@ -70,7 +72,7 @@ class ArtifactsAPI(ABC):
     def __init__(
         self,
         *,
-        drain: TransportDrainTracker,
+        drain: TransportDrainTracker | CallSupervisor,
         lifecycle: ClientLifecycle,
         notebooks: NotebookSourceIdProvider,
         asset_downloads: AssetDownloadService,
@@ -92,10 +94,16 @@ class ArtifactsAPI(ABC):
         self._notebooks = notebooks
         self._asset_downloads = asset_downloads
         self._poll_registry = PollRegistry()
+        spawn_child = getattr(self._drain, "spawn_child", None)
+        if not inspect.iscoroutinefunction(spawn_child):
+            spawn_child = None
         self._polling = ArtifactPollingService(
-            loop_guard=self._lifecycle,
+            loop_guard=(
+                self._drain if hasattr(self._drain, "assert_bound_loop") else self._lifecycle
+            ),
             op_scope=self._drain,
             poll_registry=self._poll_registry,
+            spawn_child=spawn_child,
         )
         self._drain.register_drain_hook("artifacts.polls", self._polling.drain)
 

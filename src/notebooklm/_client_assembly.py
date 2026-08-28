@@ -269,7 +269,7 @@ def _assemble_client(
         sleep=sleep,
         is_auth_error=is_auth_error,
     )
-    client._composed = ClientComposed(max_concurrent_rpcs=max_concurrent_rpcs)
+    client._composed = ClientComposed()
 
     internals = compose_client_internals(
         auth=auth,
@@ -319,7 +319,7 @@ def _assemble_client(
     # ``SourcesAPI`` no longer reads them back off a broad host.
     source_uploader = SourceUploadPipeline(
         rpc=internals.executor,
-        drain=internals.collaborators.drain_tracker,
+        supervisor=internals.collaborators.call_supervisor,
         lifecycle=internals.collaborators.lifecycle,
         kernel=internals.collaborators.kernel,
         # ADR-0016's Auth Instance Invariant: the upload pipeline
@@ -364,7 +364,7 @@ def _assemble_client(
     # service; ``lifecycle`` covers ``assert_bound_loop``.
     client.artifacts = WebArtifactsAPI(
         rpc=internals.executor,
-        drain=internals.collaborators.drain_tracker,
+        drain=internals.collaborators.call_supervisor,
         lifecycle=internals.collaborators.lifecycle,
         notebooks=client.notebooks,
         mind_maps=mind_maps,

@@ -119,6 +119,7 @@ class _StubHost:
         # ``close()`` calls ``drain_tracker.run_drain_hooks()`` so the mock
         # needs an async implementation.
         self._drain_tracker.run_drain_hooks = AsyncMock()
+        self._call_supervisor = MagicMock()
         self._auth_coord = MagicMock()
         # Wave 1 of host-protocol-removal: ``close()`` no longer reads the
         # private ``_refresh_task`` slot directly — it calls the awaitable
@@ -217,6 +218,7 @@ async def _open(lifecycle: ClientLifecycle, host: _StubHost) -> None:
         composed=host._composed,
         uploader=host._uploader,
         chat=host._chat,
+        call_supervisor=host._call_supervisor,
     )
 
 
@@ -257,8 +259,8 @@ async def test_open_idempotent_preserves_existing_client() -> None:
 
 
 @pytest.mark.asyncio
-async def test_open_captures_bound_loop_and_resets_drain() -> None:
-    """``open()`` binds the running loop and calls ``reset_after_open`` on the tracker.
+async def test_open_captures_bound_loop_and_resets_supervisor() -> None:
+    """``open()`` binds the running loop and resets common admission policy.
 
     Wave 1 of plan ``host-protocol-removal`` encapsulated the legacy
     direct write ``host._drain_tracker._draining = False`` behind
@@ -285,12 +287,11 @@ async def test_open_captures_bound_loop_and_resets_drain() -> None:
 
     assert lifecycle._bound_loop is asyncio.get_running_loop()
     assert lifecycle.get_bound_loop() is asyncio.get_running_loop()
-    host._drain_tracker.reset_after_open.assert_called_once_with()
-    # Issue #1169: the composition holder is the fourth loop-bound primitive
-    # and must receive the same set_bound_loop / reset_after_open treatment as
-    # the drain tracker so the lazy RPC semaphore rebinds on close→reopen.
-    host._composed.set_bound_loop.assert_called_once_with(asyncio.get_running_loop())
-    host._composed.reset_after_open.assert_called_once_with()
+    host._call_supervisor.set_bound_loop.assert_called_once_with(asyncio.get_running_loop())
+    host._call_supervisor.reset_after_open.assert_called_once_with()
+    host._drain_tracker.reset_after_open.assert_not_called()
+    host._composed.set_bound_loop.assert_not_called()
+    host._composed.reset_after_open.assert_not_called()
     # Issue #1196 upload variant: the Sources upload pipeline is the second
     # lazily-built loop-bound semaphore and must receive the same
     # set_bound_loop / reset_after_open treatment so the upload semaphore

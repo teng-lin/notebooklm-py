@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 from collections.abc import Awaitable, Callable
+from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 from time import monotonic
@@ -97,6 +98,7 @@ from ._upload_decode import (  # noqa: F401
 from .listing import SourceLister
 
 if TYPE_CHECKING:
+    from ..._runtime.call_supervisor import CallSupervisor
     from ..._runtime.lifecycle import ClientLifecycle
     from ..._transport_drain import TransportDrainTracker
 
@@ -176,7 +178,8 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         self,
         *,
         rpc: RpcCaller,
-        drain: TransportDrainTracker,
+        drain: TransportDrainTracker | None = None,
+        supervisor: CallSupervisor | None = None,
         lifecycle: ClientLifecycle,
         kernel: Kernel,
         auth: AuthMetadata,
@@ -189,7 +192,10 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         poller: SourcePoller | None = None,
     ):
         self._rpc = rpc
-        self._drain = drain
+        if supervisor is None and drain is None:
+            raise TypeError("SourceUploadPipeline requires supervisor or drain")
+        self._supervisor = supervisor if supervisor is not None else drain
+        self._full_workflow_supervision = supervisor is not None
         self._lifecycle = lifecycle
         self._kernel = kernel
         self._auth = auth
@@ -341,6 +347,47 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         on_progress: Callable[[int, int], object] | None = None,
         upload_index: int = 0,
     ) -> Source:
+        """Add a file while holding admission through reconciliation and rename."""
+        if title is not None:
+            title = title.strip()
+            if not title:
+                raise ValidationError("Title cannot be empty or whitespace-only")
+        if not self._full_workflow_supervision:
+            return await self._add_file_admitted(
+                notebook_id,
+                file_path,
+                mime_type,
+                wait,
+                wait_timeout,
+                title=title,
+                on_progress=on_progress,
+                upload_index=upload_index,
+            )
+        assert self._supervisor is not None
+        async with self._supervisor.operation_scope(f"upload:{upload_index}"):
+            return await self._add_file_admitted(
+                notebook_id,
+                file_path,
+                mime_type,
+                wait,
+                wait_timeout,
+                title=title,
+                on_progress=on_progress,
+                upload_index=upload_index,
+            )
+
+    async def _add_file_admitted(
+        self,
+        notebook_id: str,
+        file_path: str | Path,
+        mime_type: str | None = None,
+        wait: bool = False,
+        wait_timeout: float = 120.0,
+        *,
+        title: str | None = None,
+        on_progress: Callable[[int, int], object] | None = None,
+        upload_index: int = 0,
+    ) -> Source:
         """Add a file source to a notebook using resumable upload.
 
         Raises ``ValidationError`` for HTML-family uploads because
@@ -377,7 +424,13 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         content_type = _resolve_upload_content_type(file_path, mime_type)
         _validate_upload_file_supported(file_path, content_type)
         transient_error_types = _transient_error_types_for_upload(content_type)
-        async with self._drain.operation_scope(f"upload:{upload_index}"):
+        assert self._supervisor is not None
+        transfer_scope = (
+            nullcontext()
+            if self._full_workflow_supervision
+            else self._supervisor.operation_scope(f"upload:{upload_index}")
+        )
+        async with transfer_scope:
             upload_sem = self.get_upload_semaphore()
             upload_wait_start = monotonic()
             async with upload_sem:
@@ -995,7 +1048,15 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                 if not t.cancelled() and (exc := t.exception()) is not None:
                     logger.debug("Background finalize POST failed: %r", exc)
 
-            finalize_task = asyncio.create_task(_do_finalize())
+            assert self._supervisor is not None
+            spawn_child = getattr(self._supervisor, "spawn_child", None)
+            if spawn_child is None:
+                finalize_task = asyncio.create_task(_do_finalize())
+            else:
+                finalize_task = await spawn_child(
+                    f"upload-finalize:{diag_name}",
+                    _do_finalize,
+                )
             finalize_task.add_done_callback(_on_finalize_done)
             close_wired = True
             try:
@@ -1003,15 +1064,21 @@ class SourceUploadPipeline(LoopBoundPrimitive):
             except asyncio.CancelledError:
                 if not finalize_started:
                     finalize_task.cancel()
-                    _retain_background_cancel_task(
-                        asyncio.create_task(
-                            self.cancel_upload_session(
-                                upload_url,
-                                auth_route,
-                                logger=logger,
-                            )
+                    async def _cancel() -> None:
+                        await self.cancel_upload_session(
+                            upload_url,
+                            auth_route,
+                            logger=logger,
                         )
-                    )
+
+                    if spawn_child is None:
+                        cancel_task = asyncio.create_task(_cancel())
+                    else:
+                        cancel_task = await spawn_child(
+                            f"upload-cancel:{diag_name}",
+                            _cancel,
+                        )
+                    _retain_background_cancel_task(cancel_task)
                     raise
                 try:
                     await asyncio.shield(finalize_task)

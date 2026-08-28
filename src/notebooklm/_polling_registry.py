@@ -6,7 +6,7 @@ import asyncio
 from typing import Any
 
 PollKey = tuple[str, str]
-PendingPoll = tuple[asyncio.Future[Any], asyncio.Task[Any]]
+PendingPoll = tuple[asyncio.Future[Any], asyncio.Task[Any] | None]
 PendingPolls = dict[PollKey, PendingPoll]
 
 
@@ -37,9 +37,16 @@ class PollRegistry:
         self,
         key: PollKey,
         future: asyncio.Future[Any],
-        task: asyncio.Task[Any],
+        task: asyncio.Task[Any] | None,
     ) -> None:
         """Register the leader future and poll task for ``key``."""
+        self._pending[key] = (future, task)
+
+    def attach_task(self, key: PollKey, task: asyncio.Task[Any]) -> None:
+        """Attach the admitted leader task to an already-reserved key."""
+        future, existing = self._pending[key]
+        if existing is not None:
+            raise RuntimeError(f"poll task already attached for {key!r}")
         self._pending[key] = (future, task)
 
     def pop(self, key: PollKey) -> PendingPoll | None:
@@ -60,7 +67,11 @@ class PollRegistry:
         cancel, and asking ``asyncio.gather`` to await an already-done task is
         harmless but noisy in the cancellation path.
         """
-        return [task for _future, task in self._pending.values() if not task.done()]
+        return [
+            task
+            for _future, task in self._pending.values()
+            if task is not None and not task.done()
+        ]
 
 
 __all__ = [

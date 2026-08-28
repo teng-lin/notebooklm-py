@@ -5,11 +5,12 @@ The chain wraps ``Kernel.post`` through
 covering ``RuntimeTransport.perform_authed_post`` and
 ``RpcExecutor._execute_once``'s dispatch into the transport).
 
-The ADR-0009 ordering is ``[Drain, Metrics, Semaphore, Retry, AuthRefresh,
-ErrorInjection, Tracing]`` (outermost → innermost). ``build_chain``
-composes the leftmost entry as the outermost wrapper, so keeping
-``TracingMiddleware`` at the RIGHT end of the list preserves Tracing as
-the innermost wrapper.
+The amended ADR-0009 web-only ordering is ``[Retry, AuthRefresh,
+ErrorInjection, Tracing]`` (outermost → innermost). Protocol-neutral
+drain, metrics, and concurrency policy lives in ``CallSupervisor`` outside
+this chain. ``build_chain`` composes the leftmost entry as the outermost
+wrapper, so keeping ``TracingMiddleware`` at the RIGHT end preserves Tracing
+as the innermost wrapper.
 
 The 429 / 5xx retry loops and the auth-refresh-once retry live in
 ``RetryMiddleware`` and ``AuthRefreshMiddleware`` respectively.
@@ -33,21 +34,17 @@ The order is pinned at two levels:
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from contextlib import AbstractAsyncContextManager
 from typing import Any
 
 from .auth_refresh import AuthRefreshMiddleware
 from .core import Middleware
-from .drain import DrainMiddleware
 from .error_injection import ErrorInjectionMiddleware
-from .metrics import MetricsMiddleware
 from .retry import RetryMiddleware
-from .semaphore import SemaphoreMiddleware
 from .tracing import TracingMiddleware
 
 
 class MiddlewareChainBuilder:
-    """Builds the seven-middleware ADR-0009 chain.
+    """Build the four web-specific ADR-0009 middlewares.
 
     Provider callables (``rate_limit_max_retries_provider`` etc.) are
     used by ``RetryMiddleware`` / ``AuthRefreshMiddleware`` so
@@ -59,9 +56,7 @@ class MiddlewareChainBuilder:
     def __init__(
         self,
         *,
-        drain_tracker: Any,
         metrics: Any,
-        rpc_semaphore_factory: Callable[[], AbstractAsyncContextManager[Any]],
         rate_limit_max_retries_provider: Callable[[], int],
         server_error_max_retries_provider: Callable[[], int],
         retry_timeout_provider: Callable[[], float | None],
@@ -76,9 +71,7 @@ class MiddlewareChainBuilder:
         # ``refresh_callable`` and ``refresh_callback_enabled_provider``
         # already. Passing the coordinator object directly would create
         # a redundant reference that lints can't easily follow.
-        self._drain_tracker = drain_tracker
         self._metrics = metrics
-        self._rpc_semaphore_factory = rpc_semaphore_factory
         self._rate_limit_max_retries_provider = rate_limit_max_retries_provider
         self._server_error_max_retries_provider = server_error_max_retries_provider
         self._retry_timeout_provider = retry_timeout_provider
@@ -90,19 +83,6 @@ class MiddlewareChainBuilder:
 
     def build(self) -> list[Middleware]:
         return [
-            DrainMiddleware(self._drain_tracker),
-            MetricsMiddleware(self._metrics),
-            # Acquire the ``max_concurrent_rpcs`` slot AFTER Drain admits
-            # the call (so queued tasks count toward shutdown drain) and
-            # AFTER Metrics starts timing (so latency includes queue
-            # wait), but BEFORE Retry can re-enter the inner chain — that
-            # way ``RetryMiddleware``'s retry attempts stay in the same
-            # slot rather than racing to claim another, preserving the
-            # "one slot per logical RPC" contract.
-            # ``rpc_semaphore_factory`` returns ``contextlib.nullcontext``
-            # when ``max_concurrent_rpcs is None`` (unbounded), so the
-            # ``async with`` collapses to a no-op for opted-out clients.
-            SemaphoreMiddleware(self._rpc_semaphore_factory),
             # Pass callable budgets so post-construction mutation of
             # ``chain_host._rate_limit_max_retries`` /
             # ``chain_host._server_error_max_retries`` (an integration-test

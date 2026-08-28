@@ -6,7 +6,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
-from typing import Protocol
+from typing import Any, Protocol, TypeVar
 
 from .._backoff import compute_backoff_delay
 from .._callbacks import maybe_await_callback
@@ -32,6 +32,8 @@ _IN_PROGRESS_STATUS = "in_progress"
 ListStudioCallback = Callable[[str, str], Awaitable[list[Artifact]]]
 PollStatusCallback = Callable[[str, str], Awaitable[GenerationStatus]]
 StatusChangeCallback = Callable[[GenerationStatus], object]
+_T = TypeVar("_T")
+SpawnChild = Callable[[str, Callable[[], Awaitable[_T]]], Awaitable[asyncio.Task[_T]]]
 
 _MEDIA_ARTIFACT_TYPE_CODES = frozenset(
     {
@@ -51,7 +53,7 @@ class OperationScopeProvider(Protocol):
     its owner per the ADR-0013 ≥2-feature promotion bar.
     """
 
-    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]: ...
+    def operation_scope(self, label: str) -> AbstractAsyncContextManager[Any]: ...
 
 
 class ArtifactPollingService:
@@ -68,12 +70,14 @@ class ArtifactPollingService:
         loop_guard: LoopGuard,
         op_scope: OperationScopeProvider,
         poll_registry: PollRegistry | None = None,
+        spawn_child: SpawnChild[Any] | None = None,
         sleep: Sleep | None = None,
         monotonic: Monotonic | None = None,
     ) -> None:
         self._loop_guard = loop_guard
         self._op_scope = op_scope
         self._poll_registry = poll_registry if poll_registry is not None else PollRegistry()
+        self._spawn_child = spawn_child
         self._sleep = sleep
         self._monotonic = monotonic
 
@@ -158,6 +162,45 @@ class ArtifactPollingService:
         poll_status: PollStatusCallback,
         on_status_change: StatusChangeCallback | None = None,
     ) -> GenerationStatus:
+        """Hold caller admission while attaching to or creating a poll leader."""
+        if self._spawn_child is None:
+            return await self._wait_for_completion_admitted(
+                notebook_id,
+                task_id,
+                initial_interval=initial_interval,
+                max_interval=max_interval,
+                timeout=timeout,
+                max_not_found=max_not_found,
+                min_not_found_window=min_not_found_window,
+                poll_status=poll_status,
+                on_status_change=on_status_change,
+            )
+        async with self._op_scope.operation_scope(f"artifact waiter {task_id}"):
+            return await self._wait_for_completion_admitted(
+                notebook_id,
+                task_id,
+                initial_interval=initial_interval,
+                max_interval=max_interval,
+                timeout=timeout,
+                max_not_found=max_not_found,
+                min_not_found_window=min_not_found_window,
+                poll_status=poll_status,
+                on_status_change=on_status_change,
+            )
+
+    async def _wait_for_completion_admitted(
+        self,
+        notebook_id: str,
+        task_id: str,
+        *,
+        initial_interval: float = 2.0,
+        max_interval: float = 10.0,
+        timeout: float = 300.0,
+        max_not_found: int = 5,
+        min_not_found_window: float = 10.0,
+        poll_status: PollStatusCallback,
+        on_status_change: StatusChangeCallback | None = None,
+    ) -> GenerationStatus:
         """Wait for a generation task to complete using a shared poll loop."""
         # Catch cross-loop wait_for_completion before touching the
         # poll registry (which holds futures bound to the registering
@@ -198,8 +241,17 @@ class ArtifactPollingService:
 
         future.add_done_callback(_consume_orphan_exception)
 
-        poll_task = asyncio.create_task(
-            self._run_poll_loop_in_scope(
+        # Reserve the key before the admitted spawn await so a concurrent
+        # follower attaches to this future instead of creating a second leader.
+        self._poll_registry.register(key, future, None)
+
+        async def _leader() -> GenerationStatus:
+            run_poll = (
+                self._run_poll_loop
+                if self._spawn_child is not None
+                else self._run_poll_loop_in_scope
+            )
+            return await run_poll(
                 notebook_id,
                 task_id,
                 initial_interval=initial_interval,
@@ -209,10 +261,24 @@ class ArtifactPollingService:
                 min_not_found_window=min_not_found_window,
                 poll_status=poll_status,
                 on_status_change=on_status_change,
-            ),
-            name=f"artifact-poll-{notebook_id}-{task_id}",
-        )
-        self._poll_registry.register(key, future, poll_task)
+            )
+
+        try:
+            if self._spawn_child is None:
+                poll_task = asyncio.create_task(
+                    _leader(),
+                    name=f"artifact-poll-{notebook_id}-{task_id}",
+                )
+            else:
+                poll_task = await self._spawn_child(
+                    f"artifact-poll-{notebook_id}-{task_id}",
+                    _leader,
+                )
+        except BaseException:
+            self._poll_registry.pop(key)
+            future.cancel()
+            raise
+        self._poll_registry.attach_task(key, poll_task)
 
         def _resolve_poll(task: asyncio.Task[GenerationStatus]) -> None:
             # Pop the registry entry before resolving the future so a waiter

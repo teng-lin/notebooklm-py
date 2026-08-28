@@ -92,11 +92,9 @@ async def chat_aware_authed_post(
         max_response_bytes: Optional per-call response-size cap forwarded to
             the shared streaming transport.
     """
-    # Drain admission lives in ``DrainMiddleware`` at the outermost chain
-    # position around ``perform_authed_post`` — it reads ``log_label``
-    # from ``RpcRequest.context`` (passed below as ``parse_label``), so a
-    # drained client still surfaces ``RuntimeError`` with the chat-friendly
-    # label without explicit bracketing here.
+    # ``CallSupervisor`` wraps ``perform_authed_post`` and receives this
+    # chat-friendly label, so admission failures retain useful diagnostics
+    # without explicit bracketing here.
     try:
         return await transport.perform_authed_post(
             build_request=build_request,

@@ -26,6 +26,7 @@ ADR-0009 §"RpcRequest.context keys":
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -93,6 +94,13 @@ def _swap_kernel_post(core: NotebookLMClient, fake: FakeKernelPost) -> None:
     core._collaborators.kernel.post = fake.post  # type: ignore[method-assign]
 
 
+def _activate_supervisor(core: NotebookLMClient) -> None:
+    """Commit admission without opening HTTP for terminal-wiring tests."""
+    supervisor = core._collaborators.call_supervisor
+    supervisor.set_bound_loop(asyncio.get_running_loop())
+    supervisor.reset_after_open()
+
+
 @pytest.mark.asyncio
 async def test_chain_routes_perform_authed_post_to_transport() -> None:
     """``RuntimeTransport.perform_authed_post`` flows through the chain.
@@ -105,6 +113,7 @@ async def test_chain_routes_perform_authed_post_to_transport() -> None:
     fake = FakeKernelPost(response=expected_response)
     core = _make_core()
     _swap_kernel_post(core, fake)
+    _activate_supervisor(core)
 
     def build_request(snapshot: Any) -> tuple[str, bytes, dict[str, str] | None]:
         return ("https://fake/url", b"body", None)
@@ -148,6 +157,7 @@ async def test_chain_routes_rpc_executor_path_to_transport() -> None:
     fake = FakeKernelPost(response=expected_response)
     core = _make_core()
     _swap_kernel_post(core, fake)
+    _activate_supervisor(core)
 
     def build_request(snapshot: Any) -> tuple[str, bytes, dict[str, str] | None]:
         return ("https://fake/rpc", b"rpc-body", {"X-Goog-AuthUser": "0"})
@@ -295,22 +305,16 @@ async def test_chain_seeded_with_final_adr_009_ordering() -> None:
     verify ordering by inspecting the production attribute directly.
     """
     from notebooklm._web.transport.middleware.auth_refresh import AuthRefreshMiddleware
-    from notebooklm._web.transport.middleware.drain import DrainMiddleware
     from notebooklm._web.transport.middleware.error_injection import ErrorInjectionMiddleware
-    from notebooklm._web.transport.middleware.metrics import MetricsMiddleware
     from notebooklm._web.transport.middleware.retry import RetryMiddleware
-    from notebooklm._web.transport.middleware.semaphore import SemaphoreMiddleware
     from notebooklm._web.transport.middleware.tracing import TracingMiddleware
 
     core = _make_core()
-    assert len(core._composed.middlewares) == 7
-    assert isinstance(core._composed.middlewares[0], DrainMiddleware)
-    assert isinstance(core._composed.middlewares[1], MetricsMiddleware)
-    assert isinstance(core._composed.middlewares[2], SemaphoreMiddleware)
-    assert isinstance(core._composed.middlewares[3], RetryMiddleware)
-    assert isinstance(core._composed.middlewares[4], AuthRefreshMiddleware)
-    assert isinstance(core._composed.middlewares[5], ErrorInjectionMiddleware)
-    assert isinstance(core._composed.middlewares[6], TracingMiddleware)
+    assert len(core._composed.middlewares) == 4
+    assert isinstance(core._composed.middlewares[0], RetryMiddleware)
+    assert isinstance(core._composed.middlewares[1], AuthRefreshMiddleware)
+    assert isinstance(core._composed.middlewares[2], ErrorInjectionMiddleware)
+    assert isinstance(core._composed.middlewares[3], TracingMiddleware)
 
 
 @pytest.mark.asyncio

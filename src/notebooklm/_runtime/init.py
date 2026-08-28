@@ -2,8 +2,8 @@
 
 Splits the client-runtime constructor into three concerns:
 :func:`validate_constructor_args` (kwarg validation + normalization),
-:func:`build_collaborators` (the seven collaborators in dependency order),
-and :func:`wire_middleware_chain` (the seven-middleware ADR-0009 chain).
+:func:`build_collaborators` (the runtime collaborators in dependency order),
+and :func:`wire_middleware_chain` (the four-middleware ADR-0009 web chain).
 Dependency-ordering and seam-resolution comments live inside the helpers so
 future readers see *why* the order matters.
 
@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -46,6 +45,7 @@ from .._web.transport.reqid_counter import ReqidCounter
 from .._web.transport.runtime import RuntimeTransport
 from .._web.transport.seams import ClientSeams, resolve_client_seams
 from ..auth import AuthTokens
+from .call_supervisor import CallSupervisor
 from .config import (
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
@@ -110,6 +110,7 @@ class RuntimeCollaborators:
 
     metrics: ClientMetrics
     drain_tracker: TransportDrainTracker
+    call_supervisor: CallSupervisor
     reqid: ReqidCounter
     auth_coord: AuthRefreshCoordinator
     kernel: Kernel
@@ -258,7 +259,7 @@ def build_collaborators(
     cookie_saver: CookieSaver | None,
     cookie_rotator: CookieRotator | None,
 ) -> RuntimeCollaborators:
-    """Construct the seven extracted collaborators in dependency order.
+    """Construct the extracted runtime collaborators in dependency order.
 
     The order is dependency-driven so the load-bearing inter-collaborator
     wiring stays obvious to future readers: metrics is built first because
@@ -281,6 +282,11 @@ def build_collaborators(
     # ``__init__`` is event-loop-agnostic; the ``asyncio.Condition`` is
     # created lazily on first ``get_drain_condition`` call.
     drain_tracker = TransportDrainTracker()
+    call_supervisor = CallSupervisor(
+        metrics=metrics,
+        drain_tracker=drain_tracker,
+        max_concurrent_rpcs=config.max_concurrent_rpcs,
+    )
     # Request ID counter for chat API (must be unique per request).
     # The :class:`ReqidCounter` helper owns the monotonic ``_value`` and
     # the lazily-allocated ``asyncio.Lock`` that serialises mutation.
@@ -326,8 +332,8 @@ def build_collaborators(
     # ``asyncio.get_running_loop()`` in ``_bound_loop`` at ``open()`` time
     # and ``RuntimeTransport.perform_authed_post`` does the cross-loop
     # check with a cheap ``is`` comparison against it. Each client is per-loop — the asyncio primitives we hold
-    # (``_reqid_lock``, ``_refresh_lock``, ``_auth_snapshot_lock``,
-    # ``_rpc_semaphore``, the ``httpx.AsyncClient``
+    # (``_reqid_lock``, ``_refresh_lock``, ``_auth_snapshot_lock``, the
+    # supervisor-owned RPC semaphore, the ``httpx.AsyncClient``
     # pool, in-flight tasks like ``_refresh_task`` / ``_keepalive_task``)
     # are all bound to the loop that ``open()`` ran on; reusing them
     # under a different loop produces hangs and ``RuntimeError`` deep
@@ -364,6 +370,7 @@ def build_collaborators(
     return RuntimeCollaborators(
         metrics=metrics,
         drain_tracker=drain_tracker,
+        call_supervisor=call_supervisor,
         reqid=reqid,
         auth_coord=auth_coord,
         kernel=kernel,
@@ -414,7 +421,7 @@ def build_runtime_transport(
         kernel=collaborators.kernel,
         snapshot_provider=lambda: collaborators.auth_coord.snapshot(auth=auth),
         chain_provider=lambda: chain_host._authed_post_chain,
-        metrics=collaborators.metrics,
+        call_supervisor=collaborators.call_supervisor,
         bound_loop_check=lambda: collaborators.lifecycle.assert_bound_loop(),
         logger=logger,
     )
@@ -426,10 +433,9 @@ def wire_middleware_chain(
     chain_host: MiddlewareChainHost,
     auth: AuthTokens,
     authed_post_chain_terminal: Callable[..., Awaitable[Any]],
-    rpc_semaphore_factory: Callable[[], AbstractAsyncContextManager[Any]],
     is_auth_error: Callable[[Exception], bool],
 ) -> WiredMiddleware:
-    """Construct the :class:`MiddlewareChainBuilder`, build the seven-middleware
+    """Construct the :class:`MiddlewareChainBuilder`, build the four-middleware
     list, and wire the final chain via :func:`build_chain`.
 
     Two narrow host parameters:
@@ -457,19 +463,15 @@ def wire_middleware_chain(
 
     Post-construction mutation on ``chain_host._<attr>`` still takes
     effect through the middleware live-binding contract documented in
-    :class:`MiddlewareChainBuilder`. The ``rpc_semaphore_factory`` is
-    passed in explicitly so the helper does not need to know which holder
-    owns the live semaphore. ``is_auth_error`` is passed as a live-binding
-    callable so rebinding ``ClientSeams.is_auth_error`` after construction
-    still steers the chain.
+    :class:`MiddlewareChainBuilder`. ``is_auth_error`` is passed as a
+    live-binding callable so rebinding ``ClientSeams.is_auth_error`` after
+    construction still steers the chain.
     """
     # ADR-0009 chain construction. PR history, leaf exception shape,
     # and ``RpcRequest.context`` contract live in
     # ``_web/transport/middleware/chain.py`` module docstring.
     chain_builder = MiddlewareChainBuilder(
-        drain_tracker=collaborators.drain_tracker,
         metrics=collaborators.metrics,
-        rpc_semaphore_factory=rpc_semaphore_factory,
         rate_limit_max_retries_provider=lambda: chain_host._rate_limit_max_retries,
         server_error_max_retries_provider=lambda: chain_host._server_error_max_retries,
         retry_timeout_provider=lambda: collaborators.lifecycle._timeout,
@@ -527,13 +529,7 @@ def compose_client_internals(
         decode_response=decode_response,
     )
     if composed is None:
-        composed = ClientComposed(max_concurrent_rpcs=max_concurrent_rpcs)
-    elif composed.max_concurrent_rpcs != max_concurrent_rpcs:
-        raise ValueError(
-            "composed.max_concurrent_rpcs must match max_concurrent_rpcs "
-            f"(got composed.max_concurrent_rpcs={composed.max_concurrent_rpcs!r}, "
-            f"max_concurrent_rpcs={max_concurrent_rpcs!r})"
-        )
+        composed = ClientComposed()
     async_client_factory = _resolve_async_client_factory(async_client_factory)
 
     config = validate_constructor_args(
@@ -585,7 +581,6 @@ def compose_client_internals(
         chain_host=chain_host,
         auth=auth,
         authed_post_chain_terminal=chain_host._authed_post_chain_terminal,
-        rpc_semaphore_factory=composed.get_rpc_semaphore,
         is_auth_error=lambda *a, **kw: seams.is_auth_error(*a, **kw),
     )
     chain_host._authed_post_chain = wired.authed_post_chain
@@ -596,6 +591,7 @@ def compose_client_internals(
         transport=transport,
         auth_refresh=collaborators.auth_coord,
         metrics=collaborators.metrics,
+        call_supervisor=collaborators.call_supervisor,
         decode_response=lambda *a, **kw: seams.decode_response(*a, **kw),
         is_auth_error=lambda *a, **kw: seams.is_auth_error(*a, **kw),
         sleep=lambda *a, **kw: seams.sleep(*a, **kw),

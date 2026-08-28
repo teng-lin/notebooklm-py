@@ -38,6 +38,7 @@ from .params.artifacts import build_suggest_reports_params
 from .rows import artifacts as _artifact_rows
 
 if TYPE_CHECKING:
+    from .._runtime.call_supervisor import CallSupervisor
     from .._runtime.lifecycle import ClientLifecycle
     from .._transport_drain import TransportDrainTracker
 
@@ -64,7 +65,7 @@ class WebArtifactsAPI(ArtifactsAPI):
         self,
         *,
         rpc: RpcCaller,
-        drain: "TransportDrainTracker",
+        drain: "TransportDrainTracker | CallSupervisor",
         lifecycle: "ClientLifecycle",
         notebooks: NotebookSourceIdProvider,
         mind_maps: NoteBackedMindMapService,

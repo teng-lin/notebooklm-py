@@ -10,6 +10,29 @@ chain-metadata carrier — see §"Decision: `RpcRequest.context: dict[str,
 Any]` is the long-term shape" below for the rationale and the policy
 governing additions to the vocabulary table.
 
+Amended (2026-08-28, backend migration Phase B0a): the protocol-neutral
+outer policy is now owned by `_runtime.call_supervisor.CallSupervisor`.
+`RuntimeTransport.perform_authed_post` enters one supervisor call scope, which
+applies `Drain -> Metrics -> Semaphore` and then invokes the remaining web
+chain. The web-only chain is therefore exactly
+`Retry -> AuthRefresh -> ErrorInjection -> Tracing -> terminal`. This preserves
+the original ordering and retry-slot cohort while allowing the Android
+transport to consume the same admission, queueing, and telemetry policy
+without importing HTTP middleware. `rpc_queue_wait_seconds` is now recorded
+directly by the supervisor and is no longer middleware context. The old drain,
+metrics, and semaphore middleware modules remain historical implementation
+artifacts during migration but are not production-wired.
+
+Supervisor settlement has a stricter cancellation contract than the original
+middlewares: semaphore release precedes the terminal event, and one strongly
+retained settlement task owns drain finish followed by queue-wait recording.
+A recorder failure cannot orphan admission, and a body exception or caller
+cancellation retains precedence. Calls and multi-call operations carry an
+immutable generation lease; close/reopen retires a generation record instead
+of clearing its counters, so late old work cannot decrement or enter a newly
+opened generation. Web semaphore wait remains unbounded; transports that pass
+an aggregate `RuntimeDeadline` get deadline-bounded queue admission.
+
 This ADR shipped in PR 12.1 of the Tier-12/13 greenfield migration as
 type-only scaffolding: the Protocol, dataclasses, and `build_chain` helper
 landed without production wiring. PR 12.2 wired an empty chain into

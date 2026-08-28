@@ -86,6 +86,7 @@ if TYPE_CHECKING:
     from .._web.transport.cookie_persistence import CookiePersistence
     from .._web.transport.reqid_counter import ReqidCounter
     from ..types import ConnectionLimits
+    from .call_supervisor import CallSupervisor
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +247,7 @@ class ClientLifecycle:
         composed: ClientComposed,
         uploader: SourceUploadPipeline,
         chat: ChatAPI,
+        call_supervisor: CallSupervisor | None = None,
     ) -> None:
         """Open the HTTP client connection.
 
@@ -285,17 +287,14 @@ class ClientLifecycle:
         # ``ClientLifecycle.get_bound_loop()`` so no further propagation is
         # needed there. (``ChatAPI`` now receives direct ``set_bound_loop``
         # propagation below — #1225.)
-        drain_tracker.set_bound_loop(self._bound_loop)
+        if call_supervisor is not None:
+            call_supervisor.set_bound_loop(self._bound_loop)
+        else:
+            drain_tracker.set_bound_loop(self._bound_loop)
         reqid.set_bound_loop(self._bound_loop)
         auth_coord.set_bound_loop(self._bound_loop)
-        # The RPC concurrency semaphore is the fourth loop-bound primitive
-        # propagated here (issue #1169): it was previously the only loop-bound
-        # primitive without an affinity guard or a close→reopen reset, so
-        # reopening on a different loop could reuse a stale
-        # ``asyncio.Semaphore`` and break on Python 3.10/3.11. Propagating the
-        # captured loop lets ``ClientComposed.get_rpc_semaphore`` short-circuit
-        # cross-loop misuse with the shared diagnostic.
-        composed.set_bound_loop(self._bound_loop)
+        # The supervisor owns the RPC semaphore and its generation reset;
+        # binding it above gives cross-loop misuse the shared diagnostic.
         # The Sources upload semaphore is the second lazily-built loop-bound
         # ``asyncio.Semaphore`` with the same close→reopen hazard as the RPC
         # semaphore above (the bug #1196 fixed for RPC): a client closed on
@@ -318,13 +317,10 @@ class ClientLifecycle:
         # method on the tracker so the lifecycle never reaches into private
         # collaborator fields; the method is intentionally narrow (clears ``_draining``
         # only, leaves in-flight counters intact — see its docstring).
-        drain_tracker.reset_after_open()
-        # Discard the lazy RPC semaphore so a client reopened on a different
-        # loop rebuilds it on the new loop instead of reusing the stale one
-        # bound to the prior (now-dead) loop (issue #1169). Narrow by design —
-        # the semaphore is reconstructed lazily on the next ``get_rpc_semaphore``
-        # call from inside the new loop; ``max_concurrent_rpcs`` is untouched.
-        composed.reset_after_open()
+        if call_supervisor is not None:
+            call_supervisor.reset_after_open()
+        else:
+            drain_tracker.reset_after_open()
         # Same close→reopen reset for the Sources upload semaphore so a
         # reopened client rebuilds it on the new loop instead of reusing the
         # stale one bound to the prior (now-dead) loop. Narrow by design — the
@@ -437,7 +433,7 @@ class ClientLifecycle:
         self,
         *,
         auth_coord: AuthRefreshCoordinator,
-        drain_tracker: TransportDrainTracker,
+        drain_tracker: TransportDrainTracker | CallSupervisor,
         cookie_persistence: CookiePersistence,
     ) -> None:
         """Close the HTTP client connection.

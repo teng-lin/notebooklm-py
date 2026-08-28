@@ -68,7 +68,6 @@ from .middleware.context import (
     RPC_CONTEXT_REFRESH_BUDGET,
     RPC_CONTEXT_RETRY_DEADLINE,
     RPC_CONTEXT_RPC_METHOD,
-    RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS,
 )
 from .middleware.core import (
     NextCall,
@@ -79,8 +78,8 @@ from .middleware.core import (
 from .request_types import AuthSnapshot, BuildRequest
 
 if TYPE_CHECKING:
-    from ..._client_metrics import ClientMetrics
     from ..._deadline import RuntimeDeadline
+    from ..._runtime.call_supervisor import CallSupervisor
     from .auth_refresh_retry import RefreshBudget
     from .kernel import Kernel
 
@@ -115,7 +114,7 @@ class RuntimeTransport:
         kernel: Kernel,
         snapshot_provider: Callable[[], Awaitable[AuthSnapshot]],
         chain_provider: Callable[[], NextCall | None],
-        metrics: ClientMetrics,
+        call_supervisor: CallSupervisor,
         bound_loop_check: Callable[[], None],
         logger: logging.Logger,
     ) -> None:
@@ -131,7 +130,7 @@ class RuntimeTransport:
         # reassignments take effect on the next call without any
         # further mutation here.
         self._chain_provider = chain_provider
-        self._metrics = metrics
+        self._call_supervisor = call_supervisor
         self._bound_loop_check = bound_loop_check
         self._logger = logger
 
@@ -258,6 +257,43 @@ class RuntimeTransport:
         max_response_bytes: int | None = None,
         disable_read_timeout_retries: bool = False,
     ) -> httpx.Response:
+        """Run one web transport leg under common call supervision."""
+
+        async def _invoke(_lease: object) -> httpx.Response:
+            return await self._perform_authed_post_admitted(
+                build_request=build_request,
+                log_label=log_label,
+                disable_internal_retries=disable_internal_retries,
+                rpc_method=rpc_method,
+                refresh_budget=refresh_budget,
+                retry_deadline=retry_deadline,
+                read_timeout=read_timeout,
+                max_response_bytes=max_response_bytes,
+                disable_read_timeout_retries=disable_read_timeout_retries,
+            )
+
+        # Web deliberately preserves its historical unbounded semaphore wait.
+        # Android supplies an aggregate deadline when it consumes the service.
+        return await self._call_supervisor.run(
+            log_label,
+            rpc_method,
+            None,
+            _invoke,
+        )
+
+    async def _perform_authed_post_admitted(
+        self,
+        *,
+        build_request: BuildRequest,
+        log_label: str,
+        disable_internal_retries: bool = False,
+        rpc_method: str | None = None,
+        refresh_budget: RefreshBudget | None = None,
+        retry_deadline: RuntimeDeadline | None = None,
+        read_timeout: float | None = None,
+        max_response_bytes: int | None = None,
+        disable_read_timeout_retries: bool = False,
+    ) -> httpx.Response:
         """Authed POST entry point — routes through the middleware chain.
 
         Shared transport surface used by ``RpcExecutor._execute_once``
@@ -339,16 +375,8 @@ class RuntimeTransport:
         )
         context[RPC_CONTEXT_AUTH_SNAPSHOT] = snapshot
 
-        # The ``max_concurrent_rpcs`` slot is acquired by
-        # :class:`SemaphoreMiddleware` (chain position 2, between Metrics
-        # and Retry) — that placement keeps Drain admitting queued tasks
-        # AND keeps Metrics timing the queue wait, while still bounding
-        # the retry-and-refresh cohort to one slot per logical RPC.
-        # The middleware writes the queue-wait duration to
-        # ``request.context[RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS]`` so the recorder
-        # below can forward it to ``ClientMetrics`` without giving the
-        # middleware an opinionated ``ClientMetrics`` dependency.
-        #
+        # ``CallSupervisor`` acquired the client-wide slot before invoking
+        # this method. The web-specific chain therefore begins at Retry.
         # Chain resolution is deferred to here — AFTER snapshot capture +
         # materialization, immediately before dispatch — so a reassignment
         # of ``chain_host._authed_post_chain`` that lands while the
@@ -363,20 +391,8 @@ class RuntimeTransport:
                 "composition root must assign chain_host._authed_post_chain "
                 "before any authed POST."
             )
-        try:
-            result = await chain(request)
-            return result.response
-        finally:
-            # Record queue wait even if the chain raised. A failed chain
-            # (RetryMiddleware budget exhaustion, AuthRefreshMiddleware
-            # refresh failure, etc.) MUST still surface the queue-wait
-            # latency. ``SemaphoreMiddleware`` writes the duration to
-            # ``request.context[RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS]`` after the
-            # semaphore is acquired; absence of the key means the slot
-            # was never acquired and there's nothing to record.
-            queue_wait = request.context.get(RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS)
-            if queue_wait is not None:
-                self._metrics.record_rpc_queue_wait(queue_wait)
+        result = await chain(request)
+        return result.response
 
 
 __all__ = ["RuntimeTransport"]

@@ -59,6 +59,9 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
         auth_tokens, on_rpc_event=events.append, decode_response=fake_decode
     )
     install_http_client_for_test(core._collaborators.kernel, AsyncMock(spec=httpx.AsyncClient))
+    supervisor = core._collaborators.call_supervisor
+    supervisor.set_bound_loop(asyncio.get_running_loop())
+    supervisor.reset_after_open()
     seen_request_ids: list[str | None] = []
 
     # Mock the chain LEAF (innermost wrapper around
@@ -129,6 +132,9 @@ async def test_rpc_decode_error_bumps_drift_counter(auth_tokens: AuthTokens) -> 
 
     core = build_client_shell_for_tests(auth_tokens, decode_response=drifting_decode)
     install_http_client_for_test(core._collaborators.kernel, AsyncMock(spec=httpx.AsyncClient))
+    supervisor = core._collaborators.call_supervisor
+    supervisor.set_bound_loop(asyncio.get_running_loop())
+    supervisor.reset_after_open()
 
     from notebooklm._web.transport.middleware.core import RpcResponse, build_chain
 
@@ -311,7 +317,7 @@ async def test_close_with_drain_closes_transport_after_timeout(auth_tokens: Auth
     async def close_transport(**_kwargs: object) -> None:
         calls.append("close")
 
-    client._collaborators.drain_tracker.drain = drain_timeout  # type: ignore[method-assign]
+    client._collaborators.call_supervisor.drain = drain_timeout  # type: ignore[method-assign]
     client._collaborators.lifecycle.close = close_transport  # type: ignore[method-assign]
 
     with pytest.raises(TimeoutError, match="deadline"):
@@ -332,7 +338,7 @@ async def test_close_with_invalid_drain_does_not_close_transport(auth_tokens: Au
     async def close_transport(**_kwargs: object) -> None:
         calls.append("close")
 
-    client._collaborators.drain_tracker.drain = invalid_drain  # type: ignore[method-assign]
+    client._collaborators.call_supervisor.drain = invalid_drain  # type: ignore[method-assign]
     client._collaborators.lifecycle.close = close_transport  # type: ignore[method-assign]
 
     with pytest.raises(ValueError, match="bad deadline"):

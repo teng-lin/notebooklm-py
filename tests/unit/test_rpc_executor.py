@@ -89,6 +89,10 @@ class _Owner:
     def increment(self, **increments: int | float) -> None:
         self.metric_increments.append(increments)
 
+    def record_started(self, method: str | None) -> None:
+        if method is not None:
+            self.increment(rpc_calls_started=1)
+
     # --- RuntimeTransport role ------------------------------------------
     async def perform_authed_post(
         self,
@@ -146,6 +150,7 @@ def _executor(
         transport=owner,  # type: ignore[arg-type]
         auth_refresh=owner,  # type: ignore[arg-type]
         metrics=owner,  # type: ignore[arg-type]
+        call_supervisor=owner,  # type: ignore[arg-type]
         decode_response=decode_response or _decode,
         is_auth_error=is_auth_error or (lambda exc: False),
         sleep=sleep or _no_sleep,
