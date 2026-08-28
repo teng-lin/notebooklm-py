@@ -345,6 +345,7 @@ class TestRejectsUnusableWindows:
                 transport=SimpleNamespace(),
                 reqid=SimpleNamespace(),
                 loop_guard=SimpleNamespace(assert_bound_loop=lambda: None),
+                notebooks=SimpleNamespace(),
                 chat_timeout=AUTO_READ_TIMEOUT,
             )
 

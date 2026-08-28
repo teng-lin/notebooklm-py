@@ -4,6 +4,7 @@ import logging
 import reprlib
 from typing import Any
 
+from ._env import get_base_url
 from ._idempotency import idempotent_create
 from ._idempotency import mark_unconfirmed as _unconfirmed
 from ._notebook_metadata import (
@@ -20,7 +21,7 @@ from ._notebook_payloads import (
 )
 from ._runtime.contracts import RpcCaller
 from ._settings import build_get_user_settings_params, extract_account_limits
-from ._sharing_manager import ShareManager
+from ._sharing_manager import ShareManager, build_share_url
 from ._types.enums import GrpcStatusCode, normalize_grpc_status
 from ._web.rows.notebooks import PromptSuggestionRow, unwrap_prompt_suggestions
 from ._web.rows.sources import SourceRow
@@ -1106,7 +1107,7 @@ class NotebooksAPI:
         Returns:
             The share URL string.
         """
-        return self._share_manager.get_share_url(notebook_id, artifact_id)
+        return build_share_url(get_base_url(), notebook_id, artifact_id)
 
     async def get_metadata(self, notebook_id: str) -> NotebookMetadata:
         """Get notebook metadata with sources list.

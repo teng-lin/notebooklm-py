@@ -31,7 +31,7 @@ def mock_rpc() -> MagicMock:
     """Narrow ``RpcCaller`` fake — the only collaborator this surface uses.
 
     Constructor injection via ``ChatAPI(rpc=..., transport=..., reqid=...,
-    loop_guard=...)`` satisfies ADR-0007 (no post-hoc attribute assignment
+    loop_guard=..., notebooks=...)`` satisfies ADR-0007 (no post-hoc attribute assignment
     of an ``AsyncMock`` onto ``rpc_call``); the ``AsyncMock`` is wired
     into the ``MagicMock(spec=...)`` via its constructor so the ADR-0007
     meta-lint stays clean.
@@ -49,6 +49,7 @@ def api(mock_rpc: MagicMock) -> ChatAPI:
         # front (#1225), so the guard needs a ``LoopGuard`` spec — a bare
         # ``MagicMock`` rejects ``assert_*`` attribute access as a typo guard.
         loop_guard=MagicMock(spec=LoopGuard),
+        notebooks=MagicMock(),
     )
 
 

@@ -121,10 +121,10 @@ class ChatAPI(LoopBoundPrimitive):
         transport: RuntimeTransport,
         reqid: ReqidCounter,
         loop_guard: LoopGuard,
+        notebooks: NotebookSourceIdProvider,
         chat_timeout: float | None = DEFAULT_CHAT_TIMEOUT,
         chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES,
         conversation_cache: ConversationCache | None = None,
-        notebooks: NotebookSourceIdProvider | None = None,
         created_chat_sessions: CreatedChatSessionProvider | None = None,
     ):
         """Initialize the chat API.
@@ -144,15 +144,15 @@ class ChatAPI(LoopBoundPrimitive):
             loop_guard: :class:`LoopGuard` whose :meth:`assert_bound_loop` fires
                 before :meth:`ask` acquires the per-conversation lock, so a
                 cross-loop follow-up doesn't hang on a lock bound to a dead loop.
+            notebooks: Required source-id resolver. The composition root passes
+                the client's shared notebooks API so chat never constructs a
+                transport-specific notebook implementation implicitly.
             chat_timeout: Per-read HTTP timeout (seconds) for the streamed chat
                 endpoint. ``None`` inherits the underlying transport timeout.
             chat_response_max_bytes: Maximum buffered streamed-chat response
                 size in bytes. ``None`` inherits the shared RPC response cap.
             conversation_cache: Optional injected cache; defaults to a fresh
                 per-instance ``ConversationCache``.
-            notebooks: Optional source-id resolver; defaults to a
-                ``NotebooksAPI`` around ``rpc`` so a bare ``ChatAPI(...)`` still
-                resolves source ids without callers wiring the full graph.
             created_chat_sessions: Optional one-shot provider for the initial
                 session id returned by ``CREATE_NOTEBOOK``. The assembled
                 client passes its shared ``NotebooksAPI`` instance.
@@ -169,12 +169,6 @@ class ChatAPI(LoopBoundPrimitive):
         assert_resolved_read_timeout(chat_timeout, name="chat_timeout")
         self._chat_timeout = chat_timeout
         self._chat_response_max_bytes = chat_response_max_bytes
-        if notebooks is None:
-            from .._notebooks import NotebooksAPI
-
-            notebooks = NotebooksAPI(rpc)
-            if created_chat_sessions is None:
-                created_chat_sessions = notebooks
         self._notebooks = notebooks
         self._created_chat_sessions = created_chat_sessions
         self._cache = conversation_cache if conversation_cache is not None else ConversationCache()

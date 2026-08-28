@@ -309,7 +309,7 @@ not on speculation.
 Those composite runtime Protocols were later removed. Current
 constructors take the direct collaborators they need by keyword:
 `ArtifactsAPI(rpc=..., drain=..., lifecycle=...)`,
-`ChatAPI(rpc=..., transport=..., reqid=..., loop_guard=...)`, and
+`ChatAPI(rpc=..., transport=..., reqid=..., loop_guard=..., notebooks=...)`, and
 `SourceUploadPipeline(rpc=..., drain=..., lifecycle=..., kernel=...,
 auth=...)`.
 

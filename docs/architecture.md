@@ -205,8 +205,8 @@ error mapping, so the first ask POST goes through:
 +----------------------------------------------------------------+
 ```
 
-`ChatAPI` holds the four collaborators it needs (`rpc`, `transport`,
-`reqid`, `loop_guard`) directly — there is no `ChatRuntime` composite
+`ChatAPI` holds the five collaborators it needs (`rpc`, `transport`,
+`reqid`, `loop_guard`, `notebooks`) directly — there is no `ChatRuntime` composite
 or broad runtime transport indirection.
 
 For a new conversation, `ChatAPI.ask()` then calls `GET_LAST_CONVERSATION_ID`
@@ -383,7 +383,8 @@ constructor argument:
 - `ArtifactsAPI` and `SourceUploadPipeline` take `rpc: RpcCaller`,
   `drain: TransportDrainTracker`, `lifecycle: ClientLifecycle`.
 - `ChatAPI` takes `rpc: RpcCaller`, `transport: RuntimeTransport`,
-  `reqid: ReqidCounter`, `loop_guard: LoopGuard`.
+  `reqid: ReqidCounter`, `loop_guard: LoopGuard`, and the base-typed
+  `notebooks: NotebookSourceIdProvider`.
 
 Production satisfies shared Protocols via the underlying collaborators
 (ADR-0014 Rule 1: `RpcExecutor` satisfies `RpcCaller`,

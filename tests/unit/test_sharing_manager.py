@@ -172,13 +172,15 @@ def test_notebooks_api_share_method_removed_in_v080() -> None:
     assert not hasattr(api, "share")
 
 
-def test_notebooks_api_get_share_url_delegates_to_injected_share_manager() -> None:
+def test_notebooks_api_get_share_url_uses_transport_neutral_builder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     core = MagicMock()
     share_manager = MagicMock()
-    share_manager.get_share_url.return_value = "https://example.test/notebook/nb_123"
     api = NotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.google.com")
 
     url = api.get_share_url("nb_123")
 
-    assert url == "https://example.test/notebook/nb_123"
-    share_manager.get_share_url.assert_called_once_with("nb_123", None)
+    assert url == "https://notebooklm.google.com/notebook/nb_123"
+    share_manager.get_share_url.assert_not_called()

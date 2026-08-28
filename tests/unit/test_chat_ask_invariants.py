@@ -127,6 +127,7 @@ class TestChatTimeoutRouting:
             transport=transport,
             reqid=SimpleNamespace(next_reqid=AsyncMock(return_value=100000)),
             loop_guard=SimpleNamespace(assert_bound_loop=lambda: None),
+            notebooks=SimpleNamespace(get_source_ids=AsyncMock(return_value=[])),
             chat_timeout=45.0,
             chat_response_max_bytes=987654,
         )
@@ -411,7 +412,7 @@ class TestChatRefreshRetry:
             )
 
             # Wave 8 of session-decoupling (ADR-0014 Rule 2 Corollary):
-            # ``ChatAPI`` takes its four direct collaborators by keyword
+            # ``ChatAPI`` takes its five direct collaborators by keyword
             # arg. Wired here from the real ``Session`` under test so the
             # refresh path exercises the production transport/rpc/reqid
             # collaborators end-to-end.
@@ -423,6 +424,7 @@ class TestChatRefreshRetry:
                 transport=core._composed.transport,
                 reqid=core._collaborators.reqid,
                 loop_guard=core._collaborators.lifecycle,
+                notebooks=SimpleNamespace(get_source_ids=AsyncMock(return_value=[])),
             )
             result = await api.ask("nb_x", "Q?", source_ids=["s1"])
 
@@ -538,6 +540,7 @@ class TestChatNewConversationLocks:
             transport=MagicMock(),
             reqid=MagicMock(),
             loop_guard=loop_guard,
+            notebooks=MagicMock(),
         )
 
     def test_same_notebook_reuses_new_conversation_lock(self):
@@ -591,6 +594,7 @@ class TestChatNewConversationLocks:
             ),
             reqid=SimpleNamespace(next_reqid=AsyncMock(side_effect=[100000, 200000])),
             loop_guard=SimpleNamespace(assert_bound_loop=lambda: None),
+            notebooks=SimpleNamespace(get_source_ids=AsyncMock(return_value=[])),
             lookup_results=[ChatError("hPTbtc lookup failed"), "conv-after-failure"],
         )
         new_conversation_lock = chat._get_new_conversation_lock("nb-1")
@@ -629,6 +633,7 @@ class TestBuildChatRequestFactory:
             transport=MagicMock(),
             reqid=MagicMock(),
             loop_guard=MagicMock(),
+            notebooks=MagicMock(),
         )
 
     def test_build_request_omits_authuser_for_default_profile(self):

@@ -71,6 +71,7 @@ class TestConfigureChat:
             transport=MagicMock(),
             reqid=MagicMock(),
             loop_guard=MagicMock(spec=LoopGuard),
+            notebooks=MagicMock(),
         )
 
     @pytest.mark.asyncio

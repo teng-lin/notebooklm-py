@@ -10,6 +10,7 @@ Verifies correct encoding of source IDs in RPC parameters:
 """
 
 import json
+from inspect import Parameter, signature
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -188,14 +189,15 @@ def _chat_from_mock_core(mock_core, *, notebooks=None) -> ChatAPI:
     """Build a ``ChatAPI`` from the ``mock_core`` fixture's surfaces.
 
     Wave 8 of session-decoupling (ADR-0014 Rule 2 Corollary): ``ChatAPI``
-    takes its four direct collaborators by keyword arg. The legacy single-
+    takes its five direct collaborators by keyword arg. The legacy single-
     arg ``ChatAPI(mock_core)`` form is gone; this helper preserves the
     test shape by mapping the bag-of-attributes mock_core fixture onto
-    the new constructor surface (rpc, transport, reqid, loop_guard).
+    the new constructor surface (rpc, transport, reqid, loop_guard, notebooks).
     Tests pass ``mock_core.rpc_executor.rpc_call`` for ``rpc.rpc_call`` and the
     fixture's pre-wired ``mock_core.session_transport.perform_authed_post``
     for the transport entry point.
     """
+    notebooks = notebooks if notebooks is not None else MagicMock()
     return ChatAPI(
         rpc=mock_core.rpc_executor,
         transport=mock_core.session_transport,
@@ -203,6 +205,10 @@ def _chat_from_mock_core(mock_core, *, notebooks=None) -> ChatAPI:
         loop_guard=mock_core,
         notebooks=notebooks,
     )
+
+
+def test_chat_notebooks_dependency_is_required() -> None:
+    assert signature(ChatAPI).parameters["notebooks"].default is Parameter.empty
 
 
 @pytest.fixture

@@ -22,9 +22,9 @@ class NotebookSourceLister(Protocol):
     Consumed by :class:`NotebookMetadataService` for metadata composition
     and by :meth:`ResearchAPI.import_sources_with_verification` for
     snapshot/probe around ``IMPORT_RESEARCH`` (issue #315). Implementations
-    are constructed via :func:`create_default_source_lister` from a
-    ``RpcCaller`` object, so feature APIs don't need to depend on
-    ``SourcesAPI`` itself.
+    are supplied structurally, so feature APIs don't need to depend on
+    ``SourcesAPI`` itself. The composition root supplies its shared sources
+    API; direct web construction uses :func:`create_default_source_lister`.
     """
 
     async def list(self, notebook_id: str, *, strict: bool = False) -> builtins.list[Source]:

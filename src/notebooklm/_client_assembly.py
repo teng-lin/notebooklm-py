@@ -374,8 +374,8 @@ def _assemble_client(
         storage_path=storage_path,
     )
     # ChatAPI (per ADR-0014) takes its
-    # four direct collaborators (RpcCaller, RuntimeTransport,
-    # ReqidCounter, LoopGuard) by keyword argument. The transport is
+    # five direct collaborators (RpcCaller, RuntimeTransport, ReqidCounter,
+    # LoopGuard, NotebookSourceIdProvider) by keyword argument. The transport is
     # sourced from ``client._composed``; other runtime fields come from
     # the :class:`ClientInternals` returned by the composition root.
     client.chat = ChatAPI(

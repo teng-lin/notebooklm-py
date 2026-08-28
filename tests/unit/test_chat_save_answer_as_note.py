@@ -17,9 +17,10 @@ These tests pin:
 
 Wave 8 of the session-decoupling plan (ADR-0014 Rule 2 Corollary): the
 chat-local ``ChatRuntime`` Protocol was deleted; ``ChatAPI`` takes its
-four direct collaborators (RpcCaller, RuntimeTransport, ReqidCounter,
-LoopGuard) by keyword argument. ``save_answer_as_note`` only touches
-the ``rpc`` collaborator, so the other three are mocked without specs.
+five direct collaborators (RpcCaller, RuntimeTransport, ReqidCounter,
+LoopGuard, NotebookSourceIdProvider) by keyword argument.
+``save_answer_as_note`` only touches the ``rpc`` collaborator, so the
+other four are mocked without specs.
 """
 
 from __future__ import annotations

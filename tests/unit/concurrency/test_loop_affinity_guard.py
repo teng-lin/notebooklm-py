@@ -213,6 +213,7 @@ def test_chat_ask_guards_against_cross_loop_call() -> None:
             transport=MagicMock(),
             reqid=MagicMock(),
             loop_guard=loop_guard,
+            notebooks=MagicMock(),
         )
 
         async def inner() -> None:
