@@ -96,9 +96,9 @@ exception — refusal reuses the existing `RateLimitError`/`RPCError`.
    `DecodingError`/`UnknownRPCMethodError` ([ADR-0011](0011-schema-validation-policy.md));
    it is not collapsed to `None`/`""`/`[]`/a sentinel. v0.8.0 tightens the
    **positional shape-drift** collapse in the hand-rolled list helpers
-   (`_note_service.py:135`, `_artifact/listing.py:113`). The composite-lister
+   (`_note_service.py:135`, `_web/artifact/listing.py:123-137`). The composite-lister
    `except RPCError`/`HTTPError` that returns *partial* studio artifacts when the
-   mind-map sub-fetch is down (`_artifact/listing.py:126-138`) is a **deliberate
+   mind-map sub-fetch is down (`_web/artifact/listing.py:198-211`) is a **deliberate
    partial-availability** behavior, **not** drift-collapse — it is out of scope
    for Rule 3 and decided separately (see Scope).
 4. **Lifecycle is data.** Async status handles carry `failed`/`not_found`/
