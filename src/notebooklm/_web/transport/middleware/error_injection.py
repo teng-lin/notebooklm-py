@@ -8,7 +8,7 @@ Per ADR-0009 §"Chain ordering", ``ErrorInjectionMiddleware`` sits just *inside*
 Test-only path. Production behavior is unchanged when no builder is wired
 into the middleware — the constructor's default ``builder=None`` makes
 ``__call__`` a pass-through even if ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set.
-Production code paths (``MiddlewareChainBuilder`` in ``_middleware/chain.py``)
+Production code paths (``MiddlewareChainBuilder`` in ``_web/transport/middleware/chain.py``)
 construct ``ErrorInjectionMiddleware()`` with no builder, so the substitution
 path can never fire from a production install. Tests that want the
 substitution to fire construct the middleware directly with an explicit
@@ -61,7 +61,7 @@ retry fires. Each retry re-enters this middleware, which re-raises — so every
 retry re-fires the synthetic error.
 
 See ``docs/adr/0009-middleware-chain.md`` for the chain contract and
-``src/notebooklm/_error_injection.py`` for the env-var / startup-guard
+``src/notebooklm/_web/transport/error_injection.py`` for the env-var / startup-guard
 helpers.
 """
 
@@ -72,10 +72,10 @@ from collections.abc import Callable
 
 import httpx
 
-from .. import _error_injection
-from .._error_injection import ERROR_INJECT_ENV_VAR
-from .._runtime.config import CORE_LOGGER_NAME
-from .._transport_errors import (
+from ...._runtime.config import CORE_LOGGER_NAME
+from .. import error_injection
+from ..error_injection import ERROR_INJECT_ENV_VAR
+from ..errors import (
     TransportRateLimited,
     TransportServerError,
     parse_retry_after,
@@ -94,13 +94,13 @@ _SyntheticBuilder = Callable[[str], tuple[int, bytes, dict[str, str]]]
 class ErrorInjectionMiddleware:
     """Short-circuit chain middleware that returns synthetic error responses.
 
-    Conforms to :class:`notebooklm._middleware.core.Middleware` — ``__call__``
+    Conforms to :class:`notebooklm._web.transport.middleware.core.Middleware` — ``__call__``
     matches the Protocol so instances are assignable into a
     ``Sequence[Middleware]``.
 
     Holds no shared state. The synthetic-response builder is injected by
     the caller (default ``None``); production wiring in
-    :class:`notebooklm._middleware.chain.MiddlewareChainBuilder` never
+    :class:`notebooklm._web.transport.middleware.chain.MiddlewareChainBuilder` never
     passes a builder, so the substitution path stays inaccessible from
     installed packages. Tests pass an explicit builder (typically
     ``tests.cassette_patterns.build_synthetic_error_response``) when they
@@ -144,7 +144,7 @@ class ErrorInjectionMiddleware:
         :func:`_error_injection._get_error_injection_mode` at call
         time (not construction time) so tests that flip the var
         per-test — via :func:`monkeypatch.setenv` or by monkeypatching the
-        function itself on :mod:`notebooklm._error_injection` —
+        function itself on :mod:`notebooklm._web.transport.error_injection` —
         see the change without rebuilding the chain. Resolving through the
         module (rather than a value-imported binding) keeps the
         :func:`monkeypatch.setattr` seam live: a value-import would freeze
@@ -163,7 +163,7 @@ class ErrorInjectionMiddleware:
         """
         if self._builder is None:
             return await next_call(request)
-        mode = _error_injection._get_error_injection_mode()
+        mode = error_injection._get_error_injection_mode()
         if mode is None:
             return await next_call(request)
 

@@ -194,10 +194,10 @@ def _synthetic_error_mode(request, monkeypatch):
             f"@pytest.mark.synthetic_error: invalid mode {mode!r}; valid modes are {sorted(valid)}."
         )
     # Import the env-var name from the production module so a future rename
-    # in ``_error_injection.py`` cascades automatically; the constant is also exposed
+    # in ``_web/transport/error_injection.py`` cascades automatically; the constant is also exposed
     # from ``tests/vcr_config.py`` but importing from the canonical seam
     # is the production-faithful path.
-    from notebooklm._error_injection import ERROR_INJECT_ENV_VAR
+    from notebooklm._web.transport.error_injection import ERROR_INJECT_ENV_VAR
 
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, mode)
 

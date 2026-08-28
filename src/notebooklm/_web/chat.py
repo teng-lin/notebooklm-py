@@ -10,17 +10,17 @@ from .._chat.api import ChatAPI, _PostedAsk, _prepare_note_citations
 from .._conversation_cache import ConversationCache
 from .._logging import get_request_id, reset_request_id, set_request_id
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
-from .._request_types import AuthSnapshot
 from .._runtime.config import (
     DEFAULT_CHAT_RESPONSE_MAX_BYTES,
     DEFAULT_CHAT_TIMEOUT,
     assert_resolved_read_timeout,
 )
-from .._runtime.contracts import LoopGuard, RpcCaller
+from .._runtime.contracts import LoopGuard
 from .._types.enums import ChatGoal, ChatResponseLength
 from ..exceptions import ChatError, NetworkError, UnknownRPCMethodError, ValidationError
 from ..rpc import RPCMethod, safe_index
 from ..types import ChatReference, ChatSettings, ConversationTurn, Note
+from .contracts import RpcCaller
 from .params.chat_note import build_save_chat_as_note_params
 from .params.chat_stream import build_streaming_chat_request
 from .params.notebooks import build_get_notebook_params
@@ -45,8 +45,9 @@ from .rows.notes import NoteRow
 from .transport.chat import chat_aware_authed_post
 
 if TYPE_CHECKING:
-    from .._reqid_counter import ReqidCounter
-    from .._runtime.transport import RuntimeTransport
+    from .transport.reqid_counter import ReqidCounter
+    from .transport.request_types import AuthSnapshot
+    from .transport.runtime import RuntimeTransport
 
 logger = logging.getLogger("notebooklm._chat.api")
 notes_logger = logging.getLogger("notebooklm._chat.notes")

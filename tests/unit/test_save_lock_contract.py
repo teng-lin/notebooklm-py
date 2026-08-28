@@ -1,6 +1,6 @@
 """Regression guard for the ``CookiePersistence.save_lock`` contract.
 
-Contract (documented at ``_cookie_persistence.py`` next to the lock definition):
+Contract (documented at ``_web/transport/cookie_persistence.py`` next to the lock definition):
 ``save_lock`` is acquired ONLY inside the collaborator's ``_save()`` and
 ``_adopt()`` worker closures, which run via ``asyncio.to_thread``. It is never
 held by an async context — a
@@ -26,7 +26,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from notebooklm._cookie_persistence import CookiePersistence
+from notebooklm._web.transport.cookie_persistence import CookiePersistence
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from tests._helpers.client_factory import build_client_shell_for_tests
@@ -188,7 +188,9 @@ def test_save_lock_only_acquired_inside_worker_closures() -> None:
     """
 
     source_path = Path(inspect.getsourcefile(CookiePersistence) or "")
-    assert source_path.is_file(), f"could not locate _cookie_persistence.py source: {source_path!r}"
+    assert source_path.is_file(), (
+        f"could not locate _web/transport/cookie_persistence.py source: {source_path!r}"
+    )
     tree = ast.parse(source_path.read_text())
 
     # Find every ``with self.save_lock:`` or closure-aliased ``with lock:`` by
@@ -251,7 +253,7 @@ def test_save_lock_only_acquired_inside_worker_closures() -> None:
         f"outside an approved worker closure: {offenders!r}. The lock must "
         "ONLY be acquired inside ``_save()`` or ``_adopt()`` (run via "
         "asyncio.to_thread). "
-        "See ``_cookie_persistence.py`` "
+        "See ``_web/transport/cookie_persistence.py`` "
         "for the contract details."
     )
     assert {where.rsplit(".", 1)[-1] for where, _ in acquisition_sites} == worker_closures

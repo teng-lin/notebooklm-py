@@ -11,7 +11,7 @@ This module hosts two cooperating pieces:
    then probe for a server-side commit before re-issuing.
 
 2. :class:`IdempotencyRegistry` — the 5-policy classification layer that
-   :class:`~notebooklm._rpc_executor.RpcExecutor` consults to compute the
+   :class:`~notebooklm._web.transport.executor.RpcExecutor` consults to compute the
    *effective* ``disable_internal_retries`` value. The registry is a
    single source of truth for every ``RPCMethod`` without touching the
    executor.
@@ -30,7 +30,7 @@ possible — see :class:`~notebooklm.exceptions.NonIdempotentRetryError`).
 
 This module is private (``_idempotency.py``); call sites live in the
 domain APIs (``_notebooks.py``, ``_sources.py``) and the RPC executor
-(``_rpc_executor.py``). The canonical home for the taxonomy itself and
+(``_web/transport/executor.py``). The canonical home for the taxonomy itself and
 the per-RPC classification rationale is ADR-0005
 (``docs/adr/0005-idempotency-taxonomy.md``).
 """

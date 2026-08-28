@@ -126,7 +126,7 @@ CRITICAL" label suggests: it's the safety net for exactly the failure mode preve
 ## 3. Live RPC probing — what the backend actually does on a failed add
 
 Two probe waves against the real API (scratch notebooks, created and torn down each time), using a
-patched response decoder (`notebooklm._client_seams._default_decode_response`) to dump raw wire
+patched response decoder (`notebooklm._web.transport.seams._default_decode_response`) to dump raw wire
 payloads. Scripts live in the session scratchpad, not committed.
 
 ### Wave 1 — single-cause probes (12 cases)

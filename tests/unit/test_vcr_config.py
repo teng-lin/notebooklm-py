@@ -29,7 +29,7 @@ from urllib.parse import quote
 
 import pytest
 
-from notebooklm._error_injection import (
+from notebooklm._web.transport.error_injection import (
     ERROR_INJECT_ENV_VAR,
     _get_error_injection_mode,
 )
@@ -503,7 +503,7 @@ def test_scrub_response_noop_when_env_var_unset(monkeypatch):
     assert b"original wire response" in out["body"]["string"]
 
 
-# --- (3) _error_injection.py mode resolver ----------------------------------
+# --- (3) _web/transport/error_injection.py mode resolver ----------------------------------
 
 
 def test_core_get_error_injection_mode_unset(monkeypatch):
@@ -542,7 +542,7 @@ def test_core_get_error_injection_mode_typo_returns_none(monkeypatch):
 async def test_error_injection_middleware_present_when_env_var_set_in_session(monkeypatch, mode):
     """Client startup wires pass-through ``ErrorInjectionMiddleware`` into the chain."""
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, mode)
-    from notebooklm._middleware.error_injection import ErrorInjectionMiddleware
+    from notebooklm._web.transport.middleware.error_injection import ErrorInjectionMiddleware
     from notebooklm.auth import AuthTokens
 
     auth = AuthTokens(cookies={"SID": "t"}, csrf_token="c", session_id="s")

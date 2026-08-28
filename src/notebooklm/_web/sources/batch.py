@@ -19,7 +19,6 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from ..._idempotency import mark_unconfirmed
-from ..._runtime.contracts import RpcCaller
 from ..._types.enums import GrpcStatusCode, SourceStatus, normalize_rpc_code
 from ...exceptions import (
     AuthError,
@@ -30,6 +29,7 @@ from ...exceptions import (
 )
 from ...rpc import RPCError, RPCMethod
 from ...types import Source
+from ..contracts import RpcCaller
 from ..params.sources import build_template_block
 from ..rows.sources import unwrap_add_source_rows
 

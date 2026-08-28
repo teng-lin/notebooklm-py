@@ -15,11 +15,11 @@ from typing import Protocol, TypeAlias, TypeVar
 
 import httpx
 
-from ._auth.cookie_policy import RequiredCookieValidationError
-from ._auth.cookie_types import Cookie, CookieJar
-from ._auth.cookies import StorageStateValidationError, _load_cookie_pair_pure
-from ._auth.profile_store import ProfileStore
-from ._auth.storage import (
+from ..._auth.cookie_policy import RequiredCookieValidationError
+from ..._auth.cookie_types import Cookie, CookieJar
+from ..._auth.cookies import StorageStateValidationError, _load_cookie_pair_pure
+from ..._auth.profile_store import ProfileStore
+from ..._auth.storage import (
     CookieSaveResult,
     CookieSnapshot,
     CookieSnapshotKey,
@@ -27,7 +27,7 @@ from ._auth.storage import (
     advance_cookie_snapshot_after_save,
     snapshot_cookie_jar,
 )
-from .auth import AuthTokens
+from ...auth import AuthTokens
 
 logger = logging.getLogger("notebooklm.auth")
 

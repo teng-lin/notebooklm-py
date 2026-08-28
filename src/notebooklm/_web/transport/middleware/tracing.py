@@ -1,4 +1,4 @@
-"""TracingMiddleware — innermost middleware in the chain.
+"""TracingMiddleware — innermost middleware in the web chain.
 
 Per ADR-0009 §"Chain ordering", ``TracingMiddleware`` is
 the **innermost** wrapper around the ``Kernel.post`` transport leaf. It logs one
@@ -65,7 +65,7 @@ class TracingMiddleware:
     records use stdlib :mod:`logging` machinery (``caplog`` fixture in
     pytest, or :class:`logging.handlers.MemoryHandler` directly).
 
-    Conforms to :class:`notebooklm._middleware.core.Middleware` — the
+    Conforms to :class:`notebooklm._web.transport.middleware.core.Middleware` — the
     ``__call__`` signature matches the Protocol so mypy treats the
     instance as assignable into a ``Sequence[Middleware]``.
     """

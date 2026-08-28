@@ -1,4 +1,4 @@
-"""Canonical ``RpcRequest.context`` key vocabulary for the middleware chain."""
+"""Canonical ``RpcRequest.context`` key vocabulary for the web middleware chain."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ RPC_CONTEXT_DISABLE_READ_TIMEOUT_RETRIES: Final = "disable_read_timeout_retries"
 RPC_CONTEXT_AUTH_SNAPSHOT: Final = "auth_snapshot"
 RPC_CONTEXT_AUTH_REFRESHED: Final = "auth_refreshed"
 RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS: Final = "rpc_queue_wait_seconds"
-# Optional :class:`notebooklm._auth_refresh_retry.RefreshBudget`. Seeded by
+# Optional :class:`notebooklm._web.transport.auth_refresh_retry.RefreshBudget`. Seeded by
 # ``RpcExecutor.rpc_call`` so the HTTP-status refresh layer
 # (``AuthRefreshMiddleware``) and the decoded-RPC refresh layer
 # (``RpcExecutor``) share ONE once-per-logical-call refresh allowance — a

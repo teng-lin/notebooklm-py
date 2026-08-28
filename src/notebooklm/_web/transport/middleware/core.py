@@ -32,7 +32,7 @@ from typing import Any, Protocol
 
 import httpx
 
-from .._request_types import AuthSnapshot, BuildRequest, materialize_build_request
+from ..request_types import AuthSnapshot, BuildRequest, materialize_build_request
 from .context import (
     ALLOWED_RPC_CONTEXT_KEYS,
     RPC_CONTEXT_AUTH_REFRESHED,

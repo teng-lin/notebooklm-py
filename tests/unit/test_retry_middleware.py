@@ -1,6 +1,6 @@
 """Unit tests for :class:`RetryMiddleware` (Tier-12 PR 12.7).
 
-Pins the contract documented in ``src/notebooklm/_middleware/retry.py`` and
+Pins the contract documented in ``src/notebooklm/_web/transport/middleware/retry.py`` and
 ADR-0009 §"Chain ordering":
 
 - **Pass-through on success.** Single ``next_call`` invocation; result
@@ -37,9 +37,9 @@ import httpx
 import pytest
 
 from notebooklm._client_metrics import ClientMetrics
-from notebooklm._middleware.core import NextCall, RpcRequest, RpcResponse, build_chain
-from notebooklm._middleware.retry import RetryMiddleware
-from notebooklm._transport_errors import TransportRateLimited, TransportServerError
+from notebooklm._web.transport.errors import TransportRateLimited, TransportServerError
+from notebooklm._web.transport.middleware.core import NextCall, RpcRequest, RpcResponse, build_chain
+from notebooklm._web.transport.middleware.retry import RetryMiddleware
 
 # The ``tests/`` package chain is complete; ``tests._fixtures.chain`` is the
 # fully-qualified import path documented in ``tests/_fixtures/__init__.py``.
@@ -812,7 +812,7 @@ async def test_429_and_5xx_budgets_are_independent() -> None:
 
 def test_middleware_satisfies_protocol() -> None:
     """``RetryMiddleware`` instance is assignable to ``Middleware``."""
-    from notebooklm._middleware.core import Middleware
+    from notebooklm._web.transport.middleware.core import Middleware
 
     middleware: Middleware = RetryMiddleware(rate_limit_max_retries=3, server_error_max_retries=3)
     assert callable(middleware)

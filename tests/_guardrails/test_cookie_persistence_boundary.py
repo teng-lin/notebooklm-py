@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from notebooklm._auth.cookie_types import Cookie, CookieJar
-from notebooklm._cookie_persistence import (
+from notebooklm._web.transport.cookie_persistence import (
     FailedBaseline,
     ReadyBaseline,
     UninitializedBaseline,
@@ -23,7 +23,7 @@ pytestmark = pytest.mark.repo_lint
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = REPO_ROOT / "src" / "notebooklm"
-PERSISTENCE_PATH = SRC_ROOT / "_cookie_persistence.py"
+PERSISTENCE_PATH = SRC_ROOT / "_web/transport/cookie_persistence.py"
 LIFECYCLE_PATH = SRC_ROOT / "_runtime" / "lifecycle.py"
 INIT_PATH = SRC_ROOT / "_runtime" / "init.py"
 CLIENT_PATH = SRC_ROOT / "client.py"
@@ -52,7 +52,7 @@ _FORBIDDEN_DYNAMIC_MEMBERS = _PRIVATE_MEMBERS | {
     "merge_cookie_observation",
     "_load_cookie_pair_pure",
 }
-_PERSISTENCE_MODULE = "notebooklm._cookie_persistence"
+_PERSISTENCE_MODULE = "notebooklm._web.transport.cookie_persistence"
 
 CookieSaveResultUse = tuple[str, str, str]
 
@@ -528,7 +528,7 @@ class _MemberCollector(ast.NodeVisitor):
                 )
             qualified = ast.unparse(node.value)
             return (
-                qualified == "notebooklm._cookie_persistence"
+                qualified == "notebooklm._web.transport.cookie_persistence"
                 and self.bindings.get("notebooklm") == "root"
                 and not self._shadowed("notebooklm")
             )
@@ -1053,7 +1053,7 @@ def test_typed_merge_and_pair_parser_ownership_is_exact() -> None:
     calls, escapes = _member_projection(
         _tree(PERSISTENCE_PATH), PERSISTENCE_PATH, frozenset({"merge_cookie_observation"})
     )
-    assert calls == {("_cookie_persistence.py", "CookiePersistence._save_canonical")}
+    assert calls == {("_web/transport/cookie_persistence.py", "CookiePersistence._save_canonical")}
     assert escapes == set()
     methods = _methods(_class(_tree(PERSISTENCE_PATH), "CookiePersistence"))
     parser_owners = {
@@ -1108,10 +1108,14 @@ def test_cookie_save_result_imports_and_consumers_are_exact() -> None:
             ("_auth/storage.py", "_cookie_save_return", "name:load"): 2,
             ("_auth/storage.py", "save_cookies_to_storage", "name:load"): 1,
             ("_auth/storage.py", "merge_cookie_delta", "name:load"): 4,
-            ("_cookie_persistence.py", "<module>", "import:direct"): 1,
-            ("_cookie_persistence.py", "SaveCookiesToStorage.__call__", "name:load"): 1,
+            ("_web/transport/cookie_persistence.py", "<module>", "import:direct"): 1,
             (
-                "_cookie_persistence.py",
+                "_web/transport/cookie_persistence.py",
+                "SaveCookiesToStorage.__call__",
+                "name:load",
+            ): 1,
+            (
+                "_web/transport/cookie_persistence.py",
                 "CookiePersistence._save_v0_callback",
                 "name:load",
             ): 1,
@@ -1126,7 +1130,9 @@ def test_cookie_save_result_imports_and_consumers_are_exact() -> None:
             for path in sorted(SRC_ROOT.rglob("*.py"))
         )
     )
-    assert branch_owners == {("_cookie_persistence.py", "CookiePersistence._save_v0_callback")}
+    assert branch_owners == {
+        ("_web/transport/cookie_persistence.py", "CookiePersistence._save_v0_callback")
+    }
 
 
 @pytest.mark.parametrize(
@@ -1228,7 +1234,7 @@ def test_private_capability_escape_detector_bites(source: str) -> None:
 def test_private_caller_and_dynamic_detectors_fail_closed_on_shadow_and_rebinding() -> None:
     path = SRC_ROOT / "synthetic.py"
     tree = ast.parse(
-        "from notebooklm._cookie_persistence import CookiePersistence as P\n"
+        "from notebooklm._web.transport.cookie_persistence import CookiePersistence as P\n"
         "def deferred():\n    return P._from_store(None)\n"
         "P = object()\n"
         "def local(P):\n    return P._save_canonical()\n"
@@ -1257,7 +1263,7 @@ def test_external_source_is_scanned_with_stable_label() -> None:
 
 def test_same_owner_later_rebinding_invalidates_deferred_provider_lookup() -> None:
     tree = ast.parse(
-        "from notebooklm._cookie_persistence import CookiePersistence\n"
+        "from notebooklm._web.transport.cookie_persistence import CookiePersistence\n"
         "def build_collaborators():\n"
         "    return CookiePersistence._from_store(None)\n"
         "CookiePersistence = object\n"
@@ -1306,7 +1312,7 @@ def test_same_owner_later_rebinding_invalidates_deferred_provider_lookup() -> No
 )
 def test_same_owner_receiver_rebinding_invalidates_annotated_capability(rebind: str) -> None:
     tree = ast.parse(
-        "from notebooklm._cookie_persistence import CookiePersistence\n"
+        "from notebooklm._web.transport.cookie_persistence import CookiePersistence\n"
         "class ClientLifecycle:\n"
         "    async def save_cookies(\n"
         "        self, cookie_persistence: CookiePersistence, condition=True\n"
@@ -1343,7 +1349,7 @@ def test_same_owner_receiver_rebinding_invalidates_annotated_capability(rebind: 
 )
 def test_nested_receiver_frames_never_fall_through_to_outer_capability(nested: str) -> None:
     tree = ast.parse(
-        "from notebooklm._cookie_persistence import CookiePersistence\n"
+        "from notebooklm._web.transport.cookie_persistence import CookiePersistence\n"
         "class ClientLifecycle:\n"
         "    async def save_cookies(\n"
         "        self, cookie_persistence: CookiePersistence\n"
@@ -1374,7 +1380,7 @@ def test_nested_receiver_frames_never_fall_through_to_outer_capability(nested: s
 )
 def test_module_control_flow_bindings_poison_deferred_provider(rebind: str) -> None:
     tree = ast.parse(
-        "from notebooklm._cookie_persistence import CookiePersistence\n"
+        "from notebooklm._web.transport.cookie_persistence import CookiePersistence\n"
         f"{rebind}"
         "def build_collaborators():\n"
         "    return CookiePersistence._from_store(None)\n"
@@ -1389,7 +1395,7 @@ def test_module_control_flow_bindings_poison_deferred_provider(rebind: str) -> N
 def test_later_canonical_import_does_not_rehabilitate_ambiguous_provider() -> None:
     tree = ast.parse(
         "CookiePersistence = object\n"
-        "from notebooklm._cookie_persistence import CookiePersistence\n"
+        "from notebooklm._web.transport.cookie_persistence import CookiePersistence\n"
         "def build_collaborators():\n"
         "    return CookiePersistence._from_store(None)\n"
     )
@@ -1402,7 +1408,7 @@ def test_later_canonical_import_does_not_rehabilitate_ambiguous_provider() -> No
 
 def test_global_declaration_anywhere_poisons_deferred_module_provider() -> None:
     tree = ast.parse(
-        "from notebooklm._cookie_persistence import CookiePersistence\n"
+        "from notebooklm._web.transport.cookie_persistence import CookiePersistence\n"
         "def mutate_provider():\n"
         "    global CookiePersistence\n"
         "def build_collaborators():\n"
@@ -1462,7 +1468,7 @@ def test_client_chain_spelling_without_constructor_provenance_is_untrusted() -> 
 
 
 def test_public_exports_and_compatibility_signatures_remain_narrow() -> None:
-    import notebooklm._cookie_persistence as module
+    import notebooklm._web.transport.cookie_persistence as module
     from notebooklm._runtime.lifecycle import ClientLifecycle
 
     assert module.__all__ == ["CookiePersistence", "SaveCookiesToStorage"]

@@ -344,7 +344,7 @@ def _forbidden_cookie_type_imports(tree: ast.AST) -> set[str]:
         if normalized.startswith(
             (
                 "notebooklm.auth",
-                "notebooklm._cookie_persistence",
+                "notebooklm._web.transport.cookie_persistence",
                 "notebooklm._runtime",
                 "notebooklm.cli",
             )
@@ -362,7 +362,10 @@ def _forbidden_cookie_type_imports(tree: ast.AST) -> set[str]:
             id="lazy-persistence",
         ),
         pytest.param("import notebooklm.auth\n", id="facade"),
-        pytest.param("from notebooklm import _cookie_persistence\n", id="persistence-owner"),
+        pytest.param(
+            "from notebooklm._web.transport import cookie_persistence\n",
+            id="persistence-owner",
+        ),
         pytest.param("from notebooklm._runtime import lifecycle\n", id="runtime"),
         pytest.param("from notebooklm.cli import main\n", id="cli"),
         pytest.param("from .._runtime import lifecycle\n", id="parent-relative-runtime"),

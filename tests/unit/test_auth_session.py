@@ -22,7 +22,7 @@ from notebooklm._auth.profile_migration import LegacyAccountContext, _load_profi
 from notebooklm._auth.recovery import try_storage_cookie_reload
 from notebooklm._auth.session import refresh_auth_session
 from notebooklm._env import get_base_host
-from notebooklm._runtime.auth import AuthRefreshCoordinator
+from notebooklm._web.transport.auth import AuthRefreshCoordinator
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test

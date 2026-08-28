@@ -571,7 +571,7 @@ class TestBuildUrlHL:
 
     @staticmethod
     def _snapshot_for(core):
-        from notebooklm._request_types import AuthSnapshot
+        from notebooklm._web.transport.request_types import AuthSnapshot
 
         return AuthSnapshot(
             csrf_token=core._auth.csrf_token,

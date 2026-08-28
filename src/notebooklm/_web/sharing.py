@@ -6,12 +6,12 @@ from dataclasses import replace
 from typing import Any
 
 from .._env import get_base_url
-from .._runtime.contracts import RpcCaller
 from .._sharing import SharingAPI
 from .._sharing_manager import build_share_url
 from .._types.enums import ShareAccess, SharePermission, ShareViewLevel
 from ..rpc import RPCMethod
 from ..types import ShareStatus
+from .contracts import RpcCaller
 
 logger = logging.getLogger("notebooklm._sharing")
 

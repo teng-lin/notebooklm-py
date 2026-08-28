@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from notebooklm._request_types import AuthSnapshot
+from notebooklm._web.transport.request_types import AuthSnapshot
 from notebooklm.auth import AuthTokens
 from tests._helpers.client_factory import build_client_shell_for_tests
 

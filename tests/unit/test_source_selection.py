@@ -51,7 +51,7 @@ def mock_core():
     """
     from types import SimpleNamespace
 
-    from notebooklm._request_types import AuthSnapshot
+    from notebooklm._web.transport.request_types import AuthSnapshot
 
     # ``ChatAPI.get_conversation_id`` calls ``rpc_executor.rpc_call`` with
     # the ``hPTbtc`` (GET_LAST_CONVERSATION_ID) method. Issue #659: after a

@@ -29,7 +29,7 @@ from ._collection.params import (
     build_update_collection_notebooks_params,
 )
 from ._lookup import unwrap_or_raise
-from ._runtime.contracts import RpcCaller
+from ._web.contracts import RpcCaller
 from .exceptions import CollectionError, CollectionNotFoundError, UnknownRPCMethodError
 from .rpc import RPCMethod
 from .types import Collection, Notebook

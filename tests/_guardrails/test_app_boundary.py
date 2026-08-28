@@ -18,9 +18,9 @@ sideways/downward into a runtime-internal layer. This guardrail walks every
   - ``rpc`` — the batchexecute runtime layer (``notebooklm.rpc.*``); ``_app``
     must consume RPC enums through their public ``notebooklm.types`` re-export,
     not by reaching into ``rpc.types`` directly, or
-  - any *private* sibling whose name starts with ``_`` (``notebooklm._kernel``,
-    ``notebooklm._runtime``, ``notebooklm._middleware``,
-    ``notebooklm._rpc_executor``, ``notebooklm._auth``, …) — the client
+  - any *private* sibling whose name starts with ``_`` (``notebooklm._web.transport.kernel``,
+    ``notebooklm._runtime``, ``notebooklm._web.transport.middleware``,
+    ``notebooklm._web.transport.executor``, ``notebooklm._auth``, …) — the client
     runtime internals. ``_app`` may only depend on the public facade.
 
 ``_app``'s *own* package is ``notebooklm._app``; intra-``_app`` imports are
@@ -204,12 +204,12 @@ def test_app_has_no_transport_dependency_imports() -> None:
         "from notebooklm.rpc.types import ChatGoal\n",
         "from notebooklm import rpc\n",
         # private runtime-internal siblings.
-        "import notebooklm._kernel\n",
-        "from notebooklm._kernel import Kernel\n",
+        "import notebooklm._web.transport.kernel\n",
+        "from notebooklm._web.transport.kernel import Kernel\n",
         "from notebooklm._runtime.config import Config\n",
-        "from notebooklm._rpc_executor import execute\n",
-        "from notebooklm._middleware import retry\n",
-        "from notebooklm import _kernel\n",
+        "from notebooklm._web.transport.executor import execute\n",
+        "from notebooklm._web.transport.middleware import retry\n",
+        "from notebooklm._web import transport\n",
         "if False:\n    import click\n",  # block-nested still flagged
         "if False:\n    from notebooklm.rpc.types import ChatGoal\n",
     ],

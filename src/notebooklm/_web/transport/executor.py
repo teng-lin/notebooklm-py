@@ -14,24 +14,16 @@ from urllib.parse import urlencode
 
 import httpx
 
-from ._auth.account import format_authuser_value
-from ._auth_refresh_retry import RefreshBudget, refresh_and_count
-from ._deadline import RuntimeDeadline
-from ._env import get_base_url, get_default_language
-from ._idempotency import (
+from ..._auth.account import format_authuser_value
+from ..._deadline import RuntimeDeadline
+from ..._env import get_base_url, get_default_language
+from ..._idempotency import (
     IDEMPOTENCY_REGISTRY,
     resolve_effective_disable_internal_retries,
 )
-from ._logging import get_request_id, reset_request_id, set_request_id
-from ._request_types import AuthSnapshot
-from ._transport_errors import (
-    TransportAuthExpired,
-    TransportRateLimited,
-    TransportServerError,
-    parse_retry_after,
-)
-from .exceptions import DecodingError
-from .rpc import (
+from ..._logging import get_request_id, reset_request_id, set_request_id
+from ...exceptions import DecodingError
+from ...rpc import (
     ClientError,
     NetworkError,
     RateLimitError,
@@ -44,15 +36,23 @@ from .rpc import (
     get_batchexecute_url,
     resolve_rpc_id,
 )
+from .auth_refresh_retry import RefreshBudget, refresh_and_count
+from .errors import (
+    TransportAuthExpired,
+    TransportRateLimited,
+    TransportServerError,
+    parse_retry_after,
+)
+from .request_types import AuthSnapshot
 
 if TYPE_CHECKING:
-    from ._client_metrics import ClientMetrics
-    from ._kernel import Kernel
-    from ._runtime.auth import AuthRefreshCoordinator
-    from ._runtime.contracts import RpcCaller
-    from ._runtime.transport import RuntimeTransport
+    from ..._client_metrics import ClientMetrics
+    from ..contracts import RpcCaller
+    from .auth import AuthRefreshCoordinator
+    from .kernel import Kernel
+    from .runtime import RuntimeTransport
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("notebooklm._rpc_executor")
 
 
 def _error_host_suffix(request: httpx.Request | None) -> str:
@@ -153,7 +153,7 @@ class RpcExecutor:
         such as ``ADD_SOURCE`` and ``CREATE_NOTE``.
 
         ``_refresh_budget`` carries the shared once-per-logical-call
-        :class:`notebooklm._auth_refresh_retry.RefreshBudget` across the
+        :class:`notebooklm._web.transport.auth_refresh_retry.RefreshBudget` across the
         decode-time retry recursion so the HTTP-status refresh layer (in the
         chain) and the decoded-RPC refresh layer (here) cannot both refresh on
         the same logical call (issue #1205). Like ``_is_retry`` it is an
@@ -602,7 +602,7 @@ class RpcExecutor:
         """Refresh auth after a decode-time auth error and retry once.
 
         Shares the refresh body with the HTTP-status layer via
-        :func:`notebooklm._auth_refresh_retry.refresh_and_count`. The
+        :func:`notebooklm._web.transport.auth_refresh_retry.refresh_and_count`. The
         decoded-RPC layer's refresh-failure shape is the ORIGINAL ``RPCError``
         (``original_error``) re-raised ``from refresh_error`` — callers and
         tests pin that exact identity, distinct from the chain layer's

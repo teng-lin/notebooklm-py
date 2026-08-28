@@ -1,7 +1,7 @@
 """HTTP-client lifecycle helper for the client-owned runtime.
 
 Owns the open/close ordering while delegating the raw HTTP transport to
-:class:`notebooklm._kernel.Kernel`:
+:class:`notebooklm._web.transport.kernel.Kernel`:
 
 * ``_http_client`` — compatibility property backed by the concrete Kernel's
   live ``httpx.AsyncClient`` (or ``None`` when closed).
@@ -37,7 +37,7 @@ Design constraints (load-bearing — see ``tests/unit/test_client_keepalive.py``
 
 * :meth:`open` does not wrap the inner transport for synthetic-error
   injection — that path lives in the chain
-  (:class:`notebooklm._middleware.error_injection.ErrorInjectionMiddleware`,
+  (:class:`notebooklm._web.transport.middleware.error_injection.ErrorInjectionMiddleware`,
   wired by client internals composition). When
   ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set, the chain middleware
   short-circuits before the chain leaf reaches httpx, so the httpx-layer
@@ -72,18 +72,18 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from .._cookie_persistence import SaveCookiesToStorage
-from .._kernel import Kernel
+from .._web.transport.cookie_persistence import SaveCookiesToStorage
+from .._web.transport.kernel import Kernel
 from ..auth import AuthTokens
 from .config import CORE_LOGGER_NAME
 
 if TYPE_CHECKING:
     from .._chat import ChatAPI
     from .._client_composed import ClientComposed
-    from .._cookie_persistence import CookiePersistence
-    from .._reqid_counter import ReqidCounter
     from .._transport_drain import TransportDrainTracker
     from .._web.sources.upload import SourceUploadPipeline
+    from .._web.transport.cookie_persistence import CookiePersistence
+    from .._web.transport.reqid_counter import ReqidCounter
     from ..types import ConnectionLimits
     from .auth import AuthRefreshCoordinator
 
@@ -258,7 +258,7 @@ class ClientLifecycle:
         moment.
 
         Synthetic-error injection lives in the chain, not this layer — see
-        :class:`notebooklm._middleware.error_injection.ErrorInjectionMiddleware`
+        :class:`notebooklm._web.transport.middleware.error_injection.ErrorInjectionMiddleware`
         for the substitution point. The httpx transport built here is
         always a real, unwrapped transport.
 

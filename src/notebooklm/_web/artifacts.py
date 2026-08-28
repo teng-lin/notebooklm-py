@@ -15,7 +15,6 @@ from .._artifact import validation as _artifact_validation
 from .._artifact.downloads import AssetDownloadService
 from .._artifacts import ArtifactsAPI
 from .._notebook_metadata import NotebookSourceIdProvider
-from .._runtime.contracts import RpcCaller
 from .._types.enums import (
     ArtifactTypeCode,
     ExportType,
@@ -32,6 +31,7 @@ from ..types import (
 from .artifact.downloads import ArtifactDownloadService
 from .artifact.generation import ArtifactGenerationService
 from .artifact.listing import ArtifactListingService
+from .contracts import RpcCaller
 from .mind_maps import NoteBackedMindMapService
 from .notes import NoteService
 from .params.artifacts import build_suggest_reports_params

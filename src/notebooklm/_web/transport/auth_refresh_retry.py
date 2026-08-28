@@ -3,11 +3,11 @@
 NotebookLM recovers from an auth failure at **two** distinct layers, and
 issue #1205 flagged that they were implemented as divergent copies:
 
-* **HTTP-status layer** — :class:`notebooklm._middleware.auth_refresh.AuthRefreshMiddleware`
+* **HTTP-status layer** — :class:`notebooklm._web.transport.middleware.auth_refresh.AuthRefreshMiddleware`
   catches a raw ``httpx.HTTPStatusError`` 400/401/403 from ``Kernel.post``,
   refreshes, rebuilds the request envelope, and re-invokes the chain leaf
   once.
-* **Decoded-RPC layer** — :meth:`notebooklm._rpc_executor.RpcExecutor.try_refresh_and_retry`
+* **Decoded-RPC layer** — :meth:`notebooklm._web.transport.executor.RpcExecutor.try_refresh_and_retry`
   catches an auth-shaped decoded ``RPCError`` (HTTP 200 carrying an auth
   error in the batchexecute payload), refreshes, and re-calls ``rpc_call``
   once.
@@ -52,8 +52,8 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ._client_metrics import ClientMetrics
-    from ._deadline import RuntimeDeadline
+    from ..._client_metrics import ClientMetrics
+    from ..._deadline import RuntimeDeadline
 
 
 class RefreshBudget:

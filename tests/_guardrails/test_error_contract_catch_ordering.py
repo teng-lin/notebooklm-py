@@ -36,7 +36,7 @@ must be **preceded** in the same ``try`` by an ``except`` clause that catches
 at least :data:`REQUIRED_NARROW_RERAISE` and whose body is a bare ``raise``.
 Everything else is deliberately ignored:
 
-* a broad clause that **bare-re-raises** (``_rpc_executor.py``'s
+* a broad clause that **bare-re-raises** (``_web/transport/executor.py``'s
   refresh-and-retry catch ends in ``raise``) or re-raises via a helper
   (``_web/notebooks.py`` ``_raise_quota_error_if_detected(exc)`` + ``raise``) —
   the caller still sees the original type;

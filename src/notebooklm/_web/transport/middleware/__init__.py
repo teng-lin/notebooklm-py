@@ -1,4 +1,4 @@
-"""Private HTTP-shaped middleware implementation package.
+"""Private web HTTP middleware implementation package.
 
 Cohesive cluster promoted from the former flat ``_middleware*.py`` modules (issue #1328).
 The former ``_middleware.py`` envelope/chain primitive now lives in :mod:`._middleware.core`.

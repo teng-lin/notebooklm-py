@@ -538,7 +538,7 @@ def _build_rpc_executor() -> Any:
     assert on the ``disable_internal_retries`` value that the executor
     actually hands to ``RuntimeTransport.perform_authed_post``.
     """
-    from notebooklm._rpc_executor import RpcExecutor
+    from notebooklm._web.transport.executor import RpcExecutor
 
     captured: dict[str, Any] = {}
 

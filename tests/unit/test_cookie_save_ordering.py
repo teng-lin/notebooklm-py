@@ -30,7 +30,7 @@ from notebooklm._auth.storage import (
     CookieSnapshotKey,
     snapshot_cookie_jar,
 )
-from notebooklm._cookie_persistence import CookiePersistence
+from notebooklm._web.transport.cookie_persistence import CookiePersistence
 from notebooklm.auth import AuthTokens
 
 

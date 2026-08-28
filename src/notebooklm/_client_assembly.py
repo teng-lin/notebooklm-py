@@ -40,7 +40,6 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from ._client_composed import ClientComposed
-from ._client_seams import resolve_client_seams
 from ._collections import CollectionsAPI
 from ._labels import LabelsAPI
 from ._research import ResearchAPI
@@ -66,6 +65,7 @@ from ._web.settings import WebSettingsAPI
 from ._web.sharing import WebSharingAPI
 from ._web.sources import WebSourcesAPI
 from ._web.sources.upload import SourceUploadPipeline
+from ._web.transport.seams import resolve_client_seams
 from .auth import AuthTokens
 
 if TYPE_CHECKING:

@@ -37,7 +37,7 @@ from ..types import Note
 from .rows.notes import NoteRow
 
 if TYPE_CHECKING:
-    from .._runtime.contracts import RpcCaller
+    from .contracts import RpcCaller
     from .mind_maps import NoteBackedMindMapService
 
 __all__ = ["NoteService", "WebNotesAPI"]  # NoteRowKind is intentionally NOT exported

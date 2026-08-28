@@ -42,14 +42,14 @@ def _default_sleep() -> Callable[[float], Awaitable[Any]]:
 
 def _default_decode_response() -> Callable[..., Any]:
     """Resolve the canonical RPC response decoder."""
-    from .rpc import decode_response
+    from ...rpc import decode_response
 
     return decode_response
 
 
 def _default_is_auth_error() -> Callable[[Exception], bool]:
     """Resolve the canonical auth-error classifier."""
-    from ._runtime.helpers import is_auth_error
+    from ..._runtime.helpers import is_auth_error
 
     return is_auth_error
 

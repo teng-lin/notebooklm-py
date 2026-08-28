@@ -32,9 +32,9 @@ import pytest
 
 from notebooklm import NotebookLMClient
 from notebooklm._chat import ChatAPI
-from notebooklm._request_types import AuthSnapshot
 from notebooklm._runtime.config import DEFAULT_CHAT_RESPONSE_MAX_BYTES
 from notebooklm._web.chat import WebChatAPI
+from notebooklm._web.transport.request_types import AuthSnapshot
 from notebooklm.auth import AuthTokens
 from notebooklm.exceptions import ChatError
 from tests._helpers.client_factory import build_client_shell_for_tests

@@ -66,7 +66,7 @@ FORBIDDEN_PROPERTIES: frozenset[str] = frozenset(
         # to ``session._auth_coord.<attr>``. Names intentionally NOT listed
         # so the lint no longer flags legitimate direct-coordinator reads
         # in ``test_runtime_auth.py`` (and the unrelated ``owner._refresh_callback``
-        # attribute used by the fake ``_Owner`` in ``test_rpc_executor.py`` /
+        # attribute used by the fake ``_Owner`` in ``test_web/transport/executor.py`` /
         # ``test_idempotency_registry.py``).
         # Observability (ClientMetrics + TransportDrainTracker) bridges
         # retired in session-shrink PR 4 — readers now go straight to
@@ -101,26 +101,26 @@ _DYNAMIC_ACCESS_BUILTINS: frozenset[str] = frozenset({"getattr", "setattr", "del
 CARVE_OUT_MODULES: frozenset[str] = frozenset(
     {
         "src/notebooklm/_session.py",
-        "src/notebooklm/_kernel.py",
+        "src/notebooklm/_web/transport/kernel.py",
         "src/notebooklm/_runtime/lifecycle.py",
-        "src/notebooklm/_runtime/auth.py",
+        "src/notebooklm/_web/transport/auth.py",
         "src/notebooklm/_client_metrics.py",
         "src/notebooklm/_transport_drain.py",
-        "src/notebooklm/_cookie_persistence.py",
+        "src/notebooklm/_web/transport/cookie_persistence.py",
         "src/notebooklm/_polling_registry.py",
-        "src/notebooklm/_reqid_counter.py",
-        "src/notebooklm/_rpc_executor.py",
-        "src/notebooklm/_request_types.py",
-        "src/notebooklm/_streaming_post.py",
-        "src/notebooklm/_transport_errors.py",
-        "src/notebooklm/_middleware/auth_refresh.py",
-        "src/notebooklm/_middleware/chain.py",
-        "src/notebooklm/_middleware/drain.py",
-        "src/notebooklm/_middleware/error_injection.py",
-        "src/notebooklm/_middleware/metrics.py",
-        "src/notebooklm/_middleware/retry.py",
-        "src/notebooklm/_middleware/semaphore.py",
-        "src/notebooklm/_middleware/tracing.py",
+        "src/notebooklm/_web/transport/reqid_counter.py",
+        "src/notebooklm/_web/transport/executor.py",
+        "src/notebooklm/_web/transport/request_types.py",
+        "src/notebooklm/_web/transport/streaming_post.py",
+        "src/notebooklm/_web/transport/errors.py",
+        "src/notebooklm/_web/transport/middleware/auth_refresh.py",
+        "src/notebooklm/_web/transport/middleware/chain.py",
+        "src/notebooklm/_web/transport/middleware/drain.py",
+        "src/notebooklm/_web/transport/middleware/error_injection.py",
+        "src/notebooklm/_web/transport/middleware/metrics.py",
+        "src/notebooklm/_web/transport/middleware/retry.py",
+        "src/notebooklm/_web/transport/middleware/semaphore.py",
+        "src/notebooklm/_web/transport/middleware/tracing.py",
     }
 )
 

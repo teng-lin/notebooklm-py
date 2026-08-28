@@ -4,10 +4,10 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from .._runtime.contracts import RpcCaller
 from .._settings import SettingsAPI
 from ..rpc import RPCMethod, safe_index
 from ..types import AccountLimits, UserSettings
+from .contracts import RpcCaller
 
 logger = logging.getLogger("notebooklm._settings")
 

@@ -8,9 +8,9 @@ import httpx
 import pytest
 
 from notebooklm._logging import get_request_id, reset_request_id, set_request_id
-from notebooklm._request_types import AuthSnapshot
-from notebooklm._rpc_executor import RpcExecutor
-from notebooklm._transport_errors import TransportServerError
+from notebooklm._web.transport.errors import TransportServerError
+from notebooklm._web.transport.executor import RpcExecutor
+from notebooklm._web.transport.request_types import AuthSnapshot
 from notebooklm.auth import AuthTokens
 from notebooklm.exceptions import DecodingError, UnknownRPCMethodError
 from notebooklm.rpc import (
@@ -611,7 +611,7 @@ async def test_decode_time_auth_retry_threads_refresh_budget_to_transport() -> N
     decode-time retry. The budget is consumed by the decode-time refresh, so
     the retry leg's transport call carries a spent budget.
     """
-    from notebooklm._auth_refresh_retry import RefreshBudget
+    from notebooklm._web.transport.auth_refresh_retry import RefreshBudget
 
     async def refresh_callback() -> object:
         return object()
@@ -748,7 +748,7 @@ async def test_decode_time_auth_retry_skips_when_shared_budget_already_spent() -
     on a wire-401, consumed the shared budget, and the post-refresh retry
     returned a decoded auth error: the executor must NOT refresh a second time.
     """
-    from notebooklm._auth_refresh_retry import RefreshBudget
+    from notebooklm._web.transport.auth_refresh_retry import RefreshBudget
 
     async def refresh_callback() -> object:
         return object()
@@ -891,7 +891,7 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
     monkeypatch.setattr(core._collaborators.auth_coord, "await_refresh", fake_await_refresh)
     monkeypatch.setattr(executor, "rpc_call", fake_rpc_call)
 
-    from notebooklm._auth_refresh_retry import RefreshBudget
+    from notebooklm._web.transport.auth_refresh_retry import RefreshBudget
 
     result = await executor.try_refresh_and_retry(
         RPCMethod.LIST_NOTEBOOKS,
@@ -1004,7 +1004,7 @@ def test_request_error_mapper_parity(
 # =============================================================================
 # decode-time exception surface contract
 #
-# The ``except`` at ``_rpc_executor.py::RpcExecutor._execute_once`` only wraps genuine
+# The ``except`` at ``_web/transport/executor.py::RpcExecutor._execute_once`` only wraps genuine
 # shape-drift exceptions (``json.JSONDecodeError``, ``KeyError``, ``IndexError``,
 # ``TypeError``) as ``RPCError``. Code bugs (``AttributeError`` and friends)
 # must propagate unmasked. These tests pin that contract.

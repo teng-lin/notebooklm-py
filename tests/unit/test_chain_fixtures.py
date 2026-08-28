@@ -7,7 +7,7 @@ import asyncio
 import httpx
 import pytest
 
-from notebooklm._middleware.core import (
+from notebooklm._web.transport.middleware.core import (
     NextCall,
     RpcRequest,
     RpcResponse,

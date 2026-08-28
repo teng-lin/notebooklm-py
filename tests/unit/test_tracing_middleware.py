@@ -1,4 +1,4 @@
-"""Unit tests for :class:`notebooklm._middleware.tracing.TracingMiddleware`.
+"""Unit tests for :class:`notebooklm._web.transport.middleware.tracing.TracingMiddleware`.
 
 PR 12.3 of the Tier-12/13 greenfield migration lands ``TracingMiddleware``
 as the innermost middleware in the chain (ADR-0009 §"Chain ordering"). The
@@ -44,13 +44,13 @@ import logging
 import httpx
 import pytest
 
-from notebooklm._middleware.core import (
+from notebooklm._web.transport.middleware.core import (
     Middleware,
     RpcRequest,
     RpcResponse,
     build_chain,
 )
-from notebooklm._middleware.tracing import TracingMiddleware
+from notebooklm._web.transport.middleware.tracing import TracingMiddleware
 
 # The ``tests/`` package chain is complete; ``tests._fixtures.chain`` is the
 # fully-qualified import path documented in ``tests/_fixtures/__init__.py``.

@@ -323,7 +323,7 @@ def _collect_external_imports_by_root() -> dict[tuple[str, str], frozenset[str]]
                     module_basename = module.rsplit(".", 1)[1]
                 # Relative imports (``from .auth import X`` / ``from ..auth``):
                 # resolve against the importing file's package so a same-named
-                # SIBLING module (e.g. ``_runtime/auth.py``) is NOT misattributed
+                # SIBLING module (e.g. ``_web/transport/auth.py``) is NOT misattributed
                 # to the top-level ``notebooklm.auth`` facade.
                 elif node.level > 0 and module and file_pkg_parts is not None:
                     pops = node.level - 1

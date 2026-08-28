@@ -96,9 +96,9 @@ synthetic_error_cassette_name = _cassette_patterns.synthetic_error_cassette_name
 SYNTHETIC_ERROR_CASSETTE_PREFIX = _cassette_patterns.SYNTHETIC_ERROR_CASSETTE_PREFIX
 VALID_ERROR_MODES = _cassette_patterns.VALID_ERROR_MODES
 
-# env var name shared with :mod:`notebooklm._error_injection`. Kept in
+# env var name shared with :mod:`notebooklm._web.transport.error_injection`. Kept in
 # sync as a local copy so the VCR-only replay path (which does not import
-# :mod:`notebooklm._error_injection`) can still parse the env var without
+# :mod:`notebooklm._web.transport.error_injection`) can still parse the env var without
 # dragging the production module in. Unit tests in
 # ``tests/unit/test_vcr_config.py`` import ``ERROR_INJECT_ENV_VAR`` directly
 # from the canonical home — this duplication covers ONLY the VCR-replay
@@ -129,7 +129,7 @@ def get_error_injection_mode() -> str | None:
     typo path explicitly. The value comparison is case-insensitive.
 
     This helper mirrors ``_get_error_injection_mode`` in
-    :mod:`notebooklm._error_injection`; both sides validate against the
+    :mod:`notebooklm._web.transport.error_injection`; both sides validate against the
     same canonical set in :mod:`tests.cassette_patterns` so they cannot
     drift.
     """
@@ -186,7 +186,7 @@ def _substitute_synthetic_error(response: dict[str, Any]) -> dict[str, Any]:
     synthetic-error shape from :mod:`tests.cassette_patterns`.
 
     The error-injection middleware in
-    :mod:`notebooklm._middleware.error_injection` already substitutes
+    :mod:`notebooklm._web.transport.middleware.error_injection` already substitutes
     the live response BEFORE it reaches VCR, so in normal recording this hook
     sees the synthetic shape already. This pass exists so that:
 
@@ -255,7 +255,7 @@ def scrub_response(response: dict[str, Any]) -> dict[str, Any]:
     :func:`_substitute_synthetic_error` runs FIRST so that downstream scrub
     steps see the canonical synthetic shape rather than whatever the wire
     produced (the error-injection middleware in
-    :mod:`notebooklm._middleware.error_injection` normally already
+    :mod:`notebooklm._web.transport.middleware.error_injection` normally already
     substituted, but this pass closes the loop for VCR-only test paths).
     """
     # synthetic-error substitution (no-op when env var unset).

@@ -1,5 +1,5 @@
 """Typing checks for the capability-Protocol contracts in
-``notebooklm._runtime.contracts``.
+``notebooklm._runtime.contracts`` and ``notebooklm._web.contracts``.
 
 Phase 7 (docs/refactor-history.md §Migration Plan step 10) replaced the broad
 ``Session`` Protocol with shared capability Protocols. The surviving
@@ -25,11 +25,8 @@ from typing import Any
 
 import httpx
 
-from notebooklm._runtime.contracts import (
-    Kernel,
-    LoopGuard,
-    RpcCaller,
-)
+from notebooklm._runtime.contracts import LoopGuard
+from notebooklm._web.contracts import Kernel, RpcCaller
 from notebooklm.rpc.types import RPCMethod
 
 

@@ -148,7 +148,7 @@ def test_session_wires_seam_attributes_for_executor_and_chain() -> None:
 
 def test_kernel_http_client_is_read_only_property() -> None:
     """``Kernel.http_client`` MUST have no setter."""
-    from notebooklm._kernel import Kernel
+    from notebooklm._web.transport.kernel import Kernel
 
     descriptor = Kernel.__dict__["http_client"]
     assert isinstance(descriptor, property)

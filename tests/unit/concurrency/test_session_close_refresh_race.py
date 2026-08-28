@@ -50,9 +50,9 @@ import httpx
 import pytest
 
 from notebooklm._client_metrics import ClientMetrics
-from notebooklm._runtime.auth import AuthRefreshCoordinator
 from notebooklm._runtime.lifecycle import ClientLifecycle
 from notebooklm._transport_drain import TransportDrainTracker
+from notebooklm._web.transport.auth import AuthRefreshCoordinator
 from notebooklm.auth import AuthTokens
 from notebooklm.types import ConnectionLimits
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test

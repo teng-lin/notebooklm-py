@@ -26,10 +26,6 @@ from ..._runtime.config import (
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     normalize_max_concurrent_uploads,
 )
-from ..._runtime.contracts import (
-    Kernel,
-    RpcCaller,
-)
 from ..._source.polling import SourcePoller
 from ..._types.enums import SourceStatus
 from ...exceptions import (
@@ -41,6 +37,10 @@ from ...exceptions import (
 )
 from ...rpc import RPCError, RPCMethod, get_upload_url
 from ...types import Source, SourceAddError
+from ..contracts import (
+    Kernel,
+    RpcCaller,
+)
 from ..params.sources import (
     build_register_file_source_params,
     build_rename_source_params,

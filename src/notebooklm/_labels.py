@@ -22,7 +22,7 @@ from ._label.params import (
     build_update_label_params,
 )
 from ._lookup import unwrap_or_raise
-from ._runtime.contracts import RpcCaller
+from ._web.contracts import RpcCaller
 from .exceptions import LabelError, LabelNotFoundError, UnknownRPCMethodError
 from .rpc import RPCMethod
 from .types import Label, Source

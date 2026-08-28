@@ -10,7 +10,6 @@ from urllib.parse import urlparse
 import httpx
 
 from ..._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
-from ..._runtime.contracts import RpcCaller
 from ..._sources import SourcesAPI
 from ..._types.research import SourceGuide
 from ..._url_utils import is_youtube_url
@@ -22,6 +21,7 @@ from ...types import (
     SourceStatus,
     SourceType,
 )
+from ..contracts import RpcCaller
 from ..params.sources import build_rename_source_params
 from ..rows.sources import interpret_source_freshness
 from ..settings import build_get_user_settings_params, extract_account_limits

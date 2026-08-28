@@ -105,7 +105,7 @@ def request_log(monkeypatch: pytest.MonkeyPatch) -> _RequestLog:
     async def recording_send(self: httpx.AsyncClient, request: httpx.Request, **kwargs: object):
         response = await original(self, request, **kwargs)
         # ``Kernel.open`` builds its client with ``follow_redirects=True``
-        # (``_kernel.py``), so ``send`` returns the TERMINAL response and the
+        # (``_web/transport/kernel.py``), so ``send`` returns the TERMINAL response and the
         # 3xx hops survive only in ``response.history`` — while ``request`` is
         # the FIRST request, not the last. Recording that pair alone would log a
         # bounce off the configured host as ``(configured host, 200)``, leaving

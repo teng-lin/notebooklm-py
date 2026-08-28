@@ -40,8 +40,8 @@ from notebooklm._auth import (
 )
 from notebooklm._auth.storage_lock import LockState, StorageLockManager
 from notebooklm._auth.tokens import AuthTokens
-from notebooklm._cookie_persistence import CookiePersistence
 from notebooklm._runtime import lifecycle
+from notebooklm._web.transport.cookie_persistence import CookiePersistence
 
 pytestmark = pytest.mark.repo_lint
 
@@ -61,7 +61,9 @@ _LEGACY_RESULT_NAMES = frozenset(
     }
 )
 _EXPECTED_LEGACY_RESULT_DEPENDENCIES = {
-    "CookieSaveResult": frozenset({"_auth/storage.py", "_cookie_persistence.py", "auth.py"}),
+    "CookieSaveResult": frozenset(
+        {"_auth/storage.py", "_web/transport/cookie_persistence.py", "auth.py"}
+    ),
     "LoginWriteOutcome": frozenset({"_auth/storage.py", "_auth/storage_writer.py", "auth.py"}),
     "LoginWriteStatus": frozenset({"_auth/storage.py", "_auth/storage_writer.py"}),
     "WriteOutcome": frozenset({"_auth/storage.py", "_auth/storage_writer.py"}),
@@ -1081,8 +1083,8 @@ def test_facade_identities_and_explicit_cookie_save_adapter() -> None:
         is account.repair_account_metadata_from_playwright_storage
     )
     assert auth.validate_with_recovery is psidts_recovery.validate_with_recovery
-    from notebooklm import _cookie_persistence as persistence_module
     from notebooklm import _runtime
+    from notebooklm._web.transport import cookie_persistence as persistence_module
 
     assert not hasattr(lifecycle, "_default_cookie_saver")
     assert not hasattr(persistence_module, "_default_cookie_saver")
@@ -1131,11 +1133,11 @@ EXPECTED_DIRECT_CALLERS = {
     "AuthTokens": [
         "src/notebooklm/__init__.py",
         "src/notebooklm/_client_assembly.py",
-        "src/notebooklm/_cookie_persistence.py",
-        "src/notebooklm/_kernel.py",
-        "src/notebooklm/_runtime/auth.py",
         "src/notebooklm/_runtime/init.py",
         "src/notebooklm/_runtime/lifecycle.py",
+        "src/notebooklm/_web/transport/auth.py",
+        "src/notebooklm/_web/transport/cookie_persistence.py",
+        "src/notebooklm/_web/transport/kernel.py",
         "src/notebooklm/cli/auth_runtime.py",
         "src/notebooklm/cli/helpers.py",
         "src/notebooklm/cli/language_cmd.py",
@@ -1145,7 +1147,7 @@ EXPECTED_DIRECT_CALLERS = {
         "src/notebooklm/_app/master_token.py",
         "src/notebooklm/cli/session_cmd.py",
     ],
-    "build_cookie_jar": ["src/notebooklm/_kernel.py"],
+    "build_cookie_jar": ["src/notebooklm/_web/transport/kernel.py"],
     "build_httpx_cookies_from_storage": ["src/notebooklm/cli/auth_runtime.py"],
     "cookie_names_from_storage": [
         "src/notebooklm/_app/doctor.py",

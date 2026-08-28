@@ -1,6 +1,6 @@
 """Integration tests for the authed-post middleware chain.
 
-:func:`notebooklm._middleware.core.build_chain` is wired by
+:func:`notebooklm._web.transport.middleware.core.build_chain` is wired by
 :func:`compose_client_internals` against the chain leaf on
 :class:`MiddlewareChainHost`
 (:meth:`MiddlewareChainHost._authed_post_chain_terminal`), which
@@ -32,14 +32,14 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
-from notebooklm._middleware.core import (
+from notebooklm._web.transport.errors import TransportServerError
+from notebooklm._web.transport.middleware.core import (
     Middleware,
     NextCall,
     RpcRequest,
     RpcResponse,
     build_chain,
 )
-from notebooklm._transport_errors import TransportServerError
 from notebooklm.client import NotebookLMClient
 from tests._helpers.client_factory import build_client_shell_for_tests
 
@@ -294,13 +294,13 @@ async def test_chain_seeded_with_final_adr_009_ordering() -> None:
     The list is exposed as ``self._middlewares`` so the cleanup audit can
     verify ordering by inspecting the production attribute directly.
     """
-    from notebooklm._middleware.auth_refresh import AuthRefreshMiddleware
-    from notebooklm._middleware.drain import DrainMiddleware
-    from notebooklm._middleware.error_injection import ErrorInjectionMiddleware
-    from notebooklm._middleware.metrics import MetricsMiddleware
-    from notebooklm._middleware.retry import RetryMiddleware
-    from notebooklm._middleware.semaphore import SemaphoreMiddleware
-    from notebooklm._middleware.tracing import TracingMiddleware
+    from notebooklm._web.transport.middleware.auth_refresh import AuthRefreshMiddleware
+    from notebooklm._web.transport.middleware.drain import DrainMiddleware
+    from notebooklm._web.transport.middleware.error_injection import ErrorInjectionMiddleware
+    from notebooklm._web.transport.middleware.metrics import MetricsMiddleware
+    from notebooklm._web.transport.middleware.retry import RetryMiddleware
+    from notebooklm._web.transport.middleware.semaphore import SemaphoreMiddleware
+    from notebooklm._web.transport.middleware.tracing import TracingMiddleware
 
     core = _make_core()
     assert len(core._composed.middlewares) == 7
@@ -448,7 +448,7 @@ def test_perform_authed_post_signature_unchanged() -> None:
     """
     import inspect
 
-    from notebooklm._runtime.transport import RuntimeTransport
+    from notebooklm._web.transport.runtime import RuntimeTransport
 
     sig = inspect.signature(RuntimeTransport.perform_authed_post)
     params = sig.parameters

@@ -92,6 +92,8 @@ ALLOWED_WEB_IMPORTERS = frozenset(
         "notebooklm._artifact",
         "notebooklm._source",
         "notebooklm._chat",
+        "notebooklm._collections",
+        "notebooklm._labels",
         "notebooklm._research",
         "notebooklm.research",
     }

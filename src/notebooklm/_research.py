@@ -33,7 +33,6 @@ from ._runtime.config import (
     DEFAULT_TIMEOUT,
     MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT,
 )
-from ._runtime.contracts import RpcCaller
 from ._types.research import (
     RESEARCH_SOURCE_TYPE_DRIVE,
     RESEARCH_SOURCE_TYPE_WEB,
@@ -43,6 +42,7 @@ from ._types.research import (
     ResearchStatus,
     ResearchTask,
 )
+from ._web.contracts import RpcCaller
 from ._web.notebooks import create_default_source_lister
 from ._web.rows.research import ImportedSourceRow, ResearchStartRow, unwrap_import_rows
 from ._web.rows.research_task import parse_research_task_models

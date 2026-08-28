@@ -1,4 +1,4 @@
-"""Transport-level exceptions and error mapping for the POST pipeline."""
+"""Transport-level exceptions and error mapping for the web POST pipeline."""
 
 from __future__ import annotations
 

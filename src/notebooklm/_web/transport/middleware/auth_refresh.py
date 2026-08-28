@@ -46,7 +46,7 @@ refreshes, and the once-per-call contract holds because
 ``AuthRefreshMiddleware`` only retries ONCE per ``next_call`` invocation.
 
 See ``docs/adr/0009-middleware-chain.md`` for the chain contract and
-``src/notebooklm/_runtime/auth.py`` for :class:`AuthRefreshCoordinator`
+``src/notebooklm/_web/transport/auth.py`` for :class:`AuthRefreshCoordinator`
 (coalesced refresh + auth-snapshot lock).
 """
 
@@ -58,11 +58,11 @@ from typing import TYPE_CHECKING, cast
 
 import httpx
 
-from .._auth_refresh_retry import RefreshBudget, refresh_and_count
-from .._request_types import AuthSnapshot, BuildRequest
-from .._runtime.config import CORE_LOGGER_NAME
-from .._runtime.helpers import resolve_sleep
-from .._transport_errors import TransportAuthExpired
+from ...._runtime.config import CORE_LOGGER_NAME
+from ...._runtime.helpers import resolve_sleep
+from ..auth_refresh_retry import RefreshBudget, refresh_and_count
+from ..errors import TransportAuthExpired
+from ..request_types import AuthSnapshot, BuildRequest
 from .context import (
     RPC_CONTEXT_AUTH_REFRESHED,
     RPC_CONTEXT_AUTH_SNAPSHOT,
@@ -75,14 +75,14 @@ from .context import (
 from .core import NextCall, RpcRequest, RpcResponse, materialize_rpc_request
 
 if TYPE_CHECKING:
-    from .._client_metrics import ClientMetrics
-    from .._deadline import RuntimeDeadline
+    from ...._client_metrics import ClientMetrics
+    from ...._deadline import RuntimeDeadline
 
 
 class AuthRefreshMiddleware:
     """Chain middleware that retries authed POSTs once after refreshing tokens.
 
-    Conforms to :class:`notebooklm._middleware.core.Middleware` — ``__call__``
+    Conforms to :class:`notebooklm._web.transport.middleware.core.Middleware` — ``__call__``
     matches the Protocol so instances are assignable into a
     ``Sequence[Middleware]``.
 
@@ -172,7 +172,7 @@ class AuthRefreshMiddleware:
         "one refresh max per logical call" contract.
 
         The guard reads a shared
-        :class:`notebooklm._auth_refresh_retry.RefreshBudget` from
+        :class:`notebooklm._web.transport.auth_refresh_retry.RefreshBudget` from
         ``request.context[RPC_CONTEXT_REFRESH_BUDGET]`` when present — the
         executor seeds one per logical ``rpc_call`` so this HTTP-status layer
         and the decoded-RPC layer in :class:`RpcExecutor` share ONE refresh
@@ -325,7 +325,7 @@ class AuthRefreshMiddleware:
         - ``RPC_CONTEXT_AUTH_SNAPSHOT`` is updated below to the freshly
           captured snapshot. Because :func:`materialize_rpc_request`
           retains the inbound ``context`` dict by reference (see
-          :func:`notebooklm._middleware.core.materialize_rpc_request`), the
+          :func:`notebooklm._web.transport.middleware.core.materialize_rpc_request`), the
           returned ``retry_request`` and the original ``request`` share
           that same context dict and therefore see the same updated
           snapshot. This mutation is what lets the terminal freshness

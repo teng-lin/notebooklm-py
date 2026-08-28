@@ -17,7 +17,6 @@ from ..._idempotency import (
 from ..._idempotency import (
     mark_unconfirmed as _unconfirmed,
 )
-from ..._runtime.contracts import RpcCaller
 from ...exceptions import (
     AuthError,
     NetworkError,
@@ -29,6 +28,7 @@ from ...exceptions import (
 )
 from ...rpc import RPCError, RPCMethod
 from ...types import Source
+from ..contracts import RpcCaller
 from ..params.sources import build_template_block
 
 ListSources = Callable[[str], Awaitable[list[Source]]]

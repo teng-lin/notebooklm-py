@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from .._artifacts import ArtifactsAPI
     from .._notebooks import NotebooksAPI
     from .._notes import NotesAPI
-    from .._runtime.contracts import RpcCaller
+    from .contracts import RpcCaller
 
 
 __all__ = ["NoteBackedMindMapService", "WebMindMapsAPI"]

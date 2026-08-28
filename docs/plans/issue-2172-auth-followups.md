@@ -46,7 +46,7 @@ favor of ADR-0032 and link the v1 successor before closing the issue.
 | Finding | Current evidence | Planning consequence |
 |---|---|---|
 | ADR-0032 rejects the issue's literal Arc 1 destination | The accepted ADR defines `CookieJar` as an ordered sequence, “never a Mapping,” and rejects collapsing `cookies`/`cookie_jar` | Implement A0 only; the proposed A1/A2 field/container changes are not work items |
-| `CookieJar` already has row-preserving sequence semantics | Production code tuple-copies and iterates it in `_cookie_persistence.py`, `tokens.py`, `recovery.py`, `cookie_merge.py`, and `profile_store.py`; tests pin `next(iter(jar))` and duplicate rows | Preserve iteration and `len()` semantics; do not introduce key iteration or unique-name counts |
+| `CookieJar` already has row-preserving sequence semantics | Production code tuple-copies and iterates it in `_web/transport/cookie_persistence.py`, `tokens.py`, `recovery.py`, `cookie_merge.py`, and `profile_store.py`; tests pin `next(iter(jar))` and duplicate rows | Preserve iteration and `len()` semantics; do not introduce key iteration or unique-name counts |
 | Flat projection is lossy and operation-specific | `flatten_cookie_map()` uses domain priority and first-wins within a tied tier, while the issue proposed last-wins across domains | Keep flat projections compatibility-only and prohibit their use in transport or persistence paths |
 | ADR-0032's reader evidence is stale | `_auth/account_email.py` reads `auth.cookie_jar` as a closed-client fallback, and ADR-0016 preserves one mutable `AuthTokens` identity | A0.1 must refresh the audit and resolve the fallback; the v1 successor must own the broader identity design |
 | Arc 2's normal typed path is already behaviorally present | `ClientLifecycle.save_cookies()` selects `CookiePersistence._save_canonical()` when the default storage symbol is untouched and uses the adapter only for a patched or injected saver | Treat the typed path as the baseline; remove only the transitional module-identity fallback |
@@ -80,7 +80,7 @@ cookie shadows.
 - Repoint post-open first-party cookie reads to the kernel-owned `httpx.Cookies`. Explicitly resolve
   `_auth/account_email.py`'s closed-client fallback and test it; do not delete the public shadow while
   that fallback still depends on its final live generation.
-- Label public-shadow assignments in `_runtime/auth.py` compatibility-only. Prove kernel and
+- Label public-shadow assignments in `_web/transport/auth.py` compatibility-only. Prove kernel and
   persistence behavior never reads them to make routing or save decisions.
 - Reconcile ADR-0032's stale “no post-open reader” statement with ADR-0016's Auth Instance Invariant.
   Document which mutable responsibilities remain for the v1 successor.
@@ -91,8 +91,8 @@ cookie shadows.
 
 - `src/notebooklm/_auth/account_email.py`
 - `src/notebooklm/_auth/tokens.py`
-- `src/notebooklm/_kernel.py`
-- `src/notebooklm/_runtime/auth.py`
+- `src/notebooklm/_web/transport/kernel.py`
+- `src/notebooklm/_web/transport/auth.py`
 - `tests/unit/test_client_account_email.py`
 - `tests/unit/test_runtime_auth.py`
 - `tests/_guardrails/test_authtokens_jar_sync.py`
@@ -189,7 +189,7 @@ a detached generation snapshot to `AuthTokens`.
   - Remove the negative global patch. Prove “in-memory recovery does not save” through observable
     state or a narrow injected collaborator at the recovery boundary; do not patch `ProfileStore` at
     class level.
-- Keep `tests/unit/test_cookie_persistence.py`'s defensive-copy, `asyncio.to_thread`, and ordering
+- Keep `tests/unit/test_web/transport/cookie_persistence.py`'s defensive-copy, `asyncio.to_thread`, and ordering
   coverage as the behavioral oracle for explicit savers.
 - Reuse `tests/_helpers/client_factory.py` for client-level injection. Add a small recording fake in
   `tests/_fixtures/` only if repeated call/result behavior justifies it; do not hide the same module
@@ -241,7 +241,7 @@ attribute.
 ### Changes
 
 - Delete `_CANONICAL_COOKIE_SAVER` and `_canonical_cookie_saver_is_current()` from
-  `_cookie_persistence.py`.
+  `_web/transport/cookie_persistence.py`.
 - Delete `_default_cookie_saver` and the `_uses_default_cookie_saver` state used only to recognize a
   patched default.
 - In `ClientLifecycle.save_cookies()`:
@@ -281,7 +281,7 @@ rather than hiding that break inside seam cleanup.
   prohibited in tests.
 - Close, keepalive, and refresh use the same typed store path by default.
 - Explicit `cookie_saver=` tests continue to cover the documented override.
-- The callback adapter is the only `_cookie_persistence.py` function allowed to consume
+- The callback adapter is the only `_web/transport/cookie_persistence.py` function allowed to consume
   `CookieSaveResult`; an AST/import guard pins that exception and fails stale entries.
 - Cancellation, later-sequence-wins, accepted/CAS-rejected baseline advancement, and close waiting
   for keepalive teardown remain covered, including
@@ -418,7 +418,7 @@ the sequence-shaped `.jar` projection.
 
 ```bash
 uv run pytest tests/unit/test_runtime_lifecycle.py \
-  tests/unit/test_cookie_persistence.py \
+  tests/unit/test_web/transport/cookie_persistence.py \
   tests/unit/test_cookie_persistence_profile_store.py \
   tests/unit/test_auth_issue_2061.py \
   tests/unit/test_audit_auth_patch_sites.py \
@@ -431,7 +431,7 @@ uv run python scripts/audit_auth_patch_sites.py --module storage --list-sites
 
 ```bash
 uv run pytest tests/unit/test_runtime_lifecycle.py \
-  tests/unit/test_cookie_persistence.py \
+  tests/unit/test_web/transport/cookie_persistence.py \
   tests/unit/test_cookie_persistence_profile_store.py \
   tests/unit/test_auth_cookie_save_race.py \
   tests/unit/test_cookie_save_ordering.py \

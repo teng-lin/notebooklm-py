@@ -37,9 +37,9 @@ import pytest
 
 from notebooklm._artifact.polling import ArtifactPollingService
 from notebooklm._loop_affinity import assert_bound_loop
-from notebooklm._reqid_counter import ReqidCounter
-from notebooklm._runtime.auth import AuthRefreshCoordinator
 from notebooklm._transport_drain import TransportDrainTracker
+from notebooklm._web.transport.auth import AuthRefreshCoordinator
+from notebooklm._web.transport.reqid_counter import ReqidCounter
 
 # ---------------------------------------------------------------------------
 # Free helper — the building block.

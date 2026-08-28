@@ -22,8 +22,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._chat import ChatAPI
-from notebooklm._runtime.contracts import LoopGuard, RpcCaller
+from notebooklm._runtime.contracts import LoopGuard
 from notebooklm._web.chat import WebChatAPI
+from notebooklm._web.contracts import RpcCaller
 from notebooklm.rpc import RPCMethod
 
 

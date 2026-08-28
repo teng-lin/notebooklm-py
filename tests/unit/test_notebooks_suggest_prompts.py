@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._runtime.contracts import RpcCaller
+from notebooklm._web.contracts import RpcCaller
 from notebooklm._web.notebooks import WebNotebooksAPI
 from notebooklm._web.params.notebooks import build_prompt_suggestions_params
 from notebooklm.exceptions import ValidationError

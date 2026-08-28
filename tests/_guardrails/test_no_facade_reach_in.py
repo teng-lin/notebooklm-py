@@ -765,7 +765,7 @@ def test_notebook_metadata_has_no_concrete_lister_or_rpc_dependency() -> None:
         forbidden_modules={
             "_runtime.contracts",
             "_web.sources.listing",
-            "notebooklm._runtime.contracts",
+            "notebooklm._web.contracts",
             "notebooklm._web.sources.listing",
         },
     )

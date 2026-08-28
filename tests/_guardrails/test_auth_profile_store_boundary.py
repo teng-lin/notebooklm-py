@@ -512,7 +512,7 @@ def test_production_importers_are_exactly_approved_store_owners_and_loader() -> 
         )
     }
     assert actual == {
-        "_cookie_persistence.py",
+        "_web/transport/cookie_persistence.py",
         "_runtime/init.py",
         "account_email.py",
         "account_repair.py",
@@ -1550,10 +1550,14 @@ def test_direct_production_store_callers_are_exact_and_function_granular() -> No
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         actual.update(_store_calls(path, tree))
     assert actual == {
-        ("_cookie_persistence.py", "CookiePersistence.__init__", "ProfileStore"),
-        ("_cookie_persistence.py", "CookiePersistence._resolve_store", "ProfileStore"),
+        ("_web/transport/cookie_persistence.py", "CookiePersistence.__init__", "ProfileStore"),
         (
-            "_cookie_persistence.py",
+            "_web/transport/cookie_persistence.py",
+            "CookiePersistence._resolve_store",
+            "ProfileStore",
+        ),
+        (
+            "_web/transport/cookie_persistence.py",
             "CookiePersistence._save_canonical",
             "merge_cookie_observation",
         ),
@@ -1814,9 +1818,9 @@ def test_same_owner_later_rebinding_invalidates_deferred_store_provider() -> Non
         "        return ProfileStore(path)\n"
         "ProfileStore = object\n"
     )
-    assert _store_calls(SRC_ROOT / "_cookie_persistence.py", tree) == {
+    assert _store_calls(SRC_ROOT / "_web/transport/cookie_persistence.py", tree) == {
         (
-            "_cookie_persistence.py",
+            "_web/transport/cookie_persistence.py",
             "CookiePersistence.create",
             _UNTRUSTED_PROVIDER,
         )
@@ -1824,7 +1828,7 @@ def test_same_owner_later_rebinding_invalidates_deferred_store_provider() -> Non
 
 
 def test_arbitrary_store_sink_is_distinct_from_owned_projections_and_closure() -> None:
-    persistence_path = SRC_ROOT / "_cookie_persistence.py"
+    persistence_path = SRC_ROOT / "_web/transport/cookie_persistence.py"
     source = persistence_path.read_text(encoding="utf-8")
     marker = "                result = store.merge_cookie_observation(\n"
     assert source.count(marker) == 1
@@ -1833,7 +1837,7 @@ def test_arbitrary_store_sink_is_distinct_from_owned_projections_and_closure() -
     bitten = _store_calls(persistence_path, ast.parse(mutated))
     assert bitten - base == {
         (
-            "_cookie_persistence.py",
+            "_web/transport/cookie_persistence.py",
             "CookiePersistence._save_canonical",
             _INSTANCE_ESCAPE,
         )

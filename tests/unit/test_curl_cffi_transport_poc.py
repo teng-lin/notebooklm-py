@@ -22,11 +22,11 @@ import pytest
 pytest.importorskip("curl_cffi", reason="requires the optional [impersonate] extra")
 
 from notebooklm._curl_cffi_transport import CurlCffiAsyncClient  # noqa: E402
-from notebooklm._streaming_post import stream_post_with_size_cap  # noqa: E402
-from notebooklm._transport_errors import (  # noqa: E402
+from notebooklm._web.transport.errors import (  # noqa: E402
     TransportServerError,
     raise_mapped_post_error,
 )
+from notebooklm._web.transport.streaming_post import stream_post_with_size_cap  # noqa: E402
 
 # No module-level asyncio mark: the project runs ``asyncio_mode = "auto"`` so async
 # tests are collected automatically, and a blanket mark would wrongly tag the sync

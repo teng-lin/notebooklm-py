@@ -50,13 +50,13 @@ from .context import RPC_CONTEXT_LOG_LABEL
 from .core import NextCall, RpcRequest, RpcResponse
 
 if TYPE_CHECKING:
-    from .._transport_drain import TransportDrainTracker
+    from ...._transport_drain import TransportDrainTracker
 
 
 class DrainMiddleware:
     """Middleware that brackets the chain inner call with drain bookkeeping.
 
-    Conforms to :class:`notebooklm._middleware.core.Middleware` — the
+    Conforms to :class:`notebooklm._web.transport.middleware.core.Middleware` — the
     ``__call__`` signature matches the Protocol so mypy treats instances
     as assignable into a ``Sequence[Middleware]``.
 

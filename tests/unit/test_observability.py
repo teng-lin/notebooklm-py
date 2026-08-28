@@ -67,7 +67,7 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     # the shared authed transport itself would bypass the chain entirely
     # and silence the counters this test exists to assert. Mocking above
     # the chain would do the same.
-    from notebooklm._middleware.core import RpcResponse
+    from notebooklm._web.transport.middleware.core import RpcResponse
 
     async def fake_terminal(request: object) -> RpcResponse:
         # Read the correlation id INSIDE the chain so the assertion
@@ -81,7 +81,7 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     core._composed.chain_host._authed_post_chain_terminal = fake_terminal  # type: ignore[method-assign]
     # Rebuild the chain so it wraps the new terminal (the original chain
     # was built in the composition root against the original bound method).
-    from notebooklm._middleware.core import build_chain
+    from notebooklm._web.transport.middleware.core import build_chain
 
     core._composed.chain_host._authed_post_chain = build_chain(
         core._composed.middlewares, fake_terminal
@@ -130,7 +130,7 @@ async def test_rpc_decode_error_bumps_drift_counter(auth_tokens: AuthTokens) -> 
     core = build_client_shell_for_tests(auth_tokens, decode_response=drifting_decode)
     install_http_client_for_test(core._collaborators.kernel, AsyncMock(spec=httpx.AsyncClient))
 
-    from notebooklm._middleware.core import RpcResponse, build_chain
+    from notebooklm._web.transport.middleware.core import RpcResponse, build_chain
 
     async def fake_terminal(request: object) -> RpcResponse:
         return RpcResponse(

@@ -122,7 +122,7 @@ def test_core_build_url_uses_enterprise_base_url(monkeypatch):
 
     # ``RpcExecutor.build_url`` consumes an ``AuthSnapshot`` so direct callers
     # outside the shared transport path must build one inline.
-    from notebooklm._request_types import AuthSnapshot
+    from notebooklm._web.transport.request_types import AuthSnapshot
 
     snapshot = AuthSnapshot(
         csrf_token=core._auth.csrf_token,

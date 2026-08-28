@@ -922,14 +922,14 @@ These validations run in `NotebookLMClient.__init__` /
 Kernel owns the `httpx.AsyncClient`; `NotebookLMClient` constructs the
 runtime graph and owns the public surface. Per the
 [ADR-0010](adr/0010-session-kernel-split.md) split, `Kernel.__init__` in
-`src/notebooklm/_kernel.py` constructs the `httpx.AsyncClient` and is
+`src/notebooklm/_web/transport/kernel.py` constructs the `httpx.AsyncClient` and is
 responsible for closing it on `aclose()`. `_runtime/init.py` constructs
 the collaborator bundle, `RuntimeTransport`, middleware chain, and
 `RpcExecutor`, then binds them into `ClientComposed`. The supporting state
 (metrics, drain bookkeeping, request-id counter, transport plumbing,
 conversation cache, etc.) is split across single-responsibility runtime
-and kernel collaborator modules such as `notebooklm._rpc_executor`,
-`notebooklm._transport_drain`, and `notebooklm._transport_errors`. The
+and kernel collaborator modules such as `notebooklm._web.transport.executor`,
+`notebooklm._transport_drain`, and `notebooklm._web.transport.errors`. The
 split is internal — module-level constants and helpers live in canonical
 seam modules (`_runtime/config.py`, `_runtime/helpers.py`, `_error_injection`,
 `_request_types`, `_transport_errors`, `_streaming_post`) and are imported
@@ -941,11 +941,11 @@ compatibility shim was removed in v0.5.0.
 | `_client_composed` | `ClientComposed`: bound runtime holder for transport, executor, middleware chain metadata, and the collaborator bundle. | The composition root binds this once; public methods read the bound collaborators from the client. |
 | `_kernel` | Concrete `Kernel` transport core; owns the `httpx.AsyncClient` (constructed in `Kernel.__init__`, closed in `Kernel.aclose()`) and the cookie jar. | Pure transport surface (see `Kernel` Protocol in `_runtime/contracts.py`). |
 | `_runtime/init.py` | Client composition root helpers: constructor validation, collaborator construction, `RuntimeTransport`, middleware chain, and `RpcExecutor` wiring. | `NotebookLMClient` calls this during construction and stores the result directly. |
-| `_runtime/transport.py` | Authenticated transport leg used by `RpcExecutor` and the middleware chain terminal. | Routes through `Kernel.post` and centralizes request-envelope materialization. |
+| `_web/transport/runtime.py` | Authenticated transport leg used by `RpcExecutor` and the middleware chain terminal. | Routes through `Kernel.post` and centralizes request-envelope materialization. |
 | `_runtime/config.py` | Module-level constants: `DEFAULT_TIMEOUT`, `DEFAULT_CHAT_TIMEOUT`, `DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT`/`_PER_SOURCE_TIMEOUT`/`_MAX_TIMEOUT`, `DEFAULT_KEEPALIVE_MIN_INTERVAL`, `DEFAULT_MAX_CONCURRENT_RPCS`, `DEFAULT_MAX_CONCURRENT_UPLOADS`, `CORE_LOGGER_NAME`, `normalize_max_concurrent_uploads`. | Pure constants; importable without side effects. |
 | `_runtime/helpers.py` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval`. | Cross-seam pure helpers; behaviour-bearing (and therefore unit-tested). |
 | `_error_injection` | `ERROR_INJECT_ENV_VAR`, `_get_error_injection_mode`, `_refuse_synthetic_error_outside_test_context`. | Env-var resolver + startup guard for the synthetic-error harness. |
-| `_runtime/auth.py` | `AuthRefreshCoordinator`: refresh-task lifecycle, refresh lock, `AuthSnapshot` rotation. | Lazy `asyncio.Lock` construction; never instantiated outside a running loop. |
+| `_web/transport/auth.py` | `AuthRefreshCoordinator`: refresh-task lifecycle, refresh lock, `AuthSnapshot` rotation. | Lazy `asyncio.Lock` construction; never instantiated outside a running loop. |
 | `_conversation_cache` | Per-instance true-LRU `_conversation_cache` for `ChatAPI` continuity; bounds the conversation count and the turns retained per conversation. | Pure in-process state; not shared across client instances. |
 | `_cookie_persistence` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. | Exposes a `SaveCookiesToStorage` Protocol host. |
 | `_transport_drain` | `TransportDrainTracker`: in-flight transport counters, `_TransportOperationToken`, lazy `asyncio.Condition` powering `client.drain(...)`. | Construction is event-loop-agnostic; the `Condition` is allocated on first use. |

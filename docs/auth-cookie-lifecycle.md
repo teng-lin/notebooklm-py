@@ -1166,7 +1166,7 @@ reports still make sense:
 - **Stale-in-memory clobbers fresh-disk ("few-hours" pattern).** A `keepalive=None`
   process could write its stale in-memory `*PSIDTS` over a fresher value a sibling
   rotated. Resolved by open-time snapshot + write-only-deltas with value-CAS guards
-  (`_cookie_persistence.py`), on top of the cross-process flock
+  (`_web/transport/cookie_persistence.py`), on top of the cross-process flock
   ([#344](https://github.com/teng-lin/notebooklm-py/pull/344) +
   [#361](https://github.com/teng-lin/notebooklm-py/pull/361)). Still, prefer
   `keepalive=N` or a single cron-driven rotator.
@@ -1339,7 +1339,7 @@ gate their writes correctly.
   retained the public legacy saver. B2 retired that identity fallback: only explicit overrides now
   initialize retryable per-key adapter snapshots.
   `ClientLifecycle` owns the v0.x `AuthTokens.cookie_snapshot` mirror after open and accepted saves;
-  `_from_store` retains no `AuthTokens`. Measured owners are 457 lines in `_cookie_persistence.py`,
+  `_from_store` retains no `AuthTokens`. Measured owners are 457 lines in `_web/transport/cookie_persistence.py`,
   618 in `_runtime/init.py`, 628 in `_runtime/lifecycle.py`, and 992 in `client.py`.
 
 - **2026-08-09 (typed stored-auth loader and paired baseline)** — `_auth/tokens.py` now owns the

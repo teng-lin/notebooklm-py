@@ -5,8 +5,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-import notebooklm._kernel as kernel_module
-from notebooklm._kernel import Kernel
+import notebooklm._web.transport.kernel as kernel_module
+from notebooklm._web.transport.kernel import Kernel
 from notebooklm.auth import AuthTokens
 from notebooklm.types import ConnectionLimits
 

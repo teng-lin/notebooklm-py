@@ -14,7 +14,7 @@ import inspect
 
 import pytest
 
-from notebooklm._reqid_counter import DEFAULT_BASELINE, DEFAULT_STEP, ReqidCounter
+from notebooklm._web.transport.reqid_counter import DEFAULT_BASELINE, DEFAULT_STEP, ReqidCounter
 
 # ---------------------------------------------------------------------------
 # Construction / sync accessors

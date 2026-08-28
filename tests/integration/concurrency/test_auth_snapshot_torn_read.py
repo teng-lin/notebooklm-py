@@ -12,8 +12,8 @@ mutation prologue, and a URL builder that read
 CSRF and the URL's ``f.sid`` from different generations on the wire.
 
 The fix — which is what the current code implements (see
-``src/notebooklm/_runtime/auth.py::AuthRefreshCoordinator.snapshot`` and
-``RpcExecutor.build_url`` in ``src/notebooklm/_rpc_executor.py``, the
+``src/notebooklm/_web/transport/auth.py::AuthRefreshCoordinator.snapshot`` and
+``RpcExecutor.build_url`` in ``src/notebooklm/_web/transport/executor.py``, the
 canonical homes since PR #4b inlined the Session-level
 ``_snapshot`` / ``_build_url`` thin wrappers) — introduces a dedicated
 ``_auth_snapshot_lock`` that:

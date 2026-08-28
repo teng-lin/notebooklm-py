@@ -6,8 +6,7 @@ references keep resolving; importers may also reach submodules directly
 (``from .._runtime.config import DEFAULT_TIMEOUT``).
 """
 
-from . import auth, config, contracts, helpers, init, lifecycle, transport
-from .auth import AuthRefreshCoordinator
+from . import config, contracts, helpers, init, lifecycle
 from .config import (
     AUTO_READ_TIMEOUT,
     CORE_LOGGER_NAME,
@@ -28,7 +27,7 @@ from .config import (
     resolve_chat_read_timeout,
     validate_read_timeout_kwarg,
 )
-from .contracts import Kernel, LoopGuard, RpcCaller
+from .contracts import LoopGuard
 from .helpers import (
     AUTH_ERROR_PATTERNS,
     _resolve_keepalive_interval,
@@ -52,17 +51,13 @@ from .lifecycle import (
     CookieSaver,
     _default_cookie_rotator,
 )
-from .transport import RuntimeTransport
 
 __all__ = [
-    "auth",
     "config",
     "contracts",
     "helpers",
     "init",
     "lifecycle",
-    "transport",
-    "AuthRefreshCoordinator",
     "AUTO_READ_TIMEOUT",
     "CORE_LOGGER_NAME",
     "DEFAULT_CHAT_RESPONSE_MAX_BYTES",
@@ -81,9 +76,7 @@ __all__ = [
     "normalize_max_concurrent_uploads",
     "resolve_chat_read_timeout",
     "validate_read_timeout_kwarg",
-    "Kernel",
     "LoopGuard",
-    "RpcCaller",
     "AUTH_ERROR_PATTERNS",
     "_resolve_keepalive_interval",
     "is_auth_error",
@@ -101,5 +94,4 @@ __all__ = [
     "CookieRotator",
     "CookieSaver",
     "_default_cookie_rotator",
-    "RuntimeTransport",
 ]

@@ -1,4 +1,4 @@
-"""Composes the ADR-0009 middleware chain.
+"""Composes the ADR-0009 web middleware chain.
 
 The chain wraps ``Kernel.post`` through
 ``MiddlewareChainHost._authed_post_chain_terminal`` (the shared seam

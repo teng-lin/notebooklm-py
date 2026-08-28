@@ -32,9 +32,9 @@ from typing import Any
 import httpx
 import pytest
 
-from notebooklm._request_types import AuthSnapshot
-from notebooklm._transport_errors import TransportRateLimited
 from notebooklm._web.params.chat_stream import build_streaming_chat_request
+from notebooklm._web.transport.errors import TransportRateLimited
+from notebooklm._web.transport.request_types import AuthSnapshot
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import (
     ClientError,

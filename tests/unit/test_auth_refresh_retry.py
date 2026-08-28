@@ -1,6 +1,6 @@
 """Unit tests for the shared auth refresh-and-retry core (issue #1205).
 
-Pins the contract documented in ``src/notebooklm/_auth_refresh_retry.py``:
+Pins the contract documented in ``src/notebooklm/_web/transport/auth_refresh_retry.py``:
 
 - :class:`RefreshBudget` is a single-consume once-per-logical-call token.
 - :func:`refresh_and_count` owns the common refresh body shared by the
@@ -15,9 +15,9 @@ import logging
 
 import pytest
 
-from notebooklm._auth_refresh_retry import RefreshBudget, refresh_and_count
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._deadline import RuntimeDeadline
+from notebooklm._web.transport.auth_refresh_retry import RefreshBudget, refresh_and_count
 
 # ---------------------------------------------------------------------------
 # RefreshBudget

@@ -15,11 +15,11 @@ internal surface listed in ``docs/refactor-history.md``.
 from __future__ import annotations
 
 import notebooklm._conversation_cache as conversation_cache_module
-import notebooklm._cookie_persistence as cookie_persistence_module
-import notebooklm._request_types as request_types_module
-import notebooklm._rpc_executor as rpc_executor_module
-import notebooklm._streaming_post as streaming_post_module
-import notebooklm._transport_errors as transport_errors_module
+import notebooklm._web.transport.cookie_persistence as cookie_persistence_module
+import notebooklm._web.transport.errors as transport_errors_module
+import notebooklm._web.transport.executor as rpc_executor_module
+import notebooklm._web.transport.request_types as request_types_module
+import notebooklm._web.transport.streaming_post as streaming_post_module
 
 EXPECTED_REQUEST_TYPES_ALL: list[str] = [
     "AuthSnapshot",
@@ -77,7 +77,7 @@ def test_request_types_all_pinned() -> None:
     _check_module_all(
         request_types_module,
         EXPECTED_REQUEST_TYPES_ALL,
-        "notebooklm._request_types",
+        "notebooklm._web.transport.request_types",
     )
 
 
@@ -85,7 +85,7 @@ def test_streaming_post_all_pinned() -> None:
     _check_module_all(
         streaming_post_module,
         EXPECTED_STREAMING_POST_ALL,
-        "notebooklm._streaming_post",
+        "notebooklm._web.transport.streaming_post",
     )
 
 
@@ -93,7 +93,7 @@ def test_transport_errors_all_pinned() -> None:
     _check_module_all(
         transport_errors_module,
         EXPECTED_TRANSPORT_ERRORS_ALL,
-        "notebooklm._transport_errors",
+        "notebooklm._web.transport.errors",
     )
 
 
@@ -101,7 +101,7 @@ def test_rpc_executor_all_pinned() -> None:
     _check_module_all(
         rpc_executor_module,
         EXPECTED_RPC_EXECUTOR_ALL,
-        "notebooklm._rpc_executor",
+        "notebooklm._web.transport.executor",
     )
 
 
@@ -117,5 +117,5 @@ def test_cookie_persistence_all_pinned() -> None:
     _check_module_all(
         cookie_persistence_module,
         EXPECTED_COOKIE_PERSISTENCE_ALL,
-        "notebooklm._cookie_persistence",
+        "notebooklm._web.transport.cookie_persistence",
     )

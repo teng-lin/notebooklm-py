@@ -19,7 +19,6 @@ from urllib.parse import SplitResult, parse_qsl, urlsplit
 import httpx
 
 from ..._env import PERSONAL_APP_HOSTS
-from ..._transport_errors import parse_retry_after
 from ..._types.sources import _HTML_FILE_EXTENSIONS
 from ...exceptions import (
     AuthError,
@@ -29,6 +28,7 @@ from ...exceptions import (
     ValidationError,
 )
 from ...rpc import get_upload_url
+from ..transport.errors import parse_retry_after
 
 #: The two HTTP boundaries after the source registration RPC has succeeded.
 #: Internal: surfaced to callers only as the duck-typed ``stage`` attribute

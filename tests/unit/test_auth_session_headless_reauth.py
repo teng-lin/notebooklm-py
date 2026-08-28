@@ -30,7 +30,7 @@ import pytest
 from notebooklm._auth.cookie_types import CookieJar
 from notebooklm._auth.headless_reauth import HeadlessReauthResult, HeadlessReauthStatus
 from notebooklm._auth.session import refresh_auth_session
-from notebooklm._runtime.auth import AuthRefreshCoordinator
+from notebooklm._web.transport.auth import AuthRefreshCoordinator
 from notebooklm.auth import AuthTokens
 
 REFRESH_HTML = '"SNlM0e":"new_csrf_token_123" "FdrFJe":"new_session_id_456"'

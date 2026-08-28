@@ -77,7 +77,7 @@ satisfier of every Protocol. This produces four observable consequences:
 
 4. **`RpcOwner` Protocol carries underscore-prefixed `Session` internals.**
    `RpcExecutor` declares an `RpcOwner` dependency
-   ([`_rpc_executor.py:59-78`](../../src/notebooklm/_rpc_executor.py)) listing
+   ([`executor.py`](../../src/notebooklm/_web/transport/executor.py)) listing
    `_kernel`, `_perform_authed_post`, `_await_refresh`, `_increment_metrics`.
    This is not "narrow contract"; it is "private surface of `Session`, structurally
    typed". The leakage persists because `RpcExecutor` receives a `Session`-shaped
@@ -100,7 +100,7 @@ implementation rules change how those interfaces are satisfied at runtime.
 
 | Protocol                                                             | Satisfier (post-migration)                                                                | Migration prerequisite                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RpcCaller`                                                          | `RpcExecutor` directly                                                                    | none — already structurally satisfies (TYPE_CHECKING assertion at [`_rpc_executor.py:463`](../../src/notebooklm/_rpc_executor.py))                                                                                                                                                                                                                                                                                                                               |
+| `RpcCaller`                                                          | `RpcExecutor` directly                                                                    | none — already structurally satisfies (TYPE_CHECKING assertion in [`executor.py`](../../src/notebooklm/_web/transport/executor.py))                                                                                                                                                                                                                                                                                                                               |
 | `LoopGuard`                                                          | `ClientLifecycle` directly                                                                | **push down `assert_bound_loop()`** — currently lives on `Session.assert_bound_loop` (`_session.py:486`), which calls `_loop_affinity.assert_bound_loop(self.bound_loop)`. `ClientLifecycle` already owns `get_bound_loop` (`_session_lifecycle.py:271`); the push-down adds a trivial `assert_bound_loop()` method that calls the free function with `self.get_bound_loop()`. |
 | `OperationScopeProvider`                                             | `TransportDrainTracker` directly                                                          | **push down `operation_scope(label)`** — currently lives on `Session.operation_scope` (`_session.py:495`) as an async context manager wrapping `begin_transport_post` / `finish_transport_post` (both already on `TransportDrainTracker` at [`_transport_drain.py:139,196`](../../src/notebooklm/_transport_drain.py)). The push-down moves the contextmanager wrapper to the tracker.                                       |
 | `DrainHookRegistration` (feature-local in `_artifacts.py`)           | `TransportDrainTracker` directly                                                          | **push down `register_drain_hook(name, hook)` + the underlying `_drain_hooks` storage** — currently lives on `Session.register_drain_hook` (`_session.py:421`). The push-down moves both the method and the storage onto the tracker.                                                                                                                                                                                        |
@@ -230,7 +230,7 @@ After migration, `Session` owns:
   `_authed_post_chain`, `_rate_limit_max_retries`,
   `_server_error_max_retries`, `_refresh_retry_delay` — moved off `Session`
   onto `MiddlewareChainHost`
-  ([`_middleware_chain_host.py`](../../src/notebooklm/_middleware/chain_host.py))
+  ([`chain_host.py`](../../src/notebooklm/_web/transport/middleware/chain_host.py))
   in Stage B2 PR 1 (#1090). PR 2 (#1092) then split
   `wire_middleware_chain` / `build_session_transport` to take
   `chain_host: MiddlewareChainHost` directly, so the live chain reads
@@ -442,7 +442,7 @@ section of this ADR's revision history.
 Issue #1085 (deferred `MiddlewareChainHost` extraction) closed.
 
 - **#1090** introduced
-  [`_middleware_chain_host.py`](../../src/notebooklm/_middleware/chain_host.py).
+  [`chain_host.py`](../../src/notebooklm/_web/transport/middleware/chain_host.py).
   The chain's tunable storage (`_authed_post_chain_terminal`,
   `_authed_post_chain`, `_rate_limit_max_retries`,
   `_server_error_max_retries`, `_refresh_retry_delay`) moved from

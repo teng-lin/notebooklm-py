@@ -3,9 +3,9 @@
 Consolidates five per-file AST guards that previously lived inline in:
 
 - ``tests/unit/test_authed_post_pipeline.py::test_authed_post_pipeline_has_no_runtime_core_imports``
-- ``tests/unit/test_rpc_executor.py::test_rpc_executor_has_no_runtime_core_imports``
+- ``tests/unit/test_web/transport/executor.py::test_rpc_executor_has_no_runtime_core_imports``
 - ``tests/unit/test_auth_session.py::test_auth_session_has_no_runtime_client_or_core_imports``
-- ``tests/unit/test_cookie_persistence.py::test_cookie_persistence_does_not_import_client_core_at_runtime``
+- ``tests/unit/test_web/transport/cookie_persistence.py::test_cookie_persistence_does_not_import_client_core_at_runtime``
 - ``tests/unit/test_polling_registry.py::test_polling_registry_does_not_import_client_core_at_runtime``
 
 Each banned the same shape: runtime ``import notebooklm._core`` (or
@@ -37,12 +37,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # (relative source path, extra fully-qualified module names also banned).
 # ``notebooklm._core`` and its variants are always banned.
 GUARDED_MODULES: list[tuple[str, frozenset[str]]] = [
-    ("src/notebooklm/_request_types.py", frozenset()),
-    ("src/notebooklm/_streaming_post.py", frozenset()),
-    ("src/notebooklm/_transport_errors.py", frozenset()),
-    ("src/notebooklm/_rpc_executor.py", frozenset()),
+    ("src/notebooklm/_web/transport/request_types.py", frozenset()),
+    ("src/notebooklm/_web/transport/streaming_post.py", frozenset()),
+    ("src/notebooklm/_web/transport/errors.py", frozenset()),
+    ("src/notebooklm/_web/transport/executor.py", frozenset()),
     ("src/notebooklm/_auth/session.py", frozenset({"notebooklm.client", "client"})),
-    ("src/notebooklm/_cookie_persistence.py", frozenset()),
+    ("src/notebooklm/_web/transport/cookie_persistence.py", frozenset()),
     ("src/notebooklm/_polling_registry.py", frozenset()),
 ]
 

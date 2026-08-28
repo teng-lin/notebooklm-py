@@ -55,19 +55,19 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from .._logging import get_request_id
-from .._types.common import RpcTelemetryEvent
+from ...._logging import get_request_id
+from ...._types.common import RpcTelemetryEvent
 from .context import RPC_CONTEXT_RPC_METHOD
 from .core import NextCall, RpcRequest, RpcResponse
 
 if TYPE_CHECKING:
-    from .._client_metrics import ClientMetrics
+    from ...._client_metrics import ClientMetrics
 
 
 class MetricsMiddleware:
     """Middleware that increments counters and emits :class:`RpcTelemetryEvent`.
 
-    Conforms to :class:`notebooklm._middleware.core.Middleware` — the
+    Conforms to :class:`notebooklm._web.transport.middleware.core.Middleware` — the
     ``__call__`` signature matches the Protocol so mypy treats instances
     as assignable into a ``Sequence[Middleware]``.
 
@@ -115,7 +115,7 @@ class MetricsMiddleware:
                         elapsed_seconds=elapsed,
                         request_id=get_request_id(),
                         # ``__qualname__`` matches the
-                        # idiom used by ``TracingMiddleware`` (``_middleware/tracing.py``)
+                        # idiom used by ``TracingMiddleware`` (``_web/transport/middleware/tracing.py``)
                         # so nested exception classes are distinguishable
                         # in metrics + traces alike.
                         error_type=type(exc).__qualname__,

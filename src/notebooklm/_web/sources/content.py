@@ -7,12 +7,12 @@ import logging
 import reprlib
 from typing import Any, Literal
 
-from ..._runtime.contracts import RpcCaller
 from ..._types.documents import StructuredDocument
 from ..._types.research import SourceGuide
 from ..._types.sources import _disambiguate_type_code, _pdf_url_title_fallback
 from ...rpc import RPCMethod
 from ...types import SourceFulltext, SourceNotFoundError, _extract_source_url
+from ..contracts import RpcCaller
 from ..rows.documents import build_document
 from ..rows.sources import SourceFulltextRow, SourceGuideRow
 

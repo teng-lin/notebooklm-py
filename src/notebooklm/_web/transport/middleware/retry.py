@@ -48,7 +48,7 @@ Behavior:
   the same shape it always did.
 
 See ``docs/adr/0009-middleware-chain.md`` for the chain contract and
-``src/notebooklm/_transport_errors.py`` for the terminal error mapper.
+``src/notebooklm/_web/transport/errors.py`` for the terminal error mapper.
 """
 
 from __future__ import annotations
@@ -60,11 +60,11 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from .._backoff import compute_backoff_delay
-from .._deadline import Monotonic, RuntimeDeadline
-from .._runtime.config import CORE_LOGGER_NAME
-from .._runtime.helpers import resolve_sleep
-from .._transport_errors import TransportRateLimited, TransportServerError, parse_retry_after
+from ...._backoff import compute_backoff_delay
+from ...._deadline import Monotonic, RuntimeDeadline
+from ...._runtime.config import CORE_LOGGER_NAME
+from ...._runtime.helpers import resolve_sleep
+from ..errors import TransportRateLimited, TransportServerError, parse_retry_after
 from .context import (
     RPC_CONTEXT_DISABLE_INTERNAL_RETRIES,
     RPC_CONTEXT_DISABLE_READ_TIMEOUT_RETRIES,
@@ -74,7 +74,7 @@ from .context import (
 from .core import NextCall, RpcRequest, RpcResponse
 
 if TYPE_CHECKING:
-    from .._client_metrics import ClientMetrics
+    from ...._client_metrics import ClientMetrics
 
 
 # httpx failures that imply the request was already transmitted and the server
@@ -105,7 +105,7 @@ _BACKOFF_MIN_SECONDS = 0.1
 class RetryMiddleware:
     """Chain middleware that retries on HTTP 429 / 5xx / network failures.
 
-    Conforms to :class:`notebooklm._middleware.core.Middleware` —
+    Conforms to :class:`notebooklm._web.transport.middleware.core.Middleware` —
     ``__call__`` matches the Protocol so instances are assignable into a
     ``Sequence[Middleware]``.
 

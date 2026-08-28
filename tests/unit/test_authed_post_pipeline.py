@@ -50,13 +50,13 @@ import pytest
 import notebooklm._backoff as _backoff
 import notebooklm._runtime.helpers as _runtime_helpers
 from notebooklm._logging import get_request_id
-from notebooklm._middleware.core import RpcRequest, RpcResponse
-from notebooklm._request_types import AuthSnapshot
-from notebooklm._transport_errors import (
+from notebooklm._web.transport.errors import (
     TransportAuthExpired,
     TransportRateLimited,
     TransportServerError,
 )
+from notebooklm._web.transport.middleware.core import RpcRequest, RpcResponse
+from notebooklm._web.transport.request_types import AuthSnapshot
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import RPCMethod
@@ -243,7 +243,7 @@ async def test_auth_refresh_middleware_honors_injected_predicate() -> None:
     separately. Here we pin the middleware-level contract: *whatever*
     predicate is injected drives the refresh-and-retry decision.
     """
-    from notebooklm._middleware.auth_refresh import AuthRefreshMiddleware
+    from notebooklm._web.transport.middleware.auth_refresh import AuthRefreshMiddleware
 
     refresh_calls: list[bool] = []
 
@@ -1293,7 +1293,7 @@ async def test_streamed_response_size_cap(monkeypatch):
     """
     from contextlib import asynccontextmanager
 
-    from notebooklm._streaming_post import stream_post_with_size_cap
+    from notebooklm._web.transport.streaming_post import stream_post_with_size_cap
     from notebooklm.exceptions import RPCResponseTooLargeError
 
     cap = 1024  # 1 KiB cap so the test stays fast and small.
@@ -1349,7 +1349,7 @@ async def test_streaming_default_size_cap_reads_current_constant(monkeypatch):
     """Omitted ``max_bytes`` resolves the module constant at call time."""
     from contextlib import asynccontextmanager
 
-    import notebooklm._streaming_post as _streaming_post
+    import notebooklm._web.transport.streaming_post as _streaming_post
     from notebooklm.exceptions import RPCResponseTooLargeError
 
     cap = 8
@@ -1425,7 +1425,7 @@ async def test_perform_authed_post_without_cap_uses_shared_stream_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Omitted runtime cap keeps ordinary RPCs on the shared stream default."""
-    import notebooklm._streaming_post as _streaming_post
+    import notebooklm._web.transport.streaming_post as _streaming_post
     from notebooklm.exceptions import RPCResponseTooLargeError
 
     cap = 8
@@ -1462,7 +1462,7 @@ async def test_normal_response_below_cap_works(monkeypatch):
     """A normal-sized response decodes through the streaming wrapper unchanged."""
     from contextlib import asynccontextmanager
 
-    from notebooklm._streaming_post import stream_post_with_size_cap
+    from notebooklm._web.transport.streaming_post import stream_post_with_size_cap
 
     payload = b"hello world" * 1000  # ~11 KB, well under the 50 MiB default
 
@@ -1509,7 +1509,7 @@ async def test_streaming_raise_for_status_propagates_before_size_check(monkeypat
     auth-refresh / 429 / 5xx branches see the same error they always did."""
     from contextlib import asynccontextmanager
 
-    from notebooklm._streaming_post import stream_post_with_size_cap
+    from notebooklm._web.transport.streaming_post import stream_post_with_size_cap
 
     chunk_reads = 0
 
@@ -1592,7 +1592,7 @@ async def test_streaming_strips_content_encoding_to_prevent_double_decode(monkey
         pytest.importorskip("zstandard")
     from contextlib import asynccontextmanager
 
-    from notebooklm._streaming_post import stream_post_with_size_cap
+    from notebooklm._web.transport.streaming_post import stream_post_with_size_cap
 
     # Realistic batchexecute prefix; only the bytes matter, not the framing.
     decoded_payload = b')]}\'\n\n[["wrb.fr",null,"[1]",null,null,null,"generic"]]'
@@ -1650,7 +1650,8 @@ async def test_streaming_strips_content_encoding_to_prevent_double_decode(monkey
 
 def test_transport_constants_live_in_owning_modules():
     """Transport constants live with the modules that enforce them."""
-    from notebooklm import _streaming_post, _transport_errors
+    from notebooklm._web.transport import errors as _transport_errors
+    from notebooklm._web.transport import streaming_post as _streaming_post
 
     assert _streaming_post.MAX_RPC_RESPONSE_BYTES == 50 * 1024 * 1024
     assert _transport_errors.MAX_RETRY_AFTER_SECONDS == 300

@@ -21,7 +21,7 @@ Specifically pinned here:
   constructor-injected saver override.
 * The httpx ``AsyncClient`` **always uses httpx's default transport** —
   Tier-12 PR 12.6 lifted synthetic-error injection into the chain
-  (:class:`notebooklm._middleware.error_injection.ErrorInjectionMiddleware`)
+  (:class:`notebooklm._web.transport.middleware.error_injection.ErrorInjectionMiddleware`)
   and PR 12.9 deleted the legacy ``_SyntheticErrorTransport`` class.
   The lifecycle constructs a plain transport regardless of
   ``NOTEBOOKLM_VCR_RECORD_ERRORS``.
@@ -380,7 +380,7 @@ async def test_open_uses_default_httpx_transport_by_default(
     asserts the lifecycle's transport construction directly without
     monkeypatching the now-middleware-only error-injection seam.
     """
-    from notebooklm import _error_injection
+    from notebooklm._web.transport import error_injection as _error_injection
 
     monkeypatch.setattr(_error_injection, "_get_error_injection_mode", lambda: None)
     lifecycle = _make_lifecycle()
@@ -406,7 +406,7 @@ async def test_open_uses_default_httpx_transport_when_env_var_set(
     lives in the chain (``ErrorInjectionMiddleware``); the lifecycle
     constructs a plain transport regardless of the env var.
     """
-    from notebooklm import _error_injection
+    from notebooklm._web.transport import error_injection as _error_injection
 
     monkeypatch.setattr(_error_injection, "_get_error_injection_mode", lambda: "429")
     lifecycle = _make_lifecycle()

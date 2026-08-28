@@ -1,4 +1,4 @@
-"""Request-shape types for the shared authed POST pipeline.
+"""Request-shape types for the web authed POST pipeline.
 
 This module gathers the shared request-construction types used by the
 middleware chain. It owns the request Interface that RPC, chat, auth refresh,

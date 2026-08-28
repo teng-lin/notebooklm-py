@@ -39,8 +39,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .._runtime.auth import AuthRefreshCoordinator
-    from .._runtime.transport import RuntimeTransport
+    from ..auth import AuthRefreshCoordinator
+    from ..runtime import RuntimeTransport
     from .core import NextCall, RpcRequest, RpcResponse
 
 

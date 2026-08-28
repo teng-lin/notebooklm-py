@@ -1,7 +1,7 @@
 """Unit tests for the Tier-12 middleware-chain type scaffolding.
 
-Exercises the shapes defined in ``src/notebooklm/_middleware/core.py`` and the
-public-ish aliases in ``src/notebooklm/_request_types.py``:
+Exercises the shapes defined in ``src/notebooklm/_web/transport/middleware/core.py`` and the
+public-ish aliases in ``src/notebooklm/_web/transport/request_types.py``:
 
 - ``RpcRequest`` / ``RpcResponse`` dataclass round-trip (construction,
   ``dataclasses.replace`` equivalence, frozen-mutation guard).
@@ -24,7 +24,7 @@ import dataclasses
 import httpx
 import pytest
 
-from notebooklm._middleware.core import (
+from notebooklm._web.transport.middleware.core import (
     Middleware,
     NextCall,
     RpcRequest,
@@ -32,7 +32,7 @@ from notebooklm._middleware.core import (
     build_chain,
     materialize_rpc_request,
 )
-from notebooklm._request_types import (
+from notebooklm._web.transport.request_types import (
     AuthSnapshot,
     BuildRequest,
     BuildRequestResult,
@@ -290,7 +290,7 @@ def test_build_chain_each_call_gets_independent_closures() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _request_types.py — public aliases for AuthSnapshot / BuildRequest / BuildRequestResult
+# _web/transport/request_types.py — public aliases for AuthSnapshot / BuildRequest / BuildRequestResult
 # ---------------------------------------------------------------------------
 
 
@@ -317,7 +317,7 @@ def test_auth_snapshot_round_trip() -> None:
 
 def test_auth_snapshot_export_is_same_object_as_request_types_export() -> None:
     """``AuthSnapshot`` is owned by the request-types Module."""
-    from notebooklm._request_types import AuthSnapshot as RequestTypesAuthSnapshot
+    from notebooklm._web.transport.request_types import AuthSnapshot as RequestTypesAuthSnapshot
 
     assert AuthSnapshot is RequestTypesAuthSnapshot
 
@@ -343,7 +343,7 @@ def test_build_request_alias_is_callable_type() -> None:
 
 def test_build_request_export_is_same_object_as_request_types_export() -> None:
     """``BuildRequest`` is owned by the request-types Module."""
-    from notebooklm._request_types import BuildRequest as RequestTypesBuildRequest
+    from notebooklm._web.transport.request_types import BuildRequest as RequestTypesBuildRequest
 
     assert BuildRequest is RequestTypesBuildRequest
 
@@ -423,7 +423,7 @@ def test_materialize_rpc_request_populates_envelope_and_preserves_context_identi
 
 def test_request_types_all_contains_only_public_names() -> None:
     """``__all__`` is the canonical public-within-package export list."""
-    from notebooklm import _request_types
+    from notebooklm._web.transport import request_types as _request_types
 
     assert "AuthSnapshot" in _request_types.__all__
     assert "BuildRequest" in _request_types.__all__
@@ -434,7 +434,7 @@ def test_request_types_all_contains_only_public_names() -> None:
 
 def test_middleware_all_contains_only_public_names() -> None:
     """``_middleware.__all__`` exports the chain contract helpers."""
-    from notebooklm import _middleware
+    from notebooklm._web.transport import middleware as _middleware
 
     assert "Middleware" in _middleware.__all__
     assert "NextCall" in _middleware.__all__

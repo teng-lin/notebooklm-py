@@ -19,10 +19,10 @@ from .refresh import try_refresh_cmd_reauth
 from .tokens import AuthTokens
 
 if TYPE_CHECKING:
-    from .._cookie_persistence import CookiePersistence
-    from .._kernel import Kernel
-    from .._runtime.auth import AuthRefreshCoordinator
     from .._runtime.lifecycle import ClientLifecycle
+    from .._web.transport.auth import AuthRefreshCoordinator
+    from .._web.transport.cookie_persistence import CookiePersistence
+    from .._web.transport.kernel import Kernel
 
 
 async def refresh_auth_session(

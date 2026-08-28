@@ -13,8 +13,8 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-import notebooklm._cookie_persistence as persistence_module
 import notebooklm._runtime.lifecycle as lifecycle_module
+import notebooklm._web.transport.cookie_persistence as persistence_module
 from notebooklm import client as client_module
 from notebooklm._auth.cookie_merge import RecoveryObservation
 from notebooklm._auth.cookie_types import Cookie, CookieJar
@@ -25,7 +25,7 @@ from notebooklm._auth.profile_store import (
 )
 from notebooklm._auth.storage import CookieSaveResult, snapshot_cookie_jar
 from notebooklm._auth.tokens import FileLoadedAuth, InlineLoadedAuth
-from notebooklm._cookie_persistence import CookiePersistence
+from notebooklm._web.transport.cookie_persistence import CookiePersistence
 from notebooklm.auth import AuthTokens
 from tests._helpers.client_factory import build_client_shell_for_tests
 

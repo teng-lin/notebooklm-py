@@ -141,7 +141,7 @@ code picks the right shape.
 
 | Name | Defined in | Protocol shape | Used by |
 |---|---|---|---|
-| `NextCall` | `_middleware/core.py` | **type alias**, not a class: `Callable[[RpcRequest], Awaitable[RpcResponse]]` | Every `Middleware.__call__` — the "call the next link" function passed into around-style middlewares |
+| `NextCall` | `_web/transport/middleware/core.py` | **type alias**, not a class: `Callable[[RpcRequest], Awaitable[RpcResponse]]` | Every `Middleware.__call__` — the "call the next link" function passed into around-style middlewares |
 | `RpcCallback` | `_web/sources/upload.py` | **Callable** Protocol: `async def __call__(method, params, ...)` | `SourceUploadPipeline.register_file_source` — RPC entrypoint passed as a **keyword argument** at call time |
 | `RpcCaller` | `_runtime/contracts.py` | **Object** Protocol: `async def rpc_call(method, params, ...)` (i.e. `obj.rpc_call(...)`) | The canonical shared capability Protocol for pure-RPC feature APIs and helper services (`NotesAPI`, `SourceLister`, `ShareManager`, etc.) |
 
@@ -177,7 +177,7 @@ lets mypy flag keyword-name typos at the call site.
   Protocol; see [`docs/architecture.md`](./architecture.md) for the protocol
   catalogue. The concrete `RpcExecutor` and `NotebookLMClient` satisfy it
   structurally.
-- New middleware? Use **`NextCall`** from `_middleware/core.py` for the chain
+- New middleware? Use **`NextCall`** from `_web/transport/middleware/core.py` for the chain
   callable — do not invent a new alias.
 - New feature that takes the RPC entrypoint as a **keyword argument** at call
   time? Define a local Protocol named **`RpcCallback`** so the keyword-typo

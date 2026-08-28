@@ -36,8 +36,8 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
-from notebooklm._middleware.core import RpcRequest, RpcResponse
-from notebooklm._request_types import AuthSnapshot
+from notebooklm._web.transport.middleware.core import RpcRequest, RpcResponse
+from notebooklm._web.transport.request_types import AuthSnapshot
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from tests._helpers.client_factory import build_client_shell_for_tests

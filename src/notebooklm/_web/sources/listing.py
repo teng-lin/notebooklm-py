@@ -7,10 +7,10 @@ import logging
 from collections.abc import Awaitable, Callable, Collection
 from typing import Any, TypeVar
 
-from ..._runtime.contracts import RpcCaller
 from ..._types.enums import SourceStatus
 from ...rpc import RPCError, RPCMethod, safe_index
 from ...types import Source, SourceType
+from ..contracts import RpcCaller
 from ..params.sources import build_template_block
 from ..rows.sources import SourceRow
 

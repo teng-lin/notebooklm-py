@@ -26,11 +26,11 @@ from typing import Any
 import pytest
 
 from notebooklm._client_composed import ClientComposed
-from notebooklm._client_seams import ClientSeams
 from notebooklm._runtime.init import (
     ClientInternals,
     compose_client_internals,
 )
+from notebooklm._web.transport.seams import ClientSeams
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from tests._helpers.client_factory import build_client_shell_for_tests

@@ -54,7 +54,7 @@ def _make_auth(
 def _install_probe_client(client: NotebookLMClient) -> httpx.AsyncClient:
     """Give the kernel a real ``httpx.AsyncClient`` (intercepted by pytest-httpx).
 
-    ``follow_redirects=True`` mirrors the production kernel client (_kernel.py) so
+    ``follow_redirects=True`` mirrors the production kernel client (_web/transport/kernel.py) so
     the login-redirect path exercises the real ``is_google_auth_redirect`` branch
     (a followed 302 lands on a 200 signin page), not just the ``status != 200`` guard.
     """

@@ -28,7 +28,7 @@ from ..rows.notes import NoteRow
 from .table import _parse_data_table
 
 if TYPE_CHECKING:
-    from ..._runtime.contracts import RpcCaller
+    from ..contracts import RpcCaller
     from ..mind_maps import NoteBackedMindMapService
     from .listing import ArtifactListingService
 

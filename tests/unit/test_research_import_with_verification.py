@@ -36,7 +36,7 @@ class _RecordingRpc:
 
     * a queued :class:`RPCTimeoutError` gets its ``timeout_seconds`` from the
       window this call was actually handed, exactly as the real executor
-      derives it (``_rpc_executor.py``). Hardcoding it would hide a defect
+      derives it (``_web/transport/executor.py``). Hardcoding it would hide a defect
       where the clamp reaches the wire but the raised error still reports the
       unclamped window;
     * ``advance`` moves the injected clock *while the call is in flight*, so a

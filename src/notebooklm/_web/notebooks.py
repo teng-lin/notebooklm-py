@@ -9,7 +9,6 @@ from .._notebook_metadata import (
     NotebookSourceLister,
 )
 from .._notebooks import NotebooksAPI
-from .._runtime.contracts import RpcCaller
 from .._types.enums import GrpcStatusCode, normalize_grpc_status
 from ..exceptions import (
     ClientError,
@@ -27,6 +26,7 @@ from ..types import (
     PromptSuggestion,
     SuggestedTopic,
 )
+from .contracts import RpcCaller
 from .params.notebooks import (
     _PROMPT_SUGGESTIONS_DEFAULT_MODE,
     build_create_notebook_params,

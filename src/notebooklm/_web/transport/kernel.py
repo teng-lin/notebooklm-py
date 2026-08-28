@@ -7,10 +7,10 @@ from typing import Any
 
 import httpx
 
-from ._request_types import PostBody
-from ._streaming_post import stream_post_with_size_cap
-from .auth import AuthTokens, build_cookie_jar
-from .types import ConnectionLimits
+from ...auth import AuthTokens, build_cookie_jar
+from ...types import ConnectionLimits
+from .request_types import PostBody
+from .streaming_post import stream_post_with_size_cap
 
 
 class Kernel:

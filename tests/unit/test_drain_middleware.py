@@ -1,6 +1,6 @@
 """Unit tests for :class:`DrainMiddleware` (Tier-12 PR 12.5).
 
-Pins the contract documented in ``src/notebooklm/_middleware/drain.py``
+Pins the contract documented in ``src/notebooklm/_web/transport/middleware/drain.py``
 and ADR-0009 §"Chain ordering":
 
 - Pass-through identity: the middleware brackets ``next_call`` but does
@@ -31,14 +31,14 @@ import asyncio
 import httpx
 import pytest
 
-from notebooklm._middleware.core import (
+from notebooklm._transport_drain import TransportDrainTracker
+from notebooklm._web.transport.middleware.core import (
     NextCall,
     RpcRequest,
     RpcResponse,
     build_chain,
 )
-from notebooklm._middleware.drain import DrainMiddleware
-from notebooklm._transport_drain import TransportDrainTracker
+from notebooklm._web.transport.middleware.drain import DrainMiddleware
 
 # The ``tests/`` package chain is complete; ``tests._fixtures.chain`` is the
 # fully-qualified import path documented in ``tests/_fixtures/__init__.py``.

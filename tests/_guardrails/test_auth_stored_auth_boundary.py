@@ -1170,7 +1170,7 @@ def test_raw_projection_and_typed_merge_callers_are_exact_and_do_not_escape() ->
     assert projection_escapes == set()
     merge_calls, merge_escapes = _member_projection(_TYPED_MERGE)
     assert merge_calls == {
-        ("_cookie_persistence.py", "CookiePersistence._save_canonical"),
+        ("_web/transport/cookie_persistence.py", "CookiePersistence._save_canonical"),
         ("psidts_recovery.py", "_attempt_rotation"),
         ("refresh.py", "_merge_domain_fetch_observation"),
         ("storage.py", "merge_cookie_delta"),

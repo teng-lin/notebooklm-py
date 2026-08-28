@@ -60,16 +60,16 @@ from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 
-from .._loop_affinity import assert_bound_loop
-from .._loop_bound import LoopBoundPrimitive
-from .._request_types import AuthSnapshot
-from ..auth import AuthTokens
-from .config import CORE_LOGGER_NAME
+from ..._loop_affinity import assert_bound_loop
+from ..._loop_bound import LoopBoundPrimitive
+from ..._runtime.config import CORE_LOGGER_NAME
+from ...auth import AuthTokens
+from .request_types import AuthSnapshot
 
 if TYPE_CHECKING:
-    from .._auth.cookie_types import CookieJar
-    from .._client_metrics import ClientMetrics
-    from .._kernel import Kernel
+    from ..._auth.cookie_types import CookieJar
+    from ..._client_metrics import ClientMetrics
+    from .kernel import Kernel
 
 # Logger name pinned via :data:`CORE_LOGGER_NAME` so log filters in
 # tests — e.g. ``caplog.at_level("DEBUG", logger=CORE_LOGGER_NAME)`` —
@@ -119,7 +119,7 @@ class AuthRefreshCoordinator(LoopBoundPrimitive):
     def has_refresh_callback(self) -> bool:
         """``True`` iff a refresh callback was wired at construction.
 
-        Used by :class:`notebooklm._middleware.auth_refresh.AuthRefreshMiddleware`
+        Used by :class:`notebooklm._web.transport.middleware.auth_refresh.AuthRefreshMiddleware`
         to gate the refresh-and-retry branch: a client constructed without
         a ``refresh_callback`` should propagate auth errors directly.
         Exposing this as a property avoids reaching into the private

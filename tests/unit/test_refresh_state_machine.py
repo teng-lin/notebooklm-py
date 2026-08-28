@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm._auth_refresh_retry import RefreshBudget
+from notebooklm._web.transport.auth_refresh_retry import RefreshBudget
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import AuthError, RPCMethod
 

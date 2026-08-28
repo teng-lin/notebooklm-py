@@ -23,16 +23,16 @@ from typing import TYPE_CHECKING
 import httpx
 
 from ..._env import get_default_bl
-from ..._transport_errors import (
+from ...exceptions import ChatError, NetworkError
+from .errors import (
     TransportAuthExpired,
     TransportRateLimited,
     TransportServerError,
 )
-from ...exceptions import ChatError, NetworkError
 
 if TYPE_CHECKING:
-    from ..._request_types import BuildRequest
-    from ..._runtime.transport import RuntimeTransport
+    from .request_types import BuildRequest
+    from .runtime import RuntimeTransport
 
 
 def _format_chat_read_timeout_message(

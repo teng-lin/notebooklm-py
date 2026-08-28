@@ -15,7 +15,7 @@ the ``Kernel.http_client.setter`` and made ``decode_response`` /
 injection seams.
 
 ``None``-default resolution for ``sleep`` is owned by
-:mod:`notebooklm._client_seams`; ``async_client_factory`` resolves directly to
+:mod:`notebooklm._web.transport.seams`; ``async_client_factory`` resolves directly to
 ``httpx.AsyncClient`` here.
 """
 
@@ -33,18 +33,19 @@ import httpx
 from .._auth.profile_store import ProfileStore
 from .._client_composed import ClientComposed
 from .._client_metrics import ClientMetrics
-from .._client_seams import ClientSeams, resolve_client_seams
-from .._cookie_persistence import CookiePersistence
-from .._error_injection import _refuse_synthetic_error_outside_test_context
-from .._kernel import Kernel
-from .._middleware.chain import MiddlewareChainBuilder
-from .._middleware.chain_host import MiddlewareChainHost
-from .._middleware.core import Middleware, NextCall, build_chain
-from .._reqid_counter import ReqidCounter
-from .._rpc_executor import RpcExecutor
 from .._transport_drain import TransportDrainTracker
+from .._web.transport.auth import AuthRefreshCoordinator
+from .._web.transport.cookie_persistence import CookiePersistence
+from .._web.transport.error_injection import _refuse_synthetic_error_outside_test_context
+from .._web.transport.executor import RpcExecutor
+from .._web.transport.kernel import Kernel
+from .._web.transport.middleware.chain import MiddlewareChainBuilder
+from .._web.transport.middleware.chain_host import MiddlewareChainHost
+from .._web.transport.middleware.core import Middleware, NextCall, build_chain
+from .._web.transport.reqid_counter import ReqidCounter
+from .._web.transport.runtime import RuntimeTransport
+from .._web.transport.seams import ClientSeams, resolve_client_seams
 from ..auth import AuthTokens
-from .auth import AuthRefreshCoordinator
 from .config import (
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
@@ -55,7 +56,6 @@ from .config import (
 )
 from .helpers import _resolve_keepalive_interval
 from .lifecycle import ClientLifecycle, CookieRotator, CookieSaver
-from .transport import RuntimeTransport
 
 if TYPE_CHECKING:
     # Runtime import of ``ConnectionLimits`` is deferred to
@@ -465,7 +465,7 @@ def wire_middleware_chain(
     """
     # ADR-0009 chain construction. PR history, leaf exception shape,
     # and ``RpcRequest.context`` contract live in
-    # ``_middleware/chain.py`` module docstring.
+    # ``_web/transport/middleware/chain.py`` module docstring.
     chain_builder = MiddlewareChainBuilder(
         drain_tracker=collaborators.drain_tracker,
         metrics=collaborators.metrics,

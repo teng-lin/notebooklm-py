@@ -8,7 +8,6 @@ from typing import Any
 
 import httpx
 
-from ..._runtime.contracts import RpcCaller
 from ..._types.enums import (
     ARTIFACT_STATUS_SUGGESTED_WIRE_NAME,
     FLASHCARDS_VARIANT,
@@ -22,6 +21,7 @@ from ...rpc import (
     RPCMethod,
 )
 from ...types import Artifact, ArtifactNotFoundError, ArtifactNotReadyError, ArtifactType
+from ..contracts import RpcCaller
 from ..rows.artifacts import ArtifactRow, unwrap_artifact_rows
 from ..rows.notes import NoteRow
 

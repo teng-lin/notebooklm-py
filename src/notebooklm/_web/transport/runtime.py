@@ -56,7 +56,8 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from .._middleware.context import (
+from .errors import raise_mapped_post_error
+from .middleware.context import (
     RPC_CONTEXT_AUTH_SNAPSHOT,
     RPC_CONTEXT_BUILD_REQUEST,
     RPC_CONTEXT_DISABLE_INTERNAL_RETRIES,
@@ -69,20 +70,19 @@ from .._middleware.context import (
     RPC_CONTEXT_RPC_METHOD,
     RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS,
 )
-from .._middleware.core import (
+from .middleware.core import (
     NextCall,
     RpcRequest,
     RpcResponse,
     materialize_rpc_request,
 )
-from .._request_types import AuthSnapshot, BuildRequest
-from .._transport_errors import raise_mapped_post_error
+from .request_types import AuthSnapshot, BuildRequest
 
 if TYPE_CHECKING:
-    from .._auth_refresh_retry import RefreshBudget
-    from .._client_metrics import ClientMetrics
-    from .._deadline import RuntimeDeadline
-    from .._kernel import Kernel
+    from ..._client_metrics import ClientMetrics
+    from ..._deadline import RuntimeDeadline
+    from .auth_refresh_retry import RefreshBudget
+    from .kernel import Kernel
 
 
 class RuntimeTransport:

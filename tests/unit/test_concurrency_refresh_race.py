@@ -70,10 +70,10 @@ import httpx
 import pytest
 
 from notebooklm._auth.cookie_types import CookieJar
-from notebooklm._middleware.auth_refresh import AuthRefreshMiddleware
-from notebooklm._rpc_executor import RpcExecutor
-from notebooklm._runtime.auth import AuthRefreshCoordinator
-from notebooklm._runtime.transport import RuntimeTransport
+from notebooklm._web.transport.auth import AuthRefreshCoordinator
+from notebooklm._web.transport.executor import RpcExecutor
+from notebooklm._web.transport.middleware.auth_refresh import AuthRefreshMiddleware
+from notebooklm._web.transport.runtime import RuntimeTransport
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test

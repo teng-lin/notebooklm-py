@@ -1,4 +1,4 @@
-"""SemaphoreMiddleware — RPC concurrency gate for the chain.
+"""SemaphoreMiddleware — web RPC concurrency gate for the chain.
 
 Per ADR-0009 §"Chain ordering", ``SemaphoreMiddleware``
 sits between ``MetricsMiddleware`` and ``RetryMiddleware``. The chain
@@ -54,7 +54,7 @@ RPC_QUEUE_WAIT_CONTEXT_KEY = RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS
 class SemaphoreMiddleware:
     """Chain middleware that holds an :class:`asyncio.Semaphore` slot.
 
-    Conforms to :class:`notebooklm._middleware.core.Middleware` — the ``__call__``
+    Conforms to :class:`notebooklm._web.transport.middleware.core.Middleware` — the ``__call__``
     signature matches the Protocol so instances are assignable into a
     ``Sequence[Middleware]``.
 

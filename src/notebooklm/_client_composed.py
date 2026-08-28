@@ -13,12 +13,12 @@ from ._runtime.config import DEFAULT_MAX_CONCURRENT_RPCS
 _T = TypeVar("_T")
 
 if TYPE_CHECKING:
-    from ._middleware.chain import MiddlewareChainBuilder
-    from ._middleware.chain_host import MiddlewareChainHost
-    from ._middleware.core import Middleware
-    from ._rpc_executor import RpcExecutor
     from ._runtime.init import RuntimeCollaborators, WiredMiddleware
-    from ._runtime.transport import RuntimeTransport
+    from ._web.transport.executor import RpcExecutor
+    from ._web.transport.middleware.chain import MiddlewareChainBuilder
+    from ._web.transport.middleware.chain_host import MiddlewareChainHost
+    from ._web.transport.middleware.core import Middleware
+    from ._web.transport.runtime import RuntimeTransport
 
 
 class ClientComposed(LoopBoundPrimitive):

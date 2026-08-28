@@ -11,8 +11,8 @@ from pytest_httpx import HTTPXMock
 from notebooklm._auth import tokens as _auth_tokens
 from notebooklm._auth.cookie_types import CookieJar
 from notebooklm._auth.profile_store import ProfileStore
-from notebooklm._cookie_persistence import ReadyBaseline
 from notebooklm._runtime.helpers import is_auth_error
+from notebooklm._web.transport.cookie_persistence import ReadyBaseline
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import AuthError, RPCError, RPCMethod
@@ -1296,7 +1296,7 @@ class TestBuildUrlAuthuser:
 
     @staticmethod
     def _snapshot_for(core):
-        from notebooklm._request_types import AuthSnapshot
+        from notebooklm._web.transport.request_types import AuthSnapshot
 
         return AuthSnapshot(
             csrf_token=core._auth.csrf_token,

@@ -2,7 +2,7 @@
 
 When ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set to ``429`` / ``5xx`` /
 ``expired_csrf`` AND
-:class:`notebooklm._middleware.error_injection.ErrorInjectionMiddleware`
+:class:`notebooklm._web.transport.middleware.error_injection.ErrorInjectionMiddleware`
 has been constructed with an injected ``builder`` callable (canonical:
 ``tests/cassette_patterns.py:build_synthetic_error_response``), the
 middleware short-circuits each chain invocation with the synthetic
@@ -11,7 +11,7 @@ response so the client's exception-mapping branches (429 →
 end-to-end.
 
 **The env var is a no-op without an injected builder.** Production code
-(``MiddlewareChainBuilder`` in ``_middleware/chain.py``) instantiates
+(``MiddlewareChainBuilder`` in ``_web/transport/middleware/chain.py``) instantiates
 ``ErrorInjectionMiddleware()`` with no builder argument, so a leaked
 ``NOTEBOOKLM_VCR_RECORD_ERRORS`` env var on a user install cannot trigger
 any synthetic substitution — the middleware passes through. Tests that
@@ -50,7 +50,7 @@ __all__ = [
 import logging
 import os
 
-from ._runtime.config import CORE_LOGGER_NAME
+from ..._runtime.config import CORE_LOGGER_NAME
 
 # Logger name pinned via :data:`CORE_LOGGER_NAME` so log filters in
 # tests — e.g. ``caplog.at_level(..., logger=CORE_LOGGER_NAME)`` — keep
@@ -72,7 +72,7 @@ def _get_error_injection_mode() -> str | None:
     Returning a non-``None`` mode does NOT by itself activate any synthetic
     substitution: the production ``ErrorInjectionMiddleware`` is
     constructed without a builder (see
-    :class:`notebooklm._middleware.error_injection.ErrorInjectionMiddleware`),
+    :class:`notebooklm._web.transport.middleware.error_injection.ErrorInjectionMiddleware`),
     which makes the middleware a pass-through regardless of this mode.
     Tests that exercise the substitution wire a builder explicitly. Issue
     #1005 closes the prior dynamic-load attack surface where a leaked env

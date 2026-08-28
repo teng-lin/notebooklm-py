@@ -11,8 +11,8 @@ from typing import Any
 
 import httpx
 
-from ._request_types import PostBody
-from .exceptions import RPCResponseTooLargeError
+from ...exceptions import RPCResponseTooLargeError
+from .request_types import PostBody
 
 # Upper bound on a single RPC response body. The streaming POST path enforces
 # this with a running size guard so a runaway or hostile server can't exhaust
@@ -78,7 +78,7 @@ async def stream_post_with_size_cap(
                     bytes_read=len(buffer),
                 )
         # Reconstruct a fully-buffered Response so downstream consumers
-        # (``_rpc_executor.py`` decode path) can use ``.text`` / ``.content``
+        # (``_web/transport/executor.py`` decode path) can use ``.text`` / ``.content``
         # without dealing with stream state. The request handle is carried
         # over so log/repr surfaces still point at the originating request.
         #
