@@ -59,7 +59,8 @@ class _RecordingKernel:
     def __init__(self, http_client: httpx.AsyncClient) -> None:
         self._http_client = http_client
 
-    def get_http_client(self) -> httpx.AsyncClient:
+    def get_http_client(self, *, expected_epoch: int | None = None) -> httpx.AsyncClient:
+        assert expected_epoch is None
         return self._http_client
 
 
@@ -83,8 +84,11 @@ class _RecordingLifecycle:
         cookie_persistence: Any,
         jar: httpx.Cookies,
         path: Path | None = None,
+        *,
+        expected_epoch: int | None = None,
     ) -> None:
         assert path is None
+        assert expected_epoch is None
         self.operations.append("save_cookies")
         self.saved_jars.append(jar)
 
@@ -107,7 +111,19 @@ class _RecordingAuthCoord:
     def __init__(self, operations: list[str]) -> None:
         self._operations = operations
 
-    async def update_auth_tokens(self, *, auth: AuthTokens, csrf: str, session_id: str) -> None:
+    @property
+    def current_epoch(self) -> None:
+        return None
+
+    async def update_auth_tokens(
+        self,
+        *,
+        auth: AuthTokens,
+        csrf: str,
+        session_id: str,
+        expected_epoch: int | None = None,
+    ) -> None:
+        assert expected_epoch is None
         self._operations.append("update_auth_tokens")
         auth.csrf_token = csrf
         auth.session_id = session_id
@@ -124,7 +140,9 @@ class _RecordingAuthCoord:
         expected_generation: int,
         authuser: int,
         account_email: str | None,
+        expected_epoch: int | None = None,
     ) -> bool | None:
+        assert expected_epoch is None
         return auth._replace_profile_session(
             target_cookie_jar=target_cookie_jar,
             source_cookie_jar=source_cookie_jar,
@@ -136,7 +154,14 @@ class _RecordingAuthCoord:
             account_email=account_email,
         )
 
-    def update_auth_headers(self, *, auth: AuthTokens, kernel: Any) -> None:
+    def update_auth_headers(
+        self,
+        *,
+        auth: AuthTokens,
+        kernel: Any,
+        expected_epoch: int | None = None,
+    ) -> None:
+        assert expected_epoch is None
         self._operations.append("update_auth_headers")
 
 

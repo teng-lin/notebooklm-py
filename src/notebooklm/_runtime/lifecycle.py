@@ -482,26 +482,41 @@ class ClientLifecycle:
             *(transport.close_resources() for transport in self._transports),
             return_exceptions=True,
         )
-        for transport, result in zip(
-            (*self._transports, *self._transports),
-            (*prepare_results, *close_results),
-            strict=True,
-        ):
-            if isinstance(result, BaseException):
+        rollback_results = (*prepare_results, *close_results)
+        rollback_transports = (*self._transports, *self._transports)
+        for transport, result in zip(rollback_transports, rollback_results, strict=True):
+            if isinstance(result, BaseException) and not isinstance(
+                result, (KeyboardInterrupt, SystemExit)
+            ):
                 logger.warning(
                     "Ignoring %s rollback failure to preserve open outcome: %s",
                     transport.name,
                     result,
                 )
+        mark_error: BaseException | None = None
         try:
             self._require_supervisor().mark_closed(wave.epoch)
         except BaseException as exc:
-            logger.warning("Ignoring admission rollback failure: %s", exc)
+            mark_error = exc
+            if not isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                logger.warning("Ignoring admission rollback failure: %s", exc)
+        process_exit = next(
+            (
+                result
+                for result in (*rollback_results, mark_error)
+                if isinstance(result, (KeyboardInterrupt, SystemExit))
+            ),
+            None,
+        )
+        final_outcome = _OpenOutcome.FAILED if process_exit is not None else outcome
+        final_error = process_exit if process_exit is not None else error
         with self._state_lock:
             self._state = _ResourceState.CLOSED
             self._open_wave = None
             if not wave.result.done():
-                wave.result.set_result(_OpenResult(outcome, error))
+                wave.result.set_result(_OpenResult(final_outcome, final_error))
+        if process_exit is not None:
+            raise process_exit
 
     async def drain(self, timeout: float | None = None) -> None:
         """Stop top-level admission while leaving resources open."""
@@ -513,13 +528,23 @@ class ClientLifecycle:
                 state = self._state
                 if state is _ResourceState.CLOSED:
                     return
-                self._assert_loop(loop)
                 open_wave = self._open_wave
                 close_wave = self._close_wave
                 epoch = self._epoch
+                if state is _ResourceState.OPENING:
+                    assert open_wave is not None
+                    self._assert_wave_loop(loop, open_wave.loop, "drain")
+                elif state is _ResourceState.CLOSING:
+                    assert close_wave is not None
+                    self._assert_wave_loop(loop, close_wave.loop, "drain")
+                else:
+                    self._assert_loop(loop)
             if state is _ResourceState.OPENING:
                 assert open_wave is not None
-                await asyncio.shield(open_wave.result)
+                result = await asyncio.shield(open_wave.result)
+                if result.outcome is _OpenOutcome.FAILED:
+                    assert result.error is not None
+                    raise result.error
                 continue
             if state is _ResourceState.CLOSING:
                 assert close_wave is not None and close_wave.task is not None
@@ -542,25 +567,25 @@ class ClientLifecycle:
             # Direct lifecycle callers from the pre-root API already performed
             # admission drain outside this method.
             drain = False
-            with self._state_lock:
-                legacy_unmanaged = (
-                    self._state is _ResourceState.CLOSED and self._http_client is not None
-                )
-            if legacy_unmanaged:
-                # A few private compatibility callers install a Kernel client
-                # directly, without running ``open()``.  Keep that old explicit
-                # close seam leak-free while normal clients always use the
-                # assembled, phased transport wave below.
-                await self._close_legacy_unmanaged(**_legacy_kwargs)
-                return
         if drain and drain_timeout is not None and drain_timeout < 0:
             raise ValueError(f"timeout must be >= 0 or None, got {drain_timeout!r}")
+        with self._state_lock:
+            legacy_unmanaged = (
+                self._state is _ResourceState.CLOSED and self._http_client is not None
+            )
+        if legacy_unmanaged:
+            # A few private compatibility callers install a Kernel client
+            # directly, without running ``open()``. Keep that established seam
+            # leak-free even when the public wrapper supplies no legacy kwargs.
+            # A genuinely closed assembled client has no Kernel handle and
+            # remains a no-op without re-running feature hooks.
+            await self._close_legacy_unmanaged(**_legacy_kwargs)
+            return
         loop = asyncio.get_running_loop()
         while True:
             with self._state_lock:
                 if self._state is _ResourceState.CLOSED:
                     return
-                self._assert_loop(loop)
                 if self._state is _ResourceState.OPENING:
                     open_wave = cast(_OpenWave, self._open_wave)
                     self._assert_wave_loop(loop, open_wave.loop, "close")
@@ -570,6 +595,7 @@ class ClientLifecycle:
                     self._assert_wave_loop(loop, close_wave.loop, "close")
                     open_wave = None
                 else:
+                    self._assert_loop(loop)
                     open_wave = None
                     close_wave = _CloseWave(
                         loop=loop,
@@ -584,7 +610,10 @@ class ClientLifecycle:
                     )
                     self._close_wave = close_wave
             if open_wave is not None:
-                await asyncio.shield(open_wave.result)
+                result = await asyncio.shield(open_wave.result)
+                if result.outcome is _OpenOutcome.FAILED:
+                    assert result.error is not None
+                    raise result.error
                 continue
             assert close_wave is not None and close_wave.task is not None
             await self._await_close_wave(close_wave)
@@ -652,7 +681,19 @@ class ClientLifecycle:
                     self._state = _ResourceState.OPEN
                     self._close_wave = None
                 raise
-        await supervisor.begin_closing(wave.epoch)
+        try:
+            await supervisor.begin_closing(wave.epoch)
+        except BaseException:
+            # Resource ownership did not begin teardown, so report it honestly
+            # as still open and allow a later force-close retry. Admission is a
+            # separate state machine: the supervisor retains whichever fenced
+            # state it reached before failing, rather than lifecycle guessing
+            # at an unsafe rollback transition.
+            with self._state_lock:
+                if self._close_wave is wave:
+                    self._state = _ResourceState.OPEN
+                    self._close_wave = None
+            raise
         prepare_results = await asyncio.gather(
             *(transport.prepare_close() for transport in self._transports),
             return_exceptions=True,

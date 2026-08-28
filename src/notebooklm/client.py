@@ -381,6 +381,8 @@ class NotebookLMClient:
         logger.debug("Closing NotebookLM client")
         try:
             await self.close()
+        except (KeyboardInterrupt, SystemExit):
+            raise
         except BaseException as close_exc:
             if exc_val is not None:
                 logger.warning(

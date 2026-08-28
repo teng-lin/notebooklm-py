@@ -142,6 +142,23 @@ async def test_body_succeeds_and_close_raises_close_propagates(
     assert _stub_open, "open() stub was not invoked — Form-2 patch did not resolve"
 
 
+async def test_close_process_exit_beats_body_exception(auth_tokens) -> None:
+    """A cleanup process-exit signal must never be suppressed by the body error."""
+    client = NotebookLMClient(auth_tokens)
+    process_exit = SystemExit("shutdown")
+
+    async def _exit_close() -> None:
+        raise process_exit
+
+    with (
+        patch.object(client, "close", _exit_close),
+        pytest.raises(SystemExit, match="shutdown") as raised,
+    ):
+        await client.__aexit__(ValueError, ValueError("body failed"), None)
+
+    assert raised.value is process_exit
+
+
 async def test_cancel_mid_close_does_not_leak_transport(
     auth_tokens,
     _stub_open: list[object],
