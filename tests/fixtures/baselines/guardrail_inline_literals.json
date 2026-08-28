@@ -96,7 +96,7 @@
     "_EXEMPLARS": 22
   },
   "tests/_guardrails/test_no_facade_reach_in.py": {
-    "_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES": 25
+    "_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES": 27
   },
   "tests/_guardrails/test_no_session_compat_bridges.py": {
     "CARVE_OUT_MODULES": 21

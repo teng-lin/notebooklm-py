@@ -7,12 +7,12 @@ from typing import Any
 from .._notebook_metadata import (
     NotebookMetadataService,
     NotebookSourceLister,
-    create_default_source_lister,
 )
-from .._notebooks import NotebooksAPI, ShareUrlBuilder, _build_default_share_url
+from .._notebooks import NotebooksAPI
 from .._runtime.contracts import RpcCaller
 from .._settings import build_get_user_settings_params, extract_account_limits
 from .._sharing_manager import ShareManager
+from .._source.listing import SourceLister
 from .._types.enums import GrpcStatusCode, normalize_grpc_status
 from ..exceptions import (
     ClientError,
@@ -44,6 +44,11 @@ logger = logging.getLogger("notebooklm._notebooks")
 
 
 CREATE_NOTEBOOK_QUOTA_RPC_CODE = 3
+
+
+def create_default_source_lister(rpc: RpcCaller) -> NotebookSourceLister:
+    """Build the web fallback source lister without constructing SourcesAPI."""
+    return SourceLister(rpc)
 
 
 def _extract_summary(outer: Any) -> str:
@@ -212,14 +217,11 @@ class WebNotebooksAPI(NotebooksAPI):
         """
         self._rpc = rpc
         resolved_sources = sources_api or create_default_source_lister(self._rpc)
+        super().__init__(resolved_sources, metadata_service=metadata_service)
+
         if share_manager:
             self._share_manager = share_manager
-            has_injected_share_manager = True
-        else:
-            self._share_manager = ShareManager(self._rpc)
-            has_injected_share_manager = False
 
-        if has_injected_share_manager:
             # Preserve the existing injection seam while storing only a neutral
             # callable suitable for the transport-neutral base introduced in A4.
             # Resolve the manager method at call time so replacements remain visible.
@@ -229,14 +231,9 @@ class WebNotebooksAPI(NotebooksAPI):
             ) -> str:
                 return self._share_manager.get_share_url(notebook_id, artifact_id)
 
-            share_url_builder: ShareUrlBuilder = injected_share_url
+            self._share_url_builder = injected_share_url
         else:
-            share_url_builder = _build_default_share_url
-        super().__init__(
-            resolved_sources,
-            metadata_service=metadata_service,
-            share_url_builder=share_url_builder,
-        )
+            self._share_manager = ShareManager(self._rpc)
         # CREATE_NOTEBOOK volunteers its newly-created ChatSession, while
         # GET_NOTEBOOK omits it. Keep that one-shot hint until ChatAPI consumes
         # it so the first ask need not immediately re-fetch the same id through
@@ -851,4 +848,4 @@ class WebNotebooksAPI(NotebooksAPI):
         )
 
 
-__all__ = ["WebNotebooksAPI"]
+__all__ = ["WebNotebooksAPI", "create_default_source_lister"]

@@ -9,11 +9,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._notebook_metadata import (
-    NotebookMetadataService,
-    create_default_source_lister,
-)
+from notebooklm._notebook_metadata import NotebookMetadataService
 from notebooklm._sources import SourcesAPI
+from notebooklm._web.notebooks import create_default_source_lister
 from notebooklm.exceptions import RPCError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import Notebook, NotebookMetadata, Source, SourceType

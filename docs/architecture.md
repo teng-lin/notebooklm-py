@@ -989,7 +989,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/rows/research_task.py` | Internal parser for research task result-type selection |
 | `_web/rows/sharing.py` | `SharedUserRow` / `ShareStatusRow` decoding behind the public sharing models' lazy shims |
 | `_web/rows/sources.py` | `SourceRow` / `SourceRowShape` typed views over raw positional source RPC rows |
-| `_web/notebooks.py` | `WebNotebooksAPI`, the concrete `batchexecute` notebook backend; preserves the shared executor identity and web-only decoding/quota/session-hint behavior |
+| `_web/notebooks.py` | `WebNotebooksAPI`, the concrete `batchexecute` notebook backend; preserves the shared executor identity and web-only decoding/quota/session-hint behavior, and owns the direct-construction `SourceLister` fallback |
 | `_web/params/` | Web `batchexecute` positional request payload builders, separated from backend-neutral namespace APIs |
 | `_web/params/notebooks.py` | Stable `batchexecute` notebook RPC request payload builders, including `SUGGEST_PROMPTS` |
 | `artifacts.py`, `research.py`, `utils.py` | Public helper modules for artifact retry, research citation/report utilities, and common async helpers |
@@ -1028,7 +1028,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_source/upload_payloads.py` | Stable source upload registration, rename, and resumable-upload request builders |
 | `_label/params.py` | Stable CREATE_LABEL / LIST_LABELS / UPDATE_LABEL / DELETE_LABEL request payload builders (with the shared `_opts()` request-options wrapper) |
 | `_collection/params.py` | Collection request payload builders reusing the label RPCs — null notebook_id, type-3 discriminator, `[1,3]` opts tail; add/remove notebook-membership fieldmask and `create`'s options wrapper are live-captured (PR #2009) |
-| `_notebook_metadata.py` | Metadata protocol schemas for sub-clients |
+| `_notebook_metadata.py` | Transport-neutral notebook metadata protocols and composition service; no concrete RPC/source-listing dependency |
 | `_url_utils.py`, `urls.py` | URL parsing/validation internals and the public URL helper facade |
 | `_sharing_manager.py` | Direct sharing management logic |
 | `_version_check.py` | Dynamic client-side version deprecation guard |
@@ -1124,7 +1124,7 @@ src/notebooklm/
 ├── _note_service.py             # NoteService
 ├── _mind_map.py                 # NoteBackedMindMapService
 ├── _mind_maps_api.py            # MindMapsAPI — unified mind-map surface over both backends (#1256)
-├── _notebook_metadata.py        # Metadata protocols
+├── _notebook_metadata.py        # Neutral metadata protocols + composition service
 ├── _url_utils.py                # URL validation helpers
 ├── _sharing_manager.py          # Sharing management logic
 ├── _version_check.py            # Deprecation version guard

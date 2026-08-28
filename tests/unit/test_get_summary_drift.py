@@ -1,6 +1,6 @@
-"""Strict-mode coverage for ``NotebooksAPI.get_summary``.
+"""Strict-mode coverage for ``WebNotebooksAPI.get_summary``.
 
-The site at ``_notebooks.py:get_summary`` used to swallow ``IndexError`` /
+The site now at ``_web/notebooks.py:get_summary`` used to swallow ``IndexError`` /
 ``TypeError`` from an unguarded ``result[0][0][0]`` descent. It was migrated
 to ``safe_index`` so drift raises ``UnknownRPCMethodError`` carrying
 ``method_id=RPCMethod.SUMMARIZE.value`` for debuggability. As of #1485 the

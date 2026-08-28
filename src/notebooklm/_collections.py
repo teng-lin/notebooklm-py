@@ -43,7 +43,8 @@ ListNotebooks = Callable[[], Awaitable[builtins.list[Notebook]]]
 _SRC = "_collections"
 
 # Collections are account-level: every RPC uses the home-page source path, not a
-# ``/notebook/<id>`` path (they have no notebook scope). See _notebooks.py:788.
+# ``/notebook/<id>`` path (they have no notebook scope). Compare the home-page
+# mutation context in ``_web/notebooks.py::WebNotebooksAPI.update``.
 _ACCOUNT_PATH = "/"
 
 

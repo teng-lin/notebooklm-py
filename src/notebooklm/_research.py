@@ -14,7 +14,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from . import research as _research_pub
-from ._notebook_metadata import NotebookSourceLister, create_default_source_lister
+from ._notebook_metadata import NotebookSourceLister
 from ._research_import import (
     _import_research_read_timeout,
     _imported_result,
@@ -43,6 +43,7 @@ from ._types.research import (
     ResearchStatus,
     ResearchTask,
 )
+from ._web.notebooks import create_default_source_lister
 from ._web.rows.research import ImportedSourceRow, ResearchStartRow, unwrap_import_rows
 from ._web.rows.research_task import parse_research_task_models
 from .exceptions import (
@@ -157,7 +158,7 @@ class ResearchAPI:
                 :meth:`import_sources_with_verification` to snapshot baseline
                 source IDs before the import call and probe sources on
                 timeout. When omitted, a default lister is built from
-                ``rpc`` — mirrors the ``NotebooksAPI`` wiring pattern, so
+                ``rpc`` — mirrors the ``WebNotebooksAPI`` wiring pattern, so
                 ``ResearchAPI(rpc)`` works standalone with no cross-API
                 dependency.
         """
@@ -179,7 +180,7 @@ class ResearchAPI:
     ) -> Any:
         """Delegate through the current RPC caller for late-bound overrides.
 
-        Mirrors :meth:`NotebooksAPI._rpc_call` so direct ResearchAPI RPC paths
+        Mirrors :meth:`WebNotebooksAPI._rpc_call` so direct ResearchAPI RPC paths
         pick up post-construction changes to the underlying caller's
         ``rpc_call`` method (advanced tests / instrumentation).
         """

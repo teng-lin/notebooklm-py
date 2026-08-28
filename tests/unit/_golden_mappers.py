@@ -57,7 +57,7 @@ _NOTEBOOK_ID = "SCRUBBED_NB_001"
 def list_notebooks(decoded: Any) -> list[Notebook]:
     """``LIST_NOTEBOOKS`` -> one :class:`Notebook` per row.
 
-    Mirrors ``NotebooksAPI.list`` (``_notebooks.py``): the decoded payload is
+    Mirrors ``WebNotebooksAPI.list`` (``_web/notebooks.py``): the decoded payload is
     the ``[[row, ...]]`` wrapped envelope, and each inner row is handed to
     :meth:`Notebook.from_api_response`.
     """
@@ -67,7 +67,7 @@ def list_notebooks(decoded: Any) -> list[Notebook]:
 def get_notebook(decoded: Any) -> Notebook:
     """``GET_NOTEBOOK`` -> a single :class:`Notebook`.
 
-    Mirrors ``NotebooksAPI.get`` (``_notebooks.py``): ``decoded[0]`` is the
+    Mirrors ``WebNotebooksAPI.get`` (``_web/notebooks.py``): ``decoded[0]`` is the
     notebook-info row passed to :meth:`Notebook.from_api_response`.
     """
     return Notebook.from_api_response(decoded[0], include_chat_settings=True)
@@ -159,8 +159,8 @@ def get_suggested_reports(decoded: Any) -> list[ReportSuggestion]:
 def suggest_prompts(decoded: Any) -> list[PromptSuggestion]:
     """``SUGGEST_PROMPTS`` -> one :class:`PromptSuggestion` per row.
 
-    Mirrors ``NotebooksAPI.suggest_prompts`` (``_notebooks.py``): the decoded payload
-    is the single-element ``[[ [title, prompt], ... ]]`` envelope routed through
+    Mirrors ``WebNotebooksAPI.suggest_prompts`` (``_web/notebooks.py``): the decoded
+    payload is the single-element ``[[ [title, prompt], ... ]]`` envelope routed through
     the production ``unwrap_prompt_suggestions`` (``result[0]``), then each
     well-formed row is wrapped in a :class:`PromptSuggestionRow` (the position
     adapter) before constructing the public :class:`PromptSuggestion`.

@@ -198,7 +198,7 @@ class TestGetNotebook:
         (a real GET_NOTEBOOK response) — two PDF source entries at index 1.
         If Google ever moves the source list, this test fails before any
         downstream code that depends on ``sources_count`` (notably the
-        divergence warning in ``_notebooks.py``) silently produces a wrong
+        divergence warning in ``_notebook_metadata.py``) silently produces a wrong
         count.
         """
         response = build_rpc_response(

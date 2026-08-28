@@ -33,7 +33,7 @@ src/notebooklm/
 ├── _notebooks.py        # Backend-neutral abstract NotebooksAPI
 ├── _web/notebooks.py    # WebNotebooksAPI implementation
 ├── _web/params/         # Web batchexecute payload builders
-├── _notebook_metadata.py # Private notebook metadata composition service
+├── _notebook_metadata.py # Neutral metadata protocols + composition service
 ├── _sources.py          # SourcesAPI implementation
 ├── _source/             # Private source services
 ├── _artifacts.py        # ArtifactsAPI implementation
@@ -145,7 +145,9 @@ production consumers) that still gates adding any new shared Protocol.
 Private service modules sit inside the client layer but below the public
 facades. They own cross-facade composition without importing sibling facades:
 `_notebook_metadata.py` composes notebook metadata through a narrow source
-lister, `_sharing_manager.py` owns legacy `SHARE_ARTIFACT` link behavior, and
+lister without importing a concrete transport or lister; `_web/notebooks.py`
+owns the direct-construction web fallback. `_sharing_manager.py` owns legacy
+`SHARE_ARTIFACT` link behavior, and
 `_mind_map.py` owns note-backed mind-map rows shared by notes and artifacts.
 Facade modules keep the public method surface stable and delegate to these
 services.

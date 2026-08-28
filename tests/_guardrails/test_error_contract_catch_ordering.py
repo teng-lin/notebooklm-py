@@ -38,7 +38,7 @@ Everything else is deliberately ignored:
 
 * a broad clause that **bare-re-raises** (``_rpc_executor.py``'s
   refresh-and-retry catch ends in ``raise``) or re-raises via a helper
-  (``_notebooks.py`` ``_raise_quota_error_if_detected(exc)`` + ``raise``) —
+  (``_web/notebooks.py`` ``_raise_quota_error_if_detected(exc)`` + ``raise``) —
   the caller still sees the original type;
 * a broad clause that **swallows and continues** (the ``_artifact/listing.py``
   composite-lister partial-availability catch, the ``_research.py`` baseline

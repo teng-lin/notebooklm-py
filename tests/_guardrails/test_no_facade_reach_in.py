@@ -84,6 +84,7 @@ _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES = {
     "SettingsAPI",
     "SharingAPI",
     "SourcesAPI",
+    "WebNotebooksAPI",
 }
 
 _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES = {
@@ -97,6 +98,7 @@ _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES = {
     "_settings",
     "_sharing",
     "_sources",
+    "_web.notebooks",
     "client",
     "notebooklm",
     "notebooklm._artifacts",
@@ -109,6 +111,7 @@ _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES = {
     "notebooklm._settings",
     "notebooklm._sharing",
     "notebooklm._sources",
+    "notebooklm._web.notebooks",
     "notebooklm.client",
 }
 
@@ -538,6 +541,30 @@ from notebooklm import NotebookLMClient
     assert visitor.forbidden == ["notebooklm", "notebooklm.NotebookLMClient"]
 
 
+def test_runtime_import_visitor_detects_web_notebooks_facade_and_module() -> None:
+    """Notebook composition services must not reach into the concrete web facade."""
+    tree = ast.parse(
+        "from notebooklm._web.notebooks import WebNotebooksAPI\n"
+        "import notebooklm._web.notebooks\n"
+        "WebNotebooksAPI(rpc)\n"
+    )
+    visitor = _RuntimeImportVisitor(
+        forbidden_names=_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES,
+        forbidden_modules=_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES,
+    )
+
+    visitor.visit(tree)
+
+    assert visitor.forbidden == [
+        "notebooklm._web.notebooks.WebNotebooksAPI",
+        "notebooklm._web.notebooks",
+    ]
+    assert _facade_construction_lines(
+        tree,
+        _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES,
+    ) == {"WebNotebooksAPI": [3]}
+
+
 def test_facade_construction_lines_detects_chained_facade_access() -> None:
     """Facade construction guard must catch classmethod-style facade access."""
     tree = ast.parse("notebooklm.NotebookLMClient.from_storage()\n")
@@ -626,6 +653,29 @@ def test_notebook_composition_services_do_not_runtime_import_facades_or_core() -
 
     assert forbidden_by_module == {}
     assert forbidden_construction_by_module == {}
+
+
+def test_notebook_metadata_has_no_concrete_lister_or_rpc_dependency() -> None:
+    """The neutral metadata module contains only protocols and composition service code."""
+    tree = ast.parse((SRC_ROOT / "_notebook_metadata.py").read_text(encoding="utf-8"))
+    visitor = _RuntimeImportVisitor(
+        forbidden_names={"RpcCaller", "SourceLister"},
+        forbidden_modules={
+            "_runtime.contracts",
+            "_source.listing",
+            "notebooklm._runtime.contracts",
+            "notebooklm._source.listing",
+        },
+    )
+
+    visitor.visit(tree)
+
+    assert visitor.forbidden == []
+    assert not any(
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "create_default_source_lister"
+        for node in tree.body
+    )
 
 
 @pytest.mark.parametrize("module_name", _NOTEBOOK_COMPOSITION_SERVICE_MODULES)

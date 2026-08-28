@@ -13,6 +13,25 @@ from tests._fixtures.fake_core import make_fake_core
 BASE_URL = "https://notebook.google.com"
 
 
+class _TruthinessProbe:
+    def __init__(self, name: str, events: list[str], *, raises: bool = False) -> None:
+        self.name = name
+        self.events = events
+        self.raises = raises
+        self.truthiness_checks = 0
+
+    def __bool__(self) -> bool:
+        self.truthiness_checks += 1
+        self.events.append(self.name)
+        if self.raises:
+            raise RuntimeError(f"{self.name} truthiness failed")
+        # A second evaluation would be false and expose stateful truthiness drift.
+        return self.truthiness_checks == 1
+
+    def get_share_url(self, notebook_id: str, artifact_id: str | None = None) -> str:
+        return f"https://example.test/notebook/{notebook_id}?artifactId={artifact_id}"
+
+
 def _make_rpc() -> AsyncMock:
     return AsyncMock(return_value=None)
 
@@ -242,6 +261,61 @@ def test_notebooks_api_evaluates_share_manager_truthiness_once() -> None:
     assert url == "https://example.test/notebook/nb_123"
     assert share_manager.truthiness_checks == 1
     share_manager.get_share_url.assert_called_once_with("nb_123", None)
+
+
+def test_web_notebooks_constructor_preserves_injected_truthiness_order() -> None:
+    events: list[str] = []
+    sources = _TruthinessProbe("sources", events)
+    metadata = _TruthinessProbe("metadata", events)
+    share = _TruthinessProbe("share", events)
+
+    api = WebNotebooksAPI(
+        MagicMock(),
+        sources_api=sources,  # type: ignore[arg-type]
+        metadata_service=metadata,  # type: ignore[arg-type]
+        share_manager=share,  # type: ignore[arg-type]
+    )
+
+    assert events == ["sources", "metadata", "share"]
+    assert sources.truthiness_checks == 1
+    assert metadata.truthiness_checks == 1
+    assert share.truthiness_checks == 1
+    assert api._sources is sources
+    assert api._metadata_service is metadata
+    assert api._share_manager is share
+    assert api.get_share_url("nb_123") == "https://example.test/notebook/nb_123?artifactId=None"
+    assert events == ["sources", "metadata", "share"]
+
+
+@pytest.mark.parametrize(
+    ("raising_name", "expected_events"),
+    [
+        pytest.param("sources", ["sources"], id="sources-first"),
+        pytest.param("metadata", ["sources", "metadata"], id="metadata-second"),
+        pytest.param("share", ["sources", "metadata", "share"], id="share-third"),
+    ],
+)
+def test_web_notebooks_constructor_truthiness_failures_preserve_order(
+    raising_name: str,
+    expected_events: list[str],
+) -> None:
+    events: list[str] = []
+    sources = _TruthinessProbe("sources", events, raises=raising_name == "sources")
+    metadata = _TruthinessProbe("metadata", events, raises=raising_name == "metadata")
+    share = _TruthinessProbe("share", events, raises=raising_name == "share")
+
+    with pytest.raises(RuntimeError, match=rf"^{raising_name} truthiness failed$"):
+        WebNotebooksAPI(
+            MagicMock(),
+            sources_api=sources,  # type: ignore[arg-type]
+            metadata_service=metadata,  # type: ignore[arg-type]
+            share_manager=share,  # type: ignore[arg-type]
+        )
+
+    assert events == expected_events
+    probes = {"sources": sources, "metadata": metadata, "share": share}
+    for name, probe in probes.items():
+        assert probe.truthiness_checks == (1 if name in expected_events else 0)
 
 
 def test_notebooks_api_injected_share_url_observes_whole_manager_replacement() -> None:

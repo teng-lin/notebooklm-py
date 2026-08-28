@@ -1,8 +1,8 @@
 """Stable ``batchexecute`` notebook RPC request payload builders.
 
-Kept in a sibling module (rather than inline in ``_notebooks.py``) so the
-notebook RPC façade stays under the ADR-0008 module-size budget; mirrors the
-``_settings`` / ``_source.upload_payloads`` split.
+Kept outside ``_web/notebooks.py`` so the web notebook implementation stays
+under the ADR-0008 module-size budget; mirrors the ``_settings`` /
+``_source.upload_payloads`` split.
 """
 
 from __future__ import annotations

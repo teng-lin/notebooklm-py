@@ -116,8 +116,8 @@ and must move with this ADR:
 
 The pre-existing scaffolding from earlier remediation work makes a
 careful migration tractable: `NotebookSourceLister`
-(`_notebook_metadata.py:19`) and `NotebookSourceIdProvider`
-(`_notebook_metadata.py:26`) already let `NotebooksAPI` accept a
+(`_notebook_metadata.py:17`) and `NotebookSourceIdProvider`
+(`_notebook_metadata.py:32`) already let `NotebooksAPI` accept a
 collaborator-shaped dependency without round-tripping through `Session`.
 `_mind_map.py:55` is the existing service boundary the note/mind-map
 split rides on.
@@ -178,8 +178,8 @@ runtimes. Concretely:
    `_note_service.py`) and a `NoteBackedMindMapService` (mind-map
    adapter that stays in `_mind_map.py`). The pre-existing scaffolding
    the refactor relies on — `NotebookSourceLister`
-   (`_notebook_metadata.py:19`), `NotebookSourceIdProvider`
-   (`_notebook_metadata.py:26`), and the `_mind_map.py:55` service
+   (`_notebook_metadata.py:17`), `NotebookSourceIdProvider`
+   (`_notebook_metadata.py:32`), and the `_mind_map.py:55` service
    boundary — is reused. Module-level `_mind_map` wrappers are
    removed only after both collaborators are wired into `ArtifactsAPI`.
 

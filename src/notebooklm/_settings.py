@@ -43,7 +43,7 @@ def _extract_language(
     """Extract the output-language code from a settings RPC response.
 
     The descent is split into two regimes, per ADR-0011 (schema-validation
-    policy) and the ``_notebooks._extract_suggested_topics`` precedent for a
+    policy) and the ``_web.notebooks._extract_suggested_topics`` precedent for a
     routinely-optional trailing slot:
 
     1. ``required_prefix`` walks the *always-present* settings envelope down to
