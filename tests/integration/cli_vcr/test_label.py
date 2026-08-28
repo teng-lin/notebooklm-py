@@ -20,7 +20,7 @@ the ``label`` happy paths (``list`` / ``sources`` / ``create`` / ``rename`` /
 
 RPC fan-out per command
 -----------------------
-``client.labels`` issues these RPCs (see ``src/notebooklm/_labels.py`` and
+``client.labels`` issues these RPCs (see ``src/notebooklm/_web/labels.py`` and
 ``src/notebooklm/rpc/types.py``):
 
 * ``list``     -> one ``LIST_LABELS`` (``I3xc3c``) + one ``GET_NOTEBOOK``

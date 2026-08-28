@@ -25,6 +25,7 @@ CLIENT_HOST_NAMES = {"self", "client"}
 
 FEATURE_API_NAMES = {
     "WebChatAPI",
+    "CollectionsAPI",
     "LabelsAPI",
     "WebMindMapsAPI",
     "WebNotebooksAPI",
@@ -39,6 +40,12 @@ FEATURE_API_NAMES = {
     "NoteService",
 }
 
+WEB_ONLY_NAMESPACE_IMPORTS = {
+    "CollectionsAPI": "_web.collections",
+    "LabelsAPI": "_web.labels",
+    "ResearchAPI": "_web.research",
+}
+
 INLINE_CLIENT_ATTRS = {
     "_transport",
     "_chain_host",
@@ -51,6 +58,20 @@ INLINE_CLIENT_ATTRS = {
 
 def _tree(path: Path) -> ast.AST:
     return ast.parse(path.read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("path", COMPOSITION_ROOT_PATHS, ids=lambda p: p.name)
+def test_web_only_namespaces_are_composed_from_their_canonical_modules(path: Path) -> None:
+    """Client annotations and assembly share the exact moved class objects."""
+    imported_from: dict[str, str] = {}
+    for node in ast.walk(_tree(path)):
+        if not isinstance(node, ast.ImportFrom) or node.module is None:
+            continue
+        for alias in node.names:
+            if alias.name in WEB_ONLY_NAMESPACE_IMPORTS:
+                imported_from[alias.name] = node.module
+
+    assert imported_from == WEB_ONLY_NAMESPACE_IMPORTS
 
 
 @pytest.mark.parametrize("path", COMPOSITION_ROOT_PATHS, ids=lambda p: p.name)

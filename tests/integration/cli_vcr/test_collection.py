@@ -27,7 +27,7 @@ unlike the read-only commands) and does NOT use
 
 RPC fan-out per command
 ------------------------
-``client.collections`` issues these RPCs (see ``src/notebooklm/_collections.py``
+``client.collections`` issues these RPCs (see ``src/notebooklm/_web/collections.py``
 and ``src/notebooklm/rpc/types.py``); every collection RPC reuses the label
 method ids with a type-3 discriminator and ``source_path="/"`` (account-level):
 

@@ -36,6 +36,11 @@ pytestmark = pytest.mark.repo_lint
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
 NEUTRAL_IDEMPOTENCY_PATH = SRC_ROOT / "_idempotency.py"
 WEB_POLICY_PATH = SRC_ROOT / "_web" / "policy.py"
+WEB_NAMESPACE_SHIMS = {
+    "_collections.py": "notebooklm._web.collections",
+    "_labels.py": "notebooklm._web.labels",
+    "_research.py": "notebooklm._web.research",
+}
 
 DOMAIN_ENUM_NAMES = frozenset(
     name
@@ -95,9 +100,6 @@ ALLOWED_WEB_IMPORTERS = frozenset(
         "notebooklm._artifact",
         "notebooklm._source",
         "notebooklm._chat",
-        "notebooklm._collections",
-        "notebooklm._labels",
-        "notebooklm._research",
         "notebooklm.research",
     }
 )
@@ -330,9 +332,7 @@ def test_idempotency_policy_has_one_web_owner_and_one_registry_seed() -> None:
         if isinstance(node, (ast.Assign, ast.AnnAssign))
         and any(
             isinstance(target, ast.Name) and target.id == "IDEMPOTENCY_REGISTRY"
-            for target in (
-                node.targets if isinstance(node, ast.Assign) else [node.target]
-            )
+            for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
         )
     ]
     seed_calls = [
@@ -347,6 +347,35 @@ def test_idempotency_policy_has_one_web_owner_and_one_registry_seed() -> None:
     ]
     assert len(registry_assignments) == 1
     assert len(seed_calls) == 1
+
+
+@pytest.mark.parametrize(("filename", "implementation"), WEB_NAMESPACE_SHIMS.items())
+def test_web_only_namespace_compatibility_modules_stay_thin_and_lazy(
+    filename: str, implementation: str
+) -> None:
+    """A13 compatibility paths contain no facade body or eager web import."""
+    path = SRC_ROOT / filename
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+
+    assert not [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
+    functions = {
+        node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    assert functions == {"__dir__", "__getattr__"}
+    assert not [
+        direct
+        for direct in _scan_path(path)
+        if _is_module_or_child(direct.target, "notebooklm._web")
+    ]
+
+    implementation_literals = {
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value.startswith("notebooklm._web.")
+    }
+    assert implementation_literals == {implementation}
 
 
 def test_backend_boundary_manifests_are_well_formed() -> None:

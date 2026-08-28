@@ -71,7 +71,7 @@ DEFAULT_CHAT_RESPONSE_MAX_BYTES = 256 * 1024 * 1024
 # source cap varies 50-600 by account tier) needs materially more time than
 # the shared 30s metadata window. Scaled per requested source rather than
 # flat-overridden so a small fast-research import still fails fast on a
-# genuinely broken call; see ``_research_import._import_research_read_timeout``
+# genuinely broken call; see ``_web.research_import._import_research_read_timeout``
 # (#2187).
 DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT = 60.0
 DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT = 3.0

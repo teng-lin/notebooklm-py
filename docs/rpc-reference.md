@@ -35,10 +35,10 @@
 | `b7Wfje` | UPDATE_SOURCE | Rename source | `_web/sources/__init__.py` |
 | `tr032e` | GET_SOURCE_GUIDE | Get source summary | `_web/sources/content.py` |
 | `hizoJc` | GET_SOURCE | Get clean fulltext content of a source | `_web/sources/content.py` |
-| `agX4Bc` | CREATE_LABEL | AI-generate label groupings and create manual labels | `_labels.py` |
-| `I3xc3c` | LIST_LABELS | List source labels for a notebook | `_labels.py` |
-| `le8sX` | UPDATE_LABEL | Rename label, set emoji, add/remove sources | `_labels.py`, `_web/params/labels.py` |
-| `GyzE7e` | DELETE_LABEL | Delete one or more labels (batch) | `_labels.py` |
+| `agX4Bc` | CREATE_LABEL | AI-generate label groupings and create manual labels | `_web/labels.py` |
+| `I3xc3c` | LIST_LABELS | List source labels for a notebook | `_web/labels.py` |
+| `le8sX` | UPDATE_LABEL | Rename label, set emoji, add/remove sources | `_web/labels.py`, `_web/params/labels.py` |
+| `GyzE7e` | DELETE_LABEL | Delete one or more labels (batch) | `_web/labels.py` |
 | `R7cb6c` | CREATE_ARTIFACT | Unified artifact generation | `_artifacts.py`, `_web/artifact/generation.py` |
 | `gArtLc` | LIST_ARTIFACTS | List artifacts in a notebook | `_web/artifacts.py` |
 | `V5N4be` | DELETE_ARTIFACT | Delete artifact | `_web/artifacts.py` |
@@ -56,11 +56,11 @@
 | `VfAZjd` | SUMMARIZE | Get notebook summary | `_web/notebooks.py` |
 | `FLmJqe` | REFRESH_SOURCE | Refresh URL/Drive source | `_web/sources/__init__.py` |
 | `yR9Yof` | CHECK_SOURCE_FRESHNESS | Check if source needs refresh | `_web/sources/__init__.py` |
-| `Ljjv0c` | START_FAST_RESEARCH | Start fast research | `_research.py` |
-| `QA9ei` | START_DEEP_RESEARCH | Start deep research | `_research.py` |
-| `e3bVqc` | POLL_RESEARCH | Poll research status | `_research.py` |
-| `LBwxtb` | IMPORT_RESEARCH | Import research results | `_research.py` |
-| `Zbrupe` | CANCEL_RESEARCH | Cancel in-flight research run | `_research.py` |
+| `Ljjv0c` | START_FAST_RESEARCH | Start fast research | `_web/research.py` |
+| `QA9ei` | START_DEEP_RESEARCH | Start deep research | `_web/research.py` |
+| `e3bVqc` | POLL_RESEARCH | Poll research status | `_web/research.py` |
+| `LBwxtb` | IMPORT_RESEARCH | Import research results | `_web/research.py` |
+| `Zbrupe` | CANCEL_RESEARCH | Cancel in-flight research run | `_web/research.py` |
 | `rc3d8d` | RENAME_ARTIFACT | Rename artifact | `_web/artifacts.py` |
 | `Krh3pd` | EXPORT_ARTIFACT | Export to Docs/Sheets | `_web/artifacts.py` |
 | `RGP97b` | SHARE_ARTIFACT | Legacy notebook/artifact share-link toggle | `_web/sharing.py` |
@@ -741,7 +741,7 @@ Live label-flow notes:
 
 ### RPC: CREATE_LABEL (agX4Bc)
 
-**Source:** `_labels.py::generate()`, `_labels.py::create()` (builders in `_web/params/labels.py`)
+**Source:** `_web/labels.py::generate()`, `_web/labels.py::create()` (builders in `_web/params/labels.py`)
 
 A single multi-mode RPC; the mode is selected by which slot is populated. Slot
 `[4]` drives AI auto-labeling (`generate`); slot `[5]` creates manual labels
@@ -762,7 +762,7 @@ params = [OPTS, notebook_id, None, None, None, [["New Label", ""]]]
 
 ### RPC: LIST_LABELS (I3xc3c)
 
-**Source:** `_labels.py::list()`
+**Source:** `_web/labels.py::list()`
 
 ```python
 params = [OPTS, notebook_id]
@@ -774,7 +774,7 @@ its source UUIDs, so one `list()` call gives the complete source→label mapping
 
 ### RPC: UPDATE_LABEL (le8sX)
 
-**Source:** `_labels.py::update()`, `rename()`, `set_emoji()`,
+**Source:** `_web/labels.py::update()`, `rename()`, `set_emoji()`,
 `add_sources()`, `remove_sources()` (builder: `_web/params/labels.py`)
 
 A unified label-update RPC covering rename, emoji, and source membership. Slot
@@ -807,7 +807,7 @@ wire shape honors only the first id in each group.
 
 ### RPC: DELETE_LABEL (GyzE7e)
 
-**Source:** `_labels.py::delete()`
+**Source:** `_web/labels.py::delete()`
 
 Batch-capable — label IDs are passed as an array. Deleting a label does **not**
 delete its sources (they become unlabeled).
@@ -2306,7 +2306,7 @@ Research allows searching the web or Google Drive for sources to add to notebook
 
 ### RPC: START_FAST_RESEARCH (Ljjv0c)
 
-**Source:** `_research.py::start()` with `mode="fast"`
+**Source:** `_web/research.py::start()` with `mode="fast"`
 
 Start a fast research session.
 
@@ -2338,7 +2338,7 @@ await rpc_call(
 
 ### RPC: START_DEEP_RESEARCH (QA9ei)
 
-**Source:** `_research.py::start()` with `mode="deep"`
+**Source:** `_web/research.py::start()` with `mode="deep"`
 
 Start a deep research session (web only, more thorough).
 
@@ -2375,7 +2375,7 @@ flow, the returned `report_id` later becomes important during polling and import
 
 ### RPC: POLL_RESEARCH (e3bVqc)
 
-**Source:** `_research.py::poll()`
+**Source:** `_web/research.py::poll()`
 
 Poll for research results.
 
@@ -2548,7 +2548,7 @@ Notes:
 
 ### RPC: IMPORT_RESEARCH (LBwxtb)
 
-**Source:** `_research.py::import_sources()`
+**Source:** `_web/research.py::import_sources()`
 
 Import selected research sources into the notebook.
 
@@ -2559,7 +2559,7 @@ Import selected research sources into the notebook.
 # NOTE: this is the REQUEST the client sends. It is a different shape from the
 # POLL_RESEARCH *response* row documented above — the report body rides at index 1
 # here, whereas a response row carries it in the src[6] kind-3 content block. Built
-# by `_research.py::_build_report_import_entry` / `_build_web_import_entry`.
+# by `_web/research.py::_build_report_import_entry` / `_build_web_import_entry`.
 source_array = []
 
 # Deep research report entry (outgoing import request):
@@ -2617,7 +2617,7 @@ await rpc_call(
 # - This call commonly runs long on large batches (the server fetches/parses/
 #   embeds every entry before responding), so the client sends a batch-scaled
 #   `read_timeout` here rather than the shared 30s default — see
-#   `_research_import.py::_import_research_read_timeout` (#2187).
+#   `_web/research_import.py::_import_research_read_timeout` (#2187).
 # - A client-side timeout can still land AFTER the server partially commits.
 #   Retrying with the same task_id then gets rejected with gRPC 9
 #   (FAILED_PRECONDITION) — documented backend behavior (#1926 item F2b), not
@@ -2627,12 +2627,12 @@ await rpc_call(
 #   immediately rather than retrying blindly against the same rejected
 #   task_id (unlike a timeout, this attempt's payload was rejected outright,
 #   so a filtered-subset retry isn't evidence-based) — see
-#   `_research_import.py::_is_import_research_failed_precondition`.
+#   `_web/research_import.py::_is_import_research_failed_precondition`.
 ```
 
 ### RPC: CANCEL_RESEARCH (Zbrupe)
 
-**Source:** `_research.py::ResearchAPI.cancel()`
+**Source:** `_web/research.py::ResearchAPI.cancel()`
 
 Cancel an in-flight research (DiscoverSources) run. An IN_PROGRESS run
 transitions to a terminal `FAILED` state shortly after this call; cancelling an

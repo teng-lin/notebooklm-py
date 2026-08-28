@@ -40,9 +40,6 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from ._client_composed import ClientComposed
-from ._collections import CollectionsAPI
-from ._labels import LabelsAPI
-from ._research import ResearchAPI
 from ._runtime.config import (
     AUTO_READ_TIMEOUT,
     DEFAULT_CHAT_RESPONSE_MAX_BYTES,
@@ -58,9 +55,12 @@ from ._runtime.init import compose_client_internals
 from ._runtime.lifecycle import CookieRotator, CookieSaver
 from ._web.artifacts import WebArtifactsAPI
 from ._web.chat import WebChatAPI
+from ._web.collections import CollectionsAPI
+from ._web.labels import LabelsAPI
 from ._web.mind_maps import NoteBackedMindMapService, WebMindMapsAPI
 from ._web.notebooks import WebNotebooksAPI
 from ._web.notes import NoteService, WebNotesAPI
+from ._web.research import ResearchAPI
 from ._web.settings import WebSettingsAPI
 from ._web.sharing import WebSharingAPI
 from ._web.sources import WebSourcesAPI

@@ -1,12 +1,12 @@
 """Free-function helpers for research source import + verification.
 
-Extracted from ``_research.py`` (ADR-0008 module-size ratchet) so the
+Extracted from the research facade (ADR-0008 module-size ratchet) so the
 ``ResearchAPI.import_sources`` / ``import_sources_with_verification`` machinery
 — URL normalization for import verification, the report-source predicate, the
 imported-entry / merge helpers, the #1961 idempotency pre-filter + its
 ``already_present`` side-channel carrier, and the #2187 batch-scaled read
 timeout + retry-time FAILED_PRECONDITION predicate — lives in one cohesive
-place. These are re-imported by ``_research.py`` and remain reachable as
+place. These are imported by ``_web.research`` and remain reachable as
 ``notebooklm._research.<name>`` for callers/tests that reference them there.
 """
 
@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit, urlunsplit
 
-from ._runtime.config import (
+from .._runtime.config import (
     AUTO_READ_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT,
@@ -25,12 +25,12 @@ from ._runtime.config import (
     DEFAULT_TIMEOUT,
     compose_builtin_read_timeout,
 )
-from ._types.enums import GrpcStatusCode, normalize_grpc_status
-from ._types.research import ResearchSource, ResearchSourceInput
-from .exceptions import ResearchTaskMismatchError, RPCError, ValidationError
+from .._types.enums import GrpcStatusCode, normalize_grpc_status
+from .._types.research import ResearchSource, ResearchSourceInput
+from ..exceptions import ResearchTaskMismatchError, RPCError, ValidationError
 
 if TYPE_CHECKING:
-    from .types import Source
+    from ..types import Source
 
 
 def _validate_research_task_provenance(

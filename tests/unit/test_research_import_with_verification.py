@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import notebooklm._research as _research_mod
-from notebooklm._research import ResearchAPI
+from notebooklm._web.research import ResearchAPI
 from notebooklm.exceptions import NetworkError, RPCError, RPCTimeoutError
 
 

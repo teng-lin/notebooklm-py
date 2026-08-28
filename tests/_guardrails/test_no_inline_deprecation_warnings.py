@@ -15,7 +15,7 @@ DeprecationWarning)`` *calls* do) and fails if any such call appears outside
 Why a lint and not vigilance: issue #1369 found four inline
 ``warnings.warn(..., DeprecationWarning)`` sites
 (``client.py`` ``__await__``, ``_auth/storage.py`` ``save_cookies_to_storage``,
-``_research.py`` ``poll(task_id=None)``, ``_notebooks.py`` ``NotebooksAPI.share()``)
+``_web/research.py`` ``poll(task_id=None)``, ``_notebooks.py`` ``NotebooksAPI.share()``)
 that bypassed the suppression gate, so ``NOTEBOOKLM_QUIET_DEPRECATIONS=1`` did
 **not** silence them. (Two of those sites were later removed in v0.8.0 / #1363 —
 ``poll(task_id=None)`` ambiguity now raises ``AmbiguousResearchTaskError`` and

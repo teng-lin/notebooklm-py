@@ -20,7 +20,7 @@ from notebooklm import (
     ResearchTask,
     RPCError,
 )
-from notebooklm._research import ResearchAPI
+from notebooklm._web.research import ResearchAPI
 from notebooklm.research import extract_report_urls, normalize_citation_url, select_cited_sources
 from notebooklm.rpc import RPCMethod
 

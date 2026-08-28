@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from notebooklm._labels import LabelsAPI
+from notebooklm._web.labels import LabelsAPI
 from notebooklm.exceptions import LabelError, LabelNotFoundError, UnknownRPCMethodError
 from notebooklm.rpc import RPCMethod
 

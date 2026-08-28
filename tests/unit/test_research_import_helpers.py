@@ -1,8 +1,8 @@
 """Tests for the pure IMPORT_RESEARCH helpers added for #2187.
 
 ``_import_research_read_timeout``, ``_is_import_research_failed_precondition``,
-and ``_reconcile_import_probe`` live in ``_research_import.py`` (ADR-0008
-module-size ratchet keeps free functions out of ``_research.py`` where
+and ``_reconcile_import_probe`` live in ``_web/research_import.py`` (ADR-0008
+module-size ratchet keeps free functions out of ``_web/research.py`` where
 possible). Behavioral coverage of how ``ResearchAPI.import_sources_with_verification``
 actually uses them (retry/raise/log decisions) lives in
 ``test_research_import_with_verification.py``; these tests cover the pure
@@ -15,17 +15,17 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from notebooklm._research_import import (
-    _import_research_read_timeout,
-    _is_import_research_failed_precondition,
-    _reconcile_import_probe,
-)
 from notebooklm._runtime.config import (
     DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT,
 )
 from notebooklm._types.research import ResearchSource
+from notebooklm._web.research_import import (
+    _import_research_read_timeout,
+    _is_import_research_failed_precondition,
+    _reconcile_import_probe,
+)
 from notebooklm.exceptions import RPCError
 
 

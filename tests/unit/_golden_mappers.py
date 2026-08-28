@@ -106,7 +106,7 @@ def list_artifacts(decoded: Any) -> list[Artifact]:
 def list_labels(decoded: Any) -> list[Label]:
     """``LIST_LABELS`` -> one :class:`Label` per 4-tuple.
 
-    Mirrors ``LabelsAPI`` parsing (``_labels.py``): the decoded payload is the
+    Mirrors ``LabelsAPI`` parsing (``_web/labels.py``): the decoded payload is the
     ``[[tuple, ...]]`` envelope and each tuple is parsed via
     :meth:`Label.from_api_response` with the notebook id and method id the
     feature layer threads through.

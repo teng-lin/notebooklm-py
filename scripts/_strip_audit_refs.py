@@ -108,7 +108,7 @@ PHASE_1_FILES: list[str] = [
     "src/notebooklm/_logging.py",
     "src/notebooklm/_web/mind_maps.py",
     "src/notebooklm/_notebooks.py",
-    "src/notebooklm/_research.py",
+    "src/notebooklm/_web/research.py",
     "src/notebooklm/_sources.py",
     "src/notebooklm/auth.py",
     "src/notebooklm/cli/artifact_cmd.py",

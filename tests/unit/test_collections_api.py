@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from notebooklm._collections import CollectionsAPI
+from notebooklm._web.collections import CollectionsAPI
 from notebooklm.exceptions import (
     CollectionError,
     CollectionNotFoundError,
