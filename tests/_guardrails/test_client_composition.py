@@ -34,7 +34,7 @@ FEATURE_API_NAMES = {
     "ResearchAPI",
     "SettingsAPI",
     "SharingAPI",
-    "SourcesAPI",
+    "WebSourcesAPI",
     "SourceUploadPipeline",
     "NoteService",
 }

@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._notebook_metadata import NotebookMetadataService
-from notebooklm._sources import SourcesAPI
 from notebooklm._web.notebooks import create_default_source_lister
+from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.exceptions import RPCError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import Notebook, NotebookMetadata, Source, SourceType
@@ -211,7 +211,7 @@ async def test_default_source_lister_matches_sources_api_list_for_metadata_path(
         ]
     )
     uploader = MagicMock()
-    sources_api = SourcesAPI(rpc, uploader=uploader)
+    sources_api = WebSourcesAPI(rpc, uploader=uploader)
     source_lister = create_default_source_lister(rpc)
 
     assert await source_lister.list("nb_123") == await sources_api.list("nb_123")

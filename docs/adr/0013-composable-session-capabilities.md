@@ -16,7 +16,7 @@
 > current source tree and [`docs/architecture.md`](../architecture.md) are
 > authoritative. The live shared capability Protocols today are `Kernel`,
 > `RpcCaller`, and `LoopGuard` in `_runtime/contracts.py`; `AuthMetadata` is
-> local to `_source/upload.py`, `OperationScopeProvider` is local to
+> local to `_web/sources/upload.py`, `OperationScopeProvider` is local to
 > `_artifact/polling.py`, and `AsyncWorkRuntime` was deleted.
 >
 > **Backend-subclass amendment (2026-08-27).** The accepted web/mobile backend
@@ -149,7 +149,7 @@ runtimes. Concretely:
    time `AuthMetadata` and `Kernel` stayed as standalone Protocols in the
    shared contracts module. Current code keeps `Kernel` in
    `_runtime/contracts.py` as the typed transport surface and moves the
-   single-consumer `AuthMetadata` Protocol local to `_source/upload.py`.
+   single-consumer `AuthMetadata` Protocol local to `_web/sources/upload.py`.
 
 3. **Define feature-local runtime Protocols in their owning module** when
    a named composite earns its keep. At decision time these were:
@@ -157,7 +157,7 @@ runtimes. Concretely:
      plus chat-only `transport_post(...)` and `next_reqid(...)`).
    - `ArtifactsRuntime` and `DrainHookRegistration` in `_artifacts.py`
      (composes `RpcCaller + AsyncWorkRuntime + DrainHookRegistration`).
-   - `UploadRuntime` in `_source/upload.py` (historically `_source_upload.py`)
+   - `UploadRuntime` in `_web/sources/upload.py` (historically `_source_upload.py`)
      (composes `RpcCaller +
      OperationScopeProvider + LoopGuard` plus `kernel` + `auth`
      constructor args).
@@ -236,7 +236,7 @@ runtimes. Concretely:
 - Two `RpcCaller` Protocols coexist briefly: the shared *object*
   protocol in `_runtime/contracts.py` (symbol `RpcCaller`, used by every
   feature API) and a pre-existing local *callable* protocol in
-  `_source/upload.py` (historically `_source_upload.py`, symbol `RpcCallback`, used as the
+  `_web/sources/upload.py` (historically `_source_upload.py`, symbol `RpcCallback`, used as the
   `register_file_source(rpc_call=...)` callback). They are structurally
   distinct (one is an object with an `rpc_call` method; the other is a
   callable). To avoid the name collision, the local callable protocol is

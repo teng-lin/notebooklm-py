@@ -1,10 +1,10 @@
 """Pure decode/validation helpers for the source upload pipeline.
 
-Extracted from :mod:`notebooklm._source.upload` to keep that module under the
+Extracted from :mod:`notebooklm._web.sources.upload` to keep that module under the
 size budget. These are side-effect-free helpers over the resumable-upload URL,
 the ``ADD_SOURCE_FILE`` register response (source-id extraction), and upload
 content-type policy. ``upload.py`` re-exports every name so the historical
-``notebooklm._source.upload.<helper>`` import/patch surface keeps resolving.
+``notebooklm._web.sources.upload.<helper>`` import/patch surface keeps resolving.
 """
 
 from __future__ import annotations
@@ -18,17 +18,17 @@ from urllib.parse import SplitResult, parse_qsl, urlsplit
 
 import httpx
 
-from .._env import PERSONAL_APP_HOSTS
-from .._transport_errors import parse_retry_after
-from .._types.sources import _HTML_FILE_EXTENSIONS
-from ..exceptions import (
+from ..._env import PERSONAL_APP_HOSTS
+from ..._transport_errors import parse_retry_after
+from ..._types.sources import _HTML_FILE_EXTENSIONS
+from ...exceptions import (
     AuthError,
     NetworkError,
     RateLimitError,
     ServerError,
     ValidationError,
 )
-from ..rpc import get_upload_url
+from ...rpc import get_upload_url
 
 #: The two HTTP boundaries after the source registration RPC has succeeded.
 #: Internal: surfaced to callers only as the duck-typed ``stage`` attribute

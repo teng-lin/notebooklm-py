@@ -202,7 +202,7 @@ class TestNoInternalSelfWarn:
 
     @pytest.mark.asyncio
     async def test_get_guide_service_does_not_self_warn(self):
-        from notebooklm._source.content import SourceContentRenderer
+        from notebooklm._web.sources.content import SourceContentRenderer
 
         class _Rpc:
             async def rpc_call(self, *a, **k):

@@ -2,15 +2,15 @@
 
 Kept outside ``_web/notebooks.py`` so the web notebook implementation stays
 under the ADR-0008 module-size budget; mirrors the ``_settings`` /
-``_source.upload_payloads`` split.
+``_web.params.sources`` split.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from ..._source.upload_payloads import build_template_block
 from ...rpc import nest_source_ids
+from .sources import build_template_block
 
 
 def build_create_notebook_params(title: str) -> list[Any]:

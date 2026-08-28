@@ -159,11 +159,11 @@ def test_kernel_http_client_is_read_only_property() -> None:
 
 def test_phase8_source_listing_service_name_and_facade_wiring_are_current() -> None:
     """Downstream notebook-metadata work depends on the finalized lister name."""
-    from notebooklm._source.listing import SourceLister
-    from notebooklm._sources import SourcesAPI
+    from notebooklm._web.sources import WebSourcesAPI
+    from notebooklm._web.sources.listing import SourceLister
 
     core = MagicMock()
-    api = SourcesAPI(core, uploader=MagicMock())
+    api = WebSourcesAPI(core, uploader=MagicMock())
 
     assert isinstance(api._lister, SourceLister)
 
@@ -258,7 +258,7 @@ def test_client_constructs_sources_before_notebooks_and_injects_sources_api() ->
     sources_value = _assignment_value(sources_assignment)
     assert isinstance(sources_value, ast.Call)
     assert isinstance(sources_value.func, ast.Name)
-    assert sources_value.func.id == "SourcesAPI"
+    assert sources_value.func.id == "WebSourcesAPI"
 
     notebooks_value = _assignment_value(notebook_assignment)
     assert isinstance(notebooks_value, ast.Call)

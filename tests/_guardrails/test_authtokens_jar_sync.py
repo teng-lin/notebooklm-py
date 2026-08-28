@@ -185,7 +185,7 @@ _NON_AUTHTOKENS_CANDIDATES: frozenset[tuple[str, str, str, str, str, int]] = fro
             1,
         ),
         (
-            "_source/upload.py",
+            "_web/sources/upload.py",
             "SourceUploadPipeline._live_cookies",
             "get_http_client()",
             "cookies",

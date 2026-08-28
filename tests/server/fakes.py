@@ -19,7 +19,6 @@ from typing import Any
 
 from notebooklm._app.source_batch import batch_item_is_fatal
 from notebooklm._idempotency import mark_unconfirmed
-from notebooklm._source.batch import SourceUrlBatchItem
 from notebooklm._types.artifacts import Artifact, GenerationState, GenerationStatus
 from notebooklm._types.chat import AskResult, ChatSettings, ConversationTurnKey
 from notebooklm._types.common import AccountLimits, UserSettings
@@ -34,6 +33,7 @@ from notebooklm._types.research import (
 )
 from notebooklm._types.sharing import SharedUser, ShareStatus
 from notebooklm._types.sources import Source, SourceFulltext
+from notebooklm._web.sources.batch import SourceUrlBatchItem
 from notebooklm.exceptions import (
     ArtifactNotFoundError,
     NetworkError,

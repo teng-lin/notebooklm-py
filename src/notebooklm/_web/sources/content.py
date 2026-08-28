@@ -7,14 +7,14 @@ import logging
 import reprlib
 from typing import Any, Literal
 
-from .._runtime.contracts import RpcCaller
-from .._types.documents import StructuredDocument
-from .._types.research import SourceGuide
-from .._types.sources import _disambiguate_type_code, _pdf_url_title_fallback
-from .._web.rows.documents import build_document
-from .._web.rows.sources import SourceFulltextRow, SourceGuideRow
-from ..rpc import RPCMethod
-from ..types import SourceFulltext, SourceNotFoundError, _extract_source_url
+from ..._runtime.contracts import RpcCaller
+from ..._types.documents import StructuredDocument
+from ..._types.research import SourceGuide
+from ..._types.sources import _disambiguate_type_code, _pdf_url_title_fallback
+from ...rpc import RPCMethod
+from ...types import SourceFulltext, SourceNotFoundError, _extract_source_url
+from ..rows.documents import build_document
+from ..rows.sources import SourceFulltextRow, SourceGuideRow
 
 
 class SourceContentRenderer:
@@ -22,7 +22,7 @@ class SourceContentRenderer:
 
     def __init__(self, rpc: RpcCaller, logger: logging.Logger | None = None) -> None:
         self._rpc = rpc
-        self._logger = logger or logging.getLogger(__name__)
+        self._logger = logger or logging.getLogger("notebooklm._source.content")
 
     async def get_guide(self, notebook_id: str, source_id: str) -> SourceGuide:
         """Get AI-generated summary and keywords for a specific source."""
@@ -61,7 +61,7 @@ class SourceContentRenderer:
                     "The 'markdown' format requires the 'markdownify' package. "
                     "Install it with: pip install 'notebooklm-py[markdown]'"
                 ) from None
-            from .markdown import html_to_markdown
+            from ..._source.markdown import html_to_markdown
 
         params = [[source_id], [3], [3]] if output_format == "markdown" else [[source_id], [2], [2]]
 

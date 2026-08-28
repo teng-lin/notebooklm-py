@@ -1,4 +1,4 @@
-"""Unit tests for SourcesAPI file upload pipeline and YouTube detection."""
+"""Unit tests for WebSourcesAPI file upload pipeline and YouTube detection."""
 
 import ast
 import inspect
@@ -11,8 +11,8 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from notebooklm._source.upload import SourceUploadPipeline
-from notebooklm._sources import SourcesAPI
+from notebooklm._web.sources import WebSourcesAPI
+from notebooklm._web.sources.upload import SourceUploadPipeline
 from notebooklm.exceptions import NetworkError, RPCError, ValidationError
 from notebooklm.rpc import RPCMethod
 from notebooklm.rpc.types import SourceStatus
@@ -21,7 +21,7 @@ from notebooklm.types import Source
 
 @pytest.fixture
 def mock_core():
-    """Create a mocked Session for SourcesAPI."""
+    """Create a mocked Session for WebSourcesAPI."""
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock())
@@ -80,12 +80,12 @@ def mock_core():
 
 @pytest.fixture
 def sources_api(mock_core):
-    """Create SourcesAPI with mocked core.
+    """Create WebSourcesAPI with mocked core.
 
     The uploader is constructed explicitly from the same mocked core so the
     upload-path tests still exercise the real :class:`SourceUploadPipeline`
     while honoring the now-required ``uploader=`` kwarg on
-    :class:`SourcesAPI`. ``mock_core`` bundles ``rpc_call`` /
+    :class:`WebSourcesAPI`. ``mock_core`` bundles ``rpc_call`` /
     ``operation_scope`` / ``assert_bound_loop`` so it structurally
     satisfies all three of the pipeline's narrow collaborator slots.
     """
@@ -97,7 +97,7 @@ def sources_api(mock_core):
         auth=mock_core.auth,
         record_upload_queue_wait=mock_core.record_upload_queue_wait,
     )
-    return SourcesAPI(mock_core, uploader=uploader)
+    return WebSourcesAPI(mock_core, uploader=uploader)
 
 
 @pytest.mark.asyncio
@@ -116,12 +116,12 @@ async def test_add_drive_file_asserts_bound_loop_before_fetch(sources_api, mock_
 
 
 def test_sources_api_makes_uploader_share_lifecycle_collaborators(sources_api):
-    """SourcesAPI is the single owner of the source-lifecycle verbs.
+    """WebSourcesAPI is the single owner of the source-lifecycle verbs.
 
     The upload pipeline's ``list_sources`` / ``get_source`` / ``wait_*``
     helpers must delegate to the SAME ``SourceLister`` / ``SourcePoller``
     instances the public API uses, rather than parallel copies built in the
-    pipeline constructor (issue #1205). ``SourcesAPI.__init__`` injects its
+    pipeline constructor (issue #1205). ``WebSourcesAPI.__init__`` injects its
     own collaborators via ``configure_source_lifecycle``.
     """
     assert sources_api._uploader._lister is sources_api._lister
@@ -158,9 +158,9 @@ def _self_core_http_client_cookies_read(node: ast.AST) -> bool:
 @pytest.mark.parametrize(
     "helper",
     [
-        SourcesAPI._start_resumable_upload,
-        SourcesAPI._upload_file_streaming,
-        SourcesAPI._cancel_upload_session,
+        WebSourcesAPI._start_resumable_upload,
+        WebSourcesAPI._upload_file_streaming,
+        WebSourcesAPI._cancel_upload_session,
         SourceUploadPipeline.start_resumable_upload,
         SourceUploadPipeline.upload_file_streaming,
         SourceUploadPipeline.cancel_upload_session,

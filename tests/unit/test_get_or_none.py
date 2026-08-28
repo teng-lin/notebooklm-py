@@ -25,8 +25,8 @@ from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._note_service import NoteService
 from notebooklm._notes import NotesAPI
-from notebooklm._sources import SourcesAPI
 from notebooklm._web.notebooks import WebNotebooksAPI
+from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.exceptions import ClientError, NotebookNotFoundError, RPCError
 from notebooklm.types import MindMap, MindMapKind, Source
 
@@ -71,7 +71,7 @@ def _make_notebooks_api(rpc_call: AsyncMock) -> WebNotebooksAPI:
 
 @pytest.fixture
 def sources_api():
-    return SourcesAPI(MagicMock(), uploader=MagicMock())
+    return WebSourcesAPI(MagicMock(), uploader=MagicMock())
 
 
 @pytest.fixture

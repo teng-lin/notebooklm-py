@@ -1,4 +1,4 @@
-"""Targeted coverage tests for ``notebooklm._source.upload``.
+"""Targeted coverage tests for ``notebooklm._web.sources.upload``.
 These tests exercise the error handlers, edge-case branches, and
 streaming/finalize paths in the upload pipeline that the existing
 ``test_sources_upload.py`` / ``test_source_upload_pipeline.py`` suites do
@@ -18,10 +18,10 @@ from urllib.parse import SplitResult, urlsplit
 import httpx
 import pytest
 
-import notebooklm._source._upload_decode as _upload_decode_mod
+import notebooklm._web.sources._upload_decode as _upload_decode_mod
 from notebooklm._app.errors import ErrorCategory, classify
 from notebooklm._app.source_batch import batch_item_is_fatal
-from notebooklm._source.upload import (
+from notebooklm._web.sources.upload import (
     SourceUploadPipeline,
     _build_invalid_argument_source_limit_hint,
     _coerce_source_id_candidate,

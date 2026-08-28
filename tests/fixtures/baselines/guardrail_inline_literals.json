@@ -64,8 +64,11 @@
     "_COOKIE_SHADOW_INVENTORY": 96,
     "_NON_AUTHTOKENS_CANDIDATES": 30
   },
+  "tests/_guardrails/test_backend_abstract_contracts.py": {
+    "BASE_ABSTRACT_CONTRACTS": 28
+  },
   "tests/_guardrails/test_backend_boundaries.py": {
-    "ALLOWED_WEB_IMPORTERS": 27,
+    "ALLOWED_WEB_IMPORTERS": 23,
     "LAZY_WEB_IMPORT_ALLOWLIST": 30
   },
   "tests/_guardrails/test_classify_error_handler_consistency.py": {
@@ -96,7 +99,7 @@
     "_EXEMPLARS": 22
   },
   "tests/_guardrails/test_no_facade_reach_in.py": {
-    "_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES": 27
+    "_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES": 29
   },
   "tests/_guardrails/test_no_session_compat_bridges.py": {
     "CARVE_OUT_MODULES": 21

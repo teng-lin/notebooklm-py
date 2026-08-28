@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import notebooklm._sources as _sources_mod
-from notebooklm._sources import SourcesAPI
+from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.types import (
     DriveSourceStatus,
     Source,
@@ -185,7 +185,7 @@ class TestWaitUntilReady:
     def sources_api(self):
         """Create a SourcesAPI with mocked core."""
         core = MagicMock()
-        return SourcesAPI(core, uploader=MagicMock())
+        return WebSourcesAPI(core, uploader=MagicMock())
 
     @pytest.mark.asyncio
     async def test_returns_immediately_if_ready(self, sources_api):
@@ -386,7 +386,7 @@ class TestWaitUntilRegistered:
     @pytest.fixture
     def sources_api(self):
         core = MagicMock()
-        return SourcesAPI(core, uploader=MagicMock())
+        return WebSourcesAPI(core, uploader=MagicMock())
 
     @pytest.mark.asyncio
     async def test_wait_until_registered_returns_on_processing(self, sources_api):
@@ -489,7 +489,7 @@ class TestWaitForSources:
     def sources_api(self):
         """Create a SourcesAPI with mocked core."""
         core = MagicMock()
-        return SourcesAPI(core, uploader=MagicMock())
+        return WebSourcesAPI(core, uploader=MagicMock())
 
     @pytest.mark.asyncio
     async def test_waits_for_multiple_sources(self, sources_api):

@@ -422,7 +422,7 @@ class SourceRow:
         """Wrap an already-extracted entry (``[[id], title, metadata, ...]``).
 
         Used by callers that walked the response envelope themselves —
-        e.g. :class:`notebooklm._source.listing.SourceLister` iterating
+        e.g. :class:`notebooklm._web.sources.listing.SourceLister` iterating
         over ``notebook[0][1]`` and
         :meth:`notebooklm._notebooks.NotebooksAPI.get_source_ids`
         iterating over the same envelope. Shape is recorded as
@@ -479,7 +479,7 @@ class SourceRow:
     def has_id(self) -> bool:
         """Whether the row resolves to a non-empty :attr:`id`.
 
-        Used by :class:`notebooklm._source.listing.SourceLister` to skip
+        Used by :class:`notebooklm._web.sources.listing.SourceLister` to skip
         rows whose id envelopes legacy ``_extract_source_id`` would
         have rejected (returning ``None``) — including the rare
         ``[None, True, [None]]`` drive-payload-with-``None``-inner case
@@ -1330,7 +1330,7 @@ class SourceFulltextRow:
 
         ``result[3]`` is the source's ``tailwindDoc`` and ``[3][0]`` its
         ``Body``: a structured tree, not the pre-flattened string list the name
-        suggests. ``_source/content.py`` derives two things from it — the legacy
+        suggests. ``_web/sources/content.py`` derives two things from it — the legacy
         newline-joined ``SourceFulltext.content`` and, since #2128, the parsed
         ``SourceFulltext.document`` (via
         :func:`notebooklm._web.rows.documents.build_document`, which owns

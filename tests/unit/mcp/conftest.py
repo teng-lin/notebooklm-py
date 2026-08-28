@@ -72,7 +72,7 @@ def mock_client() -> MagicMock:
     for namespace in _NAMESPACES:
         setattr(client, namespace, MagicMock())
 
-    from notebooklm._source.batch import SourceUrlBatchItem
+    from notebooklm._web.sources.batch import SourceUrlBatchItem
 
     async def _batch_add(notebook_id: str, urls: list[str]) -> list[SourceUrlBatchItem]:
         """Adapter-test seam: model typed batch outcomes through mocked add_url.

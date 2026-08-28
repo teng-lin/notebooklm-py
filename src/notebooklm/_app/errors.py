@@ -128,9 +128,9 @@ class ErrorCategory(Enum):
     #: specific source input (invalid/inaccessible/paywalled/empty/unparseable
     #: URL). Distinct from the generic :attr:`LIBRARY` catch-all so adapters
     #: project it as a 4xx input error and, in a batch add, ISOLATE it as a
-    #: per-item error instead of aborting the whole batch. ``_source/add.py``
+    #: per-item error instead of aborting the whole batch. ``_web/sources/add.py``
     #: re-raises every infra signal (auth/rate-limit/server/network) UNWRAPPED,
-    #: and a post-registration upload failure (``_source/upload.py``) does too
+    #: and a post-registration upload failure (``_web/sources/upload.py``) does too
     #: (with ``source_id``/``stage`` attributes attached rather than a wrapper
     #: type), so a ``SourceAddError`` reaching THIS category is a per-item input
     #: failure. The guarantee is no longer carried by the type alone: an
@@ -389,11 +389,11 @@ def _category_for(exc: BaseException) -> ErrorCategory:
 
     # --- Per-source ADD failure (SourceAddError). ----------------------------
     # A SourceError -> NotebookLMError (NOT an RPCError), so it reaches here only
-    # after every RPC/infra branch missed. ``_source/add.py`` re-raises the TYPED
+    # after every RPC/infra branch missed. ``_web/sources/add.py`` re-raises the TYPED
     # infra signals (auth/rate-limit/server/network) UNWRAPPED and wraps only a
     # residual RPCError as SourceAddError — usually a genuine per-source rejection
     # (bad URL, FAILED_PRECONDITION, …), which isolates as the NON-fatal SOURCE_ADD.
-    # A post-registration upload failure (``_source/upload.py``) does the same: the
+    # A post-registration upload failure (``_web/sources/upload.py``) does the same: the
     # typed cause propagates unwrapped (with ``source_id``/``stage`` attached), so it
     # is classified by the earlier branches above and never reaches this one at all.
     # BUT a transient/server failure can still reach the wrap as a *bare* RPCError

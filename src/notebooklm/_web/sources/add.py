@@ -9,16 +9,16 @@ from dataclasses import replace
 from typing import Any
 from urllib.parse import parse_qs
 
-from .._idempotency import (
+from ..._idempotency import (
     _CreateResultKind,
     _IdempotentCreateResult,
     idempotent_create,
 )
-from .._idempotency import (
+from ..._idempotency import (
     mark_unconfirmed as _unconfirmed,
 )
-from .._runtime.contracts import RpcCaller
-from ..exceptions import (
+from ..._runtime.contracts import RpcCaller
+from ...exceptions import (
     AuthError,
     NetworkError,
     NonIdempotentRetryError,
@@ -27,9 +27,9 @@ from ..exceptions import (
     SourceAddError,
     ValidationError,
 )
-from ..rpc import RPCError, RPCMethod
-from ..types import Source
-from .upload_payloads import build_template_block
+from ...rpc import RPCError, RPCMethod
+from ...types import Source
+from ..params.sources import build_template_block
 
 ListSources = Callable[[str], Awaitable[list[Source]]]
 WaitUntilReady = Callable[..., Awaitable[Source]]
@@ -92,7 +92,7 @@ async def honor_requested_title(
         return source
     # UPDATE_SOURCE's echo can be sparse (id + title only), so returning it wholesale
     # would drop url / kind / status. Keep the fully-hydrated added source and swap in
-    # just the new title — mirrors the file-upload rename (``_source/upload.py``).
+    # just the new title — mirrors the file-upload rename (``_web/sources/upload.py``).
     return replace(source, title=(renamed.title if renamed else None) or requested)
 
 
@@ -163,7 +163,7 @@ class SourceAddService:
         source with this URL was already here"*. Probe matches are therefore
         filtered against a baseline of source ids captured **before** the
         first create attempt, exactly like
-        :meth:`~notebooklm._source.upload.SourceUploader.register_file_source`
+        :meth:`~notebooklm._web.sources.upload.SourceUploader.register_file_source`
         does for filenames and ``add_drive`` does for Drive ``documentId``\\ s.
         An unavailable baseline or an ambiguous multi-match raises
         :class:`~notebooklm.exceptions.SourceAddError` rather than guessing.
@@ -287,7 +287,7 @@ class SourceAddService:
         # pre-existing copy as if it were the one just created, masking a
         # failed create. ``None`` is the "baseline unavailable" sentinel; the
         # probe then refuses to guess. Mirrors ``add_drive`` below and
-        # ``register_file_source`` in ``_source/upload.py``.
+        # ``register_file_source`` in ``_web/sources/upload.py``.
         #
         # NEW on every call (it used to list only inside _probe, i.e. only
         # after a transport failure). This list is a GET_NOTEBOOK, which the
@@ -530,7 +530,7 @@ class SourceAddService:
         happily holds the same Drive file twice. The probe therefore filters
         matches against a baseline of source ids captured before the first
         create attempt, exactly like
-        :meth:`~notebooklm._source.upload.SourceUploader.register_file_source`
+        :meth:`~notebooklm._web.sources.upload.SourceUploader.register_file_source`
         does for filenames, so a pre-existing copy is never handed back as if
         it were the one just created. This costs one extra source list per
         call; it is the price of telling "my create landed" apart from "a copy
@@ -652,7 +652,7 @@ class SourceAddService:
         # unfiltered match could hand back a pre-existing copy as if it were the
         # one just created, silently masking a failed create. ``None`` is the
         # "baseline unavailable" sentinel; the probe then refuses to guess.
-        # Mirrors ``register_file_source`` in ``_source/upload.py``.
+        # Mirrors ``register_file_source`` in ``_web/sources/upload.py``.
         #
         # NEW on every call (it used to list only inside _probe, i.e. only after
         # a transport failure). This list is a GET_NOTEBOOK, which the backend

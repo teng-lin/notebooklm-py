@@ -5,12 +5,12 @@ returns a ``FakeSession`` instance shaped to satisfy the **shared
 capability Protocols** in :mod:`notebooklm._runtime.contracts`
 (``RpcCaller``, ``LoopGuard``, ``Kernel``) plus the single-consumer
 Protocols inlined into their owning feature modules in issue #1327
-(``AuthMetadata`` in ``notebooklm._source.upload``,
+(``AuthMetadata`` in ``notebooklm._web.sources.upload``,
 ``OperationScopeProvider`` in ``notebooklm._artifact.polling``). Feature APIs that
 need more than one capability take their direct collaborators by
 keyword-only constructor argument (``ChatAPI`` in ``notebooklm._chat.api``,
 ``ArtifactsAPI`` in ``_artifacts.py``, ``SourceUploadPipeline`` in
-``notebooklm._source.upload``); the feature-local composite Protocols
+``notebooklm._web.sources.upload``); the feature-local composite Protocols
 ``ArtifactsRuntime`` and ``UploadRuntime`` (and their adapter
 dataclasses) were retired once it was clear they only hid three stable
 collaborators with one production satisfier. (``ChatRuntime`` was

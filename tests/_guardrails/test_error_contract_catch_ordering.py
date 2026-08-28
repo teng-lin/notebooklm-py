@@ -13,8 +13,8 @@ handle the *narrow* transport exceptions, "never the broad ``RPCError``", when
 the broad clause would change what the caller sees.
 
 The sanctioned pattern is the one ``add_url`` / ``add_drive``
-(``src/notebooklm/_source/add.py``) and ``register_file_source``
-(``src/notebooklm/_source/upload.py``) use::
+(``src/notebooklm/_web/sources/add.py``) and ``register_file_source``
+(``src/notebooklm/_web/sources/upload.py``) use::
 
     try:
         result = await rpc.rpc_call(...)
@@ -282,7 +282,7 @@ def test_no_unordered_broad_rpc_error_wrap_in_feature_tree() -> None:
         "    except (AuthError, RateLimitError, ServerError, NetworkError):\n"
         "        raise\n"
         "so they propagate unwrapped — copy the add_url/add_drive pattern in "
-        "src/notebooklm/_source/add.py (see ADR-0019 'Cross-cutting' row + "
+        "src/notebooklm/_web/sources/add.py (see ADR-0019 'Cross-cutting' row + "
         "retry guidance, docs/adr/0019-error-and-return-contract.md).\n\n"
         + "\n".join(
             f"  src/notebooklm/{f}: "

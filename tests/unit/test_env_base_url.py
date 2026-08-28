@@ -11,8 +11,8 @@ from notebooklm._env import (
     get_base_host,
     get_base_url,
 )
-from notebooklm._source.upload import SourceUploadPipeline
-from notebooklm._sources import SourcesAPI
+from notebooklm._web.sources import WebSourcesAPI
+from notebooklm._web.sources.upload import SourceUploadPipeline
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import RPCMethod, get_batchexecute_url, get_query_url, get_upload_url
@@ -149,7 +149,7 @@ async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_m
     core = build_client_shell_for_tests(auth)
     await core.__aenter__()
     try:
-        api = SourcesAPI(
+        api = WebSourcesAPI(
             core,
             uploader=SourceUploadPipeline(
                 rpc=core,

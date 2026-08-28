@@ -12,7 +12,6 @@ from .._notebooks import NotebooksAPI
 from .._runtime.contracts import RpcCaller
 from .._settings import build_get_user_settings_params, extract_account_limits
 from .._sharing_manager import ShareManager
-from .._source.listing import SourceLister
 from .._types.enums import GrpcStatusCode, normalize_grpc_status
 from ..exceptions import (
     ClientError,
@@ -39,6 +38,7 @@ from .params.notebooks import (
 )
 from .rows.notebooks import PromptSuggestionRow, unwrap_prompt_suggestions
 from .rows.sources import SourceRow
+from .sources.listing import SourceLister
 
 logger = logging.getLogger("notebooklm._notebooks")
 
@@ -347,7 +347,7 @@ class WebNotebooksAPI(NotebooksAPI):
                 # the drift warning below (#2131). This is the same split the
                 # sibling walk over this slot already makes — reject the short
                 # envelope first, then accept a present ``None``
-                # (``_source/listing.py``, issue #1159).
+                # (``_web/sources/listing.py``, issue #1159).
                 return source_ids
             if not isinstance(sources, list):
                 logger.warning(
@@ -365,7 +365,7 @@ class WebNotebooksAPI(NotebooksAPI):
                 # and stringifies non-string ids. The legacy code here
                 # additionally required ``isinstance(sid, str)``; that
                 # check was inconsistent with the sibling
-                # ``_source.listing._extract_source_id`` path (which
+                # ``_web.sources.listing._extract_source_id`` path (which
                 # accepts any non-None id via ``str(src_id)`` at the
                 # ``Source(id=...)`` boundary). Unifying both call sites
                 # through ``SourceRow.id`` aligns behavior — integer-ids

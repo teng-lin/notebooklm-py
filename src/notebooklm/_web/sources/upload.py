@@ -13,36 +13,42 @@ from typing import IO, TYPE_CHECKING, Any, Protocol, cast
 
 import httpx
 
-from .._auth.account import authuser_query, format_authuser_value
-from .._callbacks import maybe_await_callback
-from .._idempotency import (
+from ..._auth.account import authuser_query, format_authuser_value
+from ..._callbacks import maybe_await_callback
+from ..._idempotency import (
     _coerce_create_result,
     _IdempotentCreateResult,
     idempotent_create,
 )
-from .._idempotency import mark_unconfirmed as _unconfirmed
-from .._loop_bound import LoopBoundPrimitive
-from .._runtime.config import (
+from ..._idempotency import mark_unconfirmed as _unconfirmed
+from ..._loop_bound import LoopBoundPrimitive
+from ..._runtime.config import (
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     normalize_max_concurrent_uploads,
 )
-from .._runtime.contracts import (
+from ..._runtime.contracts import (
     Kernel,
     RpcCaller,
 )
-from .._types.enums import SourceStatus
-from ..exceptions import (
+from ..._source.polling import SourcePoller
+from ..._types.enums import SourceStatus
+from ...exceptions import (
     AuthError,
     NetworkError,
     RateLimitError,
     ServerError,
     ValidationError,
 )
-from ..rpc import RPCError, RPCMethod, get_upload_url
-from ..types import Source, SourceAddError
+from ...rpc import RPCError, RPCMethod, get_upload_url
+from ...types import Source, SourceAddError
+from ..params.sources import (
+    build_register_file_source_params,
+    build_rename_source_params,
+    build_resumable_upload_start_request,
+)
 
 # Decode/validation helpers live in ``_upload_decode``; re-exported here so the
-# historical ``notebooklm._source.upload.<helper>`` import surface (and the
+# historical ``notebooklm._web.sources.upload.<helper>`` import surface (and the
 # ``SourceUploadPipeline`` body below) keep resolving them. Note: each helper
 # reads its module-level globals (e.g. ``urlsplit``, ``_SOURCE_ID_UUID_PATTERN``)
 # from ``_upload_decode``, so a test seam that patches such a global must target
@@ -89,16 +95,10 @@ from ._upload_decode import (  # noqa: F401
     raise_partial_upload_failure,
 )
 from .listing import SourceLister
-from .polling import SourcePoller
-from .upload_payloads import (
-    build_register_file_source_params,
-    build_rename_source_params,
-    build_resumable_upload_start_request,
-)
 
 if TYPE_CHECKING:
-    from .._runtime.lifecycle import ClientLifecycle
-    from .._transport_drain import TransportDrainTracker
+    from ..._runtime.lifecycle import ClientLifecycle
+    from ..._transport_drain import TransportDrainTracker
 
 
 class AuthMetadata(Protocol):
@@ -242,7 +242,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         # Keep the upload leg on the SAME transport as the main session — the
         # /upload/ endpoint 500s on a curl_cffi-session + httpx-upload mix
         # (fingerprint/session correlation).
-        from .._curl_cffi_transport import resolve_transport_factory
+        from ..._curl_cffi_transport import resolve_transport_factory
 
         return resolve_transport_factory()
 
@@ -969,7 +969,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                     # low-level libcurl (no full-file buffer); httpx streams natively
                     # through the async-generator ``content=`` path. isinstance (not
                     # duck-typing) because test mocks auto-spawn any attribute.
-                    from .._curl_cffi_transport import CurlCffiAsyncClient
+                    from ..._curl_cffi_transport import CurlCffiAsyncClient
 
                     if isinstance(client, CurlCffiAsyncClient) and total_bytes is not None:
                         source = path_fallback if path_fallback is not None else file_obj

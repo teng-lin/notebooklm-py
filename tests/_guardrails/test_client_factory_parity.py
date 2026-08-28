@@ -29,7 +29,9 @@ vacuous.
 from __future__ import annotations
 
 from notebooklm._notebooks import NotebooksAPI
+from notebooklm._sources import SourcesAPI
 from notebooklm._web.notebooks import WebNotebooksAPI
+from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from tests._helpers.client_factory import build_client_shell_for_tests
@@ -132,6 +134,20 @@ def test_shared_wiring_identities_hold_on_both_paths() -> None:
             f"{label}: notebooks (NotebooksAPI._rpc) must dispatch through the "
             "client's shared RpcExecutor"
         )
+        assert type(client.sources) is WebSourcesAPI
+        assert isinstance(client.sources, SourcesAPI)
+        assert getattr(client.sources, "_rpc", _missing) is client._rpc_executor, (
+            f"{label}: sources must dispatch through the client's shared RpcExecutor"
+        )
+        assert getattr(client.sources, "_uploader", _missing) is client._source_uploader, (
+            f"{label}: sources and lifecycle must share the client-owned upload pipeline"
+        )
+        assert getattr(client._source_uploader, "_lister", _missing) is getattr(
+            client.sources, "_lister", _missing
+        ), f"{label}: sources and uploader must share one SourceLister"
+        assert getattr(client._source_uploader, "_poller", _missing) is getattr(
+            client.sources, "_poller", _missing
+        ), f"{label}: sources and uploader must share one SourcePoller"
         assert getattr(client._source_uploader, "_auth", _missing) is client._auth, (
             f"{label}: the upload pipeline (SourceUploadPipeline._auth) must alias "
             "the client-owned AuthTokens (ADR-0016 Auth Instance Invariant)"

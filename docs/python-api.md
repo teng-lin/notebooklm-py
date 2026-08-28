@@ -508,7 +508,7 @@ except NonIdempotentRetryError:
     ...
 ```
 
-`client.sources.add_file(...)` and `client.sources.add_drive(...)` are now also covered by the probe-then-create wrapper: the create RPC runs with `disable_internal_retries=True` and, on transport failure, the wrapper probes the server-side source list (via `idempotent_create`) before deciding whether to retry — so transient failures no longer produce duplicate sources. See `_source/add.py` (`SourceAddService.add_drive`) and `_source/upload.py` (`SourceUploadPipeline.register_file_source`) for the implementation.
+`client.sources.add_file(...)` and `client.sources.add_drive(...)` are now also covered by the probe-then-create wrapper: the create RPC runs with `disable_internal_retries=True` and, on transport failure, the wrapper probes the server-side source list (via `idempotent_create`) before deciding whether to retry — so transient failures no longer produce duplicate sources. See `_web/sources/add.py` (`SourceAddService.add_drive`) and `_web/sources/upload.py` (`SourceUploadPipeline.register_file_source`) for the implementation.
 
 **When the probe itself fails, the call fails ([#2220](https://github.com/teng-lin/notebooklm-py/issues/2220)).** The probe is what makes the retry safe, so it is never allowed to guess. If its own list RPC fails for a non-transport reason — realistically, wire drift making the strict decoder raise `RPCError` — no **further** attempt is made, and you get `SourceAddError` (source paths) or `RPCError` (`notebooks.create`) saying the create could not be confirmed. Note "further": the wrapper allows two attempts, so if an *earlier* probe returned a clean "no match" one retry may already have gone out before this one failed — reconcile for more than one row.
 

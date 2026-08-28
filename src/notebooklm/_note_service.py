@@ -327,7 +327,7 @@ class NoteService:
             # lie: the title/content were never finalized via UPDATE_NOTE,
             # and any later operation keyed on the empty id misbehaves.
             # Raise instead, matching the sibling create paths
-            # (``_source.add`` / ``notebooks.create``) which surface an
+            # (``_web.sources.add`` / ``notebooks.create``) which surface an
             # error rather than fabricate a degenerate resource.
             raise RPCError(
                 "CREATE_NOTE returned no usable note id; the note was not created",

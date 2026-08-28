@@ -290,7 +290,7 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     #
     # These entries force-disable blind transport retries via
     # ``resolve_effective_disable_internal_retries``. The per-API call sites in
-    # ``_source/add.py`` / ``_source/upload.py`` own the executable probe loop for
+    # ``_web/sources/add.py`` / ``_web/sources/upload.py`` own the executable probe loop for
     # the URL, Drive, and file variants.
 
     _RAW_ADD_SOURCE_NOT_IDEMPOTENT_NOTE = (

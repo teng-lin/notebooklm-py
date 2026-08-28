@@ -1802,7 +1802,7 @@ class TestSourceRowId:
         """``[None, True, [None]]`` — drive inner element is ``None``.
 
         Both :attr:`id` and :attr:`has_id` must return falsy values so
-        :class:`notebooklm._source.listing.SourceLister` skips the row
+        :class:`notebooklm._web.sources.listing.SourceLister` skips the row
         (matching legacy ``_extract_source_id`` which returned ``None``
         from ``raw_id[2][0] is None``).
         """

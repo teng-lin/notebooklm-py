@@ -137,7 +137,7 @@ POST|PUT /files/ul/{token}   -> stream raw body -> add source
    {method:"POST", headers:{"Content-Type": file.type || "application/octet-stream"},
    body: file})` — **not** a multipart form. A raw body omits the filename, and
    NotebookLM's upload **requires** the real basename+extension (an extensionless
-   name 400s, `_source/upload.py:411`), so the page passes the browser-selected
+   name 400s, `_web/sources/upload.py:411`), so the page passes the browser-selected
    `file.name` as a query param and the type as `Content-Type`. The handler reads
    `request.stream()` chunk-by-chunk into a `0o600` temp file (named from the
    **sanitized** `?filename`) with a **running byte cap** (the real DoS defense),

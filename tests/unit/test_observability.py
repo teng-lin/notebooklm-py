@@ -16,8 +16,8 @@ from notebooklm import (
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
-from notebooklm._source.upload import SourceUploadPipeline
-from notebooklm._sources import SourcesAPI
+from notebooklm._web.sources import WebSourcesAPI
+from notebooklm._web.sources.upload import SourceUploadPipeline
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import GenerationStatus
@@ -349,7 +349,7 @@ async def test_upload_progress_callback_receives_byte_counts(
     core = build_client_shell_for_tests(auth_tokens)
     await core.__aenter__()
     try:
-        api = SourcesAPI(
+        api = WebSourcesAPI(
             core,
             uploader=SourceUploadPipeline(
                 rpc=core,

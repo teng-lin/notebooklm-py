@@ -3,7 +3,7 @@
 This module defines the narrow structural Protocols feature APIs depend
 on. Per ADR-0013, a Protocol lives here only when **shared by ≥2
 features**; single-consumer capabilities stay local to their owning
-feature module (e.g. ``AuthMetadata`` lives in ``_source/upload.py`` and
+feature module (e.g. ``AuthMetadata`` lives in ``_web/sources/upload.py`` and
 ``OperationScopeProvider`` lives in ``_artifact/polling.py``, each with a
 single consumer).
 
@@ -18,7 +18,7 @@ Contents:
 Feature APIs that need more than one capability take their direct
 collaborators by keyword-only constructor argument (``ChatAPI`` in
 ``_chat/api.py``, ``ArtifactsAPI`` in ``_artifacts.py``, and
-``SourceUploadPipeline`` in ``_source/upload.py``). The feature-local
+``SourceUploadPipeline`` in ``_web/sources/upload.py``). The feature-local
 composite Protocols ``ArtifactsRuntime`` and ``UploadRuntime`` (and
 their corresponding adapter dataclasses) that previously bundled three
 capability Protocols apiece were retired once it was clear they only

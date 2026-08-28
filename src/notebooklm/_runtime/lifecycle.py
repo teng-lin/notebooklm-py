@@ -82,8 +82,8 @@ if TYPE_CHECKING:
     from .._client_composed import ClientComposed
     from .._cookie_persistence import CookiePersistence
     from .._reqid_counter import ReqidCounter
-    from .._source.upload import SourceUploadPipeline
     from .._transport_drain import TransportDrainTracker
+    from .._web.sources.upload import SourceUploadPipeline
     from ..types import ConnectionLimits
     from .auth import AuthRefreshCoordinator
 

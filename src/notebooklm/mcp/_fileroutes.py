@@ -693,7 +693,7 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                     #
                     # A post-registration rejection (``raise_partial_upload_failure()``
                     # attaches ``source_id``/``stage`` to the real cause rather than
-                    # wrapping it — see ``_source/_upload_decode.py``) additionally
+                    # wrapping it — see ``_web/sources/_upload_decode.py``) additionally
                     # names the retained row: a retry re-registers a NEW row rather
                     # than replacing this one, and #2138's own evidence is exactly
                     # this shape (an HTTP-400 upload rejection after registration).

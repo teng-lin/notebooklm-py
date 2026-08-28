@@ -2101,7 +2101,7 @@ async def test_source_add_batch_isolates_source_add_error(mcp_call, mock_client)
     never attempted). Now it is the non-fatal ``SOURCE_ADD`` category, so the batch
     isolates it per item. ``[valid, bad-domain, valid, non-http]`` must yield 4 result
     entries: 2 ``added``, 1 ``SOURCE_ADD`` error (the bad domain, wrapped by
-    ``_source/add.py`` from a residual ADD RPCError), 1 ``VALIDATION`` error (the
+    ``_web/sources/add.py`` from a residual ADD RPCError), 1 ``VALIDATION`` error (the
     non-http entry, rejected by ``validate_url`` before any client call) — with no
     abort.
     """

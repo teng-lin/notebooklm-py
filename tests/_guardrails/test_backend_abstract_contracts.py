@@ -45,6 +45,27 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
         ),
         wire_hooks=frozenset({"_send_create"}),
     ),
+    _AbstractContract(
+        module="notebooklm._sources",
+        class_name="SourcesAPI",
+        abstract_methods=frozenset(
+            {
+                "add_drive",
+                "add_drive_file",
+                "add_file",
+                "add_text",
+                "add_url",
+                "check_freshness",
+                "delete",
+                "get_fulltext",
+                "get_guide",
+                "list",
+                "refresh",
+                "rename",
+            }
+        ),
+        wire_hooks=frozenset(),
+    ),
 )
 
 _WIRE_HOOK_PREFIXES = ("_send_",)

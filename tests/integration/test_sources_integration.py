@@ -16,9 +16,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pytest_httpx import HTTPXMock
 
-import notebooklm._sources as _sources_mod
+import notebooklm._sources as _sources_base_mod
+import notebooklm._web.sources as _sources_mod
 from notebooklm import NotebookLMClient, Source, SourceType
-from notebooklm._source.add import SourceAddService
+from notebooklm._web.sources.add import SourceAddService
 from notebooklm.exceptions import DecodingError, RPCError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import SourceAddError, SourceNotFoundError
@@ -30,7 +31,7 @@ def _add_register_file_source_baseline_mock(httpx_mock: HTTPXMock, build_rpc_res
     """Register an empty GET_NOTEBOOK baseline response for ``add_file`` paths.
 
     The ``register_file_source`` wrapper captures a baseline of source IDs
-    before the create attempt (see ``_source/upload.py:register_file_source``
+    before the create attempt (see ``_web/sources/upload.py:register_file_source``
     for the rationale — pre-existing same-named sources must NOT match a
     retry probe). For tests that exercise ``add_file`` with a single
     ``ADD_SOURCE_FILE`` batchexecute mock, this helper adds the baseline
@@ -3050,7 +3051,7 @@ class TestWaitUntilReadyMidLoopTimeout:
                 return_value=processing_source,
             ):
                 with patch.object(
-                    _sources_mod, "monotonic", side_effect=fake_monotonic
+                    _sources_base_mod, "monotonic", side_effect=fake_monotonic
                 ) as mock_monotonic:
                     with pytest.raises(SourceTimeoutError):
                         await client.sources.wait_until_ready(

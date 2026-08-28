@@ -65,8 +65,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from notebooklm._source.upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
+from notebooklm._web.sources import WebSourcesAPI
+from notebooklm._web.sources.upload import SourceUploadPipeline
 from tests._fixtures.fake_core import FakeSession, make_fake_core
 
 # mock-based loop-blocking detection tests; no HTTP, no cassette.
@@ -119,7 +120,7 @@ def _make_sources_api() -> tuple[SourcesAPI, FakeSession]:
         auth=core.auth,
         record_upload_queue_wait=core.record_upload_queue_wait,
     )
-    return SourcesAPI(core.rpc_executor, uploader=uploader), core
+    return WebSourcesAPI(core.rpc_executor, uploader=uploader), core
 
 
 class _SlowReadFile:

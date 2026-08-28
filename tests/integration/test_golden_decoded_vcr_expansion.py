@@ -354,7 +354,7 @@ class TestSourceMutationsGoldenDecoded:
 
         The id is the ONLY recording-derived field on this path: in the
         default no-wait flow the returned ``Source``'s title/status are
-        client-synthesized placeholders (``_source/upload.py``), so pinning
+        client-synthesized placeholders (``_web/sources/upload.py``), so pinning
         them would assert the synthesizer, not the decoder.
         """
         test_file = tmp_path / "vcr_test_document.txt"

@@ -7,7 +7,7 @@ new shared chokepoint that every async entry point on the seam helpers
 ``_runtime.auth.AuthRefreshCoordinator.await_refresh``,
 ``_artifact.polling.ArtifactPollingService.wait_for_completion``,
 ``_chat.ChatAPI.ask``,
-``_source.upload.SourceUploadPipeline.add_file``) now consults so a cross-loop call surfaces an
+``_web.sources.upload.SourceUploadPipeline.add_file``) now consults so a cross-loop call surfaces an
 actionable ``RuntimeError`` at the call site rather than hanging on a
 lock bound to a dead loop.
 
@@ -242,7 +242,7 @@ def test_add_file_guards_against_cross_loop_call(monkeypatch: pytest.MonkeyPatch
     the lifecycle (``LoopGuard``) collaborator directly via its
     ``lifecycle`` constructor slot.
     """
-    from notebooklm._source.upload import SourceUploadPipeline
+    from notebooklm._web.sources.upload import SourceUploadPipeline
 
     lifecycle = MagicMock()
     lifecycle.assert_bound_loop = MagicMock(

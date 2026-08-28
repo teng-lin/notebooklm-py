@@ -22,7 +22,7 @@ from typing import Any
 import httpx
 import pytest
 
-from notebooklm._source.drive_import import (
+from notebooklm._web.sources.drive_import import (
     _DRIVE_DOWNLOAD_URL,
     _HTML_EXTS,
     _UPLOAD_SUPPORTED_EXTS,

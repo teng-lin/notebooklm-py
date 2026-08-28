@@ -6,8 +6,6 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from ._upload_decode import _upload_url_origin
-
 
 @dataclass(frozen=True)
 class ResumableUploadStartRequest:
@@ -68,8 +66,12 @@ def build_resumable_upload_start_request(
     ``Origin`` / ``Referer`` are derived from ``upload_url`` — the endpoint this
     request is actually POSTed to — rather than from a separately supplied base
     URL, so the two can never name different hosts (see
-    :func:`notebooklm._source._upload_decode._upload_url_origin`).
+    :func:`notebooklm._web.sources._upload_decode._upload_url_origin`).
     """
+    # Local import prevents the params module from eagerly initializing the
+    # concrete ``_web.sources`` facade while its payload builders are imported.
+    from ..sources._upload_decode import _upload_url_origin
+
     origin = _upload_url_origin(upload_url)
     return ResumableUploadStartRequest(
         url=f"{upload_url}?{authuser_query}",

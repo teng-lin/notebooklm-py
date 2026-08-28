@@ -7,12 +7,12 @@ import logging
 from collections.abc import Awaitable, Callable, Collection
 from typing import Any, TypeVar
 
-from .._runtime.contracts import RpcCaller
-from .._types.enums import SourceStatus
-from .._web.rows.sources import SourceRow
-from ..rpc import RPCError, RPCMethod, safe_index
-from ..types import Source, SourceType
-from .upload_payloads import build_template_block
+from ..._runtime.contracts import RpcCaller
+from ..._types.enums import SourceStatus
+from ...rpc import RPCError, RPCMethod, safe_index
+from ...types import Source, SourceType
+from ..params.sources import build_template_block
+from ..rows.sources import SourceRow
 
 # Keep source-list warnings on the historical logger so existing log filters
 # continue to see the same channel after the service extraction.
@@ -83,7 +83,7 @@ class SourceLister:
         # (#1549; live-verified forward-compatible). Mirrors
         # ``_web.params.notebooks.build_get_notebook_params`` — inlined here to
         # avoid an ownership cycle because that web builder itself depends on
-        # ``_source.upload_payloads``.
+        # ``_web.params.sources``.
         params = [notebook_id, None, build_template_block(), None, 0]
         notebook = await self._rpc.rpc_call(
             RPCMethod.GET_NOTEBOOK,

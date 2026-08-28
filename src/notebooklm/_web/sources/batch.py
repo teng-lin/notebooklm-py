@@ -18,20 +18,20 @@ from ipaddress import IPv6Address, ip_address
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from .._idempotency import mark_unconfirmed
-from .._runtime.contracts import RpcCaller
-from .._types.enums import GrpcStatusCode, SourceStatus, normalize_rpc_code
-from .._web.rows.sources import unwrap_add_source_rows
-from ..exceptions import (
+from ..._idempotency import mark_unconfirmed
+from ..._runtime.contracts import RpcCaller
+from ..._types.enums import GrpcStatusCode, SourceStatus, normalize_rpc_code
+from ...exceptions import (
     AuthError,
     NetworkError,
     RateLimitError,
     ServerError,
     SourceAddError,
 )
-from ..rpc import RPCError, RPCMethod
-from ..types import Source
-from .upload_payloads import build_template_block
+from ...rpc import RPCError, RPCMethod
+from ...types import Source
+from ..params.sources import build_template_block
+from ..rows.sources import unwrap_add_source_rows
 
 ListSources = Callable[..., Awaitable[list[Source]]]
 _PERCENT_ESCAPE = re.compile(r"%[0-9a-fA-F]{2}")

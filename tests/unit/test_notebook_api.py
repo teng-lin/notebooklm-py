@@ -7,12 +7,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._source.listing import SourceLister
 from notebooklm._web.notebooks import WebNotebooksAPI
 from notebooklm._web.params.notebooks import (
     build_create_notebook_params,
     build_get_notebook_params,
 )
+from notebooklm._web.sources.listing import SourceLister
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.exceptions import (

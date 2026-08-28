@@ -160,12 +160,14 @@ src/notebooklm/
 ├── _artifacts.py                # ArtifactsAPI implementation
 ├── _artifact/                   # per-concern artifact seams
 ├── _chat/                       # ChatAPI implementation + chat helpers
-├── _source/                     # per-concern source seams
+├── _source/                     # neutral source polling/Markdown + lazy shims
 ├── _label/                      # label payload builders
 ├── _web/rows/                   # strict positional RPC row adapters
 ├── _notebooks.py                # Backend-neutral abstract NotebooksAPI
 ├── _web/notebooks.py            # WebNotebooksAPI implementation
-├── _sources.py, _notes.py, ...  # other feature implementations
+├── _sources.py                  # Backend-neutral abstract SourcesAPI
+├── _web/sources/                # WebSourcesAPI + concrete web source services
+├── _notes.py, ...               # other feature implementations
 ├── _env.py                      # env-var resolvers (NOTEBOOKLM_*)
 ├── _backoff.py, _atomic_io.py   # narrow utility seams
 └── _auth/                       # auth subpackage (entire tree internal)

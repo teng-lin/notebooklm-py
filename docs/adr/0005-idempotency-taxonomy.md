@@ -50,7 +50,7 @@ The classification rules are:
 
 - **Read-only RPCs** classify as `IDEMPOTENT_SET_OP`; replay is explicitly safe because the RPC does not mutate server state.
 - **Mutating RPCs with a stable server-side dedupe key** classify as `IDEMPOTENT_SET_OP` (delete / rename / set-state) — retries are explicitly safe.
-- **Mutating RPCs without a dedupe key but with a probe RPC** classify as `PROBE_THEN_CREATE`; the inner retry loop is force-disabled, and the per-API call site owns a probe-then-create wrapper (see `idempotent_create()` in `_idempotency.py` and per-API uses such as `_notebooks.py`, `_source/add.py`, and `_source/upload.py`).
+- **Mutating RPCs without a dedupe key but with a probe RPC** classify as `PROBE_THEN_CREATE`; the inner retry loop is force-disabled, and the per-API call site owns a probe-then-create wrapper (see `idempotent_create()` in `_idempotency.py` and per-API uses such as `_notebooks.py`, `_web/sources/add.py`, and `_web/sources/upload.py`).
 
   **A `PROBE_THEN_CREATE` probe must not answer what it does not know (#2220).** It may return `None` — "no match", which `idempotent_create` reads as evidence the create did not land and acts on by repeating it — only when it has affirmatively established that no matching resource exists. A probe that cannot answer, because its own list RPC failed for a non-transport reason, must raise; the retry loop then aborts and the caller is told the create is unresolved.
 

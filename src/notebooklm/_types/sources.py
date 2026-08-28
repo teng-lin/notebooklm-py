@@ -107,7 +107,7 @@ _UPLOAD_FILE_EXTENSIONS: frozenset[str] = frozenset(
 #:
 #: * the path heuristic only decides whether a *non-existent* argument gets a
 #:   warning — a wrong entry costs nothing;
-#: * the Drive router (``_source.drive_import``) uses the upload set as a
+#: * the Drive router (``_web.sources.drive_import``) uses the upload set as a
 #:   **network** gate — a wrong entry turns a fast, clear client-side refusal
 #:   into a full file download followed by a murky server-side failure.
 #:
@@ -415,7 +415,7 @@ class Source:
         This is the **single** construction site for a :class:`Source`
         from a parsed source row. Both :meth:`from_api_response` (the
         public classmethod used by ``ADD_SOURCE`` / rename paths) and
-        :meth:`notebooklm._source.listing.SourceLister._parse_source`
+        :meth:`notebooklm._web.sources.listing.SourceLister._parse_source`
         (the ``GET_NOTEBOOK`` list/get/poll path) funnel through here so
         every code path produces identical :class:`Source` instances —
         including the decoded :attr:`status`.
@@ -477,7 +477,7 @@ class Source:
         shape into a :class:`SourceRow` and defers to :meth:`from_row` —
         the single construction site shared with the
         ``GET_NOTEBOOK`` list/get/poll path
-        (:meth:`notebooklm._source.listing.SourceLister._parse_source`) —
+        (:meth:`notebooklm._web.sources.listing.SourceLister._parse_source`) —
         so all paths produce identical :class:`Source` instances,
         including the decoded :attr:`status`. ``status`` earlier silently
         fell back to the ``SourceStatus.READY`` default here while the

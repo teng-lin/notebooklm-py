@@ -421,7 +421,7 @@ _TYPES_PRIVATE_HELPER_SEAMS = [
 # compatibility. ``_extract_source_created_at`` moved here when the
 # row-adapter migration (see ``_web.rows.sources.SourceRow.created_at``)
 # replaced its sole first-party consumer
-# (``_source.listing._parse_source``).
+# (``_web.sources.listing._parse_source``).
 _TYPES_PRIVATE_EXTERNAL_COMPAT_SEAMS: list[str] = [
     "_extract_source_created_at",
 ]

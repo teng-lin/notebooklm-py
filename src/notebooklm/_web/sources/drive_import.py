@@ -51,11 +51,11 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 
-from .._artifact._download_client import _is_trusted_download_host
-from .._artifact._redirect_guard import redirect_revalidation_hooks
-from .._artifact.downloads import _await_writer_exit
-from .._types.sources import _HTML_FILE_EXTENSIONS, _UPLOAD_FILE_EXTENSIONS
-from ..exceptions import (
+from ..._artifact._download_client import _is_trusted_download_host
+from ..._artifact._redirect_guard import redirect_revalidation_hooks
+from ..._artifact.downloads import _await_writer_exit
+from ..._types.sources import _HTML_FILE_EXTENSIONS, _UPLOAD_FILE_EXTENSIONS
+from ...exceptions import (
     ArtifactDownloadError,
     AuthError,
     NetworkError,
@@ -66,7 +66,7 @@ from ..exceptions import (
 from ._upload_decode import _validate_upload_file_supported
 
 if TYPE_CHECKING:
-    from ..types import Source
+    from ...types import Source
 
 # The cookie-authed download endpoint that returns BOTH the type (via the
 # Content-Disposition filename) and the bytes in one request (validated live).

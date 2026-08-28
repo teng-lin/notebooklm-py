@@ -29,12 +29,12 @@
 | `rLM1Ne` | GET_NOTEBOOK | Get notebook details + sources | `_web/notebooks.py` |
 | `s0tc2d` | RENAME_NOTEBOOK | Rename, chat config, share access | `_web/notebooks.py`, `_chat/api.py` |
 | `WWINqb` | DELETE_NOTEBOOK | Delete a notebook | `_web/notebooks.py` |
-| `izAoDd` | ADD_SOURCE | Add URL/text/YouTube/Drive source | `_source/add.py` via `_sources.py` |
-| `o4cbdc` | ADD_SOURCE_FILE | Register uploaded file (PDF, DOCX, EPUB, etc.) | `_source/upload.py`, `_source/upload_payloads.py` |
-| `tGMBJ` | DELETE_SOURCE | Delete a source | `_sources.py` |
-| `b7Wfje` | UPDATE_SOURCE | Rename source | `_sources.py` |
-| `tr032e` | GET_SOURCE_GUIDE | Get source summary | `_sources.py` |
-| `hizoJc` | GET_SOURCE | Get clean fulltext content of a source | `_source/content.py` |
+| `izAoDd` | ADD_SOURCE | Add URL/text/YouTube/Drive source | `_web/sources/add.py` via `_web/sources/__init__.py` |
+| `o4cbdc` | ADD_SOURCE_FILE | Register uploaded file (PDF, DOCX, EPUB, etc.) | `_web/sources/upload.py`, `_web/params/sources.py` |
+| `tGMBJ` | DELETE_SOURCE | Delete a source | `_web/sources/__init__.py` |
+| `b7Wfje` | UPDATE_SOURCE | Rename source | `_web/sources/__init__.py` |
+| `tr032e` | GET_SOURCE_GUIDE | Get source summary | `_web/sources/content.py` |
+| `hizoJc` | GET_SOURCE | Get clean fulltext content of a source | `_web/sources/content.py` |
 | `agX4Bc` | CREATE_LABEL | AI-generate label groupings and create manual labels | `_labels.py` |
 | `I3xc3c` | LIST_LABELS | List source labels for a notebook | `_labels.py` |
 | `le8sX` | UPDATE_LABEL | Rename label, set emoji, add/remove sources | `_labels.py`, `_label/params.py` |
@@ -54,8 +54,8 @@
 | `cFji9` | GET_NOTES_AND_MIND_MAPS | List notes and mind maps | `_notes.py` |
 | `yyryJe` | GENERATE_MIND_MAP | Mind map generation | `_artifacts.py` |
 | `VfAZjd` | SUMMARIZE | Get notebook summary | `_web/notebooks.py` |
-| `FLmJqe` | REFRESH_SOURCE | Refresh URL/Drive source | `_sources.py` |
-| `yR9Yof` | CHECK_SOURCE_FRESHNESS | Check if source needs refresh | `_sources.py` |
+| `FLmJqe` | REFRESH_SOURCE | Refresh URL/Drive source | `_web/sources/__init__.py` |
+| `yR9Yof` | CHECK_SOURCE_FRESHNESS | Check if source needs refresh | `_web/sources/__init__.py` |
 | `Ljjv0c` | START_FAST_RESEARCH | Start fast research | `_research.py` |
 | `QA9ei` | START_DEEP_RESEARCH | Start deep research | `_research.py` |
 | `e3bVqc` | POLL_RESEARCH | Poll research status | `_research.py` |
@@ -316,7 +316,7 @@ params = [
 
 ### RPC: GET_NOTEBOOK (rLM1Ne)
 
-**Source:** `_web/notebooks.py::WebNotebooksAPI.get()`, `_source/listing.py::SourceLister.list()`
+**Source:** `_web/notebooks.py::WebNotebooksAPI.get()`, `_web/sources/listing.py::SourceLister.list()`
 
 ```python
 params = [
@@ -331,7 +331,7 @@ params = [
 
 The slot `[2]` wrapper replaced the older bare `[2]` read-path tail. Live
 capture on 2026-06-15 confirmed the nested shape in `f.req`; keep
-`_web.params.notebooks.build_get_notebook_params()` and `_source/listing.py` in sync.
+`_web.params.notebooks.build_get_notebook_params()` and `_web/sources/listing.py` in sync.
 The live web UI also sends a sixth filter/tail slot:
 `[[None, None, []]]`. Initial page load used slot `[4] == 0`; a follow-up
 refresh used slot `[4] == 1`. The client builder currently omits that sixth
@@ -449,8 +449,8 @@ button (`mattooltip='Close source view'`).
 
 ### RPC: ADD_SOURCE (izAoDd) - URL
 
-**Sources:** `_source/add.py::SourceAddService.add_url_source()` (single item),
-`_source/batch.py::SourceBatchAddService.add_urls()` (true batch)
+**Sources:** `_web/sources/add.py::SourceAddService.add_url_source()` (single item),
+`_web/sources/batch.py::SourceBatchAddService.add_urls()` (true batch)
 
 ```python
 # URL goes at position [2] in an 11-element source spec.
@@ -474,7 +474,7 @@ recovery unchanged.
 
 ### RPC: ADD_SOURCE (izAoDd) - Text
 
-**Source:** `_source/add.py::SourceAddService.add_text()`
+**Source:** `_web/sources/add.py::SourceAddService.add_text()`
 
 ```python
 # [title, content] at position [1] in an 11-element source spec; slot [3] is
@@ -488,7 +488,7 @@ params = [
 
 ### RPC: ADD_SOURCE (izAoDd) - YouTube
 
-**Source:** `_source/add.py::SourceAddService.add_youtube_source()`
+**Source:** `_web/sources/add.py::SourceAddService.add_youtube_source()`
 
 ```python
 # YouTube URL at position [7] in the source spec (different from regular URL).
@@ -502,7 +502,7 @@ params = [
 
 ### RPC: ADD_SOURCE (izAoDd) - Google Drive
 
-**Source:** `_source/add.py::SourceAddService.add_drive()`
+**Source:** `_web/sources/add.py::SourceAddService.add_drive()`
 
 ```python
 # Drive source structure - single-wrapped (not double!)
@@ -523,13 +523,13 @@ params = [
 **Note:** Drive add is intentionally still on the older `[2]`,
 `[1, ..., [1]]` tail pending a fresh live Drive capture. URL, YouTube, text,
 CREATE_NOTEBOOK, and ADD_SOURCE_FILE use the shared nested wrapper from
-`_source/upload_payloads.py::build_template_block()`.
+`_web/params/sources.py::build_template_block()`.
 
 ### RPC: ADD_SOURCE_FILE (o4cbdc) - File Upload Registration
 
-**Source:** `_source/upload.py::SourceUploadPipeline.register_file_source()`,
-`_source/upload_payloads.py::build_register_file_source_params()`,
-`_source/upload_payloads.py::build_resumable_upload_start_request()`
+**Source:** `_web/sources/upload.py::SourceUploadPipeline.register_file_source()`,
+`_web/params/sources.py::build_register_file_source_params()`,
+`_web/params/sources.py::build_resumable_upload_start_request()`
 
 File uploads are a two-step flow. First, `ADD_SOURCE_FILE` registers the file
 source and returns a `SOURCE_ID`; then the client starts a Scotty resumable
@@ -592,7 +592,7 @@ upload_headers = {
 
 ### RPC: DELETE_SOURCE (tGMBJ)
 
-**Source:** `_sources.py::delete()`
+**Source:** `_web/sources/__init__.py::WebSourcesAPI.delete()`
 
 **IMPORTANT:** `notebook_id` is passed via `source_path`, NOT in params!
 
@@ -609,7 +609,7 @@ await rpc_call(
 
 ### RPC: UPDATE_SOURCE / Rename (b7Wfje)
 
-**Source:** `_sources.py::rename()`
+**Source:** `_web/sources/__init__.py::WebSourcesAPI.rename()`
 
 ```python
 # Different structure: None at [0], source_id at [1], title triple-nested at [2]
@@ -622,7 +622,7 @@ params = [
 
 ### RPC: GET_SOURCE_GUIDE (tr032e)
 
-**Source:** `_sources.py::get_guide()`
+**Source:** `_web/sources/content.py::SourceContentRenderer.get_guide()`
 
 ```python
 # Quadruple-nested source ID!
@@ -631,7 +631,7 @@ params = [[[[source_id]]]]
 
 ### RPC: GET_SOURCE (hizoJc)
 
-**Source:** `_source/content.py::get_fulltext()`
+**Source:** `_web/sources/content.py::get_fulltext()`
 
 **Purpose:** Get raw text or clean HTML/markdown content of a source.
 
@@ -2236,7 +2236,7 @@ independent public resource outside the notebook. Mind Maps cannot be shared
 
 ### RPC: REFRESH_SOURCE (FLmJqe)
 
-**Source:** `_sources.py::refresh()`
+**Source:** `_web/sources/__init__.py::WebSourcesAPI.refresh()`
 
 Refresh a source to get updated content (for URL/Drive sources).
 
@@ -2257,7 +2257,7 @@ await rpc_call(
 
 ### RPC: CHECK_SOURCE_FRESHNESS (yR9Yof)
 
-**Source:** `_sources.py::check_freshness()`
+**Source:** `_web/sources/__init__.py::WebSourcesAPI.check_freshness()`
 
 Check if a source needs to be refreshed.
 
@@ -3128,7 +3128,7 @@ These RPC method IDs exist in `rpc/types.py` but are either legacy (superseded b
 | RPC ID | Method | Status | Notes |
 |--------|--------|--------|-------|
 
-> **Note:** `GET_SOURCE` (`hizoJc`) was previously listed here as "Broken" but is now active — used by `_source/content.py::get_fulltext()`. See [RPC Method Status](#rpc-method-status) and the detailed section above.
+> **Note:** `GET_SOURCE` (`hizoJc`) was previously listed here as "Broken" but is now active — used by `_web/sources/content.py::get_fulltext()`. See [RPC Method Status](#rpc-method-status) and the detailed section above.
 
 **Why keep these?** These IDs are preserved in the codebase in case:
 1. Google re-enables or changes their functionality

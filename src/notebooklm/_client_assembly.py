@@ -65,9 +65,9 @@ from ._runtime.init import compose_client_internals
 from ._runtime.lifecycle import CookieRotator, CookieSaver
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
-from ._source.upload import SourceUploadPipeline
-from ._sources import SourcesAPI
 from ._web.notebooks import WebNotebooksAPI
+from ._web.sources import WebSourcesAPI
+from ._web.sources.upload import SourceUploadPipeline
 from .auth import AuthTokens
 
 if TYPE_CHECKING:
@@ -344,7 +344,7 @@ def _assemble_client(
     client._source_uploader = source_uploader
     # Per ADR-0014 Rule 3: simple features take their RpcCaller dependency
     # directly from the composition root's executor.
-    client.sources = SourcesAPI(
+    client.sources = WebSourcesAPI(
         internals.executor,
         uploader=source_uploader,
         upload_timeout=upload_timeout,

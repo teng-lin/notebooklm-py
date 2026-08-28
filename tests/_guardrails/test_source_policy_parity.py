@@ -142,8 +142,8 @@ def test_both_adapters_share_the_same_fatal_classifier() -> None:
 # ===========================================================================
 #
 # Before #2202 the path-shape heuristic (``_app.source_add``), the Drive
-# download+upload router (``_source.drive_import``) and the upload HTML reject
-# gate (``_source._upload_decode``) each hand-maintained their own extension
+# download+upload router (``_web.sources.drive_import``) and the upload HTML reject
+# gate (``_web.sources._upload_decode``) each hand-maintained their own extension
 # list. They drifted: ``.pptx`` gained a decode entry in #2191 while the Drive
 # router still refused it and a mistyped ``deck.pptx`` still got no warning, and
 # ``.xhtml`` was rejectable by the uploader while not counting as file-shaped.
@@ -174,12 +174,12 @@ def test_file_shaped_only_extensions_never_reach_the_drive_network_gate() -> Non
     failure. So an extension without wire evidence (``.ppt``) must stay out of
     the upload set, and out of everything derived from it.
     """
-    from notebooklm._source.drive_import import _UPLOAD_SUPPORTED_EXTS
     from notebooklm._types.sources import (
         _FILE_SHAPED_ONLY_EXTENSIONS,
         _PATH_SHAPED_FILE_EXTENSIONS,
         _UPLOAD_FILE_EXTENSIONS,
     )
+    from notebooklm._web.sources.drive_import import _UPLOAD_SUPPORTED_EXTS
 
     assert _FILE_SHAPED_ONLY_EXTENSIONS
     # Recognised as a filename...
@@ -192,8 +192,8 @@ def test_file_shaped_only_extensions_never_reach_the_drive_network_gate() -> Non
 
 def test_drive_router_extensions_are_the_same_declaration_dot_stripped() -> None:
     """``drive_import`` compares bare suffixes, but against the SAME source of truth."""
-    from notebooklm._source.drive_import import _HTML_EXTS, _UPLOAD_SUPPORTED_EXTS
     from notebooklm._types.sources import _HTML_FILE_EXTENSIONS, _UPLOAD_FILE_EXTENSIONS
+    from notebooklm._web.sources.drive_import import _HTML_EXTS, _UPLOAD_SUPPORTED_EXTS
 
     assert {ext.lstrip(".") for ext in _UPLOAD_FILE_EXTENSIONS} == _UPLOAD_SUPPORTED_EXTS
     assert {ext.lstrip(".") for ext in _HTML_FILE_EXTENSIONS} == _HTML_EXTS
@@ -201,8 +201,8 @@ def test_drive_router_extensions_are_the_same_declaration_dot_stripped() -> None
 
 def test_upload_html_reject_gate_binds_the_same_html_set() -> None:
     """Object identity, not just equality: the upload gate must not fork the HTML set."""
-    from notebooklm._source._upload_decode import _HTML_UPLOAD_SUFFIXES
     from notebooklm._types.sources import _HTML_FILE_EXTENSIONS
+    from notebooklm._web.sources._upload_decode import _HTML_UPLOAD_SUFFIXES
 
     assert _HTML_UPLOAD_SUFFIXES is _HTML_FILE_EXTENSIONS
 

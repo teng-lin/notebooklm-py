@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._source.listing import SourceLister
-from notebooklm._sources import SourcesAPI
+from notebooklm._web.sources import WebSourcesAPI
+from notebooklm._web.sources.listing import SourceLister
 from notebooklm.exceptions import RPCError
 from notebooklm.rpc import RPCMethod
 from notebooklm.rpc.types import SourceStatus
@@ -350,7 +350,7 @@ async def test_explicit_empty_filter_matches_no_sources() -> None:
 
 @pytest.mark.asyncio
 async def test_sources_api_list_delegates_strict_and_filters() -> None:
-    api = SourcesAPI(MagicMock(), uploader=MagicMock())
+    api = WebSourcesAPI(MagicMock(), uploader=MagicMock())
     expected = [Source(id="src_1", _type_code=3, status=SourceStatus.READY)]
     api._lister.list = AsyncMock(return_value=expected)  # type: ignore[method-assign]
 

@@ -357,7 +357,7 @@ meet ADR-0013's "shared by at least two features" promotion bar.
 `Kernel` remains shared because it is the typed transport surface
 implemented by the concrete client-owned kernel and consumed by the
 upload pipeline. Single-consumer capabilities stay beside their owner:
-`AuthMetadata` lives in `_source/upload.py`, and
+`AuthMetadata` lives in `_web/sources/upload.py`, and
 `OperationScopeProvider` lives in `_artifact/polling.py`. The unused
 `AsyncWorkRuntime` composite and the feature-local composite runtime
 Protocols (`ChatRuntime`, `ArtifactsRuntime`, `UploadRuntime`) were
@@ -374,7 +374,7 @@ production dependencies.
 | `Kernel` | Pure transport surface — `post()` method, `cookies` property, `aclose()`. Single consumer today: `SourceUploadPipeline`. |
 
 **Feature-module-local Protocols.** Single-consumer capability shapes live
-next to their owner (`AuthMetadata` in `_source/upload.py`,
+next to their owner (`AuthMetadata` in `_web/sources/upload.py`,
 `OperationScopeProvider` in `_artifact/polling.py`). No feature-local
 composite-runtime unions or adapter dataclasses exist in production. Every
 multi-capability feature takes its collaborators by keyword-only
@@ -990,11 +990,13 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/rows/sharing.py` | `SharedUserRow` / `ShareStatusRow` decoding behind the public sharing models' lazy shims |
 | `_web/rows/sources.py` | `SourceRow` / `SourceRowShape` typed views over raw positional source RPC rows |
 | `_web/notebooks.py` | `WebNotebooksAPI`, the concrete `batchexecute` notebook backend; preserves the shared executor identity and web-only decoding/quota/session-hint behavior, and owns the direct-construction `SourceLister` fallback |
+| `_web/sources/` | `WebSourcesAPI` and the concrete web source services: add/batch orchestration, source listing/content decoding, Drive import, and the resumable upload pipeline |
 | `_web/params/` | Web `batchexecute` positional request payload builders, separated from backend-neutral namespace APIs |
 | `_web/params/notebooks.py` | Stable `batchexecute` notebook RPC request payload builders, including `SUGGEST_PROMPTS` |
+| `_web/params/sources.py` | Stable source registration, rename, template-block, and resumable-upload request payload builders |
 | `artifacts.py`, `research.py`, `utils.py` | Public helper modules for artifact retry, research citation/report utilities, and common async helpers |
 | `_notebooks.py` | Backend-neutral abstract `NotebooksAPI`; owns shared create idempotency, lookup/update conveniences, metadata composition, and share-URL semantics |
-| `_sources.py` | `client.sources` API |
+| `_sources.py` | Backend-neutral abstract `SourcesAPI`; owns source identity lookup and the four polling workflows over neutral `SourcePoller` |
 | `_artifacts.py` | `client.artifacts` API — owns artifact generation orchestration directly (see ADR-0012) |
 | `_chat/api.py` | `client.chat` API |
 | `_research.py` | `client.research` API |
@@ -1016,16 +1018,16 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_artifact/generation.py` | Generation kickoff service (`generate_*`, `revise_slide`, `retry_failed`) extracted from `ArtifactsAPI`; the facade keeps thin delegators |
 | `_artifact/listing.py` | Listing and filtering operations for notebook artifacts |
 | `_artifact/polling.py` | Poll coordination service for artifact generation tasks |
-| `_source/add.py` | Core service layer for adding text, URL, or Google Drive sources |
-| `_source/batch.py` | True-batch URL `ADD_SOURCE` service for the existing MCP/REST batch endpoints: typed positional outcomes, omitted-row reconciliation, and fail-closed transport/duplicate ambiguity policy |
-| `_source/drive_import.py` | Auto-route add-from-Drive (#1884): download + upload the upload-only Drive types (epub/docx/txt/…); native import (`add_drive`) instead takes Docs/Slides/Sheets + PDF by reference; header-first cookie-authed streaming fetch behind injected seams |
-| `_source/content.py` | Core service layer for fetching source HTML/markdown content |
+| `_web/sources/add.py` | Core service layer for adding text, URL, or Google Drive sources |
+| `_web/sources/batch.py` | True-batch URL `ADD_SOURCE` service for the existing MCP/REST batch endpoints: typed positional outcomes, omitted-row reconciliation, and fail-closed transport/duplicate ambiguity policy |
+| `_web/sources/drive_import.py` | Auto-route add-from-Drive (#1884): download + upload the upload-only Drive types (epub/docx/txt/…); native import (`add_drive`) instead takes Docs/Slides/Sheets + PDF by reference; header-first cookie-authed streaming fetch behind injected seams |
+| `_web/sources/content.py` | Core service layer for fetching source HTML/markdown content |
 | `_source/markdown.py` | Source fulltext HTML-to-Markdown conversion policy, including Markdown-source and LaTeX/table handling |
-| `_source/listing.py` | Core service layer for listing notebook sources |
+| `_web/sources/listing.py` | Core service layer for listing notebook sources |
 | `_source/polling.py` | Poll coordination service for active source conversions |
-| `_source/upload.py` | Concurrency-gated upload pipeline for source files |
-| `_source/_upload_decode.py` | Pure decode/validation helpers for the upload pipeline (URL redaction, ADD_SOURCE_FILE source-id extraction, content-type policy), extracted from `upload.py` |
-| `_source/upload_payloads.py` | Stable source upload registration, rename, and resumable-upload request builders |
+| `_web/sources/upload.py` | Concurrency-gated upload pipeline for source files |
+| `_web/sources/_upload_decode.py` | Pure decode/validation helpers for the upload pipeline (URL redaction, ADD_SOURCE_FILE source-id extraction, content-type policy), extracted from `upload.py` |
+| `_web/params/sources.py` | Stable source upload registration, rename, and resumable-upload request builders |
 | `_label/params.py` | Stable CREATE_LABEL / LIST_LABELS / UPDATE_LABEL / DELETE_LABEL request payload builders (with the shared `_opts()` request-options wrapper) |
 | `_collection/params.py` | Collection request payload builders reusing the label RPCs — null notebook_id, type-3 discriminator, `[1,3]` opts tail; add/remove notebook-membership fieldmask and `create`'s options wrapper are live-captured (PR #2009) |
 | `_notebook_metadata.py` | Transport-neutral notebook metadata protocols and composition service; no concrete RPC/source-listing dependency |
@@ -1193,18 +1195,10 @@ src/notebooklm/
 │   ├── retry.py                 # Retry middleware
 │   ├── auth_refresh.py          # Auth refresh middleware
 │   └── semaphore.py             # Concurrency semaphore middleware
-├── _source/                     # Source-feature subpackage (promoted from flat _source_*.py, #1328)
-│   ├── __init__.py              # Re-exports the cluster's public service classes
-│   ├── _upload_decode.py        # Pure URL/source-id/content-type decode + validation helpers (extracted from upload.py)
-│   ├── add.py                   # Source addition coordinator
-│   ├── batch.py                 # True-batch URL ADD_SOURCE coordinator + typed positional outcomes for MCP/REST batch adapters (#2115)
-│   ├── content.py               # Source content fetcher
-│   ├── markdown.py               # Source fulltext HTML-to-Markdown conversion policy
-│   ├── drive_import.py          # Auto-route add-from-Drive (#1884): DriveImportService + DriveFetcher — parse id/URL, cookie-authed header-first streaming download of the upload-only Drive types (epub/docx/txt/…), confirm-token handling + 0600 temp cleanup, then hand to add_file (native Docs/Slides/Sheets → pointer error)
-│   ├── listing.py               # Source listing helper
-│   ├── polling.py               # Source polling coordinator
-│   ├── upload.py                # Gated source upload service
-│   └── upload_payloads.py       # Source upload request payload builders
+├── _source/                     # Neutral source services + lazy compatibility exports
+│   ├── __init__.py              # Lazy package-level shims for moved web service names
+│   ├── markdown.py              # Source fulltext HTML-to-Markdown conversion policy
+│   └── polling.py               # Source polling coordinator
 ├── _artifact/                   # Artifact-feature subpackage (promoted from flat _artifact_*.py, #1328)
 │   ├── __init__.py              # Re-exports the cluster's public service classes/builders
 │   ├── _download_client.py      # Download trusted-host allowlist + transport-aware client factory (httpx event hook / curl_cffi get_guarded)
@@ -1304,11 +1298,21 @@ src/notebooklm/
 │   └── sources.py
 ├── _web/                        # Web batchexecute backend implementations
 │   ├── notebooks.py             # WebNotebooksAPI
+│   ├── sources/                 # WebSourcesAPI + web source services
+│   │   ├── __init__.py          # WebSourcesAPI facade
+│   │   ├── add.py               # Source addition coordinator
+│   │   ├── batch.py             # True-batch URL ADD_SOURCE coordinator
+│   │   ├── content.py           # Source content fetcher
+│   │   ├── drive_import.py      # Cookie-authenticated Drive download + upload route
+│   │   ├── listing.py           # GET_NOTEBOOK source listing decoder
+│   │   ├── upload.py            # Gated resumable source upload pipeline
+│   │   └── _upload_decode.py    # Upload URL/source-id/content-type validation
 │   ├── params/                   # Web batchexecute payload builders
-│   │   └── notebooks.py         # Notebook RPC payload builders (SUGGEST_PROMPTS)
+│   │   ├── notebooks.py         # Notebook RPC payload builders (SUGGEST_PROMPTS)
+│   │   └── sources.py           # Source RPC/upload payload builders
 │   └── rows/                    # Typed positional wire-row decoders
 ├── _notebooks.py                # Backend-neutral abstract NotebooksAPI
-├── _sources.py                  # SourcesAPI
+├── _sources.py                  # Backend-neutral abstract SourcesAPI
 ├── _artifacts.py                # ArtifactsAPI
 ├── _research.py                 # ResearchAPI
 ├── _notes.py                    # NotesAPI

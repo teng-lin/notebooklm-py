@@ -53,13 +53,13 @@ from notebooklm._artifact.payloads import (
     build_suggest_reports_params,
     build_video_artifact_params,
 )
-from notebooklm._source.upload_payloads import (
+from notebooklm._types.artifacts import Artifact, ArtifactType
+from notebooklm._types.sources import Source, SourceType
+from notebooklm._web.params.sources import (
     build_register_file_source_params,
     build_rename_source_params,
     build_resumable_upload_start_request,
 )
-from notebooklm._types.artifacts import Artifact, ArtifactType
-from notebooklm._types.sources import Source, SourceType
 from notebooklm._web.rows.artifacts import ArtifactRow
 from notebooklm._web.rows.notes import NoteRow
 from notebooklm._web.rows.sources import SourceRow, SourceRowShape

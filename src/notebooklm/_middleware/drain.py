@@ -25,7 +25,7 @@ Drain admission semantics:
   whose token was admitted before drain started) STILL pass through
   because ``TransportDrainTracker`` looks at ``asyncio.current_task()``'s
   depth, not the chain seam.
-- Source-upload and artifact-polling paths (``_source/upload.py``,
+- Source-upload and artifact-polling paths (``_web/sources/upload.py``,
   ``_artifact/polling.py``) keep their explicit ``_begin_transport_post`` /
   ``_finish_transport_post`` calls — they bracket logical operations that
   span multiple chain invocations (the upload spans an authed-POST per

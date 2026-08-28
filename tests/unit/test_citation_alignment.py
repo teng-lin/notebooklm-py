@@ -165,7 +165,7 @@ class TestSourceFulltextIntegration:
     async def test_document_is_populated_and_content_is_unchanged(
         self, source_result: list[Any]
     ) -> None:
-        from notebooklm._source.content import SourceContentRenderer
+        from notebooklm._web.sources.content import SourceContentRenderer
 
         class _StubRpc:
             async def rpc_call(self, *args: Any, **kwargs: Any) -> Any:
@@ -201,7 +201,7 @@ class TestSourceFulltextIntegration:
         branch would leave a markdown caller unable to resolve citation offsets
         against a document that was right there.
         """
-        from notebooklm._source.content import SourceContentRenderer
+        from notebooklm._web.sources.content import SourceContentRenderer
 
         class _StubRpc:
             async def rpc_call(self, *args: Any, **kwargs: Any) -> Any:
@@ -359,7 +359,7 @@ class TestReadableRendering:
         rendering exists to fix, so both numbers are asserted: a render that
         stopped joining runs would read 17 too.
         """
-        from notebooklm._source.content import SourceContentRenderer
+        from notebooklm._web.sources.content import SourceContentRenderer
 
         document = build_document(source_result[3][0])
         flat = "\n".join(SourceContentRenderer(None).extract_all_text(source_result[3][0]))
@@ -806,7 +806,7 @@ class TestReadableRendering:
         self, source_result: list[Any]
     ) -> None:
         """``SourceFulltext.rendered_content`` is additive: ``content`` is untouched."""
-        from notebooklm._source.content import SourceContentRenderer
+        from notebooklm._web.sources.content import SourceContentRenderer
 
         class _StubRpc:
             async def rpc_call(self, *args: Any, **kwargs: Any) -> Any:
@@ -1779,7 +1779,7 @@ class TestFragmentDescent:
         "the legacy rendering is unaffected" is exactly the claim a decoder
         change is most likely to break silently.
         """
-        from notebooklm._source.content import SourceContentRenderer
+        from notebooklm._web.sources.content import SourceContentRenderer
 
         elements = json.loads((FIXTURES_DIR / "citation_fragment_with_tables.json").read_text())
         flat = "\n".join(SourceContentRenderer(None).extract_all_text(elements))

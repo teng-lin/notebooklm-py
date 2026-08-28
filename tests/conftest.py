@@ -674,7 +674,7 @@ def legacy_vcr_add_url_baseline(monkeypatch):
     ``tests/integration/test_sources_idempotency.py``, so nothing here is its
     only coverage. Mirrors :func:`legacy_vcr_follow_up_probe`.
     """
-    from notebooklm._source.add import SourceAddService
+    from notebooklm._web.sources.add import SourceAddService
 
     original_add_url = SourceAddService.add_url
 

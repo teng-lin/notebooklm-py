@@ -34,7 +34,7 @@ def _build_default_share_url(notebook_id: str, artifact_id: str | None = None) -
 def _describe_notebooks(notebooks: list[Notebook]) -> str:
     """Render matched notebooks as ``id (title)`` for an ambiguity message.
 
-    Mirrors ``_source/add.py::_describe_sources``. The ambiguity raises tell the
+    Mirrors ``_web/sources/add.py::_describe_sources``. The ambiguity raises tell the
     caller to go and check their notebook list; naming the exact rows saves them
     diffing that list by eye against a title that, by definition, is not unique.
     """

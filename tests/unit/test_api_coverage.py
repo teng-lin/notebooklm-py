@@ -9,8 +9,8 @@ from notebooklm._chat import ChatAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
 from notebooklm._runtime.contracts import LoopGuard
-from notebooklm._sources import SourcesAPI
 from notebooklm._web.notebooks import WebNotebooksAPI
+from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.rpc.types import (
     ChatGoal,
     ChatResponseLength,
@@ -141,7 +141,7 @@ class TestGetSourceGuide:
         """
         rpc_call = AsyncMock(return_value=return_value)
         core = make_fake_core(rpc_call=rpc_call)
-        sources = SourcesAPI(core.rpc_executor, uploader=MagicMock())
+        sources = WebSourcesAPI(core.rpc_executor, uploader=MagicMock())
         return sources, rpc_call
 
     @pytest.mark.asyncio
@@ -228,7 +228,7 @@ class TestAddSourceDrive:
             ]
         )
         core = make_fake_core(rpc_call=rpc_call)
-        sources = SourcesAPI(core.rpc_executor, uploader=MagicMock())
+        sources = WebSourcesAPI(core.rpc_executor, uploader=MagicMock())
 
         await sources.add_drive(
             "notebook_123",
@@ -297,7 +297,7 @@ class TestPayloadFixes:
         """
         rpc_call = AsyncMock(return_value=True)
         core = make_fake_core(rpc_call=rpc_call)
-        sources = SourcesAPI(core.rpc_executor, uploader=MagicMock())
+        sources = WebSourcesAPI(core.rpc_executor, uploader=MagicMock())
         return sources, rpc_call
 
     @pytest.mark.asyncio

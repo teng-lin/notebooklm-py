@@ -71,9 +71,9 @@ from ._runtime.init import compose_client_internals as compose_client_internals 
 from ._runtime.lifecycle import CookieRotator, CookieSaver
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
-from ._source.upload import SourceUploadPipeline
 from ._sources import SourcesAPI
 from ._url_utils import is_google_auth_redirect as is_google_auth_redirect
+from ._web.sources.upload import SourceUploadPipeline
 from .auth import AuthTokens
 from .exceptions import AuthExtractionError as AuthExtractionError
 

@@ -55,6 +55,7 @@ from notebooklm._note_service import NoteService
 from notebooklm._notes import NotesAPI
 from notebooklm._sources import SourcesAPI
 from notebooklm._web.notebooks import WebNotebooksAPI
+from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.exceptions import (
     ArtifactNotFoundError,
     CollectionNotFoundError,
@@ -87,7 +88,7 @@ def _make_sources_api() -> SourcesAPI:
     # No ``make_fake_core`` here: ``_arrange_list_miss`` overrides ``api.list``
     # before any RPC path is reached, so the first positional collaborator is
     # never called (matches how ``test_get_or_none.py`` builds its sources API).
-    return SourcesAPI(MagicMock(), uploader=MagicMock())
+    return WebSourcesAPI(MagicMock(), uploader=MagicMock())
 
 
 def _make_artifacts_api() -> ArtifactsAPI:

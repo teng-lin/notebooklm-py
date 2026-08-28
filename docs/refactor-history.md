@@ -170,7 +170,7 @@ These modules did not exist before Tier 12 began:
 
 | Module | Purpose |
 |---|---|
-| `notebooklm._session_contracts` | Historical v0.5.0 home for `AuthMetadata`, `Kernel`, and the shared capability Protocols (`RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AsyncWorkRuntime`) added in the capability refactor (ADR-0013). Current home: `notebooklm._runtime.contracts`, exporting only `Kernel`, `RpcCaller`, and `LoopGuard`; `AuthMetadata` is local to `_source/upload.py`, `OperationScopeProvider` is local to `_artifact/polling.py`, and `AsyncWorkRuntime` was deleted. |
+| `notebooklm._session_contracts` | Historical v0.5.0 home for `AuthMetadata`, `Kernel`, and the shared capability Protocols (`RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AsyncWorkRuntime`) added in the capability refactor (ADR-0013). Current home: `notebooklm._runtime.contracts`, exporting only `Kernel`, `RpcCaller`, and `LoopGuard`; `AuthMetadata` is local to `_web/sources/upload.py`, `OperationScopeProvider` is local to `_artifact/polling.py`, and `AsyncWorkRuntime` was deleted. |
 | `notebooklm._kernel` | Concrete `Kernel` transport core (owns the `httpx.AsyncClient`, exposes `post` / `cookies` / `aclose`). Located at root (`src/notebooklm/_kernel.py`), not nested. |
 | `notebooklm._middleware` | Middleware chain primitives (`Middleware` Protocol, `NextCall` callable type, `RpcRequest` / `RpcResponse` envelope dataclasses, `build_chain` composer). |
 | `notebooklm._middleware_tracing` | Tier 12 PR 12.3 — request tracing middleware. |
@@ -271,7 +271,7 @@ class AsyncWorkRuntime(LoopGuard, OperationScopeProvider, Protocol):
 Current code has tightened that further: `_runtime/contracts.py`
 exports `Kernel`, `RpcCaller`, and `LoopGuard`; `OperationScopeProvider`
 is local to `_artifact/polling.py`; `AuthMetadata` is local to
-`_source/upload.py`; `AsyncWorkRuntime` was removed.
+`_web/sources/upload.py`; `AsyncWorkRuntime` was removed.
 
 The following were **not** globally promoted:
 

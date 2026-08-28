@@ -61,11 +61,15 @@ _ARTIFACT_SERVICE_MODULES = [
 ]
 
 _SOURCE_SERVICE_MODULES = [
-    "_source/listing.py",
+    "_web/sources/_upload_decode.py",
+    "_web/sources/add.py",
+    "_web/sources/batch.py",
+    "_web/sources/content.py",
+    "_web/sources/drive_import.py",
+    "_web/sources/listing.py",
+    "_web/sources/upload.py",
+    "_source/markdown.py",
     "_source/polling.py",
-    "_source/add.py",
-    "_source/upload.py",
-    "_source/content.py",
 ]
 
 _NOTEBOOK_COMPOSITION_SERVICE_MODULES = [
@@ -85,6 +89,7 @@ _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES = {
     "SharingAPI",
     "SourcesAPI",
     "WebNotebooksAPI",
+    "WebSourcesAPI",
 }
 
 _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES = {
@@ -99,6 +104,7 @@ _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES = {
     "_sharing",
     "_sources",
     "_web.notebooks",
+    "_web.sources",
     "client",
     "notebooklm",
     "notebooklm._artifacts",
@@ -112,6 +118,7 @@ _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES = {
     "notebooklm._sharing",
     "notebooklm._sources",
     "notebooklm._web.notebooks",
+    "notebooklm._web.sources",
     "notebooklm.client",
 }
 
@@ -565,6 +572,30 @@ def test_runtime_import_visitor_detects_web_notebooks_facade_and_module() -> Non
     ) == {"WebNotebooksAPI": [3]}
 
 
+def test_runtime_import_visitor_detects_web_sources_facade_and_module() -> None:
+    """Neutral source services must not reach into the concrete web facade."""
+    tree = ast.parse(
+        "from notebooklm._web.sources import WebSourcesAPI\n"
+        "import notebooklm._web.sources\n"
+        "WebSourcesAPI(rpc, uploader=uploader)\n"
+    )
+    visitor = _RuntimeImportVisitor(
+        forbidden_names=_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES,
+        forbidden_modules=_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES,
+    )
+
+    visitor.visit(tree)
+
+    assert visitor.forbidden == [
+        "notebooklm._web.sources.WebSourcesAPI",
+        "notebooklm._web.sources",
+    ]
+    assert _facade_construction_lines(
+        tree,
+        _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES,
+    ) == {"WebSourcesAPI": [3]}
+
+
 def test_facade_construction_lines_detects_chained_facade_access() -> None:
     """Facade construction guard must catch classmethod-style facade access."""
     tree = ast.parse("notebooklm.NotebookLMClient.from_storage()\n")
@@ -662,9 +693,9 @@ def test_notebook_metadata_has_no_concrete_lister_or_rpc_dependency() -> None:
         forbidden_names={"RpcCaller", "SourceLister"},
         forbidden_modules={
             "_runtime.contracts",
-            "_source.listing",
+            "_web.sources.listing",
             "notebooklm._runtime.contracts",
-            "notebooklm._source.listing",
+            "notebooklm._web.sources.listing",
         },
     )
 

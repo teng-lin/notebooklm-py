@@ -32,10 +32,11 @@ src/notebooklm/
 ├── _runtime/            # Runtime contracts, config, lifecycle, auth, transport
 ├── _notebooks.py        # Backend-neutral abstract NotebooksAPI
 ├── _web/notebooks.py    # WebNotebooksAPI implementation
+├── _sources.py          # Backend-neutral abstract SourcesAPI
+├── _web/sources/        # WebSourcesAPI + concrete web source services
 ├── _web/params/         # Web batchexecute payload builders
 ├── _notebook_metadata.py # Neutral metadata protocols + composition service
-├── _sources.py          # SourcesAPI implementation
-├── _source/             # Private source services
+├── _source/             # Neutral source polling/Markdown + lazy shims
 ├── _artifacts.py        # ArtifactsAPI implementation
 ├── _artifact/           # Private artifact services
 ├── _chat/               # ChatAPI implementation (facade + chat helpers)
@@ -128,7 +129,7 @@ a narrow Protocol surface so it can be unit-tested against a stub:
 The feature-facing surface is the set of **capability Protocols** in
 `notebooklm._runtime.contracts` — `Kernel`, `RpcCaller`, and
 `LoopGuard`. Single-consumer capability shapes stay in the owning
-feature module (`AuthMetadata` in `_source/upload.py`,
+feature module (`AuthMetadata` in `_web/sources/upload.py`,
 `OperationScopeProvider` in `_artifact/polling.py`), and the unused
 `AsyncWorkRuntime` composite was deleted. The broad `Session` Protocol
 that previously bundled these together was deleted in the final phase
