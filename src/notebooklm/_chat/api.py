@@ -131,7 +131,8 @@ class ChatAPI(LoopBoundPrimitive):
 
         Per ADR-0014 Rule 2 Corollary, ``ChatAPI`` depends on the **direct**
         collaborators it exercises (``rpc``, ``transport``, ``reqid``,
-        ``loop_guard``) rather than a chat-local Runtime Protocol bundling them.
+        ``loop_guard``, ``notebooks``) rather than a chat-local Runtime Protocol
+        bundling them.
 
         Args:
             rpc: RPC dispatch collaborator for the ``get_conversation_*``,

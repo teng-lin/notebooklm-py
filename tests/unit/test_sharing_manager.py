@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import notebooklm._notebooks as notebooks_module
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._sharing_manager import ShareManager, build_share_url
 from notebooklm.rpc import RPCMethod
@@ -131,12 +132,12 @@ def test_get_share_url_is_sync_and_does_not_call_rpc() -> None:
 async def test_notebooks_api_default_share_manager_uses_late_bound_rpc_executor_call() -> None:
     """The auto-built ``_share_manager`` late-binds the executor's rpc_call.
 
-    ``NotebooksAPI.share()`` was removed in v0.8.0 (#1363), but the default
-    ``ShareManager`` it constructed (still backing ``get_share_url``) keeps the
-    late-binding contract: ShareManager binds to the executor's ``rpc_call``
-    attribute lazily, so swapping it after construction must be honored. Driven
-    directly through ``_share_manager.share`` (the manager stays; only the public
-    wrapper was cut).
+    ``NotebooksAPI.share()`` was removed in v0.8.0 (#1363), but its default
+    ``ShareManager`` remains available for the legacy internal ``SHARE_ARTIFACT``
+    path and keeps the late-binding contract: the manager binds to the executor's
+    ``rpc_call`` attribute lazily, so swapping it after construction must be
+    honored. Driven directly through ``_share_manager.share`` (the manager stays;
+    only the public wrapper was cut).
     """
     core = make_fake_core(rpc_call=AsyncMock(return_value=None))
     api = NotebooksAPI(core.rpc_executor, sources_api=MagicMock())
@@ -172,15 +173,31 @@ def test_notebooks_api_share_method_removed_in_v080() -> None:
     assert not hasattr(api, "share")
 
 
-def test_notebooks_api_get_share_url_uses_transport_neutral_builder(
+def test_notebooks_api_default_get_share_url_uses_transport_neutral_builder(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     core = MagicMock()
-    share_manager = MagicMock()
-    api = NotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
-    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.google.com")
+    api = NotebooksAPI(core, sources_api=MagicMock())
+    base_url_provider = MagicMock(return_value="https://notebooklm.google.com")
+    share_url_builder = MagicMock(return_value="https://example.test/notebook/nb_123")
+    monkeypatch.setattr(notebooks_module, "get_base_url", base_url_provider)
+    monkeypatch.setattr(notebooks_module, "build_share_url", share_url_builder)
 
     url = api.get_share_url("nb_123")
 
-    assert url == "https://notebooklm.google.com/notebook/nb_123"
-    share_manager.get_share_url.assert_not_called()
+    assert url == "https://example.test/notebook/nb_123"
+    base_url_provider.assert_called_once_with()
+    share_url_builder.assert_called_once_with("https://notebooklm.google.com", "nb_123", None)
+
+
+def test_notebooks_api_get_share_url_delegates_to_injected_share_manager() -> None:
+    core = MagicMock()
+    share_manager = MagicMock()
+    api = NotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
+    replacement = MagicMock(return_value="https://example.test/notebook/nb_123")
+    share_manager.get_share_url = replacement
+
+    url = api.get_share_url("nb_123")
+
+    assert url == "https://example.test/notebook/nb_123"
+    replacement.assert_called_once_with("nb_123", None)

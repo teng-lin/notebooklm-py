@@ -2,6 +2,7 @@
 
 import logging
 import reprlib
+from collections.abc import Callable
 from typing import Any
 
 from ._env import get_base_url
@@ -51,6 +52,12 @@ logger = logging.getLogger(__name__)
 
 
 CREATE_NOTEBOOK_QUOTA_RPC_CODE = 3
+ShareUrlBuilder = Callable[[str, str | None], str]
+
+
+def _build_default_share_url(notebook_id: str, artifact_id: str | None = None) -> str:
+    """Build a share URL from the base URL resolved at call time."""
+    return build_share_url(get_base_url(), notebook_id, artifact_id)
 
 
 def _describe_notebooks(notebooks: list[Notebook]) -> str:
@@ -234,6 +241,19 @@ class NotebooksAPI:
             source_lister=self._sources,
         )
         self._share_manager = share_manager or ShareManager(self._rpc)
+        if share_manager is None:
+            self._share_url_builder: ShareUrlBuilder = _build_default_share_url
+        else:
+            # Preserve the existing injection seam while storing only a neutral
+            # callable suitable for the transport-neutral base introduced in A4.
+            # Resolve the manager method at call time so replacements remain visible.
+            def injected_share_url(
+                notebook_id: str,
+                artifact_id: str | None = None,
+            ) -> str:
+                return share_manager.get_share_url(notebook_id, artifact_id)
+
+            self._share_url_builder = injected_share_url
         # CREATE_NOTEBOOK volunteers its newly-created ChatSession, while
         # GET_NOTEBOOK omits it. Keep that one-shot hint until ChatAPI consumes
         # it so the first ask need not immediately re-fetch the same id through
@@ -1107,7 +1127,7 @@ class NotebooksAPI:
         Returns:
             The share URL string.
         """
-        return build_share_url(get_base_url(), notebook_id, artifact_id)
+        return self._share_url_builder(notebook_id, artifact_id)
 
     async def get_metadata(self, notebook_id: str) -> NotebookMetadata:
         """Get notebook metadata with sources list.
