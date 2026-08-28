@@ -1,12 +1,12 @@
 # RPC & UI Reference
 
 **Status:** Active
-**Last Updated:** 2026-08-12
-**Source of Truth:** `src/notebooklm/rpc/types.py` for method IDs; payload builders in `src/notebooklm/` and golden tests under `tests/unit/`
+**Last Updated:** 2026-08-27
+**Source of Truth:** `src/notebooklm/rpc/types.py` for method IDs; payload builders under `src/notebooklm/_web/` and golden tests under `tests/unit/`
 **Purpose:** Complete reference for RPC methods, UI selectors, and payload structures
 
 > **Note:** Payload structures are extracted from the implementation builders in
-> `src/notebooklm/` and pinned by golden unit tests. Each payload includes a
+> `src/notebooklm/_web/` and pinned by golden unit tests. Each payload includes a
 > reference to its owning source file. The CREATE_ARTIFACT payloads below were
 > re-verified against the live builders in `_web/params/artifacts.py` on
 > 2026-06-11 (AUDIO, VIDEO_EXPLAINER, VIDEO_BRIEF, VIDEO_CINEMATIC,
@@ -26,6 +26,7 @@
 |--------|--------|---------|----------------|
 | `wXbhsf` | LIST_NOTEBOOKS | List all notebooks | `_web/notebooks.py` |
 | `CCqFvf` | CREATE_NOTEBOOK | Create new notebook | `_web/notebooks.py` |
+| `te3DCe` | COPY_NOTEBOOK | Copy notebook sources and Studio artifacts | `_web/notebooks.py` |
 | `rLM1Ne` | GET_NOTEBOOK | Get notebook details + sources | `_web/notebooks.py` |
 | `s0tc2d` | RENAME_NOTEBOOK | Rename, chat config, share access | `_web/notebooks.py`, `_web/chat.py` |
 | `WWINqb` | DELETE_NOTEBOOK | Delete a notebook | `_web/notebooks.py` |
@@ -302,6 +303,27 @@ params = [
             # 3: Shared request-options wrapper (`build_template_block()`)
 ]
 ```
+
+### RPC: COPY_NOTEBOOK (te3DCe)
+
+**Server method:** `CopyProject`
+
+**Source:** `_notebooks.py::copy()` / `_notebook_payloads.py::build_copy_notebook_params()`
+
+```python
+params = [
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+    source_notebook_id,
+    destination_title,
+]
+```
+
+The response is a bare Project row and is decoded as the newly allocated
+`Notebook`. Live validation on 2026-08-27 copied a notebook containing 50
+sources and 5 Studio artifacts; all copied child IDs differed from the
+originals. The method has no caller-supplied idempotency token, so internal
+transport retry is disabled to avoid creating duplicate full copies after a
+lost response.
 
 ### RPC: DELETE_NOTEBOOK (WWINqb)
 

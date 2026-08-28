@@ -1,0 +1,69 @@
+{
+  "method_name": "COPY_NOTEBOOK",
+  "method_id": "te3DCe",
+  "description": "Copy a notebook, including its sources and Studio artifacts.",
+  "request": {
+    "params": [
+      [
+        2,
+        null,
+        null,
+        [
+          1,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          [
+            1
+          ]
+        ]
+      ],
+      "SCRUBBED_NB_SOURCE_001",
+      "Scrubbed Notebook Copy"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "te3DCe",
+          "[[2,null,null,[1,null,null,null,null,null,null,null,null,null,[1]]],\"SCRUBBED_NB_SOURCE_001\",\"Scrubbed Notebook Copy\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "te3DCe",
+          "[\"Scrubbed Notebook Copy\",[[[\"SCRUBBED_SRC_COPY_001\"],\"Scrubbed Copied Source\"]],\"SCRUBBED_NB_COPY_001\"]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      "Scrubbed Notebook Copy",
+      [
+        [
+          [
+            "SCRUBBED_SRC_COPY_001"
+          ],
+          "Scrubbed Copied Source"
+        ]
+      ],
+      "SCRUBBED_NB_COPY_001"
+    ]
+  }
+}

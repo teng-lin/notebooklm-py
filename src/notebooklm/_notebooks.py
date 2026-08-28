@@ -311,6 +311,10 @@ class NotebooksAPI(ABC):
         """Send one backend create operation and decode the notebook."""
 
     @abstractmethod
+    async def copy(self, notebook_id: str, title: str) -> Notebook:
+        """Copy a notebook, including its sources and Studio artifacts."""
+
+    @abstractmethod
     async def get(self, notebook_id: str) -> Notebook:
         """Get notebook details or raise ``NotebookNotFoundError``."""
 

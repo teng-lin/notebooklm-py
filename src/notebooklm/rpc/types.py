@@ -118,6 +118,7 @@ class RPCMethod(str, Enum):
     # not independently confirmed.
     LIST_NOTEBOOKS = "wXbhsf"
     CREATE_NOTEBOOK = "CCqFvf"  # -> CreateProject
+    COPY_NOTEBOOK = "te3DCe"  # -> CopyProject
     GET_NOTEBOOK = "rLM1Ne"  # -> GetProject
     RENAME_NOTEBOOK = "s0tc2d"  # -> MutateProject (generic notebook mutator; see note below)
     DELETE_NOTEBOOK = "WWINqb"  # -> DeleteProjects (single id; batch shapes probed & rejected, see _notebooks.delete)

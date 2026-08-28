@@ -59,6 +59,9 @@ class _FakeNotebooksAPI(NotebooksAPI):
     async def get(self, notebook_id: str) -> Notebook:
         raise NotImplementedError
 
+    async def copy(self, notebook_id: str, title: str) -> Notebook:
+        raise NotImplementedError
+
     async def delete(self, notebook_id: str) -> None:
         raise NotImplementedError
 

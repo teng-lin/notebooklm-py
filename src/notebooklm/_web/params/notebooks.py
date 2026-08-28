@@ -22,6 +22,17 @@ def build_create_notebook_params(title: str) -> list[Any]:
     return [title, None, None, build_template_block()]
 
 
+def build_copy_notebook_params(source_notebook_id: str, title: str) -> list[Any]:
+    """Return the canonical ``CopyProject`` (``te3DCe``) payload.
+
+    The current web bundle serializes a request context at field 1, the source
+    project id at field 2, and the new title at field 3. Unlike
+    :func:`build_create_notebook_params`, the context therefore leads the
+    positional request rather than trailing it.
+    """
+    return [build_template_block(), source_notebook_id, title]
+
+
 def build_get_notebook_params(notebook_id: str) -> list[Any]:
     """Return the canonical GET_NOTEBOOK (``rLM1Ne``) RPC payload.
 

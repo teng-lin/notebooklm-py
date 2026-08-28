@@ -153,6 +153,7 @@ def test_retry_disabled_entries_are_intentional_and_documented() -> None:
     """Non-retryable methods are pinned so cleanup cannot make them retryable."""
     expected = {
         (RPCMethod.CREATE_NOTEBOOK, None): IdempotencyPolicy.PROBE_THEN_CREATE,
+        (RPCMethod.COPY_NOTEBOOK, None): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         (RPCMethod.ADD_SOURCE, None): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         (RPCMethod.ADD_SOURCE, "url"): IdempotencyPolicy.PROBE_THEN_CREATE,
         (RPCMethod.ADD_SOURCE, "drive"): IdempotencyPolicy.PROBE_THEN_CREATE,

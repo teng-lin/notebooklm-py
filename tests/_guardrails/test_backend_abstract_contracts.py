@@ -72,6 +72,7 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
         abstract_methods=frozenset(
             {
                 "_send_create",
+                "copy",
                 "delete",
                 "get",
                 "get_description",

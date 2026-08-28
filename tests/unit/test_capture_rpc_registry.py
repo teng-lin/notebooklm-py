@@ -125,6 +125,22 @@ def test_main_bundle_file_mode(tmp_path: Path, capsys: pytest.CaptureFixture[str
     assert outcome.read_text(encoding="utf-8") == "drift\n"
 
 
+def test_main_save_bundle_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--save-bundle persists the fetched public JS and analyses that exact text."""
+    types = tmp_path / "types.py"
+    types.write_text(_TYPES, encoding="utf-8")
+    bundle = tmp_path / "bundle.js"
+    monkeypatch.setattr("scripts.capture_rpc_registry.fetch_bundle", lambda: _BUNDLE)
+
+    assert main(["--save-bundle", str(bundle), "--types", str(types)]) == 0
+    assert bundle.read_text(encoding="utf-8") == _BUNDLE
+    assert "CONFIRMED: 2" in capsys.readouterr().out
+
+
 def test_main_clears_stale_outcome_before_unclassified_startup_failure(tmp_path: Path) -> None:
     outcome = tmp_path / "outcome.txt"
     outcome.write_text("drift\n", encoding="utf-8")

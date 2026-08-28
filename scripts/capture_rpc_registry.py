@@ -57,7 +57,8 @@ Usage::
     python scripts/capture_rpc_registry.py --check         # exit 1 if any of our ids are ABSENT
     python scripts/capture_rpc_registry.py --check-enums    # exit 1 on CHANGED/STALE studio enums
     python scripts/capture_rpc_registry.py --check --check-enums  # both gates (combine freely)
-    python scripts/capture_rpc_registry.py --bundle-file bundle.js   # offline, no auth
+    python scripts/capture_rpc_registry.py --save-bundle bundle.js   # fetch + preserve live bundle
+    python scripts/capture_rpc_registry.py --bundle-file bundle.js   # analyse saved bundle offline
 
 Exit codes are ``0`` for a clean/report-only run, ``1`` for confirmed RPC or
 studio-enum drift, and ``2`` when the authenticated homepage is diverted to a
@@ -669,8 +670,14 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="exit 1 if any studio enum is CHANGED or STALE (NEW/UNPARSED never fail)",
     )
-    parser.add_argument(
+    bundle_source = parser.add_mutually_exclusive_group()
+    bundle_source.add_argument(
         "--bundle-file", type=Path, help="analyse a saved bundle file (no auth/network)"
+    )
+    bundle_source.add_argument(
+        "--save-bundle",
+        type=Path,
+        help="fetch the live bundle, save it to this path, and analyse it",
     )
     parser.add_argument("--types", type=Path, default=_DEFAULT_TYPES, help="path to rpc/types.py")
     parser.add_argument(
@@ -691,6 +698,8 @@ def main(argv: list[str] | None = None) -> int:
         bundle = (
             args.bundle_file.read_text(encoding="utf-8") if args.bundle_file else fetch_bundle()
         )
+        if args.save_bundle is not None:
+            args.save_bundle.write_text(bundle, encoding="utf-8")
     except _BundleAuthenticationError as exc:
         _write_outcome(args.outcome_file, "authentication")
         if args.json:

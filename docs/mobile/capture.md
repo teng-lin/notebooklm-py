@@ -2,7 +2,7 @@
 
 **Status:** Experimental, working locally
 
-**Last Verified:** 2026-07-21
+**Last Verified:** 2026-08-27
 
 **Scope:** Traffic discovery against the official NotebookLM Android app, without APK
 patching or re-signing. Mostly read-only, but [Exercising write paths](#exercising-write-paths-throwaway-notebook-only)
@@ -14,6 +14,17 @@ HTTP/2 gRPC traffic into raw protobuf messages. It also records failed approache
 investigation does not repeat them.
 
 The current recorder is [`scripts/capture_mobile_grpc.js`](../../scripts/capture_mobile_grpc.js).
+
+For Scotty file-upload and `lh3` artifact-download capture, including the redacting recorder,
+UID-scoped DNAT, live request shapes, and cleanup, see
+[`file-transfer-live-validation-2026-08-27.md`](file-transfer-live-validation-2026-08-27.md#detailed-interception-instructions).
+
+For the APK-absent async Deep Research methods, including current web-bundle discovery and the
+live-verified host-side `grpc_proxy` route through this recorder, see
+[`deep-research-mobile-grpc-2026-08-27.md`](deep-research-mobile-grpc-2026-08-27.md#detailed-traffic-interception).
+
+For host-side replay of label/collection CRUD and `CopyProject` through the same recorder, see
+[`labels-collections-copy-mobile-grpc-2026-08-27.md`](labels-collections-copy-mobile-grpc-2026-08-27.md#capture-these-calls-through-http-toolkit).
 
 ## Result
 
@@ -547,8 +558,9 @@ strings -a /tmp/nblm-apk/lib/arm64-v8a/libNotebookLM_prod_android_library_flutte
 ```
 
 This yields 49 methods across 4 gRPC services. Cross-referencing them against the web
-`rpc/types.py` rpcids shows, for example, that label mutation and deep-research job RPCs exist
-on the server but are **not** compiled into the mobile app. See the cross-reference table in
+`rpc/types.py` rpcids shows, for example, that label mutation, deep-research jobs, and notebook
+copy are **not** compiled into this mobile app. Direct mobile-bearer calls later proved that all
+three families are routed by the backend. See the cross-reference table in
 [docs/mobile/endpoints.md](endpoints.md#mobile--web-cross-reference).
 
 The **full protobuf schema** (message/field names, tags, types) was recovered by decompiling the

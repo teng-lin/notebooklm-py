@@ -400,6 +400,15 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
         variant="saved_from_chat",
         notes=_CREATE_NOTE_NOT_IDEMPOTENT_NOTE,
     )
+    registry.register(
+        RPCMethod.COPY_NOTEBOOK,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        notes=(
+            "CopyProject has no caller-provided idempotency token and creates a "
+            "new notebook with duplicated children; a blind retry after a lost "
+            "response can create a second full copy"
+        ),
+    )
 
     # Default-fill every remaining method with an UNCLASSIFIED placeholder. The
     # explicit registrations below must replace every placeholder before tests pass.

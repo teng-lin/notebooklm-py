@@ -1185,6 +1185,7 @@ async with NotebookLMClient.from_storage(rate_limit_max_retries=0) as client:
 |--------|------------|---------|-------------|
 | `list()` | - | `list[Notebook]` | List all notebooks |
 | `create(title)` | `title: str` | `Notebook` | Create a notebook |
+| `copy(notebook_id, title)` | `notebook_id: str, title: str` | `Notebook` | Copy a notebook, including its sources and Studio artifacts; automatic transport retry is disabled to avoid duplicate copies |
 | `get(notebook_id)` | `notebook_id: str` | `Notebook` | Get notebook details |
 | `delete(notebook_id)` | `notebook_id: str` | `None` | Delete a notebook (idempotent; returns `None` whether or not it existed) |
 | `rename(notebook_id, new_title)` | `notebook_id: str, new_title: str` | `Notebook` | Rename a notebook (re-fetched; raises `NotebookNotFoundError` if missing) |
@@ -1208,6 +1209,9 @@ for nb in notebooks:
 # Create and rename
 nb = await client.notebooks.create("Draft")
 nb = await client.notebooks.update(nb.id, title="Final Version", emoji="📖")
+
+# Copy sources and Studio artifacts into a new notebook
+copied = await client.notebooks.copy(nb.id, "Final Version — Copy")
 
 # Get AI-generated description (parsed with suggested topics)
 desc = await client.notebooks.get_description(nb.id)

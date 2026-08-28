@@ -3,15 +3,18 @@
 **Status:** Recovered from capture, schema-level (field numbers + wire types), not
 field-named by Google
 
-**Last verified:** 2026-07-21
+**Last verified:** 2026-08-27 (APK inventory unchanged; backend-only additions rechecked live)
 
 **Scope:** the **full 49-method surface** (4 gRPC services) is enumerated from the app binary and
-cross-referenced to the web API; **21 methods** were exercised live and their wire shapes decoded
-here. The **complete protobuf schema** — 282 messages / 767 fields with real field names, tags,
-types, and cardinality — was recovered by decompiling the Flutter binary with a Dart-3.13-ported
-blutter, and is checked in at **[mobile/schema.proto](schema.proto)**. The inline
-shapes below keep their wire-capture form (field `#N` + type); the `.proto` file is authoritative
-for names. Read paths were driven on real notebooks, all mutations on a throwaway notebook.
+cross-referenced to all **48 RPCs currently implemented by `notebooklm-py`**. The original traffic
+capture exercised 21 methods and decoded their wire shapes here; later direct bearer/gRPC probes
+also exercised APK-unwired methods and destructive APK-present methods on disposable copies. The
+**complete protobuf schema** — 282 messages / 767 fields with real field names, tags, types, and
+cardinality — was recovered by decompiling the Flutter binary with a Dart-3.13-ported blutter, and
+is checked in at **[mobile/schema.proto](schema.proto)**. The inline shapes below keep their
+wire-capture form (field `#N` + type); the `.proto` file is authoritative for names. Read paths
+were driven on real notebooks; mutations were confined to throwaway notebooks or copies and
+cleaned up afterward.
 
 This document is the schema-recovery follow-up to
 [docs/mobile/capture.md](capture.md), which explains how the `.pb`
@@ -42,8 +45,10 @@ Most methods are unary (single request message, single response message);
 
 ## Complete service surface (from the app binary)
 
-The 21 RPCs whose shapes are documented below are the ones the mobile UI actually calls.
-The **full** API surface is larger: extracting method-path strings from the Flutter AOT
+The original 21 captured RPCs whose shapes are documented below are the ones the mobile UI called
+in that capture. Later sections add direct parity probes; they are labelled separately and must not
+be mistaken for APK call-site evidence. The **full** client surface is larger: extracting
+method-path strings from the Flutter AOT
 library (`lib/arm64-v8a/libNotebookLM_prod_android_library_flutter_artifacts.so` in
 `split_config.arm64_v8a.apk`) enumerates **49 methods across 4 gRPC services** compiled into
 the app — many exist but are not wired to any mobile screen.
@@ -81,74 +86,122 @@ transport differs:
 | Auth | OAuth bearer | cookies / SAPISID |
 | Chat | `GenerateFreeFormStreamed` (gRPC stream) | separate `QUERY_URL` endpoint |
 
-Comparing the method sets (mobile binary = 49 methods; `rpc/types.py` implements 46):
+The current inventories are exact, not estimates:
 
-- **~32 shared** — the whole notebook/source/artifact/chat/share core.
-- **Mobile-only (17)** — WebRTC "Live" (`StreamLiveSession`, `GetIceConfig`, `SendSdpOffer`),
-  streaming chat (`GenerateFreeFormStreamed`), two-phase source add (`AddTentativeSources`),
-  share tokens (`GenerateAccessToken`, `CreateAccessRequest`), artifact user-state
-  (`GetArtifactUserState`/`UpsertArtifactUserState`), telemetry (`LogInteractionEvent`,
-  `SubmitFeedback`), sync `DiscoverSources`, `PrototypeNotebookSearch`.
-- **Web-only (14)** — label CRUD (`CreateLabel`/`MutateLabel`/`DeleteLabels`), the async
-  deep-research jobs (`DiscoverSourcesManifold`/`Async`, `ListDiscoverSourcesJob`,
-  `CancelDiscoverSourcesJob`), source maintenance (`MutateSource`, `RefreshSource`,
-  `CheckSourceFreshness`), `ExportToDrive`, `ShareAudio`, `GenerateReportSuggestions`.
+- Android APK: **49** compiled methods.
+- `notebooklm-py` `RPCMethod`: **48** methods. A freshly downloaded web bundle confirmed all 48,
+  including `te3DCe → CopyProject`; none were absent or merely text-present/unparsed. The same
+  bundle contained another 123 parsed registrations not yet modelled by the library.
+- Intersection by exact server method name: **33**.
+- APK-only relative to the 48-method batchexecute registry: **16**.
+- Implemented by the web library but absent from this APK: **15**.
 
-"Web-only" means the `notebooklm-py` client implements it and the mobile binary doesn't compile
-it — the shared backend almost certainly serves both regardless. Per-method correspondence (web
-`rpcid` → server `Method`):
+"Absent from the APK" means only that this app build does not compile a caller. It does **not**
+mean the mobile bearer/gRPC backend lacks a route. Direct probes found all 15 routes. Eleven were
+semantically successful with valid disposable resources, three high-side-effect methods were
+route-probed with nonexistent UUIDs (`NOT_FOUND`), and `RefreshSource` was routed but rejected a
+valid copied URL source with `INVALID_ARGUMENT` even though the web RPC refreshed the same source.
 
-| Server method | web `rpcid` (const) | on mobile? | notes |
-|---|---|---|---|
-| CreateProject | `CCqFvf` (CREATE_NOTEBOOK) | ✅ | |
-| GetProject | `rLM1Ne` (GET_NOTEBOOK) | ✅ | |
-| MutateProject | `s0tc2d` (RENAME_NOTEBOOK) | ✅ | generic notebook mutator |
-| DeleteProjects | `WWINqb` (DELETE_NOTEBOOK) | ✅ | batch-capable |
-| AddSources | `izAoDd` (ADD_SOURCE) | ✅ | |
-| DeleteSources | `tGMBJ` (DELETE_SOURCE) | ✅ | |
-| LoadSource | `hizoJc` (GET_SOURCE) | ✅ | |
-| MutateSource | `b7Wfje` (UPDATE_SOURCE) | ❌ web-only | not in mobile binary |
-| RefreshSource | `FLmJqe` (REFRESH_SOURCE) | ❌ web-only | |
-| CheckSourceFreshness | `yR9Yof` | ❌ web-only | |
-| **GetLabels** | `I3xc3c` (LIST_LABELS) | ✅ read only | |
-| **CreateLabel** | `agX4Bc` (CREATE_LABEL) | ❌ **web-only** | label create/AI-group |
-| **MutateLabel** | `le8sX` (UPDATE_LABEL) | ❌ **web-only** | rename/emoji/add-sources |
-| **DeleteLabels** | `GyzE7e` (DELETE_LABEL) | ❌ **web-only** | |
-| CreateArtifact | `R7cb6c` | ✅ | |
-| ListArtifacts | `gArtLc` | ✅ | |
-| DeleteArtifact | `V5N4be` | mobile-present | not UI-exercised here |
-| UpdateArtifact | `rc3d8d` (RENAME_ARTIFACT) | mobile-present | |
-| DeriveArtifact | `KmcKPe` (REVISE_SLIDE) | mobile-present | generic derive |
-| ExportToDrive | `Krh3pd` (EXPORT_ARTIFACT) | ❌ web-only | |
-| **DiscoverSources** (sync) | — | ✅ | mobile's only research call |
-| **DiscoverSourcesManifold** (fast) | `Ljjv0c` (START_FAST_RESEARCH) | ❌ **web-only** | |
-| **DiscoverSourcesAsync** (deep) | `QA9ei` (START_DEEP_RESEARCH) | ❌ **web-only** | deep research job |
-| **ListDiscoverSourcesJob** (poll) | `e3bVqc` (POLL_RESEARCH) | ❌ **web-only** | |
-| **CancelDiscoverSourcesJob** | `Zbrupe` (CANCEL_RESEARCH) | ❌ **web-only** | |
-| FinishDiscoverSourcesRun (import) | `LBwxtb` (IMPORT_RESEARCH) | ✅ | |
-| CreateNote | `CYK0Xb` | mobile-present | not UI-exercised |
-| MutateNote | `cYAfTb` (UPDATE_NOTE) | mobile-present | |
-| DeleteNotes | `AH0mwd` (DELETE_NOTE) | mobile-present | |
-| GetNotes | `cFji9` | ✅ | |
-| ListChatSessions | `hPTbtc` | ✅ | |
-| ListChatTurns | `khqZz` | ✅ | |
-| DeleteChatTurns | `J7Gthc` (DELETE_CONVERSATION) | ✅ | |
-| GenerateFreeFormStreamed | — | ✅ | chat ask (streaming) |
-| GeneratePromptSuggestions | `otmP3b` (SUGGEST_PROMPTS) | mobile-present | |
-| **ShareProject** | `QDyure` (SHARE_NOTEBOOK) | ✅ | `LabsTailwindSharingService` |
-| **GetProjectDetails** | `JFMDGd` (GET_SHARE_STATUS) | ✅ | share settings |
-| GetOrCreateAccount | `ZwVcOc` (GET_USER_SETTINGS) | ✅ | |
-| MutateAccount | `hT54vc` (SET_USER_SETTINGS) | mobile-present | |
+Status vocabulary below:
 
-**Answers to the two open questions:**
+- **captured** — observed from app traffic;
+- **live** — a direct mobile bearer/gRPC call was verified by read-back;
+- **route only** — a nonexistent target returned `NOT_FOUND`, proving dispatch without causing the
+  Drive/share/generation side effect;
+- **compiled** — present in the APK/schema but not independently exercised here.
 
-- **Labels** — mobile ships **read-only**: `GetLabels` is compiled in, but `CreateLabel` /
-  `MutateLabel` / `DeleteLabels` are **absent** from the mobile binary. Label management is
-  web-only; the mobile app can list/apply existing labels but not create or edit them.
-- **Deep research** — **web-only**. Mobile has only the synchronous `DiscoverSources`
-  (+ `FinishDiscoverSourcesRun` to import). The async deep-research job flow
-  (`DiscoverSourcesAsync`, `DiscoverSourcesManifold`, `ListDiscoverSourcesJob`,
-  `CancelDiscoverSourcesJob`) is **not** in the mobile binary.
+### Complete web-library → APK/backend matrix (48/48)
+
+| Server method | web `rpcid` (constant) | APK | mobile backend evidence |
+|---|---|---:|---|
+| ListRecentlyViewedProjects | `wXbhsf` (LIST_NOTEBOOKS) | ✅ | compiled; web live |
+| CreateProject | `CCqFvf` (CREATE_NOTEBOOK) | ✅ | captured |
+| **CopyProject** | `te3DCe` (COPY_NOTEBOOK) | ❌ | **live**; 50 sources + 5 artifacts copied with distinct child IDs |
+| GetProject | `rLM1Ne` (GET_NOTEBOOK) | ✅ | captured |
+| MutateProject | `s0tc2d` (RENAME_NOTEBOOK) | ✅ | captured; generic notebook mutator |
+| DeleteProjects | `WWINqb` (DELETE_NOTEBOOK) | ✅ | captured |
+| RemoveRecentlyViewedProject | `fejl7e` (REMOVE_RECENTLY_VIEWED) | ✅ | route returned `INTERNAL` for an owned disposable copy |
+| AddSources | `izAoDd` (ADD_SOURCE) | ✅ | captured |
+| AddTentativeSources | `o4cbdc` (ADD_SOURCE_FILE) | ✅ | captured; file/tentative registration path |
+| DeleteSources | `tGMBJ` (DELETE_SOURCE) | ✅ | captured + live delete/read-back on copied source |
+| LoadSource | `hizoJc` (GET_SOURCE) | ✅ | captured |
+| **MutateSource** | `b7Wfje` (UPDATE_SOURCE) | ❌ | **live** title mutation + read-back |
+| **RefreshSource** | `FLmJqe` (REFRESH_SOURCE) | ❌ | routed, but valid nested ID + four context variants returned `INVALID_ARGUMENT`; web call succeeded |
+| **CheckSourceFreshness** | `yR9Yof` (CHECK_SOURCE_FRESHNESS) | ❌ | **live** on copied URL source |
+| **CreateLabel** | `agX4Bc` (CREATE_LABEL) | ❌ | **live** for source labels and notebook collections |
+| GetLabels | `I3xc3c` (LIST_LABELS) | ✅ | APK + live for both resource kinds |
+| **MutateLabel** | `le8sX` (UPDATE_LABEL) | ❌ | **live** properties and memberships |
+| **DeleteLabels** | `GyzE7e` (DELETE_LABEL) | ❌ | **live** for both resource kinds |
+| GenerateNotebookGuide | `VfAZjd` (SUMMARIZE) | ✅ | captured |
+| GenerateDocumentGuides | `tr032e` (GET_SOURCE_GUIDE) | ✅ | captured |
+| **GenerateReportSuggestions** | `ciyUvf` (GET_SUGGESTED_REPORTS) | ❌ | **live**; four suggestion rows returned |
+| CreateArtifact | `R7cb6c` (CREATE_ARTIFACT) | ✅ | captured |
+| ListArtifacts | `gArtLc` (LIST_ARTIFACTS) | ✅ | captured |
+| DeleteArtifact | `V5N4be` (DELETE_ARTIFACT) | ✅ | **live** delete/read-back on copied report |
+| UpdateArtifact | `rc3d8d` (RENAME_ARTIFACT) | ✅ | **live** title mutation + read-back |
+| **ExportToDrive** | `Krh3pd` (EXPORT_ARTIFACT) | ❌ | **route only** (`NOT_FOUND` for nonexistent artifact; no Drive file created) |
+| **ShareAudio** | `RGP97b` (SHARE_ARTIFACT) | ❌ | **route only** on sharing service (`NOT_FOUND`; no share state changed) |
+| GetArtifact | `v9rmvd` (GET_INTERACTIVE_HTML) | ✅ | captured; generic artifact getter |
+| DeriveArtifact | `KmcKPe` (REVISE_SLIDE) | ✅ | compiled; generic derive operation |
+| **GenerateArtifact** | `Rytqqe` (RETRY_ARTIFACT) | ❌ | **route only** (`NOT_FOUND` for nonexistent artifact; no generation started) |
+| **DiscoverSourcesManifold** | `Ljjv0c` (START_FAST_RESEARCH) | ❌ | **live** fast research start |
+| **DiscoverSourcesAsync** | `QA9ei` (START_DEEP_RESEARCH) | ❌ | **live** deep research start |
+| **ListDiscoverSourcesJob** | `e3bVqc` (POLL_RESEARCH) | ❌ | **live** poll |
+| FinishDiscoverSourcesRun | `LBwxtb` (IMPORT_RESEARCH) | ✅ | **live** import |
+| **CancelDiscoverSourcesJob** | `Zbrupe` (CANCEL_RESEARCH) | ❌ | **live** cancel |
+| ActOnSources | `yyryJe` (GENERATE_MIND_MAP) | ✅ | compiled; generic source action |
+| CreateNote | `CYK0Xb` (CREATE_NOTE) | ✅ | **live** create/read-back on copied notebook |
+| GetNotes | `cFji9` (GET_NOTES_AND_MIND_MAPS) | ✅ | captured |
+| MutateNote | `cYAfTb` (UPDATE_NOTE) | ✅ | **live** content/title mutation + read-back |
+| DeleteNotes | `AH0mwd` (DELETE_NOTE) | ✅ | **live**; deletion became visible on the next read |
+| ListChatSessions | `hPTbtc` (GET_LAST_CONVERSATION_ID) | ✅ | captured |
+| ListChatTurns | `khqZz` (GET_CONVERSATION_TURNS) | ✅ | captured |
+| DeleteChatTurns | `J7Gthc` (DELETE_CONVERSATION) | ✅ | captured |
+| GeneratePromptSuggestions | `otmP3b` (SUGGEST_PROMPTS) | ✅ | compiled |
+| ShareProject | `QDyure` (SHARE_NOTEBOOK) | ✅ | captured; sharing service |
+| GetProjectDetails | `JFMDGd` (GET_SHARE_STATUS) | ✅ | captured; sharing service |
+| GetOrCreateAccount | `ZwVcOc` (GET_USER_SETTINGS) | ✅ | captured |
+| MutateAccount | `hT54vc` (SET_USER_SETTINGS) | ✅ | compiled |
+
+### APK-only relative to the batchexecute registry (16)
+
+| APK method | `notebooklm-py` coverage / closest web equivalent |
+|---|---|
+| DiscoverSources | no exact sync caller; web API exposes the async Research family |
+| GenerateAccessToken | no public API |
+| GenerateFreeFormStreamed | implemented through the separate streamed query endpoint, not `RPCMethod` |
+| GetArtifactCustomizationChoices | no public API |
+| GetArtifactUserState | no standalone public API |
+| UpsertArtifactUserState | no standalone public API |
+| GetDriveSourceStatus | no exact caller; source freshness uses `CheckSourceFreshness` |
+| GetIceConfig | Live/WebRTC not implemented |
+| SendSdpOffer | Live/WebRTC not implemented |
+| StreamLiveSession | Live/WebRTC not implemented |
+| ListExpertIntelligenceContent | no public API |
+| LogInteractionEvent | telemetry intentionally not implemented |
+| SubmitFeedback | no public API |
+| SuggestArtifacts | no exact caller; web has report and prompt suggestions |
+| CreateAccessRequest | no public API |
+| PrototypeNotebookSearch | experimental discovery search not implemented |
+
+### Conclusions from the parity probes
+
+- **Labels and collections:** the APK is read-only (`GetLabels`), while direct mobile gRPC supports
+  full CRUD and source/notebook membership add/remove. See
+  [the live organization report](labels-collections-copy-mobile-grpc-2026-08-27.md).
+- **Notebook copy:** `CopyProject` is absent from the APK but fully routed. The first probe copied a
+  one-source notebook. The parity probe then copied a notebook with 50 sources and 5 Studio
+  artifacts; the copy matched both counts on its first read and every copied source/artifact ID was
+  distinct. Controlled note/source/artifact mutations and deletes were performed only on that copy,
+  which was then deleted.
+- **Deep research:** the full async lifecycle is absent from the APK but supported by the mobile
+  backend. See [the live report](deep-research-mobile-grpc-2026-08-27.md).
+- **Remaining proof gap:** `ExportToDrive`, `ShareAudio`, and `GenerateArtifact` are routed but were
+  deliberately not run with valid IDs because doing so creates external/share/generation state.
+  `RefreshSource` is the only valid-resource parity probe that the mobile endpoint rejected.
+
+Detailed request shapes and the destructive-copy test log are in
+[Web-parity gap probes over mobile gRPC](web-parity-gap-live-validation-2026-08-27.md).
 
 Field *numbers* differ between the two transports (protobuf field tags on mobile vs. positional
 JSON arrays on web), but the message *semantics* line up — the web `rpc/` decoders are the best
@@ -213,6 +266,7 @@ Read RPCs (safe to replay):
 
 | Method | Req bytes | Resp bytes | Emitted when | Notes |
 |---|---:|---:|---|---|
+| `ListRecentlyViewedProjects` | variable | variable | app home | compiled; web-equivalent list live |
 | `GetOrCreateAccount` | 91 | 41 | app launch | returns account limits/flags |
 | `GetProject` | 105 | ~21,885 | open a notebook | full notebook + sources |
 | `GenerateNotebookGuide` | 101 | 1,851 | open a notebook | **stateful — do not replay** |
@@ -223,6 +277,8 @@ Read RPCs (safe to replay):
 | `GetArtifact` | 103 | 257–1,604 | poll generation | one artifact + status |
 | `GetNotes` | 101 | 4,460 | open Studio tab | user notes |
 | `LoadSource` | 103 | ~1.2 MB | open a source | full source text + rich-text tree |
+| `CheckSourceFreshness` | variable | 0 | direct parity probe | APK-absent; valid copied URL source succeeded |
+| `GenerateReportSuggestions` | variable | variable | direct parity probe | APK-absent; four suggestion rows returned |
 
 Write / mutation RPCs (see [Write RPCs](#write--mutation-rpcs) — **do not replay against real data**):
 
@@ -231,10 +287,17 @@ Write / mutation RPCs (see [Write RPCs](#write--mutation-rpcs) — **do not repl
 | `CreateProject` | 93 | 92 | create notebook |
 | `MutateProject` | 173 | 151 | rename notebook / edit fields |
 | `DeleteProjects` | 101 | 0 | delete notebook |
+| `CopyProject` | variable | bare `Project` | duplicate notebook; 50-source/5-artifact live replay |
 | `AddTentativeSources` | 140 | 112 | begin adding source(s) |
 | `AddSources` | 194 | 253 | commit source(s) |
 | `DeleteSources` | 103 | 0 | remove a source |
+| `MutateSource` | variable | `Source` | APK-absent; copied-source rename + read-back |
+| `RefreshSource` | variable | error | routed, but valid copied URL source returned `INVALID_ARGUMENT` |
+| `CreateLabel` / `MutateLabel` / `DeleteLabels` | variable | record set / empty | labels and collections; backend-only live replay |
 | `CreateArtifact` | 199 | 198 | generate studio artifact (audio/video/…) |
+| `UpdateArtifact` / `DeleteArtifact` | variable | `Artifact` / empty | copied-report rename/delete + read-back |
+| `CreateNote` / `MutateNote` / `DeleteNotes` | variable | `ProjectNote` / empty | disposable note lifecycle on copied notebook |
+| `GenerateArtifact` / `ExportToDrive` / `ShareAudio` | variable | `NOT_FOUND` | safe invalid-ID route probes; no side effect created |
 | `DiscoverSources` | 136 | 2,047 | research / "find sources from the web" |
 | `GenerateFreeFormStreamed` | 476 | streamed | chat: ask the notebook (**server-streaming**) |
 | `DeleteChatTurns` | 103 | 0 | chat: clear history |
@@ -242,8 +305,9 @@ Write / mutation RPCs (see [Write RPCs](#write--mutation-rpcs) — **do not repl
 | `GetProjectDetails` † | 101 | 157–161 | read share settings |
 
 † on `LabsTailwindSharingService`, not the orchestration service.
-Sizes are from a single account/notebook; treat as order-of-magnitude. Read and write
-RPCs were captured on 2026-07-22 against a throwaway notebook.
+Sizes are from a single account/notebook; treat as order-of-magnitude. Fixed byte counts are from
+the 2026-07-22 app capture. Rows labelled direct/parity/copy are later bearer/gRPC probes on
+disposable resources; their bodies vary and were not derived from an HTTP Toolkit size sample.
 
 ---
 
@@ -477,10 +541,28 @@ response: #1 str                     # new title
 ### DeleteProjects — delete notebook(s)
 
 ```text
-request:  #1 str[36]   # project_id (field is plural → likely repeated for batch delete)
+request:  #1 repeated str[36]   # project_ids
           #2 context
 response: <empty>      # 0 bytes on success
 ```
+
+### CopyProject — duplicate a notebook
+
+This method is absent from the inspected APK but live on the mobile gRPC host. The current web
+bundle and direct mobile replay agree on the field layout:
+
+```text
+request:  #1 RequestContext (optional in the successful direct replay)
+          #2 str[36] source project_id
+          #3 string destination title
+response: bare Project
+          #1 destination title
+          #3 new project_id
+```
+
+The high-coverage replay copied 50 sources and 5 Studio artifacts on its first read-back. Every
+copied source/artifact UUID differed from the original. See
+[the parity report](web-parity-gap-live-validation-2026-08-27.md#test-target-and-copy-fidelity).
 
 ### AddTentativeSources + AddSources — add a source (two-phase)
 
@@ -517,6 +599,15 @@ request:  #1 { #1 str[36] }   # source_id, wrapped   + #2 context
 response: <empty>             # 0 bytes on success
 ```
 
+### APK-unwired source/report routes
+
+Direct mobile-bearer calls recovered valid request shapes for `MutateSource`,
+`CheckSourceFreshness`, and `GenerateReportSuggestions`. `RefreshSource` was exhaustively shaped
+but rejected through mobile gRPC while the web transport succeeded. The exact bodies, controls,
+and negative results are kept in
+[the parity report](web-parity-gap-live-validation-2026-08-27.md#newly-recovered-successful-request-shapes)
+instead of duplicating them here.
+
 ### CreateArtifact — generate a studio artifact
 
 Generation (Audio Overview observed) is a single `CreateArtifact` that returns immediately
@@ -542,6 +633,11 @@ response: Artifact {
 ```
 
 ## Research / source discovery
+
+> **Backend correction, 2026-08-27:** The APK exposes only synchronous `DiscoverSources`, but the
+> same mobile gRPC service routes the full async Research lifecycle. Request/response fields,
+> current bundle names, replay commands, and interception instructions are in
+> [Deep Research over the mobile gRPC API](deep-research-mobile-grpc-2026-08-27.md).
 
 ### DiscoverSources — "find sources from the web"
 
@@ -750,6 +846,12 @@ the UI-reachable read/write/research/chat set plus the `LabsTailwindSharingServi
 (`ShareProject`, `GetProjectDetails`). Entity-ID placement, `Timestamp` shape, the shared
 client-context envelope, repeated-field structure, account-limits block, two-phase source-add,
 generate→poll, and the server-streaming chat-answer frame model are all solid.
+
+**Backend parity tested:** all 15 web-library methods absent from the APK reached a handler on the
+mobile gRPC host. Eleven succeeded with valid disposable resources, three returned `NOT_FOUND` in
+safe invalid-ID route probes, and `RefreshSource` remained a routed-but-rejected mismatch. Several
+APK-present note/artifact/delete methods were also live-verified on a rich disposable copy. These
+later results supplement the 21 captured shapes; they do not change the capture count.
 
 **Field names/tags/types — recovered:** the full protobuf schema (282 messages, 767 fields) is in
 [mobile/schema.proto](schema.proto), decompiled from the binary. This supersedes the

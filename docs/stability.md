@@ -450,7 +450,7 @@ When Google changes their internal APIs:
 
 ### Automated RPC Health Check
 
-A nightly GitHub Action (`rpc-health.yml`) monitors all 47 RPC methods for ID
+A nightly GitHub Action (`rpc-health.yml`) monitors all 48 RPC methods for ID
 changes on `main`. Release branches use the same workflow through manual
 dispatch.
 

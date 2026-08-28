@@ -86,7 +86,7 @@ class NotebookLMClient:
     """Async client for NotebookLM API.
 
     Provides access to NotebookLM functionality through namespaced sub-clients:
-    - notebooks: Create, list, delete, rename notebooks
+    - notebooks: Create, copy, list, delete, and rename notebooks
     - sources: Add, list, delete sources (URLs, text, files, YouTube, Drive)
     - artifacts: Generate and manage AI content (audio, video, reports, etc.)
     - chat: Ask questions and manage conversations

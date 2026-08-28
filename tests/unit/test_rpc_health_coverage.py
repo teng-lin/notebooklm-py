@@ -68,6 +68,9 @@ MUTATING_SKIP_LIST: frozenset[str] = frozenset(
         # Creates a new notebook — only safe inside --full mode against a
         # throwaway notebook (handled by setup_temp_resources).
         "CREATE_NOTEBOOK",
+        # Copies a notebook and its children — a mutating create with no
+        # idempotency token, safe only against an explicitly disposable source.
+        "COPY_NOTEBOOK",
         # Permanently deletes a notebook — only safe in --full cleanup.
         "DELETE_NOTEBOOK",
         # Adds a text/url source to a notebook — write op, --full only.
