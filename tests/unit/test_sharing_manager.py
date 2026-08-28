@@ -201,3 +201,38 @@ def test_notebooks_api_get_share_url_delegates_to_injected_share_manager() -> No
 
     assert url == "https://example.test/notebook/nb_123"
     replacement.assert_called_once_with("nb_123", None)
+
+
+def test_notebooks_api_falsey_share_manager_preserves_default_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    core = MagicMock()
+    share_manager = MagicMock()
+    share_manager.__bool__.return_value = False
+    share_manager.get_share_url.return_value = "https://injected.test/notebook/nb_123"
+    api = NotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
+    share_url_builder = MagicMock(return_value="https://example.test/notebook/nb_123")
+    monkeypatch.setattr(notebooks_module, "build_share_url", share_url_builder)
+    monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
+
+    url = api.get_share_url("nb_123")
+
+    assert url == "https://example.test/notebook/nb_123"
+    assert api._share_manager is not share_manager
+    share_manager.get_share_url.assert_not_called()
+    share_url_builder.assert_called_once_with("https://notebook.google.com", "nb_123", None)
+
+
+def test_notebooks_api_injected_share_url_observes_whole_manager_replacement() -> None:
+    core = MagicMock()
+    original_manager = MagicMock()
+    api = NotebooksAPI(core, sources_api=MagicMock(), share_manager=original_manager)
+    replacement_manager = MagicMock()
+    replacement_manager.get_share_url.return_value = "https://example.test/notebook/nb_123"
+    api._share_manager = replacement_manager
+
+    url = api.get_share_url("nb_123")
+
+    assert url == "https://example.test/notebook/nb_123"
+    original_manager.get_share_url.assert_not_called()
+    replacement_manager.get_share_url.assert_called_once_with("nb_123", None)

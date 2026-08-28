@@ -241,9 +241,7 @@ class NotebooksAPI:
             source_lister=self._sources,
         )
         self._share_manager = share_manager or ShareManager(self._rpc)
-        if share_manager is None:
-            self._share_url_builder: ShareUrlBuilder = _build_default_share_url
-        else:
+        if share_manager:
             # Preserve the existing injection seam while storing only a neutral
             # callable suitable for the transport-neutral base introduced in A4.
             # Resolve the manager method at call time so replacements remain visible.
@@ -251,9 +249,11 @@ class NotebooksAPI:
                 notebook_id: str,
                 artifact_id: str | None = None,
             ) -> str:
-                return share_manager.get_share_url(notebook_id, artifact_id)
+                return self._share_manager.get_share_url(notebook_id, artifact_id)
 
-            self._share_url_builder = injected_share_url
+            self._share_url_builder: ShareUrlBuilder = injected_share_url
+        else:
+            self._share_url_builder = _build_default_share_url
         # CREATE_NOTEBOOK volunteers its newly-created ChatSession, while
         # GET_NOTEBOOK omits it. Keep that one-shot hint until ChatAPI consumes
         # it so the first ask need not immediately re-fetch the same id through
