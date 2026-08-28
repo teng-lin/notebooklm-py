@@ -21,69 +21,71 @@ from notebooklm.types import (
     Note,
 )
 
-# Raw ``__doc__`` fingerprints from the pre-split ChatAPI at de56890b. These
-# cover the effective runtime owner of every public method: shared workflows on
-# the neutral base and Web overrides for the abstract reads/configuration.
+# Normalized docstring fingerprints from the pre-split ChatAPI at de56890b.
+# ``inspect.getdoc`` keeps these stable across CPython's 3.13 docstring
+# indentation change while still detecting documentation drift. These cover the
+# effective runtime owner of every public method: shared workflows on the
+# neutral base and Web overrides for the abstract reads/configuration.
 _CHAT_DOCSTRING_SHA256 = {
-    ("ChatAPI", "<class>"): "125617c3294301ee5987a2e926fbc90f6ad6a4bbee91b0944c41a0c8fe46536d",
-    ("ChatAPI", "__init__"): "ae8476b2aa8120b15ea62eafd7efe67ea84e9a21175d212db6fb709b0176a2ea",
+    ("ChatAPI", "<class>"): "3cb0c1f0686423392457277486d386eeef8f99865e8b45ba754bc96ec75cb804",
+    ("ChatAPI", "__init__"): "a48df90f2e18ac8d5591f96686b829897edc6b9ecfdb3901ef56905de4966e23",
     (
         "ChatAPI",
         "reset_after_open",
-    ): "561cee4e0504ee3cbcb413a4f34879d1a34fd5d096e9a08b0b5208d3943001b4",
-    ("ChatAPI", "ask"): "704583ce2f9eaf1b303ec68e196fbb7f07073636f5d25538de65e58240426907",
+    ): "642dc585ace0fe8dfead8faedc91298016b11807b8c88fa702c99042791ca5d7",
+    ("ChatAPI", "ask"): "13f46f7053e70d68a386a8910cc5323d06c7f027b42b9fc6daa4c28696cb39d7",
     (
         "ChatAPI",
         "get_cached_turns",
-    ): "3cc05a18496555e0974363f13a275b638cb791aa31f2cd0ebde2751299d88993",
+    ): "db1dc0d85a854422c9840010023190134778f837ac00580f0cf0d9b2259b3a56",
     (
         "ChatAPI",
         "delete_conversation",
-    ): "a8d79dc920ff192411b105d70d3e2a27ec32fed94d793aba859535a7233fe9fb",
+    ): "01a50a49944455d889f446d82810e50c733fea9964d144792484ce3c6f32e12c",
     (
         "ChatAPI",
         "clear_cache",
-    ): "841e1bc228c61c0d08585966ccdcfe6c14fba1d7bcdfb4783c71fa5b35995776",
+    ): "d4237ff0c442c2acc5deac4ab18c6fa778bdf60a4d0ec754b20f88ae95b5c6f2",
     (
         "ChatAPI",
         "cache_size",
-    ): "d59415c6b3b9a129248d8dadf1f2eac518d775d6c0d1ae333460dc1d407b9e0b",
+    ): "793175e56b14d374b9177878f327ae201f86661c8f6f534e7fa528bea0d332bf",
     (
         "ChatAPI",
         "set_mode",
-    ): "7df6a33d66d207e57d9961f3fd733b079d3b88701bbe9bead3552b8495404e01",
+    ): "822abb5683d83ab0b02df825156f243b8ecb2ce4ab54a41167ab5526ede72fdf",
     (
         "ChatAPI",
         "save_answer_as_note",
-    ): "f78942e68ea2346928926a470ad1938e3a3f80fd36992cfccfb5e98d97ca2bc7",
+    ): "a637cc7f1e583d027397d3db062e2e91c7607bc3bc6b06b9c1a86686d423326a",
     (
         "WebChatAPI",
         "<class>",
-    ): "125617c3294301ee5987a2e926fbc90f6ad6a4bbee91b0944c41a0c8fe46536d",
+    ): "3cb0c1f0686423392457277486d386eeef8f99865e8b45ba754bc96ec75cb804",
     (
         "WebChatAPI",
         "__init__",
-    ): "ae8476b2aa8120b15ea62eafd7efe67ea84e9a21175d212db6fb709b0176a2ea",
+    ): "a48df90f2e18ac8d5591f96686b829897edc6b9ecfdb3901ef56905de4966e23",
     (
         "WebChatAPI",
         "get_conversation_turns",
-    ): "9ec5273e41fd0e0ea089eb78484011d268995601ce56779b9bd94a387f586a29",
+    ): "318935a9bdd9dc412e63536cf7d4119e41d09aa49ab5f379e5c4aa8420c64feb",
     (
         "WebChatAPI",
         "get_conversation_id",
-    ): "c5feb719c00d9c81edd1347a742de4c0b62d9e8ec2fb8e5557558b5d778712bd",
+    ): "2b6a77deded362f6fa4198b4b4a39b76ae3dd835ff7d97fec8055c6f89b11dc8",
     (
         "WebChatAPI",
         "get_history",
-    ): "4a683b206539a327bf2295e6413452115d9b74b972f8df02f97dc6e0409a7ead",
+    ): "05fc7448600335aa9c7f548b2e12723c3836f1f75ad8ca04c86f25008bdb7526",
     (
         "WebChatAPI",
         "configure",
-    ): "7a3547e5a56a08283b0572b8290b0d67e4a8d79a6b4de5eac9f560849eb319ab",
+    ): "18fee62a4f952caf863098bbef023655be560d9d2a69c8307ef83fa9fb6e0e01",
     (
         "WebChatAPI",
         "get_settings",
-    ): "62723894d239d33ddf0384c496909da70c0e1740fcb32706127aab5443bfbf99",
+    ): "ab537f9191b92e48129cbc1431f32b85ba613bc871175e4fbdcfb89babce3fcc",
 }
 
 
@@ -327,8 +329,9 @@ def test_chat_split_preserves_effective_runtime_docstrings(
     member_name: str,
     expected_sha256: str,
 ) -> None:
-    """Public runtime documentation stays byte-identical across the split."""
+    """Normalized public runtime documentation stays identical across the split."""
     owner = {"ChatAPI": ChatAPI, "WebChatAPI": WebChatAPI}[owner_name]
     documented = owner if member_name == "<class>" else getattr(owner, member_name)
-    assert documented.__doc__ is not None
-    assert hashlib.sha256(documented.__doc__.encode()).hexdigest() == expected_sha256
+    doc = inspect.getdoc(documented)
+    assert doc is not None
+    assert hashlib.sha256(doc.encode()).hexdigest() == expected_sha256
