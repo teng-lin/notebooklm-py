@@ -25,6 +25,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = REPO_ROOT / "src" / "notebooklm"
 PERSISTENCE_PATH = SRC_ROOT / "_web/transport/cookie_persistence.py"
 LIFECYCLE_PATH = SRC_ROOT / "_runtime" / "lifecycle.py"
+WEB_LIFECYCLE_PATH = SRC_ROOT / "_web" / "transport" / "lifecycle.py"
 INIT_PATH = SRC_ROOT / "_runtime" / "init.py"
 CLIENT_PATH = SRC_ROOT / "client.py"
 
@@ -598,6 +599,15 @@ class _MemberCollector(ast.NodeVisitor):
         if member == "_from_store":
             return self._class_receiver(node)
         if (
+            self.path == WEB_LIFECYCLE_PATH
+            and self.owner == "WebTransportLifecycle.open"
+            and len(self.functions) == 1
+            and ast.unparse(node) == "self._cookie_persistence"
+        ):
+            # The concrete web transport receives this collaborator through
+            # its typed constructor and owns the open-baseline phase.
+            return True
+        if (
             member == "merge_cookie_observation"
             and self.path == PERSISTENCE_PATH
             and self.owner == "CookiePersistence._save_canonical"
@@ -1023,13 +1033,18 @@ def test_auth_tokens_and_cookie_snapshot_accesses_are_confined() -> None:
         "CookiePersistence.__init__",
     }
     assert _attribute_owners(LIFECYCLE_PATH, "cookie_snapshot") == {
-        "ClientLifecycle.open",
         "ClientLifecycle.save_cookies",
+    }
+    assert _attribute_owners(WEB_LIFECYCLE_PATH, "cookie_snapshot") == {
+        "WebTransportLifecycle.open",
     }
     assert _attribute_owners(LIFECYCLE_PATH, "_auth") == {
         "ClientLifecycle.__init__",
-        "ClientLifecycle.open",
         "ClientLifecycle.save_cookies",
+    }
+    assert _attribute_owners(WEB_LIFECYCLE_PATH, "_auth") == {
+        "WebTransportLifecycle.__init__",
+        "WebTransportLifecycle.open",
     }
 
 
@@ -1042,8 +1057,8 @@ def test_private_persistence_callers_and_capabilities_are_exact() -> None:
         escapes.update(rejected)
     assert calls == {
         ("_runtime/init.py", "build_collaborators"),
-        ("_runtime/lifecycle.py", "ClientLifecycle.open"),
         ("_runtime/lifecycle.py", "ClientLifecycle.save_cookies"),
+        ("_web/transport/lifecycle.py", "WebTransportLifecycle.open"),
         ("client.py", "_FromStorageContext._build"),
     }
     assert escapes == set()

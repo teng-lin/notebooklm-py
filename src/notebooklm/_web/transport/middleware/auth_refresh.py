@@ -70,6 +70,7 @@ from .context import (
     RPC_CONTEXT_DISABLE_INTERNAL_RETRIES,
     RPC_CONTEXT_LOG_LABEL,
     RPC_CONTEXT_REFRESH_BUDGET,
+    RPC_CONTEXT_RESOURCE_EPOCH,
     RPC_CONTEXT_RETRY_DEADLINE,
 )
 from .core import NextCall, RpcRequest, RpcResponse, materialize_rpc_request
@@ -133,7 +134,7 @@ class AuthRefreshMiddleware:
     def __init__(
         self,
         *,
-        refresh_callable: Callable[[], Awaitable[None]],
+        refresh_callable: Callable[..., Awaitable[None]],
         is_auth_error: Callable[[Exception], bool],
         refresh_callback_enabled: Callable[[], bool],
         refresh_retry_delay: Callable[[], float],
@@ -264,8 +265,14 @@ class AuthRefreshMiddleware:
             # log → metric). Refresh failure wraps the original auth
             # ``HTTPStatusError`` in ``TransportAuthExpired`` — the chain's
             # historical refresh-failure shape that callers / tests pin.
+            expected_epoch = request.context.get(RPC_CONTEXT_RESOURCE_EPOCH)
+            refresh = (
+                self._refresh_callable
+                if expected_epoch is None
+                else lambda: self._refresh_callable(expected_epoch)
+            )
             await refresh_and_count(
-                refresh=self._refresh_callable,
+                refresh=refresh,
                 on_refresh_failure=lambda _refresh_error: TransportAuthExpired(
                     f"auth refresh failed for {log_label}",
                     original=original_auth_error,

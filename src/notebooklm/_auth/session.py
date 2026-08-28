@@ -70,7 +70,8 @@ async def refresh_auth_session(
     explicit ``client.refresh_auth(allow_headless=True)`` entry passes
     ``allow_headless`` straight through.
     """
-    http_client = kernel.get_http_client()
+    expected_epoch = auth_coord.current_epoch
+    http_client = kernel.get_http_client(expected_epoch=expected_epoch)
     rejected_cookie_jar: CookieJar | None = None
 
     async def _get_and_extract() -> tuple[str, str] | None:
@@ -127,6 +128,7 @@ async def refresh_auth_session(
                 rejected_cookie_jar=rejected_cookie_jar,
                 force_disk_read=_attempt > 0 and auth.storage_path is not None,
                 preserve_auth_material_change=_attempt < 2,
+                expected_epoch=expected_epoch,
             ):
                 break
             extracted = await _get_and_extract()
@@ -156,15 +158,24 @@ async def refresh_auth_session(
 
     # Keep the csrf/session mutation centralized so RPC snapshots cannot
     # observe a torn token pair while refresh is in flight.
-    await auth_coord.update_auth_tokens(auth=auth, csrf=csrf or "", session_id=sid or "")
-    auth_coord.update_auth_headers(auth=auth, kernel=kernel)
+    await auth_coord.update_auth_tokens(
+        auth=auth,
+        csrf=csrf or "",
+        session_id=sid or "",
+        expected_epoch=expected_epoch,
+    )
+    auth_coord.update_auth_headers(auth=auth, kernel=kernel, expected_epoch=expected_epoch)
     # Persist through ``ClientLifecycle.save_cookies`` so refresh
     # serializes with keepalive and close saves. The lifecycle's
     # ``save_cookies`` takes the :class:`CookiePersistence` collaborator
     # directly — the first positional argument is the cookie-persistence
     # collaborator the caller already holds rather than a Session-shaped
     # ``host``, eliminating the prior ``cast`` to a Protocol-typed host.
-    await lifecycle.save_cookies(cookie_persistence, http_client.cookies)
+    await lifecycle.save_cookies(
+        cookie_persistence,
+        http_client.cookies,
+        expected_epoch=expected_epoch,
+    )
 
     return auth
 
@@ -178,9 +189,10 @@ async def _try_storage_cookie_reload(
     rejected_cookie_jar: CookieJar | None,
     force_disk_read: bool = False,
     preserve_auth_material_change: bool = True,
+    expected_epoch: int | None = None,
 ) -> bool:
     """Reload newer/different file-backed cookies without external recovery."""
-    cookie_jar = kernel.get_http_client().cookies
+    cookie_jar = kernel.get_http_client(expected_epoch=expected_epoch).cookies
     expected_authuser = auth.authuser
     expected_account_email = auth.account_email
     expected_generation = auth._profile_session_generation
@@ -202,6 +214,7 @@ async def _try_storage_cookie_reload(
             expected_generation=expected_generation,
             authuser=authuser,
             account_email=account_email,
+            expected_epoch=expected_epoch,
         )
 
     try:
@@ -222,6 +235,8 @@ async def _try_storage_cookie_reload(
         # The reload mutates the authoritative HTTP jar before its optional
         # adoption await. Keep public compatibility views synchronized even if
         # cancellation lands while adoption is waiting on disk or save_lock.
+        if expected_epoch is not None:
+            auth_coord.assert_epoch(expected_epoch)
         auth.replace_cookie_jar(cookie_jar)
 
 

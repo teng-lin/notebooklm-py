@@ -17,7 +17,7 @@ from notebooklm._runtime.config import (
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     DEFAULT_TIMEOUT,
 )
-from notebooklm._runtime.lifecycle import CookieRotator, CookieSaver
+from notebooklm._web.transport.lifecycle import CookieRotator, CookieSaver
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.types import RpcTelemetryEvent

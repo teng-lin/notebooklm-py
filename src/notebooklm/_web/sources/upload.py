@@ -10,7 +10,7 @@ from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 from time import monotonic
-from typing import IO, TYPE_CHECKING, Any, Protocol, cast
+from typing import IO, TYPE_CHECKING, Any, Concatenate, ParamSpec, Protocol, TypeVar, cast
 
 import httpx
 
@@ -161,6 +161,24 @@ class AsyncClientFactory(Protocol):
 ListSources = Callable[[str], Awaitable[list[Source]]]
 QueueWaitRecorder = Callable[[float], None]
 
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
+
+
+def _track_transport_operation(
+    method: Callable[Concatenate[SourceUploadPipeline, _P], Awaitable[_T]],
+) -> Callable[Concatenate[SourceUploadPipeline, _P], Awaitable[_T]]:
+    """Keep a direct-upload task attached to its resource generation."""
+
+    async def wrapped(self: SourceUploadPipeline, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        epoch, task = self._begin_transport_operation()
+        try:
+            return await method(self, *args, **kwargs)
+        finally:
+            self._finish_transport_operation(epoch, task)
+
+    return wrapped
+
 
 # Single-loop-per-client invariant per ADR-0004; not safe for multi-loop fan-out.
 _BACKGROUND_CANCEL_TASKS: set[asyncio.Task[None]] = set()
@@ -173,6 +191,8 @@ def _retain_background_cancel_task(task: asyncio.Task[None]) -> None:
 
 class SourceUploadPipeline(LoopBoundPrimitive):
     """Own file registration and resumable upload orchestration."""
+
+    name = "web-upload"
 
     def __init__(
         self,
@@ -206,6 +226,14 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         self._upload_semaphore: asyncio.Semaphore | None = None
         # Bounds concurrent Drive auto-route downloads (#1884); loop-bound.
         self._download_semaphore: asyncio.Semaphore | None = None
+        # Epoch zero preserves the pipeline's historical standalone use in unit
+        # tests and internal adapters that construct it without opening a root
+        # ``ClientLifecycle``.  Root-managed generations start at one, and once
+        # such a generation is fenced the pipeline never falls back to zero.
+        self._active_epoch: int | None = 0
+        self._closing = False
+        self._transport_tasks: set[asyncio.Task[Any]] = set()
+        self._transport_clients: set[httpx.AsyncClient] = set()
         # ``_bound_loop`` + ``set_bound_loop`` come from the
         # :class:`~notebooklm._loop_bound.LoopBoundPrimitive` base; this pipeline
         # overrides :meth:`_on_loop_rebind` to discard the cached
@@ -308,6 +336,71 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         self._upload_semaphore = None
         self._download_semaphore = None
 
+    async def open(self, loop: asyncio.AbstractEventLoop, epoch: int) -> None:
+        """Bind a lazy upload generation without issuing network I/O."""
+        self.set_bound_loop(loop)
+        self.reset_after_open()
+        self._active_epoch = epoch
+        self._closing = False
+        self._transport_tasks.clear()
+        self._transport_clients.clear()
+
+    async def prepare_close(self) -> None:
+        """Fence first, then interrupt every old-epoch upload resource."""
+        self._closing = True
+        self._active_epoch = None
+        current = asyncio.current_task()
+        tasks = [task for task in self._transport_tasks if task is not current and not task.done()]
+        clients = list(self._transport_clients)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*(client.aclose() for client in clients), return_exceptions=True)
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def close_resources(self) -> None:
+        """Settle and clear all direct-upload handles after partial open/close."""
+        try:
+            await asyncio.gather(
+                *(client.aclose() for client in self._transport_clients),
+                return_exceptions=True,
+            )
+        finally:
+            self._transport_clients.clear()
+            self._transport_tasks.clear()
+            self._active_epoch = None
+            self._closing = True
+
+    def _assert_transport_epoch(self, expected_epoch: int) -> None:
+        if self._closing or self._active_epoch != expected_epoch:
+            raise RuntimeError(
+                "NotebookLMClient upload generation is retired "
+                f"(expected={expected_epoch}, active={self._active_epoch!r})."
+            )
+
+    def _begin_transport_operation(self) -> tuple[int, asyncio.Task[Any]]:
+        epoch = self._active_epoch
+        task = asyncio.current_task()
+        if epoch is None or task is None:
+            raise RuntimeError("NotebookLMClient upload transport is not open.")
+        self._assert_transport_epoch(epoch)
+        self._transport_tasks.add(task)
+        return epoch, task
+
+    def _finish_transport_operation(self, epoch: int, task: asyncio.Task[Any]) -> None:
+        del epoch
+        self._transport_tasks.discard(task)
+
+    def _capture_transport_epoch(self) -> int:
+        epoch = self._active_epoch
+        if epoch is None:
+            raise RuntimeError("NotebookLMClient upload transport is not open.")
+        self._assert_transport_epoch(epoch)
+        return epoch
+
+    def _track_transport_client(self, client: httpx.AsyncClient, epoch: int) -> None:
+        self._assert_transport_epoch(epoch)
+        self._transport_clients.add(client)
+
     def get_upload_semaphore(self) -> asyncio.Semaphore:
         """Return the Sources-owned upload semaphore, creating it on first use.
 
@@ -335,6 +428,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         """Account-routing value for Google URLs (#1884), matching the upload leg."""
         return format_authuser_value(self._auth.authuser, self._auth.account_email)
 
+    @_track_transport_operation
     async def add_file(
         self,
         notebook_id: str,
@@ -912,6 +1006,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         content_type: str,
     ) -> str:
         """Start a resumable upload session and get the upload URL."""
+        expected_epoch = self._capture_transport_epoch()
         request = build_resumable_upload_start_request(
             notebook_id=notebook_id,
             filename=filename,
@@ -927,6 +1022,8 @@ class SourceUploadPipeline(LoopBoundPrimitive):
             timeout=self._resolve_upload_timeout(httpx.Timeout(10.0, read=60.0)),
             cookies=self._live_cookies(),
         ) as client:
+            self._track_transport_client(client, expected_epoch)
+            self._assert_transport_epoch(expected_epoch)
             response = await client.post(
                 request.url,
                 headers=request.headers,
@@ -962,6 +1059,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         logger: Any | None = None,
     ) -> None:
         """Stream upload file content to the resumable upload URL."""
+        expected_epoch = self._capture_transport_epoch()
         if logger is None:
             logger = module_logger
         path_fallback: Path | None = file_obj if isinstance(file_obj, Path) else None
@@ -1020,6 +1118,8 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                     timeout=self._resolve_upload_timeout(httpx.Timeout(10.0, read=300.0)),
                     cookies=self._live_cookies(),
                 ) as client:
+                    self._track_transport_client(client, expected_epoch)
+                    self._assert_transport_epoch(expected_epoch)
                     finalize_started = True
                     # The curl_cffi transport streams the request body from disk via
                     # low-level libcurl (no full-file buffer); httpx streams natively
@@ -1067,12 +1167,14 @@ class SourceUploadPipeline(LoopBoundPrimitive):
             except asyncio.CancelledError:
                 if not finalize_started:
                     finalize_task.cancel()
-
-                    async def _cancel() -> None:
-                        await self.cancel_upload_session(
-                            upload_url,
-                            auth_route,
-                            logger=logger,
+                    _retain_background_cancel_task(
+                        asyncio.create_task(
+                            self.cancel_upload_session(
+                                upload_url,
+                                auth_route,
+                                logger=logger,
+                                _expected_epoch=expected_epoch,
+                            )
                         )
 
                     if spawn_child is None:
@@ -1106,6 +1208,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         auth_route: str,
         *,
         logger: Any,
+        _expected_epoch: int | None = None,
     ) -> None:
         """Best-effort POST a Scotty resumable-upload cancel command.
 
@@ -1114,6 +1217,8 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         untrusted server-named host must never reach an outbound header.
         """
         try:
+            if _expected_epoch is not None:
+                self._assert_transport_epoch(_expected_epoch)
             upload_url = _validate_resumable_upload_url(upload_url)
             origin = _upload_url_origin(upload_url)
             headers = {
@@ -1128,6 +1233,9 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                 timeout=httpx.Timeout(10.0, read=10.0),
                 cookies=self._live_cookies(),
             ) as client:
+                if _expected_epoch is not None:
+                    self._track_transport_client(client, _expected_epoch)
+                    self._assert_transport_epoch(_expected_epoch)
                 await client.post(upload_url, headers=headers)
         except Exception as exc:  # noqa: BLE001
             logger.debug(

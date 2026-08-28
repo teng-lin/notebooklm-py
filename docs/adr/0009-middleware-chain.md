@@ -64,6 +64,20 @@ The `Kernel.post` terminal revisit has landed. The live
 older closure-callback target described below; that historical target is
 kept as tier-12 context, not as the current implementation signature.
 
+### 2026-08-28 Phase B amendment — protocol-neutral outer call policy
+
+The outer `Drain → Metrics → Semaphore` policy is promoted to the concrete
+protocol-neutral `CallSupervisor`, leaving the web request chain as
+`Retry → AuthRefresh → ErrorInjection → Tracing → terminal`. This is an
+extraction of the established ordering, not a change to web retry/auth
+behavior; Android enters the same supervisor without entering the HTTP-shaped
+chain.
+
+The web context adds `resource_epoch: int`. It is captured once at logical-call
+entry and reused by every retry/auth-refresh leg. `RuntimeTransport` forwards
+it to `Kernel.post(expected_epoch=...)`, so work admitted before a forced
+close cannot use a handle published by a later open generation.
+
 ADR-0002 ("Capability Protocol pattern, `SessionCapabilities` fat
 union") was superseded by the `arch-d2-cutover` PR (D2 PR-2), per
 ADR-0002's own Status line. ADR-0010 was the original Tier-13 supersession plan but was itself superseded by [ADR-0013](0013-composable-session-capabilities.md) ("Composable Session Capabilities") in v0.5.0. See [`docs/architecture.md`](../architecture.md)
@@ -239,6 +253,7 @@ Per-position rationale:
 | `auth_snapshot` | `AuthSnapshot` | `RuntimeTransport.perform_authed_post` (initial snapshot before chain entry); refreshed by `AuthRefreshMiddleware._rebuild_request_after_refresh` after a successful refresh, and replaced by `RuntimeTransport.refresh_request_for_current_auth` at the chain leaf when a freshness check detects auth moved while the request was queued | `RuntimeTransport.refresh_request_for_current_auth` (chain-terminal pre-POST freshness check); pair-mutated with the materialized envelope so middlewares never observe a torn `(snapshot, request)` pair |
 | `auth_refreshed` | `bool` | `AuthRefreshMiddleware` (sets to `True` after a successful refresh, **before** the retry leg) | `AuthRefreshMiddleware` (skip-on-replay guard so a `RetryMiddleware` retry on the post-refresh leg cannot drive a second refresh on a fresh 401) |
 | `rpc_queue_wait_seconds` | `float` | `SemaphoreMiddleware` (writes queue-wait duration on slot acquire — also exported as `RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS` from `_web/transport/middleware/context.py`; `RPC_QUEUE_WAIT_CONTEXT_KEY` remains a compatibility alias in `_web/transport/middleware/semaphore.py`) | `RuntimeTransport.perform_authed_post` (forwards to `ClientMetrics.record_rpc_queue_wait` after the chain returns) |
+| `resource_epoch` | `int` | `RuntimeTransport.perform_authed_post` captures the current root lifecycle generation once at logical-call entry | `RuntimeTransport` freshness checks and `Kernel.post(expected_epoch=...)`; `AuthRefreshMiddleware` forwards it to the refresh coordinator |
 | `read_timeout` | `float \| None` | `RuntimeTransport.perform_authed_post` (seeded only when a per-request read timeout is supplied — currently the chat path's `chat_timeout`; absent otherwise so metadata RPCs keep the base read window) | `RuntimeTransport.terminal` (forwards to `Kernel.post(read_timeout=...)`, which widens only the streamed-response `read` slot) |
 | `max_response_bytes` | `int` | `RuntimeTransport.perform_authed_post` (seeded only when a per-request response cap is supplied — currently the chat path's `chat_response_max_bytes`; absent otherwise so metadata RPCs keep the shared response-size guard) | `RuntimeTransport.terminal` (forwards to `Kernel.post(max_response_bytes=...)`, which passes a per-call cap to the streaming size guard) |
 | `disable_read_timeout_retries` | `bool` | `RuntimeTransport.perform_authed_post` (seeded `True` by the chat path) | `RetryMiddleware` (re-raises read-side post-transmission failures — `ReadTimeout` / `ReadError` / `RemoteProtocolError`, see `_NON_REPLAYABLE_POST_SEND_ERRORS` — instead of replaying the non-idempotent in-flight chat generation; connect/write/pool stay retryable and 401 auth refresh is unaffected) |

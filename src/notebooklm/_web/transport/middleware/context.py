@@ -14,6 +14,10 @@ RPC_CONTEXT_DISABLE_READ_TIMEOUT_RETRIES: Final = "disable_read_timeout_retries"
 RPC_CONTEXT_AUTH_SNAPSHOT: Final = "auth_snapshot"
 RPC_CONTEXT_AUTH_REFRESHED: Final = "auth_refreshed"
 RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS: Final = "rpc_queue_wait_seconds"
+# Resource generation captured when the logical web call enters the chain.
+# Every terminal attempt reuses it so a forced close/reopen cannot redirect
+# an old retry into the newly-opened Kernel.
+RPC_CONTEXT_RESOURCE_EPOCH: Final = "resource_epoch"
 # Optional :class:`notebooklm._web.transport.auth_refresh_retry.RefreshBudget`. Seeded by
 # ``RpcExecutor.rpc_call`` so the HTTP-status refresh layer
 # (``AuthRefreshMiddleware``) and the decoded-RPC refresh layer
@@ -48,6 +52,7 @@ ALLOWED_RPC_CONTEXT_KEYS: Final[frozenset[str]] = frozenset(
         RPC_CONTEXT_AUTH_SNAPSHOT,
         RPC_CONTEXT_AUTH_REFRESHED,
         RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS,
+        RPC_CONTEXT_RESOURCE_EPOCH,
         RPC_CONTEXT_REFRESH_BUDGET,
         RPC_CONTEXT_RETRY_DEADLINE,
     }
@@ -67,4 +72,5 @@ __all__ = [
     "RPC_CONTEXT_RETRY_DEADLINE",
     "RPC_CONTEXT_RPC_METHOD",
     "RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS",
+    "RPC_CONTEXT_RESOURCE_EPOCH",
 ]

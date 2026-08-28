@@ -38,6 +38,7 @@ from .._web.transport.cookie_persistence import CookiePersistence
 from .._web.transport.error_injection import _refuse_synthetic_error_outside_test_context
 from .._web.transport.executor import RpcExecutor
 from .._web.transport.kernel import Kernel
+from .._web.transport.lifecycle import CookieRotator, CookieSaver
 from .._web.transport.middleware.chain import MiddlewareChainBuilder
 from .._web.transport.middleware.chain_host import MiddlewareChainHost
 from .._web.transport.middleware.core import Middleware, NextCall, build_chain
@@ -55,7 +56,7 @@ from .config import (
     normalize_max_concurrent_uploads,
 )
 from .helpers import _resolve_keepalive_interval
-from .lifecycle import ClientLifecycle, CookieRotator, CookieSaver
+from .lifecycle import ClientLifecycle
 
 if TYPE_CHECKING:
     # Runtime import of ``ConnectionLimits`` is deferred to
@@ -423,6 +424,7 @@ def build_runtime_transport(
         chain_provider=lambda: chain_host._authed_post_chain,
         call_supervisor=collaborators.call_supervisor,
         bound_loop_check=lambda: collaborators.lifecycle.assert_bound_loop(),
+        epoch_provider=lambda: collaborators.lifecycle.current_epoch,
         logger=logger,
     )
 

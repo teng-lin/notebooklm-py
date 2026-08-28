@@ -66,6 +66,7 @@ from .middleware.context import (
     RPC_CONTEXT_MAX_RESPONSE_BYTES,
     RPC_CONTEXT_READ_TIMEOUT,
     RPC_CONTEXT_REFRESH_BUDGET,
+    RPC_CONTEXT_RESOURCE_EPOCH,
     RPC_CONTEXT_RETRY_DEADLINE,
     RPC_CONTEXT_RPC_METHOD,
 )
@@ -116,6 +117,7 @@ class RuntimeTransport:
         chain_provider: Callable[[], NextCall | None],
         call_supervisor: CallSupervisor,
         bound_loop_check: Callable[[], None],
+        epoch_provider: Callable[[], int | None] | None = None,
         logger: logging.Logger,
     ) -> None:
         self._kernel = kernel
@@ -132,6 +134,7 @@ class RuntimeTransport:
         self._chain_provider = chain_provider
         self._call_supervisor = call_supervisor
         self._bound_loop_check = bound_loop_check
+        self._epoch_provider = epoch_provider or (lambda: None)
         self._logger = logger
 
     async def refresh_request_for_current_auth(self, request: RpcRequest) -> RpcRequest:
@@ -194,6 +197,9 @@ class RuntimeTransport:
         if build_request is None:
             return request
 
+        expected_epoch = context.get(RPC_CONTEXT_RESOURCE_EPOCH)
+        if expected_epoch is not None:
+            self._kernel.assert_epoch(expected_epoch)
         current_snapshot = await self._snapshot_provider()
         context[RPC_CONTEXT_AUTH_SNAPSHOT] = current_snapshot
         return materialize_rpc_request(
@@ -228,11 +234,13 @@ class RuntimeTransport:
             post_kwargs["max_response_bytes"] = context[RPC_CONTEXT_MAX_RESPONSE_BYTES]
         start = time.perf_counter()
         try:
+            expected_epoch = context.get(RPC_CONTEXT_RESOURCE_EPOCH)
             response = await self._kernel.post(
                 request.url,
                 headers=request.headers,
                 body=request.body,
                 read_timeout=read_timeout,
+                expected_epoch=expected_epoch,
                 **post_kwargs,
             )
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
@@ -336,6 +344,9 @@ class RuntimeTransport:
             RPC_CONTEXT_DISABLE_INTERNAL_RETRIES: disable_internal_retries,
             RPC_CONTEXT_RPC_METHOD: rpc_method,
         }
+        epoch = self._epoch_provider()
+        if epoch is not None:
+            context[RPC_CONTEXT_RESOURCE_EPOCH] = epoch
         if read_timeout is not None:
             context[RPC_CONTEXT_READ_TIMEOUT] = read_timeout
         if max_response_bytes is not None:

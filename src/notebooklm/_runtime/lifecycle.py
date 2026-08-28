@@ -1,79 +1,32 @@
-"""HTTP-client lifecycle helper for the client-owned runtime.
+"""Root-owned, phased lifecycle for client transport resources.
 
-Owns the open/close ordering while delegating the raw HTTP transport to
-:class:`notebooklm._web.transport.kernel.Kernel`:
-
-* ``_http_client`` — compatibility property backed by the concrete Kernel's
-  live ``httpx.AsyncClient`` (or ``None`` when closed).
-* ``_bound_loop`` — the event loop ``open()`` ran on; the cross-loop affinity
-  guard in the transport path compares against this captured reference.
-* ``_keepalive_task`` — the optional background task that pokes
-  ``accounts.google.com/RotateCookies`` while the client is open.
-* ``_keepalive_interval`` / ``_keepalive_storage_path`` — keepalive
-  configuration; the interval is clamped against ``keepalive_min_interval``
-  via :func:`notebooklm._runtime.helpers._resolve_keepalive_interval`.
-* ``_timeout`` / ``_connect_timeout`` / ``_limits`` — HTTP timeouts and
-  connection-pool tuning consumed in :meth:`open`.
-
-Design constraints (load-bearing — see ``tests/unit/test_client_keepalive.py``,
-``tests/unit/test_session_close.py``, ``tests/unit/test_vcr_config.py``, and
-``tests/unit/test_auth_cookie_save_race.py``):
-
-* ``__init__`` MUST be event-loop-agnostic. ``NotebookLMClient`` is routinely
-  constructed outside a running loop (sync-mode ``NotebookLMClient(auth)``
-  before ``asyncio.run``), so this helper may not call
-  ``asyncio.get_running_loop()`` or instantiate any ``asyncio.*`` primitive
-  at construction time. The keepalive task is spawned inside :meth:`open`,
-  which runs from a coroutine.
-
-* :meth:`open` is idempotent — calling it twice with a live ``_http_client``
-  is a no-op, preserving the legacy client-open contract.
-
-* :meth:`close` cancellation ordering: stop keepalive → run registered drain
-  hooks → save cookies → shielded Kernel ``aclose()``. Reversing any of these
-  reintroduces the leak modes ``test_session_close.py`` pins down. The shielded
-  ``aclose()`` is critical: without it, a ``CancelledError`` arriving
-  mid-close leaks the underlying httpx transport.
-
-* :meth:`open` does not wrap the inner transport for synthetic-error
-  injection — that path lives in the chain
-  (:class:`notebooklm._web.transport.middleware.error_injection.ErrorInjectionMiddleware`,
-  wired by client internals composition). When
-  ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set, the chain middleware
-  short-circuits before the chain leaf reaches httpx, so the httpx-layer
-  transport stays a real, unwrapped transport at all times.
-
-* :meth:`save_cookies` always uses the typed ``ProfileStore`` path when no
-  callback was injected. An explicit ``cookie_saver=`` is isolated behind the
-  named v0.x callback adapter; normal runtime behavior never inspects a mutable
-  module attribute to choose its route.
-
-* ``_bound_loop`` is bound exactly once per :meth:`open` call; :meth:`close`
-  does NOT unbind so an accidental cross-loop call after close still raises
-  actionably rather than silently re-binding on the next ``open``. (See
-  ``tests/integration/concurrency/test_cross_loop_affinity.py``.)
-
-Field names (``_http_client``, ``_bound_loop``, ``_keepalive_task``,
-``_keepalive_interval``, ``_keepalive_storage_path``, ``_timeout``,
-``_connect_timeout``, ``_limits``) are kept stable for grep-discoverability
-across the test suite (see ``tests/_guardrails/test_no_session_compat_bridges.py``);
-callers reach the storage through the client-owned lifecycle collaborator.
-``_http_client`` is a thin accessor returning the live ``httpx.AsyncClient``
-from the concrete Kernel.
+``ClientLifecycle`` arbitrates public open, drain, and close waves. Concrete
+resource ownership lives in lifecycle-shaped transport participants; admission
+and generation bookkeeping remains behind the narrow ``LifecycleSupervisor``
+protocol implemented by B0a's ``CallSupervisor``.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+import threading
+from collections.abc import Sequence
+from dataclasses import dataclass
+from enum import Enum, auto
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 import httpx
 
-from .._web.transport.cookie_persistence import SaveCookiesToStorage
+from .._loop_affinity import assert_bound_loop as _assert_bound_loop
 from .._web.transport.kernel import Kernel
+from .._web.transport.lifecycle import (
+    CookieRotator,
+    CookieSaver,
+    WebTransportLifecycle,
+    _default_cookie_rotator,
+)
 from ..auth import AuthTokens
 from .config import CORE_LOGGER_NAME
 
@@ -88,65 +41,140 @@ if TYPE_CHECKING:
     from ..types import ConnectionLimits
     from .call_supervisor import CallSupervisor
 
-
-# ---------------------------------------------------------------------------
-# Injectable seams
-# ---------------------------------------------------------------------------
-#
-# These two callable seams let host integrations supply an explicit v0.x
-# on-disk cookie callback or swap the identity-surface poke. A missing cookie
-# callback selects the canonical typed store path; the rotator keeps its
-# historical late-bound default.
-#
-# Concrete return types (not ``Callable[..., Any]``) are deliberate so mypy
-# rejects an ``async def`` mistakenly passed for ``cookie_saver`` (the
-# storage writer runs INSIDE ``asyncio.to_thread`` and must be sync) and a
-# plain ``def`` mistakenly passed for ``cookie_rotator`` (the rotator is
-# awaited from the keepalive loop and must return an ``Awaitable``).
-
-#: Callable shape for the explicitly injected v0.x writer adapter.
-CookieSaver = SaveCookiesToStorage
-
-#: Callable shape for the keepalive-loop cookie rotator. ``Awaitable[None]``
-#: pins the async-callable contract so mypy rejects sync ``def`` callables
-#: at the injection point.
-CookieRotator = Callable[..., Awaitable[None]]
-
-
-async def _default_cookie_rotator(*args: Any, **kwargs: Any) -> None:
-    """Default ``cookie_rotator``: late-bind to ``_auth.keepalive._rotate_cookies``.
-
-    The import lives INSIDE the function body so any
-    ``monkeypatch.setattr("notebooklm._auth.keepalive._rotate_cookies", …)``
-    swap is observed at call time. The historical ``notebooklm._core``
-    indirection was removed in v0.5.0 when the ``_core`` compatibility
-    shim was deleted.
-
-    ``async def`` (not ``def``) is load-bearing: ``_rotate_cookies`` at
-    ``_auth/keepalive.py:298`` is async and must be awaited.
-    """
-    from .._auth.keepalive import _rotate_cookies
-
-    await _rotate_cookies(*args, **kwargs)
-
-
-# Logger name pinned via :data:`CORE_LOGGER_NAME` so log filters in
-# tests — e.g. ``caplog.at_level("DEBUG", logger=CORE_LOGGER_NAME)`` —
-# keep matching after the extraction.
 logger = logging.getLogger(CORE_LOGGER_NAME)
 
 
-class ClientLifecycle:
-    """Owns HTTP-client open/close, keepalive, cookie persistence on close.
+@runtime_checkable
+class TransportLifecycle(Protocol):
+    """A concrete resource owner participating in root lifecycle phases."""
 
-    Field names are kept stable for grep-discoverability across the test
-    suite; callers reach these fields directly via the client-owned
-    lifecycle collaborator.
+    name: str
 
-    Construction is event-loop-agnostic — only plain values and ``None``
-    placeholders are stored. The ``httpx.AsyncClient`` and the keepalive
-    ``asyncio.Task`` are created inside :meth:`open` from a running loop.
+    async def open(self, loop: asyncio.AbstractEventLoop, epoch: int) -> None: ...
+
+    async def prepare_close(self) -> None: ...
+
+    async def close_resources(self) -> None: ...
+
+
+@runtime_checkable
+class LoopParticipant(Protocol):
+    """Owner of lazy loop state rebuilt by an open generation."""
+
+    def set_bound_loop(self, loop: asyncio.AbstractEventLoop) -> None: ...
+
+    def reset_after_open(self) -> None: ...
+
+
+class LifecycleSupervisor(LoopParticipant, Protocol):
+    """Narrow B0a/B0b seam; lifecycle never reads supervisor internals."""
+
+    def prepare_generation(self, epoch: int) -> None: ...
+
+    def start_accepting(self, epoch: int) -> None: ...
+
+    async def stop_accepting(self, epoch: int) -> None: ...
+
+    async def wait_for_idle(self, epoch: int, timeout: float | None) -> None: ...
+
+    async def begin_closing(self, epoch: int) -> None: ...
+
+    def mark_closed(self, epoch: int) -> None: ...
+
+    async def run_drain_hooks(self) -> None: ...
+
+
+class _ResourceState(Enum):
+    CLOSED = auto()
+    OPENING = auto()
+    OPEN = auto()
+    CLOSING = auto()
+
+
+class _OpenOutcome(Enum):
+    OPENED = auto()
+    ABORTED_BY_OWNER = auto()
+    FAILED = auto()
+
+
+@dataclass(frozen=True)
+class _OpenResult:
+    outcome: _OpenOutcome
+    error: BaseException | None = None
+
+
+@dataclass(frozen=True)
+class _OpenWave:
+    loop: asyncio.AbstractEventLoop
+    owner: asyncio.Task[Any] | None
+    epoch: int
+    prepare_task: asyncio.Task[None]
+    result: asyncio.Future[_OpenResult]
+
+
+@dataclass
+class _CloseWave:
+    loop: asyncio.AbstractEventLoop
+    epoch: int
+    drain: bool
+    drain_timeout: float | None
+    abort_graceful: asyncio.Event
+    task: asyncio.Task[None] | None = None
+
+
+class _CompatSupervisor:
+    """Temporary adapter for testing B0b before the parallel B0a merge.
+
+    Integration replaces this private class with ``CallSupervisor``. It must
+    not grow beyond the protocol above; generation isolation belongs to B0a.
     """
+
+    def __init__(self, drain: TransportDrainTracker) -> None:
+        self._drain = drain
+        self._epoch: int | None = None
+
+    def set_bound_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        self._drain.set_bound_loop(loop)
+
+    def reset_after_open(self) -> None:
+        self._drain.reset_after_open()
+
+    def prepare_generation(self, epoch: int) -> None:
+        self._epoch = epoch
+
+    def start_accepting(self, epoch: int) -> None:
+        self._require_epoch(epoch)
+
+    async def stop_accepting(self, epoch: int) -> None:
+        self._require_epoch(epoch)
+        condition = self._drain.get_drain_condition()
+        async with condition:
+            # Compatibility bridge only; B0a owns the real admission state.
+            self._drain._draining = True
+
+    async def wait_for_idle(self, epoch: int, timeout: float | None) -> None:
+        self._require_epoch(epoch)
+        await self._drain.drain(timeout=timeout)
+
+    async def begin_closing(self, epoch: int) -> None:
+        await self.stop_accepting(epoch)
+
+    def mark_closed(self, epoch: int) -> None:
+        self._require_epoch(epoch)
+        self._epoch = None
+
+    async def run_drain_hooks(self) -> None:
+        await self._drain.run_drain_hooks()
+
+    def _require_epoch(self, epoch: int) -> None:
+        if self._epoch != epoch:
+            raise RuntimeError(
+                f"Lifecycle admission generation {epoch} is retired; active={self._epoch!r}."
+            )
+
+
+class ClientLifecycle:
+    """Sole owner of resource state and transactional lifecycle waves."""
 
     def __init__(
         self,
@@ -161,249 +189,77 @@ class ClientLifecycle:
         kernel: Kernel | None = None,
         cookie_saver: CookieSaver | None = None,
         cookie_rotator: CookieRotator | None = None,
+        supervisor: LifecycleSupervisor | None = None,
+        transports: Sequence[TransportLifecycle] = (),
+        loop_participants: Sequence[LoopParticipant] = (),
     ) -> None:
         self._kernel = kernel if kernel is not None else Kernel()
-        self._timeout: float = timeout
-        self._connect_timeout: float = connect_timeout
-        # ``ConnectionLimits`` is constructed by the caller, which applies the
-        # ``None -> ConnectionLimits()`` default before passing here. Keeping
-        # the default-resolution out of this helper avoids a types.py import
-        # cycle.
-        self._limits: ConnectionLimits = limits
-        # Pre-clamped by :func:`notebooklm._runtime.helpers._resolve_keepalive_interval`
-        # at the client composition boundary so the floor-vs-user-value
-        # branching stays in one place — the seam helper.
-        self._keepalive_interval: float | None = keepalive_interval
-        self._keepalive_storage_path: Path | None = keepalive_storage_path
-        self._cookie_persistence_path: Path | None = cookie_persistence_path
-        self._auth: AuthTokens | None = auth
-        # The live HTTP client is owned by ``self._kernel``. The
-        # ``_http_client`` property below preserves the historical lifecycle
-        # attribute for tests and private callers that probe it directly.
-        self._bound_loop: asyncio.AbstractEventLoop | None = None
-        self._keepalive_task: asyncio.Task[None] | None = None
-        # ``None`` means the unconditional typed ProfileStore route. Only an
-        # explicit callback reaches the isolated v0.x result adapter.
+        self._timeout = timeout
+        self._connect_timeout = connect_timeout
+        self._limits = limits
+        self._keepalive_interval = keepalive_interval
+        self._keepalive_storage_path = keepalive_storage_path
+        self._cookie_persistence_path = cookie_persistence_path
+        self._auth = auth
         self._cookie_saver: CookieSaver | None = cookie_saver
-        self._cookie_rotator: CookieRotator = cookie_rotator or _default_cookie_rotator
+        self._cookie_rotator = cookie_rotator or _default_cookie_rotator
+        self._supervisor = supervisor
+        self._transports = tuple(transports)
+        self._loop_participants = (
+            (supervisor, *loop_participants) if supervisor is not None else tuple(loop_participants)
+        )
+        # A supplied supervisor means the composition root provided an
+        # already-frozen assembly. The legacy production path assembles once
+        # from its explicit open collaborators until B0a is merged.
+        self._assembly_identity: tuple[int, ...] | None = () if supervisor is not None else None
+        self._state = _ResourceState.CLOSED
+        self._bound_loop: asyncio.AbstractEventLoop | None = None
+        self._epoch = 0
+        self._state_lock = threading.Lock()
+        self._open_wave: _OpenWave | None = None
+        self._close_wave: _CloseWave | None = None
+        self._retained_tasks: set[asyncio.Task[Any]] = set()
+        self._web_transport: WebTransportLifecycle | None = None
 
     @property
     def _http_client(self) -> httpx.AsyncClient | None:
-        # Read-only forwarder over the concrete kernel's live client. The
-        # corresponding setter was retired alongside ``Kernel.http_client``'s
-        # setter: production never mutated this attribute (open() builds the
-        # client through the kernel's injected ``async_client_factory``;
-        # close() nulls it via :meth:`Kernel.aclose`). Tests that need to
-        # install a stand-in client should use the constructor-time
-        # ``async_client_factory`` injection on the test client shell
-        # (preferred) or the ``install_http_client_for_test`` helper in
-        # ``tests/_fixtures/kernel_test_helpers.py``.
         return self._kernel.http_client
 
-    # ------------------------------------------------------------------
-    # State accessors
-    # ------------------------------------------------------------------
+    @property
+    def _keepalive_task(self) -> asyncio.Task[None] | None:
+        return None if self._web_transport is None else self._web_transport._keepalive_task
 
     def is_open(self) -> bool:
-        """Return whether :meth:`open` has run without a subsequent close."""
-        return self._http_client is not None
+        """Resource ownership signal; manual drain does not change it."""
+        with self._state_lock:
+            return self._state in {_ResourceState.OPEN, _ResourceState.CLOSING}
 
     def get_bound_loop(self) -> asyncio.AbstractEventLoop | None:
-        """Return the event loop :meth:`open` captured, or ``None`` if never opened.
-
-        Phase C1's RPC-dispatch facade uses this accessor (instead of reaching
-        for ``self._lifecycle._bound_loop`` directly) so the two-underscore
-        attribute stays an implementation detail of this helper.
-        """
         return self._bound_loop
 
+    @property
+    def current_epoch(self) -> int | None:
+        with self._state_lock:
+            if self._state in {_ResourceState.OPEN, _ResourceState.CLOSING}:
+                return self._epoch
+            return None
+
     def assert_bound_loop(self) -> None:
-        """Satisfies the ``LoopGuard`` capability Protocol (ADR-0014 Rule 1).
+        _assert_bound_loop(self._bound_loop)
 
-        Delegates to the free function in :mod:`notebooklm._loop_affinity`
-        with this lifecycle's captured loop. Feature APIs that depend on
-        ``LoopGuard`` take :class:`ClientLifecycle` directly.
-        """
-        from .._loop_affinity import assert_bound_loop as _assert
-
-        _assert(self._bound_loop)
-
-    def get_http_client(self) -> httpx.AsyncClient:
-        """Return the live HTTP client via the concrete Kernel."""
-        return self._kernel.get_http_client()
-
-    # ------------------------------------------------------------------
-    # Open / close
-    # ------------------------------------------------------------------
-
-    async def open(
-        self,
-        *,
-        auth: AuthTokens,
-        drain_tracker: TransportDrainTracker,
-        auth_coord: AuthRefreshCoordinator,
-        reqid: ReqidCounter,
-        cookie_persistence: CookiePersistence,
-        composed: ClientComposed,
-        uploader: SourceUploadPipeline,
-        chat: ChatAPI,
-        call_supervisor: CallSupervisor | None = None,
-    ) -> None:
-        """Open the HTTP client connection.
-
-        Idempotent: if ``_http_client`` is already non-``None`` this is a
-        no-op. Captures the running event loop in ``_bound_loop`` so the
-        cross-loop affinity guard in the transport path fails fast if the
-        same client is later driven from a different loop.
-        Re-opening on a different loop (after a prior :meth:`close`)
-        intentionally replaces the binding — ``open()`` is the only binding
-        moment.
-
-        Synthetic-error injection lives in the chain, not this layer — see
-        :class:`notebooklm._web.transport.middleware.error_injection.ErrorInjectionMiddleware`
-        for the substitution point. The httpx transport built here is
-        always a real, unwrapped transport.
-
-        This signature takes explicit keyword-only collaborators rather than
-        the legacy ``host`` Protocol so the lifecycle never reaches into
-        ``host.<X>`` attributes; the caller
-        (:meth:`notebooklm.client.NotebookLMClient.__aenter__`) passes its
-        owned collaborators through.
-        """
-        if self._http_client is not None:
-            return
-
-        # Capture event-loop affinity before any awaitable resource is built
-        # so the binding is consistent with the loop that owns every primitive
-        # constructed below.
-        self._bound_loop = asyncio.get_running_loop()
-        # Propagate the captured loop into every helper that owns a
-        # loop-bound primitive (lock / condition / task slot). Each helper
-        # consults its own ``_bound_loop`` at the top of its async entry
-        # points (``drain``, ``next_reqid``, ``await_refresh``) so a
-        # cross-loop call surfaces an actionable ``RuntimeError`` at the
-        # call site rather than hanging on a primitive bound to a dead
-        # loop. ``ArtifactPollingService`` reaches the bound loop through
-        # ``ClientLifecycle.get_bound_loop()`` so no further propagation is
-        # needed there. (``ChatAPI`` now receives direct ``set_bound_loop``
-        # propagation below — #1225.)
-        if call_supervisor is not None:
-            call_supervisor.set_bound_loop(self._bound_loop)
-        else:
-            drain_tracker.set_bound_loop(self._bound_loop)
-        reqid.set_bound_loop(self._bound_loop)
-        auth_coord.set_bound_loop(self._bound_loop)
-        # The supervisor owns the RPC semaphore and its generation reset;
-        # binding it above gives cross-loop misuse the shared diagnostic.
-        # The Sources upload semaphore is the second lazily-built loop-bound
-        # ``asyncio.Semaphore`` with the same close→reopen hazard as the RPC
-        # semaphore above (the bug #1196 fixed for RPC): a client closed on
-        # loop A and reopened on loop B would otherwise reuse a semaphore
-        # bound to the now-dead loop A. Propagating the captured loop lets the
-        # uploader discard the stale semaphore on a loop change.
-        uploader.set_bound_loop(self._bound_loop)
-        # The ChatAPI per-conversation / per-notebook locks are the last lazy
-        # loop-bound primitives without the owner-level protocol (#1225): each
-        # ``asyncio.Lock`` in the two ``WeakValueDictionary`` maps binds to the
-        # loop it is first awaited on, so a client closed on loop A and
-        # reopened on loop B would otherwise reuse a lock bound to the now-dead
-        # loop A. Propagating the captured loop lets ChatAPI discard the stale
-        # locks on a loop change (the per-call ``loop_guard.assert_bound_loop``
-        # in ``ask`` already rejects cross-loop *use*; this governs rebuild).
-        chat.set_bound_loop(self._bound_loop)
-        # Reset the drain flag so a previously-drained-then-reopened client
-        # admits new transport work again. The legacy direct write
-        # ``host._drain_tracker._draining = False`` is encapsulated behind a
-        # method on the tracker so the lifecycle never reaches into private
-        # collaborator fields; the method is intentionally narrow (clears ``_draining``
-        # only, leaves in-flight counters intact — see its docstring).
-        if call_supervisor is not None:
-            call_supervisor.reset_after_open()
-        else:
-            drain_tracker.reset_after_open()
-        # Same close→reopen reset for the Sources upload semaphore so a
-        # reopened client rebuilds it on the new loop instead of reusing the
-        # stale one bound to the prior (now-dead) loop. Narrow by design — the
-        # semaphore is reconstructed lazily on the next ``get_upload_semaphore``
-        # call from inside the new loop; ``max_concurrent_uploads`` is untouched.
-        uploader.reset_after_open()
-        # Same close→reopen reset for the ChatAPI conversation locks so a
-        # reopened client rebuilds each per-key lock on the new loop instead of
-        # reusing a stale one bound to the prior (now-dead) loop (#1225). Narrow
-        # by design — the locks are reconstructed lazily on the next
-        # ``_get_conversation_lock`` / ``_get_new_conversation_lock`` call from
-        # inside the new loop.
-        chat.reset_after_open()
-        # Same close→reopen reset for the reqid counter's lazy lock so a
-        # reopened client rebuilds it on the new loop instead of reusing the
-        # stale one bound to the prior (now-dead) loop (#2106). Latent-hazard
-        # hardening rather than an active bug: the critical section under the
-        # lock is purely synchronous, so the stale lock cannot be contended
-        # (and thus cannot trip the 3.10/3.11 cross-loop RuntimeError) today —
-        # this keeps the counter consistent with its clear-on-rebind siblings
-        # above. Narrow by design — the lock is reconstructed lazily on the
-        # next ``next_reqid`` call from inside the new loop; ``_value`` is
-        # untouched so reqid monotonicity survives reopen.
-        reqid.reset_after_open()
-        # Same close→reopen reset for the auth coordinator's two lazy locks
-        # (refresh single-flight + auth snapshot) so a reopened client
-        # rebuilds them on the new loop instead of reusing stale ones bound to
-        # the prior (now-dead) loop (#2106). Same latent-hazard rationale as
-        # the reqid reset above. Narrow by design — both locks are
-        # reconstructed lazily via ``get_refresh_lock`` /
-        # ``get_auth_snapshot_lock`` from inside the new loop;
-        # ``_refresh_task`` and ``_refresh_callback`` are untouched (the task
-        # slot-preservation invariant in ``cancel_inflight_refresh`` still
-        # holds).
-        auth_coord.reset_after_open()
-
-        await cookie_persistence._prepare_open_baseline(
-            self._cookie_persistence_path,
-            to_thread=asyncio.to_thread,
-        )
-
-        # Delegate HTTP-client construction and open-time cookie baseline
-        # capture to the concrete transport kernel. The lifecycle still owns
-        # loop binding and open/close ordering.
-        await self._kernel.open(
-            auth=auth,
-            timeout=self._timeout,
-            connect_timeout=self._connect_timeout,
-            limits=self._limits,
-            capture_cookie_snapshot=cookie_persistence.capture_open_snapshot,
-        )
-        if self._auth is not None:
-            self._auth.cookie_snapshot = cookie_persistence.loaded_cookie_snapshot
-
-        # Spawn the keepalive task once the client is ready.
-        if self._keepalive_interval is not None:
-            self._keepalive_task = asyncio.create_task(
-                self._keepalive_loop(
-                    cookie_persistence=cookie_persistence,
-                    interval=self._keepalive_interval,
-                )
-            )
+    def get_http_client(self, *, expected_epoch: int | None = None) -> httpx.AsyncClient:
+        return self._kernel.get_http_client(expected_epoch=expected_epoch)
 
     async def save_cookies(
         self,
         cookie_persistence: CookiePersistence,
         jar: httpx.Cookies,
         path: Path | None = None,
+        *,
+        expected_epoch: int | None = None,
     ) -> None:
-        """Persist a cookie jar through the shared cookie-persistence collaborator.
-
-        Single chokepoint used by :meth:`close`, :meth:`_keepalive_loop`, and
-        ``NotebookLMClient.refresh_auth``. ``None`` selects the canonical typed
-        store path unconditionally; an explicitly supplied ``cookie_saver=``
-        selects the v0.x callback adapter. Neither branch inspects or imports
-        the public storage wrapper to decide normal runtime behavior.
-
-        The first positional argument is the :class:`CookiePersistence`
-        collaborator directly rather than the legacy ``host`` Protocol. Callers
-        (lifecycle ``close`` / keepalive loop, :func:`refresh_auth_session`)
-        pass the collaborator they already hold rather than a broad host
-        wrapper.
-        """
+        if expected_epoch is not None:
+            self._kernel.assert_epoch(expected_epoch)
         effective_path = path if path is not None else self._cookie_persistence_path
         if self._cookie_saver is None:
             logger.debug(
@@ -411,9 +267,7 @@ class ClientLifecycle:
                 effective_path,
             )
             await cookie_persistence._save_canonical(
-                jar,
-                effective_path,
-                to_thread=asyncio.to_thread,
+                jar, effective_path, to_thread=asyncio.to_thread
             )
         else:
             logger.debug(
@@ -426,189 +280,463 @@ class ClientLifecycle:
                 save_cookies_to_storage=self._cookie_saver,
                 to_thread=asyncio.to_thread,
             )
+        if expected_epoch is not None:
+            self._kernel.assert_epoch(expected_epoch)
         if self._auth is not None:
             self._auth.cookie_snapshot = cookie_persistence.loaded_cookie_snapshot
+
+    def _assemble_once(
+        self,
+        *,
+        auth: AuthTokens,
+        drain_tracker: TransportDrainTracker,
+        auth_coord: AuthRefreshCoordinator,
+        reqid: ReqidCounter,
+        cookie_persistence: CookiePersistence,
+        composed: ClientComposed,
+        uploader: SourceUploadPipeline,
+        chat: ChatAPI,
+    ) -> None:
+        identity = tuple(
+            map(
+                id,
+                (
+                    auth,
+                    drain_tracker,
+                    auth_coord,
+                    reqid,
+                    cookie_persistence,
+                    composed,
+                    uploader,
+                    chat,
+                ),
+            )
+        )
+        if self._assembly_identity is not None:
+            if identity != self._assembly_identity:
+                raise RuntimeError("Client lifecycle collaborators changed after assembly.")
+            return
+        supervisor = self._supervisor or _CompatSupervisor(drain_tracker)
+        web = WebTransportLifecycle(
+            auth=auth,
+            auth_coord=auth_coord,
+            cookie_persistence=cookie_persistence,
+            kernel=self._kernel,
+            timeout=self._timeout,
+            connect_timeout=self._connect_timeout,
+            limits=self._limits,
+            keepalive_interval=self._keepalive_interval,
+            keepalive_storage_path=self._keepalive_storage_path,
+            cookie_persistence_path=self._cookie_persistence_path,
+            save_cookies=self.save_cookies,
+            cookie_rotator=self._cookie_rotator,
+        )
+        uploader_transports: tuple[TransportLifecycle, ...] = ()
+        uploader_participants: tuple[LoopParticipant, ...] = ()
+        if isinstance(uploader, TransportLifecycle):
+            uploader_transports = (cast(TransportLifecycle, uploader),)
+        else:
+            # Temporary pre-B0a/B0b compatibility: the current uploader owns
+            # loop-bound semaphores but has not yet gained transport phases.
+            uploader_participants = (cast(LoopParticipant, uploader),)
+        self._supervisor = supervisor
+        self._web_transport = web
+        self._transports = (web, *self._transports, *uploader_transports)
+        # ClientComposed remains explicit until B0a moves its semaphore.
+        self._loop_participants = (
+            supervisor,
+            reqid,
+            auth_coord,
+            composed,
+            *uploader_participants,
+            chat,
+            *self._loop_participants,
+        )
+        self._assembly_identity = identity
+
+    async def open(
+        self,
+        *,
+        auth: AuthTokens | None = None,
+        drain_tracker: TransportDrainTracker | None = None,
+        auth_coord: AuthRefreshCoordinator | None = None,
+        reqid: ReqidCounter | None = None,
+        cookie_persistence: CookiePersistence | None = None,
+        composed: ClientComposed | None = None,
+        uploader: SourceUploadPipeline | None = None,
+        chat: ChatAPI | None = None,
+    ) -> None:
+        """Open all transports transactionally and coalesce concurrent callers."""
+        if self._assembly_identity is None:
+            if any(
+                value is None
+                for value in (
+                    auth,
+                    drain_tracker,
+                    auth_coord,
+                    reqid,
+                    cookie_persistence,
+                    composed,
+                    uploader,
+                    chat,
+                )
+            ):
+                raise RuntimeError("Client lifecycle requires a complete transport assembly.")
+            self._assemble_once(
+                auth=cast(AuthTokens, auth),
+                drain_tracker=cast("TransportDrainTracker", drain_tracker),
+                auth_coord=cast("AuthRefreshCoordinator", auth_coord),
+                reqid=cast("ReqidCounter", reqid),
+                cookie_persistence=cast("CookiePersistence", cookie_persistence),
+                composed=cast("ClientComposed", composed),
+                uploader=cast("SourceUploadPipeline", uploader),
+                chat=cast("ChatAPI", chat),
+            )
+        loop = asyncio.get_running_loop()
+        while True:
+            owner = False
+            with self._state_lock:
+                if self._state is _ResourceState.OPEN:
+                    self._assert_loop(loop)
+                    return
+                if self._state is _ResourceState.CLOSING:
+                    self._assert_loop(loop)
+                    raise RuntimeError(
+                        "NotebookLMClient is closing; wait for close() before open()."
+                    )
+                if self._state is _ResourceState.OPENING:
+                    wave = cast(_OpenWave, self._open_wave)
+                    self._assert_wave_loop(loop, wave.loop, "open")
+                else:
+                    self._epoch += 1
+                    epoch = self._epoch
+                    result: asyncio.Future[_OpenResult] = loop.create_future()
+                    prepare = asyncio.create_task(self._prepare_open(loop, epoch))
+                    wave = _OpenWave(loop, asyncio.current_task(), epoch, prepare, result)
+                    self._open_wave = wave
+                    self._state = _ResourceState.OPENING
+                    owner = True
+            if not owner:
+                outcome = await asyncio.shield(wave.result)
+                if outcome.outcome is _OpenOutcome.OPENED:
+                    return
+                if outcome.outcome is _OpenOutcome.ABORTED_BY_OWNER:
+                    continue
+                assert outcome.error is not None
+                raise outcome.error
+            await self._run_open_owner(wave)
+            return
+
+    async def _prepare_open(self, loop: asyncio.AbstractEventLoop, epoch: int) -> None:
+        self._bound_loop = loop
+        for participant in self._loop_participants:
+            participant.set_bound_loop(loop)
+            participant.reset_after_open()
+        supervisor = self._require_supervisor()
+        supervisor.prepare_generation(epoch)
+        for transport in self._transports:
+            await transport.open(loop, epoch)
+
+    async def _run_open_owner(self, wave: _OpenWave) -> None:
+        try:
+            await wave.prepare_task
+        except asyncio.CancelledError as cancelled:
+            if not wave.prepare_task.done():
+                wave.prepare_task.cancel()
+            cleanup = self._retain_task(
+                asyncio.create_task(self._rollback_open(wave, _OpenOutcome.ABORTED_BY_OWNER))
+            )
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                pass
+            raise cancelled
+        except BaseException as exc:
+            cleanup = self._retain_task(
+                asyncio.create_task(self._rollback_open(wave, _OpenOutcome.FAILED, exc))
+            )
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                pass
+            raise
+        with self._state_lock:
+            self._require_supervisor().start_accepting(wave.epoch)
+            self._state = _ResourceState.OPEN
+            self._open_wave = None
+            if not wave.result.done():
+                wave.result.set_result(_OpenResult(_OpenOutcome.OPENED))
+
+    async def _rollback_open(
+        self,
+        wave: _OpenWave,
+        outcome: _OpenOutcome,
+        error: BaseException | None = None,
+    ) -> None:
+        await asyncio.gather(wave.prepare_task, return_exceptions=True)
+        prepare_results = await asyncio.gather(
+            *(transport.prepare_close() for transport in self._transports),
+            return_exceptions=True,
+        )
+        close_results = await asyncio.gather(
+            *(transport.close_resources() for transport in self._transports),
+            return_exceptions=True,
+        )
+        for transport, result in zip(
+            (*self._transports, *self._transports),
+            (*prepare_results, *close_results),
+            strict=True,
+        ):
+            if isinstance(result, BaseException):
+                logger.warning(
+                    "Ignoring %s rollback failure to preserve open outcome: %s",
+                    transport.name,
+                    result,
+                )
+        try:
+            self._require_supervisor().mark_closed(wave.epoch)
+        except BaseException as exc:
+            logger.warning("Ignoring admission rollback failure: %s", exc)
+        with self._state_lock:
+            self._state = _ResourceState.CLOSED
+            self._open_wave = None
+            if not wave.result.done():
+                wave.result.set_result(_OpenResult(outcome, error))
+
+    async def drain(self, timeout: float | None = None) -> None:
+        """Stop top-level admission while leaving resources open."""
+        if timeout is not None and timeout < 0:
+            raise ValueError(f"timeout must be >= 0 or None, got {timeout!r}")
+        loop = asyncio.get_running_loop()
+        while True:
+            with self._state_lock:
+                state = self._state
+                if state is _ResourceState.CLOSED:
+                    return
+                self._assert_loop(loop)
+                open_wave = self._open_wave
+                close_wave = self._close_wave
+                epoch = self._epoch
+            if state is _ResourceState.OPENING:
+                assert open_wave is not None
+                await asyncio.shield(open_wave.result)
+                continue
+            if state is _ResourceState.CLOSING:
+                assert close_wave is not None and close_wave.task is not None
+                await asyncio.shield(close_wave.task)
+                return
+            supervisor = self._require_supervisor()
+            await supervisor.stop_accepting(epoch)
+            await supervisor.wait_for_idle(epoch, timeout)
+            return
 
     async def close(
         self,
         *,
-        auth_coord: AuthRefreshCoordinator,
-        drain_tracker: TransportDrainTracker | CallSupervisor,
-        cookie_persistence: CookiePersistence,
+        drain: bool = True,
+        drain_timeout: float | None = None,
+        **_legacy_kwargs: Any,
     ) -> None:
-        """Close the HTTP client connection.
+        """Coalesce one phased close wave and retain it across cancellation."""
+        if _legacy_kwargs:
+            # Direct lifecycle callers from the pre-root API already performed
+            # admission drain outside this method.
+            drain = False
+            with self._state_lock:
+                legacy_unmanaged = (
+                    self._state is _ResourceState.CLOSED and self._http_client is not None
+                )
+            if legacy_unmanaged:
+                # A few private compatibility callers install a Kernel client
+                # directly, without running ``open()``.  Keep that old explicit
+                # close seam leak-free while normal clients always use the
+                # assembled, phased transport wave below.
+                await self._close_legacy_unmanaged(**_legacy_kwargs)
+                return
+        if drain and drain_timeout is not None and drain_timeout < 0:
+            raise ValueError(f"timeout must be >= 0 or None, got {drain_timeout!r}")
+        loop = asyncio.get_running_loop()
+        while True:
+            with self._state_lock:
+                if self._state is _ResourceState.CLOSED:
+                    return
+                self._assert_loop(loop)
+                if self._state is _ResourceState.OPENING:
+                    open_wave = cast(_OpenWave, self._open_wave)
+                    self._assert_wave_loop(loop, open_wave.loop, "close")
+                    close_wave = None
+                elif self._state is _ResourceState.CLOSING:
+                    close_wave = cast(_CloseWave, self._close_wave)
+                    self._assert_wave_loop(loop, close_wave.loop, "close")
+                    open_wave = None
+                else:
+                    open_wave = None
+                    close_wave = _CloseWave(
+                        loop=loop,
+                        epoch=self._epoch,
+                        drain=drain,
+                        drain_timeout=drain_timeout,
+                        abort_graceful=asyncio.Event(),
+                    )
+                    self._state = _ResourceState.CLOSING
+                    close_wave.task = self._retain_task(
+                        asyncio.create_task(self._run_close(close_wave))
+                    )
+                    self._close_wave = close_wave
+            if open_wave is not None:
+                await asyncio.shield(open_wave.result)
+                continue
+            assert close_wave is not None and close_wave.task is not None
+            await self._await_close_wave(close_wave)
+            return
 
-        Cancellation safety: the entire close sequence is wrapped in
-        ``try/finally`` and the final ``aclose()`` is wrapped in
-        :func:`asyncio.shield` — without the shield, a ``CancelledError``
-        arriving during keepalive teardown or the cookie save would skip
-        ``aclose()`` and leak the underlying httpx transport.
-        :meth:`Kernel.aclose` clears the live HTTP client in its own
-        ``finally`` so the instance is consistently marked closed even if
-        shielded teardown raises.
-
-        Drain hooks: feature-owned close hooks are awaited before the HTTP
-        client is torn down. Without this, a feature task waking mid-aclose
-        could issue a request against an already-closed transport and surface
-        as a confusing httpx error. The drain uses ``return_exceptions=True``
-        so a single misbehaving hook can't block the rest of the close
-        sequence.
-
-        There is no close-time ``host._rpc_executor = None`` step. The
-        composition root
-        (:func:`notebooklm._runtime.init.compose_client_internals`)
-        binds the executor exactly once via
-        :meth:`notebooklm._client_composed.ClientComposed.bind_executor`,
-        and the binding is preserved across ``close()`` → ``open()``
-        cycles. The executor's
-        underlying transport collaborator (:class:`Kernel`) rebuilds
-        its ``httpx.AsyncClient`` on each :meth:`open`, so the executor
-        continues to operate against the fresh transport state without
-        a fresh executor instance.
-
-        This signature takes explicit keyword-only collaborators rather than
-        the legacy ``host`` Protocol; the caller
-        (:meth:`notebooklm.client.NotebookLMClient.close`) passes its owned
-        collaborators through.
-        """
+    async def _close_legacy_unmanaged(self, **collaborators: Any) -> None:
+        """Tear down a pre-B0 directly-installed Kernel client."""
+        auth_coord = collaborators.get("auth_coord")
+        drain_tracker = collaborators.get("drain_tracker")
+        cookie_persistence = collaborators.get("cookie_persistence")
         try:
-            # Stop the keepalive task before tearing down the HTTP client so
-            # the loop can't issue a poke against an already-closed transport.
-            if self._keepalive_task is not None:
-                self._keepalive_task.cancel()
-                await asyncio.gather(self._keepalive_task, return_exceptions=True)
-                self._keepalive_task = None
-
-            # Cancel any in-flight auth refresh task BEFORE the cookie
-            # save or shielded ``aclose()``. Without this, a slow refresh
-            # racing against close would survive the close path and continue
-            # holding the now-torn-down ``httpx.AsyncClient``, surfacing as a
-            # confusing httpx error or a "coroutine was never awaited" GC
-            # warning. The cancel+gather block is encapsulated behind a
-            # method on the coordinator so
-            # the lifecycle never reaches into the private ``_refresh_task``
-            # slot; the method preserves both ``is None`` and ``done()``
-            # short-circuits (true no-op outside the racing case) AND the
-            # critical slot-preservation invariant (the ``_refresh_task``
-            # slot is NOT cleared on cancel — sibling waiters joined to the
-            # same single-flight refresh still observe the shared task).
-            # See :meth:`AuthRefreshCoordinator.cancel_inflight_refresh`.
-            await auth_coord.cancel_inflight_refresh()
-
-            await drain_tracker.run_drain_hooks()
-
-            if self._http_client:
+            if auth_coord is not None:
+                await auth_coord.cancel_inflight_refresh()
+            if drain_tracker is not None:
+                await drain_tracker.run_drain_hooks()
+            if cookie_persistence is not None and self._http_client is not None:
                 try:
-                    # Single source of truth for the on-close save: takes the
-                    # in-process lock, snapshots, off-loads. Serializes
-                    # naturally with any keepalive save still finishing in a
-                    # worker thread — close() owns the freshest jar and must
-                    # win, not the older snapshot.
                     await self.save_cookies(cookie_persistence, self._kernel.cookies)
-                except Exception as e:
-                    logger.warning("Failed to sync refreshed cookies during close: %s", e)
+                except Exception as exc:
+                    logger.warning("Failed to sync refreshed cookies during close: %s", exc)
         finally:
-            if self._http_client:
-                # Shield: cancellation arriving mid-aclose must not leak
-                # the transport. The shielded aclose runs to completion;
-                # ``self._http_client = None`` then makes ``is_open``
-                # return False correctly. There is no
-                # ``host._rpc_executor = None`` step here — the executor is
-                # composition-root-bound and persists across
-                # close() → open() cycles.
+            if self._http_client is not None:
                 await asyncio.shield(self._kernel.aclose())
 
-    # ------------------------------------------------------------------
-    # Keepalive
-    # ------------------------------------------------------------------
-
-    async def _keepalive_loop(
-        self,
-        *,
-        cookie_persistence: CookiePersistence,
-        interval: float,
-    ) -> None:
-        """Background loop that periodically pokes the identity surface.
-
-        Sleeps ``interval`` seconds between iterations, then calls
-        ``self._cookie_rotator`` (defaulting to
-        :func:`notebooklm._auth.keepalive._rotate_cookies`) to elicit
-        ``__Secure-1PSIDTS`` rotation. Any rotated cookies are persisted to
-        ``storage_state.json`` immediately (off-loop, via
-        :func:`asyncio.to_thread`) so a long-lived client's freshness survives
-        a crash.
-
-        Error handling is split by failure mode:
-
-        - Poke failures (network blips, ``accounts.google.com`` downtime) are
-          opportunistic and logged at DEBUG. The next iteration retries.
-        - Persistence failures hide the most important class of bug — a
-          rotated cookie that exists in memory but not on disk — so they are
-          logged at WARNING with the storage path.
-
-        Both classes never propagate; the loop only exits via
-        :class:`asyncio.CancelledError` from :meth:`close`.
-
-        This signature takes the :class:`CookiePersistence` collaborator
-        (used for the per-iteration cookie save) rather than the legacy
-        ``host`` Protocol. :meth:`open` spawns the task with the same
-        ``cookie_persistence`` it received, so the loop saves through the
-        same collaborator the open path captured.
-        """
-        logger.debug("Keepalive task started (interval=%.1fs)", interval)
-        # Rotation is delegated to ``self._cookie_rotator`` (injectable
-        # seam). The default :func:`_default_cookie_rotator`
-        # wrapper performs a late-bound ``from ._auth.keepalive import
-        # _rotate_cookies`` lookup inside its body so a
-        # ``monkeypatch.setattr`` on the canonical seam keeps affecting
-        # the live keepalive loop. Custom callables bypass the late-bind
-        # hop entirely.
-
+    async def _await_close_wave(self, wave: _CloseWave) -> None:
+        assert wave.task is not None
         try:
-            while True:
-                await asyncio.sleep(interval)
-                client = self._http_client
-                if client is None:
-                    # Client closed concurrently; exit gracefully.
-                    return
+            await asyncio.shield(wave.task)
+        except asyncio.CancelledError as cancelled:
+            wave.abort_graceful.set()
+            try:
+                await asyncio.shield(wave.task)
+            except asyncio.CancelledError:
+                pass
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception:
+                pass
+            raise cancelled
 
-                try:
-                    # Bypass the layer-1 dedup guards: this loop is self-paced
-                    # by ``keepalive_min_interval`` and never runs concurrently
-                    # with itself. Pass the storage path so the bare call
-                    # bumps the *per-profile* in-process timestamp, letting
-                    # concurrent layer-1 callers (e.g. spawned ``fetch_tokens``
-                    # tasks on the same profile) and other keepalive loops on
-                    # the same profile see the fresh rotation and skip.
-                    await self._cookie_rotator(client, self._keepalive_storage_path)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:  # noqa: BLE001 - opportunistic best-effort
-                    logger.debug("Keepalive poke failed (non-fatal): %s", exc)
-                    continue
+    async def _run_close(self, wave: _CloseWave) -> None:
+        timeout_error: TimeoutError | None = None
+        supervisor = self._require_supervisor()
+        if wave.drain:
+            try:
+                await supervisor.stop_accepting(wave.epoch)
+                prephase = asyncio.create_task(self._run_graceful_prephase(wave))
+                abort_wait = asyncio.create_task(wave.abort_graceful.wait())
+                done, _pending = await asyncio.wait(
+                    {prephase, abort_wait}, return_when=asyncio.FIRST_COMPLETED
+                )
+                if abort_wait in done and wave.abort_graceful.is_set() and not prephase.done():
+                    prephase.cancel()
+                    await asyncio.gather(prephase, return_exceptions=True)
+                else:
+                    abort_wait.cancel()
+                    await asyncio.gather(abort_wait, return_exceptions=True)
+                    await prephase
+            except TimeoutError as exc:
+                timeout_error = exc
+            except asyncio.CancelledError:
+                raise
+            except BaseException:
+                with self._state_lock:
+                    self._state = _ResourceState.OPEN
+                    self._close_wave = None
+                raise
+        await supervisor.begin_closing(wave.epoch)
+        prepare_results = await asyncio.gather(
+            *(transport.prepare_close() for transport in self._transports),
+            return_exceptions=True,
+        )
+        hook_results = await asyncio.gather(supervisor.run_drain_hooks(), return_exceptions=True)
+        close_results = await asyncio.gather(
+            *(transport.close_resources() for transport in self._transports),
+            return_exceptions=True,
+        )
+        mark_error: BaseException | None = None
+        try:
+            supervisor.mark_closed(wave.epoch)
+        except BaseException as exc:
+            mark_error = exc
+        finally:
+            with self._state_lock:
+                self._state = _ResourceState.CLOSED
+                self._close_wave = None
+        ordered = [*prepare_results, *hook_results, *close_results]
+        if mark_error is not None:
+            ordered.append(mark_error)
+        process_exit = next(
+            (r for r in ordered if isinstance(r, (KeyboardInterrupt, SystemExit))), None
+        )
+        if process_exit is not None:
+            raise process_exit
+        if timeout_error is not None:
+            ordinary = next((r for r in ordered if isinstance(r, Exception)), None)
+            if ordinary is not None:
+                raise timeout_error from ordinary
+            raise timeout_error
+        failure = next((r for r in ordered if isinstance(r, BaseException)), None)
+        if failure is not None:
+            raise failure
 
-                if self._keepalive_storage_path is None:
-                    continue
+    async def _run_graceful_prephase(self, wave: _CloseWave) -> None:
+        supervisor = self._require_supervisor()
+        await supervisor.run_drain_hooks()
+        await supervisor.wait_for_idle(wave.epoch, wave.drain_timeout)
 
-                try:
-                    # save_cookies handles snapshot + lock + off-load.
-                    await self.save_cookies(cookie_persistence, client.cookies)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "Keepalive cookie persistence to %s failed: %s",
-                        self._keepalive_storage_path,
-                        exc,
-                    )
-        except asyncio.CancelledError:
-            logger.debug("Keepalive task cancelled")
-            raise
+    def _require_supervisor(self) -> LifecycleSupervisor:
+        if self._supervisor is None:
+            raise RuntimeError("Client lifecycle has not been assembled.")
+        return self._supervisor
+
+    def _assert_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        if self._bound_loop is not None and self._bound_loop is not loop:
+            _assert_bound_loop(self._bound_loop)
+
+    @staticmethod
+    def _assert_wave_loop(
+        loop: asyncio.AbstractEventLoop,
+        wave_loop: asyncio.AbstractEventLoop,
+        action: str,
+    ) -> None:
+        if loop is not wave_loop:
+            raise RuntimeError(
+                f"Cannot {action} NotebookLMClient from a different event loop while a lifecycle "
+                "wave is active. Wait on the loop that owns the client."
+            )
+
+    def _retain_task(self, task: asyncio.Task[Any]) -> asyncio.Task[Any]:
+        self._retained_tasks.add(task)
+
+        def _settled(done: asyncio.Task[Any]) -> None:
+            self._retained_tasks.discard(done)
+            if done.cancelled():
+                return
+            error = done.exception()
+            if isinstance(error, (KeyboardInterrupt, SystemExit)):
+                done.get_loop().call_exception_handler(
+                    {
+                        "message": "Process-exit signal from retained lifecycle task",
+                        "exception": error,
+                    }
+                )
+
+        task.add_done_callback(_settled)
+        return task
 
 
 __all__ = [
     "ClientLifecycle",
-    "CookieRotator",
-    "CookieSaver",
-    "_default_cookie_rotator",
+    "LifecycleSupervisor",
+    "LoopParticipant",
+    "TransportLifecycle",
 ]

@@ -235,15 +235,8 @@ async def test_close_drain_cancels_inflight_poll_in_operation_scope() -> None:
 
 
 @pytest.mark.asyncio
-async def test_close_fires_drain_hooks_before_drain_wait() -> None:
-    """Issue #1161: ``close(drain=True)`` fires the registered cancel hooks
-    BEFORE awaiting ``drain()`` — the ordering that lets the poll-cancel hook
-    short-circuit a poll counted in the in-flight counter.
-
-    This pins the ordering directly (independent of the operation_scope
-    integration test) so a future refactor that moves the hook fire back
-    after the drain wait fails here.
-    """
+async def test_close_delegates_hook_and_drain_policy_to_root_lifecycle() -> None:
+    """B0b makes ClientLifecycle the sole close-policy owner."""
     client = NotebookLMClient(_auth())
     order: list[str] = []
 
@@ -253,7 +246,10 @@ async def test_close_fires_drain_hooks_before_drain_wait() -> None:
     async def fake_drain(timeout: float | None = None) -> None:
         order.append("drain")
 
-    async def fake_close(**_kwargs: object) -> None:
+    close_kwargs: list[dict[str, object]] = []
+
+    async def fake_close(**kwargs: object) -> None:
+        close_kwargs.append(kwargs)
         order.append("close")
 
     client._collaborators.call_supervisor.run_drain_hooks = fake_run_drain_hooks  # type: ignore[method-assign]
@@ -262,9 +258,8 @@ async def test_close_fires_drain_hooks_before_drain_wait() -> None:
 
     await client.close()
 
-    assert order == ["hooks", "drain", "close"], (
-        "cancel hooks must fire before the drain wait (issue #1161)"
-    )
+    assert order == ["close"]
+    assert close_kwargs == [{"drain": True, "drain_timeout": None}]
 
 
 # ---------------------------------------------------------------------------
@@ -276,35 +271,36 @@ async def test_close_fires_drain_hooks_before_drain_wait() -> None:
 async def test_client_close_default_drain_is_true() -> None:
     """``client.close()`` (no args) now drains by default (BREAKING)."""
     client = NotebookLMClient(_auth())
+    close_kwargs: list[dict[str, object]] = []
     drain_calls: list[float | None] = []
 
     async def fake_drain(timeout: float | None = None) -> None:
         drain_calls.append(timeout)
 
-    async def fake_close(**_kwargs: object) -> None:
-        pass
+    async def fake_close(**kwargs: object) -> None:
+        close_kwargs.append(kwargs)
 
     client._collaborators.call_supervisor.drain = fake_drain  # type: ignore[method-assign]
     client._collaborators.lifecycle.close = fake_close  # type: ignore[method-assign]
 
     await client.close()
 
-    assert drain_calls == [None], (
-        "default close() must drain; pass drain=False to opt out (BREAKING)"
-    )
+    assert drain_calls == []
+    assert close_kwargs == [{"drain": True, "drain_timeout": None}]
 
 
 @pytest.mark.asyncio
 async def test_client_close_drain_false_skips_drain() -> None:
     """``client.close(drain=False)`` preserves the old fire-and-forget path."""
     client = NotebookLMClient(_auth())
+    close_kwargs: list[dict[str, object]] = []
     drain_calls: list[float | None] = []
 
     async def fake_drain(timeout: float | None = None) -> None:
         drain_calls.append(timeout)
 
-    async def fake_close(**_kwargs: object) -> None:
-        pass
+    async def fake_close(**kwargs: object) -> None:
+        close_kwargs.append(kwargs)
 
     client._collaborators.call_supervisor.drain = fake_drain  # type: ignore[method-assign]
     client._collaborators.lifecycle.close = fake_close  # type: ignore[method-assign]
@@ -312,6 +308,7 @@ async def test_client_close_drain_false_skips_drain() -> None:
     await client.close(drain=False)
 
     assert drain_calls == []
+    assert close_kwargs == [{"drain": False, "drain_timeout": None}]
 
 
 @pytest.mark.asyncio
@@ -319,12 +316,13 @@ async def test_client_aexit_uses_drain_true_default() -> None:
     """``async with`` exit now drains (BREAKING)."""
     client = NotebookLMClient(_auth())
     drain_calls: list[float | None] = []
+    close_kwargs: list[dict[str, object]] = []
 
     async def fake_drain(timeout: float | None = None) -> None:
         drain_calls.append(timeout)
 
-    async def fake_close(**_kwargs: object) -> None:
-        pass
+    async def fake_close(**kwargs: object) -> None:
+        close_kwargs.append(kwargs)
 
     client._collaborators.call_supervisor.drain = fake_drain  # type: ignore[method-assign]
     client._collaborators.lifecycle.close = fake_close  # type: ignore[method-assign]
@@ -333,4 +331,5 @@ async def test_client_aexit_uses_drain_true_default() -> None:
     # patched core without going through ``open()``.
     await client.__aexit__(None, None, None)
 
-    assert drain_calls == [None]
+    assert drain_calls == []
+    assert close_kwargs == [{"drain": True, "drain_timeout": None}]

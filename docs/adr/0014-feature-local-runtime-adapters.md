@@ -26,15 +26,12 @@
 > do not depend on those web contracts; each `Web*API` subclass receives the
 > web collaborator it needs. Rules 2–5 otherwise remain in force.
 >
-> **Call-supervisor amendment (2026-08-28).** `CallSupervisor` is a concrete
-> multi-consumer runtime service and therefore clears this ADR's promotion
-> threshold. Web `RuntimeTransport`, Android transport, upload workflows, and
-> artifact polling consume its narrow call/operation/child admission surface.
-> It owns the existing drain tracker, the lazy client-wide RPC semaphore, and
-> common terminal metrics policy. Transports do not receive those internals
-> separately and the supervisor does not forward request-id, auth, retry,
-> codec, or upload metrics capabilities. `ClientComposed` is again web
-> composition state only.
+> **Phase B lifecycle amendment (2026-08-28).** `CallSupervisor` and the root
+> `ClientLifecycle`/`TransportLifecycle` split now have multiple production
+> consumers (web and Android) and therefore pass this ADR's sharing threshold.
+> They are infrastructure services with closed lifecycle/call-policy surfaces,
+> not a resurrection of the deleted broad `Session` facade. Backend request,
+> auth, retry, codec, and exception decisions remain on their concrete stacks.
 
 ## Status
 

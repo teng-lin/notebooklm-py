@@ -52,7 +52,6 @@ from ._runtime.config import (
     validate_read_timeout_kwarg,
 )
 from ._runtime.init import compose_client_internals
-from ._runtime.lifecycle import CookieRotator, CookieSaver
 from ._web.artifacts import WebArtifactsAPI
 from ._web.chat import WebChatAPI
 from ._web.collections import WebCollectionsAPI
@@ -65,6 +64,7 @@ from ._web.settings import WebSettingsAPI
 from ._web.sharing import WebSharingAPI
 from ._web.sources import WebSourcesAPI
 from ._web.sources.upload import SourceUploadPipeline
+from ._web.transport.lifecycle import CookieRotator, CookieSaver
 from ._web.transport.seams import resolve_client_seams
 from .auth import AuthTokens
 

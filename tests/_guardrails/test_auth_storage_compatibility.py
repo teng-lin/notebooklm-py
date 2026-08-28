@@ -1138,6 +1138,7 @@ EXPECTED_DIRECT_CALLERS = {
         "src/notebooklm/_web/transport/auth.py",
         "src/notebooklm/_web/transport/cookie_persistence.py",
         "src/notebooklm/_web/transport/kernel.py",
+        "src/notebooklm/_web/transport/lifecycle.py",
         "src/notebooklm/cli/auth_runtime.py",
         "src/notebooklm/cli/helpers.py",
         "src/notebooklm/cli/language_cmd.py",
@@ -2209,11 +2210,11 @@ def test_first_party_facade_callers_are_frozen_in_both_import_idioms() -> None:
     union = {(name, path) for name, paths in direct.items() for path in paths}
     union |= {(name, path) for name, paths in aliases.items() for path in paths}
     assert len(direct) == 14
-    assert sum(map(len, direct.values())) == 40
+    assert sum(map(len, direct.values())) == 41
     assert len(aliases) == 25
     assert sum(map(len, aliases.values())) == 30
     assert len({name for name, _path in union}) == 35
-    assert len(union) == 70
+    assert len(union) == 71
 
 
 @pytest.mark.skipif(not hasattr(ast, "TryStar"), reason="exception-group AST requires 3.11+")

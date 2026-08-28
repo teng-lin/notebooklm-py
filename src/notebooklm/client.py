@@ -62,7 +62,6 @@ from ._runtime.config import (
 )
 from ._runtime.init import RuntimeCollaborators
 from ._runtime.init import compose_client_internals as compose_client_internals  # noqa: F401
-from ._runtime.lifecycle import CookieRotator, CookieSaver
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
 from ._sources import SourcesAPI
@@ -72,6 +71,7 @@ from ._web.notes import NoteService as NoteService  # noqa: F401
 from ._web.research import ResearchAPI
 from ._web.sources.upload import SourceUploadPipeline
 from ._web.transport.executor import RpcExecutor
+from ._web.transport.lifecycle import CookieRotator, CookieSaver
 from ._web.transport.seams import ClientSeams
 from ._web.transport.seams import resolve_client_seams as resolve_client_seams  # noqa: F401
 from .auth import AuthTokens
@@ -393,10 +393,10 @@ class NotebookLMClient:
     async def drain(self, timeout: float | None = None) -> None:
         """Stop accepting new operations and wait for in-flight operations to finish.
 
-        Delegates to :class:`CallSupervisor`, the generation-aware admission
-        authority; public timeout propagation remains unchanged.
+        Resource ownership and admission are separate: a successfully drained
+        client remains connected, but rejects new top-level work until closed.
         """
-        await self._collaborators.call_supervisor.drain(timeout=timeout)
+        await self._collaborators.lifecycle.drain(timeout=timeout)
 
     async def close(
         self,
@@ -481,85 +481,9 @@ class NotebookLMClient:
         feature hook that blocks indefinitely could still extend shutdown,
         and such hooks should bound their own work.
         """
-        if drain:
-            drain_timeout_exc: TimeoutError | None = None
-            try:
-                # Fire feature-owned cancel hooks BEFORE the drain wait (see
-                # the "Drain-hook ordering" section of the docstring above for
-                # why). Awaited inside this ``try`` so a *caller* CancelledError
-                # arriving during the hook fire still routes through the I12
-                # shielded-close path below; ``run_drain_hooks`` itself never
-                # re-raises (it gathers with ``return_exceptions=True``).
-                await self._collaborators.call_supervisor.run_drain_hooks()
-                await self.drain(timeout=drain_timeout)
-            except TimeoutError as exc:
-                # Drain deadline missed. Hold onto the exception and
-                # fall through to the shielded close below so callers
-                # see both the timeout signal AND a torn-down transport.
-                drain_timeout_exc = exc
-            except asyncio.CancelledError:
-                # Cancellation-safety contract (audit finding I12): if
-                # the caller's task is cancelled while drain() is
-                # waiting (e.g. ``asyncio.wait_for`` deadline, manual
-                # ``task.cancel()``), we MUST still tear down the
-                # transport before letting the cancel propagate. On a
-                # single cancellation this shielded await runs to
-                # completion synchronously (Python does not re-raise
-                # CancelledError without an explicit re-cancel). If a
-                # SECOND cancel arrives while we're parked here,
-                # ``asyncio.shield`` isolates the inner lifecycle close
-                # Task so it continues in the background; the second
-                # cancel hits the awaiter and is swallowed below so the
-                # original CancelledError surfaces unchanged.
-                try:
-                    await asyncio.shield(
-                        self._collaborators.lifecycle.close(
-                            auth_coord=self._collaborators.auth_coord,
-                            drain_tracker=self._collaborators.call_supervisor,
-                            cookie_persistence=self._collaborators.cookie_persistence,
-                        )
-                    )
-                except (Exception, asyncio.CancelledError):
-                    # Swallow regular close failures and any re-cancel
-                    # propagated through the shield await so the
-                    # original CancelledError below is the one that
-                    # reaches the caller. The inner shielded Task
-                    # continues to run regardless.
-                    # NOTE: deliberately NOT catching ``BaseException`` —
-                    # ``KeyboardInterrupt`` and ``SystemExit`` are
-                    # process-exit signals that must propagate unchanged.
-                    pass
-                raise
-            # Any other exception from drain (e.g. ``ValueError`` for a
-            # caller-provided invalid deadline) propagates here without
-            # an implicit close — matches pre-I12 caller-error semantics
-            # asserted by
-            # ``test_close_with_invalid_drain_does_not_close_transport``.
-
-            try:
-                await asyncio.shield(
-                    self._collaborators.lifecycle.close(
-                        auth_coord=self._collaborators.auth_coord,
-                        drain_tracker=self._collaborators.call_supervisor,
-                        cookie_persistence=self._collaborators.cookie_persistence,
-                    )
-                )
-            except Exception as close_exc:
-                if drain_timeout_exc is not None:
-                    logger.warning(
-                        "Suppressing close() error after drain timeout to "
-                        "preserve timeout signal: %s",
-                        close_exc,
-                    )
-                    raise drain_timeout_exc from close_exc
-                raise
-            if drain_timeout_exc is not None:
-                raise drain_timeout_exc
-            return
         await self._collaborators.lifecycle.close(
-            auth_coord=self._collaborators.auth_coord,
-            drain_tracker=self._collaborators.call_supervisor,
-            cookie_persistence=self._collaborators.cookie_persistence,
+            drain=drain,
+            drain_timeout=drain_timeout,
         )
 
     def metrics_snapshot(self) -> ClientMetricsSnapshot:

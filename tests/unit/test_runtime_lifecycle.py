@@ -52,11 +52,9 @@ import pytest
 from notebooklm._auth.storage import snapshot_cookie_jar
 from notebooklm._runtime.config import CORE_LOGGER_NAME
 from notebooklm._runtime.helpers import _resolve_keepalive_interval
-from notebooklm._runtime.lifecycle import (
-    ClientLifecycle,
-    _default_cookie_rotator,
-)
+from notebooklm._runtime.lifecycle import ClientLifecycle
 from notebooklm._transport_drain import TransportDrainTracker
+from notebooklm._web.transport.lifecycle import _default_cookie_rotator
 from notebooklm.auth import AuthTokens
 from notebooklm.types import ConnectionLimits
 from tests._helpers.client_factory import build_client_shell_for_tests
@@ -664,10 +662,11 @@ def test_bound_loop_mismatch_via_session_raises_runtime_error() -> None:
         )
 
     async def _attempt_post_on_loop_b() -> Exception | None:
-        # ``open()`` is idempotent — since loop A left ``_http_client``
-        # populated, this is a no-op and ``_bound_loop`` stays bound to loop A.
-        await core.__aenter__()
         try:
+            # B0b moves the affinity assertion to the root lifecycle: any
+            # public lifecycle action on a non-CLOSED resource fails before
+            # touching a foreign-loop task or primitive.
+            await core.__aenter__()
             await core._composed.transport.perform_authed_post(
                 build_request=_build_request_stub,
                 log_label="test.cross_loop",
