@@ -28,6 +28,8 @@ vacuous.
 
 from __future__ import annotations
 
+from notebooklm._notebooks import NotebooksAPI
+from notebooklm._web.notebooks import WebNotebooksAPI
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from tests._helpers.client_factory import build_client_shell_for_tests
@@ -124,6 +126,8 @@ def test_shared_wiring_identities_hold_on_both_paths() -> None:
             f"{label}: chat must share the client's NotebooksAPI instance "
             "(ChatAPI._notebooks), not a privately constructed one"
         )
+        assert type(client.notebooks) is WebNotebooksAPI
+        assert isinstance(client.notebooks, NotebooksAPI)
         assert getattr(client.notebooks, "_rpc", _missing) is client._rpc_executor, (
             f"{label}: notebooks (NotebooksAPI._rpc) must dispatch through the "
             "client's shared RpcExecutor"

@@ -17,7 +17,6 @@ from .._conversation_cache import ConversationCache
 from .._logging import get_request_id, reset_request_id, set_request_id
 from .._loop_bound import LoopBoundPrimitive
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
-from .._notebooks import build_get_notebook_params
 from .._request_types import AuthSnapshot
 from .._runtime.config import (
     DEFAULT_CHAT_RESPONSE_MAX_BYTES,
@@ -25,6 +24,7 @@ from .._runtime.config import (
     assert_resolved_read_timeout,
 )
 from .._runtime.contracts import LoopGuard, RpcCaller
+from .._web.params.notebooks import build_get_notebook_params
 from .._web.rows.chat import (
     ConversationTurnRow,
     unwrap_chat_settings,

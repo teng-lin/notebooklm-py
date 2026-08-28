@@ -24,11 +24,11 @@
 
 | RPC ID | Method | Purpose | Implementation |
 |--------|--------|---------|----------------|
-| `wXbhsf` | LIST_NOTEBOOKS | List all notebooks | `_notebooks.py` |
-| `CCqFvf` | CREATE_NOTEBOOK | Create new notebook | `_notebooks.py` |
-| `rLM1Ne` | GET_NOTEBOOK | Get notebook details + sources | `_notebooks.py` |
-| `s0tc2d` | RENAME_NOTEBOOK | Rename, chat config, share access | `_notebooks.py`, `_chat/api.py` |
-| `WWINqb` | DELETE_NOTEBOOK | Delete a notebook | `_notebooks.py` |
+| `wXbhsf` | LIST_NOTEBOOKS | List all notebooks | `_web/notebooks.py` |
+| `CCqFvf` | CREATE_NOTEBOOK | Create new notebook | `_web/notebooks.py` |
+| `rLM1Ne` | GET_NOTEBOOK | Get notebook details + sources | `_web/notebooks.py` |
+| `s0tc2d` | RENAME_NOTEBOOK | Rename, chat config, share access | `_web/notebooks.py`, `_chat/api.py` |
+| `WWINqb` | DELETE_NOTEBOOK | Delete a notebook | `_web/notebooks.py` |
 | `izAoDd` | ADD_SOURCE | Add URL/text/YouTube/Drive source | `_source/add.py` via `_sources.py` |
 | `o4cbdc` | ADD_SOURCE_FILE | Register uploaded file (PDF, DOCX, EPUB, etc.) | `_source/upload.py`, `_source/upload_payloads.py` |
 | `tGMBJ` | DELETE_SOURCE | Delete a source | `_sources.py` |
@@ -47,13 +47,13 @@
 | `hPTbtc` | GET_LAST_CONVERSATION_ID | Get most recent conversation ID | `_chat/api.py` |
 | `khqZz` | GET_CONVERSATION_TURNS | Get Q&A turns for a conversation | `_chat/api.py` |
 | `J7Gthc` | DELETE_CONVERSATION | Delete a conversation (web UI's "Delete history") | `_chat/api.py` |
-| `otmP3b` | SUGGEST_PROMPTS | Get AI-suggested prompts for a notebook | `_notebooks.py` |
+| `otmP3b` | SUGGEST_PROMPTS | Get AI-suggested prompts for a notebook | `_web/notebooks.py` |
 | `CYK0Xb` | CREATE_NOTE | Create a note (placeholder) | `_notes.py` |
 | `cYAfTb` | UPDATE_NOTE | Update note content/title | `_notes.py` |
 | `AH0mwd` | DELETE_NOTE | Delete a note | `_notes.py` |
 | `cFji9` | GET_NOTES_AND_MIND_MAPS | List notes and mind maps | `_notes.py` |
 | `yyryJe` | GENERATE_MIND_MAP | Mind map generation | `_artifacts.py` |
-| `VfAZjd` | SUMMARIZE | Get notebook summary | `_notebooks.py` |
+| `VfAZjd` | SUMMARIZE | Get notebook summary | `_web/notebooks.py` |
 | `FLmJqe` | REFRESH_SOURCE | Refresh URL/Drive source | `_sources.py` |
 | `yR9Yof` | CHECK_SOURCE_FRESHNESS | Check if source needs refresh | `_sources.py` |
 | `Ljjv0c` | START_FAST_RESEARCH | Start fast research | `_research.py` |
@@ -68,7 +68,7 @@
 | `JFMDGd` | GET_SHARE_STATUS | Get notebook share settings | `_sharing.py` |
 | `ciyUvf` | GET_SUGGESTED_REPORTS | Get AI-suggested report formats | `_artifacts.py` |
 | `v9rmvd` | GET_INTERACTIVE_HTML | Fetch quiz/flashcard HTML (`[0][9][0]`) / interactive mind-map tree (`[0][9][3]`) | `_artifact/downloads.py` |
-| `fejl7e` | REMOVE_RECENTLY_VIEWED | Remove notebook from recent list | `_notebooks.py` |
+| `fejl7e` | REMOVE_RECENTLY_VIEWED | Remove notebook from recent list | `_web/notebooks.py` |
 | `ZwVcOc` | GET_USER_SETTINGS | Get user settings including output language | `_settings.py` |
 | `hT54vc` | SET_USER_SETTINGS | Set user settings (e.g., output language) | `_settings.py` |
 
@@ -267,7 +267,7 @@ The home project action menu is now labeled `Project Actions Menu`; older
 
 ### RPC: LIST_NOTEBOOKS (wXbhsf)
 
-**Source:** `_notebooks.py::list()`
+**Source:** `_web/notebooks.py::WebNotebooksAPI.list()`
 
 ```python
 # Minimal client builder (`NotebooksAPI.list()`), accepted by the backend:
@@ -291,7 +291,7 @@ params = [
 
 ### RPC: CREATE_NOTEBOOK (CCqFvf)
 
-**Source:** `_notebooks.py::create()`
+**Source:** `_notebooks.py::NotebooksAPI.create()`, `_web/notebooks.py::WebNotebooksAPI._send_create()`
 
 ```python
 params = [
@@ -305,7 +305,7 @@ params = [
 
 ### RPC: DELETE_NOTEBOOK (WWINqb)
 
-**Source:** `_notebooks.py::delete()`
+**Source:** `_web/notebooks.py::WebNotebooksAPI.delete()`
 
 ```python
 params = [
@@ -316,7 +316,7 @@ params = [
 
 ### RPC: GET_NOTEBOOK (rLM1Ne)
 
-**Source:** `_notebooks.py::get()`, `_source/listing.py::SourceLister.list()`
+**Source:** `_web/notebooks.py::WebNotebooksAPI.get()`, `_source/listing.py::SourceLister.list()`
 
 ```python
 params = [
@@ -331,7 +331,7 @@ params = [
 
 The slot `[2]` wrapper replaced the older bare `[2]` read-path tail. Live
 capture on 2026-06-15 confirmed the nested shape in `f.req`; keep
-`_notebooks.build_get_notebook_params()` and `_source/listing.py` in sync.
+`_web.params.notebooks.build_get_notebook_params()` and `_source/listing.py` in sync.
 The live web UI also sends a sixth filter/tail slot:
 `[[None, None, []]]`. Initial page load used slot `[4] == 0`; a follow-up
 refresh used slot `[4] == 1`. The client builder currently omits that sixth
@@ -339,7 +339,7 @@ slot because the backend accepts the compact form.
 
 ### RPC: REMOVE_RECENTLY_VIEWED (fejl7e)
 
-**Source:** `_notebooks.py::remove_from_recent()`
+**Source:** `_web/notebooks.py::WebNotebooksAPI.remove_from_recent()`
 
 Remove a notebook from the recently viewed list (doesn't delete the notebook).
 
@@ -948,7 +948,7 @@ as `AskResult.turn_key`.
 
 ### RPC: RENAME_NOTEBOOK (s0tc2d) - Rename Only
 
-**Source:** `_notebooks.py::rename()`
+**Source:** `_notebooks.py::NotebooksAPI.rename()`, `_web/notebooks.py::WebNotebooksAPI.update()`
 
 ```python
 # Just rename, no chat config
@@ -1070,7 +1070,7 @@ is signaled by the absence of an error — there is no return payload.
 
 ### RPC: SUGGEST_PROMPTS (otmP3b)
 
-**Source:** `_notebooks.py::NotebooksAPI.suggest_prompts()`
+**Source:** `_web/notebooks.py::WebNotebooksAPI.suggest_prompts()`
 
 Returns AI-suggested prompts for a notebook (the live
 `GeneratePromptSuggestions` method) — a general notebook-prompt endpoint whose
@@ -1942,7 +1942,7 @@ source_ids_triple = [[[sid]] for sid in source_ids]
 
 ### RPC: SUMMARIZE (VfAZjd)
 
-**Source:** `_notebooks.py::get_summary()`, `_notebooks.py::get_description()`
+**Source:** `_web/notebooks.py::WebNotebooksAPI.get_summary()`, `_web/notebooks.py::WebNotebooksAPI.get_description()`
 
 Gets AI-generated summary and suggested topics for a notebook.
 

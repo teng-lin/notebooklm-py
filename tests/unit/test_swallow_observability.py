@@ -22,11 +22,11 @@ SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
 @pytest.mark.asyncio
 async def test_get_source_ids_warns_on_top_level_shape_drift(caplog):
     """_notebooks.py:get_source_ids — non-list at notebook_data[0] triggers WARNING."""
-    from notebooklm._notebooks import NotebooksAPI
+    from notebooklm._web.notebooks import WebNotebooksAPI
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=[{"unexpected": "dict"}]))
-    api = NotebooksAPI(core)
+    api = WebNotebooksAPI(core)
 
     with caplog.at_level(logging.WARNING, logger="notebooklm"):
         result = await api.get_source_ids("nb_drift")
@@ -44,12 +44,12 @@ async def test_get_source_ids_warns_on_top_level_shape_drift(caplog):
 @pytest.mark.asyncio
 async def test_get_source_ids_warns_on_inner_shape_drift(caplog):
     """_notebooks.py:get_source_ids — notebook_info[1] not list triggers WARNING."""
-    from notebooklm._notebooks import NotebooksAPI
+    from notebooklm._web.notebooks import WebNotebooksAPI
     from tests._fixtures.fake_core import make_fake_core
 
     # notebook_data[0] is a list of length >1 but [1] is not a list
     core = make_fake_core(rpc_call=AsyncMock(return_value=[[None, "not a list", "x"]]))
-    api = NotebooksAPI(core)
+    api = WebNotebooksAPI(core)
 
     with caplog.at_level(logging.WARNING, logger="notebooklm"):
         result = await api.get_source_ids("nb_inner")
@@ -61,13 +61,13 @@ async def test_get_source_ids_warns_on_inner_shape_drift(caplog):
 @pytest.mark.asyncio
 async def test_get_source_ids_happy_path_no_warning(caplog):
     """Well-formed payload extracts source ids and emits no warning."""
-    from notebooklm._notebooks import NotebooksAPI
+    from notebooklm._web.notebooks import WebNotebooksAPI
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(
         rpc_call=AsyncMock(return_value=[[None, [[["src_alpha"]], [["src_beta"]]]]])
     )
-    api = NotebooksAPI(core)
+    api = WebNotebooksAPI(core)
 
     with caplog.at_level(logging.WARNING, logger="notebooklm"):
         result = await api.get_source_ids("nb_happy")
@@ -87,11 +87,11 @@ async def test_get_source_ids_empty_notebook_emits_no_drift_warning(caplog):
     erodes the one signal that must stay trustworthy — ``schema drift?`` is how
     an operator learns the positional payload shape really did change.
     """
-    from notebooklm._notebooks import NotebooksAPI
+    from notebooklm._web.notebooks import WebNotebooksAPI
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=[[None] * 11]))
-    api = NotebooksAPI(core)
+    api = WebNotebooksAPI(core)
 
     with caplog.at_level(logging.WARNING, logger="notebooklm"):
         result = await api.get_source_ids("nb_empty")
@@ -110,11 +110,11 @@ async def test_get_source_ids_warns_when_the_sources_slot_is_absent(caplog):
     implementation ("return quietly whenever the slot expression is ``None``")
     folds this case in and silently drops the warning it used to emit.
     """
-    from notebooklm._notebooks import NotebooksAPI
+    from notebooklm._web.notebooks import WebNotebooksAPI
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=[[None]]))
-    api = NotebooksAPI(core)
+    api = WebNotebooksAPI(core)
 
     with caplog.at_level(logging.WARNING, logger="notebooklm"):
         result = await api.get_source_ids("nb_short")
@@ -157,10 +157,10 @@ async def test_summary_raises_on_indexerror_drift():
     (None / empty / null slot) returns "" instead and is covered in
     ``test_get_summary_drift.py``.
     """
-    from notebooklm._notebooks import NotebooksAPI
+    from notebooklm._web.notebooks import WebNotebooksAPI
     from tests._fixtures.fake_core import make_fake_core
 
-    api = NotebooksAPI.__new__(NotebooksAPI)
+    api = WebNotebooksAPI.__new__(WebNotebooksAPI)
     # result[0] == [42]: the summary slot is present and non-None but holds an
     # int, so the inner result[0][0][0] descent raises TypeError — genuine
     # drift, distinct from a routinely-absent summary.
@@ -189,10 +189,10 @@ async def test_summary_raises_on_indexerror_drift():
 @pytest.mark.asyncio
 async def test_description_partial_summary_logs_debug(caplog):
     """_notebooks.py:273 — partial summary (no topics) logs at DEBUG."""
-    from notebooklm._notebooks import NotebooksAPI
+    from notebooklm._web.notebooks import WebNotebooksAPI
     from tests._fixtures.fake_core import make_fake_core
 
-    api = NotebooksAPI.__new__(NotebooksAPI)
+    api = WebNotebooksAPI.__new__(WebNotebooksAPI)
     # outer[0][0] works but outer[1] raises (no topics shape)
     mock_core = make_fake_core(rpc_call=AsyncMock(return_value=[[["the summary"]]]))
     api._rpc = mock_core

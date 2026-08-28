@@ -49,7 +49,7 @@ from tests._fixtures import make_fake_core
 
 async def test_notebooks_list_returns_payload() -> None:
     fake = make_fake_core(rpc_call=AsyncMock(return_value=[fake_payload]))
-    api = NotebooksAPI(fake.rpc_executor)
+    api = WebNotebooksAPI(fake.rpc_executor)
     result = await api.list()
     fake.rpc_executor.rpc_call.assert_awaited_once()
 ```
@@ -76,7 +76,7 @@ The meta-lint (`tests/_guardrails/test_no_forbidden_monkeypatches.py`) runs in `
 **Wanted:**
 
 - New tests cannot rebuild the gravity well. The meta-lint blocks the patterns at PR review.
-- Sub-clients become testable in isolation. `NotebooksAPI(core=fake)` exercises the sub-client without standing up a real `Session`, without import-string resolution, and without after-construction mutation.
+- Sub-clients become testable in isolation. `WebNotebooksAPI(fake.rpc_executor)` exercises the web sub-client without standing up a real `Session`, without import-string resolution, and without after-construction mutation.
 - The `_AuthFacadeModule` shim, the `_core.py` property bridges, and the `cli/session_cmd.py` proxy block were always intended as *removable* artifacts. They kept existing tests passing until those tests migrated; **all three have now been deleted with no remaining test churn** (D2 cutover and D1 PR-2/PR-3 removed the first two; #1367 / [PR #1374](https://github.com/teng-lin/notebooklm-py/pull/1374) removed the `cli/session_cmd` bridge). The file-level allowlist drain is **complete — the allowlist drained to zero** (issue #1376).
 - Test diffs become smaller and more readable. A test that overrides one collaborator now shows one keyword argument instead of one `monkeypatch.setattr` line per substituted symbol.
 

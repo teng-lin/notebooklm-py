@@ -1266,12 +1266,12 @@ class TestGetSourceIds:
     @pytest.mark.asyncio
     async def test_get_source_ids_extracts_correctly(self):
         """Test get_source_ids correctly extracts source IDs from notebook data."""
-        from notebooklm._notebooks import NotebooksAPI
+        from notebooklm._web.notebooks import WebNotebooksAPI
         from tests._fixtures.fake_core import make_fake_core
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
-        api = NotebooksAPI(core.rpc_executor)
+        api = WebNotebooksAPI(core.rpc_executor)
 
         # Mock notebook data with multiple sources
         # Structure: notebook_data[0][1] = sources list
@@ -1295,12 +1295,12 @@ class TestGetSourceIds:
     @pytest.mark.asyncio
     async def test_get_source_ids_handles_empty_notebook(self):
         """Test get_source_ids handles notebook with no sources."""
-        from notebooklm._notebooks import NotebooksAPI
+        from notebooklm._web.notebooks import WebNotebooksAPI
         from tests._fixtures.fake_core import make_fake_core
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
-        api = NotebooksAPI(core.rpc_executor)
+        api = WebNotebooksAPI(core.rpc_executor)
 
         rpc.return_value = [["nb_123", []]]
 
@@ -1311,12 +1311,12 @@ class TestGetSourceIds:
     @pytest.mark.asyncio
     async def test_get_source_ids_handles_null_response(self):
         """Test get_source_ids handles null API response."""
-        from notebooklm._notebooks import NotebooksAPI
+        from notebooklm._web.notebooks import WebNotebooksAPI
         from tests._fixtures.fake_core import make_fake_core
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
-        api = NotebooksAPI(core.rpc_executor)
+        api = WebNotebooksAPI(core.rpc_executor)
 
         rpc.return_value = None
 
@@ -1327,12 +1327,12 @@ class TestGetSourceIds:
     @pytest.mark.asyncio
     async def test_get_source_ids_handles_malformed_data(self):
         """Test get_source_ids handles malformed source data gracefully."""
-        from notebooklm._notebooks import NotebooksAPI
+        from notebooklm._web.notebooks import WebNotebooksAPI
         from tests._fixtures.fake_core import make_fake_core
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
-        api = NotebooksAPI(core.rpc_executor)
+        api = WebNotebooksAPI(core.rpc_executor)
 
         # Malformed data - missing nested structure
         # Structure: source[0] must be a list, source[0][0] must be a string

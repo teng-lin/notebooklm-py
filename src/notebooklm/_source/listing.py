@@ -81,7 +81,7 @@ class SourceLister:
 
         # GET_NOTEBOOK read-path tail migrated to the nested template block
         # (#1549; live-verified forward-compatible). Mirrors
-        # ``_notebooks.build_get_notebook_params`` — inlined here because
+        # ``_web.params.notebooks.build_get_notebook_params`` — inlined here because
         # importing ``_notebooks`` from this module would cycle (``_notebooks``
         # imports ``_source.upload_payloads``, which runs ``_source/__init__``).
         params = [notebook_id, None, build_template_block(), None, 0]

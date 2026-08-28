@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ._source.upload_payloads import build_template_block
-from .rpc import nest_source_ids
+from ..._source.upload_payloads import build_template_block
+from ...rpc import nest_source_ids
 
 
 def build_create_notebook_params(title: str) -> list[Any]:

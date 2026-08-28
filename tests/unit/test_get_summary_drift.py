@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from notebooklm._notebooks import NotebooksAPI
+from notebooklm._web.notebooks import WebNotebooksAPI
 from notebooklm.exceptions import UnknownRPCMethodError
 from notebooklm.rpc import RPCMethod
 
@@ -27,7 +27,7 @@ from notebooklm.rpc import RPCMethod
 def _make_api(rpc_return):
     from tests._fixtures.fake_core import make_fake_core
 
-    api = NotebooksAPI.__new__(NotebooksAPI)
+    api = WebNotebooksAPI.__new__(WebNotebooksAPI)
     core = make_fake_core(rpc_call=AsyncMock(return_value=rpc_return))
     api._rpc = core
     return api

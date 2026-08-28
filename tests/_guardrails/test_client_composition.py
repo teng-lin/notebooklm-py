@@ -28,7 +28,7 @@ FEATURE_API_NAMES = {
     "ChatAPI",
     "LabelsAPI",
     "MindMapsAPI",
-    "NotebooksAPI",
+    "WebNotebooksAPI",
     "NoteBackedMindMapService",
     "NotesAPI",
     "ResearchAPI",

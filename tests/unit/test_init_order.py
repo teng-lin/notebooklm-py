@@ -264,7 +264,7 @@ def test_client_constructs_sources_before_notebooks_and_injects_sources_api() ->
     assert isinstance(notebooks_value, ast.Call)
     notebooks_call = notebooks_value
     assert isinstance(notebooks_call.func, ast.Name)
-    assert notebooks_call.func.id == "NotebooksAPI"
+    assert notebooks_call.func.id == "WebNotebooksAPI"
 
     assert (
         _owned_attr_name(_call_keyword_value(notebooks_call, "sources_api"), owner="client")

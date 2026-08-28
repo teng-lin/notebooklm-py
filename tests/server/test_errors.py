@@ -100,12 +100,14 @@ def _client_with_real_notebooks(error: BaseException) -> TestClient:
     """
     from unittest.mock import AsyncMock, MagicMock
 
-    from notebooklm._notebooks import NotebooksAPI
+    from notebooklm._web.notebooks import WebNotebooksAPI
     from tests._fixtures.fake_core import make_fake_core
 
     fake = FakeClient()
     core = make_fake_core(rpc_call=AsyncMock(side_effect=error))
-    fake.notebooks = NotebooksAPI(core.rpc_executor, sources_api=MagicMock())  # type: ignore[assignment]
+    fake.notebooks = WebNotebooksAPI(  # type: ignore[assignment]
+        core.rpc_executor, sources_api=MagicMock()
+    )
 
     @asynccontextmanager
     async def factory() -> AsyncIterator[FakeClient]:

@@ -24,9 +24,9 @@ from notebooklm._lookup import unwrap_or_raise
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._note_service import NoteService
-from notebooklm._notebooks import NotebooksAPI
 from notebooklm._notes import NotesAPI
 from notebooklm._sources import SourcesAPI
+from notebooklm._web.notebooks import WebNotebooksAPI
 from notebooklm.exceptions import ClientError, NotebookNotFoundError, RPCError
 from notebooklm.types import MindMap, MindMapKind, Source
 
@@ -59,14 +59,14 @@ class TestUnwrapOrRaise:
 # ---------------------------------------------------------------------------
 
 
-def _make_notebooks_api(rpc_call: AsyncMock) -> NotebooksAPI:
+def _make_notebooks_api(rpc_call: AsyncMock) -> WebNotebooksAPI:
     # ADR-0007: configure the rpc_call seam via constructor injection
     # (``make_fake_core(rpc_call=...)``) rather than dotted AsyncMock attribute
     # assignment, which the forbidden-monkeypatch lint rejects.
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=rpc_call)
-    return NotebooksAPI(core.rpc_executor, sources_api=MagicMock())
+    return WebNotebooksAPI(core.rpc_executor, sources_api=MagicMock())
 
 
 @pytest.fixture

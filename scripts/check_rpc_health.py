@@ -102,7 +102,7 @@ from notebooklm._env import (
     get_default_language,
 )
 from notebooklm._logging import scrub_secrets
-from notebooklm._notebooks import build_create_notebook_params
+from notebooklm._web.params.notebooks import build_create_notebook_params
 from notebooklm.auth import AuthTokens
 from notebooklm.exceptions import ChatError, ChatResponseParseError, DecodingError
 from notebooklm.paths import get_storage_path

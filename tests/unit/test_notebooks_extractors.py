@@ -1,4 +1,4 @@
-"""Unit tests for named extraction helpers in ``_notebooks.py``.
+"""Unit tests for named web notebook extraction helpers.
 
 These cover ``_extract_summary`` and ``_extract_suggested_topics`` — the
 named wrappers that replaced raw ``outer[0][0]`` / ``outer[1][0]`` deep
@@ -12,7 +12,7 @@ import logging
 
 import pytest
 
-from notebooklm._notebooks import _extract_suggested_topics, _extract_summary
+from notebooklm._web.notebooks import _extract_suggested_topics, _extract_summary
 from notebooklm.exceptions import UnknownRPCMethodError
 from notebooklm.types import SuggestedTopic
 

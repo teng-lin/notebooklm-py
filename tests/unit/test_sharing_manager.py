@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import notebooklm._notebooks as notebooks_module
-from notebooklm._notebooks import NotebooksAPI
 from notebooklm._sharing_manager import ShareManager, build_share_url
+from notebooklm._web.notebooks import WebNotebooksAPI
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.fake_core import make_fake_core
 
@@ -140,7 +140,7 @@ async def test_notebooks_api_default_share_manager_uses_late_bound_rpc_executor_
     only the public wrapper was cut).
     """
     core = make_fake_core(rpc_call=AsyncMock(return_value=None))
-    api = NotebooksAPI(core.rpc_executor, sources_api=MagicMock())
+    api = WebNotebooksAPI(core.rpc_executor, sources_api=MagicMock())
     replacement_rpc = AsyncMock(return_value=None)
     # ShareManager binds to the executor's rpc_call attribute lazily — swap
     # it to verify the late-binding contract. This is intentional behavior
@@ -168,7 +168,7 @@ def test_notebooks_api_share_method_removed_in_v080() -> None:
     """
     core = MagicMock()
     share_manager = MagicMock()
-    api = NotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
+    api = WebNotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
 
     assert not hasattr(api, "share")
 
@@ -177,7 +177,7 @@ def test_notebooks_api_default_get_share_url_uses_transport_neutral_builder(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     core = MagicMock()
-    api = NotebooksAPI(core, sources_api=MagicMock())
+    api = WebNotebooksAPI(core, sources_api=MagicMock())
     base_url_provider = MagicMock(return_value="https://notebooklm.google.com")
     share_url_builder = MagicMock(return_value="https://example.test/notebook/nb_123")
     monkeypatch.setattr(notebooks_module, "get_base_url", base_url_provider)
@@ -193,7 +193,7 @@ def test_notebooks_api_default_get_share_url_uses_transport_neutral_builder(
 def test_notebooks_api_get_share_url_delegates_to_injected_share_manager() -> None:
     core = MagicMock()
     share_manager = MagicMock()
-    api = NotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
+    api = WebNotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
     replacement = MagicMock(return_value="https://example.test/notebook/nb_123")
     share_manager.get_share_url = replacement
 
@@ -210,7 +210,7 @@ def test_notebooks_api_falsey_share_manager_preserves_default_fallback(
     share_manager = MagicMock()
     share_manager.__bool__.return_value = False
     share_manager.get_share_url.return_value = "https://injected.test/notebook/nb_123"
-    api = NotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
+    api = WebNotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
     share_url_builder = MagicMock(return_value="https://example.test/notebook/nb_123")
     monkeypatch.setattr(notebooks_module, "build_share_url", share_url_builder)
     monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
@@ -235,7 +235,7 @@ def test_notebooks_api_evaluates_share_manager_truthiness_once() -> None:
 
     core = MagicMock()
     share_manager = StatefulShareManager()
-    api = NotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
+    api = WebNotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
 
     url = api.get_share_url("nb_123")
 
@@ -247,7 +247,7 @@ def test_notebooks_api_evaluates_share_manager_truthiness_once() -> None:
 def test_notebooks_api_injected_share_url_observes_whole_manager_replacement() -> None:
     core = MagicMock()
     original_manager = MagicMock()
-    api = NotebooksAPI(core, sources_api=MagicMock(), share_manager=original_manager)
+    api = WebNotebooksAPI(core, sources_api=MagicMock(), share_manager=original_manager)
     replacement_manager = MagicMock()
     replacement_manager.get_share_url.return_value = "https://example.test/notebook/nb_123"
     api._share_manager = replacement_manager

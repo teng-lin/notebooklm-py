@@ -52,9 +52,9 @@ from notebooklm._labels import LabelsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._note_service import NoteService
-from notebooklm._notebooks import NotebooksAPI
 from notebooklm._notes import NotesAPI
 from notebooklm._sources import SourcesAPI
+from notebooklm._web.notebooks import WebNotebooksAPI
 from notebooklm.exceptions import (
     ArtifactNotFoundError,
     CollectionNotFoundError,
@@ -150,14 +150,14 @@ def _make_collections_api() -> CollectionsAPI:
     return CollectionsAPI(MagicMock(), list_notebooks=AsyncMock(return_value=[]))
 
 
-def _make_notebooks_api() -> NotebooksAPI:
+def _make_notebooks_api() -> WebNotebooksAPI:
     from tests._fixtures.fake_core import make_fake_core
 
     # An empty/degenerate GET_NOTEBOOK payload is the unknown-id shape that
     # ``notebooks.get`` post-validates into ``NotebookNotFoundError`` — so this
     # factory is already arranged for a miss (see ``_arrange_notebooks_miss``).
     core = make_fake_core(rpc_call=AsyncMock(return_value=[[]]))
-    return NotebooksAPI(core.rpc_executor, sources_api=MagicMock())
+    return WebNotebooksAPI(core.rpc_executor, sources_api=MagicMock())
 
 
 def _arrange_list_miss(api: object) -> None:

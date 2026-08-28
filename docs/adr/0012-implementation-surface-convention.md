@@ -163,7 +163,8 @@ src/notebooklm/
 ├── _source/                     # per-concern source seams
 ├── _label/                      # label payload builders
 ├── _web/rows/                   # strict positional RPC row adapters
-├── _notebooks.py                # NotebooksAPI implementation
+├── _notebooks.py                # Backend-neutral abstract NotebooksAPI
+├── _web/notebooks.py            # WebNotebooksAPI implementation
 ├── _sources.py, _notes.py, ...  # other feature implementations
 ├── _env.py                      # env-var resolvers (NOTEBOOKLM_*)
 ├── _backoff.py, _atomic_io.py   # narrow utility seams

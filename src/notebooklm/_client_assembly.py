@@ -48,7 +48,6 @@ from ._labels import LabelsAPI
 from ._mind_map import NoteBackedMindMapService
 from ._mind_maps_api import MindMapsAPI
 from ._note_service import NoteService
-from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
 from ._research import ResearchAPI
 from ._runtime.config import (
@@ -68,6 +67,7 @@ from ._settings import SettingsAPI
 from ._sharing import SharingAPI
 from ._source.upload import SourceUploadPipeline
 from ._sources import SourcesAPI
+from ._web.notebooks import WebNotebooksAPI
 from .auth import AuthTokens
 
 if TYPE_CHECKING:
@@ -350,7 +350,7 @@ def _assemble_client(
         upload_timeout=upload_timeout,
         max_concurrent_uploads=max_concurrent_uploads,
     )
-    client.notebooks = NotebooksAPI(internals.executor, sources_api=client.sources)
+    client.notebooks = WebNotebooksAPI(internals.executor, sources_api=client.sources)
     # Note wiring (see docs/refactor-history.md): an explicit
     # NoteService + NoteBackedMindMapService split. NoteService owns the
     # raw row primitives; NoteBackedMindMapService is the mind-map-only

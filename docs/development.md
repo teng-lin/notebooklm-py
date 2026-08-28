@@ -30,7 +30,9 @@ src/notebooklm/
 ├── _app/                # Transport-neutral business logic shared by adapters
 ├── _client_composed.py  # Client-owned composition holder
 ├── _runtime/            # Runtime contracts, config, lifecycle, auth, transport
-├── _notebooks.py        # NotebooksAPI implementation
+├── _notebooks.py        # Backend-neutral abstract NotebooksAPI
+├── _web/notebooks.py    # WebNotebooksAPI implementation
+├── _web/params/         # Web batchexecute payload builders
 ├── _notebook_metadata.py # Private notebook metadata composition service
 ├── _sources.py          # SourcesAPI implementation
 ├── _source/             # Private source services

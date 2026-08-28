@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from notebooklm._notebooks import build_create_notebook_params
+from notebooklm._web.params.notebooks import build_create_notebook_params
 from notebooklm.rpc.encoder import build_request_body, encode_rpc_request, nest_source_ids
 from notebooklm.rpc.types import RPCMethod
 

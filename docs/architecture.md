@@ -989,9 +989,11 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/rows/research_task.py` | Internal parser for research task result-type selection |
 | `_web/rows/sharing.py` | `SharedUserRow` / `ShareStatusRow` decoding behind the public sharing models' lazy shims |
 | `_web/rows/sources.py` | `SourceRow` / `SourceRowShape` typed views over raw positional source RPC rows |
+| `_web/notebooks.py` | `WebNotebooksAPI`, the concrete `batchexecute` notebook backend; preserves the shared executor identity and web-only decoding/quota/session-hint behavior |
+| `_web/params/` | Web `batchexecute` positional request payload builders, separated from backend-neutral namespace APIs |
+| `_web/params/notebooks.py` | Stable `batchexecute` notebook RPC request payload builders, including `SUGGEST_PROMPTS` |
 | `artifacts.py`, `research.py`, `utils.py` | Public helper modules for artifact retry, research citation/report utilities, and common async helpers |
-| `_notebooks.py` | `client.notebooks` API + source-id resolver |
-| `_notebook_payloads.py` | Stable `batchexecute` notebook RPC request payload builders (currently `SUGGEST_PROMPTS`) |
+| `_notebooks.py` | Backend-neutral abstract `NotebooksAPI`; owns shared create idempotency, lookup/update conveniences, metadata composition, and share-URL semantics |
 | `_sources.py` | `client.sources` API |
 | `_artifacts.py` | `client.artifacts` API — owns artifact generation orchestration directly (see ADR-0012) |
 | `_chat/api.py` | `client.chat` API |
@@ -1300,8 +1302,12 @@ src/notebooklm/
 │   ├── research.py              # ResearchStatus enum + ResearchTask/ResearchSource/ResearchStart/MindMapResult/SourceGuide typed returns (#1209)
 │   ├── sharing.py
 │   └── sources.py
-├── _notebooks.py                # NotebooksAPI
-├── _notebook_payloads.py        # batchexecute notebook RPC payload builders (SUGGEST_PROMPTS)
+├── _web/                        # Web batchexecute backend implementations
+│   ├── notebooks.py             # WebNotebooksAPI
+│   ├── params/                   # Web batchexecute payload builders
+│   │   └── notebooks.py         # Notebook RPC payload builders (SUGGEST_PROMPTS)
+│   └── rows/                    # Typed positional wire-row decoders
+├── _notebooks.py                # Backend-neutral abstract NotebooksAPI
 ├── _sources.py                  # SourcesAPI
 ├── _artifacts.py                # ArtifactsAPI
 ├── _research.py                 # ResearchAPI

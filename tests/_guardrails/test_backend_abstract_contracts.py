@@ -23,8 +23,29 @@ class _AbstractContract:
     wire_hooks: frozenset[str]
 
 
-# Empty in A0. A4-A9 append one contract per namespace split.
-BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = ()
+# A4-A9 append one contract per namespace split.
+BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
+    _AbstractContract(
+        module="notebooklm._notebooks",
+        class_name="NotebooksAPI",
+        abstract_methods=frozenset(
+            {
+                "_send_create",
+                "delete",
+                "get",
+                "get_description",
+                "get_raw",
+                "get_source_ids",
+                "get_summary",
+                "list",
+                "remove_from_recent",
+                "suggest_prompts",
+                "update",
+            }
+        ),
+        wire_hooks=frozenset({"_send_create"}),
+    ),
+)
 
 _WIRE_HOOK_PREFIXES = ("_send_",)
 _WIRE_HOOK_NAMES = frozenset({"_stream_answer"})

@@ -24,7 +24,7 @@ feature API. Both attributes are wired to the same underlying mock so
 ``fake.rpc_call.assert_awaited`` and
 ``fake.rpc_executor.rpc_call.assert_awaited`` observe the same calls.
 Tests pass the result to a sub-client constructor (e.g.
-``NotebooksAPI(fake.rpc_executor)``) instead of constructing a real
+``WebNotebooksAPI(fake.rpc_executor)``) instead of constructing a real
 client/runtime stack and mutating its attributes after the fact.
 
 Phase 7 (refactor-history.md §Migration Plan step 10) deleted the broad
@@ -106,7 +106,7 @@ def make_fake_core(**overrides: Any) -> FakeSession:
     Example::
 
         fake = make_fake_core(rpc_call=AsyncMock(return_value=[payload]))
-        api = NotebooksAPI(fake.rpc_executor)
+        api = WebNotebooksAPI(fake.rpc_executor)
         result = await api.list()
         fake.rpc_executor.rpc_call.assert_awaited_once()
     """

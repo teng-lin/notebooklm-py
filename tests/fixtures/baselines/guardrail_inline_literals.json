@@ -65,7 +65,7 @@
     "_NON_AUTHTOKENS_CANDIDATES": 30
   },
   "tests/_guardrails/test_backend_boundaries.py": {
-    "ALLOWED_WEB_IMPORTERS": 28,
+    "ALLOWED_WEB_IMPORTERS": 27,
     "LAZY_WEB_IMPORT_ALLOWLIST": 30
   },
   "tests/_guardrails/test_classify_error_handler_consistency.py": {

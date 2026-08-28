@@ -361,7 +361,7 @@ Feature APIs adopted consistent dependency-naming conventions:
 
 ```python
 SourcesAPI(rpc, *, uploader=source_uploader)
-NotebooksAPI(rpc, *, sources_api=sources)
+WebNotebooksAPI(rpc, *, sources_api=sources)
 ChatAPI(rpc=rpc, transport=transport, reqid=reqid, loop_guard=lifecycle,
         notebooks=notebooks)
 ArtifactsAPI(rpc=rpc, drain=drain, lifecycle=lifecycle,
