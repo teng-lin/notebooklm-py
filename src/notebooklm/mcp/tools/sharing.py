@@ -3,9 +3,11 @@
 Thin adapters over ``client.sharing`` (SharingAPI): resolve the notebook ref once
 via :func:`resolve_notebook`, call the sharing method directly, and project the
 typed :class:`~notebooklm._types.sharing.ShareStatus` to the wire with
-**string-labeled enums**. The share enums are ``int, Enum`` (``rpc/types.py``), so
-a raw :func:`to_jsonable` pass would leak integers (``access=1`` etc.) — the
-projection here maps them to stable labels instead.
+**string-labeled enums**. The share enums are transport-neutral ``int, Enum``
+definitions in ``_types/enums.py`` (publicly imported from ``notebooklm.types``
+and compatibility-re-exported by ``rpc.types``), so a raw :func:`to_jsonable`
+pass would leak integers (``access=1`` etc.) — the projection here maps them to
+stable labels instead.
 
 Four tools cover the six ``client.sharing`` operations: the notebook-link settings
 (``set_public`` + ``set_view_level``) fold into :func:`share_set_access`, and the

@@ -35,9 +35,9 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from ..._types.common import _datetime_from_timestamp
+from ..._types.enums import ChatGoal, ChatResponseLength, SharePermission
 from ...exceptions import UnknownRPCMethodError
 from ...rpc import RPCMethod, safe_index
-from ...rpc.types import ChatGoal, ChatResponseLength, SharePermission
 
 if TYPE_CHECKING:
     from ..._types.notebooks import Notebook
@@ -164,7 +164,7 @@ def decode_notebook(
     project = ProjectRow(data)
     title_slot = (
         safe_index(data, 0, method_id=_NOTEBOOK_METHOD_ID, source="Notebook.title")
-        if data
+        if len(data) > 0
         else None
     )
     raw_title = title_slot if isinstance(title_slot, str) else ""

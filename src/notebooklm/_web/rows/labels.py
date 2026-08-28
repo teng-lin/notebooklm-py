@@ -19,7 +19,9 @@ from ...rpc import safe_index
 
 __all__ = ["LabelRow"]
 
-_SRC = "_web.rows.labels"
+# Keep the historical diagnostic source stable across the private module move.
+# ``UnknownRPCMethodError.source`` is structured caller-visible context.
+_SRC = "_row_adapters.labels"
 
 
 @dataclass(frozen=True)

@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import quote
 
 from ..._env import get_base_url
+from ..._types.enums import ShareAccess, SharePermission, ShareViewLevel
 from ...rpc import RPCMethod, safe_index
-from ...rpc.types import ShareAccess, SharePermission, ShareViewLevel
 
 if TYPE_CHECKING:
     from ..._types.sharing import SharedUser, ShareStatus
@@ -133,7 +133,20 @@ class ShareStatusRow:
         from ..._types.sharing import SharedUser
 
         users = []
-        user_entries = self._scalar_at(self._USERS_POS)
+        # Preserve the pre-extraction ordering for malformed top-level inputs:
+        # a truthy non-list reaches ``safe_index`` first and raises the
+        # structured decoder error, while a falsey non-list reaches the later
+        # length guard and retains its historical ``TypeError``.
+        user_entries = (
+            safe_index(
+                self._raw,
+                self._USERS_POS,
+                method_id=_SHARE_METHOD_ID,
+                source="ShareStatus.from_api_response",
+            )
+            if self._raw
+            else None
+        )
         if isinstance(user_entries, list):
             users = [
                 decode_shared_user(SharedUser, user_data)

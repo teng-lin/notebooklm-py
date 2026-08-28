@@ -1506,7 +1506,8 @@ params = [
 # Detail:      1=CONCISE, 2=STANDARD, 3=DETAILED
 # Style:       InfographicStyle enum (1=AUTO_SELECT, 2=SKETCH_NOTE,
 #              3=PROFESSIONAL, 4=BENTO_GRID, 5=EDITORIAL, ...).
-#              See rpc/types.py::InfographicStyle for the full list.
+#              See _types/enums.py::InfographicStyle for the canonical list
+#              (public import: notebooklm.types.InfographicStyle).
 
 params = [
     create_artifact_options,

@@ -225,6 +225,30 @@ def test_collect_manifest_canonicalizes_pep563_return_annotation(script):
     assert members["mind_maps.get"]["signature"]["return_annotation"] == "notebooklm.types.MindMap"
 
 
+def test_collect_manifest_canonicalizes_neutral_enum_annotation_home(script):
+    """The enum move keeps the historical audited compatibility spelling."""
+    manifest = script.collect_manifest(REPO_ROOT)
+
+    cases = (
+        ("notebooklm", "Artifact", "report_format", "notebooklm.rpc.types.ReportFormat | None"),
+        (
+            "notebooklm",
+            "NextStepSuggestion",
+            "kind",
+            "notebooklm.rpc.types.MagicArtifactType | None",
+        ),
+        (
+            "notebooklm",
+            "NotebookMetadata",
+            "role",
+            "notebooklm.rpc.types.SharePermission | None",
+        ),
+    )
+    for module_name, class_name, member_name, expected in cases:
+        member = manifest["modules"][module_name]["exports"][class_name]["members"][member_name]
+        assert member["signature"]["return_annotation"] == expected
+
+
 def test_collect_manifest_preserves_defaulted_dataclass_fields(script):
     manifest = script.collect_manifest(REPO_ROOT)
     members = manifest["modules"]["notebooklm"]["exports"]["GenerationStatus"]["members"]

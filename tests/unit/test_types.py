@@ -355,6 +355,12 @@ def _notebook_meta(*, user_role=1, has_sharing=False):
 
 
 class TestNotebook:
+    @pytest.mark.parametrize("data", [True, 1, 1.2])
+    def test_truthy_non_list_preserves_type_error(self, data: object) -> None:
+        """The decoder extraction must preserve malformed top-level behavior."""
+        with pytest.raises(TypeError):
+            Notebook.from_api_response(data)  # type: ignore[arg-type]
+
     def test_from_api_response_basic(self):
         """Test parsing basic notebook data."""
         data = ["My Notebook", [], "nb_123", "📓"]

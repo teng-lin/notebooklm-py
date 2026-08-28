@@ -178,9 +178,12 @@ notebooklm.auth.LockUnavailableError  # canonical home: notebooklm.exceptions; a
 > **`ArtifactStatus` / `artifact_status_to_str` import path.** Unlike every other
 > enum listed above, these two are **not** re-exported at top level — import them
 > as `from notebooklm.types import ArtifactStatus`, never `from notebooklm import
-> ArtifactStatus`. Their canonical module `notebooklm.rpc` is marked internal
-> below; the `notebooklm.types` spelling is the blessed public one (see
-> [deprecations.md](deprecations.md)).
+> ArtifactStatus`. Their definitions live in the private transport-neutral
+> `_types/enums.py` module; `notebooklm.rpc.types` remains a compatibility
+> re-export. The `notebooklm.types` spelling is the blessed public one (see
+> [deprecations.md](deprecations.md)). This implementation-home move preserves
+> object identity at both existing import paths, but newly created pickle data
+> records the private canonical module rather than the compatibility module.
 >
 > **Wire-value correction in the Unreleased line
 > ([#2127](https://github.com/teng-lin/notebooklm-py/issues/2127)).** `ArtifactStatus`

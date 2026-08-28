@@ -218,6 +218,16 @@ VALUE_TRACKED = (
     else {}
 )
 
+# Domain enums are canonically implemented in the neutral private module, but
+# ``notebooklm.rpc.types`` remains their compatibility spelling. Normalize the
+# implementation-only home when comparing annotations so moving the same class
+# object does not masquerade as a public return-type change. This is applied to
+# both baseline and current collection; older baselines simply contain no
+# matching private prefix.
+ANNOTATION_MODULE_ALIASES = {
+    f"{PKG}._types.enums.": f"{PKG}.rpc.types.",
+}
+
 
 def discover_modules() -> list[str]:
     package_dir = ROOT / "src" / PKG
@@ -261,7 +271,10 @@ def annotation_repr(annotation, obj=None):
             )["return"]
         except Exception:
             return annotation
-    return inspect.formatannotation(annotation)
+    rendered = inspect.formatannotation(annotation)
+    for private_prefix, compatibility_prefix in ANNOTATION_MODULE_ALIASES.items():
+        rendered = rendered.replace(private_prefix, compatibility_prefix)
+    return rendered
 
 
 def signature_payload(obj):

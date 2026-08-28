@@ -106,11 +106,11 @@ class RPCErrorCode(IntEnum):
 # result data. The bare single-element form `[code]` is what issues #114 and
 # #294 observed on the wire.
 #
-# The codes themselves live in `GrpcStatusCode` (rpc/types.py) — the single
-# source of truth shared with the neutral error classifier and the notebook
-# not-found translation. This table only supplies the wording, and is keyed by
-# the enum so a member added there without a label fails the guardrail test
-# rather than silently degrading to an unlabelled status.
+# The codes themselves live in the transport-neutral ``_types/enums.py``
+# ``GrpcStatusCode`` definition and are compatibility-re-exported by
+# ``rpc/types.py``. This table only supplies the wording, and is keyed by the
+# enum so a member added there without a label fails the guardrail test rather
+# than silently degrading to an unlabelled status.
 _GRPC_STATUS_MESSAGES: dict[int, str] = {
     GrpcStatusCode.OK: "OK",
     GrpcStatusCode.CANCELLED: "Cancelled",

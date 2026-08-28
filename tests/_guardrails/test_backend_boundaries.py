@@ -22,15 +22,26 @@ checked.
 from __future__ import annotations
 
 import ast
+import enum
 import importlib.util
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
+import notebooklm._types.enums as domain_enums
+
 pytestmark = pytest.mark.repo_lint
 
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
+
+DOMAIN_ENUM_NAMES = frozenset(
+    name
+    for name, value in vars(domain_enums).items()
+    if isinstance(value, type)
+    and value.__module__ == domain_enums.__name__
+    and issubclass(value, enum.Enum)
+)
 
 # Modules become members only after their concrete web implementation has
 # split away. Empty in A0 by design; A4-A9 add one entry per namespace split.
@@ -222,18 +233,30 @@ def _boundary_violations(
 
         importer_is_web = _is_module_or_child(direct.importer, "notebooklm._web")
         importer_is_mobile = _is_module_or_child(direct.importer, "notebooklm._mobile")
+        importer_is_types = _is_module_or_child(direct.importer, "notebooklm._types")
+        importer_is_rpc = _is_module_or_child(direct.importer, "notebooklm.rpc")
         target_is_web = _is_module_or_child(direct.target, "notebooklm._web")
         target_is_mobile = _is_module_or_child(direct.target, "notebooklm._mobile")
         target_is_rpc = _is_module_or_child(direct.target, "notebooklm.rpc")
         target_is_protobuf = _is_module_or_child(direct.target, "google.protobuf")
+        target_is_rpc_enum = any(
+            direct.target in {f"notebooklm.rpc.{name}", f"notebooklm.rpc.types.{name}"}
+            for name in DOMAIN_ENUM_NAMES
+        )
 
         reason: str | None = None
         if importer_is_mobile and (target_is_web or target_is_rpc):
             reason = "mobile backends must not import the web/RPC backend"
         elif importer_is_web and (target_is_mobile or target_is_protobuf):
             reason = "web backends must not import mobile/protobuf code"
-        elif direct.importer in base_modules and (target_is_web or target_is_rpc):
-            reason = "backend-neutral bases must not import _web or rpc"
+        elif direct.importer in base_modules and (
+            target_is_web or target_is_mobile or target_is_rpc
+        ):
+            reason = "backend-neutral bases must not import backend implementations or rpc"
+        elif importer_is_types and target_is_rpc:
+            reason = "neutral types must not import the RPC compatibility package"
+        elif target_is_rpc_enum and not importer_is_rpc:
+            reason = "first-party enum consumers must import the neutral canonical module"
         elif target_is_web and not importer_is_web:
             lazy_edge = (direct.importer, direct.scope) in LAZY_WEB_IMPORT_ALLOWLIST
             allowed_edge = direct.importer in ALLOWED_WEB_IMPORTERS
@@ -362,4 +385,50 @@ def test_backend_boundary_matcher_rejects_rpc_import_from_enrolled_base() -> Non
     )
 
     violations = _boundary_violations(imports, base_modules=frozenset({importer}))
-    assert "backend-neutral bases must not import _web or rpc" in violations[0]
+    assert "backend-neutral bases must not import backend implementations or rpc" in violations[0]
+
+
+def test_backend_boundary_matcher_rejects_mobile_import_from_enrolled_base() -> None:
+    importer = "notebooklm._notebooks"
+    imports = _scan_source(
+        "from ._mobile.notebooks import MobileNotebooksAPI",
+        importer=importer,
+        package="notebooklm",
+    )
+
+    violations = _boundary_violations(imports, base_modules=frozenset({importer}))
+    assert "backend-neutral bases must not import backend implementations or rpc" in violations[0]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from ..rpc import safe_index as decode_at",
+        "from ..rpc import RPCMethod as Method",
+        "from .. import rpc as wire",
+    ],
+)
+def test_backend_boundary_matcher_rejects_rpc_aliases_from_neutral_types(source: str) -> None:
+    imports = _scan_source(
+        source,
+        importer="notebooklm._types.notebooks",
+        package="notebooklm._types",
+    )
+
+    assert (
+        "neutral types must not import the RPC compatibility package"
+        in _boundary_violations(imports)[0]
+    )
+
+
+def test_backend_boundary_matcher_rejects_enum_compat_import_from_first_party_code() -> None:
+    imports = _scan_source(
+        "from ...rpc.types import ArtifactStatus as Status",
+        importer="notebooklm._web.rows.artifacts",
+        package="notebooklm._web.rows",
+    )
+
+    assert (
+        "first-party enum consumers must import the neutral canonical module"
+        in (_boundary_violations(imports)[0])
+    )

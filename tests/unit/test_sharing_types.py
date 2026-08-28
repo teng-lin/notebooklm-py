@@ -6,6 +6,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
+from notebooklm.exceptions import UnknownRPCMethodError
 from notebooklm.rpc import RPCMethod
 from notebooklm.rpc.types import ShareAccess, SharePermission, ShareViewLevel
 from notebooklm.types import SharedUser, ShareStatus
@@ -36,6 +37,12 @@ class TestShareStatusCapacityAndPolicyFields:
     capture ``tests/fixtures/rpc_golden/GET_SHARE_STATUS.json`` is a real
     three-element response.
     """
+
+    @pytest.mark.parametrize("data", [True, 1, 1.2])
+    def test_truthy_non_list_preserves_structured_decode_error(self, data: object) -> None:
+        """The row extraction preserves the legacy first-slot decode ordering."""
+        with pytest.raises(UnknownRPCMethodError):
+            ShareStatus.from_api_response(data, "nb-1")  # type: ignore[arg-type]
 
     def test_decodes_both_fields_from_the_captured_row(self):
         """The live 8-slot shape yields the real cap and the real policy gate."""

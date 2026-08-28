@@ -39,5 +39,6 @@ def test_empty_sources_none_is_empty_tuple_not_drift() -> None:
     ],
 )
 def test_drift_raises(tuple_: list[object]) -> None:
-    with pytest.raises(UnknownRPCMethodError):
+    with pytest.raises(UnknownRPCMethodError) as exc_info:
         LabelRow.from_label_tuple(tuple_, method_id="agX4Bc")
+    assert exc_info.value.source == "_row_adapters.labels"
