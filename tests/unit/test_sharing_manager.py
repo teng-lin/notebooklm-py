@@ -223,6 +223,27 @@ def test_notebooks_api_falsey_share_manager_preserves_default_fallback(
     share_url_builder.assert_called_once_with("https://notebook.google.com", "nb_123", None)
 
 
+def test_notebooks_api_evaluates_share_manager_truthiness_once() -> None:
+    class StatefulShareManager:
+        def __init__(self) -> None:
+            self.truthiness_checks = 0
+            self.get_share_url = MagicMock(return_value="https://example.test/notebook/nb_123")
+
+        def __bool__(self) -> bool:
+            self.truthiness_checks += 1
+            return self.truthiness_checks == 1
+
+    core = MagicMock()
+    share_manager = StatefulShareManager()
+    api = NotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
+
+    url = api.get_share_url("nb_123")
+
+    assert url == "https://example.test/notebook/nb_123"
+    assert share_manager.truthiness_checks == 1
+    share_manager.get_share_url.assert_called_once_with("nb_123", None)
+
+
 def test_notebooks_api_injected_share_url_observes_whole_manager_replacement() -> None:
     core = MagicMock()
     original_manager = MagicMock()

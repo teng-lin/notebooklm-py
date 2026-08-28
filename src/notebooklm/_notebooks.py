@@ -240,8 +240,14 @@ class NotebooksAPI:
             get_notebook=lambda notebook_id: self.get(notebook_id),
             source_lister=self._sources,
         )
-        self._share_manager = share_manager or ShareManager(self._rpc)
         if share_manager:
+            self._share_manager = share_manager
+            has_injected_share_manager = True
+        else:
+            self._share_manager = ShareManager(self._rpc)
+            has_injected_share_manager = False
+
+        if has_injected_share_manager:
             # Preserve the existing injection seam while storing only a neutral
             # callable suitable for the transport-neutral base introduced in A4.
             # Resolve the manager method at call time so replacements remain visible.
