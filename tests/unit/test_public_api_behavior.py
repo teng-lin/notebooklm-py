@@ -52,6 +52,8 @@ from notebooklm._labels import LabelsAPI
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._sources import SourcesAPI
 from notebooklm._web.artifacts import WebArtifactsAPI
+from notebooklm._web.collections import WebCollectionsAPI
+from notebooklm._web.labels import WebLabelsAPI
 from notebooklm._web.mind_maps import NoteBackedMindMapService, WebMindMapsAPI
 from notebooklm._web.notebooks import WebNotebooksAPI
 from notebooklm._web.notes import NoteService, WebNotesAPI
@@ -141,7 +143,7 @@ def _make_labels_api() -> LabelsAPI:
     # ``_arrange_list_miss`` overrides ``api.list`` before any RPC path is reached
     # (``labels.get`` scans ``self.list``), so the rpc collaborator and
     # ``list_sources`` are never called on the miss path.
-    return LabelsAPI(MagicMock(), list_sources=AsyncMock(return_value=[]))
+    return WebLabelsAPI(MagicMock(), list_sources=AsyncMock(return_value=[]))
 
 
 def _make_collections_api() -> CollectionsAPI:
@@ -149,7 +151,7 @@ def _make_collections_api() -> CollectionsAPI:
     # (no notebook scope), so ``_arrange_list_miss`` stubbing ``list`` to ``[]`` is
     # the same backend-agnostic miss lever; the rpc collaborator and
     # ``list_notebooks`` are never reached on the miss path.
-    return CollectionsAPI(MagicMock(), list_notebooks=AsyncMock(return_value=[]))
+    return WebCollectionsAPI(MagicMock(), list_notebooks=AsyncMock(return_value=[]))
 
 
 def _make_notebooks_api() -> WebNotebooksAPI:

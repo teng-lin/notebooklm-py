@@ -37,11 +37,10 @@ SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
 NEUTRAL_IDEMPOTENCY_PATH = SRC_ROOT / "_idempotency.py"
 WEB_POLICY_PATH = SRC_ROOT / "_web" / "policy.py"
 WEB_NAMESPACE_SHIMS = {
-    "_collections.py": "notebooklm._web.collections",
-    "_labels.py": "notebooklm._web.labels",
     "_research.py": "notebooklm._web.research",
 }
 REMOVED_EMPTY_PACKAGE_SHELLS = (
+    "_chat",
     "_collection",
     "_label",
     "_middleware",
@@ -61,7 +60,9 @@ DOMAIN_ENUM_NAMES = frozenset(
 BASE_MODULE_ALLOWLIST: frozenset[str] = frozenset(
     {
         "notebooklm._artifacts",
-        "notebooklm._chat.api",
+        "notebooklm._chat",
+        "notebooklm._collections",
+        "notebooklm._labels",
         "notebooklm._mind_maps_api",
         "notebooklm._notebooks",
         "notebooklm._sources",
@@ -77,6 +78,7 @@ BASE_MODULE_ALLOWLIST: frozenset[str] = frozenset(
 LAZY_WEB_IMPORT_ALLOWLIST = frozenset(
     {
         ("notebooklm._artifacts", "__getattr__"),
+        ("notebooklm._chat", "__getattr__"),
         ("notebooklm._types.artifacts", "Artifact.from_api_response"),
         ("notebooklm._types.artifacts", "Artifact.from_mind_map"),
         ("notebooklm._types.artifacts", "_extract_artifact_url"),
@@ -105,7 +107,6 @@ ALLOWED_WEB_IMPORTERS = frozenset(
         "notebooklm.rpc.types",
         "notebooklm._artifact",
         "notebooklm._source",
-        "notebooklm._chat",
     }
 )
 
@@ -400,7 +401,9 @@ def test_backend_boundary_manifests_are_well_formed() -> None:
         frozenset(
             {
                 "notebooklm._artifacts",
-                "notebooklm._chat.api",
+                "notebooklm._chat",
+                "notebooklm._collections",
+                "notebooklm._labels",
                 "notebooklm._mind_maps_api",
                 "notebooklm._notebooks",
                 "notebooklm._notes",

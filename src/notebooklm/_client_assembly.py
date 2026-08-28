@@ -55,8 +55,8 @@ from ._runtime.init import compose_client_internals
 from ._runtime.lifecycle import CookieRotator, CookieSaver
 from ._web.artifacts import WebArtifactsAPI
 from ._web.chat import WebChatAPI
-from ._web.collections import CollectionsAPI
-from ._web.labels import LabelsAPI
+from ._web.collections import WebCollectionsAPI
+from ._web.labels import WebLabelsAPI
 from ._web.mind_maps import NoteBackedMindMapService, WebMindMapsAPI
 from ._web.notebooks import WebNotebooksAPI
 from ._web.notes import NoteService, WebNotesAPI
@@ -412,8 +412,8 @@ def _assemble_client(
     # Source labels. Takes a narrow ``list_sources`` callable (not the whole
     # SourcesAPI) for the membership->Source join in ``labels.sources()``;
     # wired after ``client.sources`` exists. Same client/bound loop (ADR-0004).
-    client.labels = LabelsAPI(internals.executor, list_sources=client.sources.list)
+    client.labels = WebLabelsAPI(internals.executor, list_sources=client.sources.list)
     # Collections (account-level notebook groups). Takes a narrow ``list_notebooks``
     # callable for the membership->Notebook join in ``collections.notebooks()``;
     # wired after ``client.notebooks`` exists. Same client/bound loop (ADR-0004).
-    client.collections = CollectionsAPI(internals.executor, list_notebooks=client.notebooks.list)
+    client.collections = WebCollectionsAPI(internals.executor, list_notebooks=client.notebooks.list)

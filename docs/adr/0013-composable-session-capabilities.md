@@ -212,7 +212,7 @@ runtimes. Concretely:
   of opting into the entire `Session` surface.
 - Feature-local capabilities evolve without widening any shared union.
   If chat later needs another streaming primitive, the change is local
-  to `_chat/` and the chat helpers, not to every feature that types
+  to `_chat.py` and the chat helpers, not to every feature that types
   against `RpcCaller`.
 - `_runtime/contracts.py` shrank after the migration arc deleted the
   broad `Session` Protocol and later demoted single-consumer shapes. It

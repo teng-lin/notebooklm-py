@@ -40,7 +40,7 @@ Two facts shape this ADR:
    migrated off hand-rolled `try/except IndexError` blocks; every
    migrated site threads a `method_id` / `source` label through. A
    small number of historical positional decoders remained in feature modules
-   (now under `_artifact/downloads.py`, `_artifact/polling.py`, and `_chat/`)
+   (now under `_artifact/downloads.py`, `_artifact/polling.py`, and `_chat.py`)
    where
    the parsing logic predates the helper; each guards its own descent
    with feature-local error recovery, so the strict-default flip does

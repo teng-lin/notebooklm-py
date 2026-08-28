@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from notebooklm._web.collections import CollectionsAPI
+from notebooklm._web.collections import WebCollectionsAPI
 from notebooklm.exceptions import (
     CollectionError,
     CollectionNotFoundError,
@@ -83,7 +83,7 @@ def _api(
 ):
     rpc = FakeRpc(responses, sequences)
     list_notebooks = AsyncMock(return_value=notebooks or [])
-    return CollectionsAPI(rpc, list_notebooks=list_notebooks), rpc, list_notebooks
+    return WebCollectionsAPI(rpc, list_notebooks=list_notebooks), rpc, list_notebooks
 
 
 # -- read --------------------------------------------------------------------
@@ -313,7 +313,7 @@ async def test_add_notebooks_is_not_atomic_partial_failure_propagates() -> None:
             return None
 
     rpc = _RaiseOnSecondUpdate()
-    api = CollectionsAPI(rpc, list_notebooks=AsyncMock(return_value=[]))
+    api = WebCollectionsAPI(rpc, list_notebooks=AsyncMock(return_value=[]))
     with pytest.raises(RuntimeError):
         await api.add_notebooks("c1", ["a", "b", "c"])
     updates = [c for c in rpc.calls if c.method == RPCMethod.UPDATE_LABEL]

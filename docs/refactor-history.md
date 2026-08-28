@@ -373,7 +373,7 @@ ArtifactsAPI(rpc=rpc, drain=drain, lifecycle=lifecycle,
 NotesAPI(*, notes=note_service, mind_maps=mind_maps)
 MindMapsAPI(rpc=rpc, mind_maps=mind_maps, artifacts=artifacts,
             notebooks=notebooks)
-LabelsAPI(rpc, list_sources=sources.list)
+WebLabelsAPI(rpc, list_sources=sources.list)
 ```
 
 Compatibility aliases and fallback constructors that read missing

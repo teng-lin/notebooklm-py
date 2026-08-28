@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import builtins
 import logging
-from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
+from .._labels import LabelsAPI, ListSources
 from .._lookup import unwrap_or_raise
 from ..exceptions import LabelError, LabelNotFoundError, UnknownRPCMethodError
 from ..rpc import RPCMethod
@@ -30,13 +30,10 @@ from .params.labels import (
 # Preserve the historical logger key across the whole-module move.
 logger = logging.getLogger("notebooklm._labels")
 
-# Narrow capability: just ``sources.list(notebook_id) -> list[Source]``.
-ListSources = Callable[[str], Awaitable[list[Source]]]
-
 _SRC = "_labels"
 
 
-class LabelsAPI:
+class WebLabelsAPI(LabelsAPI):
     """Operations on NotebookLM source labels (``client.labels``).
 
     Usage::
@@ -366,3 +363,6 @@ class LabelsAPI:
             allow_null=True,
         )
         return None
+
+
+__all__ = ["WebLabelsAPI"]

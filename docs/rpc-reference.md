@@ -1047,7 +1047,7 @@ params = [
 
 ### RPC: DELETE_CONVERSATION (J7Gthc)
 
-**Source:** shared `_chat/api.py::ChatAPI.delete_conversation()` orchestration,
+**Source:** shared `_chat.py::ChatAPI.delete_conversation()` orchestration,
 with the Web RPC send in `_web/chat.py::WebChatAPI._send_delete_conversation()`
 
 Deletes a conversation server-side. Mirrors the NotebookLM web UI's "Delete

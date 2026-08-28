@@ -3,11 +3,11 @@
 Sibling to ``scripts/check_claude_md_freshness.py`` (which guards the
 ``### Repository Structure`` map in ``docs/architecture.md``). This gate turns
 the repo's "enforce, don't document" principle onto the *rest* of the docs:
-after the #1328 refactor promoted flat ``_*.py`` modules into subpackages
-(``_chat.py`` -> ``_chat/api.py``, ``_runtime_lifecycle.py`` ->
-``_runtime/lifecycle.py``, ...), ~25 stale flat references survived across the
-live docs because a hand audit and a scoped doc-sync PR both missed them. A gate
-is the only thing that makes that class of drift un-recurrable.
+after the #1328 refactor relocated flat ``_*.py`` modules into subpackages
+(``_runtime_lifecycle.py`` -> ``_runtime/lifecycle.py``, ...), ~25 stale flat
+references survived across the live docs because a hand audit and a scoped
+doc-sync PR both missed them. A gate is the only thing that makes that class of
+drift un-recurrable.
 
 Two checks, both read the docs and resolve targets against the repo:
 

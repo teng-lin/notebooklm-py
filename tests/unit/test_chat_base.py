@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from notebooklm._chat.api import ChatAPI, _PostedAsk
+from notebooklm._chat import ChatAPI, _PostedAsk
 from notebooklm._types.documents import StructuredDocument
 from notebooklm._types.enums import ChatGoal, ChatResponseLength
 from notebooklm._web.chat import WebChatAPI

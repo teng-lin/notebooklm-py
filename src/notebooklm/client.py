@@ -45,8 +45,10 @@ from ._auth.session import refresh_auth_session
 from ._chat import ChatAPI
 from ._client_assembly import _assemble_client
 from ._client_composed import ClientComposed
+from ._collections import CollectionsAPI
 from ._deprecation import warn_deprecated
 from ._env import get_base_url as get_base_url
+from ._labels import LabelsAPI
 from ._mind_maps_api import MindMapsAPI
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
@@ -65,8 +67,6 @@ from ._settings import SettingsAPI
 from ._sharing import SharingAPI
 from ._sources import SourcesAPI
 from ._url_utils import is_google_auth_redirect as is_google_auth_redirect
-from ._web.collections import CollectionsAPI
-from ._web.labels import LabelsAPI
 from ._web.mind_maps import NoteBackedMindMapService as NoteBackedMindMapService  # noqa: F401
 from ._web.notes import NoteService as NoteService  # noqa: F401
 from ._web.research import ResearchAPI

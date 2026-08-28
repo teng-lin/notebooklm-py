@@ -84,7 +84,7 @@ Position contracts (pinned by ``tests/unit/test_chat_row_adapter.py``):
   3      question text (str) — only on role-1 rows
   4      nested answer-content payload — only on role-2 rows
          (the ``[4][0][0]`` leaf descent lives in
-         ``_chat.api._extract_next_turn_content``)
+         ``_chat._extract_next_turn_content``)
   =====  ============================================================
 """
 
@@ -157,7 +157,7 @@ def unwrap_last_conversation_id(raw: Any) -> str | None:
     The wire shape is the nested ``[[[conv_id]]]`` envelope: an outer list of
     groups, each a list of rows, each row an innermost ``[conv_id]`` list whose
     first element is the id string. This centralises the ``conv[0]`` descent
-    ``_chat/api.py`` previously open-coded, and is **deliberately SOFT** —
+    ``_chat.py`` previously open-coded, and is **deliberately SOFT** —
     mirroring the historical ``get_conversation_id`` contract:
 
     * a non-list / falsy payload, or a payload that yields no innermost
@@ -188,7 +188,7 @@ def unwrap_conversation_turns(turns_data: Any, *, source: str) -> list[Any]:
 
     The wire shape is a single-element envelope whose first element is the
     turn list (``[[turn, ...], ...]``). This centralises the ``turns_data[0]``
-    container probe so ``_chat/api.py`` stops open-coding it, with the
+    container probe so ``_chat.py`` stops open-coding it, with the
     absence-vs-malformed split of the #1485 policy:
 
     * **Absence stays soft** — a falsy payload (no history yet) and a falsy
@@ -442,8 +442,8 @@ class ConversationTurnRow:
     Each turn is ``[id?, ?, role, ...]`` where ``role`` at position 2 is
     ``1`` for a user question (text at position 3) or ``2`` for an AI answer
     (nested content at position 4, whose ``[4][0][0]`` leaf descent lives in
-    ``_chat.api._extract_next_turn_content``). Position knowledge is
-    centralised here; ``_chat/api.py`` should NEVER open-code ``turn[2]`` /
+    ``_chat._extract_next_turn_content``). Position knowledge is
+    centralised here; ``_chat.py`` should NEVER open-code ``turn[2]`` /
     ``turn[3]``.
 
     Per the #1485 absence-vs-malformed policy, every read here is a soft

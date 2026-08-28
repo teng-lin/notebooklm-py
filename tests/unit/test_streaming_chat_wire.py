@@ -10,6 +10,7 @@ import importlib.util
 import inspect
 import json
 import logging
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -36,6 +37,18 @@ from notebooklm.exceptions import ChatError, UnknownRPCMethodError
 from notebooklm.rpc.types import get_query_url
 
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
+PROJECT_ROOT = SRC_ROOT.parents[1]
+
+
+def _run_import_probe(source: str) -> None:
+    result = subprocess.run(
+        [sys.executable, "-c", source],
+        cwd=PROJECT_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def _snapshot(
@@ -678,7 +691,7 @@ def test_skipped_citation_row_leaves_numbering_hole_for_markers(caplog) -> None:
     the skipped row leaves a hole: marker ``[2]`` resolves to ``None`` and
     its anchor is dropped — never mis-anchored.
     """
-    from notebooklm._chat.api import _resolve_reference
+    from notebooklm._chat import _resolve_reference
 
     good_1 = _citation(source_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", chunk_id="chunk-1")
     bad_2 = ["present-but-unusable"]
@@ -1032,33 +1045,38 @@ def test_chat_wire_runtime_import_does_not_request_forbidden_modules(monkeypatch
 
 
 def test_chat_wire_and_chat_smoke_import_order() -> None:
-    for name in ("notebooklm._chat", "notebooklm._web.rows.chat_stream"):
-        sys.modules.pop(name, None)
-    protocol = importlib.import_module("notebooklm._web.rows.chat_stream")
-    chat = importlib.import_module("notebooklm._chat")
-    assert protocol.__name__ == "notebooklm._web.rows.chat_stream"
-    assert chat.__name__ == "notebooklm._chat"
+    for first, second in (
+        ("notebooklm._web.rows.chat_stream", "notebooklm._chat"),
+        ("notebooklm._chat", "notebooklm._web.rows.chat_stream"),
+    ):
+        _run_import_probe(
+            f"""
+import importlib
+first = importlib.import_module({first!r})
+second = importlib.import_module({second!r})
+assert first.__name__ == {first!r}
+assert second.__name__ == {second!r}
+"""
+        )
 
-    for name in ("notebooklm._chat", "notebooklm._web.rows.chat_stream"):
-        sys.modules.pop(name, None)
-    chat = importlib.import_module("notebooklm._chat")
-    protocol = importlib.import_module("notebooklm._web.rows.chat_stream")
-    assert chat.__name__ == "notebooklm._chat"
-    assert protocol.__name__ == "notebooklm._web.rows.chat_stream"
 
-
-def test_chat_package_turn_helper_is_a_lazy_identity_shim() -> None:
-    """The neutral package loads no Web parser until the legacy name is read."""
-    module_name = "notebooklm._web.rows.chat_stream"
-    sys.modules.pop("notebooklm._chat", None)
-    sys.modules.pop(module_name, None)
-
-    chat = importlib.import_module("notebooklm._chat")
-
-    assert module_name not in sys.modules
-    helper = chat._extract_next_turn_content
-    parser = importlib.import_module(module_name)
-    assert helper is parser._extract_next_turn_content
+def test_chat_module_turn_helper_is_a_lazy_identity_shim() -> None:
+    """The neutral module loads no Web parser until the legacy name is read."""
+    _run_import_probe(
+        """
+import importlib
+import sys
+import notebooklm
+module_name = "notebooklm._web.rows.chat_stream"
+sys.modules.pop("notebooklm._chat", None)
+sys.modules.pop(module_name, None)
+chat = importlib.import_module("notebooklm._chat")
+assert module_name not in sys.modules
+helper = chat._extract_next_turn_content
+parser = importlib.import_module(module_name)
+assert helper is parser._extract_next_turn_content
+"""
+    )
 
 
 def test_chat_module_keeps_only_delegating_stream_parser_wrappers() -> None:

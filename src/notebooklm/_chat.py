@@ -11,14 +11,14 @@ from collections import OrderedDict
 from dataclasses import dataclass, replace
 from typing import Any
 
-from .._conversation_cache import ConversationCache
-from .._loop_bound import LoopBoundPrimitive
-from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
-from .._runtime.contracts import LoopGuard
-from .._types.documents import StructuredDocument, utf16_len
-from .._types.enums import ChatGoal, ChatResponseLength
-from ..exceptions import ChatError, NetworkError
-from ..types import (
+from ._conversation_cache import ConversationCache
+from ._loop_bound import LoopBoundPrimitive
+from ._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
+from ._runtime.contracts import LoopGuard
+from ._types.documents import StructuredDocument, utf16_len
+from ._types.enums import ChatGoal, ChatResponseLength
+from .exceptions import ChatError, NetworkError
+from .types import (
     AskResult,
     ChatMode,
     ChatReference,
@@ -678,4 +678,13 @@ class ChatAPI(LoopBoundPrimitive, ABC):
         """Send the backend saved-from-chat note request."""
 
 
-__all__ = ["ChatAPI"]
+def __getattr__(name: str) -> Any:
+    """Lazily preserve the historically importable private turn helper."""
+    if name == "_extract_next_turn_content":
+        from ._web.rows.chat_stream import _extract_next_turn_content
+
+        return _extract_next_turn_content
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+__all__ = ["ChatAPI", "_extract_next_turn_content"]  # noqa: F822 - resolved lazily above

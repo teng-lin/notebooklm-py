@@ -44,7 +44,7 @@ src/notebooklm/
 ├── _artifact/           # Neutral artifact polling, formatting, validation, and asset transfer
 ├── _web/artifacts.py    # WebArtifactsAPI implementation
 ├── _web/artifact/       # Web artifact listing/generation/download-selection services
-├── _chat/               # Backend-neutral ChatAPI orchestration
+├── _chat.py             # Backend-neutral ChatAPI orchestration
 ├── _research.py         # Lazy ResearchAPI compatibility shim
 ├── _web/research.py     # ResearchAPI web implementation
 ├── _web/research_import.py # Research import/verification helpers
@@ -52,10 +52,10 @@ src/notebooklm/
 ├── _web/notes.py        # WebNotesAPI + NoteService implementation
 ├── _mind_maps_api.py    # Backend-neutral abstract MindMapsAPI
 ├── _web/mind_maps.py    # WebMindMapsAPI + NoteBackedMindMapService
-├── _labels.py           # Lazy LabelsAPI compatibility shim
-├── _web/labels.py       # LabelsAPI web implementation
-├── _collections.py      # Lazy CollectionsAPI compatibility shim
-├── _web/collections.py  # CollectionsAPI web implementation
+├── _labels.py           # Backend-neutral abstract LabelsAPI
+├── _web/labels.py       # WebLabelsAPI implementation
+├── _collections.py      # Backend-neutral abstract CollectionsAPI
+├── _web/collections.py  # WebCollectionsAPI implementation
 ├── _settings.py         # Backend-neutral abstract SettingsAPI
 ├── _web/settings.py     # WebSettingsAPI + web settings helpers
 ├── _sharing.py          # Backend-neutral abstract SharingAPI

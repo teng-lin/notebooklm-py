@@ -110,7 +110,7 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
         wire_hooks=frozenset(),
     ),
     _AbstractContract(
-        module="notebooklm._chat.api",
+        module="notebooklm._chat",
         class_name="ChatAPI",
         implementation_module="notebooklm._web.chat",
         implementation_class_name="WebChatAPI",
@@ -128,6 +128,49 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
             }
         ),
         wire_hooks=frozenset({"_send_delete_conversation", "_send_note", "_stream_answer"}),
+    ),
+    _AbstractContract(
+        module="notebooklm._collections",
+        class_name="CollectionsAPI",
+        implementation_module="notebooklm._web.collections",
+        implementation_class_name="WebCollectionsAPI",
+        abstract_methods=frozenset(
+            {
+                "add_notebooks",
+                "create",
+                "delete",
+                "get",
+                "get_or_none",
+                "list",
+                "notebooks",
+                "remove_notebooks",
+                "rename",
+            }
+        ),
+        wire_hooks=frozenset(),
+    ),
+    _AbstractContract(
+        module="notebooklm._labels",
+        class_name="LabelsAPI",
+        implementation_module="notebooklm._web.labels",
+        implementation_class_name="WebLabelsAPI",
+        abstract_methods=frozenset(
+            {
+                "add_sources",
+                "create",
+                "delete",
+                "generate",
+                "get",
+                "get_or_none",
+                "list",
+                "remove_sources",
+                "rename",
+                "set_emoji",
+                "sources",
+                "update",
+            }
+        ),
+        wire_hooks=frozenset(),
     ),
     _AbstractContract(
         module="notebooklm._notes",
@@ -317,11 +360,15 @@ def test_artifact_class_constructor_docstrings_and_web_signature_are_pinned() ->
 def test_logger_names_survive_web_module_moves() -> None:
     """Existing log filters keep observing events after ownership moves."""
     expected = {
+        "notebooklm._chat": "notebooklm._chat.api",
         "notebooklm._web.artifacts": "notebooklm._artifacts",
         "notebooklm._web.artifact.downloads": "notebooklm._artifact.downloads",
         "notebooklm._web.artifact.generation": "notebooklm._artifact.generation",
         "notebooklm._web.artifact.listing": "notebooklm._artifact.listing",
         "notebooklm._web.artifact.table": "notebooklm._artifacts",
+        "notebooklm._web.chat": "notebooklm._chat.api",
+        "notebooklm._web.collections": "notebooklm._collections",
+        "notebooklm._web.labels": "notebooklm._labels",
         "notebooklm._web.rows.documents": "notebooklm._row_adapters.documents",
         "notebooklm._web.rows.notebooks": "notebooklm._types.notebooks",
         "notebooklm._web.rows.research": "notebooklm._row_adapters.research",
@@ -335,7 +382,7 @@ def test_logger_names_survive_web_module_moves() -> None:
 
 def test_chat_shared_workflows_call_only_their_single_wire_hook() -> None:
     """Pin the one protected-adapter hook used by each shared Chat workflow."""
-    path = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_chat" / "api.py"
+    path = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_chat.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
     chat = next(
         node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ChatAPI"

@@ -9,7 +9,7 @@ Protocols inlined into their owning feature modules in issue #1327
 (``AuthMetadata`` in ``notebooklm._web.sources.upload``,
 ``OperationScopeProvider`` in ``notebooklm._artifact.polling``). Feature APIs that
 need more than one capability take their direct collaborators by
-keyword-only constructor argument (``ChatAPI`` in ``notebooklm._chat.api``,
+keyword-only constructor argument (``ChatAPI`` in ``notebooklm._chat``,
 ``ArtifactsAPI`` in ``_artifacts.py``, ``SourceUploadPipeline`` in
 ``notebooklm._web.sources.upload``); the feature-local composite Protocols
 ``ArtifactsRuntime`` and ``UploadRuntime`` (and their adapter

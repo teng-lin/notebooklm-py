@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from notebooklm._web.labels import LabelsAPI
+from notebooklm._web.labels import WebLabelsAPI
 from notebooklm.exceptions import LabelError, LabelNotFoundError, UnknownRPCMethodError
 from notebooklm.rpc import RPCMethod
 
@@ -62,7 +62,7 @@ class FakeRpc:
 def _api(responses: dict[RPCMethod, Any] | None = None, sources: list[Any] | None = None):
     rpc = FakeRpc(responses)
     list_sources = AsyncMock(return_value=sources or [])
-    return LabelsAPI(rpc, list_sources=list_sources), rpc, list_sources
+    return WebLabelsAPI(rpc, list_sources=list_sources), rpc, list_sources
 
 
 # -- read --------------------------------------------------------------------
@@ -376,7 +376,7 @@ async def test_add_sources_is_not_atomic_partial_failure_propagates() -> None:
             return None
 
     rpc = _RaiseOnSecondUpdate()
-    api = LabelsAPI(rpc, list_sources=AsyncMock(return_value=[]))
+    api = WebLabelsAPI(rpc, list_sources=AsyncMock(return_value=[]))
     with pytest.raises(RuntimeError):
         await api.add_sources("nb", "l1", ["s1", "s2", "s3"])
 

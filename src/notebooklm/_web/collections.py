@@ -8,7 +8,7 @@ this API reuses the four label RPCs (``LIST_LABELS`` / ``CREATE_LABEL`` /
 in :mod:`notebooklm._web.params.collections`, always with ``source_path="/"`` (the
 account/home context — collections have no notebook scope).
 
-Like ``LabelsAPI`` it takes a narrow ``list_notebooks`` callable
+Like ``WebLabelsAPI`` it takes a narrow ``list_notebooks`` callable
 (``client.notebooks.list``) — wired in ``_client_assembly.py`` after
 ``NotebooksAPI`` is built — for the membership→``Notebook`` join in
 ``notebooks()``.
@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import builtins
 import logging
-from collections.abc import Awaitable, Callable
 from typing import Any
 
+from .._collections import CollectionsAPI, ListNotebooks
 from .._lookup import unwrap_or_raise
 from ..exceptions import CollectionError, CollectionNotFoundError, UnknownRPCMethodError
 from ..rpc import RPCMethod
@@ -37,10 +37,6 @@ from .params.collections import (
 # Preserve the historical logger key across the whole-module move.
 logger = logging.getLogger("notebooklm._collections")
 
-# Narrow capability: just ``notebooks.list() -> list[Notebook]`` (account-level,
-# no notebook-id argument — unlike labels' source list).
-ListNotebooks = Callable[[], Awaitable[builtins.list[Notebook]]]
-
 _SRC = "_collections"
 
 # Collections are account-level: every RPC uses the home-page source path, not a
@@ -49,7 +45,7 @@ _SRC = "_collections"
 _ACCOUNT_PATH = "/"
 
 
-class CollectionsAPI:
+class WebCollectionsAPI(CollectionsAPI):
     """Operations on NotebookLM collections (``client.collections``).
 
     Usage::
@@ -325,3 +321,6 @@ class CollectionsAPI:
             allow_null=True,
         )
         return None
+
+
+__all__ = ["WebCollectionsAPI"]

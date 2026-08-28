@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm._chat.api import (
+from notebooklm._chat import (
     _CITATION_MARKER_RE,
     _prepare_note_citations,
     _resolve_reference,

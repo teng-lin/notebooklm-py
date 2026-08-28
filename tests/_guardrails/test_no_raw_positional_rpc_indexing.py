@@ -20,7 +20,7 @@ value behind ``try/except (IndexError, TypeError)`` instead of raising
 The enforcement is **LAYERED** -- different layers get the gate that actually
 carries signal for them:
 
-* **BELOW the facade (the feature/decode layer: ``_chat/``, ``_artifact/``,
+* **BELOW the facade (the feature/decode layer: ``_chat.py``, ``_artifact/``,
   ``_source/``, ``_types/``, the ``_*.py`` facade internals, ...).** This is
   where decoded ``batchexecute`` payloads legitimately flow, so positional
   decode must live behind ``_web/wire/`` + ``_web/rows/`` + ``safe_index``. Both

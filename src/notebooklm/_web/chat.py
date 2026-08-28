@@ -6,7 +6,7 @@ import logging
 import reprlib
 from typing import TYPE_CHECKING, Any
 
-from .._chat.api import ChatAPI, _PostedAsk, _prepare_note_citations
+from .._chat import ChatAPI, _PostedAsk, _prepare_note_citations
 from .._conversation_cache import ConversationCache
 from .._logging import get_request_id, reset_request_id, set_request_id
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider

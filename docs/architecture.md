@@ -1042,15 +1042,15 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_notebooks.py` | Backend-neutral abstract `NotebooksAPI`; owns shared create idempotency, lookup/update conveniences, metadata composition, and share-URL semantics |
 | `_sources.py` | Backend-neutral abstract `SourcesAPI`; owns source identity lookup and the four polling workflows over neutral `SourcePoller` |
 | `_artifacts.py` | Backend-neutral abstract `ArtifactsAPI`; owns artifact generation orchestration, decoded polling, family lists, lookup, neutral formatting, and asset transfer |
-| `_chat/api.py` | Backend-neutral abstract `ChatAPI`; owns locks, cache, deleted-conversation tracking, ID recovery, authoritative turn counting, modes, and shared ask/delete/save-note orchestration over three protected adapter hooks plus the typed `_list_turn_roles` read boundary |
+| `_chat.py` | Backend-neutral abstract `ChatAPI`; owns locks, cache, deleted-conversation tracking, ID recovery, authoritative turn counting, modes, and shared ask/delete/save-note orchestration over three protected adapter hooks plus the typed `_list_turn_roles` read boundary |
 | `_research.py` | Thin lazy compatibility shim for the moved `ResearchAPI` implementation |
 | `_web/research.py` | Web-only `client.research` API implementation; keeps the historical `notebooklm._research` logger key |
 | `_web/research_import.py` | Web-only free-function helpers for `ResearchAPI` source import + verification: URL normalization, report-source predicates, imported-entry merging, and the #1961 idempotency pre-filter |
 | `_notes.py` | Backend-neutral abstract `NotesAPI` contract |
 | `_sharing.py` | Backend-neutral abstract `SharingAPI`; owns the shared `add_user` / `update_user` workflows |
-| `_labels.py`, `_collections.py` | Thin lazy compatibility shims that resolve to the canonical web-only namespace classes |
-| `_web/labels.py` | Web-only `client.labels` implementation, plus the narrow `list_sources` join callable; keeps the historical `notebooklm._labels` logger key |
-| `_web/collections.py` | Web-only `client.collections` implementation over type-3 label RPCs, plus the narrow `list_notebooks` join callable; keeps the historical `notebooklm._collections` logger key |
+| `_labels.py`, `_collections.py` | Backend-neutral abstract `LabelsAPI` / `CollectionsAPI` contracts and their narrow membership-join callable types |
+| `_web/labels.py` | Concrete `WebLabelsAPI` implementation; keeps the historical `notebooklm._labels` logger key |
+| `_web/collections.py` | Concrete `WebCollectionsAPI` implementation over type-3 label RPCs; keeps the historical `notebooklm._collections` logger key |
 | `_settings.py` | Backend-neutral abstract `SettingsAPI` contract |
 | `_mind_maps_api.py` | Backend-neutral abstract `MindMapsAPI`; owns unified lookup/list/rename/delete composition over note-backed and interactive mind maps (#1256) |
 | `_artifact/downloads.py` | Backend-neutral asset transfer service: guarded streaming, rejection, staging, and atomic publication |
@@ -1080,7 +1080,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_url_utils.py`, `urls.py` | URL parsing/validation internals and the public URL helper facade |
 | `_version_check.py` | Dynamic client-side version deprecation guard |
 | `_version_info.py` | Human-facing `version_string()` — package version + short git commit (embedded by `hatch_build.py` at build time, or live `git` from a checkout) |
-| `_chat/api.py` | Abstract `ChatAPI`, shared chat orchestration, and its bounded recently-deleted-conversation tracker; `delete_conversation` records the id under the conversation lock so a concurrent null-conversation ask can recover the server's real post-POST conversation id (#1875) |
+| `_chat.py` | Abstract `ChatAPI`, shared chat orchestration, and its bounded recently-deleted-conversation tracker; `delete_conversation` records the id under the conversation lock so a concurrent null-conversation ask can recover the server's real post-POST conversation id (#1875) |
 | `_web/transport/middleware/chain.py` | Constructs the middleware chain in the canonical ADR-0009 order |
 | `_web/transport/middleware/*.py` | Modular middleware implementations (drain, metrics, semaphore, retry, auth, error injection, tracing) |
 | `rpc/types.py` | RPC method IDs (source of truth) |
@@ -1274,9 +1274,7 @@ src/notebooklm/
 │   ├── research_task.py         # Deep-research task parser
 │   ├── sharing.py               # Shared-user and share-status row decoders behind public lazy shims
 │   └── sources.py               # Source row adapter
-├── _chat/                       # Backend-neutral chat package
-│   ├── __init__.py              # Re-exports ChatAPI + lazy private turn-helper compatibility shim
-│   └── api.py                   # Abstract ChatAPI + shared locks/cache/ask/delete/save-note orchestration and deleted-id tracker
+├── _chat.py                     # Abstract ChatAPI + shared locks/cache/ask/delete/save-note orchestration and lazy private turn-helper shim
 ├── _auth/                       # Auth subpackage (forwarded through auth.py facade)
 │   ├── __init__.py
 │   ├── paths.py                 # Storage paths and filesystem helpers
@@ -1339,8 +1337,8 @@ src/notebooklm/
 ├── _web/                        # Web batchexecute backend implementations
 │   ├── chat.py                  # WebChatAPI streamed-query/RPC adapter
 │   ├── notebooks.py             # WebNotebooksAPI
-│   ├── labels.py                # LabelsAPI (web-only; historical logger preserved)
-│   ├── collections.py           # CollectionsAPI (web-only; historical logger preserved)
+│   ├── labels.py                # WebLabelsAPI (historical logger preserved)
+│   ├── collections.py           # WebCollectionsAPI (historical logger preserved)
 │   ├── research.py              # ResearchAPI (web-only; historical logger preserved)
 │   ├── research_import.py       # Research import/verification helpers
 │   ├── sources/                 # WebSourcesAPI + web source services
@@ -1384,8 +1382,8 @@ src/notebooklm/
 ├── _notes.py                    # Backend-neutral abstract NotesAPI
 ├── _sharing.py                  # Backend-neutral abstract SharingAPI
 ├── _settings.py                 # Backend-neutral abstract SettingsAPI
-├── _labels.py                   # Lazy LabelsAPI compatibility shim
-├── _collections.py              # Lazy CollectionsAPI compatibility shim
+├── _labels.py                   # Backend-neutral abstract LabelsAPI
+├── _collections.py              # Backend-neutral abstract CollectionsAPI
 ├── notebooklm_cli.py            # Entry-point assembler — imports + registers cli/ groups
 ├── mcp/                         # MCP server (opt-in `mcp` extra) — transport-neutral adapter over _app/, sibling to cli/
 │   ├── __init__.py              # Re-exports create_server / SERVER_NAME / SERVER_INSTRUCTIONS

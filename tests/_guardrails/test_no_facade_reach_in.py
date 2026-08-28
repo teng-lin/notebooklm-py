@@ -532,10 +532,11 @@ def test_retired_sharing_manager_module_is_not_importable() -> None:
     assert importlib.util.find_spec("notebooklm._sharing_manager") is None
 
 
-def test_retired_chat_deleted_tracker_module_is_not_importable() -> None:
-    """The single-consumer deleted-id tracker now belongs to ChatAPI."""
-    assert not (SRC_ROOT / "_chat" / "deleted_tracker.py").exists()
-    assert importlib.util.find_spec("notebooklm._chat.deleted_tracker") is None
+def test_retired_chat_package_shell_is_not_importable() -> None:
+    """The neutral ChatAPI is flat; the old package and helpers stay retired."""
+    assert not (SRC_ROOT / "_chat").exists()
+    with pytest.raises(ModuleNotFoundError):
+        importlib.util.find_spec("notebooklm._chat.api")
 
 
 def test_runtime_import_visitor_detects_nested_forbidden_modules() -> None:

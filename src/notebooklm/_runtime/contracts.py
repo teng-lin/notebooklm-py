@@ -12,7 +12,7 @@ Only :class:`LoopGuard` remains here. The web-only :class:`Kernel` and
 
 Feature APIs that need more than one capability take their direct
 collaborators by keyword-only constructor argument (``ChatAPI`` in
-``_chat/api.py``, ``ArtifactsAPI`` in ``_artifacts.py``, and
+``_chat.py``, ``ArtifactsAPI`` in ``_artifacts.py``, and
 ``SourceUploadPipeline`` in ``_web/sources/upload.py``). The feature-local
 composite Protocols ``ArtifactsRuntime`` and ``UploadRuntime`` (and
 their corresponding adapter dataclasses) that previously bundled three

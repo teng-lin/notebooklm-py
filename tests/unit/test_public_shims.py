@@ -26,13 +26,6 @@ pytestmark = pytest.mark.repo_lint
     ("compatibility_module", "implementation_module", "class_name", "logger_name"),
     [
         (
-            "notebooklm._collections",
-            "notebooklm._web.collections",
-            "CollectionsAPI",
-            "notebooklm._collections",
-        ),
-        ("notebooklm._labels", "notebooklm._web.labels", "LabelsAPI", "notebooklm._labels"),
-        (
             "notebooklm._research",
             "notebooklm._web.research",
             "ResearchAPI",

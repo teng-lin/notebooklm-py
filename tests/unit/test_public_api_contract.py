@@ -43,7 +43,7 @@ import pytest
 # private implementation modules rather than constructing a live
 # ``NotebookLMClient`` so the walk needs no auth, event loop, or network.
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._chat.api import ChatAPI
+from notebooklm._chat import ChatAPI
 from notebooklm._collections import CollectionsAPI
 from notebooklm._labels import LabelsAPI
 from notebooklm._mind_maps_api import MindMapsAPI
