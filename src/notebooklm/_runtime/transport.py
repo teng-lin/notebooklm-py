@@ -261,8 +261,8 @@ class RuntimeTransport:
         """Authed POST entry point — routes through the middleware chain.
 
         Shared transport surface used by ``RpcExecutor._execute_once``
-        (``_rpc_executor.py``) and ``_chat.transport``
-        (``_chat/transport.py``); keep the same keyword-only signature.
+        (``_rpc_executor.py``) and ``_web.transport.chat``; keep the same
+        keyword-only signature.
 
         ``RpcRequest.url`` / ``headers`` / ``body`` are populated through
         :func:`materialize_rpc_request` before the chain sees the

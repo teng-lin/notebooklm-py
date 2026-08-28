@@ -7,10 +7,12 @@ so a new abstract read or hook is always an explicit review-visible diff.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import importlib
 import inspect
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -98,6 +100,24 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
             }
         ),
         wire_hooks=frozenset(),
+    ),
+    _AbstractContract(
+        module="notebooklm._chat.api",
+        class_name="ChatAPI",
+        abstract_methods=frozenset(
+            {
+                "_list_turn_roles",
+                "_send_delete_conversation",
+                "_send_note",
+                "_stream_answer",
+                "configure",
+                "get_conversation_id",
+                "get_conversation_turns",
+                "get_history",
+                "get_settings",
+            }
+        ),
+        wire_hooks=frozenset({"_send_delete_conversation", "_send_note", "_stream_answer"}),
     ),
 )
 
@@ -235,3 +255,32 @@ def test_artifact_logger_names_survive_web_module_moves() -> None:
     }
     actual = {module: importlib.import_module(module).logger.name for module in expected}
     assert actual == expected
+
+
+def test_chat_shared_workflows_call_only_their_single_wire_hook() -> None:
+    """Pin the one protected-adapter hook used by each shared Chat workflow."""
+    path = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_chat" / "api.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    chat = next(
+        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ChatAPI"
+    )
+    expected = {
+        "ask": {"_stream_answer"},
+        "delete_conversation": {"_send_delete_conversation"},
+        "save_answer_as_note": {"_send_note"},
+    }
+    for method_name, expected_hooks in expected.items():
+        method = next(
+            node
+            for node in chat.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == method_name
+        )
+        hooks = {
+            node.func.attr
+            for node in ast.walk(method)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and (node.func.attr.startswith("_send_") or node.func.attr == "_stream_answer")
+        }
+        assert hooks == expected_hooks

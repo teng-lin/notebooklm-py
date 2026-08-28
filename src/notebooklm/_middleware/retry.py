@@ -44,7 +44,7 @@ Behavior:
 - **Same exception types on exhaustion** —
   :class:`TransportRateLimited` /
   :class:`TransportServerError` re-raised verbatim so
-  ``_chat.transport.chat_aware_authed_post`` (which catches both) sees
+  ``_web.transport.chat.chat_aware_authed_post`` (which catches both) sees
   the same shape it always did.
 
 See ``docs/adr/0009-middleware-chain.md`` for the chain contract and

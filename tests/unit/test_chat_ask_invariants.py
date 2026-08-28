@@ -34,6 +34,7 @@ from notebooklm import NotebookLMClient
 from notebooklm._chat import ChatAPI
 from notebooklm._request_types import AuthSnapshot
 from notebooklm._runtime.config import DEFAULT_CHAT_RESPONSE_MAX_BYTES
+from notebooklm._web.chat import WebChatAPI
 from notebooklm.auth import AuthTokens
 from notebooklm.exceptions import ChatError
 from tests._helpers.client_factory import build_client_shell_for_tests
@@ -122,7 +123,7 @@ class TestChatTimeoutRouting:
                 )
             )
         )
-        chat = ChatAPI(
+        chat = WebChatAPI(
             rpc=SimpleNamespace(rpc_call=AsyncMock(return_value=[[]])),
             transport=transport,
             reqid=SimpleNamespace(next_reqid=AsyncMock(return_value=100000)),
@@ -419,7 +420,7 @@ class TestChatRefreshRetry:
             # Stage B1 PR 2 deleted the Stage A accessors
             # (``Session.session_transport`` / ``Session.collaborators``);
             # read the private slots directly instead.
-            api = ChatAPI(
+            api = WebChatAPI(
                 rpc=core._rpc_executor,
                 transport=core._composed.transport,
                 reqid=core._collaborators.reqid,
@@ -535,7 +536,7 @@ class TestChatNewConversationLocks:
 
         loop_guard = MagicMock()
         loop_guard.assert_bound_loop = MagicMock()
-        return ChatAPI(
+        return WebChatAPI(
             rpc=MagicMock(),
             transport=MagicMock(),
             reqid=MagicMock(),
@@ -561,7 +562,7 @@ class TestChatNewConversationLocks:
 
     @pytest.mark.asyncio
     async def test_failed_post_ask_hptbtc_lookup_releases_new_conversation_lock(self):
-        class HptbtcFailureChatAPI(ChatAPI):
+        class HptbtcFailureChatAPI(WebChatAPI):
             def __init__(self, *, lookup_results: list[str | ChatError], **kwargs: Any) -> None:
                 super().__init__(**kwargs)
                 self._lookup_results = iter(lookup_results)
@@ -628,7 +629,7 @@ class TestBuildChatRequestFactory:
         # are touched, so they are bare ``MagicMock()`` placeholders.
         from unittest.mock import MagicMock
 
-        return ChatAPI(
+        return WebChatAPI(
             rpc=MagicMock(),
             transport=MagicMock(),
             reqid=MagicMock(),

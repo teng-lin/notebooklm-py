@@ -1,62 +1,22 @@
-"""Chat API for NotebookLM notebook conversations.
-
-Provides operations for asking questions, managing conversations, and
-retrieving conversation history.
-"""
+"""Backend-neutral chat semantics and orchestration."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import reprlib
+import re
 import weakref
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, replace
+from typing import Any
 
 from .._conversation_cache import ConversationCache
-from .._logging import get_request_id, reset_request_id, set_request_id
 from .._loop_bound import LoopBoundPrimitive
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
-from .._request_types import AuthSnapshot
-from .._runtime.config import (
-    DEFAULT_CHAT_RESPONSE_MAX_BYTES,
-    DEFAULT_CHAT_TIMEOUT,
-    assert_resolved_read_timeout,
-)
-from .._runtime.contracts import LoopGuard, RpcCaller
-from .._web.params.notebooks import build_get_notebook_params
-from .._web.rows.chat import (
-    ConversationTurnRow,
-    unwrap_chat_settings,
-    unwrap_conversation_turns,
-    unwrap_last_conversation_id,
-)
-from ..exceptions import ChatError, NetworkError, UnknownRPCMethodError, ValidationError
-from .deleted_tracker import RecentlyDeletedConversations
-from .history import count_prior_server_turns
-from .notes import save_chat_answer_as_note
-from .transport import chat_aware_authed_post
-from .wire import (
-    _extract_next_turn_content,
-    build_streaming_chat_request,
-    extract_answer_and_refs_from_chunk,
-    extract_text_passages,
-    extract_uuid_from_nested,
-    parse_citations,
-    parse_single_citation,
-    parse_streaming_chat_response,
-    raise_if_rate_limited,
-)
-
-if TYPE_CHECKING:
-    from .._reqid_counter import ReqidCounter
-    from .._runtime.transport import RuntimeTransport
-from .._types.documents import StructuredDocument
+from .._runtime.contracts import LoopGuard
+from .._types.documents import StructuredDocument, utf16_len
 from .._types.enums import ChatGoal, ChatResponseLength
-from ..rpc import (
-    RPCMethod,
-    safe_index,
-)
+from ..exceptions import ChatError, NetworkError
 from ..types import (
     AskResult,
     ChatMode,
@@ -67,180 +27,150 @@ from ..types import (
     NextStepSuggestion,
     Note,
 )
+from .deleted_tracker import RecentlyDeletedConversations
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("notebooklm._chat.api")
+notes_logger = logging.getLogger("notebooklm._chat.notes")
+
+_TURN_COUNT_INITIAL_LIMIT = 100
+_TURN_COUNT_MAX_LIMIT = 12_800
+_CITATION_MARKER_RE = re.compile(r" ?\[(\d+)\]")
 
 
 @dataclass(frozen=True)
 class _PostedAsk:
-    """One completed streamed-chat POST, as :meth:`ChatAPI.ask` consumes it.
-
-    A frozen dataclass rather than a ``NamedTuple``: this shape has grown twice
-    (#2120, #2122), and a ``NamedTuple`` would have kept positional access and
-    field ORDER load-bearing at every consumption site — so inserting a member
-    anywhere but the end would silently misbind. Read the members by name.
-    """
+    """One completed backend chat stream before semantic ID recovery."""
 
     answer: str
     references: list[ChatReference]
-    conversation_id: str
+    conversation_id: str | None
     raw_response: str
-    #: The answer's own structured document (#2120).
     answer_document: StructuredDocument
-    #: The backend's key for this turn, or ``None`` when the stream carried
-    #: none. Threaded onto :attr:`AskResult.turn_key` (#2122).
     turn_key: ConversationTurnKey | None
-    #: Suggested follow-up actions decoded from NextStepSuggestions (#2119).
     next_steps: list[NextStepSuggestion]
 
 
-class ChatAPI(LoopBoundPrimitive):
-    """Operations for notebook chat/conversations.
+def _strip_citation_markers(answer_text: str) -> tuple[str, list[tuple[int, int]]]:
+    """Strip ``[N]`` markers and return their UTF-16 offsets in clean text."""
+    positions: list[tuple[int, int]] = []
+    clean_parts: list[str] = []
+    last_end = 0
+    clean_offset = 0
+    for match in _CITATION_MARKER_RE.finditer(answer_text):
+        chunk = answer_text[last_end : match.start()]
+        clean_parts.append(chunk)
+        clean_offset += utf16_len(chunk)
+        positions.append((int(match.group(1)), clean_offset))
+        last_end = match.end()
+    clean_parts.append(answer_text[last_end:])
+    return "".join(clean_parts), positions
 
-    Provides methods for asking questions to notebooks and managing
-    conversation history with follow-up support.
+
+def _resolve_reference(
+    references: list[ChatReference],
+    citation_number: int,
+) -> ChatReference | None:
+    """Resolve a marker without mis-anchoring numbering holes."""
+    for ref in references:
+        if ref.citation_number == citation_number and ref.chunk_id:
+            return ref
+    index = citation_number - 1
+    if 0 <= index < len(references):
+        candidate = references[index]
+        if candidate.citation_number is None and candidate.chunk_id:
+            return candidate
+    return None
+
+
+def _prepare_note_citations(
+    answer_text: str,
+    references: list[ChatReference],
+) -> tuple[str, list[tuple[ChatReference, int]]]:
+    """Prepare clean note text and resolved citation anchors."""
+    clean_answer, marker_positions = _strip_citation_markers(answer_text)
+    if not any(ref.chunk_id for ref in references):
+        raise ValueError(
+            "save_chat_answer_as_note requires references with chunk_id set; "
+            "got references without any usable chunk_id."
+        )
+    anchors: list[tuple[ChatReference, int]] = []
+    for citation_number, position in marker_positions:
+        reference = _resolve_reference(references, citation_number)
+        if reference is None or reference.chunk_id is None:
+            notes_logger.warning(
+                "Citation marker [%d] in answer has no matching reference; "
+                "skipping anchor for this marker",
+                citation_number,
+            )
+            continue
+        anchors.append((reference, position))
+    return clean_answer, anchors
+
+
+class ChatAPI(LoopBoundPrimitive, ABC):
+    """Backend-neutral operations for notebook chat and conversations.
+
+    Provides shared workflows for asking questions, managing conversation
+    history, and saving answers as notes. Concrete backends implement the
+    transport reads and the three protected send hooks.
 
     Usage:
         async with NotebookLMClient.from_storage() as client:
-            # Ask a question
             result = await client.chat.ask(notebook_id, "What is X?")
-            print(result.answer)
-
-            # Follow-up question
             result = await client.chat.ask(
                 notebook_id,
                 "Can you elaborate?",
-                conversation_id=result.conversation_id
+                conversation_id=result.conversation_id,
             )
     """
 
     def __init__(
         self,
         *,
-        rpc: RpcCaller,
-        transport: RuntimeTransport,
-        reqid: ReqidCounter,
         loop_guard: LoopGuard,
         notebooks: NotebookSourceIdProvider,
-        chat_timeout: float | None = DEFAULT_CHAT_TIMEOUT,
-        chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES,
         conversation_cache: ConversationCache | None = None,
         created_chat_sessions: CreatedChatSessionProvider | None = None,
-    ):
-        """Initialize the chat API.
-
-        Per ADR-0014 Rule 2 Corollary, ``ChatAPI`` depends on the **direct**
-        collaborators it exercises (``rpc``, ``transport``, ``reqid``,
-        ``loop_guard``, ``notebooks``) rather than a chat-local Runtime Protocol
-        bundling them.
+    ) -> None:
+        """Initialize backend-neutral chat state.
 
         Args:
-            rpc: RPC dispatch collaborator for the ``get_conversation_*``,
-                ``configure``, ``delete_conversation``, and
-                ``save_answer_as_note`` round-trips.
-            transport: :class:`RuntimeTransport` owning the authed-POST entry
-                point used by :meth:`ask` via :func:`chat_aware_authed_post`.
-            reqid: :class:`ReqidCounter` minting the per-attempt ``_reqid``
-                query parameter for the streamed chat request.
-            loop_guard: :class:`LoopGuard` whose :meth:`assert_bound_loop` fires
-                before :meth:`ask` acquires the per-conversation lock, so a
-                cross-loop follow-up doesn't hang on a lock bound to a dead loop.
-            notebooks: Required source-id resolver. The composition root passes
-                the client's shared notebooks API so chat never constructs a
-                transport-specific notebook implementation implicitly.
-            chat_timeout: Per-read HTTP timeout (seconds) for the streamed chat
-                endpoint. ``None`` inherits the underlying transport timeout.
-            chat_response_max_bytes: Maximum buffered streamed-chat response
-                size in bytes. ``None`` inherits the shared RPC response cap.
+            loop_guard: Collaborator whose ``assert_bound_loop`` check runs
+                before lock acquisition in shared ask/delete workflows.
+            notebooks: Required source-ID resolver. The composition root passes
+                the client's shared notebooks API.
             conversation_cache: Optional injected cache; defaults to a fresh
                 per-instance ``ConversationCache``.
-            created_chat_sessions: Optional one-shot provider for the initial
-                session id returned by ``CREATE_NOTEBOOK``. The assembled
-                client passes its shared ``NotebooksAPI`` instance.
+            created_chat_sessions: Optional one-shot provider for an initial
+                session ID returned by notebook creation.
         """
-        self._rpc = rpc
-        self._transport = transport
-        self._reqid = reqid
         self._loop_guard = loop_guard
-        # ``chat_timeout`` arrives already resolved against the client's
-        # ``timeout=`` (``_client_assembly`` calls ``resolve_chat_read_timeout``).
-        # Every layer below here guards on ``is not None``, so an unresolved
-        # AUTO_READ_TIMEOUT would sail into ``httpx.Timeout`` — which accepts it
-        # — and only surface as a TypeError inside the timeout error formatter.
-        assert_resolved_read_timeout(chat_timeout, name="chat_timeout")
-        self._chat_timeout = chat_timeout
-        self._chat_response_max_bytes = chat_response_max_bytes
         self._notebooks = notebooks
         self._created_chat_sessions = created_chat_sessions
         self._cache = conversation_cache if conversation_cache is not None else ConversationCache()
-        # Per-``conversation_id`` lock serializing follow-up asks on the same
-        # conversation. Without it, two ``asyncio.gather``'d asks read identical
-        # pre-update history, both POST it, then race to append to ``self._cache``
-        # — the server sees two turn N+1 follow-ups and the cache loses lineage.
-        #
-        # ``WeakValueDictionary`` keeps the map bounded: a caller holds a strong
-        # ref while inside ``async with lock:``; once all waiters release, the
-        # entry GCs itself. Per-key churn for one-shot conversations is negligible.
         self._conversation_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
-        # Per-``notebook_id`` lock for asks that enter without a
-        # ``conversation_id``. The server treats ``params[4] = null`` as
-        # "append to the current conversation for this notebook, creating it
-        # if needed"; until ``hPTbtc`` returns the real id, the only stable
-        # key we can serialize on locally is the notebook id.
         self._new_conversation_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
-        # Recently deleted conversation ids (see ``deleted_tracker``); a null ask
-        # that resolved a since-deleted id re-checks here after taking its lock.
         self._deleted_conversations = RecentlyDeletedConversations()
-        # Event-loop binding for the two lazy lock maps. ``set_bound_loop`` comes
-        # from :class:`~notebooklm._loop_bound.LoopBoundPrimitive`; this API
-        # overrides :meth:`_on_loop_rebind` to clear the maps on a loop change so
-        # a lock bound to a closed loop is never reused after a reopen — see
-        # :meth:`_on_loop_rebind` / :meth:`reset_after_open`.
 
     def _on_loop_rebind(
         self,
         old: asyncio.AbstractEventLoop | None,
         new: asyncio.AbstractEventLoop | None,
     ) -> None:
-        """Clear the lazy conversation lock maps when the bound loop changes.
-
-        Fires from ``LoopBoundPrimitive.set_bound_loop`` only on a real loop
-        change (before ``_bound_loop`` updates), so a stale ``asyncio.Lock``
-        bound to the old loop is never reused after a rebind even when called
-        independently of :meth:`reset_after_open`. The cross-loop guard for
-        :meth:`ask` is the injected ``loop_guard.assert_bound_loop``; this hook
-        only governs when the lazy locks are rebuilt.
-        """
+        """Discard locks captured by a prior event loop."""
         self._conversation_locks.clear()
         self._new_conversation_locks.clear()
 
     def reset_after_open(self) -> None:
-        """Discard the lazy conversation locks so a reopened client rebinds them.
-
-        Called from :meth:`ClientLifecycle.open` so a client closed and reopened
-        on a *different* event loop builds fresh ``asyncio.Lock`` instances on
-        the new loop instead of reusing stale ones bound to the dead loop (which
-        on 3.10/3.11 can raise "bound to a different event loop" or mispark
-        waiters). Clearing the two ``WeakValueDictionary`` maps suffices — each
-        per-key lock is rebuilt lazily on the next ``_get_*_lock`` call. Mirrors
-        ``SourceUploadPipeline.reset_after_open``.
-        """
+        """Rebuild lazy conversation locks after a client reopen."""
         self._conversation_locks.clear()
         self._new_conversation_locks.clear()
 
     def _get_conversation_lock(self, conversation_id: str) -> asyncio.Lock:
-        """Return the (lazily created) lock for ``conversation_id``.
-
-        Single-threaded asyncio makes the ``WeakValueDictionary`` get/set atomic
-        (no ``await`` between lookup and insert), so concurrent callers on the
-        same conversation share one lock instance. The bare lock is returned (not
-        a context-manager wrapper) so the caller's strong ref keeps the entry
-        alive for the critical section.
-        """
         lock = self._conversation_locks.get(conversation_id)
         if lock is None:
             lock = asyncio.Lock()
@@ -248,18 +178,32 @@ class ChatAPI(LoopBoundPrimitive):
         return lock
 
     def _get_new_conversation_lock(self, notebook_id: str) -> asyncio.Lock:
-        """Return the lock for null-conversation asks in ``notebook_id``.
-
-        Uses the same weak-cache pattern as per-conversation locks: the
-        caller's local variable keeps the lock alive while it is held, and
-        the registry entry is reclaimed when there are no active holders or
-        waiters.
-        """
         lock = self._new_conversation_locks.get(notebook_id)
         if lock is None:
             lock = asyncio.Lock()
             self._new_conversation_locks[notebook_id] = lock
         return lock
+
+    async def _count_prior_server_turns(
+        self,
+        notebook_id: str,
+        conversation_id: str,
+    ) -> int:
+        """Count questions from a complete newest-first role snapshot."""
+        limit = _TURN_COUNT_INITIAL_LIMIT
+        while True:
+            roles = await self._list_turn_roles(notebook_id, conversation_id, limit)
+            row_count = len(roles)
+            question_count = sum(role == 1 for role in roles)
+            if row_count < limit:
+                return question_count
+            if limit >= _TURN_COUNT_MAX_LIMIT:
+                raise ChatError(
+                    f"Conversation history filled the maximum "
+                    f"{_TURN_COUNT_MAX_LIMIT:,}-row snapshot; cannot derive an "
+                    "authoritative turn number."
+                )
+            limit *= 2
 
     async def ask(
         self,
@@ -268,45 +212,7 @@ class ChatAPI(LoopBoundPrimitive):
         source_ids: list[str] | None = None,
         conversation_id: str | None = None,
     ) -> AskResult:
-        """Ask the notebook a question.
-
-        Args:
-            notebook_id: The notebook ID.
-            question: The question to ask.
-            source_ids: Specific source IDs to query. If None, uses all sources.
-            conversation_id: Existing conversation ID for follow-up questions.
-                Omit (or pass ``None``) to continue the user's current
-                conversation on this notebook (or create one if none
-                exists) — matching the web UI's default behavior.
-
-        Returns:
-            AskResult with answer, server-recorded conversation_id, and
-            turn info. For new conversations the conversation_id is
-            fetched via ``hPTbtc`` post-ask (issue #659).
-
-        Raises:
-            ChatError: For a new conversation, if ``hPTbtc`` returns no
-                conversation_id after the ask (the server failed to record
-                the turn, or the API shape drifted). The full answer text
-                is logged at ERROR level before the raise so it survives
-                in the audit trail.
-            NetworkError / ChatError: If the post-ask ``hPTbtc`` round-trip
-                itself fails (transient network or auth issue). Same
-                logging contract — answer is logged before the raise.
-
-        Note:
-            Repeated ``ask()`` calls without ``conversation_id`` all extend
-            the same most-recent conversation. To force a fresh
-            conversation, first call ``delete_conversation(notebook_id,
-            last_conversation_id)`` — the server then has nothing to
-            extend and the next ``ask()`` starts a new conversation.
-        """
-        # Catch cross-loop ``ask`` before any work — particularly
-        # before acquiring the per-conversation lock below, which would
-        # otherwise hang on a lock bound to a dead loop. The POST-path
-        # guard in ``RuntimeTransport.perform_authed_post`` only catches misuse on
-        # the POST itself, which is *after* the conversation lock is
-        # already held — too late.
+        """Ask a question while preserving conversation and cache semantics."""
         self._loop_guard.assert_bound_loop()
         logger.debug(
             "Asking question in notebook %s (conversation=%s)",
@@ -316,118 +222,46 @@ class ChatAPI(LoopBoundPrimitive):
         if source_ids is None:
             source_ids = await self._notebooks.get_source_ids(notebook_id)
 
+        active_source_ids: list[str] = source_ids
         is_new_conversation = conversation_id is None
-        # ``is_follow_up`` records whether this ask CONTINUED an existing
-        # conversation. An explicit ``conversation_id`` is always a follow-up.
-        # A null ask is a follow-up only when the notebook already had a current
-        # conversation that we resumed — refined on the null-ask path below,
-        # where a first-ever (or just-deleted) conversation starts fresh (#1965).
         is_follow_up = not is_new_conversation
         prior_turn_count = 0
 
         async def perform_request(
             *,
-            conversation_history: list[Any] | None,
+            cached_turns: list[ConversationTurn],
             active_conversation_id: str | None,
             resolved_id_override: str | None = None,
         ) -> _PostedAsk:
-            # Capture into closure-local variables so the nested ``build_request``
-            # closure carries explicit types — mypy doesn't propagate flow
-            # narrowing through nested-function captures, and the wire
-            # builder accepts ``conversation_id: str | None``.
-            active_source_ids: list[str] = source_ids
-
-            # Mint the request-id under the asyncio-safe counter helper so two
-            # concurrent ``ask`` calls on the same client never collide.
-            # A direct counter mutation would race under ``asyncio.gather``
-            # and produce duplicate ``_reqid`` URL params. ``ChatAPI`` holds
-            # the :class:`ReqidCounter` directly (constructor injection).
-            reqid = await self._reqid.next_reqid()
-
-            def build_request(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
-                return self._build_chat_request(
-                    snapshot=snapshot,
-                    notebook_id=notebook_id,
-                    question=question,
-                    source_ids=active_source_ids,
-                    conversation_history=conversation_history,
-                    conversation_id=active_conversation_id,
-                    reqid=reqid,
-                )
-
-            # ``chat_aware_authed_post`` owns the chat-flavored exception
-            # mapping (transport→ChatError/NetworkError) and drain
-            # bookkeeping that ``ask`` used to duplicate inline. The
-            # request-id context lives here so retries inside the helper
-            # share the same ``[req=<id>]`` log prefix as the initial
-            # attempt.
-            reqid_token = None if get_request_id() is not None else set_request_id()
-            try:
-                response = await chat_aware_authed_post(
-                    self._transport,
-                    build_request=build_request,
-                    parse_label="chat.ask",
-                    read_timeout=self._chat_timeout,
-                    max_response_bytes=self._chat_response_max_bytes,
-                    disable_read_timeout_retries=True,
-                )
-            finally:
-                if reqid_token is not None:
-                    reset_request_id(reqid_token)
-
-            # ``StreamingChatParseResult.conversation_id`` is historically
-            # called ``server_conv_id``. Live API tests (issue #659) proved
-            # that field is a per-stream/per-query id, not a real
-            # conversation_id: querying ``khqZz`` with it returns 0 turns, and
-            # passing it back as ``params[4]`` for a follow-up produces a ghost
-            # turn the server does not register. We discard it here and fetch
-            # the real id via ``hPTbtc`` below. (It reads the same wire slot
-            # #2122 surfaces as ``turn_key.session_id`` — which is exactly why
-            # that field claims nothing; see ``ConversationTurnKey``.)
-            parsed = parse_streaming_chat_response(response.text)
-            answer_text = parsed.answer
-            references = parsed.references
-            answer_document = parsed.answer_document
+            posted = await self._stream_answer(
+                notebook_id=notebook_id,
+                question=question,
+                source_ids=active_source_ids,
+                cached_turns=cached_turns,
+                conversation_id=active_conversation_id,
+            )
 
             resolved_conversation_id = active_conversation_id
             if resolved_id_override is not None:
-                # Caller resolved the current id under the notebook lock and
-                # holds its conversation lock; skip the post-POST hPTbtc
-                # recovery — the id is known and re-fetching is redundant.
                 resolved_conversation_id = resolved_id_override
             elif is_new_conversation:
-                # The real conversation_id is not present anywhere in the
-                # streamed chat response. The only way to recover it is to
-                # query ``hPTbtc`` (GET_LAST_CONVERSATION_ID), which returns
-                # the user's current conversation for this notebook — i.e.
-                # the one our null-at-params[4] ask just attached to.
-                #
-                # Wrap the call in try/except so that if hPTbtc itself fails
-                # (network, auth, etc.), we log the answer text before
-                # surfacing the exception — otherwise the caller loses an
-                # answer they already paid for.
                 try:
-                    real_conversation_id = await self.get_conversation_id(notebook_id)
+                    resolved_conversation_id = await self.get_conversation_id(notebook_id)
                 except (ChatError, NetworkError):
                     logger.error(
                         "Chat ask succeeded but post-ask get_conversation_id "
                         "failed. Answer (%d chars, may be truncated): %r",
-                        len(answer_text or ""),
-                        (answer_text or "")[:500],
+                        len(posted.answer or ""),
+                        (posted.answer or "")[:500],
                     )
                     raise
-                if real_conversation_id is None:
-                    if answer_text:
-                        # Server returned an answer but hPTbtc has no id.
-                        # The conversation may have been recorded but is
-                        # invisible to hPTbtc, OR the API shape drifted.
-                        # Log the answer so it survives the raise.
+                if resolved_conversation_id is None:
+                    if posted.answer:
                         logger.error(
                             "Server returned a non-empty answer but hPTbtc "
-                            "returned no conversation_id (%d chars). Answer "
-                            "preview: %r",
-                            len(answer_text),
-                            answer_text[:500],
+                            "returned no conversation_id (%d chars). Answer preview: %r",
+                            len(posted.answer),
+                            posted.answer[:500],
                         )
                     raise ChatError(
                         "Server did not register a conversation for this ask "
@@ -435,54 +269,25 @@ class ChatAPI(LoopBoundPrimitive):
                         "empty, or the API shape may have changed. Please file "
                         "an issue at https://github.com/teng-lin/notebooklm-py/issues."
                     )
-                resolved_conversation_id = real_conversation_id
-            # Follow-up: keep the caller-supplied id. (We used to rebind to
-            # ``server_conv_id`` here, but that field is a stream id not a
-            # conv_id — see comment above.)
 
             assert resolved_conversation_id is not None
+            return replace(posted, conversation_id=resolved_conversation_id)
 
-            return _PostedAsk(
-                answer=answer_text,
-                references=references,
-                conversation_id=resolved_conversation_id,
-                raw_response=response.text,
-                answer_document=answer_document,
-                turn_key=parsed.turn_key,
-                next_steps=parsed.next_steps,
-            )
-
-        def cache_turn(
-            resolved_conversation_id: str,
-            answer_text: str,
-            server_prior_turn_count: int,
-        ) -> int:
-            if answer_text:
+        def cache_turn(posted: _PostedAsk, server_prior_turn_count: int) -> int:
+            assert posted.conversation_id is not None
+            if posted.answer:
                 turn_number = server_prior_turn_count + 1
                 self._cache.cache_conversation_turn(
-                    resolved_conversation_id, question, answer_text, turn_number
+                    posted.conversation_id,
+                    question,
+                    posted.answer,
+                    turn_number,
                 )
-            else:
-                turn_number = server_prior_turn_count
-            return turn_number
+                return turn_number
+            return server_prior_turn_count
 
-        # Null-conversation asks carry no caller id; the server appends them to
-        # the notebook's *current* conversation (params[4]=null). Resolve that id
-        # under the notebook lock, then serialize the POST on it like an explicit
-        # follow-up (#1875). Residual assumption: a follow-up to a *different*
-        # conversation won't move the server's current pointer between the
-        # resolve and this POST.
         if is_new_conversation:
             async with self._get_new_conversation_lock(notebook_id):
-                # CREATE_NOTEBOOK already returned this notebook's initial
-                # ChatSession. Consume that one-shot hint before falling back
-                # to hPTbtc, avoiding an immediate re-fetch of data the server
-                # just volunteered (#2133). Keep its provenance: unlike an id
-                # resolved from hPTbtc, the create hint must be bound to the
-                # POST below. Otherwise another client changing the notebook's
-                # current session between create() and ask() would make the
-                # null-session POST land elsewhere while we still reported the
-                # stale create id.
                 created_session_id = (
                     self._created_chat_sessions._take_created_chat_session_id(notebook_id)
                     if self._created_chat_sessions is not None
@@ -492,61 +297,48 @@ class ChatAPI(LoopBoundPrimitive):
                 if current_id is None:
                     current_id = await self.get_conversation_id(notebook_id)
                 if current_id is None:
-                    # First-ever conversation: no id to lock on, so serialize the
-                    # create under the notebook lock; recover the id post-POST.
                     posted = await perform_request(
-                        conversation_history=None, active_conversation_id=None
+                        cached_turns=[],
+                        active_conversation_id=None,
                     )
-            # Existing conversation: release the notebook lock and serialize on the
-            # conversation lock alone, so other null asks on this notebook resolve
-            # in parallel yet still serialize here on that shared lock.
+
             if current_id is not None:
                 async with self._get_conversation_lock(current_id):
-                    # A delete_conversation for current_id may have finished while
-                    # we blocked on this lock; the server then starts a fresh
-                    # conversation for the null POST, so drop the override and
-                    # recover the real id post-POST, not the deleted one (#1875).
                     override = None if current_id in self._deleted_conversations else current_id
-                    # A current id can refer to an auto-created, zero-turn
-                    # conversation. Query the server even when local turns are
-                    # cached because another client may have deleted them (#1973).
                     is_follow_up = False
                     if override is not None:
-                        prior_turn_count = await count_prior_server_turns(
-                            self.get_conversation_turns, notebook_id, override
+                        prior_turn_count = await self._count_prior_server_turns(
+                            notebook_id,
+                            override,
                         )
                         is_follow_up = prior_turn_count > 0
                     posted = await perform_request(
-                        conversation_history=None,
-                        # A CREATE hint is a genuine server-issued session id,
-                        # not the client-minted UUID forbidden by #659. Bind
-                        # the first ask to it so the returned id and the POST
-                        # target cannot diverge if the server's current pointer
-                        # changed in another client meanwhile.
+                        cached_turns=[],
                         active_conversation_id=(
                             override if created_session_id is not None else None
                         ),
                         resolved_id_override=override,
                     )
-                    turn_number = cache_turn(
-                        posted.conversation_id, posted.answer, prior_turn_count
-                    )
+                    turn_number = cache_turn(posted, prior_turn_count)
             else:
+                assert posted.conversation_id is not None
                 async with self._get_conversation_lock(posted.conversation_id):
-                    turn_number = cache_turn(posted.conversation_id, posted.answer, 0)
+                    turn_number = cache_turn(posted, 0)
         else:
-            assert conversation_id is not None  # narrowed by is_new_conversation
+            assert conversation_id is not None
             async with self._get_conversation_lock(conversation_id):
-                prior_turn_count = await count_prior_server_turns(
-                    self.get_conversation_turns, notebook_id, conversation_id
+                prior_turn_count = await self._count_prior_server_turns(
+                    notebook_id,
+                    conversation_id,
                 )
-                conversation_history = self._build_conversation_history(conversation_id)
+                cached_turns = self.get_cached_turns(conversation_id)
                 posted = await perform_request(
-                    conversation_history=conversation_history,
+                    cached_turns=cached_turns,
                     active_conversation_id=conversation_id,
                 )
-                turn_number = cache_turn(posted.conversation_id, posted.answer, prior_turn_count)
+                turn_number = cache_turn(posted, prior_turn_count)
 
+        assert posted.conversation_id is not None
         return AskResult(
             answer=posted.answer,
             conversation_id=posted.conversation_id,
@@ -559,173 +351,8 @@ class ChatAPI(LoopBoundPrimitive):
             next_steps=posted.next_steps,
         )
 
-    async def get_conversation_turns(
-        self, notebook_id: str, conversation_id: str, limit: int = 2
-    ) -> Any:
-        """Get turns (individual messages) for a specific conversation.
-
-        Args:
-            notebook_id: The notebook ID.
-            conversation_id: The conversation ID to fetch turns for.
-            limit: Maximum number of turns to retrieve. Turns are returned
-                newest-first, so limit=2 gives the latest Q&A pair.
-
-        Returns:
-            Raw turn data from API; the per-turn position contract lives in
-            :class:`~notebooklm._web.rows.chat.ConversationTurnRow`.
-        """
-        logger.debug(
-            "Getting conversation turns for %s (conversation=%s, limit=%d)",
-            notebook_id,
-            conversation_id,
-            limit,
-        )
-        params: list[Any] = [[], None, None, conversation_id, limit]
-        return await self._rpc.rpc_call(
-            RPCMethod.GET_CONVERSATION_TURNS,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-        )
-
-    async def get_conversation_id(self, notebook_id: str) -> str | None:
-        """Get the most recent conversation ID from the API.
-
-        The underlying RPC (hPTbtc) returns the last conversation ID for a notebook.
-
-        Args:
-            notebook_id: The notebook ID.
-
-        Returns:
-            The most recent conversation ID, or None if no conversations exist.
-        """
-        logger.debug("Getting conversation ID for notebook %s", notebook_id)
-        params: list[Any] = [[], None, notebook_id, 1]
-        raw = await self._rpc.rpc_call(
-            RPCMethod.GET_LAST_CONVERSATION_ID,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-        )
-        # Response [[[conv_id]]]: SOFT walk in
-        # ``_web.rows.chat.unwrap_last_conversation_id`` (None if no row).
-        if raw and isinstance(raw, list):
-            conversation_id = unwrap_last_conversation_id(raw)
-            if conversation_id is not None:
-                return conversation_id
-            # WARNING (not DEBUG): the shape is the actionable diagnostic when
-            # ``ChatAPI.ask`` raises ChatError on a ``None`` return (issue #659).
-            logger.warning(
-                "hPTbtc returned an unexpected response shape; no "
-                "conversation_id extracted (notebook=%s, raw=%r)",
-                notebook_id,
-                repr(raw)[:500],
-            )
-        elif raw is not None:
-            logger.warning(
-                "hPTbtc returned a non-list, non-empty response (notebook=%s, type=%s, raw=%r)",
-                notebook_id,
-                type(raw).__name__,
-                repr(raw)[:500],
-            )
-        return None
-
-    async def get_history(
-        self,
-        notebook_id: str,
-        limit: int = 100,
-        conversation_id: str | None = None,
-    ) -> list[tuple[str, str]]:
-        """Get Q&A history for the most recent conversation.
-
-        Args:
-            notebook_id: The notebook ID.
-            limit: Maximum number of Q&A turns to retrieve.
-            conversation_id: Use this conversation ID instead of fetching it.
-                Defaults to the most recent conversation if not provided.
-
-        Returns:
-            List of (question, answer) pairs, oldest-first.
-            Returns an empty list if no conversations exist.
-        """
-        logger.debug("Getting conversation history for notebook %s (limit=%d)", notebook_id, limit)
-        conv_id = conversation_id or await self.get_conversation_id(notebook_id)
-        if not conv_id:
-            return []
-
-        try:
-            turns_data = await self.get_conversation_turns(notebook_id, conv_id, limit=limit)
-        except (ChatError, NetworkError) as e:
-            logger.warning("Failed to fetch conversation turns for %s: %s", notebook_id, e)
-            return []
-        # API returns turns newest-first: [A2, Q2, ...]; reverse to [Q1, A1, ...]
-        # for the Q→A pairer. Unwrap keeps an empty history soft, raises on drift.
-        turns = unwrap_conversation_turns(turns_data, source="_chat.get_history")
-        if turns:
-            turns_data = [list(reversed(turns))]
-        return self._parse_turns_to_qa_pairs(turns_data)
-
-    @staticmethod
-    def _parse_turns_to_qa_pairs(turns_data: Any) -> list[tuple[str, str]]:
-        """Parse raw turn data into (question, answer) pairs in array order.
-
-        Pairs are returned in the same order as the input data (newest-first
-        from the API); callers reverse if oldest-first is needed. Each user
-        question (role 1) is followed by its AI answer (role 2); per-turn
-        positions live in :class:`~notebooklm._web.rows.chat.ConversationTurnRow`.
-
-        Drift handling (#1485): an empty/absent history parses to ``[]``; a
-        truthy-but-malformed payload/container raises ``UnknownRPCMethodError``
-        via ``unwrap_conversation_turns``; a malformed turn row or an
-        unrecognized role code is skipped with a DEBUG diagnostic (ordinary
-        unpaired answer rows are consumed by pairing and never logged).
-        """
-        turns = unwrap_conversation_turns(turns_data, source="_chat._parse_turns_to_qa_pairs")
-
-        pairs: list[tuple[str, str]] = []
-        i = 0
-        while i < len(turns):
-            turn = ConversationTurnRow(turns[i])
-            if not turn.is_well_formed:
-                logger.debug(
-                    "_parse_turns_to_qa_pairs: skipping malformed turn at index %d: %s",
-                    i,
-                    reprlib.repr(turns[i]),
-                )
-                i += 1
-                continue
-            if turn.has_unrecognized_role:
-                logger.debug(
-                    "_parse_turns_to_qa_pairs: unrecognized role code %r at turn %d — skipping; "
-                    "possible role-slot drift: %s",
-                    turn.role,
-                    i,
-                    reprlib.repr(turns[i]),
-                )
-                i += 1
-                continue
-            if turn.is_question:
-                q = turn.question_text
-                a = ""
-                # Pair with the immediately-following answer turn, if any; a
-                # non-string content leaf yields "" (drift raises in the leaf).
-                if i + 1 < len(turns):
-                    next_turn = ConversationTurnRow(turns[i + 1])
-                    if next_turn.is_answer:
-                        content = _extract_next_turn_content(next_turn.raw)
-                        a = str(content or "")
-                        i += 1  # skip the answer turn
-                pairs.append((q, a))
-            i += 1
-        return pairs
-
     def get_cached_turns(self, conversation_id: str) -> list[ConversationTurn]:
-        """Get locally cached conversation turns.
-
-        Args:
-            conversation_id: The conversation ID.
-
-        Returns:
-            List of ConversationTurn objects.
-        """
+        """Return typed turns from the local conversation cache."""
         cached = self._cache.get_cached_conversation(conversation_id)
         return [
             ConversationTurn(
@@ -737,190 +364,37 @@ class ChatAPI(LoopBoundPrimitive):
         ]
 
     async def delete_conversation(self, notebook_id: str, conversation_id: str) -> None:
-        """Delete a conversation from the server.
-
-        Mirrors the web UI's "Delete history" action. After deletion the next
-        ``ask()`` with no ``conversation_id`` starts a fresh server-side
-        conversation rather than extending the deleted one.
-
-        Args:
-            notebook_id: The notebook that owns the conversation.
-            conversation_id: The conversation to delete.
-
-        Returns:
-            ``None`` on success; any failure raises first.
-
-        .. versionchanged:: 0.8.0
-            **Breaking change:** returns ``None`` instead of the uninformative
-            always-``True`` value; the ``-> bool`` annotation is dropped (#1290).
-        """
-        # Catch cross-loop misuse before acquiring the per-conversation lock
-        # (like ``ask``), so a client reused from another loop fails fast rather
-        # than hang on a dead-loop lock. ``set_bound_loop`` / ``reset_after_open``
-        # (#1225) only reset locks on *reopen*; an open cross-loop client raises.
+        """Delete server turns, then clear local state atomically."""
         self._loop_guard.assert_bound_loop()
         logger.debug("Deleting conversation %s in notebook %s", conversation_id, notebook_id)
-        # Hold the per-``conversation_id`` lock like ``ask`` does for follow-ups,
-        # so a concurrent follow-up can't read pre-delete history then POST it
-        # after the delete cleared both server-side state and the local cache.
         async with self._get_conversation_lock(conversation_id):
-            # DELETE_CONVERSATION is the live ``DeleteChatTurns``: it deletes the
-            # conversation's chat turns (the "Delete history" action), not a
-            # standalone conversation entity.
-            # Param shape from web-UI traffic; trailing 1 is a fixed flag.
-            params: list[Any] = [[], conversation_id, None, 1]
-            await self._rpc.rpc_call(
-                RPCMethod.DELETE_CONVERSATION,
-                params,
-                source_path=f"/notebook/{notebook_id}",
-            )
-            # Clear the cache only after a successful RPC (failure raises above).
+            await self._send_delete_conversation(notebook_id, conversation_id)
             self._cache.clear(conversation_id)
-            # Record under the conversation lock so a null ask blocked on this
-            # same lock learns, on wake, not to pin its POST to the deleted id
-            # (see ``ask`` null-conversation path, #1875).
             self._deleted_conversations.record(conversation_id)
-        # v0.8.0 (#1290): the uninformative always-``True`` return becomes ``None``.
         return None
 
     def clear_cache(self, conversation_id: str | None = None) -> bool:
-        """Clear conversation cache.
-
-        Args:
-            conversation_id: Clear specific conversation, or all if None.
-
-        Returns:
-            True if cache was cleared.
-        """
+        """Clear one cached conversation, or all cached conversations."""
         return self._cache.clear(conversation_id)
 
     def cache_size(self) -> int:
-        """Return the number of conversations currently held in the cache.
-
-        Surfaced for CLI ``history --clear --json`` so the emitted envelope
-        can report how many conversations were dropped without reaching
-        into ``_cache`` from the CLI layer.
-        """
+        """Return the number of cached conversations."""
         return len(self._cache.conversations)
 
-    async def configure(
-        self,
-        notebook_id: str,
-        goal: ChatGoal | None = None,
-        response_length: ChatResponseLength | None = None,
-        custom_prompt: str | None = None,
-    ) -> None:
-        """Configure chat persona and response settings for a notebook.
-
-        Writes the WHOLE chat-settings block with no server-side merge: an
-        omitted ``goal`` / ``response_length`` resets that field to its default.
-        This is the low-level primitive — for a partial, merge-preserving update
-        (CLI ``configure`` / MCP ``chat_configure``) go through
-        ``_app.chat.execute_configure``, which reads :meth:`get_settings` first.
-
-        Args:
-            notebook_id: The notebook ID.
-            goal: Chat persona/goal (ChatGoal enum: DEFAULT, CUSTOM, LEARNING_GUIDE).
-            response_length: Response verbosity (ChatResponseLength enum).
-            custom_prompt: Custom instructions (required if goal is CUSTOM).
-
-        Raises:
-            ValidationError: If goal is CUSTOM but custom_prompt is not provided.
-        """
-        logger.debug("Configuring chat for notebook %s", notebook_id)
-
-        if goal is None:
-            goal = ChatGoal.DEFAULT
-        if response_length is None:
-            response_length = ChatResponseLength.DEFAULT
-
-        if goal == ChatGoal.CUSTOM and not custom_prompt:
-            raise ValidationError("custom_prompt is required when goal is CUSTOM")
-
-        goal_array = [goal.value, custom_prompt] if goal == ChatGoal.CUSTOM else [goal.value]
-
-        chat_settings = [goal_array, [response_length.value]]
-        params = [
-            notebook_id,
-            [[None, None, None, None, None, None, None, chat_settings]],
-        ]
-
-        await self._rpc.rpc_call(
-            RPCMethod.RENAME_NOTEBOOK,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-        )
-
     async def set_mode(self, notebook_id: str, mode: ChatMode) -> None:
-        """Set chat mode using predefined configurations.
-
-        Args:
-            notebook_id: The notebook ID.
-            mode: Predefined ChatMode (DEFAULT, LEARNING_GUIDE, CONCISE, DETAILED).
-        """
-
+        """Apply a predefined chat configuration."""
         mode_configs = {
             ChatMode.DEFAULT: (ChatGoal.DEFAULT, ChatResponseLength.DEFAULT, None),
-            ChatMode.LEARNING_GUIDE: (ChatGoal.LEARNING_GUIDE, ChatResponseLength.LONGER, None),
+            ChatMode.LEARNING_GUIDE: (
+                ChatGoal.LEARNING_GUIDE,
+                ChatResponseLength.LONGER,
+                None,
+            ),
             ChatMode.CONCISE: (ChatGoal.DEFAULT, ChatResponseLength.SHORTER, None),
             ChatMode.DETAILED: (ChatGoal.DEFAULT, ChatResponseLength.LONGER, None),
         }
-
         goal, length, prompt = mode_configs[mode]
         await self.configure(notebook_id, goal, length, prompt)
-
-    async def get_settings(self, notebook_id: str) -> ChatSettings:
-        """Read the notebook's current chat configuration.
-
-        Decodes the chat-settings block from ``GET_NOTEBOOK`` so a *partial*
-        ``configure`` can merge (read-modify-write) instead of clobbering the
-        fields it doesn't touch — the server stores the whole block with no
-        merge (see :meth:`configure`). A notebook that has never been configured
-        reads back as ``DEFAULT``/``DEFAULT`` with no persona.
-
-        Args:
-            notebook_id: The notebook ID.
-
-        Returns:
-            The current :class:`ChatSettings` (goal, response length, persona).
-
-        Raises:
-            UnknownRPCMethodError: if the GET_NOTEBOOK chat-settings block has
-                drifted from the expected shape — raised rather than silently
-                defaulting, which on the merge path would clobber a field the
-                caller meant to preserve (the #1751 footgun).
-        """
-        params = build_get_notebook_params(notebook_id)
-        result = await self._rpc.rpc_call(
-            RPCMethod.GET_NOTEBOOK,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-        )
-        nb_info = safe_index(
-            result,
-            0,
-            method_id=RPCMethod.GET_NOTEBOOK.value,
-            source="ChatAPI.get_settings",
-        )
-        row = unwrap_chat_settings(nb_info, source="ChatAPI.get_settings")
-        # Map the raw codes to enums here (the row layer stays enum-free). An
-        # unknown code — a new server-side enum member — is decode drift, so
-        # surface it as UnknownRPCMethodError (with the GET_NOTEBOOK method id)
-        # rather than a bare ValueError, matching the rest of the decode path.
-        try:
-            goal = ChatGoal(row.goal_code)
-            length = ChatResponseLength(row.response_length_code)
-        except ValueError as exc:
-            raise UnknownRPCMethodError(
-                f"unknown chat-settings enum code "
-                f"(goal={row.goal_code!r}, response_length={row.response_length_code!r})",
-                method_id=RPCMethod.GET_NOTEBOOK.value,
-                path=(7,),
-                source="ChatAPI.get_settings",
-                data_at_failure=reprlib.repr((row.goal_code, row.response_length_code)),
-            ) from exc
-        return ChatSettings(goal=goal, response_length=length, custom_prompt=row.custom_prompt)
 
     async def save_answer_as_note(
         self,
@@ -929,40 +403,7 @@ class ChatAPI(LoopBoundPrimitive):
         *,
         title: str | None = None,
     ) -> Note:
-        """Save a chat answer as a citation-rich note (issue #660).
-
-        Unlike :meth:`NotesAPI.create`, this preserves the ``[N]``
-        citation markers in the answer as interactive hover-anchored
-        references in the NotebookLM web UI. It mirrors the wire format
-        the web UI's "Save to note" button uses.
-
-        Args:
-            notebook_id: The notebook ID.
-            ask_result: Result from a prior ``client.chat.ask()`` call.
-                Must have non-empty ``references`` — otherwise this
-                method raises :class:`ValueError`.
-            title: Note title. When ``None`` (default), a title is
-                derived from the first 50 characters of the answer
-                (``AskResult`` does not currently carry the original
-                question, so the answer is used). An empty string
-                (``""``) is passed through verbatim — i.e. treated as
-                "use this exact (empty) title", NOT as "use default".
-                The NotebookLM server may apply smart-title generation
-                regardless; the returned ``Note.title`` reflects what
-                the server actually stored.
-
-        Returns:
-            The created ``Note``. ``Note.content`` holds the answer text
-            WITH ``[N]`` markers; the rich citation anchors live
-            server-side and surface via the NotebookLM web UI.
-
-        Raises:
-            ValueError: If ``ask_result.references`` is empty. Callers
-                without citations should fall back to
-                :meth:`NotesAPI.create` for plain-text notes — this
-                method raises rather than silently degrading so the
-                caller can decide.
-        """
+        """Save a chat answer as a citation-rich note."""
         if not ask_result.references:
             raise ValueError(
                 "save_answer_as_note requires AskResult.references to be "
@@ -973,86 +414,102 @@ class ChatAPI(LoopBoundPrimitive):
             if title is not None
             else f"Chat: {ask_result.answer[:50].strip().replace(chr(10), ' ')}"
         )
-        return await save_chat_answer_as_note(
-            self._rpc,
+        notes_logger.debug(
+            "Saving chat answer as note in notebook %s (%d refs)",
             notebook_id,
+            len(ask_result.references),
+        )
+        clean_answer, citation_anchors = _prepare_note_citations(
             ask_result.answer,
             ask_result.references,
-            resolved_title,
         )
 
-    # =========================================================================
-    # Private Helpers
-    # =========================================================================
+        return await self._send_note(
+            notebook_id=notebook_id,
+            answer_text=ask_result.answer,
+            references=ask_result.references,
+            title=resolved_title,
+            clean_answer=clean_answer,
+            citation_anchors=citation_anchors,
+        )
 
-    def _build_conversation_history(self, conversation_id: str) -> list | None:
-        """Build conversation history for follow-up requests."""
-        turns = self._cache.get_cached_conversation(conversation_id)
-        if not turns:
-            return None
+    @abstractmethod
+    async def get_conversation_turns(
+        self,
+        notebook_id: str,
+        conversation_id: str,
+        limit: int = 2,
+    ) -> Any:
+        """Return backend-native conversation turns."""
 
-        history = []
-        for turn in turns:
-            history.append([turn["answer"], None, 2])
-            history.append([turn["query"], None, 1])
-        return history
+    @abstractmethod
+    async def get_conversation_id(self, notebook_id: str) -> str | None:
+        """Return the notebook's current conversation ID."""
 
-    def _build_chat_request(
+    @abstractmethod
+    async def get_history(
+        self,
+        notebook_id: str,
+        limit: int = 100,
+        conversation_id: str | None = None,
+    ) -> list[tuple[str, str]]:
+        """Return decoded question/answer history."""
+
+    @abstractmethod
+    async def configure(
+        self,
+        notebook_id: str,
+        goal: ChatGoal | None = None,
+        response_length: ChatResponseLength | None = None,
+        custom_prompt: str | None = None,
+    ) -> None:
+        """Persist chat configuration."""
+
+    @abstractmethod
+    async def get_settings(self, notebook_id: str) -> ChatSettings:
+        """Return decoded chat settings."""
+
+    @abstractmethod
+    async def _list_turn_roles(
+        self,
+        notebook_id: str,
+        conversation_id: str,
+        limit: int,
+    ) -> list[object]:
+        """Return one decoded role value per backend turn row."""
+
+    @abstractmethod
+    async def _stream_answer(
         self,
         *,
-        snapshot: AuthSnapshot,
         notebook_id: str,
         question: str,
         source_ids: list[str],
-        conversation_history: list | None,
+        cached_turns: list[ConversationTurn],
         conversation_id: str | None,
-        reqid: int,
-    ) -> tuple[str, str, dict[str, str]]:
-        """Compatibility wrapper for streamed-chat request construction."""
-        return build_streaming_chat_request(
-            snapshot=snapshot,
-            notebook_id=notebook_id,
-            question=question,
-            source_ids=source_ids,
-            conversation_history=conversation_history,
-            conversation_id=conversation_id,
-            reqid=reqid,
-        )
+    ) -> _PostedAsk:
+        """Send and decode one backend answer stream."""
 
-    def _parse_ask_response_with_references(
-        self, response_text: str
-    ) -> tuple[str, list[ChatReference], str | None]:
-        """Compatibility wrapper preserving the old tuple return shape.
+    @abstractmethod
+    async def _send_delete_conversation(
+        self,
+        notebook_id: str,
+        conversation_id: str,
+    ) -> None:
+        """Send the backend delete request."""
 
-        Deliberately still a 3-tuple: the answer document added by #2120 is
-        read from :func:`parse_streaming_chat_response` directly on the ask
-        path, so this legacy shape does not have to grow a fourth element.
-        """
-        result = parse_streaming_chat_response(response_text)
-        return result.answer, result.references, result.conversation_id
+    @abstractmethod
+    async def _send_note(
+        self,
+        *,
+        notebook_id: str,
+        answer_text: str,
+        references: list[ChatReference],
+        title: str,
+        clean_answer: str,
+        citation_anchors: list[tuple[ChatReference, int]],
+    ) -> Note:
+        """Send the backend saved-from-chat note request."""
 
-    def _extract_answer_and_refs_from_chunk(
-        self, json_str: str
-    ) -> tuple[str | None, bool, list[ChatReference], str | None]:
-        """Compatibility wrapper for streamed-chat chunk parsing."""
-        return extract_answer_and_refs_from_chunk(json_str)
 
-    def _raise_if_rate_limited(self, error_payload: list) -> None:
-        """Compatibility wrapper for streamed-chat error payload parsing."""
-        raise_if_rate_limited(error_payload)
-
-    def _parse_citations(self, first: list) -> list[ChatReference]:
-        """Compatibility wrapper for streamed-chat citation parsing."""
-        return parse_citations(first)
-
-    def _parse_single_citation(self, cite: Any) -> ChatReference | None:
-        """Compatibility wrapper for single streamed-chat citation parsing."""
-        return parse_single_citation(cite)
-
-    def _extract_text_passages(self, cite_inner: list) -> tuple[str | None, int | None, int | None]:
-        """Compatibility wrapper for streamed-chat citation text extraction."""
-        return extract_text_passages(cite_inner)
-
-    def _extract_uuid_from_nested(self, data: Any, max_depth: int = 10) -> str | None:
-        """Compatibility wrapper for streamed-chat source UUID extraction."""
-        return extract_uuid_from_nested(data, max_depth)
+__all__ = ["ChatAPI"]

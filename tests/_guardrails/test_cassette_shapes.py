@@ -93,7 +93,7 @@ AUDIT_REPAIR_LIST: dict[str, str] = {
     # collapsed to ``"SCRUBBED"``).
     # chat_ask.yaml + chat_ask_with_references.yaml were re-recorded against
     # the current 9-param streaming-chat builder
-    # (src/notebooklm/_chat/wire.py:90-127, reached via ChatAPI._build_chat_request)
+    # (src/notebooklm/_web/params/chat_stream.py, reached via WebChatAPI._stream_answer)
     # with the ``freq`` body matcher opted in per-cassette in
     # tests/integration/test_vcr_comprehensive.py.
     # sources_add_file.yaml was repaired — upload tokens scrubbed in

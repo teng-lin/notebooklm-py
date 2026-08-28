@@ -7,7 +7,8 @@ share groups landed in #1322; this file is the chat counterpart tracked by
 
 RPC fan-out per command
 -----------------------
-``ask`` uses the **streamed** chat backend (``_chat.wire`` / a ``_reqid``-bearing
+``ask`` uses the **streamed** chat backend (``_web.rows.chat_stream`` / a
+``_reqid``-bearing
 streaming POST), preceded by a ``GET_LAST_CONVERSATION_ID`` lookup:
 
 * ``ask``     -> ``hPTbtc`` (GET_LAST_CONVERSATION_ID), ``khqZz`` (authoritative

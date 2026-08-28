@@ -4,11 +4,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._chat import ChatAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
 from notebooklm._runtime.contracts import LoopGuard
 from notebooklm._web.artifacts import WebArtifactsAPI
+from notebooklm._web.chat import WebChatAPI
 from notebooklm._web.notebooks import WebNotebooksAPI
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.rpc.types import (
@@ -66,7 +66,7 @@ class TestConfigureChat:
         constructor collaborators are inert ``MagicMock`` stand-ins.
         """
         core = make_fake_core(rpc_call=rpc_call)
-        return ChatAPI(
+        return WebChatAPI(
             rpc=core.rpc_executor,
             transport=MagicMock(),
             reqid=MagicMock(),

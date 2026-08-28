@@ -98,7 +98,7 @@ async def test_chain_routes_perform_authed_post_to_transport() -> None:
     """``RuntimeTransport.perform_authed_post`` flows through the chain.
 
     Covers direct callers of ``RuntimeTransport.perform_authed_post``: the chat
-    path in :func:`notebooklm._chat.transport.chat_aware_authed_post` and any
+    path in :func:`notebooklm._web.transport.chat.chat_aware_authed_post` and any
     first-party caller via ``client._composed.transport.perform_authed_post``.
     """
     expected_response = httpx.Response(status_code=200, content=b"chain-routed")

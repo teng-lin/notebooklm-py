@@ -39,7 +39,6 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from ._chat import ChatAPI
 from ._client_composed import ClientComposed
 from ._client_seams import resolve_client_seams
 from ._collections import CollectionsAPI
@@ -65,6 +64,7 @@ from ._runtime.lifecycle import CookieRotator, CookieSaver
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
 from ._web.artifacts import WebArtifactsAPI
+from ._web.chat import WebChatAPI
 from ._web.notebooks import WebNotebooksAPI
 from ._web.sources import WebSourcesAPI
 from ._web.sources.upload import SourceUploadPipeline
@@ -373,12 +373,12 @@ def _assemble_client(
         note_service=note_service,
         storage_path=storage_path,
     )
-    # ChatAPI (per ADR-0014) takes its
+    # WebChatAPI (per ADR-0014) takes its
     # five direct collaborators (RpcCaller, RuntimeTransport, ReqidCounter,
     # LoopGuard, NotebookSourceIdProvider) by keyword argument. The transport is
     # sourced from ``client._composed``; other runtime fields come from
     # the :class:`ClientInternals` returned by the composition root.
-    client.chat = ChatAPI(
+    client.chat = WebChatAPI(
         rpc=internals.executor,
         transport=client._composed.transport,
         reqid=internals.collaborators.reqid,

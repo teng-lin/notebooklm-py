@@ -32,7 +32,7 @@ class TestChatAPI:
         # Pins the per-tenant isolation contract: two NotebookLMClient
         # instances must never share a conversation cache, or follow-up
         # turns from one tenant could leak into the other's outgoing
-        # history payload. The default ``ChatAPI(conversation_cache=None)``
+        # history payload. The default ``WebChatAPI(conversation_cache=None)``
         # factory path constructs a fresh ``ConversationCache`` per
         # instance — this test would have caught a regression where
         # someone made the default a class-level singleton.
@@ -705,7 +705,7 @@ class TestChatAskErrorHandling:
     ):
         """Test ask() raises ChatError on httpx.HTTPStatusError.
         After the chat-path refactor, the chat path uses
-        :func:`_chat.transport.chat_aware_authed_post` which routes
+        :func:`_web.transport.chat.chat_aware_authed_post` which routes
         through the shared transport pipeline. Auth-shaped statuses
         (400/401/403) go through the refresh path before surfacing; this
         test uses 500 to exercise the plain
@@ -1851,7 +1851,7 @@ class TestExtractAnswerAndRefsFromChunk:
     def test_inner_data_first_not_list_raises(self, auth_tokens):
         """A populated record whose answer row is not a list is drift.
         Previously this silently returned ``(None, ...)`` (the answer was
-        dropped). Since the strict-decode migration of ``_chat.wire``
+        dropped). Since the strict-decode migration of the chat stream parser
         (ADR-0011) a non-list answer row in a *populated* ``wrb.fr`` record is
         treated as Google-side wire drift and raises ``UnknownRPCMethodError``.
         Strict decoding is the only mode (the ``NOTEBOOKLM_STRICT_DECODE=0``

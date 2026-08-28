@@ -31,6 +31,7 @@ import pytest
 
 from notebooklm._chat import ChatAPI
 from notebooklm._runtime.contracts import RpcCaller
+from notebooklm._web.chat import WebChatAPI
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import AskResult, ChatReference
 
@@ -53,14 +54,14 @@ def chat_api(mock_rpc: MagicMock) -> ChatAPI:
 
     A ``MagicMock(get_source_ids=AsyncMock(...))`` notebooks resolver
     is injected so the ``NotebooksAPI`` fallback in
-    ``ChatAPI.__init__`` does not try to wrap ``rpc``; the
+    ``WebChatAPI.__init__`` does not try to wrap ``rpc``; the
     ``NotebookSourceIdProvider`` protocol surface is small enough that
     a ``MagicMock`` with a single async stub satisfies it without
     falling into ADR-0007's forbidden-attribute-assignment lint
     (the stub is passed via constructor injection).
     """
     notebooks = MagicMock(get_source_ids=AsyncMock(return_value=[]))
-    return ChatAPI(
+    return WebChatAPI(
         rpc=mock_rpc,
         transport=MagicMock(),
         reqid=MagicMock(),

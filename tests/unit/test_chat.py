@@ -1,7 +1,7 @@
 """Unit tests for chat-domain exception contracts.
 
 Pins the failure-mode contract for
-:func:`notebooklm._chat.wire.parse_streaming_chat_response`:
+:func:`notebooklm._web.rows.chat_stream.parse_streaming_chat_response`:
 
 * Zero parseable chunks (empty body, garbage, or API wire drift) →
   raise :class:`notebooklm.exceptions.ChatResponseParseError`.
@@ -16,7 +16,7 @@ import json
 
 import pytest
 
-from notebooklm._chat.wire import (
+from notebooklm._web.rows.chat_stream import (
     StreamingChatParseResult,
     parse_streaming_chat_response,
 )

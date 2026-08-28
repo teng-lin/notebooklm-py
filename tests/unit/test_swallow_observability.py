@@ -124,13 +124,13 @@ async def test_get_source_ids_warns_when_the_sources_slot_is_absent(caplog):
 
 
 def test_qa_pairs_raises_on_unguarded_shape():
-    """_chat/api.py: QA-pair parser raises when next_turn[4] is not indexable.
+    """Web chat QA-pair parser raises when next_turn[4] is not indexable.
 
     Strict decoding is the only mode (the ``NOTEBOOKLM_STRICT_DECODE=0``
     soft-mode opt-out was retired in v0.7.0), so a drifted answer turn raises
     ``UnknownRPCMethodError`` rather than silently producing an empty answer.
     """
-    from notebooklm._chat import ChatAPI
+    from notebooklm._web.chat import WebChatAPI
 
     # next_turn[4] is None → None[0] raises TypeError, surfaced by safe_index.
     turns_data = [
@@ -140,9 +140,8 @@ def test_qa_pairs_raises_on_unguarded_shape():
         ]
     ]
 
-    chat = ChatAPI.__new__(ChatAPI)
     with pytest.raises(UnknownRPCMethodError):
-        chat._parse_turns_to_qa_pairs(turns_data)  # type: ignore[arg-type]
+        WebChatAPI._parse_turns_to_qa_pairs(turns_data)
 
 
 @pytest.mark.asyncio
@@ -278,10 +277,10 @@ def test_auth_corrupt_legacy_context_does_not_block_in_band_write(tmp_path):
 
 
 def test_stream_parser_debug_guarded_by_isenabledfor(caplog):
-    """_chat/wire.py — non-JSON chunk debug log is guarded before it fires."""
+    """chat_stream.py — non-JSON chunk debug log is guarded before it fires."""
 
     # Direct: ensure the module has a guarded debug call (structural check).
-    src = (SRC_ROOT / "_chat" / "wire.py").read_text(encoding="utf-8")
+    src = (SRC_ROOT / "_web" / "rows" / "chat_stream.py").read_text(encoding="utf-8")
     assert "logger.isEnabledFor(logging.DEBUG)" in src
     assert "Stream parser" in src
 

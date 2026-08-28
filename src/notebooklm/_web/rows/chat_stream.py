@@ -1,7 +1,7 @@
-"""Streamed-chat wire mechanics for NotebookLM private chat calls.
+"""Web streamed-chat parsing mechanics for NotebookLM private chat calls.
 
-This module owns only streamed-chat wire request construction and response
-parsing. Conversation flow, caching, source resolution, and ``AskResult``
+This module owns streamed-chat response parsing. Conversation flow, request
+construction, caching, source resolution, and ``AskResult``
 construction stay in :mod:`notebooklm._chat`.
 """
 
@@ -13,18 +13,20 @@ import math
 import re
 import reprlib
 from dataclasses import dataclass, field, replace
-from typing import Any, NoReturn, Protocol
-from urllib.parse import quote, urlencode
+from typing import Any, NoReturn
 
-from .._auth.account import format_authuser_value
-from .._env import get_default_bl, get_default_language
-from .._types.documents import (
+from ..._types.documents import (
     DocumentAnnotation,
     StructuredDocument,
     _utf16_slice,
     utf16_len,
 )
-from .._web.rows.chat import (
+from ...exceptions import ChatError, ChatResponseParseError, UnknownRPCMethodError
+from ...rpc._safe_index import safe_index
+from ...rpc.decoder import strip_anti_xssi
+from ...rpc.types import RPCMethod
+from ...types import ChatReference, ConversationTurnKey, NextStepSuggestion
+from .chat import (
     AnswerRow,
     CitationDetail,
     CitationRow,
@@ -32,13 +34,7 @@ from .._web.rows.chat import (
     StreamEnvelopeRow,
     StreamFrameRow,
 )
-from .._web.rows.documents import build_blocks
-from ..exceptions import ChatError, ChatResponseParseError, UnknownRPCMethodError
-from ..rpc._safe_index import safe_index
-from ..rpc.decoder import strip_anti_xssi
-from ..rpc.encoder import nest_source_ids
-from ..rpc.types import RPCMethod, get_query_url
-from ..types import ChatReference, ConversationTurnKey, NextStepSuggestion
+from .documents import build_blocks
 
 # Deliberate: use the ``notebooklm._chat`` logger namespace (not this module's)
 # so existing log filters keep matching the chat parser diagnostics.
@@ -56,22 +52,6 @@ _UUID_PATTERN = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
     re.IGNORECASE,
 )
-
-
-class AuthSnapshotLike(Protocol):
-    """Structural auth snapshot accepted by streamed-chat request builders."""
-
-    @property
-    def csrf_token(self) -> str: ...
-
-    @property
-    def session_id(self) -> str: ...
-
-    @property
-    def authuser(self) -> int: ...
-
-    @property
-    def account_email(self) -> str | None: ...
 
 
 @dataclass(frozen=True)
@@ -139,69 +119,6 @@ class _ChunkExtraction:
     #: Read before the answer-text gate, so a text-less chunk still reports it.
     turn_key: ConversationTurnKey | None = None
     next_steps: list[NextStepSuggestion] = field(default_factory=list)
-
-
-def build_streaming_chat_request(
-    *,
-    snapshot: AuthSnapshotLike,
-    notebook_id: str,
-    question: str,
-    source_ids: list[str],
-    conversation_history: list | None,
-    conversation_id: str | None,
-    reqid: int,
-) -> tuple[str, str, dict[str, str]]:
-    """Assemble ``(url, body, extra_headers)`` for one streamed-chat attempt.
-
-    ``conversation_id=None`` tells the server to use the user's current
-    conversation on this notebook, creating one if none exists. The
-    server-recorded id is NOT returned in the streaming response — it
-    must be recovered separately via ``hPTbtc``
-    (``ChatAPI.get_conversation_id``) after the ask. Non-None values are
-    follow-up asks and are forwarded verbatim into ``params[4]``.
-
-    See issue #659 for the bug class that motivated this contract.
-    """
-    sources_array = nest_source_ids(source_ids, 2)
-
-    params: list[Any] = [
-        sources_array,
-        question,
-        conversation_history,
-        [2, None, [1], [1]],
-        conversation_id,
-        None,  # [5] - always null
-        None,  # [6] - always null
-        notebook_id,  # [7] - required for server-side conversation persistence
-        1,  # [8] - always 1
-    ]
-
-    params_json = json.dumps(params, separators=(",", ":"))
-    f_req_json = json.dumps([None, params_json], separators=(",", ":"))
-    encoded_req = quote(f_req_json, safe="")
-
-    body_parts = [f"f.req={encoded_req}"]
-    if snapshot.csrf_token:
-        encoded_at = quote(snapshot.csrf_token, safe="")
-        body_parts.append(f"at={encoded_at}")
-    body = "&".join(body_parts) + "&"
-
-    url_params: dict[str, str] = {
-        "bl": get_default_bl(),
-        "hl": get_default_language(),
-        "_reqid": str(reqid),
-        "rt": "c",
-    }
-    if snapshot.session_id:
-        url_params["f.sid"] = snapshot.session_id
-    if snapshot.account_email or snapshot.authuser:
-        url_params["authuser"] = format_authuser_value(
-            snapshot.authuser,
-            snapshot.account_email,
-        )
-
-    url = f"{get_query_url()}?{urlencode(url_params)}"
-    return url, body, {}
 
 
 def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResult:

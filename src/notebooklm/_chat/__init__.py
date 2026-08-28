@@ -1,33 +1,20 @@
-"""Private chat-feature package (facade + helpers unified).
+"""Backend-neutral private chat package."""
 
-Cohesive cluster promoted from the former flat ``_chat*.py`` modules (issue #1328).
-Unlike the other promoted clusters, the ``ChatAPI`` facade (formerly ``_chat.py``) is
-moved *into* this package as :mod:`._chat.api` to resolve the package/module name
-collision; its public names are re-exported here so existing references such as
-``from notebooklm._chat import ChatAPI`` keep resolving unchanged.
+from __future__ import annotations
 
-No package-init import cycle exists: the dependency direction is strictly one-way
-(``api`` imports ``notes``/``wire``/``transport``; none of the helpers
-import ``api`` or this package ``__init__``). Importing ``api`` therefore pulls in the
-helpers it needs regardless of the order of the aggregating ``from . import ...`` line
-below, which ruff's import sorter keeps alphabetised.
-"""
+from typing import Any
 
-from . import api, notes, transport, wire
+from . import api
 from .api import ChatAPI
-from .wire import _extract_next_turn_content
 
-# ``_extract_next_turn_content`` is private-by-name but intentionally re-exported
-# (and listed in ``__all__``) because it was historically importable as
-# ``notebooklm._chat._extract_next_turn_content`` from the old ``_chat.py`` module;
-# unit tests (``tests/unit/test_chat_helpers.py``) import it through this facade.
-# It now lives in ``.wire`` (a pure streamed-turn decode helper) but stays
-# re-exported here so that import path keeps working across the package promotion.
-__all__ = [
-    "api",
-    "notes",
-    "transport",
-    "wire",
-    "ChatAPI",
-    "_extract_next_turn_content",
-]
+
+def __getattr__(name: str) -> Any:
+    """Lazily preserve the historically importable private turn helper."""
+    if name == "_extract_next_turn_content":
+        from .._web.rows.chat_stream import _extract_next_turn_content
+
+        return _extract_next_turn_content
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+__all__ = ["api", "ChatAPI", "_extract_next_turn_content"]

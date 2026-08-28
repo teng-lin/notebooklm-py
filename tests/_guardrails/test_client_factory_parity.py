@@ -29,9 +29,11 @@ vacuous.
 from __future__ import annotations
 
 from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._chat import ChatAPI
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._sources import SourcesAPI
 from notebooklm._web.artifacts import WebArtifactsAPI
+from notebooklm._web.chat import WebChatAPI
 from notebooklm._web.notebooks import WebNotebooksAPI
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.auth import AuthTokens
@@ -130,6 +132,11 @@ def test_shared_wiring_identities_hold_on_both_paths() -> None:
             f"{label}: chat must share the client's NotebooksAPI instance "
             "(ChatAPI._notebooks), not a privately constructed one"
         )
+        assert type(client.chat) is WebChatAPI
+        assert isinstance(client.chat, ChatAPI)
+        assert getattr(client.chat, "_rpc", _missing) is client._rpc_executor
+        assert getattr(client.chat, "_transport", _missing) is client._composed.transport
+        assert getattr(client.chat, "_reqid", _missing) is client._collaborators.reqid
         assert type(client.notebooks) is WebNotebooksAPI
         assert isinstance(client.notebooks, NotebooksAPI)
         assert getattr(client.notebooks, "_rpc", _missing) is client._rpc_executor, (

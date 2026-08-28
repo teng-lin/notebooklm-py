@@ -1,4 +1,4 @@
-"""Chat-domain consumer-side error-mapping seam over generic transport.
+"""Web chat consumer-side error-mapping seam over generic transport.
 
 This module owns the chat-flavored exception mapping that wraps a
 single authed POST attempt against the NotebookLM batchexecute
@@ -22,17 +22,17 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from .._env import get_default_bl
-from .._transport_errors import (
+from ..._env import get_default_bl
+from ..._transport_errors import (
     TransportAuthExpired,
     TransportRateLimited,
     TransportServerError,
 )
-from ..exceptions import ChatError, NetworkError
+from ...exceptions import ChatError, NetworkError
 
 if TYPE_CHECKING:
-    from .._request_types import BuildRequest
-    from .._runtime.transport import RuntimeTransport
+    from ..._request_types import BuildRequest
+    from ..._runtime.transport import RuntimeTransport
 
 
 def _format_chat_read_timeout_message(

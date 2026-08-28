@@ -198,7 +198,7 @@ def test_chat_ask_guards_against_cross_loop_call() -> None:
     takes the :class:`LoopGuard` collaborator directly via keyword arg
     instead of reaching for it through a chat-local runtime composite.
     """
-    from notebooklm._chat import ChatAPI
+    from notebooklm._web.chat import WebChatAPI
 
     other_loop = asyncio.new_event_loop()
     try:
@@ -208,7 +208,7 @@ def test_chat_ask_guards_against_cross_loop_call() -> None:
             )
         )
 
-        chat = ChatAPI(
+        chat = WebChatAPI(
             rpc=MagicMock(),
             transport=MagicMock(),
             reqid=MagicMock(),

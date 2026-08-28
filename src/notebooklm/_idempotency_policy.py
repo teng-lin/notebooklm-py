@@ -73,7 +73,7 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     #     ``(CREATE_NOTE, None)`` default mirrors the same policy so callers
     #     that omit ``operation_variant`` still get NON_IDEMPOTENT_NO_RETRY.
     #   * ``"saved_from_chat"`` — 7-element params from
-    #     ``_chat.notes.save_chat_answer_as_note`` (issue #660). Used by
+    #     ``_web.chat.save_chat_answer_as_note`` (issue #660). Used by
     #     ``ChatAPI.save_answer_as_note``.
     # Both variants share the policy; explicit registration documents the
     # two distinct param shapes for future-classification work.

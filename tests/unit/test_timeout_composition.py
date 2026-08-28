@@ -30,7 +30,6 @@ from types import SimpleNamespace
 import pytest
 
 from notebooklm import NotebookLMClient
-from notebooklm._chat.api import ChatAPI
 from notebooklm._idempotency import (
     IDEMPOTENCY_REGISTRY,
     resolve_effective_disable_internal_retries,
@@ -48,6 +47,7 @@ from notebooklm._runtime.config import (
     compose_builtin_read_timeout,
     resolve_chat_read_timeout,
 )
+from notebooklm._web.chat import WebChatAPI
 from notebooklm.rpc import RPCMethod
 
 #: batchexecute puts the RPC id in the query string (``?rpcids=…``), so it
@@ -340,7 +340,7 @@ class TestRejectsUnusableWindows:
         real diagnostic. Fail at the boundary instead.
         """
         with pytest.raises(TypeError, match="AUTO_READ_TIMEOUT"):
-            ChatAPI(
+            WebChatAPI(
                 rpc=SimpleNamespace(rpc_call=None),
                 transport=SimpleNamespace(),
                 reqid=SimpleNamespace(),

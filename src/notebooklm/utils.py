@@ -203,7 +203,7 @@ async def resolve_chat_reference_passage(
         reference: The chat citation to resolve. Must carry either a
             usable ``start_char`` / ``end_char`` range or a non-empty
             ``cited_text``. A citation whose fragment decoded no blocks at
-            all — the structural anchor ``_chat.wire`` reports as
+            all — the structural anchor ``_web.rows.chat_stream`` reports as
             ``(None, None, None)`` — has neither and raises
             :class:`ChatResponseParseError` without issuing a request. A
             fragment holding only an image or a rule is *not* that case: it

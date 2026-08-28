@@ -179,7 +179,8 @@ _MAX_STATUS_MESSAGE_CHARS = 300
 #:
 #: The fifth is chat_ask_oversized_rejection.yaml's ``[3]`` (#1472). It carries
 #: no rpc id at all because streamed chat is not a ``batchexecute`` RPC, so it
-#: never passes through ``decode_response`` — it is handled by ``_chat/wire.py``
+#: never passes through ``decode_response`` — it is handled by
+#: ``_web/rows/chat_stream.py``
 #: and is not part of this list.
 #:
 #: Recorded here as a *finding*, not a blessing: only the first has ever been

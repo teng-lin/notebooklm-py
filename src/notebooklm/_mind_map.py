@@ -12,7 +12,7 @@ The legacy ``MindMapService`` class was retired (see refactor-history.md
 Step 9, ADR-0013) along with its module-level compatibility wrappers
 (``create_note``, ``list_mind_maps``, ``update_note``, ...) together
 with the saved-from-chat encoder, which now lives in
-:mod:`_chat.notes`. Only the :class:`NoteBackedMindMapService`
+:mod:`_web.params.chat_note`. Only the :class:`NoteBackedMindMapService`
 adapter remains.
 """
 

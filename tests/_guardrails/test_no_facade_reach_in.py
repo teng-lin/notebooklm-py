@@ -91,6 +91,7 @@ _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES = {
     "SharingAPI",
     "SourcesAPI",
     "WebArtifactsAPI",
+    "WebChatAPI",
     "WebNotebooksAPI",
     "WebSourcesAPI",
 }
@@ -107,6 +108,7 @@ _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES = {
     "_sharing",
     "_sources",
     "_web.notebooks",
+    "_web.chat",
     "_web.sources",
     "client",
     "notebooklm",
@@ -121,6 +123,7 @@ _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES = {
     "notebooklm._sharing",
     "notebooklm._sources",
     "notebooklm._web.notebooks",
+    "notebooklm._web.chat",
     "notebooklm._web.sources",
     "notebooklm.client",
 }
@@ -585,7 +588,6 @@ def test_runtime_import_visitor_detects_web_sources_facade_and_module() -> None:
         forbidden_names=_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES,
         forbidden_modules=_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES,
     )
-
     visitor.visit(tree)
 
     assert visitor.forbidden == [
@@ -596,6 +598,28 @@ def test_runtime_import_visitor_detects_web_sources_facade_and_module() -> None:
         tree,
         _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES,
     ) == {"WebSourcesAPI": [3]}
+
+
+def test_runtime_import_visitor_detects_web_chat_facade_and_module() -> None:
+    """Private services must not reach into the concrete Web chat facade."""
+    tree = ast.parse(
+        "from notebooklm._web.chat import WebChatAPI\n"
+        "import notebooklm._web.chat\n"
+        "WebChatAPI(rpc=rpc)\n"
+    )
+    visitor = _RuntimeImportVisitor(
+        forbidden_names=_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES,
+        forbidden_modules=_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES,
+    )
+    visitor.visit(tree)
+    assert visitor.forbidden == [
+        "notebooklm._web.chat.WebChatAPI",
+        "notebooklm._web.chat",
+    ]
+    assert _facade_construction_lines(
+        tree,
+        _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES,
+    ) == {"WebChatAPI": [3]}
 
 
 def test_facade_construction_lines_detects_chained_facade_access() -> None:

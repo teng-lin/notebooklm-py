@@ -1,4 +1,4 @@
-"""Unit tests for the ``_chat.notes`` module (Phase 6, ADR-0013).
+"""Unit tests for the Web saved-chat note adapter (Phase 6, ADR-0013).
 
 The encoder is tested separately in
 ``tests/unit/test_save_chat_as_note_encoder.py``. The tests here pin
@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from notebooklm._chat.notes import save_chat_answer_as_note
+from notebooklm._web.chat import save_chat_answer_as_note
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import ChatReference
 from tests._fixtures.fake_core import FakeSession, make_fake_core

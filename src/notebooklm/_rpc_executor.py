@@ -174,7 +174,7 @@ class RpcExecutor:
         ``read_timeout`` (default ``None``) overrides the client-wide
         ``timeout_provider`` read window for this one logical call — the same
         per-call escape hatch chat already uses on
-        ``RuntimeTransport.perform_authed_post`` (see ``_chat/transport.py``).
+        ``RuntimeTransport.perform_authed_post`` (see ``_web/transport/chat.py``).
         ``None`` inherits the client default, so callers that omit it are
         unaffected.
 

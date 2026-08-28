@@ -33,7 +33,7 @@ tests now drive the canonical collaborator method directly):
 
 The chat-side error mapping that used to live on
 ``NotebookLMClient.query_post`` moved to
-:func:`notebooklm._chat.transport.chat_aware_authed_post` in the D2
+:func:`notebooklm._web.transport.chat.chat_aware_authed_post` in the D2
 cutover; equivalent coverage lives in ``tests/unit/test_chat_transport.py``.
 """
 
@@ -862,7 +862,7 @@ async def test_request_id_constant_across_retry_chain(monkeypatch):
 
 # NOTE: ``query_post`` (chat-side wrapper) tests were removed in
 # ``arch-d2-cutover`` — the chat-flavored error mapping moved to
-# :func:`notebooklm._chat.transport.chat_aware_authed_post`. Equivalent
+# :func:`notebooklm._web.transport.chat.chat_aware_authed_post`. Equivalent
 # coverage lives in ``tests/unit/test_chat_transport.py``.
 
 

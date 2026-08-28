@@ -23,6 +23,7 @@ import pytest
 
 from notebooklm._chat import ChatAPI
 from notebooklm._runtime.contracts import LoopGuard, RpcCaller
+from notebooklm._web.chat import WebChatAPI
 from notebooklm.rpc import RPCMethod
 
 
@@ -30,7 +31,7 @@ from notebooklm.rpc import RPCMethod
 def mock_rpc() -> MagicMock:
     """Narrow ``RpcCaller`` fake — the only collaborator this surface uses.
 
-    Constructor injection via ``ChatAPI(rpc=..., transport=..., reqid=...,
+    Constructor injection via ``WebChatAPI(rpc=..., transport=..., reqid=...,
     loop_guard=..., notebooks=...)`` satisfies ADR-0007 (no post-hoc attribute assignment
     of an ``AsyncMock`` onto ``rpc_call``); the ``AsyncMock`` is wired
     into the ``MagicMock(spec=...)`` via its constructor so the ADR-0007
@@ -41,7 +42,7 @@ def mock_rpc() -> MagicMock:
 
 @pytest.fixture
 def api(mock_rpc: MagicMock) -> ChatAPI:
-    return ChatAPI(
+    return WebChatAPI(
         rpc=mock_rpc,
         transport=MagicMock(),
         reqid=MagicMock(),

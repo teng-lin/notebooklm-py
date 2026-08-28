@@ -85,10 +85,6 @@ from uuid import uuid4
 import httpx
 
 from notebooklm._auth.tokens import LoadPolicy, _load_stored_auth
-from notebooklm._chat.wire import (
-    build_streaming_chat_request,
-    parse_streaming_chat_response,
-)
 from notebooklm._env import (
     BUILD_LABEL_STALE_AFTER_DAYS,
     DEFAULT_BL,
@@ -102,7 +98,9 @@ from notebooklm._env import (
 )
 from notebooklm._logging import scrub_secrets
 from notebooklm._web.params.artifacts import build_retry_artifact_params
+from notebooklm._web.params.chat_stream import build_streaming_chat_request
 from notebooklm._web.params.notebooks import build_create_notebook_params
+from notebooklm._web.rows.chat_stream import parse_streaming_chat_response
 from notebooklm.auth import AuthTokens
 from notebooklm.exceptions import ChatError, ChatResponseParseError, DecodingError
 from notebooklm.paths import get_storage_path

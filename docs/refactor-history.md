@@ -309,7 +309,7 @@ not on speculation.
 Those composite runtime Protocols were later removed. Current
 constructors take the direct collaborators they need by keyword:
 `ArtifactsAPI(rpc=..., drain=..., lifecycle=...)`,
-`ChatAPI(rpc=..., transport=..., reqid=..., loop_guard=..., notebooks=...)`, and
+`WebChatAPI(rpc=..., transport=..., reqid=..., loop_guard=..., notebooks=...)`, and
 `SourceUploadPipeline(rpc=..., drain=..., lifecycle=..., kernel=...,
 auth=...)`.
 
@@ -342,6 +342,9 @@ These were factored apart:
   into `_chat/notes.py`, where `ChatAPI.save_answer_as_note(...)`
   owns the workflow. `NotesAPI.create_from_chat(...)` was a deprecated
   forwarder during the migration window and was removed in v0.7.0.
+  The later backend split kept citation preparation on the neutral
+  `ChatAPI` workflow and moved the positional encoder into
+  `_web/params/chat_note.py` with persistence in `WebChatAPI`.
 
 `NoteRowKind` stays private — it is an internal classification of
 rows returned by the undocumented `GET_NOTES_AND_MIND_MAPS` RPC, not
@@ -362,8 +365,8 @@ Feature APIs adopted consistent dependency-naming conventions:
 ```python
 SourcesAPI(rpc, *, uploader=source_uploader)
 WebNotebooksAPI(rpc, *, sources_api=sources)
-ChatAPI(rpc=rpc, transport=transport, reqid=reqid, loop_guard=lifecycle,
-        notebooks=notebooks)
+WebChatAPI(rpc=rpc, transport=transport, reqid=reqid, loop_guard=lifecycle,
+           notebooks=notebooks)
 ArtifactsAPI(rpc=rpc, drain=drain, lifecycle=lifecycle,
              notebooks=notebooks, mind_maps=mind_maps,
              note_service=note_service)

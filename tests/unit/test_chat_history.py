@@ -6,14 +6,25 @@ Tests cover:
 - CLI helper: _get_latest_conversation_from_server
 """
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 import notebooklm.cli.chat_cmd as chat_cmd_module
-from notebooklm._chat import ChatAPI
-from notebooklm._chat.history import count_prior_server_turns
+from notebooklm._web.chat import WebChatAPI as ChatAPI
 from notebooklm.exceptions import ChatError, UnknownRPCMethodError
+
+
+async def count_prior_server_turns(
+    fetch_turns: Any,
+    notebook_id: str,
+    conversation_id: str,
+) -> int:
+    """Exercise the base window loop through the Web typed-role boundary."""
+    api = ChatAPI.__new__(ChatAPI)
+    api.get_conversation_turns = fetch_turns  # type: ignore[method-assign]
+    return await api._count_prior_server_turns(notebook_id, conversation_id)
 
 
 class TestParseTurnsToQaPairs:

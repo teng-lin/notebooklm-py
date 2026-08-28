@@ -1,6 +1,6 @@
 """Unit tests for the saved-from-chat CREATE_NOTE encoder (issue #660).
 
-These tests exercise ``_chat.notes.build_save_chat_as_note_params`` and
+These tests exercise ``_web.params.chat_note.build_save_chat_as_note_params`` and
 pin its output against the wire-captured payload at
 ``tests/unit/fixtures/save_chat_as_note_create_note_request.json``.
 
@@ -10,9 +10,9 @@ produces the same payload Google's web UI sends when its "Save to note"
 button is clicked. Drift from that payload risks the server silently
 dropping citation anchors and reverting the note to plain text.
 
-The encoder moved from ``_mind_map.py`` to ``_chat/notes.py`` in
-Phase 6 (refactor-history.md Step 8, ADR-0013); the test imports were updated
-accordingly.
+The encoder moved from ``_mind_map.py`` into the chat domain in Phase 6
+(refactor-history.md Step 8, ADR-0013), then into the Web params layer when the
+chat base became transport-neutral.
 """
 
 from __future__ import annotations
@@ -22,15 +22,45 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm._chat.notes import (
+from notebooklm._chat.api import (
     _CITATION_MARKER_RE,
+    _prepare_note_citations,
     _resolve_reference,
     _strip_citation_markers,
-    build_save_chat_as_note_params,
+)
+from notebooklm._web.params.chat_note import (
+    build_save_chat_as_note_params as _build_save_chat_as_note_params,
 )
 from notebooklm.types import ChatReference
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+def build_save_chat_as_note_params(
+    notebook_id: str,
+    answer_text: str,
+    references: list[ChatReference],
+    title: str,
+) -> list[object]:
+    """Exercise neutral preparation and the Web positional encoder together."""
+    if not references:
+        return _build_save_chat_as_note_params(
+            notebook_id,
+            answer_text,
+            references,
+            title,
+            clean_answer=answer_text,
+            citation_anchors=[],
+        )
+    clean_answer, citation_anchors = _prepare_note_citations(answer_text, references)
+    return _build_save_chat_as_note_params(
+        notebook_id,
+        answer_text,
+        references,
+        title,
+        clean_answer=clean_answer,
+        citation_anchors=citation_anchors,
+    )
 
 
 def _load_request_fixture() -> dict:

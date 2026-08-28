@@ -46,7 +46,12 @@ DOMAIN_ENUM_NAMES = frozenset(
 # Modules become members only after their concrete web implementation has
 # split away. A4-A9 add one entry per namespace split.
 BASE_MODULE_ALLOWLIST: frozenset[str] = frozenset(
-    {"notebooklm._artifacts", "notebooklm._notebooks", "notebooklm._sources"}
+    {
+        "notebooklm._artifacts",
+        "notebooklm._chat.api",
+        "notebooklm._notebooks",
+        "notebooklm._sources",
+    }
 )
 
 # Public dataclass decoders remain compatibility shims after their bodies move
@@ -82,10 +87,6 @@ ALLOWED_WEB_IMPORTERS = frozenset(
         "notebooklm._artifact",
         "notebooklm._source",
         "notebooklm._chat",
-        "notebooklm._chat.api",
-        "notebooklm._chat.history",
-        "notebooklm._chat.notes",
-        "notebooklm._chat.wire",
         "notebooklm._mind_map",
         "notebooklm._mind_maps_api",
         "notebooklm._note_service",
@@ -298,7 +299,12 @@ def test_backend_direct_import_boundaries() -> None:
 
 def test_backend_boundary_manifests_are_well_formed() -> None:
     assert frozenset(
-        {"notebooklm._artifacts", "notebooklm._notebooks", "notebooklm._sources"}
+        {
+            "notebooklm._artifacts",
+            "notebooklm._chat.api",
+            "notebooklm._notebooks",
+            "notebooklm._sources",
+        }
     ) == BASE_MODULE_ALLOWLIST
     assert not BASE_MODULE_ALLOWLIST & ALLOWED_WEB_IMPORTERS
 

@@ -500,8 +500,8 @@ def test_single_level_allowlist_has_no_above_facade_entries() -> None:
     )
 
 
-def test_migrated_chat_wire_is_not_single_level_allowlisted() -> None:
-    """``_chat/wire.py`` was migrated behind ``_web/rows/chat.py`` (issue #1491).
+def test_migrated_chat_stream_rows_are_not_single_level_allowlisted() -> None:
+    """Chat stream decoding stays behind ``_web/rows/chat.py`` (issue #1491).
 
     Pins the headline #1491 outcome: the chat wire parser no longer open-codes
     any single-level RPC-payload subscript, so it is absent from
@@ -509,8 +509,9 @@ def test_migrated_chat_wire_is_not_single_level_allowlisted() -> None:
     re-protects it. If a future edit re-introduces a raw ``x[i]`` read there,
     ``test_no_unbaselined_single_level_positional_rpc_indexing`` fails.
     """
-    assert "_chat/wire.py" not in SINGLE_LEVEL_ALLOWLIST
-    assert "_chat/wire.py" not in _single_level_offending_files()
+    path = "_web/rows/chat_stream.py"
+    assert path not in SINGLE_LEVEL_ALLOWLIST
+    assert path not in _single_level_offending_files()
 
 
 def test_single_level_detector_flags_and_ignores() -> None:

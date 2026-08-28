@@ -17,6 +17,7 @@ import pytest
 
 from notebooklm._chat import ChatAPI
 from notebooklm._web.artifacts import WebArtifactsAPI
+from notebooklm._web.chat import WebChatAPI
 from notebooklm.exceptions import ValidationError
 from notebooklm.rpc import (
     AudioFormat,
@@ -186,9 +187,9 @@ def mock_notebooks_api():
 
 
 def _chat_from_mock_core(mock_core, *, notebooks=None) -> ChatAPI:
-    """Build a ``ChatAPI`` from the ``mock_core`` fixture's surfaces.
+    """Build a ``WebChatAPI`` from the ``mock_core`` fixture's surfaces.
 
-    Wave 8 of session-decoupling (ADR-0014 Rule 2 Corollary): ``ChatAPI``
+    Wave 8 of session-decoupling (ADR-0014 Rule 2 Corollary): ``WebChatAPI``
     takes its five direct collaborators by keyword arg. The legacy single-
     arg ``ChatAPI(mock_core)`` form is gone; this helper preserves the
     test shape by mapping the bag-of-attributes mock_core fixture onto
@@ -198,7 +199,7 @@ def _chat_from_mock_core(mock_core, *, notebooks=None) -> ChatAPI:
     for the transport entry point.
     """
     notebooks = notebooks if notebooks is not None else MagicMock()
-    return ChatAPI(
+    return WebChatAPI(
         rpc=mock_core.rpc_executor,
         transport=mock_core.session_transport,
         reqid=mock_core,

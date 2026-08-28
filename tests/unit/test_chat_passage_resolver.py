@@ -104,7 +104,7 @@ def _build_block_document_response(
     return (
         build_rpc_response(RPCMethod.GET_SOURCE, data).encode(),
         # ``cited_text`` omits the positions that decode no text, exactly as
-        # ``_chat.wire.extract_text_passages`` does.
+        # ``_web.rows.chat_stream.extract_text_passages`` does.
         "".join(run for runs in blocks if not isinstance(runs, int) for run in runs),
         (0, cursor),
     )

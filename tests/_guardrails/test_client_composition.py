@@ -24,7 +24,7 @@ COMPOSITION_ROOT_PATHS = (CLIENT_PATH, ASSEMBLY_PATH)
 CLIENT_HOST_NAMES = {"self", "client"}
 
 FEATURE_API_NAMES = {
-    "ChatAPI",
+    "WebChatAPI",
     "LabelsAPI",
     "MindMapsAPI",
     "WebNotebooksAPI",

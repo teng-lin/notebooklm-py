@@ -205,9 +205,10 @@ error mapping, so the first ask POST goes through:
 +----------------------------------------------------------------+
 ```
 
-`ChatAPI` holds the five collaborators it needs (`rpc`, `transport`,
-`reqid`, `loop_guard`, `notebooks`) directly — there is no `ChatRuntime` composite
-or broad runtime transport indirection.
+The neutral `ChatAPI` holds `loop_guard` and the base-typed `notebooks`
+collaborator plus its cache/session-hint state. `WebChatAPI` adds `rpc`,
+`transport`, and `reqid`; there is no `ChatRuntime` composite or broad runtime
+transport indirection.
 
 For a new conversation, `ChatAPI.ask()` then calls `GET_LAST_CONVERSATION_ID`
 through the normal `RpcExecutor` path. Other chat methods such as
@@ -386,9 +387,9 @@ constructor argument:
   `WebArtifactsAPI` additionally takes `rpc: RpcCaller`, mind-map, and note
   collaborators. `SourceUploadPipeline` takes `rpc: RpcCaller`, drain, and
   lifecycle collaborators.
-- `ChatAPI` takes `rpc: RpcCaller`, `transport: RuntimeTransport`,
-  `reqid: ReqidCounter`, `loop_guard: LoopGuard`, and the base-typed
-  `notebooks: NotebookSourceIdProvider`.
+- `ChatAPI` takes `loop_guard: LoopGuard` and the base-typed
+  `notebooks: NotebookSourceIdProvider`; `WebChatAPI` adds
+  `rpc: RpcCaller`, `transport: RuntimeTransport`, and `reqid: ReqidCounter`.
 
 Production satisfies shared Protocols via the underlying collaborators
 (ADR-0014 Rule 1: `RpcExecutor` satisfies `RpcCaller`,
@@ -464,7 +465,7 @@ the executor on direct collaborator dependencies.
 | `ClientSeams` | [`_client_seams.py`](../src/notebooklm/_client_seams.py) | Mutable holder for runtime callables that closures re-read after construction: `decode_response`, `sleep`, and `is_auth_error`. Construction-only seams such as `async_client_factory` stay on `compose_client_internals(...)` and the client-shell test helper, not on the public constructor. |
 | `ClientComposed` | [`_client_composed.py`](../src/notebooklm/_client_composed.py) | Write-once holder for composition state: `transport`, `executor`, `chain_host`, `chain_builder`, `middlewares`, lazy RPC semaphore, and `runtime_collaborators`. Pre-binding access raises a clear `RuntimeError`; the holder deliberately does not expose a broad `.collaborators` alias. |
 | `RpcExecutor` | [`_rpc_executor.py`](../src/notebooklm/_rpc_executor.py) | Single logical batchexecute RPC dispatch path. Owns request-id/started-metric bracketing, idempotency policy lookup, method-ID resolution, request encoding, response decode, RPC error mapping, and decode-time auth refresh retry. Takes its `Kernel`, `RuntimeTransport`, `AuthRefreshCoordinator`, and `ClientMetrics` collaborators directly via keyword-only constructor parameters (ADR-0014 Rule 5). Enters transport through `RuntimeTransport.perform_authed_post`. |
-| `RuntimeTransport` | [`_runtime/transport.py`](../src/notebooklm/_runtime/transport.py) | Authed POST collaborator. Owns `perform_authed_post()` (loop guard, auth snapshot, request materialization, chain dispatch, queue-wait recording), `refresh_request_for_current_auth()`, and `terminal()` (freshness rebuild + `Kernel.post`). Called directly by `RpcExecutor` and by `chat_aware_authed_post` (ChatAPI's chat-flavoured transport call); the middleware chain leaf at `MiddlewareChainHost._authed_post_chain_terminal` continues to dispatch through `RuntimeTransport.terminal` per ADR-0014 Rule 4. |
+| `RuntimeTransport` | [`_runtime/transport.py`](../src/notebooklm/_runtime/transport.py) | Authed POST collaborator. Owns `perform_authed_post()` (loop guard, auth snapshot, request materialization, chain dispatch, queue-wait recording), `refresh_request_for_current_auth()`, and `terminal()` (freshness rebuild + `Kernel.post`). Called directly by `RpcExecutor` and by `_web.transport.chat.chat_aware_authed_post` (WebChatAPI's chat-flavoured transport call); the middleware chain leaf at `MiddlewareChainHost._authed_post_chain_terminal` continues to dispatch through `RuntimeTransport.terminal` per ADR-0014 Rule 4. |
 | `MiddlewareChainHost` | [`_middleware/chain_host.py`](../src/notebooklm/_middleware/chain_host.py) | Owns the wired middleware chain (`_authed_post_chain`), the chain leaf (`_authed_post_chain_terminal`), the three retry-budget tunables (`_rate_limit_max_retries`, `_server_error_max_retries`, `_refresh_retry_delay`), and the dynamic `await_refresh` delegate that the auth-refresh middleware captures. The chain's provider lambdas and the transport's `chain_provider` closure read the host's attributes live, so post-construction mutation (e.g. tests setting `client._composed.chain_host._rate_limit_max_retries = 0`) still steers the live chain. |
 | `AuthRefreshCoordinator` | [`_runtime/auth.py`](../src/notebooklm/_runtime/auth.py) | Owns the auth-snapshot lock and refresh task. Canonical implementation for `AuthRefreshCoordinator.snapshot(auth=...)`, `update_auth_tokens(auth=..., csrf=..., session_id=...)`, and `update_auth_headers(auth=..., kernel=...)`; callers pass explicit collaborators rather than a host object. |
 | `ClientLifecycle` | [`_runtime/lifecycle.py`](../src/notebooklm/_runtime/lifecycle.py) | HTTP-client open/close, keepalive task, and typed-versus-legacy cookie-save routing. It alone retains the client-owned `AuthTokens` as the v0.x snapshot mirror and updates that projection after open and accepted saves. Holds `_timeout`, `_bound_loop`, `_http_client`, `_keepalive_*`. |
@@ -986,7 +987,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_types/labels.py` | `Label` pure-value type (source-label topic grouping; `source_ids` only, no artifact members) re-exported by `types.py` |
 | `_types/collections.py` | `Collection` pure-value type (account-level notebook grouping; `notebook_ids`, no notebook parent) re-exported by `types.py`; its public factory lazily delegates strict web-row decoding to `_web/rows/collections.py` |
 | `_web/rows/artifacts.py` | `ArtifactRow` typed view over raw positional artifact RPC rows, plus `ReportSuggestionRow` over `GET_SUGGESTED_REPORTS` rows |
-| `_web/rows/chat.py` | Streamed-chat row adapters (`AnswerRow` / `CitationRow` / `CitationDetail` / `StreamFrameRow` / `ErrorPayloadRow`) that centralise the chat wire positions `_chat/wire.py` used to open-code (#1491). `AnswerRow.document` and `CitationDetail.fragment_elements` delegate the document tree to `_web/rows/documents.py` (#2120) |
+| `_web/rows/chat.py` | Shared Web chat row adapters (`AnswerRow` / `CitationRow` / `CitationDetail` / `ConversationTurnRow` / `SavedChatNoteRow` / `StreamFrameRow` / `ErrorPayloadRow`). `AnswerRow.document` and `CitationDetail.fragment_elements` delegate the document tree to `_web/rows/documents.py` (#2120) |
+| `_web/rows/chat_stream.py` | Streamed-chat envelope parsing, answer/citation extraction, error-frame rejection, and UUID helpers over the typed chat/document rows |
 | `_web/rows/collections.py` | Strict collection-tuple decoding behind `Collection.from_api_response`'s lazy shim |
 | `_web/rows/documents.py` | `TailwindDoc` tree adapters (`DocumentBodyRow` / `StructuralElementRow` / `ParagraphRow` / `ParagraphElementRow` / `TextRunRow` / `TableRow` / `BulletInfoRow` / `AnnotationEntryRow`) plus the `build_document` / `build_blocks` builders. One decoder for all three carriers of the tree — source fulltext, chat-answer `responseDoc`, and a citation's `TailwindDocFragment` — so citation offsets on both sides share a coordinate space (#2128, #2120) |
 | `_web/rows/labels.py` | `LabelRow` strict typed view over the raw positional label tuple `[name, sources, id, emoji]` (fails loud on schema drift) |
@@ -1000,15 +1002,19 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/sources/` | `WebSourcesAPI` and the concrete web source services: add/batch orchestration, source listing/content decoding, Drive import, and the resumable upload pipeline |
 | `_web/artifacts.py` | `WebArtifactsAPI`, the concrete `batchexecute` artifact backend; owns web listing, mutation, generation-hook, raw selection, export, and suggestion operations |
 | `_web/artifact/` | Web artifact services for listing, generation dispatch, raw download selection, and positional data-table decoding |
+| `_web/chat.py` | `WebChatAPI`, the concrete streamed-query and `batchexecute` chat backend; owns request IDs, streamed transport, positional history/turn decoding, chat RPCs, and saved-chat note persistence |
 | `_web/params/` | Web `batchexecute` positional request payload builders, separated from backend-neutral namespace APIs |
 | `_web/params/notebooks.py` | Stable `batchexecute` notebook RPC request payload builders, including `SUGGEST_PROMPTS` |
 | `_web/params/sources.py` | Stable source registration, rename, template-block, and resumable-upload request payload builders |
 | `_web/params/artifacts.py` | Stable web `CREATE_ARTIFACT`, revise/retry, and mind-map positional request payload builders |
+| `_web/params/chat_stream.py` | Streamed-chat URL, form-body, and source/history request construction |
+| `_web/params/chat_note.py` | Saved-from-chat `CREATE_NOTE` positional payload and citation-anchor encoding |
+| `_web/transport/chat.py` | Chat-specific HTTP/error mapping over the shared authenticated streaming transport |
 | `artifacts.py`, `research.py`, `utils.py` | Public helper modules for artifact retry, research citation/report utilities, and common async helpers |
 | `_notebooks.py` | Backend-neutral abstract `NotebooksAPI`; owns shared create idempotency, lookup/update conveniences, metadata composition, and share-URL semantics |
 | `_sources.py` | Backend-neutral abstract `SourcesAPI`; owns source identity lookup and the four polling workflows over neutral `SourcePoller` |
 | `_artifacts.py` | Backend-neutral abstract `ArtifactsAPI`; owns artifact generation orchestration, decoded polling, family lists, lookup, neutral formatting, and asset transfer |
-| `_chat/api.py` | `client.chat` API |
+| `_chat/api.py` | Backend-neutral abstract `ChatAPI`; owns locks, cache, deleted-conversation tracking, ID recovery, authoritative turn counting, modes, and shared ask/delete/save-note orchestration over three protected adapter hooks plus the typed `_list_turn_roles` read boundary |
 | `_research.py` | `client.research` API |
 | `_research_import.py` | Free-function helpers for `ResearchAPI` source import + verification: URL normalization, the report-source predicate, imported-entry/merge helpers, and the #1961 idempotency pre-filter (skip already-present URLs) with its `already_present` side-channel carrier. Split out of `_research.py` under the ADR-0008 module-size ratchet. |
 | `_notes.py` | `client.notes` API |
@@ -1048,10 +1054,6 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_sharing_manager.py` | Direct sharing management logic |
 | `_version_check.py` | Dynamic client-side version deprecation guard |
 | `_version_info.py` | Human-facing `version_string()` — package version + short git commit (embedded by `hatch_build.py` at build time, or live `git` from a checkout) |
-| `_chat/notes.py` | Chat-adjacent note saving workflow adapter |
-| `_chat/history.py` | Server-backed complete-history snapshot and user-question turn counting for authoritative `AskResult.turn_number` values |
-| `_chat/wire.py` | Streamed-chat wire request construction + response parsing for the chat client |
-| `_chat/transport.py` | Chat-specific error mapping over the shared transport pipeline |
 | `_chat/deleted_tracker.py` | Bounded `RecentlyDeletedConversations` set — `delete_conversation` records the id (under the conversation lock) so a concurrent null-conversation ask, after acquiring that lock, detects a mid-flight delete and drops `resolved_id_override` to recover the server's real conversation id post-POST (#1875) |
 | `_middleware/chain.py` | Constructs the middleware chain in the canonical ADR-0009 order |
 | `_middleware/*.py` | Modular middleware implementations (drain, metrics, semaphore, retry, auth, error injection, tracing) |
@@ -1243,6 +1245,7 @@ src/notebooklm/
 │   ├── __init__.py              # Re-exports the typed row views
 │   ├── artifacts.py             # Artifact + GET_SUGGESTED_REPORTS row adapters (ArtifactRow / ReportSuggestionRow)
 │   ├── chat.py                  # Streamed-chat row adapters (AnswerRow / CitationRow / CitationDetail / StreamFrameRow / ErrorPayloadRow) — closes the chat positional-decode perimeter (#1491); the document tree is delegated to documents.py (#2120)
+│   ├── chat_stream.py           # Streamed-chat envelope, answer, citation, and error-frame parsing
 │   ├── collections.py           # Strict collection tuple decoder behind the public lazy shim
 │   ├── documents.py             # TailwindDoc tree adapters (DocumentBodyRow / StructuralElementRow / ParagraphRow / ParagraphElementRow / TextRunRow / TableRow / BulletInfoRow / AnnotationEntryRow) + build_document/build_blocks — one decoder for source fulltext, chat responseDoc, and citation fragments (#2128, #2120)
 │   ├── labels.py                # Source-label row adapter
@@ -1252,13 +1255,9 @@ src/notebooklm/
 │   ├── research_task.py         # Deep-research task parser
 │   ├── sharing.py               # Shared-user and share-status row decoders behind public lazy shims
 │   └── sources.py               # Source row adapter
-├── _chat/                       # Chat-feature subpackage — facade + helpers unified (#1328)
-│   ├── __init__.py              # Re-exports ChatAPI so `from ._chat import ChatAPI` keeps resolving
-│   ├── api.py                   # ChatAPI facade (was _chat.py)
-│   ├── history.py               # Server-backed complete-history turn counting
-│   ├── notes.py                 # Note saving workflow adapter
-│   ├── wire.py                  # Streamed-chat wire request/response parser
-│   ├── transport.py             # Chat error mapping
+├── _chat/                       # Backend-neutral chat package
+│   ├── __init__.py              # Re-exports ChatAPI + lazy private turn-helper compatibility shim
+│   ├── api.py                   # Abstract ChatAPI + shared locks/cache/ask/delete/save-note orchestration
 │   └── deleted_tracker.py       # Bounded RecentlyDeletedConversations set — serializes null-ask vs delete (#1875)
 ├── _auth/                       # Auth subpackage (forwarded through auth.py facade)
 │   ├── __init__.py
@@ -1320,6 +1319,7 @@ src/notebooklm/
 │   ├── sharing.py
 │   └── sources.py
 ├── _web/                        # Web batchexecute backend implementations
+│   ├── chat.py                  # WebChatAPI streamed-query/RPC adapter
 │   ├── notebooks.py             # WebNotebooksAPI
 │   ├── sources/                 # WebSourcesAPI + web source services
 │   │   ├── __init__.py          # WebSourcesAPI facade
@@ -1338,9 +1338,13 @@ src/notebooklm/
 │   │   └── table.py             # Positional data-table decoding
 │   ├── params/                   # Web batchexecute payload builders
 │   │   ├── artifacts.py         # Artifact RPC payload builders
+│   │   ├── chat_note.py         # Saved-chat CREATE_NOTE payload builder
+│   │   ├── chat_stream.py       # Streamed-chat URL/form request builder
 │   │   ├── notebooks.py         # Notebook RPC payload builders (SUGGEST_PROMPTS)
 │   │   └── sources.py           # Source RPC/upload payload builders
-│   └── rows/                    # Typed positional wire-row decoders
+│   ├── rows/                    # Typed positional wire-row decoders
+│   └── transport/               # Web-only transport adapters
+│       └── chat.py              # Chat-specific HTTP/error mapping
 ├── _notebooks.py                # Backend-neutral abstract NotebooksAPI
 ├── _sources.py                  # Backend-neutral abstract SourcesAPI
 ├── _artifacts.py                # Backend-neutral abstract ArtifactsAPI
