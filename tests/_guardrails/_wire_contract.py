@@ -1038,9 +1038,9 @@ UNMAPPED: tuple[Unmapped, ...] = (
     Unmapped("research", MODULE_LEVEL, "_IMPORT_ENVELOPE_PROBE_POS", _ENVELOPE),
     Unmapped("research", MODULE_LEVEL, "_IMPORT_ROW_ID_ENVELOPE_POS", _ENVELOPE),
     Unmapped("research", MODULE_LEVEL, "_IMPORT_ROW_TITLE_POS", _NESTED_LOCAL),
-    Unmapped("_mind_maps_api", MODULE_LEVEL, "_CREATE_ARTIFACT_ENVELOPE_POS", _ENVELOPE),
-    Unmapped("_mind_maps_api", MODULE_LEVEL, "_CREATE_ARTIFACT_ID_POS", _NESTED_LOCAL),
-    Unmapped("_mind_maps_api", MODULE_LEVEL, "_INTERACTIVE_TREE_LEAF_POS", _NESTED_LOCAL),
+    Unmapped("mind_maps", MODULE_LEVEL, "_CREATE_ARTIFACT_ENVELOPE_POS", _ENVELOPE),
+    Unmapped("mind_maps", MODULE_LEVEL, "_CREATE_ARTIFACT_ID_POS", _NESTED_LOCAL),
+    Unmapped("artifacts", MODULE_LEVEL, "_INTERACTIVE_TREE_LEAF_POS", _NESTED_LOCAL),
     Unmapped(
         "chat",
         MODULE_LEVEL,

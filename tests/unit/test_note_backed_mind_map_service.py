@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._mind_map import NoteBackedMindMapService
+from notebooklm._web.mind_maps import NoteBackedMindMapService
 from notebooklm._web.notes import NoteRowKind, NoteService
 from notebooklm.exceptions import MindMapNotFoundError, NotFoundError
 

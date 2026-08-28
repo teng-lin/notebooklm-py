@@ -33,7 +33,7 @@ def mock_artifacts_api():
     ``mock_core.rpc_executor.rpc_call`` (via ``side_effect``) since both new
     services delegate down to that single RPC seam.
     """
-    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._web.mind_maps import NoteBackedMindMapService
     from notebooklm._web.notes import NoteService
     from tests._fixtures.fake_core import make_fake_core
 

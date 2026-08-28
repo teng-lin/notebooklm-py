@@ -4,7 +4,7 @@ This module owns the backend note-row operations shared by ``NotesAPI``
 (plain notes + saved-from-chat notes) and ``ArtifactsAPI`` (mind maps,
 which the server stores in the same note collection). It deliberately
 sits *below* both feature facades so neither has to import the other,
-and so the mind-map adapter (``_mind_map.NoteBackedMindMapService``)
+and so the mind-map adapter (``_web.mind_maps.NoteBackedMindMapService``)
 has a single seam to delegate through.
 
 ``NoteRowKind`` is a private classification of the raw row shapes
@@ -37,8 +37,8 @@ from ..types import Note
 from .rows.notes import NoteRow
 
 if TYPE_CHECKING:
-    from .._mind_map import NoteBackedMindMapService
     from .._runtime.contracts import RpcCaller
+    from .mind_maps import NoteBackedMindMapService
 
 __all__ = ["NoteService", "WebNotesAPI"]  # NoteRowKind is intentionally NOT exported
 

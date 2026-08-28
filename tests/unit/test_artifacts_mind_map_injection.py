@@ -13,7 +13,7 @@ These tests pin three contracts:
 
 1. ``_list_mind_maps()`` delegates to the injected ``mind_maps``
    facade and does not re-enter the legacy module-level
-   ``_mind_map.NoteBackedMindMapService.list_mind_maps`` adapter.
+   ``_web.mind_maps.NoteBackedMindMapService.list_mind_maps`` adapter.
 2. Both ``mind_maps`` and ``note_service`` are required and
    keyword-only — the legacy ``mind_map_service`` kwarg is gone.
 3. Constructing without the new kwargs (or with the old name) raises
@@ -30,8 +30,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._web.artifacts import WebArtifactsAPI
+from notebooklm._web.mind_maps import NoteBackedMindMapService
 from notebooklm._web.notes import NoteService
 
 

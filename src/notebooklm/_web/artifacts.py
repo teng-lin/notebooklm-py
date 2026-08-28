@@ -10,13 +10,10 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-# ``_mind_map`` re-exported as ``_artifacts._mind_map`` for legacy monkeypatch seams (runtime uses injected services).
-from .. import _mind_map  # noqa: F401 — re-exported as facade attribute
 from .._artifact import polling as _artifact_polling
 from .._artifact import validation as _artifact_validation
 from .._artifact.downloads import AssetDownloadService
 from .._artifacts import ArtifactsAPI
-from .._mind_map import NoteBackedMindMapService
 from .._notebook_metadata import NotebookSourceIdProvider
 from .._runtime.contracts import RpcCaller
 from .._types.enums import (
@@ -35,6 +32,7 @@ from ..types import (
 from .artifact.downloads import ArtifactDownloadService
 from .artifact.generation import ArtifactGenerationService
 from .artifact.listing import ArtifactListingService
+from .mind_maps import NoteBackedMindMapService
 from .notes import NoteService
 from .params.artifacts import build_suggest_reports_params
 from .rows import artifacts as _artifact_rows

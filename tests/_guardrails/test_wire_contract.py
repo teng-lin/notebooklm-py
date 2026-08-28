@@ -90,7 +90,7 @@ _SRC = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
 _SCANNED_DIRS = (_SRC / "_web" / "rows",)
 _SCANNED_FILES = (
     _SRC / "_web" / "settings.py",
-    _SRC / "_mind_maps_api.py",
+    _SRC / "_web" / "mind_maps.py",
 )
 
 # Matches both `X: ClassVar[int] = 3` (class scope) and `X = 3` (module scope).

@@ -83,7 +83,7 @@ class TestEmptyResults:
         Covers both wings of the unified ``list`` implementation: the studio
         ``LIST_ARTIFACTS`` RPC (audio/video/reports/quizzes/...) AND the
         mind-map sidecar via the injected
-        :class:`notebooklm._mind_map.NoteBackedMindMapService`. A brand-new
+        :class:`notebooklm._web.mind_maps.NoteBackedMindMapService`. A brand-new
         notebook has neither, so the merged return must be ``[]``.
         """
         notebook_id = _get_scratch_notebook_id()

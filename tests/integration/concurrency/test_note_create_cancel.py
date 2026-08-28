@@ -89,7 +89,7 @@ class _NoteCancelTransport(httpx.AsyncBaseTransport):
         self.captured.append((rpc_id, request))
 
         if rpc_id == RPCMethod.CREATE_NOTE.value:
-            # CREATE_NOTE returns the new note id; mirrors _mind_map.create_note
+            # CREATE_NOTE returns the new note id; mirrors the web mind-map note service.
             # parsing path that pulls ``result[0][0]`` when result is nested.
             return httpx.Response(
                 200,

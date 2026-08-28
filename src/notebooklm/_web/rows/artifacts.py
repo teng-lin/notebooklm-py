@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import reprlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, ClassVar
@@ -26,9 +28,71 @@ __all__ = [
     "ArtifactRow",
     "QuizOptionPair",
     "ReportSuggestionRow",
+    "extract_interactive_tree_leaf",
     "unwrap_artifact_rows",
     "unwrap_mind_map_generation_leaf",
 ]
+
+_INTERACTIVE_TREE_LEAF_POS = 3
+
+# Preserve the historical observable logger name after the decoder move.
+_mind_maps_logger = logging.getLogger("notebooklm._mind_maps_api")
+
+
+def extract_interactive_tree_leaf(result: Any, *, source: str) -> Any | None:
+    """Return the raw ``[0][9][3]`` interactive mind-map tree leaf, or ``None``.
+
+    Distinguishes a *genuinely absent leaf* (the options block is a list but
+    its ``[3]`` tree slot is not populated yet — the legitimate "not ready"
+    window) from *real shape drift* (``[0]`` or ``[0][9]`` moved out from under
+    us, or ``[0][9]`` is no longer a list). Drift re-raises
+    ``UnknownRPCMethodError`` so the library fails loud like the sibling HTML
+    accessor ``_get_artifact_content`` (issue #1270); only the missing ``[3]``
+    leaf within a present *list* options block is tolerated. A tolerated-but-
+    absent leaf emits a WARNING with the rpcid/source so a reshape that drops
+    just the leaf position still leaves a drift signal in the logs.
+    """
+    if result is None:
+        return None
+    # Descend to the options block (``[0][9]``) strictly: if Google moves the
+    # interactive payload off ``[0][9]`` entirely, this raises and surfaces the
+    # drift instead of masquerading as "not ready".
+    options_block = safe_index(
+        result,
+        0,
+        9,
+        method_id=RPCMethod.GET_INTERACTIVE_HTML.value,
+        source=source,
+    )
+    # Only a *list* options block too short for index 3 is the legitimate
+    # "tree not populated yet" window — a non-list ``[0][9]`` is genuine drift,
+    # so fail loud rather than masking it as not-ready. (We raise explicitly
+    # rather than via ``safe_index`` because some non-list types — e.g. ``str``
+    # — are subscriptable and would not trip ``safe_index``'s descent guard.)
+    if not isinstance(options_block, list):
+        raise UnknownRPCMethodError(
+            f"safe_index drift at path (0, 9): options block is "
+            f"{type(options_block).__name__}, not a list",
+            method_id=RPCMethod.GET_INTERACTIVE_HTML.value,
+            path=(0, 9),
+            source=source,
+            # ``reprlib.repr`` bounds the diagnostic preview without first
+            # materialising the full repr of a pathologically large/deep
+            # ``options_block`` (mirrors ``safe_index``'s own ``_truncate``).
+            data_at_failure=reprlib.repr(options_block),
+        )
+    if len(options_block) <= _INTERACTIVE_TREE_LEAF_POS:
+        _mind_maps_logger.warning(
+            "Interactive mind-map tree leaf absent at [0][9][%d] (rpcid=%s, source=%s); "
+            "treating as not-yet-populated. If this persists, Google may have reshaped "
+            "the %s response.",
+            _INTERACTIVE_TREE_LEAF_POS,
+            RPCMethod.GET_INTERACTIVE_HTML.value,
+            source,
+            RPCMethod.GET_INTERACTIVE_HTML.name,
+        )
+        return None
+    return options_block[_INTERACTIVE_TREE_LEAF_POS]
 
 
 @dataclass(frozen=True)

@@ -65,10 +65,10 @@
     "_NON_AUTHTOKENS_CANDIDATES": 30
   },
   "tests/_guardrails/test_backend_abstract_contracts.py": {
-    "BASE_ABSTRACT_CONTRACTS": 104
+    "BASE_ABSTRACT_CONTRACTS": 113
   },
   "tests/_guardrails/test_backend_boundaries.py": {
-    "LAZY_WEB_IMPORT_ALLOWLIST": 30
+    "LAZY_WEB_IMPORT_ALLOWLIST": 32
   },
   "tests/_guardrails/test_classify_error_handler_consistency.py": {
     "_EXEMPLARS": 22
@@ -98,7 +98,7 @@
     "_EXEMPLARS": 22
   },
   "tests/_guardrails/test_no_facade_reach_in.py": {
-    "_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES": 31
+    "_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES": 35
   },
   "tests/_guardrails/test_no_session_compat_bridges.py": {
     "CARVE_OUT_MODULES": 21

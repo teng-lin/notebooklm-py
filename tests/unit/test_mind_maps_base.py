@@ -1,0 +1,146 @@
+"""Transport-neutral tests for the unified mind-map base class."""
+
+from __future__ import annotations
+
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from notebooklm._mind_maps_api import MindMapsAPI
+from notebooklm._web.mind_maps import WebMindMapsAPI
+from notebooklm.types import Artifact, ArtifactType, MindMap, MindMapKind
+
+
+class _FakeMindMapsAPI(MindMapsAPI):
+    """Minimal backend proving shared workflows need only the rename hook."""
+
+    def __init__(
+        self,
+        *,
+        note_backed: list[MindMap],
+        artifacts: Any,
+        notes: Any,
+    ) -> None:
+        super().__init__(artifacts=artifacts, notes=notes)
+        self._note_backed = note_backed
+        self.renames: list[tuple[str, str, str]] = []
+
+    async def list_note_backed(self, notebook_id: str) -> list[MindMap]:
+        return list(self._note_backed)
+
+    async def generate(
+        self,
+        notebook_id: str,
+        source_ids: list[str] | None = None,
+        *,
+        kind: MindMapKind,
+        language: str | None = "en",
+        instructions: str | None = None,
+        wait: bool = True,
+    ) -> MindMap:
+        raise NotImplementedError
+
+    async def get_tree(
+        self,
+        notebook_id: str,
+        mind_map_id: str,
+        *,
+        kind: MindMapKind | None = None,
+    ) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    async def _send_rename_note_backed(
+        self,
+        notebook_id: str,
+        mind_map_id: str,
+        new_title: str,
+    ) -> None:
+        self.renames.append((notebook_id, mind_map_id, new_title))
+
+
+def _api(*, note_backed: list[MindMap] | None = None, artifacts: list[Artifact] | None = None):
+    artifact_api = MagicMock()
+    artifact_api.list = AsyncMock(return_value=artifacts or [])
+    artifact_api.rename = AsyncMock()
+    artifact_api.delete = AsyncMock()
+    notes = MagicMock()
+    notes.delete_mind_map = AsyncMock()
+    return (
+        _FakeMindMapsAPI(
+            note_backed=note_backed or [],
+            artifacts=artifact_api,
+            notes=notes,
+        ),
+        artifact_api,
+        notes,
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_composes_note_backed_and_interactive_maps() -> None:
+    note_map = MindMap(
+        id="note-map",
+        notebook_id="nb",
+        title="Note map",
+        kind=MindMapKind.NOTE_BACKED,
+    )
+    interactive = Artifact(
+        id="interactive",
+        title="Interactive",
+        _artifact_type=4,
+        status=3,
+        _variant=4,
+    )
+    api, artifacts, _ = _api(note_backed=[note_map], artifacts=[interactive])
+
+    result = await api.list("nb")
+
+    assert [item.id for item in result] == ["note-map", "interactive"]
+    artifacts.list.assert_awaited_once_with("nb", ArtifactType.MIND_MAP)
+
+
+@pytest.mark.asyncio
+async def test_rename_dispatches_note_backed_through_the_sole_hook() -> None:
+    note_map = MindMap(
+        id="note-map",
+        notebook_id="nb",
+        title="Note map",
+        kind=MindMapKind.NOTE_BACKED,
+    )
+    api, artifacts, _ = _api(note_backed=[note_map])
+
+    assert await api.rename("nb", "note-map", "Renamed", return_object=False) is None
+
+    assert api.renames == [("nb", "note-map", "Renamed")]
+    artifacts.rename.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_dispatches_through_neutral_notes_and_artifacts() -> None:
+    api, artifacts, notes = _api()
+
+    await api.delete("nb", "note-map", kind=MindMapKind.NOTE_BACKED)
+    await api.delete("nb", "interactive", kind=MindMapKind.INTERACTIVE)
+
+    notes.delete_mind_map.assert_awaited_once_with("nb", "note-map")
+    artifacts.delete.assert_awaited_once_with("nb", "interactive")
+
+
+def test_web_backend_inherits_every_base_concrete_workflow_and_its_docs() -> None:
+    concrete = {"list", "get", "get_or_none", "rename", "delete"}
+    for method_name in concrete:
+        assert method_name not in WebMindMapsAPI.__dict__
+        assert getattr(WebMindMapsAPI, method_name) is getattr(MindMapsAPI, method_name)
+        assert (
+            getattr(WebMindMapsAPI, method_name).__doc__
+            == getattr(MindMapsAPI, method_name).__doc__
+        )
+
+    for method_name in {"list_note_backed", "generate", "get_tree"}:
+        assert (
+            getattr(WebMindMapsAPI, method_name).__doc__
+            == getattr(MindMapsAPI, method_name).__doc__
+        )
+
+    assert WebMindMapsAPI.__doc__ == MindMapsAPI.__doc__

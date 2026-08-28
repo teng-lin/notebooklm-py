@@ -1605,7 +1605,7 @@ params = [
 #### Interactive Mind Map (Type 4 / variant 4) - Uses CREATE_ARTIFACT (R7cb6c)
 
 **Source:** `_web/params/artifacts.py::build_interactive_mind_map_artifact_params()`,
-`_mind_maps_api.py::MindMapsAPI.generate()`
+`_web/mind_maps.py::WebMindMapsAPI.generate()`
 
 NotebookLM's web app now generates an **interactive** mind map — a studio
 artifact in the type-4 family with `variant 4` (distinct from the note-backed

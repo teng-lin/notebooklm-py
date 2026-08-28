@@ -49,10 +49,10 @@ import pytest
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._collections import CollectionsAPI
 from notebooklm._labels import LabelsAPI
-from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._sources import SourcesAPI
 from notebooklm._web.artifacts import WebArtifactsAPI
+from notebooklm._web.mind_maps import NoteBackedMindMapService, WebMindMapsAPI
 from notebooklm._web.notebooks import WebNotebooksAPI
 from notebooklm._web.notes import NoteService, WebNotesAPI
 from notebooklm._web.sources import WebSourcesAPI
@@ -128,11 +128,12 @@ def _make_mind_maps_api() -> MindMapsAPI:
     artifacts = MagicMock()
     artifacts.list = AsyncMock(return_value=[])
     notebooks = MagicMock()
-    return MindMapsAPI(
+    return WebMindMapsAPI(
         rpc=MagicMock(),
         mind_maps=mind_maps,
         artifacts=artifacts,
         notebooks=notebooks,
+        notes=MagicMock(),
     )
 
 

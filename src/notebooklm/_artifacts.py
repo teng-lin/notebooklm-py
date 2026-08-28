@@ -8,7 +8,6 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from . import _mind_map  # noqa: F401 -- private compatibility identity
 from ._artifact import formatters as _artifact_formatters  # noqa: F401
 from ._artifact import polling as _artifact_polling  # noqa: F401
 from ._artifact import validation as _artifact_validation  # noqa: F401
@@ -41,6 +40,15 @@ if TYPE_CHECKING:
     from ._transport_drain import TransportDrainTracker
 
 logger = logging.getLogger(__name__)
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve the legacy private ``_mind_map`` module alias lazily."""
+    if name == "_mind_map":
+        from ._web import mind_maps
+
+        return mind_maps
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class ArtifactsAPI(ABC):

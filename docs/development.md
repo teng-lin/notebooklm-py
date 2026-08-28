@@ -45,8 +45,8 @@ src/notebooklm/
 ├── _research.py         # ResearchAPI implementation
 ├── _notes.py            # Backend-neutral abstract NotesAPI
 ├── _web/notes.py        # WebNotesAPI + NoteService implementation
-├── _mind_map.py         # Private note-backed mind-map service
-├── _mind_maps_api.py    # MindMapsAPI implementation
+├── _mind_maps_api.py    # Backend-neutral abstract MindMapsAPI
+├── _web/mind_maps.py    # WebMindMapsAPI + NoteBackedMindMapService
 ├── _labels.py           # LabelsAPI implementation
 ├── _settings.py         # Backend-neutral abstract SettingsAPI
 ├── _web/settings.py     # WebSettingsAPI + web settings helpers
@@ -155,7 +155,8 @@ lister without importing a concrete transport or lister; `_web/notebooks.py`
 owns the direct-construction web fallback. `_web/sharing.py` owns legacy
 `SHARE_ARTIFACT` mutation behavior while `_sharing_manager.py` keeps only the
 transport-neutral URL builder, and
-`_mind_map.py` owns note-backed mind-map rows shared by notes and artifacts.
+`_web/mind_maps.py` owns the web note-backed mind-map rows shared by notes and artifacts;
+`_mind_maps_api.py` owns the transport-neutral unified workflows.
 Facade modules keep the public method surface stable and delegate to these
 services.
 

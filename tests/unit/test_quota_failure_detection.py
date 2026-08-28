@@ -65,7 +65,7 @@ def _make_api(rpc_call: AsyncMock | None = None):
     ``rpc_call`` overrides the RPC seam so a test can answer with a real
     decoded response instead of a bare mock return value.
     """
-    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._web.mind_maps import NoteBackedMindMapService
     from notebooklm._web.notes import NoteService
     from tests._fixtures.fake_core import make_fake_core
 

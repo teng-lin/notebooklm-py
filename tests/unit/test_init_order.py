@@ -183,9 +183,9 @@ def test_phase7_artifact_download_patch_seams_are_current() -> None:
     import notebooklm._artifact.downloads as artifact_downloads
     import notebooklm._artifact.formatters as artifact_formatters
     import notebooklm._artifacts as artifacts
-    import notebooklm._mind_map as mind_map
     import notebooklm._web.artifact.downloads as web_downloads
     import notebooklm._web.artifact.table as artifact_table
+    import notebooklm._web.mind_maps as mind_map
     import notebooklm.auth as auth
 
     tree = ast.parse((SRC_ROOT / "_artifact" / "downloads.py").read_text(encoding="utf-8"))
@@ -312,7 +312,7 @@ def test_artifacts_constructible_without_notes_api(mock_auth: AuthTokens) -> Non
     docs/refactor-history.md Step 4) — the parameter was removed in favor of
     explicit ``mind_maps`` + ``note_service`` (Phase 5). The mind-map
     decoupling is now structural."""
-    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._web.mind_maps import NoteBackedMindMapService
     from notebooklm._web.notes import NoteService
 
     core = MagicMock()
@@ -333,7 +333,7 @@ def test_artifacts_constructible_without_notes_api(mock_auth: AuthTokens) -> Non
 def test_artifacts_rejects_legacy_notes_api_kwarg(mock_auth: AuthTokens) -> None:
     """The legacy ``notes_api=`` kwarg was removed in Phase 3
     (docs/refactor-history.md Step 4). Passing it must raise ``TypeError``."""
-    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._web.mind_maps import NoteBackedMindMapService
     from notebooklm._web.notes import NoteService
 
     core = MagicMock()
@@ -358,7 +358,7 @@ def test_artifacts_before_notes_construction_order(mock_auth: AuthTokens) -> Non
     dependency on each other; this test pins that building either one
     first still yields working APIs.
     """
-    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._web.mind_maps import NoteBackedMindMapService
     from notebooklm._web.notes import NoteService
 
     core = MagicMock()
@@ -449,7 +449,7 @@ def _build_artifacts_with_real_mind_map_service(core: FakeSession) -> ArtifactsA
     instances backed by ``core.rpc_executor`` so the mind-map flow
     exercises the live RPC callbacks against the canned executor.
     """
-    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._web.mind_maps import NoteBackedMindMapService
     from notebooklm._web.notes import NoteService
 
     note_service = NoteService(core.rpc_executor)

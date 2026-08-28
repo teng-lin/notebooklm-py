@@ -46,7 +46,6 @@ _CORE_PRIVATE_GUARD_EXCLUDED_MODULES = {
     "_env.py",
     "_idempotency.py",
     "_logging.py",
-    "_mind_map.py",
     "_session.py",
     "_url_utils.py",
     "_version_check.py",
@@ -77,12 +76,12 @@ _SOURCE_SERVICE_MODULES = [
 _NOTEBOOK_COMPOSITION_SERVICE_MODULES = [
     "_notebook_metadata.py",
     "_sharing_manager.py",
-    "_mind_map.py",
 ]
 
 _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES = {
     "ArtifactsAPI",
     "ChatAPI",
+    "MindMapsAPI",
     "NotebookLMClient",
     "NotebooksAPI",
     "NotesAPI",
@@ -93,6 +92,7 @@ _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES = {
     "WebArtifactsAPI",
     "WebChatAPI",
     "WebNotebooksAPI",
+    "WebMindMapsAPI",
     "WebNotesAPI",
     "WebSettingsAPI",
     "WebSharingAPI",
@@ -104,6 +104,7 @@ _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES = {
     "_chat",
     "_core",
     "_notebooks",
+    "_mind_maps_api",
     "_notes",
     "_research",
     "_session",
@@ -112,6 +113,7 @@ _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES = {
     "_sources",
     "_web.notebooks",
     "_web.chat",
+    "_web.mind_maps",
     "_web.sources",
     "client",
     "notebooklm",
@@ -119,6 +121,7 @@ _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES = {
     "notebooklm._chat",
     "notebooklm._core",
     "notebooklm._notebooks",
+    "notebooklm._mind_maps_api",
     "notebooklm._notes",
     "notebooklm._research",
     "notebooklm" + "." + "_session",
@@ -127,6 +130,7 @@ _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES = {
     "notebooklm._sources",
     "notebooklm._web.notebooks",
     "notebooklm._web.chat",
+    "notebooklm._web.mind_maps",
     "notebooklm._web.sources",
     "notebooklm.client",
 }
@@ -517,6 +521,12 @@ def test_retired_note_service_module_is_not_importable() -> None:
     assert importlib.util.find_spec("notebooklm._note_service") is None
 
 
+def test_retired_mind_map_service_module_is_not_importable() -> None:
+    """The note-backed service moved atomically to the web mind-map backend."""
+    assert not (SRC_ROOT / "_mind_map.py").exists()
+    assert importlib.util.find_spec("notebooklm._mind_map") is None
+
+
 def test_runtime_import_visitor_detects_nested_forbidden_modules() -> None:
     """The import-boundary guard must catch nested forbidden module paths."""
     tree = ast.parse(
@@ -635,6 +645,7 @@ def test_runtime_import_visitor_detects_web_chat_facade_and_module() -> None:
     ("module", "facade"),
     [
         ("notes", "WebNotesAPI"),
+        ("mind_maps", "WebMindMapsAPI"),
         ("settings", "WebSettingsAPI"),
         ("sharing", "WebSharingAPI"),
     ],

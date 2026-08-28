@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any
 
 from ..._artifact.downloads import AssetDownloadService, DownloadResult
 from ..._artifact.formatters import _extract_app_data, _format_interactive_content
-from ..._mind_maps_api import extract_interactive_tree_leaf
 from ..._types.enums import ArtifactTypeCode
 from ...exceptions import UnknownRPCMethodError, ValidationError
 from ...rpc import RPCMethod, safe_index
@@ -24,13 +23,13 @@ from ...types import (
     ArtifactParseError,
     ArtifactType,
 )
-from ..rows.artifacts import ArtifactRow
+from ..rows.artifacts import ArtifactRow, extract_interactive_tree_leaf
 from ..rows.notes import NoteRow
 from .table import _parse_data_table
 
 if TYPE_CHECKING:
-    from ..._mind_map import NoteBackedMindMapService
     from ..._runtime.contracts import RpcCaller
+    from ..mind_maps import NoteBackedMindMapService
     from .listing import ArtifactListingService
 
 logger = logging.getLogger(__name__)

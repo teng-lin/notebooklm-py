@@ -524,7 +524,7 @@ Beyond the client-owned runtime graph, several feature APIs are implemented via 
 | Service / Module | Module | Responsibility |
 |-------------------|--------|----------------|
 | `NoteService` | [`_web/notes.py`](../src/notebooklm/_web/notes.py) | Web note-row service managing note CRUD, note-backed content generation, and sync. |
-| `NoteBackedMindMapService` | [`_mind_map.py`](../src/notebooklm/_mind_map.py) | Specific adapter service representing mind-maps, backed by standard notebook notes. |
+| `NoteBackedMindMapService` | [`_web/mind_maps.py`](../src/notebooklm/_web/mind_maps.py) | Web adapter service representing mind maps backed by standard notebook notes. |
 | `ArtifactDownloadService` | [`_web/artifact/downloads.py`](../src/notebooklm/_web/artifact/downloads.py) | Web raw-row selection and representation lookup for finished artifacts. |
 | `AssetDownloadService` | [`_artifact/downloads.py`](../src/notebooklm/_artifact/downloads.py) | Backend-neutral guarded byte transfer, staged writing, and atomic publication. |
 | `ArtifactGenerationService` | [`_web/artifact/generation.py`](../src/notebooklm/_web/artifact/generation.py) | Web `CREATE_ARTIFACT` dispatch plus revise/retry/mind-map generation. |
@@ -1021,6 +1021,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/artifacts.py` | `WebArtifactsAPI`, the concrete `batchexecute` artifact backend; owns web listing, mutation, generation-hook, raw selection, export, and suggestion operations |
 | `_web/artifact/` | Web artifact services for listing, generation dispatch, raw download selection, and positional data-table decoding |
 | `_web/chat.py` | `WebChatAPI`, the concrete streamed-query and `batchexecute` chat backend; owns request IDs, streamed transport, positional history/turn decoding, chat RPCs, and saved-chat note persistence |
+| `_web/mind_maps.py` | `WebMindMapsAPI` plus `NoteBackedMindMapService`, the concrete `batchexecute` mind-map backend and shared web note-row adapter |
 | `_web/notes.py` | `WebNotesAPI` plus `NoteService`, the concrete `batchexecute` notes backend and shared note-row primitives |
 | `_web/settings.py` | `WebSettingsAPI` plus account-setting request/response helpers |
 | `_web/sharing.py` | `WebSharingAPI` plus the legacy `SHARE_ARTIFACT` `ShareManager` |
@@ -1043,8 +1044,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_labels.py` | `client.labels` API — source labels (topic groupings); pure-RPC like `SharingAPI`, plus a narrow `list_sources` callable for the membership→`Source` join in `sources()` |
 | `_collections.py` | `client.collections` API — account-level notebook groups; reuses the label RPCs (type-3, null notebook parent, `source_path="/"`), plus a narrow `list_notebooks` callable for the membership→`Notebook` join in `notebooks()` |
 | `_settings.py` | Backend-neutral abstract `SettingsAPI` contract |
-| `_mind_map.py` | Specific adapter service representing mind-maps, backed by standard notes |
-| `_mind_maps_api.py` | `client.mind_maps` API — unified surface over both mind-map backends (note-backed JSON + interactive studio-artifact), dispatching each op to the correct RPC family (#1256) |
+| `_mind_maps_api.py` | Backend-neutral abstract `MindMapsAPI`; owns unified lookup/list/rename/delete composition over note-backed and interactive mind maps (#1256) |
 | `_artifact/downloads.py` | Backend-neutral asset transfer service: guarded streaming, rejection, staging, and atomic publication |
 | `_artifact/_redirect_guard.py` | Per-redirect-hop host/scheme revalidation and credential-policy application for downloads — rejects off-allowlist / non-HTTPS redirect targets before the request is sent (#1521) |
 | `_artifact/_download_client.py` | Download trusted-host allowlist + transport-aware client factory — wires redirect validation and per-hop credentials for httpx or opt-in curl_cffi |
@@ -1159,8 +1159,7 @@ src/notebooklm/
 ├── _conversation_cache.py       # Per-instance true-LRU conversation cache (bounded conversation count + per-conversation turns)
 ├── _polling_registry.py         # Artifact polling helpers
 ├── _cookie_persistence.py       # Cookie-jar persistence + __Secure-1PSIDTS rotation
-├── _mind_map.py                 # NoteBackedMindMapService
-├── _mind_maps_api.py            # MindMapsAPI — unified mind-map surface over both backends (#1256)
+├── _mind_maps_api.py            # Backend-neutral abstract MindMapsAPI
 ├── _notebook_metadata.py        # Neutral metadata protocols + composition service
 ├── _url_utils.py                # URL validation helpers
 ├── _sharing_manager.py          # Neutral legacy share-URL builder
@@ -1355,6 +1354,7 @@ src/notebooklm/
 │   │   ├── generation.py        # Generation RPC dispatch
 │   │   ├── listing.py           # Listing and mind-map composition
 │   │   └── table.py             # Positional data-table decoding
+│   ├── mind_maps.py             # WebMindMapsAPI + NoteBackedMindMapService
 │   ├── notes.py                 # WebNotesAPI + NoteService
 │   ├── settings.py              # WebSettingsAPI + web settings helpers
 │   ├── sharing.py               # WebSharingAPI + legacy ShareManager

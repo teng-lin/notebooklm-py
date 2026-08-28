@@ -92,7 +92,7 @@ async def test_session_close_drains_artifact_poll_hook() -> None:
     """``close()`` cancels in-flight poll tasks within 1s and tears down cleanly."""
     from unittest.mock import MagicMock
 
-    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._web.mind_maps import NoteBackedMindMapService
     from notebooklm._web.notes import NoteService
 
     core = build_client_shell_for_tests(_auth())

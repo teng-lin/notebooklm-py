@@ -113,7 +113,7 @@ def mock_artifacts_api(tmp_path: Path) -> tuple[ArtifactsAPI, FakeSession]:
     lifecycle capability stubs the API reads, so no post-hoc
     ``AsyncMock`` attribute assignment is needed.
     """
-    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._web.mind_maps import NoteBackedMindMapService
     from notebooklm._web.notes import NoteService
 
     mock_core = make_fake_core(

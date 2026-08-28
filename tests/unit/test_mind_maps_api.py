@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._mind_maps_api import MindMapsAPI, extract_interactive_tree_leaf
+from notebooklm._web.mind_maps import WebMindMapsAPI, extract_interactive_tree_leaf
 from notebooklm.exceptions import (
     ArtifactError,
     ArtifactFeatureUnavailableError,
@@ -47,7 +47,15 @@ def _make_api(*, note_rows=None, interactive=None):
     artifacts.wait_for_completion = AsyncMock()
     notebooks = MagicMock()
     notebooks.get_source_ids = AsyncMock(return_value=["s1"])
-    api = MindMapsAPI(rpc=rpc, mind_maps=mind_maps, artifacts=artifacts, notebooks=notebooks)
+    notes = MagicMock()
+    notes.delete_mind_map = AsyncMock()
+    api = WebMindMapsAPI(
+        rpc=rpc,
+        mind_maps=mind_maps,
+        artifacts=artifacts,
+        notebooks=notebooks,
+        notes=notes,
+    )
     return api, rpc, mind_maps, artifacts, notebooks
 
 
@@ -184,7 +192,7 @@ async def test_rename_explicit_kind_missing_raises_even_with_return_object_false
 async def test_delete_dispatches_by_kind():
     api, _, mind_maps, artifacts, _ = _make_api()
     assert await api.delete("nb", "note_mm", kind=MindMapKind.NOTE_BACKED) is None
-    mind_maps.delete_mind_map.assert_awaited_once_with("nb", "note_mm")
+    api._notes.delete_mind_map.assert_awaited_once_with("nb", "note_mm")
     assert await api.delete("nb", "int_mm", kind=MindMapKind.INTERACTIVE) is None
     artifacts.delete.assert_awaited_once_with("nb", "int_mm")
 
@@ -613,7 +621,7 @@ async def test_delete_auto_detect_note_backed():
     # Decoy first row exercises the _detect_kind loop-continue branch.
     api, _, mind_maps, artifacts, _ = _make_api(note_rows=[["other_mm", "{}"], ["note_mm", "{}"]])
     await api.delete("nb", "note_mm")
-    mind_maps.delete_mind_map.assert_awaited_once_with("nb", "note_mm")
+    api._notes.delete_mind_map.assert_awaited_once_with("nb", "note_mm")
     artifacts.delete.assert_not_awaited()
 
 
@@ -622,7 +630,7 @@ async def test_delete_auto_detect_interactive():
     api, _, mind_maps, artifacts, _ = _make_api(interactive=[_interactive_artifact("int_mm")])
     await api.delete("nb", "int_mm")
     artifacts.delete.assert_awaited_once_with("nb", "int_mm")
-    mind_maps.delete_mind_map.assert_not_awaited()
+    api._notes.delete_mind_map.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -632,7 +640,7 @@ async def test_delete_auto_detect_missing_is_idempotent():
     # not a raise. Neither delete RPC family is dispatched.
     api, _, mind_maps, artifacts, _ = _make_api()
     assert await api.delete("nb", "ghost") is None
-    mind_maps.delete_mind_map.assert_not_awaited()
+    api._notes.delete_mind_map.assert_not_awaited()
     artifacts.delete.assert_not_awaited()
 
 
@@ -655,6 +663,6 @@ def test_new_artifact_id_degenerate_shapes(create_response, expected):
     ``None`` (never raises ``UnknownRPCMethodError``), and a well-formed
     ``[[id, ...]]`` yields the id. Pins the empty / non-list / non-str paths the
     two guarded ``safe_index`` descents must keep soft."""
-    from notebooklm._mind_maps_api import _new_artifact_id
+    from notebooklm._web.mind_maps import _new_artifact_id
 
     assert _new_artifact_id(create_response) == expected

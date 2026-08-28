@@ -33,6 +33,7 @@ import typing
 import notebooklm.client as client_module
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._chat import ChatAPI
+from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._notes import NotesAPI
 from notebooklm._settings import SettingsAPI
@@ -40,6 +41,7 @@ from notebooklm._sharing import SharingAPI
 from notebooklm._sources import SourcesAPI
 from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm._web.chat import WebChatAPI
+from notebooklm._web.mind_maps import WebMindMapsAPI
 from notebooklm._web.notebooks import WebNotebooksAPI
 from notebooklm._web.notes import WebNotesAPI
 from notebooklm._web.settings import WebSettingsAPI
@@ -191,6 +193,23 @@ def test_shared_wiring_identities_hold_on_both_paths() -> None:
         )
         assert getattr(client.notes, "_mind_maps", _missing) is client.artifacts._mind_maps, (
             f"{label}: notes and artifacts must share one note-backed mind-map service"
+        )
+        assert type(client.mind_maps) is WebMindMapsAPI
+        assert isinstance(client.mind_maps, MindMapsAPI)
+        assert getattr(client.mind_maps, "_rpc", _missing) is client._rpc_executor, (
+            f"{label}: mind maps must dispatch through the client's shared RpcExecutor"
+        )
+        assert getattr(client.mind_maps, "_mind_maps", _missing) is client.artifacts._mind_maps, (
+            f"{label}: mind maps and artifacts must share one note-backed mind-map service"
+        )
+        assert getattr(client.mind_maps, "_artifacts", _missing) is client.artifacts, (
+            f"{label}: mind maps must compose through the client's ArtifactsAPI"
+        )
+        assert getattr(client.mind_maps, "_notes", _missing) is client.notes, (
+            f"{label}: mind maps must compose through the client's NotesAPI"
+        )
+        assert getattr(client.mind_maps, "_notebooks", _missing) is client.notebooks, (
+            f"{label}: mind maps must resolve sources through the client's NotebooksAPI"
         )
         assert getattr(client.artifacts._note_service, "_rpc", _missing) is client._rpc_executor, (
             f"{label}: NoteService must dispatch through the client's shared RpcExecutor"

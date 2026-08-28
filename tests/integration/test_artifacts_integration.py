@@ -19,8 +19,8 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
-from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._web.artifacts import WebArtifactsAPI
+from notebooklm._web.mind_maps import NoteBackedMindMapService
 from notebooklm._web.notes import NoteService
 from notebooklm.exceptions import (
     ArtifactNotFoundError,

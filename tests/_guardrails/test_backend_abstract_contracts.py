@@ -173,6 +173,21 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
         ),
         wire_hooks=frozenset(),
     ),
+    _AbstractContract(
+        module="notebooklm._mind_maps_api",
+        class_name="MindMapsAPI",
+        implementation_module="notebooklm._web.mind_maps",
+        implementation_class_name="WebMindMapsAPI",
+        abstract_methods=frozenset(
+            {
+                "_send_rename_note_backed",
+                "generate",
+                "get_tree",
+                "list_note_backed",
+            }
+        ),
+        wire_hooks=frozenset({"_send_rename_note_backed"}),
+    ),
 )
 
 _WIRE_HOOK_PREFIXES = ("_send_",)

@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._runtime.contracts import LoopGuard
 from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm._web.chat import WebChatAPI
+from notebooklm._web.mind_maps import NoteBackedMindMapService
 from notebooklm._web.notebooks import WebNotebooksAPI
 from notebooklm._web.notes import NoteService
 from notebooklm._web.sources import WebSourcesAPI

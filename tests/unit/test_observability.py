@@ -13,8 +13,8 @@ from notebooklm import (
     correlation_id,
     get_request_id,
 )
-from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._web.artifacts import WebArtifactsAPI
+from notebooklm._web.mind_maps import NoteBackedMindMapService
 from notebooklm._web.notes import NoteService
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm._web.sources.upload import SourceUploadPipeline

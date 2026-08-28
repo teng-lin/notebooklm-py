@@ -43,8 +43,6 @@ from ._client_composed import ClientComposed
 from ._client_seams import resolve_client_seams
 from ._collections import CollectionsAPI
 from ._labels import LabelsAPI
-from ._mind_map import NoteBackedMindMapService
-from ._mind_maps_api import MindMapsAPI
 from ._research import ResearchAPI
 from ._runtime.config import (
     AUTO_READ_TIMEOUT,
@@ -61,6 +59,7 @@ from ._runtime.init import compose_client_internals
 from ._runtime.lifecycle import CookieRotator, CookieSaver
 from ._web.artifacts import WebArtifactsAPI
 from ._web.chat import WebChatAPI
+from ._web.mind_maps import NoteBackedMindMapService, WebMindMapsAPI
 from ._web.notebooks import WebNotebooksAPI
 from ._web.notes import NoteService, WebNotesAPI
 from ._web.settings import WebSettingsAPI
@@ -393,11 +392,12 @@ def _assemble_client(
     )
     # Unified mind-map surface over both backends (note-backed + interactive
     # studio artifact); dispatches each op to the correct RPC family (#1256).
-    client.mind_maps = MindMapsAPI(
+    client.mind_maps = WebMindMapsAPI(
         rpc=internals.executor,
         mind_maps=mind_maps,
         artifacts=client.artifacts,
         notebooks=client.notebooks,
+        notes=client.notes,
     )
     # Pure-RPC features (typed as ``rpc: RpcCaller``). Pass the
     # ``RpcExecutor`` collaborator directly, sourced from the composed

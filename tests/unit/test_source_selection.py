@@ -223,7 +223,7 @@ def mock_mind_map_service():
     splat into ``WebArtifactsAPI(...)`` calls via
     ``**mock_mind_map_service``.
     """
-    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._web.mind_maps import NoteBackedMindMapService
     from notebooklm._web.notes import NoteService
 
     return {

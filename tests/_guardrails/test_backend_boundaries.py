@@ -49,6 +49,7 @@ BASE_MODULE_ALLOWLIST: frozenset[str] = frozenset(
     {
         "notebooklm._artifacts",
         "notebooklm._chat.api",
+        "notebooklm._mind_maps_api",
         "notebooklm._notebooks",
         "notebooklm._sources",
         "notebooklm._notes",
@@ -62,6 +63,7 @@ BASE_MODULE_ALLOWLIST: frozenset[str] = frozenset(
 # same module cannot acquire a web dependency unnoticed.
 LAZY_WEB_IMPORT_ALLOWLIST = frozenset(
     {
+        ("notebooklm._artifacts", "__getattr__"),
         ("notebooklm._types.artifacts", "Artifact.from_api_response"),
         ("notebooklm._types.artifacts", "Artifact.from_mind_map"),
         ("notebooklm._types.artifacts", "_extract_artifact_url"),
@@ -90,8 +92,6 @@ ALLOWED_WEB_IMPORTERS = frozenset(
         "notebooklm._artifact",
         "notebooklm._source",
         "notebooklm._chat",
-        "notebooklm._mind_map",
-        "notebooklm._mind_maps_api",
         "notebooklm._research",
         "notebooklm.research",
     }
@@ -233,6 +233,7 @@ def _boundary_violations(
         target_is_mobile = _is_module_or_child(direct.target, "notebooklm._mobile")
         target_is_rpc = _is_module_or_child(direct.target, "notebooklm.rpc")
         target_is_protobuf = _is_module_or_child(direct.target, "google.protobuf")
+        lazy_edge = (direct.importer, direct.scope) in LAZY_WEB_IMPORT_ALLOWLIST
         target_is_rpc_enum = any(
             direct.target in {f"notebooklm.rpc.{name}", f"notebooklm.rpc.types.{name}"}
             for name in DOMAIN_ENUM_NAMES
@@ -243,7 +244,7 @@ def _boundary_violations(
             reason = "mobile backends must not import the web/RPC backend"
         elif importer_is_web and (target_is_mobile or target_is_protobuf):
             reason = "web backends must not import mobile/protobuf code"
-        elif direct.importer in base_modules and (
+        elif not lazy_edge and direct.importer in base_modules and (
             target_is_web or target_is_mobile or target_is_rpc
         ):
             reason = "backend-neutral bases must not import backend implementations or rpc"
@@ -252,7 +253,6 @@ def _boundary_violations(
         elif target_is_rpc_enum and not importer_is_rpc:
             reason = "first-party enum consumers must import the neutral canonical module"
         elif target_is_web and not importer_is_web:
-            lazy_edge = (direct.importer, direct.scope) in LAZY_WEB_IMPORT_ALLOWLIST
             allowed_edge = direct.importer in ALLOWED_WEB_IMPORTERS
             neutral_importer = direct.importer in base_modules or any(
                 _is_module_or_child(direct.importer, prefix)
@@ -303,6 +303,7 @@ def test_backend_boundary_manifests_are_well_formed() -> None:
         {
             "notebooklm._artifacts",
             "notebooklm._chat.api",
+            "notebooklm._mind_maps_api",
             "notebooklm._notebooks",
             "notebooklm._notes",
             "notebooklm._settings",
