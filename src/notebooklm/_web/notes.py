@@ -1,4 +1,4 @@
-"""Private note-row primitives — classifier + CRUD.
+"""Web note backend: row primitives and the concrete notes namespace.
 
 This module owns the backend note-row operations shared by ``NotesAPI``
 (plain notes + saved-from-chat notes) and ``ArtifactsAPI`` (mind maps,
@@ -23,22 +23,27 @@ the row — losing a chat-mode tag is preferable to dropping the note.
 from __future__ import annotations
 
 import asyncio
+import builtins
 import logging
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from ._web.rows.notes import NoteRow
-from .exceptions import DecodingError, RPCError
-from .rpc import safe_index
-from .rpc.types import RPCMethod
-from .types import Note
+from .._lookup import unwrap_or_raise
+from .._notes import NotesAPI
+from ..exceptions import DecodingError, NoteNotFoundError, RPCError
+from ..rpc import safe_index
+from ..rpc.types import RPCMethod
+from ..types import Note
+from .rows.notes import NoteRow
 
 if TYPE_CHECKING:
-    from ._runtime.contracts import RpcCaller
+    from .._mind_map import NoteBackedMindMapService
+    from .._runtime.contracts import RpcCaller
 
-__all__ = ["NoteService"]  # NoteRowKind is intentionally NOT exported
+__all__ = ["NoteService", "WebNotesAPI"]  # NoteRowKind is intentionally NOT exported
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("notebooklm._note_service")
+notes_logger = logging.getLogger("notebooklm._notes")
 
 
 # Module-level strong-ref anchor for fire-and-forget cleanup tasks (RUF006).
@@ -450,4 +455,103 @@ class NoteService:
             params,
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
+        )
+
+
+class WebNotesAPI(NotesAPI):
+    """Concrete batchexecute implementation of ``client.notes``."""
+
+    def __init__(
+        self,
+        *,
+        notes: NoteService,
+        mind_maps: NoteBackedMindMapService,
+    ):
+        self._notes = notes
+        self._mind_maps = mind_maps
+
+    async def list(self, notebook_id: str) -> list[Note]:
+        """List all non-deleted, non-mind-map notes in a notebook."""
+        notes_logger.debug("Listing notes in notebook: %s", notebook_id)
+        all_items = await self._get_all_notes_and_mind_maps(notebook_id)
+        notes: list[Note] = []
+        for item in all_items:
+            kind = self._notes.classify_row(item)
+            if kind in (NoteRowKind.DELETED, NoteRowKind.MIND_MAP):
+                continue
+            notes.append(self._parse_note(item, notebook_id))
+        return notes
+
+    async def get(self, notebook_id: str, note_id: str) -> Note:
+        """Get a note by ID, raising on a miss."""
+        return unwrap_or_raise(
+            await self.get_or_none(notebook_id, note_id),
+            NoteNotFoundError(note_id),
+        )
+
+    async def get_or_none(self, notebook_id: str, note_id: str) -> Note | None:
+        """Get a note by ID, returning ``None`` on a genuine miss."""
+        all_items = await self._get_all_notes_and_mind_maps(notebook_id)
+        for item in all_items:
+            if isinstance(item, list) and len(item) > 0 and NoteRow(item).id == note_id:
+                return self._parse_note(item, notebook_id)
+        return None
+
+    _get_or_none = get_or_none
+
+    async def create(
+        self,
+        notebook_id: str,
+        title: str = "New Note",
+        content: str = "",
+    ) -> Note:
+        """Create and return a note."""
+        return await self._notes.create_note(
+            notebook_id,
+            title=title,
+            content=content,
+        )
+
+    async def update(
+        self,
+        notebook_id: str,
+        note_id: str,
+        content: str,
+        title: str,
+    ) -> None:
+        """Update an existing note's content and title."""
+        if await self.get_or_none(notebook_id, note_id) is None:
+            raise NoteNotFoundError(note_id)
+        await self._notes.update_note(notebook_id, note_id, content, title)
+
+    async def delete(self, notebook_id: str, note_id: str) -> None:
+        """Idempotently delete a note."""
+        notes_logger.debug("Deleting note %s from notebook %s", note_id, notebook_id)
+        await self._notes.delete_note(notebook_id, note_id)
+
+    async def list_mind_maps(self, notebook_id: str) -> builtins.list[Any]:
+        """Return the raw note-backed mind-map rows for a notebook."""
+        return await self._mind_maps.list_mind_maps(notebook_id)
+
+    async def delete_mind_map(self, notebook_id: str, mind_map_id: str) -> None:
+        """Idempotently delete a note-backed mind map."""
+        await self._mind_maps.delete_mind_map(notebook_id, mind_map_id)
+
+    async def _get_all_notes_and_mind_maps(self, notebook_id: str) -> builtins.list[Any]:
+        return await self._notes.fetch_note_rows(notebook_id)
+
+    def _is_deleted(self, item: builtins.list[Any]) -> bool:
+        return self._notes.classify_row(item) == NoteRowKind.DELETED
+
+    def _extract_content(self, item: builtins.list[Any]) -> str | None:
+        return self._notes.extract_content(item)
+
+    def _parse_note(self, item: builtins.list[Any], notebook_id: str) -> Note:
+        row = NoteRow(item)
+        return Note(
+            id=row.id,
+            notebook_id=notebook_id,
+            title=row.title,
+            content=row.content or "",
+            created_at=row.created_at,
         )

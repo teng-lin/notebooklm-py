@@ -33,7 +33,7 @@ from notebooklm.rpc import RPCMethod
 def artifacts_api():
     """Build a minimal ArtifactsAPI for direct parser invocation."""
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import NoteService
+    from notebooklm._web.notes import NoteService
     from tests._fixtures.fake_core import make_fake_core
 
     mock_core = make_fake_core(rpc_call=AsyncMock())

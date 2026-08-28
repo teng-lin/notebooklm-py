@@ -1,4 +1,4 @@
-"""Mind-map facade backed by :mod:`_note_service`.
+"""Mind-map facade backed by :mod:`_web.notes`.
 
 Mind maps live in the same backend collection as user notes and use the
 same ``GET_NOTES_AND_MIND_MAPS`` / ``CREATE_NOTE`` / ``UPDATE_NOTE`` /
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ._note_service import NoteRowKind, NoteService
+from ._web.notes import NoteRowKind, NoteService
 from ._web.rows.notes import NoteRow
 from .exceptions import MindMapNotFoundError
 

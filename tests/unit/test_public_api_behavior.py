@@ -51,11 +51,10 @@ from notebooklm._collections import CollectionsAPI
 from notebooklm._labels import LabelsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._mind_maps_api import MindMapsAPI
-from notebooklm._note_service import NoteService
-from notebooklm._notes import NotesAPI
 from notebooklm._sources import SourcesAPI
 from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm._web.notebooks import WebNotebooksAPI
+from notebooklm._web.notes import NoteService, WebNotesAPI
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.exceptions import (
     ArtifactNotFoundError,
@@ -110,7 +109,7 @@ def _make_artifacts_api() -> ArtifactsAPI:
     )
 
 
-def _make_notes_api() -> NotesAPI:
+def _make_notes_api() -> WebNotesAPI:
     from tests._fixtures.fake_core import make_fake_core
 
     # ``None`` is the empty-notebook payload (a notebook with no notes); it is
@@ -120,7 +119,7 @@ def _make_notes_api() -> NotesAPI:
     core = make_fake_core(rpc_call=AsyncMock(return_value=None))
     note_service = NoteService(core)
     mind_maps = NoteBackedMindMapService(note_service)
-    return NotesAPI(notes=note_service, mind_maps=mind_maps)
+    return WebNotesAPI(notes=note_service, mind_maps=mind_maps)
 
 
 def _make_mind_maps_api() -> MindMapsAPI:

@@ -43,13 +43,16 @@ src/notebooklm/
 ├── _web/artifact/       # Web artifact listing/generation/download-selection services
 ├── _chat/               # ChatAPI implementation (facade + chat helpers)
 ├── _research.py         # ResearchAPI implementation
-├── _notes.py            # NotesAPI implementation
+├── _notes.py            # Backend-neutral abstract NotesAPI
+├── _web/notes.py        # WebNotesAPI + NoteService implementation
 ├── _mind_map.py         # Private note-backed mind-map service
 ├── _mind_maps_api.py    # MindMapsAPI implementation
 ├── _labels.py           # LabelsAPI implementation
-├── _settings.py         # SettingsAPI implementation
-├── _sharing.py          # SharingAPI implementation
-├── _sharing_manager.py  # Private legacy notebook share-link service
+├── _settings.py         # Backend-neutral abstract SettingsAPI
+├── _web/settings.py     # WebSettingsAPI + web settings helpers
+├── _sharing.py          # Backend-neutral abstract SharingAPI
+├── _web/sharing.py      # WebSharingAPI + legacy ShareManager
+├── _sharing_manager.py  # Neutral legacy share-URL builder
 ├── rpc/                 # RPC protocol layer
 │   ├── __init__.py
 │   ├── types.py         # RPCMethod enum and constants
@@ -149,8 +152,9 @@ Private service modules sit inside the client layer but below the public
 facades. They own cross-facade composition without importing sibling facades:
 `_notebook_metadata.py` composes notebook metadata through a narrow source
 lister without importing a concrete transport or lister; `_web/notebooks.py`
-owns the direct-construction web fallback. `_sharing_manager.py` owns legacy
-`SHARE_ARTIFACT` link behavior, and
+owns the direct-construction web fallback. `_web/sharing.py` owns legacy
+`SHARE_ARTIFACT` mutation behavior while `_sharing_manager.py` keeps only the
+transport-neutral URL builder, and
 `_mind_map.py` owns note-backed mind-map rows shared by notes and artifacts.
 Facade modules keep the public method surface stable and delegate to these
 services.

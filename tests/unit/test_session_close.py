@@ -93,7 +93,7 @@ async def test_session_close_drains_artifact_poll_hook() -> None:
     from unittest.mock import MagicMock
 
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import NoteService
+    from notebooklm._web.notes import NoteService
 
     core = build_client_shell_for_tests(_auth())
     # ``ArtifactsAPI`` consumes its three runtime collaborators

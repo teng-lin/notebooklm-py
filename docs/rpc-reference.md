@@ -48,10 +48,10 @@
 | `khqZz` | GET_CONVERSATION_TURNS | Get Q&A turns for a conversation | `_web/chat.py` |
 | `J7Gthc` | DELETE_CONVERSATION | Delete a conversation (web UI's "Delete history") | `_web/chat.py` |
 | `otmP3b` | SUGGEST_PROMPTS | Get AI-suggested prompts for a notebook | `_web/notebooks.py` |
-| `CYK0Xb` | CREATE_NOTE | Create a note (placeholder) | `_notes.py` |
-| `cYAfTb` | UPDATE_NOTE | Update note content/title | `_notes.py` |
-| `AH0mwd` | DELETE_NOTE | Delete a note | `_notes.py` |
-| `cFji9` | GET_NOTES_AND_MIND_MAPS | List notes and mind maps | `_notes.py` |
+| `CYK0Xb` | CREATE_NOTE | Create a note (placeholder) | `_web/notes.py` |
+| `cYAfTb` | UPDATE_NOTE | Update note content/title | `_web/notes.py` |
+| `AH0mwd` | DELETE_NOTE | Delete a note | `_web/notes.py` |
+| `cFji9` | GET_NOTES_AND_MIND_MAPS | List notes and mind maps | `_web/notes.py` |
 | `yyryJe` | GENERATE_MIND_MAP | Mind map generation | `_web/artifact/generation.py` |
 | `VfAZjd` | SUMMARIZE | Get notebook summary | `_web/notebooks.py` |
 | `FLmJqe` | REFRESH_SOURCE | Refresh URL/Drive source | `_web/sources/__init__.py` |
@@ -63,14 +63,14 @@
 | `Zbrupe` | CANCEL_RESEARCH | Cancel in-flight research run | `_research.py` |
 | `rc3d8d` | RENAME_ARTIFACT | Rename artifact | `_web/artifacts.py` |
 | `Krh3pd` | EXPORT_ARTIFACT | Export to Docs/Sheets | `_web/artifacts.py` |
-| `RGP97b` | SHARE_ARTIFACT | Legacy notebook/artifact share-link toggle | `_sharing_manager.py` |
-| `QDyure` | SHARE_NOTEBOOK | Set notebook visibility (restricted/public) | `_sharing.py` |
-| `JFMDGd` | GET_SHARE_STATUS | Get notebook share settings | `_sharing.py` |
+| `RGP97b` | SHARE_ARTIFACT | Legacy notebook/artifact share-link toggle | `_web/sharing.py` |
+| `QDyure` | SHARE_NOTEBOOK | Set notebook visibility (restricted/public) | `_web/sharing.py` |
+| `JFMDGd` | GET_SHARE_STATUS | Get notebook share settings | `_web/sharing.py` |
 | `ciyUvf` | GET_SUGGESTED_REPORTS | Get AI-suggested report formats | `_web/artifacts.py` |
 | `v9rmvd` | GET_INTERACTIVE_HTML | Fetch quiz/flashcard HTML (`[0][9][0]`) / interactive mind-map tree (`[0][9][3]`) | `_web/artifact/downloads.py` |
 | `fejl7e` | REMOVE_RECENTLY_VIEWED | Remove notebook from recent list | `_web/notebooks.py` |
-| `ZwVcOc` | GET_USER_SETTINGS | Get user settings including output language | `_settings.py` |
-| `hT54vc` | SET_USER_SETTINGS | Set user settings (e.g., output language) | `_settings.py` |
+| `ZwVcOc` | GET_USER_SETTINGS | Get user settings including output language | `_web/settings.py` |
+| `hT54vc` | SET_USER_SETTINGS | Set user settings (e.g., output language) | `_web/settings.py` |
 
 ### Content Type Codes (ArtifactTypeCode)
 
@@ -671,7 +671,7 @@ Source labels group a notebook's sources into AI-generated (or manually named)
 topic buckets. A label is a standalone entity — a source carries no
 back-reference; the label owns a list of source IDs, and membership is
 many-to-many (a source can belong to multiple labels). Every label RPC's first
-argument is the recurring request-options wrapper used by `_settings.py`:
+argument is the recurring request-options wrapper used by `_web/settings.py`:
 
 ```python
 OPTS = [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]]
@@ -1990,7 +1990,7 @@ await rpc_call(
 
 ### RPC: GET_SHARE_STATUS (JFMDGd)
 
-**Source:** `_sharing.py::get_status()`
+**Source:** `_web/sharing.py::get_status()`
 
 Get the current share settings for a notebook, including users with access and public status.
 
@@ -2065,8 +2065,8 @@ collaborator cap.
 
 ### RPC: SHARE_NOTEBOOK (QDyure)
 
-**Source:** `_sharing.py::set_public()`, `_sharing.py::add_user()`,
-`_sharing.py::set_users()`, `_sharing.py::remove_user()`
+**Source:** `_web/sharing.py::set_public()`, `_sharing.py::add_user()`,
+`_web/sharing.py::set_users()`, `_web/sharing.py::remove_user()`
 
 Multi-purpose RPC for managing notebook sharing: toggle public access, add/update users, or remove users.
 
@@ -2167,7 +2167,7 @@ params = [
 
 ### RPC: SET_VIEW_LEVEL (via RENAME_NOTEBOOK s0tc2d)
 
-**Source:** `_sharing.py::set_view_level()`
+**Source:** `_web/sharing.py::set_view_level()`
 
 Set what viewers can access (full notebook vs chat only).
 
@@ -2677,7 +2677,7 @@ Global user settings that affect all notebooks in an account.
 
 ### RPC: GET_USER_SETTINGS (ZwVcOc)
 
-**Source:** `_settings.py::get_output_language()`
+**Source:** `_web/settings.py::get_output_language()`
 
 Get user settings including the current output language.
 
@@ -2728,7 +2728,7 @@ The full per-tier notebook/source/studio limits these enum values map to are doc
 
 ### RPC: SET_USER_SETTINGS (hT54vc)
 
-**Source:** `_settings.py::set_output_language()`
+**Source:** `_web/settings.py::set_output_language()`
 
 Set user settings (currently used for output language).
 
@@ -2900,7 +2900,7 @@ callers decide whether to re-invoke.
 
 ### RPC: SHARE_ARTIFACT (RGP97b)
 
-**Source:** `_sharing_manager.py::ShareManager.share()` (legacy share-link toggle)
+**Source:** `_web/sharing.py::ShareManager.share()` (legacy share-link toggle)
 
 Toggle the legacy share-link state for a notebook URL, optionally with an
 artifact deep-link target. Distinct from `SHARE_NOTEBOOK` (`QDyure`), which

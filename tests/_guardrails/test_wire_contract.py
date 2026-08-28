@@ -89,7 +89,7 @@ _SRC = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
 #: test will then demand a registry entry for each newly-visible constant.
 _SCANNED_DIRS = (_SRC / "_web" / "rows",)
 _SCANNED_FILES = (
-    _SRC / "_settings.py",
+    _SRC / "_web" / "settings.py",
     _SRC / "_mind_maps_api.py",
 )
 

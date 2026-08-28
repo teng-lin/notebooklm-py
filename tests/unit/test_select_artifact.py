@@ -49,7 +49,7 @@ def _artifact(
 def api() -> ArtifactsAPI:
     """Build an ArtifactsAPI with no-op runtime / mind-map — only the helper is exercised."""
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import NoteService
+    from notebooklm._web.notes import NoteService
     from tests._fixtures.fake_core import make_fake_core
 
     mock_core = make_fake_core(rpc_call=AsyncMock())

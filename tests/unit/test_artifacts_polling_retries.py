@@ -93,7 +93,7 @@ class _FakeTransportProvider:
 @pytest.fixture
 def api():
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import NoteService
+    from notebooklm._web.notes import NoteService
 
     core = _make_session_core()
     mock_notebooks = MagicMock()
@@ -484,7 +484,7 @@ async def test_polling_service_cancels_and_drains_spawned_poll_task_if_begin_fai
 @pytest.mark.asyncio
 async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_or_later_waiter():
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import NoteService
+    from notebooklm._web.notes import NoteService
 
     core = _make_session_core()
     api = WebArtifactsAPI(

@@ -5,8 +5,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import notebooklm._notebooks as notebooks_module
-from notebooklm._sharing_manager import ShareManager, build_share_url
+from notebooklm._sharing_manager import build_share_url
 from notebooklm._web.notebooks import WebNotebooksAPI
+from notebooklm._web.sharing import ShareManager
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.fake_core import make_fake_core
 

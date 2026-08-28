@@ -93,6 +93,9 @@ _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES = {
     "WebArtifactsAPI",
     "WebChatAPI",
     "WebNotebooksAPI",
+    "WebNotesAPI",
+    "WebSettingsAPI",
+    "WebSharingAPI",
     "WebSourcesAPI",
 }
 
@@ -508,6 +511,12 @@ def test_deleted_session_module_is_not_importable() -> None:
     assert importlib.util.find_spec(deleted_module) is None
 
 
+def test_retired_note_service_module_is_not_importable() -> None:
+    """NoteService moved atomically to the web notes backend."""
+    assert not (SRC_ROOT / "_note_service.py").exists()
+    assert importlib.util.find_spec("notebooklm._note_service") is None
+
+
 def test_runtime_import_visitor_detects_nested_forbidden_modules() -> None:
     """The import-boundary guard must catch nested forbidden module paths."""
     tree = ast.parse(
@@ -620,6 +629,31 @@ def test_runtime_import_visitor_detects_web_chat_facade_and_module() -> None:
         tree,
         _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES,
     ) == {"WebChatAPI": [3]}
+
+
+@pytest.mark.parametrize(
+    ("module", "facade"),
+    [
+        ("notes", "WebNotesAPI"),
+        ("settings", "WebSettingsAPI"),
+        ("sharing", "WebSharingAPI"),
+    ],
+)
+def test_runtime_import_visitor_detects_a8_web_facades(module: str, facade: str) -> None:
+    """The private-service guard must recognize every concrete A8 facade."""
+    tree = ast.parse(f"from notebooklm._web.{module} import {facade}\n{facade}(rpc)\n")
+    visitor = _RuntimeImportVisitor(
+        forbidden_names=_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES,
+        forbidden_modules=_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES,
+    )
+
+    visitor.visit(tree)
+
+    assert visitor.forbidden == [f"notebooklm._web.{module}.{facade}"]
+    assert _facade_construction_lines(
+        tree,
+        _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES,
+    ) == {facade: [2]}
 
 
 def test_facade_construction_lines_detects_chained_facade_access() -> None:

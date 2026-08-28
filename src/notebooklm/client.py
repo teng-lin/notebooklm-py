@@ -53,7 +53,6 @@ from ._env import get_base_url as get_base_url
 from ._labels import LabelsAPI
 from ._mind_map import NoteBackedMindMapService as NoteBackedMindMapService  # noqa: F401
 from ._mind_maps_api import MindMapsAPI
-from ._note_service import NoteService as NoteService  # noqa: F401
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
 from ._research import ResearchAPI
@@ -73,6 +72,7 @@ from ._settings import SettingsAPI
 from ._sharing import SharingAPI
 from ._sources import SourcesAPI
 from ._url_utils import is_google_auth_redirect as is_google_auth_redirect
+from ._web.notes import NoteService as NoteService  # noqa: F401
 from ._web.sources.upload import SourceUploadPipeline
 from .auth import AuthTokens
 from .exceptions import AuthExtractionError as AuthExtractionError

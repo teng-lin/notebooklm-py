@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from notebooklm._settings import (
-    SettingsAPI,
+from notebooklm._web.settings import (
+    WebSettingsAPI,
     _extract_language,
     build_get_user_settings_params,
     extract_account_limits,
@@ -84,7 +84,7 @@ async def test_get_account_limits_calls_user_settings_rpc():
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=[[None, [6, 200, 100, 500000, 1]]]))
-    api = SettingsAPI(core.rpc_executor)
+    api = WebSettingsAPI(core.rpc_executor)
 
     limits = await api.get_account_limits()
 
@@ -108,7 +108,7 @@ async def test_get_user_settings_fetches_once_returns_both():
     # Realistic full GET response: limits at [0][1], language flags at [0][2].
     response = [[None, [6, 200, 100, 500000, 1], [True, None, None, True, ["fr"]]]]
     core = make_fake_core(rpc_call=AsyncMock(return_value=response))
-    api = SettingsAPI(core.rpc_executor)
+    api = WebSettingsAPI(core.rpc_executor)
 
     settings = await api.get_user_settings()
 
@@ -129,7 +129,7 @@ async def test_get_user_settings_preserves_getter_contracts():
 
     # Junk inner: no [0][1] limits shape, no [0][2] flags block.
     core = make_fake_core(rpc_call=AsyncMock(return_value=[["junk"]]))
-    api = SettingsAPI(core.rpc_executor)
+    api = WebSettingsAPI(core.rpc_executor)
 
     with pytest.raises(UnknownRPCMethodError):
         await api.get_user_settings()
@@ -310,7 +310,7 @@ async def test_get_output_language_returns_code_from_wire_shape():
     core = make_fake_core(
         rpc_call=AsyncMock(return_value=_get_response([True, None, None, True, ["zh_Hans"]]))
     )
-    api = SettingsAPI(core.rpc_executor)
+    api = WebSettingsAPI(core.rpc_executor)
 
     assert await api.get_output_language() == "zh_Hans"
 
@@ -321,7 +321,7 @@ async def test_get_output_language_absent_language_returns_none():
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=_get_response([True, None, None, True])))
-    api = SettingsAPI(core.rpc_executor)
+    api = WebSettingsAPI(core.rpc_executor)
 
     assert await api.get_output_language() is None
 
@@ -332,7 +332,7 @@ async def test_get_output_language_envelope_drift_raises():
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=[None]))
-    api = SettingsAPI(core.rpc_executor)
+    api = WebSettingsAPI(core.rpc_executor)
 
     with pytest.raises(UnknownRPCMethodError):
         await api.get_output_language()
@@ -345,7 +345,7 @@ async def test_set_output_language_returns_confirmed_code():
     core = make_fake_core(
         rpc_call=AsyncMock(return_value=_set_response([True, None, None, True, ["en"]]))
     )
-    api = SettingsAPI(core.rpc_executor)
+    api = WebSettingsAPI(core.rpc_executor)
 
     assert await api.set_output_language("en") == "en"
 
@@ -356,6 +356,6 @@ async def test_set_output_language_absent_confirmation_returns_none():
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=_set_response([True, None, None, True])))
-    api = SettingsAPI(core.rpc_executor)
+    api = WebSettingsAPI(core.rpc_executor)
 
     assert await api.set_output_language("en") is None

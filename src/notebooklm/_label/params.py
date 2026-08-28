@@ -4,7 +4,7 @@ Two differences from the source RPCs: the request-options wrapper is slot ``[0]`
 and ``notebook_id`` rides in the params (slot ``[1]``) in addition to the
 ``source-path`` query arg. Every builder returns a **fresh** structure per call
 so callers never alias a shared mutable wrapper (cf.
-``_settings.build_get_user_settings_params``).
+``_web.settings.build_get_user_settings_params``).
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from typing import Any, Literal
 def _opts() -> list[Any]:
     """Fresh request-options wrapper (arg ``[0]`` of every label RPC).
 
-    Mirrors the ``[1, None*8, [1]]`` context block in ``_settings.py``; returned
+    Mirrors the ``[1, None*8, [1]]`` context block in ``_web/settings.py``; returned
     fresh so callers never alias a shared mutable list.
     """
     return [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]]

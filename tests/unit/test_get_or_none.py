@@ -22,10 +22,9 @@ import pytest
 from notebooklm._lookup import unwrap_or_raise
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._mind_maps_api import MindMapsAPI
-from notebooklm._note_service import NoteService
-from notebooklm._notes import NotesAPI
 from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm._web.notebooks import WebNotebooksAPI
+from notebooklm._web.notes import NoteService, WebNotesAPI
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.exceptions import ClientError, NotebookNotFoundError, RPCError
 from notebooklm.types import MindMap, MindMapKind, Source
@@ -100,7 +99,7 @@ def notes_api():
     core = make_fake_core(rpc_call=AsyncMock())
     note_service = NoteService(core)
     mind_maps = NoteBackedMindMapService(note_service)
-    return NotesAPI(notes=note_service, mind_maps=mind_maps)
+    return WebNotesAPI(notes=note_service, mind_maps=mind_maps)
 
 
 @pytest.fixture

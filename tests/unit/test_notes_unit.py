@@ -5,8 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._mind_map import NoteBackedMindMapService
-from notebooklm._note_service import NoteService
-from notebooklm._notes import NotesAPI
+from notebooklm._web.notes import NoteService, WebNotesAPI
 from notebooklm.exceptions import NoteNotFoundError, RPCError
 
 
@@ -34,7 +33,7 @@ def notes_api(mock_core):
     """
     note_service = NoteService(mock_core)
     mind_maps = NoteBackedMindMapService(note_service)
-    return NotesAPI(
+    return WebNotesAPI(
         notes=note_service,
         mind_maps=mind_maps,
     )

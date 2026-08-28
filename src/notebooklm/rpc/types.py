@@ -183,7 +183,7 @@ class RPCMethod(str, Enum):
     # -> ActOnSources (generic source-action op; we use it to generate a mind map)
     GENERATE_MIND_MAP = "yyryJe"
     CREATE_NOTE = "CYK0Xb"  # -> CreateNote
-    # -> GetNotes (mind maps come back as JSON-bodied notes; see _note_service)
+    # -> GetNotes (mind maps come back as JSON-bodied notes; see _web.notes)
     GET_NOTES_AND_MIND_MAPS = "cFji9"
     UPDATE_NOTE = "cYAfTb"  # -> MutateNote
     DELETE_NOTE = "AH0mwd"  # -> DeleteNotes (batch-capable; we send a single note)

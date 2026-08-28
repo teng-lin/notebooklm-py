@@ -45,8 +45,6 @@ from ._collections import CollectionsAPI
 from ._labels import LabelsAPI
 from ._mind_map import NoteBackedMindMapService
 from ._mind_maps_api import MindMapsAPI
-from ._note_service import NoteService
-from ._notes import NotesAPI
 from ._research import ResearchAPI
 from ._runtime.config import (
     AUTO_READ_TIMEOUT,
@@ -61,11 +59,12 @@ from ._runtime.config import (
 )
 from ._runtime.init import compose_client_internals
 from ._runtime.lifecycle import CookieRotator, CookieSaver
-from ._settings import SettingsAPI
-from ._sharing import SharingAPI
 from ._web.artifacts import WebArtifactsAPI
 from ._web.chat import WebChatAPI
 from ._web.notebooks import WebNotebooksAPI
+from ._web.notes import NoteService, WebNotesAPI
+from ._web.settings import WebSettingsAPI
+from ._web.sharing import WebSharingAPI
 from ._web.sources import WebSourcesAPI
 from ._web.sources.upload import SourceUploadPipeline
 from .auth import AuthTokens
@@ -388,7 +387,7 @@ def _assemble_client(
         notebooks=client.notebooks,
         created_chat_sessions=client.notebooks,
     )
-    client.notes = NotesAPI(
+    client.notes = WebNotesAPI(
         notes=note_service,
         mind_maps=mind_maps,
     )
@@ -408,8 +407,8 @@ def _assemble_client(
         base_timeout=timeout,
         import_research_timeout=import_research_timeout,
     )
-    client.settings = SettingsAPI(internals.executor)
-    client.sharing = SharingAPI(internals.executor)
+    client.settings = WebSettingsAPI(internals.executor)
+    client.sharing = WebSharingAPI(internals.executor)
     # Source labels. Takes a narrow ``list_sources`` callable (not the whole
     # SourcesAPI) for the membership->Source join in ``labels.sources()``;
     # wired after ``client.sources`` exists. Same client/bound loop (ADR-0004).

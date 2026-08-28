@@ -23,6 +23,8 @@ pytestmark = pytest.mark.repo_lint
 class _AbstractContract:
     module: str
     class_name: str
+    implementation_module: str
+    implementation_class_name: str
     abstract_methods: frozenset[str]
     wire_hooks: frozenset[str]
 
@@ -32,6 +34,8 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
     _AbstractContract(
         module="notebooklm._artifacts",
         class_name="ArtifactsAPI",
+        implementation_module="notebooklm._web.artifacts",
+        implementation_class_name="WebArtifactsAPI",
         abstract_methods=frozenset(
             {
                 "_list_studio",
@@ -63,6 +67,8 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
     _AbstractContract(
         module="notebooklm._notebooks",
         class_name="NotebooksAPI",
+        implementation_module="notebooklm._web.notebooks",
+        implementation_class_name="WebNotebooksAPI",
         abstract_methods=frozenset(
             {
                 "_send_create",
@@ -83,6 +89,8 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
     _AbstractContract(
         module="notebooklm._sources",
         class_name="SourcesAPI",
+        implementation_module="notebooklm._web.sources",
+        implementation_class_name="WebSourcesAPI",
         abstract_methods=frozenset(
             {
                 "add_drive",
@@ -104,6 +112,8 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
     _AbstractContract(
         module="notebooklm._chat.api",
         class_name="ChatAPI",
+        implementation_module="notebooklm._web.chat",
+        implementation_class_name="WebChatAPI",
         abstract_methods=frozenset(
             {
                 "_list_turn_roles",
@@ -118,6 +128,50 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
             }
         ),
         wire_hooks=frozenset({"_send_delete_conversation", "_send_note", "_stream_answer"}),
+    ),
+    _AbstractContract(
+        module="notebooklm._notes",
+        class_name="NotesAPI",
+        implementation_module="notebooklm._web.notes",
+        implementation_class_name="WebNotesAPI",
+        abstract_methods=frozenset(
+            {
+                "create",
+                "delete",
+                "delete_mind_map",
+                "get",
+                "get_or_none",
+                "list",
+                "list_mind_maps",
+                "update",
+            }
+        ),
+        wire_hooks=frozenset(),
+    ),
+    _AbstractContract(
+        module="notebooklm._sharing",
+        class_name="SharingAPI",
+        implementation_module="notebooklm._web.sharing",
+        implementation_class_name="WebSharingAPI",
+        abstract_methods=frozenset(
+            {"get_status", "remove_user", "set_public", "set_users", "set_view_level"}
+        ),
+        wire_hooks=frozenset(),
+    ),
+    _AbstractContract(
+        module="notebooklm._settings",
+        class_name="SettingsAPI",
+        implementation_module="notebooklm._web.settings",
+        implementation_class_name="WebSettingsAPI",
+        abstract_methods=frozenset(
+            {
+                "get_account_limits",
+                "get_output_language",
+                "get_user_settings",
+                "set_output_language",
+            }
+        ),
+        wire_hooks=frozenset(),
     ),
 )
 
@@ -284,3 +338,25 @@ def test_chat_shared_workflows_call_only_their_single_wire_hook() -> None:
             and (node.func.attr.startswith("_send_") or node.func.attr == "_stream_answer")
         }
         assert hooks == expected_hooks
+
+
+def test_backend_implementations_preserve_abstract_method_signatures() -> None:
+    """Concrete backends cannot widen, reorder, or reannotate public contracts."""
+    for contract in BASE_ABSTRACT_CONTRACTS:
+        base = getattr(importlib.import_module(contract.module), contract.class_name)
+        implementation = getattr(
+            importlib.import_module(contract.implementation_module),
+            contract.implementation_class_name,
+        )
+        for method_name in contract.abstract_methods:
+            base_method = getattr(base, method_name)
+            implementation_method = getattr(implementation, method_name)
+            assert inspect.signature(implementation_method, eval_str=True) == inspect.signature(
+                base_method, eval_str=True
+            ), (
+                f"{contract.implementation_class_name}.{method_name} does not match "
+                f"{contract.class_name}.{method_name}"
+            )
+            assert inspect.iscoroutinefunction(
+                implementation_method
+            ) == inspect.iscoroutinefunction(base_method)

@@ -45,7 +45,7 @@ from notebooklm.types import ArtifactDownloadError
 def mock_artifacts_api(tmp_path):
     """ArtifactsAPI wired to mocks -- no real network, real httpx clients."""
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import NoteService
+    from notebooklm._web.notes import NoteService
     from tests._fixtures.fake_core import make_fake_core
 
     mock_core = make_fake_core(

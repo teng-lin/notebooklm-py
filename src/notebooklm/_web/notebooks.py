@@ -10,8 +10,6 @@ from .._notebook_metadata import (
 )
 from .._notebooks import NotebooksAPI
 from .._runtime.contracts import RpcCaller
-from .._settings import build_get_user_settings_params, extract_account_limits
-from .._sharing_manager import ShareManager
 from .._types.enums import GrpcStatusCode, normalize_grpc_status
 from ..exceptions import (
     ClientError,
@@ -38,6 +36,8 @@ from .params.notebooks import (
 )
 from .rows.notebooks import PromptSuggestionRow, unwrap_prompt_suggestions
 from .rows.sources import SourceRow
+from .settings import build_get_user_settings_params, extract_account_limits
+from .sharing import ShareManager
 from .sources.listing import SourceLister
 
 logger = logging.getLogger("notebooklm._notebooks")

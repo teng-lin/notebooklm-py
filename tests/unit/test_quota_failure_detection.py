@@ -66,7 +66,7 @@ def _make_api(rpc_call: AsyncMock | None = None):
     decoded response instead of a bare mock return value.
     """
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import NoteService
+    from notebooklm._web.notes import NoteService
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(

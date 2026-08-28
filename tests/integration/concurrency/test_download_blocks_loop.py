@@ -114,7 +114,7 @@ def mock_artifacts_api(tmp_path: Path) -> tuple[ArtifactsAPI, FakeSession]:
     ``AsyncMock`` attribute assignment is needed.
     """
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import NoteService
+    from notebooklm._web.notes import NoteService
 
     mock_core = make_fake_core(
         rpc_call=AsyncMock(),

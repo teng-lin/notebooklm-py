@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, call
 
 import pytest
 
-from notebooklm._note_service import NoteRowKind, NoteService
+from notebooklm._web.notes import NoteRowKind, NoteService
 from notebooklm.exceptions import DecodingError, RPCError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import Note

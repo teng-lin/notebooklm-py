@@ -31,8 +31,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._mind_map import NoteBackedMindMapService
-from notebooklm._note_service import NoteService
 from notebooklm._web.artifacts import WebArtifactsAPI
+from notebooklm._web.notes import NoteService
 
 
 def _make_collaborators() -> tuple[MagicMock, MagicMock, MagicMock]:

@@ -57,9 +57,9 @@ from ..params.artifacts import (
 )
 
 if TYPE_CHECKING:
-    from ..._note_service import NoteService
     from ..._notebook_metadata import NotebookSourceIdProvider
     from ..._runtime.contracts import RpcCaller
+    from ..notes import NoteService
 
 from ..rows import artifacts as _artifact_rows
 

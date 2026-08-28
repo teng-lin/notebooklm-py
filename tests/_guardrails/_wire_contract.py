@@ -773,7 +773,7 @@ MAPPINGS: tuple[Mapping, ...] = (
     # (free: [_, 100, 50, 500000, 1]; Pro cassettes: [_, 500, 300, 500000, 2]),
     # matching Google's published per-tier limits.
     Mapping(
-        "_settings",
+        "settings",
         MODULE_LEVEL,
         "_NOTEBOOK_LIMIT_INDEX",
         "TierLimits",
@@ -783,7 +783,7 @@ MAPPINGS: tuple[Mapping, ...] = (
         ),
     ),
     Mapping(
-        "_settings",
+        "settings",
         MODULE_LEVEL,
         "_SOURCE_LIMIT_INDEX",
         "TierLimits",
@@ -1049,7 +1049,7 @@ UNMAPPED: tuple[Unmapped, ...] = (
         f"extractor did not recover a name for. {_UNRECOVERED}",
     ),
     Unmapped(
-        "_settings",
+        "settings",
         MODULE_LEVEL,
         "_TIER_INDEX",
         "reads TierLimits tag 5 (subscription tier). The mobile BuilderInfo "

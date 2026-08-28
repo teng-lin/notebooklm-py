@@ -586,11 +586,11 @@ class TestSharingAPIValidation:
         """Test that add_user rejects OWNER permission."""
         from unittest.mock import AsyncMock
 
-        from notebooklm._sharing import SharingAPI
+        from notebooklm._web.sharing import WebSharingAPI
         from tests._fixtures.fake_core import make_fake_core
 
         mock_core = make_fake_core(rpc_call=AsyncMock())
-        api = SharingAPI(mock_core)
+        api = WebSharingAPI(mock_core)
 
         with pytest.raises(ValueError, match="Cannot assign OWNER permission"):
             await api.add_user("nb_123", "test@example.com", SharePermission.OWNER)
@@ -603,11 +603,11 @@ class TestSharingAPIValidation:
         """Test that add_user rejects _REMOVE permission."""
         from unittest.mock import AsyncMock
 
-        from notebooklm._sharing import SharingAPI
+        from notebooklm._web.sharing import WebSharingAPI
         from tests._fixtures.fake_core import make_fake_core
 
         mock_core = make_fake_core(rpc_call=AsyncMock())
-        api = SharingAPI(mock_core)
+        api = WebSharingAPI(mock_core)
 
         with pytest.raises(ValueError, match="Use remove_user"):
             await api.add_user("nb_123", "test@example.com", SharePermission._REMOVE)
@@ -619,7 +619,7 @@ class TestSharingAPIValidation:
         """Test that add_user accepts EDITOR permission."""
         from unittest.mock import AsyncMock
 
-        from notebooklm._sharing import SharingAPI
+        from notebooklm._web.sharing import WebSharingAPI
         from tests._fixtures.fake_core import make_fake_core
 
         # Return empty list for share call, then mock get_status
@@ -635,7 +635,7 @@ class TestSharingAPIValidation:
                 ]
             )
         )
-        api = SharingAPI(mock_core)
+        api = WebSharingAPI(mock_core)
 
         status = await api.add_user("nb_123", "test@example.com", SharePermission.EDITOR)
 
@@ -648,7 +648,7 @@ class TestSharingAPIValidation:
         """Test that add_user accepts VIEWER permission (default)."""
         from unittest.mock import AsyncMock
 
-        from notebooklm._sharing import SharingAPI
+        from notebooklm._web.sharing import WebSharingAPI
         from tests._fixtures.fake_core import make_fake_core
 
         mock_core = make_fake_core(
@@ -663,7 +663,7 @@ class TestSharingAPIValidation:
                 ]
             )
         )
-        api = SharingAPI(mock_core)
+        api = WebSharingAPI(mock_core)
 
         # Use default permission (VIEWER)
         status = await api.add_user("nb_123", "test@example.com")

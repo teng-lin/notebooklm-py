@@ -224,7 +224,7 @@ def mock_mind_map_service():
     ``**mock_mind_map_service``.
     """
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import NoteService
+    from notebooklm._web.notes import NoteService
 
     return {
         "mind_maps": MagicMock(spec=NoteBackedMindMapService),

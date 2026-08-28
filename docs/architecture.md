@@ -523,7 +523,7 @@ Beyond the client-owned runtime graph, several feature APIs are implemented via 
 
 | Service / Module | Module | Responsibility |
 |-------------------|--------|----------------|
-| `NoteService` | [`_note_service.py`](../src/notebooklm/_note_service.py) | Service layer managing note CRUD, note-backed content generation, and sync. |
+| `NoteService` | [`_web/notes.py`](../src/notebooklm/_web/notes.py) | Web note-row service managing note CRUD, note-backed content generation, and sync. |
 | `NoteBackedMindMapService` | [`_mind_map.py`](../src/notebooklm/_mind_map.py) | Specific adapter service representing mind-maps, backed by standard notebook notes. |
 | `ArtifactDownloadService` | [`_web/artifact/downloads.py`](../src/notebooklm/_web/artifact/downloads.py) | Web raw-row selection and representation lookup for finished artifacts. |
 | `AssetDownloadService` | [`_artifact/downloads.py`](../src/notebooklm/_artifact/downloads.py) | Backend-neutral guarded byte transfer, staged writing, and atomic publication. |
@@ -1021,6 +1021,9 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/artifacts.py` | `WebArtifactsAPI`, the concrete `batchexecute` artifact backend; owns web listing, mutation, generation-hook, raw selection, export, and suggestion operations |
 | `_web/artifact/` | Web artifact services for listing, generation dispatch, raw download selection, and positional data-table decoding |
 | `_web/chat.py` | `WebChatAPI`, the concrete streamed-query and `batchexecute` chat backend; owns request IDs, streamed transport, positional history/turn decoding, chat RPCs, and saved-chat note persistence |
+| `_web/notes.py` | `WebNotesAPI` plus `NoteService`, the concrete `batchexecute` notes backend and shared note-row primitives |
+| `_web/settings.py` | `WebSettingsAPI` plus account-setting request/response helpers |
+| `_web/sharing.py` | `WebSharingAPI` plus the legacy `SHARE_ARTIFACT` `ShareManager` |
 | `_web/params/` | Web `batchexecute` positional request payload builders, separated from backend-neutral namespace APIs |
 | `_web/params/notebooks.py` | Stable `batchexecute` notebook RPC request payload builders, including `SUGGEST_PROMPTS` |
 | `_web/params/sources.py` | Stable source registration, rename, template-block, and resumable-upload request payload builders |
@@ -1035,12 +1038,11 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_chat/api.py` | Backend-neutral abstract `ChatAPI`; owns locks, cache, deleted-conversation tracking, ID recovery, authoritative turn counting, modes, and shared ask/delete/save-note orchestration over three protected adapter hooks plus the typed `_list_turn_roles` read boundary |
 | `_research.py` | `client.research` API |
 | `_research_import.py` | Free-function helpers for `ResearchAPI` source import + verification: URL normalization, the report-source predicate, imported-entry/merge helpers, and the #1961 idempotency pre-filter (skip already-present URLs) with its `already_present` side-channel carrier. Split out of `_research.py` under the ADR-0008 module-size ratchet. |
-| `_notes.py` | `client.notes` API |
-| `_sharing.py` | `client.sharing` API |
+| `_notes.py` | Backend-neutral abstract `NotesAPI` contract |
+| `_sharing.py` | Backend-neutral abstract `SharingAPI`; owns the shared `add_user` / `update_user` workflows |
 | `_labels.py` | `client.labels` API — source labels (topic groupings); pure-RPC like `SharingAPI`, plus a narrow `list_sources` callable for the membership→`Source` join in `sources()` |
 | `_collections.py` | `client.collections` API — account-level notebook groups; reuses the label RPCs (type-3, null notebook parent, `source_path="/"`), plus a narrow `list_notebooks` callable for the membership→`Notebook` join in `notebooks()` |
-| `_settings.py` | `client.settings` API |
-| `_note_service.py` | Service layer managing note CRUD, note-backed content generation, and sync |
+| `_settings.py` | Backend-neutral abstract `SettingsAPI` contract |
 | `_mind_map.py` | Specific adapter service representing mind-maps, backed by standard notes |
 | `_mind_maps_api.py` | `client.mind_maps` API — unified surface over both mind-map backends (note-backed JSON + interactive studio-artifact), dispatching each op to the correct RPC family (#1256) |
 | `_artifact/downloads.py` | Backend-neutral asset transfer service: guarded streaming, rejection, staging, and atomic publication |
@@ -1069,7 +1071,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_collection/params.py` | Collection request payload builders reusing the label RPCs — null notebook_id, type-3 discriminator, `[1,3]` opts tail; add/remove notebook-membership fieldmask and `create`'s options wrapper are live-captured (PR #2009) |
 | `_notebook_metadata.py` | Transport-neutral notebook metadata protocols and composition service; no concrete RPC/source-listing dependency |
 | `_url_utils.py`, `urls.py` | URL parsing/validation internals and the public URL helper facade |
-| `_sharing_manager.py` | Direct sharing management logic |
+| `_sharing_manager.py` | Backend-neutral legacy share-URL builder |
 | `_version_check.py` | Dynamic client-side version deprecation guard |
 | `_version_info.py` | Human-facing `version_string()` — package version + short git commit (embedded by `hatch_build.py` at build time, or live `git` from a checkout) |
 | `_chat/deleted_tracker.py` | Bounded `RecentlyDeletedConversations` set — `delete_conversation` records the id (under the conversation lock) so a concurrent null-conversation ask, after acquiring that lock, detects a mid-flight delete and drops `resolved_id_override` to recover the server's real conversation id post-POST (#1875) |
@@ -1157,12 +1159,11 @@ src/notebooklm/
 ├── _conversation_cache.py       # Per-instance true-LRU conversation cache (bounded conversation count + per-conversation turns)
 ├── _polling_registry.py         # Artifact polling helpers
 ├── _cookie_persistence.py       # Cookie-jar persistence + __Secure-1PSIDTS rotation
-├── _note_service.py             # NoteService
 ├── _mind_map.py                 # NoteBackedMindMapService
 ├── _mind_maps_api.py            # MindMapsAPI — unified mind-map surface over both backends (#1256)
 ├── _notebook_metadata.py        # Neutral metadata protocols + composition service
 ├── _url_utils.py                # URL validation helpers
-├── _sharing_manager.py          # Sharing management logic
+├── _sharing_manager.py          # Neutral legacy share-URL builder
 ├── _version_check.py            # Deprecation version guard
 ├── _version_info.py             # version_string(): version + short git commit
 ├── _research_import.py          # ResearchAPI import/verification helpers + #1961 idempotency pre-filter
@@ -1367,9 +1368,12 @@ src/notebooklm/
 ├── _sources.py                  # Backend-neutral abstract SourcesAPI
 ├── _artifacts.py                # Backend-neutral abstract ArtifactsAPI
 ├── _research.py                 # ResearchAPI
-├── _notes.py                    # NotesAPI
-├── _sharing.py                  # SharingAPI
-├── _settings.py                 # SettingsAPI
+├── _notes.py                    # Backend-neutral abstract NotesAPI
+├── _sharing.py                  # Backend-neutral abstract SharingAPI
+├── _settings.py                 # Backend-neutral abstract SettingsAPI
+├── _web/notes.py                # WebNotesAPI + NoteService
+├── _web/sharing.py              # WebSharingAPI + legacy ShareManager
+├── _web/settings.py             # WebSettingsAPI + web settings helpers
 ├── _labels.py                   # LabelsAPI — client.labels (source labels: generate/create/list/…)
 ├── _collections.py              # CollectionsAPI — client.collections (account-level notebook groups; reuse label RPCs, type-3)
 ├── notebooklm_cli.py            # Entry-point assembler — imports + registers cli/ groups

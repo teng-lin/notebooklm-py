@@ -21,9 +21,9 @@ import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
-from notebooklm._note_service import NoteService
 from notebooklm._web.artifact.listing import ArtifactListingService
 from notebooklm._web.artifacts import WebArtifactsAPI
+from notebooklm._web.notes import NoteService
 from notebooklm._web.rows.artifacts import ArtifactRow
 from notebooklm.exceptions import ArtifactNotFoundError, UnknownRPCMethodError
 from notebooklm.rpc import (
