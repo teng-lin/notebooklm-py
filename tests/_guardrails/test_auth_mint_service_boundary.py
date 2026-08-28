@@ -860,13 +860,14 @@ def _production_perform_oauth_calls(root: Path = SRC_ROOT) -> set[tuple[str, str
     calls: set[tuple[str, str, str]] = set()
     for path in sorted(root.rglob("*.py")):
         tree = _tree(path)
+        bindings = _bindings(tree, path=path, src_root=root)
         parents = {
             child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)
         }
         for node in ast.walk(tree):
             if not (
                 isinstance(node, ast.Call)
-                and _qualified_name(node.func) == "gpsoauth.perform_oauth"
+                and _origin(node.func, bindings) == "gpsoauth.perform_oauth"
             ):
                 continue
             owner = "<module>"
@@ -999,7 +1000,7 @@ def test_exchange_mint_http_and_error_shapes_are_exact() -> None:
         if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call):
             if _qualified_name(node.exc.func) in {"_MintError", "OAuthMintError"}:
                 raises.add((ast.unparse(node.exc), ast.unparse(node.cause) if node.cause else "-"))
-    assert len(raises) == 7
+    assert len(raises) == 5
     assert {cause for _expression, cause in raises} == {"-", "None", "exc"}
     dependency_raises = [
         (ast.unparse(node.exc), ast.unparse(node.cause) if node.cause else "-")
@@ -1075,12 +1076,32 @@ def test_service_importers_callers_and_lock_boundary_are_exact() -> None:
 
 
 def test_source_tree_has_one_owned_perform_oauth_call_site() -> None:
+    assert _module_importers("gpsoauth") == {"_auth/mint_service.py"}
     assert _production_perform_oauth_calls() == {
         (
             "_auth/mint_service.py",
             "_perform_oauth",
             "gpsoauth.perform_oauth(email, master_token, android_id, service=spec.service, "
             "app=spec.app, client_sig=spec.client_sig)",
+        )
+    }
+
+
+def test_perform_oauth_call_guard_resolves_import_and_assignment_aliases(tmp_path: Path) -> None:
+    source = tmp_path / "hidden.py"
+    source.write_text(
+        "from gpsoauth import perform_oauth as imported\n"
+        "alias = imported\n"
+        "def hidden():\n"
+        "    return alias('e', 'm', 'a', service='s', app='p', client_sig='c')\n",
+        encoding="utf-8",
+    )
+
+    assert _production_perform_oauth_calls(tmp_path) == {
+        (
+            "hidden.py",
+            "hidden",
+            "alias('e', 'm', 'a', service='s', app='p', client_sig='c')",
         )
     }
 

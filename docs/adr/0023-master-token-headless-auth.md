@@ -162,8 +162,11 @@ the coordinator.
 `MintService` now exposes the protocol-neutral `mint_oauth(master_token, spec)`
 seam. `OAuthClientSpec(service, app, client_sig)` is immutable, and the returned
 `MintedOAuthToken` excludes its token from `repr`. A valid server-supplied
-decimal `Expiry` is projected to Unix seconds; an absent or malformed value is
-`None`, with no fallback lifetime invented by the client.
+one-to-ten-digit decimal `Expiry` is projected to Unix seconds; an absent,
+non-decimal, or oversized value is `None`, with no fallback lifetime invented
+by the client. OAuth failures use fixed sanitized messages and discard raw
+dependency exceptions, responses, and credential-bearing traceback locals;
+`MissingDependencyError` retains its distinct type.
 
 The existing web cookie mint supplies the frozen Chromecast/OAuthLogin spec and
 then performs OAuthLogin, MergeSession, and RotateCookies exactly as before.

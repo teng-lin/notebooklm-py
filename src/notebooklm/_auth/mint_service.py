@@ -119,13 +119,17 @@ def _perform_oauth(
 
 def _parse_oauth_expiry(value: Any) -> int | None:
     """Parse the server's optional Unix-seconds expiry without guessing one."""
-    if not isinstance(value, str) or not value.isascii() or not value.isdecimal():
+    if (
+        not isinstance(value, str)
+        or len(value) > 10
+        or not value.isascii()
+        or not value.isdecimal()
+    ):
         return None
     try:
         return int(value)
     except ValueError:
-        # Python rejects pathologically long integer strings. Treat that server
-        # value as unknown just like every other malformed optional expiry.
+        # Defensive backstop for interpreter-specific integer conversion.
         return None
 
 
@@ -187,6 +191,11 @@ class MintService:
             # the durable credential from this escaping traceback frame.
             del master_token
             raise
+        oauth: Any = None
+        bearer: Any = None
+        minted_token: str | None = None
+        expires_at: int | None = None
+        failure_message: str | None = None
         try:
             oauth = await asyncio.to_thread(
                 _perform_oauth,
@@ -196,26 +205,51 @@ class MintService:
                 master_token.android_id,
                 spec,
             )
-        except Exception as exc:  # noqa: BLE001 (sanitize dependency/transport failures)
-            raise OAuthMintError("perform_oauth failed (network or gpsoauth error).") from exc
-        bearer = oauth.get("Auth")
-        if not bearer:
-            raise OAuthMintError(
-                f"perform_oauth rejected the master token (Error={oauth.get('Error', 'unknown')}). "
-                "Re-bootstrap with `notebooklm login --master-token`."
-            )
-        return MintedOAuthToken(
-            token=str(bearer),
-            expires_at=_parse_oauth_expiry(oauth.get("Expiry")),
-        )
+        except Exception:  # noqa: BLE001 (discard dependency/transport exception + traceback)
+            failure_message = "perform_oauth failed (network or gpsoauth error)."
+        except BaseException:
+            # Cancellation and process-exit signals keep their identity, but the
+            # durable credential must not remain in this escaping frame.
+            del master_token
+            raise
+        else:
+            try:
+                bearer = oauth.get("Auth")
+                if bearer:
+                    minted_token = str(bearer)
+                    expires_at = _parse_oauth_expiry(oauth.get("Expiry"))
+                else:
+                    failure_message = (
+                        "perform_oauth rejected the master token. "
+                        "Re-bootstrap with `notebooklm login --master-token`."
+                    )
+            except Exception:  # noqa: BLE001 (sanitize malformed dependency response)
+                failure_message = "perform_oauth returned a malformed response."
+
+        if minted_token is not None:
+            return MintedOAuthToken(token=minted_token, expires_at=expires_at)
+
+        # Raise only after the dependency exception/parser frame has unwound,
+        # and remove every raw credential carrier from this escaping frame.
+        # The explicit chain reset also prevents an active caller exception
+        # from becoming an implicit, potentially secret-bearing context.
+        del master_token, oauth, bearer, minted_token
+        error = OAuthMintError(failure_message or "perform_oauth returned a malformed response.")
+        try:
+            raise error
+        except OAuthMintError:
+            error.__cause__ = None
+            error.__context__ = None
+            error.__suppress_context__ = False
+            raise
 
     async def mint(self, token: MasterToken) -> httpx.Cookies:
         """Mint a fresh live transport jar from one durable master token."""
         try:
             oauth = await self.mint_oauth(token, _CHROMECAST_OAUTH_SPEC)
-        except MissingDependencyError:
-            # ``mint_oauth`` already scrubbed its own frame; retain the same
-            # dependency failure and traceback behavior at the web adapter.
+        except BaseException:
+            # ``mint_oauth`` owns error typing and sanitization. Preserve that
+            # identity while removing the durable token from this adapter frame.
             del token
             raise
         bearer = oauth.token

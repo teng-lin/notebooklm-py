@@ -155,6 +155,42 @@ def _assert_traceback_does_not_retain_secret(error: BaseException, secret: str) 
         current = current.tb_next
 
 
+def _value_retains_secret(value: object, secret: str, seen: set[int] | None = None) -> bool:
+    """Inspect the concrete carrier shapes used by auth exceptions and frames."""
+    if value == secret:
+        return True
+    if isinstance(value, MasterToken):
+        return value.secret == secret
+    if seen is None:
+        seen = set()
+    if id(value) in seen:
+        return False
+    seen.add(id(value))
+    if isinstance(value, dict):
+        return any(
+            _value_retains_secret(item, secret, seen) for pair in value.items() for item in pair
+        )
+    if isinstance(value, list | tuple | set | frozenset):
+        return any(_value_retains_secret(item, secret, seen) for item in value)
+    return False
+
+
+def _assert_error_graph_does_not_retain_secret(error: BaseException, secret: str) -> None:
+    """Check exception text/fields, every chain node, and every traceback local."""
+    for current_error in _chain_objects(error):
+        assert secret not in str(current_error)
+        assert secret not in repr(current_error)
+        assert not _value_retains_secret(current_error.args, secret)
+        current_traceback = current_error.__traceback__
+        while current_traceback is not None:
+            if current_traceback.tb_frame.f_globals.get("__name__", "").startswith("notebooklm."):
+                assert not any(
+                    _value_retains_secret(value, secret)
+                    for value in current_traceback.tb_frame.f_locals.values()
+                )
+            current_traceback = current_traceback.tb_next
+
+
 def _adapter_traceback_retains(
     error: BaseException,
     target: BaseException,
@@ -226,6 +262,7 @@ def test_oauth_value_shapes_are_immutable_and_secret_safe() -> None:
         (True, None),
         ("١٧٠٠٠٠٠٠٠٠", None),
         ("7.0", None),
+        ("9" * 11, None),
         ("9" * 10_000, None),
     ],
 )
@@ -490,7 +527,10 @@ async def test_mint_oauth_errors_expose_no_input_or_returned_credentials(
 ) -> None:
     master_secret = "aas_et/MASTER-SECRET"
     bearer_secret = "ya29.MINTED-BEARER-SECRET-1234567890"
-    fake_gpsoauth.oauth_return = {"Auth": "", "Error": "rejected"}
+    fake_gpsoauth.oauth_return = {
+        "Auth": "",
+        "Error": f"rejected {master_secret} {bearer_secret}",
+    }
 
     with pytest.raises(OAuthMintError) as rejected:
         await MintService().mint_oauth(
@@ -498,13 +538,95 @@ async def test_mint_oauth_errors_expose_no_input_or_returned_credentials(
             OAuthClientSpec("oauth2:scope", "example.app", "certificate"),
         )
 
-    surfaces = (str(rejected.value), repr(rejected.value), repr(rejected.value.args))
-    assert all(master_secret not in surface for surface in surfaces)
-    assert all(bearer_secret not in surface for surface in surfaces)
+    _assert_error_graph_does_not_retain_secret(rejected.value, master_secret)
+    _assert_error_graph_does_not_retain_secret(rejected.value, bearer_secret)
     assert str(rejected.value) == (
-        "perform_oauth rejected the master token (Error=rejected). "
+        "perform_oauth rejected the master token. "
         "Re-bootstrap with `notebooklm login --master-token`."
     )
+    _assert_chain(rejected.value, cause=None, context=None, suppress=False)
+
+
+@pytest.mark.asyncio
+async def test_mint_oauth_discards_secret_bearing_dependency_error_and_traceback(
+    fake_gpsoauth: types.ModuleType,
+) -> None:
+    master_secret = "aas_et/WORKER-MASTER-SECRET"
+    bearer_secret = "ya29.WORKER-BEARER-SECRET-1234567890"
+    fake_gpsoauth.oauth_error = RuntimeError(f"dependency echoed {master_secret} {bearer_secret}")
+
+    with pytest.raises(OAuthMintError) as failed:
+        await MintService().mint_oauth(
+            MasterToken("person@example.com", "android-1", master_secret),
+            OAuthClientSpec("oauth2:scope", "example.app", "certificate"),
+        )
+
+    assert str(failed.value) == "perform_oauth failed (network or gpsoauth error)."
+    _assert_chain(failed.value, cause=None, context=None, suppress=False)
+    _assert_error_graph_does_not_retain_secret(failed.value, master_secret)
+    _assert_error_graph_does_not_retain_secret(failed.value, bearer_secret)
+
+
+def test_oversized_oauth_expiry_is_unknown_when_integer_limit_is_disabled() -> None:
+    setter = getattr(sys, "set_int_max_str_digits", None)
+    getter = getattr(sys, "get_int_max_str_digits", None)
+    if setter is None or getter is None:
+        assert _parse_oauth_expiry("9" * 10_000) is None
+        return
+    original = getter()
+    try:
+        setter(0)
+        assert _parse_oauth_expiry("9" * 10_000) is None
+    finally:
+        setter(original)
+
+
+@pytest.mark.parametrize("layer", ["mint_oauth", "mint", "public"])
+@pytest.mark.parametrize("failure", ["worker", "malformed", "rejected"])
+@pytest.mark.asyncio
+async def test_every_oauth_layer_discards_failure_secrets_from_error_graph_and_traceback(
+    fake_gpsoauth: types.ModuleType,
+    layer: str,
+    failure: str,
+) -> None:
+    master_secret = "aas_et/LAYER-MASTER-SECRET"
+    bearer_secret = "ya29.LAYER-BEARER-SECRET-1234567890"
+    if failure == "worker":
+        fake_gpsoauth.oauth_error = RuntimeError(
+            f"dependency echoed {master_secret} {bearer_secret}"
+        )
+        expected_message = "perform_oauth failed (network or gpsoauth error)."
+    elif failure == "malformed":
+        fake_gpsoauth.oauth_return = object()
+        expected_message = "perform_oauth returned a malformed response."
+    else:
+        fake_gpsoauth.oauth_return = {
+            "Auth": "",
+            "Error": f"server echoed {master_secret} {bearer_secret}",
+        }
+        expected_message = (
+            "perform_oauth rejected the master token. "
+            "Re-bootstrap with `notebooklm login --master-token`."
+        )
+
+    expected_type = master_token.MasterTokenError if layer == "public" else OAuthMintError
+    with pytest.raises(expected_type) as raised:
+        if layer == "mint_oauth":
+            await MintService().mint_oauth(
+                MasterToken("person@example.com", "android-1", master_secret),
+                OAuthClientSpec("oauth2:scope", "example.app", "certificate"),
+            )
+        elif layer == "mint":
+            await MintService().mint(MasterToken("person@example.com", "android-1", master_secret))
+        else:
+            await master_token.mint_cookies("person@example.com", master_secret, "android-1")
+
+    assert str(raised.value) == expected_message
+    _assert_chain(raised.value, cause=None, context=None, suppress=False)
+    _assert_error_graph_does_not_retain_secret(raised.value, master_secret)
+    _assert_error_graph_does_not_retain_secret(raised.value, bearer_secret)
+    if layer == "public":
+        _assert_public_projection_has_no_private_error(raised.value)
 
 
 @pytest.mark.no_default_keepalive_mock
@@ -622,6 +744,15 @@ async def test_missing_gpsoauth_happens_before_offload(
 
     monkeypatch.setattr(asyncio, "to_thread", forbidden)
     master_secret = "MASTER-SECRET-FOR-TRACEBACK"
+    with pytest.raises(MissingDependencyError, match=r"notebooklm-py\[headless\]") as seam:
+        await MintService().mint_oauth(
+            MasterToken("e@example.com", "android", master_secret),
+            OAuthClientSpec("oauth2:scope", "example.app", "certificate"),
+        )
+    assert classify(seam.value).category is ErrorCategory.DEPENDENCY
+    assert not isinstance(seam.value, _MintError)
+    _assert_traceback_does_not_retain_secret(seam.value, master_secret)
+
     with pytest.raises(MissingDependencyError, match=r"notebooklm-py\[headless\]") as raised:
         await MintService().mint(MasterToken("e@example.com", "android", master_secret))
     assert offloaded is False
@@ -693,11 +824,11 @@ async def test_perform_oauth_failure_and_rejection_error_matrices(
     with pytest.raises(_MintError) as failed:
         await MintService().mint(token)
     assert str(failed.value) == "perform_oauth failed (network or gpsoauth error)."
-    _assert_chain(failed.value, cause=original, context=original, suppress=True)
+    _assert_chain(failed.value, cause=None, context=None, suppress=False)
 
     with pytest.raises(master_token.MasterTokenError) as public:
         await master_token.mint_cookies("e@example.com", "master-secret", "android")
-    _assert_chain(public.value, cause=original, context=original, suppress=True)
+    _assert_chain(public.value, cause=None, context=None, suppress=False)
     _assert_public_projection_has_no_private_error(public.value)
 
     fake_gpsoauth.oauth_error = None
@@ -705,7 +836,7 @@ async def test_perform_oauth_failure_and_rejection_error_matrices(
     with pytest.raises(_MintError) as rejected:
         await MintService().mint(token)
     assert str(rejected.value) == (
-        "perform_oauth rejected the master token (Error={'code': 7}). "
+        "perform_oauth rejected the master token. "
         "Re-bootstrap with `notebooklm login --master-token`."
     )
     _assert_chain(rejected.value, cause=None, context=None, suppress=False)
@@ -725,7 +856,7 @@ async def test_async_mint_rejection_projection_ignores_active_outer_exception(
             await master_token.mint_cookies("person@example.com", "master-secret", "android-1")
 
     assert str(public.value) == (
-        "perform_oauth rejected the master token (Error=rejected safely). "
+        "perform_oauth rejected the master token. "
         "Re-bootstrap with `notebooklm login --master-token`."
     )
     _assert_chain(public.value, cause=None, context=None, suppress=False)
@@ -736,12 +867,16 @@ async def test_async_mint_rejection_projection_ignores_active_outer_exception(
 
 
 @pytest.mark.asyncio
-async def test_malformed_perform_result_escapes_raw_attribute_error(
+async def test_malformed_perform_result_is_sanitized_oauth_mint_error(
     fake_gpsoauth: types.ModuleType,
 ) -> None:
     fake_gpsoauth.oauth_return = object()
-    with pytest.raises(AttributeError):
-        await MintService().mint(MasterToken("e@example.com", "android", "secret"))
+    master_secret = "aas_et/MALFORMED-MASTER-SECRET"
+    with pytest.raises(OAuthMintError) as raised:
+        await MintService().mint(MasterToken("e@example.com", "android", master_secret))
+    assert str(raised.value) == "perform_oauth returned a malformed response."
+    _assert_chain(raised.value, cause=None, context=None, suppress=False)
+    _assert_error_graph_does_not_retain_secret(raised.value, master_secret)
 
 
 @pytest.mark.no_default_keepalive_mock

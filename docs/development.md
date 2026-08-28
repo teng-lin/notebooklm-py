@@ -397,8 +397,11 @@ is 373 lines and the compatibility adapter is 463 lines.
 `MintService.mint_oauth()` is the single typed OAuth mint seam. New protocol
 adapters supply an immutable `OAuthClientSpec` and consume a repr-safe
 `MintedOAuthToken`; they do not import `gpsoauth` or invent a TTL when its
-optional `Expiry` is absent or malformed. The web `mint()` path is pinned to the
-existing Chromecast/OAuthLogin arguments and cookie-mint wire sequence.
+optional `Expiry` is absent or malformed. Oversized decimal expiry values are
+rejected before integer conversion. Fixed mint failures retain no raw response,
+dependency exception, credential-bearing cause, or traceback local, while
+`MissingDependencyError` remains distinct. The web `mint()` path is pinned to
+the existing Chromecast/OAuthLogin arguments and cookie-mint wire sequence.
 
 The current measured persistence boundary is 1,090 lines in `_auth/storage.py`, 602 in
 `_auth/profile_migration.py`, 876 in `_auth/profile_store.py`, 96 in
