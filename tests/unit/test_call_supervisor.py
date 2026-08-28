@@ -69,6 +69,34 @@ class _BlockingFinishDrain(TransportDrainTracker):
         await super().finish_transport_post(token)
 
 
+class _BlockingBeginDrain(TransportDrainTracker):
+    def __init__(self) -> None:
+        super().__init__()
+        self.begin_started = asyncio.Event()
+
+    async def begin_transport_post(self, log_label: str) -> _TransportOperationToken:
+        del log_label
+        self.begin_started.set()
+        await asyncio.Future()
+        raise AssertionError("unreachable")
+
+
+class _BlockingChildBeginDrain(TransportDrainTracker):
+    def __init__(self) -> None:
+        super().__init__()
+        self.child_begin_started = asyncio.Event()
+
+    async def begin_transport_task(
+        self,
+        task: asyncio.Task[object],
+        log_label: str,
+    ) -> _TransportOperationToken:
+        del task, log_label
+        self.child_begin_started.set()
+        await asyncio.Future()
+        raise AssertionError("unreachable")
+
+
 def _supervisor(
     *,
     metrics: ClientMetrics | None = None,
@@ -206,6 +234,120 @@ async def test_recancellation_cannot_orphan_retained_settlement() -> None:
     await asyncio.gather(*tuple(supervisor._settlement_tasks))
     assert drain._in_flight_posts == 0
     assert not supervisor._settlement_tasks
+
+
+@pytest.mark.asyncio
+async def test_recancellation_during_partial_admission_cannot_orphan_generation() -> None:
+    drain = _BlockingBeginDrain()
+    supervisor = _supervisor(drain=drain, max_concurrent_rpcs=None)
+
+    async def _enter() -> None:
+        async with supervisor.operation_scope("partial"):
+            raise AssertionError("unreachable")
+
+    caller = asyncio.create_task(_enter())
+    await drain.begin_started.wait()
+    generation = supervisor._current
+    assert generation is not None
+    condition_held = asyncio.Event()
+    release_condition = asyncio.Event()
+
+    async def _hold_condition() -> None:
+        async with generation.condition:
+            condition_held.set()
+            await release_condition.wait()
+
+    holder = asyncio.create_task(_hold_condition())
+    await condition_held.wait()
+    caller.cancel("first")
+    while not supervisor._settlement_tasks:
+        await asyncio.sleep(0)
+    caller.cancel("second")
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await caller
+    assert raised.value.args == ("first",)
+    assert generation.in_flight == 1
+
+    release_condition.set()
+    await holder
+    await asyncio.gather(*tuple(supervisor._settlement_tasks))
+    await asyncio.sleep(0)
+    assert generation.in_flight == 0
+    assert not supervisor._settlement_tasks
+
+
+@pytest.mark.asyncio
+async def test_recancellation_during_child_admission_retains_both_settlements() -> None:
+    drain = _BlockingChildBeginDrain()
+    supervisor = _supervisor(drain=drain, max_concurrent_rpcs=None)
+    factory_invoked = False
+
+    async def _child() -> None:
+        nonlocal factory_invoked
+        factory_invoked = True
+
+    async def _parent() -> None:
+        async with supervisor.operation_scope("parent"):
+            await supervisor.spawn_child("partial-child", _child)
+
+    caller = asyncio.create_task(_parent())
+    await drain.child_begin_started.wait()
+    generation = supervisor._current
+    assert generation is not None
+    condition_held = asyncio.Event()
+    release_condition = asyncio.Event()
+
+    async def _hold_condition() -> None:
+        async with generation.condition:
+            condition_held.set()
+            await release_condition.wait()
+
+    holder = asyncio.create_task(_hold_condition())
+    await condition_held.wait()
+    caller.cancel("first")
+    while len(supervisor._settlement_tasks) < 1:
+        await asyncio.sleep(0)
+    caller.cancel("second")
+    while len(supervisor._settlement_tasks) < 2:
+        await asyncio.sleep(0)
+    caller.cancel("third")
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await caller
+    assert raised.value.args == ("first",)
+    assert factory_invoked is False
+    assert generation.in_flight == 2
+
+    release_condition.set()
+    await holder
+    await asyncio.gather(*tuple(supervisor._settlement_tasks))
+    await asyncio.sleep(0)
+    assert generation.in_flight == 0
+    assert drain._in_flight_posts == 0
+
+
+@pytest.mark.asyncio
+async def test_recancellation_after_normal_body_preserves_first_cancelled_error() -> None:
+    drain = _BlockingFinishDrain()
+    supervisor = _supervisor(drain=drain, max_concurrent_rpcs=None)
+
+    async def _body() -> None:
+        async with supervisor.operation_scope("completed"):
+            return
+
+    caller = asyncio.create_task(_body())
+    await drain.finish_started.wait()
+    caller.cancel("first")
+    await asyncio.sleep(0)
+    caller.cancel("second")
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await caller
+    assert raised.value.args == ("first",)
+
+    drain.finish_release.set()
+    await asyncio.gather(*tuple(supervisor._settlement_tasks))
 
 
 @pytest.mark.asyncio

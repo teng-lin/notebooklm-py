@@ -138,6 +138,7 @@ def make_pipeline(
     kernel: HttpRuntime | None = None,
     auth: HttpRuntime | None = None,
     *,
+    supervisor: UploadRuntime | None = None,
     max_concurrent_uploads: int | None = None,
     async_client_factory=None,
 ) -> SourceUploadPipeline:
@@ -151,6 +152,7 @@ def make_pipeline(
     return SourceUploadPipeline(
         rpc=session,  # type: ignore[arg-type]
         drain=session,  # type: ignore[arg-type]
+        supervisor=supervisor,  # type: ignore[arg-type]
         lifecycle=session,  # type: ignore[arg-type]
         kernel=kernel,
         auth=auth,  # type: ignore[arg-type]
@@ -711,6 +713,23 @@ async def test_add_file_rejects_html_before_registering_source(
 
     register_file_source.assert_not_awaited()
     start_resumable_upload.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_full_workflow_validates_mime_before_admission_but_resolves_path_inside(
+    tmp_path,
+) -> None:
+    runtime = UploadRuntime()
+    service = make_pipeline(runtime, supervisor=runtime)
+
+    with pytest.raises(ValidationError, match="HTML file uploads are not supported"):
+        await service.add_file("nb_123", tmp_path / "missing.html")
+    assert runtime.labels == []
+
+    with pytest.raises(FileNotFoundError, match="File not found"):
+        await service.add_file("nb_123", tmp_path / "missing.pdf")
+    assert runtime.labels == ["upload:0"]
+    assert runtime.finished == ["upload:0"]
 
 
 @pytest.mark.asyncio

@@ -230,6 +230,52 @@ async def test_perform_authed_post_requires_open_client():
 
 
 @pytest.mark.asyncio
+async def test_pre_chain_failures_stay_outside_web_terminal_accounting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """B0a must preserve the old outer-middleware accounting boundary."""
+    core = _make_core()
+    await core.__aenter__()
+    try:
+        transport = core._composed.transport
+        original_snapshot_provider = transport._snapshot_provider
+        before = core.metrics_snapshot()
+
+        async def _snapshot_failure() -> AuthSnapshot:
+            raise LookupError("snapshot failed before chain entry")
+
+        monkeypatch.setattr(transport, "_snapshot_provider", _snapshot_failure)
+        with pytest.raises(LookupError, match="snapshot failed"):
+            await transport.perform_authed_post(
+                build_request=lambda _snapshot: ("https://example.test", "body", {}),
+                log_label="snapshot",
+                rpc_method="METHOD",
+            )
+
+        monkeypatch.setattr(transport, "_snapshot_provider", original_snapshot_provider)
+
+        def _build_failure(_snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            raise ValueError("materialization failed before chain entry")
+
+        with pytest.raises(ValueError, match="materialization failed"):
+            await transport.perform_authed_post(
+                build_request=_build_failure,
+                log_label="materialize",
+                rpc_method="METHOD",
+            )
+
+        after = core.metrics_snapshot()
+        assert after.rpc_calls_succeeded == before.rpc_calls_succeeded
+        assert after.rpc_calls_failed == before.rpc_calls_failed
+        assert after.rpc_latency_seconds_total == before.rpc_latency_seconds_total
+        assert after.rpc_queue_wait_seconds_total == before.rpc_queue_wait_seconds_total
+        assert core._collaborators.call_supervisor._current is not None
+        assert core._collaborators.call_supervisor._current.in_flight == 0
+    finally:
+        await core.close()
+
+
+@pytest.mark.asyncio
 async def test_auth_refresh_middleware_honors_injected_predicate() -> None:
     """``AuthRefreshMiddleware`` calls ``refresh_callable`` and retries
     exactly once when the injected ``is_auth_error`` predicate returns

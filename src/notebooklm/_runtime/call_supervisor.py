@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import time
 import weakref
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from enum import Enum
@@ -100,9 +100,7 @@ class CallSupervisor(LoopBoundPrimitive):
         monotonic: Callable[[], float] | None = None,
     ) -> None:
         if max_concurrent_rpcs is not None and max_concurrent_rpcs < 1:
-            raise ValueError(
-                f"max_concurrent_rpcs must be >= 1, got {max_concurrent_rpcs!r}"
-            )
+            raise ValueError(f"max_concurrent_rpcs must be >= 1, got {max_concurrent_rpcs!r}")
         self._metrics = metrics
         self._drain = drain_tracker
         self._max_concurrent_rpcs = max_concurrent_rpcs
@@ -211,8 +209,7 @@ class CallSupervisor(LoopBoundPrimitive):
                 generation.state = AdmissionState.DRAINING
             elif generation.state is not AdmissionState.DRAINING:
                 raise RuntimeError(
-                    f"admission generation {epoch} cannot drain from "
-                    f"{generation.state.value}"
+                    f"admission generation {epoch} cannot drain from {generation.state.value}"
                 )
 
     async def wait_for_idle(self, epoch: int, timeout: float | None) -> None:
@@ -238,8 +235,7 @@ class CallSupervisor(LoopBoundPrimitive):
                 generation.state = AdmissionState.CLOSING
             elif generation.state is not AdmissionState.CLOSING:
                 raise RuntimeError(
-                    f"admission generation {epoch} cannot close from "
-                    f"{generation.state.value}"
+                    f"admission generation {epoch} cannot close from {generation.state.value}"
                 )
 
     def mark_closed(self, epoch: int) -> None:
@@ -302,8 +298,7 @@ class CallSupervisor(LoopBoundPrimitive):
         generation = self._current
         if generation is None:
             raise RuntimeError(
-                "Client not initialized or NotebookLMClient is not accepting "
-                f"operations ({label})."
+                f"Client not initialized or NotebookLMClient is not accepting operations ({label})."
             )
         self._assert_generation_loop(generation)
         async with generation.condition:
@@ -327,8 +322,22 @@ class CallSupervisor(LoopBoundPrimitive):
                 generation.depths[task] = depth + 1
         try:
             drain_token = await self._drain.begin_transport_post(label)
-        except BaseException:
-            await self._finish_generation_token(generation, task)
+        except BaseException as exc:
+            settlement, state = self._publish_partial_settlement(
+                generation=generation,
+                task=task,
+            )
+            try:
+                await self._await_settlement(
+                    settlement,
+                    state,
+                    cancellation_already_active=isinstance(exc, asyncio.CancelledError),
+                )
+            except BaseException:
+                # The admission failure/cancellation owns precedence.  A
+                # re-cancel may detach this waiter, but the strongly retained
+                # settlement still retires the generation token.
+                pass
             raise
         return _AdmissionToken(
             generation=generation,
@@ -351,9 +360,7 @@ class CallSupervisor(LoopBoundPrimitive):
                     generation.depths[task] = depth - 1
             generation.in_flight -= 1
             if generation.in_flight < 0:
-                raise RuntimeError(
-                    f"admission generation {generation.epoch} settled below zero"
-                )
+                raise RuntimeError(f"admission generation {generation.epoch} settled below zero")
             if generation.in_flight == 0:
                 generation.condition.notify_all()
                 if generation.state is AdmissionState.CLOSED:
@@ -380,28 +387,18 @@ class CallSupervisor(LoopBoundPrimitive):
             await asyncio.wait_for(semaphore.acquire(), timeout=deadline.remaining())
         return semaphore
 
-    def _publish_settlement(
+    def _retain_settlement(
         self,
+        settle: Coroutine[Any, Any, None],
         *,
-        token: _AdmissionToken,
-        queue_wait: float | None,
+        epoch: int,
     ) -> tuple[asyncio.Task[None], _SettlementState]:
+        """Publish one strongly retained settlement awaitable."""
         state = _SettlementState()
-
-        async def _settle() -> None:
-            try:
-                await self._drain.finish_transport_post(token.drain_token)
-            finally:
-                try:
-                    await self._finish_generation_token(token.generation, token.task)
-                finally:
-                    if queue_wait is not None:
-                        self._metrics.record_rpc_queue_wait(queue_wait)
-
         loop = asyncio.get_running_loop()
-        task = loop.create_task(
-            _settle(),
-            name=f"notebooklm-settle-{token.generation.epoch}",
+        task: asyncio.Task[None] = loop.create_task(
+            settle,
+            name=f"notebooklm-settle-{epoch}",
         )
         self._settlement_tasks.add(task)
 
@@ -422,6 +419,42 @@ class CallSupervisor(LoopBoundPrimitive):
         task.add_done_callback(_done)
         return task, state
 
+    def _publish_partial_settlement(
+        self,
+        *,
+        generation: AdmissionGeneration,
+        task: asyncio.Task[Any] | None,
+        child: asyncio.Task[Any] | None = None,
+    ) -> tuple[asyncio.Task[None], _SettlementState]:
+        """Settle a generation reservation that has no legacy drain token."""
+
+        async def _settle() -> None:
+            try:
+                if child is not None:
+                    await asyncio.gather(child, return_exceptions=True)
+            finally:
+                await self._finish_generation_token(generation, task)
+
+        return self._retain_settlement(_settle(), epoch=generation.epoch)
+
+    def _publish_settlement(
+        self,
+        *,
+        token: _AdmissionToken,
+        queue_wait: float | None,
+    ) -> tuple[asyncio.Task[None], _SettlementState]:
+        async def _settle() -> None:
+            try:
+                await self._drain.finish_transport_post(token.drain_token)
+            finally:
+                try:
+                    await self._finish_generation_token(token.generation, token.task)
+                finally:
+                    if queue_wait is not None:
+                        self._metrics.record_rpc_queue_wait(queue_wait)
+
+        return self._retain_settlement(_settle(), epoch=token.generation.epoch)
+
     async def _await_settlement(
         self,
         task: asyncio.Task[None],
@@ -437,9 +470,12 @@ class CallSupervisor(LoopBoundPrimitive):
                     raise first_cancel
                 return
             except asyncio.CancelledError as exc:
-                if cancellation_already_active or first_cancel is not None:
+                if cancellation_already_active:
                     state.abandoned = True
                     raise
+                if first_cancel is not None:
+                    state.abandoned = True
+                    raise first_cancel from None
                 first_cancel = exc
                 # A first cancellation cannot cancel the shielded settlement.
                 # Keep waiting; only an explicit re-cancel lets this caller
@@ -626,8 +662,7 @@ class CallSupervisor(LoopBoundPrimitive):
         generation = self._current
         if generation is None:
             raise RuntimeError(
-                "NotebookLMClient child work requires a current generation "
-                f"({label})."
+                f"NotebookLMClient child work requires a current generation ({label})."
             )
         self._assert_generation_loop(generation)
         gate: asyncio.Future[None] = asyncio.get_running_loop().create_future()
@@ -651,9 +686,7 @@ class CallSupervisor(LoopBoundPrimitive):
                     await self._await_settlement(
                         settlement,
                         state,
-                        cancellation_already_active=isinstance(
-                            body_error, asyncio.CancelledError
-                        ),
+                        cancellation_already_active=isinstance(body_error, asyncio.CancelledError),
                     )
                 except BaseException:
                     if body_error is None:
@@ -679,11 +712,22 @@ class CallSupervisor(LoopBoundPrimitive):
             generation.in_flight += 1
         try:
             drain_token = await self._drain.begin_transport_task(task, label)
-        except BaseException:
+        except BaseException as exc:
             gate.cancel()
             task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
-            await self._finish_generation_token(generation, task)
+            settlement, state = self._publish_partial_settlement(
+                generation=generation,
+                task=task,
+                child=task,
+            )
+            try:
+                await self._await_settlement(
+                    settlement,
+                    state,
+                    cancellation_already_active=isinstance(exc, asyncio.CancelledError),
+                )
+            except BaseException:
+                pass
             raise
         token = _AdmissionToken(
             generation=generation,

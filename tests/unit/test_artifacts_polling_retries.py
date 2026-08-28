@@ -424,6 +424,54 @@ async def test_polling_service_drain_waits_for_bookkeeping_without_active_polls(
 
 
 @pytest.mark.asyncio
+async def test_polling_drain_cancels_reserved_leader_before_task_attachment() -> None:
+    """A ``(future, None)`` reservation must remain visible to the drain hook."""
+    provider = _FakeTransportProvider()
+    spawn_started = asyncio.Event()
+    factory_invoked = False
+
+    async def _spawn_child(label, factory):
+        del label, factory
+        spawn_started.set()
+        await asyncio.Future()
+        raise AssertionError("unreachable")
+
+    service = ArtifactPollingService(
+        loop_guard=provider,
+        op_scope=provider,
+        poll_registry=provider.poll_registry,
+        spawn_child=_spawn_child,
+    )
+
+    async def _poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
+        nonlocal factory_invoked
+        del notebook_id
+        factory_invoked = True
+        return GenerationStatus(task_id=task_id, status="completed")
+
+    waiter = asyncio.create_task(
+        service.wait_for_completion(
+            "nb1",
+            "reserved",
+            initial_interval=0.0,
+            max_interval=0.0,
+            timeout=1.0,
+            poll_status=_poll_status,
+        )
+    )
+    await spawn_started.wait()
+    assert provider.poll_registry.get(("nb1", "reserved")) is not None
+
+    await asyncio.wait_for(service.drain(), timeout=1.0)
+
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+    assert provider.poll_registry.get(("nb1", "reserved")) is None
+    assert provider.poll_registry.active_tasks() == []
+    assert factory_invoked is False
+
+
+@pytest.mark.asyncio
 async def test_polling_service_finishes_transport_token_once_after_poll_failure() -> None:
     token = object()
     provider = _FakeTransportProvider(token=token)

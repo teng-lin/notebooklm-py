@@ -352,58 +352,57 @@ class SourceUploadPipeline(LoopBoundPrimitive):
             title = title.strip()
             if not title:
                 raise ValidationError("Title cannot be empty or whitespace-only")
+        # Pure argument/MIME rejection stays outside admission. In particular,
+        # a drained client must still report an unsupported HTML upload as an
+        # input error. The filesystem-backed resolve/stat remains inside the
+        # full workflow scope below so close waits for that awaited work.
+        raw_path = Path(file_path)
+        content_type = _resolve_upload_content_type(raw_path, mime_type)
+        _validate_upload_file_supported(raw_path, content_type)
+        # Assert affinity before entering the supervisor's loop-bound scope.
+        self._lifecycle.assert_bound_loop()
         if not self._full_workflow_supervision:
             return await self._add_file_admitted(
                 notebook_id,
-                file_path,
-                mime_type,
+                raw_path,
                 wait,
                 wait_timeout,
                 title=title,
                 on_progress=on_progress,
                 upload_index=upload_index,
+                _mime_type=mime_type,
             )
         assert self._supervisor is not None
         async with self._supervisor.operation_scope(f"upload:{upload_index}"):
             return await self._add_file_admitted(
                 notebook_id,
-                file_path,
-                mime_type,
+                raw_path,
                 wait,
                 wait_timeout,
                 title=title,
                 on_progress=on_progress,
                 upload_index=upload_index,
+                _mime_type=mime_type,
             )
 
     async def _add_file_admitted(
         self,
         notebook_id: str,
         file_path: str | Path,
-        mime_type: str | None = None,
         wait: bool = False,
         wait_timeout: float = 120.0,
         *,
         title: str | None = None,
         on_progress: Callable[[int, int], object] | None = None,
         upload_index: int = 0,
+        _mime_type: str | None,
     ) -> Source:
         """Add a file source to a notebook using resumable upload.
 
         Raises ``ValidationError`` for HTML-family uploads because
         NotebookLM's upload endpoint rejects those file extensions.
         """
-        # Catch cross-loop add_file *before* touching
-        # ``operation_scope`` or lazily allocating the upload semaphore.
-        # Both are loop-bound on first use, so a cross-loop call would
-        # otherwise attach a primitive to the wrong loop before the
-        # documented ``RuntimeError`` guard fires (ADR-0004).
-        self._lifecycle.assert_bound_loop()
         module_logger.debug("Adding file source to notebook %s: %s", notebook_id, file_path)
-        if title is not None:
-            title = title.strip()
-            if not title:
-                raise ValidationError("Title cannot be empty or whitespace-only")
 
         # ``Path.resolve()`` / ``exists()`` / ``is_file()`` all hit the
         # filesystem (stat / readlink syscalls). On a slow network mount
@@ -421,7 +420,11 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         file_path = await asyncio.to_thread(_resolve_and_check, file_path)
 
         filename = file_path.name
-        content_type = _resolve_upload_content_type(file_path, mime_type)
+        # Re-resolve against the canonical target to preserve historical
+        # symlink behavior; the equivalent pure check already ran before
+        # admission, while a target whose suffix differs is necessarily known
+        # only after the awaited filesystem resolution.
+        content_type = _resolve_upload_content_type(file_path, _mime_type)
         _validate_upload_file_supported(file_path, content_type)
         transient_error_types = _transient_error_types_for_upload(content_type)
         assert self._supervisor is not None
@@ -1064,6 +1067,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
             except asyncio.CancelledError:
                 if not finalize_started:
                     finalize_task.cancel()
+
                     async def _cancel() -> None:
                         await self.cancel_upload_session(
                             upload_url,

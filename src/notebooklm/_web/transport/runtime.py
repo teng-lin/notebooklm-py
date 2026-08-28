@@ -257,28 +257,17 @@ class RuntimeTransport:
         max_response_bytes: int | None = None,
         disable_read_timeout_retries: bool = False,
     ) -> httpx.Response:
-        """Run one web transport leg under common call supervision."""
-
-        async def _invoke(_lease: object) -> httpx.Response:
-            return await self._perform_authed_post_admitted(
-                build_request=build_request,
-                log_label=log_label,
-                disable_internal_retries=disable_internal_retries,
-                rpc_method=rpc_method,
-                refresh_budget=refresh_budget,
-                retry_deadline=retry_deadline,
-                read_timeout=read_timeout,
-                max_response_bytes=max_response_bytes,
-                disable_read_timeout_retries=disable_read_timeout_retries,
-            )
-
-        # Web deliberately preserves its historical unbounded semaphore wait.
-        # Android supplies an aggregate deadline when it consumes the service.
-        return await self._call_supervisor.run(
-            log_label,
-            rpc_method,
-            None,
-            _invoke,
+        """Build one web request, then supervise the old outer-chain boundary."""
+        return await self._perform_authed_post_admitted(
+            build_request=build_request,
+            log_label=log_label,
+            disable_internal_retries=disable_internal_retries,
+            rpc_method=rpc_method,
+            refresh_budget=refresh_budget,
+            retry_deadline=retry_deadline,
+            read_timeout=read_timeout,
+            max_response_bytes=max_response_bytes,
+            disable_read_timeout_retries=disable_read_timeout_retries,
         )
 
     async def _perform_authed_post_admitted(
@@ -375,8 +364,6 @@ class RuntimeTransport:
         )
         context[RPC_CONTEXT_AUTH_SNAPSHOT] = snapshot
 
-        # ``CallSupervisor`` acquired the client-wide slot before invoking
-        # this method. The web-specific chain therefore begins at Retry.
         # Chain resolution is deferred to here — AFTER snapshot capture +
         # materialization, immediately before dispatch — so a reassignment
         # of ``chain_host._authed_post_chain`` that lands while the
@@ -391,8 +378,22 @@ class RuntimeTransport:
                 "composition root must assign chain_host._authed_post_chain "
                 "before any authed POST."
             )
-        result = await chain(request)
-        return result.response
+
+        async def _invoke(_lease: object) -> httpx.Response:
+            result = await chain(request)
+            return result.response
+
+        # Preserve the pre-B0a accounting boundary exactly: the retired outer
+        # Drain/Metrics/Semaphore middlewares were entered only after snapshot
+        # capture and request materialization, immediately around the wired
+        # chain dispatch. Web deliberately keeps its unbounded queue deadline;
+        # Android supplies an aggregate deadline at its own call site.
+        return await self._call_supervisor.run(
+            log_label,
+            rpc_method,
+            None,
+            _invoke,
+        )
 
 
 __all__ = ["RuntimeTransport"]
