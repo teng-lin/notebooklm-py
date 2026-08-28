@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from notebooklm._runtime.lifecycle import ClientLifecycle
+from notebooklm._runtime.lifecycle import ClientLifecycle, _ResourceState
 from notebooklm.types import ConnectionLimits
 
 
@@ -16,6 +16,7 @@ class _Supervisor:
     events: list[str] = field(default_factory=list)
     wait_gate: asyncio.Event | None = None
     wait_error: BaseException | None = None
+    start_error: BaseException | None = None
     closing_error: BaseException | None = None
     mark_error: BaseException | None = None
 
@@ -30,16 +31,18 @@ class _Supervisor:
 
     def start_accepting(self, epoch: int) -> None:
         self.events.append(f"accept:{epoch}")
+        if self.start_error is not None:
+            raise self.start_error
 
     async def stop_accepting(self, epoch: int) -> None:
         self.events.append(f"drain:{epoch}")
 
     async def wait_for_idle(self, epoch: int, timeout: float | None) -> None:
         self.events.append(f"idle:{epoch}:{timeout}")
-        if self.wait_error is not None:
-            raise self.wait_error
         if self.wait_gate is not None:
             await self.wait_gate.wait()
+        if self.wait_error is not None:
+            raise self.wait_error
 
     async def begin_closing(self, epoch: int) -> None:
         self.events.append(f"closing:{epoch}")
@@ -169,6 +172,53 @@ async def test_open_failure_rolls_back_every_transport_and_preserves_original() 
 
 
 @pytest.mark.asyncio
+async def test_open_commit_failure_rolls_back_releases_joiners_and_allows_reopen() -> None:
+    events: list[str] = []
+    gate = asyncio.Event()
+    original = LookupError("commit failed")
+    supervisor = _Supervisor(events=events, start_error=original)
+    first = _Transport("first", events)
+    second = _Transport(
+        "second",
+        events,
+        open_gate=gate,
+        prepare_error=RuntimeError("rollback prepare"),
+        close_error=RuntimeError("rollback close"),
+    )
+    lifecycle = _lifecycle(supervisor, first, second)
+
+    owner = asyncio.create_task(lifecycle.open())
+    await asyncio.sleep(0)
+    joiners = [
+        asyncio.create_task(lifecycle.open()),
+        asyncio.create_task(lifecycle.close(drain=False)),
+        asyncio.create_task(lifecycle.drain()),
+    ]
+    await asyncio.sleep(0)
+    gate.set()
+
+    results = await asyncio.gather(owner, *joiners, return_exceptions=True)
+
+    assert all(result is original for result in results)
+    assert not lifecycle.is_open()
+    assert lifecycle._state is _ResourceState.CLOSED
+    assert lifecycle._open_wave is None
+    for expected in ("prepare:first", "prepare:second", "close:first", "close:second"):
+        assert events.count(expected) == 1
+    assert events.count("closed:1") == 1
+
+    supervisor.start_error = None
+    second.prepare_error = None
+    second.close_error = None
+    await lifecycle.open()
+    assert lifecycle.is_open()
+    assert first.opens == [1, 2]
+    assert second.opens == [1, 2]
+    await lifecycle.close(drain=False)
+    assert not lifecycle.is_open()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("waiter_action", ["close", "drain"])
 async def test_failed_open_is_re_raised_to_close_and_drain_waiters(waiter_action: str) -> None:
     events: list[str] = []
@@ -268,6 +318,44 @@ async def test_begin_closing_failure_restores_non_stranded_resource_state(
     await lifecycle.close(drain=False)
     assert not lifecycle.is_open()
     assert "close:web" in events
+
+
+@pytest.mark.asyncio
+async def test_graceful_prephase_cancellation_releases_joiners_and_allows_retry() -> None:
+    events: list[str] = []
+    gate = asyncio.Event()
+    supervisor = _Supervisor(
+        events=events,
+        wait_gate=gate,
+        wait_error=asyncio.CancelledError("idle wait cancelled"),
+    )
+    lifecycle = _lifecycle(supervisor, _Transport("web", events))
+    await lifecycle.open()
+
+    owner = asyncio.create_task(lifecycle.close())
+    while not any(event.startswith("idle:") for event in events):
+        await asyncio.sleep(0)
+    joiner = asyncio.create_task(lifecycle.close())
+    await asyncio.sleep(0)
+    gate.set()
+
+    results = await asyncio.gather(owner, joiner, return_exceptions=True)
+
+    assert all(isinstance(result, asyncio.CancelledError) for result in results)
+    assert lifecycle.is_open()
+    assert lifecycle._state is _ResourceState.OPEN
+    assert lifecycle._close_wave is None
+    assert "prepare:web" not in events
+    assert "close:web" not in events
+
+    supervisor.wait_gate = None
+    supervisor.wait_error = None
+    await lifecycle.drain(timeout=0.5)
+    assert lifecycle.is_open()
+    await lifecycle.close(drain=False)
+    assert not lifecycle.is_open()
+    assert events.count("prepare:web") == 1
+    assert events.count("close:web") == 1
 
 
 @pytest.mark.asyncio

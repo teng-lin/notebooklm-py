@@ -460,12 +460,22 @@ class ClientLifecycle:
             except asyncio.CancelledError:
                 pass
             raise
-        with self._state_lock:
-            self._require_supervisor().start_accepting(wave.epoch)
-            self._state = _ResourceState.OPEN
-            self._open_wave = None
-            if not wave.result.done():
-                wave.result.set_result(_OpenResult(_OpenOutcome.OPENED))
+        try:
+            with self._state_lock:
+                self._require_supervisor().start_accepting(wave.epoch)
+                self._state = _ResourceState.OPEN
+                self._open_wave = None
+                if not wave.result.done():
+                    wave.result.set_result(_OpenResult(_OpenOutcome.OPENED))
+        except BaseException as exc:
+            cleanup = self._retain_task(
+                asyncio.create_task(self._rollback_open(wave, _OpenOutcome.FAILED, exc))
+            )
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                pass
+            raise
 
     async def _rollback_open(
         self,
@@ -674,12 +684,11 @@ class ClientLifecycle:
                     await prephase
             except TimeoutError as exc:
                 timeout_error = exc
-            except asyncio.CancelledError:
-                raise
             except BaseException:
                 with self._state_lock:
-                    self._state = _ResourceState.OPEN
-                    self._close_wave = None
+                    if self._close_wave is wave:
+                        self._state = _ResourceState.OPEN
+                        self._close_wave = None
                 raise
         try:
             await supervisor.begin_closing(wave.epoch)
