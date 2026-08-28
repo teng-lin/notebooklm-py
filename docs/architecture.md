@@ -369,13 +369,14 @@ intent at runtime: each feature receives the specific collaborator it
 needs, never a broad runtime facade. `NotebookLMClient.__init__` is the
 composition root that wires each feature with the satisfier it needs.
 
-Three shared Protocols live in
-[`_runtime/contracts.py`](../src/notebooklm/_runtime/contracts.py):
-`Kernel`, `RpcCaller`, and `LoopGuard`. `RpcCaller` and `LoopGuard`
-meet ADR-0013's "shared by at least two features" promotion bar.
-`Kernel` remains shared because it is the typed transport surface
-implemented by the concrete client-owned kernel and consumed by the
-upload pipeline. Single-consumer capabilities stay beside their owner:
+The web-only `Kernel` and `RpcCaller` Protocols live in
+[`_web/contracts.py`](../src/notebooklm/_web/contracts.py), while the
+transport-neutral `LoopGuard` remains in
+[`_runtime/contracts.py`](../src/notebooklm/_runtime/contracts.py).
+`RpcCaller` and `LoopGuard` meet ADR-0013's "shared by at least two features"
+promotion bar. `Kernel` is the typed web transport surface implemented by the
+concrete client-owned kernel and consumed by the web upload pipeline.
+Single-consumer capabilities stay beside their owner:
 `AuthMetadata` lives in `_web/sources/upload.py`, and
 `OperationScopeProvider` lives in `_artifact/polling.py`. The unused
 `AsyncWorkRuntime` composite and the feature-local composite runtime
@@ -383,14 +384,13 @@ Protocols (`ChatRuntime`, `ArtifactsRuntime`, `UploadRuntime`) were
 deleted once they no longer represented independently varying
 production dependencies.
 
-**Module-level Protocols** (defined in
-[`_runtime/contracts.py`](../src/notebooklm/_runtime/contracts.py)):
+**Module-level Protocols:**
 
 | Protocol | Responsibility |
 |----------|----------------|
-| `RpcCaller` | Exposes `rpc_call(method, params, ...)` — the chokepoint every feature API uses for batchexecute calls. |
-| `LoopGuard` | Exposes `assert_bound_loop()` — single-method cross-loop affinity check; consumed by anything that may touch the HTTP client. |
-| `Kernel` | Pure transport surface — `post()` method, `cookies` property, `aclose()`. Single consumer today: `SourceUploadPipeline`. |
+| `RpcCaller` (`_web/contracts.py`) | Exposes `rpc_call(method, params, ...)` — the chokepoint every web feature API uses for batchexecute calls. |
+| `LoopGuard` (`_runtime/contracts.py`) | Exposes `assert_bound_loop()` — single-method cross-loop affinity check for transport-neutral orchestration. |
+| `Kernel` (`_web/contracts.py`) | Pure web transport surface — `post()` method, `cookies` property, `aclose()`. Single consumer today: `SourceUploadPipeline`. |
 
 **Feature-module-local Protocols.** Single-consumer capability shapes live
 next to their owner (`AuthMetadata` in `_web/sources/upload.py`,
@@ -480,23 +480,23 @@ the executor on direct collaborator dependencies.
 | Collaborator | Module | Responsibility |
 |--------------|--------|----------------|
 | `NotebookLMClient` | [`client.py`](../src/notebooklm/client.py) | Public surface and composition root. Owns `_auth`, `_seams`, `_composed`, `_collaborators`, `_rpc_executor`, and the eleven feature API attributes (`notebooks`, `sources`, `artifacts`, `chat`, `notes`, `mind_maps`, `research`, `settings`, `sharing`, `labels`, `collections`). `__aenter__`, `close`, `drain`, `is_connected`, `metrics_snapshot`, and `rpc_call` route directly to the owning collaborator. **Split candidate:** at 992 lines it is well below the 1500-line `MODULE_SIZE_BUDGET` ceiling (`tests/_guardrails/test_module_size_ratchet.py`, raised from 1000 on 2026-08-12), so the gate no longer forces the issue. The split guidance stands on its own merits regardless: this module is a composition root, and a non-trivial addition is better placed in a seam than accreted here. Treat that as design judgement, not a line-count trigger. |
-| `ClientSeams` | [`_client_seams.py`](../src/notebooklm/_client_seams.py) | Mutable holder for runtime callables that closures re-read after construction: `decode_response`, `sleep`, and `is_auth_error`. Construction-only seams such as `async_client_factory` stay on `compose_client_internals(...)` and the client-shell test helper, not on the public constructor. |
+| `ClientSeams` | [`_web/transport/seams.py`](../src/notebooklm/_web/transport/seams.py) | Mutable holder for runtime callables that closures re-read after construction: `decode_response`, `sleep`, and `is_auth_error`. Construction-only seams such as `async_client_factory` stay on `compose_client_internals(...)` and the client-shell test helper, not on the public constructor. |
 | `ClientComposed` | [`_client_composed.py`](../src/notebooklm/_client_composed.py) | Write-once holder for composition state: `transport`, `executor`, `chain_host`, `chain_builder`, `middlewares`, lazy RPC semaphore, and `runtime_collaborators`. Pre-binding access raises a clear `RuntimeError`; the holder deliberately does not expose a broad `.collaborators` alias. |
-| `RpcExecutor` | [`_rpc_executor.py`](../src/notebooklm/_rpc_executor.py) | Single logical batchexecute RPC dispatch path. Owns request-id/started-metric bracketing, idempotency policy lookup, method-ID resolution, request encoding, response decode, RPC error mapping, and decode-time auth refresh retry. Takes its `Kernel`, `RuntimeTransport`, `AuthRefreshCoordinator`, and `ClientMetrics` collaborators directly via keyword-only constructor parameters (ADR-0014 Rule 5). Enters transport through `RuntimeTransport.perform_authed_post`. |
-| `RuntimeTransport` | [`_runtime/transport.py`](../src/notebooklm/_runtime/transport.py) | Authed POST collaborator. Owns `perform_authed_post()` (loop guard, auth snapshot, request materialization, chain dispatch, queue-wait recording), `refresh_request_for_current_auth()`, and `terminal()` (freshness rebuild + `Kernel.post`). Called directly by `RpcExecutor` and by `_web.transport.chat.chat_aware_authed_post` (WebChatAPI's chat-flavoured transport call); the middleware chain leaf at `MiddlewareChainHost._authed_post_chain_terminal` continues to dispatch through `RuntimeTransport.terminal` per ADR-0014 Rule 4. |
-| `MiddlewareChainHost` | [`_middleware/chain_host.py`](../src/notebooklm/_middleware/chain_host.py) | Owns the wired middleware chain (`_authed_post_chain`), the chain leaf (`_authed_post_chain_terminal`), the three retry-budget tunables (`_rate_limit_max_retries`, `_server_error_max_retries`, `_refresh_retry_delay`), and the dynamic `await_refresh` delegate that the auth-refresh middleware captures. The chain's provider lambdas and the transport's `chain_provider` closure read the host's attributes live, so post-construction mutation (e.g. tests setting `client._composed.chain_host._rate_limit_max_retries = 0`) still steers the live chain. |
-| `AuthRefreshCoordinator` | [`_runtime/auth.py`](../src/notebooklm/_runtime/auth.py) | Owns the auth-snapshot lock and refresh task. Canonical implementation for `AuthRefreshCoordinator.snapshot(auth=...)`, `update_auth_tokens(auth=..., csrf=..., session_id=...)`, and `update_auth_headers(auth=..., kernel=...)`; callers pass explicit collaborators rather than a host object. |
+| `RpcExecutor` | [`_web/transport/executor.py`](../src/notebooklm/_web/transport/executor.py) | Single logical batchexecute RPC dispatch path. Owns request-id/started-metric bracketing, idempotency policy lookup, method-ID resolution, request encoding, response decode, RPC error mapping, and decode-time auth refresh retry. Takes its `Kernel`, `RuntimeTransport`, `AuthRefreshCoordinator`, and `ClientMetrics` collaborators directly via keyword-only constructor parameters (ADR-0014 Rule 5). Enters transport through `RuntimeTransport.perform_authed_post`. |
+| `RuntimeTransport` | [`_web/transport/runtime.py`](../src/notebooklm/_web/transport/runtime.py) | Authed POST collaborator. Owns `perform_authed_post()` (loop guard, auth snapshot, request materialization, chain dispatch, queue-wait recording), `refresh_request_for_current_auth()`, and `terminal()` (freshness rebuild + `Kernel.post`). Called directly by `RpcExecutor` and by `_web.transport.chat.chat_aware_authed_post` (WebChatAPI's chat-flavoured transport call); the middleware chain leaf at `MiddlewareChainHost._authed_post_chain_terminal` continues to dispatch through `RuntimeTransport.terminal` per ADR-0014 Rule 4. |
+| `MiddlewareChainHost` | [`_web/transport/middleware/chain_host.py`](../src/notebooklm/_web/transport/middleware/chain_host.py) | Owns the wired middleware chain (`_authed_post_chain`), the chain leaf (`_authed_post_chain_terminal`), the three retry-budget tunables (`_rate_limit_max_retries`, `_server_error_max_retries`, `_refresh_retry_delay`), and the dynamic `await_refresh` delegate that the auth-refresh middleware captures. The chain's provider lambdas and the transport's `chain_provider` closure read the host's attributes live, so post-construction mutation (e.g. tests setting `client._composed.chain_host._rate_limit_max_retries = 0`) still steers the live chain. |
+| `AuthRefreshCoordinator` | [`_web/transport/auth.py`](../src/notebooklm/_web/transport/auth.py) | Owns the auth-snapshot lock and refresh task. Canonical implementation for `AuthRefreshCoordinator.snapshot(auth=...)`, `update_auth_tokens(auth=..., csrf=..., session_id=...)`, and `update_auth_headers(auth=..., kernel=...)`; callers pass explicit collaborators rather than a host object. |
 | `ClientLifecycle` | [`_runtime/lifecycle.py`](../src/notebooklm/_runtime/lifecycle.py) | HTTP-client open/close, keepalive task, and typed-versus-legacy cookie-save routing. It alone retains the client-owned `AuthTokens` as the v0.x snapshot mirror and updates that projection after open and accepted saves. Holds `_timeout`, `_bound_loop`, `_http_client`, `_keepalive_*`. |
-| `MiddlewareChainBuilder` | [`_middleware/chain.py`](../src/notebooklm/_middleware/chain.py) | Constructs the middleware chain in the canonical ADR-0009 order. |
+| `MiddlewareChainBuilder` | [`_web/transport/middleware/chain.py`](../src/notebooklm/_web/transport/middleware/chain.py) | Constructs the middleware chain in the canonical ADR-0009 order. |
 | `TransportDrainTracker` | [`_transport_drain.py`](../src/notebooklm/_transport_drain.py) | Tracks in-flight transport operations + the drain condition variable. Gates graceful shutdown. |
 | `ClientMetrics` | [`_client_metrics.py`](../src/notebooklm/_client_metrics.py) | Per-instance counters (`ClientMetricsSnapshot`) + the `on_rpc_event` user callback. |
-| `ReqidCounter` | [`_reqid_counter.py`](../src/notebooklm/_reqid_counter.py) | Monotonic `_reqid` for the chat backend; lock-protected `next_reqid(...)`. |
-| `CookiePersistence` | [`_cookie_persistence.py`](../src/notebooklm/_cookie_persistence.py) | Per-canonical-path typed baseline state, ordered `ProfileStore` cookie merges, `__Secure-1PSIDTS` rotation, and the concrete v0.x snapshot adapter. First-party `_from_store` instances retain no `AuthTokens`; public-constructor instances preserve legacy save compatibility. |
+| `ReqidCounter` | [`_web/transport/reqid_counter.py`](../src/notebooklm/_web/transport/reqid_counter.py) | Monotonic `_reqid` for the chat backend; lock-protected `next_reqid(...)`. |
+| `CookiePersistence` | [`_web/transport/cookie_persistence.py`](../src/notebooklm/_web/transport/cookie_persistence.py) | Per-canonical-path typed baseline state, ordered `ProfileStore` cookie merges, `__Secure-1PSIDTS` rotation, and the concrete v0.x snapshot adapter. First-party `_from_store` instances retain no `AuthTokens`; public-constructor instances preserve legacy save compatibility. |
 | `IdempotencyRegistry` | [`_idempotency.py`](../src/notebooklm/_idempotency.py) | Policy/classification registry keyed by `(RPCMethod, operation_variant)`. The production registry explicitly covers every active `RPCMethod`; `UNCLASSIFIED` is retained only as a placeholder for hand-built test/future registries. `RpcExecutor._execute_once()` consults it to resolve `effective_disable_internal_retries`. It is part of the RPC dispatch path, not lifecycle state. Side-effect probing (`idempotent_create(...)`) is a separate mechanism not owned by this registry. |
-| `_request_types` | [`_request_types.py`](../src/notebooklm/_request_types.py) | Owns `AuthSnapshot`, `BuildRequest`, and request materialization shapes shared by RPC, chat, auth refresh, and the chain terminal. |
-| `_transport_errors` | [`_transport_errors.py`](../src/notebooklm/_transport_errors.py) | Owns transport-level exceptions, `Retry-After` parsing, and raw `Kernel.post` error mapping consumed by `RetryMiddleware` and `AuthRefreshMiddleware`. |
-| `_streaming_post` | [`_streaming_post.py`](../src/notebooklm/_streaming_post.py) | Low-level streaming POST helper with the response-size cap used by `Kernel.post`. |
-| `Kernel` | [`_kernel.py`](../src/notebooklm/_kernel.py) | Pure transport core. Owns the `httpx.AsyncClient` and cookie jar; exposes `post()`, the `cookies` property, and `aclose()` (the close path wraps it in `asyncio.shield` from `ClientLifecycle.close()`). Concrete class behind the `Kernel` Protocol in `_runtime/contracts.py`; constructed by `build_collaborators(...)` and called from the middleware leaf via `RuntimeTransport.terminal → Kernel.post`. |
+| `_web/transport/request_types.py` | [`_web/transport/request_types.py`](../src/notebooklm/_web/transport/request_types.py) | Owns `AuthSnapshot`, `BuildRequest`, and request materialization shapes shared by RPC, chat, auth refresh, and the chain terminal. |
+| `_web/transport/errors.py` | [`_web/transport/errors.py`](../src/notebooklm/_web/transport/errors.py) | Owns transport-level exceptions, `Retry-After` parsing, and raw `Kernel.post` error mapping consumed by `RetryMiddleware` and `AuthRefreshMiddleware`. |
+| `_web/transport/streaming_post.py` | [`_web/transport/streaming_post.py`](../src/notebooklm/_web/transport/streaming_post.py) | Low-level streaming POST helper with the response-size cap used by `Kernel.post`. |
+| `Kernel` | [`_web/transport/kernel.py`](../src/notebooklm/_web/transport/kernel.py) | Pure transport core. Owns the `httpx.AsyncClient` and cookie jar; exposes `post()`, the `cookies` property, and `aclose()` (the close path wraps it in `asyncio.shield` from `ClientLifecycle.close()`). Concrete class behind the `Kernel` Protocol in `_web/contracts.py`; constructed by `build_collaborators(...)` and called from the middleware leaf via `RuntimeTransport.terminal → Kernel.post`. |
 | `_runtime/init` | [`_runtime/init.py`](../src/notebooklm/_runtime/init.py) | Construction-time helpers for `NotebookLMClient`: `validate_constructor_args` (kwarg validation/normalization), `build_collaborators` (the seven collaborators in dependency order: `metrics`, `drain_tracker`, `reqid`, `auth_coord`, `kernel`, `lifecycle`, `cookie_persistence`), `build_runtime_transport`, `wire_middleware_chain`, and `compose_client_internals`. It binds the runtime graph into `ClientComposed` and returns `ClientInternals(collaborators, executor)`. |
 | `_loop_affinity` | [`_loop_affinity.py`](../src/notebooklm/_loop_affinity.py) | Tiny free-function `assert_bound_loop(bound_loop)` shared by every helper that captures a loop reference at `open()` time (`TransportDrainTracker`, `ReqidCounter`, `AuthRefreshCoordinator`, `ArtifactPollingService`, `ChatAPI`). Enforces ADR-0004 without coupling those helpers to the public client. |
 
@@ -598,7 +598,7 @@ transport; fileless clients capture only the live compatibility projection. A mi
 uses ordered typed merges; only an explicit `cookie_saver=` retains the v0.x callback surface and
 its per-key adapter snapshot. `ClientLifecycle` owns the sole
 `AuthTokens.cookie_snapshot` mirror. Measured Phase 10 owners are 457 lines in
-`_cookie_persistence.py`, 618 in `_runtime/init.py`, 628 in `_runtime/lifecycle.py`, and 992 in
+`_web/transport/cookie_persistence.py`, 618 in `_runtime/init.py`, 628 in `_runtime/lifecycle.py`, and 992 in
 `client.py`.
 
 Phase 12C completes state ownership without changing the public ladder or on-disk schema. The
@@ -787,7 +787,7 @@ The runtime chain order is pinned by
 simultaneously updating the pin tests
 (`test_chain_seeded_with_final_adr_009_ordering`) is a bug.
 
-The chain list in [`MiddlewareChainBuilder.build()`](../src/notebooklm/_middleware/chain.py)
+The chain list in [`MiddlewareChainBuilder.build()`](../src/notebooklm/_web/transport/middleware/chain.py)
 reads outermost-first (index 0 wraps everything below it):
 
 ```text
@@ -948,7 +948,7 @@ Vocabulary that recurs in this document and the surrounding code.
 | `idempotent_create(...)` | Caller-owned probe-then-create wrapper used by source-add / Drive-add flows. Distinct from the `IdempotencyRegistry` (which only classifies retry safety inside the executor). |
 | `operation_variant` | Optional kwarg on `rpc_call(...)` that selects a method-variant-specific idempotency policy from the registry (e.g. `ADD_SOURCE` `"url"` vs `"drive"`). Unknown variants raise `IdempotencyVariantError`. |
 | RPC method id | A short obfuscated identifier (`rpcids=`) Google uses to route batchexecute calls. Source of truth: `RPCMethod` enum in `rpc/types.py`. |
-| Snapshot | An `AuthSnapshot` (see [`_request_types.py`](../src/notebooklm/_request_types.py)) — an immutable, point-in-time view of session id, CSRF token, authuser, and account email. Taken inside the auth-snapshot lock so a refresh racing with a transport build cannot tear. |
+| Snapshot | An `AuthSnapshot` (see [`_web/transport/request_types.py`](../src/notebooklm/_web/transport/request_types.py)) — an immutable, point-in-time view of session id, CSRF token, authuser, and account email. Taken inside the auth-snapshot lock so a refresh racing with a transport build cannot tear. |
 
 ## File map
 
@@ -961,9 +961,9 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `client.py` | Main `NotebookLMClient` class |
 | `_client_assembly.py` | Single private assembly seam (`_assemble_client`) that wires every constructor-set attribute; shared by `NotebookLMClient.__init__` and the canonical test factory (`tests/_helpers/client_factory.py`) so the two construction paths cannot drift. |
 | `_client_composed.py` | Client-owned composition holder for transport, executor, chain host, middleware metadata, and runtime collaborator bundle. |
-| `_client_seams.py` | Constructor-only injectable seams used by tests and collaborator construction. |
+| `_web/transport/seams.py` | Constructor-only injectable seams used by tests and collaborator construction. |
 | `_runtime/init.py` | Constructor helpers that validate client runtime kwargs, build collaborators (returning a `RuntimeCollaborators` bundle), wire middleware, and bind `ClientComposed`. |
-| `_kernel.py` | Concrete `Kernel` transport core (owns `httpx.AsyncClient` + cookie jar) |
+| `_web/transport/kernel.py` | Concrete `Kernel` transport core (owns `httpx.AsyncClient` + cookie jar) |
 | `_runtime/config.py` | `DEFAULT_*` knobs and module-level constants. `CORE_LOGGER_NAME = "notebooklm._core"` is intentionally preserved as a compatibility logging contract even though the `_core` module was deleted; renaming it silently breaks downstream `caplog`/logger filters. |
 | `_env.py`, `config.py` | Runtime environment defaults and the public config re-export surface |
 | `_logging.py`, `log.py` | Redaction/correlation logging internals and the public logging helper surface |
@@ -973,27 +973,28 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_loop_bound.py` | `LoopBoundPrimitive` — template-method base for the loop-affinity `set_bound_loop` protocol. Owns the `_bound_loop` field + a `set_bound_loop` that always stores the binding and fires the `_on_loop_rebind(old, new)` hook only on a real loop change (hook before store). Trivial owners (`TransportDrainTracker`/`ReqidCounter`/`AuthRefreshCoordinator`) use the default no-op hook; clear-on-rebind owners (`ClientComposed`/`SourceUploadPipeline`/`ChatAPI`) override it to discard their cached loop-bound primitive/locks. Owns only the binding + rebind hook — the cross-loop *assert* stays in `_loop_affinity`, and each owner keeps its own `reset_after_open`. |
 | `_deprecation.py` | Deprecation helper, gated by `NOTEBOOKLM_QUIET_DEPRECATIONS`. The immutable `DEPRECATION_SPECS` table owns the two Phase 13D auth-storage messages, replacements, since/removal versions, categories, and public-boundary stacklevels; `warn_registered_deprecation` emits them through `warn_deprecated`. `scripts/check_deprecation_targets.py` parses the table and callsites without importing application code and fails closed on malformed, missing, stale, lapsed, or structurally unresolved entries. Unrelated one-off deprecations continue to use `warn_deprecated`; `deprecations_quiet` / `_deprecations_quiet` / `_QUIET_ENV_VAR` retain the live suppression gate. ADR-0018 forbids inline `warnings.warn(..., DeprecationWarning)` outside this module — `tests/_guardrails/test_no_inline_deprecation_warnings.py` enforces it (only for `DeprecationWarning`; inline `RuntimeWarning`/`UserWarning` remains allowed). The permanent `save_cookies_to_storage(original_snapshot=None)` race advisory is therefore still an ungated `RuntimeWarning`. See `docs/deprecations.md`. |
 | `_runtime/helpers.py` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval` |
-| `_error_injection.py` | Synthetic-error env-var resolver + startup guard |
+| `_web/transport/error_injection.py` | Synthetic-error env-var resolver + startup guard |
 | `_client_metrics.py` | `ClientMetrics` — `ClientMetricsSnapshot` counters + `on_rpc_event` callback |
 | `_transport_drain.py` | `TransportDrainTracker` — in-flight transport counters + `_TransportOperationToken` |
 | `_deadline.py` | `RuntimeDeadline` helper shared by retry and polling loops so aggregate timeouts clamp sleep consistently |
 | `_backoff.py` | Shared capped exponential-backoff calculation with deterministic test injection |
-| `_reqid_counter.py` | `ReqidCounter` — monotonic `_reqid` for the chat backend |
-| `_runtime/auth.py` | `AuthRefreshCoordinator` — refresh task + auth-snapshot lock |
-| `_auth_refresh_retry.py` | Shared auth refresh-and-retry core for the two retry layers (HTTP-status `AuthRefreshMiddleware` + decoded-RPC `RpcExecutor`): the once-per-logical-call `RefreshBudget` token and the common `refresh_and_count` body (log/refresh/sleep/`rpc_auth_retries` metric). Unifies the previously-divergent copies per issue #1205; the two layers keep their distinct triggers and refresh-failure exception shapes. |
+| `_web/transport/reqid_counter.py` | `ReqidCounter` — monotonic `_reqid` for the chat backend |
+| `_web/transport/auth.py` | `AuthRefreshCoordinator` — refresh task + auth-snapshot lock |
+| `_web/transport/auth_refresh_retry.py` | Shared auth refresh-and-retry core for the two retry layers (HTTP-status `AuthRefreshMiddleware` + decoded-RPC `RpcExecutor`): the once-per-logical-call `RefreshBudget` token and the common `refresh_and_count` body (log/refresh/sleep/`rpc_auth_retries` metric). Unifies the previously-divergent copies per issue #1205; the two layers keep their distinct triggers and refresh-failure exception shapes. |
 | `_runtime/lifecycle.py` | `ClientLifecycle` — loop-affinity guard + keepalive task |
-| `_runtime/transport.py` | `RuntimeTransport` — authed-POST transport wrapper that drives the middleware chain and typed transport response handling |
-| `_rpc_executor.py` | RPC dispatch executor. Takes its `Kernel`, `RuntimeTransport`, `AuthRefreshCoordinator`, and `ClientMetrics` collaborators directly via keyword-only constructor parameters (ADR-0014 Rule 5). Defines a single local `DecodeResponse` Protocol. |
-| `_request_types.py` | Shared authed POST request construction types: `AuthSnapshot`, `BuildRequest`, `PostBody`, and materialization helpers. |
-| `_transport_errors.py` | Transport exceptions, `Retry-After` parsing, and terminal `Kernel.post` error mapping for retry/auth middleware. |
-| `_streaming_post.py` | Size-capped streaming POST helper used by `Kernel.post`. |
-| `_middleware/core.py` | HTTP-shaped middleware request/response envelope, chain composition, and middleware Protocol |
-| `_middleware/context.py` | Canonical per-request context-key vocabulary for middleware |
-| `_middleware/chain_host.py` | Mutable owner for the live middleware chain slots and retry-budget tunables |
+| `_web/transport/runtime.py` | `RuntimeTransport` — authed-POST transport wrapper that drives the middleware chain and typed transport response handling |
+| `_web/transport/executor.py` | RPC dispatch executor. Takes its `Kernel`, `RuntimeTransport`, `AuthRefreshCoordinator`, and `ClientMetrics` collaborators directly via keyword-only constructor parameters (ADR-0014 Rule 5). Defines a single local `DecodeResponse` Protocol. |
+| `_web/transport/request_types.py` | Shared authed POST request construction types: `AuthSnapshot`, `BuildRequest`, `PostBody`, and materialization helpers. |
+| `_web/transport/errors.py` | Transport exceptions, `Retry-After` parsing, and terminal `Kernel.post` error mapping for retry/auth middleware. |
+| `_web/transport/streaming_post.py` | Size-capped streaming POST helper used by `Kernel.post`. |
+| `_web/transport/middleware/core.py` | HTTP-shaped middleware request/response envelope, chain composition, and middleware Protocol |
+| `_web/transport/middleware/context.py` | Canonical per-request context-key vocabulary for middleware |
+| `_web/transport/middleware/chain_host.py` | Mutable owner for the live middleware chain slots and retry-budget tunables |
 | `_conversation_cache.py` | Per-instance true-LRU conversation cache for `ChatAPI` (caps conversation count via `MAX_CONVERSATION_CACHE_SIZE` and per-conversation turns via `MAX_TURNS_PER_CONVERSATION`) |
 | `_polling_registry.py` | Pending-poll registry for long-running artifact generations |
-| `_cookie_persistence.py` | Cookie-jar persistence + `__Secure-1PSIDTS` rotation |
-| `_runtime/contracts.py` | Shared runtime Protocols consumed by sub-clients |
+| `_web/transport/cookie_persistence.py` | Cookie-jar persistence + `__Secure-1PSIDTS` rotation |
+| `_runtime/contracts.py` | Transport-neutral `LoopGuard` Protocol |
+| `_web/contracts.py` | Web-only `Kernel` and `RpcCaller` Protocols |
 | `_idempotency.py` | Mutating-RPC idempotency policy registry and probe-then-retry wrapper; ADR-0005 is the taxonomy source |
 | `_idempotency_policy.py` | Declarative per-RPC idempotency classification data, applied to `IDEMPOTENCY_REGISTRY` via `register_default_policies` at `_idempotency` import time (#1331). Holds the load-bearing two-pass seeding order (pre-seed `register()` → `_seed_defaults()` → post-seed `register()` + the read/set-op loop). |
 | `_atomic_io.py`, `io.py` | Atomic JSON write/update internals and public I/O re-export surface for CLI boundary compliance |
@@ -1075,8 +1076,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_version_check.py` | Dynamic client-side version deprecation guard |
 | `_version_info.py` | Human-facing `version_string()` — package version + short git commit (embedded by `hatch_build.py` at build time, or live `git` from a checkout) |
 | `_chat/deleted_tracker.py` | Bounded `RecentlyDeletedConversations` set — `delete_conversation` records the id (under the conversation lock) so a concurrent null-conversation ask, after acquiring that lock, detects a mid-flight delete and drops `resolved_id_override` to recover the server's real conversation id post-POST (#1875) |
-| `_middleware/chain.py` | Constructs the middleware chain in the canonical ADR-0009 order |
-| `_middleware/*.py` | Modular middleware implementations (drain, metrics, semaphore, retry, auth, error injection, tracing) |
+| `_web/transport/middleware/chain.py` | Constructs the middleware chain in the canonical ADR-0009 order |
+| `_web/transport/middleware/*.py` | Modular middleware implementations (drain, metrics, semaphore, retry, auth, error injection, tracing) |
 | `rpc/types.py` | RPC method IDs (source of truth) |
 | `auth.py` | Authentication facade — **almost pure re-exports** (the only remaining function body is `async def enumerate_accounts`, which binds `_poke_session` as a default dependency; ADR-0003 records the optional-`async` audit command). Every other top-level name forwards from the relevant `_auth/*` module: `auth._validate_required_cookies` is identity-equal to `_auth.cookie_policy._validate_required_cookies`, and `load_auth_from_storage` / `AuthTokens` live in `_auth/tokens.py`. **ADR-0003's flat-re-export goal was closed by ADR-0014.** Tests that need to rebind policy names patch `_auth.cookie_policy.X` directly. |
 | `_auth/paths.py` | Storage paths and filesystem helpers |
@@ -1128,37 +1129,27 @@ src/notebooklm/
 ├── urls.py                      # Public URL helper facade
 ├── utils.py                     # Public async utility helpers
 ├── _atomic_io.py                # Atomic JSON write/update helpers
-├── _auth_refresh_retry.py       # Shared auth refresh-and-retry core (RefreshBudget + refresh_and_count) for both retry layers
 ├── _backoff.py                  # Shared retry backoff calculation
 ├── _callbacks.py                # Sync/async callback invocation helper
 ├── _client_assembly.py          # Shared client-assembly seam (constructor + test factory)
 ├── _client_composed.py          # Client-owned composition holder
-├── _client_seams.py             # Constructor-only injectable seams
 ├── _deadline.py                 # RuntimeDeadline helper for aggregate timeouts
 ├── _deprecation.py              # Immutable auth-storage specs + gated deprecation emitters
 ├── _env.py                      # Runtime environment/default endpoint helpers
 ├── _idempotency.py              # Mutating-RPC idempotency registry + wrappers
 ├── _idempotency_policy.py       # Declarative per-RPC idempotency classification data (register_default_policies)
-├── _kernel.py                   # Concrete Kernel transport core
 ├── _logging.py                  # Redaction + correlation logging internals
 ├── _secrets.py                  # Canonical runtime secret registry (cookie names + secure/host umbrellas + token/API-key shapes) the redaction patterns derive from
 ├── _lookup.py                   # unwrap_or_raise — shared single-row-lookup helper for get/get_or_none
 ├── _serving.py                  # Shared bootstrap for both HTTP entry points: single-source loopback classification (IPv4-mapped-IPv6-aware) + non-loopback bind guard (mcp/server __main__ + server/_auth all route through it)
 ├── _loop_affinity.py            # Event-loop affinity guard helper (assert_bound_loop free function)
 ├── _loop_bound.py               # LoopBoundPrimitive mixin — template-method set_bound_loop + _on_loop_rebind hook for the loop-bound collaborators
-├── _error_injection.py          # Synthetic-error env-var resolver + startup guard
-├── _request_types.py            # AuthSnapshot, BuildRequest, PostBody, request materialization helpers
-├── _transport_errors.py         # Transport exceptions, Retry-After parsing, Kernel.post error mapping
-├── _streaming_post.py           # Size-capped streaming POST helper
 ├── _curl_cffi_transport.py      # Opt-in curl_cffi browser-impersonation transport (NOTEBOOKLM_TRANSPORT=curl_cffi)
 ├── _hop_credentials.py         # Typed per-hop cookie/header credentials for guarded asset requests
-├── _rpc_executor.py             # RPC dispatch executor
 ├── _client_metrics.py           # Telemetry / metrics seam
 ├── _transport_drain.py          # In-flight transport drain coordinator
-├── _reqid_counter.py            # Request-counter / request-id helpers
 ├── _conversation_cache.py       # Per-instance true-LRU conversation cache (bounded conversation count + per-conversation turns)
 ├── _polling_registry.py         # Artifact polling helpers
-├── _cookie_persistence.py       # Cookie-jar persistence + __Secure-1PSIDTS rotation
 ├── _mind_maps_api.py            # Backend-neutral abstract MindMapsAPI
 ├── _notebook_metadata.py        # Neutral metadata protocols + composition service
 ├── _url_utils.py                # URL validation helpers
@@ -1207,6 +1198,7 @@ src/notebooklm/
 │   └── views.py                 # Transport-neutral output-projection views: share_status_view (access/permission/view_level enum→label), source_view (kind/status_label/drive_status_label + is_drive_degraded added), notebook_view (role_label added), notebook_viewed_keys (last_viewed_at + its deprecated modified_at alias, for hand-built CLI JSON envelopes), ask_result_view (raw_response debug blob stripped); shared by the MCP tools + REST routes so both emit the identical enriched shape (Option B)
 ├── _web/                        # Private batchexecute web-backend implementation package
 │   ├── __init__.py              # Package boundary
+│   ├── contracts.py             # Web-only Kernel and RpcCaller Protocols
 │   ├── notebooks.py             # WebNotebooksAPI
 │   ├── artifacts.py             # WebArtifactsAPI
 │   ├── artifact/                # Web artifact services
@@ -1215,32 +1207,45 @@ src/notebooklm/
 │   │   ├── generation.py        # Generation RPC dispatch
 │   │   ├── listing.py           # Listing and mind-map composition
 │   │   └── table.py             # Positional data-table decoding
-│   └── params/                  # Web batchexecute request builders
+│   ├── params/                  # Web batchexecute request builders
 │       ├── __init__.py
 │       ├── artifacts.py         # Artifact request payloads
 │       └── notebooks.py         # Notebook request payloads
+│   └── transport/               # Web HTTP transport core
+│       ├── __init__.py
+│       ├── auth.py              # AuthRefreshCoordinator
+│       ├── auth_refresh_retry.py # Shared refresh budget + retry body
+│       ├── chat.py              # Chat-specific error mapping
+│       ├── cookie_persistence.py # Cookie-jar persistence + __Secure-1PSIDTS rotation
+│       ├── error_injection.py   # Synthetic-error env-var resolver + startup guard
+│       ├── errors.py            # Transport exceptions and raw POST error mapping
+│       ├── executor.py          # Batchexecute RPC dispatcher
+│       ├── kernel.py            # Concrete Kernel transport core
+│       ├── reqid_counter.py     # Chat request-id counter
+│       ├── request_types.py     # AuthSnapshot, BuildRequest, and materializers
+│       ├── runtime.py           # Middleware-chain transport wrapper
+│       ├── seams.py             # Constructor-only injectable seams
+│       ├── streaming_post.py    # Size-capped streaming POST helper
+│       └── middleware/          # ADR-0009 middleware chain
+│           ├── __init__.py
+│           ├── auth_refresh.py
+│           ├── chain.py
+│           ├── chain_host.py
+│           ├── context.py
+│           ├── core.py
+│           ├── drain.py
+│           ├── error_injection.py
+│           ├── metrics.py
+│           ├── retry.py
+│           ├── semaphore.py
+│           └── tracing.py
 ├── _runtime/                    # Client-runtime subpackage (promoted from flat _runtime_*.py, #1328)
-│   ├── __init__.py              # Re-exports the cluster's public names
-│   ├── auth.py                  # AuthRefreshCoordinator (refresh task + auth-snapshot lock)
+│   ├── __init__.py              # Re-exports only transport-neutral runtime names
 │   ├── config.py                # DEFAULT_* knobs + module-level constants
-│   ├── contracts.py             # Shared runtime Protocols consumed by feature APIs
+│   ├── contracts.py             # Transport-neutral LoopGuard Protocol
 │   ├── helpers.py               # is_auth_error / AUTH_ERROR_PATTERNS / keepalive helpers
 │   ├── init.py                  # Runtime collaborator construction + validation
-│   ├── lifecycle.py             # Open/close lifecycle seam (loop affinity + keepalive task)
-│   └── transport.py             # Middleware-chain transport wrapper
-├── _middleware/                 # Middleware subpackage (promoted from flat _middleware*.py, #1328)
-│   ├── __init__.py              # Re-exports the cluster's public names
-│   ├── core.py                  # Middleware envelope + Protocol + chain composition primitive (was _middleware.py)
-│   ├── context.py               # Middleware context-key vocabulary
-│   ├── chain.py                 # Middleware chain builder
-│   ├── chain_host.py            # Live middleware chain slots and retry tunables
-│   ├── tracing.py               # Tracing middleware
-│   ├── metrics.py               # Metrics middleware
-│   ├── drain.py                 # Drain middleware
-│   ├── error_injection.py       # Error injection middleware
-│   ├── retry.py                 # Retry middleware
-│   ├── auth_refresh.py          # Auth refresh middleware
-│   └── semaphore.py             # Concurrency semaphore middleware
+│   └── lifecycle.py             # Open/close lifecycle seam (loop affinity + keepalive task)
 ├── _source/                     # Neutral source services + lazy compatibility exports
 │   ├── __init__.py              # Lazy package-level shims for moved web service names
 │   ├── markdown.py              # Source fulltext HTML-to-Markdown conversion policy
@@ -1364,9 +1369,7 @@ src/notebooklm/
 │   │   ├── chat_stream.py       # Streamed-chat URL/form request builder
 │   │   ├── notebooks.py         # Notebook RPC payload builders (SUGGEST_PROMPTS)
 │   │   └── sources.py           # Source RPC/upload payload builders
-│   ├── rows/                    # Typed positional wire-row decoders
-│   └── transport/               # Web-only transport adapters
-│       └── chat.py              # Chat-specific HTTP/error mapping
+│   └── rows/                    # Typed positional wire-row decoders
 ├── _notebooks.py                # Backend-neutral abstract NotebooksAPI
 ├── _sources.py                  # Backend-neutral abstract SourcesAPI
 ├── _artifacts.py                # Backend-neutral abstract ArtifactsAPI

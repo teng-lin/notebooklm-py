@@ -120,7 +120,8 @@ a narrow Protocol surface so it can be unit-tested against a stub:
 | `_transport_drain.py` | `TransportDrainTracker` | In-flight transport counters, `_TransportOperationToken`, lazy `asyncio.Condition` powering `client.drain(...)`. |
 | `_web/transport/reqid_counter.py` | `ReqidCounter` | Monotonic `_reqid` counter for chat backend (baseline 100000, step 100000). |
 | `_web/transport/auth.py` | `AuthRefreshCoordinator` | Refresh-task lifecycle, refresh lock, `AuthSnapshot` rotation. |
-| `_runtime/contracts.py` | Runtime Protocols | Shared capability Protocols: `Kernel`, `RpcCaller`, and `LoopGuard`. Single-consumer capabilities stay local to their owner modules. |
+| `_runtime/contracts.py` | Neutral runtime Protocol | `LoopGuard`, used by transport-neutral orchestration. |
+| `_web/contracts.py` | Web transport Protocols | `Kernel` and `RpcCaller`, used only by batchexecute implementations. Single-consumer capabilities stay local to their owner modules. |
 | `_runtime/lifecycle.py` | `ClientLifecycle` | Loop-affinity guard, `aclose` plumbing, keepalive task wiring. |
 | `_web/transport/runtime.py` | `RuntimeTransport` | Authenticated transport leg used by `RpcExecutor` and the middleware chain terminal. |
 | `_web/transport/executor.py` | `RpcExecutor` | RPC dispatch executor with direct collaborator dependencies. |
@@ -131,10 +132,10 @@ a narrow Protocol surface so it can be unit-tested against a stub:
 | `_polling_registry.py` | `PollRegistry` | Pending-poll registry shared by long-running artifact generations. |
 | `_web/transport/cookie_persistence.py` | `CookiePersistence` | Per-path typed baselines, ordered `ProfileStore` cookie merges, `__Secure-1PSIDTS` rotation, and the concrete v0.x snapshot adapter. |
 
-The feature-facing surface is the set of **capability Protocols** in
-`notebooklm._runtime.contracts` — `Kernel`, `RpcCaller`, and
-`LoopGuard`. Single-consumer capability shapes stay in the owning
-feature module (`AuthMetadata` in `_web/sources/upload.py`,
+Transport-neutral orchestration uses `LoopGuard` from
+`notebooklm._runtime.contracts`; batchexecute implementations use `Kernel`
+and `RpcCaller` from `notebooklm._web.contracts`. Single-consumer capability
+shapes stay in the owning feature module (`AuthMetadata` in `_web/sources/upload.py`,
 `OperationScopeProvider` in `_artifact/polling.py`), and the unused
 `AsyncWorkRuntime` composite was deleted. The broad `Session` Protocol
 that previously bundled these together was deleted in the final phase
@@ -226,12 +227,13 @@ from those catalogues rather than introducing parallel patterns.
 **New API Class:**
 1. Create `_newfeature.py` with `NewFeatureAPI` class.
 2. Type each constructor parameter against the **narrowest shared
-   capability Protocol** it actually uses (`RpcCaller`, `LoopGuard`,
-   `Kernel` — see
+   capability Protocol** it actually uses (`LoopGuard` from
+   `_runtime/contracts.py`, or web-only `RpcCaller` / `Kernel` from
+   `_web/contracts.py` — see
    [`docs/architecture.md`](./architecture.md) for the protocol
    catalog). If the capability has only one consumer, define the
-   Protocol locally beside that consumer instead of promoting it to
-   `_runtime/contracts.py`. Pass each collaborator by keyword-only
+   Protocol locally beside that consumer instead of promoting it to either
+   contracts module. Pass each collaborator by keyword-only
    argument; do not bundle them into a feature-local composite-runtime
    Protocol unless a second production consumer materialises. **Do NOT
    depend on a broad runtime facade for type annotations** — there is no

@@ -27,7 +27,7 @@ edges (attributes added *outside* this function).
 
 This module is private: it is not exported from ``notebooklm`` and the
 test-only parameters MUST NOT be promoted to ``NotebookLMClient``'s
-public constructor (see the seam policy in ``_client_seams``).
+public constructor (see the seam policy in ``_web/transport/seams.py``).
 """
 
 from __future__ import annotations
@@ -120,7 +120,7 @@ def _assemble_client(
     refresh_retry_delay: float = 0.2,
     connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
     keepalive_storage_path: Path | None | _UnsetType = _UNSET,
-    # --- Test-only injection seams (see ``_client_seams`` docstring) ------
+    # --- Test-only injection seams (see ``_web/transport/seams.py``) ------
     decode_response: Callable[..., Any] | None = None,
     sleep: Callable[[float], Awaitable[Any]] | None = None,
     is_auth_error: Callable[[Exception], bool] | None = None,
@@ -261,7 +261,7 @@ def _assemble_client(
     # three runtime seams here (and never supplies an
     # ``async_client_factory``), so they always resolve to the
     # canonical module bindings. The non-``None`` paths exist solely
-    # for deterministic test injection — see ``_client_seams`` module
+    # for deterministic test injection — see ``_web/transport/seams.py``
     # docstring. Do not promote any of them to a public kwarg without
     # a production caller that varies them.
     client._seams = resolve_client_seams(

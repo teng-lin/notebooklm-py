@@ -103,7 +103,7 @@ class RuntimeTransport:
     dispatch; the chain is read at the dispatch site.
 
     The injected ``logger`` is held so error messages mapped through
-    :func:`notebooklm._transport_errors.raise_mapped_post_error` keep
+    :func:`notebooklm._web.transport.errors.raise_mapped_post_error` keep
     appearing under the historical session logger namespace rather than
     this module's namespace — preserving the log-filter / caplog
     vocabulary callers may already rely on.
@@ -261,8 +261,8 @@ class RuntimeTransport:
         """Authed POST entry point — routes through the middleware chain.
 
         Shared transport surface used by ``RpcExecutor._execute_once``
-        (``_rpc_executor.py``) and ``_web.transport.chat``; keep the same
-        keyword-only signature.
+        (``_web/transport/executor.py``) and ``_web.transport.chat``;
+        keep the same keyword-only signature.
 
         ``RpcRequest.url`` / ``headers`` / ``body`` are populated through
         :func:`materialize_rpc_request` before the chain sees the
@@ -271,8 +271,8 @@ class RuntimeTransport:
         checks.
 
         ``refresh_budget`` is an optional
-        :class:`notebooklm._auth_refresh_retry.RefreshBudget` seeded by the
-        RPC executor so the HTTP-status refresh layer
+        :class:`notebooklm._web.transport.auth_refresh_retry.RefreshBudget`
+        seeded by the RPC executor so the HTTP-status refresh layer
         (:class:`AuthRefreshMiddleware`) shares its once-per-logical-call
         refresh allowance with the executor's decoded-RPC refresh layer
         (issue #1205). Callers that drive the chain without a budget (the

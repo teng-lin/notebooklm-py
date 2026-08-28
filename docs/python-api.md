@@ -931,39 +931,45 @@ conversation cache, etc.) is split across single-responsibility runtime
 and kernel collaborator modules such as `notebooklm._web.transport.executor`,
 `notebooklm._transport_drain`, and `notebooklm._web.transport.errors`. The
 split is internal — module-level constants and helpers live in canonical
-seam modules (`_runtime/config.py`, `_runtime/helpers.py`, `_error_injection`,
-`_request_types`, `_transport_errors`, `_streaming_post`) and are imported
+seam modules (`_runtime/config.py`, `_runtime/helpers.py`, and
+`_web/transport/`) and are imported
 from those modules directly. The historical `notebooklm._core`
 compatibility shim was removed in v0.5.0.
 
 | Module | Owns | Notes |
 |---|---|---|
 | `_client_composed` | `ClientComposed`: bound runtime holder for transport, executor, middleware chain metadata, and the collaborator bundle. | The composition root binds this once; public methods read the bound collaborators from the client. |
-| `_kernel` | Concrete `Kernel` transport core; owns the `httpx.AsyncClient` (constructed in `Kernel.__init__`, closed in `Kernel.aclose()`) and the cookie jar. | Pure transport surface (see `Kernel` Protocol in `_runtime/contracts.py`). |
+| `_web/transport/kernel.py` | Concrete `Kernel` transport core; owns the `httpx.AsyncClient` (constructed in `Kernel.__init__`, closed in `Kernel.aclose()`) and the cookie jar. | Pure web transport surface (see `Kernel` Protocol in `_web/contracts.py`). |
 | `_runtime/init.py` | Client composition root helpers: constructor validation, collaborator construction, `RuntimeTransport`, middleware chain, and `RpcExecutor` wiring. | `NotebookLMClient` calls this during construction and stores the result directly. |
 | `_web/transport/runtime.py` | Authenticated transport leg used by `RpcExecutor` and the middleware chain terminal. | Routes through `Kernel.post` and centralizes request-envelope materialization. |
 | `_runtime/config.py` | Module-level constants: `DEFAULT_TIMEOUT`, `DEFAULT_CHAT_TIMEOUT`, `DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT`/`_PER_SOURCE_TIMEOUT`/`_MAX_TIMEOUT`, `DEFAULT_KEEPALIVE_MIN_INTERVAL`, `DEFAULT_MAX_CONCURRENT_RPCS`, `DEFAULT_MAX_CONCURRENT_UPLOADS`, `CORE_LOGGER_NAME`, `normalize_max_concurrent_uploads`. | Pure constants; importable without side effects. |
 | `_runtime/helpers.py` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval`. | Cross-seam pure helpers; behaviour-bearing (and therefore unit-tested). |
-| `_error_injection` | `ERROR_INJECT_ENV_VAR`, `_get_error_injection_mode`, `_refuse_synthetic_error_outside_test_context`. | Env-var resolver + startup guard for the synthetic-error harness. |
+| `_web/transport/error_injection.py` | `ERROR_INJECT_ENV_VAR`, `_get_error_injection_mode`, `_refuse_synthetic_error_outside_test_context`. | Env-var resolver + startup guard for the synthetic-error harness. |
 | `_web/transport/auth.py` | `AuthRefreshCoordinator`: refresh-task lifecycle, refresh lock, `AuthSnapshot` rotation. | Lazy `asyncio.Lock` construction; never instantiated outside a running loop. |
 | `_conversation_cache` | Per-instance true-LRU `_conversation_cache` for `ChatAPI` continuity; bounds the conversation count and the turns retained per conversation. | Pure in-process state; not shared across client instances. |
-| `_cookie_persistence` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. | Exposes a `SaveCookiesToStorage` Protocol host. |
+| `_web/transport/cookie_persistence.py` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. | Exposes a `SaveCookiesToStorage` Protocol host. |
 | `_transport_drain` | `TransportDrainTracker`: in-flight transport counters, `_TransportOperationToken`, lazy `asyncio.Condition` powering `client.drain(...)`. | Construction is event-loop-agnostic; the `Condition` is allocated on first use. |
 | `_runtime/lifecycle.py` | `ClientLifecycle`: loop-affinity guard, `aclose` plumbing, keepalive task wiring. | Client lifecycle collaborator. |
 | `_client_metrics` | `ClientMetrics`: `ClientMetricsSnapshot` counters, `_metrics_lock`, `on_rpc_event` callback, queue-wait recorders. | `__init__` is event-loop-agnostic; `emit_rpc_event` is `async` and intentionally awaits the user callback (back-pressure). |
 | `_polling_registry` | Pending-poll registry shared by long-running artifact generations. | Used by artifacts to coordinate and cancel pending polls. |
-| `_reqid_counter` | `ReqidCounter`: monotonic `_reqid` for the chat backend, lazy `asyncio.Lock` for concurrent `ChatAPI.ask` callers. | Baseline `_value=100000`, default `step=100000` — both are chat-API contract values; do not change. |
-| `_rpc_executor` | RPC dispatch executor; exposes `DecodeResponse` Protocol so callers can be unit-tested against a stub. | `NotebookLMClient.rpc_call` dispatches here directly. |
-| `_request_types` | `AuthSnapshot`, `BuildRequest`, `BuildRequestResult`, and request materialization helpers. | Shared request Interface for RPC, chat, auth refresh, and the chain terminal. |
-| `_transport_errors` | Transport exceptions, `Retry-After` parsing, and raw `Kernel.post` error mapping. | Keeps terminal error mapping out of `Kernel` callers and lets the middleware chain consume a narrow exception Interface. |
-| `_streaming_post` | Streaming POST helper with the response-size cap. | Keeps low-level buffered HTTP read behavior local to the `Kernel.post` implementation. |
+| `_web/transport/reqid_counter.py` | `ReqidCounter`: monotonic `_reqid` for the chat backend, lazy `asyncio.Lock` for concurrent `ChatAPI.ask` callers. | Baseline `_value=100000`, default `step=100000` — both are chat-API contract values; do not change. |
+| `_web/transport/executor.py` | RPC dispatch executor; exposes `DecodeResponse` Protocol so callers can be unit-tested against a stub. | `NotebookLMClient.rpc_call` dispatches here directly. |
+| `_web/transport/request_types.py` | `AuthSnapshot`, `BuildRequest`, `BuildRequestResult`, and request materialization helpers. | Shared request Interface for RPC, chat, auth refresh, and the chain terminal. |
+| `_web/transport/errors.py` | Transport exceptions, `Retry-After` parsing, and raw `Kernel.post` error mapping. | Keeps terminal error mapping out of `Kernel` callers and lets the middleware chain consume a narrow exception Interface. |
+| `_web/transport/streaming_post.py` | Streaming POST helper with the response-size cap. | Keeps low-level buffered HTTP read behavior local to the `Kernel.post` implementation. |
 
-Feature APIs depend on narrow per-capability Protocols defined in
-`notebooklm._runtime.contracts` rather than on a broad runtime facade.
-`ChatAPI`, `WebArtifactsAPI`, and `SourceUploadPipeline` each take their
-backend-specific collaborators by keyword-only constructor argument;
-the neutral `ArtifactsAPI` base takes lifecycle, drain, notebook-source, and a
-required backend-configured asset-transfer collaborator only. The
+Transport-neutral orchestration depends on `LoopGuard` from
+`notebooklm._runtime.contracts`; web feature APIs and services depend on
+`Kernel` / `RpcCaller` from `notebooklm._web.contracts` rather than on a broad
+runtime facade. `ChatAPI`, `ArtifactsAPI`, and `SourceUploadPipeline` each take
+their direct collaborators by keyword-only constructor argument. In the split
+namespaces, the neutral `ChatAPI` takes its loop guard and notebook provider,
+while `WebChatAPI` adds `RpcCaller`, `RuntimeTransport`, and `ReqidCounter`;
+the neutral `ArtifactsAPI` takes lifecycle, drain, notebook-source, and the
+required backend-configured asset-transfer collaborator, while
+`WebArtifactsAPI` adds its web RPC and note/mind-map collaborators.
+`SourceUploadPipeline` is web-only and takes its RPC, kernel, lifecycle,
+drain, and auth collaborators directly. The
 feature-local composite-runtime Protocols (`ChatRuntime`,
 `ArtifactsRuntime`, `UploadRuntime`) and their adapter dataclasses that
 previously bundled three collaborators apiece were retired once it was
@@ -978,8 +984,9 @@ If you previously imported from `notebooklm._core` modules, see
 Tier 12 → Tier 13 rename table. The `notebooklm._core` compatibility
 shim was removed in v0.5.0; first-party callers should import directly
 from the canonical seam modules (`_runtime/config.py`, `_runtime/helpers.py`,
-`_request_types`, `_transport_errors`, `_streaming_post`, `_error_injection`,
-`_transport_drain`, etc.).
+`_web/transport/request_types.py`, `_web/transport/errors.py`,
+`_web/transport/streaming_post.py`, `_web/transport/error_injection.py`,
+`_transport_drain.py`, etc.).
 
 ---
 

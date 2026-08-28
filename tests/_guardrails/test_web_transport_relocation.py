@@ -19,6 +19,14 @@ from notebooklm._web.transport.reqid_counter import ReqidCounter
 from notebooklm._web.transport.runtime import RuntimeTransport
 
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
+REPO_ROOT = SRC_ROOT.parents[1]
+
+CURRENT_LAYOUT_DOCS = (
+    "docs/architecture.md",
+    "docs/conventions.md",
+    "docs/development.md",
+    "docs/python-api.md",
+)
 
 REMOVED_TRANSPORT_PATHS = frozenset(
     {
@@ -50,6 +58,17 @@ MOVED_RUNTIME_EXPORTS = frozenset(
     }
 )
 
+REMOVED_PYTHON_API_MODULE_TOKENS = {
+    "`_cookie_persistence`",
+    "`_error_injection`",
+    "`_kernel`",
+    "`_reqid_counter`",
+    "`_request_types`",
+    "`_rpc_executor`",
+    "`_streaming_post`",
+    "`_transport_errors`",
+}
+
 
 def test_transport_implementations_exist_only_at_the_web_paths() -> None:
     stale = sorted(path for path in REMOVED_TRANSPORT_PATHS if (SRC_ROOT / path).exists())
@@ -60,6 +79,22 @@ def test_runtime_package_does_not_eagerly_reexport_moved_web_names() -> None:
     assert MOVED_RUNTIME_EXPORTS.isdisjoint(runtime_package.__all__)
     assert all(not hasattr(runtime_package, name) for name in MOVED_RUNTIME_EXPORTS)
     assert runtime_package.LoopGuard is LoopGuard
+
+
+def test_current_docs_use_canonical_transport_paths_and_contract_homes() -> None:
+    texts = {path: (REPO_ROOT / path).read_text(encoding="utf-8") for path in CURRENT_LAYOUT_DOCS}
+    stale = {
+        path: sorted(token for token in REMOVED_TRANSPORT_PATHS if token in content)
+        for path, content in texts.items()
+    }
+    assert {path: tokens for path, tokens in stale.items() if tokens} == {}
+    assert all(
+        token not in texts["docs/python-api.md"] for token in REMOVED_PYTHON_API_MODULE_TOKENS
+    )
+
+    assert "`RpcCaller` object Protocol from `_web/contracts.py`" in texts["docs/conventions.md"]
+    assert "| `_web/contracts.py` | Web transport Protocols |" in texts["docs/development.md"]
+    assert "see `Kernel` Protocol in `_web/contracts.py`" in texts["docs/python-api.md"]
 
 
 def test_client_module_keeps_required_identity_attributes() -> None:
