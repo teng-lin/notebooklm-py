@@ -82,10 +82,10 @@ if TYPE_CHECKING:
     from .._client_composed import ClientComposed
     from .._transport_drain import TransportDrainTracker
     from .._web.sources.upload import SourceUploadPipeline
+    from .._web.transport.auth import AuthRefreshCoordinator
     from .._web.transport.cookie_persistence import CookiePersistence
     from .._web.transport.reqid_counter import ReqidCounter
     from ..types import ConnectionLimits
-    from .auth import AuthRefreshCoordinator
 
 
 # ---------------------------------------------------------------------------

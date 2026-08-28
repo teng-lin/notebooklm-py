@@ -1,12 +1,11 @@
-"""Private client-runtime implementation package.
+"""Transport-neutral client-runtime helpers.
 
-Cohesive cluster promoted from the former flat ``_runtime_*.py`` modules (issue #1328).
-Re-exports the cluster's public names so existing ``from .._runtime import X`` style
-references keep resolving; importers may also reach submodules directly
-(``from .._runtime.config import DEFAULT_TIMEOUT``).
+The web composition and lifecycle modules are intentionally not imported here:
+transport leaves depend on :mod:`._runtime.config`, so eagerly importing those
+roots would create an import cycle through :mod:`notebooklm._web.transport`.
 """
 
-from . import config, contracts, helpers, init, lifecycle
+from . import config, contracts, helpers
 from .config import (
     AUTO_READ_TIMEOUT,
     CORE_LOGGER_NAME,
@@ -34,30 +33,11 @@ from .helpers import (
     is_auth_error,
     resolve_sleep,
 )
-from .init import (
-    ClientInternals,
-    RuntimeCollaborators,
-    ValidatedSessionConfig,
-    WiredMiddleware,
-    build_collaborators,
-    build_runtime_transport,
-    compose_client_internals,
-    validate_constructor_args,
-    wire_middleware_chain,
-)
-from .lifecycle import (
-    ClientLifecycle,
-    CookieRotator,
-    CookieSaver,
-    _default_cookie_rotator,
-)
 
 __all__ = [
     "config",
     "contracts",
     "helpers",
-    "init",
-    "lifecycle",
     "AUTO_READ_TIMEOUT",
     "CORE_LOGGER_NAME",
     "DEFAULT_CHAT_RESPONSE_MAX_BYTES",
@@ -81,17 +61,4 @@ __all__ = [
     "_resolve_keepalive_interval",
     "is_auth_error",
     "resolve_sleep",
-    "ClientInternals",
-    "RuntimeCollaborators",
-    "ValidatedSessionConfig",
-    "WiredMiddleware",
-    "build_collaborators",
-    "build_runtime_transport",
-    "compose_client_internals",
-    "validate_constructor_args",
-    "wire_middleware_chain",
-    "ClientLifecycle",
-    "CookieRotator",
-    "CookieSaver",
-    "_default_cookie_rotator",
 ]

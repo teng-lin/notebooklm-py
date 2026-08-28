@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import notebooklm._runtime as runtime_package
@@ -75,3 +77,54 @@ def test_transport_and_contract_objects_report_canonical_modules() -> None:
     assert Kernel.__module__ == "notebooklm._web.transport.kernel"
     assert ReqidCounter.__module__ == "notebooklm._web.transport.reqid_counter"
     assert RuntimeTransport.__module__ == "notebooklm._web.transport.runtime"
+
+
+def test_runtime_config_package_initialization_stays_web_free() -> None:
+    script = """
+import importlib
+import sys
+import types
+
+package = types.ModuleType("notebooklm")
+package.__package__ = "notebooklm"
+package.__path__ = [sys.argv[1]]
+sys.modules["notebooklm"] = package
+
+importlib.import_module("notebooklm._runtime.config")
+loaded_web = sorted(name for name in sys.modules if name.startswith("notebooklm._web"))
+if loaded_web:
+    raise AssertionError(f"runtime config loaded web modules: {loaded_web}")
+"""
+    subprocess.run(
+        [sys.executable, "-I", "-c", script, str(SRC_ROOT)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_web_transport_leaves_import_without_the_public_composition_root() -> None:
+    script = """
+import importlib
+import sys
+import types
+
+package = types.ModuleType("notebooklm")
+package.__package__ = "notebooklm"
+package.__path__ = [sys.argv[1]]
+sys.modules["notebooklm"] = package
+importlib.import_module(sys.argv[2])
+"""
+    leaves = (
+        "notebooklm._web.transport.auth",
+        "notebooklm._web.transport.error_injection",
+        "notebooklm._web.transport.middleware.auth_refresh",
+        "notebooklm._web.transport.runtime",
+    )
+    for leaf in leaves:
+        subprocess.run(
+            [sys.executable, "-I", "-c", script, str(SRC_ROOT), leaf],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
