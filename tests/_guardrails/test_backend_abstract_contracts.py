@@ -224,12 +224,13 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
         implementation_class_name="WebMindMapsAPI",
         abstract_methods=frozenset(
             {
+                "_send_rename_note_backed",
                 "generate",
                 "get_tree",
                 "list_note_backed",
             }
         ),
-        wire_hooks=frozenset(),
+        wire_hooks=frozenset({"_send_rename_note_backed"}),
     ),
 )
 

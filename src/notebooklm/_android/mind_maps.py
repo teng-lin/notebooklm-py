@@ -1,8 +1,8 @@
 """Android composition for the unified mind-map namespace.
 
-B7 adds no Android wire declarations.  The supported workflows compose the
-decoded ``ArtifactsAPI`` and ``NotesAPI`` collaborators supplied by B4/B6;
-generation and interactive-tree reads remain evidence-gated.
+B7 adds no Android wire declarations. Interactive mutations compose the
+``ArtifactsAPI`` collaborator supplied by B4; note-backed operations remain
+evidence-gated pending a decoded note-kind boundary from B6.
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ import builtins
 from typing import TYPE_CHECKING, Any, NoReturn
 
 from .._mind_maps_api import MindMapsAPI
-from ..exceptions import DecodingError
 from ..types import MindMap, MindMapKind
 from .errors import unsupported_operation
 
@@ -26,29 +25,48 @@ def _reject(operation: str) -> NoReturn:
 
 
 class AndroidMindMapsAPI(MindMapsAPI):
-    """Android mind-map adapter composed from decoded artifact/note APIs."""
+    """Android mind-map adapter composed from base-typed artifact/note APIs."""
 
     def __init__(self, *, artifacts: ArtifactsAPI, notes: NotesAPI) -> None:
         """Retain the exact B4/B6 collaborators without selecting a frontend."""
         super().__init__(artifacts=artifacts, notes=notes)
 
     async def list_note_backed(self, notebook_id: str) -> builtins.list[MindMap]:
-        """List only note-kind rows that B6 has already decoded as mind maps.
+        """Reject until B6 exposes decoded, kind-qualified note-backed maps."""
+        _reject("mind_maps.list_note_backed")
 
-        This boundary deliberately does not inspect raw protobuf messages,
-        infer a kind from JSON content, or consult artifacts.  The notes
-        implementation must establish note-kind evidence and return public
-        ``MindMap`` values; anything else is decode drift.
+    async def _send_rename_note_backed(
+        self,
+        notebook_id: str,
+        mind_map_id: str,
+        new_title: str,
+    ) -> None:
+        """Reject until exact persisted note content can be preserved."""
+        _reject("mind_maps.rename_note_backed")
+
+    async def rename(
+        self,
+        notebook_id: str,
+        mind_map_id: str,
+        new_title: str,
+        *,
+        kind: MindMapKind | None = None,
+        return_object: bool = True,
+    ) -> MindMap | None:
+        """Compose the explicit interactive no-hydration branch only.
+
+        Auto-detection and hydration both require the evidence-gated aggregate
+        note-backed read. Reject those branches before an artifact mutation.
         """
-        items = await self._notes.list_mind_maps(notebook_id)
-        if any(
-            not isinstance(item, MindMap) or item.kind is not MindMapKind.NOTE_BACKED
-            for item in items
-        ):
-            raise DecodingError(
-                "Android notes did not return decoded note-backed mind maps",
-            )
-        return list(items)
+        if kind is not MindMapKind.INTERACTIVE or return_object:
+            _reject("mind_maps.rename")
+        return await super().rename(
+            notebook_id,
+            mind_map_id,
+            new_title,
+            kind=kind,
+            return_object=False,
+        )
 
     async def generate(
         self,

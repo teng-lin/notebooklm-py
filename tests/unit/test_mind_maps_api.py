@@ -6,7 +6,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._web.mind_maps import WebMindMapsAPI, extract_interactive_tree_leaf
+from notebooklm._web.mind_maps import (
+    NoteBackedMindMapService,
+    WebMindMapsAPI,
+    extract_interactive_tree_leaf,
+)
+from notebooklm._web.notes import NoteRowKind, NoteService
 from notebooklm.exceptions import (
     ArtifactError,
     ArtifactFeatureUnavailableError,
@@ -48,7 +53,6 @@ def _make_api(*, note_rows=None, interactive=None):
     notebooks = MagicMock()
     notebooks.get_source_ids = AsyncMock(return_value=["s1"])
     notes = MagicMock()
-    notes.update = AsyncMock()
     notes.delete_mind_map = AsyncMock()
     api = WebMindMapsAPI(
         rpc=rpc,
@@ -115,21 +119,75 @@ async def test_rename_dispatches_by_kind():
     # The explicit-interactive path pre-validates the id (issue #1270), so the
     # interactive artifact must exist for the rename to dispatch.
     # return_object=False keeps this focused on dispatch (no hydrate re-fetch).
-    api, _, _, artifacts, _ = _make_api(
-        note_rows=[["note_mm", '{"name":"NB","children":[]}']],
-        interactive=[_interactive_artifact("int_mm")],
-    )
+    api, _, mind_maps, artifacts, _ = _make_api(interactive=[_interactive_artifact("int_mm")])
     assert (
         await api.rename("nb", "note_mm", "X", kind=MindMapKind.NOTE_BACKED, return_object=False)
         is None
     )
-    api._notes.update.assert_awaited_once_with("nb", "note_mm", '{"name":"NB","children":[]}', "X")
+    mind_maps.rename_mind_map.assert_awaited_once_with("nb", "note_mm", "X")
     artifacts.rename.assert_not_awaited()
 
     await api.rename("nb", "int_mm", "Y", kind=MindMapKind.INTERACTIVE, return_object=False)
     # The interactive artifact rename is delegated with return_object=False so
     # the unified API hydrates once (not twice) when an object is requested.
     artifacts.rename.assert_awaited_once_with("nb", "int_mm", "Y", return_object=False)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kind", "expected_fetches"),
+    [
+        pytest.param(MindMapKind.NOTE_BACKED, 1, id="explicit-kind"),
+        pytest.param(None, 2, id="auto-detect"),
+    ],
+)
+async def test_web_note_backed_rename_preserves_raw_content_and_call_count(
+    kind: MindMapKind | None,
+    expected_fetches: int,
+) -> None:
+    raw_content = r"""{
+  "z-last" : "雪だるま",
+  "children" : [  ],
+  "escaped" : "\u2603",
+  "a-first" : "slash\/value"
+}"""
+    target_row = ["note_mm", raw_content]
+    note_service = MagicMock(spec=NoteService)
+    note_service.fetch_note_rows = AsyncMock(return_value=[target_row])
+    note_service.classify_row = MagicMock(return_value=NoteRowKind.MIND_MAP)
+    note_service.extract_content = MagicMock(return_value=raw_content)
+    note_service.update_note = AsyncMock()
+    artifacts = MagicMock()
+    artifacts.list = AsyncMock()
+    artifacts.rename = AsyncMock()
+
+    api = WebMindMapsAPI(
+        rpc=MagicMock(),
+        mind_maps=NoteBackedMindMapService(note_service),
+        artifacts=artifacts,
+        notebooks=MagicMock(),
+        notes=MagicMock(),
+    )
+
+    assert (
+        await api.rename(
+            "nb",
+            "note_mm",
+            "Renamed",
+            kind=kind,
+            return_object=False,
+        )
+        is None
+    )
+
+    assert note_service.fetch_note_rows.await_count == expected_fetches
+    assert note_service.fetch_note_rows.await_args_list == [(("nb",), {})] * expected_fetches
+    assert note_service.extract_content.call_count == expected_fetches
+    note_service.extract_content.assert_called_with(target_row)
+    note_service.update_note.assert_awaited_once_with("nb", "note_mm", raw_content, "Renamed")
+    assert note_service.update_note.await_args.args[2].encode() == raw_content.encode()
+    artifacts.list.assert_not_awaited()
+    artifacts.rename.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -180,12 +238,12 @@ async def test_rename_missing_raises_even_with_return_object_false():
 @pytest.mark.asyncio
 async def test_rename_explicit_kind_missing_raises_even_with_return_object_false():
     # The pre-dispatch guarantee holds on the explicit-kind paths too: NOTE_BACKED
-    # raises from the decoded note-backed preflight and INTERACTIVE raises from
-    # the _find_interactive pre-validation, both before mutation dispatch.
-    api, _, _, artifacts, _ = _make_api()
+    # raises from rename_mind_map and INTERACTIVE raises from the _find_interactive
+    # pre-validation, both before _hydrate_renamed is reached.
+    api, _, mind_maps, artifacts, _ = _make_api()
+    mind_maps.rename_mind_map = AsyncMock(side_effect=MindMapNotFoundError("ghost"))
     with pytest.raises(MindMapNotFoundError, match="ghost"):
         await api.rename("nb", "ghost", "X", kind=MindMapKind.NOTE_BACKED, return_object=False)
-    api._notes.update.assert_not_awaited()
 
     with pytest.raises(MindMapNotFoundError, match="not found"):
         await api.rename("nb", "ghost", "X", kind=MindMapKind.INTERACTIVE, return_object=False)
@@ -534,11 +592,11 @@ async def test_rename_auto_detect_note_backed_dispatches():
     # kind=None with the id in the note collection -> note-backed rename,
     # interactive rename never consulted.
     # Decoy first row exercises the loop-continue branch before the match.
-    api, _, _, artifacts, _ = _make_api(
+    api, _, mind_maps, artifacts, _ = _make_api(
         note_rows=[["other_mm", "{}"], ["note_mm", '{"name": "NB", "children": []}']]
     )
     await api.rename("nb", "note_mm", "X", return_object=False)
-    api._notes.update.assert_awaited_once_with("nb", "note_mm", '{"name":"NB","children":[]}', "X")
+    mind_maps.rename_mind_map.assert_awaited_once_with("nb", "note_mm", "X")
     artifacts.rename.assert_not_awaited()
 
 
@@ -549,7 +607,7 @@ async def test_rename_auto_detect_interactive_dispatches():
     api, _, mind_maps, artifacts, _ = _make_api(interactive=[_interactive_artifact("int_mm")])
     await api.rename("nb", "int_mm", "Y", return_object=False)
     artifacts.rename.assert_awaited_once_with("nb", "int_mm", "Y", return_object=False)
-    api._notes.update.assert_not_awaited()
+    mind_maps.rename_mind_map.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -562,18 +620,12 @@ async def test_rename_hydrate_raises_when_target_vanishes():
     # warning-emitting public get() (this would fail if it regressed).
     import warnings
 
-    api, _, mind_maps, _, _ = _make_api()
-    mind_maps.list_mind_maps = AsyncMock(
-        side_effect=[
-            [["note_mm", '{"name":"NB","children":[]}']],
-            [],
-        ]
-    )
+    api, _, mind_maps, _, _ = _make_api(note_rows=[])
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         with pytest.raises(MindMapNotFoundError, match="not found"):
             await api.rename("nb", "note_mm", "X", kind=MindMapKind.NOTE_BACKED)
-    api._notes.update.assert_awaited_once_with("nb", "note_mm", '{"name":"NB","children":[]}', "X")
+    mind_maps.rename_mind_map.assert_awaited_once_with("nb", "note_mm", "X")
 
 
 # --- get_tree auto-detect + note-backed paths -------------------------------

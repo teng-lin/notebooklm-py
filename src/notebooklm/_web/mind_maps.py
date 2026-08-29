@@ -217,6 +217,15 @@ class WebMindMapsAPI(MindMapsAPI):
             )
         return result
 
+    async def _send_rename_note_backed(
+        self,
+        notebook_id: str,
+        mind_map_id: str,
+        new_title: str,
+    ) -> None:
+        """Rename a note-backed mind map through the web note-row service."""
+        await self._mind_maps.rename_mind_map(notebook_id, mind_map_id, new_title)
+
     async def generate(
         self,
         notebook_id: str,

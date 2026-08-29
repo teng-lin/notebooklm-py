@@ -52,7 +52,7 @@ src/notebooklm/
 ├── _web/notes.py        # WebNotesAPI + NoteService implementation
 ├── _mind_maps_api.py    # Backend-neutral abstract MindMapsAPI
 ├── _web/mind_maps.py    # WebMindMapsAPI + NoteBackedMindMapService
-├── _android/mind_maps.py # Private B7 composition; generate/get_tree evidence-gated
+├── _android/mind_maps.py # Private B7 artifact composition; note/generation/tree gated
 ├── _labels.py           # Backend-neutral abstract LabelsAPI
 ├── _web/labels.py       # WebLabelsAPI implementation
 ├── _collections.py      # Backend-neutral abstract CollectionsAPI

@@ -50,13 +50,20 @@ profiles only after the wave-one namespaces pass repeated conformance runs.
 
 ### B7 mind-map evidence gate
 
-The private Android mind-map adapter composes the decoded artifact and note
+The private Android mind-map adapter composes the base-typed artifact and note
 namespace interfaces; it adds no mobile protobuf declarations and is not wired
 into a public client factory. Unified list, lookup, rename, and delete behavior
-stays in the backend-neutral `MindMapsAPI`. Android note-backed membership is
-accepted only when the notes frontend has already decoded an explicit note kind
-into a public `MindMap`; B7 does not infer kind from JSON or flattened-schema
-symbols. `generate` remains unsupported before I/O until a valid-resource
+stays in the backend-neutral `MindMapsAPI`, except for a narrow protected rename
+send hook needed to preserve the exact stored web note content. The public
+`NotesAPI.list_mind_maps` boundary remains raw `list[Any]`; B6 does not claim
+that its Android result contains decoded `MindMap` values, and B7 neither casts
+those rows nor infers kind from JSON or flattened-schema symbols. Consequently,
+Android aggregate reads, auto-detection, note-backed rename, and hydrated
+interactive rename reject before dependency I/O. Explicit interactive rename
+with `return_object=False` and explicit interactive delete still compose through
+the artifact namespace;
+note-backed delete delegates to B6's own pre-I/O evidence gate. `generate`
+remains unsupported before I/O until a valid-resource
 `ActOnSources` generation exchange is captured, and `get_tree` remains
 unsupported before I/O until an exact fixture proves the interactive-tree
 field. Compiled-only method presence and invalid-ID route responses do not meet

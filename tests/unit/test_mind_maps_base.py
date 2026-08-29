@@ -14,7 +14,7 @@ from notebooklm.types import Artifact, ArtifactType, MindMap, MindMapKind
 
 
 class _FakeMindMapsAPI(MindMapsAPI):
-    """Minimal backend proving shared workflows need only three frontend reads."""
+    """Minimal backend proving shared workflows need only the rename hook."""
 
     def __init__(
         self,
@@ -25,6 +25,7 @@ class _FakeMindMapsAPI(MindMapsAPI):
     ) -> None:
         super().__init__(artifacts=artifacts, notes=notes)
         self._note_backed = note_backed
+        self.renames: list[tuple[str, str, str]] = []
 
     async def list_note_backed(self, notebook_id: str) -> list[MindMap]:
         return list(self._note_backed)
@@ -50,6 +51,14 @@ class _FakeMindMapsAPI(MindMapsAPI):
     ) -> dict[str, Any] | None:
         raise NotImplementedError
 
+    async def _send_rename_note_backed(
+        self,
+        notebook_id: str,
+        mind_map_id: str,
+        new_title: str,
+    ) -> None:
+        self.renames.append((notebook_id, mind_map_id, new_title))
+
 
 def _api(*, note_backed: list[MindMap] | None = None, artifacts: list[Artifact] | None = None):
     artifact_api = MagicMock()
@@ -57,7 +66,6 @@ def _api(*, note_backed: list[MindMap] | None = None, artifacts: list[Artifact] 
     artifact_api.rename = AsyncMock()
     artifact_api.delete = AsyncMock()
     notes = MagicMock()
-    notes.update = AsyncMock()
     notes.delete_mind_map = AsyncMock()
     return (
         _FakeMindMapsAPI(
@@ -94,18 +102,18 @@ async def test_list_composes_note_backed_and_interactive_maps() -> None:
 
 
 @pytest.mark.asyncio
-async def test_rename_dispatches_note_backed_through_notes_api() -> None:
+async def test_rename_dispatches_note_backed_through_the_sole_hook() -> None:
     note_map = MindMap(
         id="note-map",
         notebook_id="nb",
         title="Note map",
         kind=MindMapKind.NOTE_BACKED,
     )
-    api, artifacts, notes = _api(note_backed=[note_map])
+    api, artifacts, _ = _api(note_backed=[note_map])
 
     assert await api.rename("nb", "note-map", "Renamed", return_object=False) is None
 
-    notes.update.assert_awaited_once_with("nb", "note-map", "", "Renamed")
+    assert api.renames == [("nb", "note-map", "Renamed")]
     artifacts.rename.assert_not_awaited()
 
 
@@ -141,16 +149,21 @@ def test_web_backend_inherits_every_base_concrete_workflow_and_its_docs() -> Non
 
 def test_exact_abstract_set_and_frontends_are_concrete() -> None:
     assert MindMapsAPI.__abstractmethods__ == frozenset(
-        {"generate", "get_tree", "list_note_backed"}
+        {"_send_rename_note_backed", "generate", "get_tree", "list_note_backed"}
     )
     assert WebMindMapsAPI.__abstractmethods__ == frozenset()
     assert AndroidMindMapsAPI.__abstractmethods__ == frozenset()
 
 
-def test_android_backend_inherits_every_shared_composition_workflow() -> None:
-    for method_name in {"list", "get", "get_or_none", "rename", "delete"}:
+def test_android_backend_inherits_shared_aggregate_and_delete_workflows() -> None:
+    for method_name in {"list", "get", "get_or_none", "delete"}:
         assert method_name not in AndroidMindMapsAPI.__dict__
         assert getattr(AndroidMindMapsAPI, method_name) is getattr(MindMapsAPI, method_name)
+
+
+def test_android_rename_gate_delegates_the_supported_branch_to_the_base() -> None:
+    assert "rename" in AndroidMindMapsAPI.__dict__
+    assert AndroidMindMapsAPI.rename is not MindMapsAPI.rename
 
 
 def test_default_client_assembly_keeps_the_web_frontend() -> None:
