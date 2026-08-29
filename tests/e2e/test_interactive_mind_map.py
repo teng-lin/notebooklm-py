@@ -5,7 +5,7 @@ Exercises the real NotebookLM API end-to-end through the public
 variant 4, created via CREATE_ARTIFACT): generate -> poll -> read tree
 (GET_INTERACTIVE_HTML) -> rename (RENAME_ARTIFACT) -> delete (DELETE_ARTIFACT).
 Marked ``e2e``, so it only runs with real auth and ``-m e2e``. The wire
-lifecycle was validated live while authoring #1256 Phase 2.
+lifecycle was validated live while authoring #1256.
 
 Run: ``uv run pytest tests/e2e/test_interactive_mind_map.py -m e2e``
 """
@@ -62,6 +62,7 @@ async def swept_interactive_mind_maps(client, generation_notebook_id):
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
+@pytest.mark.timeout(360)
 async def test_interactive_mind_map_full_lifecycle(
     client, generation_notebook_id, swept_interactive_mind_maps
 ):
@@ -83,7 +84,7 @@ async def test_interactive_mind_map_full_lifecycle(
         assert mind_map.kind == MindMapKind.INTERACTIVE
         assert mind_map.id, "generate() must return a non-empty interactive artifact id"
 
-        # --- recognition (Phase 1) ---
+        # --- recognition ---
         listed = {m.id: m for m in await client.mind_maps.list(nb_id)}
         assert mind_map.id in listed
         assert listed[mind_map.id].kind == MindMapKind.INTERACTIVE
