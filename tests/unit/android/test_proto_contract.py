@@ -166,12 +166,14 @@ def test_b2_repository_local_wire_fields_are_exhaustive() -> None:
     assert notebooks_pb2.DESCRIPTOR.package == LOCAL_WIRE_PACKAGE
     assert not notebooks_pb2.DESCRIPTOR.services_by_name
     assert [dependency.name for dependency in notebooks_pb2.DESCRIPTOR.dependencies] == [
-        "google/internal/labs/tailwind/orchestration/v1/notebooks.proto"
+        "google/internal/labs/tailwind/orchestration/v1/notebooks.proto",
+        "labs/language/tailwind/common/protos/metadata.proto",
     ]
 
     singular = False
     repeated = True
     string = FieldDescriptor.TYPE_STRING
+    int32 = FieldDescriptor.TYPE_INT32
     message = FieldDescriptor.TYPE_MESSAGE
     local = LOCAL_WIRE_PACKAGE
     expected = {
@@ -186,14 +188,59 @@ def test_b2_repository_local_wire_fields_are_exhaustive() -> None:
                 message,
                 f"{local}.WireProjectChangeProperty",
             ),
+            "advanced_settings": (
+                8,
+                singular,
+                message,
+                f"{local}.WireProjectAdvancedSettings",
+            ),
+        },
+        notebooks_pb2.WireProjectGoalSettings: {
+            "goal": (1, singular, int32, None),
+            "custom_prompt": (2, singular, string, None),
+        },
+        notebooks_pb2.WireProjectResponseStyleSettings: {
+            "response_length": (1, singular, int32, None),
+        },
+        notebooks_pb2.WireProjectAdvancedSettings: {
+            "goal_settings": (
+                1,
+                singular,
+                message,
+                f"{local}.WireProjectGoalSettings",
+            ),
+            "response_style_settings": (
+                2,
+                singular,
+                message,
+                f"{local}.WireProjectResponseStyleSettings",
+            ),
         },
         notebooks_pb2.WireMutateProjectRequest: {
             "project_id": (1, singular, string, None),
             "mutations": (2, repeated, message, f"{local}.WireProjectMutation"),
+            "request_context": (
+                3,
+                singular,
+                message,
+                "labs.language.tailwind.common.protos.RequestContext",
+            ),
         },
-        notebooks_pb2.WireCopyProjectRequest: {
-            "source_project_id": (2, singular, string, None),
-            "title": (3, singular, string, None),
+        notebooks_pb2.WireProjectWithAdvancedSettings: {
+            "advanced_settings": (
+                8,
+                singular,
+                message,
+                f"{local}.WireProjectAdvancedSettings",
+            ),
+        },
+        notebooks_pb2.WireGetProjectResponse: {
+            "project": (
+                1,
+                singular,
+                message,
+                f"{local}.WireProjectWithAdvancedSettings",
+            ),
         },
         notebooks_pb2.WireSuggestedTopic: {
             "question": (1, singular, string, None),
@@ -230,7 +277,10 @@ def test_exact_notebook_operation_fields_are_pinned_separately_from_local_overri
     assert exact_notebooks_pb2.DESCRIPTOR.services_by_name == {}
     assert set(exact_notebooks_pb2.DESCRIPTOR.message_types_by_name) == {
         "CreateProjectRequest",
+        "CopyProjectRequest",
         "DeleteProjectsRequest",
+        "GeneratePromptSuggestionsRequest",
+        "GeneratePromptSuggestionsResponse",
         "GenerateNotebookGuideRequest",
         "GenerateNotebookGuideResponse",
         "MutateProjectRequest",
@@ -238,6 +288,7 @@ def test_exact_notebook_operation_fields_are_pinned_separately_from_local_overri
         "NextStepSuggestions",
         "NotebookGuide",
         "NotebookSummary",
+        "PromptSuggestion",
         "ProjectMutation",
     }
     assert _field_shapes(exact_notebooks_pb2.CreateProjectRequest) == {
@@ -245,6 +296,35 @@ def test_exact_notebook_operation_fields_are_pinned_separately_from_local_overri
     }
     assert _field_shapes(exact_notebooks_pb2.DeleteProjectsRequest) == {
         "project_ids": (1, repeated, string, None)
+    }
+    assert _field_shapes(exact_notebooks_pb2.CopyProjectRequest) == {
+        "request_context": (
+            1,
+            singular,
+            message,
+            "labs.language.tailwind.common.protos.RequestContext",
+        ),
+        "source_project_id": (2, singular, string, None),
+        "title": (3, singular, string, None),
+    }
+    assert _field_shapes(exact_notebooks_pb2.PromptSuggestion) == {
+        "title": (1, singular, string, None),
+        "prompt": (2, singular, string, None),
+    }
+    assert _field_shapes(exact_notebooks_pb2.GeneratePromptSuggestionsRequest) == {
+        "request_context": (
+            1,
+            singular,
+            message,
+            "labs.language.tailwind.common.protos.RequestContext",
+        ),
+        "project_id": (2, singular, string, None),
+        "source_ids": (3, repeated, message, f"{package}.SourceId"),
+        "config_id": (4, singular, FieldDescriptor.TYPE_ENUM, f"{package}.SuggestionConfigId"),
+        "query": (6, singular, string, None),
+    }
+    assert _field_shapes(exact_notebooks_pb2.GeneratePromptSuggestionsResponse) == {
+        "suggestions": (1, repeated, message, f"{package}.PromptSuggestion")
     }
     assert _field_shapes(exact_notebooks_pb2.MutateProjectRequest) == {
         "project_id": (1, singular, string, None),
@@ -291,17 +371,50 @@ def test_b2_wire_messages_match_captured_serialization() -> None:
             )
         ],
     )
-    copy = notebooks_pb2.WireCopyProjectRequest(source_project_id="p", title="Title")
+    copy = exact_notebooks_pb2.CopyProjectRequest(source_project_id="p", title="Title")
     guide = exact_notebooks_pb2.GenerateNotebookGuideRequest(project_id="p")
+    chat_settings = notebooks_pb2.WireProjectAdvancedSettings(
+        goal_settings=notebooks_pb2.WireProjectGoalSettings(
+            goal=2,
+            custom_prompt="Be exact.",
+        ),
+        response_style_settings=notebooks_pb2.WireProjectResponseStyleSettings(response_length=4),
+    )
+    chat_mutation = notebooks_pb2.WireMutateProjectRequest(
+        project_id="notebook-1",
+        mutations=[notebooks_pb2.WireProjectMutation(advanced_settings=chat_settings)],
+    )
+    chat_response = notebooks_pb2.WireGetProjectResponse(
+        project=notebooks_pb2.WireProjectWithAdvancedSettings(advanced_settings=chat_settings)
+    )
 
     assert create.SerializeToString(deterministic=True).hex() == "0a055469746c65"
     assert delete.SerializeToString(deterministic=True).hex() == "0a0469642d31"
     assert mutate.SerializeToString(deterministic=True).hex() == "0a017012052203120154"
     assert copy.SerializeToString(deterministic=True).hex() == "1201701a055469746c65"
     assert guide.SerializeToString(deterministic=True).hex() == "0a0170"
+    assert chat_mutation.SerializeToString(deterministic=True).hex() == (
+        "0a0a6e6f7465626f6f6b2d31121542130a0d0802120942652065786163742e12020804"
+    )
+    assert chat_response.SerializeToString(deterministic=True).hex() == (
+        "0a1542130a0d0802120942652065786163742e12020804"
+    )
 
 
 def test_all_reachable_enum_names_and_numbers_are_exact() -> None:
+    assert _enum_values(exact_notebooks_pb2.SuggestionConfigId) == {
+        "SUGGESTION_CONFIG_UNSPECIFIED": 0,
+        "SUGGESTION_CONFIG_AUDIO_OVERVIEW_DEEP_DIVE": 1,
+        "SUGGESTION_CONFIG_AUDIO_OVERVIEW_BRIEF": 2,
+        "SUGGESTION_CONFIG_VIDEO_OVERVIEW_EXPLAINER": 3,
+        "SUGGESTION_CONFIG_VIDEO_OVERVIEW_BRIEF": 4,
+        "SUGGESTION_CONFIG_AUDIO_OVERVIEW_CRITIQUE": 5,
+        "SUGGESTION_CONFIG_AUDIO_OVERVIEW_DEBATE": 6,
+        "SUGGESTION_CONFIG_VIDEO_OVERVIEW_BREAKDOWN": 7,
+        "SUGGESTION_CONFIG_QUIZ": 8,
+        "SUGGESTION_CONFIG_FLASHCARDS": 9,
+        "SUGGESTION_CONFIG_VIDEO_OVERVIEW_SHORT": 10,
+    }
     assert _enum_values(read_pb2.ProjectRole) == {
         "PROJECT_ROLE_UNKNOWN": 0,
         "PROJECT_ROLE_OWNER": 1,

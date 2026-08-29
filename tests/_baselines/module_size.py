@@ -13,6 +13,11 @@ MODULE_SIZE_BUDGET = 1500
 # Authored exemptions preserve the review intent that JSON cannot carry. Values
 # explain why the path may remain over budget; measured ceilings stay derived.
 OVER_BUDGET_EXEMPTIONS: dict[str, str] = {
+    "_android/proto/google/internal/labs/tailwind/orchestration/v1/"
+    "orchestration_service_pb2_grpc.py": (
+        "deterministic protoc output for the complete generated Android service; splitting it "
+        "would require hand-editing generated code"
+    ),
     "exceptions.py": (
         "canonical public exception home; moving classes would fork their documented provenance"
     ),

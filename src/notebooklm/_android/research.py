@@ -36,6 +36,7 @@ from .codecs.research import (
 from .errors import unsupported_operation
 from .proto.google.internal.labs.tailwind.orchestration.v1 import research_pb2, sources_pb2
 from .session import AndroidSession
+from .upload import android_request_context
 
 _PROTO = cast(Any, research_pb2)
 _SOURCE_PROTO = cast(Any, sources_pb2)
@@ -222,7 +223,10 @@ class AndroidResearchAPI(ResearchAPI):
             try:
                 await self._transport.unary(
                     CANCEL_JOB_METHOD,
-                    _PROTO.CancelDiscoverSourcesJobRequest(source_discovery_job_id=run_id),
+                    _PROTO.CancelDiscoverSourcesJobRequest(
+                        request_context=android_request_context(),
+                        source_discovery_job_id=run_id,
+                    ),
                     replay_safe=False,
                     response_type=Empty,
                     expected_epoch=lease.epoch,

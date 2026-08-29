@@ -2,6 +2,9 @@ syntax = "proto3";
 
 package google.internal.labs.tailwind.orchestration.v1;
 
+import "google/internal/labs/tailwind/orchestration/v1/read.proto";
+import "labs/language/tailwind/common/protos/metadata.proto";
+
 // Exact-package notebook mutation/guide closure copied from the pinned
 // orchestration supported.proto. The runtime adapter may use a repository-local
 // wire overlay when a live-only field is not present in this archived subset;
@@ -26,6 +29,47 @@ message MutateProjectRequest {
 
 message DeleteProjectsRequest {
   repeated string project_ids = 1;
+}
+
+// Web-derived signature candidate for te3DCe -> CopyProject. The current web
+// bundle uses the same response constructor as CreateProject and
+// MutateProject, while a successful Android-bearer replay pins fields #2/#3.
+message CopyProjectRequest {
+  .labs.language.tailwind.common.protos.RequestContext request_context = 1;
+  string source_project_id = 2;
+  string title = 3;
+}
+
+enum SuggestionConfigId {
+  SUGGESTION_CONFIG_UNSPECIFIED = 0;
+  SUGGESTION_CONFIG_AUDIO_OVERVIEW_DEEP_DIVE = 1;
+  SUGGESTION_CONFIG_AUDIO_OVERVIEW_BRIEF = 2;
+  SUGGESTION_CONFIG_VIDEO_OVERVIEW_EXPLAINER = 3;
+  SUGGESTION_CONFIG_VIDEO_OVERVIEW_BRIEF = 4;
+  SUGGESTION_CONFIG_AUDIO_OVERVIEW_CRITIQUE = 5;
+  SUGGESTION_CONFIG_AUDIO_OVERVIEW_DEBATE = 6;
+  SUGGESTION_CONFIG_VIDEO_OVERVIEW_BREAKDOWN = 7;
+  SUGGESTION_CONFIG_QUIZ = 8;
+  SUGGESTION_CONFIG_FLASHCARDS = 9;
+  SUGGESTION_CONFIG_VIDEO_OVERVIEW_SHORT = 10;
+}
+
+message PromptSuggestion {
+  string title = 1;
+  string prompt = 2;
+}
+
+message GeneratePromptSuggestionsRequest {
+  .labs.language.tailwind.common.protos.RequestContext request_context = 1;
+  string project_id = 2;
+  repeated SourceId source_ids = 3;
+  SuggestionConfigId config_id = 4;
+  // Web bundle field #6; accepted by the Android bearer route in a live probe.
+  string query = 6;
+}
+
+message GeneratePromptSuggestionsResponse {
+  repeated PromptSuggestion suggestions = 1;
 }
 
 message NextStep {

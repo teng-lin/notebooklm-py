@@ -5,6 +5,7 @@ package google.internal.labs.tailwind.orchestration.v1;
 import "google/internal/labs/tailwind/orchestration/v1/read.proto";
 import "google/internal/labs/tailwind/orchestration/v1/sources.proto";
 import "google/protobuf/timestamp.proto";
+import "labs/language/tailwind/common/protos/metadata.proto";
 
 // Exact-package B10 Research closure. It is intentionally service-free:
 // protobuf services cannot be reopened across files, and the B1 descriptor is
@@ -127,6 +128,7 @@ message ListDiscoverSourcesJobResponse {
 }
 
 message CancelDiscoverSourcesJobRequest {
+  .labs.language.tailwind.common.protos.RequestContext request_context = 1;
   string source_discovery_job_id = 3;
 }
 

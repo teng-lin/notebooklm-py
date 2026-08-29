@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import pytest
 from google.protobuf.empty_pb2 import Empty
@@ -18,6 +19,7 @@ from notebooklm._android.notebooks import (
     CREATE_PROJECT_METHOD,
     DELETE_PROJECTS_METHOD,
     GENERATE_NOTEBOOK_GUIDE_METHOD,
+    GENERATE_PROMPT_SUGGESTIONS_METHOD,
     LIST_RECENT_PROJECTS_METHOD,
     MUTATE_PROJECT_METHOD,
     AndroidNotebooksAPI,
@@ -40,7 +42,7 @@ from notebooklm.exceptions import (
     UnsupportedOperationError,
     ValidationError,
 )
-from notebooklm.types import SuggestedTopic
+from notebooklm.types import PromptSuggestion, SuggestedTopic
 
 
 class SequenceTransport:
@@ -352,10 +354,11 @@ async def test_copy_validates_then_decodes_one_bare_project_response() -> None:
 
     assert copied.id == "copy-1"
     _, request, kwargs = transport.calls[0]
-    assert request == notebooks_pb2.WireCopyProjectRequest(
-        source_project_id="source-1",
-        title="Copy",
-    )
+    assert isinstance(request, exact_notebooks_pb2.CopyProjectRequest)
+    assert request.source_project_id == "source-1"
+    assert request.title == "Copy"
+    assert request.HasField("request_context")
+    assert request.request_context.client_type != 0
     assert kwargs == {"replay_safe": False, "response_type": read_pb2.Project}
 
     for notebook_id, title in [("", "Copy"), ("source-1", ""), ("source-1", "  ")]:
@@ -458,14 +461,81 @@ def test_guide_decode_failure_is_bounded_and_suppresses_raw_cause() -> None:
 
 
 @pytest.mark.asyncio
+async def test_suggest_prompts_uses_all_sources_query_field_six_and_maps_rows() -> None:
+    transport = SequenceTransport(
+        {
+            GENERATE_PROMPT_SUGGESTIONS_METHOD: [
+                exact_notebooks_pb2.GeneratePromptSuggestionsResponse(
+                    suggestions=[
+                        exact_notebooks_pb2.PromptSuggestion(
+                            title="\n- First topic ",
+                            prompt=" * Ask the first question ",
+                        ),
+                        exact_notebooks_pb2.PromptSuggestion(
+                            title="2026. Outlook",
+                            prompt="Compare the evidence",
+                        ),
+                    ]
+                )
+            ]
+        }
+    )
+    api = _api(transport)
+    source_lister = AsyncMock(return_value=["source-1", "source-2"])
+    api.get_source_ids = cast(Any, source_lister)
+
+    suggestions = await api.suggest_prompts("notebook-1", mode=4, query="focus")
+
+    assert suggestions == [
+        PromptSuggestion(title="First topic", prompt="Ask the first question"),
+        PromptSuggestion(title="2026. Outlook", prompt="Compare the evidence"),
+    ]
+    source_lister.assert_awaited_once_with("notebook-1")
+    _, request, kwargs = transport.calls[0]
+    assert isinstance(request, exact_notebooks_pb2.GeneratePromptSuggestionsRequest)
+    assert request.project_id == "notebook-1"
+    assert [source.id for source in request.source_ids] == ["source-1", "source-2"]
+    assert request.config_id == 4
+    assert request.query == "focus"
+    assert request.HasField("request_context")
+    assert kwargs == {
+        "replay_safe": True,
+        "response_type": exact_notebooks_pb2.GeneratePromptSuggestionsResponse,
+    }
+
+
+@pytest.mark.asyncio
+async def test_suggest_prompts_validates_before_io_and_normalizes_blank_query() -> None:
+    transport = SequenceTransport(
+        {
+            GENERATE_PROMPT_SUGGESTIONS_METHOD: [
+                exact_notebooks_pb2.GeneratePromptSuggestionsResponse()
+            ]
+        }
+    )
+    api = _api(transport)
+
+    for mode in (0, 11):
+        with pytest.raises(ValidationError, match="inclusive range 1..10"):
+            await api.suggest_prompts("notebook-1", source_ids=[], mode=mode)
+    assert transport.calls == []
+
+    assert (
+        await api.suggest_prompts(
+            "notebook-1",
+            source_ids=["source-1"],
+            query=" \t ",
+        )
+        == []
+    )
+    assert transport.calls[0][1].query == ""
+
+
+@pytest.mark.asyncio
 async def test_remaining_notebook_operations_still_reject_before_io() -> None:
     transport = SequenceTransport()
     api = _api(transport)
 
-    for invoke in (
-        lambda: api.suggest_prompts("notebook-1"),
-        lambda: api.remove_from_recent("notebook-1"),
-    ):
-        with pytest.raises(UnsupportedOperationError, match="web backend"):
-            await invoke()
+    with pytest.raises(UnsupportedOperationError, match="web backend"):
+        await api.remove_from_recent("notebook-1")
     assert transport.calls == []

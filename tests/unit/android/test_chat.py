@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from typing import Any, cast
 
 import pytest
@@ -12,8 +12,10 @@ from google.protobuf.empty_pb2 import Empty
 from notebooklm._android.chat import (
     DELETE_CHAT_TURNS_METHOD,
     GENERATE_FREE_FORM_STREAMED_METHOD,
+    GET_PROJECT_METHOD,
     LIST_CHAT_SESSIONS_METHOD,
     LIST_CHAT_TURNS_METHOD,
+    MUTATE_PROJECT_METHOD,
     AndroidChatAPI,
 )
 from notebooklm._android.notes import CREATE_NOTE_METHOD, SAVED_RESPONSE_NOTE_TYPE
@@ -24,12 +26,15 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
     sources_pb2,
 )
 from notebooklm._android.proto.labs.language.tailwind.common.protos import common_pb2
+from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import (
+    notebooks_pb2 as wire_notebooks_pb2,
+)
 from notebooklm._android.session import AndroidSession
 from notebooklm._chat import ChatAPI
 from notebooklm._types.documents import StructuredDocument
 from notebooklm._types.enums import ChatGoal, ChatResponseLength
-from notebooklm.exceptions import ChatResponseParseError, UnsupportedOperationError
-from notebooklm.types import AskResult, ChatMode, ChatReference, ConversationTurn
+from notebooklm.exceptions import ChatResponseParseError, UnknownRPCMethodError, ValidationError
+from notebooklm.types import AskResult, ChatMode, ChatReference, ChatSettings, ConversationTurn
 
 
 class FakeSession:
@@ -409,25 +414,163 @@ async def test_delete_uses_base_lock_cache_workflow_and_exact_non_replay_request
     ]
 
 
-UnsupportedCall = Callable[[AndroidChatAPI], Awaitable[object]]
+@pytest.mark.asyncio
+async def test_configure_sends_whole_advanced_settings_block() -> None:
+    fake = FakeSession()
+    fake.unary_responses[MUTATE_PROJECT_METHOD] = [read_pb2.Project(id="notebook-1")]
+    api, _, _ = _api(fake)
+
+    await api.configure(
+        "notebook-1",
+        goal=ChatGoal.CUSTOM,
+        response_length=ChatResponseLength.LONGER,
+        custom_prompt="Be exact.",
+    )
+
+    assert len(fake.unary_calls) == 1
+    method, request, kwargs = fake.unary_calls[0]
+    assert method == MUTATE_PROJECT_METHOD
+    assert request.project_id == "notebook-1"
+    assert request.HasField("request_context")
+    assert len(request.mutations) == 1
+    settings = request.mutations[0].advanced_settings
+    assert (settings.goal_settings.goal, settings.goal_settings.custom_prompt) == (
+        ChatGoal.CUSTOM.value,
+        "Be exact.",
+    )
+    assert settings.response_style_settings.response_length == ChatResponseLength.LONGER.value
+    assert kwargs == {"replay_safe": False, "response_type": read_pb2.Project}
+    assert fake.stream_calls == []
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "invoke",
-    [
-        pytest.param(lambda api: api.configure("notebook-1"), id="configure"),
-        pytest.param(lambda api: api.get_settings("notebook-1"), id="get-settings"),
-        pytest.param(lambda api: api.set_mode("notebook-1", ChatMode.DEFAULT), id="set-mode"),
-    ],
-)
-async def test_b5_unsupported_operations_fail_before_transport_io(invoke: UnsupportedCall) -> None:
+async def test_configure_defaults_and_validates_custom_prompt() -> None:
     fake = FakeSession()
+    fake.unary_responses[MUTATE_PROJECT_METHOD] = [read_pb2.Project(id="notebook-1")]
     api, _, _ = _api(fake)
-    with pytest.raises(UnsupportedOperationError, match="web backend"):
-        await invoke(api)
-    assert fake.unary_calls == []
-    assert fake.stream_calls == []
+
+    await api.configure("notebook-1")
+    settings = fake.unary_calls[0][1].mutations[0].advanced_settings
+    assert settings.goal_settings.goal == ChatGoal.DEFAULT.value
+    assert settings.response_style_settings.response_length == ChatResponseLength.DEFAULT.value
+
+    with pytest.raises(ValidationError, match="custom_prompt is required"):
+        await api.configure("notebook-1", goal=ChatGoal.CUSTOM)
+    assert len(fake.unary_calls) == 1
+
+    fake.unary_responses[MUTATE_PROJECT_METHOD] = [read_pb2.Project(id="notebook-1")]
+    await api.configure(
+        "notebook-1",
+        goal=ChatGoal.LEARNING_GUIDE,
+        custom_prompt="inactive draft",
+    )
+    assert fake.unary_calls[-1][1].mutations[0].advanced_settings.goal_settings.custom_prompt == ""
+
+
+@pytest.mark.asyncio
+async def test_get_settings_decodes_advanced_project_block() -> None:
+    fake = FakeSession()
+    fake.unary_responses[GET_PROJECT_METHOD] = [
+        wire_notebooks_pb2.WireGetProjectResponse(
+            project=wire_notebooks_pb2.WireProjectWithAdvancedSettings(
+                advanced_settings=wire_notebooks_pb2.WireProjectAdvancedSettings(
+                    goal_settings=wire_notebooks_pb2.WireProjectGoalSettings(
+                        goal=ChatGoal.CUSTOM.value,
+                        custom_prompt="Use terse proofs.",
+                    ),
+                    response_style_settings=wire_notebooks_pb2.WireProjectResponseStyleSettings(
+                        response_length=ChatResponseLength.SHORTER.value,
+                    ),
+                )
+            )
+        )
+    ]
+    api, _, _ = _api(fake)
+
+    assert await api.get_settings("notebook-1") == ChatSettings(
+        goal=ChatGoal.CUSTOM,
+        response_length=ChatResponseLength.SHORTER,
+        custom_prompt="Use terse proofs.",
+    )
+    assert fake.unary_calls == [
+        (
+            GET_PROJECT_METHOD,
+            read_pb2.GetProjectRequest(
+                project_id="notebook-1",
+                include_audio_overview_ids=True,
+            ),
+            {"replay_safe": True, "response_type": wire_notebooks_pb2.WireGetProjectResponse},
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_settings_defaults_when_block_is_absent() -> None:
+    fake = FakeSession()
+    fake.unary_responses[GET_PROJECT_METHOD] = [
+        wire_notebooks_pb2.WireGetProjectResponse(
+            project=wire_notebooks_pb2.WireProjectWithAdvancedSettings()
+        )
+    ]
+    api, _, _ = _api(fake)
+    assert await api.get_settings("notebook-1") == ChatSettings(
+        goal=ChatGoal.DEFAULT,
+        response_length=ChatResponseLength.DEFAULT,
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_settings_rejects_partial_or_unknown_settings() -> None:
+    fake = FakeSession()
+    fake.unary_responses[GET_PROJECT_METHOD] = [
+        wire_notebooks_pb2.WireGetProjectResponse(
+            project=wire_notebooks_pb2.WireProjectWithAdvancedSettings(
+                advanced_settings=wire_notebooks_pb2.WireProjectAdvancedSettings(
+                    goal_settings=wire_notebooks_pb2.WireProjectGoalSettings(goal=99),
+                    response_style_settings=wire_notebooks_pb2.WireProjectResponseStyleSettings(
+                        response_length=ChatResponseLength.DEFAULT.value
+                    ),
+                )
+            )
+        ),
+        wire_notebooks_pb2.WireGetProjectResponse(
+            project=wire_notebooks_pb2.WireProjectWithAdvancedSettings(
+                advanced_settings=wire_notebooks_pb2.WireProjectAdvancedSettings(
+                    goal_settings=wire_notebooks_pb2.WireProjectGoalSettings(
+                        goal=ChatGoal.DEFAULT.value
+                    )
+                )
+            )
+        ),
+        wire_notebooks_pb2.WireGetProjectResponse(
+            project=wire_notebooks_pb2.WireProjectWithAdvancedSettings(
+                advanced_settings=wire_notebooks_pb2.WireProjectAdvancedSettings(
+                    goal_settings=wire_notebooks_pb2.WireProjectGoalSettings(
+                        goal=ChatGoal.CUSTOM.value
+                    ),
+                    response_style_settings=wire_notebooks_pb2.WireProjectResponseStyleSettings(
+                        response_length=ChatResponseLength.DEFAULT.value
+                    ),
+                )
+            )
+        ),
+    ]
+    api, _, _ = _api(fake)
+    with pytest.raises(UnknownRPCMethodError, match="unknown Android chat-settings enum"):
+        await api.get_settings("notebook-1")
+    with pytest.raises(UnknownRPCMethodError, match="partial chat-settings block"):
+        await api.get_settings("notebook-1")
+    with pytest.raises(UnknownRPCMethodError, match="CUSTOM chat settings without a prompt"):
+        await api.get_settings("notebook-1")
+
+
+@pytest.mark.asyncio
+async def test_get_settings_rejects_missing_project_envelope() -> None:
+    fake = FakeSession()
+    fake.unary_responses[GET_PROJECT_METHOD] = [wire_notebooks_pb2.WireGetProjectResponse()]
+    api, _, _ = _api(fake)
+    with pytest.raises(UnknownRPCMethodError, match="omitted its project"):
+        await api.get_settings("notebook-1")
 
 
 @pytest.mark.asyncio

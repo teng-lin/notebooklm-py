@@ -21,6 +21,7 @@ from notebooklm._android.session import AndroidSession
 from notebooklm._android.sources import (
     ADD_SOURCES_METHOD,
     ADD_TENTATIVE_SOURCES_METHOD,
+    CHECK_SOURCE_FRESHNESS_METHOD,
     DELETE_SOURCES_METHOD,
     GENERATE_DOCUMENT_GUIDES_METHOD,
     GET_PROJECT_METHOD,
@@ -32,6 +33,7 @@ from notebooklm._android.upload import AndroidUploadPipeline
 from notebooklm.exceptions import (
     AuthError,
     NetworkError,
+    NonIdempotentRetryError,
     RateLimitError,
     RPCError,
     RPCTimeoutError,
@@ -39,7 +41,7 @@ from notebooklm.exceptions import (
     SourceAddError,
     SourceNotFoundError,
     SourceTimeoutError,
-    UnsupportedOperationError,
+    ValidationError,
 )
 from notebooklm.types import Source, SourceStatus
 
@@ -545,19 +547,126 @@ async def test_duplicate_registration_ids_exclude_every_involved_entry_from_comm
 
 
 @pytest.mark.asyncio
-async def test_youtube_rejection_and_empty_batch_have_zero_io() -> None:
+async def test_youtube_single_uses_exact_video_branch() -> None:
+    youtube_url = "https://youtu.be/abcdefghijk"
+    transport = _successful_transport()
+
+    result = await _api(transport).add_url(NOTEBOOK_ID, youtube_url)
+
+    assert result.id == SOURCE_A
+    commit = next(call[1] for call in transport.calls if call[0] == ADD_SOURCES_METHOD)
+    content = commit.user_content[0]
+    assert content.video_content.youtube_url == youtube_url
+    assert not content.HasField("web_content")
+    assert content.tentative_source_id.id == SOURCE_A
+    assert commit.HasField("request_context")
+
+
+@pytest.mark.asyncio
+async def test_mixed_url_batch_uses_web_and_video_branches_in_order() -> None:
+    youtube_url = "https://www.youtube.com/watch?v=abcdefghijk"
     transport = FakeTransport()
-    api = _api(transport)
-    with pytest.raises(UnsupportedOperationError):
-        await api.add_url(NOTEBOOK_ID, "https://youtu.be/abcdefghijk")
-    with pytest.raises(UnsupportedOperationError):
-        await api._add_urls_batch(
-            NOTEBOOK_ID,
-            ["https://www.youtube.com/watch?v=abcdefghijk"],
-        )
-    assert await api._add_urls_batch(NOTEBOOK_ID, []) == []
+    transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _registration_handler([SOURCE_A, SOURCE_B])
+    transport.handlers[ADD_SOURCES_METHOD] = sources_pb2.AddSourcesResponse()
+    transport.handlers[GET_PROJECT_METHOD] = _project(
+        _source(SOURCE_A, url=URL_A),
+        _source(SOURCE_B, url=youtube_url),
+    )
+
+    outcomes = await _api(transport)._add_urls_batch(NOTEBOOK_ID, [URL_A, youtube_url])
+
+    assert [item.source.id if item.source else None for item in outcomes] == [SOURCE_A, SOURCE_B]
+    commit = next(call[1] for call in transport.calls if call[0] == ADD_SOURCES_METHOD)
+    assert commit.user_content[0].web_content.url == URL_A
+    assert not commit.user_content[0].HasField("video_content")
+    assert commit.user_content[1].video_content.youtube_url == youtube_url
+    assert not commit.user_content[1].HasField("web_content")
+
+
+@pytest.mark.asyncio
+async def test_empty_url_batch_has_zero_io() -> None:
+    transport = FakeTransport()
+
+    assert await _api(transport)._add_urls_batch(NOTEBOOK_ID, []) == []
     assert transport.calls == []
     assert transport.scopes == []
+
+
+@pytest.mark.asyncio
+async def test_add_text_uses_registered_exact_content_and_rejects_idempotent_opt_in() -> None:
+    transport = _successful_transport()
+
+    result = await _api(transport).add_text(NOTEBOOK_ID, "Title", "Body")
+
+    assert result.id == SOURCE_A
+    assert transport.scopes == ["source.add_text"]
+    commit = next(call[1] for call in transport.calls if call[0] == ADD_SOURCES_METHOD)
+    content = commit.user_content[0]
+    assert content.text_content.source_name == "Title"
+    assert content.text_content.content == "Body"
+    assert content.text_content_type == sources_pb2.UserContent.CONTENT_TYPE_TEXT
+    assert content.tentative_source_id.id == SOURCE_A
+
+    before_io = FakeTransport()
+    with pytest.raises(NonIdempotentRetryError, match="cannot be marked idempotent"):
+        await _api(before_io).add_text(NOTEBOOK_ID, "Title", "Body", idempotent=True)
+    assert before_io.calls == []
+    assert before_io.scopes == []
+
+
+@pytest.mark.asyncio
+async def test_add_drive_uses_exact_content_and_validates_identifier_before_io() -> None:
+    transport = _successful_transport()
+
+    result = await _api(transport).add_drive(
+        NOTEBOOK_ID,
+        "drive-document-id",
+        "Drive title",
+        mime_type="application/vnd.google-apps.presentation",
+    )
+
+    assert result.id == SOURCE_A
+    assert transport.scopes == ["source.add_drive"]
+    commit = next(call[1] for call in transport.calls if call[0] == ADD_SOURCES_METHOD)
+    content = commit.user_content[0]
+    assert content.google_drive_content.document_id == "drive-document-id"
+    assert content.google_drive_content.mime_type == "application/vnd.google-apps.presentation"
+    assert content.google_drive_content.can_download is True
+    assert content.google_drive_content.source_name == "Drive title"
+    assert content.tentative_source_id.id == SOURCE_A
+
+    before_io = FakeTransport()
+    with pytest.raises(ValidationError, match="cannot be empty"):
+        await _api(before_io).add_drive(NOTEBOOK_ID, "  ", "Title")
+    assert before_io.calls == []
+    assert before_io.scopes == []
+
+
+@pytest.mark.asyncio
+async def test_check_freshness_maps_empty_success_to_true_and_explicit_false() -> None:
+    transport = FakeTransport()
+    transport.handlers[CHECK_SOURCE_FRESHNESS_METHOD] = deque(
+        [
+            sources_pb2.CheckSourceFreshnessResponse(),
+            sources_pb2.CheckSourceFreshnessResponse(
+                source_freshness=sources_pb2.SourceFreshness(
+                    source_id=read_pb2.SourceId(id=SOURCE_A),
+                    is_fresh=False,
+                )
+            ),
+        ]
+    )
+    api = _api(transport)
+
+    assert await api.check_freshness(NOTEBOOK_ID, SOURCE_A) is True
+    assert await api.check_freshness(NOTEBOOK_ID, SOURCE_A) is False
+    for _, request, kwargs in transport.calls:
+        assert request.source_id.id == SOURCE_A
+        assert request.HasField("request_context")
+        assert kwargs == {
+            "replay_safe": True,
+            "response_type": sources_pb2.CheckSourceFreshnessResponse,
+        }
 
 
 class _OrderedSources(AndroidSourcesAPI):
@@ -650,7 +759,9 @@ async def test_delete_and_rename_use_non_replayed_exact_wire_shapes() -> None:
         "google.protobuf.empty_pb2",
         fromlist=["Empty"],
     ).Empty()
-    transport.handlers[MUTATE_SOURCE_METHOD] = _source(SOURCE_A, title="Renamed")
+    transport.handlers[MUTATE_SOURCE_METHOD] = sources_pb2.MutateSourceResponse(
+        source=_source(SOURCE_A, title="Renamed")
+    )
     api = _api(transport)
 
     await api.delete(NOTEBOOK_ID, SOURCE_A)
@@ -661,6 +772,7 @@ async def test_delete_and_rename_use_non_replayed_exact_wire_shapes() -> None:
     assert [item.id for item in delete_request.source_ids] == [SOURCE_A]
     assert mutate_request.source_id.id == SOURCE_A
     assert mutate_request.mutations[0].change_title.title == "Renamed"
+    assert mutate_request.HasField("request_context")
     assert all(call[2]["replay_safe"] is False for call in transport.calls)
     assert renamed is not None and renamed.title == "Renamed"
 
@@ -668,13 +780,13 @@ async def test_delete_and_rename_use_non_replayed_exact_wire_shapes() -> None:
 @pytest.mark.asyncio
 async def test_null_rename_echo_hydrates_exact_id_and_detects_miss() -> None:
     transport = FakeTransport()
-    transport.handlers[MUTATE_SOURCE_METHOD] = read_pb2.Source()
+    transport.handlers[MUTATE_SOURCE_METHOD] = sources_pb2.MutateSourceResponse()
     transport.handlers[GET_PROJECT_METHOD] = _project(_source(SOURCE_A, title="Hydrated"))
     result = await _api(transport).rename(NOTEBOOK_ID, SOURCE_A, "Requested")
     assert result is not None and result.title == "Hydrated"
 
     missing = FakeTransport()
-    missing.handlers[MUTATE_SOURCE_METHOD] = read_pb2.Source()
+    missing.handlers[MUTATE_SOURCE_METHOD] = sources_pb2.MutateSourceResponse()
     missing.handlers[GET_PROJECT_METHOD] = _project()
     with pytest.raises(SourceNotFoundError):
         await _api(missing).rename(NOTEBOOK_ID, SOURCE_A, "Requested", return_object=False)
@@ -689,7 +801,7 @@ async def test_rename_readback_finishes_during_graceful_drain_in_one_epoch() -> 
     async def _mutate(_request: Any, _kwargs: dict[str, Any]) -> Any:
         mutation_started.set()
         await mutation_release.wait()
-        return read_pb2.Source()
+        return sources_pb2.MutateSourceResponse()
 
     transport.handlers[MUTATE_SOURCE_METHOD] = _mutate
     transport.handlers[GET_PROJECT_METHOD] = _project(_source(SOURCE_A, title="Hydrated"))
@@ -714,7 +826,7 @@ async def test_rename_readback_cannot_cross_forced_close_and_reopen() -> None:
     async def _mutate(_request: Any, _kwargs: dict[str, Any]) -> Any:
         mutation_started.set()
         await mutation_release.wait()
-        return read_pb2.Source()
+        return sources_pb2.MutateSourceResponse()
 
     transport.handlers[MUTATE_SOURCE_METHOD] = _mutate
     transport.handlers[GET_PROJECT_METHOD] = _project(_source(SOURCE_A))

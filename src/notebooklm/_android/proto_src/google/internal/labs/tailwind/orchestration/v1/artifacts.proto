@@ -6,6 +6,7 @@ import "google/internal/labs/tailwind/orchestration/v1/read.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
+import "labs/language/tailwind/common/protos/metadata.proto";
 
 // Exact-package B4 artifact overlay. Every declaration below was checked for
 // FQN/name/tag/type/cardinality against the archived exact-package
@@ -63,6 +64,42 @@ enum MediaStreamingType {
   MEDIA_STREAMING_TYPE_DOWNLOAD = 4;
 }
 
+enum VideoOverviewTemplateFormat {
+  TEMPLATE_FORMAT_UNSPECIFIED = 0;
+  TEMPLATE_FORMAT_EXPLAINER = 1;
+  TEMPLATE_FORMAT_BRIEF = 2;
+  TEMPLATE_FORMAT_BREAKDOWN = 3;
+  TEMPLATE_FORMAT_SHORT = 4;
+  TEMPLATE_FORMAT_WHITEBOARD_ANIMATION = 5;
+}
+
+enum VideoOverviewStyle {
+  VIDEO_OVERVIEW_STYLE_UNSPECIFIED = 0;
+  VIDEO_OVERVIEW_STYLE_AUTO_SELECT = 1;
+  VIDEO_OVERVIEW_STYLE_CLASSIC = 2;
+  VIDEO_OVERVIEW_STYLE_WHITEBOARD = 3;
+  VIDEO_OVERVIEW_STYLE_HERITAGE = 4;
+  VIDEO_OVERVIEW_STYLE_PAPERCRAFT = 5;
+  VIDEO_OVERVIEW_STYLE_WATERCOLOR = 6;
+  VIDEO_OVERVIEW_STYLE_ANIME = 7;
+  VIDEO_OVERVIEW_STYLE_RISOGRAPHIC = 8;
+  VIDEO_OVERVIEW_STYLE_KAWAII = 9;
+}
+
+enum DeckType {
+  DECK_TYPE_UNSPECIFIED = 0;
+  DECK_TYPE_READING = 1;
+  DECK_TYPE_PRESENTATION = 2;
+}
+
+enum SlideDeckLength {
+  SLIDE_DECK_LENGTH_UNSPECIFIED = 0;
+  SLIDE_DECK_LENGTH_DYNAMIC = 1;
+  SLIDE_DECK_LENGTH_SHORT = 2;
+  SLIDE_DECK_LENGTH_MEDIUM = 3;
+  SLIDE_DECK_LENGTH_LONG = 4;
+}
+
 message MediaStreamingUrl {
   string url = 1; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
   MediaStreamingType type = 2; // evidence: docs/android/proto-evidence-ledger.md#b4-artifact-field-ledger
@@ -87,9 +124,30 @@ message QuizGenerationOptions {
   QuizDifficulty quiz_difficulty = 2; // evidence: docs/android/schema.proto QuizGenerationOptions
 }
 
+message FlashcardsGenerationOptions {
+  enum CardQuantity {
+    CARD_QUANTITY_UNSPECIFIED = 0;
+    CARD_QUANTITY_FEWER = 1;
+    CARD_QUANTITY_STANDARD = 2;
+    CARD_QUANTITY_MORE = 3;
+  }
+
+  enum FlashcardsDifficulty {
+    FLASHCARDS_DIFFICULTY_UNSPECIFIED = 0;
+    FLASHCARDS_DIFFICULTY_EASY = 1;
+    FLASHCARDS_DIFFICULTY_MEDIUM = 2;
+    FLASHCARDS_DIFFICULTY_HARD = 3;
+  }
+
+  CardQuantity card_quantity = 1;
+  FlashcardsDifficulty flashcards_difficulty = 2;
+}
+
 message AppArtifactGenerationOptions {
   AppType app_type = 1; // evidence: docs/android/proto-evidence-ledger.md#b4-artifact-field-ledger
   string free_text_steering_prompt = 3; // evidence: docs/android/schema.proto AppArtifactGenerationOptions
+  string language_code = 4; // evidence: exact-package supported.proto AppArtifactGenerationOptions
+  FlashcardsGenerationOptions flashcards_generation_options = 7; // evidence: exact-package supported.proto AppArtifactGenerationOptions
   QuizGenerationOptions quiz_generation_options = 8; // evidence: docs/android/schema.proto AppArtifactGenerationOptions
 }
 
@@ -112,7 +170,12 @@ message AudioOverviewArtifact {
 }
 
 message ExplainerVideoGenerationOptions {
+  repeated SourceId source_ids = 1; // evidence: exact-package supported.proto ExplainerVideoGenerationOptions
+  string language_code = 2; // evidence: exact-package supported.proto ExplainerVideoGenerationOptions
   string video_focus = 3; // evidence: docs/android/schema.proto ExplainerVideoGenerationOptions
+  VideoOverviewTemplateFormat template_format = 5; // evidence: exact-package supported.proto ExplainerVideoGenerationOptions
+  VideoOverviewStyle video_overview_style = 6; // evidence: exact-package supported.proto ExplainerVideoGenerationOptions
+  string style_prompt = 7; // evidence: exact-package supported.proto ExplainerVideoGenerationOptions
 }
 
 message ExplainerVideoArtifact {
@@ -123,6 +186,9 @@ message ExplainerVideoArtifact {
 
 message TailoredReportArtifactGenerationOptions {
   string type = 1; // evidence: docs/android/schema.proto TailoredReportArtifactGenerationOptions
+  string description = 2; // evidence: exact-package supported.proto TailoredReportArtifactGenerationOptions
+  repeated SourceId source_ids = 4; // evidence: exact-package supported.proto TailoredReportArtifactGenerationOptions
+  string language_code = 5; // evidence: exact-package supported.proto TailoredReportArtifactGenerationOptions
   string document_directive = 6; // evidence: docs/android/schema.proto TailoredReportArtifactGenerationOptions
 }
 
@@ -135,7 +201,33 @@ message ServedImage {
 }
 
 message InfographicGenerationOptions {
+  enum AspectRatio {
+    ASPECT_RATIO_UNSPECIFIED = 0;
+    ASPECT_RATIO_LANDSCAPE = 1;
+    ASPECT_RATIO_PORTRAIT = 2;
+    ASPECT_RATIO_SQUARE = 3;
+  }
+
+  enum InfographicStyle {
+    STYLE_UNSPECIFIED = 0;
+    STYLE_AUTO = 1;
+    STYLE_SKETCH_NOTE = 2;
+    STYLE_PROFESSIONAL = 3;
+    STYLE_BENTO_GRID = 4;
+    STYLE_EDITORIAL = 5;
+    STYLE_STORYBOARD = 6;
+    STYLE_BRICKS = 7;
+    STYLE_CLAYMATION = 8;
+    STYLE_ANIME = 9;
+    STYLE_KAWAII = 10;
+    STYLE_SCIENTIFIC = 11;
+    STYLE_ACADEMIC = 12;
+  }
+
   string user_steering_prompt = 1; // evidence: docs/android/schema.proto InfographicGenerationOptions
+  string language_code = 2; // evidence: exact-package supported.proto InfographicGenerationOptions
+  AspectRatio aspect_ratio = 4; // evidence: exact-package supported.proto InfographicGenerationOptions
+  InfographicStyle style = 6; // evidence: exact-package supported.proto InfographicGenerationOptions
 }
 
 message Infographic {
@@ -150,6 +242,9 @@ message InfographicArtifact {
 
 message SlidesGenerationOptions {
   string user_steering_prompt = 1; // evidence: docs/android/schema.proto SlidesGenerationOptions
+  string language_code = 2; // evidence: exact-package supported.proto SlidesGenerationOptions
+  DeckType deck_type = 3; // evidence: exact-package supported.proto SlidesGenerationOptions
+  SlideDeckLength length = 4; // evidence: exact-package supported.proto SlidesGenerationOptions
 }
 
 message Slide {
@@ -221,4 +316,25 @@ message UpdateArtifactRequest {
 
 message DeleteArtifactRequest {
   string artifact_id = 2; // evidence: docs/android/schema.proto DeleteArtifactRequest
+}
+
+// Web-derived ciyUvf -> GenerateReportSuggestions closure. The method and
+// conventional request/response names come from the current bundle registry;
+// tags and cardinality are pinned by a successful Android-bearer response.
+message GenerateReportSuggestionsRequest {
+  .labs.language.tailwind.common.protos.RequestContext request_context = 1;
+  string project_id = 2;
+  repeated SourceId source_ids = 3;
+}
+
+message ReportSuggestion {
+  string title = 1;
+  string description = 2;
+  repeated SourceId source_ids = 4;
+  string prompt = 5;
+  int32 audience_level = 6;
+}
+
+message GenerateReportSuggestionsResponse {
+  repeated ReportSuggestion suggestions = 1;
 }

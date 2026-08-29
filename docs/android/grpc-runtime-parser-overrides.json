@@ -3,12 +3,20 @@
   "description": "Repository-local runtime protobuf parsers used by exact generated service paths when live wire semantics exceed the admitted exact-package field subset.",
   "overrides": [
     {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject",
+      "side": "response",
+      "remote_type": "google.internal.labs.tailwind.orchestration.v1.GetProjectResponse",
+      "adapter_parser": "notebooklm.internal.android.wire.v1.WireGetProjectResponse",
+      "reason_code": "live_only_field",
+      "evidence": "docs/android/public-api-reject-audit-2026-08-29.md#chat-settings"
+    },
+    {
       "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateProject",
       "side": "request",
       "remote_type": "google.internal.labs.tailwind.orchestration.v1.MutateProjectRequest",
       "adapter_parser": "notebooklm.internal.android.wire.v1.WireMutateProjectRequest",
       "reason_code": "live_only_field",
-      "evidence": "docs/android/proto-evidence-ledger.md#b2-exact-and-repository-local-field-ledger"
+      "evidence": "docs/android/proto-evidence-ledger.md#b2-exact-and-web-derived-field-ledger"
     },
     {
       "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateNotebookGuide",
@@ -16,7 +24,7 @@
       "remote_type": "google.internal.labs.tailwind.orchestration.v1.GenerateNotebookGuideResponse",
       "adapter_parser": "notebooklm.internal.android.wire.v1.WireGenerateNotebookGuideResponse",
       "reason_code": "live_only_field",
-      "evidence": "docs/android/proto-evidence-ledger.md#b2-exact-and-repository-local-field-ledger"
+      "evidence": "docs/android/proto-evidence-ledger.md#b2-exact-and-web-derived-field-ledger"
     },
     {
       "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",

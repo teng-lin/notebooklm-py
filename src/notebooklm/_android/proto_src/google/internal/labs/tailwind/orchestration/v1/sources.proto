@@ -6,9 +6,10 @@ import "google/internal/labs/tailwind/orchestration/v1/read.proto";
 import "labs/language/tailwind/common/protos/metadata.proto";
 import "labs/language/tailwind/common/protos/provenance.proto";
 
-// Exact-package source-operation closure admitted by B3. The source mutation
-// route is deliberately absent: only its wire bytes, not its request FQN, are
-// evidenced, so it uses the repository-local overlay beside this file.
+// Exact-package source-operation closure admitted by B3, plus the explicitly
+// web-derived MutateSource signature. Its method/type names follow the current
+// bundle registration; the populated field tags are pinned by successful
+// Android-bearer replay.
 
 message InputSource {
   SourceId source_id = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
@@ -61,6 +62,17 @@ message TextContent {
   string content = 2; // evidence: docs/android/deep-research-mobile-grpc-2026-08-27.md
 }
 
+message GoogleDriveContent {
+  string document_id = 1;
+  string mime_type = 2;
+  bool can_download = 3;
+  string source_name = 4;
+}
+
+message VideoContent {
+  string youtube_url = 1;
+}
+
 message UserContent {
   enum TextContentType {
     CONTENT_TYPE_UNKNOWN = 0;
@@ -73,15 +85,18 @@ message UserContent {
     CONTENT_TYPE_CSV = 7;
   }
 
+  GoogleDriveContent google_drive_content = 1;
   TextContent text_content = 2; // evidence: docs/android/deep-research-mobile-grpc-2026-08-27.md
   WebContent web_content = 3; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
   TextContentType text_content_type = 4; // evidence: docs/android/deep-research-mobile-grpc-2026-08-27.md
+  VideoContent video_content = 8;
   SourceId tentative_source_id = 9; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
 }
 
 message AddSourcesRequest {
   repeated UserContent user_content = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
   string project_id = 2; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  .labs.language.tailwind.common.protos.RequestContext request_context = 3;
 }
 
 message AddSourcesResponse {
@@ -90,6 +105,45 @@ message AddSourcesResponse {
 
 message DeleteSourcesRequest {
   repeated SourceId source_ids = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+}
+
+message ChangeTitle {
+  string title = 1;
+}
+
+message SourceMutation {
+  oneof mutation {
+    ChangeTitle change_title = 1;
+  }
+  // Live oneof branches #2/#3 remain unrecovered and therefore undeclared.
+}
+
+message MutateSourceRequest {
+  SourceId source_id = 2;
+  repeated SourceMutation mutations = 3;
+  .labs.language.tailwind.common.protos.RequestContext request_context = 4;
+}
+
+// The web response constructor is a dedicated wrapper around Source at #1.
+message MutateSourceResponse {
+  Source source = 1;
+}
+
+// Web-derived request/response closure for yR9Yof. The route is absent from
+// the APK method table, while the populated tags and empty-success response
+// were pinned by successful Android-bearer replay.
+message CheckSourceFreshnessRequest {
+  SourceId source_id = 2;
+  .labs.language.tailwind.common.protos.RequestContext request_context = 3;
+}
+
+message SourceFreshness {
+  optional bool is_fresh = 2;
+  SourceId source_id = 3;
+}
+
+message CheckSourceFreshnessResponse {
+  SourceFreshness source_freshness = 1;
 }
 
 message PlainTextSourceContent {

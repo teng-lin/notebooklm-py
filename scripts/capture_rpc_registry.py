@@ -5,7 +5,7 @@ against ``src/notebooklm/rpc/types.py``.
 NotebookLM declares every ``batchexecute`` RPC in its (public, gstatic-served) JS
 bundle as::
 
-    _.fD("<rpc_id>", <ReqCtor>, <RespCtor>, [<flags>, "/<Service>.<Method>"])
+    _.fD("<rpc_id>", <RespCtor>, <ReqCtor>, [<flags>, "/<Service>.<Method>"])
 
 (The registration helper is currently minified to ``_.fD``; it was ``_.uD`` in an
 earlier bundle. The scraper does **not** depend on the helper name — it anchors on

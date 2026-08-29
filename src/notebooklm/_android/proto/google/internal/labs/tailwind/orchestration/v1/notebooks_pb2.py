@@ -22,35 +22,47 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2
+from notebooklm._android.proto.labs.language.tailwind.common.protos import metadata_pb2 as labs_dot_language_dot_tailwind_dot_common_dot_protos_dot_metadata__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n>google/internal/labs/tailwind/orchestration/v1/notebooks.proto\x12.google.internal.labs.tailwind.orchestration.v1\"$\n\x14\x43reateProjectRequest\x12\x0c\n\x04name\x18\x01 \x01(\t\"\xaf\x01\n\x0fProjectMutation\x12o\n\x0f\x63hange_property\x18\x04 \x01(\x0b\x32V.google.internal.labs.tailwind.orchestration.v1.ProjectMutation.ChangePropertyMutation\x1a+\n\x16\x43hangePropertyMutation\x12\x11\n\tnew_title\x18\x02 \x01(\t\"~\n\x14MutateProjectRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\x12R\n\tmutations\x18\x02 \x03(\x0b\x32?.google.internal.labs.tailwind.orchestration.v1.ProjectMutation\",\n\x15\x44\x65leteProjectsRequest\x12\x13\n\x0bproject_ids\x18\x01 \x03(\t\"7\n\x08NextStep\x12\x12\n\nsuggestion\x18\x01 \x01(\t\x12\x17\n\x0fsuggestion_type\x18\x02 \x01(\x05\"c\n\x13NextStepSuggestions\x12L\n\nnext_steps\x18\x01 \x03(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.NextStep\"\'\n\x0fNotebookSummary\x12\x14\n\x0ctext_summary\x18\x01 \x01(\t\"\xc5\x01\n\rNotebookGuide\x12P\n\x07summary\x18\x01 \x01(\x0b\x32?.google.internal.labs.tailwind.orchestration.v1.NotebookSummary\x12\x62\n\x15next_step_suggestions\x18\x06 \x01(\x0b\x32\x43.google.internal.labs.tailwind.orchestration.v1.NextStepSuggestions\"2\n\x1cGenerateNotebookGuideRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\"v\n\x1dGenerateNotebookGuideResponse\x12U\n\x0enotebook_guide\x18\x01 \x01(\x0b\x32=.google.internal.labs.tailwind.orchestration.v1.NotebookGuideb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n>google/internal/labs/tailwind/orchestration/v1/notebooks.proto\x12.google.internal.labs.tailwind.orchestration.v1\x1a\x39google/internal/labs/tailwind/orchestration/v1/read.proto\x1a\x33labs/language/tailwind/common/protos/metadata.proto\"$\n\x14\x43reateProjectRequest\x12\x0c\n\x04name\x18\x01 \x01(\t\"\xaf\x01\n\x0fProjectMutation\x12o\n\x0f\x63hange_property\x18\x04 \x01(\x0b\x32V.google.internal.labs.tailwind.orchestration.v1.ProjectMutation.ChangePropertyMutation\x1a+\n\x16\x43hangePropertyMutation\x12\x11\n\tnew_title\x18\x02 \x01(\t\"~\n\x14MutateProjectRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\x12R\n\tmutations\x18\x02 \x03(\x0b\x32?.google.internal.labs.tailwind.orchestration.v1.ProjectMutation\",\n\x15\x44\x65leteProjectsRequest\x12\x13\n\x0bproject_ids\x18\x01 \x03(\t\"\x8d\x01\n\x12\x43opyProjectRequest\x12M\n\x0frequest_context\x18\x01 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.RequestContext\x12\x19\n\x11source_project_id\x18\x02 \x01(\t\x12\r\n\x05title\x18\x03 \x01(\t\"1\n\x10PromptSuggestion\x12\r\n\x05title\x18\x01 \x01(\t\x12\x0e\n\x06prompt\x18\x02 \x01(\t\"\xb9\x02\n GeneratePromptSuggestionsRequest\x12M\n\x0frequest_context\x18\x01 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.RequestContext\x12\x12\n\nproject_id\x18\x02 \x01(\t\x12L\n\nsource_ids\x18\x03 \x03(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.SourceId\x12U\n\tconfig_id\x18\x04 \x01(\x0e\x32\x42.google.internal.labs.tailwind.orchestration.v1.SuggestionConfigId\x12\r\n\x05query\x18\x06 \x01(\t\"z\n!GeneratePromptSuggestionsResponse\x12U\n\x0bsuggestions\x18\x01 \x03(\x0b\x32@.google.internal.labs.tailwind.orchestration.v1.PromptSuggestion\"7\n\x08NextStep\x12\x12\n\nsuggestion\x18\x01 \x01(\t\x12\x17\n\x0fsuggestion_type\x18\x02 \x01(\x05\"c\n\x13NextStepSuggestions\x12L\n\nnext_steps\x18\x01 \x03(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.NextStep\"\'\n\x0fNotebookSummary\x12\x14\n\x0ctext_summary\x18\x01 \x01(\t\"\xc5\x01\n\rNotebookGuide\x12P\n\x07summary\x18\x01 \x01(\x0b\x32?.google.internal.labs.tailwind.orchestration.v1.NotebookSummary\x12\x62\n\x15next_step_suggestions\x18\x06 \x01(\x0b\x32\x43.google.internal.labs.tailwind.orchestration.v1.NextStepSuggestions\"2\n\x1cGenerateNotebookGuideRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\"v\n\x1dGenerateNotebookGuideResponse\x12U\n\x0enotebook_guide\x18\x01 \x01(\x0b\x32=.google.internal.labs.tailwind.orchestration.v1.NotebookGuide*\xe5\x03\n\x12SuggestionConfigId\x12!\n\x1dSUGGESTION_CONFIG_UNSPECIFIED\x10\x00\x12.\n*SUGGESTION_CONFIG_AUDIO_OVERVIEW_DEEP_DIVE\x10\x01\x12*\n&SUGGESTION_CONFIG_AUDIO_OVERVIEW_BRIEF\x10\x02\x12.\n*SUGGESTION_CONFIG_VIDEO_OVERVIEW_EXPLAINER\x10\x03\x12*\n&SUGGESTION_CONFIG_VIDEO_OVERVIEW_BRIEF\x10\x04\x12-\n)SUGGESTION_CONFIG_AUDIO_OVERVIEW_CRITIQUE\x10\x05\x12+\n\'SUGGESTION_CONFIG_AUDIO_OVERVIEW_DEBATE\x10\x06\x12.\n*SUGGESTION_CONFIG_VIDEO_OVERVIEW_BREAKDOWN\x10\x07\x12\x1a\n\x16SUGGESTION_CONFIG_QUIZ\x10\x08\x12 \n\x1cSUGGESTION_CONFIG_FLASHCARDS\x10\t\x12*\n&SUGGESTION_CONFIG_VIDEO_OVERVIEW_SHORT\x10\nb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'google.internal.labs.tailwind.orchestration.v1.notebooks_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_CREATEPROJECTREQUEST']._serialized_start=114
-  _globals['_CREATEPROJECTREQUEST']._serialized_end=150
-  _globals['_PROJECTMUTATION']._serialized_start=153
-  _globals['_PROJECTMUTATION']._serialized_end=328
-  _globals['_PROJECTMUTATION_CHANGEPROPERTYMUTATION']._serialized_start=285
-  _globals['_PROJECTMUTATION_CHANGEPROPERTYMUTATION']._serialized_end=328
-  _globals['_MUTATEPROJECTREQUEST']._serialized_start=330
-  _globals['_MUTATEPROJECTREQUEST']._serialized_end=456
-  _globals['_DELETEPROJECTSREQUEST']._serialized_start=458
-  _globals['_DELETEPROJECTSREQUEST']._serialized_end=502
-  _globals['_NEXTSTEP']._serialized_start=504
-  _globals['_NEXTSTEP']._serialized_end=559
-  _globals['_NEXTSTEPSUGGESTIONS']._serialized_start=561
-  _globals['_NEXTSTEPSUGGESTIONS']._serialized_end=660
-  _globals['_NOTEBOOKSUMMARY']._serialized_start=662
-  _globals['_NOTEBOOKSUMMARY']._serialized_end=701
-  _globals['_NOTEBOOKGUIDE']._serialized_start=704
-  _globals['_NOTEBOOKGUIDE']._serialized_end=901
-  _globals['_GENERATENOTEBOOKGUIDEREQUEST']._serialized_start=903
-  _globals['_GENERATENOTEBOOKGUIDEREQUEST']._serialized_end=953
-  _globals['_GENERATENOTEBOOKGUIDERESPONSE']._serialized_start=955
-  _globals['_GENERATENOTEBOOKGUIDERESPONSE']._serialized_end=1073
+  _globals['_SUGGESTIONCONFIGID']._serialized_start=1823
+  _globals['_SUGGESTIONCONFIGID']._serialized_end=2308
+  _globals['_CREATEPROJECTREQUEST']._serialized_start=226
+  _globals['_CREATEPROJECTREQUEST']._serialized_end=262
+  _globals['_PROJECTMUTATION']._serialized_start=265
+  _globals['_PROJECTMUTATION']._serialized_end=440
+  _globals['_PROJECTMUTATION_CHANGEPROPERTYMUTATION']._serialized_start=397
+  _globals['_PROJECTMUTATION_CHANGEPROPERTYMUTATION']._serialized_end=440
+  _globals['_MUTATEPROJECTREQUEST']._serialized_start=442
+  _globals['_MUTATEPROJECTREQUEST']._serialized_end=568
+  _globals['_DELETEPROJECTSREQUEST']._serialized_start=570
+  _globals['_DELETEPROJECTSREQUEST']._serialized_end=614
+  _globals['_COPYPROJECTREQUEST']._serialized_start=617
+  _globals['_COPYPROJECTREQUEST']._serialized_end=758
+  _globals['_PROMPTSUGGESTION']._serialized_start=760
+  _globals['_PROMPTSUGGESTION']._serialized_end=809
+  _globals['_GENERATEPROMPTSUGGESTIONSREQUEST']._serialized_start=812
+  _globals['_GENERATEPROMPTSUGGESTIONSREQUEST']._serialized_end=1125
+  _globals['_GENERATEPROMPTSUGGESTIONSRESPONSE']._serialized_start=1127
+  _globals['_GENERATEPROMPTSUGGESTIONSRESPONSE']._serialized_end=1249
+  _globals['_NEXTSTEP']._serialized_start=1251
+  _globals['_NEXTSTEP']._serialized_end=1306
+  _globals['_NEXTSTEPSUGGESTIONS']._serialized_start=1308
+  _globals['_NEXTSTEPSUGGESTIONS']._serialized_end=1407
+  _globals['_NOTEBOOKSUMMARY']._serialized_start=1409
+  _globals['_NOTEBOOKSUMMARY']._serialized_end=1448
+  _globals['_NOTEBOOKGUIDE']._serialized_start=1451
+  _globals['_NOTEBOOKGUIDE']._serialized_end=1648
+  _globals['_GENERATENOTEBOOKGUIDEREQUEST']._serialized_start=1650
+  _globals['_GENERATENOTEBOOKGUIDEREQUEST']._serialized_end=1700
+  _globals['_GENERATENOTEBOOKGUIDERESPONSE']._serialized_start=1702
+  _globals['_GENERATENOTEBOOKGUIDERESPONSE']._serialized_end=1820
 # @@protoc_insertion_point(module_scope)

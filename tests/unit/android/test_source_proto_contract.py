@@ -14,13 +14,9 @@ from notebooklm._android.proto.labs.language.tailwind.common.protos import (
     metadata_pb2,
     provenance_pb2,
 )
-from notebooklm._android.proto.notebooklm.internal.android.wire import (
-    source_mutation_wire_pb2,
-)
 from notebooklm._android.upload import android_provenance, android_request_context
 
 ORCHESTRATION_PACKAGE = "google.internal.labs.tailwind.orchestration.v1"
-LOCAL_WIRE_PACKAGE = "notebooklm.internal.android.wire"
 COMMON_PACKAGE = "labs.language.tailwind.common.protos"
 
 
@@ -36,7 +32,7 @@ def _shape(message: Any) -> dict[str, tuple[int, bool, int, str | None]]:
     return result
 
 
-def test_b3_exact_package_overlay_is_minimal_and_has_no_service_guess() -> None:
+def test_b3_generated_package_overlay_is_complete_and_service_free() -> None:
     assert sources_pb2.DESCRIPTOR.name == (
         "google/internal/labs/tailwind/orchestration/v1/sources.proto"
     )
@@ -52,20 +48,29 @@ def test_b3_exact_package_overlay_is_minimal_and_has_no_service_guess() -> None:
         "AddSourcesResponse",
         "AddTentativeSourcesRequest",
         "AddTentativeSourcesResponse",
+        "CheckSourceFreshnessRequest",
+        "CheckSourceFreshnessResponse",
         "DeleteSourcesRequest",
         "DocumentGuide",
         "GenerateDocumentGuidesRequest",
         "GenerateDocumentGuidesResponse",
+        "GoogleDriveContent",
         "InputSource",
         "LoadSourceRequest",
         "LoadSourceResponse",
         "MainIdeas",
+        "MutateSourceRequest",
+        "MutateSourceResponse",
         "PlainTextSourceContent",
+        "ChangeTitle",
         "Snippet",
+        "SourceMutation",
+        "SourceFreshness",
         "TentativeSourceMetadata",
         "TextContent",
         "UploadFileRequest",
         "UserContent",
+        "VideoContent",
         "WebContent",
     }
     assert _shape(sources_pb2.WebContent) == {
@@ -76,7 +81,22 @@ def test_b3_exact_package_overlay_is_minimal_and_has_no_service_guess() -> None:
         "source_name": (1, False, FieldDescriptor.TYPE_STRING, None),
         "content": (2, False, FieldDescriptor.TYPE_STRING, None),
     }
+    assert _shape(sources_pb2.GoogleDriveContent) == {
+        "document_id": (1, False, FieldDescriptor.TYPE_STRING, None),
+        "mime_type": (2, False, FieldDescriptor.TYPE_STRING, None),
+        "can_download": (3, False, FieldDescriptor.TYPE_BOOL, None),
+        "source_name": (4, False, FieldDescriptor.TYPE_STRING, None),
+    }
+    assert _shape(sources_pb2.VideoContent) == {
+        "youtube_url": (1, False, FieldDescriptor.TYPE_STRING, None),
+    }
     assert _shape(sources_pb2.UserContent) == {
+        "google_drive_content": (
+            1,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{ORCHESTRATION_PACKAGE}.GoogleDriveContent",
+        ),
         "text_content": (
             2,
             False,
@@ -95,11 +115,32 @@ def test_b3_exact_package_overlay_is_minimal_and_has_no_service_guess() -> None:
             FieldDescriptor.TYPE_ENUM,
             f"{ORCHESTRATION_PACKAGE}.UserContent.TextContentType",
         ),
+        "video_content": (
+            8,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{ORCHESTRATION_PACKAGE}.VideoContent",
+        ),
         "tentative_source_id": (
             9,
             False,
             FieldDescriptor.TYPE_MESSAGE,
             f"{ORCHESTRATION_PACKAGE}.SourceId",
+        ),
+    }
+    assert _shape(sources_pb2.AddSourcesRequest) == {
+        "user_content": (
+            1,
+            True,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{ORCHESTRATION_PACKAGE}.UserContent",
+        ),
+        "project_id": (2, False, FieldDescriptor.TYPE_STRING, None),
+        "request_context": (
+            3,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{COMMON_PACKAGE}.RequestContext",
         ),
     }
     assert _shape(sources_pb2.AddTentativeSourcesRequest) == {
@@ -189,10 +230,8 @@ def test_b3b_context_and_provenance_packages_are_exact_minimal_closures() -> Non
     assert set(metadata_pb2.DESCRIPTOR.enum_types_by_name) == {"ClientType"}
 
 
-def test_b3_local_mutation_overlay_does_not_claim_the_remote_request_fqn() -> None:
-    assert source_mutation_wire_pb2.DESCRIPTOR.package == LOCAL_WIRE_PACKAGE
-    assert source_mutation_wire_pb2.DESCRIPTOR.services_by_name == {}
-    assert _shape(source_mutation_wire_pb2.MutateSourceWireRequest) == {
+def test_b3_web_derived_mutation_request_and_response_shapes_are_pinned() -> None:
+    assert _shape(sources_pb2.MutateSourceRequest) == {
         "source_id": (
             2,
             False,
@@ -203,8 +242,70 @@ def test_b3_local_mutation_overlay_does_not_claim_the_remote_request_fqn() -> No
             3,
             True,
             FieldDescriptor.TYPE_MESSAGE,
-            f"{LOCAL_WIRE_PACKAGE}.SourceMutation",
+            f"{ORCHESTRATION_PACKAGE}.SourceMutation",
         ),
+        "request_context": (
+            4,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            "labs.language.tailwind.common.protos.RequestContext",
+        ),
+    }
+    assert _shape(sources_pb2.SourceMutation) == {
+        "change_title": (
+            1,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{ORCHESTRATION_PACKAGE}.ChangeTitle",
+        )
+    }
+    assert list(sources_pb2.SourceMutation.DESCRIPTOR.oneofs_by_name) == ["mutation"]
+    assert [
+        field.name
+        for field in sources_pb2.SourceMutation.DESCRIPTOR.oneofs_by_name["mutation"].fields
+    ] == ["change_title"]
+    assert _shape(sources_pb2.MutateSourceResponse) == {
+        "source": (
+            1,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{ORCHESTRATION_PACKAGE}.Source",
+        )
+    }
+
+
+def test_web_derived_freshness_shapes_are_pinned() -> None:
+    assert _shape(sources_pb2.CheckSourceFreshnessRequest) == {
+        "source_id": (
+            2,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{ORCHESTRATION_PACKAGE}.SourceId",
+        ),
+        "request_context": (
+            3,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{COMMON_PACKAGE}.RequestContext",
+        ),
+    }
+    assert _shape(sources_pb2.SourceFreshness) == {
+        "is_fresh": (2, False, FieldDescriptor.TYPE_BOOL, None),
+        "source_id": (
+            3,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{ORCHESTRATION_PACKAGE}.SourceId",
+        ),
+    }
+    assert sources_pb2.SourceFreshness.DESCRIPTOR.fields_by_name["is_fresh"].has_presence
+    assert _shape(sources_pb2.CheckSourceFreshnessResponse) == {
+        "source_freshness": (
+            1,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{ORCHESTRATION_PACKAGE}.SourceFreshness",
+        )
     }
 
 
@@ -222,13 +323,9 @@ def test_b3_request_bytes_are_pinned_without_context_or_unexercised_title() -> N
         ],
         project_id="project",
     )
-    mutation = source_mutation_wire_pb2.MutateSourceWireRequest(
+    mutation = sources_pb2.MutateSourceRequest(
         source_id=read_pb2.SourceId(id="source"),
-        mutations=[
-            source_mutation_wire_pb2.SourceMutation(
-                change_title=source_mutation_wire_pb2.ChangeTitle(title="new")
-            )
-        ],
+        mutations=[sources_pb2.SourceMutation(change_title=sources_pb2.ChangeTitle(title="new"))],
     )
 
     assert registration.SerializeToString(deterministic=True).hex() == (

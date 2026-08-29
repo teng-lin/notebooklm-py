@@ -58,9 +58,12 @@ inventory without a recovered adjacent generic binding and is still explicitly u
 
 The same APK has no generated client bindings for `CopyProject`, `MutateSource`,
 `GenerateReportSuggestions`, `CreateLabel`, `MutateLabel`, `DeleteLabels`, or
-`CancelDiscoverSourcesJob`. Live calls prove their current repository-local wire parsers, but cannot
-prove every remote protobuf FQN. Those seven paths therefore remain explicit signature exceptions;
-this report makes no package claim for them. A second audit of the newer Google-signed
+`CancelDiscoverSourcesJob`. This APK report therefore makes no package claim for them. Subsequent
+current-web-bundle constructor tracing plus successful mobile-backend calls promoted all seven;
+six conventional type-name inferences are recorded separately in
+[`grpc-service-signature-inferences.json`](grpc-service-signature-inferences.json), while
+`CancelDiscoverSourcesJob` closes exactly through a shared `google.protobuf.Empty` constructor.
+A second audit of the newer Google-signed
 `1.55.10.971450265` build found zero occurrences of all seven across its AOT, Dex, resource, native,
 and reconstructed blutter trees; see
 [`latest-apk-grpc-audit-2026-08-29.md`](latest-apk-grpc-audit-2026-08-29.md).

@@ -1,10 +1,9 @@
-"""Exact generated-service coverage for implemented private Android RPC paths."""
+"""Generated-service coverage for implemented private Android RPC paths."""
 
 from __future__ import annotations
 
 import csv
 import hashlib
-import importlib
 import json
 import re
 from pathlib import Path
@@ -47,11 +46,12 @@ from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import (
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 EXCEPTION_MANIFEST = REPO_ROOT / "docs" / "android" / "grpc-service-signature-exceptions.json"
+INFERENCE_MANIFEST = REPO_ROOT / "docs" / "android" / "grpc-service-signature-inferences.json"
 PARSER_OVERRIDE_MANIFEST = REPO_ROOT / "docs" / "android" / "grpc-runtime-parser-overrides.json"
 EXTERNAL_METHOD_MANIFEST = (
     REPO_ROOT / "tests" / "fixtures" / "android" / "external_method_manifest.csv"
 )
-EXTERNAL_METHOD_MANIFEST_SHA256 = "eae7d90bdadc5868ed6970b5ce3343d56e8aaf26885987e227e6947ebe0e73d1"
+EXTERNAL_METHOD_MANIFEST_SHA256 = "965cec28a15d98ae3b767488b9e5e1636925396d6b4455eaab317012b36ff0fd"
 LATEST_APK_GRPC_SIGNATURES = (
     REPO_ROOT / "tests" / "fixtures" / "android" / "latest_apk_grpc_signatures.csv"
 )
@@ -106,9 +106,19 @@ _EXPECTED_ORCHESTRATION_SIGNATURES = {
         f"{ORCHESTRATION_PACKAGE}.Project",
         False,
     ),
+    "CopyProject": (
+        f"{ORCHESTRATION_PACKAGE}.CopyProjectRequest",
+        f"{ORCHESTRATION_PACKAGE}.Project",
+        False,
+    ),
     "GenerateNotebookGuide": (
         f"{ORCHESTRATION_PACKAGE}.GenerateNotebookGuideRequest",
         f"{ORCHESTRATION_PACKAGE}.GenerateNotebookGuideResponse",
+        False,
+    ),
+    "GeneratePromptSuggestions": (
+        f"{ORCHESTRATION_PACKAGE}.GeneratePromptSuggestionsRequest",
+        f"{ORCHESTRATION_PACKAGE}.GeneratePromptSuggestionsResponse",
         False,
     ),
     "AddTentativeSources": (
@@ -124,6 +134,16 @@ _EXPECTED_ORCHESTRATION_SIGNATURES = {
     "DeleteSources": (
         f"{ORCHESTRATION_PACKAGE}.DeleteSourcesRequest",
         "google.protobuf.Empty",
+        False,
+    ),
+    "MutateSource": (
+        f"{ORCHESTRATION_PACKAGE}.MutateSourceRequest",
+        f"{ORCHESTRATION_PACKAGE}.MutateSourceResponse",
+        False,
+    ),
+    "CheckSourceFreshness": (
+        f"{ORCHESTRATION_PACKAGE}.CheckSourceFreshnessRequest",
+        f"{ORCHESTRATION_PACKAGE}.CheckSourceFreshnessResponse",
         False,
     ),
     "GenerateDocumentGuides": (
@@ -159,6 +179,11 @@ _EXPECTED_ORCHESTRATION_SIGNATURES = {
     "UpdateArtifact": (
         f"{ORCHESTRATION_PACKAGE}.UpdateArtifactRequest",
         f"{ORCHESTRATION_PACKAGE}.Artifact",
+        False,
+    ),
+    "GenerateReportSuggestions": (
+        f"{ORCHESTRATION_PACKAGE}.GenerateReportSuggestionsRequest",
+        f"{ORCHESTRATION_PACKAGE}.GenerateReportSuggestionsResponse",
         False,
     ),
     "ListChatSessions": (
@@ -221,6 +246,11 @@ _EXPECTED_ORCHESTRATION_SIGNATURES = {
         f"{ORCHESTRATION_PACKAGE}.ListDiscoverSourcesJobResponse",
         False,
     ),
+    "CancelDiscoverSourcesJob": (
+        f"{ORCHESTRATION_PACKAGE}.CancelDiscoverSourcesJobRequest",
+        "google.protobuf.Empty",
+        False,
+    ),
     "FinishDiscoverSourcesRun": (
         f"{ORCHESTRATION_PACKAGE}.FinishDiscoverSourcesRunRequest",
         f"{ORCHESTRATION_PACKAGE}.FinishDiscoverSourcesRunResponse",
@@ -229,6 +259,21 @@ _EXPECTED_ORCHESTRATION_SIGNATURES = {
     "GetLabels": (
         f"{ORCHESTRATION_PACKAGE}.GetLabelsRequest",
         f"{ORCHESTRATION_PACKAGE}.GetLabelsResponse",
+        False,
+    ),
+    "CreateLabel": (
+        f"{ORCHESTRATION_PACKAGE}.CreateLabelRequest",
+        f"{ORCHESTRATION_PACKAGE}.CreateLabelResponse",
+        False,
+    ),
+    "MutateLabel": (
+        f"{ORCHESTRATION_PACKAGE}.MutateLabelRequest",
+        f"{ORCHESTRATION_PACKAGE}.MutateLabelResponse",
+        False,
+    ),
+    "DeleteLabels": (
+        f"{ORCHESTRATION_PACKAGE}.DeleteLabelsRequest",
+        f"{ORCHESTRATION_PACKAGE}.DeleteLabelsResponse",
         False,
     ),
 }
@@ -247,6 +292,7 @@ _EXPECTED_SHARING_SIGNATURES = {
 _LOCAL_PARSER_TYPES = {
     wire_notebooks_pb2.WireMutateProjectRequest.DESCRIPTOR.full_name,
     wire_notebooks_pb2.WireGenerateNotebookGuideResponse.DESCRIPTOR.full_name,
+    wire_notebooks_pb2.WireGetProjectResponse.DESCRIPTOR.full_name,
     organization_mutations_pb2.GetLabelsWireResponse.DESCRIPTOR.full_name,
     wire_sharing_pb2.GetProjectDetailsResponse.DESCRIPTOR.full_name,
 }
@@ -300,10 +346,19 @@ def _parser_override_entries() -> list[dict[str, Any]]:
     return payload["overrides"]
 
 
+def _inference_entries() -> list[dict[str, Any]]:
+    payload = json.loads(INFERENCE_MANIFEST.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == 1
+    assert payload["bundle_sha256"] == (
+        "8cc2569196b28083ba58a33319df79af97ec1832f442c4a182289894edf5eaef"
+    )
+    return payload["inferences"]
+
+
 def _external_method_entries() -> dict[str, dict[str, str]]:
     with EXTERNAL_METHOD_MANIFEST.open(encoding="utf-8", newline="") as stream:
         rows = list(csv.DictReader(stream))
-    assert len(rows) == 53
+    assert len(rows) == 60
     entries = {row["path"]: row for row in rows}
     assert len(entries) == len(rows)
     return entries
@@ -332,7 +387,7 @@ class _RecordingChannel:
         return object()
 
 
-def test_exact_service_descriptor_and_generated_stub_expose_all_admitted_paths() -> None:
+def test_service_descriptor_and_generated_stub_expose_all_admitted_paths() -> None:
     assert read_pb2.DESCRIPTOR.services_by_name == {}
     assert not hasattr(read_pb2_grpc, "LabsTailwindOrchestrationServiceStub")
     assert notebooks_pb2.DESCRIPTOR.services_by_name == {}
@@ -378,52 +433,14 @@ def test_exact_service_descriptor_and_generated_stub_expose_all_admitted_paths()
     assert set(channel.calls.values()) == {"unary_unary", "unary_stream"}
 
 
-def test_adapter_paths_equal_exact_descriptor_plus_machine_readable_exceptions() -> None:
+def test_adapter_paths_equal_generated_descriptor_with_no_omitted_exceptions() -> None:
     entries = _manifest_entries()
-    assert len(entries) == 7
-    assert all(
-        set(entry)
-        == {
-            "path",
-            "adapter_constant",
-            "request_parser",
-            "response_parser",
-            "reason_code",
-            "evidence",
-        }
-        for entry in entries
-    )
-    assert {entry["reason_code"] for entry in entries} == {
-        "request_fqn_unproven",
-        "request_response_fqns_unproven",
-        "response_fqn_unproven",
-    }
-    assert all(entry["evidence"].startswith("docs/android/") for entry in entries)
-
-    for entry in entries:
-        document, separator, anchor = entry["evidence"].partition("#")
-        assert separator and anchor
-        evidence_path = REPO_ROOT / document
-        assert evidence_path.is_file()
-        assert anchor in _markdown_anchors(evidence_path)
-
-    exception_paths = {entry["path"] for entry in entries}
-    assert len(exception_paths) == len(entries)
-    entries_by_path = {entry["path"]: entry for entry in entries}
-    assert (
-        entries_by_path[f"/{ORCHESTRATION_SERVICE}/CancelDiscoverSourcesJob"]["reason_code"]
-        == "response_fqn_unproven"
-    )
-    assert _descriptor_paths().isdisjoint(exception_paths)
-    assert _adapter_paths() == _descriptor_paths() | exception_paths
-    assert len(_adapter_paths()) == 40
-    assert len(_descriptor_paths()) == 33
-    assert sum(path.startswith(f"/{ORCHESTRATION_SERVICE}/") for path in _descriptor_paths()) == 31
+    assert entries == []
+    assert _adapter_paths() == _descriptor_paths()
+    assert len(_adapter_paths()) == 42
+    assert len(_descriptor_paths()) == 42
+    assert sum(path.startswith(f"/{ORCHESTRATION_SERVICE}/") for path in _descriptor_paths()) == 40
     assert sum(path.startswith(f"/{SHARING_SERVICE}/") for path in _descriptor_paths()) == 2
-
-    for entry in entries:
-        module_name, constant_name = entry["adapter_constant"].rsplit(".", 1)
-        assert getattr(importlib.import_module(module_name), constant_name) == entry["path"]
 
     sharing_paths = {path for path in _adapter_paths() if path.startswith(f"/{SHARING_SERVICE}/")}
     assert sharing_paths == {
@@ -433,15 +450,41 @@ def test_adapter_paths_equal_exact_descriptor_plus_machine_readable_exceptions()
     assert sharing_paths <= _descriptor_paths()
 
 
+def test_web_derived_signature_inferences_are_explicit_and_generated() -> None:
+    entries = _inference_entries()
+    assert len(entries) == 7
+    assert all(
+        set(entry) == {"path", "request_type", "response_type", "confidence", "evidence"}
+        for entry in entries
+    )
+    paths = {entry["path"] for entry in entries}
+    assert len(paths) == len(entries)
+    assert paths < _descriptor_paths()
+    assert f"/{ORCHESTRATION_SERVICE}/CancelDiscoverSourcesJob" not in paths
+    signatures = _descriptor_signatures()
+    for entry in entries:
+        request_type, response_type, cardinality = signatures[entry["path"]]
+        assert (request_type, response_type, cardinality) == (
+            entry["request_type"],
+            entry["response_type"],
+            "unary_unary",
+        )
+        document, separator, anchor = entry["evidence"].partition("#")
+        assert separator and anchor
+        evidence_path = REPO_ROOT / document
+        assert evidence_path.is_file()
+        assert anchor in _markdown_anchors(evidence_path)
+
+
 def test_external_manifest_and_implemented_signature_inventory_are_bidirectional() -> None:
-    """Admit every implemented exact signature and reject normalized or unresolved responses."""
+    """Admit every implemented generated signature, including qualified web inferences."""
 
     assert hashlib.sha256(EXTERNAL_METHOD_MANIFEST.read_bytes()).hexdigest() == (
         EXTERNAL_METHOD_MANIFEST_SHA256
     )
     external = _external_method_entries()
     signatures = _descriptor_signatures()
-    exceptions = {entry["path"]: entry for entry in _manifest_entries()}
+    assert len(external) == 60
 
     for path, (request_type, response_type, cardinality) in signatures.items():
         row = external[path]
@@ -451,28 +494,14 @@ def test_external_manifest_and_implemented_signature_inventory_are_bidirectional
         assert row["cardinality"] == cardinality
 
     for path in _adapter_paths():
-        row = external.get(path)
-        if row is None:
-            assert path in exceptions
-            continue
-        if row["response_type"] in {"NORMALIZED_EMPTY", "UNRESOLVED_PRIVATE"}:
-            assert path in exceptions
-            assert exceptions[path]["reason_code"] == "response_fqn_unproven"
-            continue
+        row = external[path]
+        assert row["response_type"] not in {"NORMALIZED_EMPTY", "UNRESOLVED_PRIVATE"}
         assert path in signatures
-
-    for path, entry in exceptions.items():
-        row = external.get(path)
-        if row is not None:
-            assert row["response_type"] in {"NORMALIZED_EMPTY", "UNRESOLVED_PRIVATE"}
-            assert entry["reason_code"] == "response_fqn_unproven"
 
     normalized_empty_paths = {
         path for path, row in external.items() if row["response_type"] == "NORMALIZED_EMPTY"
     }
-    assert normalized_empty_paths & _adapter_paths() == {
-        f"/{ORCHESTRATION_SERVICE}/CancelDiscoverSourcesJob",
-    }
+    assert normalized_empty_paths & _adapter_paths() == set()
     assert _descriptor_paths().isdisjoint(normalized_empty_paths)
 
 
@@ -493,7 +522,10 @@ def test_latest_signed_apk_inventory_is_complete_exact_and_version_scoped() -> N
     assert len(exact) == 52
     assert raw_paths - exact.keys() == {upsert_path}
     assert exact.keys() <= raw_paths
-    assert {entry["path"] for entry in _manifest_entries()}.isdisjoint(raw_paths)
+    inferred_or_web_proven = {entry["path"] for entry in _inference_entries()} | {
+        f"/{ORCHESTRATION_SERVICE}/CancelDiscoverSourcesJob"
+    }
+    assert inferred_or_web_proven.isdisjoint(raw_paths)
 
     new_paths = {
         f"/{ORCHESTRATION_SERVICE}/CancelGeneration",
@@ -511,7 +543,7 @@ def test_latest_signed_apk_inventory_is_complete_exact_and_version_scoped() -> N
 
 def test_runtime_local_parser_overrides_are_explicit_exact_path_exceptions() -> None:
     entries = _parser_override_entries()
-    assert len(entries) == 4
+    assert len(entries) == 5
     assert all(
         set(entry)
         == {

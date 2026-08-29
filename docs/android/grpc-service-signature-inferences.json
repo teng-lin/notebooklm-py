@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "description": "Generated Android gRPC signatures whose conventional protobuf type names are inferred from current NotebookLM web registrations while their wire shapes are pinned by successful mobile-backend calls.",
+  "bundle_sha256": "8cc2569196b28083ba58a33319df79af97ec1832f442c4a182289894edf5eaef",
+  "inferences": [
+    {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CopyProject",
+      "request_type": "google.internal.labs.tailwind.orchestration.v1.CopyProjectRequest",
+      "response_type": "google.internal.labs.tailwind.orchestration.v1.Project",
+      "confidence": "response_ctor_exact_request_name_inferred",
+      "evidence": "docs/android/web-bundle-grpc-signature-inference-2026-08-29.md#signature-matrix"
+    },
+    {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateSource",
+      "request_type": "google.internal.labs.tailwind.orchestration.v1.MutateSourceRequest",
+      "response_type": "google.internal.labs.tailwind.orchestration.v1.MutateSourceResponse",
+      "confidence": "type_names_inferred_admitted_partial_wire_shape",
+      "evidence": "docs/android/web-bundle-grpc-signature-inference-2026-08-29.md#signature-matrix"
+    },
+    {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CheckSourceFreshness",
+      "request_type": "google.internal.labs.tailwind.orchestration.v1.CheckSourceFreshnessRequest",
+      "response_type": "google.internal.labs.tailwind.orchestration.v1.CheckSourceFreshnessResponse",
+      "confidence": "type_names_inferred_admitted_partial_wire_shape",
+      "evidence": "docs/android/web-parity-gap-live-validation-2026-08-27.md#checksourcefreshness"
+    },
+    {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateReportSuggestions",
+      "request_type": "google.internal.labs.tailwind.orchestration.v1.GenerateReportSuggestionsRequest",
+      "response_type": "google.internal.labs.tailwind.orchestration.v1.GenerateReportSuggestionsResponse",
+      "confidence": "type_names_inferred_admitted_partial_wire_shape",
+      "evidence": "docs/android/web-bundle-grpc-signature-inference-2026-08-29.md#signature-matrix"
+    },
+    {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateLabel",
+      "request_type": "google.internal.labs.tailwind.orchestration.v1.CreateLabelRequest",
+      "response_type": "google.internal.labs.tailwind.orchestration.v1.CreateLabelResponse",
+      "confidence": "type_names_inferred_admitted_partial_wire_shape",
+      "evidence": "docs/android/web-bundle-grpc-signature-inference-2026-08-29.md#signature-matrix"
+    },
+    {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateLabel",
+      "request_type": "google.internal.labs.tailwind.orchestration.v1.MutateLabelRequest",
+      "response_type": "google.internal.labs.tailwind.orchestration.v1.MutateLabelResponse",
+      "confidence": "type_names_inferred_partial_shape_no_retained_response_fields",
+      "evidence": "docs/android/web-bundle-grpc-signature-inference-2026-08-29.md#signature-matrix"
+    },
+    {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteLabels",
+      "request_type": "google.internal.labs.tailwind.orchestration.v1.DeleteLabelsRequest",
+      "response_type": "google.internal.labs.tailwind.orchestration.v1.DeleteLabelsResponse",
+      "confidence": "type_names_inferred_partial_shape_no_retained_response_fields",
+      "evidence": "docs/android/web-bundle-grpc-signature-inference-2026-08-29.md#signature-matrix"
+    }
+  ]
+}

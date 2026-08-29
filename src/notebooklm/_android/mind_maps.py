@@ -1,9 +1,9 @@
 """Android composition for the unified mind-map namespace.
 
 B7 adds no Android wire declarations. Interactive mutations compose the
-``ArtifactsAPI`` collaborator supplied by B4; note-backed reads compose through
-B6's private typed projection, and explicit note-backed deletion composes
-through B6's kind-safe delete. Rename and auto-detected mutation remain gated.
+``ArtifactsAPI`` collaborator supplied by B4; note-backed reads and mutations
+compose through B6's typed projection and exact note CRUD seams. Interactive
+tree reads and generation remain evidence-gated.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, NoReturn, Protocol, cast
 
 from .._mind_maps_api import MindMapsAPI
 from .._runtime.call_supervisor import CallSupervisor
+from ..exceptions import MindMapNotFoundError, NoteNotFoundError
 from ..types import MindMap, MindMapKind
 from .errors import unsupported_operation
 
@@ -68,8 +69,16 @@ class AndroidMindMapsAPI(MindMapsAPI):
         mind_map_id: str,
         new_title: str,
     ) -> None:
-        """Reject until exact persisted note content can be preserved."""
-        _reject("mind_maps.rename_note_backed")
+        """Retitle a classified map while preserving its exact persisted content."""
+        if not any(
+            mind_map.id == mind_map_id for mind_map in await self.list_note_backed(notebook_id)
+        ):
+            raise MindMapNotFoundError(mind_map_id)
+        try:
+            note = await self._notes.get(notebook_id, mind_map_id)
+            await self._notes.update(notebook_id, mind_map_id, note.content, new_title)
+        except NoteNotFoundError as exc:
+            raise MindMapNotFoundError(mind_map_id) from exc
 
     async def rename(
         self,
@@ -80,20 +89,14 @@ class AndroidMindMapsAPI(MindMapsAPI):
         kind: MindMapKind | None = None,
         return_object: bool = True,
     ) -> MindMap | None:
-        """Compose the explicit interactive no-hydration branch only.
-
-        Auto-detection and hydration both require the evidence-gated aggregate
-        note-backed read. Reject those branches before an artifact mutation.
-        """
-        if kind is not MindMapKind.INTERACTIVE or return_object:
-            _reject("mind_maps.rename")
+        """Compose kind detection, exact mutation, and optional hydration."""
         async with self._supervisor.operation_scope("mind_maps.rename"):
             return await super().rename(
                 notebook_id,
                 mind_map_id,
                 new_title,
                 kind=kind,
-                return_object=False,
+                return_object=return_object,
             )
 
     async def generate(
@@ -110,8 +113,8 @@ class AndroidMindMapsAPI(MindMapsAPI):
         _reject("mind_maps.generate")
 
     async def _detect_kind(self, notebook_id: str, mind_map_id: str) -> MindMapKind:
-        """Keep inherited auto-delete behind its existing mutation evidence gate."""
-        _reject("mind_maps.delete")
+        """Resolve note-backed first, then interactive, using existing read seams."""
+        return await super()._detect_kind(notebook_id, mind_map_id)
 
     async def get_tree(
         self,
@@ -120,8 +123,19 @@ class AndroidMindMapsAPI(MindMapsAPI):
         *,
         kind: MindMapKind | None = None,
     ) -> dict[str, Any] | None:
-        """Reject tree reads until an exact interactive-tree fixture exists."""
-        _reject("mind_maps.get_tree")
+        """Return persisted note trees while keeping interactive payloads gated."""
+        if kind is MindMapKind.INTERACTIVE:
+            _reject("mind_maps.get_tree")
+
+        for mind_map in await self.list_note_backed(notebook_id):
+            if mind_map.id == mind_map_id:
+                return mind_map.tree
+        if kind is MindMapKind.NOTE_BACKED:
+            return None
+
+        if await self._find_interactive(notebook_id, mind_map_id) is not None:
+            _reject("mind_maps.get_tree")
+        return None
 
 
 __all__ = ["AndroidMindMapsAPI"]

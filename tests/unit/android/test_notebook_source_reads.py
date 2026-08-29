@@ -628,7 +628,6 @@ SourceUnsupportedCall = Callable[[AndroidSourcesAPI], Awaitable[object]]
 @pytest.mark.parametrize(
     "invoke",
     [
-        pytest.param(lambda api: api.suggest_prompts("notebook"), id="suggest-prompts"),
         pytest.param(lambda api: api.remove_from_recent("notebook"), id="remove-recent"),
     ],
 )
@@ -645,20 +644,11 @@ async def test_every_unsupported_notebook_method_fails_before_io(
 @pytest.mark.parametrize(
     "invoke",
     [
-        pytest.param(lambda api: api.add_text("notebook", "title", "body"), id="add-text"),
-        pytest.param(
-            lambda api: api.add_drive("notebook", "file", "title"),
-            id="add-drive",
-        ),
         pytest.param(
             lambda api: api.add_drive_file("notebook", "document"),
             id="add-drive-file",
         ),
         pytest.param(lambda api: api.refresh("notebook", "source"), id="refresh"),
-        pytest.param(
-            lambda api: api.check_freshness("notebook", "source"),
-            id="check-freshness",
-        ),
     ],
 )
 async def test_every_unsupported_source_method_fails_before_io(

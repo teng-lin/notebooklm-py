@@ -157,11 +157,17 @@ class FakeOrganizationServer:
             }
             return self._response()
 
+        response_types = {
+            CREATE_LABEL_METHOD: organization_pb2.CreateLabelResponse,
+            MUTATE_LABEL_METHOD: organization_pb2.MutateLabelResponse,
+            DELETE_LABELS_METHOD: organization_pb2.DeleteLabelsResponse,
+        }
         assert kwargs == {
             "replay_safe": False,
-            "response_type": organization_mutations_pb2.OrganizationMutationWireResponse,
+            "response_type": response_types[method],
             "expected_epoch": self.epoch,
         }
+        assert request.HasField("request_context")
         if method == CREATE_LABEL_METHOD:
             properties = request.manual_create.properties
             if request.label_type == COLLECTION_TYPE:
@@ -180,11 +186,11 @@ class FakeOrganizationServer:
                         notebook_id=request.project_id,
                         emoji=properties.emoji or None,
                     )
-            return organization_mutations_pb2.OrganizationMutationWireResponse()
+            return organization_pb2.CreateLabelResponse()
 
         if method == MUTATE_LABEL_METHOD:
             if self.ignore_mutations:
-                return organization_mutations_pb2.OrganizationMutationWireResponse()
+                return organization_pb2.MutateLabelResponse()
             target: Label | Collection
             if request.label_type == COLLECTION_TYPE:
                 target = self.collections[request.label_id]
@@ -208,7 +214,7 @@ class FakeOrganizationServer:
                     members.append(member_id)
                 elif not add and member_id in members:
                     members.remove(member_id)
-            return organization_mutations_pb2.OrganizationMutationWireResponse()
+            return organization_pb2.MutateLabelResponse()
 
         if method == DELETE_LABELS_METHOD:
             if request.label_type == COLLECTION_TYPE:
@@ -218,7 +224,7 @@ class FakeOrganizationServer:
                 bucket = self.labels.setdefault(request.project_id, {})
                 for resource_id in request.label_ids:
                     bucket.pop(resource_id, None)
-            return organization_mutations_pb2.OrganizationMutationWireResponse()
+            return organization_pb2.DeleteLabelsResponse()
         raise AssertionError(f"unexpected method: {method}")
 
 

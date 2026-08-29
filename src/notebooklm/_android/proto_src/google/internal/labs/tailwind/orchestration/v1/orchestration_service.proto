@@ -33,13 +33,19 @@ service LabsTailwindOrchestrationService {
   rpc CreateProject(CreateProjectRequest) returns (Project);
   rpc DeleteProjects(DeleteProjectsRequest) returns (google.protobuf.Empty);
   rpc MutateProject(MutateProjectRequest) returns (Project);
+  rpc CopyProject(CopyProjectRequest) returns (Project);
   rpc GenerateNotebookGuide(GenerateNotebookGuideRequest)
       returns (GenerateNotebookGuideResponse);
+  rpc GeneratePromptSuggestions(GeneratePromptSuggestionsRequest)
+      returns (GeneratePromptSuggestionsResponse);
 
   rpc AddTentativeSources(AddTentativeSourcesRequest)
       returns (AddTentativeSourcesResponse);
   rpc AddSources(AddSourcesRequest) returns (AddSourcesResponse);
   rpc DeleteSources(DeleteSourcesRequest) returns (google.protobuf.Empty);
+  rpc MutateSource(MutateSourceRequest) returns (MutateSourceResponse);
+  rpc CheckSourceFreshness(CheckSourceFreshnessRequest)
+      returns (CheckSourceFreshnessResponse);
   rpc GenerateDocumentGuides(GenerateDocumentGuidesRequest)
       returns (GenerateDocumentGuidesResponse);
   rpc LoadSource(LoadSourceRequest) returns (LoadSourceResponse);
@@ -49,6 +55,8 @@ service LabsTailwindOrchestrationService {
   rpc CreateArtifact(CreateArtifactRequest) returns (CreateArtifactResponse);
   rpc DeleteArtifact(DeleteArtifactRequest) returns (google.protobuf.Empty);
   rpc UpdateArtifact(UpdateArtifactRequest) returns (Artifact);
+  rpc GenerateReportSuggestions(GenerateReportSuggestionsRequest)
+      returns (GenerateReportSuggestionsResponse);
 
   rpc ListChatSessions(ListChatSessionsRequest) returns (ListChatSessionsResponse);
   rpc ListChatTurns(ListChatTurnsRequest) returns (ListChatTurnsResponse);
@@ -68,8 +76,13 @@ service LabsTailwindOrchestrationService {
       returns (DiscoverSourcesAsyncResponse);
   rpc ListDiscoverSourcesJob(ListDiscoverSourcesJobRequest)
       returns (ListDiscoverSourcesJobResponse);
+  rpc CancelDiscoverSourcesJob(CancelDiscoverSourcesJobRequest)
+      returns (google.protobuf.Empty);
   rpc FinishDiscoverSourcesRun(FinishDiscoverSourcesRunRequest)
       returns (FinishDiscoverSourcesRunResponse);
 
   rpc GetLabels(GetLabelsRequest) returns (GetLabelsResponse);
+  rpc CreateLabel(CreateLabelRequest) returns (CreateLabelResponse);
+  rpc MutateLabel(MutateLabelRequest) returns (MutateLabelResponse);
+  rpc DeleteLabels(DeleteLabelsRequest) returns (DeleteLabelsResponse);
 }

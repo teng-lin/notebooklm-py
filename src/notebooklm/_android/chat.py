@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any, NoReturn, cast
+from typing import Any, cast
 from uuid import uuid4
 
 from google.protobuf.empty_pb2 import Empty
@@ -15,37 +15,36 @@ from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdPro
 from .._runtime.config import DEFAULT_CHAT_TIMEOUT, validate_read_timeout_kwarg
 from .._runtime.contracts import LoopGuard
 from .._types.enums import ChatGoal, ChatResponseLength
-from ..exceptions import ChatResponseParseError
+from ..exceptions import ChatResponseParseError, UnknownRPCMethodError, ValidationError
 from ..types import ChatReference, ChatSettings, ConversationTurn, Note
 from .codecs.chat import decode_document, decode_history, decode_references, decode_turn_key
-from .errors import unsupported_operation
 from .notes import SAVED_RESPONSE_NOTE_TYPE, create_note
 from .proto.google.internal.labs.tailwind.orchestration.v1 import (
     chat_pb2,
     read_pb2,
     sources_pb2,
 )
+from .proto.notebooklm.internal.android.wire.v1 import notebooks_pb2 as wire_notebooks_pb2
 from .session import AndroidSession
+from .upload import android_request_context
 
 logger = logging.getLogger("notebooklm._chat.api")
 _PROTO = cast(Any, chat_pb2)
 _READ_PROTO = cast(Any, read_pb2)
 _SOURCES_PROTO = cast(Any, sources_pb2)
+_WIRE = cast(Any, wire_notebooks_pb2)
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 LIST_CHAT_SESSIONS_METHOD = f"/{_SERVICE}/ListChatSessions"
 LIST_CHAT_TURNS_METHOD = f"/{_SERVICE}/ListChatTurns"
 DELETE_CHAT_TURNS_METHOD = f"/{_SERVICE}/DeleteChatTurns"
 GENERATE_FREE_FORM_STREAMED_METHOD = f"/{_SERVICE}/GenerateFreeFormStreamed"
+GET_PROJECT_METHOD = f"/{_SERVICE}/GetProject"
+MUTATE_PROJECT_METHOD = f"/{_SERVICE}/MutateProject"
 
 
 def _new_turn_id() -> str:
     return str(uuid4())
-
-
-def _reject(operation: str) -> NoReturn:
-    unsupported_operation(operation)
-    raise AssertionError("unsupported_operation returned")  # pragma: no cover
 
 
 class AndroidChatAPI(ChatAPI):
@@ -230,10 +229,100 @@ class AndroidChatAPI(ChatAPI):
         response_length: ChatResponseLength | None = None,
         custom_prompt: str | None = None,
     ) -> None:
-        _reject("chat.configure")
+        if goal is None:
+            goal = ChatGoal.DEFAULT
+        if response_length is None:
+            response_length = ChatResponseLength.DEFAULT
+        if goal == ChatGoal.CUSTOM and not custom_prompt:
+            raise ValidationError("custom_prompt is required when goal is CUSTOM")
+        active_prompt = custom_prompt if goal == ChatGoal.CUSTOM else ""
+
+        await self._transport.unary(
+            MUTATE_PROJECT_METHOD,
+            _WIRE.WireMutateProjectRequest(
+                project_id=notebook_id,
+                mutations=[
+                    _WIRE.WireProjectMutation(
+                        advanced_settings=_WIRE.WireProjectAdvancedSettings(
+                            goal_settings=_WIRE.WireProjectGoalSettings(
+                                goal=goal.value,
+                                custom_prompt=active_prompt,
+                            ),
+                            response_style_settings=_WIRE.WireProjectResponseStyleSettings(
+                                response_length=response_length.value,
+                            ),
+                        )
+                    )
+                ],
+                request_context=android_request_context(),
+            ),
+            replay_safe=False,
+            response_type=_READ_PROTO.Project,
+        )
 
     async def get_settings(self, notebook_id: str) -> ChatSettings:
-        _reject("chat.get_settings")
+        response = await self._transport.unary(
+            GET_PROJECT_METHOD,
+            _READ_PROTO.GetProjectRequest(
+                project_id=notebook_id,
+                include_audio_overview_ids=True,
+            ),
+            replay_safe=True,
+            response_type=_WIRE.WireGetProjectResponse,
+        )
+        if not response.HasField("project"):
+            raise UnknownRPCMethodError(
+                "Android GetProject response omitted its project",
+                method_id=GET_PROJECT_METHOD,
+                path=(0,),
+                source="AndroidChatAPI.get_settings",
+            )
+        project = response.project
+        if not project.HasField("advanced_settings"):
+            return ChatSettings(
+                goal=ChatGoal.DEFAULT,
+                response_length=ChatResponseLength.DEFAULT,
+            )
+
+        settings = project.advanced_settings
+        if not settings.HasField("goal_settings") or not settings.HasField(
+            "response_style_settings"
+        ):
+            raise UnknownRPCMethodError(
+                "Android GetProject returned a partial chat-settings block",
+                method_id=GET_PROJECT_METHOD,
+                path=(0, 7),
+                source="AndroidChatAPI.get_settings",
+            )
+        goal_code = settings.goal_settings.goal
+        response_length_code = settings.response_style_settings.response_length
+        try:
+            goal = ChatGoal(goal_code)
+            response_length = ChatResponseLength(response_length_code)
+        except ValueError as exc:
+            raise UnknownRPCMethodError(
+                "unknown Android chat-settings enum code "
+                f"(goal={goal_code!r}, response_length={response_length_code!r})",
+                method_id=GET_PROJECT_METHOD,
+                path=(0, 7),
+                source="AndroidChatAPI.get_settings",
+                data_at_failure=(goal_code, response_length_code),
+            ) from exc
+        custom_prompt = settings.goal_settings.custom_prompt or None
+        if goal == ChatGoal.CUSTOM and custom_prompt is None:
+            raise UnknownRPCMethodError(
+                "Android GetProject returned CUSTOM chat settings without a prompt",
+                method_id=GET_PROJECT_METHOD,
+                path=(0, 7, 0, 1),
+                source="AndroidChatAPI.get_settings",
+            )
+        if goal != ChatGoal.CUSTOM:
+            custom_prompt = None
+        return ChatSettings(
+            goal=goal,
+            response_length=response_length,
+            custom_prompt=custom_prompt,
+        )
 
     async def _send_note(
         self,
@@ -259,6 +348,8 @@ __all__ = [
     "AndroidChatAPI",
     "DELETE_CHAT_TURNS_METHOD",
     "GENERATE_FREE_FORM_STREAMED_METHOD",
+    "GET_PROJECT_METHOD",
     "LIST_CHAT_SESSIONS_METHOD",
     "LIST_CHAT_TURNS_METHOD",
+    "MUTATE_PROJECT_METHOD",
 ]

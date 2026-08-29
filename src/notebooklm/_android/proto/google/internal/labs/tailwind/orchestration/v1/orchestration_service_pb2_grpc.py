@@ -83,10 +83,20 @@ class LabsTailwindOrchestrationServiceStub(object):
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.MutateProjectRequest.SerializeToString,
                 response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.Project.FromString,
                 _registered_method=True)
+        self.CopyProject = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CopyProject',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.CopyProjectRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.Project.FromString,
+                _registered_method=True)
         self.GenerateNotebookGuide = channel.unary_unary(
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateNotebookGuide',
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.GenerateNotebookGuideRequest.SerializeToString,
                 response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.GenerateNotebookGuideResponse.FromString,
+                _registered_method=True)
+        self.GeneratePromptSuggestions = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GeneratePromptSuggestions',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.GeneratePromptSuggestionsRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.GeneratePromptSuggestionsResponse.FromString,
                 _registered_method=True)
         self.AddTentativeSources = channel.unary_unary(
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/AddTentativeSources',
@@ -102,6 +112,16 @@ class LabsTailwindOrchestrationServiceStub(object):
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteSources',
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.DeleteSourcesRequest.SerializeToString,
                 response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+                _registered_method=True)
+        self.MutateSource = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateSource',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.MutateSourceRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.MutateSourceResponse.FromString,
+                _registered_method=True)
+        self.CheckSourceFreshness = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CheckSourceFreshness',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.CheckSourceFreshnessRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.CheckSourceFreshnessResponse.FromString,
                 _registered_method=True)
         self.GenerateDocumentGuides = channel.unary_unary(
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateDocumentGuides',
@@ -137,6 +157,11 @@ class LabsTailwindOrchestrationServiceStub(object):
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/UpdateArtifact',
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.UpdateArtifactRequest.SerializeToString,
                 response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.Artifact.FromString,
+                _registered_method=True)
+        self.GenerateReportSuggestions = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateReportSuggestions',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.GenerateReportSuggestionsRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.GenerateReportSuggestionsResponse.FromString,
                 _registered_method=True)
         self.ListChatSessions = channel.unary_unary(
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListChatSessions',
@@ -198,6 +223,11 @@ class LabsTailwindOrchestrationServiceStub(object):
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.ListDiscoverSourcesJobRequest.SerializeToString,
                 response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.ListDiscoverSourcesJobResponse.FromString,
                 _registered_method=True)
+        self.CancelDiscoverSourcesJob = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CancelDiscoverSourcesJob',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.CancelDiscoverSourcesJobRequest.SerializeToString,
+                response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+                _registered_method=True)
         self.FinishDiscoverSourcesRun = channel.unary_unary(
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/FinishDiscoverSourcesRun',
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.FinishDiscoverSourcesRunRequest.SerializeToString,
@@ -207,6 +237,21 @@ class LabsTailwindOrchestrationServiceStub(object):
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels',
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.GetLabelsRequest.SerializeToString,
                 response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.GetLabelsResponse.FromString,
+                _registered_method=True)
+        self.CreateLabel = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateLabel',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.CreateLabelRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.CreateLabelResponse.FromString,
+                _registered_method=True)
+        self.MutateLabel = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateLabel',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.MutateLabelRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.MutateLabelResponse.FromString,
+                _registered_method=True)
+        self.DeleteLabels = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteLabels',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.DeleteLabelsRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.DeleteLabelsResponse.FromString,
                 _registered_method=True)
 
 
@@ -259,7 +304,19 @@ class LabsTailwindOrchestrationServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def CopyProject(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def GenerateNotebookGuide(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GeneratePromptSuggestions(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -278,6 +335,18 @@ class LabsTailwindOrchestrationServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def DeleteSources(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def MutateSource(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CheckSourceFreshness(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -320,6 +389,12 @@ class LabsTailwindOrchestrationServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def UpdateArtifact(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GenerateReportSuggestions(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -397,6 +472,12 @@ class LabsTailwindOrchestrationServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def CancelDiscoverSourcesJob(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def FinishDiscoverSourcesRun(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -404,6 +485,24 @@ class LabsTailwindOrchestrationServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def GetLabels(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CreateLabel(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def MutateLabel(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DeleteLabels(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -442,10 +541,20 @@ def add_LabsTailwindOrchestrationServiceServicer_to_server(servicer, server):
                     request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.MutateProjectRequest.FromString,
                     response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.Project.SerializeToString,
             ),
+            'CopyProject': grpc.unary_unary_rpc_method_handler(
+                    servicer.CopyProject,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.CopyProjectRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.Project.SerializeToString,
+            ),
             'GenerateNotebookGuide': grpc.unary_unary_rpc_method_handler(
                     servicer.GenerateNotebookGuide,
                     request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.GenerateNotebookGuideRequest.FromString,
                     response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.GenerateNotebookGuideResponse.SerializeToString,
+            ),
+            'GeneratePromptSuggestions': grpc.unary_unary_rpc_method_handler(
+                    servicer.GeneratePromptSuggestions,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.GeneratePromptSuggestionsRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.GeneratePromptSuggestionsResponse.SerializeToString,
             ),
             'AddTentativeSources': grpc.unary_unary_rpc_method_handler(
                     servicer.AddTentativeSources,
@@ -461,6 +570,16 @@ def add_LabsTailwindOrchestrationServiceServicer_to_server(servicer, server):
                     servicer.DeleteSources,
                     request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.DeleteSourcesRequest.FromString,
                     response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            ),
+            'MutateSource': grpc.unary_unary_rpc_method_handler(
+                    servicer.MutateSource,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.MutateSourceRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.MutateSourceResponse.SerializeToString,
+            ),
+            'CheckSourceFreshness': grpc.unary_unary_rpc_method_handler(
+                    servicer.CheckSourceFreshness,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.CheckSourceFreshnessRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.CheckSourceFreshnessResponse.SerializeToString,
             ),
             'GenerateDocumentGuides': grpc.unary_unary_rpc_method_handler(
                     servicer.GenerateDocumentGuides,
@@ -496,6 +615,11 @@ def add_LabsTailwindOrchestrationServiceServicer_to_server(servicer, server):
                     servicer.UpdateArtifact,
                     request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.UpdateArtifactRequest.FromString,
                     response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.Artifact.SerializeToString,
+            ),
+            'GenerateReportSuggestions': grpc.unary_unary_rpc_method_handler(
+                    servicer.GenerateReportSuggestions,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.GenerateReportSuggestionsRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.GenerateReportSuggestionsResponse.SerializeToString,
             ),
             'ListChatSessions': grpc.unary_unary_rpc_method_handler(
                     servicer.ListChatSessions,
@@ -557,6 +681,11 @@ def add_LabsTailwindOrchestrationServiceServicer_to_server(servicer, server):
                     request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.ListDiscoverSourcesJobRequest.FromString,
                     response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.ListDiscoverSourcesJobResponse.SerializeToString,
             ),
+            'CancelDiscoverSourcesJob': grpc.unary_unary_rpc_method_handler(
+                    servicer.CancelDiscoverSourcesJob,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.CancelDiscoverSourcesJobRequest.FromString,
+                    response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            ),
             'FinishDiscoverSourcesRun': grpc.unary_unary_rpc_method_handler(
                     servicer.FinishDiscoverSourcesRun,
                     request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.FinishDiscoverSourcesRunRequest.FromString,
@@ -566,6 +695,21 @@ def add_LabsTailwindOrchestrationServiceServicer_to_server(servicer, server):
                     servicer.GetLabels,
                     request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.GetLabelsRequest.FromString,
                     response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.GetLabelsResponse.SerializeToString,
+            ),
+            'CreateLabel': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateLabel,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.CreateLabelRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.CreateLabelResponse.SerializeToString,
+            ),
+            'MutateLabel': grpc.unary_unary_rpc_method_handler(
+                    servicer.MutateLabel,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.MutateLabelRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.MutateLabelResponse.SerializeToString,
+            ),
+            'DeleteLabels': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeleteLabels,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.DeleteLabelsRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.DeleteLabelsResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -751,6 +895,33 @@ class LabsTailwindOrchestrationService(object):
             _registered_method=True)
 
     @staticmethod
+    def CopyProject(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CopyProject',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.CopyProjectRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.Project.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
     def GenerateNotebookGuide(request,
             target,
             options=(),
@@ -767,6 +938,33 @@ class LabsTailwindOrchestrationService(object):
             '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateNotebookGuide',
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.GenerateNotebookGuideRequest.SerializeToString,
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.GenerateNotebookGuideResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GeneratePromptSuggestions(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GeneratePromptSuggestions',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.GeneratePromptSuggestionsRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.GeneratePromptSuggestionsResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -848,6 +1046,60 @@ class LabsTailwindOrchestrationService(object):
             '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteSources',
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.DeleteSourcesRequest.SerializeToString,
             google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def MutateSource(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateSource',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.MutateSourceRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.MutateSourceResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CheckSourceFreshness(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CheckSourceFreshness',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.CheckSourceFreshnessRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.CheckSourceFreshnessResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1037,6 +1289,33 @@ class LabsTailwindOrchestrationService(object):
             '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/UpdateArtifact',
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.UpdateArtifactRequest.SerializeToString,
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.Artifact.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GenerateReportSuggestions(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateReportSuggestions',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.GenerateReportSuggestionsRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.GenerateReportSuggestionsResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1372,6 +1651,33 @@ class LabsTailwindOrchestrationService(object):
             _registered_method=True)
 
     @staticmethod
+    def CancelDiscoverSourcesJob(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CancelDiscoverSourcesJob',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.CancelDiscoverSourcesJobRequest.SerializeToString,
+            google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
     def FinishDiscoverSourcesRun(request,
             target,
             options=(),
@@ -1415,6 +1721,87 @@ class LabsTailwindOrchestrationService(object):
             '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels',
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.GetLabelsRequest.SerializeToString,
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.GetLabelsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CreateLabel(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateLabel',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.CreateLabelRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.CreateLabelResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def MutateLabel(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateLabel',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.MutateLabelRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.MutateLabelResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DeleteLabels(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteLabels',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.DeleteLabelsRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.DeleteLabelsResponse.FromString,
             options,
             channel_credentials,
             insecure,

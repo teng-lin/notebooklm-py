@@ -359,6 +359,9 @@ async def test_cancel_lost_response_resolves_only_by_exact_id_poll() -> None:
     )
     await api.cancel("nb", RUN_ID)
     assert [call[0] for call in transport.calls] == [CANCEL_JOB_METHOD, LIST_JOBS_METHOD]
+    cancel_request = transport.calls[0][1]
+    assert cancel_request.source_discovery_job_id == RUN_ID
+    assert cancel_request.HasField("request_context")
     assert transport.calls[0][2]["replay_safe"] is False
     assert transport.calls[1][2]["replay_safe"] is True
 

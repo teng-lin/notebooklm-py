@@ -22,16 +22,12 @@ from notebooklm._android.codecs.artifacts import decode_artifact, decode_artifac
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     artifacts_pb2,
 )
-from notebooklm._android.proto.notebooklm.android.internal.v1 import (
-    report_suggestions_pb2,
-)
 from notebooklm._types.artifact_content import ArtifactMediaType
 from notebooklm.exceptions import DecodingError
 from notebooklm.types import ArtifactType
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "android"
 ORCHESTRATION_PACKAGE = "google.internal.labs.tailwind.orchestration.v1"
-LOCAL_PACKAGE = "notebooklm.android.internal.v1"
 
 
 def _shapes(message: Any) -> dict[str, tuple[int, bool, int, str | None]]:
@@ -58,12 +54,11 @@ def _enum_values(enum: Any) -> dict[str, int]:
     return {value.name: value.number for value in enum.DESCRIPTOR.values}
 
 
-def test_b4_exact_package_and_repository_local_overlay_are_distinct() -> None:
+def test_b4_generated_package_contains_report_suggestions_without_local_overlay() -> None:
     assert artifacts_pb2.DESCRIPTOR.package == ORCHESTRATION_PACKAGE
-    assert report_suggestions_pb2.DESCRIPTOR.package == LOCAL_PACKAGE
     assert list(artifacts_pb2.DESCRIPTOR.services_by_name) == []
-    assert list(report_suggestions_pb2.DESCRIPTOR.services_by_name) == []
-    assert not hasattr(artifacts_pb2, "GenerateReportSuggestionsRequestWire")
+    assert hasattr(artifacts_pb2, "GenerateReportSuggestionsRequest")
+    assert hasattr(artifacts_pb2, "GenerateReportSuggestionsResponse")
 
 
 def test_full_method_paths_are_exact_and_local_overlay_does_not_claim_a_service() -> None:
@@ -159,6 +154,38 @@ def test_b4_reachable_enum_names_and_numbers_are_exhaustive() -> None:
         "MEDIA_STREAMING_TYPE_ADAPTIVE_STREAMING_DASH": 3,
         "MEDIA_STREAMING_TYPE_DOWNLOAD": 4,
     }
+    assert _enum_values(artifacts_pb2.VideoOverviewTemplateFormat) == {
+        "TEMPLATE_FORMAT_UNSPECIFIED": 0,
+        "TEMPLATE_FORMAT_EXPLAINER": 1,
+        "TEMPLATE_FORMAT_BRIEF": 2,
+        "TEMPLATE_FORMAT_BREAKDOWN": 3,
+        "TEMPLATE_FORMAT_SHORT": 4,
+        "TEMPLATE_FORMAT_WHITEBOARD_ANIMATION": 5,
+    }
+    assert _enum_values(artifacts_pb2.VideoOverviewStyle) == {
+        "VIDEO_OVERVIEW_STYLE_UNSPECIFIED": 0,
+        "VIDEO_OVERVIEW_STYLE_AUTO_SELECT": 1,
+        "VIDEO_OVERVIEW_STYLE_CLASSIC": 2,
+        "VIDEO_OVERVIEW_STYLE_WHITEBOARD": 3,
+        "VIDEO_OVERVIEW_STYLE_HERITAGE": 4,
+        "VIDEO_OVERVIEW_STYLE_PAPERCRAFT": 5,
+        "VIDEO_OVERVIEW_STYLE_WATERCOLOR": 6,
+        "VIDEO_OVERVIEW_STYLE_ANIME": 7,
+        "VIDEO_OVERVIEW_STYLE_RISOGRAPHIC": 8,
+        "VIDEO_OVERVIEW_STYLE_KAWAII": 9,
+    }
+    assert _enum_values(artifacts_pb2.DeckType) == {
+        "DECK_TYPE_UNSPECIFIED": 0,
+        "DECK_TYPE_READING": 1,
+        "DECK_TYPE_PRESENTATION": 2,
+    }
+    assert _enum_values(artifacts_pb2.SlideDeckLength) == {
+        "SLIDE_DECK_LENGTH_UNSPECIFIED": 0,
+        "SLIDE_DECK_LENGTH_DYNAMIC": 1,
+        "SLIDE_DECK_LENGTH_SHORT": 2,
+        "SLIDE_DECK_LENGTH_MEDIUM": 3,
+        "SLIDE_DECK_LENGTH_LONG": 4,
+    }
     assert _enum_values(artifacts_pb2.QuizGenerationOptions.QuestionQuantity) == {
         "QUESTION_QUANTITY_UNSPECIFIED": 0,
         "QUESTION_QUANTITY_FEWER": 1,
@@ -170,6 +197,39 @@ def test_b4_reachable_enum_names_and_numbers_are_exhaustive() -> None:
         "QUIZ_DIFFICULTY_EASY": 1,
         "QUIZ_DIFFICULTY_MEDIUM": 2,
         "QUIZ_DIFFICULTY_HARD": 3,
+    }
+    assert _enum_values(artifacts_pb2.FlashcardsGenerationOptions.CardQuantity) == {
+        "CARD_QUANTITY_UNSPECIFIED": 0,
+        "CARD_QUANTITY_FEWER": 1,
+        "CARD_QUANTITY_STANDARD": 2,
+        "CARD_QUANTITY_MORE": 3,
+    }
+    assert _enum_values(artifacts_pb2.FlashcardsGenerationOptions.FlashcardsDifficulty) == {
+        "FLASHCARDS_DIFFICULTY_UNSPECIFIED": 0,
+        "FLASHCARDS_DIFFICULTY_EASY": 1,
+        "FLASHCARDS_DIFFICULTY_MEDIUM": 2,
+        "FLASHCARDS_DIFFICULTY_HARD": 3,
+    }
+    assert _enum_values(artifacts_pb2.InfographicGenerationOptions.AspectRatio) == {
+        "ASPECT_RATIO_UNSPECIFIED": 0,
+        "ASPECT_RATIO_LANDSCAPE": 1,
+        "ASPECT_RATIO_PORTRAIT": 2,
+        "ASPECT_RATIO_SQUARE": 3,
+    }
+    assert _enum_values(artifacts_pb2.InfographicGenerationOptions.InfographicStyle) == {
+        "STYLE_UNSPECIFIED": 0,
+        "STYLE_AUTO": 1,
+        "STYLE_SKETCH_NOTE": 2,
+        "STYLE_PROFESSIONAL": 3,
+        "STYLE_BENTO_GRID": 4,
+        "STYLE_EDITORIAL": 5,
+        "STYLE_STORYBOARD": 6,
+        "STYLE_BRICKS": 7,
+        "STYLE_CLAYMATION": 8,
+        "STYLE_ANIME": 9,
+        "STYLE_KAWAII": 10,
+        "STYLE_SCIENTIFIC": 11,
+        "STYLE_ACADEMIC": 12,
     }
 
 
@@ -205,9 +265,33 @@ def test_b4_artifact_projection_fields_are_exhaustive() -> None:
                 f"{package}.QuizGenerationOptions.QuizDifficulty",
             ),
         ),
+        artifacts_pb2.FlashcardsGenerationOptions: _expected(
+            (
+                "card_quantity",
+                1,
+                singular,
+                enum,
+                f"{package}.FlashcardsGenerationOptions.CardQuantity",
+            ),
+            (
+                "flashcards_difficulty",
+                2,
+                singular,
+                enum,
+                f"{package}.FlashcardsGenerationOptions.FlashcardsDifficulty",
+            ),
+        ),
         artifacts_pb2.AppArtifactGenerationOptions: _expected(
             ("app_type", 1, singular, enum, f"{package}.AppType"),
             ("free_text_steering_prompt", 3, singular, string, None),
+            ("language_code", 4, singular, string, None),
+            (
+                "flashcards_generation_options",
+                7,
+                singular,
+                message,
+                f"{package}.FlashcardsGenerationOptions",
+            ),
             (
                 "quiz_generation_options",
                 8,
@@ -244,7 +328,24 @@ def test_b4_artifact_projection_fields_are_exhaustive() -> None:
             ("duration", 7, singular, message, duration),
         ),
         artifacts_pb2.ExplainerVideoGenerationOptions: _expected(
+            ("source_ids", 1, repeated, message, f"{package}.SourceId"),
+            ("language_code", 2, singular, string, None),
             ("video_focus", 3, singular, string, None),
+            (
+                "template_format",
+                5,
+                singular,
+                enum,
+                f"{package}.VideoOverviewTemplateFormat",
+            ),
+            (
+                "video_overview_style",
+                6,
+                singular,
+                enum,
+                f"{package}.VideoOverviewStyle",
+            ),
+            ("style_prompt", 7, singular, string, None),
         ),
         artifacts_pb2.ExplainerVideoArtifact: _expected(
             (
@@ -259,6 +360,9 @@ def test_b4_artifact_projection_fields_are_exhaustive() -> None:
         ),
         artifacts_pb2.TailoredReportArtifactGenerationOptions: _expected(
             ("type", 1, singular, string, None),
+            ("description", 2, singular, string, None),
+            ("source_ids", 4, repeated, message, f"{package}.SourceId"),
+            ("language_code", 5, singular, string, None),
             ("document_directive", 6, singular, string, None),
         ),
         artifacts_pb2.TailoredReportArtifact: _expected(
@@ -273,6 +377,21 @@ def test_b4_artifact_projection_fields_are_exhaustive() -> None:
         artifacts_pb2.ServedImage: _expected(("url", 1, singular, string, None)),
         artifacts_pb2.InfographicGenerationOptions: _expected(
             ("user_steering_prompt", 1, singular, string, None),
+            ("language_code", 2, singular, string, None),
+            (
+                "aspect_ratio",
+                4,
+                singular,
+                enum,
+                f"{package}.InfographicGenerationOptions.AspectRatio",
+            ),
+            (
+                "style",
+                6,
+                singular,
+                enum,
+                f"{package}.InfographicGenerationOptions.InfographicStyle",
+            ),
         ),
         artifacts_pb2.Infographic: _expected(
             ("title", 1, singular, string, None),
@@ -290,6 +409,9 @@ def test_b4_artifact_projection_fields_are_exhaustive() -> None:
         ),
         artifacts_pb2.SlidesGenerationOptions: _expected(
             ("user_steering_prompt", 1, singular, string, None),
+            ("language_code", 2, singular, string, None),
+            ("deck_type", 3, singular, enum, f"{package}.DeckType"),
+            ("length", 4, singular, enum, f"{package}.SlideDeckLength"),
         ),
         artifacts_pb2.Slide: _expected(
             ("image", 1, singular, message, f"{package}.ServedImage"),
@@ -334,23 +456,32 @@ def test_b4_artifact_projection_fields_are_exhaustive() -> None:
     assert integer == FieldDescriptor.TYPE_INT32
 
 
-def test_local_report_overlay_fields_are_exhaustive() -> None:
+def test_web_derived_report_suggestion_fields_are_exhaustive() -> None:
     singular = False
     repeated = True
     string = FieldDescriptor.TYPE_STRING
     integer = FieldDescriptor.TYPE_INT32
     message = FieldDescriptor.TYPE_MESSAGE
-    assert _shapes(report_suggestions_pb2.GenerateReportSuggestionsRequestWire) == _expected(
-        ("project_id", 2, singular, string, None)
+    assert _shapes(artifacts_pb2.GenerateReportSuggestionsRequest) == _expected(
+        (
+            "request_context",
+            1,
+            singular,
+            message,
+            "labs.language.tailwind.common.protos.RequestContext",
+        ),
+        ("project_id", 2, singular, string, None),
+        ("source_ids", 3, repeated, message, f"{ORCHESTRATION_PACKAGE}.SourceId"),
     )
-    assert _shapes(report_suggestions_pb2.ReportSuggestionWire) == _expected(
+    assert _shapes(artifacts_pb2.ReportSuggestion) == _expected(
         ("title", 1, singular, string, None),
         ("description", 2, singular, string, None),
+        ("source_ids", 4, repeated, message, f"{ORCHESTRATION_PACKAGE}.SourceId"),
         ("prompt", 5, singular, string, None),
         ("audience_level", 6, singular, integer, None),
     )
-    assert _shapes(report_suggestions_pb2.GenerateReportSuggestionsResponseWire) == _expected(
-        ("suggestions", 1, repeated, message, f"{LOCAL_PACKAGE}.ReportSuggestionWire")
+    assert _shapes(artifacts_pb2.GenerateReportSuggestionsResponse) == _expected(
+        ("suggestions", 1, repeated, message, f"{ORCHESTRATION_PACKAGE}.ReportSuggestion")
     )
 
 
@@ -366,7 +497,6 @@ def test_descriptor_fixture_contains_the_cumulative_android_closure() -> None:
         "google/protobuf/duration.proto",
         "google/protobuf/field_mask.proto",
         "google/protobuf/timestamp.proto",
-        "notebooklm/android/internal/v1/report_suggestions.proto",
     } <= names
 
 

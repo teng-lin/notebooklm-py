@@ -7,6 +7,7 @@ syntax = "proto3";
 package notebooklm.internal.android.wire.v1;
 
 import "google/internal/labs/tailwind/orchestration/v1/notebooks.proto";
+import "labs/language/tailwind/common/protos/metadata.proto";
 
 message WireProjectChangeProperty {
   string new_title = 2; // evidence: docs/android/endpoints.md#mutateproject--rename--edit-notebook-fields
@@ -17,16 +18,38 @@ message WireProjectChangeProperty {
 
 message WireProjectMutation {
   WireProjectChangeProperty change_property = 4; // evidence: docs/android/endpoints.md#mutateproject--rename--edit-notebook-fields
+  WireProjectAdvancedSettings advanced_settings = 8; // evidence: live Android-bearer write/read-back, 2026-08-29
+}
+
+message WireProjectGoalSettings {
+  int32 goal = 1; // ChatGoal wire enum: 1=default, 2=custom, 3=learning guide
+  string custom_prompt = 2;
+}
+
+message WireProjectResponseStyleSettings {
+  int32 response_length = 1; // ChatResponseLength wire enum: 1=default, 4=longer, 5=shorter
+}
+
+message WireProjectAdvancedSettings {
+  WireProjectGoalSettings goal_settings = 1;
+  WireProjectResponseStyleSettings response_style_settings = 2;
 }
 
 message WireMutateProjectRequest {
   string project_id = 1; // evidence: docs/android/endpoints.md#mutateproject--rename--edit-notebook-fields
   repeated WireProjectMutation mutations = 2; // evidence: docs/android/endpoints.md#mutateproject--rename--edit-notebook-fields
+  .labs.language.tailwind.common.protos.RequestContext request_context = 3; // evidence: live Android-bearer chat-config mutation, 2026-08-29
 }
 
-message WireCopyProjectRequest {
-  string source_project_id = 2; // evidence: docs/android/labels-collections-copy-mobile-grpc-2026-08-27.md#copy-a-notebook
-  string title = 3; // evidence: docs/android/labels-collections-copy-mobile-grpc-2026-08-27.md#copy-a-notebook
+// Minimal wire-equivalent GetProject response used only to preserve/read the
+// APK-omitted Project.advanced_settings branch. Unknown Project fields remain
+// in the protobuf unknown-field set and are not claimed here.
+message WireProjectWithAdvancedSettings {
+  WireProjectAdvancedSettings advanced_settings = 8;
+}
+
+message WireGetProjectResponse {
+  WireProjectWithAdvancedSettings project = 1;
 }
 
 message WireSuggestedTopic {

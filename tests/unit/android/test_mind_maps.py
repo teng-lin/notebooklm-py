@@ -16,8 +16,8 @@ from notebooklm._android.mind_maps import AndroidMindMapsAPI
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._notes import NotesAPI
 from notebooklm._runtime.call_supervisor import CallSupervisor
-from notebooklm.exceptions import MindMapNotFoundError, UnsupportedOperationError
-from notebooklm.types import Artifact, MindMap, MindMapKind
+from notebooklm.exceptions import MindMapNotFoundError, NoteNotFoundError, UnsupportedOperationError
+from notebooklm.types import Artifact, MindMap, MindMapKind, Note
 
 
 @dataclass(frozen=True)
@@ -56,6 +56,14 @@ def _graph(
     # B6's public method remains a raw ``list[Any]`` evidence gate. A raw-looking
     # value makes accidental use by B7 fail the interaction assertions below.
     notes.list_mind_maps = AsyncMock(return_value=[["raw-note-row"]])
+    notes.get = AsyncMock(
+        return_value=Note(
+            id="note-map",
+            notebook_id="notebook-1",
+            title="Note-backed",
+            content='{"name":"Root","children":[]}',
+        )
+    )
     notes.update = AsyncMock()
     notes.delete_mind_map = AsyncMock(return_value=None)
 
@@ -78,6 +86,7 @@ def _graph(
 def _assert_no_dependency_io(artifacts: MagicMock, notes: MagicMock) -> None:
     notes._list_note_backed_mind_maps.assert_not_awaited()
     notes.list_mind_maps.assert_not_awaited()
+    notes.get.assert_not_awaited()
     notes.update.assert_not_awaited()
     notes.delete_mind_map.assert_not_awaited()
     artifacts.list.assert_not_awaited()
@@ -163,35 +172,6 @@ UnsupportedCall = Callable[[AndroidMindMapsAPI], Awaitable[object]]
     "invoke",
     [
         pytest.param(
-            lambda api: api.rename(
-                "notebook-1",
-                "map",
-                "Renamed",
-                return_object=False,
-            ),
-            id="rename-auto-detect",
-        ),
-        pytest.param(
-            lambda api: api.rename(
-                "notebook-1",
-                "map",
-                "Renamed",
-                kind=MindMapKind.NOTE_BACKED,
-                return_object=False,
-            ),
-            id="rename-note-backed",
-        ),
-        pytest.param(
-            lambda api: api.rename(
-                "notebook-1",
-                "interactive",
-                "Renamed",
-                kind=MindMapKind.INTERACTIVE,
-            ),
-            id="rename-interactive-with-hydration",
-        ),
-        pytest.param(lambda api: api.delete("notebook-1", "map"), id="delete-auto-detect"),
-        pytest.param(
             lambda api: api.generate(
                 "notebook-1",
                 ["source-1"],
@@ -206,14 +186,6 @@ UnsupportedCall = Callable[[AndroidMindMapsAPI], Awaitable[object]]
                 kind=MindMapKind.INTERACTIVE,
             ),
             id="generate-interactive",
-        ),
-        pytest.param(
-            lambda api: api.get_tree(
-                "notebook-1",
-                "map",
-                kind=MindMapKind.NOTE_BACKED,
-            ),
-            id="get-tree-note-backed",
         ),
         pytest.param(
             lambda api: api.get_tree(
@@ -234,6 +206,132 @@ async def test_evidence_gated_operations_fail_before_dependency_io(
         await invoke(api)
 
     _assert_no_dependency_io(artifacts, notes)
+
+
+@pytest.mark.asyncio
+async def test_note_backed_rename_preserves_exact_persisted_content() -> None:
+    note_map = _note_backed_mind_map()
+    api, artifacts, notes = _graph(note_backed=[note_map])
+
+    assert (
+        await api.rename(
+            "notebook-1",
+            "note-map",
+            "Renamed",
+            kind=MindMapKind.NOTE_BACKED,
+            return_object=False,
+        )
+        is None
+    )
+
+    notes._list_note_backed_mind_maps.assert_awaited_once_with("notebook-1")
+    notes.get.assert_awaited_once_with("notebook-1", "note-map")
+    notes.update.assert_awaited_once_with(
+        "notebook-1",
+        "note-map",
+        '{"name":"Root","children":[]}',
+        "Renamed",
+    )
+    artifacts.list.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_note_backed_rename_maps_a_vanished_note_to_mind_map_not_found() -> None:
+    api, artifacts, notes = _graph(note_backed=[_note_backed_mind_map()])
+    notes.get.side_effect = NoteNotFoundError("note-map")
+
+    with pytest.raises(MindMapNotFoundError, match="note-map"):
+        await api.rename(
+            "notebook-1",
+            "note-map",
+            "Renamed",
+            kind=MindMapKind.NOTE_BACKED,
+            return_object=False,
+        )
+
+    notes.update.assert_not_awaited()
+    artifacts.list.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_auto_detect_rename_hydrates_interactive_map() -> None:
+    before = _interactive_artifact()
+    after = Artifact(
+        id="interactive",
+        title="Renamed",
+        _artifact_type=4,
+        status=3,
+        _variant=4,
+    )
+    api, artifacts, notes = _graph(artifacts=[before])
+    artifacts.list.side_effect = [[before], [after]]
+
+    renamed = await api.rename("notebook-1", "interactive", "Renamed")
+
+    assert renamed is not None
+    assert (renamed.id, renamed.title, renamed.kind) == (
+        "interactive",
+        "Renamed",
+        MindMapKind.INTERACTIVE,
+    )
+    assert notes._list_note_backed_mind_maps.await_count == 2
+    assert artifacts.list.await_count == 2
+    artifacts.rename.assert_awaited_once_with(
+        "notebook-1",
+        "interactive",
+        "Renamed",
+        return_object=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_auto_detect_delete_dispatches_and_missing_is_idempotent() -> None:
+    api, artifacts, notes = _graph(
+        note_backed=[_note_backed_mind_map()],
+        artifacts=[_interactive_artifact()],
+    )
+
+    assert await api.delete("notebook-1", "note-map") is None
+    notes.delete_mind_map.assert_awaited_once_with("notebook-1", "note-map")
+
+    notes._list_note_backed_mind_maps.return_value = []
+    assert await api.delete("notebook-1", "interactive") is None
+    artifacts.delete.assert_awaited_once_with("notebook-1", "interactive")
+
+    artifacts.list.return_value = []
+    assert await api.delete("notebook-1", "missing") is None
+    assert artifacts.delete.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_get_tree_reads_note_backed_and_auto_detects_missing() -> None:
+    tree = {"name": "Root", "children": []}
+    api, artifacts, notes = _graph(note_backed=[_note_backed_mind_map()])
+
+    assert (
+        await api.get_tree(
+            "notebook-1",
+            "note-map",
+            kind=MindMapKind.NOTE_BACKED,
+        )
+        == tree
+    )
+    assert await api.get_tree("notebook-1", "note-map") == tree
+
+    notes._list_note_backed_mind_maps.return_value = []
+    assert await api.get_tree("notebook-1", "missing") is None
+    artifacts.list.assert_awaited_once_with("notebook-1")
+
+
+@pytest.mark.asyncio
+async def test_get_tree_auto_detected_interactive_remains_gated_after_reads() -> None:
+    api, artifacts, notes = _graph(artifacts=[_interactive_artifact()])
+
+    with pytest.raises(UnsupportedOperationError, match="web backend"):
+        await api.get_tree("notebook-1", "interactive")
+
+    notes._list_note_backed_mind_maps.assert_awaited_once_with("notebook-1")
+    artifacts.list.assert_awaited_once_with("notebook-1")
 
 
 @pytest.mark.asyncio

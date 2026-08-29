@@ -29,9 +29,6 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
     artifacts_pb2,
     read_pb2,
 )
-from notebooklm._android.proto.notebooklm.android.internal.v1 import (
-    report_suggestions_pb2,
-)
 from notebooklm._android.session import AndroidSession
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._client_metrics import ClientMetrics
@@ -43,8 +40,16 @@ from notebooklm._types.enums import (
     ArtifactTypeCode,
     AudioFormat,
     AudioLength,
+    InfographicDetail,
+    InfographicOrientation,
+    InfographicStyle,
     QuizDifficulty,
     QuizQuantity,
+    ReportFormat,
+    SlideDeckFormat,
+    SlideDeckLength,
+    VideoFormat,
+    VideoStyle,
 )
 from notebooklm.exceptions import (
     ArtifactDownloadError,
@@ -189,9 +194,7 @@ def _graph(
             LIST_ARTIFACTS_METHOD: _PROTO.ListArtifactsResponse(artifacts=studio_rows),
             GET_ARTIFACT_METHOD: get_response,
             DELETE_ARTIFACT_METHOD: empty_pb2.Empty(),
-            GENERATE_REPORT_SUGGESTIONS_METHOD: (
-                report_suggestions_pb2.GenerateReportSuggestionsResponseWire()
-            ),
+            GENERATE_REPORT_SUGGESTIONS_METHOD: _PROTO.GenerateReportSuggestionsResponse(),
         }
     )
     notebooks = FakeNotebooks()
@@ -673,6 +676,211 @@ async def test_generate_audio_rejects_mismatched_response_family() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("cinematic", "expected_format"),
+    [(False, _PROTO.TEMPLATE_FORMAT_BRIEF), (True, _PROTO.TEMPLATE_FORMAT_BREAKDOWN)],
+)
+async def test_generate_video_families_use_exact_mobile_options(
+    cinematic: bool,
+    expected_format: int,
+) -> None:
+    session, _, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact(
+            "video-1",
+            type_code=_PROTO.ARTIFACT_TYPE_EXPLAINER_VIDEO,
+            status=_PROTO.ARTIFACT_STATUS_PROCESSING,
+        )
+    )
+
+    if cinematic:
+        status = await api.generate_cinematic_video(
+            "notebook-1",
+            source_ids=["source-1"],
+            language="fr",
+            instructions="Use the evidence",
+        )
+    else:
+        status = await api.generate_video(
+            "notebook-1",
+            source_ids=["source-1"],
+            language="fr",
+            instructions="Use the evidence",
+            video_format=VideoFormat.BRIEF,
+            video_style=VideoStyle.WATERCOLOR,
+        )
+
+    assert status.task_id == "video-1"
+    method, request, kwargs = session.calls[0]
+    assert method == CREATE_ARTIFACT_METHOD
+    assert kwargs["replay_safe"] is False
+    assert kwargs["expected_epoch"] == 7
+    assert request.artifact.type == _PROTO.ARTIFACT_TYPE_EXPLAINER_VIDEO
+    assert [row.source_id.id for row in request.artifact.sources] == ["source-1"]
+    options = request.artifact.explainer_video.generation_options
+    assert [source.id for source in options.source_ids] == ["source-1"]
+    assert options.language_code == "fr"
+    assert options.video_focus == "Use the evidence"
+    assert options.template_format == expected_format
+    assert options.video_overview_style == (
+        _PROTO.VIDEO_OVERVIEW_STYLE_UNSPECIFIED
+        if cinematic
+        else _PROTO.VIDEO_OVERVIEW_STYLE_WATERCOLOR
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("study_guide", "expected_title", "directive_fragment"),
+    [
+        (False, "Custom Report", "A custom directive"),
+        (True, "Study Guide", "Extra emphasis"),
+    ],
+)
+async def test_generate_report_families_use_exact_mobile_options(
+    study_guide: bool,
+    expected_title: str,
+    directive_fragment: str,
+) -> None:
+    session, _, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact("report-1", type_code=_PROTO.ARTIFACT_TYPE_TAILORED_REPORT)
+    )
+
+    if study_guide:
+        status = await api.generate_study_guide(
+            "notebook-1",
+            source_ids=["source-1"],
+            language="de",
+            extra_instructions="Extra emphasis",
+        )
+    else:
+        status = await api.generate_report(
+            "notebook-1",
+            ReportFormat.CUSTOM,
+            source_ids=["source-1"],
+            language="de",
+            custom_prompt="A custom directive",
+        )
+
+    assert status.task_id == "report-1"
+    request = session.calls[0][1]
+    assert request.artifact.type == _PROTO.ARTIFACT_TYPE_TAILORED_REPORT
+    options = request.artifact.tailored_report.generation_options
+    assert options.type == expected_title
+    assert options.description
+    assert [source.id for source in options.source_ids] == ["source-1"]
+    assert options.language_code == "de"
+    assert directive_fragment in options.document_directive
+
+
+@pytest.mark.asyncio
+async def test_generate_flashcards_uses_exact_nested_variant_options() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact(
+            "cards-1",
+            type_code=_PROTO.ARTIFACT_TYPE_APP,
+            variant=_PROTO.APP_TYPE_FLASHCARDS,
+        )
+    )
+
+    status = await api.generate_flashcards(
+        "notebook-1",
+        source_ids=["source-1"],
+        instructions="Key dates",
+        quantity=QuizQuantity.MORE,
+        difficulty=QuizDifficulty.HARD,
+    )
+
+    assert status.task_id == "cards-1"
+    options = session.calls[0][1].artifact.app.generation_options
+    assert options.app_type == _PROTO.APP_TYPE_FLASHCARDS
+    assert options.free_text_steering_prompt == "Key dates"
+    assert options.flashcards_generation_options.card_quantity == 3
+    assert options.flashcards_generation_options.flashcards_difficulty == 3
+
+
+@pytest.mark.asyncio
+async def test_generate_flashcards_rejects_a_quiz_variant_response() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact(
+            "wrong-app",
+            type_code=_PROTO.ARTIFACT_TYPE_APP,
+            variant=_PROTO.APP_TYPE_QUIZ,
+        )
+    )
+
+    with pytest.raises(DecodingError, match="different artifact family"):
+        await api.generate_flashcards("notebook-1", source_ids=["source-1"])
+
+    assert [call[0] for call in session.calls] == [CREATE_ARTIFACT_METHOD]
+    assert session.calls[0][2]["replay_safe"] is False
+
+
+@pytest.mark.asyncio
+async def test_generate_infographic_uses_exact_mobile_options() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact("image-1", type_code=_PROTO.ARTIFACT_TYPE_INFOGRAPHIC)
+    )
+
+    await api.generate_infographic(
+        "notebook-1",
+        source_ids=["source-1"],
+        language="es",
+        instructions="Visual summary",
+        orientation=InfographicOrientation.PORTRAIT,
+        style=InfographicStyle.SCIENTIFIC,
+    )
+
+    request = session.calls[0][1]
+    options = request.artifact.infographic.generation_options
+    assert options.user_steering_prompt == "Visual summary"
+    assert options.language_code == "es"
+    assert options.aspect_ratio == _PROTO.InfographicGenerationOptions.ASPECT_RATIO_PORTRAIT
+    assert options.style == _PROTO.InfographicGenerationOptions.STYLE_SCIENTIFIC
+
+
+@pytest.mark.asyncio
+async def test_generate_slide_deck_uses_exact_mobile_options() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact("slides-1", type_code=_PROTO.ARTIFACT_TYPE_SLIDES)
+    )
+
+    await api.generate_slide_deck(
+        "notebook-1",
+        source_ids=["source-1"],
+        language="ja",
+        instructions="Speaker notes",
+        slide_format=SlideDeckFormat.PRESENTER_SLIDES,
+        slide_length=SlideDeckLength.SHORT,
+    )
+
+    options = session.calls[0][1].artifact.slides.generation_options
+    assert options.user_steering_prompt == "Speaker notes"
+    assert options.language_code == "ja"
+    assert options.deck_type == _PROTO.DECK_TYPE_PRESENTATION
+    assert options.length == _PROTO.SLIDE_DECK_LENGTH_SHORT
+
+
+@pytest.mark.asyncio
+async def test_infographic_detail_level_remains_a_pre_io_evidence_gate() -> None:
+    session, notebooks, _, _, api = _graph()
+
+    with pytest.raises(UnsupportedOperationError, match="detail_level"):
+        await api.generate_infographic(
+            "notebook-1",
+            detail_level=InfographicDetail.DETAILED,
+        )
+
+    assert session.calls == []
+    assert notebooks.calls == []
+
+
+@pytest.mark.asyncio
 async def test_missing_artifact_identity_is_a_bounded_decode_error() -> None:
     raw_title = "raw title must not become a decoder diagnostic"
     session, _, _, _, api = _graph([_artifact("", title=raw_title)])
@@ -710,13 +918,6 @@ async def test_failed_quiz_mutation_is_not_replayed() -> None:
 async def test_all_unsupported_public_paths_reject_before_collaborator_io() -> None:
     session, notebooks, mind_maps, assets, api = _graph()
     invocations: list[Callable[[], Awaitable[Any]]] = [
-        lambda: api.generate_video("n"),
-        lambda: api.generate_cinematic_video("n"),
-        lambda: api.generate_report("n"),
-        lambda: api.generate_study_guide("n"),
-        lambda: api.generate_flashcards("n"),
-        lambda: api.generate_infographic("n"),
-        lambda: api.generate_slide_deck("n"),
         lambda: api.generate_data_table("n"),
         lambda: api.revise_slide("n", "a", 0, "p"),
         lambda: api.retry_failed("n", "a"),
@@ -1179,18 +1380,18 @@ async def test_infographic_transfer_cannot_cross_forced_close_and_reopen() -> No
 
 
 @pytest.mark.asyncio
-async def test_report_suggestions_use_local_wire_overlay_and_preserve_defaulted_rows() -> None:
+async def test_report_suggestions_use_generated_signature_and_preserve_defaulted_rows() -> None:
     session, _, _, _, api = _graph()
     session.responses[GENERATE_REPORT_SUGGESTIONS_METHOD] = (
-        report_suggestions_pb2.GenerateReportSuggestionsResponseWire(
+        _PROTO.GenerateReportSuggestionsResponse(
             suggestions=[
-                report_suggestions_pb2.ReportSuggestionWire(
+                _PROTO.ReportSuggestion(
                     title="Brief",
                     description="A focused report",
                     prompt="Write the report",
                     audience_level=1,
                 ),
-                report_suggestions_pb2.ReportSuggestionWire(title="missing prompt"),
+                _PROTO.ReportSuggestion(title="missing prompt"),
             ]
         )
     )
@@ -1203,12 +1404,13 @@ async def test_report_suggestions_use_local_wire_overlay_and_preserve_defaulted_
     ]
     method, request, kwargs = session.calls[0]
     assert method == GENERATE_REPORT_SUGGESTIONS_METHOD
-    assert request == report_suggestions_pb2.GenerateReportSuggestionsRequestWire(
-        project_id="notebook-1"
-    )
+    assert request.project_id == "notebook-1"
+    assert list(request.source_ids) == []
+    assert request.HasField("request_context")
+    assert request.request_context.client_type != 0
     assert kwargs == {
         "replay_safe": True,
-        "response_type": (report_suggestions_pb2.GenerateReportSuggestionsResponseWire),
+        "response_type": _PROTO.GenerateReportSuggestionsResponse,
     }
 
 

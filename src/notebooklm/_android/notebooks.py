@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import builtins
 import logging
+import re
 from contextvars import ContextVar
 from typing import Any, NoReturn, cast
 
@@ -35,6 +36,7 @@ from .proto.google.internal.labs.tailwind.orchestration.v1 import (
 from .proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
 from .proto.notebooklm.internal.android.wire.v1 import notebooks_pb2
 from .session import AndroidSession
+from .upload import android_request_context
 
 logger = logging.getLogger(__name__)
 _PROTO = cast(Any, read_pb2)
@@ -49,6 +51,17 @@ COPY_PROJECT_METHOD = f"/{_SERVICE}/CopyProject"
 DELETE_PROJECTS_METHOD = f"/{_SERVICE}/DeleteProjects"
 MUTATE_PROJECT_METHOD = f"/{_SERVICE}/MutateProject"
 GENERATE_NOTEBOOK_GUIDE_METHOD = f"/{_SERVICE}/GenerateNotebookGuide"
+GENERATE_PROMPT_SUGGESTIONS_METHOD = f"/{_SERVICE}/GeneratePromptSuggestions"
+
+_LEADING_LIST_MARKER = re.compile(r"[-*+]\s+")
+
+
+def _strip_leading_list_marker(text: str) -> str:
+    lstripped = text.lstrip()
+    marker = _LEADING_LIST_MARKER.match(lstripped)
+    if marker:
+        return lstripped[marker.end() :].strip()
+    return lstripped.rstrip()
 
 
 def _reject(operation: str) -> NoReturn:
@@ -176,7 +189,8 @@ class AndroidNotebooksAPI(NotebooksAPI):
         try:
             response = await self._transport.unary(
                 COPY_PROJECT_METHOD,
-                _WIRE.WireCopyProjectRequest(
+                _NOTEBOOK_PROTO.CopyProjectRequest(
+                    request_context=android_request_context(),
                     source_project_id=notebook_id,
                     title=title,
                 ),
@@ -210,7 +224,30 @@ class AndroidNotebooksAPI(NotebooksAPI):
         mode: int = 4,
         query: str | None = None,
     ) -> builtins.list[PromptSuggestion]:
-        _reject("notebooks.suggest_prompts")
+        if not 1 <= mode <= 10:
+            raise ValidationError(f"mode must be in the inclusive range 1..10, got {mode!r}")
+        if source_ids is None:
+            source_ids = await self.get_source_ids(notebook_id)
+        resolved_query = query if query and query.strip() else ""
+        response = await self._transport.unary(
+            GENERATE_PROMPT_SUGGESTIONS_METHOD,
+            _NOTEBOOK_PROTO.GeneratePromptSuggestionsRequest(
+                request_context=android_request_context(),
+                project_id=notebook_id,
+                source_ids=[_PROTO.SourceId(id=source_id) for source_id in source_ids],
+                config_id=mode,
+                query=resolved_query,
+            ),
+            replay_safe=True,
+            response_type=_NOTEBOOK_PROTO.GeneratePromptSuggestionsResponse,
+        )
+        return [
+            PromptSuggestion(
+                title=_strip_leading_list_marker(item.title),
+                prompt=_strip_leading_list_marker(item.prompt),
+            )
+            for item in response.suggestions
+        ]
 
     async def delete(self, notebook_id: str) -> None:
         # The official generated client proves both the exact request FQN and
@@ -284,6 +321,7 @@ __all__ = [
     "CREATE_PROJECT_METHOD",
     "DELETE_PROJECTS_METHOD",
     "GENERATE_NOTEBOOK_GUIDE_METHOD",
+    "GENERATE_PROMPT_SUGGESTIONS_METHOD",
     "GET_PROJECT_METHOD",
     "LIST_RECENT_PROJECTS_METHOD",
     "MUTATE_PROJECT_METHOD",

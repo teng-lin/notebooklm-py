@@ -314,7 +314,7 @@ Write / mutation RPCs (see [Write RPCs](#write--mutation-rpcs) — **do not repl
 | `AddTentativeSources` | 140 | 112 | begin adding source(s) |
 | `AddSources` | 194 | 253 | commit source(s) |
 | `DeleteSources` | 103 | 0 | remove a source |
-| `MutateSource` | variable | `Source` | APK-absent; copied-source rename + read-back |
+| `MutateSource` | variable | `MutateSourceResponse` wrapping `Source #1` | APK-absent; copied-source rename + read-back |
 | `RefreshSource` | variable | error | routed, but valid copied URL source returned `INVALID_ARGUMENT` |
 | `CreateLabel` / `MutateLabel` / `DeleteLabels` | variable | record set / empty | labels and collections; backend-only live replay |
 | `CreateArtifact` | 199 | 198 | generate studio artifact (audio/video/…) |

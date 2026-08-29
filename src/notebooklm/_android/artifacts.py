@@ -43,17 +43,17 @@ from ..exceptions import (
     ValidationError,
 )
 from ..types import Artifact, ArtifactType, GenerationStatus, ReportSuggestion
+from .artifact_creation import build_create_artifact_plan, normalize_creation_options
 from .assets import AndroidAssetDownloadService
 from .codecs.artifacts import decode_artifact, decode_artifacts, decode_report_suggestions
 from .errors import sanitize_escaping_exception, unsupported_operation
 from .proto.google.internal.labs.tailwind.orchestration.v1 import artifacts_pb2, read_pb2
-from .proto.notebooklm.android.internal.v1 import report_suggestions_pb2
 from .session import AndroidSession
+from .upload import android_request_context
 
 logger = logging.getLogger(__name__)
 _PROTO = cast(Any, artifacts_pb2)
 _READ_PROTO = cast(Any, read_pb2)
-_REPORT_PROTO = cast(Any, report_suggestions_pb2)
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 LIST_ARTIFACTS_METHOD = f"/{_SERVICE}/ListArtifacts"
@@ -313,6 +313,44 @@ class AndroidArtifactsAPI(ArtifactsAPI):
                 audio_length=options.get("audio_length"),
                 expected_epoch=expected_epoch,
             )
+        if family in {
+            "video",
+            "cinematic_video",
+            "report",
+            "flashcards",
+            "infographic",
+            "slide_deck",
+        }:
+            plan = build_create_artifact_plan(
+                notebook_id,
+                family,
+                source_ids,
+                **options,
+            )
+            creation_epoch_kwargs: dict[str, Any] = (
+                {} if expected_epoch is None else {"expected_epoch": expected_epoch}
+            )
+            response = await self._transport.unary(
+                CREATE_ARTIFACT_METHOD,
+                plan.request,
+                replay_safe=False,
+                response_type=_PROTO.CreateArtifactResponse,
+                **creation_epoch_kwargs,
+            )
+            artifact = decode_artifact(response.artifact, method_id=CREATE_ARTIFACT_METHOD)
+            if artifact._artifact_type != plan.expected_type or (
+                plan.expected_variant is not None
+                and artifact._variant not in (None, plan.expected_variant)
+            ):
+                raise DecodingError(
+                    f"Android {plan.family_label} creation returned a different artifact family.",
+                    method_id=CREATE_ARTIFACT_METHOD,
+                )
+            return GenerationStatus(
+                task_id=artifact.id,
+                status=_status_from_code(artifact.status),
+                url=artifact.url,
+            )
         if family != "quiz":
             _reject(f"artifacts.generate_{family}")
         if not source_ids:
@@ -429,6 +467,26 @@ class AndroidArtifactsAPI(ArtifactsAPI):
             url=artifact.url,
         )
 
+    async def _generate_supported_family(
+        self,
+        notebook_id: str,
+        family: str,
+        source_ids: builtins.list[str] | None,
+        **options: Any,
+    ) -> GenerationStatus:
+        if source_ids == []:
+            label = family.replace("_", " ").title()
+            raise ValidationError(f"{label} generation requires at least one source id")
+        async with self._transport.operation_scope(f"artifacts.generate_{family}") as lease:
+            resolved_source_ids = await self._resolve_source_ids(notebook_id, source_ids)
+            return await self._send_create_artifact_at_epoch(
+                notebook_id,
+                family,
+                resolved_source_ids,
+                expected_epoch=lease.epoch,
+                **options,
+            )
+
     async def generate_quiz(
         self,
         notebook_id: str,
@@ -497,7 +555,25 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         video_style: VideoStyle | None = None,
         style_prompt: str | None = None,
     ) -> GenerationStatus:
-        _reject("artifacts.generate_video")
+        language_code = _validate_audio_language(self._resolve_language(language))
+        normalized = normalize_creation_options(
+            "video",
+            language=language_code,
+            instructions=instructions,
+            video_format=video_format,
+            video_style=video_style,
+            style_prompt=style_prompt,
+        )
+        return await self._generate_supported_family(
+            notebook_id,
+            "video",
+            source_ids,
+            language=language_code,
+            instructions=instructions,
+            video_format=video_format,
+            video_style=video_style,
+            style_prompt=normalized["style_prompt"],
+        )
 
     async def generate_cinematic_video(
         self,
@@ -506,7 +582,19 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         language: str | None = "en",
         instructions: str | None = None,
     ) -> GenerationStatus:
-        _reject("artifacts.generate_cinematic_video")
+        language_code = _validate_audio_language(self._resolve_language(language))
+        normalize_creation_options(
+            "cinematic_video",
+            language=language_code,
+            instructions=instructions,
+        )
+        return await self._generate_supported_family(
+            notebook_id,
+            "cinematic_video",
+            source_ids,
+            language=language_code,
+            instructions=instructions,
+        )
 
     async def generate_report(
         self,
@@ -517,7 +605,23 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         custom_prompt: str | None = None,
         extra_instructions: str | None = None,
     ) -> GenerationStatus:
-        _reject("artifacts.generate_report")
+        language_code = _validate_audio_language(self._resolve_language(language))
+        normalized = normalize_creation_options(
+            "report",
+            report_format=report_format,
+            language=language_code,
+            custom_prompt=custom_prompt,
+            extra_instructions=extra_instructions,
+        )
+        return await self._generate_supported_family(
+            notebook_id,
+            "report",
+            source_ids,
+            report_format=normalized["report_format"],
+            language=language_code,
+            custom_prompt=custom_prompt,
+            extra_instructions=extra_instructions,
+        )
 
     async def generate_study_guide(
         self,
@@ -526,7 +630,13 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         language: str | None = "en",
         extra_instructions: str | None = None,
     ) -> GenerationStatus:
-        _reject("artifacts.generate_study_guide")
+        return await self.generate_report(
+            notebook_id,
+            report_format=ReportFormat.STUDY_GUIDE,
+            source_ids=source_ids,
+            language=language,
+            extra_instructions=extra_instructions,
+        )
 
     async def generate_flashcards(
         self,
@@ -536,7 +646,20 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         quantity: QuizQuantity | None = None,
         difficulty: QuizDifficulty | None = None,
     ) -> GenerationStatus:
-        _reject("artifacts.generate_flashcards")
+        normalize_creation_options(
+            "flashcards",
+            instructions=instructions,
+            quantity=quantity,
+            difficulty=difficulty,
+        )
+        return await self._generate_supported_family(
+            notebook_id,
+            "flashcards",
+            source_ids,
+            instructions=instructions,
+            quantity=quantity,
+            difficulty=difficulty,
+        )
 
     async def generate_infographic(
         self,
@@ -548,7 +671,25 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         detail_level: InfographicDetail | None = None,
         style: InfographicStyle | None = None,
     ) -> GenerationStatus:
-        _reject("artifacts.generate_infographic")
+        language_code = _validate_audio_language(self._resolve_language(language))
+        normalize_creation_options(
+            "infographic",
+            language=language_code,
+            instructions=instructions,
+            orientation=orientation,
+            detail_level=detail_level,
+            style=style,
+        )
+        return await self._generate_supported_family(
+            notebook_id,
+            "infographic",
+            source_ids,
+            language=language_code,
+            instructions=instructions,
+            orientation=orientation,
+            detail_level=detail_level,
+            style=style,
+        )
 
     async def generate_slide_deck(
         self,
@@ -559,7 +700,23 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         slide_format: SlideDeckFormat | None = None,
         slide_length: SlideDeckLength | None = None,
     ) -> GenerationStatus:
-        _reject("artifacts.generate_slide_deck")
+        language_code = _validate_audio_language(self._resolve_language(language))
+        normalize_creation_options(
+            "slide_deck",
+            language=language_code,
+            instructions=instructions,
+            slide_format=slide_format,
+            slide_length=slide_length,
+        )
+        return await self._generate_supported_family(
+            notebook_id,
+            "slide_deck",
+            source_ids,
+            language=language_code,
+            instructions=instructions,
+            slide_format=slide_format,
+            slide_length=slide_length,
+        )
 
     async def generate_data_table(
         self,
@@ -885,12 +1042,16 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         _reject("artifacts.export")
 
     async def suggest_reports(self, notebook_id: str) -> builtins.list[ReportSuggestion]:
-        # APK-absent exact method path with repository-local wire-equivalent messages.
+        # APK-absent method promoted from the current web registry and a
+        # successful Android-bearer request/response replay.
         response = await self._transport.unary(
             GENERATE_REPORT_SUGGESTIONS_METHOD,
-            _REPORT_PROTO.GenerateReportSuggestionsRequestWire(project_id=notebook_id),
+            _PROTO.GenerateReportSuggestionsRequest(
+                request_context=android_request_context(),
+                project_id=notebook_id,
+            ),
             replay_safe=True,
-            response_type=_REPORT_PROTO.GenerateReportSuggestionsResponseWire,
+            response_type=_PROTO.GenerateReportSuggestionsResponse,
         )
         return decode_report_suggestions(response.suggestions)
 

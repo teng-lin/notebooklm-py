@@ -33,6 +33,14 @@ def _wire_proto() -> Any:
     return cast(Any, organization_mutations_pb2)
 
 
+def _request_context() -> Any:
+    # Keep protobuf imports deferred until an async operation, matching the
+    # organization adapter's optional-runtime construction contract.
+    from .upload import android_request_context
+
+    return android_request_context()
+
+
 def _map_notebook_error(notebook_id: str, error: RPCError) -> RPCError:
     if error.rpc_code != 5:
         return error
@@ -96,12 +104,15 @@ async def create_manual(
     notebook_id: str | None,
     expected_epoch: int,
 ) -> None:
-    wire = _wire_proto()
-    properties = wire.LabelPropertiesWire(name=name)
+    exact = _exact_proto()
+    properties = exact.LabelProperties(name=name)
     if emoji:
         properties.emoji = emoji
-    manual = wire.ManualCreateLabelWire(properties=properties)
-    request = wire.CreateLabelWireRequest(manual_create=manual)
+    manual = exact.ManualCreateLabel(properties=properties)
+    request = exact.CreateLabelRequest(
+        request_context=_request_context(),
+        manual_create=manual,
+    )
     if kind == "label":
         assert notebook_id is not None
         request.project_id = notebook_id
@@ -111,7 +122,7 @@ async def create_manual(
         CREATE_LABEL_METHOD,
         request,
         replay_safe=False,
-        response_type=wire.OrganizationMutationWireResponse,
+        response_type=exact.CreateLabelResponse,
         expected_epoch=expected_epoch,
     )
 
@@ -126,11 +137,12 @@ async def mutate_properties(
     notebook_id: str | None,
     expected_epoch: int,
 ) -> None:
-    wire = _wire_proto()
-    request = wire.MutateLabelWireRequest(
+    exact = _exact_proto()
+    request = exact.MutateLabelRequest(
+        request_context=_request_context(),
         label_id=resource_id,
         mutations=[
-            wire.LabelMutationWire(properties=wire.LabelPropertiesWire(name=name, emoji=emoji))
+            exact.LabelMutation(properties=exact.MutateLabelProperties(name=name, emoji=emoji))
         ],
     )
     if kind == "label":
@@ -142,7 +154,7 @@ async def mutate_properties(
         MUTATE_LABEL_METHOD,
         request,
         replay_safe=False,
-        response_type=wire.OrganizationMutationWireResponse,
+        response_type=exact.MutateLabelResponse,
         expected_epoch=expected_epoch,
     )
 
@@ -157,10 +169,14 @@ async def mutate_member(
     notebook_id: str | None,
     expected_epoch: int,
 ) -> None:
-    wire = _wire_proto()
-    mutation = wire.LabelMutationWire()
+    exact = _exact_proto()
+    mutation = exact.LabelMutation()
     getattr(mutation, operation).member_ids.append(member_id)
-    request = wire.MutateLabelWireRequest(label_id=resource_id, mutations=[mutation])
+    request = exact.MutateLabelRequest(
+        request_context=_request_context(),
+        label_id=resource_id,
+        mutations=[mutation],
+    )
     if kind == "label":
         assert notebook_id is not None
         request.project_id = notebook_id
@@ -170,7 +186,7 @@ async def mutate_member(
         MUTATE_LABEL_METHOD,
         request,
         replay_safe=False,
-        response_type=wire.OrganizationMutationWireResponse,
+        response_type=exact.MutateLabelResponse,
         expected_epoch=expected_epoch,
     )
 
@@ -183,8 +199,11 @@ async def delete_resources(
     notebook_id: str | None,
     expected_epoch: int,
 ) -> None:
-    wire = _wire_proto()
-    request = wire.DeleteLabelsWireRequest(label_ids=resource_ids)
+    exact = _exact_proto()
+    request = exact.DeleteLabelsRequest(
+        request_context=_request_context(),
+        label_ids=resource_ids,
+    )
     if kind == "label":
         assert notebook_id is not None
         request.project_id = notebook_id
@@ -194,7 +213,7 @@ async def delete_resources(
         DELETE_LABELS_METHOD,
         request,
         replay_safe=False,
-        response_type=wire.OrganizationMutationWireResponse,
+        response_type=exact.DeleteLabelsResponse,
         expected_epoch=expected_epoch,
     )
 

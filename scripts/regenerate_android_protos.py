@@ -52,11 +52,9 @@ PROTO_FILES = (
     Path("labs/language/tailwind/common/protos/metadata.proto"),
     Path("labs/language/tailwind/common/protos/provenance.proto"),
     Path("labs/language/tailwind/sharing/sharing.proto"),
-    Path("notebooklm/android/internal/v1/report_suggestions.proto"),
     Path("notebooklm/android/wire/v1/sharing.proto"),
     Path("notebooklm/android/wire/v1/organization_mutations.proto"),
     Path("notebooklm/internal/android/wire/v1/notebooks.proto"),
-    Path("notebooklm/internal/android/wire/source_mutation_wire.proto"),
 )
 EXPECTED_GENERATED = frozenset(
     {
@@ -90,16 +88,12 @@ EXPECTED_GENERATED = frozenset(
         Path("labs/language/tailwind/common/protos/provenance_pb2_grpc.py"),
         Path("labs/language/tailwind/sharing/sharing_pb2.py"),
         Path("labs/language/tailwind/sharing/sharing_pb2_grpc.py"),
-        Path("notebooklm/android/internal/v1/report_suggestions_pb2.py"),
-        Path("notebooklm/android/internal/v1/report_suggestions_pb2_grpc.py"),
         Path("notebooklm/android/wire/v1/sharing_pb2.py"),
         Path("notebooklm/android/wire/v1/sharing_pb2_grpc.py"),
         Path("notebooklm/android/wire/v1/organization_mutations_pb2.py"),
         Path("notebooklm/android/wire/v1/organization_mutations_pb2_grpc.py"),
         Path("notebooklm/internal/android/wire/v1/notebooks_pb2.py"),
         Path("notebooklm/internal/android/wire/v1/notebooks_pb2_grpc.py"),
-        Path("notebooklm/internal/android/wire/source_mutation_wire_pb2.py"),
-        Path("notebooklm/internal/android/wire/source_mutation_wire_pb2_grpc.py"),
     }
 )
 EXPECTED_PROTO_SOURCES = frozenset(PROTO_FILES)

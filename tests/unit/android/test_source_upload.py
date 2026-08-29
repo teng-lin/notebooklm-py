@@ -306,7 +306,7 @@ async def _graph(
     session.handlers[GET_PROJECT_METHOD] = _project(
         _SETTINGS.SOURCE_STATUS_COMPLETE
     )
-    session.handlers[MUTATE_SOURCE_METHOD] = _READ.Source()
+    session.handlers[MUTATE_SOURCE_METHOD] = _WRITE.MutateSourceResponse()
 
     factory: Callable[..., Any]
     if curl:

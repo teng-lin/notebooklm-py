@@ -72,9 +72,11 @@ image, native libraries, Dex/resources, `pp.txt`, `addNames.py`, and reconstruct
 | `CancelDiscoverSourcesJob` | 0 | 0 | 0 | 0 |
 
 The newer signed client therefore cannot supply exact request/response FQNs for these methods.
-They were tree-shaken or never compiled into the application. The seven runtime implementations
-remain explicit signature exceptions; promoting them into a generated service would be a package
-guess, not extraction.
+They were tree-shaken or never compiled into the application. This client-absence result does not
+limit mobile-backend capability: a later authenticated web-bundle audit and valid-resource mobile
+calls promoted all seven into the generated service. Six conventional type-name guesses remain
+explicit in [`grpc-service-signature-inferences.json`](grpc-service-signature-inferences.json);
+they are web-derived inferences, not claims of APK extraction.
 
 ## Reproduction
 
