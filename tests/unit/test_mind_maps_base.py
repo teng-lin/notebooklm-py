@@ -7,13 +7,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from notebooklm._android.mind_maps import AndroidMindMapsAPI
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._web.mind_maps import WebMindMapsAPI
 from notebooklm.types import Artifact, ArtifactType, MindMap, MindMapKind
 
 
 class _FakeMindMapsAPI(MindMapsAPI):
-    """Minimal backend proving shared workflows need only the rename hook."""
+    """Minimal backend proving shared workflows need only three frontend reads."""
 
     def __init__(
         self,
@@ -24,7 +25,6 @@ class _FakeMindMapsAPI(MindMapsAPI):
     ) -> None:
         super().__init__(artifacts=artifacts, notes=notes)
         self._note_backed = note_backed
-        self.renames: list[tuple[str, str, str]] = []
 
     async def list_note_backed(self, notebook_id: str) -> list[MindMap]:
         return list(self._note_backed)
@@ -50,14 +50,6 @@ class _FakeMindMapsAPI(MindMapsAPI):
     ) -> dict[str, Any] | None:
         raise NotImplementedError
 
-    async def _send_rename_note_backed(
-        self,
-        notebook_id: str,
-        mind_map_id: str,
-        new_title: str,
-    ) -> None:
-        self.renames.append((notebook_id, mind_map_id, new_title))
-
 
 def _api(*, note_backed: list[MindMap] | None = None, artifacts: list[Artifact] | None = None):
     artifact_api = MagicMock()
@@ -65,6 +57,7 @@ def _api(*, note_backed: list[MindMap] | None = None, artifacts: list[Artifact] 
     artifact_api.rename = AsyncMock()
     artifact_api.delete = AsyncMock()
     notes = MagicMock()
+    notes.update = AsyncMock()
     notes.delete_mind_map = AsyncMock()
     return (
         _FakeMindMapsAPI(
@@ -101,18 +94,18 @@ async def test_list_composes_note_backed_and_interactive_maps() -> None:
 
 
 @pytest.mark.asyncio
-async def test_rename_dispatches_note_backed_through_the_sole_hook() -> None:
+async def test_rename_dispatches_note_backed_through_notes_api() -> None:
     note_map = MindMap(
         id="note-map",
         notebook_id="nb",
         title="Note map",
         kind=MindMapKind.NOTE_BACKED,
     )
-    api, artifacts, _ = _api(note_backed=[note_map])
+    api, artifacts, notes = _api(note_backed=[note_map])
 
     assert await api.rename("nb", "note-map", "Renamed", return_object=False) is None
 
-    assert api.renames == [("nb", "note-map", "Renamed")]
+    notes.update.assert_awaited_once_with("nb", "note-map", "", "Renamed")
     artifacts.rename.assert_not_awaited()
 
 
@@ -144,3 +137,26 @@ def test_web_backend_inherits_every_base_concrete_workflow_and_its_docs() -> Non
         )
 
     assert WebMindMapsAPI.__doc__ == MindMapsAPI.__doc__
+
+
+def test_exact_abstract_set_and_frontends_are_concrete() -> None:
+    assert MindMapsAPI.__abstractmethods__ == frozenset(
+        {"generate", "get_tree", "list_note_backed"}
+    )
+    assert WebMindMapsAPI.__abstractmethods__ == frozenset()
+    assert AndroidMindMapsAPI.__abstractmethods__ == frozenset()
+
+
+def test_android_backend_inherits_every_shared_composition_workflow() -> None:
+    for method_name in {"list", "get", "get_or_none", "rename", "delete"}:
+        assert method_name not in AndroidMindMapsAPI.__dict__
+        assert getattr(AndroidMindMapsAPI, method_name) is getattr(MindMapsAPI, method_name)
+
+
+def test_default_client_assembly_keeps_the_web_frontend() -> None:
+    import notebooklm
+    import notebooklm._client_assembly as assembly
+
+    assert assembly.WebMindMapsAPI is WebMindMapsAPI
+    assert "AndroidMindMapsAPI" not in assembly.__dict__
+    assert not hasattr(notebooklm, "AndroidMindMapsAPI")

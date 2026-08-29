@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import builtins
+import json
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 from ._lookup import unwrap_or_raise
 from ._types.mind_maps import MindMap, MindMapKind
-from .exceptions import MindMapNotFoundError
+from .exceptions import MindMapNotFoundError, NoteNotFoundError
 from .types import ArtifactType
 
 if TYPE_CHECKING:
@@ -161,7 +162,7 @@ class MindMapsAPI(ABC):
         kind: MindMapKind | None = None,
         return_object: bool = True,
     ) -> MindMap | None:
-        """Rename a mind map (dispatches by kind: ``UPDATE_NOTE`` / ``RENAME_ARTIFACT``).
+        """Rename a mind map through the notes or artifacts namespace.
 
         Omitting ``kind`` triggers an extra list RPC (and possibly a second
         ``LIST_ARTIFACTS`` call) to auto-detect the backing; pass ``kind`` to skip it.
@@ -199,7 +200,7 @@ class MindMapsAPI(ABC):
             # note-backed first, then interactive, then ``MindMapNotFoundError``.
             for mind_map in await self.list_note_backed(notebook_id):
                 if mind_map.id == mind_map_id:
-                    await self._send_rename_note_backed(notebook_id, mind_map_id, new_title)
+                    await self._rename_note_backed(notebook_id, mind_map, new_title)
                     return await self._hydrate_renamed(notebook_id, mind_map_id, return_object)
             if await self._find_interactive(notebook_id, mind_map_id) is not None:
                 # ``return_object=False`` on the artifact rename: hydration (if
@@ -211,7 +212,17 @@ class MindMapsAPI(ABC):
                 return await self._hydrate_renamed(notebook_id, mind_map_id, return_object)
             raise MindMapNotFoundError(mind_map_id)
         if kind == MindMapKind.NOTE_BACKED:
-            await self._send_rename_note_backed(notebook_id, mind_map_id, new_title)
+            note_backed_map = next(
+                (
+                    item
+                    for item in await self.list_note_backed(notebook_id)
+                    if item.id == mind_map_id
+                ),
+                None,
+            )
+            if note_backed_map is None:
+                raise MindMapNotFoundError(mind_map_id)
+            await self._rename_note_backed(notebook_id, note_backed_map, new_title)
         else:
             # Pre-validate the id on the explicit-interactive path. Without this,
             # ``RENAME_ARTIFACT`` silently no-ops on a wrong id (the RPC returns
@@ -223,6 +234,39 @@ class MindMapsAPI(ABC):
                 raise MindMapNotFoundError(mind_map_id)
             await self._artifacts.rename(notebook_id, mind_map_id, new_title, return_object=False)
         return await self._hydrate_renamed(notebook_id, mind_map_id, return_object)
+
+    async def _rename_note_backed(
+        self,
+        notebook_id: str,
+        mind_map: MindMap,
+        new_title: str,
+    ) -> None:
+        """Rename one confirmed note-backed map through :class:`NotesAPI`.
+
+        ``NotesAPI.update`` is the existing neutral mutation boundary.  The
+        note-backed listing has already decoded the persisted JSON into
+        ``MindMap.tree``; serializing that value keeps the semantic tree while
+        avoiding any dependency on a web positional row or an Android protobuf
+        field.  A vanished target is projected back into the mind-map domain.
+        """
+        content = (
+            json.dumps(mind_map.tree, ensure_ascii=False, separators=(",", ":"))
+            if mind_map.tree is not None
+            else ""
+        )
+        try:
+            await self._notes.update(
+                notebook_id,
+                mind_map.id,
+                content,
+                new_title,
+            )
+        except NoteNotFoundError as exc:
+            raise MindMapNotFoundError(
+                mind_map.id,
+                method_id=exc.method_id,
+                raw_response=exc.raw_response,
+            ) from exc
 
     async def _hydrate_renamed(
         self, notebook_id: str, mind_map_id: str, return_object: bool
@@ -371,12 +415,3 @@ class MindMapsAPI(ABC):
             if art.is_interactive_mind_map or (allow_unclassified and art.is_unclassified_type4):
                 return art
         return None
-
-    @abstractmethod
-    async def _send_rename_note_backed(
-        self,
-        notebook_id: str,
-        mind_map_id: str,
-        new_title: str,
-    ) -> None:
-        """Rename a note-backed mind map through the active backend."""

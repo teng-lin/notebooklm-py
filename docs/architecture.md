@@ -250,7 +250,7 @@ Some feature workflows intentionally combine RPC with non-RPC HTTP work:
 | Source URL/text/Drive add | `WebSourcesAPI` holds a `CallSupervisor.operation_scope` across URL workflows that combine create, optional wait, and optional rename. `SourceAddService` wraps URL and Drive mutating RPCs in `idempotent_create(...)` where those flows have stable probes. Text-source adds remain intentionally non-idempotent unless the caller handles dedupe externally. |
 | Artifact generation | The backend-neutral `ArtifactsAPI` owns validation, source/language resolution, and all ten `generate_*` workflows over the sole `_send_create_artifact` hook. `WebArtifactsAPI` implements that hook with `ArtifactGenerationService` (`_web/artifact/generation.py`), whose positional `CREATE_ARTIFACT` builders live in `_web/params/artifacts.py`; web-only revise/retry/mind-map paths use the same service. `ArtifactPollingService` owns leader/follower polling over the abstract target-aware studio projection, with one `LIST_ARTIFACTS` and no note call per tick; Web id-matches the raw row before decoding target status/type/URL so unrelated optional-field drift retains its historical fault boundary. |
 | Artifact download | Web-only `ArtifactDownloadService` (`_web/artifact/downloads.py`) selects artifacts and decodes raw rows/interactive HTML. The neutral `AssetDownloadService` (`_artifact/downloads.py`) owns byte transfer, rejection, staging, and atomic publication. Its streaming client applies a typed cookie-jar/header credential result on every validated redirect hop for both httpx and curl_cffi; Web supplies the storage-cookie jar, with client-side domain matching and no flat `Cookie` header. These transfers do not go through `RpcExecutor` or `Kernel.post`. |
-| Notes and mind maps | `NoteService` owns note-row CRUD/classification through `RpcCaller`. `NoteBackedMindMapService` adapts those note rows for artifact-facing mind-map behavior so notes and artifacts do not import each other. |
+| Notes and mind maps | `NoteService` owns web note-row CRUD/classification through `RpcCaller`. `NoteBackedMindMapService` keeps web row decoding available to `WebMindMapsAPI` and artifact-facing behavior. The neutral `MindMapsAPI` composes unified list/lookup/rename/delete workflows over base-typed `ArtifactsAPI` and `NotesAPI` collaborators; note-backed rename serializes the already-decoded tree through `NotesAPI.update`. `AndroidMindMapsAPI` reuses that composition without importing web code or declaring new protobuf fields. |
 
 ## Cross-cutting policies
 
@@ -983,7 +983,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/errors.py` | Sanitized gRPC-status projection plus the pre-I/O unsupported-operation helper; raw transport exceptions and details never cross this boundary. |
 | `_android/notebooks.py` | Private Android notebook adapter: B1 reads and evidence-admitted B2 create/delete/title-update/copy/guide operations. |
 | `_android/session.py` | Lazy Google-TLS gRPC transport participating in root loop/lifecycle supervision, aggregate deadlines, per-call bearer metadata, status mapping, safe-read replay, and full stream leases. |
-| `_android/sources.py` | Private Android source adapter: B1 dependency-complete reads and explicit pre-I/O unsupported mutations. |
+| `_android/sources.py` | Private Android source adapter: B1 reads plus evidence-admitted B3 URL, delete, rename, guide, and full-text operations; unevidenced branches reject before I/O. |
+| `_android/mind_maps.py` | Private B7 Android mind-map composition over base-typed artifact/note collaborators. Note-backed listing accepts only already-decoded `MindMap(kind=NOTE_BACKED)` values; generation and tree reads reject before dependency I/O pending valid-resource `ActOnSources` and exact interactive-tree fixtures. No public client factory selects it. |
 | `_android/proto/` | Checked-in generated Python protobuf package. Files are regenerated only by `scripts/regenerate_android_protos.py` with the pinned toolchain and are never generated during installation. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/b1_read_pb2.py` | Exact-package B1 messages and descriptors for `GetProject` and `ListRecentlyViewedProjects`. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/b1_read_pb2_grpc.py` | Generated `LabsTailwindOrchestrationServiceStub` limited to the two B1 read methods. |
@@ -1081,7 +1082,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/labels.py` | Concrete `WebLabelsAPI` implementation; keeps the historical `notebooklm._labels` logger key |
 | `_web/collections.py` | Concrete `WebCollectionsAPI` implementation over type-3 label RPCs; keeps the historical `notebooklm._collections` logger key |
 | `_settings.py` | Backend-neutral abstract `SettingsAPI` contract |
-| `_mind_maps_api.py` | Backend-neutral abstract `MindMapsAPI`; owns unified lookup/list/rename/delete composition over note-backed and interactive mind maps (#1256) |
+| `_mind_maps_api.py` | Backend-neutral abstract `MindMapsAPI`; owns unified lookup/list/rename/delete composition over base-typed `ArtifactsAPI` and `NotesAPI` dependencies. Only `list_note_backed`, `generate`, and `get_tree` remain frontend-specific (#1256). |
 | `_artifact/downloads.py` | Backend-neutral asset transfer service: guarded streaming, rejection, staging, and atomic publication |
 | `_artifact/_redirect_guard.py` | Per-redirect-hop host/scheme revalidation and credential-policy application for downloads — rejects off-allowlist / non-HTTPS redirect targets before the request is sent (#1521) |
 | `_artifact/_download_client.py` | Download trusted-host allowlist + transport-aware client factory — wires redirect validation and per-hop credentials for httpx or opt-in curl_cffi |
@@ -1237,7 +1238,8 @@ src/notebooklm/
 │   ├── errors.py                # Sanitized gRPC status/error mapping
 │   ├── notebooks.py             # Android notebook reads and B2 mutations
 │   ├── session.py               # Supervised lazy gRPC transport
-│   ├── sources.py               # Android source reads and unsupported gates
+│   ├── sources.py               # Android source reads and B3 operations/gates
+│   ├── mind_maps.py             # B7 neutral composition + evidence-gated leaves
 │   ├── proto_src/               # Exact-package reads + evidence-bounded local wire overlays
 │   └── proto/                   # Checked-in generated pb2/pb2_grpc modules
 │       ├── __init__.py          # Dependency-free generated-package marker

@@ -48,6 +48,20 @@ profiles only after the wave-one namespaces pass repeated conformance runs.
 - Automatic backend selection and default changes remain deferred until the
   Phase B evidence threshold is met.
 
+### B7 mind-map evidence gate
+
+The private Android mind-map adapter composes the decoded artifact and note
+namespace interfaces; it adds no mobile protobuf declarations and is not wired
+into a public client factory. Unified list, lookup, rename, and delete behavior
+stays in the backend-neutral `MindMapsAPI`. Android note-backed membership is
+accepted only when the notes frontend has already decoded an explicit note kind
+into a public `MindMap`; B7 does not infer kind from JSON or flattened-schema
+symbols. `generate` remains unsupported before I/O until a valid-resource
+`ActOnSources` generation exchange is captured, and `get_tree` remains
+unsupported before I/O until an exact fixture proves the interactive-tree
+field. Compiled-only method presence and invalid-ID route responses do not meet
+either admission threshold.
+
 ## Alternatives considered
 
 **Oracle only.** Rejected because it captures drift but does not provide users
