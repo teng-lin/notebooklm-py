@@ -11,13 +11,13 @@ capture exercised 21 methods and decoded their wire shapes here; later direct be
 also exercised APK-unwired methods and destructive APK-present methods on disposable copies. The
 **complete protobuf schema** — 282 messages / 767 fields with real field names, tags, types, and
 cardinality — was recovered by decompiling the Flutter binary with a Dart-3.13-ported blutter, and
-is checked in at **[mobile/schema.proto](schema.proto)**. The inline shapes below keep their
+is checked in at **[android/schema.proto](schema.proto)**. The inline shapes below keep their
 wire-capture form (field `#N` + type); the `.proto` file is authoritative for names. Read paths
 were driven on real notebooks; mutations were confined to throwaway notebooks or copies and
 cleaned up afterward.
 
 This document is the schema-recovery follow-up to
-[docs/mobile/capture.md](capture.md), which explains how the `.pb`
+[docs/android/capture.md](capture.md), which explains how the `.pb`
 bodies were captured. Regenerate the raw shapes with:
 
 ```bash
@@ -72,12 +72,12 @@ maps on web), `DeriveArtifact` / `UpdateArtifact` / `SuggestArtifacts`, `Generat
 interactive-audio "Live"), `GetDriveSourceStatus`, `ListExpertIntelligenceContent`, and
 `PrototypeNotebookSearch` (experimental search).
 
-## Mobile ⇄ web cross-reference
+## Android ⇄ web cross-reference
 
 **Same backend, two front doors.** Both clients drive the *same* Tailwind services; only the
 transport differs:
 
-| | Mobile (Android) | Web (`notebooklm-py` / browser) |
+| | Android | Web (`notebooklm-py` / browser) |
 |---|---|---|
 | Transport | native **gRPC**, HTTP/2 | **batchexecute**, HTTP POST |
 | Endpoint | `notebooklm-pa.googleapis.com/<Service>/<Method>` | `/_/LabsTailwindUi/data/batchexecute` |
@@ -210,7 +210,7 @@ cross-check for naming mobile fields.
 ## Common building blocks
 
 These shapes recur across methods. Field numbers are stable; **names below are now the real ones
-recovered from the binary** (see [mobile/schema.proto](schema.proto)) — the earlier
+recovered from the binary** (see [android/schema.proto](schema.proto)) — the earlier
 `(inferred)` guesses are annotated where they differed.
 
 ### UUID string (`str[36]`)
@@ -809,9 +809,9 @@ Graduated options, cheapest first:
 
    **Outcome (2026-07-22): success — full schema recovered.** blutter was ported to Dart 3.13 and
    run to completion; the recovered schema is checked in at
-   [docs/mobile/schema.proto](schema.proto) (**282 messages, 767 fields**, field
+   [docs/android/schema.proto](schema.proto) (**282 messages, 767 fields**, field
    numbers/names/types/cardinality from the binary). The port took two kinds of change, captured as
-   a patch in [docs/mobile/blutter-dart3.13.patch](blutter-dart3.13.patch):
+   a patch in [docs/android/blutter-dart3.13.patch](blutter-dart3.13.patch):
 
    - **Snapshot loading** (the novel part): `extract_dart_info.py` reads the snapshot header from the
      renamed `.symtab` symbol; `ElfHelper.cpp::findSnapshots` scans `.symtab` and maps the combined
@@ -833,13 +833,13 @@ Graduated options, cheapest first:
    viable here**, frida's native hooks crash this app (see the capture runbook's "What did not work").
 
 Result: enums came from string-mining; the full field-named schema came from the ported blutter —
-see [docs/mobile/schema.proto](schema.proto).
+see [docs/android/schema.proto](schema.proto).
 
 ## Recovered vs. still unknown
 
 **Full surface enumerated:** all **49 methods across 4 services** are known by name from the
 app binary (see [Complete service surface](#complete-service-surface-from-the-app-binary)), and
-cross-referenced to the web `batchexecute` `rpcid`s (see [Mobile ⇄ web cross-reference](#mobile--web-cross-reference)).
+cross-referenced to the web `batchexecute` `rpcid`s (see [Android ⇄ web cross-reference](#android--web-cross-reference)).
 
 **Shapes recovered (high confidence):** request/response top-level shapes for **21 methods** —
 the UI-reachable read/write/research/chat set plus the `LabsTailwindSharingService` pair
@@ -854,7 +854,7 @@ APK-present note/artifact/delete methods were also live-verified on a rich dispo
 later results supplement the 21 captured shapes; they do not change the capture count.
 
 **Field names/tags/types — recovered:** the full protobuf schema (282 messages, 767 fields) is in
-[mobile/schema.proto](schema.proto), decompiled from the binary. This supersedes the
+[android/schema.proto](schema.proto), decompiled from the binary. This supersedes the
 `(inferred)` names in the inline shapes — including every message not reachable from the mobile UI
 (`CreateNote`/`MutateNote`/`DeleteNotes`, `ActOnSources`, artifact ops, the WebRTC Live messages,
 `PrototypeNotebookSearch`). Enum *value* names are in [Enums](#enums-recovered-from-the-binary).

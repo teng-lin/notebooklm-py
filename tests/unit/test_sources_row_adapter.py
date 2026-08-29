@@ -857,7 +857,7 @@ class TestDriveDocumentIdDriftWarning:
 #
 # ACTIVE is the ONLY Drive-status value that has been seen on the wire. The
 # degraded members are exercised below from the backend enum
-# (``docs/mobile/enums.txt::UserDriveSourceStatus``), NOT from a captured
+# (``docs/android/enums.txt::UserDriveSourceStatus``), NOT from a captured
 # response — producing them requires deliberately breaking access to a real
 # Drive file. Those rows are a claim about *our decoding*, not about the wire.
 

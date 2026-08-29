@@ -215,8 +215,8 @@ Findings:
 ## 4. Android binary cross-check — what the first-party client knows
 
 Third investigation wave: rather than probe the backend, ask Google's own mobile client what the
-backend's contract *is*. Sources: the recovered mobile schema (`docs/mobile/schema.proto`, 282
-messages / 767 fields, produced by the blutter port documented in `docs/mobile/endpoints.md`) and
+backend's contract *is*. Sources: the recovered mobile schema (`docs/android/schema.proto`, 282
+messages / 767 fields, produced by the blutter port documented in `docs/android/endpoints.md`) and
 string/symbol mining of `libNotebookLM_prod_android_library_flutter_artifacts.so` from
 `notebooklm.apk/split_config.arm64_v8a.apk` (app v1.46.7). Dart AOT symbol names carry a per-library
 id suffix (`@1877180633`), so grouping on it reconstructs each file's method surface without a full
@@ -344,7 +344,7 @@ We don't read this at all today — `_settings.py` instead derives `source_limit
 undocumented positional descent (`limits[2]` under path `(0,1)`), flagged as brittle in §1 — **which
 §4.7 confirms is this very `TierLimits` message**, reached from a different RPC.
 
-> **Parser bug found along the way.** `docs/mobile/schema.proto` renders all three of these as
+> **Parser bug found along the way.** `docs/android/schema.proto` renders all three of these as
 > `int32 fieldType = N`. That's an artifact of `scripts/parse_pbschema.py`: the Dart `BuilderInfo`
 > const list contains a literal placeholder string `"fieldType"`, and the parser picks that up instead
 > of the adjacent real name. Any `fieldType` in the committed schema is a **parse failure, not a real
@@ -522,11 +522,11 @@ identity and a from-scratch reproduction recipe. Verified build inputs:
 | App | NotebookLM `1.46.7.940945420`, `.so` sha256 `082d75e3…b8e6f81f` |
 | Dart SDK | `3.13.0-256.0.dev` @ `bf06ec43d9f241a04072fc97ed3f2501ce935d7d` |
 | Snapshot hash | `80d3c83b83e625573b88d3775debfe7d` |
-| blutter base | `528acbe83ba35a3a53fb97b231cb5f968c7068d1` + `docs/mobile/blutter-dart3.13.patch` |
+| blutter base | `528acbe83ba35a3a53fb97b231cb5f968c7068d1` + `docs/android/blutter-dart3.13.patch` |
 
 Two corrections to the prior reversing notes: the patch **applies cleanly to current blutter HEAD**
 (no rebase needed), and the build is **~3 minutes, not multi-hour** — the Dart SDK sparse clone is only
-71 MB. `docs/mobile/endpoints.md` and the `mobile-binary-reversing` memory should be corrected.
+71 MB. `docs/android/endpoints.md` and the `mobile-binary-reversing` memory should be corrected.
 The one analysis error emitted (`handleArgumentsDescriptorTypeArguments`, `insn.IsBranch()`) is
 non-fatal and did not affect any output used here.
 
@@ -540,7 +540,7 @@ The mobile gRPC API can be called directly from Python, which makes the mobile s
 rather than merely readable. This closes the loop on §4: claims can now be confirmed against the live
 backend on **both** transports.
 
-**Auth** — exactly as `docs/mobile/auth-research.md` documents, and it is still
+**Auth** — exactly as `docs/android/auth-research.md` documents, and it is still
 accurate. `gpsoauth.perform_oauth()` with the NotebookLM Android identity
 (`app=com.google.android.apps.labs.language.tailwind`,
 `client_sig=a3382adf91991e6ef1e7e7de309c1febfedf3283`) and the **full 10-scope Android bundle** yields
@@ -628,5 +628,5 @@ probing actually showed (several of these are weaker than they looked before pro
   only 4, the unit tests assume 5.
 - ~~Exact `SourceStatus` numbering and `TierLimits` field↔tag pairing~~ — **resolved** by the blutter
   rebuild (§4.2, §4.4, §4.8).
-- How many other `fieldType` entries in `docs/mobile/schema.proto` are parser failures rather than
+- How many other `fieldType` entries in `docs/android/schema.proto` are parser failures rather than
   real names (§4.4) — `scripts/parse_pbschema.py` needs a fix, and the committed schema a re-run.

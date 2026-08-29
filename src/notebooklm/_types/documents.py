@@ -1,7 +1,7 @@
 """Structured-document types shared by the source-content and chat-answer paths.
 
 NotebookLM returns prose as a ``TailwindDoc`` — a nested positional tree whose
-shape is recovered in ``docs/mobile/schema.proto`` (section
+shape is recovered in ``docs/android/schema.proto`` (section
 ``orchestration.v1/tailwind_doc.pb.dart``). Three call sites carry the *same*
 tree:
 
@@ -342,7 +342,7 @@ class BlockKind(str, Enum):
     ``table``, ``image``, ``codeBlock``, ``a2uiBlock``, ``thought``,
     ``functionCall``, ``functionResponse`` or ``horizontalRule`` is populated,
     and the member names here are that schema's
-    (``docs/mobile/schema.proto``).
+    (``docs/android/schema.proto``).
 
     This client decodes text out of ``PARAGRAPH`` and ``TABLE`` only.
     Everything else arrives with empty :attr:`DocumentBlock.spans` and its
@@ -379,7 +379,7 @@ class BlockKind(str, Enum):
 class BlockStyle(Enum):
     """Named paragraph style of a :class:`DocumentBlock`.
 
-    Mirrors the backend's ``NamedStyleType`` enum (``docs/mobile/enums.txt``).
+    Mirrors the backend's ``NamedStyleType`` enum (``docs/android/enums.txt``).
     ``UNSPECIFIED`` is both the wire's ``0`` and this client's fallback for an
     absent or unrecognised style slot — a block with no explicit style is body
     prose, which is also what ``NORMAL_TEXT`` means, so consumers that only care

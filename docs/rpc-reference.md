@@ -161,7 +161,7 @@ wire evidence rather than schema mappings.
 > `0` means the same thing, so the decoder normalizes it to `None` rather than
 > modelling it (recorded in `ENUM_GAPS`). Only `ACTIVE` has
 > been observed live; the degraded members come from the backend enum recovered
-> from the official Android app (`docs/mobile/enums.txt`) and are pinned in
+> from the official Android app (`docs/android/enums.txt`) and are pinned in
 > `tests/_guardrails/_wire_contract.py`. A populated-but-unmapped code decodes to
 > `DriveSourceStatus.UNKNOWN` (never `None`) and warns once (#2111).
 
@@ -1712,7 +1712,7 @@ row[9][1][6]   # flashcards [quantity, difficulty] — null on a quiz row
 row[9][1][7]   # quiz       [quantity, difficulty] — null on a flashcards row
 ```
 
-Positions follow `AppArtifactGenerationOptions` in `docs/mobile/schema.proto`
+Positions follow `AppArtifactGenerationOptions` in `docs/android/schema.proto`
 (`flashcardsGenerationOptions` = tag 7, `quizGenerationOptions` = tag 8), and
 each pair is `[quantity, difficulty]` — the same order both builders send. Read
 them through `ArtifactRow.quiz_options` / `ArtifactRow.flashcards_options`, which
@@ -3035,7 +3035,7 @@ When a `batchexecute` RPC is rejected, the server answers with a `wrb.fr` frame
 whose *result* slot (index 2) is `null` and whose index 5 carries a
 JSON-array-encoded [`google.rpc.Status`](https://github.com/googleapis/googleapis/blob/master/google/rpc/status.proto).
 That is a **public** Google type, not a Tailwind message, so it is absent from
-`docs/mobile/schema.proto` and its positions are the proto tags minus one:
+`docs/android/schema.proto` and its positions are the proto tags minus one:
 
 | Index | `google.rpc.Status` field | Observed |
 |-------|---------------------------|----------|
@@ -3102,7 +3102,7 @@ at DEBUG, so the remaining cases are findable.
 
 ### Artifact failures have no reason at all
 
-`Artifact` in `docs/mobile/schema.proto` has **no error or failure field**. An
+`Artifact` in `docs/android/schema.proto` has **no error or failure field**. An
 artifact accepted at create time that later transitions to
 `ARTIFACT_STATUS_FAILED` therefore carries nothing to explain itself: no cassette
 contains a status-4 row, and a live sweep of 27 notebooks / 99 rows found index 3

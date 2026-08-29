@@ -1,4 +1,4 @@
-# Mobile API reverse-engineering
+# Android API reverse-engineering
 
 `notebooklm-py` drives NotebookLM's **web** `batchexecute` transport. The official
 **Android** app drives the *same backend services* over gRPC — where fields are

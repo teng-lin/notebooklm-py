@@ -1,4 +1,4 @@
-# Labels, collections, and notebook copy over mobile gRPC
+# Labels, collections, and notebook copy over Android gRPC
 
 **Status:** All operations below are routed and working on the mobile bearer endpoint
 

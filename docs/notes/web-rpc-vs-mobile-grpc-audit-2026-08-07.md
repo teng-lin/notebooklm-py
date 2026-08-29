@@ -6,7 +6,7 @@ actually sends, and does it misread any field?
 **Method:** a five-agent parallel audit (enums, sources, notebooks/sharing, artifacts, chat/research)
 diffing our client against ground truth recovered from Google's official NotebookLM Android app,
 then **confirming every claim live against the real backend on both transports**. Ground truth:
-`docs/mobile/schema.proto`, the blutter analysis build (object pool + `BuilderInfo` disassembly —
+`docs/android/schema.proto`, the blutter analysis build (object pool + `BuilderInfo` disassembly —
 see [pr-2102 review §4.10](pr-2102-quota-source-state-review-2026-08-07.md)), and live probing.
 
 **Why both transports.** Web `batchexecute` is positional JSON — index `i` carries protobuf tag

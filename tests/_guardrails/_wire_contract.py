@@ -15,7 +15,7 @@ the wire, so they could only ever confirm the bug.
 This registry makes the claim explicit and checkable. Each :class:`Mapping` says
 "constant ``X`` on class ``Y`` reads protobuf field ``M.f``", and
 ``test_wire_contract.py`` asserts ``constant == tag - 1`` against
-``docs/mobile/schema.proto``.
+``docs/android/schema.proto``.
 
 Adding a constant
 -----------------
@@ -112,7 +112,7 @@ class Pinned:
     """A constant whose meaning is known from LIVE evidence but not from the proto.
 
     These read ``addUnused()`` slots: the mobile ``BuilderInfo`` reserves the field
-    but records no name, so the tag is absent from ``mobile/schema.proto`` and
+    but records no name, so the tag is absent from ``android/schema.proto`` and
     cannot be checked against it. What we *can* do is record what the slot means,
     cite the observation that established it, and freeze the value so an
     accidental change is caught.
@@ -334,7 +334,7 @@ MAPPINGS: tuple[Mapping, ...] = (
         "appType",
         note=(
             "ArtifactRow.variant. AppType: 1=FLASHCARDS, 2=QUIZ, 4=MINDMAP "
-            "(docs/mobile/enums.txt), matching the variant codes the payload "
+            "(docs/android/enums.txt), matching the variant codes the payload "
             "builders send."
         ),
     ),
@@ -991,7 +991,7 @@ UNMAPPED: tuple[Unmapped, ...] = (
         "ErrorPayloadRow",
         "_MESSAGE_POS",
         "google.rpc.Status.message (tag 2 -> index 1) — a PUBLIC google/rpc/status.proto "
-        "field, not a Tailwind one, so mobile/schema.proto cannot check it. Its two "
+        "field, not a Tailwind one, so android/schema.proto cannot check it. Its two "
         "siblings in the same envelope ARE live-confirmed (code at index 0: [3] / [5] "
         "live from CREATE_ARTIFACT 2026-08-13, [13] in notebooks_remove_from_recent.yaml; "
         "details at index 2: the recorded UserDisplayableError block). The message slot "

@@ -1,4 +1,4 @@
-# Deep Research over the mobile gRPC API
+# Deep Research over the Android gRPC API
 
 **Status:** Mobile-backend supported; async methods are absent from the inspected Android APK
 

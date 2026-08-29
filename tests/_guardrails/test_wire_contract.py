@@ -23,9 +23,9 @@ source of truth:
 * **C. Enum values agree.** Client enum members match the recovered backend enum,
   and known gaps stay declared.
 
-The reference data lives in ``docs/mobile/schema.proto`` and
-``docs/mobile/enums.txt``. Both are recovered artifacts, not guesses — see
-``docs/mobile/endpoints.md`` for the recovery method, and
+The reference data lives in ``docs/android/schema.proto`` and
+``docs/android/enums.txt``. Both are recovered artifacts, not guesses — see
+``docs/android/endpoints.md`` for the recovery method, and
 ``tests/_guardrails/_wire_schema.py`` for the index↔tag equivalence this relies on.
 """
 
@@ -228,7 +228,7 @@ def test_unread_share_status_slots_stay_undecoded() -> None:
         "A GET_SHARE_STATUS positional constant now reads a slot recorded as "
         "deliberately-undecoded:\n"
         + "\n".join(offenders)
-        + "\n\nThese proto tags have no name in docs/mobile/schema.proto. If a schema "
+        + "\n\nThese proto tags have no name in docs/android/schema.proto. If a schema "
         "re-extraction has since recovered one, add a MAPPINGS entry and remove the slot "
         "from UNREAD_SHARE_STATUS_SLOTS in the same change — do not name it from a guess."
     )
@@ -239,7 +239,7 @@ def test_enum_values_match_backend(client_enum: str) -> None:
     """C. Declared enum members match the recovered backend enum."""
     backend_name, bindings = ENUM_BINDINGS[client_enum]
     backend = load_enums().get(backend_name)
-    assert backend, f"{backend_name} missing from docs/mobile/enums.txt"
+    assert backend, f"{backend_name} missing from docs/android/enums.txt"
 
     mismatches = [
         f"  {client_enum}({value}) claims {member!r}, backend has {backend.get(value)!r}"
@@ -341,8 +341,8 @@ def test_quiz_and_flashcards_backend_enums_agree(quiz_enum: str, flashcards_enum
     """
     enums = load_enums()
     quiz, flashcards = enums.get(quiz_enum), enums.get(flashcards_enum)
-    assert quiz, f"{quiz_enum} missing from docs/mobile/enums.txt"
-    assert flashcards, f"{flashcards_enum} missing from docs/mobile/enums.txt"
+    assert quiz, f"{quiz_enum} missing from docs/android/enums.txt"
+    assert flashcards, f"{flashcards_enum} missing from docs/android/enums.txt"
 
     quiz_semantic = _semantic_members(quiz)
     flashcards_semantic = _semantic_members(flashcards)

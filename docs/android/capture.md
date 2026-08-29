@@ -542,7 +542,7 @@ python scripts/decode_mobile_grpc.py /tmp/notebooklm-mobile-grpc <MethodSubstrin
 
 The recovered endpoint and message shapes — including create/rename/delete, source add/remove,
 artifact generation, web-source discovery, chat, and sharing — are written up in
-[docs/mobile/endpoints.md](endpoints.md). Field numbers and wire types there are
+[docs/android/endpoints.md](endpoints.md). Field numbers and wire types there are
 ground truth; semantic names are inferred. Do not assign semantic field names from a single sample.
 
 ### Enumerating the full method surface without traffic
@@ -561,15 +561,15 @@ This yields 49 methods across 4 gRPC services. Cross-referencing them against th
 `rpc/types.py` rpcids shows, for example, that label mutation, deep-research jobs, and notebook
 copy are **not** compiled into this mobile app. Direct mobile-bearer calls later proved that all
 three families are routed by the backend. See the cross-reference table in
-[docs/mobile/endpoints.md](endpoints.md#mobile--web-cross-reference).
+[docs/android/endpoints.md](endpoints.md#android--web-cross-reference).
 
 The **full protobuf schema** (message/field names, tags, types) was recovered by decompiling the
 Flutter AOT snapshot with [blutter](https://github.com/worawit/blutter) ported to Dart 3.13 (the
 app's `3.13.0-256.0.dev` build). The port is saved as
-[docs/mobile/blutter-dart3.13.patch](blutter-dart3.13.patch); [scripts/parse_pbschema.py](../../scripts/parse_pbschema.py)
+[docs/android/blutter-dart3.13.patch](blutter-dart3.13.patch); [scripts/parse_pbschema.py](../../scripts/parse_pbschema.py)
 turns blutter's disassembled `BuilderInfo._i()` methods into
-[docs/mobile/schema.proto](schema.proto) (282 messages, 767 fields). See
-[docs/mobile/endpoints.md](endpoints.md#recovering-the-remaining-field-names-reversing-the-binary)
+[docs/android/schema.proto](schema.proto) (282 messages, 767 fields). See
+[docs/android/endpoints.md](endpoints.md#recovering-the-remaining-field-names-reversing-the-binary)
 for the exact Dart-3.13 changes and build steps.
 
 ## Stopping and restoring HTTP Toolkit

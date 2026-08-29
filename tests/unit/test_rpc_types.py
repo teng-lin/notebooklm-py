@@ -189,7 +189,7 @@ class TestArtifactTypeCode:
 
 
 #: The backend ``ArtifactStatus`` enum, code by code, as recovered in
-#: ``docs/mobile/enums.txt`` and corrected against live traces in #2127.
+#: ``docs/android/enums.txt`` and corrected against live traces in #2127.
 #: ``(wire code, member name, public status string)``.
 _ARTIFACT_STATUS_TABLE = [
     (0, "UNKNOWN", "unknown"),

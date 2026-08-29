@@ -1,7 +1,7 @@
 """Row adapters for the ``TailwindDoc`` document tree.
 
 All positional knowledge for NotebookLM's document tree lives here. The shape is
-recovered from ``docs/mobile/schema.proto`` (section
+recovered from ``docs/android/schema.proto`` (section
 ``orchestration.v1/tailwind_doc.pb.dart``) and live-confirmed against both
 carriers of the tree (issues #2128 and #2120)::
 

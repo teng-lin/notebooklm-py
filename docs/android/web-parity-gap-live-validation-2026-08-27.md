@@ -1,4 +1,4 @@
-# Web-parity gap probes over mobile gRPC
+# Web-parity gap probes over Android gRPC
 
 **Status:** Mobile routing checked for every `notebooklm-py` method absent from the inspected APK
 

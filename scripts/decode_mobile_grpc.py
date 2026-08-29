@@ -2,7 +2,7 @@
 """Recover NotebookLM Android gRPC message *shapes* from captured protobuf bodies.
 
 Companion to ``scripts/capture_mobile_grpc.js`` and
-``docs/mobile/capture.md``. Reads the ``.pb`` files a capture session wrote
+``docs/android/capture.md``. Reads the ``.pb`` files a capture session wrote
 (gRPC envelope already stripped) and prints a merged schema per method+direction:
 field number, wire type, whether it repeats, and — for length-delimited fields —
 whether the payload is a nested message, a string, or opaque bytes.
@@ -11,7 +11,7 @@ Privacy: string/bytes *values* are never printed, only their length. Varint and
 fixed32/64 values ARE printed because they are flags, enums, page sizes, and
 ``google.protobuf.Timestamp`` seconds/nanos — not private text. Even so, do not
 commit this tool's output verbatim; summarise shapes in docs instead (see
-``docs/mobile/endpoints.md``).
+``docs/android/endpoints.md``).
 
 Usage:
     python scripts/decode_mobile_grpc.py <capture-dir> [method-substring]

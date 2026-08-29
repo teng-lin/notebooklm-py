@@ -97,7 +97,7 @@ class TestPositionContract:
 
         ``AppArtifact.generationOptions`` is tag 2, and inside it ``appType``
         is 1, ``flashcardsGenerationOptions`` 7 and ``quizGenerationOptions``
-        8 — each ``tag - 1`` here, asserted against ``docs/mobile/schema.proto``
+        8 — each ``tag - 1`` here, asserted against ``docs/android/schema.proto``
         in ``tests/_guardrails/test_wire_contract.py``.
         """
         assert (
@@ -499,7 +499,7 @@ class TestOptionPairRoundTrip:
 
     This is the encode↔decode loop #2116 lacked. It is only meaningful because
     the decode positions are pinned independently of the encode positions —
-    against ``docs/mobile/schema.proto`` in
+    against ``docs/android/schema.proto`` in
     ``tests/_guardrails/test_wire_contract.py`` and against a live capture in
     ``TestQuizOptionEcho`` — so this cannot pass by two mistakes agreeing.
 

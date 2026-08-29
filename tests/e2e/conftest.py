@@ -302,7 +302,7 @@ async def read_back_option_pair(
     The backend echoes the generation options it persisted, which makes this the
     only tier that can check a request against reality rather than against a
     fixture we wrote (#2195). Unit tests pin the decode positions against
-    ``docs/mobile/schema.proto``; this closes the loop against a live
+    ``docs/android/schema.proto``; this closes the loop against a live
     generation, and is what would have caught the transposed flashcards pair
     (#2116) and the ``MORE``-as-``STANDARD`` alias (#2117) without anyone
     thinking to look.

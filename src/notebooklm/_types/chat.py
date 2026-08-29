@@ -238,7 +238,7 @@ class ChatReference:
             server omitted it.
 
             (The slot is ``Citation``'s protobuf tag 4, which the recovered
-            schema in ``docs/mobile/schema.proto`` does not name — the meaning
+            schema in ``docs/android/schema.proto`` does not name — the meaning
             is established by live capture, not by that file.)
         fragment_end_char: End of that source-side range (exclusive).
         answer_anchor_start: Start of the range **of the answer** this
