@@ -36,7 +36,7 @@
     "_EXPECTED_IMPORTS": 20
   },
   "tests/_guardrails/test_auth_mint_service_boundary.py": {
-    "_EXPECTED_IMPORTS": 55
+    "_EXPECTED_IMPORTS": 65
   },
   "tests/_guardrails/test_auth_phase12c_boundaries.py": {
     "_MODULE_HASHES": 34,

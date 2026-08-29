@@ -843,7 +843,7 @@
       "path": "src/notebooklm/_auth/master_token_types.py"
     },
     {
-      "lines": 208,
+      "lines": 304,
       "name": "mint_service",
       "path": "src/notebooklm/_auth/mint_service.py"
     },
@@ -936,7 +936,7 @@
     "function_local_edges": 12,
     "module_edges": 131,
     "modules": 42,
-    "total_lines": 16557,
+    "total_lines": 16653,
     "unique_edges": 143
   },
   "version": 1
