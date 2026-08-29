@@ -66,4 +66,4 @@ six conventional type-name inferences are recorded separately in
 A second audit of the newer Google-signed
 `1.55.10.971450265` build found zero occurrences of all seven across its AOT, Dex, resource, native,
 and reconstructed blutter trees; see
-[`latest-apk-grpc-audit-2026-08-29.md`](latest-apk-grpc-audit-2026-08-29.md).
+[`grpc-capability-and-signature-evidence.md`](grpc-capability-and-signature-evidence.md).

@@ -17,6 +17,9 @@ class NoteBackedMindMapArtifactAdapter:
     ) -> None:
         self._list_note_backed = list_note_backed
 
+    async def list_note_backed_mind_maps(self, notebook_id: str) -> builtins.list[MindMap]:
+        return await self._list_note_backed(notebook_id)
+
     async def list_mind_map_artifacts(self, notebook_id: str) -> builtins.list[Artifact]:
         return [
             Artifact(
@@ -26,7 +29,7 @@ class NoteBackedMindMapArtifactAdapter:
                 status=3,
                 created_at=mind_map.created_at,
             )
-            for mind_map in await self._list_note_backed(notebook_id)
+            for mind_map in await self.list_note_backed_mind_maps(notebook_id)
         ]
 
 

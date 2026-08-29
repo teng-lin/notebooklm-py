@@ -9,9 +9,15 @@ copies. No credential material or resource identifiers were logged.
 The audit found 44 target callsites, excluding the `_reject` helper definitions present when
 the audit began. They were not all missing gRPC methods: many were local composition/download gaps
 or omitted fields on RPCs that were already admitted. The completed implementation passes removed
-27 of those callsites. The 17 retained calls are 10 artifact gaps, one note-backed mind-map branch,
-three sharing operations, two source operations, and one notebook operation; Android chat now has
-none.
+38 of those callsites. The six retained calls are three sharing operations, two source operations,
+and one notebook operation. Android artifacts, chat, and mind maps now have no public rejection
+branch.
+
+Those six are callsites in private, currently unselected Android adapters. Explicit Android
+selection still installs the Web notebook/source/sharing namespaces, so the corresponding public
+methods remain available through Web. In particular, Web `sources.add_drive_file` downloads an
+upload-only Drive file and feeds it through the upload pipeline; it is distinct from native
+`sources.add_drive` reference ingestion and remains usable when Android artifacts are selected.
 
 ## Disposable-copy live results
 
@@ -35,27 +41,25 @@ in `finally` cleanup.
 The completed adapters were then exercised through their real classes on another copied notebook.
 Text, YouTube, freshness, prompt suggestions, and chat configure/read-back all succeeded. Artifact
 kickoff returned `in_progress` tasks for flashcards, report, infographic, slide deck, and video.
-Cinematic video reached `CreateArtifact` in an exploratory probe but the account returned
-`RESOURCE_EXHAUSTED` (gRPC 8). More importantly, public `VideoFormat.CINEMATIC` is code 3 while the
-recovered mobile enum assigns code 3 to `BREAKDOWN`; the probe therefore does not validate a
-cinematic route. The public cinematic entry points remain gated before I/O. Cleanup again deleted
-the copy.
+Cinematic video reached `CreateArtifact`; although the account returned `RESOURCE_EXHAUSTED`, APK
+UI identity proves its displayed Cinematic value is the same enum object the RPC converter emits as
+protobuf value 3 (`BREAKDOWN` is a stale generated name). Cleanup again deleted the copy.
 
 ## Artifact generation and mutation
 
 | Public operation | Android mapping | Status |
 |---|---|---|
-| non-deep-dive audio formats | existing `CreateArtifact`; missing exact audio-format field | retain reject |
+| non-deep-dive audio formats | `AudioOverviewGenerationOptions #7`; codes 2/3/4 independently accepted and echoed live | implemented with an explicit local wire overlay |
 | video | existing `CreateArtifact`, exact mobile video options | implementation-ready; implemented in this change |
-| cinematic video | no exact cinematic enum mapping: public code 3 conflicts with mobile `BREAKDOWN`; the only live probe ended `RESOURCE_EXHAUSTED` | retain reject before I/O |
-| report / study guide | existing `CreateArtifact`, exact tailored-report options | implementation-ready; implemented in this change |
+| cinematic video | APK UI/RPC converter identity maps displayed Cinematic to template code 3 and suppresses style | implemented; live kickoff reached the handler but quota-blocked |
+| report / study guide / concept explanation | existing flexible `CreateArtifact` report strings; concept preset accepted and echoed live | implemented |
 | flashcards | existing `CreateArtifact`, exact app/flashcard options | implementation-ready; implemented in this change |
-| infographic | existing `CreateArtifact`, exact prompt/language/aspect/style options | implemented except unpinned `detail_level` |
+| infographic | existing `CreateArtifact`; detail field `#5`, code 3 accepted and echoed live | implemented including `detail_level` |
 | slide deck | existing `CreateArtifact`, exact prompt/language/type/length options | implementation-ready; implemented in this change |
-| data table | generic `CreateArtifact` type 9; live bare request rejected because required field `Artifact #19` has no APK payload FQN | retain reject |
+| data table | `Artifact #19`, document `TailwindDoc #1`, options prompt/language `#1/#2`; generated table reached `READY` | implemented with honest local wire-equivalent nested names |
 | revise slide | APK-exact `DeriveArtifact`; live derivation returned a new type-8 artifact and reached `READY` | implemented |
-| retry failed | web `GenerateArtifact`; APK absent and invalid-ID routing only | retain reject |
-| artifact note-backed mind-map generation | APK-exact outer `ActOnSources`, web-derived missing nested field-6 FQN, then `CreateNote` | retain reject |
+| retry failed | web-derived `GenerateArtifact`; request/response wire pinned, valid READY artifact rejected as non-retryable | implemented; accepted retry still lacks a disposable failed-row live fixture |
+| artifact note-backed mind-map generation | Web-only `ActOnSources` then `CreateNote` | implemented through a narrow Web compatibility collaborator under Android selection; no Google FQN invented |
 | interactive mind-map generation | `CreateArtifact` type 4 / app type 4; live `READY` plus direct JSON field `AppArtifact #4` | implemented in `mind_maps.generate` |
 
 ## Artifact downloads and exports
@@ -68,10 +72,10 @@ These are primarily local decoding/transfer gaps, not missing creation RPCs.
 | infographic with `artifacts_data` | normal download and typed/exact-protobuf prefetch both implemented; Web positional rows remain intentionally outside the Android contract |
 | slide deck | exact PDF/PPTX fields and strict transfer implemented; current URLs still need the APK's unrecovered scoped Drive download-form token |
 | report | exact rich document closure and Markdown renderer implemented; live sample covered paragraphs, table, bullets, styles, and rules |
-| mind map | interactive field-4 JSON generate/read/download and typed note-backed `MindMap` prefetch implemented; note-backed generation remains gated |
-| data table | table payload/FQNs unresolved |
+| mind map | interactive field-4 JSON plus note-backed generation/read/download are implemented; note-backed generation uses the narrow existing Web pipeline |
+| data table | live `TailwindDoc` table decoded to BOM CSV with local wire-equivalent omitted nested names |
 | quiz / flashcards | exact full-`GetArtifact` app HTML/templated-app fields admitted and local JSON/Markdown/HTML saves implemented |
-| report/data-table/generic export | web `ExportToDrive`; only invalid-ID Android routing is retained, and valid probes create external Drive resources |
+| report/data-table/generic export | `ExportToDrive` implemented; report-to-Docs succeeded live, exact Drive read-back matched, and exact Drive deletion returned 204; Sheets/content variants remain web-derived |
 
 ## Chat settings
 
@@ -98,7 +102,7 @@ read-modify-write from clobbering settings.
 | note-backed tree and note-first auto-detection | already-decoded note JSON; implemented |
 | interactive tree | live `AppArtifact #4` direct JSON with bounded `{name,children}` validation | implemented |
 | interactive generation | live `CreateArtifact` type 4 / app type 4 | implemented |
-| note-backed generation | see `ActOnSources` nested-FQN gap above | retain reject |
+| note-backed generation | narrow delegation to the existing Web `ActOnSources` + `CreateNote` pipeline | implemented under Android selection without guessing mobile fields |
 
 ## Notebooks and sources
 
@@ -109,7 +113,7 @@ read-modify-write from clobbering settings.
 | YouTube `add_url` and batch | dedicated exact `VideoContent #8`; live success; implemented |
 | `sources.add_text` | exact `TextContent #2`; live success; implemented |
 | `sources.add_drive` | exact `GoogleDriveContent #1`; valid existing-Drive-reference success; implemented without `GetDriveSourceStatus` |
-| `sources.add_drive_file` | needs authenticated Drive download plus Android upload composition | retain reject |
+| `sources.add_drive_file` | Web supports its distinct download-then-upload workflow and remains publicly selected; the private Android source adapter would need authenticated Drive download plus Android upload composition | retain private-adapter reject |
 | `sources.refresh` | valid-resource mobile rejection | retain reject |
 | `sources.check_freshness` | valid-resource Android success | implemented |
 

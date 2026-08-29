@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import builtins
+import csv
+import io
 import json
 import os
 import tempfile
@@ -15,6 +17,7 @@ from .._types.artifact_content import ArtifactMediaType
 from ..exceptions import ArtifactDownloadError, ArtifactParseError, ValidationError
 from ..types import Artifact, MindMap, MindMapKind
 from .artifact_proto import ARTIFACTS_PROTO as _PROTO
+from .artifact_proto import table_artifact_projection
 from .codecs.artifacts import decode_artifact
 
 
@@ -301,3 +304,103 @@ def report_doc_markdown(document: Any) -> str:
             label = f"{label} (source {source_id})"
         blocks.append(f"> **{label}:** {fragment}".rstrip())
     return "\n\n".join(block for block in blocks if block).strip()
+
+
+def _invalid_data_table_cell(*, artifact_id: str) -> ArtifactParseError:
+    return ArtifactParseError(
+        "data_table",
+        artifact_id=artifact_id,
+        details="Android table artifact contains an unsupported cell structure",
+        cause=None,
+    )
+
+
+def _data_table_structural_text(block: Any, *, artifact_id: str) -> str:
+    variants = [
+        name
+        for name in (
+            "paragraph",
+            "table",
+            "image",
+            "code_block",
+            "a2ui_block",
+            "thought",
+            "horizontal_rule",
+        )
+        if block.HasField(name)
+    ]
+    variant = next(iter(variants), None)
+    if len(variants) != 1 or variant not in {"paragraph", "thought", "code_block"}:
+        raise _invalid_data_table_cell(artifact_id=artifact_id)
+    kind = variant
+    if kind == "code_block":
+        return block.code_block.content
+    if kind == "thought":
+        return "".join(
+            _data_table_structural_text(child, artifact_id=artifact_id)
+            for child in block.thought.elements
+        )
+    parts: builtins.list[str] = []
+    for element in block.paragraph.elements:
+        element_variants = [
+            name for name in ("text_run", "image", "resource") if element.HasField(name)
+        ]
+        if element_variants != ["text_run"]:
+            raise _invalid_data_table_cell(artifact_id=artifact_id)
+        parts.append(element.text_run.content)
+    return "".join(parts)
+
+
+def _data_table_cell_text(cell: Any, *, artifact_id: str) -> str:
+    parts: builtins.list[str] = []
+    for block in cell.content:
+        parts.append(_data_table_structural_text(block, artifact_id=artifact_id))
+    return "".join(parts)
+
+
+def data_table_csv(message: Any, *, artifact_id: str) -> str:
+    """Render one live table document as BOM-prefixed RFC-compatible CSV."""
+
+    table_artifact = table_artifact_projection(message)
+    document = None if table_artifact is None else table_artifact.document
+    tables = (
+        []
+        if document is None or not document.HasField("body")
+        else [block.table for block in document.body.content if block.HasField("table")]
+    )
+    if len(tables) != 1:
+        raise ArtifactParseError(
+            "data_table",
+            artifact_id=artifact_id,
+            details=(
+                "Android table artifact omitted its table document"
+                if not tables
+                else "Android table artifact contains multiple top-level tables"
+            ),
+            cause=None,
+        )
+    table, *_ = tables
+    rows = [
+        [_data_table_cell_text(cell, artifact_id=artifact_id) for cell in row.table_cells]
+        for row in table.table_rows
+    ]
+    first_row = next(iter(rows), [])
+    width = len(first_row)
+    if width == 0 or any(len(row) != width for row in rows):
+        raise ArtifactParseError(
+            "data_table",
+            artifact_id=artifact_id,
+            details="Android table artifact has an invalid rectangular table",
+            cause=None,
+        )
+    if any(not heading.strip() for heading in first_row):
+        raise ArtifactParseError(
+            "data_table",
+            artifact_id=artifact_id,
+            details="Android table artifact contains a missing header cell",
+            cause=None,
+        )
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerows(rows)
+    return "\ufeff" + output.getvalue()

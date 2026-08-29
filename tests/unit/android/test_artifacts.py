@@ -6,10 +6,11 @@ import asyncio
 import inspect
 import json
 import traceback
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -21,6 +22,8 @@ from notebooklm._android.artifacts import (
     CREATE_ARTIFACT_METHOD,
     DELETE_ARTIFACT_METHOD,
     DERIVE_ARTIFACT_METHOD,
+    EXPORT_TO_DRIVE_METHOD,
+    GENERATE_ARTIFACT_METHOD,
     GENERATE_REPORT_SUGGESTIONS_METHOD,
     GET_ARTIFACT_METHOD,
     LIST_ARTIFACTS_METHOD,
@@ -33,6 +36,7 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
     chat_pb2,
     read_pb2,
 )
+from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import artifacts_pb2 as wire_pb2
 from notebooklm._android.session import AndroidSession
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._client_metrics import ClientMetrics
@@ -44,6 +48,7 @@ from notebooklm._types.enums import (
     ArtifactTypeCode,
     AudioFormat,
     AudioLength,
+    ExportType,
     InfographicDetail,
     InfographicOrientation,
     InfographicStyle,
@@ -55,14 +60,15 @@ from notebooklm._types.enums import (
     VideoFormat,
     VideoStyle,
 )
+from notebooklm._types.research import MindMapResult
 from notebooklm.exceptions import (
     ArtifactDownloadError,
+    ArtifactFeatureUnavailableError,
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
     DecodingError,
     RPCError,
-    UnsupportedOperationError,
     ValidationError,
 )
 from notebooklm.types import Artifact, ArtifactType, MindMap, MindMapKind
@@ -112,6 +118,7 @@ class FakeNotebooks:
 class FakeMindMaps:
     def __init__(self, artifacts: list[Artifact] | None = None) -> None:
         self.artifacts = artifacts or []
+        self.mind_maps: list[MindMap] = []
         self.calls: list[str] = []
         self.error: BaseException | None = None
 
@@ -120,6 +127,12 @@ class FakeMindMaps:
         if self.error is not None:
             raise self.error
         return list(self.artifacts)
+
+    async def list_note_backed_mind_maps(self, notebook_id: str) -> list[MindMap]:
+        self.calls.append(notebook_id)
+        if self.error is not None:
+            raise self.error
+        return list(self.mind_maps)
 
 
 class FakeAssets:
@@ -212,17 +225,30 @@ def _graph(
             GET_ARTIFACT_METHOD: get_response,
             DELETE_ARTIFACT_METHOD: empty_pb2.Empty(),
             DERIVE_ARTIFACT_METHOD: _PROTO.DeriveArtifactResponse(),
+            GENERATE_ARTIFACT_METHOD: _PROTO.GenerateArtifactResponse(),
+            EXPORT_TO_DRIVE_METHOD: _PROTO.ExportToDriveResponse(),
             GENERATE_REPORT_SUGGESTIONS_METHOD: _PROTO.GenerateReportSuggestionsResponse(),
         }
     )
     notebooks = FakeNotebooks()
     mind_maps = FakeMindMaps()
     assets = FakeAssets()
+
+    async def generate_note_backed(
+        notebook_id: str,
+        source_ids: list[str] | None = None,
+        language: str | None = "en",
+        instructions: str | None = None,
+    ) -> MindMapResult:
+        del notebook_id, source_ids, language, instructions
+        return MindMapResult()
+
     api = AndroidArtifactsAPI(
         session=cast(AndroidSession, session),
         supervisor=_supervisor(),
         notebooks=cast(NotebookSourceIdProvider, notebooks),
         mind_maps=mind_maps,
+        note_backed_generator=generate_note_backed,
         asset_downloads=cast(AndroidAssetDownloadService, assets),
     )
     return session, notebooks, mind_maps, assets, api
@@ -235,11 +261,21 @@ def _supervised_graph(
     mind_maps: Any | None = None,
     assets: Any | None = None,
 ) -> AndroidArtifactsAPI:
+    async def generate_note_backed(
+        notebook_id: str,
+        source_ids: list[str] | None = None,
+        language: str | None = "en",
+        instructions: str | None = None,
+    ) -> MindMapResult:
+        del notebook_id, source_ids, language, instructions
+        return MindMapResult()
+
     return AndroidArtifactsAPI(
         session=cast(AndroidSession, transport),
         supervisor=transport.supervisor,
         notebooks=cast(NotebookSourceIdProvider, notebooks or FakeNotebooks()),
         mind_maps=cast(Any, mind_maps or FakeMindMaps()),
+        note_backed_generator=generate_note_backed,
         asset_downloads=cast(AndroidAssetDownloadService, assets or FakeAssets()),
     )
 
@@ -257,6 +293,7 @@ def test_adapter_is_concrete_and_requires_the_narrow_note_lister() -> None:
             supervisor=_supervisor(),
             notebooks=cast(NotebookSourceIdProvider, notebooks),
             mind_maps=cast(Any, None),
+            note_backed_generator=cast(Any, None),
             asset_downloads=cast(AndroidAssetDownloadService, assets),
         )
 
@@ -541,6 +578,24 @@ async def test_generate_quiz_uses_exact_request_and_never_replays_mutation() -> 
 
 
 @pytest.mark.asyncio
+async def test_generate_quiz_uses_public_standard_medium_defaults() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact(
+            "quiz-defaults",
+            type_code=_PROTO.ARTIFACT_TYPE_APP,
+            variant=_PROTO.APP_TYPE_QUIZ,
+        )
+    )
+
+    await api.generate_quiz("notebook-1", source_ids=["source-1"])
+
+    options = session.calls[0][1].artifact.app.generation_options.quiz_generation_options
+    assert options.question_quantity == QuizQuantity.STANDARD.value
+    assert options.quiz_difficulty == QuizDifficulty.MEDIUM.value
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
@@ -629,16 +684,22 @@ async def test_generate_audio_uses_exact_duplicated_source_wire(
     "audio_format",
     [AudioFormat.BRIEF, AudioFormat.CRITIQUE, AudioFormat.DEBATE],
 )
-async def test_generate_audio_rejects_unevidenced_formats_before_io(
+async def test_generate_audio_formats_use_live_wire_overlay(
     audio_format: AudioFormat,
 ) -> None:
     session, notebooks, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact("audio-format", type_code=_PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW)
+    )
 
-    with pytest.raises(UnsupportedOperationError, match="audio_format"):
-        await api.generate_audio("notebook-1", audio_format=audio_format)
+    status = await api.generate_audio("notebook-1", audio_format=audio_format)
 
-    assert session.calls == []
-    assert notebooks.calls == []
+    assert status.task_id == "audio-format"
+    options = session.calls[0][1].artifact.audio_overview.generation_options
+    projection = wire_pb2.WireAudioOverviewGenerationOptionsProjection()
+    projection.ParseFromString(options.SerializeToString())
+    assert projection.format == audio_format.value
+    assert notebooks.calls == ["notebook-1"]
 
 
 @pytest.mark.asyncio
@@ -730,22 +791,43 @@ async def test_generate_video_families_use_exact_mobile_options() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("through_video_format", [False, True])
-async def test_cinematic_video_rejects_before_source_or_transport(
+async def test_cinematic_video_uses_mobile_template_code_three(
     through_video_format: bool,
 ) -> None:
     session, notebooks, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact("cinematic", type_code=_PROTO.ARTIFACT_TYPE_EXPLAINER_VIDEO)
+    )
 
-    with pytest.raises(UnsupportedOperationError, match="generate_cinematic_video"):
-        if through_video_format:
-            await api.generate_video(
-                "notebook-1",
-                video_format=VideoFormat.CINEMATIC,
-            )
-        else:
-            await api.generate_cinematic_video("notebook-1")
+    if through_video_format:
+        status = await api.generate_video(
+            "notebook-1",
+            video_format=VideoFormat.CINEMATIC,
+        )
+    else:
+        status = await api.generate_cinematic_video("notebook-1")
 
-    assert notebooks.calls == []
+    assert status.task_id == "cinematic"
+    options = session.calls[0][1].artifact.explainer_video.generation_options
+    assert options.template_format == _PROTO.TEMPLATE_FORMAT_BREAKDOWN
+    assert options.video_overview_style == _PROTO.VIDEO_OVERVIEW_STYLE_UNSPECIFIED
+    assert notebooks.calls == ["notebook-1"]
+
+
+@pytest.mark.asyncio
+async def test_cinematic_video_rejects_style_prompt_before_io() -> None:
+    session, notebooks, _, _, api = _graph()
+
+    with pytest.raises(ValidationError, match="cinematic"):
+        await api.generate_video(
+            "notebook-1",
+            video_format=VideoFormat.CINEMATIC,
+            video_style=VideoStyle.CUSTOM,
+            style_prompt="Use hand-drawn diagrams",
+        )
+
     assert session.calls == []
+    assert notebooks.calls == []
 
 
 @pytest.mark.asyncio
@@ -791,6 +873,25 @@ async def test_generate_report_families_use_exact_mobile_options(
     assert [source.id for source in options.source_ids] == ["source-1"]
     assert options.language_code == "de"
     assert directive_fragment in options.document_directive
+
+
+@pytest.mark.asyncio
+async def test_generate_concept_explanation_uses_live_flexible_report_contract() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact("concept", type_code=_PROTO.ARTIFACT_TYPE_TAILORED_REPORT)
+    )
+
+    await api.generate_report(
+        "notebook-1",
+        ReportFormat.CONCEPT_EXPLANATION,
+        source_ids=["source-1"],
+    )
+
+    options = session.calls[0][1].artifact.tailored_report.generation_options
+    assert options.type == "Concept Explanation"
+    assert options.description == "Clear explanations of key concepts"
+    assert "common misconceptions" in options.document_directive
 
 
 @pytest.mark.asyncio
@@ -886,17 +987,59 @@ async def test_generate_slide_deck_uses_exact_mobile_options() -> None:
 
 
 @pytest.mark.asyncio
-async def test_infographic_detail_level_remains_a_pre_io_evidence_gate() -> None:
+async def test_infographic_detail_level_uses_live_wire_overlay() -> None:
     session, notebooks, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact("detailed", type_code=_PROTO.ARTIFACT_TYPE_INFOGRAPHIC)
+    )
 
-    with pytest.raises(UnsupportedOperationError, match="detail_level"):
-        await api.generate_infographic(
-            "notebook-1",
-            detail_level=InfographicDetail.DETAILED,
-        )
+    await api.generate_infographic(
+        "notebook-1",
+        detail_level=InfographicDetail.DETAILED,
+    )
 
-    assert session.calls == []
-    assert notebooks.calls == []
+    options = session.calls[0][1].artifact.infographic.generation_options
+    projection = wire_pb2.WireInfographicGenerationOptionsProjection()
+    projection.ParseFromString(options.SerializeToString())
+    assert projection.detail_level == InfographicDetail.DETAILED.value
+    assert notebooks.calls == ["notebook-1"]
+
+
+@pytest.mark.asyncio
+async def test_infographic_uses_public_standard_detail_default() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact("standard", type_code=_PROTO.ARTIFACT_TYPE_INFOGRAPHIC)
+    )
+
+    await api.generate_infographic("notebook-1", source_ids=["source-1"])
+
+    options = session.calls[0][1].artifact.infographic.generation_options
+    projection = wire_pb2.WireInfographicGenerationOptionsProjection()
+    projection.ParseFromString(options.SerializeToString())
+    assert projection.detail_level == InfographicDetail.STANDARD.value
+
+
+@pytest.mark.asyncio
+async def test_generate_data_table_uses_live_local_wire_overlay() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact("table", type_code=_PROTO.ARTIFACT_TYPE_TABLE)
+    )
+
+    status = await api.generate_data_table(
+        "notebook-1",
+        source_ids=["source-1"],
+        language="fr",
+        instructions="Compare evidence",
+    )
+
+    assert status.task_id == "table"
+    request = session.calls[0][1]
+    projection = wire_pb2.WireArtifactTableProjection()
+    projection.ParseFromString(request.artifact.SerializeToString())
+    assert projection.table.generation_options.user_steering_prompt == "Compare evidence"
+    assert projection.table.generation_options.language_code == "fr"
 
 
 @pytest.mark.asyncio
@@ -931,6 +1074,54 @@ async def test_failed_quiz_mutation_is_not_replayed() -> None:
     assert raised.value is original
     assert [call[0] for call in session.calls] == [CREATE_ARTIFACT_METHOD]
     assert session.calls[0][2]["replay_safe"] is False
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_uses_web_derived_mobile_generate_artifact_shape() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[GENERATE_ARTIFACT_METHOD] = _PROTO.GenerateArtifactResponse(
+        artifact=_artifact(
+            "failed-1",
+            type_code=_PROTO.ARTIFACT_TYPE_SLIDES,
+            status=_PROTO.ARTIFACT_STATUS_INITIALIZED,
+        )
+    )
+
+    status = await api.retry_failed("notebook-1", "failed-1")
+
+    assert status.task_id == "failed-1"
+    assert status.status == "pending"
+    method, request, kwargs = session.calls[0]
+    assert method == GENERATE_ARTIFACT_METHOD
+    assert request.artifact_id == "failed-1"
+    assert request.request_context.client_type != 0
+    assert kwargs == {
+        "replay_safe": False,
+        "response_type": _PROTO.GenerateArtifactResponse,
+        "expected_epoch": 7,
+    }
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_rejects_changed_artifact_identity() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[GENERATE_ARTIFACT_METHOD] = _PROTO.GenerateArtifactResponse(
+        artifact=_artifact("different", type_code=_PROTO.ARTIFACT_TYPE_SLIDES)
+    )
+
+    with pytest.raises(DecodingError, match="different artifact id"):
+        await api.retry_failed("notebook-1", "failed-1")
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_empty_result_is_feature_unavailable() -> None:
+    session, _, _, _, api = _graph()
+
+    with pytest.raises(ArtifactFeatureUnavailableError) as raised:
+        await api.retry_failed("notebook-1", "failed-1")
+
+    assert raised.value.method_id == GENERATE_ARTIFACT_METHOD
+    assert [call[0] for call in session.calls] == [GENERATE_ARTIFACT_METHOD]
 
 
 @pytest.mark.asyncio
@@ -1073,6 +1264,157 @@ async def test_slide_download_reads_exact_get_artifact_representation(
     assert assets.representation_calls == [
         (expected_url, f"slides.{output_format}", representation)
     ]
+
+
+@pytest.mark.asyncio
+async def test_download_data_table_decodes_tailwind_doc_as_bom_csv(tmp_path) -> None:
+    raw = _artifact("table", type_code=_PROTO.ARTIFACT_TYPE_TABLE)
+    projection = wire_pb2.WireArtifactTableProjection()
+    table = projection.table.document.body.content.add().table
+    for values in (("Name", "Evidence"), ("Alpha", "quoted, value"), ("Beta", "line\nbreak")):
+        row = table.table_rows.add()
+        for value in values:
+            row.table_cells.add().content.add().paragraph.elements.add().text_run.content = value
+    raw.MergeFromString(projection.SerializeToString())
+    session, _, _, _, api = _graph([raw])
+    output = tmp_path / "table.csv"
+
+    result = await api.download_data_table("notebook-1", str(output), "table")
+
+    assert result == str(output)
+    assert output.read_bytes().startswith(b"\xef\xbb\xbf")
+    assert output.read_text(encoding="utf-8-sig") == (
+        'Name,Evidence\nAlpha,"quoted, value"\nBeta,"line\nbreak"\n'
+    )
+    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD, GET_ARTIFACT_METHOD]
+
+
+@pytest.mark.asyncio
+async def test_download_data_table_preserves_code_blocks(tmp_path) -> None:
+    raw = _artifact("table", type_code=_PROTO.ARTIFACT_TYPE_TABLE)
+    projection = wire_pb2.WireArtifactTableProjection()
+    table = projection.table.document.body.content.add().table
+    header = table.table_rows.add()
+    header.table_cells.add().content.add().paragraph.elements.add().text_run.content = "Snippet"
+    data = table.table_rows.add()
+    data.table_cells.add().content.add().code_block.content = "x = 1\ny = 2"
+    raw.MergeFromString(projection.SerializeToString())
+    _, _, _, _, api = _graph([raw])
+    output = tmp_path / "table.csv"
+
+    await api.download_data_table("notebook-1", str(output), "table")
+
+    assert output.read_text(encoding="utf-8-sig") == 'Snippet\n"x = 1\ny = 2"\n'
+
+
+@pytest.mark.asyncio
+async def test_download_data_table_rejects_multiple_tables_without_output(tmp_path) -> None:
+    raw = _artifact("table", type_code=_PROTO.ARTIFACT_TYPE_TABLE)
+    projection = wire_pb2.WireArtifactTableProjection()
+    for _ in range(2):
+        table = projection.table.document.body.content.add().table
+        table.table_rows.add().table_cells.add().content.add().paragraph.elements.add().text_run.content = "Header"
+    raw.MergeFromString(projection.SerializeToString())
+    _, _, _, _, api = _graph([raw])
+    output = tmp_path / "table.csv"
+
+    with pytest.raises(ArtifactParseError, match="multiple top-level tables"):
+        await api.download_data_table("notebook-1", str(output), "table")
+
+    assert not output.exists()
+
+
+@pytest.mark.asyncio
+async def test_download_data_table_rejects_mixed_cell_variants_without_output(tmp_path) -> None:
+    raw = _artifact("table", type_code=_PROTO.ARTIFACT_TYPE_TABLE)
+    projection = wire_pb2.WireArtifactTableProjection()
+    table = projection.table.document.body.content.add().table
+    cell_block = table.table_rows.add().table_cells.add().content.add()
+    cell_block.paragraph.elements.add().text_run.content = "Header"
+    cell_block.image.url = "https://example.invalid/must-not-be-dropped"
+    raw.MergeFromString(projection.SerializeToString())
+    _, _, _, _, api = _graph([raw])
+    output = tmp_path / "table.csv"
+
+    with pytest.raises(ArtifactParseError, match="unsupported cell structure"):
+        await api.download_data_table("notebook-1", str(output), "table")
+
+    assert not output.exists()
+
+
+@pytest.mark.asyncio
+async def test_download_data_table_rejects_missing_document_without_output(tmp_path) -> None:
+    raw = _artifact("table", type_code=_PROTO.ARTIFACT_TYPE_TABLE)
+    _, _, _, _, api = _graph([raw])
+    output = tmp_path / "table.csv"
+
+    with pytest.raises(ArtifactParseError, match="omitted its table document"):
+        await api.download_data_table("notebook-1", str(output), "table")
+
+    assert not output.exists()
+
+
+@pytest.mark.asyncio
+async def test_export_to_drive_supports_artifact_and_literal_content_targets() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[EXPORT_TO_DRIVE_METHOD] = [
+        _PROTO.ExportToDriveResponse(url="https://docs.google.com/document/d/one"),
+        _PROTO.ExportToDriveResponse(url="https://docs.google.com/spreadsheets/d/two"),
+    ]
+
+    report_url = await api.export_report(
+        "notebook-1",
+        "report-1",
+        "Report title",
+        ExportType.DOCS,
+    )
+    content_url = await api.export(
+        "notebook-1",
+        title="Table title",
+        export_type=ExportType.SHEETS,
+        content="A,B\n1,2\n",
+    )
+
+    assert report_url.endswith("/one")
+    assert content_url.endswith("/two")
+    first = session.calls[0]
+    assert first[0] == EXPORT_TO_DRIVE_METHOD
+    assert first[1].WhichOneof("target") == "artifact_id"
+    assert first[1].artifact_id == "report-1"
+    assert first[1].title == "Report title"
+    assert first[1].destination == ExportType.DOCS.value
+    second = session.calls[1]
+    assert second[1].WhichOneof("target") == "content"
+    assert second[1].content == "A,B\n1,2\n"
+    assert second[1].destination == ExportType.SHEETS.value
+    assert all(call[2]["replay_safe"] is False for call in session.calls)
+
+
+@pytest.mark.asyncio
+async def test_export_data_table_forces_sheets_and_validates_target_before_io() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[EXPORT_TO_DRIVE_METHOD] = _PROTO.ExportToDriveResponse(
+        url="https://docs.google.com/spreadsheets/d/sheet"
+    )
+
+    assert (await api.export_data_table("notebook-1", "table-1")).endswith("/sheet")
+    assert session.calls[0][1].destination == ExportType.SHEETS.value
+    session.calls.clear()
+
+    with pytest.raises(ValidationError, match="exactly one"):
+        await api.export("notebook-1")
+    with pytest.raises(ValidationError, match="exactly one"):
+        await api.export("notebook-1", "artifact-1", content="literal")
+    assert session.calls == []
+
+
+@pytest.mark.asyncio
+async def test_export_to_drive_rejects_missing_or_non_https_response_url() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[EXPORT_TO_DRIVE_METHOD] = _PROTO.ExportToDriveResponse(url="javascript:x")
+
+    with pytest.raises(DecodingError, match="valid HTTPS URL"):
+        await api.export_report("notebook-1", "report-1")
 
 
 @pytest.mark.asyncio
@@ -1318,6 +1660,27 @@ async def test_download_note_backed_mind_map_uses_typed_prefetch_without_rpc(tmp
 
 
 @pytest.mark.asyncio
+async def test_download_note_backed_mind_map_self_fetches_without_prefetch(tmp_path) -> None:
+    session, _, mind_maps, _, api = _graph()
+    output = tmp_path / "note-map.json"
+    note_map = MindMap(
+        id="note-map",
+        notebook_id="notebook-1",
+        title="Note map",
+        kind=MindMapKind.NOTE_BACKED,
+        tree={"name": "Root", "children": []},
+    )
+    mind_maps.mind_maps = [note_map]
+
+    result = await api.download_mind_map("notebook-1", str(output), "note-map")
+
+    assert result == str(output)
+    assert json.loads(output.read_text(encoding="utf-8")) == note_map.tree
+    assert mind_maps.calls == ["notebook-1"]
+    assert session.calls == []
+
+
+@pytest.mark.asyncio
 async def test_interactive_mind_map_rejects_malformed_node_tree() -> None:
     raw = _artifact(
         "interactive",
@@ -1332,26 +1695,31 @@ async def test_interactive_mind_map_rejects_malformed_node_tree() -> None:
 
 
 @pytest.mark.asyncio
-async def test_all_unsupported_public_paths_reject_before_collaborator_io() -> None:
-    session, notebooks, mind_maps, assets, api = _graph()
-    invocations: list[Callable[[], Awaitable[Any]]] = [
-        lambda: api.generate_data_table("n"),
-        lambda: api.retry_failed("n", "a"),
-        lambda: api.generate_mind_map("n"),
-        lambda: api.download_data_table("n", "out"),
-        lambda: api.export_report("n", "a"),
-        lambda: api.export_data_table("n", "a"),
-        lambda: api.export("n", "a"),
-    ]
+async def test_generate_note_backed_mind_map_delegates_to_narrow_web_compatibility_seam() -> None:
+    session, notebooks, _, _, api = _graph()
+    expected = MindMapResult(
+        mind_map={"name": "Topics", "children": []},
+        note_id="note-1",
+    )
+    generator = AsyncMock(return_value=expected)
+    api._generate_note_backed_mind_map = generator
 
-    for invoke in invocations:
-        with pytest.raises(UnsupportedOperationError):
-            await invoke()
+    result = await api.generate_mind_map(
+        "notebook-1",
+        ["source-1"],
+        "fr",
+        "Group by theme",
+    )
 
+    assert result is expected
+    generator.assert_awaited_once_with(
+        "notebook-1",
+        ["source-1"],
+        "fr",
+        "Group by theme",
+    )
     assert session.calls == []
     assert notebooks.calls == []
-    assert mind_maps.calls == []
-    assert assets.calls == []
 
 
 @pytest.mark.asyncio

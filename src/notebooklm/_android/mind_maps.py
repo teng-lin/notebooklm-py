@@ -10,22 +10,16 @@ from __future__ import annotations
 
 import builtins
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, NoReturn, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from .._mind_maps_api import MindMapsAPI
 from .._runtime.call_supervisor import CallSupervisor
 from ..exceptions import MindMapNotFoundError, NoteNotFoundError
 from ..types import ArtifactType, MindMap, MindMapKind
-from .errors import unsupported_operation
 
 if TYPE_CHECKING:
     from .._artifacts import ArtifactsAPI
     from .._notes import NotesAPI
-
-
-def _reject(operation: str) -> NoReturn:
-    unsupported_operation(operation)
-    raise AssertionError("unsupported_operation returned")  # pragma: no cover
 
 
 class _NoteBackedMindMapReader(Protocol):
@@ -141,10 +135,29 @@ class AndroidMindMapsAPI(MindMapsAPI):
         instructions: str | None = None,
         wait: bool = True,
     ) -> MindMap:
-        """Generate the live-proven interactive kind; keep note-backed gated."""
+        """Generate either backing through its selected narrow collaborator."""
         async with self._supervisor.operation_scope("mind_maps.generate"):
             if kind is MindMapKind.NOTE_BACKED:
-                _reject("mind_maps.generate(kind=note_backed)")
+                result = await self._artifacts.generate_mind_map(
+                    notebook_id,
+                    source_ids,
+                    language,
+                    instructions,
+                )
+                tree = result.mind_map if isinstance(result.mind_map, dict) else None
+                title = "Mind Map"
+                if tree is not None:
+                    name = tree.get("name")
+                    if isinstance(name, str) and name:
+                        title = name
+                return MindMap(
+                    id=result.note_id or "",
+                    notebook_id=notebook_id,
+                    title=title,
+                    kind=MindMapKind.NOTE_BACKED,
+                    created_at=result.created_at,
+                    tree=tree,
+                )
 
             generate = getattr(self._artifacts, "_generate_interactive_mind_map", None)
             if generate is None or not callable(generate):

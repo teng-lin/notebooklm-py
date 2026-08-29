@@ -44,8 +44,8 @@ message TentativeSourceMetadata {
 message AddTentativeSourcesRequest {
   repeated TentativeSourceMetadata tentative_sources_metadata = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
   string project_id = 2; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
-  .labs.language.tailwind.common.protos.RequestContext request_context = 3; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md
-  .labs.language.tailwind.common.protos.Provenance provenance = 4; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md
+  .labs.language.tailwind.common.protos.RequestContext request_context = 3; // evidence: docs/android/file-transfer-evidence.md
+  .labs.language.tailwind.common.protos.Provenance provenance = 4; // evidence: docs/android/file-transfer-evidence.md
 }
 
 message AddTentativeSourcesResponse {
@@ -54,12 +54,12 @@ message AddTentativeSourcesResponse {
 
 message WebContent {
   string url = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
-  string source_name = 2; // evidence: docs/android/deep-research-mobile-grpc-2026-08-27.md
+  string source_name = 2; // evidence: docs/android/deep-research-evidence.md
 }
 
 message TextContent {
-  string source_name = 1; // evidence: docs/android/deep-research-mobile-grpc-2026-08-27.md
-  string content = 2; // evidence: docs/android/deep-research-mobile-grpc-2026-08-27.md
+  string source_name = 1; // evidence: docs/android/deep-research-evidence.md
+  string content = 2; // evidence: docs/android/deep-research-evidence.md
 }
 
 message GoogleDriveContent {
@@ -86,9 +86,9 @@ message UserContent {
   }
 
   GoogleDriveContent google_drive_content = 1;
-  TextContent text_content = 2; // evidence: docs/android/deep-research-mobile-grpc-2026-08-27.md
+  TextContent text_content = 2; // evidence: docs/android/deep-research-evidence.md
   WebContent web_content = 3; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
-  TextContentType text_content_type = 4; // evidence: docs/android/deep-research-mobile-grpc-2026-08-27.md
+  TextContentType text_content_type = 4; // evidence: docs/android/deep-research-evidence.md
   VideoContent video_content = 8;
   SourceId tentative_source_id = 9; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
 }
@@ -163,8 +163,8 @@ message LoadSourceResponse {
 }
 
 message UploadFileRequest {
-  string project_id = 3; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md
-  .labs.language.tailwind.common.protos.RequestContext request_context = 4; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md
-  string source_id = 5; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md
-  .labs.language.tailwind.common.protos.Provenance provenance = 6; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md
+  string project_id = 3; // evidence: docs/android/file-transfer-evidence.md
+  .labs.language.tailwind.common.protos.RequestContext request_context = 4; // evidence: docs/android/file-transfer-evidence.md
+  string source_id = 5; // evidence: docs/android/file-transfer-evidence.md
+  .labs.language.tailwind.common.protos.Provenance provenance = 6; // evidence: docs/android/file-transfer-evidence.md
 }

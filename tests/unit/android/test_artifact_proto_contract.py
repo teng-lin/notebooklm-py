@@ -14,6 +14,8 @@ from notebooklm._android.artifacts import (
     CREATE_ARTIFACT_METHOD,
     DELETE_ARTIFACT_METHOD,
     DERIVE_ARTIFACT_METHOD,
+    EXPORT_TO_DRIVE_METHOD,
+    GENERATE_ARTIFACT_METHOD,
     GENERATE_REPORT_SUGGESTIONS_METHOD,
     GET_ARTIFACT_METHOD,
     LIST_ARTIFACTS_METHOD,
@@ -23,6 +25,7 @@ from notebooklm._android.codecs.artifacts import decode_artifact, decode_artifac
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     artifacts_pb2,
 )
+from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import artifacts_pb2 as wire_pb2
 from notebooklm._types.artifact_content import (
     ArtifactMediaType,
     AudioArtifactUserState,
@@ -75,12 +78,15 @@ def test_full_method_paths_are_exact_and_local_overlay_does_not_claim_a_service(
     assert f"{prefix}UpdateArtifact" == UPDATE_ARTIFACT_METHOD
     assert f"{prefix}DeleteArtifact" == DELETE_ARTIFACT_METHOD
     assert f"{prefix}GenerateReportSuggestions" == GENERATE_REPORT_SUGGESTIONS_METHOD
+    assert f"{prefix}GenerateArtifact" == GENERATE_ARTIFACT_METHOD
+    assert f"{prefix}ExportToDrive" == EXPORT_TO_DRIVE_METHOD
 
 
 def test_b4_request_response_fields_are_exhaustive() -> None:
     singular = False
     repeated = True
     string = FieldDescriptor.TYPE_STRING
+    integer = FieldDescriptor.TYPE_INT32
     message = FieldDescriptor.TYPE_MESSAGE
 
     expected = {
@@ -90,6 +96,35 @@ def test_b4_request_response_fields_are_exhaustive() -> None:
         ),
         artifacts_pb2.CreateArtifactResponse: _expected(
             ("artifact", 1, singular, message, f"{ORCHESTRATION_PACKAGE}.Artifact"),
+        ),
+        artifacts_pb2.GenerateArtifactRequest: _expected(
+            (
+                "request_context",
+                1,
+                singular,
+                message,
+                "labs.language.tailwind.common.protos.RequestContext",
+            ),
+            ("artifact_id", 2, singular, string, None),
+        ),
+        artifacts_pb2.GenerateArtifactResponse: _expected(
+            ("artifact", 1, singular, message, f"{ORCHESTRATION_PACKAGE}.Artifact"),
+        ),
+        artifacts_pb2.ExportToDriveRequest: _expected(
+            (
+                "request_context",
+                1,
+                singular,
+                message,
+                "labs.language.tailwind.common.protos.RequestContext",
+            ),
+            ("artifact_id", 2, singular, string, None),
+            ("content", 3, singular, string, None),
+            ("title", 4, singular, string, None),
+            ("destination", 5, singular, integer, None),
+        ),
+        artifacts_pb2.ExportToDriveResponse: _expected(
+            ("url", 1, singular, string, None),
         ),
         artifacts_pb2.DeriveArtifactRequest: _expected(
             (
@@ -134,6 +169,33 @@ def test_b4_request_response_fields_are_exhaustive() -> None:
     }
     for message_type, fields in expected.items():
         assert _shapes(message_type) == fields
+    target = artifacts_pb2.ExportToDriveRequest.DESCRIPTOR.oneofs_by_name["target"]
+    assert [field.name for field in target.fields] == [
+        "artifact_id",
+        "content",
+    ]
+
+
+def test_local_table_and_option_overlays_pin_live_unknown_fields_without_google_fqns() -> None:
+    package = ORCHESTRATION_PACKAGE
+    assert wire_pb2.DESCRIPTOR.package == "notebooklm.internal.android.wire.v1"
+    assert _shapes(wire_pb2.WireTableArtifactGenerationOptions) == _expected(
+        ("user_steering_prompt", 1, False, FieldDescriptor.TYPE_STRING, None),
+        ("language_code", 2, False, FieldDescriptor.TYPE_STRING, None),
+    )
+    assert _shapes(wire_pb2.WireTableArtifact) == _expected(
+        ("document", 1, False, FieldDescriptor.TYPE_MESSAGE, f"{package}.TailwindDoc"),
+        (
+            "generation_options",
+            2,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            "notebooklm.internal.android.wire.v1.WireTableArtifactGenerationOptions",
+        ),
+    )
+    assert _shapes(wire_pb2.WireArtifactTableProjection)["table"][0] == 19
+    assert _shapes(wire_pb2.WireAudioOverviewGenerationOptionsProjection)["format"][0] == 7
+    assert _shapes(wire_pb2.WireInfographicGenerationOptionsProjection)["detail_level"][0] == 5
 
 
 def test_b4_reachable_enum_names_and_numbers_are_exhaustive() -> None:

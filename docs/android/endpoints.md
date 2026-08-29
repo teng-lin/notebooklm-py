@@ -80,7 +80,7 @@ Relative to the table above, the newer binary adds `CancelGeneration`,
 `DiscoveryService/BatchSearchNotebooks`, and `DiscoveryService/SearchNotebooks`. It drops the old
 `LabsTailwindDiscoveryService/PrototypeNotebookSearch` call site. The complete current path and
 signature fixtures are pinned in the
-[latest APK audit](latest-apk-grpc-audit-2026-08-29.md#blutter-result); this historical capture
+[latest APK audit](grpc-capability-and-signature-evidence.md#blutter-result); this historical capture
 section is intentionally not rewritten to pretend those methods existed in `1.46.7`.
 
 Notable methods present in the `1.46.7` binary but **not exercised by the mobile UI**: `CreateNote` /
@@ -162,11 +162,11 @@ Status vocabulary below:
 | ListArtifacts | `gArtLc` (LIST_ARTIFACTS) | ✅ | captured |
 | DeleteArtifact | `V5N4be` (DELETE_ARTIFACT) | ✅ | **live** delete/read-back on copied report |
 | UpdateArtifact | `rc3d8d` (RENAME_ARTIFACT) | ✅ | **live** title mutation + read-back |
-| **ExportToDrive** | `Krh3pd` (EXPORT_ARTIFACT) | ❌ | **route only** (`NOT_FOUND` for nonexistent artifact; no Drive file created) |
+| **ExportToDrive** | `Krh3pd` (EXPORT_ARTIFACT) | ❌ | **live backend overlay**: report-to-Docs succeeded; Drive read-back and exact deletion succeeded |
 | **ShareAudio** | `RGP97b` (SHARE_ARTIFACT) | ❌ | **route only** on sharing service (`NOT_FOUND`; no share state changed) |
 | GetArtifact | `v9rmvd` (GET_INTERACTIVE_HTML) | ✅ | captured; generic artifact getter |
 | DeriveArtifact | `KmcKPe` (REVISE_SLIDE) | ✅ | compiled; generic derive operation |
-| **GenerateArtifact** | `Rytqqe` (RETRY_ARTIFACT) | ❌ | **route only** (`NOT_FOUND` for nonexistent artifact; no generation started) |
+| **GenerateArtifact** | `Rytqqe` (RETRY_ARTIFACT) | ❌ | **live backend overlay**: wire pinned; valid READY artifact rejected as non-retryable; accepted failed-row replay not yet captured |
 | **DiscoverSourcesManifold** | `Ljjv0c` (START_FAST_RESEARCH) | ❌ | **live** fast research start |
 | **DiscoverSourcesAsync** | `QA9ei` (START_DEEP_RESEARCH) | ❌ | **live** deep research start |
 | **ListDiscoverSourcesJob** | `e3bVqc` (POLL_RESEARCH) | ❌ | **live** poll |
@@ -211,20 +211,21 @@ Status vocabulary below:
 
 - **Labels and collections:** the APK is read-only (`GetLabels`), while direct mobile gRPC supports
   full CRUD and source/notebook membership add/remove. See
-  [the live organization report](labels-collections-copy-mobile-grpc-2026-08-27.md).
+  [the live organization report](resource-lifecycle-and-public-qualification.md).
 - **Notebook copy:** `CopyProject` is absent from the APK but fully routed. The first probe copied a
   one-source notebook. The parity probe then copied a notebook with 50 sources and 5 Studio
   artifacts; the copy matched both counts on its first read and every copied source/artifact ID was
   distinct. Controlled note/source/artifact mutations and deletes were performed only on that copy,
   which was then deleted.
 - **Deep research:** the full async lifecycle is absent from the APK but supported by the mobile
-  backend. See [the live report](deep-research-mobile-grpc-2026-08-27.md).
-- **Remaining proof gap:** `ExportToDrive`, `ShareAudio`, and `GenerateArtifact` are routed but were
-  deliberately not run with valid IDs because doing so creates external/share/generation state.
-  `RefreshSource` is the only valid-resource parity probe that the mobile endpoint rejected.
+  backend. See [the live report](deep-research-evidence.md).
+- **Remaining proof gap:** `ShareAudio` lacks a valid-resource probe, and `GenerateArtifact` lacks a
+  safely disposable failed artifact for an accepted replay. `ExportToDrive` report-to-Docs is now
+  live-proven with Drive read-back and exact deletion. `RefreshSource` is the valid-resource parity
+  probe the mobile endpoint rejected.
 
 Detailed request shapes and the destructive-copy test log are in
-[Web-parity gap probes over mobile gRPC](web-parity-gap-live-validation-2026-08-27.md).
+[Web-parity gap probes over mobile gRPC](grpc-capability-and-signature-evidence.md).
 
 Field *numbers* differ between the two transports (protobuf field tags on mobile vs. positional
 JSON arrays on web), but the message *semantics* line up — the web `rpc/` decoders are the best
@@ -320,7 +321,7 @@ Write / mutation RPCs (see [Write RPCs](#write--mutation-rpcs) — **do not repl
 | `CreateArtifact` | 199 | 198 | generate studio artifact (audio/video/…) |
 | `UpdateArtifact` / `DeleteArtifact` | variable | `Artifact` / empty | copied-report rename/delete + read-back |
 | `CreateNote` / `MutateNote` / `DeleteNotes` | variable | `ProjectNote` / empty | disposable note lifecycle on copied notebook |
-| `GenerateArtifact` / `ExportToDrive` / `ShareAudio` | variable | `NOT_FOUND` | safe invalid-ID route probes; no side effect created |
+| `GenerateArtifact` / `ExportToDrive` / `ShareAudio` | variable | mixed | retry wire + READY precondition rejection; report-to-Docs success/read-back/delete; ShareAudio invalid-ID only |
 | `DiscoverSources` | 136 | 2,047 | research / "find sources from the web" |
 | `GenerateFreeFormStreamed` | 476 | streamed | chat: ask the notebook (**server-streaming**) |
 | `DeleteChatTurns` | 103 | 0 | chat: clear history |
@@ -597,7 +598,7 @@ response: bare Project
 
 The high-coverage replay copied 50 sources and 5 Studio artifacts on its first read-back. Every
 copied source/artifact UUID differed from the original. See
-[the parity report](web-parity-gap-live-validation-2026-08-27.md#test-target-and-copy-fidelity).
+[the parity report](grpc-capability-and-signature-evidence.md#test-target-and-copy-fidelity).
 
 ### AddTentativeSources + AddSources — add a source (two-phase)
 
@@ -640,7 +641,7 @@ Direct mobile-bearer calls recovered valid request shapes for `MutateSource`,
 `CheckSourceFreshness`, and `GenerateReportSuggestions`. `RefreshSource` was exhaustively shaped
 but rejected through mobile gRPC while the web transport succeeded. The exact bodies, controls,
 and negative results are kept in
-[the parity report](web-parity-gap-live-validation-2026-08-27.md#newly-recovered-successful-request-shapes)
+[the parity report](grpc-capability-and-signature-evidence.md#newly-recovered-successful-request-shapes)
 instead of duplicating them here.
 
 ### CreateArtifact — generate a studio artifact
@@ -672,7 +673,7 @@ response: Artifact {
 > **Backend correction, 2026-08-27:** The APK exposes only synchronous `DiscoverSources`, but the
 > same mobile gRPC service routes the full async Research lifecycle. Request/response fields,
 > current bundle names, replay commands, and interception instructions are in
-> [Deep Research over the mobile gRPC API](deep-research-mobile-grpc-2026-08-27.md).
+> [Deep Research over the mobile gRPC API](deep-research-evidence.md).
 
 ### DiscoverSources — "find sources from the web"
 

@@ -21,9 +21,9 @@ from .._types.enums import (
     VideoStyle,
 )
 from ..exceptions import ValidationError
+from .artifact_proto import ARTIFACT_WIRE_PROTO as _WIRE_PROTO
 from .artifact_proto import ARTIFACTS_PROTO as _PROTO
 from .artifact_proto import READ_PROTO as _READ_PROTO
-from .errors import unsupported_operation
 
 _REPORT_CONFIGS: dict[ReportFormat, tuple[str, str, str]] = {
     ReportFormat.BRIEFING_DOC: (
@@ -46,6 +46,13 @@ _REPORT_CONFIGS: dict[ReportFormat, tuple[str, str, str]] = {
         "Write an engaging blog post that presents the key insights in an accessible, "
         "reader-friendly format. Include an attention-grabbing introduction, well-organized "
         "sections, and a compelling conclusion with takeaways.",
+    ),
+    ReportFormat.CONCEPT_EXPLANATION: (
+        "Concept Explanation",
+        "Clear explanations of key concepts",
+        "Explain the key concepts from the provided sources clearly and comprehensively. "
+        "Define important terms, connect related ideas, use examples where helpful, and "
+        "address common misconceptions.",
     ),
 }
 
@@ -83,20 +90,18 @@ def _optional_string(value: Any, parameter: str) -> str | None:
 def normalize_creation_options(family: str, **options: Any) -> dict[str, Any]:
     """Validate and normalize a supported family's public options before collaborator I/O."""
 
-    if family == "cinematic_video":
-        unsupported_operation("artifacts.generate_cinematic_video")
-    if family == "video":
+    if family in {"video", "cinematic_video"}:
         language = _language(options.get("language"))
         instructions = _optional_string(options.get("instructions"), "instructions")
-        video_format = options.get("video_format")
+        video_format = (
+            VideoFormat.CINEMATIC if family == "cinematic_video" else options.get("video_format")
+        )
         format_code = _enum_code(
             video_format,
             VideoFormat,
             "video_format",
             VideoFormat.EXPLAINER.value,
         )
-        if format_code == VideoFormat.CINEMATIC.value:
-            unsupported_operation("artifacts.generate_cinematic_video")
         video_style = options.get("video_style")
         style_code = _enum_code(
             video_style,
@@ -106,6 +111,10 @@ def normalize_creation_options(family: str, **options: Any) -> dict[str, Any]:
         )
         style_prompt = _optional_string(options.get("style_prompt"), "style_prompt")
         style_prompt = style_prompt.strip() if style_prompt is not None else None
+        if format_code == VideoFormat.CINEMATIC.value:
+            if style_prompt:
+                raise ValidationError("style_prompt is not supported for cinematic videos")
+            style_code = 0
         if format_code == VideoFormat.SHORT.value and (
             (video_style is not None and video_style != VideoStyle.AUTO_SELECT) or style_prompt
         ):
@@ -130,8 +139,6 @@ def normalize_creation_options(family: str, **options: Any) -> dict[str, Any]:
         language = _language(options.get("language"))
         custom_prompt = _optional_string(options.get("custom_prompt"), "custom_prompt")
         extra = _optional_string(options.get("extra_instructions"), "extra_instructions")
-        if report_format == ReportFormat.CONCEPT_EXPLANATION:
-            unsupported_operation("artifacts.generate_report(report_format=concept_explanation)")
         if report_format == ReportFormat.CUSTOM:
             title, description = "Custom Report", "Custom format"
             directive = custom_prompt or "Create a report based on the provided sources."
@@ -164,6 +171,23 @@ def normalize_creation_options(family: str, **options: Any) -> dict[str, Any]:
             ),
         }
 
+    if family == "quiz":
+        return {
+            "instructions": _optional_string(options.get("instructions"), "instructions"),
+            "quantity_code": _enum_code(
+                options.get("quantity"),
+                QuizQuantity,
+                "quantity",
+                QuizQuantity.STANDARD.value,
+            ),
+            "difficulty_code": _enum_code(
+                options.get("difficulty"),
+                QuizDifficulty,
+                "difficulty",
+                QuizDifficulty.MEDIUM.value,
+            ),
+        }
+
     if family == "interactive_mind_map":
         return {
             "language": _language(options.get("language")),
@@ -174,8 +198,6 @@ def normalize_creation_options(family: str, **options: Any) -> dict[str, Any]:
         detail_level = options.get("detail_level")
         if detail_level is not None and not isinstance(detail_level, InfographicDetail):
             raise ValidationError("detail_level must be an InfographicDetail value")
-        if detail_level is not None:
-            unsupported_operation("artifacts.generate_infographic(detail_level)")
         return {
             "language": _language(options.get("language")),
             "instructions": _optional_string(options.get("instructions"), "instructions"),
@@ -191,6 +213,17 @@ def normalize_creation_options(family: str, **options: Any) -> dict[str, Any]:
                 "style",
                 InfographicStyle.AUTO_SELECT.value,
             ),
+            "detail_code": (
+                InfographicDetail.STANDARD.value
+                if detail_level is None
+                else int(detail_level.value)
+            ),
+        }
+
+    if family == "data_table":
+        return {
+            "language": _language(options.get("language")),
+            "instructions": _optional_string(options.get("instructions"), "instructions"),
         }
 
     if family == "slide_deck":
@@ -211,8 +244,7 @@ def normalize_creation_options(family: str, **options: Any) -> dict[str, Any]:
             ),
         }
 
-    unsupported_operation(f"artifacts.generate_{family}")
-    raise AssertionError("unsupported_operation returned")  # pragma: no cover
+    raise ValidationError(f"Unsupported Android artifact family: {family}")
 
 
 def _sources(source_ids: builtins.list[str]) -> builtins.list[Any]:
@@ -240,7 +272,7 @@ def build_create_artifact_plan(
     normalized = normalize_creation_options(family, **options)
     artifact_sources = _sources(source_ids)
 
-    if family == "video":
+    if family in {"video", "cinematic_video"}:
         artifact = _PROTO.Artifact(
             type=_PROTO.ARTIFACT_TYPE_EXPLAINER_VIDEO,
             sources=artifact_sources,
@@ -275,24 +307,34 @@ def build_create_artifact_plan(
         expected_type = ArtifactTypeCode.REPORT.value
         expected_variant = None
         family_label = "report"
-    elif family == "flashcards":
+    elif family in {"flashcards", "quiz"}:
+        app_type = _PROTO.APP_TYPE_FLASHCARDS if family == "flashcards" else _PROTO.APP_TYPE_QUIZ
+        generation_options = _PROTO.AppArtifactGenerationOptions(
+            app_type=app_type,
+            free_text_steering_prompt=normalized["instructions"] or "",
+        )
+        if family == "flashcards":
+            generation_options.flashcards_generation_options.CopyFrom(
+                _PROTO.FlashcardsGenerationOptions(
+                    card_quantity=normalized["quantity_code"],
+                    flashcards_difficulty=normalized["difficulty_code"],
+                )
+            )
+        else:
+            generation_options.quiz_generation_options.CopyFrom(
+                _PROTO.QuizGenerationOptions(
+                    question_quantity=normalized["quantity_code"],
+                    quiz_difficulty=normalized["difficulty_code"],
+                )
+            )
         artifact = _PROTO.Artifact(
             type=_PROTO.ARTIFACT_TYPE_APP,
             sources=artifact_sources,
-            app=_PROTO.AppArtifact(
-                generation_options=_PROTO.AppArtifactGenerationOptions(
-                    app_type=_PROTO.APP_TYPE_FLASHCARDS,
-                    free_text_steering_prompt=normalized["instructions"] or "",
-                    flashcards_generation_options=_PROTO.FlashcardsGenerationOptions(
-                        card_quantity=normalized["quantity_code"],
-                        flashcards_difficulty=normalized["difficulty_code"],
-                    ),
-                )
-            ),
+            app=_PROTO.AppArtifact(generation_options=generation_options),
         )
         expected_type = ArtifactTypeCode.QUIZ.value
-        expected_variant = _PROTO.APP_TYPE_FLASHCARDS
-        family_label = "flashcards"
+        expected_variant = app_type
+        family_label = family
     elif family == "interactive_mind_map":
         artifact = _PROTO.Artifact(
             type=_PROTO.ARTIFACT_TYPE_APP,
@@ -309,22 +351,26 @@ def build_create_artifact_plan(
         expected_variant = _PROTO.APP_TYPE_MINDMAP
         family_label = "interactive mind map"
     elif family == "infographic":
+        generation_options = _PROTO.InfographicGenerationOptions(
+            user_steering_prompt=normalized["instructions"] or "",
+            language_code=normalized["language"],
+            aspect_ratio=normalized["orientation_code"],
+            style=normalized["style_code"],
+        )
+        generation_options.MergeFromString(
+            _WIRE_PROTO.WireInfographicGenerationOptionsProjection(
+                detail_level=normalized["detail_code"]
+            ).SerializeToString()
+        )
         artifact = _PROTO.Artifact(
             type=_PROTO.ARTIFACT_TYPE_INFOGRAPHIC,
             sources=artifact_sources,
-            infographic=_PROTO.InfographicArtifact(
-                generation_options=_PROTO.InfographicGenerationOptions(
-                    user_steering_prompt=normalized["instructions"] or "",
-                    language_code=normalized["language"],
-                    aspect_ratio=normalized["orientation_code"],
-                    style=normalized["style_code"],
-                )
-            ),
+            infographic=_PROTO.InfographicArtifact(generation_options=generation_options),
         )
         expected_type = ArtifactTypeCode.INFOGRAPHIC.value
         expected_variant = None
         family_label = "infographic"
-    else:
+    elif family == "slide_deck":
         artifact = _PROTO.Artifact(
             type=_PROTO.ARTIFACT_TYPE_SLIDES,
             sources=artifact_sources,
@@ -340,6 +386,24 @@ def build_create_artifact_plan(
         expected_type = ArtifactTypeCode.SLIDE_DECK.value
         expected_variant = None
         family_label = "slide deck"
+    else:
+        artifact = _PROTO.Artifact(
+            type=_PROTO.ARTIFACT_TYPE_TABLE,
+            sources=artifact_sources,
+        )
+        artifact.MergeFromString(
+            _WIRE_PROTO.WireArtifactTableProjection(
+                table=_WIRE_PROTO.WireTableArtifact(
+                    generation_options=_WIRE_PROTO.WireTableArtifactGenerationOptions(
+                        user_steering_prompt=normalized["instructions"] or "",
+                        language_code=normalized["language"],
+                    )
+                )
+            ).SerializeToString()
+        )
+        expected_type = ArtifactTypeCode.DATA_TABLE.value
+        expected_variant = None
+        family_label = "data table"
 
     return CreateArtifactPlan(
         request=_PROTO.CreateArtifactRequest(project_id=notebook_id, artifact=artifact),

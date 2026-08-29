@@ -103,7 +103,7 @@ enum SlideDeckLength {
 }
 
 message MediaStreamingUrl {
-  string url = 1; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
+  string url = 1; // evidence: docs/android/file-transfer-evidence.md#1-list-and-select-a-ready-representation
   MediaStreamingType type = 2; // evidence: docs/android/proto-evidence-ledger.md#b4-artifact-field-ledger
 }
 
@@ -174,7 +174,7 @@ message AudioOverviewGenerationOptions {
 message AudioOverviewArtifact {
   AudioOverviewGenerationOptions generation_options = 2; // evidence: exact-package supported.proto AudioOverviewArtifact
   bool is_interactive = 5; // evidence: exact-package supported.proto AudioOverviewArtifact
-  repeated MediaStreamingUrl media_urls = 6; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
+  repeated MediaStreamingUrl media_urls = 6; // evidence: docs/android/file-transfer-evidence.md#1-list-and-select-a-ready-representation
   google.protobuf.Duration duration = 7; // evidence: docs/android/schema.proto AudioOverviewArtifact
 }
 
@@ -189,7 +189,7 @@ message ExplainerVideoGenerationOptions {
 
 message ExplainerVideoArtifact {
   ExplainerVideoGenerationOptions generation_options = 3; // evidence: docs/android/schema.proto ExplainerVideoArtifact
-  repeated MediaStreamingUrl media_urls = 5; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
+  repeated MediaStreamingUrl media_urls = 5; // evidence: docs/android/file-transfer-evidence.md#1-list-and-select-a-ready-representation
   google.protobuf.Duration duration = 6; // evidence: docs/android/schema.proto ExplainerVideoArtifact
 }
 
@@ -242,12 +242,12 @@ message InfographicGenerationOptions {
 
 message Infographic {
   string title = 1; // evidence: docs/android/schema.proto Infographic
-  ServedImage image = 2; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
+  ServedImage image = 2; // evidence: docs/android/file-transfer-evidence.md#1-list-and-select-a-ready-representation
 }
 
 message InfographicArtifact {
   InfographicGenerationOptions generation_options = 1; // evidence: docs/android/schema.proto InfographicArtifact
-  repeated Infographic infographics = 3; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
+  repeated Infographic infographics = 3; // evidence: docs/android/file-transfer-evidence.md#1-list-and-select-a-ready-representation
 }
 
 message SlidesGenerationOptions {
@@ -258,13 +258,13 @@ message SlidesGenerationOptions {
 }
 
 message Slide {
-  ServedImage image = 1; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
+  ServedImage image = 1; // evidence: docs/android/file-transfer-evidence.md#1-list-and-select-a-ready-representation
 }
 
 message SlidesArtifact {
   SlidesGenerationOptions generation_options = 1; // evidence: docs/android/schema.proto SlidesArtifact
-  repeated Slide slides = 3; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
-  string pdf_download_url = 4; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
+  repeated Slide slides = 3; // evidence: docs/android/file-transfer-evidence.md#1-list-and-select-a-ready-representation
+  string pdf_download_url = 4; // evidence: docs/android/file-transfer-evidence.md#1-list-and-select-a-ready-representation
   string pptx_download_url = 5; // evidence: official APK recovered SlidesArtifact schema
 }
 
@@ -280,8 +280,8 @@ message SlidesDerivationOptions {
 message FileArtifact {
   string file_name = 1; // evidence: official APK recovered FileArtifact schema
   string mime_type = 2; // evidence: official APK recovered FileArtifact schema
-  string file_preview_url = 3; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
-  string file_download_url = 4; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
+  string file_preview_url = 3; // evidence: docs/android/file-transfer-evidence.md#1-list-and-select-a-ready-representation
+  string file_download_url = 4; // evidence: docs/android/file-transfer-evidence.md#1-list-and-select-a-ready-representation
 }
 
 message AudioOverviewState {
@@ -313,16 +313,16 @@ message Artifact {
   ArtifactType type = 3; // evidence: docs/android/schema.proto Artifact
   repeated ArtifactSource sources = 4; // evidence: docs/android/schema.proto Artifact
   ArtifactStatus status = 5; // evidence: docs/android/schema.proto Artifact
-  AudioOverviewArtifact audio_overview = 7; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
+  AudioOverviewArtifact audio_overview = 7; // evidence: docs/android/file-transfer-evidence.md#1-list-and-select-a-ready-representation
   TailoredReportArtifact tailored_report = 8; // evidence: docs/android/schema.proto Artifact
-  ExplainerVideoArtifact explainer_video = 9; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
+  ExplainerVideoArtifact explainer_video = 9; // evidence: docs/android/file-transfer-evidence.md#1-list-and-select-a-ready-representation
   AppArtifact app = 10; // evidence: docs/android/schema.proto Artifact
   google.protobuf.Timestamp last_modified_timestamp = 11; // evidence: docs/android/schema.proto Artifact
-  InfographicArtifact infographic = 15; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
-  SlidesArtifact slides = 17; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
+  InfographicArtifact infographic = 15; // evidence: docs/android/file-transfer-evidence.md#1-list-and-select-a-ready-representation
+  SlidesArtifact slides = 17; // evidence: docs/android/file-transfer-evidence.md#1-list-and-select-a-ready-representation
   ArtifactState artifact_user_state = 18; // evidence: exact-package supported.proto Artifact
-  string etag = 22; // evidence: docs/android/web-parity-gap-live-validation-2026-08-27.md#apk-present-destructive-validation-on-the-copy
-  FileArtifact file = 25; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
+  string etag = 22; // evidence: docs/android/grpc-capability-and-signature-evidence.md#apk-present-destructive-validation-on-the-copy
+  FileArtifact file = 25; // evidence: docs/android/file-transfer-evidence.md#1-list-and-select-a-ready-representation
 }
 
 message CreateArtifactRequest {
@@ -332,6 +332,31 @@ message CreateArtifactRequest {
 
 message CreateArtifactResponse {
   Artifact artifact = 1; // evidence: docs/android/endpoints.md#createartifact--generate-a-studio-artifact
+}
+
+// Conventional type names from the current web registration. The wire fields
+// and mobile routes are live-pinned; these methods are absent from the APK.
+message GenerateArtifactRequest {
+  .labs.language.tailwind.common.protos.RequestContext request_context = 1;
+  string artifact_id = 2;
+}
+
+message GenerateArtifactResponse {
+  Artifact artifact = 1;
+}
+
+message ExportToDriveRequest {
+  .labs.language.tailwind.common.protos.RequestContext request_context = 1;
+  oneof target {
+    string artifact_id = 2;
+    string content = 3;
+  }
+  string title = 4;
+  int32 destination = 5; // 1 = Docs, 2 = Sheets
+}
+
+message ExportToDriveResponse {
+  string url = 1;
 }
 
 message DeriveArtifactRequest {
@@ -361,7 +386,7 @@ message ListArtifactsResponse {
 }
 
 message UpdateArtifactRequest {
-  Artifact artifact = 1; // evidence: docs/android/web-parity-gap-live-validation-2026-08-27.md#apk-present-destructive-validation-on-the-copy
+  Artifact artifact = 1; // evidence: docs/android/grpc-capability-and-signature-evidence.md#apk-present-destructive-validation-on-the-copy
   google.protobuf.FieldMask update_mask = 2; // evidence: docs/android/schema.proto UpdateArtifactRequest
   string etag = 3; // evidence: docs/android/schema.proto UpdateArtifactRequest
 }

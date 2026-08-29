@@ -58,6 +58,8 @@ service LabsTailwindOrchestrationService {
   rpc UpdateArtifact(UpdateArtifactRequest) returns (Artifact);
   rpc GenerateReportSuggestions(GenerateReportSuggestionsRequest)
       returns (GenerateReportSuggestionsResponse);
+  rpc GenerateArtifact(GenerateArtifactRequest) returns (GenerateArtifactResponse);
+  rpc ExportToDrive(ExportToDriveRequest) returns (ExportToDriveResponse);
 
   rpc ListChatSessions(ListChatSessionsRequest) returns (ListChatSessionsResponse);
   rpc ListChatTurns(ListChatTurnsRequest) returns (ListChatTurnsResponse);

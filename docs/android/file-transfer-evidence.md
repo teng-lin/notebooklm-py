@@ -293,7 +293,7 @@ system certificate injection.
 ### 2. Install and launch the original split APK
 
 ```bash
-notebooklm_apk_bundle=/Users/blackmyth/src/notebooklm-py/notebooklm.apk
+notebooklm_apk_bundle=/path/to/notebooklm.apk
 
 adb install-multiple -r \
   "$notebooklm_apk_bundle/base.apk" \
@@ -393,7 +393,7 @@ test -n "$notebooklm_lh3google_ip"
 Start the recorder from `gemini-notebook-mobile` and leave it running:
 
 ```bash
-cd /Users/blackmyth/src/gemini-notebook-mobile
+cd /path/to/gemini-notebook-mobile
 
 NOTEBOOKLM_PRODUCTION_IP="$notebooklm_prod_ip" \
 NOTEBOOKLM_AUTOPUSH_IP="$notebooklm_autopush_ip" \

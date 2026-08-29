@@ -8,7 +8,7 @@
       "remote_type": "google.internal.labs.tailwind.orchestration.v1.GetProjectResponse",
       "adapter_parser": "notebooklm.internal.android.wire.v1.WireGetProjectResponse",
       "reason_code": "live_only_field",
-      "evidence": "docs/android/public-api-reject-audit-2026-08-29.md#chat-settings"
+      "evidence": "docs/android/public-api-audit.md#chat-settings"
     },
     {
       "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateProject",

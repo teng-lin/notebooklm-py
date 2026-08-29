@@ -142,7 +142,7 @@ an Android context requirement.
 List jobs without printing notebook content or resource IDs:
 
 ```bash
-cd /Users/blackmyth/src/gemini-notebook-mobile
+cd /path/to/gemini-notebook-mobile
 uv run scripts/reproduce_mobile_deep_research.py list \
   --profile PROFILE \
   --redact
@@ -277,7 +277,7 @@ Use a new owner-private temporary directory and keep this terminal open:
 notebooklm_capture_dir="$(mktemp -d /tmp/notebooklm-deep-research.XXXXXX)"
 chmod 700 "$notebooklm_capture_dir"
 
-cd /Users/blackmyth/src/notebooklm-py
+cd /path/to/notebooklm-py
 NOTEBOOKLM_UPSTREAM_IP="$notebooklm_upstream_ip" \
 NOTEBOOKLM_CAPTURE_DIR="$notebooklm_capture_dir" \
 node scripts/capture_mobile_grpc.js
@@ -292,7 +292,7 @@ contain notebook IDs, queries, URLs, titles, and generated report text.
 In a second terminal:
 
 ```bash
-cd /Users/blackmyth/src/gemini-notebook-mobile
+cd /path/to/gemini-notebook-mobile
 
 grpc_proxy=http://127.0.0.1:8081 \
 GRPC_DEFAULT_SSL_ROOTS_FILE_PATH="$HOME/Library/Preferences/httptoolkit/ca.pem" \

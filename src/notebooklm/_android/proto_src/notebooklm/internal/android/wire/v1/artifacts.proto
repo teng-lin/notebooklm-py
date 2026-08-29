@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+// These messages are deliberately repository-local wire overlays, not claims
+// about Google's omitted protobuf names. Live Android CreateArtifact/GetArtifact
+// exchanges prove the field numbers and the exact TailwindDoc payload type.
+package notebooklm.internal.android.wire.v1;
+
+import "google/internal/labs/tailwind/orchestration/v1/chat.proto";
+
+message WireTableArtifactGenerationOptions {
+  string user_steering_prompt = 1; // evidence: live Android CreateArtifact table echo, 2026-08-29
+  string language_code = 2; // evidence: live Android CreateArtifact table echo, 2026-08-29
+}
+
+message WireTableArtifact {
+  .google.internal.labs.tailwind.orchestration.v1.TailwindDoc document = 1; // evidence: live Android ready table, 2026-08-29
+  WireTableArtifactGenerationOptions generation_options = 2; // evidence: live Android CreateArtifact table echo, 2026-08-29
+}
+
+message WireArtifactTableProjection {
+  WireTableArtifact table = 19; // APK Artifact tag is addUnused; wire live-validated, 2026-08-29
+}
+
+message WireAudioOverviewGenerationOptionsProjection {
+  int32 format = 7; // web registry plus live Android echoes for codes 2, 3, and 4, 2026-08-29
+}
+
+message WireInfographicGenerationOptionsProjection {
+  int32 detail_level = 5; // web registry plus live Android echo for code 3, 2026-08-29
+}

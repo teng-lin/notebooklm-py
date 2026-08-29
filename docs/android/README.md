@@ -22,28 +22,42 @@ themselves.
 
 ## What's here
 
-| file | kind | notes |
-|---|---|---|
-| [`schema.proto`](schema.proto) | **generated** | 295 messages / 767 fields recovered from the Dart AOT `BuilderInfo`, including 13 zero-field messages. **Parsed by CI** — see caveats. |
-| [`enums.txt`](enums.txt) | **generated** | 77 enums / ~1900 values with exact integers. **Parsed by CI.** |
-| [`endpoints.md`](endpoints.md) | reference | The gRPC method surface, and the mobile ⇄ web cross-reference. Start here. |
-| [`proto-evidence-ledger.md`](proto-evidence-ledger.md) | admission ledger | Exact/local cumulative compile closure, replay policy, and evidence-gated omissions for implemented Android B1-B11 adapters. |
-| [`grpc-service-signature-exceptions.json`](grpc-service-signature-exceptions.json) | machine-readable admission manifest | Empty after all implemented full paths were promoted into the generated service. |
-| [`grpc-service-signature-inferences.json`](grpc-service-signature-inferences.json) | machine-readable inference manifest | Seven generated signatures whose conventional Google-package type names come from the current web registry rather than an APK descriptor. |
-| [`grpc-runtime-parser-overrides.json`](grpc-runtime-parser-overrides.json) | machine-readable runtime manifest | Exact generated paths whose adapters deliberately use repository-local parsers for additional live-only fields, heterogeneous wire members, or scalar-presence semantics. |
-| [`blutter-grpc-signature-evidence.md`](blutter-grpc-signature-evidence.md) | AOT evidence report | Exact generated-client bindings that close six formerly normalized/unresolved empty-response FQNs. |
-| [`latest-apk-grpc-audit-2026-08-29.md`](latest-apk-grpc-audit-2026-08-29.md) | AOT absence audit | Newer Google-signed app audit proving that seven web/mobile-backend methods are not shipped in the client binary. |
-| [`public-api-reject-audit-2026-08-29.md`](public-api-reject-audit-2026-08-29.md) | implementation audit | Every Android public-adapter rejection classified by exact schema, current web mapping, live scratch-copy result, and retained blocker. |
-| [`capture.md`](capture.md) | runbook | How to intercept the app's HTTP/2 gRPC traffic (emulator, VPN, Mockttp). |
-| [`android-traffic-capture.md`](android-traffic-capture.md) | legacy runbook | Rooted-emulator Cronet/Frida capture procedure retained as dated evidence. |
-| [`auth-research.md`](auth-research.md) | live report | Exact NotebookLM Android OAuth identity, scope bundle, and bearer validation. |
-| [`file-transfer-live-validation-2026-08-27.md`](file-transfer-live-validation-2026-08-27.md) | live report | Android file upload and artifact download protocol, failures, and successful replay. |
-| [`deep-research-mobile-grpc-2026-08-27.md`](deep-research-mobile-grpc-2026-08-27.md) | live report | APK-absent Deep Research methods routed by the mobile backend, wire contract, reproducer, and interception. |
-| [`labels-collections-copy-mobile-grpc-2026-08-27.md`](labels-collections-copy-mobile-grpc-2026-08-27.md) | live report | Full label/collection CRUD and memberships plus notebook copy through the mobile backend. |
-| [`web-parity-gap-live-validation-2026-08-27.md`](web-parity-gap-live-validation-2026-08-27.md) | live report | Complete APK-vs-web gap routing audit, rich-copy fidelity, source/report probes, and destructive validation on the copy. |
-| [`notebooks-live-validation-2026-08-28.md`](notebooks-live-validation-2026-08-28.md) | live report | Sanitized Android notebook emoji set/clear/combined read-back plus the repeated Recent-removal failure. |
-| [`notes-mind-maps-live-validation-2026-08-28.md`](notes-mind-maps-live-validation-2026-08-28.md) | live report | Sanitized cross-backend note-backed mind-map classification and kind-safe Android deletion proof. |
-| [`blutter-dart3.13.patch`](blutter-dart3.13.patch) | tooling | Port of [blutter](https://github.com/worawit/blutter) to Dart 3.13, needed to decompile this app's snapshot. |
+Start with the durable contracts, then follow the thematic evidence report for the feature you are
+changing. Validation dates and the hashes of the former dated reports are retained inside each
+consolidated document rather than encoded in filenames.
+
+### Contracts and manifests
+
+| File | Role |
+|---|---|
+| [`endpoints.md`](endpoints.md) | gRPC method surface and mobile ⇄ Web cross-reference |
+| [`proto-evidence-ledger.md`](proto-evidence-ledger.md) | exact/local compile closure, replay policy, hashes, and admission decisions |
+| [`schema.proto`](schema.proto) | generated 295-message / 767-field Dart-AOT recovery parsed by CI |
+| [`enums.txt`](enums.txt) | generated 77-enum integer inventory parsed by CI |
+| [`grpc-service-signature-inferences.json`](grpc-service-signature-inferences.json) | nine Web-derived signatures with conventional request/response type names |
+| [`grpc-service-signature-exceptions.json`](grpc-service-signature-exceptions.json) | empty implemented-path exception manifest |
+| [`grpc-runtime-parser-overrides.json`](grpc-runtime-parser-overrides.json) | exact paths intentionally decoded through local live-field overlays |
+
+### Consolidated evidence
+
+| File | Scope |
+|---|---|
+| [`artifact-contracts-and-live-validation.md`](artifact-contracts-and-live-validation.md) | generation families, representations, data tables, retry, mind maps, transfers, and Drive export |
+| [`grpc-capability-and-signature-evidence.md`](grpc-capability-and-signature-evidence.md) | signed-APK inventory, Web-derived signatures, backend routing, and semantic probes |
+| [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md) | notebook copy/metadata, notes/maps, labels, collections, and public-selection boundaries |
+| [`public-api-audit.md`](public-api-audit.md) | current implementation/rejection decisions across Android adapters |
+| [`file-transfer-evidence.md`](file-transfer-evidence.md) | Scotty upload and artifact-download protocol with interception details |
+| [`deep-research-evidence.md`](deep-research-evidence.md) | Deep Research wire contract, lifecycle, reproducer, and interception |
+| [`auth-research.md`](auth-research.md) | Android OAuth identity, scopes, and bearer validation |
+| [`blutter-grpc-signature-evidence.md`](blutter-grpc-signature-evidence.md) | exact generated-client bindings for formerly unresolved response FQNs |
+
+### Capture and tooling
+
+| File | Role |
+|---|---|
+| [`capture.md`](capture.md) | primary HTTP/2 gRPC interception runbook |
+| [`android-traffic-capture.md`](android-traffic-capture.md) | legacy rooted-emulator Cronet/Frida procedure |
+| [`blutter-dart3.13.patch`](blutter-dart3.13.patch) | Dart 3.13 port used to decompile the app snapshot |
 
 `schema.proto` and `enums.txt` are **regenerable artifacts, not hand-written docs**.
 They are committed because CI parses them; regenerate rather than hand-edit.
@@ -61,17 +75,17 @@ The generator reports `295 messages, 767 fields` and resolves package identity t
 The reduced compile inputs used by the private Android adapters live under
 `src/notebooklm/_android/proto_src/`. Regenerate their checked-in Python modules and the full
 descriptor fixture with `python scripts/regenerate_android_protos.py --write`; use `--check` in CI.
-The cumulative `orchestration_service.proto` owns the 41-method orchestration service;
+The cumulative `orchestration_service.proto` owns the 43-method orchestration service;
 `sharing.proto` owns the separately proven two-method exact sharing service, and individual
-orchestration message overlays remain service-free. Seven orchestration signatures are explicitly
+orchestration message overlays remain service-free. Nine orchestration signatures are explicitly
 marked as web-derived conventional-name inferences; all other generated signatures are exact.
-The 43 generated methods exhaustively equal the 43 implemented adapter paths, and the signature
+The 45 generated methods exhaustively equal the 45 implemented adapter paths, and the signature
 exception manifest is empty. Generated descriptors, adapter paths, inference provenance, and the
 hash-pinned external method manifest are checked in both
 directions, so a locally repeated claim cannot admit a normalized or unresolved response type.
 The package, generated protos, and most adapters remain private, direct-testable migration building
-blocks. Explicit `backend="android"` selection installs Android Collections, the first complete
-substitution-qualified namespace; every other namespace remains Web, including Notes and Labels.
+blocks. Explicit `backend="android"` selection installs Android Artifacts, Mind Maps, and
+Collections; every other namespace remains Web, including Sources, Notes, Sharing, and Labels.
 
 ## Public Collections qualification
 
@@ -80,7 +94,7 @@ all nine public methods and cleans up one uniquely named notebook and collection
 twice against an isolated profile containing both Web cookies and a sibling master token:
 
 ```bash
-export NOTEBOOKLM_PROFILE=agent-b8p-collections
+export NOTEBOOKLM_PROFILE=android-collections-e2e
 export NOTEBOOKLM_ANDROID_COLLECTIONS_CONFORMANCE=1
 uv run pytest tests/e2e/test_android_collections_conformance.py -m e2e -vv
 uv run pytest tests/e2e/test_android_collections_conformance.py -m e2e -vv
@@ -95,7 +109,7 @@ notebooks may be created and deleted. The test prefixes and registers its resour
 prefix scan, and should pass twice against the same account to prove cleanup and rerun safety:
 
 ```bash
-export NOTEBOOKLM_PROFILE=agent-b8p-notes
+export NOTEBOOKLM_PROFILE=android-notes-e2e
 export NOTEBOOKLM_ANDROID_NOTES_CONFORMANCE=1
 uv run pytest tests/e2e/test_android_notes_conformance.py -m e2e -vv
 uv run pytest tests/e2e/test_android_notes_conformance.py -m e2e -vv

@@ -19,6 +19,7 @@ from ..._types.artifact_content import (
 from ..._types.artifacts import Artifact, ReportSuggestion
 from ..._types.enums import FLASHCARDS_VARIANT
 from ...exceptions import DecodingError
+from ..artifact_proto import table_artifact_projection
 from ..errors import sanitize_escaping_exception
 
 _MEDIA_KINDS = {
@@ -147,6 +148,9 @@ def _prompt(message: Any, type_code: int) -> str | None:
         value = message.infographic.generation_options.user_steering_prompt
     elif type_code == 8 and message.HasField("slides"):
         value = message.slides.generation_options.user_steering_prompt
+    elif type_code == 9:
+        table = table_artifact_projection(message)
+        value = "" if table is None else table.generation_options.user_steering_prompt
     else:
         return None
     return value or None

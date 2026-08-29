@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, cast
@@ -17,7 +17,8 @@ from notebooklm._android.mind_maps import AndroidMindMapsAPI
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._notes import NotesAPI
 from notebooklm._runtime.call_supervisor import CallSupervisor
-from notebooklm.exceptions import MindMapNotFoundError, NoteNotFoundError, UnsupportedOperationError
+from notebooklm._types.research import MindMapResult
+from notebooklm.exceptions import MindMapNotFoundError, NoteNotFoundError
 from notebooklm.types import Artifact, GenerationStatus, MindMap, MindMapKind, Note
 
 
@@ -84,6 +85,12 @@ def _graph(
     artifact_api.rename = AsyncMock()
     artifact_api.delete = AsyncMock()
     artifact_api.wait_for_completion = AsyncMock()
+    artifact_api.generate_mind_map = AsyncMock(
+        return_value=MindMapResult(
+            mind_map={"name": "Root", "children": []},
+            note_id="note-generated",
+        )
+    )
     artifact_api._generate_interactive_mind_map = AsyncMock(
         return_value=GenerationStatus(task_id="interactive", status="pending")
     )
@@ -100,21 +107,6 @@ def _graph(
         artifact_api,
         notes,
     )
-
-
-def _assert_no_dependency_io(artifacts: MagicMock, notes: MagicMock) -> None:
-    notes._list_note_backed_mind_maps.assert_not_awaited()
-    notes.list_mind_maps.assert_not_awaited()
-    notes.get.assert_not_awaited()
-    notes.update.assert_not_awaited()
-    notes.delete_mind_map.assert_not_awaited()
-    artifacts.list.assert_not_awaited()
-    artifacts._list_all_studio.assert_not_awaited()
-    artifacts.rename.assert_not_awaited()
-    artifacts.delete.assert_not_awaited()
-    artifacts.wait_for_completion.assert_not_awaited()
-    artifacts._generate_interactive_mind_map.assert_not_awaited()
-    artifacts._get_interactive_mind_map_tree.assert_not_awaited()
 
 
 def test_direct_graph_requires_and_retains_exact_base_collaborators() -> None:
@@ -189,32 +181,32 @@ async def test_get_and_get_or_none_use_typed_aggregate_read() -> None:
     artifacts.list.assert_not_awaited()
 
 
-UnsupportedCall = Callable[[AndroidMindMapsAPI], Awaitable[object]]
-
-
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "invoke",
-    [
-        pytest.param(
-            lambda api: api.generate(
-                "notebook-1",
-                ["source-1"],
-                kind=MindMapKind.NOTE_BACKED,
-            ),
-            id="generate-note-backed",
-        ),
-    ],
-)
-async def test_evidence_gated_operations_fail_before_dependency_io(
-    invoke: UnsupportedCall,
-) -> None:
+async def test_note_backed_generate_uses_narrow_artifact_compatibility_seam() -> None:
     api, artifacts, notes = _graph(artifacts=[_interactive_artifact()])
 
-    with pytest.raises(UnsupportedOperationError, match="web backend"):
-        await invoke(api)
+    result = await api.generate(
+        "notebook-1",
+        ["source-1"],
+        kind=MindMapKind.NOTE_BACKED,
+        language="fr",
+        instructions="Group by theme",
+    )
 
-    _assert_no_dependency_io(artifacts, notes)
+    assert result == MindMap(
+        id="note-generated",
+        notebook_id="notebook-1",
+        title="Root",
+        kind=MindMapKind.NOTE_BACKED,
+        tree={"name": "Root", "children": []},
+    )
+    artifacts.generate_mind_map.assert_awaited_once_with(
+        "notebook-1",
+        ["source-1"],
+        "fr",
+        "Group by theme",
+    )
+    notes._list_note_backed_mind_maps.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -524,11 +524,13 @@ def _assemble_client(
         note_backed_artifacts = NoteBackedMindMapArtifactAdapter(
             web_mind_maps.list_note_backed,
         )
+        web_artifacts = client.artifacts
         client.artifacts = AndroidArtifactsAPI(
             session=android_session,
             supervisor=internals.collaborators.call_supervisor,
             notebooks=client.notebooks,
             mind_maps=note_backed_artifacts,
+            note_backed_generator=web_artifacts.generate_mind_map,
             asset_downloads=android_asset_downloads,
         )
         client.mind_maps = AndroidMindMapsAPI(

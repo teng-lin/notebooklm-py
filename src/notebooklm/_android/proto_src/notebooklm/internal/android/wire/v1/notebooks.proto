@@ -13,7 +13,7 @@ message WireProjectChangeProperty {
   string new_title = 2; // evidence: docs/android/endpoints.md#mutateproject--rename--edit-notebook-fields
   // Repository-local name. Live Android set/clear/combined read-back proves
   // tag #3 and explicit empty-string presence without claiming a Google FQN.
-  optional string new_emoji = 3; // evidence: docs/android/notebooks-live-validation-2026-08-28.md
+  optional string new_emoji = 3; // evidence: docs/android/resource-lifecycle-and-public-qualification.md
 }
 
 message WireProjectMutation {

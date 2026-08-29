@@ -333,9 +333,8 @@ class ReportFormat(str, Enum):
     BRIEFING_DOC = "briefing_doc"
     STUDY_GUIDE = "study_guide"
     BLOG_POST = "blog_post"
-    # Returned by LIST_ARTIFACTS as a report kind. Read-only for now: unlike
-    # the three static generation presets, its generation directive has not
-    # been recovered, so build_report_artifact_params rejects it explicitly.
+    # The mobile report contract uses free-form preset strings; this SDK preset
+    # is live-validated rather than tied to a hidden backend enum.
     CONCEPT_EXPLANATION = "concept_explanation"
     CUSTOM = "custom"
 

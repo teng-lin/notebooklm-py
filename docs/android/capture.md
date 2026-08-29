@@ -17,14 +17,14 @@ The current recorder is [`scripts/capture_mobile_grpc.js`](../../scripts/capture
 
 For Scotty file-upload and `lh3` artifact-download capture, including the redacting recorder,
 UID-scoped DNAT, live request shapes, and cleanup, see
-[`file-transfer-live-validation-2026-08-27.md`](file-transfer-live-validation-2026-08-27.md#detailed-interception-instructions).
+[`file-transfer-evidence.md`](file-transfer-evidence.md#detailed-interception-instructions).
 
 For the APK-absent async Deep Research methods, including current web-bundle discovery and the
 live-verified host-side `grpc_proxy` route through this recorder, see
-[`deep-research-mobile-grpc-2026-08-27.md`](deep-research-mobile-grpc-2026-08-27.md#detailed-traffic-interception).
+[`deep-research-evidence.md`](deep-research-evidence.md#detailed-traffic-interception).
 
 For host-side replay of label/collection CRUD and `CopyProject` through the same recorder, see
-[`labels-collections-copy-mobile-grpc-2026-08-27.md`](labels-collections-copy-mobile-grpc-2026-08-27.md#capture-these-calls-through-http-toolkit).
+[`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md#capture-these-calls-through-http-toolkit).
 
 ## Result
 
