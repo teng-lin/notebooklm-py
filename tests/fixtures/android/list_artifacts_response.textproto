@@ -1,0 +1,109 @@
+artifacts {
+  artifact_id: "audio-1"
+  title: "Audio"
+  type: ARTIFACT_TYPE_AUDIO_OVERVIEW
+  sources { source_id { id: "source-a" } }
+  status: ARTIFACT_STATUS_READY
+  audio_overview {
+    generation_options { episode_focus: "Audio focus" }
+    media_urls {
+      url: "https://lh3.googleusercontent.com/audio-stream"
+      type: MEDIA_STREAMING_TYPE_PROGRESSIVE_STREAMING
+    }
+    media_urls {
+      url: "https://lh3.googleusercontent.com/audio-download"
+      type: MEDIA_STREAMING_TYPE_DOWNLOAD
+    }
+    duration { seconds: 61 nanos: 500000000 }
+  }
+  last_modified_timestamp { seconds: 1700000001 nanos: 1000000 }
+  etag: "etag-audio"
+}
+artifacts {
+  artifact_id: "report-1"
+  title: "Report"
+  type: ARTIFACT_TYPE_TAILORED_REPORT
+  status: ARTIFACT_STATUS_READY
+  tailored_report {
+    generation_options {
+      type: "Briefing Doc"
+      document_directive: "Report directive"
+    }
+  }
+}
+artifacts {
+  artifact_id: "video-1"
+  title: "Video"
+  type: ARTIFACT_TYPE_EXPLAINER_VIDEO
+  status: ARTIFACT_STATUS_PROCESSING
+  explainer_video {
+    generation_options { video_focus: "Video focus" }
+    media_urls {
+      url: "https://lh3.googleusercontent.com/video-download"
+      type: MEDIA_STREAMING_TYPE_DOWNLOAD
+    }
+    duration { seconds: 42 }
+  }
+}
+artifacts {
+  artifact_id: "quiz-1"
+  title: "Quiz"
+  type: ARTIFACT_TYPE_APP
+  status: ARTIFACT_STATUS_INITIALIZED
+  app {
+    generation_options {
+      app_type: APP_TYPE_QUIZ
+      free_text_steering_prompt: "Quiz prompt"
+      quiz_generation_options {
+        question_quantity: QUESTION_QUANTITY_MORE
+        quiz_difficulty: QUIZ_DIFFICULTY_HARD
+      }
+    }
+  }
+}
+artifacts {
+  artifact_id: "infographic-1"
+  title: "Infographic"
+  type: ARTIFACT_TYPE_INFOGRAPHIC
+  status: ARTIFACT_STATUS_READY
+  infographic {
+    generation_options { user_steering_prompt: "Infographic prompt" }
+    infographics {
+      title: "Rendered infographic"
+      image { url: "https://lh3.googleusercontent.com/infographic.png?cap=fixture" }
+    }
+  }
+}
+artifacts {
+  artifact_id: "slides-1"
+  title: "Slides"
+  type: ARTIFACT_TYPE_SLIDES
+  status: ARTIFACT_STATUS_READY
+  slides {
+    generation_options { user_steering_prompt: "Slide prompt" }
+    slides { image { url: "https://lh3.googleusercontent.com/slide-1.png" } }
+    pdf_download_url: "https://lh3.googleusercontent.com/deck.pdf"
+  }
+}
+artifacts {
+  artifact_id: "table-1"
+  title: "Table"
+  type: ARTIFACT_TYPE_TABLE
+  status: ARTIFACT_STATUS_FAILED
+}
+artifacts {
+  artifact_id: "file-1"
+  title: "File"
+  type: ARTIFACT_TYPE_FILE
+  status: ARTIFACT_STATUS_READY
+  file {
+    file_preview_url: "https://lh3.googleusercontent.com/file-preview"
+    file_download_url: "https://lh3.googleusercontent.com/file-download"
+  }
+}
+artifacts {
+  artifact_id: "suggested-1"
+  title: "Suggested"
+  type: ARTIFACT_TYPE_TAILORED_REPORT
+  status: ARTIFACT_STATUS_SUGGESTED
+}

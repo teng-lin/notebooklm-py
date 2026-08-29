@@ -975,24 +975,29 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_client_assembly.py` | Single private assembly seam (`_assemble_client`) that wires every constructor-set attribute; shared by `NotebookLMClient.__init__` and the canonical test factory (`tests/_helpers/client_factory.py`) so the two construction paths cannot drift. |
 | `_client_composed.py` | Client-owned composition holder for transport, executor, chain host, middleware metadata, and runtime collaborator bundle. |
 | `_web/transport/seams.py` | Constructor-only injectable seams used by tests and collaborator construction. |
-| `_android/` | Private Android backend package. Its package marker is dependency-free; generated protobuf modules remain private/direct-test-only and no client factory branch selects them. |
+| `_android/` | Private Android backend package. Its package marker is dependency-free; generated protobuf modules and partial adapters remain private/direct-test-only and no client factory branch selects them. |
 | `_android/auth.py` | Generation-fenced `BearerProvider`: off-loop typed profile reads, shared mint waves, bounded expiry caching, compare-and-clear invalidation, and secret-safe teardown. |
 | `_android/codecs/` | Typed protobuf-to-public-dataclass projection package for private Android adapters. |
 | `_android/codecs/notebooks.py` | Android project and notebook-guide projections plus bounded notebook decode/status errors. |
 | `_android/codecs/sources.py` | Android source projection, enum-name mapping, duplicate handling, and strict/default drift behavior. |
+| `_android/codecs/artifacts.py` | Ledgered Android artifact and representation projection with bounded decode failures. |
 | `_android/errors.py` | Sanitized gRPC-status projection plus the pre-I/O unsupported-operation helper; raw transport exceptions and details never cross this boundary. |
 | `_android/notebooks.py` | Private Android notebook adapter: B1 reads and evidence-admitted B2 create/delete/title-update/copy/guide operations. |
 | `_android/session.py` | Lazy Google-TLS gRPC transport participating in root loop/lifecycle supervision, aggregate deadlines, per-call bearer metadata, status mapping, safe-read replay, and full stream leases. |
 | `_android/sources.py` | Private Android source adapter: B1 reads plus evidence-admitted B3 URL, delete, rename, guide, and full-text operations; unevidenced branches reject before I/O. |
+| `_android/artifacts.py` | Private B4 partial artifact adapter: aggregate Studio/note-backed listing, Studio-only polling, quiz create, delete/rename, infographic PNG download and report suggestions; every other public family rejects before I/O. |
+| `_android/assets.py` | B4 response-aware Android asset transport. It validates every hop, attaches bearer only to the exact approved origin, strips it for signed-GCS hops, streams one open PNG response through same-directory staging and publishes atomically. |
 | `_android/mind_maps.py` | Private B7 Android mind-map composition over base-typed artifact/note collaborators. The raw `NotesAPI.list_mind_maps` boundary is not treated as decoded `MindMap` data: aggregate reads, note-backed rename, and hydrated interactive rename reject before dependency I/O. Explicit non-hydrating interactive rename/delete compose through artifacts; generation and tree reads remain evidence-gated. No public client factory selects it. |
 | `_android/proto/` | Checked-in generated Python protobuf package. Files are regenerated only by `scripts/regenerate_android_protos.py` with the pinned toolchain and are never generated during installation. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/b1_read_pb2.py` | Exact-package B1 messages and descriptors for `GetProject` and `ListRecentlyViewedProjects`. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/b1_read_pb2_grpc.py` | Generated `LabsTailwindOrchestrationServiceStub` limited to the two B1 read methods. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/b4_artifacts_pb2.py` | Exact-package B4 artifact request/response and projection overlay; dispatch uses ledgered generic-session method paths so the B1 service descriptor remains unchanged. |
+| `_android/proto/notebooklm/android/internal/v1/b4_report_suggestions_pb2.py` | Repository-local `*Wire` overlay for the live-added, APK-absent report-suggestion method; intentionally makes no Google FQN claim. |
 | `_android/proto/google/internal/labs/tailwind/v1/source_settings_pb2.py` | Exact-package `SourceSettings`, `SourceStatus`, and `UserDriveSourceStatus` descriptors. |
 | `_android/proto/google/internal/labs/tailwind/v1/source_settings_pb2_grpc.py` | Generated companion for the service-free SourceSettings proto; retained so the generated tree exactly matches the pinned command. |
 | `_android/proto/notebooklm/internal/android/wire/v1/b2_notebooks_pb2.py` | Repository-local B2 notebook wire-equivalent messages; the local package explicitly avoids claiming unproven Google FQNs. |
 | `_android/proto/notebooklm/internal/android/wire/v1/b2_notebooks_pb2_grpc.py` | Deterministic service-free companion for the B2 local wire overlay. |
-| `_android/proto_src/` | Minimal compile-ready Android `.proto` closure. The evidence ledger is `docs/android/proto-evidence-ledger.md`; flattened `docs/android/schema.proto` is never a compile input. |
+| `_android/proto_src/` | Minimal compile-ready cumulative Android `.proto` closure. The evidence ledger is `docs/android/proto-evidence-ledger.md`; flattened `docs/android/schema.proto` is never a compile input. |
 | `_runtime/init.py` | Constructor helpers that validate client runtime kwargs, build collaborators (returning a `RuntimeCollaborators` bundle), wire middleware, and bind `ClientComposed`. |
 | `_web/transport/kernel.py` | Concrete `Kernel` transport core (owns `httpx.AsyncClient` + cookie jar) |
 | `_runtime/config.py` | `DEFAULT_*` knobs and module-level constants. `CORE_LOGGER_NAME = "notebooklm._core"` is intentionally preserved as a compatibility logging contract even though the `_core` module was deleted; renaming it silently breaks downstream `caplog`/logger filters. |
@@ -1234,22 +1239,30 @@ src/notebooklm/
 │   ├── codecs/                  # Android protobuf projections
 │   │   ├── __init__.py          # Codec package marker
 │   │   ├── notebooks.py         # Project and notebook-guide decoding
-│   │   └── sources.py           # Source projection and enum mapping
+│   │   ├── sources.py           # Source projection and enum mapping
+│   │   └── artifacts.py         # Ledgered artifact/representation projection
 │   ├── errors.py                # Sanitized gRPC status/error mapping
 │   ├── notebooks.py             # Android notebook reads and B2 mutations
 │   ├── session.py               # Supervised lazy gRPC transport
 │   ├── sources.py               # Android source reads and B3 operations/gates
+│   ├── artifacts.py             # B4 partial artifact API and unsupported surface
+│   ├── assets.py                # B4 response-aware bearer-safe PNG transfer
 │   ├── mind_maps.py             # B7 artifact composition + note/evidence gates
 │   ├── proto_src/               # Exact-package reads + evidence-bounded local wire overlays
 │   └── proto/                   # Checked-in generated pb2/pb2_grpc modules
 │       ├── __init__.py          # Dependency-free generated-package marker
-│       └── google/internal/labs/tailwind/
+│       ├── google/internal/labs/tailwind/
 │           ├── orchestration/v1/
-│           │   ├── b1_read_pb2.py       # B1 read messages and descriptors
-│           │   └── b1_read_pb2_grpc.py  # Two-method orchestration service stub
+│           │   ├── b1_read_pb2.py              # B1 read messages and descriptors
+│           │   ├── b1_read_pb2_grpc.py         # Two-method orchestration service stub
+│           │   ├── b4_artifacts_pb2.py         # B4 exact artifact message overlay
+│           │   └── b4_artifacts_pb2_grpc.py    # Deterministic service-free companion
 │           └── v1/
 │               ├── source_settings_pb2.py       # Source settings/status descriptors
 │               └── source_settings_pb2_grpc.py  # Deterministic service-free companion
+│       ├── notebooklm/android/internal/v1/
+│           ├── b4_report_suggestions_pb2.py       # Local live-added Wire messages
+│           └── b4_report_suggestions_pb2_grpc.py  # Deterministic service-free companion
 │       └── notebooklm/internal/android/wire/v1/
 │           ├── b2_notebooks_pb2.py       # Repository-local B2 notebook wire messages
 │           └── b2_notebooks_pb2_grpc.py  # Deterministic service-free companion
