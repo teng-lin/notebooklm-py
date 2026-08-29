@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Awaitable, Callable, Collection, Iterator
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from google.protobuf import text_format
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from notebooklm._android.notebooks import (
@@ -35,6 +37,8 @@ from notebooklm.types import (
     SourceStatus,
     SourceType,
 )
+
+FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "android"
 
 
 class FakeSession:
@@ -361,6 +365,38 @@ async def test_source_codec_fixture_projects_status_kind_drive_and_order() -> No
         "replay_safe": True,
         "response_type": b1_read_pb2.GetProjectResponse,
     }
+
+
+@pytest.mark.asyncio
+async def test_checked_in_textproto_fixture_projects_through_both_adapters() -> None:
+    response = text_format.Parse(
+        (FIXTURES / "get_project_response.textproto").read_text(encoding="utf-8"),
+        b1_read_pb2.GetProjectResponse(),
+    )
+    fake = FakeSession(
+        {
+            GET_PROJECT_METHOD: response,
+            LIST_RECENT_PROJECTS_METHOD: b1_read_pb2.ListRecentlyViewedProjectsResponse(
+                projects=[response.project]
+            ),
+        }
+    )
+    sources = AndroidSourcesAPI(_android_session(fake))
+    notebooks = AndroidNotebooksAPI(_android_session(fake), sources)
+
+    notebook = await notebooks.get("00000000-0000-4000-8000-000000000000")
+    decoded = await sources.list(notebook.id)
+
+    assert notebook.title == "Synthetic B1 project"
+    assert notebook.sources_count == 4
+    assert [source.kind for source in decoded] == [
+        SourceType.WEB_PAGE,
+        SourceType.PDF,
+        SourceType.MARKDOWN,
+        SourceType.GOOGLE_DOCS,
+    ]
+    assert decoded[3].status is SourceStatus.ERROR
+    assert decoded[3].drive_status is DriveSourceStatus.ACTIVE
 
 
 @pytest.mark.asyncio
