@@ -11,10 +11,10 @@ from ..types import ShareStatus
 from .codecs.notebooks import map_get_project_error
 from .codecs.sharing import decode_share_status
 from .errors import unsupported_operation
-from .proto.notebooklm.android.wire.v1 import b6_sharing_pb2
+from .proto.notebooklm.android.wire.v1 import sharing_pb2
 from .session import AndroidSession
 
-_WIRE = cast(Any, b6_sharing_pb2)
+_WIRE = cast(Any, sharing_pb2)
 
 _SERVICE = "labs.language.tailwind.sharing.LabsTailwindSharingService"
 GET_PROJECT_DETAILS_METHOD = f"/{_SERVICE}/GetProjectDetails"

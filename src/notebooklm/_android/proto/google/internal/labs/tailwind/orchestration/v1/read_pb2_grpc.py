@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import b1_read_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_b1__read__pb2
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2
 
 GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in google/internal/labs/tailwind/orchestration/v1/b1_read_pb2_grpc.py depends on'
+        + ' but the generated code in google/internal/labs/tailwind/orchestration/v1/read_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -36,13 +36,13 @@ class LabsTailwindOrchestrationServiceStub(object):
         """
         self.GetProject = channel.unary_unary(
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject',
-                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_b1__read__pb2.GetProjectRequest.SerializeToString,
-                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_b1__read__pb2.GetProjectResponse.FromString,
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.GetProjectRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.GetProjectResponse.FromString,
                 _registered_method=True)
         self.ListRecentlyViewedProjects = channel.unary_unary(
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListRecentlyViewedProjects',
-                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_b1__read__pb2.ListRecentlyViewedProjectsRequest.SerializeToString,
-                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_b1__read__pb2.ListRecentlyViewedProjectsResponse.FromString,
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.ListRecentlyViewedProjectsRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.ListRecentlyViewedProjectsResponse.FromString,
                 _registered_method=True)
 
 
@@ -66,13 +66,13 @@ def add_LabsTailwindOrchestrationServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'GetProject': grpc.unary_unary_rpc_method_handler(
                     servicer.GetProject,
-                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_b1__read__pb2.GetProjectRequest.FromString,
-                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_b1__read__pb2.GetProjectResponse.SerializeToString,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.GetProjectRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.GetProjectResponse.SerializeToString,
             ),
             'ListRecentlyViewedProjects': grpc.unary_unary_rpc_method_handler(
                     servicer.ListRecentlyViewedProjects,
-                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_b1__read__pb2.ListRecentlyViewedProjectsRequest.FromString,
-                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_b1__read__pb2.ListRecentlyViewedProjectsResponse.SerializeToString,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.ListRecentlyViewedProjectsRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.ListRecentlyViewedProjectsResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -100,8 +100,8 @@ class LabsTailwindOrchestrationService(object):
             request,
             target,
             '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject',
-            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_b1__read__pb2.GetProjectRequest.SerializeToString,
-            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_b1__read__pb2.GetProjectResponse.FromString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.GetProjectRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.GetProjectResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -127,8 +127,8 @@ class LabsTailwindOrchestrationService(object):
             request,
             target,
             '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListRecentlyViewedProjects',
-            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_b1__read__pb2.ListRecentlyViewedProjectsRequest.SerializeToString,
-            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_b1__read__pb2.ListRecentlyViewedProjectsResponse.FromString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.ListRecentlyViewedProjectsRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.ListRecentlyViewedProjectsResponse.FromString,
             options,
             channel_credentials,
             insecure,

@@ -12,7 +12,7 @@ from typing import Any, cast
 import pytest
 
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
-    b1_read_pb2,
+    read_pb2,
     sources_pb2,
 )
 from notebooklm._android.proto.google.internal.labs.tailwind.v1 import source_settings_pb2
@@ -106,21 +106,21 @@ def _source(
     title: str = "Example",
     url: str = URL_A,
     status: int = source_settings_pb2.SOURCE_STATUS_PENDING,
-) -> b1_read_pb2.Source:
-    return b1_read_pb2.Source(
-        source_id=b1_read_pb2.SourceId(id=source_id),
+) -> read_pb2.Source:
+    return read_pb2.Source(
+        source_id=read_pb2.SourceId(id=source_id),
         title=title,
-        metadata=b1_read_pb2.SourceMetadata(
-            original_source_content_type=b1_read_pb2.SOURCE_CONTENT_TYPE_URL,
-            webpage_metadata=b1_read_pb2.WebpageMetadata(url=url),
+        metadata=read_pb2.SourceMetadata(
+            original_source_content_type=read_pb2.SOURCE_CONTENT_TYPE_URL,
+            webpage_metadata=read_pb2.WebpageMetadata(url=url),
         ),
         settings=source_settings_pb2.SourceSettings(status=status),
     )
 
 
-def _project(*sources: b1_read_pb2.Source) -> b1_read_pb2.GetProjectResponse:
-    return b1_read_pb2.GetProjectResponse(
-        project=b1_read_pb2.Project(id=NOTEBOOK_ID, title="Notebook", sources=sources)
+def _project(*sources: read_pb2.Source) -> read_pb2.GetProjectResponse:
+    return read_pb2.GetProjectResponse(
+        project=read_pb2.Project(id=NOTEBOOK_ID, title="Notebook", sources=sources)
     )
 
 
@@ -144,8 +144,8 @@ def _registration_handler(ids: list[str]) -> Handler:
 
 def _successful_transport(
     *,
-    commit_sources: list[b1_read_pb2.Source] | None = None,
-    project_sources: list[b1_read_pb2.Source] | None = None,
+    commit_sources: list[read_pb2.Source] | None = None,
+    project_sources: list[read_pb2.Source] | None = None,
 ) -> FakeTransport:
     transport = FakeTransport()
     transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _registration_handler([SOURCE_A])
@@ -667,13 +667,13 @@ async def test_delete_and_rename_use_non_replayed_exact_wire_shapes() -> None:
 @pytest.mark.asyncio
 async def test_null_rename_echo_hydrates_exact_id_and_detects_miss() -> None:
     transport = FakeTransport()
-    transport.handlers[MUTATE_SOURCE_METHOD] = b1_read_pb2.Source()
+    transport.handlers[MUTATE_SOURCE_METHOD] = read_pb2.Source()
     transport.handlers[GET_PROJECT_METHOD] = _project(_source(SOURCE_A, title="Hydrated"))
     result = await _api(transport).rename(NOTEBOOK_ID, SOURCE_A, "Requested")
     assert result is not None and result.title == "Hydrated"
 
     missing = FakeTransport()
-    missing.handlers[MUTATE_SOURCE_METHOD] = b1_read_pb2.Source()
+    missing.handlers[MUTATE_SOURCE_METHOD] = read_pb2.Source()
     missing.handlers[GET_PROJECT_METHOD] = _project()
     with pytest.raises(SourceNotFoundError):
         await _api(missing).rename(NOTEBOOK_ID, SOURCE_A, "Requested", return_object=False)
@@ -699,7 +699,7 @@ async def test_guide_and_fulltext_decode_only_captured_flat_fields() -> None:
         sources_pb2.GenerateDocumentGuidesResponse(
             guides=[
                 sources_pb2.DocumentGuide(
-                    source=sources_pb2.InputSource(source_id=b1_read_pb2.SourceId(id=SOURCE_A)),
+                    source=sources_pb2.InputSource(source_id=read_pb2.SourceId(id=SOURCE_A)),
                     snippet=sources_pb2.Snippet(text_snippet="Summary"),
                     main_ideas=sources_pb2.MainIdeas(text_ideas=["one", "two"]),
                 )

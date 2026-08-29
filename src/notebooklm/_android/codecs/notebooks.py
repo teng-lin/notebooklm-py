@@ -10,9 +10,9 @@ from google.protobuf.message import Message
 
 from ...exceptions import DecodingError, NotebookNotFoundError, RPCError
 from ...types import Notebook, NotebookDescription, SharePermission, SuggestedTopic
-from ..proto.google.internal.labs.tailwind.orchestration.v1 import b1_read_pb2
+from ..proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
 
-_PROTO = cast(Any, b1_read_pb2)
+_PROTO = cast(Any, read_pb2)
 
 _PROJECT_ROLE_BY_NAME: dict[str, SharePermission] = {
     "PROJECT_ROLE_OWNER": SharePermission.OWNER,

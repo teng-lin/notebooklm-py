@@ -7,7 +7,7 @@ from typing import Any
 from google.protobuf.descriptor import FieldDescriptor
 
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
-    b1_read_pb2,
+    read_pb2,
     sources_pb2,
 )
 from notebooklm._android.proto.labs.language.tailwind.common.protos import (
@@ -42,7 +42,7 @@ def test_b3_exact_package_overlay_is_minimal_and_has_no_service_guess() -> None:
     )
     assert sources_pb2.DESCRIPTOR.package == ORCHESTRATION_PACKAGE
     assert [dependency.name for dependency in sources_pb2.DESCRIPTOR.dependencies] == [
-        "google/internal/labs/tailwind/orchestration/v1/b1_read.proto",
+        "google/internal/labs/tailwind/orchestration/v1/read.proto",
         "labs/language/tailwind/common/protos/metadata.proto",
         "labs/language/tailwind/common/protos/provenance.proto",
     ]
@@ -199,13 +199,13 @@ def test_b3_request_bytes_are_pinned_without_context_or_unexercised_title() -> N
         user_content=[
             sources_pb2.UserContent(
                 web_content=sources_pb2.WebContent(url=" raw "),
-                tentative_source_id=b1_read_pb2.SourceId(id="source"),
+                tentative_source_id=read_pb2.SourceId(id="source"),
             )
         ],
         project_id="project",
     )
     mutation = source_mutation_wire_pb2.MutateSourceWireRequest(
-        source_id=b1_read_pb2.SourceId(id="source"),
+        source_id=read_pb2.SourceId(id="source"),
         mutations=[
             source_mutation_wire_pb2.SourceMutation(
                 change_title=source_mutation_wire_pb2.ChangeTitle(title="new")

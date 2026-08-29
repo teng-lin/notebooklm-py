@@ -6,9 +6,9 @@ from typing import Any, cast
 
 from ...exceptions import DecodingError
 from ...types import Note
-from ..proto.google.internal.labs.tailwind.orchestration.v1 import b6_notes_pb2
+from ..proto.google.internal.labs.tailwind.orchestration.v1 import notes_pb2
 
-_PROTO = cast(Any, b6_notes_pb2)
+_PROTO = cast(Any, notes_pb2)
 
 
 def _enum_name(enum: Any, value: int) -> str | None:

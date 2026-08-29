@@ -46,14 +46,14 @@ from ..types import Artifact, ArtifactType, GenerationStatus, ReportSuggestion
 from .assets import AndroidAssetDownloadService
 from .codecs.artifacts import decode_artifact, decode_artifacts, decode_report_suggestions
 from .errors import sanitize_escaping_exception, unsupported_operation
-from .proto.google.internal.labs.tailwind.orchestration.v1 import b1_read_pb2, b4_artifacts_pb2
-from .proto.notebooklm.android.internal.v1 import b4_report_suggestions_pb2
+from .proto.google.internal.labs.tailwind.orchestration.v1 import artifacts_pb2, read_pb2
+from .proto.notebooklm.android.internal.v1 import report_suggestions_pb2
 from .session import AndroidSession
 
 logger = logging.getLogger(__name__)
-_PROTO = cast(Any, b4_artifacts_pb2)
-_READ_PROTO = cast(Any, b1_read_pb2)
-_REPORT_PROTO = cast(Any, b4_report_suggestions_pb2)
+_PROTO = cast(Any, artifacts_pb2)
+_READ_PROTO = cast(Any, read_pb2)
+_REPORT_PROTO = cast(Any, report_suggestions_pb2)
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 LIST_ARTIFACTS_METHOD = f"/{_SERVICE}/ListArtifacts"

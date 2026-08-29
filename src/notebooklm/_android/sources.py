@@ -39,7 +39,7 @@ from .codecs.notebooks import decode_project, map_get_project_error
 from .codecs.sources import decode_source, decode_sources
 from .errors import unsupported_operation
 from .proto.google.internal.labs.tailwind.orchestration.v1 import (
-    b1_read_pb2,
+    read_pb2,
     sources_pb2,
 )
 from .proto.google.internal.labs.tailwind.v1 import source_settings_pb2
@@ -52,7 +52,7 @@ from .upload import (
 )
 
 logger = logging.getLogger(__name__)
-_READ_PROTO = cast(Any, b1_read_pb2)
+_READ_PROTO = cast(Any, read_pb2)
 _WRITE_PROTO = cast(Any, sources_pb2)
 _MUTATION_WIRE = cast(Any, source_mutation_wire_pb2)
 _SETTINGS_PROTO = cast(Any, source_settings_pb2)

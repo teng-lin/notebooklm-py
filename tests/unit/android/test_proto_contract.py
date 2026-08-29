@@ -12,11 +12,11 @@ from google.protobuf import descriptor_pb2, text_format
 from google.protobuf.descriptor import FieldDescriptor
 
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
-    b1_read_pb2,
-    b1_read_pb2_grpc,
+    read_pb2,
+    read_pb2_grpc,
 )
 from notebooklm._android.proto.google.internal.labs.tailwind.v1 import source_settings_pb2
-from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import b2_notebooks_pb2
+from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import notebooks_pb2
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "android"
@@ -57,14 +57,14 @@ def _without_implicit_json_names(
 
 
 def test_exact_packages_imports_and_service_are_minimal() -> None:
-    assert b1_read_pb2.DESCRIPTOR.package == ORCHESTRATION_PACKAGE
+    assert read_pb2.DESCRIPTOR.package == ORCHESTRATION_PACKAGE
     assert source_settings_pb2.DESCRIPTOR.package == SETTINGS_PACKAGE
-    assert [dependency.name for dependency in b1_read_pb2.DESCRIPTOR.dependencies] == [
+    assert [dependency.name for dependency in read_pb2.DESCRIPTOR.dependencies] == [
         "google/internal/labs/tailwind/v1/source_settings.proto",
         "google/protobuf/timestamp.proto",
     ]
 
-    services = b1_read_pb2.DESCRIPTOR.services_by_name
+    services = read_pb2.DESCRIPTOR.services_by_name
     assert list(services) == ["LabsTailwindOrchestrationService"]
     methods = services["LabsTailwindOrchestrationService"].methods
     assert [method.name for method in methods] == [
@@ -80,7 +80,7 @@ def test_exact_packages_imports_and_service_are_minimal() -> None:
         f"{ORCHESTRATION_PACKAGE}.ListRecentlyViewedProjectsResponse",
     ]
     assert all(not method.client_streaming and not method.server_streaming for method in methods)
-    assert hasattr(b1_read_pb2_grpc, "LabsTailwindOrchestrationServiceStub")
+    assert hasattr(read_pb2_grpc, "LabsTailwindOrchestrationServiceStub")
 
 
 def test_orchestration_message_fields_tags_types_and_cardinality_are_exhaustive() -> None:
@@ -92,13 +92,13 @@ def test_orchestration_message_fields_tags_types_and_cardinality_are_exhaustive(
     enum = FieldDescriptor.TYPE_ENUM
 
     expected = {
-        b1_read_pb2.SourceId: {"id": (1, singular, string, None)},
-        b1_read_pb2.WebpageMetadata: {"url": (1, singular, string, None)},
-        b1_read_pb2.GoogleDriveSourceMetadata: {
+        read_pb2.SourceId: {"id": (1, singular, string, None)},
+        read_pb2.WebpageMetadata: {"url": (1, singular, string, None)},
+        read_pb2.GoogleDriveSourceMetadata: {
             "document_id": (1, singular, string, None),
             "mime_type": (3, singular, string, None),
         },
-        b1_read_pb2.SourceMetadata: {
+        read_pb2.SourceMetadata: {
             "original_source_content_type": (
                 5,
                 singular,
@@ -118,41 +118,41 @@ def test_orchestration_message_fields_tags_types_and_cardinality_are_exhaustive(
                 f"{ORCHESTRATION_PACKAGE}.GoogleDriveSourceMetadata",
             ),
         },
-        b1_read_pb2.Source: {
+        read_pb2.Source: {
             "source_id": (1, singular, message, f"{ORCHESTRATION_PACKAGE}.SourceId"),
             "title": (2, singular, string, None),
             "metadata": (3, singular, message, f"{ORCHESTRATION_PACKAGE}.SourceMetadata"),
             "settings": (4, singular, message, f"{SETTINGS_PACKAGE}.SourceSettings"),
         },
-        b1_read_pb2.ProjectMetadata: {
+        read_pb2.ProjectMetadata: {
             "user_role": (1, singular, enum, f"{ORCHESTRATION_PACKAGE}.ProjectRole"),
             "create_time": (9, singular, message, "google.protobuf.Timestamp"),
         },
-        b1_read_pb2.Project: {
+        read_pb2.Project: {
             "title": (1, singular, string, None),
             "sources": (2, repeated, message, f"{ORCHESTRATION_PACKAGE}.Source"),
             "id": (3, singular, string, None),
             "emoji": (4, singular, string, None),
             "metadata": (6, singular, message, f"{ORCHESTRATION_PACKAGE}.ProjectMetadata"),
         },
-        b1_read_pb2.GetProjectRequest: {
+        read_pb2.GetProjectRequest: {
             "project_id": (1, singular, string, None),
             "include_audio_overview_ids": (2, singular, boolean, None),
         },
-        b1_read_pb2.GetProjectResponse: {
+        read_pb2.GetProjectResponse: {
             "project": (1, singular, message, f"{ORCHESTRATION_PACKAGE}.Project"),
         },
-        b1_read_pb2.ListRecentlyViewedProjectsRequest: {
+        read_pb2.ListRecentlyViewedProjectsRequest: {
             "include_own_projects": (2, singular, boolean, None),
             "include_audio_overview_ids": (3, singular, boolean, None),
         },
-        b1_read_pb2.ListRecentlyViewedProjectsResponse: {
+        read_pb2.ListRecentlyViewedProjectsResponse: {
             "projects": (1, repeated, message, f"{ORCHESTRATION_PACKAGE}.Project"),
         },
     }
 
     assert {message_type.DESCRIPTOR.name for message_type in expected} == set(
-        b1_read_pb2.DESCRIPTOR.message_types_by_name
+        read_pb2.DESCRIPTOR.message_types_by_name
     )
     for message_type, expected_fields in expected.items():
         assert _field_shapes(message_type) == expected_fields
@@ -177,9 +177,9 @@ def test_source_settings_has_only_fields_two_and_four() -> None:
 
 
 def test_b2_repository_local_wire_fields_are_exhaustive() -> None:
-    assert b2_notebooks_pb2.DESCRIPTOR.package == LOCAL_WIRE_PACKAGE
-    assert not b2_notebooks_pb2.DESCRIPTOR.services_by_name
-    assert not b2_notebooks_pb2.DESCRIPTOR.dependencies
+    assert notebooks_pb2.DESCRIPTOR.package == LOCAL_WIRE_PACKAGE
+    assert not notebooks_pb2.DESCRIPTOR.services_by_name
+    assert not notebooks_pb2.DESCRIPTOR.dependencies
 
     singular = False
     repeated = True
@@ -187,16 +187,16 @@ def test_b2_repository_local_wire_fields_are_exhaustive() -> None:
     message = FieldDescriptor.TYPE_MESSAGE
     local = LOCAL_WIRE_PACKAGE
     expected = {
-        b2_notebooks_pb2.WireCreateProjectRequest: {
+        notebooks_pb2.WireCreateProjectRequest: {
             "name": (1, singular, string, None),
         },
-        b2_notebooks_pb2.WireDeleteProjectsRequest: {
+        notebooks_pb2.WireDeleteProjectsRequest: {
             "project_ids": (1, repeated, string, None),
         },
-        b2_notebooks_pb2.WireProjectChangeProperty: {
+        notebooks_pb2.WireProjectChangeProperty: {
             "new_title": (2, singular, string, None),
         },
-        b2_notebooks_pb2.WireProjectMutation: {
+        notebooks_pb2.WireProjectMutation: {
             "change_property": (
                 4,
                 singular,
@@ -204,56 +204,56 @@ def test_b2_repository_local_wire_fields_are_exhaustive() -> None:
                 f"{local}.WireProjectChangeProperty",
             ),
         },
-        b2_notebooks_pb2.WireMutateProjectRequest: {
+        notebooks_pb2.WireMutateProjectRequest: {
             "project_id": (1, singular, string, None),
             "mutations": (2, repeated, message, f"{local}.WireProjectMutation"),
         },
-        b2_notebooks_pb2.WireCopyProjectRequest: {
+        notebooks_pb2.WireCopyProjectRequest: {
             "source_project_id": (2, singular, string, None),
             "title": (3, singular, string, None),
         },
-        b2_notebooks_pb2.WireGenerateNotebookGuideRequest: {
+        notebooks_pb2.WireGenerateNotebookGuideRequest: {
             "project_id": (1, singular, string, None),
         },
-        b2_notebooks_pb2.WireNotebookSummary: {
+        notebooks_pb2.WireNotebookSummary: {
             "text_summary": (1, singular, string, None),
         },
-        b2_notebooks_pb2.WireSuggestedTopic: {
+        notebooks_pb2.WireSuggestedTopic: {
             "question": (1, singular, string, None),
             "prompt": (2, singular, string, None),
         },
-        b2_notebooks_pb2.WireSuggestedTopics: {
+        notebooks_pb2.WireSuggestedTopics: {
             "topics": (1, repeated, message, f"{local}.WireSuggestedTopic"),
         },
-        b2_notebooks_pb2.WireNotebookGuide: {
+        notebooks_pb2.WireNotebookGuide: {
             "summary": (1, singular, message, f"{local}.WireNotebookSummary"),
             "suggested_topics": (2, singular, message, f"{local}.WireSuggestedTopics"),
         },
-        b2_notebooks_pb2.WireGenerateNotebookGuideResponse: {
+        notebooks_pb2.WireGenerateNotebookGuideResponse: {
             "notebook_guide": (1, singular, message, f"{local}.WireNotebookGuide"),
         },
     }
 
     assert {message_type.DESCRIPTOR.name for message_type in expected} == set(
-        b2_notebooks_pb2.DESCRIPTOR.message_types_by_name
+        notebooks_pb2.DESCRIPTOR.message_types_by_name
     )
     for message_type, expected_fields in expected.items():
         assert _field_shapes(message_type) == expected_fields
 
 
 def test_b2_wire_messages_match_captured_serialization() -> None:
-    create = b2_notebooks_pb2.WireCreateProjectRequest(name="Title")
-    delete = b2_notebooks_pb2.WireDeleteProjectsRequest(project_ids=["id-1"])
-    mutate = b2_notebooks_pb2.WireMutateProjectRequest(
+    create = notebooks_pb2.WireCreateProjectRequest(name="Title")
+    delete = notebooks_pb2.WireDeleteProjectsRequest(project_ids=["id-1"])
+    mutate = notebooks_pb2.WireMutateProjectRequest(
         project_id="p",
         mutations=[
-            b2_notebooks_pb2.WireProjectMutation(
-                change_property=b2_notebooks_pb2.WireProjectChangeProperty(new_title="T")
+            notebooks_pb2.WireProjectMutation(
+                change_property=notebooks_pb2.WireProjectChangeProperty(new_title="T")
             )
         ],
     )
-    copy = b2_notebooks_pb2.WireCopyProjectRequest(source_project_id="p", title="Title")
-    guide = b2_notebooks_pb2.WireGenerateNotebookGuideRequest(project_id="p")
+    copy = notebooks_pb2.WireCopyProjectRequest(source_project_id="p", title="Title")
+    guide = notebooks_pb2.WireGenerateNotebookGuideRequest(project_id="p")
 
     assert create.SerializeToString(deterministic=True).hex() == "0a055469746c65"
     assert delete.SerializeToString(deterministic=True).hex() == "0a0469642d31"
@@ -263,14 +263,14 @@ def test_b2_wire_messages_match_captured_serialization() -> None:
 
 
 def test_all_reachable_enum_names_and_numbers_are_exact() -> None:
-    assert _enum_values(b1_read_pb2.ProjectRole) == {
+    assert _enum_values(read_pb2.ProjectRole) == {
         "PROJECT_ROLE_UNKNOWN": 0,
         "PROJECT_ROLE_OWNER": 1,
         "PROJECT_ROLE_WRITER": 2,
         "PROJECT_ROLE_READER": 3,
         "PROJECT_ROLE_NOT_SHARED": 4,
     }
-    assert _enum_values(b1_read_pb2.OriginalSourceContentType) == {
+    assert _enum_values(read_pb2.OriginalSourceContentType) == {
         "SOURCE_CONTENT_TYPE_UNKNOWN": 0,
         "SOURCE_CONTENT_TYPE_GOOGLE_DOC": 1,
         "SOURCE_CONTENT_TYPE_GOOGLE_SLIDES": 2,
@@ -312,11 +312,11 @@ def test_all_reachable_enum_names_and_numbers_are_exact() -> None:
 
 
 def test_request_wire_shapes_have_no_context_or_extra_fields() -> None:
-    get_request = b1_read_pb2.GetProjectRequest(
+    get_request = read_pb2.GetProjectRequest(
         project_id="project-1",
         include_audio_overview_ids=True,
     )
-    list_request = b1_read_pb2.ListRecentlyViewedProjectsRequest(
+    list_request = read_pb2.ListRecentlyViewedProjectsRequest(
         include_own_projects=True,
         include_audio_overview_ids=True,
     )
@@ -328,7 +328,7 @@ def test_request_wire_shapes_have_no_context_or_extra_fields() -> None:
 def test_synthetic_get_project_textproto_exercises_b1_projection() -> None:
     response = text_format.Parse(
         (FIXTURES / "get_project_response.textproto").read_text(encoding="utf-8"),
-        b1_read_pb2.GetProjectResponse(),
+        read_pb2.GetProjectResponse(),
     )
 
     assert response.project.id == "00000000-0000-4000-8000-000000000000"
@@ -348,7 +348,7 @@ def test_synthetic_get_project_textproto_exercises_b1_projection() -> None:
     assert response.project.metadata.create_time.nanos == 123000000
     assert 10 not in response.project.DESCRIPTOR.fields_by_number
 
-    reparsed = b1_read_pb2.GetProjectResponse.FromString(
+    reparsed = read_pb2.GetProjectResponse.FromString(
         response.SerializeToString(deterministic=True)
     )
     assert reparsed == response
@@ -357,7 +357,7 @@ def test_synthetic_get_project_textproto_exercises_b1_projection() -> None:
 def test_synthetic_list_textproto_pins_repeated_project_cardinality() -> None:
     response = text_format.Parse(
         (FIXTURES / "list_recently_viewed_projects_response.textproto").read_text(encoding="utf-8"),
-        b1_read_pb2.ListRecentlyViewedProjectsResponse(),
+        read_pb2.ListRecentlyViewedProjectsResponse(),
     )
 
     assert [project.id for project in response.projects] == [
@@ -365,23 +365,23 @@ def test_synthetic_list_textproto_pins_repeated_project_cardinality() -> None:
         "00000000-0000-4000-8000-000000000012",
     ]
     assert response.projects[1].sources[0].metadata.original_source_content_type == (
-        b1_read_pb2.SOURCE_CONTENT_TYPE_TEXT
+        read_pb2.SOURCE_CONTENT_TYPE_TEXT
     )
 
 
 def test_descriptor_fixture_matches_generated_file_descriptors() -> None:
     descriptor_set = descriptor_pb2.FileDescriptorSet.FromString(
-        (FIXTURES / "b1_descriptor_set.pb").read_bytes()
+        (FIXTURES / "read_descriptor_set.pb").read_bytes()
     )
     files = {file.name: file for file in descriptor_set.file}
 
     assert set(files) == {
-        "google/internal/labs/tailwind/orchestration/v1/b1_read.proto",
+        "google/internal/labs/tailwind/orchestration/v1/read.proto",
         "google/internal/labs/tailwind/v1/source_settings.proto",
         "google/protobuf/timestamp.proto",
     }
-    assert _without_implicit_json_names(files[b1_read_pb2.DESCRIPTOR.name]) == (
-        descriptor_pb2.FileDescriptorProto.FromString(b1_read_pb2.DESCRIPTOR.serialized_pb)
+    assert _without_implicit_json_names(files[read_pb2.DESCRIPTOR.name]) == (
+        descriptor_pb2.FileDescriptorProto.FromString(read_pb2.DESCRIPTOR.serialized_pb)
     )
     assert _without_implicit_json_names(files[source_settings_pb2.DESCRIPTOR.name]) == (
         descriptor_pb2.FileDescriptorProto.FromString(source_settings_pb2.DESCRIPTOR.serialized_pb)
@@ -395,15 +395,15 @@ def test_current_descriptor_fixture_includes_b2_local_wire_overlay() -> None:
     files = {file.name: file for file in descriptor_set.file}
 
     assert {
-        "google/internal/labs/tailwind/orchestration/v1/b1_read.proto",
+        "google/internal/labs/tailwind/orchestration/v1/read.proto",
         "google/internal/labs/tailwind/v1/source_settings.proto",
         "google/protobuf/timestamp.proto",
-        "notebooklm/internal/android/wire/v1/b2_notebooks.proto",
+        "notebooklm/internal/android/wire/v1/notebooks.proto",
     } <= set(files)
-    local = files[b2_notebooks_pb2.DESCRIPTOR.name]
+    local = files[notebooks_pb2.DESCRIPTOR.name]
     assert local.package == LOCAL_WIRE_PACKAGE
     assert _without_implicit_json_names(local) == descriptor_pb2.FileDescriptorProto.FromString(
-        b2_notebooks_pb2.DESCRIPTOR.serialized_pb
+        notebooks_pb2.DESCRIPTOR.serialized_pb
     )
 
 

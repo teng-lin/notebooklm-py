@@ -21,15 +21,15 @@ from .codecs.chat import decode_document, decode_history, decode_references, dec
 from .errors import unsupported_operation
 from .notes import SAVED_RESPONSE_NOTE_TYPE, create_note
 from .proto.google.internal.labs.tailwind.orchestration.v1 import (
-    b1_read_pb2,
-    b5_chat_pb2,
+    chat_pb2,
+    read_pb2,
     sources_pb2,
 )
 from .session import AndroidSession
 
 logger = logging.getLogger("notebooklm._chat.api")
-_PROTO = cast(Any, b5_chat_pb2)
-_B1_PROTO = cast(Any, b1_read_pb2)
+_PROTO = cast(Any, chat_pb2)
+_READ_PROTO = cast(Any, read_pb2)
 _SOURCES_PROTO = cast(Any, sources_pb2)
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
@@ -166,7 +166,7 @@ class AndroidChatAPI(ChatAPI):
 
         request = _PROTO.GenerateFreeFormStreamedRequest(
             sources=[
-                _SOURCES_PROTO.InputSource(source_id=_B1_PROTO.SourceId(id=source_id))
+                _SOURCES_PROTO.InputSource(source_id=_READ_PROTO.SourceId(id=source_id))
                 for source_id in source_ids
             ],
             user_query=question,

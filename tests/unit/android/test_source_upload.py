@@ -17,7 +17,7 @@ import pytest
 
 from notebooklm._android.auth import BearerCredential, BearerProvider
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
-    b1_read_pb2,
+    read_pb2,
     sources_pb2,
 )
 from notebooklm._android.proto.google.internal.labs.tailwind.v1 import source_settings_pb2
@@ -50,7 +50,7 @@ SESSION_URL = (
     f"https://notebooklm-pa.googleapis.com/upload/upload/{NOTEBOOK_ID}"
     "?upload_id=session-capability&upload_protocol=resumable"
 )
-_READ = cast(Any, b1_read_pb2)
+_READ = cast(Any, read_pb2)
 _WRITE = cast(Any, sources_pb2)
 _SETTINGS = cast(Any, source_settings_pb2)
 

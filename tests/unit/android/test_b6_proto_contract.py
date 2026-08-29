@@ -16,9 +16,9 @@ from notebooklm._android.codecs.notes import (
 )
 from notebooklm._android.codecs.sharing import decode_share_status
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
-    b6_notes_pb2,
+    notes_pb2,
 )
-from notebooklm._android.proto.notebooklm.android.wire.v1 import b6_sharing_pb2
+from notebooklm._android.proto.notebooklm.android.wire.v1 import sharing_pb2
 from notebooklm.types import ShareAccess, ShareViewLevel
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -40,9 +40,9 @@ def _field_shapes(message: Any) -> dict[str, tuple[int, bool, int, str | None]]:
 
 
 def test_note_overlay_keeps_exact_package_fields_and_no_guessed_service_descriptor() -> None:
-    assert b6_notes_pb2.DESCRIPTOR.package == ORCHESTRATION_PACKAGE
-    assert b6_notes_pb2.DESCRIPTOR.services_by_name == {}
-    assert _field_shapes(b6_notes_pb2.ProjectNote) == {
+    assert notes_pb2.DESCRIPTOR.package == ORCHESTRATION_PACKAGE
+    assert notes_pb2.DESCRIPTOR.services_by_name == {}
+    assert _field_shapes(notes_pb2.ProjectNote) == {
         "id": (1, False, FieldDescriptor.TYPE_STRING, None),
         "content": (2, False, FieldDescriptor.TYPE_STRING, None),
         "metadata": (
@@ -53,7 +53,7 @@ def test_note_overlay_keeps_exact_package_fields_and_no_guessed_service_descript
         ),
         "name": (5, False, FieldDescriptor.TYPE_STRING, None),
     }
-    assert _field_shapes(b6_notes_pb2.NoteMetadata) == {
+    assert _field_shapes(notes_pb2.NoteMetadata) == {
         "type": (1, False, FieldDescriptor.TYPE_ENUM, f"{ORCHESTRATION_PACKAGE}.NoteType"),
         "last_edit_timestamp": (
             3,
@@ -68,22 +68,22 @@ def test_note_overlay_keeps_exact_package_fields_and_no_guessed_service_descript
             f"{ORCHESTRATION_PACKAGE}.NotePromptType",
         ),
     }
-    assert _field_shapes(b6_notes_pb2.NoteOrStatus) == {
+    assert _field_shapes(notes_pb2.NoteOrStatus) == {
         "note": (2, False, FieldDescriptor.TYPE_MESSAGE, f"{ORCHESTRATION_PACKAGE}.ProjectNote")
     }
-    assert 1 not in b6_notes_pb2.NoteOrStatus.DESCRIPTOR.fields_by_number
-    assert 6 not in b6_notes_pb2.ProjectNote.DESCRIPTOR.fields_by_number
+    assert 1 not in notes_pb2.NoteOrStatus.DESCRIPTOR.fields_by_number
+    assert 6 not in notes_pb2.ProjectNote.DESCRIPTOR.fields_by_number
 
 
 def test_note_enums_are_exhaustive() -> None:
-    assert {value.name: value.number for value in b6_notes_pb2.NoteType.DESCRIPTOR.values} == {
+    assert {value.name: value.number for value in notes_pb2.NoteType.DESCRIPTOR.values} == {
         "NOTE_TYPE_UNSPECIFIED": 0,
         "USER_WRITTEN": 1,
         "SAVED_RESPONSE": 2,
         "CUSTOM": 3,
     }
     assert {
-        value.name: value.number for value in b6_notes_pb2.NotePromptType.DESCRIPTOR.values
+        value.name: value.number for value in notes_pb2.NotePromptType.DESCRIPTOR.values
     } == {
         "NOTE_PROMPT_TYPE_UNSPECIFIED": 0,
         "STUDY_GUIDE": 1,
@@ -95,9 +95,9 @@ def test_note_enums_are_exhaustive() -> None:
 
 
 def test_local_sharing_overlay_exposes_only_byte_proven_fields() -> None:
-    assert b6_sharing_pb2.DESCRIPTOR.package == LOCAL_WIRE_PACKAGE
-    assert b6_sharing_pb2.DESCRIPTOR.services_by_name == {}
-    assert _field_shapes(b6_sharing_pb2.GetProjectDetailsResponse) == {
+    assert sharing_pb2.DESCRIPTOR.package == LOCAL_WIRE_PACKAGE
+    assert sharing_pb2.DESCRIPTOR.services_by_name == {}
+    assert _field_shapes(sharing_pb2.GetProjectDetailsResponse) == {
         "public_settings": (
             2,
             False,
@@ -107,20 +107,20 @@ def test_local_sharing_overlay_exposes_only_byte_proven_fields() -> None:
         "max_individuals_share_limit": (3, False, FieldDescriptor.TYPE_INT32, None),
         "is_public_sharing_allowed": (4, False, FieldDescriptor.TYPE_BOOL, None),
     }
-    assert 1 not in b6_sharing_pb2.GetProjectDetailsResponse.DESCRIPTOR.fields_by_number
-    assert 7 not in b6_sharing_pb2.GetProjectDetailsResponse.DESCRIPTOR.fields_by_number
-    assert 8 not in b6_sharing_pb2.GetProjectDetailsResponse.DESCRIPTOR.fields_by_number
+    assert 1 not in sharing_pb2.GetProjectDetailsResponse.DESCRIPTOR.fields_by_number
+    assert 7 not in sharing_pb2.GetProjectDetailsResponse.DESCRIPTOR.fields_by_number
+    assert 8 not in sharing_pb2.GetProjectDetailsResponse.DESCRIPTOR.fields_by_number
 
 
 def test_request_wire_fixture_pins_all_populated_fields() -> None:
     expected = json.loads((FIXTURES / "b6_request_wires.json").read_text(encoding="utf-8"))
     messages = {
-        "get_notes": b6_notes_pb2.GetNotesRequest(project_id="project-1"),
+        "get_notes": notes_pb2.GetNotesRequest(project_id="project-1"),
         "create_note": build_create_note_request(
             "project-1",
             title="Pinned title",
             content="Pinned body",
-            note_type=b6_notes_pb2.USER_WRITTEN,
+            note_type=notes_pb2.USER_WRITTEN,
         ),
         "mutate_note": build_mutate_note_request(
             "project-1",
@@ -128,16 +128,16 @@ def test_request_wire_fixture_pins_all_populated_fields() -> None:
             title="Edited title",
             content="Edited body",
         ),
-        "delete_notes": b6_notes_pb2.DeleteNotesRequest(
+        "delete_notes": notes_pb2.DeleteNotesRequest(
             project_id="project-1", note_ids=["note-1"]
         ),
-        "get_project_details": b6_sharing_pb2.GetProjectDetailsRequest(project_id="project-1"),
-        "share_project_public": b6_sharing_pb2.ShareProjectRequest(
+        "get_project_details": sharing_pb2.GetProjectDetailsRequest(project_id="project-1"),
+        "share_project_public": sharing_pb2.ShareProjectRequest(
             project=[
-                b6_sharing_pb2.ShareProjectRequest_ProjectToShare(
+                sharing_pb2.ShareProjectRequest_ProjectToShare(
                     project_id="project-1",
                     public_document_settings=(
-                        b6_sharing_pb2.ShareProjectRequest_PublicDocumentSettings(
+                        sharing_pb2.ShareProjectRequest_PublicDocumentSettings(
                             is_publicly_readable=True,
                             is_discoverable=False,
                         )
@@ -145,12 +145,12 @@ def test_request_wire_fixture_pins_all_populated_fields() -> None:
                 )
             ]
         ),
-        "share_project_private": b6_sharing_pb2.ShareProjectRequest(
+        "share_project_private": sharing_pb2.ShareProjectRequest(
             project=[
-                b6_sharing_pb2.ShareProjectRequest_ProjectToShare(
+                sharing_pb2.ShareProjectRequest_ProjectToShare(
                     project_id="project-1",
                     public_document_settings=(
-                        b6_sharing_pb2.ShareProjectRequest_PublicDocumentSettings(
+                        sharing_pb2.ShareProjectRequest_PublicDocumentSettings(
                             is_publicly_readable=False,
                             is_discoverable=False,
                         )
@@ -168,7 +168,7 @@ def test_request_wire_fixture_pins_all_populated_fields() -> None:
 def test_response_textprotos_exercise_projection_and_presence() -> None:
     notes_response = text_format.Parse(
         (FIXTURES / "get_notes_response.textproto").read_text(encoding="utf-8"),
-        b6_notes_pb2.GetNotesResponse(),
+        notes_pb2.GetNotesResponse(),
     )
     notes = decode_note_entries(notes_response, "project-1", method_id="fixture")
     assert [(note.id, note.title, note.content, note.created_at) for note in notes] == [
@@ -177,7 +177,7 @@ def test_response_textprotos_exercise_projection_and_presence() -> None:
 
     sharing_response = text_format.Parse(
         (FIXTURES / "get_project_details_response.textproto").read_text(encoding="utf-8"),
-        b6_sharing_pb2.GetProjectDetailsResponse(),
+        sharing_pb2.GetProjectDetailsResponse(),
     )
     status = decode_share_status(sharing_response, "project-1")
     assert status.is_public is True
@@ -194,10 +194,10 @@ def test_cumulative_descriptor_fixture_contains_b1_and_b6_without_replacing_b1_f
     )
     names = {file.name for file in descriptor_set.file}
     assert {
-        "google/internal/labs/tailwind/orchestration/v1/b1_read.proto",
-        "google/internal/labs/tailwind/orchestration/v1/b6_notes.proto",
+        "google/internal/labs/tailwind/orchestration/v1/read.proto",
+        "google/internal/labs/tailwind/orchestration/v1/notes.proto",
         "google/internal/labs/tailwind/v1/source_settings.proto",
         "google/protobuf/timestamp.proto",
-        "notebooklm/android/wire/v1/b6_sharing.proto",
+        "notebooklm/android/wire/v1/sharing.proto",
     } <= names
-    assert (FIXTURES / "b1_descriptor_set.pb").is_file()
+    assert (FIXTURES / "read_descriptor_set.pb").is_file()

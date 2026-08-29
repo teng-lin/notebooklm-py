@@ -8,10 +8,10 @@ from typing import Any, cast
 
 from ...exceptions import DecodingError
 from ...types import DriveSourceStatus, Source, SourceStatus
-from ..proto.google.internal.labs.tailwind.orchestration.v1 import b1_read_pb2
+from ..proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
 from ..proto.google.internal.labs.tailwind.v1 import source_settings_pb2
 
-_PROTO = cast(Any, b1_read_pb2)
+_PROTO = cast(Any, read_pb2)
 _SETTINGS_PROTO = cast(Any, source_settings_pb2)
 
 _SOURCE_TYPE_CODE_BY_NAME: dict[str, int] = {

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package google.internal.labs.tailwind.orchestration.v1;
 
-import "google/internal/labs/tailwind/orchestration/v1/b1_read.proto";
+import "google/internal/labs/tailwind/orchestration/v1/read.proto";
 import "google/internal/labs/tailwind/orchestration/v1/sources.proto";
 import "google/protobuf/timestamp.proto";
 import "labs/language/tailwind/common/protos/chat_history.proto";

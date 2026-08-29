@@ -18,9 +18,9 @@ from notebooklm._android.notes import (
     create_note,
 )
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
-    b6_notes_pb2,
+    notes_pb2,
 )
-from notebooklm._android.proto.notebooklm.android.wire.v1 import b6_sharing_pb2
+from notebooklm._android.proto.notebooklm.android.wire.v1 import sharing_pb2
 from notebooklm._android.session import AndroidSession
 from notebooklm._android.sharing import (
     GET_PROJECT_DETAILS_METHOD,
@@ -47,28 +47,28 @@ class FakeB6Server:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, Any, dict[str, Any]]] = []
-        self.notes: dict[str, b6_notes_pb2.ProjectNote] = {
-            "note-existing": b6_notes_pb2.ProjectNote(
+        self.notes: dict[str, notes_pb2.ProjectNote] = {
+            "note-existing": notes_pb2.ProjectNote(
                 id="note-existing",
                 content="Existing body",
                 name="Existing title",
-                metadata=b6_notes_pb2.NoteMetadata(type=b6_notes_pb2.USER_WRITTEN),
+                metadata=notes_pb2.NoteMetadata(type=notes_pb2.USER_WRITTEN),
             ),
-            "mind-map": b6_notes_pb2.ProjectNote(
+            "mind-map": notes_pb2.ProjectNote(
                 id="mind-map",
                 content='{"nodes": []}',
                 name="Map",
-                metadata=b6_notes_pb2.NoteMetadata(
-                    type=b6_notes_pb2.CUSTOM,
-                    note_prompt_type=b6_notes_pb2.MIND_MAP,
+                metadata=notes_pb2.NoteMetadata(
+                    type=notes_pb2.CUSTOM,
+                    note_prompt_type=notes_pb2.MIND_MAP,
                 ),
             ),
         }
         self.pending_deletion_reads: dict[str, int] = {}
         self.public = False
 
-    def _get_notes(self) -> b6_notes_pb2.GetNotesResponse:
-        entries = [b6_notes_pb2.NoteOrStatus()]  # unrecovered status-only arm
+    def _get_notes(self) -> notes_pb2.GetNotesResponse:
+        entries = [notes_pb2.NoteOrStatus()]  # unrecovered status-only arm
         for note_id, note in list(self.notes.items()):
             pending = self.pending_deletion_reads.get(note_id)
             if pending is not None:
@@ -77,38 +77,38 @@ class FakeB6Server:
                     del self.pending_deletion_reads[note_id]
                     continue
                 self.pending_deletion_reads[note_id] = pending - 1
-            entries.append(b6_notes_pb2.NoteOrStatus(note=note))
-        return b6_notes_pb2.GetNotesResponse(notes=entries)
+            entries.append(notes_pb2.NoteOrStatus(note=note))
+        return notes_pb2.GetNotesResponse(notes=entries)
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
         self.calls.append((method, request, kwargs))
         if method == GET_NOTES_METHOD:
             return self._get_notes()
         if method == CREATE_NOTE_METHOD:
-            note = b6_notes_pb2.ProjectNote(
+            note = notes_pb2.ProjectNote(
                 id="note-created",
                 content=request.content,
                 name=request.name,
                 metadata=request.metadata,
             )
             self.notes[note.id] = note
-            return b6_notes_pb2.CreateNoteResponse(note=note)
+            return notes_pb2.CreateNoteResponse(note=note)
         if method == MUTATE_NOTE_METHOD:
             edit = request.mutations[0].edit_note_mutation
             note = self.notes[request.note_id]
             note.content = edit.content
             note.name = edit.name
-            return b6_notes_pb2.MutateNoteResponse(note=note)
+            return notes_pb2.MutateNoteResponse(note=note)
         if method == DELETE_NOTES_METHOD:
             for note_id in request.note_ids:
                 if note_id in self.notes:
                     # The first post-delete GetNotes still sees the row; the
                     # second excludes it, matching the disposable live probe.
                     self.pending_deletion_reads[note_id] = 1
-            return b6_sharing_pb2.EmptyResponse()
+            return sharing_pb2.EmptyResponse()
         if method == GET_PROJECT_DETAILS_METHOD:
-            return b6_sharing_pb2.GetProjectDetailsResponse(
-                public_settings=b6_sharing_pb2.ProjectPublicSettings(
+            return sharing_pb2.GetProjectDetailsResponse(
+                public_settings=sharing_pb2.ProjectPublicSettings(
                     is_publicly_readable=self.public,
                     is_discoverable=False,
                 ),
@@ -117,7 +117,7 @@ class FakeB6Server:
             )
         if method == SHARE_PROJECT_METHOD:
             self.public = request.project[0].public_document_settings.is_publicly_readable
-            return b6_sharing_pb2.EmptyResponse()
+            return sharing_pb2.EmptyResponse()
         raise AssertionError(f"unexpected method: {method}")
 
 
@@ -140,15 +140,15 @@ def _session(fake: object) -> AndroidSession:
     return cast(AndroidSession, fake)
 
 
-def _visible(note_id: str = "note-1") -> b6_notes_pb2.GetNotesResponse:
-    return b6_notes_pb2.GetNotesResponse(
+def _visible(note_id: str = "note-1") -> notes_pb2.GetNotesResponse:
+    return notes_pb2.GetNotesResponse(
         notes=[
-            b6_notes_pb2.NoteOrStatus(
-                note=b6_notes_pb2.ProjectNote(
+            notes_pb2.NoteOrStatus(
+                note=notes_pb2.ProjectNote(
                     id=note_id,
                     content="body",
                     name="title",
-                    metadata=b6_notes_pb2.NoteMetadata(type=b6_notes_pb2.USER_WRITTEN),
+                    metadata=notes_pb2.NoteMetadata(type=notes_pb2.USER_WRITTEN),
                 )
             )
         ]
@@ -217,9 +217,9 @@ async def test_fake_server_runs_complete_note_lifecycle_with_exact_orchestration
         GET_NOTES_METHOD,
     ]
     writes = {
-        CREATE_NOTE_METHOD: b6_notes_pb2.CreateNoteResponse,
-        MUTATE_NOTE_METHOD: b6_notes_pb2.MutateNoteResponse,
-        DELETE_NOTES_METHOD: b6_sharing_pb2.EmptyResponse,
+        CREATE_NOTE_METHOD: notes_pb2.CreateNoteResponse,
+        MUTATE_NOTE_METHOD: notes_pb2.MutateNoteResponse,
+        DELETE_NOTES_METHOD: sharing_pb2.EmptyResponse,
     }
     for method, _request, kwargs in server.calls:
         if method in writes:
@@ -227,7 +227,7 @@ async def test_fake_server_runs_complete_note_lifecycle_with_exact_orchestration
         elif method == GET_NOTES_METHOD:
             assert kwargs == {
                 "replay_safe": True,
-                "response_type": b6_notes_pb2.GetNotesResponse,
+                "response_type": notes_pb2.GetNotesResponse,
             }
 
 
@@ -321,15 +321,15 @@ async def test_delete_status_five_after_preflight_is_idempotent_and_not_replayed
 
 @pytest.mark.asyncio
 async def test_note_write_read_back_drift_fails_loud() -> None:
-    wrong = b6_notes_pb2.ProjectNote(
+    wrong = notes_pb2.ProjectNote(
         id="note-1",
         content="wrong",
         name="title",
-        metadata=b6_notes_pb2.NoteMetadata(type=b6_notes_pb2.USER_WRITTEN),
+        metadata=notes_pb2.NoteMetadata(type=notes_pb2.USER_WRITTEN),
     )
     session = SequencedSession(
         {
-            CREATE_NOTE_METHOD: [b6_notes_pb2.CreateNoteResponse(note=wrong)],
+            CREATE_NOTE_METHOD: [notes_pb2.CreateNoteResponse(note=wrong)],
         }
     )
     with pytest.raises(DecodingError, match="read back"):
@@ -342,7 +342,7 @@ async def test_eventual_delete_is_bounded_when_row_never_disappears() -> None:
     session = SequencedSession(
         {
             GET_NOTES_METHOD: [_visible(), _visible(), _visible()],
-            DELETE_NOTES_METHOD: [b6_sharing_pb2.EmptyResponse()],
+            DELETE_NOTES_METHOD: [sharing_pb2.EmptyResponse()],
         }
     )
     with pytest.raises(RPCError, match="remained visible"):
@@ -379,7 +379,7 @@ async def test_fake_server_sharing_set_public_then_reads_status() -> None:
     assert share_request.project[0].public_document_settings.is_publicly_readable is True
     assert server.calls[1][2] == {
         "replay_safe": False,
-        "response_type": b6_sharing_pb2.EmptyResponse,
+        "response_type": sharing_pb2.EmptyResponse,
     }
 
 

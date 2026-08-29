@@ -11,7 +11,7 @@ from google.protobuf.descriptor import FieldDescriptor
 
 from notebooklm._android.codecs.chat import decode_document, decode_references
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
-    b5_chat_pb2,
+    chat_pb2,
     sources_pb2,
 )
 from notebooklm._android.proto.labs.language.tailwind.common.protos import chat_history_pb2
@@ -49,15 +49,15 @@ def _without_implicit_json_names(
 
 
 def test_b5_packages_imports_and_service_free_overlay_are_exact() -> None:
-    assert b5_chat_pb2.DESCRIPTOR.package == ORCHESTRATION_PACKAGE
+    assert chat_pb2.DESCRIPTOR.package == ORCHESTRATION_PACKAGE
     assert chat_history_pb2.DESCRIPTOR.package == COMMON_PACKAGE
-    assert [dependency.name for dependency in b5_chat_pb2.DESCRIPTOR.dependencies] == [
-        "google/internal/labs/tailwind/orchestration/v1/b1_read.proto",
+    assert [dependency.name for dependency in chat_pb2.DESCRIPTOR.dependencies] == [
+        "google/internal/labs/tailwind/orchestration/v1/read.proto",
         "google/internal/labs/tailwind/orchestration/v1/sources.proto",
         "google/protobuf/timestamp.proto",
         "labs/language/tailwind/common/protos/chat_history.proto",
     ]
-    assert b5_chat_pb2.DESCRIPTOR.services_by_name == {}
+    assert chat_pb2.DESCRIPTOR.services_by_name == {}
     assert chat_history_pb2.DESCRIPTOR.services_by_name == {}
     assert _field_shapes(chat_history_pb2.ChatSession) == {
         "chat_session_id": (1, False, FieldDescriptor.TYPE_STRING, None)
@@ -78,39 +78,39 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
         sources_pb2.InputSource: {
             "source_id": (1, singular, message, f"{o}.SourceId"),
         },
-        b5_chat_pb2.ConversationEvent: {
+        chat_pb2.ConversationEvent: {
             "text": (1, singular, string, None),
             "type": (3, singular, enum, f"{o}.ConversationEvent.ConversationEventType"),
         },
-        b5_chat_pb2.ConversationTurnKey: {
+        chat_pb2.ConversationTurnKey: {
             "session_id": (1, singular, string, None),
             "conversation_id": (2, singular, string, None),
             "observed_field_3": (3, singular, int32, None),
         },
-        b5_chat_pb2.ObjectId: {"id": (1, singular, string, None)},
-        b5_chat_pb2.Range: {
+        chat_pb2.ObjectId: {"id": (1, singular, string, None)},
+        chat_pb2.Range: {
             "start_index": (2, singular, int32, None),
             "end_index": (3, singular, int32, None),
         },
-        b5_chat_pb2.AnnotationMapEntry: {
+        chat_pb2.AnnotationMapEntry: {
             "object_id": (1, singular, message, f"{o}.ObjectId"),
             "content_range": (2, singular, message, f"{o}.Range"),
         },
-        b5_chat_pb2.TextRun: {"content": (1, singular, string, None)},
-        b5_chat_pb2.ParagraphElement: {
+        chat_pb2.TextRun: {"content": (1, singular, string, None)},
+        chat_pb2.ParagraphElement: {
             "start_index": (1, singular, int32, None),
             "end_index": (2, singular, int32, None),
             "text_run": (3, singular, message, f"{o}.TextRun"),
         },
-        b5_chat_pb2.Paragraph: {
+        chat_pb2.Paragraph: {
             "elements": (1, repeated, message, f"{o}.ParagraphElement"),
         },
-        b5_chat_pb2.StructuralElement: {
+        chat_pb2.StructuralElement: {
             "start_index": (1, singular, int32, None),
             "end_index": (2, singular, int32, None),
             "paragraph": (3, singular, message, f"{o}.Paragraph"),
         },
-        b5_chat_pb2.Body: {
+        chat_pb2.Body: {
             "content": (1, repeated, message, f"{o}.StructuralElement"),
             "inline_object_locations": (
                 2,
@@ -119,37 +119,37 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
                 f"{o}.AnnotationMapEntry",
             ),
         },
-        b5_chat_pb2.TailwindDocFragment: {
+        chat_pb2.TailwindDocFragment: {
             "elements": (1, repeated, message, f"{o}.StructuralElement"),
         },
-        b5_chat_pb2.SourceRevision: {
+        chat_pb2.SourceRevision: {
             "source": (1, singular, message, f"{o}.SourceId"),
         },
-        b5_chat_pb2.CitationSource: {
+        chat_pb2.CitationSource: {
             "ingested_source": (1, singular, message, f"{o}.SourceRevision"),
         },
-        b5_chat_pb2.Citation: {
+        chat_pb2.Citation: {
             "fragment": (5, singular, message, f"{o}.TailwindDocFragment"),
             "source_attribution": (6, singular, message, f"{o}.CitationSource"),
             "object_id": (7, singular, message, f"{o}.ObjectId"),
         },
-        b5_chat_pb2.DocumentObject: {
+        chat_pb2.DocumentObject: {
             "object_id": (1, singular, message, f"{o}.ObjectId"),
             "citation": (2, singular, message, f"{o}.Citation"),
         },
-        b5_chat_pb2.TailwindDoc: {
+        chat_pb2.TailwindDoc: {
             "body": (1, singular, message, f"{o}.Body"),
             "objects": (4, repeated, message, f"{o}.DocumentObject"),
         },
-        b5_chat_pb2.AnswerResponse: {
+        chat_pb2.AnswerResponse: {
             "response": (1, singular, string, None),
             "conversation_turn_key": (3, singular, message, f"{o}.ConversationTurnKey"),
             "response_doc": (5, singular, message, f"{o}.TailwindDoc"),
         },
-        b5_chat_pb2.ActOnSourcesResponse: {
+        chat_pb2.ActOnSourcesResponse: {
             "response": (1, singular, message, f"{o}.AnswerResponse"),
         },
-        b5_chat_pb2.ChatHistoryMessage: {
+        chat_pb2.ChatHistoryMessage: {
             "message_id": (1, singular, string, None),
             "timestamp": (2, singular, message, "google.protobuf.Timestamp"),
             "observed_event_type": (3, singular, int32, None),
@@ -161,25 +161,25 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
                 f"{o}.ActOnSourcesResponse",
             ),
         },
-        b5_chat_pb2.ListChatSessionsRequest: {
+        chat_pb2.ListChatSessionsRequest: {
             "project_id": (3, singular, string, None),
         },
-        b5_chat_pb2.ListChatSessionsResponse: {
+        chat_pb2.ListChatSessionsResponse: {
             "sessions": (1, repeated, message, f"{COMMON_PACKAGE}.ChatSession"),
         },
-        b5_chat_pb2.ListChatTurnsRequest: {
+        chat_pb2.ListChatTurnsRequest: {
             "chat_session_id": (4, singular, string, None),
             "page_token": (6, singular, string, None),
         },
-        b5_chat_pb2.ListChatTurnsResponse: {
+        chat_pb2.ListChatTurnsResponse: {
             "chat_turns": (1, repeated, message, f"{o}.ChatHistoryMessage"),
             "next_page_token": (2, singular, string, None),
         },
-        b5_chat_pb2.DeleteChatTurnsRequest: {
+        chat_pb2.DeleteChatTurnsRequest: {
             "chat_session_id": (2, singular, string, None),
             "delete_all_history": (4, singular, boolean, None),
         },
-        b5_chat_pb2.GenerateFreeFormStreamedRequest: {
+        chat_pb2.GenerateFreeFormStreamedRequest: {
             "sources": (1, repeated, message, f"{o}.InputSource"),
             "user_query": (2, singular, string, None),
             "conversation_history": (3, repeated, message, f"{o}.ConversationEvent"),
@@ -188,7 +188,7 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
             "project_id": (8, singular, string, None),
             "origin": (9, singular, enum, f"{o}.QueryOrigin"),
         },
-        b5_chat_pb2.GenerateFreeFormStreamedResponse: {
+        chat_pb2.GenerateFreeFormStreamedResponse: {
             "answer": (1, singular, message, f"{o}.AnswerResponse"),
             "is_final_response": (5, singular, boolean, None),
         },
@@ -198,13 +198,13 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
         message_type.DESCRIPTOR.name
         for message_type in expected
         if message_type is not sources_pb2.InputSource
-    } == set(b5_chat_pb2.DESCRIPTOR.message_types_by_name)
+    } == set(chat_pb2.DESCRIPTOR.message_types_by_name)
     for message_type, fields in expected.items():
         assert _field_shapes(message_type) == fields
 
 
 def test_b5_enum_names_and_numbers_match_checked_in_evidence() -> None:
-    assert {value.name: value.number for value in b5_chat_pb2.QueryOrigin.DESCRIPTOR.values} == {
+    assert {value.name: value.number for value in chat_pb2.QueryOrigin.DESCRIPTOR.values} == {
         "QUERY_ORIGIN_UNSPECIFIED": 0,
         "QUERY_ORIGIN_CHAT_TEXT_BOX": 1,
         "QUERY_ORIGIN_SUGGESTION_CHIP": 2,
@@ -215,7 +215,7 @@ def test_b5_enum_names_and_numbers_match_checked_in_evidence() -> None:
         "QUERY_ORIGIN_LINK_SERVICE": 7,
         "QUERY_ORIGIN_ARTIFACT_VIEWER": 8,
     }
-    nested = b5_chat_pb2.ConversationEvent.ConversationEventType.DESCRIPTOR
+    nested = chat_pb2.ConversationEvent.ConversationEventType.DESCRIPTOR
     assert {value.name: value.number for value in nested.values} == {
         "EVENT_TYPE_UNKNOWN": 0,
         "USER_QUERY": 1,
@@ -229,14 +229,14 @@ def test_b5_descriptor_fixture_matches_generated_file_descriptors() -> None:
     )
     files = {file.name: file for file in descriptor_set.file}
     assert {
-        "google/internal/labs/tailwind/orchestration/v1/b1_read.proto",
-        "google/internal/labs/tailwind/orchestration/v1/b5_chat.proto",
+        "google/internal/labs/tailwind/orchestration/v1/read.proto",
+        "google/internal/labs/tailwind/orchestration/v1/chat.proto",
         "google/internal/labs/tailwind/v1/source_settings.proto",
         "google/protobuf/timestamp.proto",
         "labs/language/tailwind/common/protos/chat_history.proto",
     } <= set(files)
-    assert _without_implicit_json_names(files[b5_chat_pb2.DESCRIPTOR.name]) == (
-        descriptor_pb2.FileDescriptorProto.FromString(b5_chat_pb2.DESCRIPTOR.serialized_pb)
+    assert _without_implicit_json_names(files[chat_pb2.DESCRIPTOR.name]) == (
+        descriptor_pb2.FileDescriptorProto.FromString(chat_pb2.DESCRIPTOR.serialized_pb)
     )
     assert _without_implicit_json_names(files[chat_history_pb2.DESCRIPTOR.name]) == (
         descriptor_pb2.FileDescriptorProto.FromString(chat_history_pb2.DESCRIPTOR.serialized_pb)
@@ -246,11 +246,11 @@ def test_b5_descriptor_fixture_matches_generated_file_descriptors() -> None:
 def test_checked_in_b5_wire_fixture_round_trips_without_unknown_semantics() -> None:
     fixture = json.loads((FIXTURES / "b5_chat_wire.json").read_text(encoding="utf-8"))
     types = {
-        "generate_request": b5_chat_pb2.GenerateFreeFormStreamedRequest,
-        "partial_frame": b5_chat_pb2.GenerateFreeFormStreamedResponse,
-        "final_frame": b5_chat_pb2.GenerateFreeFormStreamedResponse,
-        "history_response": b5_chat_pb2.ListChatTurnsResponse,
-        "sessions_response": b5_chat_pb2.ListChatSessionsResponse,
+        "generate_request": chat_pb2.GenerateFreeFormStreamedRequest,
+        "partial_frame": chat_pb2.GenerateFreeFormStreamedResponse,
+        "final_frame": chat_pb2.GenerateFreeFormStreamedResponse,
+        "history_response": chat_pb2.ListChatTurnsResponse,
+        "sessions_response": chat_pb2.ListChatSessionsResponse,
     }
     decoded = {}
     for name, message_type in types.items():
@@ -262,8 +262,8 @@ def test_checked_in_b5_wire_fixture_round_trips_without_unknown_semantics() -> N
     request = decoded["generate_request"]
     assert request.user_message_id == "00000000-0000-4000-8000-000000000099"
     assert [(event.text, event.type) for event in request.conversation_history] == [
-        ("Cached answer.", b5_chat_pb2.ConversationEvent.GENERATED_RESPONSE),
-        ("Cached question?", b5_chat_pb2.ConversationEvent.USER_QUERY),
+        ("Cached answer.", chat_pb2.ConversationEvent.GENERATED_RESPONSE),
+        ("Cached question?", chat_pb2.ConversationEvent.USER_QUERY),
     ]
     assert decoded["partial_frame"].is_final_response is False
     assert decoded["final_frame"].is_final_response is True

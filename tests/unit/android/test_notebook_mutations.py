@@ -18,9 +18,9 @@ from notebooklm._android.notebooks import (
     AndroidNotebooksAPI,
 )
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
-    b1_read_pb2,
+    read_pb2,
 )
-from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import b2_notebooks_pb2
+from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import notebooks_pb2
 from notebooklm._android.session import AndroidSession
 from notebooklm._android.sources import AndroidSourcesAPI
 from notebooklm._android.upload import AndroidUploadPipeline
@@ -49,8 +49,8 @@ class SequenceTransport:
         return outcome
 
 
-def _project(project_id: str, title: str) -> b1_read_pb2.Project:
-    return b1_read_pb2.Project(id=project_id, title=title)
+def _project(project_id: str, title: str) -> read_pb2.Project:
+    return read_pb2.Project(id=project_id, title=title)
 
 
 def _api(transport: SequenceTransport) -> AndroidNotebooksAPI:
@@ -68,7 +68,7 @@ async def test_create_keeps_base_baseline_then_single_send_workflow() -> None:
     transport = SequenceTransport(
         {
             LIST_RECENT_PROJECTS_METHOD: [
-                b1_read_pb2.ListRecentlyViewedProjectsResponse(
+                read_pb2.ListRecentlyViewedProjectsResponse(
                     projects=[_project("old", "Existing")]
                 )
             ],
@@ -84,8 +84,8 @@ async def test_create_keeps_base_baseline_then_single_send_workflow() -> None:
         CREATE_PROJECT_METHOD,
     ]
     _, request, kwargs = transport.calls[1]
-    assert request == b2_notebooks_pb2.WireCreateProjectRequest(name="Created")
-    assert kwargs == {"replay_safe": False, "response_type": b1_read_pb2.Project}
+    assert request == notebooks_pb2.WireCreateProjectRequest(name="Created")
+    assert kwargs == {"replay_safe": False, "response_type": read_pb2.Project}
 
 
 @pytest.mark.asyncio
@@ -94,8 +94,8 @@ async def test_create_transport_loss_uses_base_probe_without_replaying_send() ->
     transport = SequenceTransport(
         {
             LIST_RECENT_PROJECTS_METHOD: [
-                b1_read_pb2.ListRecentlyViewedProjectsResponse(),
-                b1_read_pb2.ListRecentlyViewedProjectsResponse(projects=[created]),
+                read_pb2.ListRecentlyViewedProjectsResponse(),
+                read_pb2.ListRecentlyViewedProjectsResponse(projects=[created]),
             ],
             CREATE_PROJECT_METHOD: [
                 ServerError("lost response", method_id=CREATE_PROJECT_METHOD, rpc_code=14)
@@ -119,7 +119,7 @@ async def test_delete_sends_one_id_and_never_replays() -> None:
     assert await _api(transport).delete("notebook-1") is None
 
     _, request, kwargs = transport.calls[0]
-    assert request == b2_notebooks_pb2.WireDeleteProjectsRequest(project_ids=["notebook-1"])
+    assert request == notebooks_pb2.WireDeleteProjectsRequest(project_ids=["notebook-1"])
     assert kwargs == {"replay_safe": False, "response_type": Empty}
 
 
@@ -159,15 +159,15 @@ async def test_title_only_update_decodes_bare_project_without_followup_read() ->
     assert updated.title == "Renamed"
     assert len(transport.calls) == 1
     _, request, kwargs = transport.calls[0]
-    assert request == b2_notebooks_pb2.WireMutateProjectRequest(
+    assert request == notebooks_pb2.WireMutateProjectRequest(
         project_id="notebook-1",
         mutations=[
-            b2_notebooks_pb2.WireProjectMutation(
-                change_property=b2_notebooks_pb2.WireProjectChangeProperty(new_title="Renamed")
+            notebooks_pb2.WireProjectMutation(
+                change_property=notebooks_pb2.WireProjectChangeProperty(new_title="Renamed")
             )
         ],
     )
-    assert kwargs == {"replay_safe": False, "response_type": b1_read_pb2.Project}
+    assert kwargs == {"replay_safe": False, "response_type": read_pb2.Project}
 
 
 @pytest.mark.asyncio
@@ -209,11 +209,11 @@ async def test_copy_validates_then_decodes_one_bare_project_response() -> None:
 
     assert copied.id == "copy-1"
     _, request, kwargs = transport.calls[0]
-    assert request == b2_notebooks_pb2.WireCopyProjectRequest(
+    assert request == notebooks_pb2.WireCopyProjectRequest(
         source_project_id="source-1",
         title="Copy",
     )
-    assert kwargs == {"replay_safe": False, "response_type": b1_read_pb2.Project}
+    assert kwargs == {"replay_safe": False, "response_type": read_pb2.Project}
 
     for notebook_id, title in [("", "Copy"), ("source-1", ""), ("source-1", "  ")]:
         with pytest.raises(ValidationError):
@@ -260,13 +260,13 @@ async def test_copy_lost_response_is_ambiguous_and_never_replayed() -> None:
     assert transport.calls[0][2]["replay_safe"] is False
 
 
-def _guide_response() -> b2_notebooks_pb2.WireGenerateNotebookGuideResponse:
-    return b2_notebooks_pb2.WireGenerateNotebookGuideResponse(
-        notebook_guide=b2_notebooks_pb2.WireNotebookGuide(
-            summary=b2_notebooks_pb2.WireNotebookSummary(text_summary="A summary"),
-            suggested_topics=b2_notebooks_pb2.WireSuggestedTopics(
+def _guide_response() -> notebooks_pb2.WireGenerateNotebookGuideResponse:
+    return notebooks_pb2.WireGenerateNotebookGuideResponse(
+        notebook_guide=notebooks_pb2.WireNotebookGuide(
+            summary=notebooks_pb2.WireNotebookSummary(text_summary="A summary"),
+            suggested_topics=notebooks_pb2.WireSuggestedTopics(
                 topics=[
-                    b2_notebooks_pb2.WireSuggestedTopic(
+                    notebooks_pb2.WireSuggestedTopic(
                         question="What happened?",
                         prompt="Explain what happened",
                     )
@@ -291,10 +291,10 @@ async def test_summary_and_description_each_make_one_nonreplayed_stateful_call()
         SuggestedTopic(question="What happened?", prompt="Explain what happened")
     ]
     for _, request, kwargs in transport.calls:
-        assert request == b2_notebooks_pb2.WireGenerateNotebookGuideRequest(project_id="notebook-1")
+        assert request == notebooks_pb2.WireGenerateNotebookGuideRequest(project_id="notebook-1")
         assert kwargs == {
             "replay_safe": False,
-            "response_type": b2_notebooks_pb2.WireGenerateNotebookGuideResponse,
+            "response_type": notebooks_pb2.WireGenerateNotebookGuideResponse,
         }
 
 

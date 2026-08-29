@@ -27,14 +27,14 @@ from .codecs.notebooks import (
 )
 from .codecs.sources import decode_sources
 from .errors import unsupported_operation
-from .proto.google.internal.labs.tailwind.orchestration.v1 import b1_read_pb2
-from .proto.notebooklm.internal.android.wire.v1 import b2_notebooks_pb2
+from .proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
+from .proto.notebooklm.internal.android.wire.v1 import notebooks_pb2
 from .session import AndroidSession
 from .sources import AndroidSourcesAPI
 
 logger = logging.getLogger(__name__)
-_PROTO = cast(Any, b1_read_pb2)
-_WIRE = cast(Any, b2_notebooks_pb2)
+_PROTO = cast(Any, read_pb2)
+_WIRE = cast(Any, notebooks_pb2)
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 GET_PROJECT_METHOD = f"/{_SERVICE}/GetProject"

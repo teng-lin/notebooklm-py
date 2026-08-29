@@ -21,11 +21,11 @@ from notebooklm._android.artifacts import (
 )
 from notebooklm._android.assets import AndroidAssetDownloadService
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
-    b1_read_pb2,
-    b4_artifacts_pb2,
+    artifacts_pb2,
+    read_pb2,
 )
 from notebooklm._android.proto.notebooklm.android.internal.v1 import (
-    b4_report_suggestions_pb2,
+    report_suggestions_pb2,
 )
 from notebooklm._android.session import AndroidSession
 from notebooklm._artifacts import ArtifactsAPI
@@ -47,7 +47,7 @@ from notebooklm.exceptions import (
 )
 from notebooklm.types import Artifact, ArtifactType
 
-_PROTO = b4_artifacts_pb2
+_PROTO = artifacts_pb2
 
 
 class FakeSession:
@@ -162,7 +162,7 @@ def _graph(
             LIST_ARTIFACTS_METHOD: _PROTO.ListArtifactsResponse(artifacts=studio or []),
             DELETE_ARTIFACT_METHOD: empty_pb2.Empty(),
             GENERATE_REPORT_SUGGESTIONS_METHOD: (
-                b4_report_suggestions_pb2.GenerateReportSuggestionsResponseWire()
+                report_suggestions_pb2.GenerateReportSuggestionsResponseWire()
             ),
         }
     )
@@ -659,15 +659,15 @@ async def test_rename_rejects_wrong_bare_update_identity_without_replay() -> Non
 async def test_report_suggestions_use_local_wire_overlay_and_preserve_defaulted_rows() -> None:
     session, _, _, _, api = _graph()
     session.responses[GENERATE_REPORT_SUGGESTIONS_METHOD] = (
-        b4_report_suggestions_pb2.GenerateReportSuggestionsResponseWire(
+        report_suggestions_pb2.GenerateReportSuggestionsResponseWire(
             suggestions=[
-                b4_report_suggestions_pb2.ReportSuggestionWire(
+                report_suggestions_pb2.ReportSuggestionWire(
                     title="Brief",
                     description="A focused report",
                     prompt="Write the report",
                     audience_level=1,
                 ),
-                b4_report_suggestions_pb2.ReportSuggestionWire(title="missing prompt"),
+                report_suggestions_pb2.ReportSuggestionWire(title="missing prompt"),
             ]
         )
     )
@@ -680,13 +680,13 @@ async def test_report_suggestions_use_local_wire_overlay_and_preserve_defaulted_
     ]
     method, request, kwargs = session.calls[0]
     assert method == GENERATE_REPORT_SUGGESTIONS_METHOD
-    assert request == b4_report_suggestions_pb2.GenerateReportSuggestionsRequestWire(
+    assert request == report_suggestions_pb2.GenerateReportSuggestionsRequestWire(
         project_id="notebook-1"
     )
     assert kwargs == {
         "replay_safe": True,
         "response_type": (
-            b4_report_suggestions_pb2.GenerateReportSuggestionsResponseWire
+            report_suggestions_pb2.GenerateReportSuggestionsResponseWire
         ),
     }
 
@@ -696,7 +696,7 @@ def test_artifact_source_uses_the_imported_exact_package_source_id() -> None:
         project_id="notebook-1",
         artifact=_PROTO.Artifact(
             sources=[
-                _PROTO.ArtifactSource(source_id=b1_read_pb2.SourceId(id="source-1"))
+                _PROTO.ArtifactSource(source_id=read_pb2.SourceId(id="source-1"))
             ]
         ),
     )

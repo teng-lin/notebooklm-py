@@ -29,33 +29,44 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = REPO_ROOT / "src" / "notebooklm" / "_android" / "proto_src"
 OUTPUT_ROOT = REPO_ROOT / "src" / "notebooklm" / "_android" / "proto"
 DESCRIPTOR_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "android" / "android_descriptor_set.pb"
+READ_DESCRIPTOR_FIXTURE = (
+    REPO_ROOT / "tests" / "fixtures" / "android" / "read_descriptor_set.pb"
+)
+DESCRIPTOR_FIXTURE_ROOT = DESCRIPTOR_FIXTURE.parent
+EXPECTED_DESCRIPTOR_FIXTURES = frozenset(
+    {DESCRIPTOR_FIXTURE.name, READ_DESCRIPTOR_FIXTURE.name}
+)
+READ_PROTO_FILES = (
+    Path("google/internal/labs/tailwind/orchestration/v1/read.proto"),
+    Path("google/internal/labs/tailwind/v1/source_settings.proto"),
+)
 PROTO_FILES = (
-    Path("google/internal/labs/tailwind/orchestration/v1/b1_read.proto"),
+    Path("google/internal/labs/tailwind/orchestration/v1/read.proto"),
     Path("google/internal/labs/tailwind/orchestration/v1/sources.proto"),
-    Path("google/internal/labs/tailwind/orchestration/v1/b4_artifacts.proto"),
-    Path("google/internal/labs/tailwind/orchestration/v1/b5_chat.proto"),
-    Path("google/internal/labs/tailwind/orchestration/v1/b6_notes.proto"),
+    Path("google/internal/labs/tailwind/orchestration/v1/artifacts.proto"),
+    Path("google/internal/labs/tailwind/orchestration/v1/chat.proto"),
+    Path("google/internal/labs/tailwind/orchestration/v1/notes.proto"),
     Path("google/internal/labs/tailwind/v1/source_settings.proto"),
     Path("labs/language/tailwind/common/protos/chat_history.proto"),
     Path("labs/language/tailwind/common/protos/metadata.proto"),
     Path("labs/language/tailwind/common/protos/provenance.proto"),
-    Path("notebooklm/android/internal/v1/b4_report_suggestions.proto"),
-    Path("notebooklm/android/wire/v1/b6_sharing.proto"),
-    Path("notebooklm/internal/android/wire/v1/b2_notebooks.proto"),
+    Path("notebooklm/android/internal/v1/report_suggestions.proto"),
+    Path("notebooklm/android/wire/v1/sharing.proto"),
+    Path("notebooklm/internal/android/wire/v1/notebooks.proto"),
     Path("notebooklm/internal/android/wire/source_mutation_wire.proto"),
 )
 EXPECTED_GENERATED = frozenset(
     {
-        Path("google/internal/labs/tailwind/orchestration/v1/b1_read_pb2.py"),
-        Path("google/internal/labs/tailwind/orchestration/v1/b1_read_pb2_grpc.py"),
+        Path("google/internal/labs/tailwind/orchestration/v1/read_pb2.py"),
+        Path("google/internal/labs/tailwind/orchestration/v1/read_pb2_grpc.py"),
         Path("google/internal/labs/tailwind/orchestration/v1/sources_pb2.py"),
         Path("google/internal/labs/tailwind/orchestration/v1/sources_pb2_grpc.py"),
-        Path("google/internal/labs/tailwind/orchestration/v1/b4_artifacts_pb2.py"),
-        Path("google/internal/labs/tailwind/orchestration/v1/b4_artifacts_pb2_grpc.py"),
-        Path("google/internal/labs/tailwind/orchestration/v1/b5_chat_pb2.py"),
-        Path("google/internal/labs/tailwind/orchestration/v1/b5_chat_pb2_grpc.py"),
-        Path("google/internal/labs/tailwind/orchestration/v1/b6_notes_pb2.py"),
-        Path("google/internal/labs/tailwind/orchestration/v1/b6_notes_pb2_grpc.py"),
+        Path("google/internal/labs/tailwind/orchestration/v1/artifacts_pb2.py"),
+        Path("google/internal/labs/tailwind/orchestration/v1/artifacts_pb2_grpc.py"),
+        Path("google/internal/labs/tailwind/orchestration/v1/chat_pb2.py"),
+        Path("google/internal/labs/tailwind/orchestration/v1/chat_pb2_grpc.py"),
+        Path("google/internal/labs/tailwind/orchestration/v1/notes_pb2.py"),
+        Path("google/internal/labs/tailwind/orchestration/v1/notes_pb2_grpc.py"),
         Path("google/internal/labs/tailwind/v1/source_settings_pb2.py"),
         Path("google/internal/labs/tailwind/v1/source_settings_pb2_grpc.py"),
         Path("labs/language/tailwind/common/protos/chat_history_pb2.py"),
@@ -64,16 +75,17 @@ EXPECTED_GENERATED = frozenset(
         Path("labs/language/tailwind/common/protos/metadata_pb2_grpc.py"),
         Path("labs/language/tailwind/common/protos/provenance_pb2.py"),
         Path("labs/language/tailwind/common/protos/provenance_pb2_grpc.py"),
-        Path("notebooklm/android/internal/v1/b4_report_suggestions_pb2.py"),
-        Path("notebooklm/android/internal/v1/b4_report_suggestions_pb2_grpc.py"),
-        Path("notebooklm/android/wire/v1/b6_sharing_pb2.py"),
-        Path("notebooklm/android/wire/v1/b6_sharing_pb2_grpc.py"),
-        Path("notebooklm/internal/android/wire/v1/b2_notebooks_pb2.py"),
-        Path("notebooklm/internal/android/wire/v1/b2_notebooks_pb2_grpc.py"),
+        Path("notebooklm/android/internal/v1/report_suggestions_pb2.py"),
+        Path("notebooklm/android/internal/v1/report_suggestions_pb2_grpc.py"),
+        Path("notebooklm/android/wire/v1/sharing_pb2.py"),
+        Path("notebooklm/android/wire/v1/sharing_pb2_grpc.py"),
+        Path("notebooklm/internal/android/wire/v1/notebooks_pb2.py"),
+        Path("notebooklm/internal/android/wire/v1/notebooks_pb2_grpc.py"),
         Path("notebooklm/internal/android/wire/source_mutation_wire_pb2.py"),
         Path("notebooklm/internal/android/wire/source_mutation_wire_pb2_grpc.py"),
     }
 )
+EXPECTED_PROTO_SOURCES = frozenset(PROTO_FILES)
 
 _IMPORT_RELOCATIONS = (
     (
@@ -119,12 +131,13 @@ def _verify_toolchain() -> None:
         raise RuntimeError("Android protobuf toolchain mismatch:\n- " + "\n- ".join(problems))
 
 
-def _compile(temp_root: Path) -> tuple[Path, Path]:
+def _compile(temp_root: Path) -> tuple[Path, Path, Path]:
     import grpc_tools
     from grpc_tools import protoc
 
     generated_root = temp_root / "generated"
     descriptor_path = temp_root / "android_descriptor_set.pb"
+    read_descriptor_path = temp_root / "read_descriptor_set.pb"
     generated_root.mkdir(parents=True)
     bundled_well_known_types = Path(grpc_tools.__file__).resolve().parent / "_proto"
     args = [
@@ -141,6 +154,21 @@ def _compile(temp_root: Path) -> tuple[Path, Path]:
     if result != 0:
         raise RuntimeError(f"grpc_tools.protoc failed with exit status {result}")
 
+    read_result = protoc.main(
+        [
+            "grpc_tools.protoc",
+            f"-I{SOURCE_ROOT}",
+            f"-I{bundled_well_known_types}",
+            "--include_imports",
+            f"--descriptor_set_out={read_descriptor_path}",
+            *(str(path) for path in sorted(READ_PROTO_FILES)),
+        ]
+    )
+    if read_result != 0:
+        raise RuntimeError(
+            f"grpc_tools.protoc read descriptor failed with exit status {read_result}"
+        )
+
     _relocate_generated_imports(generated_root)
     actual_generated = _generated_files(generated_root)
     if actual_generated != EXPECTED_GENERATED:
@@ -149,7 +177,7 @@ def _compile(temp_root: Path) -> tuple[Path, Path]:
             f"expected={sorted(map(str, EXPECTED_GENERATED))}, "
             f"actual={sorted(map(str, actual_generated))}"
         )
-    return generated_root, descriptor_path
+    return generated_root, descriptor_path, read_descriptor_path
 
 
 def _generated_files(root: Path) -> frozenset[Path]:
@@ -158,6 +186,24 @@ def _generated_files(root: Path) -> frozenset[Path]:
         for path in root.rglob("*.py")
         if path.name.endswith(("_pb2.py", "_pb2_grpc.py"))
     )
+
+
+def _proto_sources(root: Path) -> frozenset[Path]:
+    return frozenset(path.relative_to(root) for path in root.rglob("*.proto"))
+
+
+def _descriptor_fixtures(root: Path) -> frozenset[str]:
+    return frozenset(path.name for path in root.glob("*_descriptor_set.pb"))
+
+
+def _verify_source_closure() -> None:
+    actual = _proto_sources(SOURCE_ROOT)
+    if actual != EXPECTED_PROTO_SOURCES:
+        raise RuntimeError(
+            "checked-in proto source set differs from the Android closure: "
+            f"expected={sorted(map(str, EXPECTED_PROTO_SOURCES))}, "
+            f"actual={sorted(map(str, actual))}"
+        )
 
 
 def _relocate_generated_imports(generated_root: Path) -> None:
@@ -193,7 +239,7 @@ def _compare_text(expected: Path, actual: Path, relative: Path) -> list[str]:
     return [diff]
 
 
-def _check(generated_root: Path, descriptor_path: Path) -> None:
+def _check(generated_root: Path, descriptor_path: Path, read_descriptor_path: Path) -> None:
     problems: list[str] = []
     checked_in = _generated_files(OUTPUT_ROOT)
     if checked_in != EXPECTED_GENERATED:
@@ -210,17 +256,39 @@ def _check(generated_root: Path, descriptor_path: Path) -> None:
     elif DESCRIPTOR_FIXTURE.read_bytes() != descriptor_path.read_bytes():
         problems.append("checked-in Android descriptor set differs from pinned regeneration")
 
+    if not READ_DESCRIPTOR_FIXTURE.is_file():
+        problems.append(
+            f"missing read descriptor fixture: {READ_DESCRIPTOR_FIXTURE.relative_to(REPO_ROOT)}"
+        )
+    elif READ_DESCRIPTOR_FIXTURE.read_bytes() != read_descriptor_path.read_bytes():
+        problems.append("checked-in Android read descriptor set differs from pinned regeneration")
+
+    descriptor_fixtures = _descriptor_fixtures(DESCRIPTOR_FIXTURE_ROOT)
+    if descriptor_fixtures != EXPECTED_DESCRIPTOR_FIXTURES:
+        problems.append(
+            "checked-in descriptor fixture set differs from the Android closure: "
+            f"expected={sorted(EXPECTED_DESCRIPTOR_FIXTURES)}, "
+            f"actual={sorted(descriptor_fixtures)}"
+        )
+
     if problems:
         raise RuntimeError("Android protobuf regeneration check failed:\n" + "\n".join(problems))
 
 
-def _write(generated_root: Path, descriptor_path: Path) -> None:
+def _write(generated_root: Path, descriptor_path: Path, read_descriptor_path: Path) -> None:
+    for relative in sorted(_generated_files(OUTPUT_ROOT) - EXPECTED_GENERATED):
+        (OUTPUT_ROOT / relative).unlink()
     for relative in sorted(EXPECTED_GENERATED):
         destination = OUTPUT_ROOT / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes((generated_root / relative).read_bytes())
     DESCRIPTOR_FIXTURE.parent.mkdir(parents=True, exist_ok=True)
     DESCRIPTOR_FIXTURE.write_bytes(descriptor_path.read_bytes())
+    READ_DESCRIPTOR_FIXTURE.write_bytes(read_descriptor_path.read_bytes())
+    for fixture_name in sorted(
+        _descriptor_fixtures(DESCRIPTOR_FIXTURE_ROOT) - EXPECTED_DESCRIPTOR_FIXTURES
+    ):
+        (DESCRIPTOR_FIXTURE_ROOT / fixture_name).unlink()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -239,14 +307,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        _verify_source_closure()
         _verify_toolchain()
         with tempfile.TemporaryDirectory(prefix="notebooklm-android-proto-") as temp_dir:
-            generated_root, descriptor_path = _compile(Path(temp_dir))
+            generated_root, descriptor_path, read_descriptor_path = _compile(Path(temp_dir))
             if args.write:
-                _write(generated_root, descriptor_path)
+                _write(generated_root, descriptor_path, read_descriptor_path)
                 print("Updated checked-in Android protobuf artifacts")
             else:
-                _check(generated_root, descriptor_path)
+                _check(generated_root, descriptor_path, read_descriptor_path)
                 print("OK: Android protobuf descriptors and generated tree are deterministic")
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)

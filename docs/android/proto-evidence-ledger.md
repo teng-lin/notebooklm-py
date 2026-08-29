@@ -74,7 +74,7 @@ reuse the B1 exact-package message, and empty deletion uses `google.protobuf.Emp
 ## B4 service ledger
 
 Every Google-package FQN, field name, tag, type and cardinality compiled in
-`b4_artifacts.proto` was independently checked against the exact-package archived
+`artifacts.proto` was independently checked against the exact-package archived
 `supported.proto` whose SHA-256 is pinned above. References to the flattened `schema.proto` in
 source comments are corroborating Dart-symbol evidence, never the authority for a Google FQN.
 The B4 overlay intentionally declares no second protobuf `service`: protobuf cannot reopen the
@@ -93,7 +93,7 @@ classes.
 
 ## B4 exact artifact field ledger
 
-This table is exhaustive for `b4_artifacts.proto`; fields present in the archived message but not
+This table is exhaustive for `artifacts.proto`; fields present in the archived message but not
 needed by B4 are deliberately left unknown. “Exact” means the pinned exact-package archive, not a
 field inferred from its plausible Dart name.
 
@@ -271,8 +271,8 @@ shows context is optional; the implementation does not fabricate one.
 ### B5 field ledger
 
 The compile inputs are
-[`b5_chat.proto`](../../src/notebooklm/_android/proto_src/google/internal/labs/tailwind/orchestration/v1/b5_chat.proto)
-(SHA-256 `e59dc263d0ec4f03a67aef9b82fb1a82d75eed4dc58ac7d0ac56bdd14b991f27`) and
+[`chat.proto`](../../src/notebooklm/_android/proto_src/google/internal/labs/tailwind/orchestration/v1/chat.proto)
+(SHA-256 `a4d1a93ccb15ecc8f7328b3a9ede68e71ac4921401cf023fe729285b798b887f`) and
 [`chat_history.proto`](../../src/notebooklm/_android/proto_src/labs/language/tailwind/common/protos/chat_history.proto)
 (SHA-256 `7e8551fe837ac30f80d3d5f5d07f33c1c1dd24970b33c558c86b4dba799d9bb8`).
 The shared `InputSource` declaration is imported from

@@ -26,12 +26,12 @@ from .codecs.notes import (
     decode_note_entries,
 )
 from .errors import unsupported_operation
-from .proto.google.internal.labs.tailwind.orchestration.v1 import b6_notes_pb2
-from .proto.notebooklm.android.wire.v1 import b6_sharing_pb2
+from .proto.google.internal.labs.tailwind.orchestration.v1 import notes_pb2
+from .proto.notebooklm.android.wire.v1 import sharing_pb2
 from .session import AndroidSession
 
-_PROTO = cast(Any, b6_notes_pb2)
-_WIRE = cast(Any, b6_sharing_pb2)
+_PROTO = cast(Any, notes_pb2)
+_WIRE = cast(Any, sharing_pb2)
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 GET_NOTES_METHOD = f"/{_SERVICE}/GetNotes"

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package notebooklm.internal.android.wire;
 
-import "google/internal/labs/tailwind/orchestration/v1/b1_read.proto";
+import "google/internal/labs/tailwind/orchestration/v1/read.proto";
 
 // Repository-local wire-equivalent overlay. The mobile route and serialized
 // tags are live-proven, but no exact request package/FQN descriptor survived.

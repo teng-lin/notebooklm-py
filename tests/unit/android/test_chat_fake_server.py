@@ -14,7 +14,7 @@ import pytest
 from notebooklm._android.auth import BearerCredential
 from notebooklm._android.chat import AndroidChatAPI
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
-    b5_chat_pb2,
+    chat_pb2,
     sources_pb2,
 )
 from notebooklm._android.proto.labs.language.tailwind.common.protos import chat_history_pb2
@@ -62,23 +62,23 @@ class _ChatService:
         del context
         self.list_requests.append(request)
         if not self.asked:
-            return b5_chat_pb2.ListChatSessionsResponse()
-        return b5_chat_pb2.ListChatSessionsResponse(
+            return chat_pb2.ListChatSessionsResponse()
+        return chat_pb2.ListChatSessionsResponse(
             sessions=[chat_history_pb2.ChatSession(chat_session_id="conversation-1")]
         )
 
     async def generate(self, request: Any, context: Any):
         self.generate_requests.append(request)
-        yield b5_chat_pb2.GenerateFreeFormStreamedResponse(
-            answer=b5_chat_pb2.AnswerResponse(response="Cumulative partial"),
+        yield chat_pb2.GenerateFreeFormStreamedResponse(
+            answer=chat_pb2.AnswerResponse(response="Cumulative partial"),
             is_final_response=False,
         )
         if self.fail_auth_after_partial:
             await context.abort(grpc.StatusCode.UNAUTHENTICATED, "expired test credential")
             return
         self.asked = True
-        yield b5_chat_pb2.GenerateFreeFormStreamedResponse(
-            answer=b5_chat_pb2.AnswerResponse(response="Cumulative final"),
+        yield chat_pb2.GenerateFreeFormStreamedResponse(
+            answer=chat_pb2.AnswerResponse(response="Cumulative final"),
             is_final_response=True,
         )
 
@@ -89,14 +89,14 @@ def _handler(service: _ChatService) -> Any:
         {
             "ListChatSessions": grpc.unary_unary_rpc_method_handler(
                 service.list_sessions,
-                request_deserializer=b5_chat_pb2.ListChatSessionsRequest.FromString,
-                response_serializer=b5_chat_pb2.ListChatSessionsResponse.SerializeToString,
+                request_deserializer=chat_pb2.ListChatSessionsRequest.FromString,
+                response_serializer=chat_pb2.ListChatSessionsResponse.SerializeToString,
             ),
             "GenerateFreeFormStreamed": grpc.unary_stream_rpc_method_handler(
                 service.generate,
-                request_deserializer=b5_chat_pb2.GenerateFreeFormStreamedRequest.FromString,
+                request_deserializer=chat_pb2.GenerateFreeFormStreamedRequest.FromString,
                 response_serializer=(
-                    b5_chat_pb2.GenerateFreeFormStreamedResponse.SerializeToString
+                    chat_pb2.GenerateFreeFormStreamedResponse.SerializeToString
                 ),
             ),
         },
@@ -164,16 +164,16 @@ async def test_base_ask_over_real_android_session_and_fake_grpc_server() -> None
     assert result.turn_number == 1
     assert len(service.list_requests) == 2
     assert service.list_requests == [
-        b5_chat_pb2.ListChatSessionsRequest(project_id="notebook-1"),
-        b5_chat_pb2.ListChatSessionsRequest(project_id="notebook-1"),
+        chat_pb2.ListChatSessionsRequest(project_id="notebook-1"),
+        chat_pb2.ListChatSessionsRequest(project_id="notebook-1"),
     ]
     assert service.generate_requests == [
-        b5_chat_pb2.GenerateFreeFormStreamedRequest(
+        chat_pb2.GenerateFreeFormStreamedRequest(
             sources=[sources_pb2.InputSource(source_id={"id": "source-1"})],
             user_query="Question?",
             user_message_id="00000000-0000-4000-8000-000000000123",
             project_id="notebook-1",
-            origin=b5_chat_pb2.QUERY_ORIGIN_CHAT_TEXT_BOX,
+            origin=chat_pb2.QUERY_ORIGIN_CHAT_TEXT_BOX,
         )
     ]
     # Only the two unary session lookups emit public RPC telemetry. B5's

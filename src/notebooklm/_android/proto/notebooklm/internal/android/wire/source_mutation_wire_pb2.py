@@ -22,20 +22,20 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
-from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import b1_read_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_b1__read__pb2
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n;notebooklm/internal/android/wire/source_mutation_wire.proto\x12 notebooklm.internal.android.wire\x1a<google/internal/labs/tailwind/orchestration/v1/b1_read.proto\"\x1c\n\x0b\x43hangeTitle\x12\r\n\x05title\x18\x01 \x01(\t\"U\n\x0eSourceMutation\x12\x43\n\x0c\x63hange_title\x18\x01 \x01(\x0b\x32-.notebooklm.internal.android.wire.ChangeTitle\"\xab\x01\n\x17MutateSourceWireRequest\x12K\n\tsource_id\x18\x02 \x01(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.SourceId\x12\x43\n\tmutations\x18\x03 \x03(\x0b\x32\x30.notebooklm.internal.android.wire.SourceMutationb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n;notebooklm/internal/android/wire/source_mutation_wire.proto\x12 notebooklm.internal.android.wire\x1a\x39google/internal/labs/tailwind/orchestration/v1/read.proto\"\x1c\n\x0b\x43hangeTitle\x12\r\n\x05title\x18\x01 \x01(\t\"U\n\x0eSourceMutation\x12\x43\n\x0c\x63hange_title\x18\x01 \x01(\x0b\x32-.notebooklm.internal.android.wire.ChangeTitle\"\xab\x01\n\x17MutateSourceWireRequest\x12K\n\tsource_id\x18\x02 \x01(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.SourceId\x12\x43\n\tmutations\x18\x03 \x03(\x0b\x32\x30.notebooklm.internal.android.wire.SourceMutationb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'notebooklm.internal.android.wire.source_mutation_wire_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_CHANGETITLE']._serialized_start=159
-  _globals['_CHANGETITLE']._serialized_end=187
-  _globals['_SOURCEMUTATION']._serialized_start=189
-  _globals['_SOURCEMUTATION']._serialized_end=274
-  _globals['_MUTATESOURCEWIREREQUEST']._serialized_start=277
-  _globals['_MUTATESOURCEWIREREQUEST']._serialized_end=448
+  _globals['_CHANGETITLE']._serialized_start=156
+  _globals['_CHANGETITLE']._serialized_end=184
+  _globals['_SOURCEMUTATION']._serialized_start=186
+  _globals['_SOURCEMUTATION']._serialized_end=271
+  _globals['_MUTATESOURCEWIREREQUEST']._serialized_start=274
+  _globals['_MUTATESOURCEWIREREQUEST']._serialized_end=445
 # @@protoc_insertion_point(module_scope)

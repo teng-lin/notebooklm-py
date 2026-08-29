@@ -18,7 +18,7 @@ from notebooklm._android.notebooks import (
     AndroidNotebooksAPI,
 )
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
-    b1_read_pb2,
+    read_pb2,
 )
 from notebooklm._android.proto.google.internal.labs.tailwind.v1 import source_settings_pb2
 from notebooklm._android.session import AndroidSession
@@ -79,15 +79,15 @@ def _source(
     drive_document_id: str | None = None,
     drive_status: int = 0,
     content_mime: str | None = None,
-) -> b1_read_pb2.Source:
-    metadata = b1_read_pb2.SourceMetadata(original_source_content_type=content_type)
+) -> read_pb2.Source:
+    metadata = read_pb2.SourceMetadata(original_source_content_type=content_type)
     if url is not None:
         metadata.webpage_metadata.url = url
     if drive_document_id is not None or content_mime is not None:
         metadata.google_drive_source_metadata.document_id = drive_document_id or ""
         metadata.google_drive_source_metadata.mime_type = content_mime or ""
-    return b1_read_pb2.Source(
-        source_id=b1_read_pb2.SourceId(id=source_id),
+    return read_pb2.Source(
+        source_id=read_pb2.SourceId(id=source_id),
         title=title,
         metadata=metadata,
         settings=source_settings_pb2.SourceSettings(
@@ -101,45 +101,45 @@ def _project(
     project_id: str = "notebook-1",
     *,
     title: str = "Android notebook",
-    sources: list[b1_read_pb2.Source] | None = None,
-) -> b1_read_pb2.Project:
-    return b1_read_pb2.Project(
+    sources: list[read_pb2.Source] | None = None,
+) -> read_pb2.Project:
+    return read_pb2.Project(
         id=project_id,
         title=title,
         emoji="",
-        metadata=b1_read_pb2.ProjectMetadata(
-            user_role=b1_read_pb2.PROJECT_ROLE_OWNER,
+        metadata=read_pb2.ProjectMetadata(
+            user_role=read_pb2.PROJECT_ROLE_OWNER,
             create_time=_timestamp(1_700_000_000, 123_000_000),
         ),
         sources=sources or [],
     )
 
 
-def _source_fixture() -> list[b1_read_pb2.Source]:
+def _source_fixture() -> list[read_pb2.Source]:
     return [
         _source(
             "url-1",
             title="Website",
-            content_type=b1_read_pb2.SOURCE_CONTENT_TYPE_URL,
+            content_type=read_pb2.SOURCE_CONTENT_TYPE_URL,
             status=source_settings_pb2.SOURCE_STATUS_COMPLETE,
             url="https://example.test/article",
         ),
         _source(
             "pdf-1",
             title="Paper",
-            content_type=b1_read_pb2.SOURCE_CONTENT_TYPE_PDF,
+            content_type=read_pb2.SOURCE_CONTENT_TYPE_PDF,
             status=source_settings_pb2.SOURCE_STATUS_PENDING,
         ),
         _source(
             "tentative-1",
             title="Draft",
-            content_type=b1_read_pb2.SOURCE_CONTENT_TYPE_MARKDOWN,
+            content_type=read_pb2.SOURCE_CONTENT_TYPE_MARKDOWN,
             status=source_settings_pb2.SOURCE_STATUS_TENTATIVE,
         ),
         _source(
             "drive-1",
             title="Drive file",
-            content_type=b1_read_pb2.SOURCE_CONTENT_TYPE_DRIVE,
+            content_type=read_pb2.SOURCE_CONTENT_TYPE_DRIVE,
             status=source_settings_pb2.SOURCE_STATUS_COMPLETE,
             drive_document_id="drive-document-1",
             drive_status=source_settings_pb2.DRIVE_SOURCE_STATUS_ACTIVE,
@@ -149,13 +149,13 @@ def _source_fixture() -> list[b1_read_pb2.Source]:
 
 
 def _graph(
-    project: b1_read_pb2.Project | None = None,
+    project: read_pb2.Project | None = None,
 ) -> tuple[FakeSession, AndroidSourcesAPI, AndroidNotebooksAPI]:
     selected = project or _project(sources=_source_fixture())
     fake = FakeSession(
         {
-            GET_PROJECT_METHOD: b1_read_pb2.GetProjectResponse(project=selected),
-            LIST_RECENT_PROJECTS_METHOD: b1_read_pb2.ListRecentlyViewedProjectsResponse(
+            GET_PROJECT_METHOD: read_pb2.GetProjectResponse(project=selected),
+            LIST_RECENT_PROJECTS_METHOD: read_pb2.ListRecentlyViewedProjectsResponse(
                 projects=[selected]
             ),
         }
@@ -237,32 +237,32 @@ async def test_notebook_requests_and_projection_are_exact() -> None:
 
     method, request, kwargs = fake.calls[0]
     assert method == LIST_RECENT_PROJECTS_METHOD
-    assert request == b1_read_pb2.ListRecentlyViewedProjectsRequest(
+    assert request == read_pb2.ListRecentlyViewedProjectsRequest(
         include_own_projects=True,
         include_audio_overview_ids=True,
     )
     assert kwargs == {
         "replay_safe": True,
-        "response_type": b1_read_pb2.ListRecentlyViewedProjectsResponse,
+        "response_type": read_pb2.ListRecentlyViewedProjectsResponse,
     }
 
     assert await notebooks.get("notebook-1") == notebook
     method, request, kwargs = fake.calls[1]
     assert method == GET_PROJECT_METHOD
-    assert request == b1_read_pb2.GetProjectRequest(
+    assert request == read_pb2.GetProjectRequest(
         project_id="notebook-1",
         include_audio_overview_ids=True,
     )
     assert kwargs == {
         "replay_safe": True,
-        "response_type": b1_read_pb2.GetProjectResponse,
+        "response_type": read_pb2.GetProjectResponse,
     }
 
 
 @pytest.mark.asyncio
 async def test_notebook_role_mapping_uses_names_and_unknown_degrades_to_none() -> None:
     project = _project()
-    project.metadata.user_role = b1_read_pb2.PROJECT_ROLE_WRITER
+    project.metadata.user_role = read_pb2.PROJECT_ROLE_WRITER
     _, _, notebooks = _graph(project)
     assert (await notebooks.get(project.id)).role is SharePermission.EDITOR
 
@@ -387,9 +387,9 @@ async def test_get_raw_is_known_field_snake_case_message_dict() -> None:
 @pytest.mark.asyncio
 async def test_get_source_ids_uses_one_read_and_first_duplicate_semantics() -> None:
     first = _source_fixture()[0]
-    duplicate = b1_read_pb2.Source()
+    duplicate = read_pb2.Source()
     duplicate.CopyFrom(first)
-    malformed = b1_read_pb2.Source(title="missing id")
+    malformed = read_pb2.Source(title="missing id")
     fake, _, notebooks = _graph(_project(sources=[first, duplicate, malformed]))
 
     assert await notebooks.get_source_ids("notebook-1") == ["url-1"]
@@ -424,13 +424,13 @@ async def test_source_codec_fixture_projects_status_kind_drive_and_order() -> No
     assert decoded[3].download_url is None
     method, request, kwargs = fake.calls[0]
     assert method == GET_PROJECT_METHOD
-    assert request == b1_read_pb2.GetProjectRequest(
+    assert request == read_pb2.GetProjectRequest(
         project_id="notebook-1",
         include_audio_overview_ids=True,
     )
     assert kwargs == {
         "replay_safe": True,
-        "response_type": b1_read_pb2.GetProjectResponse,
+        "response_type": read_pb2.GetProjectResponse,
     }
 
 
@@ -438,12 +438,12 @@ async def test_source_codec_fixture_projects_status_kind_drive_and_order() -> No
 async def test_checked_in_textproto_fixture_projects_through_both_adapters() -> None:
     response = text_format.Parse(
         (FIXTURES / "get_project_response.textproto").read_text(encoding="utf-8"),
-        b1_read_pb2.GetProjectResponse(),
+        read_pb2.GetProjectResponse(),
     )
     fake = FakeSession(
         {
             GET_PROJECT_METHOD: response,
-            LIST_RECENT_PROJECTS_METHOD: b1_read_pb2.ListRecentlyViewedProjectsResponse(
+            LIST_RECENT_PROJECTS_METHOD: read_pb2.ListRecentlyViewedProjectsResponse(
                 projects=[response.project]
             ),
         }
@@ -474,13 +474,13 @@ async def test_source_enum_mapping_is_name_based_not_android_integer_copy() -> N
     sheet = _source(
         "sheet-1",
         title="Sheet",
-        content_type=b1_read_pb2.SOURCE_CONTENT_TYPE_GOOGLE_SHEET,
+        content_type=read_pb2.SOURCE_CONTENT_TYPE_GOOGLE_SHEET,
         status=99,
         drive_status=99,
     )
     _, sources, _ = _graph(_project(sources=[sheet]))
     decoded = (await sources.list("notebook-1"))[0]
-    assert b1_read_pb2.SOURCE_CONTENT_TYPE_GOOGLE_SHEET == 7
+    assert read_pb2.SOURCE_CONTENT_TYPE_GOOGLE_SHEET == 7
     assert decoded.kind is SourceType.GOOGLE_SPREADSHEET
     assert decoded._type_code == 14
     assert decoded.status is SourceStatus.UNKNOWN
@@ -494,7 +494,7 @@ async def test_source_missing_id_default_skips_with_warning_and_strict_rejects(
     malformed = _source(
         "",
         title="sensitive title must not be logged",
-        content_type=b1_read_pb2.SOURCE_CONTENT_TYPE_URL,
+        content_type=read_pb2.SOURCE_CONTENT_TYPE_URL,
         status=source_settings_pb2.SOURCE_STATUS_COMPLETE,
     )
     valid = _source_fixture()[0]
@@ -512,9 +512,9 @@ async def test_source_missing_id_default_skips_with_warning_and_strict_rejects(
 @pytest.mark.asyncio
 async def test_source_duplicates_keep_first_and_strict_only_rejects_conflicts() -> None:
     first = _source_fixture()[0]
-    same = b1_read_pb2.Source()
+    same = read_pb2.Source()
     same.CopyFrom(first)
-    conflict = b1_read_pb2.Source()
+    conflict = read_pb2.Source()
     conflict.CopyFrom(first)
     conflict.title = "Conflicting title"
     _, sources, _ = _graph(_project(sources=[first, same, conflict]))
