@@ -118,6 +118,8 @@ def _make_web(
     cookie_persistence_path: Path | None = None,
     cookie_saver: Any = None,
     cookie_rotator: Any = _default_cookie_rotator,
+    canonical_save_error: BaseException | None = None,
+    async_client_factory: Any = httpx.AsyncClient,
 ) -> _WebFixture:
     resolved_auth = auth or AuthTokens(
         csrf_token="CSRF",
@@ -129,10 +131,10 @@ def _make_web(
     persistence = MagicMock()
     persistence._prepare_open_baseline = AsyncMock()
     persistence.capture_open_snapshot = MagicMock()
-    persistence._save_canonical = AsyncMock()
+    persistence._save_canonical = AsyncMock(side_effect=canonical_save_error)
     persistence._save_v0_callback = AsyncMock()
     persistence.loaded_cookie_snapshot = None
-    kernel = Kernel(auth=resolved_auth)
+    kernel = Kernel(auth=resolved_auth, async_client_factory=async_client_factory)
     lifecycle = WebTransportLifecycle(
         auth=resolved_auth,
         auth_coord=auth_coord,
@@ -353,20 +355,25 @@ async def test_web_close_resources_saves_then_closes_kernel() -> None:
 
 @pytest.mark.asyncio
 async def test_web_close_resources_preserves_cookie_save_process_exit_over_close_failure() -> None:
-    fixture = _make_web()
-    await fixture.lifecycle.open(asyncio.get_running_loop(), 1)
     process_exit = SystemExit("cookie save shutdown")
     close_failure = RuntimeError("kernel close failed")
-    fixture.lifecycle.save_cookies = AsyncMock(side_effect=process_exit)  # type: ignore[method-assign]
-    close_mock = AsyncMock(side_effect=close_failure)
-    fixture.kernel.aclose = close_mock  # type: ignore[method-assign]
+
+    class _FailingCloseClient(httpx.AsyncClient):
+        async def aclose(self) -> None:
+            await super().aclose()
+            raise close_failure
+
+    fixture = _make_web(
+        canonical_save_error=process_exit,
+        async_client_factory=_FailingCloseClient,
+    )
+    await fixture.lifecycle.open(asyncio.get_running_loop(), 1)
 
     with pytest.raises(SystemExit, match="cookie save shutdown") as raised:
         await fixture.lifecycle.close_resources()
 
     assert raised.value is process_exit
     assert raised.value.__cause__ is close_failure
-    close_mock.assert_awaited_once()
     assert fixture.lifecycle._active_epoch is None
 
 
