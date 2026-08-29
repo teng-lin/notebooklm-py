@@ -23,15 +23,16 @@ _sym_db = _symbol_database.Default()
 
 
 from notebooklm._android.proto.labs.language.tailwind.common.protos import common_pb2 as labs_dot_language_dot_tailwind_dot_common_dot_protos_dot_common__pb2
+from notebooklm._android.proto.labs.language.tailwind.sharing import sharing_pb2 as labs_dot_language_dot_tailwind_dot_sharing_dot_sharing__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n(notebooklm/android/wire/v1/sharing.proto\x12\x1anotebooklm.android.wire.v1\x1a\x31labs/language/tailwind/common/protos/common.proto\"\x81\x02\n\x19GetProjectDetailsResponse\x12T\n\x0fpublic_settings\x18\x02 \x01(\x0b\x32;.labs.language.tailwind.common.protos.ProjectPublicSettings\x12(\n\x1bmax_individuals_share_limit\x18\x03 \x01(\x05H\x00\x88\x01\x01\x12&\n\x19is_public_sharing_allowed\x18\x04 \x01(\x08H\x01\x88\x01\x01\x42\x1e\n\x1c_max_individuals_share_limitB\x1c\n\x1a_is_public_sharing_allowedb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n(notebooklm/android/wire/v1/sharing.proto\x12\x1anotebooklm.android.wire.v1\x1a\x31labs/language/tailwind/common/protos/common.proto\x1a,labs/language/tailwind/sharing/sharing.proto\"\xc3\x02\n\x19GetProjectDetailsResponse\x12@\n\x0cshared_users\x18\x01 \x03(\x0b\x32*.labs.language.tailwind.sharing.SharedUser\x12T\n\x0fpublic_settings\x18\x02 \x01(\x0b\x32;.labs.language.tailwind.common.protos.ProjectPublicSettings\x12(\n\x1bmax_individuals_share_limit\x18\x03 \x01(\x05H\x00\x88\x01\x01\x12&\n\x19is_public_sharing_allowed\x18\x04 \x01(\x08H\x01\x88\x01\x01\x42\x1e\n\x1c_max_individuals_share_limitB\x1c\n\x1a_is_public_sharing_allowedb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'notebooklm.android.wire.v1.sharing_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_GETPROJECTDETAILSRESPONSE']._serialized_start=124
-  _globals['_GETPROJECTDETAILSRESPONSE']._serialized_end=381
+  _globals['_GETPROJECTDETAILSRESPONSE']._serialized_start=170
+  _globals['_GETPROJECTDETAILSRESPONSE']._serialized_end=493
 # @@protoc_insertion_point(module_scope)

@@ -56,8 +56,9 @@ The selected Android mind-map adapter composes the base-typed artifact and note
 namespace interfaces; it adds no separate mobile protobuf declarations.
 Interactive generation, tree reads, rename, and delete use the Android artifact
 contract. Note-backed list, tree, rename, and delete use the Android Notes
-contract. Note-backed generation alone uses an injected Web compatibility
-callable because no mobile request identity was recovered for that operation.
+contract. Note-backed generation uses the current-bundle `ActOnSources` request
+on the mobile gRPC route and persists the returned JSON through native
+`CreateNote`; no Web compatibility callable remains in the mind-map namespace.
 
 ## Alternatives considered
 

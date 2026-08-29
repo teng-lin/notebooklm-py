@@ -2,14 +2,14 @@
 
 **Status:** Live-verified
 
-**Last verified:** 2026-08-27
+**Last verified:** 2026-08-29
 
 **App:** NotebookLM Android `1.46.7.940945420` (`versionCode=138238`)
 
 This report records a successful official-app file upload, a successful headless replay of the
-same mobile upload protocol, and a successful mobile artifact download. Credentials, notebook IDs,
-source IDs, artifact IDs, resumable-session values, and private artifact titles are deliberately
-omitted.
+same mobile upload protocol, and successful mobile artifact downloads including slide PDF and
+PPTX. Credentials, notebook IDs, source IDs, artifact IDs, capability URLs, resumable-session
+values, and private artifact titles are deliberately omitted.
 
 The runnable reproducer is
 [`scripts/reproduce_android_transfer.py`](../../../gemini-notebook-mobile/scripts/reproduce_android_transfer.py).
@@ -23,7 +23,9 @@ persists either credential.
 | Official Android app upload | success | 13,362-byte PDF appeared as a source and became ready |
 | Headless mobile upload replay | success | same PDF uploaded through gRPC + Scotty; process exited 0 after source-ready polling |
 | Headless mobile artifact download | success | 4,721,650-byte PNG, 1536×2752, valid PNG signature |
-| Artifact auth control without bearer | not an artifact | redirected through Google sign-in and ended as HTML |
+| Android public slide PDF download | success | 15,017,608 bytes, `application/octet-stream`, valid `%PDF-` signature |
+| Android public slide PPTX download | success | 17,392,113 bytes, `application/octet-stream`, valid OOXML ZIP containing `[Content_Types].xml` and `ppt/` entries |
+| Slide auth control without bearer | not an artifact | initial request returned HTTP 302 `text/html`; the same URL with the mobile bearer returned the bytes directly |
 
 The disposable notebook created for the test was deleted after validation.
 
@@ -159,7 +161,8 @@ representation fields currently used by the reproducer are:
 | file preview | artifact field 25 → URL field 3 |
 | file download | artifact field 25 → URL field 4 |
 
-The live test selected a ready infographic without printing its artifact ID or title.
+The first live test selected a ready infographic. A later read-only test selected one ready slide
+deck with both PDF and PPTX representations. Neither test printed an artifact ID, title, or URL.
 
 ### 2. Add the application-level redirect opt-in
 
@@ -169,11 +172,29 @@ Append this query parameter to the returned representation URL:
 alr=yes
 ```
 
-The live URL host was:
+The live infographic URL host was:
 
 ```text
 lh3.googleusercontent.com
 ```
+
+The live PDF and PPTX URLs both began on `contribution.usercontent.google.com`.
+
+### APK control-flow confirmation
+
+The pinned AOT library
+`libNotebookLM_prod_android_library_flutter_artifacts.so` (SHA-256
+`082d75e36eb03aea7ea5a8c252029c48b964177311ca4ebac6392814b8e6f81f`) contains the exact
+download path. `ArtifactDownloadManager.download` receives the session `SSOHttpClient` and calls
+`artifact_download_utils.downloadWithAlr(client, url, gcsHostsToStripAuth)`. That helper:
+
+1. parses the representation URL and sets `alr=yes`;
+2. constructs an ordinary HTTP `GET`;
+3. sends through the authenticated `SSOHttpClient`; and
+4. switches to a raw client only when the current host matches the configured storage-host list.
+
+The multipart strings present elsewhere in the bundled `package:http` implementation are not
+referenced by this path. No Drive form POST participates in the APK artifact-download control flow.
 
 ### 3. Authenticate the Googleusercontent request
 
@@ -184,6 +205,13 @@ For the live mobile URL, the OAuth bearer was required on the initial
 |---|---|
 | `GET` with mobile bearer | HTTP 200 `image/png` |
 | `GET` without bearer | HTTP 200 `text/plain`, then `lh3.google.com`, then Google sign-in, finally HTML |
+
+The live slide control gave the same auth decision more directly:
+
+| request to `contribution.usercontent.google.com` | result |
+|---|---|
+| `GET` with `alr=yes` and mobile bearer | HTTP 200 `application/octet-stream`, no redirect, for both PDF and PPTX |
+| `GET` with `alr=yes` and no bearer | HTTP 302 `text/html` with a redirect |
 
 This proves that the current mobile asset URL is not satisfied by an unauthenticated cookie-free
 request. It also falsifies the planning assumption that the mobile bearer must never reach the
@@ -206,7 +234,7 @@ The downloader:
 4. checks the expected media signature; and
 5. atomically replaces the destination only after success.
 
-The live result was:
+The live infographic result was:
 
 ```text
 media type: image/png
@@ -215,10 +243,18 @@ bytes: 4,721,650
 sha256: 7eaaaec02d881f67ffbdfb5417b0bee35d10c9b458b98df64e9ff06c590f3536
 ```
 
+The same public Android API was then exercised for both slide formats through
+`NotebookLMClient.from_storage(..., backend="android")`. The PDF passed its `%PDF-` signature
+check. The PPTX passed ZIP validation and contained the required OOXML content-types file and
+presentation directory. Both responses declared `application/octet-stream`, so the downloader
+admits that live MIME only for slide representations and still requires the format-specific byte
+signature before atomic publication. Both temporary outputs were deleted after validation; this
+read-only probe created no notebook or external Drive resource.
+
 ## Reproducer usage
 
-The profile requested during the investigation was not present. The nearest/current profile was
-used instead; its exact account metadata and all IDs remain local.
+The authorized master-token profile was used directly; its account metadata and all IDs remain
+local.
 
 List ready artifacts and their available representations:
 

@@ -3,6 +3,7 @@ syntax = "proto3";
 package labs.language.tailwind.sharing;
 
 import "labs/language/tailwind/common/protos/common.proto";
+import "labs/language/tailwind/common/protos/metadata.proto";
 
 // Exact-package partial closure for the sharing operations used by the
 // private adapter. The official generated client binds ShareProject to the
@@ -14,19 +15,59 @@ message ShareProjectRequest {
     bool is_discoverable = 2;
   }
 
+  message UserPermission {
+    oneof target {
+      string email = 1;
+      string alternate_id = 4;
+    }
+    SharePermission permission = 3;
+  }
+
+  message ShareMessage {
+    bool omit_message = 1;
+    string message = 2;
+  }
+
   message ProjectToShare {
     string project_id = 1;
+    repeated UserPermission user_permissions = 2;
     PublicDocumentSettings public_document_settings = 3;
+    ShareMessage share_message = 4;
   }
 
   repeated ProjectToShare project = 1;
+  bool notify = 2;
+  .labs.language.tailwind.common.protos.RequestContext request_context = 4;
 }
 
 message GetProjectDetailsRequest {
   string project_id = 1;
+  .labs.language.tailwind.common.protos.RequestContext request_context = 2;
+}
+
+enum SharePermission {
+  SHARE_PERMISSION_UNSPECIFIED = 0;
+  OWNER = 1;
+  EDITOR = 2;
+  VIEWER = 3;
+  NOT_SHARED = 4;
+}
+
+message SharedUserProfile {
+  string display_name = 1;
+  string avatar_url = 2;
+}
+
+message SharedUser {
+  string email = 1;
+  SharePermission permission = 2;
+  // Current bundle also carries an internal metadata message at #3 and an
+  // unnamed bool at #5. Neither contributes to the public collaborator model.
+  SharedUserProfile profile = 4;
 }
 
 message GetProjectDetailsResponse {
+  repeated SharedUser shared_users = 1;
   .labs.language.tailwind.common.protos.ProjectPublicSettings public_settings = 2;
   int32 max_individuals_share_limit = 3;
   bool is_public_sharing_allowed = 4;

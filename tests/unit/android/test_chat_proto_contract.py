@@ -12,6 +12,7 @@ from google.protobuf.descriptor import FieldDescriptor
 from notebooklm._android.codecs.chat import decode_document, decode_references
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     chat_pb2,
+    notebooks_pb2,
     sources_pb2,
 )
 from notebooklm._android.proto.labs.language.tailwind.common.protos import common_pb2
@@ -48,14 +49,16 @@ def _without_implicit_json_names(
     return normalized
 
 
-def test_b5_packages_imports_and_service_free_overlay_are_exact() -> None:
+def test_chat_packages_imports_and_service_free_overlay_are_exact() -> None:
     assert chat_pb2.DESCRIPTOR.package == ORCHESTRATION_PACKAGE
     assert common_pb2.DESCRIPTOR.package == COMMON_PACKAGE
     assert [dependency.name for dependency in chat_pb2.DESCRIPTOR.dependencies] == [
         "google/internal/labs/tailwind/orchestration/v1/read.proto",
         "google/internal/labs/tailwind/orchestration/v1/sources.proto",
+        "google/internal/labs/tailwind/orchestration/v1/notebooks.proto",
         "google/protobuf/timestamp.proto",
         "labs/language/tailwind/common/protos/common.proto",
+        "labs/language/tailwind/common/protos/metadata.proto",
     ]
     assert chat_pb2.DESCRIPTOR.services_by_name == {}
     assert common_pb2.DESCRIPTOR.services_by_name == {}
@@ -68,7 +71,7 @@ def test_b5_packages_imports_and_service_free_overlay_are_exact() -> None:
     }
 
 
-def test_b5_request_response_fields_are_exhaustive() -> None:
+def test_chat_request_response_fields_are_exhaustive() -> None:
     singular = False
     repeated = True
     string = FieldDescriptor.TYPE_STRING
@@ -121,7 +124,7 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
             "background_color": (7, singular, message, f"{o}.Color"),
             "code": (8, singular, boolean, None),
             "strikethrough": (9, singular, boolean, None),
-            "math": (10, singular, int32, None),
+            "math": (10, singular, enum, f"{o}.MathStyleType"),
         },
         chat_pb2.TextRun: {
             "content": (1, singular, string, None),
@@ -179,6 +182,30 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
             "elements": (1, repeated, message, f"{o}.StructuralElement"),
         },
         chat_pb2.HorizontalRule: {},
+        chat_pb2.TailwindValue: {
+            "number_value": (2, singular, double, None),
+            "string_value": (3, singular, string, None),
+            "bool_value": (4, singular, boolean, None),
+        },
+        chat_pb2.TailwindStruct_TailwindStructEntry: {
+            "key": (1, singular, string, None),
+            "value": (2, singular, message, f"{o}.TailwindValue"),
+        },
+        chat_pb2.TailwindStruct: {
+            "fields": (
+                1,
+                repeated,
+                message,
+                f"{o}.TailwindStruct_TailwindStructEntry",
+            ),
+        },
+        chat_pb2.FunctionCall: {
+            "name": (1, singular, string, None),
+            "args": (2, singular, message, f"{o}.TailwindStruct"),
+        },
+        chat_pb2.FunctionResponse: {
+            "name": (1, singular, string, None),
+        },
         chat_pb2.StructuralElement: {
             "start_index": (1, singular, int32, None),
             "end_index": (2, singular, int32, None),
@@ -188,6 +215,8 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
             "code_block": (7, singular, message, f"{o}.CodeBlock"),
             "a2ui_block": (8, singular, message, f"{o}.A2uiBlock"),
             "thought": (9, singular, message, f"{o}.Thought"),
+            "function_call": (10, singular, message, f"{o}.FunctionCall"),
+            "function_response": (11, singular, message, f"{o}.FunctionResponse"),
             "horizontal_rule": (12, singular, message, f"{o}.HorizontalRule"),
         },
         chat_pb2.Body: {
@@ -209,6 +238,7 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
             "ingested_source": (1, singular, message, f"{o}.SourceRevision"),
         },
         chat_pb2.Citation: {
+            "ranges": (4, repeated, message, f"{o}.Range"),
             "fragment": (5, singular, message, f"{o}.TailwindDocFragment"),
             "source_attribution": (6, singular, message, f"{o}.CitationSource"),
             "object_id": (7, singular, message, f"{o}.ObjectId"),
@@ -220,15 +250,59 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
         chat_pb2.TailwindDoc: {
             "body": (1, singular, message, f"{o}.Body"),
             "objects": (4, repeated, message, f"{o}.DocumentObject"),
-            "type": (5, singular, int32, None),
+            "type": (5, singular, enum, f"{o}.ResponseType"),
         },
         chat_pb2.AnswerResponse: {
             "response": (1, singular, string, None),
             "conversation_turn_key": (3, singular, message, f"{o}.ConversationTurnKey"),
+            "empty_answer_reason": (4, singular, enum, f"{o}.EmptyAnswerReason"),
             "response_doc": (5, singular, message, f"{o}.TailwindDoc"),
         },
         chat_pb2.ActOnSourcesResponse: {
             "response": (1, singular, message, f"{o}.AnswerResponse"),
+            "next_step_suggestions": (
+                6,
+                singular,
+                message,
+                f"{o}.NextStepSuggestions",
+            ),
+        },
+        chat_pb2.ActOnSourcesMindMapContext: {
+            "key": (1, singular, string, None),
+            "value": (2, singular, string, None),
+        },
+        chat_pb2.ActOnSourcesMindMapAction: {
+            "action": (1, singular, string, None),
+            "context": (2, repeated, message, f"{o}.ActOnSourcesMindMapContext"),
+            "language": (3, singular, string, None),
+        },
+        chat_pb2.ActOnSourcesOptions: {
+            "citation_content_type": (7, singular, enum, f"{o}.ContentType"),
+            "answer_content_type": (10, singular, enum, f"{o}.ContentType"),
+        },
+        chat_pb2.FreeFormAction: {
+            "user_query": (1, singular, string, None),
+            "conversation_history": (2, repeated, message, f"{o}.ConversationEvent"),
+            "user_message_id": (3, singular, string, None),
+        },
+        chat_pb2.InputSourceOptions: {
+            "project_id": (1, singular, string, None),
+            "use_all_sources": (2, singular, boolean, None),
+        },
+        chat_pb2.ActOnSourcesRequest: {
+            "sources": (1, repeated, message, f"{o}.InputSource"),
+            "options": (2, singular, message, f"{o}.ActOnSourcesOptions"),
+            "free_form_action": (3, singular, message, f"{o}.FreeFormAction"),
+            "mind_map_action": (6, singular, message, f"{o}.ActOnSourcesMindMapAction"),
+            "source_options": (7, singular, message, f"{o}.InputSourceOptions"),
+            "request_context": (
+                8,
+                singular,
+                message,
+                "labs.language.tailwind.common.protos.RequestContext",
+            ),
+            "chat_session_id": (10, singular, string, None),
+            "origin": (11, singular, enum, f"{o}.QueryOrigin"),
         },
         chat_pb2.ChatHistoryMessage: {
             "message_id": (1, singular, string, None),
@@ -272,6 +346,7 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
         chat_pb2.GenerateFreeFormStreamedResponse: {
             "answer": (1, singular, message, f"{o}.AnswerResponse"),
             "is_final_response": (5, singular, boolean, None),
+            "next_step_suggestions": (6, singular, message, f"{o}.NextStepSuggestions"),
         },
     }
 
@@ -284,7 +359,24 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
         assert _field_shapes(message_type) == fields
 
 
-def test_b5_enum_names_and_numbers_match_checked_in_evidence() -> None:
+def test_streamed_next_step_suggestions_round_trip_as_typed_bytes() -> None:
+    response = chat_pb2.GenerateFreeFormStreamedResponse(
+        next_step_suggestions=notebooks_pb2.NextStepSuggestions(
+            next_steps=[notebooks_pb2.NextStep(suggestion="Follow up?", suggestion_type=99)]
+        )
+    )
+
+    wire = response.SerializeToString(deterministic=True)
+    decoded = chat_pb2.GenerateFreeFormStreamedResponse.FromString(wire)
+
+    assert decoded.SerializeToString(deterministic=True) == wire
+    assert [
+        (next_step.suggestion, next_step.suggestion_type)
+        for next_step in decoded.next_step_suggestions.next_steps
+    ] == [("Follow up?", 99)]
+
+
+def test_chat_enum_names_and_numbers_match_checked_in_evidence() -> None:
     assert {value.name: value.number for value in chat_pb2.QueryOrigin.DESCRIPTOR.values} == {
         "QUERY_ORIGIN_UNSPECIFIED": 0,
         "QUERY_ORIGIN_CHAT_TEXT_BOX": 1,
@@ -295,6 +387,11 @@ def test_b5_enum_names_and_numbers_match_checked_in_evidence() -> None:
         "QUERY_ORIGIN_GETTING_STARTED_MESSAGE": 6,
         "QUERY_ORIGIN_LINK_SERVICE": 7,
         "QUERY_ORIGIN_ARTIFACT_VIEWER": 8,
+    }
+    assert {value.name: value.number for value in chat_pb2.EmptyAnswerReason.DESCRIPTOR.values} == {
+        "EMPTY_ANSWER_REASON_UNKNOWN": 0,
+        "UNANSWERABLE": 1,
+        "FILTERED": 2,
     }
     nested = chat_pb2.ConversationEvent.ConversationEventType.DESCRIPTOR
     assert {value.name: value.number for value in nested.values} == {
@@ -319,6 +416,22 @@ def test_b5_enum_names_and_numbers_match_checked_in_evidence() -> None:
         "LIST_TYPE_UNORDERED": 1,
         "LIST_TYPE_ORDERED": 2,
     }
+    assert {value.name: value.number for value in chat_pb2.ContentType.DESCRIPTOR.values} == {
+        "CONTENT_TYPE_UNSPECIFIED": 0,
+        "MARKDOWN": 1,
+        "TAILWIND_DOC": 2,
+        "HTML": 3,
+    }
+    assert {value.name: value.number for value in chat_pb2.MathStyleType.DESCRIPTOR.values} == {
+        "MATH_STYLE_TYPE_UNSPECIFIED": 0,
+        "MATH_STYLE_TYPE_INLINE": 1,
+        "MATH_STYLE_TYPE_DISPLAY": 2,
+    }
+    assert {value.name: value.number for value in chat_pb2.ResponseType.DESCRIPTOR.values} == {
+        "TYPE_UNSPECIFIED": 0,
+        "TYPE_DEFAULT_ANSWER": 1,
+        "TYPE_THOUGHT": 2,
+    }
 
 
 def test_chat_descriptor_fixture_matches_generated_file_descriptors() -> None:
@@ -332,6 +445,7 @@ def test_chat_descriptor_fixture_matches_generated_file_descriptors() -> None:
         "google/internal/labs/tailwind/v1/source_settings.proto",
         "google/protobuf/timestamp.proto",
         "labs/language/tailwind/common/protos/common.proto",
+        "labs/language/tailwind/common/protos/metadata.proto",
     } <= set(files)
     assert _without_implicit_json_names(files[chat_pb2.DESCRIPTOR.name]) == (
         descriptor_pb2.FileDescriptorProto.FromString(chat_pb2.DESCRIPTOR.serialized_pb)
@@ -341,7 +455,7 @@ def test_chat_descriptor_fixture_matches_generated_file_descriptors() -> None:
     )
 
 
-def test_checked_in_b5_wire_fixture_round_trips_without_unknown_semantics() -> None:
+def test_checked_in_chat_wire_fixture_round_trips_without_unknown_semantics() -> None:
     fixture = json.loads((FIXTURES / "chat_wire.json").read_text(encoding="utf-8"))
     types = {
         "generate_request": chat_pb2.GenerateFreeFormStreamedRequest,

@@ -27,6 +27,14 @@
       "evidence": "docs/android/proto-evidence-ledger.md#notebook-exact-and-web-derived-field-ledger"
     },
     {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/LoadSource",
+      "side": "response",
+      "remote_type": "google.internal.labs.tailwind.orchestration.v1.LoadSourceResponse",
+      "adapter_parser": "notebooklm.internal.android.wire.v1.WireLoadSourceResponse",
+      "reason_code": "import_cycle_overlay",
+      "evidence": "docs/android/proto-evidence-ledger.md#source-operation-admission"
+    },
+    {
       "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",
       "side": "response",
       "remote_type": "google.internal.labs.tailwind.orchestration.v1.GetLabelsResponse",

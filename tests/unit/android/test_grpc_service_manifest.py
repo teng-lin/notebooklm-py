@@ -17,6 +17,7 @@ from notebooklm._android import (
     notes,
     organization,
     research,
+    settings,
     sharing,
     sources,
 )
@@ -43,6 +44,7 @@ from notebooklm._android.proto.notebooklm.android.wire.v1 import (
 from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import (
     notebooks_pb2 as wire_notebooks_pb2,
 )
+from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import source_content_pb2
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 EXCEPTION_MANIFEST = REPO_ROOT / "docs" / "android" / "grpc-service-signature-exceptions.json"
@@ -51,7 +53,7 @@ PARSER_OVERRIDE_MANIFEST = REPO_ROOT / "docs" / "android" / "grpc-runtime-parser
 EXTERNAL_METHOD_MANIFEST = (
     REPO_ROOT / "tests" / "fixtures" / "android" / "external_method_manifest.csv"
 )
-EXTERNAL_METHOD_MANIFEST_SHA256 = "88a7b9cddd5b52d68ff07a5d2ca1154e64808fdf3c8a89dc0e160b730ecfb56b"
+EXTERNAL_METHOD_MANIFEST_SHA256 = "364dd70ac0e4e101047e570133a44cc007b384aa9a5063187abfd5d04ade1f57"
 LATEST_APK_GRPC_SIGNATURES = (
     REPO_ROOT / "tests" / "fixtures" / "android" / "latest_apk_grpc_signatures.csv"
 )
@@ -73,12 +75,18 @@ _ADAPTER_MODULES = (
     notes,
     research,
     organization,
+    settings,
     sharing,
 )
 _EXPECTED_ORCHESTRATION_SIGNATURES = {
     "GetOrCreateAccount": (
         f"{ORCHESTRATION_PACKAGE}.GetOrCreateAccountRequest",
         f"{ORCHESTRATION_PACKAGE}.GetOrCreateAccountResponse",
+        False,
+    ),
+    "MutateAccount": (
+        f"{ORCHESTRATION_PACKAGE}.MutateAccountRequest",
+        f"{ORCHESTRATION_PACKAGE}.Account",
         False,
     ),
     "GetProject": (
@@ -149,6 +157,11 @@ _EXPECTED_ORCHESTRATION_SIGNATURES = {
     "CheckSourceFreshness": (
         f"{ORCHESTRATION_PACKAGE}.CheckSourceFreshnessRequest",
         f"{ORCHESTRATION_PACKAGE}.CheckSourceFreshnessResponse",
+        False,
+    ),
+    "RefreshSource": (
+        f"{ORCHESTRATION_PACKAGE}.RefreshSourceRequest",
+        f"{ORCHESTRATION_PACKAGE}.RefreshSourceResponse",
         False,
     ),
     "GenerateDocumentGuides": (
@@ -225,6 +238,11 @@ _EXPECTED_ORCHESTRATION_SIGNATURES = {
         f"{ORCHESTRATION_PACKAGE}.GenerateFreeFormStreamedRequest",
         f"{ORCHESTRATION_PACKAGE}.GenerateFreeFormStreamedResponse",
         True,
+    ),
+    "ActOnSources": (
+        f"{ORCHESTRATION_PACKAGE}.ActOnSourcesRequest",
+        f"{ORCHESTRATION_PACKAGE}.ActOnSourcesResponse",
+        False,
     ),
     "GetNotes": (
         f"{ORCHESTRATION_PACKAGE}.GetNotesRequest",
@@ -313,6 +331,7 @@ _LOCAL_PARSER_TYPES = {
     wire_notebooks_pb2.WireMutateProjectRequest.DESCRIPTOR.full_name,
     wire_notebooks_pb2.WireGenerateNotebookGuideResponse.DESCRIPTOR.full_name,
     wire_notebooks_pb2.WireGetProjectResponse.DESCRIPTOR.full_name,
+    source_content_pb2.WireLoadSourceResponse.DESCRIPTOR.full_name,
     organization_mutations_pb2.GetLabelsWireResponse.DESCRIPTOR.full_name,
     wire_sharing_pb2.GetProjectDetailsResponse.DESCRIPTOR.full_name,
 }
@@ -378,7 +397,7 @@ def _inference_entries() -> list[dict[str, Any]]:
 def _external_method_entries() -> dict[str, dict[str, str]]:
     with EXTERNAL_METHOD_MANIFEST.open(encoding="utf-8", newline="") as stream:
         rows = list(csv.DictReader(stream))
-    assert len(rows) == 62
+    assert len(rows) == 63
     entries = {row["path"]: row for row in rows}
     assert len(entries) == len(rows)
     return entries
@@ -457,9 +476,9 @@ def test_adapter_paths_equal_generated_descriptor_with_no_omitted_exceptions() -
     entries = _manifest_entries()
     assert entries == []
     assert _adapter_paths() == _descriptor_paths()
-    assert len(_adapter_paths()) == 46
-    assert len(_descriptor_paths()) == 46
-    assert sum(path.startswith(f"/{ORCHESTRATION_SERVICE}/") for path in _descriptor_paths()) == 44
+    assert len(_adapter_paths()) == 49
+    assert len(_descriptor_paths()) == 49
+    assert sum(path.startswith(f"/{ORCHESTRATION_SERVICE}/") for path in _descriptor_paths()) == 47
     assert sum(path.startswith(f"/{SHARING_SERVICE}/") for path in _descriptor_paths()) == 2
 
     sharing_paths = {path for path in _adapter_paths() if path.startswith(f"/{SHARING_SERVICE}/")}
@@ -472,7 +491,7 @@ def test_adapter_paths_equal_generated_descriptor_with_no_omitted_exceptions() -
 
 def test_web_derived_signature_inferences_are_explicit_and_generated() -> None:
     entries = _inference_entries()
-    assert len(entries) == 9
+    assert len(entries) == 10
     assert all(
         set(entry) == {"path", "request_type", "response_type", "confidence", "evidence"}
         for entry in entries
@@ -504,7 +523,7 @@ def test_external_manifest_and_implemented_signature_inventory_are_bidirectional
     )
     external = _external_method_entries()
     signatures = _descriptor_signatures()
-    assert len(external) == 62
+    assert len(external) == 63
 
     for path, (request_type, response_type, cardinality) in signatures.items():
         row = external[path]
@@ -563,7 +582,7 @@ def test_latest_signed_apk_inventory_is_complete_exact_and_version_scoped() -> N
 
 def test_runtime_local_parser_overrides_are_explicit_exact_path_exceptions() -> None:
     entries = _parser_override_entries()
-    assert len(entries) == 5
+    assert len(entries) == 6
     assert all(
         set(entry)
         == {
@@ -579,6 +598,7 @@ def test_runtime_local_parser_overrides_are_explicit_exact_path_exceptions() -> 
     assert {entry["adapter_parser"] for entry in entries} == _LOCAL_PARSER_TYPES
     assert {entry["reason_code"] for entry in entries} == {
         "heterogeneous_member_wire",
+        "import_cycle_overlay",
         "live_only_field",
         "presence_semantics",
     }

@@ -2,14 +2,21 @@ syntax = "proto3";
 
 package google.internal.labs.tailwind.orchestration.v1;
 
+import "labs/language/tailwind/common/protos/metadata.proto";
+
 // Minimal exact-package account closure copied from the archived
 // gemini-notebook-mobile supported.proto identified in the evidence ledger.
 // This deliberately omits adjacent quota/settings fields whose exact-package
 // declarations are not required by the private account adapter.
 
+message OutputLanguage {
+  string language_code = 1;
+}
+
 message UserInfo {
   bool accepted_tos = 1;
   bool opted_in_to_marketing_emails = 4;
+  OutputLanguage output_language = 5;
   bool is_eea_user = 9;
 }
 
@@ -17,13 +24,41 @@ message PremiumUserInfo {
   bool is_premium_user = 1;
 }
 
+message TierLimits {
+  // Web ctor jUa/current Account mapper pin fields #1-#4. The optional #5
+  // subscription tier is independently present in recorded live responses.
+  optional int32 account_type = 1;
+  optional int32 max_projects = 2;
+  optional int32 max_sources_per_project = 3;
+  optional int32 max_words_per_source = 4;
+  optional int32 subscription_tier = 5;
+}
+
 message Account {
+  TierLimits tier_limits = 2;
   UserInfo user_info = 3;
   PremiumUserInfo premium_user_info = 5;
 }
 
-message GetOrCreateAccountRequest {}
+message GetOrCreateAccountRequest {
+  .labs.language.tailwind.common.protos.RequestContext request_context = 1;
+}
 
 message GetOrCreateAccountResponse {
   Account account = 1;
+}
+
+message AccountMutation_ChangePropertyMutation {
+  UserInfo new_user_info = 1;
+}
+
+message AccountMutation {
+  oneof mutation {
+    AccountMutation_ChangePropertyMutation change_property = 2;
+  }
+}
+
+message MutateAccountRequest {
+  repeated AccountMutation mutations = 1;
+  .labs.language.tailwind.common.protos.RequestContext request_context = 2;
 }

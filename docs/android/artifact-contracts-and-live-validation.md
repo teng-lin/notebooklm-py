@@ -29,7 +29,7 @@ probe results are retained as sections in this document.
 - Package: `com.google.android.apps.labs.language.tailwind`
 - Official APK version: `1.46.7.940945420`
 - APK AOT SHA-256:
-  `082d75e36eb03aea7ea5a8c252029c48b964177311ca4ebac6392814b8e6f81f8`
+  `082d75e36eb03aea7ea5a8c252029c48b964177311ca4ebac6392814b8e6f81f`
 - Static evidence: the recovered APK AOT output and the repository's reduced protobuf evidence.
 - Dynamic evidence: Android-bearer gRPC probes against uniquely named disposable notebook copies;
   retry/export signatures were also checked against the authenticated current web bundle.
@@ -81,7 +81,7 @@ admits the exact paragraph/table/rule/style/bullet closure instead of flattening
 | Concept explanation | Flexible `TailoredReportArtifactGenerationOptions` string fields | Preset returned OK and echoed `Concept Explanation` |
 | Data table | `Artifact #19`, document `#1`, generation options `#2` | New table reached READY; exact document rendered to Web-equivalent CSV |
 | Interactive mind map | `AppArtifactGenerationOptions.app_type=4`, prompt `#3`, language `#4` | Reached READY; exact JSON tree decoded |
-| Note-backed mind map | Existing Web `GENERATE_MIND_MAP` followed by `CreateNote` | Narrow compatibility collaborator; no mobile field or FQN invented |
+| Note-backed mind map | `ActOnSourcesRequest.sources #1`, mind-map action `#6`, request context `#8`; then `CreateNote` | Android bearer returned JSON and native note persistence succeeded |
 
 ## Audio overview format
 
@@ -296,8 +296,8 @@ An Android `CreateArtifact` request using outer artifact type 4 and app type 4 r
 grammar. The captured tree contained 67 valid nodes, maximum depth 3, and no unexpected node shape.
 Interactive generation, tree read, and JSON download are therefore admitted.
 
-The legacy note-backed generation path remains the Web Batchexecute `GENERATE_MIND_MAP (yyryJe)`
-payload:
+The legacy Web note-backed generation path uses Batchexecute `GENERATE_MIND_MAP (yyryJe)` with
+this positional payload:
 
 ```text
 [
@@ -308,17 +308,21 @@ payload:
 ]
 ```
 
-Its synchronous tree result is persisted through `CreateNote`. This positional Web slot is not a
-protobuf field number and is not evidence for a missing field 6 on Android
-`ActOnSourcesRequest`. The recovered request has sources 1, options 2, free-form action 3, source
-options 7, request context 8, chat session 10, and origin 11, with no note-backed mind-map
-generation option.
+The APK establishes the exact `ActOnSourcesRequest` and response FQNs and the request fields for
+sources `#1`, options `#2`, free-form action `#3`, source options `#7`, request context `#8`, chat
+session `#10`, and origin `#11`. The current Web constructor additionally closes the action union:
+field `#6` is a message with action string `#1`, repeated key/value context rows `#2`, and language
+`#3`. Its product call site sets action `interactive_mindmap`, context key `[CONTEXT]`, the caller's
+instructions as the value, and the requested language. This is a protobuf field, not merely an
+array-index guess.
 
-Public Android assembly therefore retains a narrow compatibility collaborator: note-backed
-generation delegates to the existing Web `generate_mind_map` pipeline under the shared
-supervisor/lifecycle, while interactive generation uses Android `CreateArtifact`. This removes the
-public rejection without fabricating a mobile schema. A strict Android-only implementation would
-still require a real APK/mobile descriptor or successful live request proving a mobile RPC.
+A bounded Android-bearer run then sent that exact request with one disposable text source. The
+named `ActOnSources` handler returned a nonempty JSON tree whose root was `NotebookLM Features`.
+The adapter parsed the tree and persisted the same JSON through Android `CreateNote` within the
+same lifecycle epoch; the response returned a canonical note ID. Deleting the exact disposable
+notebook removed the note and source. Public Android assembly now uses this native generation and
+note-write chain directly. Interactive generation remains the separate Android `CreateArtifact`
+application path described above.
 
 ## Public assembly and local representation boundary
 
@@ -429,8 +433,9 @@ It does not prove Sheets, literal-content export, or other artifact/destination 
 
 The implementation marks the call non-replay-safe, accepts exactly one of artifact ID/content,
 validates destination `1`/`2`, requires a nonempty HTTPS response URL, and surfaces transport loss
-as an outcome-unknown mutation. A live E2E remains separately gated behind the exact Drive-file
-cleanup fixture.
+as an outcome-unknown mutation. A later Android Drive-file import probe independently exercised
+the bearer-authenticated Drive v3 download and exact external-file cleanup described in the
+resource-lifecycle record.
 
 ## Byte-transfer boundary
 
@@ -445,16 +450,28 @@ publisher changes the final suffix to `.wav`; batch downloads retain that return
 
 Download endpoints redirected to `drum.usercontent.google.com` and returned HTTP 403 without
 credentials. No bearer was forwarded because the APK does not authorize that. Slide PDF/PPTX URLs
-began on `contribution.usercontent.google.com`; anonymous access ended at sign-in HTML. The APK uses
-a scoped Drive download-form choreography for those bytes, not the gRPC bearer or a SAPISID cookie.
-The local slide URL/MIME/signature path is implemented and never leaks a bearer, but live slide
-retrieval remains blocked until that scoped form-token exchange is recovered.
+began on `contribution.usercontent.google.com`; an anonymous `alr=yes` request returned HTTP 302
+`text/html`, while the same request with the Android multi-scope OAuth bearer returned HTTP 200
+`application/octet-stream` with no redirect for both formats.
+
+This matches the exact APK AOT control flow. `ArtifactDownloadManager.download` injects the session
+`SSOHttpClient` into `artifact_download_utils.downloadWithAlr`, which appends `alr=yes`, issues an
+ordinary `GET`, and switches to a raw client only for the configured storage-host patterns. Generic
+multipart constants elsewhere in bundled `package:http` are unrelated; no Drive form POST
+participates in this path.
+
+The real Android public API then downloaded a 15,017,608-byte PDF with a valid `%PDF-` signature and
+a 17,392,113-byte PPTX that was a valid OOXML ZIP containing `[Content_Types].xml` and `ppt/`
+entries. The downloader now allows the observed generic MIME only for slide representations and
+still requires the exact PDF or ZIP signature before atomic publication. Temporary files were
+deleted after this read-only validation, which created no notebook or external Drive resource.
 
 ## Cleanup qualification
 
 Every copied or created notebook used by these probes was deleted through `DeleteProjects`,
 including the source-delete, status-mutation, unsupported-family, ready-artifact retry,
-cancellation, data-table, media-option, and mind-map experiments. Exact-prefix/title sweeps found
-no remaining scratch notebook. The exported Google Doc was verified and permanently deleted by
-exact ID through Drive v3 before its copied notebook was deleted. Credentials remained in memory
-or redacted throughout.
+cancellation, data-table, media-option, and both mind-map experiments. Exact-prefix/title sweeps
+found no remaining scratch notebook. The note-backed Android run deleted its exact notebook after
+`ActOnSources` and `CreateNote` succeeded. The exported Google Doc and the later Drive-import file
+were permanently deleted by exact ID through Drive v3 with HTTP 204 before their notebooks were
+deleted. Credentials remained in memory or redacted throughout.

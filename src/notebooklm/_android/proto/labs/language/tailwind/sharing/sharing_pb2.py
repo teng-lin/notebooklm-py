@@ -23,27 +23,38 @@ _sym_db = _symbol_database.Default()
 
 
 from notebooklm._android.proto.labs.language.tailwind.common.protos import common_pb2 as labs_dot_language_dot_tailwind_dot_common_dot_protos_dot_common__pb2
+from notebooklm._android.proto.labs.language.tailwind.common.protos import metadata_pb2 as labs_dot_language_dot_tailwind_dot_common_dot_protos_dot_metadata__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n,labs/language/tailwind/sharing/sharing.proto\x12\x1elabs.language.tailwind.sharing\x1a\x31labs/language/tailwind/common/protos/common.proto\"\xd0\x02\n\x13ShareProjectRequest\x12S\n\x07project\x18\x01 \x03(\x0b\x32\x42.labs.language.tailwind.sharing.ShareProjectRequest.ProjectToShare\x1aO\n\x16PublicDocumentSettings\x12\x1c\n\x14is_publicly_readable\x18\x01 \x01(\x08\x12\x17\n\x0fis_discoverable\x18\x02 \x01(\x08\x1a\x92\x01\n\x0eProjectToShare\x12\x12\n\nproject_id\x18\x01 \x01(\t\x12l\n\x18public_document_settings\x18\x03 \x01(\x0b\x32J.labs.language.tailwind.sharing.ShareProjectRequest.PublicDocumentSettings\".\n\x18GetProjectDetailsRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\"\xb9\x01\n\x19GetProjectDetailsResponse\x12T\n\x0fpublic_settings\x18\x02 \x01(\x0b\x32;.labs.language.tailwind.common.protos.ProjectPublicSettings\x12#\n\x1bmax_individuals_share_limit\x18\x03 \x01(\x05\x12!\n\x19is_public_sharing_allowed\x18\x04 \x01(\x08\"\x16\n\x14ShareProjectResponse2\xa2\x02\n\x1aLabsTailwindSharingService\x12\x88\x01\n\x11GetProjectDetails\x12\x38.labs.language.tailwind.sharing.GetProjectDetailsRequest\x1a\x39.labs.language.tailwind.sharing.GetProjectDetailsResponse\x12y\n\x0cShareProject\x12\x33.labs.language.tailwind.sharing.ShareProjectRequest\x1a\x34.labs.language.tailwind.sharing.ShareProjectResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n,labs/language/tailwind/sharing/sharing.proto\x12\x1elabs.language.tailwind.sharing\x1a\x31labs/language/tailwind/common/protos/common.proto\x1a\x33labs/language/tailwind/common/protos/metadata.proto\"\xa8\x06\n\x13ShareProjectRequest\x12S\n\x07project\x18\x01 \x03(\x0b\x32\x42.labs.language.tailwind.sharing.ShareProjectRequest.ProjectToShare\x12\x0e\n\x06notify\x18\x02 \x01(\x08\x12M\n\x0frequest_context\x18\x04 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.RequestContext\x1aO\n\x16PublicDocumentSettings\x12\x1c\n\x14is_publicly_readable\x18\x01 \x01(\x08\x12\x17\n\x0fis_discoverable\x18\x02 \x01(\x08\x1a\x88\x01\n\x0eUserPermission\x12\x0f\n\x05\x65mail\x18\x01 \x01(\tH\x00\x12\x16\n\x0c\x61lternate_id\x18\x04 \x01(\tH\x00\x12\x43\n\npermission\x18\x03 \x01(\x0e\x32/.labs.language.tailwind.sharing.SharePermissionB\x08\n\x06target\x1a\x35\n\x0cShareMessage\x12\x14\n\x0comit_message\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\x1a\xc9\x02\n\x0eProjectToShare\x12\x12\n\nproject_id\x18\x01 \x01(\t\x12\\\n\x10user_permissions\x18\x02 \x03(\x0b\x32\x42.labs.language.tailwind.sharing.ShareProjectRequest.UserPermission\x12l\n\x18public_document_settings\x18\x03 \x01(\x0b\x32J.labs.language.tailwind.sharing.ShareProjectRequest.PublicDocumentSettings\x12W\n\rshare_message\x18\x04 \x01(\x0b\x32@.labs.language.tailwind.sharing.ShareProjectRequest.ShareMessage\"}\n\x18GetProjectDetailsRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\x12M\n\x0frequest_context\x18\x02 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.RequestContext\"=\n\x11SharedUserProfile\x12\x14\n\x0c\x64isplay_name\x18\x01 \x01(\t\x12\x12\n\navatar_url\x18\x02 \x01(\t\"\xa4\x01\n\nSharedUser\x12\r\n\x05\x65mail\x18\x01 \x01(\t\x12\x43\n\npermission\x18\x02 \x01(\x0e\x32/.labs.language.tailwind.sharing.SharePermission\x12\x42\n\x07profile\x18\x04 \x01(\x0b\x32\x31.labs.language.tailwind.sharing.SharedUserProfile\"\xfb\x01\n\x19GetProjectDetailsResponse\x12@\n\x0cshared_users\x18\x01 \x03(\x0b\x32*.labs.language.tailwind.sharing.SharedUser\x12T\n\x0fpublic_settings\x18\x02 \x01(\x0b\x32;.labs.language.tailwind.common.protos.ProjectPublicSettings\x12#\n\x1bmax_individuals_share_limit\x18\x03 \x01(\x05\x12!\n\x19is_public_sharing_allowed\x18\x04 \x01(\x08\"\x16\n\x14ShareProjectResponse*f\n\x0fSharePermission\x12 \n\x1cSHARE_PERMISSION_UNSPECIFIED\x10\x00\x12\t\n\x05OWNER\x10\x01\x12\n\n\x06\x45\x44ITOR\x10\x02\x12\n\n\x06VIEWER\x10\x03\x12\x0e\n\nNOT_SHARED\x10\x04\x32\xa2\x02\n\x1aLabsTailwindSharingService\x12\x88\x01\n\x11GetProjectDetails\x12\x38.labs.language.tailwind.sharing.GetProjectDetailsRequest\x1a\x39.labs.language.tailwind.sharing.GetProjectDetailsResponse\x12y\n\x0cShareProject\x12\x33.labs.language.tailwind.sharing.ShareProjectRequest\x1a\x34.labs.language.tailwind.sharing.ShareProjectResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'labs.language.tailwind.sharing.sharing_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_SHAREPROJECTREQUEST']._serialized_start=132
-  _globals['_SHAREPROJECTREQUEST']._serialized_end=468
-  _globals['_SHAREPROJECTREQUEST_PUBLICDOCUMENTSETTINGS']._serialized_start=240
-  _globals['_SHAREPROJECTREQUEST_PUBLICDOCUMENTSETTINGS']._serialized_end=319
-  _globals['_SHAREPROJECTREQUEST_PROJECTTOSHARE']._serialized_start=322
-  _globals['_SHAREPROJECTREQUEST_PROJECTTOSHARE']._serialized_end=468
-  _globals['_GETPROJECTDETAILSREQUEST']._serialized_start=470
-  _globals['_GETPROJECTDETAILSREQUEST']._serialized_end=516
-  _globals['_GETPROJECTDETAILSRESPONSE']._serialized_start=519
-  _globals['_GETPROJECTDETAILSRESPONSE']._serialized_end=704
-  _globals['_SHAREPROJECTRESPONSE']._serialized_start=706
-  _globals['_SHAREPROJECTRESPONSE']._serialized_end=728
-  _globals['_LABSTAILWINDSHARINGSERVICE']._serialized_start=731
-  _globals['_LABSTAILWINDSHARINGSERVICE']._serialized_end=1021
+  _globals['_SHAREPERMISSION']._serialized_start=1630
+  _globals['_SHAREPERMISSION']._serialized_end=1732
+  _globals['_SHAREPROJECTREQUEST']._serialized_start=185
+  _globals['_SHAREPROJECTREQUEST']._serialized_end=993
+  _globals['_SHAREPROJECTREQUEST_PUBLICDOCUMENTSETTINGS']._serialized_start=388
+  _globals['_SHAREPROJECTREQUEST_PUBLICDOCUMENTSETTINGS']._serialized_end=467
+  _globals['_SHAREPROJECTREQUEST_USERPERMISSION']._serialized_start=470
+  _globals['_SHAREPROJECTREQUEST_USERPERMISSION']._serialized_end=606
+  _globals['_SHAREPROJECTREQUEST_SHAREMESSAGE']._serialized_start=608
+  _globals['_SHAREPROJECTREQUEST_SHAREMESSAGE']._serialized_end=661
+  _globals['_SHAREPROJECTREQUEST_PROJECTTOSHARE']._serialized_start=664
+  _globals['_SHAREPROJECTREQUEST_PROJECTTOSHARE']._serialized_end=993
+  _globals['_GETPROJECTDETAILSREQUEST']._serialized_start=995
+  _globals['_GETPROJECTDETAILSREQUEST']._serialized_end=1120
+  _globals['_SHAREDUSERPROFILE']._serialized_start=1122
+  _globals['_SHAREDUSERPROFILE']._serialized_end=1183
+  _globals['_SHAREDUSER']._serialized_start=1186
+  _globals['_SHAREDUSER']._serialized_end=1350
+  _globals['_GETPROJECTDETAILSRESPONSE']._serialized_start=1353
+  _globals['_GETPROJECTDETAILSRESPONSE']._serialized_end=1604
+  _globals['_SHAREPROJECTRESPONSE']._serialized_start=1606
+  _globals['_SHAREPROJECTRESPONSE']._serialized_end=1628
+  _globals['_LABSTAILWINDSHARINGSERVICE']._serialized_start=1735
+  _globals['_LABSTAILWINDSHARINGSERVICE']._serialized_end=2025
 # @@protoc_insertion_point(module_scope)

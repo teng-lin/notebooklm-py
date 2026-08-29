@@ -182,7 +182,7 @@ async def test_base_ask_over_real_android_session_and_fake_grpc_server() -> None
 
 
 @pytest.mark.asyncio
-async def test_b5_stream_does_not_retry_after_midstream_auth_failure() -> None:
+async def test_android_stream_does_not_retry_after_midstream_auth_failure() -> None:
     service = _ChatService(fail_auth_after_partial=True)
     async with _running_api(service) as (api, _supervisor, bearer):
         with pytest.raises(AuthError):

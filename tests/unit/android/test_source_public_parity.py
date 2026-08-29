@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import cast
@@ -40,13 +40,11 @@ class _ParitySources(AndroidSourcesAPI):
     def __init__(
         self,
         drive_download: _DriveDownload,
-        refresh_source: Callable[[str, str], Awaitable[None]],
     ) -> None:
         super().__init__(
             cast(AndroidSession, object()),
             cast(AndroidUploadPipeline, object()),
             drive_download=drive_download,
-            refresh_source=refresh_source,
         )
         self.uploads: list[tuple[str, Path, str | None, bool, float]] = []
 
@@ -76,10 +74,7 @@ async def test_add_drive_file_downloads_with_live_web_auth_then_uses_android_add
     downloaded.write_bytes(b"docx")
     drive_download = _DriveDownload(downloaded)
 
-    async def refresh_source(_notebook_id: str, _source_id: str) -> None:
-        raise AssertionError("refresh must not run")
-
-    api = _ParitySources(drive_download, refresh_source)
+    api = _ParitySources(drive_download)
     result = await api.add_drive_file(
         "notebook-id",
         "abcdefghijklmnopqrstuvwxyz123456",
@@ -89,20 +84,5 @@ async def test_add_drive_file_downloads_with_live_web_auth_then_uses_android_add
 
     assert result.id == "source-id"
     assert drive_download.document_ids == ["abcdefghijklmnopqrstuvwxyz123456"]
-    assert api.uploads == [
-        ("notebook-id", downloaded, "Drive document.docx", True, 9.0)
-    ]
+    assert api.uploads == [("notebook-id", downloaded, "Drive document.docx", True, 9.0)]
     assert not downloaded.exists()
-
-
-@pytest.mark.asyncio
-async def test_refresh_delegates_exactly_once_to_qualified_compatibility() -> None:
-    calls: list[tuple[str, str]] = []
-
-    async def refresh_source(notebook_id: str, source_id: str) -> None:
-        calls.append((notebook_id, source_id))
-
-    api = _ParitySources(_DriveDownload(Path("unused")), refresh_source)
-
-    assert await api.refresh("notebook-id", "source-id") is None
-    assert calls == [("notebook-id", "source-id")]

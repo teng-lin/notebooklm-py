@@ -175,10 +175,12 @@ option, and the `notebooklm-server --backend ...` option. Resolution is always:
 The preference is fixed when a client is constructed. `backend="android"`
 installs an Android adapter for every public namespace; the read-only
 `client.backends` mapping therefore reports `android` for all eleven entries.
-A small number of operations use documented, narrow Web compatibility
-collaborators where the official mobile schema exposes no equivalent RPC. The
-mapping describes the installed namespace adapters, not the transport of every
-internal operation. Neither `auto` nor `mobile` is accepted.
+Exactly two operations use documented, narrow Web compatibility collaborators:
+`notebooks.remove_from_recent` and `sharing.set_view_level`. The mapping describes
+the installed namespace adapters, not the transport of every internal operation.
+The root `client.rpc_call(...)` escape hatch is outside the namespace graph and
+remains Web-specific because `RPCMethod` contains `batchexecute` identifiers.
+Neither `auto` nor `mobile` is accepted.
 
 Selecting Android does not read credentials during construction. When an
 installed Android namespace needs a durable credential, validation occurs on

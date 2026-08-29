@@ -14,7 +14,6 @@ from .._notebook_metadata import NotebookSourceIdProvider
 from .._runtime.call_supervisor import CallSupervisor
 from .._types.artifacts import _status_from_code
 from .._types.enums import (
-    INTERACTIVE_MIND_MAP_VARIANT,
     ArtifactStatus,
     ArtifactTypeCode,
     AudioFormat,
@@ -42,7 +41,7 @@ from ..exceptions import (
     ValidationError,
 )
 from ..types import Artifact, ArtifactType, GenerationStatus, ReportSuggestion
-from .artifact_collaborators import NoteBackedMindMapGenerator, NoteBackedMindMapLister
+from .artifact_collaborators import NoteBackedMindMapLister
 from .artifact_creation import build_create_artifact_plan, normalize_creation_options
 from .artifact_mutations import (
     EXPORT_TO_DRIVE_METHOD,
@@ -50,11 +49,16 @@ from .artifact_mutations import (
     export_to_drive,
     retry_failed_artifact,
 )
+from .artifact_note_mind_maps import (
+    ACT_ON_SOURCES_METHOD as ACT_ON_SOURCES_METHOD,
+)
+from .artifact_note_mind_maps import generate_note_backed_mind_map
 from .artifact_outputs import (
     data_table_csv,
     decode_interactive_app_data,
     decode_interactive_mind_map_tree,
     decode_prefetched_artifacts,
+    matches_artifact_type,
     report_doc_markdown,
     select_note_backed_mind_map,
     select_single_file_media_url,
@@ -86,17 +90,6 @@ DERIVE_ARTIFACT_METHOD = f"/{_SERVICE}/DeriveArtifact"
 DELETE_ARTIFACT_METHOD = f"/{_SERVICE}/DeleteArtifact"
 UPDATE_ARTIFACT_METHOD = f"/{_SERVICE}/UpdateArtifact"
 GENERATE_REPORT_SUGGESTIONS_METHOD = f"/{_SERVICE}/GenerateReportSuggestions"
-
-
-def _matches_type(artifact: Artifact, requested: ArtifactType | None) -> bool:
-    if requested is None:
-        return True
-    if requested == ArtifactType.MIND_MAP:
-        return artifact._artifact_type == ArtifactTypeCode.MIND_MAP.value or (
-            artifact._artifact_type == ArtifactTypeCode.QUIZ.value
-            and artifact._variant == INTERACTIVE_MIND_MAP_VARIANT
-        )
-    return artifact.kind == requested
 
 
 def _audio_format_code(value: Any) -> int:
@@ -131,16 +124,12 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         supervisor: CallSupervisor,
         notebooks: NotebookSourceIdProvider,
         mind_maps: NoteBackedMindMapLister,
-        note_backed_generator: NoteBackedMindMapGenerator,
         asset_downloads: AndroidAssetDownloadService,
     ) -> None:
         if mind_maps is None:
             raise TypeError("mind_maps must be a NoteBackedMindMapLister")
-        if note_backed_generator is None or not callable(note_backed_generator):
-            raise TypeError("note_backed_generator must be callable")
         self._transport = session
         self._mind_maps = mind_maps
-        self._generate_note_backed_mind_map = note_backed_generator
         super().__init__(
             supervisor=supervisor,
             notebooks=notebooks,
@@ -185,7 +174,7 @@ class AndroidArtifactsAPI(ArtifactsAPI):
                 notebook_id,
                 expected_epoch=expected_epoch,
             )
-            if _matches_type(artifact, artifact_type)
+            if matches_artifact_type(artifact, artifact_type)
         ]
         if artifact_type is not None and artifact_type != ArtifactType.MIND_MAP:
             return studio, []
@@ -199,7 +188,9 @@ class AndroidArtifactsAPI(ArtifactsAPI):
                 type(error).__name__,
             )
             return studio, None
-        filtered = [item for item in note_backed if _matches_type(item, ArtifactType.MIND_MAP)]
+        filtered = [
+            item for item in note_backed if matches_artifact_type(item, ArtifactType.MIND_MAP)
+        ]
         return [*studio, *filtered], filtered
 
     async def list(
@@ -861,11 +852,14 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         language: str | None = "en",
         instructions: str | None = None,
     ) -> MindMapResult:
-        return await self._generate_note_backed_mind_map(
+        language_code = _validate_audio_language(self._resolve_language(language))
+        selected_sources = await self._resolve_source_ids(notebook_id, source_ids)
+        return await generate_note_backed_mind_map(
+            self._transport,
             notebook_id,
-            source_ids,
-            language,
-            instructions,
+            selected_sources,
+            language=language_code,
+            instructions=instructions,
         )
 
     async def _generate_interactive_mind_map(

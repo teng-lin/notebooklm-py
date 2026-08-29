@@ -62,7 +62,7 @@ def _enum_values(enum: Any) -> dict[str, int]:
     return {value.name: value.number for value in enum.DESCRIPTOR.values}
 
 
-def test_b4_generated_package_contains_report_suggestions_without_local_overlay() -> None:
+def test_generated_package_contains_report_suggestions_without_local_overlay() -> None:
     assert artifacts_pb2.DESCRIPTOR.package == ORCHESTRATION_PACKAGE
     assert list(artifacts_pb2.DESCRIPTOR.services_by_name) == []
     assert hasattr(artifacts_pb2, "GenerateReportSuggestionsRequest")
@@ -82,7 +82,7 @@ def test_full_method_paths_are_exact_and_local_overlay_does_not_claim_a_service(
     assert f"{prefix}ExportToDrive" == EXPORT_TO_DRIVE_METHOD
 
 
-def test_b4_request_response_fields_are_exhaustive() -> None:
+def test_artifact_request_response_fields_are_exhaustive() -> None:
     singular = False
     repeated = True
     string = FieldDescriptor.TYPE_STRING
@@ -198,7 +198,7 @@ def test_local_table_and_option_overlays_pin_live_unknown_fields_without_google_
     assert _shapes(wire_pb2.WireInfographicGenerationOptionsProjection)["detail_level"][0] == 5
 
 
-def test_b4_reachable_enum_names_and_numbers_are_exhaustive() -> None:
+def test_reachable_artifact_enum_names_and_numbers_are_exhaustive() -> None:
     assert _enum_values(artifacts_pb2.ArtifactType) == {
         "ARTIFACT_TYPE_UNKNOWN": 0,
         "ARTIFACT_TYPE_AUDIO_OVERVIEW": 1,
@@ -321,7 +321,7 @@ def test_b4_reachable_enum_names_and_numbers_are_exhaustive() -> None:
     }
 
 
-def test_b4_artifact_projection_fields_are_exhaustive() -> None:
+def test_artifact_projection_fields_are_exhaustive() -> None:
     singular = False
     repeated = True
     string = FieldDescriptor.TYPE_STRING
@@ -705,6 +705,66 @@ def test_audio_options_project_only_onto_existing_public_artifact_fields() -> No
     assert not hasattr(artifact, "episode_length")
     assert not hasattr(artifact, "language_code")
     assert not hasattr(artifact, "is_interactive")
+
+
+@pytest.mark.parametrize(
+    ("artifact_type", "payload", "expected_source_id"),
+    [
+        (
+            artifacts_pb2.ARTIFACT_TYPE_TAILORED_REPORT,
+            {
+                "tailored_report": artifacts_pb2.TailoredReportArtifact(
+                    generation_options=artifacts_pb2.TailoredReportArtifactGenerationOptions(
+                        source_ids=[{"id": "source-report"}]
+                    )
+                )
+            },
+            "source-report",
+        ),
+        (
+            artifacts_pb2.ARTIFACT_TYPE_EXPLAINER_VIDEO,
+            {
+                "explainer_video": artifacts_pb2.ExplainerVideoArtifact(
+                    generation_options=artifacts_pb2.ExplainerVideoGenerationOptions(
+                        source_ids=[{"id": "source-video"}]
+                    )
+                )
+            },
+            "source-video",
+        ),
+    ],
+)
+def test_report_and_video_source_ids_fall_back_to_exact_nested_options(
+    artifact_type: int,
+    payload: dict[str, object],
+    expected_source_id: str,
+) -> None:
+    raw = artifacts_pb2.Artifact(
+        artifact_id="nested-sources",
+        type=artifact_type,
+        **payload,
+    )
+
+    artifact = decode_artifact(raw, method_id=GET_ARTIFACT_METHOD)
+
+    assert artifact.source_ids == (expected_source_id,)
+
+
+def test_top_level_artifact_sources_take_precedence_over_nested_options() -> None:
+    raw = artifacts_pb2.Artifact(
+        artifact_id="top-level-sources",
+        type=artifacts_pb2.ARTIFACT_TYPE_EXPLAINER_VIDEO,
+        sources=[{"source_id": {"id": "source-top"}}],
+        explainer_video=artifacts_pb2.ExplainerVideoArtifact(
+            generation_options=artifacts_pb2.ExplainerVideoGenerationOptions(
+                source_ids=[{"id": "source-nested"}]
+            )
+        ),
+    )
+
+    artifact = decode_artifact(raw, method_id=GET_ARTIFACT_METHOD)
+
+    assert artifact.source_ids == ("source-top",)
 
 
 def test_exact_audio_and_flashcard_user_state_projects_to_public_types() -> None:

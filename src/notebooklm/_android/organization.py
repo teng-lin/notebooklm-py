@@ -103,7 +103,7 @@ async def create_manual(
     emoji: str,
     notebook_id: str | None,
     expected_epoch: int,
-) -> None:
+) -> Any:
     exact = _exact_proto()
     properties = exact.LabelProperties(name=name)
     if emoji:
@@ -118,6 +118,29 @@ async def create_manual(
         request.project_id = notebook_id
     else:
         request.label_type = COLLECTION_TYPE
+    return await transport.unary(
+        CREATE_LABEL_METHOD,
+        request,
+        replay_safe=False,
+        response_type=exact.CreateLabelResponse,
+        expected_epoch=expected_epoch,
+    )
+
+
+async def generate_labels(
+    transport: AndroidSession,
+    notebook_id: str,
+    *,
+    regenerate_all: bool,
+    expected_epoch: int,
+) -> builtins.list[Label]:
+    """Generate source labels through CreateLabel's evidenced auto-create branch."""
+    exact = _exact_proto()
+    request = exact.CreateLabelRequest(
+        request_context=_request_context(),
+        project_id=notebook_id,
+        auto_create=exact.AutoCreateLabel(regenerate_all=regenerate_all),
+    )
     await transport.unary(
         CREATE_LABEL_METHOD,
         request,
@@ -125,6 +148,9 @@ async def create_manual(
         response_type=exact.CreateLabelResponse,
         expected_epoch=expected_epoch,
     )
+    # Return the complete post-write set through the canonical heterogeneous
+    # label decoder; CreateLabelResponse may contain only created rows.
+    return await list_labels(transport, notebook_id, expected_epoch=expected_epoch)
 
 
 async def mutate_properties(
@@ -227,6 +253,7 @@ __all__ = [
     "MemberOperation",
     "create_manual",
     "delete_resources",
+    "generate_labels",
     "list_collections",
     "list_labels",
     "mutate_member",

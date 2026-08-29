@@ -34,6 +34,7 @@ def test_generated_organization_package_fields_are_pinned() -> None:
     singular = False
     repeated = True
     string = FieldDescriptor.TYPE_STRING
+    bool_ = FieldDescriptor.TYPE_BOOL
     int32 = FieldDescriptor.TYPE_INT32
     message = FieldDescriptor.TYPE_MESSAGE
 
@@ -81,6 +82,9 @@ def test_generated_organization_package_fields_are_pinned() -> None:
         "source_ids": (2, repeated, string, None),
         "notebook_ids": (3, repeated, string, None),
     }
+    assert _fields(organization_pb2.AutoCreateLabel) == {
+        "regenerate_all": (1, singular, bool_, None),
+    }
     assert _fields(organization_pb2.CreateLabelRequest) == {
         "request_context": (
             1,
@@ -89,6 +93,12 @@ def test_generated_organization_package_fields_are_pinned() -> None:
             "labs.language.tailwind.common.protos.RequestContext",
         ),
         "project_id": (2, singular, string, None),
+        "auto_create": (
+            5,
+            singular,
+            message,
+            f"{ORCHESTRATION_PACKAGE}.AutoCreateLabel",
+        ),
         "manual_create": (
             6,
             singular,
@@ -97,13 +107,32 @@ def test_generated_organization_package_fields_are_pinned() -> None:
         ),
         "label_type": (7, singular, int32, None),
     }
+    assert list(organization_pb2.CreateLabelRequest.DESCRIPTOR.oneofs_by_name) == ["create_mode"]
+    assert {
+        field.name
+        for field in organization_pb2.CreateLabelRequest.DESCRIPTOR.oneofs_by_name[
+            "create_mode"
+        ].fields
+    } == {"auto_create", "manual_create"}
     assert _fields(organization_pb2.CreateLabelResponse) == {
         "label_and_sources": (
             2,
             repeated,
             message,
             f"{ORCHESTRATION_PACKAGE}.LabelAndSources",
-        )
+        ),
+        "notebook_collections": (
+            3,
+            repeated,
+            message,
+            f"{ORCHESTRATION_PACKAGE}.NotebookCollection",
+        ),
+    }
+    assert _fields(organization_pb2.NotebookCollection) == {
+        "name": (1, singular, string, None),
+        "notebook_ids": (2, repeated, string, None),
+        "id": (3, singular, string, None),
+        "emoji": (4, singular, string, None),
     }
     assert _fields(organization_pb2.MutateLabelProperties) == {
         "name": (1, singular, string, None),
@@ -223,6 +252,26 @@ def test_request_wire_bytes_pin_both_resource_modes_and_one_member_operations() 
         "12026e62"
     )
     assert organization_pb2.GetLabelsRequest(label_type=3).SerializeToString().hex() == "1803"
+    unlabeled = proto.AutoCreateLabel(regenerate_all=False)
+    assert unlabeled.HasField("regenerate_all")
+    assert (
+        proto.CreateLabelRequest(project_id="nb", auto_create=unlabeled).SerializeToString().hex()
+        == "12026e622a020800"
+    )
+    regenerate_all = proto.AutoCreateLabel(regenerate_all=True)
+    assert regenerate_all.HasField("regenerate_all")
+    assert (
+        proto.CreateLabelRequest(project_id="nb", auto_create=regenerate_all)
+        .SerializeToString()
+        .hex()
+        == "12026e622a020801"
+    )
+    assert (
+        proto.CreateLabelRequest(project_id="nb", auto_create=proto.AutoCreateLabel())
+        .SerializeToString()
+        .hex()
+        == "12026e622a00"
+    )
     assert (
         proto.CreateLabelRequest(
             project_id="nb",
@@ -299,3 +348,21 @@ def test_local_read_overlay_preserves_heterogeneous_member_bytes_and_empty_prese
     assert properties.HasField("name")
     assert properties.HasField("emoji")
     assert properties.SerializeToString().hex() == "0a01411200"
+
+
+def test_create_collection_response_wire_bytes_pin_live_field_three_row() -> None:
+    response = organization_pb2.CreateLabelResponse(
+        notebook_collections=[
+            organization_pb2.NotebookCollection(
+                name="Research",
+                notebook_ids=["n1", "n2"],
+                id="c1",
+                emoji="x",
+            )
+        ]
+    )
+    assert (
+        response.SerializeToString().hex()
+        == "1a190a08526573656172636812026e3112026e321a026331220178"
+    )
+    assert organization_pb2.CreateLabelResponse.FromString(response.SerializeToString()) == response

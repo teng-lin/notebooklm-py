@@ -225,12 +225,15 @@ def _decode_artifact(message: Any, *, method_id: str) -> Artifact:
         last_modified_at = message.last_modified_timestamp.ToDatetime(tzinfo=timezone.utc)
 
     source_ids = tuple(source.source_id.id for source in message.sources if source.source_id.id)
-    if not source_ids and type_code == 1 and message.HasField("audio_overview"):
-        source_ids = tuple(
-            source.id
-            for source in message.audio_overview.generation_options.source_ids
-            if source.id
-        )
+    if not source_ids:
+        nested_source_ids: Any = ()
+        if type_code == 1 and message.HasField("audio_overview"):
+            nested_source_ids = message.audio_overview.generation_options.source_ids
+        elif type_code == 2 and message.HasField("tailored_report"):
+            nested_source_ids = message.tailored_report.generation_options.source_ids
+        elif type_code == 3 and message.HasField("explainer_video"):
+            nested_source_ids = message.explainer_video.generation_options.source_ids
+        source_ids = tuple(source.id for source in nested_source_ids if source.id)
 
     return Artifact(
         id=artifact_id,

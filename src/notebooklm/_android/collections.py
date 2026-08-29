@@ -14,7 +14,9 @@ from ..exceptions import (
     RPCError,
 )
 from ..types import Collection, Notebook
+from .codecs.organization import decode_created_collections
 from .organization import (
+    CREATE_LABEL_METHOD,
     DELETE_LABELS_METHOD,
     GET_LABELS_METHOD,
     MUTATE_LABEL_METHOD,
@@ -92,10 +94,7 @@ class AndroidCollectionsAPI(CollectionsAPI):
 
     async def create(self, name: str) -> Collection:
         async with self._transport.operation_scope("collections.create") as lease:
-            before_ids = {
-                collection.id for collection in await self._list(expected_epoch=lease.epoch)
-            }
-            await create_manual(
+            response = await create_manual(
                 self._transport,
                 kind="collection",
                 name=name,
@@ -103,17 +102,13 @@ class AndroidCollectionsAPI(CollectionsAPI):
                 notebook_id=None,
                 expected_epoch=lease.epoch,
             )
-            new = [
-                collection
-                for collection in await self._list(expected_epoch=lease.epoch)
-                if collection.id not in before_ids
-            ]
-            if len(new) != 1:
+            created = decode_created_collections(response, method_id=CREATE_LABEL_METHOD)
+            if len(created) != 1:
                 raise CollectionError(
-                    f"create(name={name!r}) expected exactly 1 new collection, found {len(new)} "
-                    "(concurrent collection creation or read-after-write lag can cause this)"
+                    f"create(name={name!r}) expected exactly 1 created collection in the "
+                    f"Android response, found {len(created)}"
                 )
-            (collection,) = new
+            (collection,) = created
             return collection
 
     async def rename(

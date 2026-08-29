@@ -3,6 +3,7 @@ syntax = "proto3";
 package notebooklm.android.wire.v1;
 
 import "labs/language/tailwind/common/protos/common.proto";
+import "labs/language/tailwind/sharing/sharing.proto";
 
 // Repository-local sharing response parser. The exact service path, message names,
 // imported public-settings FQN, and field tags are evidenced. This local
@@ -10,7 +11,7 @@ import "labs/language/tailwind/common/protos/common.proto";
 // #3/#4; the exact-package response descriptor remains the remote type.
 
 message GetProjectDetailsResponse {
-  // Collaborator/owner details #1 and unknown tags #7/#8 remain unknown fields.
+  repeated .labs.language.tailwind.sharing.SharedUser shared_users = 1;
   .labs.language.tailwind.common.protos.ProjectPublicSettings public_settings = 2;
   optional int32 max_individuals_share_limit = 3;
   optional bool is_public_sharing_allowed = 4;

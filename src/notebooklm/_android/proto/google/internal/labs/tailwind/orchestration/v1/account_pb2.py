@@ -22,23 +22,34 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
+from notebooklm._android.proto.labs.language.tailwind.common.protos import metadata_pb2 as labs_dot_language_dot_tailwind_dot_common_dot_protos_dot_metadata__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n<google/internal/labs/tailwind/orchestration/v1/account.proto\x12.google.internal.labs.tailwind.orchestration.v1\"[\n\x08UserInfo\x12\x14\n\x0c\x61\x63\x63\x65pted_tos\x18\x01 \x01(\x08\x12$\n\x1copted_in_to_marketing_emails\x18\x04 \x01(\x08\x12\x13\n\x0bis_eea_user\x18\t \x01(\x08\"*\n\x0fPremiumUserInfo\x12\x17\n\x0fis_premium_user\x18\x01 \x01(\x08\"\xb2\x01\n\x07\x41\x63\x63ount\x12K\n\tuser_info\x18\x03 \x01(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.UserInfo\x12Z\n\x11premium_user_info\x18\x05 \x01(\x0b\x32?.google.internal.labs.tailwind.orchestration.v1.PremiumUserInfo\"\x1b\n\x19GetOrCreateAccountRequest\"f\n\x1aGetOrCreateAccountResponse\x12H\n\x07\x61\x63\x63ount\x18\x01 \x01(\x0b\x32\x37.google.internal.labs.tailwind.orchestration.v1.Accountb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n<google/internal/labs/tailwind/orchestration/v1/account.proto\x12.google.internal.labs.tailwind.orchestration.v1\x1a\x33labs/language/tailwind/common/protos/metadata.proto\"\'\n\x0eOutputLanguage\x12\x15\n\rlanguage_code\x18\x01 \x01(\t\"\xb4\x01\n\x08UserInfo\x12\x14\n\x0c\x61\x63\x63\x65pted_tos\x18\x01 \x01(\x08\x12$\n\x1copted_in_to_marketing_emails\x18\x04 \x01(\x08\x12W\n\x0foutput_language\x18\x05 \x01(\x0b\x32>.google.internal.labs.tailwind.orchestration.v1.OutputLanguage\x12\x13\n\x0bis_eea_user\x18\t \x01(\x08\"*\n\x0fPremiumUserInfo\x12\x17\n\x0fis_premium_user\x18\x01 \x01(\x08\"\x98\x02\n\nTierLimits\x12\x19\n\x0c\x61\x63\x63ount_type\x18\x01 \x01(\x05H\x00\x88\x01\x01\x12\x19\n\x0cmax_projects\x18\x02 \x01(\x05H\x01\x88\x01\x01\x12$\n\x17max_sources_per_project\x18\x03 \x01(\x05H\x02\x88\x01\x01\x12!\n\x14max_words_per_source\x18\x04 \x01(\x05H\x03\x88\x01\x01\x12\x1e\n\x11subscription_tier\x18\x05 \x01(\x05H\x04\x88\x01\x01\x42\x0f\n\r_account_typeB\x0f\n\r_max_projectsB\x1a\n\x18_max_sources_per_projectB\x17\n\x15_max_words_per_sourceB\x14\n\x12_subscription_tier\"\x83\x02\n\x07\x41\x63\x63ount\x12O\n\x0btier_limits\x18\x02 \x01(\x0b\x32:.google.internal.labs.tailwind.orchestration.v1.TierLimits\x12K\n\tuser_info\x18\x03 \x01(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.UserInfo\x12Z\n\x11premium_user_info\x18\x05 \x01(\x0b\x32?.google.internal.labs.tailwind.orchestration.v1.PremiumUserInfo\"j\n\x19GetOrCreateAccountRequest\x12M\n\x0frequest_context\x18\x01 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.RequestContext\"f\n\x1aGetOrCreateAccountResponse\x12H\n\x07\x61\x63\x63ount\x18\x01 \x01(\x0b\x32\x37.google.internal.labs.tailwind.orchestration.v1.Account\"y\n&AccountMutation_ChangePropertyMutation\x12O\n\rnew_user_info\x18\x01 \x01(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.UserInfo\"\x90\x01\n\x0f\x41\x63\x63ountMutation\x12q\n\x0f\x63hange_property\x18\x02 \x01(\x0b\x32V.google.internal.labs.tailwind.orchestration.v1.AccountMutation_ChangePropertyMutationH\x00\x42\n\n\x08mutation\"\xb9\x01\n\x14MutateAccountRequest\x12R\n\tmutations\x18\x01 \x03(\x0b\x32?.google.internal.labs.tailwind.orchestration.v1.AccountMutation\x12M\n\x0frequest_context\x18\x02 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.RequestContextb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'google.internal.labs.tailwind.orchestration.v1.account_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_USERINFO']._serialized_start=112
-  _globals['_USERINFO']._serialized_end=203
-  _globals['_PREMIUMUSERINFO']._serialized_start=205
-  _globals['_PREMIUMUSERINFO']._serialized_end=247
-  _globals['_ACCOUNT']._serialized_start=250
-  _globals['_ACCOUNT']._serialized_end=428
-  _globals['_GETORCREATEACCOUNTREQUEST']._serialized_start=430
-  _globals['_GETORCREATEACCOUNTREQUEST']._serialized_end=457
-  _globals['_GETORCREATEACCOUNTRESPONSE']._serialized_start=459
-  _globals['_GETORCREATEACCOUNTRESPONSE']._serialized_end=561
+  _globals['_OUTPUTLANGUAGE']._serialized_start=165
+  _globals['_OUTPUTLANGUAGE']._serialized_end=204
+  _globals['_USERINFO']._serialized_start=207
+  _globals['_USERINFO']._serialized_end=387
+  _globals['_PREMIUMUSERINFO']._serialized_start=389
+  _globals['_PREMIUMUSERINFO']._serialized_end=431
+  _globals['_TIERLIMITS']._serialized_start=434
+  _globals['_TIERLIMITS']._serialized_end=714
+  _globals['_ACCOUNT']._serialized_start=717
+  _globals['_ACCOUNT']._serialized_end=976
+  _globals['_GETORCREATEACCOUNTREQUEST']._serialized_start=978
+  _globals['_GETORCREATEACCOUNTREQUEST']._serialized_end=1084
+  _globals['_GETORCREATEACCOUNTRESPONSE']._serialized_start=1086
+  _globals['_GETORCREATEACCOUNTRESPONSE']._serialized_end=1188
+  _globals['_ACCOUNTMUTATION_CHANGEPROPERTYMUTATION']._serialized_start=1190
+  _globals['_ACCOUNTMUTATION_CHANGEPROPERTYMUTATION']._serialized_end=1311
+  _globals['_ACCOUNTMUTATION']._serialized_start=1314
+  _globals['_ACCOUNTMUTATION']._serialized_end=1458
+  _globals['_MUTATEACCOUNTREQUEST']._serialized_start=1461
+  _globals['_MUTATEACCOUNTREQUEST']._serialized_end=1646
 # @@protoc_insertion_point(module_scope)

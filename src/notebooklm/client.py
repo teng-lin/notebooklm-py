@@ -306,8 +306,8 @@ class NotebookLMClient:
             backend: Preferred namespace backend. ``"web"`` preserves the
                 established implementation; ``"android"`` installs the Android
                 adapter for every public namespace. A few operations retain
-                documented Web compatibility collaborators where the official
-                mobile schema exposes no equivalent wire contract. When omitted,
+                documented Web compatibility collaborators where the recovered
+                mobile route has no usable admitted contract. When omitted,
                 ``NOTEBOOKLM_BACKEND`` is consulted, then the default is web.
         """
         # The full assembly lives in ``notebooklm._client_assembly`` —
@@ -370,7 +370,7 @@ class NotebookLMClient:
 
         The value describes the namespace object, not every internal operation:
         an Android adapter may use a documented narrow Web compatibility seam
-        when the official mobile schema has no equivalent RPC.
+        when the recovered mobile route has no usable admitted contract.
         """
         return self._backends
 
@@ -466,7 +466,10 @@ class NotebookLMClient:
         This is the public escape hatch for advanced callers who need an
         undocumented RPC before a typed API exists. Prefer the namespaced APIs
         (``client.notebooks``, ``client.sources``, etc.) when possible. Import
-        ``RPCMethod`` from ``notebooklm.rpc``.
+        ``RPCMethod`` from ``notebooklm.rpc``. ``RPCMethod`` contains Web
+        ``batchexecute`` identifiers, so selecting ``backend="android"`` does
+        not change this root escape hatch; only the typed namespace APIs follow
+        the Android backend selection.
 
         The wrapper forwards to :meth:`RpcExecutor.rpc_call` on the
         executor that was bound during :meth:`__init__` (and that every

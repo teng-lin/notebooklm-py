@@ -248,9 +248,9 @@ Some feature workflows intentionally combine RPC with non-RPC HTTP work:
 |------|---------------|
 | Source file upload | `WebSourcesAPI.add_file()` delegates to `SourceUploadPipeline.add_file()`. The pipeline holds a generation-bearing `CallSupervisor.operation_scope`, takes its own upload semaphore, registers the file source through `runtime.rpc_call(ADD_SOURCE_FILE)`, then uses a dedicated `httpx.AsyncClient` and epoch-fenced live Kernel cookies for the Scotty resumable-upload start/finalize calls. Optional wait/rename steps remain inside the same admitted workflow and return to `rpc_call`. |
 | Source URL/text/Drive add | `WebSourcesAPI` holds a `CallSupervisor.operation_scope` across URL workflows that combine create, optional wait, and optional rename. `SourceAddService` wraps URL and Drive mutating RPCs in `idempotent_create(...)` where those flows have stable probes. Text-source adds remain intentionally non-idempotent unless the caller handles dedupe externally. |
-| Artifact generation | The backend-neutral `ArtifactsAPI` owns validation, source/language resolution, and all ten `generate_*` workflows over the sole `_send_create_artifact` hook. `WebArtifactsAPI` implements that hook with `ArtifactGenerationService` (`_web/artifact/generation.py`), whose positional `CREATE_ARTIFACT` builders live in `_web/params/artifacts.py`; web-only revise/retry/mind-map paths use the same service. When `backend="android"` is explicit, `AndroidArtifactsAPI` is publicly assembled and dispatches the evidence-admitted exact `CreateArtifact` families, including cinematic videos and data tables, plus live-proven `DeriveArtifact`. Retry and Drive export use web-derived mobile handlers, while note-backed generation is isolated behind the existing Web compatibility collaborator because no mobile FQN was recoverable. `ArtifactPollingService` owns leader/follower polling over the abstract target-aware studio projection. |
-| Artifact download | Web `ArtifactDownloadService` (`_web/artifact/downloads.py`) selects artifacts and decodes raw rows/interactive HTML. The neutral `AssetDownloadService` (`_artifact/downloads.py`) owns byte transfer, rejection, staging, and atomic publication. Web supplies a storage-cookie jar. The publicly selected Android asset service validates canonical hosts, clears ambient cookies on every hop, attaches bearer only to the initial exact `lh3` chain segment, applies representation byte/signature limits, corrects verified WAV output to `.wav`, and is drained with the client lifecycle. These transfers do not go through `RpcExecutor` or `Kernel.post`. |
-| Notes and mind maps | `NoteService` owns web note-row CRUD/classification through `RpcCaller`. `NoteBackedMindMapService` keeps web row decoding and exact-content note-backed rename in `WebMindMapsAPI`; rename fetches the raw stored row and resends its content unchanged. The neutral `MindMapsAPI` composes unified list/lookup/rename/delete workflows over base-typed `ArtifactsAPI` and `NotesAPI` collaborators. For explicit Android selection, `AndroidMindMapsAPI` is publicly assembled over the Android artifact API and the typed note-backed reader: interactive generation/tree/mutation uses live artifact operations, while note-backed reads/rename/delete/tree and typed prefetch compose without fabricating Web rows. Note-backed generation uses a narrow compatibility collaborator backed by the existing Web operation rather than inventing an unrecovered mobile FQN. |
+| Artifact generation | The backend-neutral `ArtifactsAPI` owns validation, source/language resolution, and all ten `generate_*` workflows over the sole `_send_create_artifact` hook. `WebArtifactsAPI` implements that hook with `ArtifactGenerationService` (`_web/artifact/generation.py`), whose positional `CREATE_ARTIFACT` builders live in `_web/params/artifacts.py`; Web revise/retry/mind-map paths use the same service. When `backend="android"` is explicit, `AndroidArtifactsAPI` is publicly assembled and dispatches the evidence-admitted exact `CreateArtifact` families, including cinematic videos and data tables, plus live-proven `DeriveArtifact`. Retry and Drive export use web-derived mobile gRPC handlers; note-backed generation is native composition over current-bundle `ActOnSources` and exact `CreateNote`. `ArtifactPollingService` owns leader/follower polling over the abstract target-aware studio projection. |
+| Artifact download | Web `ArtifactDownloadService` (`_web/artifact/downloads.py`) selects artifacts and decodes raw rows/interactive HTML. The neutral `AssetDownloadService` (`_artifact/downloads.py`) owns byte transfer, rejection, staging, and atomic publication. Web supplies a storage-cookie jar. The publicly selected Android asset service validates canonical hosts, clears ambient cookies on every hop, uses the APK-evidenced bearer-authenticated `GET` plus `alr=yes` on the exact `lh3.googleusercontent.com` and slide `contribution.usercontent.google.com` entry hosts, strips credentials once a chain leaves the allowlist, applies representation byte/signature limits, corrects verified WAV output to `.wav`, and is drained with the client lifecycle. These transfers do not go through `RpcExecutor` or `Kernel.post`. |
+| Notes and mind maps | `NoteService` owns Web note-row CRUD/classification through `RpcCaller`. `NoteBackedMindMapService` keeps Web row decoding and exact-content note-backed rename in `WebMindMapsAPI`; rename fetches the raw stored row and resends its content unchanged. The neutral `MindMapsAPI` composes unified list/lookup/rename/delete workflows over base-typed `ArtifactsAPI` and `NotesAPI` collaborators. For explicit Android selection, `AndroidMindMapsAPI` is publicly assembled over the Android artifact and note APIs: interactive generation/tree/mutation uses live artifact operations, while note-backed reads/rename/delete/tree and typed prefetch compose without fabricating Web rows. Note-backed generation uses the current-bundle `ActOnSources` request and persists its JSON through native `CreateNote`. |
 
 ## Cross-cutting policies
 
@@ -983,33 +983,35 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/codecs/notebooks.py` | Android project and notebook-guide projections plus bounded notebook decode/status errors. |
 | `_android/codecs/sources.py` | Android source projection, enum-name mapping, duplicate handling, and strict/default drift behavior. |
 | `_android/codecs/artifacts.py` | Ledgered Android artifact, representation, and exact `Artifact.artifact_user_state #18` projection with bounded decode failures; preserves recognized audio/flashcard state and unknown populated state. |
-| `_android/codecs/chat.py` | Proven Android history, response-document, and citation projection. |
+| `_android/codecs/chat.py` | Proven Android history and citation projection layered on the shared document codec. |
+| `_android/codecs/documents.py` | Shared exact-`TailwindDoc` decoder plus plain-text/Markdown renderers used by source full-text, chat answers, and report downloads. |
 | `_android/codecs/notes.py` | Evidence-bounded note request builders plus ordinary-note and exact-kind note-backed mind-map projections. |
-| `_android/codecs/sharing.py` | Public-link sharing status projection from the repository-local wire overlay. |
+| `_android/codecs/sharing.py` | Sharing-status projection for collaborator rows, permissions, public settings, limits, and policy flags from exact and repository-local wire overlays. |
 | `_android/codecs/organization.py` | Strict heterogeneous organization decoder: wrapped exact `SourceId` members for labels and bare UTF-8 notebook UUID members for collections. |
 | `_android/codecs/research.py` | Strict research discovery job/result projection with exact mode/status mapping and bounded drift errors. |
 | `_android/errors.py` | Sanitized gRPC-status projection plus the pre-I/O unsupported-operation helper; raw transport exceptions and details never cross this boundary. |
 | `_android/notebooks.py` | Selected Android notebook adapter: reads and evidence-admitted notebook create/delete/title-and-emoji update/copy/guide operations; the exact but live-failing recent-removal route is isolated behind a Web compatibility callable. |
 | `_android/session.py` | Lazy Google-TLS gRPC transport participating in root loop/lifecycle supervision, aggregate deadlines, per-call bearer metadata, status mapping, safe-read replay, and full stream leases. |
-| `_android/sources.py` | Selected Android source adapter: `GetProject` reads, exact URL/text/YouTube/Drive adds, freshness checks, maintenance/content methods, and generic file uploads. Refresh uses a narrow Web compatibility callable after valid mobile requests proved unusable; Drive-file download uses the shared authenticated Web download seam before Android registration/upload. |
-| `_android/upload.py` | Selected `AndroidUploadPipeline`: epoch-fenced generic tentative registration plus strict bearer-authenticated Scotty start/finalize, one aggregate upload deadline, separate FD/body concurrency, Web-compatible return branches, and secret-safe local teardown. |
+| `_android/sources.py` | Selected Android source adapter: `GetProject` reads, exact URL/text/YouTube/Drive adds, freshness checks, native stale-Drive-source refresh, maintenance/content methods, generic file uploads, and Android-bearer Drive-file download followed by Android registration/upload. |
+| `_android/upload.py` | Selected `AndroidUploadPipeline`: epoch-fenced generic tentative registration, strict bearer-authenticated Scotty start/finalize, and a bounded exact-origin Drive v3 metadata/media downloader for `add_drive_file`; it uses one aggregate operation deadline, independent download/upload admission, restricted temporary files, and secret-safe teardown. |
 | `_android/evidence.py` | One pinned Android evidence profile for the captured app version and distinct registration/finalize user agents. |
 | `_android/artifacts.py` | Publicly selected artifact adapter: aggregate listing/polling, all public generation families, live `DeriveArtifact` slide revision, retry, interactive and note-backed mind maps, strict media/slide transfers, local report/quiz/flashcard/mind-map/data-table saves, delete/rename, infographic download, report suggestions, and Drive export. |
 | `_android/artifact_creation.py` | Exact Android `CreateArtifact` option/request builders for video (including cinematic code 3), tailored reports/study guides/concept explanations, flashcards, quizzes, infographics, slide decks, data tables, and interactive mind maps. |
-| `_android/artifact_collaborators.py` | Narrow typed protocols for note-backed mind-map listing and the existing Web generation compatibility seam used by Android assembly. |
+| `_android/artifact_collaborators.py` | Narrow typed protocol for joining note-backed mind maps into Android artifact listing. |
 | `_android/artifact_mutations.py` | Web-derived mobile `GenerateArtifact` retry and `ExportToDrive` mutations with exact request/response types, lifecycle fencing, and bounded response validation. |
+| `_android/artifact_note_mind_maps.py` | Native `ActOnSources` plus `CreateNote` workflow for note-backed mind-map generation within one Android transport epoch. |
 | `_android/artifact_outputs.py` | Bounded local representation decoding and atomic text publication: progressive media selection, typed/exact-protobuf prefetch, typed note-backed mind-map prefetch, app/tree parsing, TailwindDoc Markdown rendering, and BOM-prefixed data-table CSV rendering. |
 | `_android/artifact_proto.py` | Lazy handles for exact artifact/read protobuf modules and repository-local evidence overlays so public Android backend construction does not eagerly import generated descriptors. |
 | `_android/note_backed.py` | Narrow adapter projecting the selected typed note-backed mind-map reader into aggregate Android artifact rows. |
-| `_android/assets.py` | Publicly selected, lifecycle-drained Android asset transport. It validates canonical hosts and every hop, clears ambient cookies, attaches bearer only to the initial exact `lh3` segment, enforces representation-specific length/stream/signature limits, corrects verified WAV destinations to `.wav`, and publishes through same-directory staging atomically. Slide PDF/PPTX transfer remains live-blocked by the unrecovered scoped Drive form token. |
-| `_android/chat.py` | Selected Android chat adapter over settings, sessions, raw turns, history deletion, the cumulative server stream, and the saved-response note seam; base `ChatAPI` retains locks/cache/follow-up orchestration and public result construction. |
-| `_android/notes.py` | Selected implementation of the eight-method Notes manifest: exact note CRUD write/read-back checks, bounded idempotent deletion polling, exact-kind note-backed mind-map list/delete, and a saved-response creation seam. Unknown creation time remains `None`, raw map rows preserve the supported ID/content prefix, and genuine post-delete absence remains `None`. |
-| `_android/settings.py` | Selected settings adapter that preserves output-language and account-limit semantics through a narrow Web compatibility collaborator because the admitted Android account closure exposes neither contract. |
-| `_android/sharing.py` | Selected sharing adapter: public-link mutation stays native Android while full collaborator/view/status semantics use the Web compatibility collaborator omitted by the mobile closure. |
-| `_android/mind_maps.py` | Publicly selected Android mind-map composition over base-typed artifact/note collaborators. Interactive generation/tree reads and note-backed rename/delete/tree/prefetch compose through live typed operations; note-backed generation is supplied by the narrow Web compatibility collaborator. |
+| `_android/assets.py` | Publicly selected, lifecycle-drained Android asset transport. It validates canonical hosts and every hop, clears ambient cookies, performs the APK-evidenced bearer-authenticated `GET` with `alr=yes` only on exact admitted entry hosts, strips credentials after leaving the allowlist, enforces representation-specific length/stream/signature limits, corrects verified WAV destinations to `.wav`, and publishes through same-directory staging atomically. PDF and PPTX slide transfer are live-proven. |
+| `_android/chat.py` | Selected Android chat adapter over settings, sessions, raw turns, history deletion, the cumulative server stream, and citation-rich saved-response notes; base `ChatAPI` retains locks/cache/follow-up orchestration and public result construction. |
+| `_android/notes.py` | Selected implementation of the eight-method Notes manifest: exact note CRUD write/read-back checks, bounded idempotent deletion polling, exact-kind note-backed mind-map list/delete, and rich saved-response creation with current-server citation fields. Unknown creation time remains `None`, raw map rows preserve the supported ID/content prefix, and genuine post-delete absence remains `None`. |
+| `_android/settings.py` | Native output-language and account-limit adapter over exact `GetOrCreateAccount` and `MutateAccount`; temporary live mutation/read-back was restored in `finally`. |
+| `_android/sharing.py` | Native `GetProjectDetails`/`ShareProject` adapter for status, public links, collaborator grants/updates/removals, and read-back. Only the independently rejected `set_view_level` mutation uses the Web compatibility callable. |
+| `_android/mind_maps.py` | Publicly selected Android mind-map composition over base-typed artifact/note collaborators. Interactive generation/tree reads and note-backed rename/delete/tree/prefetch compose through live typed operations; note-backed generation uses Android `ActOnSources` plus native `CreateNote`. |
 | `_android/organization.py` | Shared lazy-protobuf transport/building seam for exact `GetLabels` plus generated web-derived manual organization writes; every write is non-replayed and epoch-fenced by its adapter workflow. |
-| `_android/labels.py` | Selected label adapter with native manual CRUD/membership, ID-diff creation, one-member writes, and strict read-backs; AI generation uses the injected Web callable absent from the mobile request union. |
-| `_android/collections.py` | Complete implementation of all nine collection methods with ID-diff creation, member-order joins, one-member non-atomic writes, and one outer lifecycle lease per workflow. Explicit `backend="android"` selects this namespace; default and Web selection remain Web. |
+| `_android/labels.py` | Selected label adapter with native manual CRUD/membership, exact create-response correlation, one-member writes, strict read-backs, and live-proven automatic generation through `CreateLabel.auto_create #5`. |
+| `_android/collections.py` | Complete implementation of all nine collection methods with exact create-response correlation, member-order joins, one-member non-atomic writes, and one outer lifecycle lease per workflow. Explicit `backend="android"` selects this namespace; default and Web selection remain Web. |
 | `_android/research.py` | Selected synchronous and async Research adapter with native Web/Drive fast starts, Web deep starts, stateful non-replayed cancel/import, replay-safe polls, and epoch-fenced workflows. |
 | `_android/account.py` | Private account `GetOrCreateAccount` adapter: lazy protobuf import, one epoch lease, conservative non-replay, and no public client namespace. |
 | `_android/proto/` | Checked-in generated Python protobuf package. Files are regenerated only by `scripts/regenerate_android_protos.py` with the pinned toolchain and are never generated during installation. |
@@ -1019,7 +1021,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/read_pb2_grpc.py` | Deterministic service-free companion for the read message overlay. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/notebooks_pb2.py` | Durable exact-package notebook mutation/guide messages imported by the cumulative service; local parser overrides remain only for live-only fields. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/notebooks_pb2_grpc.py` | Deterministic service-free companion for the exact notebook message overlay. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2.py` | Sole exact-package cumulative orchestration descriptor: 44 implemented methods, including exact `RemoveRecentlyViewedProject`, live APK-exact `DeriveArtifact`, and nine conventional-name signatures explicitly tracked as current-web-bundle inferences; the separate sharing descriptor adds two exact paths and the exception manifest is empty. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2.py` | Sole exact-package cumulative orchestration descriptor: 47 implemented methods, including exact `RemoveRecentlyViewedProject`, live APK-exact `DeriveArtifact`, and ten conventional-name signatures explicitly tracked as current-web-bundle inferences; the separate sharing descriptor adds two exact paths and the exception manifest is empty. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2_grpc.py` | Generated `LabsTailwindOrchestrationServiceStub` exposing the cumulative exact unary and unary-stream methods. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/sources_pb2.py` | Source-operation and `UploadFileRequest` descriptors plus the explicitly web-derived `MutateSource` request/response wrapper. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/artifacts_pb2.py` | Artifact request/response and projection overlay, including the explicitly web-derived report-suggestion closure. |
@@ -1045,6 +1047,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/proto/notebooklm/internal/android/wire/v1/notebooks_pb2_grpc.py` | Deterministic service-free companion for the notebook local wire overlay. |
 | `_android/proto/notebooklm/internal/android/wire/v1/artifacts_pb2.py` | Repository-local artifact table/audio/infographic wire overlay for evidence-backed fields absent from the inspected APK descriptor. |
 | `_android/proto/notebooklm/internal/android/wire/v1/artifacts_pb2_grpc.py` | Deterministic service-free companion for the artifact local artifact wire overlay. |
+| `_android/proto/notebooklm/internal/android/wire/v1/source_content_pb2.py` | Repository-local `LoadSource` response overlay admitting the live exact `TailwindDoc #4` branch without a Google-package import cycle. |
+| `_android/proto/notebooklm/internal/android/wire/v1/source_content_pb2_grpc.py` | Deterministic service-free companion for the local source-content wire overlay. |
 | `_android/proto_src/` | Minimal compile-ready cumulative Android `.proto` closure. The evidence ledger is `docs/android/proto-evidence-ledger.md`; flattened `docs/android/schema.proto` is never a compile input. |
 | `_runtime/init.py` | Constructor helpers that validate client runtime kwargs, build collaborators (returning a `RuntimeCollaborators` bundle), wire middleware, and bind `ClientComposed`. |
 | `_web/transport/kernel.py` | Concrete `Kernel` transport core (owns `httpx.AsyncClient` + cookie jar) |
@@ -1289,7 +1293,8 @@ src/notebooklm/
 │   ├── codecs/                  # Android protobuf projections
 │   │   ├── __init__.py          # Codec package marker
 │   │   ├── account.py           # Strict frozen account projection
-│   │   ├── chat.py              # Chat history/document/citation projection
+│   │   ├── chat.py              # Chat history/citation projection
+│   │   ├── documents.py         # Shared TailwindDoc decoder + text renderers
 │   │   ├── notes.py             # Note request builders and projection
 │   │   ├── sharing.py           # Public-link sharing projection
 │   │   ├── notebooks.py         # Project and notebook-guide decoding
@@ -1307,6 +1312,7 @@ src/notebooklm/
 │   ├── artifact_creation.py      # Exact CreateArtifact option/request builders
 │   ├── artifact_collaborators.py # Narrow note-backed compatibility protocols
 │   ├── artifact_mutations.py     # Retry and Drive export mobile mutations
+│   ├── artifact_note_mind_maps.py # Native note-backed map generation/persistence
 │   ├── artifact_outputs.py       # Local output decoders/renderers + atomic publication
 │   ├── artifact_proto.py         # Lazy artifact/read protobuf handles
 │   ├── note_backed.py            # Typed note-backed map → aggregate artifact adapter
@@ -1332,7 +1338,7 @@ src/notebooklm/
 │           │   ├── notebooks_pb2.py         # Exact notebook messages/descriptors
 │           │   ├── notebooks_pb2_grpc.py    # Deterministic service-free companion
 │           │   ├── orchestration_service_pb2.py      # Cumulative exact service descriptor
-│           │   ├── orchestration_service_pb2_grpc.py # 44-method generated stub
+│           │   ├── orchestration_service_pb2_grpc.py # 47-method generated stub
 │           │   ├── sources_pb2.py               # Source and generic-upload descriptors
 │           │   ├── sources_pb2_grpc.py          # Deterministic service-free companion
 │           │   ├── artifacts_pb2.py         # Exact artifact message overlay
@@ -1357,7 +1363,9 @@ src/notebooklm/
 │           ├── notebooks_pb2.py       # Repository-local notebook wire messages
 │           ├── notebooks_pb2_grpc.py  # Deterministic service-free companion
 │           ├── artifacts_pb2.py       # Repository-local artifact wire messages
-│           └── artifacts_pb2_grpc.py  # Deterministic service-free companion
+│           ├── artifacts_pb2_grpc.py  # Deterministic service-free companion
+│           ├── source_content_pb2.py       # Local LoadSource TailwindDoc overlay
+│           └── source_content_pb2_grpc.py  # Deterministic service-free companion
 │       └── labs/language/tailwind/
 │           ├── common/protos/
 │           │   ├── common_pb2.py          # Shared chat/sharing exact common messages
@@ -1424,6 +1432,7 @@ src/notebooklm/
 ├── _source/                     # Neutral source services + lazy compatibility exports
 │   ├── __init__.py              # Lazy package-level shims for moved web service names
 │   ├── batch.py                 # Backend-neutral per-URL batch result record
+│   ├── drive.py                 # Drive file-id/resource-key parsing and safe display labels
 │   ├── markdown.py              # Source fulltext HTML-to-Markdown conversion policy
 │   └── polling.py               # Source polling coordinator
 ├── _artifact/                   # Artifact-feature subpackage (promoted from flat _artifact_*.py, #1328)

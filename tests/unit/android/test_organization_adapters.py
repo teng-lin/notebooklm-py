@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 import pytest
 
@@ -97,9 +97,10 @@ class FakeOrganizationServer:
         }
         self.next_label_ids = [LABEL_B]
         self.next_collection_ids = [COLLECTION_B]
+        self.concurrent_label_ids: builtins.list[str] = []
+        self.concurrent_collection_ids: builtins.list[str] = []
         self.failures: dict[int, BaseException] = {}
         self.ignore_mutations = False
-        self.generate_calls: builtins.list[tuple[str, str]] = []
 
     @asynccontextmanager
     async def operation_scope(
@@ -128,6 +129,24 @@ class FakeOrganizationServer:
         return organization_mutations_pb2.OrganizationRecordWire(
             name=collection.name,
             member_ids=[notebook_id.encode() for notebook_id in collection.notebook_ids],
+            id=collection.id,
+            emoji=collection.emoji or "",
+        )
+
+    @staticmethod
+    def _created_label_row(label: Label) -> Any:
+        return organization_pb2.LabelAndSources(
+            label=label.name,
+            source_ids=[read_pb2.SourceId(id=source_id) for source_id in label.source_ids],
+            label_id=label.id,
+            emoji=label.emoji or "",
+        )
+
+    @staticmethod
+    def _created_collection_row(collection: Collection) -> Any:
+        return organization_pb2.NotebookCollection(
+            name=collection.name,
+            notebook_ids=collection.notebook_ids,
             id=collection.id,
             emoji=collection.emoji or "",
         )
@@ -169,23 +188,62 @@ class FakeOrganizationServer:
         }
         assert request.HasField("request_context")
         if method == CREATE_LABEL_METHOD:
+            if request.HasField("auto_create"):
+                assert request.auto_create.HasField("regenerate_all")
+                bucket = self.labels.setdefault(request.project_id, {})
+                if request.auto_create.regenerate_all:
+                    bucket.clear()
+                bucket[LABEL_B] = Label(
+                    id=LABEL_B,
+                    name="Generated",
+                    notebook_id=request.project_id,
+                    emoji="✨",
+                    source_ids=[SOURCE_B],
+                )
+                return organization_pb2.CreateLabelResponse()
             properties = request.manual_create.properties
             if request.label_type == COLLECTION_TYPE:
+                created_collections: builtins.list[Collection] = []
                 for resource_id in self.next_collection_ids:
-                    self.collections[resource_id] = Collection(
+                    collection = Collection(
                         id=resource_id,
                         name=properties.name,
                         emoji=properties.emoji or None,
                     )
+                    self.collections[resource_id] = collection
+                    created_collections.append(collection)
+                for resource_id in self.concurrent_collection_ids:
+                    self.collections[resource_id] = Collection(
+                        id=resource_id,
+                        name="Concurrent",
+                    )
+                return organization_pb2.CreateLabelResponse(
+                    notebook_collections=[
+                        self._created_collection_row(collection)
+                        for collection in created_collections
+                    ]
+                )
             else:
                 bucket = self.labels.setdefault(request.project_id, {})
+                created: builtins.list[Label] = []
                 for resource_id in self.next_label_ids:
-                    bucket[resource_id] = Label(
+                    label = Label(
                         id=resource_id,
                         name=properties.name,
                         notebook_id=request.project_id,
                         emoji=properties.emoji or None,
                     )
+                    bucket[resource_id] = label
+                    created.append(label)
+                for resource_id in self.concurrent_label_ids:
+                    bucket[resource_id] = Label(
+                        id=resource_id,
+                        name="Concurrent",
+                        notebook_id=request.project_id,
+                    )
+                return organization_pb2.CreateLabelResponse(
+                    label_and_sources=[self._created_label_row(label) for label in created]
+                )
             return organization_pb2.CreateLabelResponse()
 
         if method == MUTATE_LABEL_METHOD:
@@ -240,20 +298,11 @@ def _apis(
     async def list_notebooks() -> builtins.list[Notebook]:
         return notebooks
 
-    async def generate_labels(
-        notebook_id: str,
-        *,
-        scope: Literal["all", "unlabeled"] = "unlabeled",
-    ) -> builtins.list[Label]:
-        server.generate_calls.append((notebook_id, scope))
-        return list(server.labels.get(notebook_id, {}).values())
-
     transport = cast(AndroidSession, server)
     return (
         AndroidLabelsAPI(
             transport,
             list_sources=list_sources,
-            generate_labels=generate_labels,
         ),
         AndroidCollectionsAPI(transport, list_notebooks=list_notebooks),
     )
@@ -331,7 +380,7 @@ async def test_get_and_membership_joins_preserve_order_and_skip_missing() -> Non
         await collections.get(COLLECTION_MISSING)
 
 
-async def test_create_uses_id_diff_readback_and_one_outer_scope() -> None:
+async def test_label_and_collection_create_use_exact_response_rows() -> None:
     server = FakeOrganizationServer()
     labels, collections = _apis(server)
 
@@ -340,30 +389,52 @@ async def test_create_uses_id_diff_readback_and_one_outer_scope() -> None:
     assert created_label.id == LABEL_B
     assert created_collection.id == COLLECTION_B
     assert [method for method, _request, _kwargs in server.calls] == [
-        GET_LABELS_METHOD,
         CREATE_LABEL_METHOD,
-        GET_LABELS_METHOD,
-        GET_LABELS_METHOD,
         CREATE_LABEL_METHOD,
-        GET_LABELS_METHOD,
     ]
     assert server.operation_scopes == [("labels.create", None), ("collections.create", None)]
 
-    label_create = server.calls[1][1]
+    label_create = server.calls[0][1]
     assert label_create.project_id == NB
     assert label_create.label_type == 0
     assert label_create.manual_create.properties.name == "Duplicate-safe"
     assert label_create.manual_create.properties.emoji == "🧪"
-    collection_create = server.calls[4][1]
+    collection_create = server.calls[1][1]
     assert collection_create.project_id == ""
     assert collection_create.label_type == COLLECTION_TYPE
     assert collection_create.manual_create.properties.name == "Duplicate-safe"
     assert not collection_create.manual_create.properties.HasField("emoji")
 
 
+async def test_label_create_ignores_unrelated_concurrent_post_state() -> None:
+    server = FakeOrganizationServer()
+    server.concurrent_label_ids = [LABEL_MISSING]
+    labels, _collections = _apis(server)
+
+    created = await labels.create(NB, "Requested", "🧪")
+
+    assert created.id == LABEL_B
+    assert created.name == "Requested"
+    assert set(server.labels[NB]) == {LABEL_A, LABEL_B, LABEL_MISSING}
+    assert [method for method, _request, _kwargs in server.calls] == [CREATE_LABEL_METHOD]
+
+
+async def test_collection_create_ignores_unrelated_concurrent_post_state() -> None:
+    server = FakeOrganizationServer()
+    server.concurrent_collection_ids = [COLLECTION_MISSING]
+    _labels, collections = _apis(server)
+
+    created = await collections.create("Requested")
+
+    assert created.id == COLLECTION_B
+    assert created.name == "Requested"
+    assert set(server.collections) == {COLLECTION_A, COLLECTION_B, COLLECTION_MISSING}
+    assert [method for method, _request, _kwargs in server.calls] == [CREATE_LABEL_METHOD]
+
+
 @pytest.mark.parametrize("kind", ["label", "collection"])
 @pytest.mark.parametrize("new_count", [0, 2])
-async def test_create_id_diff_rejects_zero_or_multiple_new_ids(kind: str, new_count: int) -> None:
+async def test_create_response_rejects_zero_or_multiple_rows(kind: str, new_count: int) -> None:
     server = FakeOrganizationServer()
     server.next_label_ids = [LABEL_B, LABEL_MISSING][:new_count]
     server.next_collection_ids = [COLLECTION_B, COLLECTION_MISSING][:new_count]
@@ -554,11 +625,36 @@ async def test_delete_filters_absent_ids_batches_existing_and_reads_back_absence
     assert server.operation_scopes == [("labels.delete", None), ("collections.delete", None)]
 
 
-async def test_generate_compatibility_and_empty_operations_avoid_android_transport() -> None:
+async def test_generate_uses_native_presence_sensitive_scope_and_returns_readback() -> None:
+    server = FakeOrganizationServer()
+    labels, _collections = _apis(server)
+
+    incremental = await labels.generate(NB)
+    assert [label.id for label in incremental] == [LABEL_A, LABEL_B]
+    incremental_request = server.calls[0][1]
+    assert incremental_request.WhichOneof("create_mode") == "auto_create"
+    assert incremental_request.auto_create.HasField("regenerate_all")
+    assert incremental_request.auto_create.regenerate_all is False
+
+    regenerated = await labels.generate(NB, scope="all")
+    assert [label.id for label in regenerated] == [LABEL_B]
+    regenerate_request = server.calls[2][1]
+    assert regenerate_request.WhichOneof("create_mode") == "auto_create"
+    assert regenerate_request.auto_create.HasField("regenerate_all")
+    assert regenerate_request.auto_create.regenerate_all is True
+    assert [method for method, _request, _kwargs in server.calls] == [
+        CREATE_LABEL_METHOD,
+        GET_LABELS_METHOD,
+        CREATE_LABEL_METHOD,
+        GET_LABELS_METHOD,
+    ]
+    assert server.operation_scopes == [("labels.generate", None), ("labels.generate", None)]
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in server.calls] == [7, 7, 7, 7]
+
+
+async def test_generate_validation_and_empty_operations_avoid_android_transport() -> None:
     server = FakeOrganizationServer()
     labels, collections = _apis(server)
-    assert await labels.generate(NB) == list(server.labels[NB].values())
-    assert await labels.generate(NB, scope="all") == list(server.labels[NB].values())
     with pytest.raises(ValueError, match="generate scope"):
         await labels.generate(NB, scope=cast(Any, "invalid"))
     with pytest.raises(ValueError):
@@ -571,7 +667,6 @@ async def test_generate_compatibility_and_empty_operations_avoid_android_transpo
     assert await collections.delete([]) is None
     assert server.calls == []
     assert server.operation_scopes == []
-    assert server.generate_calls == [(NB, "unlabeled"), (NB, "all")]
 
 
 async def test_status_five_maps_to_public_miss_and_retired_epoch_stops_later_io() -> None:
@@ -584,14 +679,11 @@ async def test_status_five_maps_to_public_miss_and_retired_epoch_stops_later_io(
     assert len(server.calls) == 1
 
     retired = FakeOrganizationServer()
-    retired.failures[2] = RuntimeError("retired resource generation")
+    retired.failures[1] = RuntimeError("retired resource generation")
     labels, _collections = _apis(retired)
     with pytest.raises(RuntimeError, match="retired resource generation"):
         await labels.create(NB, "uncertain")
-    assert [method for method, _request, _kwargs in retired.calls] == [
-        GET_LABELS_METHOD,
-        CREATE_LABEL_METHOD,
-    ]
+    assert [method for method, _request, _kwargs in retired.calls] == [CREATE_LABEL_METHOD]
 
 
 async def test_real_supervisor_outer_lease_keeps_create_alive_during_graceful_drain() -> None:
@@ -636,12 +728,8 @@ async def test_real_supervisor_outer_lease_keeps_create_alive_during_graceful_dr
     created = await create_task
     await idle_task
     assert created.id == COLLECTION_B
-    assert [method for method, _request, _kwargs in server.calls] == [
-        GET_LABELS_METHOD,
-        CREATE_LABEL_METHOD,
-        GET_LABELS_METHOD,
-    ]
-    assert [kwargs["expected_epoch"] for _method, _request, kwargs in server.calls] == [1, 1, 1]
+    assert [method for method, _request, _kwargs in server.calls] == [CREATE_LABEL_METHOD]
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in server.calls] == [1]
 
 
 async def test_readback_mismatch_is_decode_failure_for_properties_and_membership() -> None:

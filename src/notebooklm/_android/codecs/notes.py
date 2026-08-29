@@ -5,11 +5,91 @@ from __future__ import annotations
 import json
 from typing import Any, cast
 
+from ..._types.documents import utf16_len
 from ...exceptions import DecodingError
-from ...types import MindMap, MindMapKind, Note
-from ..proto.google.internal.labs.tailwind.orchestration.v1 import notes_pb2
+from ...types import ChatReference, MindMap, MindMapKind, Note
+from ..proto.google.internal.labs.tailwind.orchestration.v1 import chat_pb2, notes_pb2, read_pb2
 
 _PROTO = cast(Any, notes_pb2)
+_CHAT_PROTO = cast(Any, chat_pb2)
+_READ_PROTO = cast(Any, read_pb2)
+
+
+def _text_element(text: str, *, start: int, end: int) -> Any:
+    return _CHAT_PROTO.StructuralElement(
+        start_index=start,
+        end_index=end,
+        paragraph=_CHAT_PROTO.Paragraph(
+            elements=[
+                _CHAT_PROTO.ParagraphElement(
+                    start_index=start,
+                    end_index=end,
+                    text_run=_CHAT_PROTO.TextRun(content=text),
+                )
+            ]
+        ),
+    )
+
+
+def build_saved_response_payload(
+    clean_answer: str,
+    references: list[ChatReference],
+    citation_anchors: list[tuple[ChatReference, int]],
+) -> tuple[list[Any], Any]:
+    """Build current-bundle source passages and TailwindDoc from one citation set."""
+    clean_end = utf16_len(clean_answer)
+    inline_locations = [
+        _CHAT_PROTO.AnnotationMapEntry(
+            object_id=_CHAT_PROTO.ObjectId(id=reference.chunk_id),
+            content_range=_CHAT_PROTO.Range(start_index=0, end_index=position),
+        )
+        for reference, position in citation_anchors
+        if reference.chunk_id is not None
+    ]
+
+    source_passages: list[Any] = []
+    objects: list[Any] = []
+    seen_chunks: set[str] = set()
+    for reference in references:
+        chunk_id = reference.chunk_id
+        if not chunk_id or chunk_id in seen_chunks:
+            continue
+        seen_chunks.add(chunk_id)
+        cited_text = reference.cited_text or ""
+        cited_end = utf16_len(cited_text)
+        source_start = reference.start_char if reference.start_char is not None else 0
+        source_end = reference.end_char if reference.end_char is not None else cited_end
+        if not cited_text:
+            source_start = source_end = 0
+        object_id = _CHAT_PROTO.ObjectId(id=chunk_id)
+        citation = _CHAT_PROTO.Citation(
+            ranges=[
+                _CHAT_PROTO.Range(
+                    start_index=source_start,
+                    end_index=source_end,
+                )
+            ],
+            fragment=_CHAT_PROTO.TailwindDocFragment(
+                elements=[_text_element(cited_text, start=0, end=cited_end)]
+            ),
+            source_attribution=_CHAT_PROTO.CitationSource(
+                ingested_source=_CHAT_PROTO.SourceRevision(
+                    source=_READ_PROTO.SourceId(id=reference.source_id)
+                )
+            ),
+            object_id=object_id,
+        )
+        source_passages.append(citation)
+        objects.append(_CHAT_PROTO.DocumentObject(object_id=object_id, citation=citation))
+
+    document = _CHAT_PROTO.TailwindDoc(
+        body=_CHAT_PROTO.Body(
+            content=[_text_element(clean_answer, start=0, end=clean_end)],
+            inline_object_locations=inline_locations,
+        ),
+        objects=objects,
+    )
+    return source_passages, document
 
 
 def build_create_note_request(
@@ -18,14 +98,23 @@ def build_create_note_request(
     title: str,
     content: str,
     note_type: int,
+    source_passages: list[Any] | None = None,
+    tailwind_doc_content: Any | None = None,
 ) -> Any:
-    """Build the byte-proven CreateNote request shared with the chat hook."""
-    return _PROTO.CreateNoteRequest(
+    """Build the current-bundle CreateNote request shared with the chat hook."""
+    request = _PROTO.CreateNoteRequest(
         project_id=notebook_id,
         content=content,
         metadata=_PROTO.NoteMetadata(type=note_type),
+        source_passages=source_passages or (),
         name=title,
+        tailwind_doc_content=tailwind_doc_content,
     )
+    if tailwind_doc_content is not None:
+        from ..upload import android_request_context
+
+        request.request_context.CopyFrom(android_request_context())
+    return request
 
 
 def build_mutate_note_request(
@@ -245,6 +334,7 @@ def decode_note_backed_mind_maps(
 __all__ = [
     "build_create_note_request",
     "build_mutate_note_request",
+    "build_saved_response_payload",
     "decode_note",
     "decode_note_by_id",
     "decode_note_backed_mind_map_rows",

@@ -77,6 +77,56 @@ def decode_labels(
     return result
 
 
+def decode_created_labels(
+    response: Any,
+    notebook_id: str,
+    *,
+    method_id: str,
+) -> builtins.list[Label]:
+    """Decode the exact source-label rows returned by ``CreateLabel``."""
+
+    result: builtins.list[Label] = []
+    for row in response.label_and_sources:
+        label_id = _canonical_uuid(row.label_id, field="label ID", method_id=method_id)
+        result.append(
+            Label(
+                id=label_id,
+                name=row.label,
+                notebook_id=notebook_id,
+                emoji=row.emoji or None,
+                source_ids=[
+                    _canonical_uuid(source.id, field="source member ID", method_id=method_id)
+                    for source in row.source_ids
+                ],
+            )
+        )
+    return result
+
+
+def decode_created_collections(response: Any, *, method_id: str) -> builtins.list[Collection]:
+    """Decode the exact notebook-collection rows returned by ``CreateLabel``."""
+
+    result: builtins.list[Collection] = []
+    for row in response.notebook_collections:
+        collection_id = _canonical_uuid(row.id, field="collection ID", method_id=method_id)
+        result.append(
+            Collection(
+                id=collection_id,
+                name=row.name,
+                emoji=row.emoji or None,
+                notebook_ids=[
+                    _canonical_uuid(
+                        notebook_id,
+                        field="notebook member ID",
+                        method_id=method_id,
+                    )
+                    for notebook_id in row.notebook_ids
+                ],
+            )
+        )
+    return result
+
+
 def decode_collections(response: Any, *, method_id: str) -> builtins.list[Collection]:
     """Decode collection rows whose member slot contains bare UUID strings."""
 
@@ -97,4 +147,9 @@ def decode_collections(response: Any, *, method_id: str) -> builtins.list[Collec
     return result
 
 
-__all__ = ["decode_collections", "decode_labels"]
+__all__ = [
+    "decode_collections",
+    "decode_created_collections",
+    "decode_created_labels",
+    "decode_labels",
+]

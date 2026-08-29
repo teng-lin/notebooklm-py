@@ -103,11 +103,14 @@ def _decode_source(
         # Unrepresentable and ambiguous kinds (including generic DRIVE and
         # EXCEL) intentionally remain UNKNOWN rather than becoming a false kind.
         type_code = _SOURCE_TYPE_CODE_BY_NAME.get(type_name or "", 0)
+        if metadata.HasField("google_docs_metadata"):
+            drive_document_id = metadata.google_docs_metadata.document_id or None
         if metadata.HasField("webpage_metadata"):
             url = metadata.webpage_metadata.url or None
         if metadata.HasField("google_drive_source_metadata"):
             drive_metadata = metadata.google_drive_source_metadata
-            drive_document_id = drive_metadata.document_id or None
+            if drive_document_id is None:
+                drive_document_id = drive_metadata.document_id or None
             content_mime = drive_metadata.mime_type or None
 
     status = SourceStatus.UNKNOWN

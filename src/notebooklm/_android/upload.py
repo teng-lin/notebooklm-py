@@ -7,12 +7,15 @@ import json
 import math
 import mimetypes
 import os
+import shutil
+import tempfile
 import time
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import IO, Any, Protocol, TypeVar, cast
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 import httpx
 
@@ -21,10 +24,14 @@ from .._deadline import RuntimeDeadline
 from .._loop_affinity import assert_bound_loop
 from .._loop_bound import LoopBoundPrimitive
 from .._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS, normalize_max_concurrent_uploads
-from .._types.sources import _HTML_FILE_EXTENSIONS
+from .._source.drive import DriveRef, parse_drive_ref
+from .._types.sources import _HTML_FILE_EXTENSIONS, _UPLOAD_FILE_EXTENSIONS
 from ..exceptions import (
+    AuthError,
     NetworkError,
+    RateLimitError,
     RPCError,
+    ServerError,
     SourceAddError,
     ValidationError,
 )
@@ -58,6 +65,11 @@ _EXTENSION_CONTENT_TYPES = {
     ".md": "text/markdown",
     ".markdown": "text/markdown",
 }
+_DRIVE_API_ORIGIN = "https://www.googleapis.com"
+_DRIVE_NATIVE_MIME_PREFIX = "application/vnd.google-apps."
+_MAX_DRIVE_DOWNLOAD_BYTES = 200 * 1024 * 1024
+_DRIVE_STREAM_CHUNK_BYTES = 64 * 1024
+_UPLOAD_SUPPORTED_EXTENSIONS = frozenset(_UPLOAD_FILE_EXTENSIONS)
 
 
 def _resolve_upload_content_type(file_path: Path, mime_type: str | None) -> str:
@@ -89,6 +101,69 @@ def _validate_upload_file_supported(file_path: Path, content_type: str) -> None:
             "HTML file uploads are not supported by NotebookLM's upload endpoint: "
             f"{file_path.name}. Convert the page to .txt, .md, or .pdf first, then retry."
         )
+
+
+def _drive_resource_key_headers(ref: DriveRef) -> dict[str, str]:
+    if ref.resource_key is None:
+        return {}
+    return {"X-Goog-Drive-Resource-Keys": f"{ref.file_id}/{ref.resource_key}"}
+
+
+def _drive_filename(value: Any, file_id: str) -> str:
+    """Return one safe leaf filename while retaining the evidenced extension."""
+
+    raw = value if isinstance(value, str) else ""
+    leaf = raw.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    leaf = "".join(
+        "_" if ord(character) < 0x20 or ord(character) == 0x7F else character for character in leaf
+    )
+    if leaf in {"", ".", ".."}:
+        raise ValidationError(f"Drive did not return a usable filename for {file_id}.")
+    if len(leaf.encode("utf-8")) > 240:
+        raise ValidationError(f"Drive filename for {file_id} is too long to import safely.")
+    return leaf
+
+
+def _validate_drive_metadata(metadata: Any, ref: DriveRef) -> tuple[str, str]:
+    if not isinstance(metadata, dict):
+        raise ValidationError(f"Drive returned malformed metadata for {ref.file_id}.")
+    filename = _drive_filename(metadata.get("name"), ref.file_id)
+    mime_type = metadata.get("mimeType")
+    if not isinstance(mime_type, str) or not mime_type:
+        raise ValidationError(f"Drive did not return a MIME type for {ref.file_id}.")
+    if mime_type.startswith(_DRIVE_NATIVE_MIME_PREFIX):
+        raise ValidationError(
+            f"Drive file {filename!r} is a native Google document. Add it with "
+            "sources.add_drive(...) instead of sources.add_drive_file(...)."
+        )
+    capabilities = metadata.get("capabilities")
+    if capabilities is not None and not isinstance(capabilities, dict):
+        raise ValidationError(f"Drive returned malformed metadata for {ref.file_id}.")
+    if isinstance(capabilities, dict) and capabilities.get("canDownload") is False:
+        raise ValidationError(f"Drive file {filename!r} is not downloadable by this account.")
+    extension = Path(filename).suffix.lower()
+    if extension in _HTML_FILE_EXTENSIONS:
+        raise ValidationError(
+            "HTML isn't supported by NotebookLM upload; convert the page to "
+            ".txt, .md, or .pdf first, then retry."
+        )
+    if extension not in _UPLOAD_SUPPORTED_EXTENSIONS:
+        accepted = ", ".join(sorted(value.lstrip(".") for value in _UPLOAD_SUPPORTED_EXTENSIONS))
+        raise ValidationError(
+            f"Drive file {filename!r} has an unsupported type for NotebookLM upload. "
+            f"Accepted: {accepted}."
+        )
+    size = metadata.get("size")
+    if size is not None:
+        try:
+            declared_size = int(size)
+        except (TypeError, ValueError):
+            declared_size = -1
+        if declared_size > _MAX_DRIVE_DOWNLOAD_BYTES:
+            raise ValidationError(
+                f"Drive file {ref.file_id} is {declared_size} bytes, over the 200 MiB download cap."
+            )
+    return filename, mime_type
 
 
 def _resolve_upload_timeouts(
@@ -333,6 +408,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         self._active_epoch: int | None = None
         self._closing = True
         self._upload_semaphore: asyncio.Semaphore | None = None
+        self._download_semaphore: asyncio.Semaphore | None = None
         self._transport_tasks: set[asyncio.Task[Any]] = set()
         self._transport_clients: set[Any] = set()
         self._open_files: set[IO[bytes]] = set()
@@ -343,9 +419,11 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         new: asyncio.AbstractEventLoop | None,
     ) -> None:
         self._upload_semaphore = None
+        self._download_semaphore = None
 
     def reset_after_open(self) -> None:
         self._upload_semaphore = None
+        self._download_semaphore = None
         self._transport_tasks.clear()
         self._transport_clients.clear()
         self._open_files.clear()
@@ -374,6 +452,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
             self._transport_clients.clear()
             self._open_files.clear()
             self._upload_semaphore = None
+            self._download_semaphore = None
 
     async def _settle_resources(self) -> None:
         current = asyncio.current_task()
@@ -423,6 +502,231 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         if self._upload_semaphore is None:
             self._upload_semaphore = asyncio.Semaphore(self._max_concurrent_uploads)
         return self._upload_semaphore
+
+    def _download_slot(self) -> asyncio.Semaphore:
+        """Keep Drive downloads independent from upload admission to avoid deadlock."""
+
+        assert_bound_loop(self._bound_loop)
+        if self._download_semaphore is None:
+            self._download_semaphore = asyncio.Semaphore(self._max_concurrent_uploads)
+        return self._download_semaphore
+
+    @staticmethod
+    def _drive_url(file_id: str, *, media: bool) -> str:
+        fields = "id,name,mimeType,size,capabilities(canDownload)"
+        query = {"supportsAllDrives": "true"}
+        if media:
+            query["alt"] = "media"
+        else:
+            query["fields"] = fields
+        return f"{_DRIVE_API_ORIGIN}/drive/v3/files/{quote(file_id, safe='')}?{urlencode(query)}"
+
+    @staticmethod
+    def _map_drive_status(status: int, ref: DriveRef) -> None:
+        if status == 401:
+            raise AuthError(
+                "Android Drive authentication expired; reauthenticate the selected profile."
+            )
+        if status == 429:
+            raise RateLimitError(
+                f"Drive throttled the download for {ref.file_id}; retry after a delay."
+            )
+        if status >= 500:
+            raise ServerError(
+                f"Drive returned HTTP {status} while fetching {ref.file_id}; retry later.",
+                status_code=status,
+            )
+        if status >= 300:
+            raise ValidationError(
+                f"Drive returned HTTP {status} for {ref.file_id}; confirm the file id and "
+                "that the selected account can download it."
+            )
+
+    async def _drive_metadata(
+        self,
+        client: Any,
+        ref: DriveRef,
+        credential: Any,
+        deadline: RuntimeDeadline,
+    ) -> tuple[str, str]:
+        headers = {
+            "Authorization": f"Bearer {credential.token}",
+            **_drive_resource_key_headers(ref),
+        }
+        response: Any | None = None
+        try:
+            response = await _bounded(
+                client.get(
+                    self._drive_url(ref.file_id, media=False),
+                    headers=headers,
+                    follow_redirects=False,
+                ),
+                deadline,
+            )
+            assert response is not None
+            status = int(response.status_code)
+            if status == 401:
+                self._bearer_provider.invalidate(credential.generation)
+            self._map_drive_status(status, ref)
+            try:
+                metadata = response.json()
+            except (TypeError, ValueError):
+                raise ValidationError(
+                    f"Drive returned malformed metadata for {ref.file_id}."
+                ) from None
+            return _validate_drive_metadata(metadata, ref)
+        finally:
+            if response is not None:
+                close = getattr(response, "aclose", None)
+                if callable(close):
+                    await close()
+
+    async def _stream_drive_media(
+        self,
+        client: Any,
+        ref: DriveRef,
+        filename: str,
+        credential: Any,
+        destination: Path,
+        deadline: RuntimeDeadline,
+    ) -> None:
+        headers = {
+            "Authorization": f"Bearer {credential.token}",
+            **_drive_resource_key_headers(ref),
+        }
+        total = 0
+        with destination.open("xb") as handle:
+            os.chmod(destination, 0o600)
+            self._open_files.add(handle)
+            try:
+                async with client.stream(
+                    "GET",
+                    self._drive_url(ref.file_id, media=True),
+                    headers=headers,
+                    follow_redirects=False,
+                ) as response:
+                    status = int(response.status_code)
+                    if status == 401:
+                        self._bearer_provider.invalidate(credential.generation)
+                    self._map_drive_status(status, ref)
+                    declared = response.headers.get("content-length")
+                    if declared is not None:
+                        try:
+                            declared_size = int(declared)
+                        except ValueError:
+                            declared_size = -1
+                        if declared_size > _MAX_DRIVE_DOWNLOAD_BYTES:
+                            raise ValidationError(
+                                f"Drive file {ref.file_id} is {declared_size} bytes, over the "
+                                "200 MiB download cap."
+                            )
+                    iterator = response.aiter_bytes()
+                    while True:
+                        try:
+                            chunk = await _bounded(anext(iterator), deadline)
+                        except StopAsyncIteration:
+                            break
+                        total += len(chunk)
+                        if total > _MAX_DRIVE_DOWNLOAD_BYTES:
+                            raise ValidationError(
+                                f"Drive download exceeded the 200 MiB cap for {filename!r}."
+                            )
+                        await _bounded(asyncio.to_thread(handle.write, chunk), deadline)
+            finally:
+                self._open_files.discard(handle)
+        if total == 0:
+            raise ValidationError("Drive returned 0 bytes; the file may be empty or inaccessible.")
+
+    async def _download_drive_file(
+        self,
+        document_id: str,
+    ) -> tuple[Path, str, str | None, Path]:
+        """Finish credential-bearing Drive I/O before returning a temporary file."""
+
+        ref = parse_drive_ref(document_id)
+        deadline = RuntimeDeadline.start(self._upload_timeout, monotonic=self._monotonic)
+        temp_dir: Path | None = None
+        client: Any | None = None
+        try:
+            async with (
+                self._transport.operation_scope("sources.add_drive_file.download") as lease,
+                self._download_slot(),
+            ):
+                self._assert_epoch(lease.epoch)
+                credential = await _bounded(
+                    self._bearer_provider.get(lease.epoch),
+                    deadline,
+                )
+                self._assert_epoch(lease.epoch)
+                client = self._client_factory()(
+                    cookies=None,
+                    follow_redirects=False,
+                    timeout=self._http_timeout or deadline.remaining(),
+                )
+                self._transport_clients.add(client)
+                async with client:
+                    filename, content_type = await self._drive_metadata(
+                        client,
+                        ref,
+                        credential,
+                        deadline,
+                    )
+                    temp_dir = Path(tempfile.mkdtemp(prefix="nlm-android-drive-"))
+                    os.chmod(temp_dir, 0o700)
+                    path = temp_dir / filename
+                    await self._stream_drive_media(
+                        client,
+                        ref,
+                        filename,
+                        credential,
+                        path,
+                        deadline,
+                    )
+            assert temp_dir is not None
+            return path, filename, content_type, temp_dir
+        except BaseException:
+            if temp_dir is not None:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            raise
+        finally:
+            if client is not None:
+                self._transport_clients.discard(client)
+
+    @asynccontextmanager
+    async def drive_download_scope(
+        self,
+        document_id: str,
+    ) -> AsyncIterator[tuple[Path, str, str | None]]:
+        """Download one upload-only Drive file without exposing bearer-owned errors."""
+
+        pipeline = self
+        downloaded: tuple[Path, str, str | None, Path] | None = None
+        failure: BaseException | None = None
+        file_id = ""
+        try:
+            file_id = parse_drive_ref(document_id).file_id
+            downloaded = await pipeline._download_drive_file(document_id)
+        except BaseException as error:
+            if isinstance(error, (httpx.HTTPError, OSError, TimeoutError)):
+                failure = NetworkError(
+                    f"Network error fetching Drive file {file_id} ({error.__class__.__name__})",
+                    original_error=None,
+                )
+            else:
+                failure = error
+            sanitize_escaping_exception(error)
+        finally:
+            del document_id, file_id, self, pipeline
+
+        if failure is not None:
+            raise sanitize_escaping_exception(failure) from None
+        assert downloaded is not None
+        path, filename, content_type, temp_dir = downloaded
+        try:
+            yield path, filename, content_type
+        finally:
+            path.unlink(missing_ok=True)
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     async def upload_file(
         self,

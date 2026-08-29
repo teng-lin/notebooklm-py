@@ -4,87 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..._types.documents import (
-    BlockKind,
-    DocumentAnnotation,
-    DocumentBlock,
-    StructuredDocument,
-    TextSpan,
-    utf16_len,
-)
+from ..._types.documents import DocumentAnnotation, StructuredDocument, utf16_len
 from ...types import ChatReference, ConversationTurnKey
-
-
-def _decode_blocks(elements: Any) -> tuple[DocumentBlock, ...]:
-    blocks: list[DocumentBlock] = []
-    for element in elements:
-        start = element.start_index
-        end = element.end_index
-        if start < 0 or end < start:
-            continue
-
-        spans: list[TextSpan] = []
-        kind = BlockKind.UNKNOWN
-        if element.HasField("paragraph"):
-            kind = BlockKind.PARAGRAPH
-            for paragraph_element in element.paragraph.elements:
-                span_start = paragraph_element.start_index
-                span_end = paragraph_element.end_index
-                if span_start < 0 or span_end < span_start:
-                    continue
-                if not paragraph_element.HasField("text_run"):
-                    continue
-                spans.append(
-                    TextSpan(
-                        start_index=span_start,
-                        end_index=span_end,
-                        text=paragraph_element.text_run.content,
-                    )
-                )
-
-        blocks.append(
-            DocumentBlock(
-                start_index=start,
-                end_index=end,
-                spans=tuple(spans),
-                kind=kind,
-            )
-        )
-    return tuple(sorted(blocks, key=lambda block: (block.start_index, block.end_index)))
-
-
-def decode_document(document: Any) -> StructuredDocument:
-    """Decode only chat-proven paragraph text and answer annotation fields."""
-    if not document.HasField("body"):
-        return StructuredDocument()
-
-    annotations: list[DocumentAnnotation] = []
-    for entry in document.body.inline_object_locations:
-        if not entry.HasField("object_id") or not entry.object_id.id:
-            continue
-        if not entry.HasField("content_range"):
-            continue
-        start = entry.content_range.start_index
-        end = entry.content_range.end_index
-        if start < 0 or end < start:
-            continue
-        annotations.append(
-            DocumentAnnotation(
-                object_id=entry.object_id.id,
-                start_index=start,
-                end_index=end,
-            )
-        )
-    return StructuredDocument(
-        blocks=_decode_blocks(document.body.content),
-        annotations=tuple(annotations),
-    )
+from .documents import decode_blocks, decode_document, structural_elements_plain_text
 
 
 def _fragment_projection(citation: Any) -> tuple[str | None, int | None, int | None]:
     if not citation.HasField("fragment"):
         return None, None, None
-    blocks = _decode_blocks(citation.fragment.elements)
+    blocks = decode_blocks(citation.fragment.elements)
     if not blocks:
         return None, None, None
 
@@ -102,7 +30,21 @@ def _fragment_projection(citation: Any) -> tuple[str | None, int | None, int | N
             text = encoded[overlap * 2 :].decode("utf-16-le", errors="replace")
         parts.append(text)
         cursor = block.end_index
-    return "".join(parts) or None, start, end
+    text = "".join(parts)
+    if not text:
+        text = structural_elements_plain_text(citation.fragment.elements)
+    return text or None, start, end
+
+
+def _declared_fragment_range(citation: Any) -> tuple[int | None, int | None]:
+    """Return the strict union of the server-declared source ranges."""
+
+    if not citation.ranges:
+        return None, None
+    pairs = [(int(item.start_index), int(item.end_index)) for item in citation.ranges]
+    if any(start < 0 or end < start for start, end in pairs):
+        return None, None
+    return min(start for start, _end in pairs), max(end for _start, end in pairs)
 
 
 def decode_references(document: Any, answer_document: StructuredDocument) -> list[ChatReference]:
@@ -133,6 +75,7 @@ def decode_references(document: Any, answer_document: StructuredDocument) -> lis
 
         chunk_id = document_object.object_id.id if document_object.HasField("object_id") else None
         cited_text, start, end = _fragment_projection(citation)
+        fragment_start, fragment_end = _declared_fragment_range(citation)
         anchor = anchors.get(chunk_id or "")
         references.append(
             ChatReference(
@@ -142,6 +85,8 @@ def decode_references(document: Any, answer_document: StructuredDocument) -> lis
                 start_char=start,
                 end_char=end,
                 chunk_id=chunk_id or None,
+                fragment_start_char=fragment_start,
+                fragment_end_char=fragment_end,
                 answer_anchor_start=None if anchor is None else anchor.start_index,
                 answer_anchor_end=None if anchor is None else anchor.end_index,
             )

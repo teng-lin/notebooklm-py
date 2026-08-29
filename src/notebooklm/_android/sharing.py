@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
 from .._sharing import SharingAPI
@@ -41,16 +42,25 @@ def _map_notebook_error(notebook_id: str, error: RPCError, *, method_id: str) ->
     )
 
 
-class AndroidSharingAPI(SharingAPI):
-    """Android public-link mutations with Web compatibility for omitted fields."""
+SetViewLevel = Callable[[str, ShareViewLevel], Awaitable[ShareStatus]]
 
-    def __init__(self, session: AndroidSession, *, compatibility: SharingAPI) -> None:
+
+class AndroidSharingAPI(SharingAPI):
+    """Native sharing except for the unrecovered view-level mutation."""
+
+    def __init__(
+        self,
+        session: AndroidSession,
+        *,
+        set_view_level: SetViewLevel,
+    ) -> None:
         self._transport = session
-        self._compatibility = compatibility
+        self._set_view_level_compat = set_view_level
 
     async def get_status(self, notebook_id: str) -> ShareStatus:
         """Read the complete public status, including collaborators."""
-        return await self._compatibility.get_status(notebook_id)
+        async with self._transport.operation_scope("sharing.get_status") as lease:
+            return await self._get_status(notebook_id, expected_epoch=lease.epoch)
 
     async def _get_status(
         self,
@@ -60,7 +70,12 @@ class AndroidSharingAPI(SharingAPI):
     ) -> ShareStatus:
         proto = _proto()
         wire = _wire_proto()
-        request = proto.GetProjectDetailsRequest(project_id=notebook_id)
+        from .upload import android_request_context
+
+        request = proto.GetProjectDetailsRequest(
+            project_id=notebook_id,
+            request_context=android_request_context(),
+        )
         try:
             response = await self._transport.unary(
                 GET_PROJECT_DETAILS_METHOD,
@@ -83,6 +98,8 @@ class AndroidSharingAPI(SharingAPI):
     async def set_public(self, notebook_id: str, public: bool) -> ShareStatus:
         """Set public readability once and return a fresh status read."""
         proto = _proto()
+        from .upload import android_request_context
+
         request = proto.ShareProjectRequest(
             project=[
                 proto.ShareProjectRequest.ProjectToShare(
@@ -92,7 +109,8 @@ class AndroidSharingAPI(SharingAPI):
                         is_discoverable=False,
                     ),
                 )
-            ]
+            ],
+            request_context=android_request_context(),
         )
         async with self._transport.operation_scope("sharing.set_public") as lease:
             try:
@@ -108,18 +126,14 @@ class AndroidSharingAPI(SharingAPI):
                 if mapped is exc:
                     raise
                 raise mapped from exc
-            # GetProjectDetails' recovered Android descriptor omits its
-            # collaborator row. The compatibility read preserves the complete
-            # public ShareStatus contract after the native public-link write.
-            self._transport.assert_epoch(lease.epoch)
-            return await self._compatibility.get_status(notebook_id)
+            return await self._get_status(notebook_id, expected_epoch=lease.epoch)
 
     async def set_view_level(
         self,
         notebook_id: str,
         level: ShareViewLevel,
     ) -> ShareStatus:
-        return await self._compatibility.set_view_level(notebook_id, level)
+        return await self._set_view_level_compat(notebook_id, level)
 
     async def set_users(
         self,
@@ -128,19 +142,92 @@ class AndroidSharingAPI(SharingAPI):
         notify: bool = True,
         welcome_message: str = "",
     ) -> ShareStatus:
-        return await self._compatibility.set_users(
+        if not grants:
+            raise ValueError("Must provide at least one user grant")
+        seen: set[str] = set()
+        for email, permission in grants:
+            if permission == SharePermission.OWNER:
+                raise ValueError("Cannot assign OWNER permission")
+            if permission == SharePermission._REMOVE:
+                raise ValueError("Use remove_user() instead")
+            if email in seen:
+                raise ValueError(
+                    f"Duplicate email in grants: {email!r}. The backend silently "
+                    "ignores a repeated grantee instead of applying either entry; "
+                    "send one grant per user."
+                )
+            seen.add(email)
+        return await self._mutate_users(
             notebook_id,
             grants,
             notify=notify,
+            omit_message=not bool(welcome_message),
             welcome_message=welcome_message,
+            operation="sharing.set_users",
         )
 
     async def remove_user(self, notebook_id: str, email: str) -> ShareStatus:
-        return await self._compatibility.remove_user(notebook_id, email)
+        return await self._mutate_users(
+            notebook_id,
+            [(email, SharePermission._REMOVE)],
+            notify=False,
+            omit_message=False,
+            welcome_message="",
+            operation="sharing.remove_user",
+        )
+
+    async def _mutate_users(
+        self,
+        notebook_id: str,
+        grants: list[tuple[str, SharePermission]],
+        *,
+        notify: bool,
+        omit_message: bool,
+        welcome_message: str,
+        operation: str,
+    ) -> ShareStatus:
+        proto = _proto()
+        from .upload import android_request_context
+
+        project = proto.ShareProjectRequest.ProjectToShare(
+            project_id=notebook_id,
+            user_permissions=[
+                proto.ShareProjectRequest.UserPermission(
+                    email=email,
+                    permission=permission.value,
+                )
+                for email, permission in grants
+            ],
+            share_message=proto.ShareProjectRequest.ShareMessage(
+                omit_message=omit_message,
+                message=welcome_message,
+            ),
+        )
+        request = proto.ShareProjectRequest(
+            project=[project],
+            notify=notify,
+            request_context=android_request_context(),
+        )
+        async with self._transport.operation_scope(operation) as lease:
+            try:
+                await self._transport.unary(
+                    SHARE_PROJECT_METHOD,
+                    request,
+                    replay_safe=False,
+                    response_type=proto.ShareProjectResponse,
+                    expected_epoch=lease.epoch,
+                )
+            except RPCError as exc:
+                mapped = _map_notebook_error(notebook_id, exc, method_id=SHARE_PROJECT_METHOD)
+                if mapped is exc:
+                    raise
+                raise mapped from exc
+            return await self._get_status(notebook_id, expected_epoch=lease.epoch)
 
 
 __all__ = [
     "AndroidSharingAPI",
     "GET_PROJECT_DETAILS_METHOD",
     "SHARE_PROJECT_METHOD",
+    "SetViewLevel",
 ]

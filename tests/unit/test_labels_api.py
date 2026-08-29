@@ -85,13 +85,13 @@ async def test_generate_decodes_create_envelope_and_default_scope() -> None:
     labels = await api.generate("nb")
     assert {label.id for label in labels} == {"l1", "l2"}
     assert rpc.methods() == [RPCMethod.CREATE_LABEL]
-    assert rpc.calls[0].params[4] == [0]  # default scope="unlabeled"
+    assert rpc.calls[0].params[4] == [False]  # default scope="unlabeled"
 
 
 async def test_generate_scope_all_is_destructive_slot() -> None:
     api, rpc, _ = _api({RPCMethod.CREATE_LABEL: _create_env()})
     await api.generate("nb", scope="all")
-    assert rpc.calls[0].params[4] == []
+    assert rpc.calls[0].params[4] == [True]
 
 
 async def test_generate_rejects_invalid_scope_before_any_rpc() -> None:

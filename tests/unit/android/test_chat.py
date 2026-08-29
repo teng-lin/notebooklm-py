@@ -18,9 +18,12 @@ from notebooklm._android.chat import (
     MUTATE_PROJECT_METHOD,
     AndroidChatAPI,
 )
+from notebooklm._android.codecs.chat import decode_references
+from notebooklm._android.codecs.documents import decode_document
 from notebooklm._android.notes import CREATE_NOTE_METHOD, SAVED_RESPONSE_NOTE_TYPE
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     chat_pb2,
+    notebooks_pb2,
     notes_pb2,
     read_pb2,
     sources_pb2,
@@ -31,10 +34,22 @@ from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import (
 )
 from notebooklm._android.session import AndroidSession
 from notebooklm._chat import ChatAPI
-from notebooklm._types.documents import StructuredDocument
+from notebooklm._types.documents import BlockKind, BlockStyle, ListStyle, StructuredDocument
 from notebooklm._types.enums import ChatGoal, ChatResponseLength
-from notebooklm.exceptions import ChatResponseParseError, UnknownRPCMethodError, ValidationError
-from notebooklm.types import AskResult, ChatMode, ChatReference, ChatSettings, ConversationTurn
+from notebooklm.exceptions import (
+    ChatResponseParseError,
+    DecodingError,
+    UnknownRPCMethodError,
+    ValidationError,
+)
+from notebooklm.types import (
+    AskResult,
+    ChatMode,
+    ChatReference,
+    ChatSettings,
+    ConversationTurn,
+    NextStepSuggestion,
+)
 
 
 class FakeSession:
@@ -165,8 +180,286 @@ def _document() -> Any:
     )
 
 
-def _frame(text: str, *, final: bool) -> Any:
-    return chat_pb2.GenerateFreeFormStreamedResponse(
+def test_shared_document_decoder_preserves_style_lists_tables_and_offset_kinds() -> None:
+    document = chat_pb2.TailwindDoc(
+        body=chat_pb2.Body(
+            content=[
+                chat_pb2.StructuralElement(
+                    start_index=0,
+                    end_index=6,
+                    paragraph=chat_pb2.Paragraph(
+                        elements=[
+                            chat_pb2.ParagraphElement(
+                                start_index=0,
+                                end_index=6,
+                                text_run=chat_pb2.TextRun(
+                                    content="Styled",
+                                    text_style=chat_pb2.TextStyle(
+                                        bold=True,
+                                        italic=True,
+                                        underline=True,
+                                        url="https://example.invalid/style",
+                                    ),
+                                ),
+                            )
+                        ],
+                        paragraph_style=chat_pb2.ParagraphStyle(
+                            named_style_type=chat_pb2.HEADING_1
+                        ),
+                        bullet_info=chat_pb2.BulletInfo(
+                            nesting_level=2,
+                            glyph="1.",
+                            list_type=chat_pb2.LIST_TYPE_ORDERED,
+                            ordinal=1,
+                        ),
+                    ),
+                ),
+                chat_pb2.StructuralElement(
+                    start_index=6,
+                    end_index=16,
+                    table=chat_pb2.Table(
+                        rows=1,
+                        columns=2,
+                        table_rows=[
+                            chat_pb2.TableRow(
+                                start_index=6,
+                                end_index=16,
+                                table_cells=[
+                                    chat_pb2.TableCell(
+                                        start_index=6,
+                                        end_index=10,
+                                        content=[
+                                            chat_pb2.StructuralElement(
+                                                start_index=5,
+                                                end_index=11,
+                                                paragraph=chat_pb2.Paragraph(
+                                                    elements=[
+                                                        chat_pb2.ParagraphElement(
+                                                            start_index=5,
+                                                            end_index=11,
+                                                            text_run=chat_pb2.TextRun(
+                                                                content="XHeadY"
+                                                            ),
+                                                        )
+                                                    ]
+                                                ),
+                                            )
+                                        ],
+                                    ),
+                                    chat_pb2.TableCell(
+                                        start_index=10,
+                                        end_index=16,
+                                        content=[
+                                            chat_pb2.StructuralElement(
+                                                start_index=10,
+                                                end_index=16,
+                                                paragraph=chat_pb2.Paragraph(
+                                                    elements=[
+                                                        chat_pb2.ParagraphElement(
+                                                            start_index=10,
+                                                            end_index=16,
+                                                            text_run=chat_pb2.TextRun(
+                                                                content="Value!"
+                                                            ),
+                                                        )
+                                                    ]
+                                                ),
+                                            )
+                                        ],
+                                    ),
+                                ],
+                            )
+                        ],
+                    ),
+                ),
+                chat_pb2.StructuralElement(
+                    start_index=16,
+                    end_index=20,
+                    code_block=chat_pb2.CodeBlock(content="code"),
+                ),
+                chat_pb2.StructuralElement(
+                    start_index=20,
+                    end_index=24,
+                    thought=chat_pb2.Thought(),
+                ),
+                chat_pb2.StructuralElement(
+                    start_index=24,
+                    end_index=25,
+                    image=chat_pb2.Image(url="https://example.invalid/image"),
+                ),
+                chat_pb2.StructuralElement(
+                    start_index=25,
+                    end_index=26,
+                    a2ui_block=chat_pb2.A2uiBlock(json="{}"),
+                ),
+                chat_pb2.StructuralElement(
+                    start_index=26,
+                    end_index=27,
+                    horizontal_rule=chat_pb2.HorizontalRule(),
+                ),
+                chat_pb2.StructuralElement(start_index=27, end_index=28),
+            ]
+        )
+    )
+
+    decoded = decode_document(document)
+
+    paragraph, table, code, thought, image, a2ui, rule, unknown = decoded.blocks
+    assert paragraph.style is BlockStyle.HEADING_1
+    assert paragraph.list_info is not None
+    assert paragraph.list_info.style is ListStyle.ORDERED
+    assert (paragraph.list_info.nesting_level, paragraph.list_info.glyph) == (2, "1.")
+    assert paragraph.list_info.ordinal == 1
+    [span] = paragraph.spans
+    assert (span.bold, span.italic, span.underline, span.url) == (
+        True,
+        True,
+        True,
+        "https://example.invalid/style",
+    )
+    assert table.kind is BlockKind.TABLE
+    assert [span.text for span in table.spans] == ["Head", "Value!"]
+    assert [(cell.start_index, cell.end_index) for cell in table.table_rows[0]] == [
+        (6, 10),
+        (10, 16),
+    ]
+    assert decoded.render(6, 16) == "Head\tValue!"
+    assert [block.kind for block in (code, thought, image, a2ui, rule, unknown)] == [
+        BlockKind.CODE_BLOCK,
+        BlockKind.THOUGHT,
+        BlockKind.IMAGE,
+        BlockKind.A2UI_BLOCK,
+        BlockKind.HORIZONTAL_RULE,
+        BlockKind.UNKNOWN,
+    ]
+    assert all(not block.spans for block in (code, thought, image, a2ui, rule, unknown))
+
+
+def test_citation_fragment_uses_structural_text_when_blocks_have_no_spans() -> None:
+    document = chat_pb2.TailwindDoc(
+        objects=[
+            chat_pb2.DocumentObject(
+                citation=chat_pb2.Citation(
+                    fragment=chat_pb2.TailwindDocFragment(
+                        elements=[
+                            chat_pb2.StructuralElement(
+                                start_index=5,
+                                end_index=9,
+                                code_block=chat_pb2.CodeBlock(content="code"),
+                            ),
+                            chat_pb2.StructuralElement(
+                                start_index=9,
+                                end_index=16,
+                                thought=chat_pb2.Thought(
+                                    elements=[
+                                        chat_pb2.StructuralElement(
+                                            start_index=9,
+                                            end_index=16,
+                                            paragraph=chat_pb2.Paragraph(
+                                                elements=[
+                                                    chat_pb2.ParagraphElement(
+                                                        text_run=chat_pb2.TextRun(content="thought")
+                                                    )
+                                                ]
+                                            ),
+                                        )
+                                    ]
+                                ),
+                            ),
+                        ]
+                    ),
+                    source_attribution=chat_pb2.CitationSource(
+                        ingested_source=chat_pb2.SourceRevision(
+                            source=read_pb2.SourceId(id="source-structural")
+                        )
+                    ),
+                )
+            )
+        ]
+    )
+
+    [reference] = decode_references(document, StructuredDocument())
+
+    assert reference.source_id == "source-structural"
+    assert reference.cited_text == "code\nthought"
+    assert (reference.start_char, reference.end_char) == (5, 16)
+
+
+def test_citation_declared_ranges_union_without_overwriting_fragment_offsets() -> None:
+    document = chat_pb2.TailwindDoc(
+        objects=[
+            chat_pb2.DocumentObject(
+                citation=chat_pb2.Citation(
+                    ranges=[
+                        chat_pb2.Range(start_index=100, end_index=110),
+                        chat_pb2.Range(start_index=120, end_index=140),
+                    ],
+                    fragment=chat_pb2.TailwindDocFragment(
+                        elements=[
+                            chat_pb2.StructuralElement(
+                                start_index=5,
+                                end_index=9,
+                                paragraph=chat_pb2.Paragraph(
+                                    elements=[
+                                        chat_pb2.ParagraphElement(
+                                            start_index=5,
+                                            end_index=9,
+                                            text_run=chat_pb2.TextRun(content="text"),
+                                        )
+                                    ]
+                                ),
+                            )
+                        ]
+                    ),
+                    source_attribution=chat_pb2.CitationSource(
+                        ingested_source=chat_pb2.SourceRevision(
+                            source=read_pb2.SourceId(id="source-ranged")
+                        )
+                    ),
+                )
+            )
+        ]
+    )
+
+    [reference] = decode_references(document, StructuredDocument())
+
+    assert (reference.start_char, reference.end_char) == (5, 9)
+    assert (reference.fragment_start_char, reference.fragment_end_char) == (100, 140)
+    assert (reference.answer_start_char, reference.answer_end_char) == (100, 140)
+
+
+def test_citation_declared_ranges_reject_an_invalid_pair_as_one_value() -> None:
+    document = chat_pb2.TailwindDoc(
+        objects=[
+            chat_pb2.DocumentObject(
+                citation=chat_pb2.Citation(
+                    ranges=[
+                        chat_pb2.Range(start_index=10, end_index=20),
+                        chat_pb2.Range(start_index=30, end_index=25),
+                    ],
+                    source_attribution=chat_pb2.CitationSource(
+                        ingested_source=chat_pb2.SourceRevision(
+                            source=read_pb2.SourceId(id="source-invalid-range")
+                        )
+                    ),
+                )
+            )
+        ]
+    )
+
+    [reference] = decode_references(document, StructuredDocument())
+
+    assert reference.fragment_start_char is None
+    assert reference.fragment_end_char is None
+
+
+def _frame(
+    text: str,
+    *,
+    final: bool,
+    suggestions: list[tuple[str, int]] | None = None,
+) -> Any:
+    response = chat_pb2.GenerateFreeFormStreamedResponse(
         answer=chat_pb2.AnswerResponse(
             response=text,
             conversation_turn_key=chat_pb2.ConversationTurnKey(
@@ -178,6 +471,16 @@ def _frame(text: str, *, final: bool) -> Any:
         ),
         is_final_response=final,
     )
+    if suggestions is not None:
+        response.next_step_suggestions.CopyFrom(
+            notebooks_pb2.NextStepSuggestions(
+                next_steps=[
+                    notebooks_pb2.NextStep(suggestion=question, suggestion_type=type_code)
+                    for question, type_code in suggestions
+                ]
+            )
+        )
+    return response
 
 
 def test_android_chat_is_private_concrete_and_inherits_ask_orchestration() -> None:
@@ -205,14 +508,19 @@ async def test_list_sessions_raw_turns_and_history_decode_exact_requests() -> No
             chat_pb2.ListChatTurnsResponse(
                 chat_turns=[
                     _chat_turn("Newest?", "Newest.", message_id="message-2", role=2),
-                    _chat_turn("Oldest?", "Oldest.", message_id="message-1", role=1),
                 ],
-                next_page_token="captured-next-page",
+                next_page_token="raw-next-page",
             ),
             chat_pb2.ListChatTurnsResponse(
                 chat_turns=[
                     _chat_turn("Newest?", "Newest.", message_id="message-2", role=2),
-                    _chat_turn("Oldest?", "Oldest.", message_id="message-1", role=1),
+                    _chat_turn("Middle?", "Middle.", message_id="message-1", role=1),
+                ],
+                next_page_token="history-next-page",
+            ),
+            chat_pb2.ListChatTurnsResponse(
+                chat_turns=[
+                    _chat_turn("Oldest?", "Oldest.", message_id="message-0", role=1),
                 ]
             ),
         ],
@@ -222,11 +530,12 @@ async def test_list_sessions_raw_turns_and_history_decode_exact_requests() -> No
     assert await api.get_conversation_id("notebook-1") == "conversation-1"
     raw = await api.get_conversation_turns("notebook-1", "conversation-1", limit=1)
     assert isinstance(raw, chat_pb2.ListChatTurnsResponse)
-    assert raw.next_page_token == "captured-next-page"
-    assert len(raw.chat_turns) == 2
-    assert [turn.observed_event_type for turn in raw.chat_turns] == [2, 1]
-    assert await api.get_history("notebook-1", limit=2) == [
+    assert raw.next_page_token == "raw-next-page"
+    assert len(raw.chat_turns) == 1
+    assert [turn.observed_event_type for turn in raw.chat_turns] == [2]
+    assert await api.get_history("notebook-1", limit=3) == [
         ("Oldest?", "Oldest."),
+        ("Middle?", "Middle."),
         ("Newest?", "Newest."),
     ]
 
@@ -263,7 +572,40 @@ async def test_list_sessions_raw_turns_and_history_decode_exact_requests() -> No
                 "response_type": chat_pb2.ListChatTurnsResponse,
             },
         ),
+        (
+            LIST_CHAT_TURNS_METHOD,
+            chat_pb2.ListChatTurnsRequest(
+                chat_session_id="conversation-1",
+                page_token="history-next-page",
+            ),
+            {
+                "replay_safe": True,
+                "response_type": chat_pb2.ListChatTurnsResponse,
+            },
+        ),
     ]
+
+
+@pytest.mark.asyncio
+async def test_list_turns_zero_limit_skips_transport_and_token_cycle_fails() -> None:
+    fake = FakeSession()
+    fake.unary_responses[LIST_CHAT_TURNS_METHOD] = [
+        chat_pb2.ListChatTurnsResponse(
+            chat_turns=[_chat_turn("One?", "One.", message_id="message-1", role=1)],
+            next_page_token="cycle-token",
+        ),
+        chat_pb2.ListChatTurnsResponse(next_page_token="cycle-token"),
+    ]
+    api, _, _ = _api(fake)
+
+    empty = await api.get_conversation_turns("notebook-1", "conversation-1", limit=-1)
+    assert list(empty.chat_turns) == []
+    assert fake.unary_calls == []
+
+    with pytest.raises(UnknownRPCMethodError, match="pagination token"):
+        await api.get_conversation_turns("notebook-1", "conversation-1", limit=2)
+
+    assert [call[1].page_token for call in fake.unary_calls] == ["", "cycle-token"]
 
 
 @pytest.mark.asyncio
@@ -290,7 +632,8 @@ async def test_base_ask_uses_latest_cumulative_final_without_concatenating_frame
     assert result.conversation_id == "conversation-1"
     assert result.turn_number == 1
     assert result.is_follow_up is False
-    assert result.raw_response == ""
+    assert 0 < len(result.raw_response) <= 1000
+    assert '"response": "Final answer [2]"' in result.raw_response
     assert result.answer_document.text == "Final answer"
     assert result.turn_key is not None
     assert result.turn_key.session_id == "conversation-1"
@@ -334,15 +677,80 @@ async def test_base_ask_uses_latest_cumulative_final_without_concatenating_frame
 
 
 @pytest.mark.asyncio
+async def test_stream_next_step_suggestions_are_nonempty_last_wins_across_frames() -> None:
+    fake = FakeSession()
+    fake.stream_responses = [
+        [
+            _frame(
+                "Partial",
+                final=False,
+                suggestions=[("First suggestion", 9), ("", 7)],
+            ),
+            _frame(
+                "Later partial",
+                final=False,
+                suggestions=[("Winning suggestion", 99)],
+            ),
+            _frame("Final answer", final=True, suggestions=[]),
+        ]
+    ]
+    api, _, _ = _api(fake)
+
+    posted = await api._stream_answer(
+        notebook_id="notebook-1",
+        question="Question?",
+        source_ids=["source-1"],
+        cached_turns=[],
+        conversation_id="conversation-1",
+    )
+
+    assert posted.next_steps == [NextStepSuggestion(question="Winning suggestion", type_code=99)]
+    assert '"response": "Final answer"' in posted.raw_response
+
+
+@pytest.mark.asyncio
+async def test_stream_preserves_exact_empty_answer_reason_in_raw_response() -> None:
+    fake = FakeSession()
+    fake.stream_responses = [
+        [
+            chat_pb2.GenerateFreeFormStreamedResponse(
+                answer=chat_pb2.AnswerResponse(
+                    empty_answer_reason=chat_pb2.FILTERED,
+                ),
+                is_final_response=True,
+            )
+        ]
+    ]
+    api, _, _ = _api(fake)
+
+    posted = await api._stream_answer(
+        notebook_id="notebook-1",
+        question="Question?",
+        source_ids=["source-1"],
+        cached_turns=[],
+        conversation_id="conversation-1",
+    )
+
+    assert posted.answer == ""
+    assert '"empty_answer_reason": "FILTERED"' in posted.raw_response
+
+
+@pytest.mark.asyncio
 async def test_follow_up_maps_cached_turns_to_captured_conversation_events() -> None:
     fake = FakeSession()
-    turns = chat_pb2.ListChatTurnsResponse(
-        chat_turns=[
-            _chat_turn("Server newest?", "Yes.", message_id="server-2", role=2),
-            _chat_turn("Server oldest?", "Yes.", message_id="server-1", role=1),
-        ]
+    first_page = chat_pb2.ListChatTurnsResponse(
+        chat_turns=[_chat_turn("Server newest?", "Yes.", message_id="server-2", role=2)],
+        next_page_token="older-page",
     )
-    fake.unary_responses[LIST_CHAT_TURNS_METHOD] = [turns, turns]
+    second_page = chat_pb2.ListChatTurnsResponse(
+        chat_turns=[_chat_turn("Server oldest?", "Yes.", message_id="server-1", role=1)]
+    )
+    fake.unary_responses[LIST_CHAT_TURNS_METHOD] = [
+        first_page,
+        second_page,
+        first_page,
+        second_page,
+    ]
     fake.stream_responses = [[_frame("Final answer", final=True)]]
     api, _, _ = _api(fake)
     api._cache.cache_conversation_turn("conversation-1", "Cached question?", "Cached answer.", 1)
@@ -359,6 +767,12 @@ async def test_follow_up_maps_cached_turns_to_captured_conversation_events() -> 
     # silently rewritten into another question by the Android adapter.
     assert result.turn_number == 2
     assert result.is_follow_up is True
+    assert [call[1].page_token for call in fake.unary_calls] == [
+        "",
+        "older-page",
+        "",
+        "older-page",
+    ]
     request = fake.stream_calls[0][1]
     assert list(request.conversation_history) == [
         chat_pb2.ConversationEvent(
@@ -520,6 +934,20 @@ async def test_get_settings_defaults_when_block_is_absent() -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_settings_rejects_a_different_echoed_notebook_id() -> None:
+    fake = FakeSession()
+    fake.unary_responses[GET_PROJECT_METHOD] = [
+        wire_notebooks_pb2.WireGetProjectResponse(
+            project=wire_notebooks_pb2.WireProjectWithAdvancedSettings(id="other-notebook")
+        )
+    ]
+    api, _, _ = _api(fake)
+
+    with pytest.raises(DecodingError, match="unexpected notebook id"):
+        await api.get_settings("requested-notebook")
+
+
+@pytest.mark.asyncio
 async def test_get_settings_rejects_partial_or_unknown_settings() -> None:
     fake = FakeSession()
     fake.unary_responses[GET_PROJECT_METHOD] = [
@@ -574,13 +1002,13 @@ async def test_get_settings_rejects_missing_project_envelope() -> None:
 
 
 @pytest.mark.asyncio
-async def test_save_answer_as_note_uses_b6_saved_response_seam() -> None:
+async def test_save_answer_as_note_preserves_rich_citation_contract_natively() -> None:
     fake = FakeSession()
     fake.unary_responses[CREATE_NOTE_METHOD] = [
         notes_pb2.CreateNoteResponse(
             note=notes_pb2.ProjectNote(
                 id="note-1",
-                content="Answer [1]",
+                content="Answer 😀 [1]",
                 metadata=notes_pb2.NoteMetadata(type=SAVED_RESPONSE_NOTE_TYPE),
                 name="Saved answer",
             )
@@ -588,7 +1016,7 @@ async def test_save_answer_as_note_uses_b6_saved_response_seam() -> None:
     ]
     api, _, _ = _api(fake)
     result = AskResult(
-        answer="Answer [1]",
+        answer="Answer 😀 [1]",
         conversation_id="conversation-1",
         turn_number=1,
         is_follow_up=False,
@@ -596,6 +1024,9 @@ async def test_save_answer_as_note_uses_b6_saved_response_seam() -> None:
             ChatReference(
                 source_id="source-1",
                 citation_number=1,
+                cited_text="Source 😀 passage",
+                start_char=20,
+                end_char=37,
                 chunk_id="chunk-1",
             )
         ],
@@ -604,19 +1035,46 @@ async def test_save_answer_as_note_uses_b6_saved_response_seam() -> None:
 
     note = await api.save_answer_as_note("notebook-1", result, title="Saved answer")
 
-    assert (note.id, note.title, note.content) == ("note-1", "Saved answer", "Answer [1]")
-    assert fake.unary_calls == [
-        (
-            CREATE_NOTE_METHOD,
-            notes_pb2.CreateNoteRequest(
-                project_id="notebook-1",
-                content="Answer [1]",
-                metadata=notes_pb2.NoteMetadata(type=SAVED_RESPONSE_NOTE_TYPE),
-                name="Saved answer",
-            ),
-            {"replay_safe": False, "response_type": notes_pb2.CreateNoteResponse},
-        )
-    ]
+    assert (note.id, note.title, note.content) == (
+        "note-1",
+        "Saved answer",
+        "Answer 😀 [1]",
+    )
+    assert len(fake.unary_calls) == 1
+    method, request, kwargs = fake.unary_calls[0]
+    assert method == CREATE_NOTE_METHOD
+    assert kwargs == {"replay_safe": False, "response_type": notes_pb2.CreateNoteResponse}
+    assert (request.project_id, request.content, request.metadata.type, request.name) == (
+        "notebook-1",
+        "Answer 😀 [1]",
+        SAVED_RESPONSE_NOTE_TYPE,
+        "Saved answer",
+    )
+    assert request.request_context.client_type == 3
+    document = request.tailwind_doc_content
+    assert document.type == 0
+    assert document.body.content[0].end_index == 9
+    assert document.body.content[0].paragraph.elements[0].text_run.content == "Answer 😀"
+    anchor = document.body.inline_object_locations[0]
+    assert (
+        anchor.object_id.id,
+        anchor.content_range.start_index,
+        anchor.content_range.end_index,
+    ) == (
+        "chunk-1",
+        0,
+        9,
+    )
+    citation = document.objects[0].citation
+    assert document.objects[0].object_id.id == "chunk-1"
+    assert (citation.ranges[0].start_index, citation.ranges[0].end_index) == (20, 37)
+    assert citation.fragment.elements[0].end_index == 17
+    assert citation.fragment.elements[0].paragraph.elements[0].text_run.content == (
+        "Source 😀 passage"
+    )
+    assert citation.source_attribution.ingested_source.source.id == "source-1"
+    assert citation.object_id.id == "chunk-1"
+    assert list(request.source_passages) == [citation]
     assert fake.stream_calls == []
 
 

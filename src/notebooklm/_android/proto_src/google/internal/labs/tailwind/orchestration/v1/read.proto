@@ -2,15 +2,19 @@ syntax = "proto3";
 
 package google.internal.labs.tailwind.orchestration.v1;
 
+import "google/internal/labs/tailwind/orchestration/v1/account.proto";
 import "google/internal/labs/tailwind/v1/source_settings.proto";
 import "google/protobuf/timestamp.proto";
+import "labs/language/tailwind/common/protos/common.proto";
 
 // Minimal exact-package read message closure. Only fields reachable from
 // GetProject and ListRecentlyViewedProjects public projections are declared.
 // The cumulative exact service lives in orchestration_service.proto so one
 // descriptor owns the service instead of attempting to reopen it across
-// message overlays. In particular, RequestContext, Project tier limits #11,
-// and chat sessions #12 are omitted.
+// message overlays. In particular, RequestContext and Project tier limits #11
+// are omitted. Project chat sessions #12 are
+// admitted from the exact APK schema plus a current live CreateProject
+// response carrying ChatSession.chat_session_id #1.
 
 enum ProjectRole {
   PROJECT_ROLE_UNKNOWN = 0;
@@ -52,15 +56,30 @@ message WebpageMetadata {
   string url = 1; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
 }
 
+message GoogleDocsSourceMetadata {
+  string document_id = 1; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+}
+
 message GoogleDriveSourceMetadata {
   string document_id = 1; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
   string mime_type = 3; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
 }
 
+message ExpertIntelligenceSourceMetadata {
+  string content_id = 1; // evidence: exact APK schema
+  string title = 3; // evidence: exact APK schema
+  repeated string authors = 4; // evidence: exact APK schema
+  string thumbnail_image_url = 5; // evidence: exact APK schema
+  string description = 6; // evidence: exact APK schema
+  double field_type = 7; // evidence: exact APK schema; semantic name is unresolved
+}
+
 message SourceMetadata {
+  GoogleDocsSourceMetadata google_docs_metadata = 1; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
   OriginalSourceContentType original_source_content_type = 5; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
   WebpageMetadata webpage_metadata = 8; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
   GoogleDriveSourceMetadata google_drive_source_metadata = 10; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+  ExpertIntelligenceSourceMetadata expert_intelligence_source_metadata = 19; // evidence: exact APK schema
 }
 
 message Source {
@@ -73,6 +92,14 @@ message Source {
 message ProjectMetadata {
   ProjectRole user_role = 1; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
   google.protobuf.Timestamp create_time = 9; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+  bool is_public = 13; // evidence: exact APK schema
+  repeated string audio_overview_artifact_ids = 17; // evidence: exact APK schema
+}
+
+message PremiumFeatureInfo {
+  optional bool can_edit_advanced_settings = 1; // evidence: exact APK schema + live ListRecentlyViewedProjects, 2026-08-29
+  optional bool can_edit_guidebook_config = 2; // evidence: exact APK schema + live ListRecentlyViewedProjects, 2026-08-29
+  optional bool can_view_analytics = 3; // evidence: exact APK schema + live ListRecentlyViewedProjects, 2026-08-29
 }
 
 message Project {
@@ -81,6 +108,9 @@ message Project {
   string id = 3; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
   string emoji = 4; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
   ProjectMetadata metadata = 6; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+  PremiumFeatureInfo premium_feature_info = 10; // evidence: exact APK schema + live ListRecentlyViewedProjects, 2026-08-29
+  TierLimits project_tier_limits = 11; // evidence: exact APK schema
+  repeated .labs.language.tailwind.common.protos.ChatSession chat_sessions = 12; // evidence: live Android CreateProject, 2026-08-29
 }
 
 message GetProjectRequest {

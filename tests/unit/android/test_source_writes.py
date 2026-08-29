@@ -12,11 +12,14 @@ from typing import Any, cast
 import pytest
 from tests._helpers.android_supervisor import SupervisedAndroidTransport
 
+from notebooklm._android.codecs.documents import decode_document, tailwind_doc_plain_text
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
+    chat_pb2,
     read_pb2,
     sources_pb2,
 )
 from notebooklm._android.proto.google.internal.labs.tailwind.v1 import source_settings_pb2
+from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import source_content_pb2
 from notebooklm._android.session import AndroidSession
 from notebooklm._android.sources import (
     ADD_SOURCES_METHOD,
@@ -27,11 +30,13 @@ from notebooklm._android.sources import (
     GET_PROJECT_METHOD,
     LOAD_SOURCE_METHOD,
     MUTATE_SOURCE_METHOD,
+    REFRESH_SOURCE_METHOD,
     AndroidSourcesAPI,
 )
 from notebooklm._android.upload import AndroidUploadPipeline
 from notebooklm.exceptions import (
     AuthError,
+    DecodingError,
     NetworkError,
     NonIdempotentRetryError,
     RateLimitError,
@@ -669,6 +674,54 @@ async def test_check_freshness_maps_empty_success_to_true_and_explicit_false() -
         }
 
 
+@pytest.mark.asyncio
+async def test_check_freshness_rejects_a_different_nonempty_echoed_source_id() -> None:
+    transport = FakeTransport()
+    transport.handlers[CHECK_SOURCE_FRESHNESS_METHOD] = sources_pb2.CheckSourceFreshnessResponse(
+        source_freshness=sources_pb2.SourceFreshness(
+            source_id=read_pb2.SourceId(id=SOURCE_B),
+            is_fresh=True,
+        )
+    )
+
+    with pytest.raises(DecodingError, match="unexpected source id"):
+        await _api(transport).check_freshness(NOTEBOOK_ID, SOURCE_A)
+
+
+@pytest.mark.asyncio
+async def test_refresh_uses_exact_native_request_and_public_none_contract() -> None:
+    transport = FakeTransport()
+    transport.handlers[REFRESH_SOURCE_METHOD] = sources_pb2.RefreshSourceResponse(
+        source=read_pb2.Source(source_id=read_pb2.SourceId(id=SOURCE_A))
+    )
+
+    result = await _api(transport).refresh(NOTEBOOK_ID, SOURCE_A)
+
+    assert result is None
+    [(method, request, kwargs)] = transport.calls
+    assert method == REFRESH_SOURCE_METHOD
+    assert request.source_id.id == SOURCE_A
+    assert request.HasField("request_context")
+    assert request.request_context.client_type == 3
+    assert kwargs == {
+        "replay_safe": False,
+        "response_type": sources_pb2.RefreshSourceResponse,
+        "expected_epoch": 7,
+    }
+    assert transport.scopes == ["sources.refresh"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_rejects_a_different_nonempty_echoed_source_id() -> None:
+    transport = FakeTransport()
+    transport.handlers[REFRESH_SOURCE_METHOD] = sources_pb2.RefreshSourceResponse(
+        source=read_pb2.Source(source_id=read_pb2.SourceId(id=SOURCE_B))
+    )
+
+    with pytest.raises(DecodingError, match="unexpected source id"):
+        await _api(transport).refresh(NOTEBOOK_ID, SOURCE_A)
+
+
 class _OrderedSources(AndroidSourcesAPI):
     def __init__(self, session: AndroidSession, order: list[str]) -> None:
         self.order = order
@@ -871,7 +924,7 @@ async def test_guide_and_fulltext_decode_only_captured_flat_fields() -> None:
             ]
         )
     )
-    transport.handlers[LOAD_SOURCE_METHOD] = sources_pb2.LoadSourceResponse(
+    transport.handlers[LOAD_SOURCE_METHOD] = source_content_pb2.WireLoadSourceResponse(
         source=_source(SOURCE_A, title="Document"),
         plain_text=sources_pb2.PlainTextSourceContent(header="ignored", body="plain body"),
         markdown_string="# markdown",
@@ -880,14 +933,196 @@ async def test_guide_and_fulltext_decode_only_captured_flat_fields() -> None:
 
     guide = await api.get_guide(NOTEBOOK_ID, SOURCE_A)
     fulltext = await api.get_fulltext(NOTEBOOK_ID, SOURCE_A)
+    markdown = await api.get_fulltext(NOTEBOOK_ID, SOURCE_A, output_format="markdown")
 
     assert guide.summary == "Summary"
     assert guide.keywords == ("one", "two")
     assert fulltext.content == "plain body"
     assert fulltext.char_count == 10
     assert fulltext.document.blocks == ()
+    assert markdown.content == "# markdown"
     assert transport.calls[0][2]["replay_safe"] is True
     assert transport.calls[1][2]["replay_safe"] is True
+    assert (
+        transport.calls[1][2]["response_type"].DESCRIPTOR.full_name
+        == "notebooklm.internal.android.wire.v1.WireLoadSourceResponse"
+    )
+
+
+@pytest.mark.asyncio
+async def test_fulltext_decodes_current_tailwind_doc_for_text_and_markdown() -> None:
+    transport = FakeTransport()
+    document = chat_pb2.TailwindDoc(
+        body=chat_pb2.Body(
+            content=[
+                chat_pb2.StructuralElement(
+                    start_index=0,
+                    end_index=10,
+                    paragraph=chat_pb2.Paragraph(
+                        elements=[
+                            chat_pb2.ParagraphElement(
+                                start_index=0,
+                                end_index=6,
+                                text_run=chat_pb2.TextRun(content="First "),
+                            ),
+                            chat_pb2.ParagraphElement(
+                                start_index=6,
+                                end_index=10,
+                                text_run=chat_pb2.TextRun(content="line"),
+                            ),
+                        ],
+                        paragraph_style=chat_pb2.ParagraphStyle(
+                            named_style_type=chat_pb2.HEADING_1
+                        ),
+                    ),
+                )
+            ]
+        )
+    )
+    transport.handlers[LOAD_SOURCE_METHOD] = source_content_pb2.WireLoadSourceResponse(
+        source=_source(SOURCE_A, title="Document"),
+        tailwind_doc=document,
+    )
+    api = _api(transport)
+
+    fulltext = await api.get_fulltext(NOTEBOOK_ID, SOURCE_A)
+    markdown = await api.get_fulltext(NOTEBOOK_ID, SOURCE_A, output_format="markdown")
+
+    assert fulltext.content == "First \nline"
+    assert fulltext.char_count == 11
+    assert fulltext.document.text == "First line"
+    assert fulltext.rendered_content == "First line"
+    assert markdown.content == "# First line"
+    assert markdown.document == fulltext.document
+
+
+@pytest.mark.asyncio
+async def test_fulltext_decodes_table_and_code_only_tailwind_doc() -> None:
+    transport = FakeTransport()
+
+    def cell(start: int, end: int, text: str) -> Any:
+        return chat_pb2.TableCell(
+            start_index=start,
+            end_index=end,
+            content=[
+                chat_pb2.StructuralElement(
+                    start_index=start,
+                    end_index=end,
+                    paragraph=chat_pb2.Paragraph(
+                        elements=[
+                            chat_pb2.ParagraphElement(
+                                start_index=start,
+                                end_index=end,
+                                text_run=chat_pb2.TextRun(content=text),
+                            )
+                        ]
+                    ),
+                )
+            ],
+        )
+
+    document = chat_pb2.TailwindDoc(
+        body=chat_pb2.Body(
+            content=[
+                chat_pb2.StructuralElement(
+                    start_index=0,
+                    end_index=9,
+                    table=chat_pb2.Table(
+                        rows=1,
+                        columns=2,
+                        table_rows=[
+                            chat_pb2.TableRow(
+                                start_index=0,
+                                end_index=9,
+                                table_cells=[cell(0, 4, "Head"), cell(4, 9, "Value")],
+                            )
+                        ],
+                    ),
+                ),
+                chat_pb2.StructuralElement(
+                    start_index=9,
+                    end_index=17,
+                    code_block=chat_pb2.CodeBlock(content="print(1)", language_hint="python"),
+                ),
+            ]
+        )
+    )
+    transport.handlers[LOAD_SOURCE_METHOD] = source_content_pb2.WireLoadSourceResponse(
+        source=_source(SOURCE_A, title="Structured"),
+        tailwind_doc=document,
+    )
+    api = _api(transport)
+
+    fulltext = await api.get_fulltext(NOTEBOOK_ID, SOURCE_A)
+    markdown = await api.get_fulltext(NOTEBOOK_ID, SOURCE_A, output_format="markdown")
+
+    assert fulltext.content == "Head\nValue\nprint(1)"
+    assert fulltext.rendered_content == "Head\tValue"
+    assert [block.kind.value for block in fulltext.document.blocks] == ["table", "code_block"]
+    assert markdown.content == ("| Head | Value |\n| --- | --- |\n\n```python\nprint(1)\n```")
+
+
+def test_plain_renderer_covers_all_text_bearing_variants_and_omits_metadata() -> None:
+    nested_text = chat_pb2.StructuralElement(
+        paragraph=chat_pb2.Paragraph(
+            elements=[
+                chat_pb2.ParagraphElement(text_run=chat_pb2.TextRun(content="nested")),
+                chat_pb2.ParagraphElement(
+                    image=chat_pb2.Image(url="https://example.invalid/inline")
+                ),
+                chat_pb2.ParagraphElement(resource=chat_pb2.Resource(id="resource-id")),
+            ]
+        )
+    )
+    document = chat_pb2.TailwindDoc(
+        body=chat_pb2.Body(
+            content=[
+                nested_text,
+                chat_pb2.StructuralElement(
+                    table=chat_pb2.Table(
+                        table_rows=[
+                            chat_pb2.TableRow(
+                                table_cells=[chat_pb2.TableCell(content=[nested_text])]
+                            )
+                        ]
+                    )
+                ),
+                chat_pb2.StructuralElement(code_block=chat_pb2.CodeBlock(content="code")),
+                chat_pb2.StructuralElement(a2ui_block=chat_pb2.A2uiBlock(json='{"ok":true}')),
+                chat_pb2.StructuralElement(thought=chat_pb2.Thought(elements=[nested_text])),
+                chat_pb2.StructuralElement(
+                    start_index=1,
+                    end_index=2,
+                    function_call=chat_pb2.FunctionCall(
+                        name="lookup",
+                        args=chat_pb2.TailwindStruct(
+                            fields=[
+                                chat_pb2.TailwindStruct_TailwindStructEntry(
+                                    key="query",
+                                    value=chat_pb2.TailwindValue(string_value="term"),
+                                )
+                            ]
+                        ),
+                    ),
+                ),
+                chat_pb2.StructuralElement(
+                    start_index=2,
+                    end_index=3,
+                    function_response=chat_pb2.FunctionResponse(name="lookup"),
+                ),
+                chat_pb2.StructuralElement(
+                    image=chat_pb2.Image(url="https://example.invalid/block")
+                ),
+                chat_pb2.StructuralElement(horizontal_rule=chat_pb2.HorizontalRule()),
+            ]
+        )
+    )
+
+    assert tailwind_doc_plain_text(document) == 'nested\nnested\ncode\n{"ok":true}\nnested'
+    assert [block.kind.value for block in decode_document(document).blocks[-2:]] == [
+        "function_call",
+        "function_response",
+    ]
 
 
 @pytest.mark.asyncio

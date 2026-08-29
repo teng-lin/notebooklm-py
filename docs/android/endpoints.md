@@ -120,10 +120,12 @@ For the separately audited `1.55.10` build, the intersection remains **33**, APK
 **20**, and Web-only remains **15**. The five-added/one-removed binary delta is listed above.
 
 "Absent from the APK" means only that this app build does not compile a caller. It does **not**
-mean the mobile bearer/gRPC backend lacks a route. Direct probes found all 15 routes. Eleven were
-semantically successful with valid disposable resources, three high-side-effect methods were
-route-probed with nonexistent UUIDs (`NOT_FOUND`), and `RefreshSource` was routed but rejected a
-valid copied URL source with `INVALID_ARGUMENT` even though the web RPC refreshed the same source.
+mean the mobile bearer/gRPC backend lacks a route. The original direct probe found all 15 routes:
+eleven were semantically successful with valid disposable resources, three high-side-effect methods
+were route-probed with nonexistent UUIDs (`NOT_FOUND`), and `RefreshSource` rejected a valid copied
+URL source with `INVALID_ARGUMENT`. A 2026-08-29 corrective probe then refreshed a stale native
+Google Doc successfully through the Android bearer; the historical URL-source failure remains a
+resource-cohort result, not a current parity gap.
 
 Status vocabulary below:
 
@@ -149,7 +151,7 @@ Status vocabulary below:
 | DeleteSources | `tGMBJ` (DELETE_SOURCE) | ✅ | captured + live delete/read-back on copied source |
 | LoadSource | `hizoJc` (GET_SOURCE) | ✅ | captured |
 | **MutateSource** | `b7Wfje` (UPDATE_SOURCE) | ❌ | **live** title mutation + read-back |
-| **RefreshSource** | `FLmJqe` (REFRESH_SOURCE) | ❌ | routed, but valid nested ID + four context variants returned `INVALID_ARGUMENT`; web call succeeded |
+| **RefreshSource** | `FLmJqe` (REFRESH_SOURCE) | ❌ | **live** on a stale native Google Doc; an earlier copied-URL probe returned `INVALID_ARGUMENT` for four context variants |
 | **CheckSourceFreshness** | `yR9Yof` (CHECK_SOURCE_FRESHNESS) | ❌ | **live** on copied URL source |
 | **CreateLabel** | `agX4Bc` (CREATE_LABEL) | ❌ | **live** for source labels and notebook collections |
 | GetLabels | `I3xc3c` (LIST_LABELS) | ✅ | APK + live for both resource kinds |
@@ -220,9 +222,9 @@ Status vocabulary below:
 - **Deep research:** the full async lifecycle is absent from the APK but supported by the mobile
   backend. See [the live report](deep-research-evidence.md).
 - **Remaining proof gap:** `ShareAudio` lacks a valid-resource probe, and `GenerateArtifact` lacks a
-  safely disposable failed artifact for an accepted replay. `ExportToDrive` report-to-Docs is now
-  live-proven with Drive read-back and exact deletion. `RefreshSource` is the valid-resource parity
-  probe the mobile endpoint rejected.
+  safely disposable failed artifact for an accepted replay. `ExportToDrive` report-to-Docs is
+  live-proven with Drive read-back and exact deletion. `RefreshSource` is also live-proven on a
+  stale native Google Doc; its earlier copied-URL rejection remains historical evidence only.
 
 Detailed request shapes and the destructive-copy test log are in
 [Web-parity gap probes over mobile gRPC](grpc-capability-and-signature-evidence.md).
@@ -316,7 +318,7 @@ Write / mutation RPCs (see [Write RPCs](#write--mutation-rpcs) — **do not repl
 | `AddSources` | 194 | 253 | commit source(s) |
 | `DeleteSources` | 103 | 0 | remove a source |
 | `MutateSource` | variable | `MutateSourceResponse` wrapping `Source #1` | APK-absent; copied-source rename + read-back |
-| `RefreshSource` | variable | error | routed, but valid copied URL source returned `INVALID_ARGUMENT` |
+| `RefreshSource` | variable | `RefreshSourceResponse` wrapping `Source #1` | stale native Google Doc refreshed successfully; earlier copied-URL probe returned `INVALID_ARGUMENT` |
 | `CreateLabel` / `MutateLabel` / `DeleteLabels` | variable | record set / empty | labels and collections; backend-only live replay |
 | `CreateArtifact` | 199 | 198 | generate studio artifact (audio/video/…) |
 | `UpdateArtifact` / `DeleteArtifact` | variable | `Artifact` / empty | copied-report rename/delete + read-back |
@@ -468,9 +470,10 @@ one user query with its generated response (captured newest-first):
 #2 str                     # next_page_token when another page exists
 ```
 
-The selected Android chat adapter returns this protobuf response raw. Its decoded history view applies the
-caller limit and reverses the newest-first rows into the Python API's oldest-first Q&A order; it
-does not infer pagination behavior from `nextPageToken`.
+The selected Android chat adapter follows unseen nonempty `nextPageToken` values through request
+field 6, aggregates at most the caller limit, preserves the final continuation token when the
+snapshot truncates, and fails loudly on a token cycle. Its decoded history view reverses the
+newest-first aggregate into the Python API's oldest-first Q&A order.
 
 ---
 
@@ -638,9 +641,10 @@ response: <empty>             # 0 bytes on success
 ### APK-unwired source/report routes
 
 Direct mobile-bearer calls recovered valid request shapes for `MutateSource`,
-`CheckSourceFreshness`, and `GenerateReportSuggestions`. `RefreshSource` was exhaustively shaped
-but rejected through mobile gRPC while the web transport succeeded. The exact bodies, controls,
-and negative results are kept in
+`CheckSourceFreshness`, and `GenerateReportSuggestions`. The original `RefreshSource` probe was
+exhaustively shaped but rejected for copied URL sources while the web transport succeeded. A later
+probe using the current constructor and a stale native Google Doc succeeded through mobile gRPC.
+The exact bodies, controls, historical negative results, and corrective run are kept in
 [the parity report](grpc-capability-and-signature-evidence.md#newly-recovered-successful-request-shapes)
 instead of duplicating them here.
 
@@ -891,10 +895,11 @@ client-context envelope, repeated-field structure, account-limits block, two-pha
 generate→poll, and the server-streaming chat-answer frame model are all solid.
 
 **Backend parity tested:** all 15 web-library methods absent from the APK reached a handler on the
-mobile gRPC host. Eleven succeeded with valid disposable resources, three returned `NOT_FOUND` in
-safe invalid-ID route probes, and `RefreshSource` remained a routed-but-rejected mismatch. Several
-APK-present note/artifact/delete methods were also live-verified on a rich disposable copy. These
-later results supplement the 21 captured shapes; they do not change the capture count.
+mobile gRPC host. The original run had eleven valid-resource successes, three safe invalid-ID route
+probes, and one routed-but-rejected `RefreshSource` result. A later stale-Google-Doc run promoted
+`RefreshSource` to valid-resource success. Several APK-present note/artifact/delete methods were
+also live-verified on a rich disposable copy. These later results supplement the 21 captured
+shapes; they do not change the capture count.
 
 **Field names/tags/types — recovered:** the full protobuf schema (295 messages, 767 fields) is in
 [android/schema.proto](schema.proto), decompiled from the binary. This supersedes the

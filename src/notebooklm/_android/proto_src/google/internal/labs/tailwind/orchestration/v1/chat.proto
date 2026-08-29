@@ -4,8 +4,10 @@ package google.internal.labs.tailwind.orchestration.v1;
 
 import "google/internal/labs/tailwind/orchestration/v1/read.proto";
 import "google/internal/labs/tailwind/orchestration/v1/sources.proto";
+import "google/internal/labs/tailwind/orchestration/v1/notebooks.proto";
 import "google/protobuf/timestamp.proto";
 import "labs/language/tailwind/common/protos/common.proto";
+import "labs/language/tailwind/common/protos/metadata.proto";
 
 // Service-free exact-package chat message overlay. The cumulative service in
 // orchestration_service.proto imports the three independently exact method
@@ -25,6 +27,12 @@ enum QueryOrigin {
   QUERY_ORIGIN_ARTIFACT_VIEWER = 8;
 }
 
+enum EmptyAnswerReason {
+  EMPTY_ANSWER_REASON_UNKNOWN = 0;
+  UNANSWERABLE = 1;
+  FILTERED = 2;
+}
+
 enum NamedStyleType {
   NAMED_STYLE_TYPE_UNSPECIFIED = 0;
   NORMAL_TEXT = 1;
@@ -42,6 +50,25 @@ enum ListType {
   LIST_TYPE_UNSPECIFIED = 0;
   LIST_TYPE_UNORDERED = 1;
   LIST_TYPE_ORDERED = 2;
+}
+
+enum ContentType {
+  CONTENT_TYPE_UNSPECIFIED = 0;
+  MARKDOWN = 1;
+  TAILWIND_DOC = 2;
+  HTML = 3;
+}
+
+enum MathStyleType {
+  MATH_STYLE_TYPE_UNSPECIFIED = 0;
+  MATH_STYLE_TYPE_INLINE = 1;
+  MATH_STYLE_TYPE_DISPLAY = 2;
+}
+
+enum ResponseType {
+  TYPE_UNSPECIFIED = 0;
+  TYPE_DEFAULT_ANSWER = 1;
+  TYPE_THOUGHT = 2;
 }
 
 message ConversationEvent {
@@ -97,7 +124,7 @@ message TextStyle {
   Color background_color = 7;
   bool code = 8;
   bool strikethrough = 9;
-  int32 math = 10;
+  MathStyleType math = 10;
 }
 
 message TextRun {
@@ -174,6 +201,30 @@ message Thought {
 
 message HorizontalRule {}
 
+message TailwindValue {
+  double number_value = 2;
+  string string_value = 3;
+  bool bool_value = 4;
+}
+
+message TailwindStruct_TailwindStructEntry {
+  string key = 1;
+  TailwindValue value = 2;
+}
+
+message TailwindStruct {
+  repeated TailwindStruct_TailwindStructEntry fields = 1;
+}
+
+message FunctionCall {
+  string name = 1;
+  TailwindStruct args = 2;
+}
+
+message FunctionResponse {
+  string name = 1;
+}
+
 message StructuralElement {
   int32 start_index = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   int32 end_index = 2; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
@@ -183,6 +234,8 @@ message StructuralElement {
   CodeBlock code_block = 7; // evidence: official APK exact TailwindDoc schema
   A2uiBlock a2ui_block = 8; // evidence: official APK exact TailwindDoc schema
   Thought thought = 9; // evidence: official APK exact TailwindDoc schema
+  FunctionCall function_call = 10; // evidence: official APK exact TailwindDoc schema
+  FunctionResponse function_response = 11; // evidence: official APK exact TailwindDoc schema
   HorizontalRule horizontal_rule = 12; // evidence: live Android reportDoc
 }
 
@@ -204,6 +257,7 @@ message CitationSource {
 }
 
 message Citation {
+  repeated Range ranges = 4; // evidence: current web bundle Citation encoder N_a
   TailwindDocFragment fragment = 5; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   CitationSource source_attribution = 6; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   ObjectId object_id = 7; // retained only as a captured field; projection uses the enclosing id
@@ -217,17 +271,59 @@ message DocumentObject {
 message TailwindDoc {
   Body body = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   repeated DocumentObject objects = 4; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
-  int32 type = 5; // evidence: official APK exact TailwindDoc schema
+  ResponseType type = 5; // evidence: official APK exact TailwindDoc schema
 }
 
 message AnswerResponse {
   string response = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   ConversationTurnKey conversation_turn_key = 3; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  EmptyAnswerReason empty_answer_reason = 4; // exact archived APK schema; diagnostic only
   TailwindDoc response_doc = 5; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message ActOnSourcesResponse {
   AnswerResponse response = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  NextStepSuggestions next_step_suggestions = 6; // evidence: official APK exact schema
+}
+
+message ActOnSourcesMindMapContext {
+  string key = 1; // exact current Web constructor mGb field #1
+  string value = 2; // exact current Web constructor mGb field #2
+}
+
+message ActOnSourcesMindMapAction {
+  string action = 1; // exact current Web constructor qGb field #1
+  repeated ActOnSourcesMindMapContext context = 2; // exact current Web constructor qGb field #2
+  string language = 3; // exact current Web constructor qGb field #3
+}
+
+message ActOnSourcesOptions {
+  ContentType citation_content_type = 7; // exact APK ActOnSourcesOptions schema
+  ContentType answer_content_type = 10; // exact APK ActOnSourcesOptions schema
+}
+
+message FreeFormAction {
+  string user_query = 1;
+  repeated ConversationEvent conversation_history = 2;
+  string user_message_id = 3;
+}
+
+message InputSourceOptions {
+  string project_id = 1;
+  bool use_all_sources = 2;
+}
+
+message ActOnSourcesRequest {
+  repeated InputSource sources = 1; // exact APK request field #1
+  ActOnSourcesOptions options = 2; // exact APK request field #2
+  FreeFormAction free_form_action = 3; // exact APK request field #3
+  // Field #6 is omitted from the APK descriptor but exact in the current Web
+  // constructor and accepted by the same ActOnSources mobile gRPC method.
+  ActOnSourcesMindMapAction mind_map_action = 6;
+  InputSourceOptions source_options = 7; // exact APK request field #7
+  .labs.language.tailwind.common.protos.RequestContext request_context = 8; // exact APK request field #8
+  string chat_session_id = 10; // exact APK request field #10
+  QueryOrigin origin = 11; // exact APK request field #11
 }
 
 message ChatHistoryMessage {
@@ -274,4 +370,5 @@ message GenerateFreeFormStreamedRequest {
 message GenerateFreeFormStreamedResponse {
   AnswerResponse answer = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   bool is_final_response = 5; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  NextStepSuggestions next_step_suggestions = 6; // exact checked-in APK schema
 }

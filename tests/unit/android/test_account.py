@@ -42,35 +42,91 @@ def _fields(message_type: type[Any]) -> dict[str, tuple[int, int, str | None]]:
 
 def test_exact_account_proto_package_fields_and_wire_are_minimal() -> None:
     boolean = FieldDescriptor.TYPE_BOOL
+    int32 = FieldDescriptor.TYPE_INT32
+    string = FieldDescriptor.TYPE_STRING
     message = FieldDescriptor.TYPE_MESSAGE
     package = ORCHESTRATION_PACKAGE
 
     assert account_pb2.DESCRIPTOR.package == package
-    assert account_pb2.DESCRIPTOR.dependencies == []
+    assert [dependency.name for dependency in account_pb2.DESCRIPTOR.dependencies] == [
+        "labs/language/tailwind/common/protos/metadata.proto"
+    ]
     assert account_pb2.DESCRIPTOR.services_by_name == {}
     assert set(account_pb2.DESCRIPTOR.message_types_by_name) == {
         "UserInfo",
+        "OutputLanguage",
         "PremiumUserInfo",
+        "TierLimits",
         "Account",
         "GetOrCreateAccountRequest",
         "GetOrCreateAccountResponse",
+        "AccountMutation_ChangePropertyMutation",
+        "AccountMutation",
+        "MutateAccountRequest",
     }
+    assert _fields(account_pb2.OutputLanguage) == {"language_code": (1, string, None)}
     assert _fields(account_pb2.UserInfo) == {
         "accepted_tos": (1, boolean, None),
         "opted_in_to_marketing_emails": (4, boolean, None),
+        "output_language": (5, message, f"{package}.OutputLanguage"),
         "is_eea_user": (9, boolean, None),
     }
     assert _fields(account_pb2.PremiumUserInfo) == {"is_premium_user": (1, boolean, None)}
+    assert _fields(account_pb2.TierLimits) == {
+        "account_type": (1, int32, None),
+        "max_projects": (2, int32, None),
+        "max_sources_per_project": (3, int32, None),
+        "max_words_per_source": (4, int32, None),
+        "subscription_tier": (5, int32, None),
+    }
     assert _fields(account_pb2.Account) == {
+        "tier_limits": (2, message, f"{package}.TierLimits"),
         "user_info": (3, message, f"{package}.UserInfo"),
         "premium_user_info": (5, message, f"{package}.PremiumUserInfo"),
     }
-    assert _fields(account_pb2.GetOrCreateAccountRequest) == {}
+    assert _fields(account_pb2.GetOrCreateAccountRequest) == {
+        "request_context": (
+            1,
+            message,
+            "labs.language.tailwind.common.protos.RequestContext",
+        )
+    }
     assert _fields(account_pb2.GetOrCreateAccountResponse) == {
         "account": (1, message, f"{package}.Account")
     }
 
     assert account_pb2.GetOrCreateAccountRequest().SerializeToString() == b""
+    assert _fields(account_pb2.AccountMutation_ChangePropertyMutation) == {
+        "new_user_info": (1, message, f"{package}.UserInfo")
+    }
+    assert _fields(account_pb2.AccountMutation) == {
+        "change_property": (
+            2,
+            message,
+            f"{package}.AccountMutation_ChangePropertyMutation",
+        )
+    }
+    assert list(account_pb2.AccountMutation.DESCRIPTOR.oneofs_by_name) == ["mutation"]
+    assert _fields(account_pb2.MutateAccountRequest) == {
+        "mutations": (1, message, f"{package}.AccountMutation"),
+        "request_context": (
+            2,
+            message,
+            "labs.language.tailwind.common.protos.RequestContext",
+        ),
+    }
+    mutation = account_pb2.MutateAccountRequest(
+        mutations=[
+            account_pb2.AccountMutation(
+                change_property=account_pb2.AccountMutation_ChangePropertyMutation(
+                    new_user_info=account_pb2.UserInfo(
+                        output_language=account_pb2.OutputLanguage(language_code="ja")
+                    )
+                )
+            )
+        ]
+    )
+    assert mutation.SerializeToString().hex() == "0a0a12080a062a040a026a61"
     response = account_pb2.GetOrCreateAccountResponse(
         account=account_pb2.Account(
             user_info=account_pb2.UserInfo(
@@ -166,7 +222,7 @@ async def test_adapter_uses_one_outer_epoch_lease_and_conservative_non_replay() 
     assert len(session.calls) == 1
     method, request, kwargs = session.calls[0]
     assert method == GET_OR_CREATE_ACCOUNT_METHOD
-    assert request == account_pb2.GetOrCreateAccountRequest()
+    assert request.HasField("request_context")
     assert kwargs == {
         "replay_safe": False,
         "response_type": account_pb2.GetOrCreateAccountResponse,

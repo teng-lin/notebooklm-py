@@ -329,18 +329,18 @@ async def test_live_wav_audio_corrects_registry_m4a_suffix(tmp_path: Path) -> No
         (
             "slide_pdf",
             "https://contribution.usercontent.google.com/download?cap=pdf-secret",
-            "application/pdf",
+            "application/octet-stream",
             PDF,
         ),
         (
             "slide_pptx",
             "https://contribution.usercontent.google.com/download?cap=pptx-secret",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/octet-stream",
             PPTX,
         ),
     ],
 )
-async def test_slide_capability_initial_never_acquires_or_sends_bearer(
+async def test_slide_capability_initial_uses_mobile_bearer_and_alr(
     tmp_path: Path,
     representation: str,
     url: str,
@@ -358,8 +358,10 @@ async def test_slide_capability_initial_never_acquires_or_sends_bearer(
     )
 
     assert destination.read_bytes() == body
-    assert bearer.calls == []
-    assert client.requests == [("GET", url, {}, False)]
+    assert bearer.calls == [1]
+    assert client.requests == [
+        ("GET", f"{url}&alr=yes", {"Authorization": f"Bearer {BEARER}"}, False)
+    ]
 
 
 @pytest.mark.asyncio
@@ -501,8 +503,22 @@ async def test_bearer_is_not_reattached_after_chain_leaves_exact_origin(tmp_path
         ("video", "video/mp4", b"not-an-mp4", "signature", "video"),
         ("slide_pdf", "application/pdf", b"not-a-pdf", "signature", "slide_deck"),
         (
+            "slide_pdf",
+            "application/octet-stream",
+            b"not-a-pdf",
+            "signature",
+            "slide_deck",
+        ),
+        (
             "slide_pptx",
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            b"not-a-zip",
+            "signature",
+            "slide_deck",
+        ),
+        (
+            "slide_pptx",
+            "application/octet-stream",
             b"not-a-zip",
             "signature",
             "slide_deck",

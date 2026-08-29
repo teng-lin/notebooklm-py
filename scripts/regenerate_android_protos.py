@@ -56,6 +56,7 @@ PROTO_FILES = (
     Path("notebooklm/android/wire/v1/organization_mutations.proto"),
     Path("notebooklm/internal/android/wire/v1/artifacts.proto"),
     Path("notebooklm/internal/android/wire/v1/notebooks.proto"),
+    Path("notebooklm/internal/android/wire/v1/source_content.proto"),
 )
 EXPECTED_GENERATED = frozenset(
     {
@@ -97,6 +98,8 @@ EXPECTED_GENERATED = frozenset(
         Path("notebooklm/internal/android/wire/v1/artifacts_pb2_grpc.py"),
         Path("notebooklm/internal/android/wire/v1/notebooks_pb2.py"),
         Path("notebooklm/internal/android/wire/v1/notebooks_pb2_grpc.py"),
+        Path("notebooklm/internal/android/wire/v1/source_content_pb2.py"),
+        Path("notebooklm/internal/android/wire/v1/source_content_pb2_grpc.py"),
     }
 )
 EXPECTED_PROTO_SOURCES = frozenset(PROTO_FILES)

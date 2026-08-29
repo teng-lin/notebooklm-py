@@ -490,8 +490,8 @@ def _assemble_client(
     # wired after ``client.sources`` exists. Same client/bound loop (ADR-0004).
     client.labels = WebLabelsAPI(internals.executor, list_sources=client.sources.list)
     # Android selection replaces the complete public namespace graph while keeping
-    # narrow Web compatibility collaborators only where the official mobile schema
-    # exposes no equivalent operation. Cross-namespace joins receive the selected
+    # narrow Web compatibility collaborators only where the recovered mobile route
+    # has no usable admitted operation. Cross-namespace joins receive the selected
     # Android capabilities instead of manufacturing a second frontend. Android
     # dependency/token validation remains deferred to async open, and the gRPC
     # channel remains lazy until the first Android RPC.
@@ -538,17 +538,12 @@ def _assemble_client(
             max_concurrent_uploads=max_concurrent_uploads,
             record_upload_queue_wait=internals.collaborators.metrics.record_upload_queue_wait,
         )
-        web_sources = client.sources
         web_notebooks = client.notebooks
-        web_artifacts = client.artifacts
-        web_settings = client.settings
         web_sharing = client.sharing
-        web_labels = client.labels
         client.sources = AndroidSourcesAPI(
             android_session,
             android_upload_pipeline,
-            drive_download=source_uploader.drive_download_scope,
-            refresh_source=web_sources.refresh,
+            drive_download=android_upload_pipeline.drive_download_scope,
         )
         client.notebooks = AndroidNotebooksAPI(
             android_session,
@@ -564,7 +559,6 @@ def _assemble_client(
             supervisor=internals.collaborators.call_supervisor,
             notebooks=client.notebooks,
             mind_maps=note_backed_artifacts,
-            note_backed_generator=web_artifacts.generate_mind_map,
             asset_downloads=android_asset_downloads,
         )
         client.mind_maps = AndroidMindMapsAPI(
@@ -585,12 +579,14 @@ def _assemble_client(
             base_timeout=timeout,
             import_research_timeout=import_research_timeout,
         )
-        client.settings = AndroidSettingsAPI(compatibility=web_settings)
-        client.sharing = AndroidSharingAPI(android_session, compatibility=web_sharing)
+        client.settings = AndroidSettingsAPI(android_session)
+        client.sharing = AndroidSharingAPI(
+            android_session,
+            set_view_level=web_sharing.set_view_level,
+        )
         client.labels = AndroidLabelsAPI(
             android_session,
             list_sources=client.sources.list,
-            generate_labels=web_labels.generate,
         )
         client.collections = AndroidCollectionsAPI(
             android_session,

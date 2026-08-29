@@ -14,8 +14,9 @@ from .._runtime.config import DEFAULT_CHAT_TIMEOUT, validate_read_timeout_kwarg
 from .._runtime.contracts import LoopGuard
 from .._types.enums import ChatGoal, ChatResponseLength
 from ..exceptions import ChatResponseParseError, UnknownRPCMethodError, ValidationError
-from ..types import ChatReference, ChatSettings, ConversationTurn, Note
+from ..types import ChatReference, ChatSettings, ConversationTurn, NextStepSuggestion, Note
 from .codecs.chat import decode_document, decode_history, decode_references, decode_turn_key
+from .codecs.notebooks import validate_project_identity
 from .notes import SAVED_RESPONSE_NOTE_TYPE, create_note
 from .session import AndroidSession
 
@@ -106,18 +107,45 @@ class AndroidChatAPI(ChatAPI):
         conversation_id: str,
         limit: int = 2,
     ) -> Any:
-        """Return the raw first ListChatTurns protobuf page.
-
-        The Android request has no limit field. ``limit`` remains in the
-        backend-neutral signature and is applied only by decoded consumers.
-        """
-        del notebook_id, limit
+        """Return at most ``limit`` newest turns across exact token pages."""
+        del notebook_id
         proto = _proto()
-        return await self._transport.unary(
-            LIST_CHAT_TURNS_METHOD,
-            proto.ListChatTurnsRequest(chat_session_id=conversation_id),
-            replay_safe=True,
-            response_type=proto.ListChatTurnsResponse,
+        bounded_limit = max(0, limit)
+        if bounded_limit == 0:
+            return proto.ListChatTurnsResponse()
+
+        turns: list[Any] = []
+        page_token = ""
+        seen_tokens: set[str] = set()
+        next_page_token = ""
+        while len(turns) < bounded_limit:
+            response = await self._transport.unary(
+                LIST_CHAT_TURNS_METHOD,
+                proto.ListChatTurnsRequest(
+                    chat_session_id=conversation_id,
+                    page_token=page_token,
+                ),
+                replay_safe=True,
+                response_type=proto.ListChatTurnsResponse,
+            )
+            remaining = bounded_limit - len(turns)
+            turns.extend(response.chat_turns[:remaining])
+            next_page_token = response.next_page_token
+            if len(turns) >= bounded_limit or not next_page_token:
+                break
+            if next_page_token in seen_tokens:
+                raise UnknownRPCMethodError(
+                    "Android ListChatTurns repeated a pagination token.",
+                    method_id=LIST_CHAT_TURNS_METHOD,
+                    path=(1,),
+                    source="AndroidChatAPI.get_conversation_turns",
+                )
+            seen_tokens.add(next_page_token)
+            page_token = next_page_token
+
+        return proto.ListChatTurnsResponse(
+            chat_turns=turns,
+            next_page_token=next_page_token,
         )
 
     async def get_history(
@@ -199,6 +227,7 @@ class AndroidChatAPI(ChatAPI):
         )
 
         final_response = None
+        next_steps: list[NextStepSuggestion] = []
         async for response in self._transport.stream(
             GENERATE_FREE_FORM_STREAMED_METHOD,
             request,
@@ -206,6 +235,17 @@ class AndroidChatAPI(ChatAPI):
             response_type=proto.GenerateFreeFormStreamedResponse,
             telemetry_method=None,
         ):
+            if response.HasField("next_step_suggestions"):
+                decoded_next_steps = [
+                    NextStepSuggestion(
+                        question=next_step.suggestion,
+                        type_code=int(next_step.suggestion_type),
+                    )
+                    for next_step in response.next_step_suggestions.next_steps
+                    if next_step.suggestion
+                ]
+                if decoded_next_steps:
+                    next_steps = decoded_next_steps
             if response.is_final_response:
                 final_response = response
 
@@ -218,14 +258,21 @@ class AndroidChatAPI(ChatAPI):
         answer = final_response.answer
         answer_document = decode_document(answer.response_doc)
         references = decode_references(answer.response_doc, answer_document)
+        from google.protobuf.json_format import MessageToJson
+
         return _PostedAsk(
             answer=answer.response,
             references=references,
             conversation_id=conversation_id,
-            raw_response="",
+            raw_response=MessageToJson(
+                final_response,
+                preserving_proto_field_name=True,
+                indent=None,
+                sort_keys=True,
+            ),
             answer_document=answer_document,
             turn_key=decode_turn_key(answer),
-            next_steps=[],
+            next_steps=next_steps,
         )
 
     async def _send_delete_conversation(
@@ -307,6 +354,7 @@ class AndroidChatAPI(ChatAPI):
                 source="AndroidChatAPI.get_settings",
             )
         project = response.project
+        validate_project_identity(project, notebook_id, method_id=GET_PROJECT_METHOD)
         if not project.HasField("advanced_settings"):
             return ChatSettings(
                 goal=ChatGoal.DEFAULT,
@@ -363,13 +411,21 @@ class AndroidChatAPI(ChatAPI):
         clean_answer: str,
         citation_anchors: list[tuple[ChatReference, int]],
     ) -> Note:
-        del references, clean_answer, citation_anchors
+        from .codecs.notes import build_saved_response_payload
+
+        source_passages, rich_content = build_saved_response_payload(
+            clean_answer,
+            references,
+            citation_anchors,
+        )
         return await create_note(
             self._transport,
             notebook_id,
             title=title,
             content=answer_text,
             note_type=SAVED_RESPONSE_NOTE_TYPE,
+            source_passages=source_passages,
+            tailwind_doc_content=rich_content,
         )
 
 

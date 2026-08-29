@@ -17,8 +17,10 @@ import pytest
 from google.protobuf import empty_pb2
 from tests._helpers.android_supervisor import SupervisedAndroidTransport
 
+from notebooklm._android import notes as android_notes
 from notebooklm._android.artifact_outputs import report_doc_markdown
 from notebooklm._android.artifacts import (
+    ACT_ON_SOURCES_METHOD,
     CREATE_ARTIFACT_METHOD,
     DELETE_ARTIFACT_METHOD,
     DERIVE_ARTIFACT_METHOD,
@@ -60,7 +62,6 @@ from notebooklm._types.enums import (
     VideoFormat,
     VideoStyle,
 )
-from notebooklm._types.research import MindMapResult
 from notebooklm.exceptions import (
     ArtifactDownloadError,
     ArtifactFeatureUnavailableError,
@@ -71,7 +72,7 @@ from notebooklm.exceptions import (
     RPCError,
     ValidationError,
 )
-from notebooklm.types import Artifact, ArtifactType, MindMap, MindMapKind
+from notebooklm.types import Artifact, ArtifactType, MindMap, MindMapKind, Note
 
 _PROTO = artifacts_pb2
 
@@ -234,21 +235,11 @@ def _graph(
     mind_maps = FakeMindMaps()
     assets = FakeAssets()
 
-    async def generate_note_backed(
-        notebook_id: str,
-        source_ids: list[str] | None = None,
-        language: str | None = "en",
-        instructions: str | None = None,
-    ) -> MindMapResult:
-        del notebook_id, source_ids, language, instructions
-        return MindMapResult()
-
     api = AndroidArtifactsAPI(
         session=cast(AndroidSession, session),
         supervisor=_supervisor(),
         notebooks=cast(NotebookSourceIdProvider, notebooks),
         mind_maps=mind_maps,
-        note_backed_generator=generate_note_backed,
         asset_downloads=cast(AndroidAssetDownloadService, assets),
     )
     return session, notebooks, mind_maps, assets, api
@@ -261,21 +252,11 @@ def _supervised_graph(
     mind_maps: Any | None = None,
     assets: Any | None = None,
 ) -> AndroidArtifactsAPI:
-    async def generate_note_backed(
-        notebook_id: str,
-        source_ids: list[str] | None = None,
-        language: str | None = "en",
-        instructions: str | None = None,
-    ) -> MindMapResult:
-        del notebook_id, source_ids, language, instructions
-        return MindMapResult()
-
     return AndroidArtifactsAPI(
         session=cast(AndroidSession, transport),
         supervisor=transport.supervisor,
         notebooks=cast(NotebookSourceIdProvider, notebooks or FakeNotebooks()),
         mind_maps=cast(Any, mind_maps or FakeMindMaps()),
-        note_backed_generator=generate_note_backed,
         asset_downloads=cast(AndroidAssetDownloadService, assets or FakeAssets()),
     )
 
@@ -283,9 +264,9 @@ def _supervised_graph(
 def test_adapter_is_concrete_and_requires_the_narrow_note_lister() -> None:
     assert AndroidArtifactsAPI.__abstractmethods__ == frozenset()
     assert ArtifactsAPI.__abstractmethods__
-    assert inspect.signature(AndroidArtifactsAPI).parameters["mind_maps"].default is (
-        inspect.Parameter.empty
-    )
+    parameters = inspect.signature(AndroidArtifactsAPI).parameters
+    assert parameters["mind_maps"].default is inspect.Parameter.empty
+    assert "note_backed_generator" not in parameters
     session, notebooks, _, assets, _ = _graph()
     with pytest.raises(TypeError, match="mind_maps"):
         AndroidArtifactsAPI(
@@ -293,7 +274,6 @@ def test_adapter_is_concrete_and_requires_the_narrow_note_lister() -> None:
             supervisor=_supervisor(),
             notebooks=cast(NotebookSourceIdProvider, notebooks),
             mind_maps=cast(Any, None),
-            note_backed_generator=cast(Any, None),
             asset_downloads=cast(AndroidAssetDownloadService, assets),
         )
 
@@ -1695,14 +1675,23 @@ async def test_interactive_mind_map_rejects_malformed_node_tree() -> None:
 
 
 @pytest.mark.asyncio
-async def test_generate_note_backed_mind_map_delegates_to_narrow_web_compatibility_seam() -> None:
+async def test_generate_note_backed_mind_map_uses_native_action_and_note_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     session, notebooks, _, _, api = _graph()
-    expected = MindMapResult(
-        mind_map={"name": "Topics", "children": []},
-        note_id="note-1",
+    tree_json = '{"name":"Topics","children":[]}'
+    session.responses[ACT_ON_SOURCES_METHOD] = chat_pb2.ActOnSourcesResponse(
+        response=chat_pb2.AnswerResponse(response=tree_json)
     )
-    generator = AsyncMock(return_value=expected)
-    api._generate_note_backed_mind_map = generator
+    create = AsyncMock(
+        return_value=Note(
+            id="note-1",
+            notebook_id="notebook-1",
+            title="Topics",
+            content=tree_json,
+        )
+    )
+    monkeypatch.setattr(android_notes, "create_note", create)
 
     result = await api.generate_mind_map(
         "notebook-1",
@@ -1711,15 +1700,141 @@ async def test_generate_note_backed_mind_map_delegates_to_narrow_web_compatibili
         "Group by theme",
     )
 
-    assert result is expected
-    generator.assert_awaited_once_with(
+    assert result.mind_map == {"name": "Topics", "children": []}
+    assert result.note_id == "note-1"
+    create.assert_awaited_once_with(
+        session,
         "notebook-1",
-        ["source-1"],
-        "fr",
-        "Group by theme",
+        title="Topics",
+        content=tree_json,
+        expected_epoch=7,
     )
-    assert session.calls == []
+    assert len(session.calls) == 1
+    method, request, kwargs = session.calls[0]
+    assert method == ACT_ON_SOURCES_METHOD
+    assert [source.source_id.id for source in request.sources] == ["source-1"]
+    assert request.mind_map_action.action == "interactive_mindmap"
+    assert request.mind_map_action.language == "fr"
+    assert [(item.key, item.value) for item in request.mind_map_action.context] == [
+        ("[CONTEXT]", "Group by theme")
+    ]
+    assert request.request_context.client_type == 3
+    assert kwargs["replay_safe"] is False
+    assert kwargs["response_type"] is chat_pb2.ActOnSourcesResponse
+    assert kwargs["expected_epoch"] == 7
     assert notebooks.calls == []
+
+
+@pytest.mark.asyncio
+async def test_generate_note_backed_mind_map_resolves_default_sources_natively(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, notebooks, _, _, api = _graph()
+    session.responses[ACT_ON_SOURCES_METHOD] = chat_pb2.ActOnSourcesResponse(
+        response=chat_pb2.AnswerResponse(response='{"name":"Root","children":[]}')
+    )
+    create = AsyncMock(
+        return_value=Note(
+            id="note-1",
+            notebook_id="notebook-1",
+            title="Root",
+            content='{"name":"Root","children":[]}',
+        )
+    )
+    monkeypatch.setattr(android_notes, "create_note", create)
+
+    await api.generate_mind_map("notebook-1")
+
+    assert notebooks.calls == ["notebook-1"]
+    request = session.calls[0][1]
+    assert [source.source_id.id for source in request.sources] == ["source-1", "source-2"]
+
+
+@pytest.mark.asyncio
+async def test_generate_note_backed_mind_map_empty_response_does_not_create_note(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, _, _, _, api = _graph()
+    session.responses[ACT_ON_SOURCES_METHOD] = chat_pb2.ActOnSourcesResponse()
+    create = AsyncMock()
+    monkeypatch.setattr(android_notes, "create_note", create)
+
+    result = await api.generate_mind_map("notebook-1", ["source-1"])
+
+    assert result.mind_map is None
+    assert result.note_id is None
+    assert result.created_at is None
+    create.assert_not_awaited()
+    assert [method for method, _request, _kwargs in session.calls] == [ACT_ON_SOURCES_METHOD]
+
+
+@pytest.mark.asyncio
+async def test_generate_note_backed_mind_map_preserves_non_json_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, _, _, _, api = _graph()
+    session.responses[ACT_ON_SOURCES_METHOD] = chat_pb2.ActOnSourcesResponse(
+        response=chat_pb2.AnswerResponse(response="unstructured tree")
+    )
+    create = AsyncMock(
+        return_value=Note(
+            id="note-1",
+            notebook_id="notebook-1",
+            title="Mind Map",
+            content="unstructured tree",
+        )
+    )
+    monkeypatch.setattr(android_notes, "create_note", create)
+
+    result = await api.generate_mind_map("notebook-1", ["source-1"])
+
+    assert result.mind_map == "unstructured tree"
+    assert result.note_id == "note-1"
+    create.assert_awaited_once_with(
+        session,
+        "notebook-1",
+        title="Mind Map",
+        content="unstructured tree",
+        expected_epoch=7,
+    )
+
+
+@pytest.mark.asyncio
+async def test_generate_note_backed_mind_map_generation_failure_never_writes_note(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, _, _, _, api = _graph()
+    original = RPCError("generation unavailable", method_id=ACT_ON_SOURCES_METHOD, rpc_code=13)
+    session.errors[ACT_ON_SOURCES_METHOD] = original
+    create = AsyncMock()
+    monkeypatch.setattr(android_notes, "create_note", create)
+
+    with pytest.raises(RPCError) as raised:
+        await api.generate_mind_map("notebook-1", ["source-1"])
+
+    assert raised.value is original
+    create.assert_not_awaited()
+    assert [method for method, _request, _kwargs in session.calls] == [ACT_ON_SOURCES_METHOD]
+
+
+@pytest.mark.asyncio
+async def test_generate_note_backed_mind_map_note_failure_does_not_repeat_generation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, _, _, _, api = _graph()
+    session.responses[ACT_ON_SOURCES_METHOD] = chat_pb2.ActOnSourcesResponse(
+        response=chat_pb2.AnswerResponse(response='{"children":[]}')
+    )
+    original = RPCError("note unavailable", method_id="CreateNote", rpc_code=13)
+    create = AsyncMock(side_effect=original)
+    monkeypatch.setattr(android_notes, "create_note", create)
+
+    with pytest.raises(RPCError) as raised:
+        await api.generate_mind_map("notebook-1", ["source-1"])
+
+    assert raised.value is original
+    create.assert_awaited_once()
+    assert [method for method, _request, _kwargs in session.calls] == [ACT_ON_SOURCES_METHOD]
 
 
 @pytest.mark.asyncio

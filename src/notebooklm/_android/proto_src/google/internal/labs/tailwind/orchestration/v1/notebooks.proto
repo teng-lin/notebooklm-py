@@ -62,6 +62,25 @@ enum SuggestionConfigId {
   SUGGESTION_CONFIG_VIDEO_OVERVIEW_SHORT = 10;
 }
 
+enum MagicArtifactType {
+  MAGIC_ARTIFACT_TYPE_UNSPECIFIED = 0;
+  MINDMAP = 1;
+  AUDIO_OVERVIEW = 2;
+  VIDEO_OVERVIEW = 3;
+  NOTE = 4;
+  TABLE = 5;
+  LINE_CHART = 6;
+  FLASHCARDS = 7;
+  REPORT = 8;
+  CONVERSATIONAL_TEXT_CHIP = 9;
+  VIDEO_OVERVIEW_TEXT_CHIP = 10;
+  AUDIO_OVERVIEW_TEXT_CHIP = 11;
+  REPORT_TEXT_CHIP = 12;
+  FLASHCARDS_TEXT_CHIP = 13;
+  QUIZ_TEXT_CHIP = 14;
+  SOURCE_DISCOVERY_TEXT_CHIP = 15;
+}
+
 message PromptSuggestion {
   string title = 1;
   string prompt = 2;
@@ -82,7 +101,7 @@ message GeneratePromptSuggestionsResponse {
 
 message NextStep {
   string suggestion = 1;
-  int32 suggestion_type = 2;
+  MagicArtifactType suggestion_type = 2;
 }
 
 message NextStepSuggestions {

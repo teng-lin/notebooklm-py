@@ -3,11 +3,14 @@ syntax = "proto3";
 package google.internal.labs.tailwind.orchestration.v1;
 
 import "google/protobuf/timestamp.proto";
+import "google/internal/labs/tailwind/orchestration/v1/chat.proto";
+import "labs/language/tailwind/common/protos/metadata.proto";
 
 // Exact-package note overlay. The flattened recovery preserves this Dart
 // library's package, message names, enum values, field tags, and cardinality.
-// RequestContext and ProjectNote.tailwind_doc_content #6 are deliberately
-// omitted because no public projection populates or reads them.
+// The current web bundle closes rich-note fields omitted by the older APK:
+// CreateNote and ProjectNote carry TailwindDoc at #6, while CreateNote carries
+// RequestContext at #7.
 
 enum NotePromptType {
   NOTE_PROMPT_TYPE_UNSPECIFIED = 0;
@@ -35,7 +38,9 @@ message ProjectNote {
   string id = 1;
   string content = 2;
   NoteMetadata metadata = 3;
+  repeated Citation source_passages = 4;
   string name = 5;
+  TailwindDoc tailwind_doc_content = 6;
 }
 
 message NoteOrStatus {
@@ -56,8 +61,10 @@ message CreateNoteRequest {
   string project_id = 1;
   string content = 2;
   NoteMetadata metadata = 3;
+  repeated Citation source_passages = 4;
   string name = 5;
-  // RequestContext #7 intentionally omitted.
+  TailwindDoc tailwind_doc_content = 6;
+  .labs.language.tailwind.common.protos.RequestContext request_context = 7;
 }
 
 message CreateNoteResponse {

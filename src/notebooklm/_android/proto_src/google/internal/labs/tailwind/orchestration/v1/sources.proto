@@ -146,6 +146,15 @@ message CheckSourceFreshnessResponse {
   SourceFreshness source_freshness = 1;
 }
 
+message RefreshSourceRequest {
+  SourceId source_id = 2; // exact current Web constructor bLb field #2
+  .labs.language.tailwind.common.protos.RequestContext request_context = 3; // exact current Web constructor bLb field #3
+}
+
+message RefreshSourceResponse {
+  Source source = 1; // exact current Web response wrapper field #1
+}
+
 message PlainTextSourceContent {
   string header = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
   string body = 2; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
@@ -159,7 +168,9 @@ message LoadSourceResponse {
   Source source = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
   PlainTextSourceContent plain_text = 2; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
   string markdown_string = 3; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
-  // TailwindDoc #4 remains unknown to this decoder until its offset grammar is admitted.
+  // Exact TailwindDoc #4 is decoded through the repository-local
+  // WireLoadSourceResponse overlay to avoid the sources.proto <-> chat.proto
+  // import cycle created by chat's InputSource dependency.
 }
 
 message UploadFileRequest {

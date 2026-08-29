@@ -32,11 +32,12 @@ message GetLabelsResponse {
 // Android-bearer CRUD pins the populated request tags below. The response
 // names are conventional inferences. Distinct web constructors remain distinct
 // below even where their currently observed fields serialize identically.
-// Create's observed web response carries source labels at #2. Its heterogeneous
-// collection rows at #3 deliberately remain unknown here. Mutate/delete use
-// dedicated response constructors rather than the shared google.protobuf.Empty
-// ctor; no response fields are retained by the current bundle, so the generated
-// partial parsers intentionally admit none.
+// Create's response carries source labels at #2 and notebook collections at #3.
+// The collection row shape is live-proven on the Android-bearer route: name #1,
+// repeated raw notebook UUID strings #2, collection UUID #3, and emoji #4.
+// Mutate/delete use dedicated response constructors rather than the shared
+// google.protobuf.Empty ctor; no response fields are retained by the current
+// bundle, so the generated partial parsers intentionally admit none.
 message LabelProperties {
   optional string name = 1;
   optional string emoji = 2;
@@ -48,15 +49,34 @@ message ManualCreateLabel {
   repeated string notebook_ids = 3;
 }
 
+// Current Web request ctor eHb and live Android-bearer probes pin the
+// presence-sensitive auto-create branch. An explicit false incrementally
+// labels unlabeled sources; true discards and regenerates all labels. A
+// present empty message is the product's distinct initial/default mode.
+message AutoCreateLabel {
+  optional bool regenerate_all = 1;
+}
+
 message CreateLabelRequest {
   .labs.language.tailwind.common.protos.RequestContext request_context = 1;
   string project_id = 2;
-  ManualCreateLabel manual_create = 6;
+  oneof create_mode {
+    AutoCreateLabel auto_create = 5;
+    ManualCreateLabel manual_create = 6;
+  }
   int32 label_type = 7;
 }
 
 message CreateLabelResponse {
   repeated LabelAndSources label_and_sources = 2;
+  repeated NotebookCollection notebook_collections = 3;
+}
+
+message NotebookCollection {
+  string name = 1;
+  repeated string notebook_ids = 2;
+  string id = 3;
+  string emoji = 4;
 }
 
 message MutateLabelProperties {

@@ -14,10 +14,12 @@ from notebooklm._android.proto.labs.language.tailwind.common.protos import (
     metadata_pb2,
     provenance_pb2,
 )
+from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import source_content_pb2
 from notebooklm._android.upload import android_provenance, android_request_context
 
 ORCHESTRATION_PACKAGE = "google.internal.labs.tailwind.orchestration.v1"
 COMMON_PACKAGE = "labs.language.tailwind.common.protos"
+LOCAL_WIRE_PACKAGE = "notebooklm.internal.android.wire.v1"
 
 
 def _shape(message: Any) -> dict[str, tuple[int, bool, int, str | None]]:
@@ -32,7 +34,7 @@ def _shape(message: Any) -> dict[str, tuple[int, bool, int, str | None]]:
     return result
 
 
-def test_b3_generated_package_overlay_is_complete_and_service_free() -> None:
+def test_source_generated_package_overlay_is_complete_and_service_free() -> None:
     assert sources_pb2.DESCRIPTOR.name == (
         "google/internal/labs/tailwind/orchestration/v1/sources.proto"
     )
@@ -62,6 +64,8 @@ def test_b3_generated_package_overlay_is_complete_and_service_free() -> None:
         "MutateSourceRequest",
         "MutateSourceResponse",
         "PlainTextSourceContent",
+        "RefreshSourceRequest",
+        "RefreshSourceResponse",
         "ChangeTitle",
         "Snippet",
         "SourceMutation",
@@ -182,7 +186,36 @@ def test_b3_generated_package_overlay_is_complete_and_service_free() -> None:
     }
 
 
-def test_b3b_context_and_provenance_packages_are_exact_minimal_closures() -> None:
+def test_load_source_local_overlay_admits_exact_tailwind_doc_field() -> None:
+    assert source_content_pb2.DESCRIPTOR.name == (
+        "notebooklm/internal/android/wire/v1/source_content.proto"
+    )
+    assert source_content_pb2.DESCRIPTOR.package == LOCAL_WIRE_PACKAGE
+    assert source_content_pb2.DESCRIPTOR.services_by_name == {}
+    assert _shape(source_content_pb2.WireLoadSourceResponse) == {
+        "source": (
+            1,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{ORCHESTRATION_PACKAGE}.Source",
+        ),
+        "plain_text": (
+            2,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{ORCHESTRATION_PACKAGE}.PlainTextSourceContent",
+        ),
+        "markdown_string": (3, False, FieldDescriptor.TYPE_STRING, None),
+        "tailwind_doc": (
+            4,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{ORCHESTRATION_PACKAGE}.TailwindDoc",
+        ),
+    }
+
+
+def test_source_context_and_provenance_packages_are_exact_minimal_closures() -> None:
     assert provenance_pb2.DESCRIPTOR.name == (
         "labs/language/tailwind/common/protos/provenance.proto"
     )
@@ -230,7 +263,7 @@ def test_b3b_context_and_provenance_packages_are_exact_minimal_closures() -> Non
     assert set(metadata_pb2.DESCRIPTOR.enum_types_by_name) == {"ClientType"}
 
 
-def test_b3_web_derived_mutation_request_and_response_shapes_are_pinned() -> None:
+def test_source_web_derived_mutation_request_and_response_shapes_are_pinned() -> None:
     assert _shape(sources_pb2.MutateSourceRequest) == {
         "source_id": (
             2,
@@ -307,9 +340,31 @@ def test_web_derived_freshness_shapes_are_pinned() -> None:
             f"{ORCHESTRATION_PACKAGE}.SourceFreshness",
         )
     }
+    assert _shape(sources_pb2.RefreshSourceRequest) == {
+        "source_id": (
+            2,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{ORCHESTRATION_PACKAGE}.SourceId",
+        ),
+        "request_context": (
+            3,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{COMMON_PACKAGE}.RequestContext",
+        ),
+    }
+    assert _shape(sources_pb2.RefreshSourceResponse) == {
+        "source": (
+            1,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{ORCHESTRATION_PACKAGE}.Source",
+        )
+    }
 
 
-def test_b3_request_bytes_are_pinned_without_context_or_unexercised_title() -> None:
+def test_source_request_bytes_are_pinned_without_context_or_unexercised_title() -> None:
     registration = sources_pb2.AddTentativeSourcesRequest(
         tentative_sources_metadata=[sources_pb2.TentativeSourceMetadata(name="corr")],
         project_id="project",
@@ -339,7 +394,7 @@ def test_b3_request_bytes_are_pinned_without_context_or_unexercised_title() -> N
     )
 
 
-def test_b3b_registration_and_upload_file_request_bytes_are_pinned() -> None:
+def test_source_registration_and_upload_file_request_bytes_are_pinned() -> None:
     registration = sources_pb2.AddTentativeSourcesRequest(
         tentative_sources_metadata=[sources_pb2.TentativeSourceMetadata(name="document.pdf")],
         project_id="project",

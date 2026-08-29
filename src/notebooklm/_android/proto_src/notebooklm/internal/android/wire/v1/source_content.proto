@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+// Repository-local response overlay for LoadSource. The official response FQN
+// remains google.internal...LoadSourceResponse; this local message exists only
+// because sources.proto and chat.proto import each other through InputSource,
+// while the live response's field #4 is the exact TailwindDoc declared by
+// chat.proto. Protobuf response decoding is wire-based, so this overlay admits
+// that proven branch without inventing a second Google-package declaration.
+package notebooklm.internal.android.wire.v1;
+
+import "google/internal/labs/tailwind/orchestration/v1/chat.proto";
+import "google/internal/labs/tailwind/orchestration/v1/read.proto";
+import "google/internal/labs/tailwind/orchestration/v1/sources.proto";
+
+message WireLoadSourceResponse {
+  .google.internal.labs.tailwind.orchestration.v1.Source source = 1;
+  .google.internal.labs.tailwind.orchestration.v1.PlainTextSourceContent plain_text = 2;
+  string markdown_string = 3;
+  .google.internal.labs.tailwind.orchestration.v1.TailwindDoc tailwind_doc = 4;
+}

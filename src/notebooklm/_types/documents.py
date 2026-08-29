@@ -39,8 +39,8 @@ is where offsets resolve; and :meth:`StructuredDocument.render` — surfaced as
 be read. :meth:`StructuredDocument.render` documents what separates them.
 
 The types here are transport-neutral and carry no positional knowledge; the
-``TailwindDoc`` array positions live in
-:mod:`notebooklm._web.rows.documents`.
+Web array projection lives in :mod:`notebooklm._web.rows.documents`, while the
+Android protobuf projection lives in :mod:`notebooklm._android.codecs.documents`.
 """
 
 from __future__ import annotations

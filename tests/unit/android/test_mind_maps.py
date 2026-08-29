@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from tests._helpers.android_supervisor import SupervisedAndroidTransport
 from notebooklm._android.artifacts import AndroidArtifactsAPI
 from notebooklm._android.mind_maps import AndroidMindMapsAPI
 from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._notes import NotesAPI
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._types.research import MindMapResult
@@ -110,8 +112,6 @@ def _graph(
 
 
 def test_direct_graph_requires_and_retains_exact_base_collaborators() -> None:
-    import inspect
-
     api, artifacts, notes = _graph()
     parameters = inspect.signature(AndroidMindMapsAPI).parameters
 
@@ -120,6 +120,27 @@ def test_direct_graph_requires_and_retains_exact_base_collaborators() -> None:
     assert parameters["notes"].default is inspect.Parameter.empty
     assert api._artifacts is artifacts
     assert api._notes is notes
+
+
+def test_public_callable_manifest_is_complete_without_compatibility_methods() -> None:
+    expected = {
+        "delete",
+        "generate",
+        "get",
+        "get_or_none",
+        "get_tree",
+        "list",
+        "list_note_backed",
+        "rename",
+    }
+
+    for adapter in (MindMapsAPI, AndroidMindMapsAPI):
+        assert {
+            name
+            for name, member in inspect.getmembers(adapter)
+            if not name.startswith("_") and callable(member)
+        } == expected
+    assert AndroidMindMapsAPI.__abstractmethods__ == frozenset()
 
 
 def test_direct_graph_requires_private_typed_notes_read_seam() -> None:
@@ -182,7 +203,7 @@ async def test_get_and_get_or_none_use_typed_aggregate_read() -> None:
 
 
 @pytest.mark.asyncio
-async def test_note_backed_generate_uses_narrow_artifact_compatibility_seam() -> None:
+async def test_note_backed_generate_composes_native_artifact_result() -> None:
     api, artifacts, notes = _graph(artifacts=[_interactive_artifact()])
 
     result = await api.generate(
@@ -206,6 +227,7 @@ async def test_note_backed_generate_uses_narrow_artifact_compatibility_seam() ->
         "fr",
         "Group by theme",
     )
+    artifacts._generate_interactive_mind_map.assert_not_awaited()
     notes._list_note_backed_mind_maps.assert_not_awaited()
 
 

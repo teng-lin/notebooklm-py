@@ -3,34 +3,26 @@
 from __future__ import annotations
 
 import builtins
-from typing import Literal, Protocol
+from typing import Literal
 
 from .._labels import LabelsAPI, ListSources
 from ..exceptions import DecodingError, LabelError, LabelNotFoundError, RPCError
 from ..types import Label, Source
+from .codecs.organization import decode_created_labels
 from .organization import (
+    CREATE_LABEL_METHOD,
     DELETE_LABELS_METHOD,
     GET_LABELS_METHOD,
     MUTATE_LABEL_METHOD,
     MemberOperation,
     create_manual,
     delete_resources,
+    generate_labels,
     list_labels,
     mutate_member,
     mutate_properties,
 )
 from .session import AndroidSession
-
-
-class GenerateLabels(Protocol):
-    """Narrow compatibility seam for Web-only AI label organization."""
-
-    async def __call__(
-        self,
-        notebook_id: str,
-        *,
-        scope: Literal["all", "unlabeled"] = "unlabeled",
-    ) -> builtins.list[Label]: ...
 
 
 def _label_miss(label_id: str, *, method_id: str) -> LabelNotFoundError:
@@ -51,11 +43,9 @@ class AndroidLabelsAPI(LabelsAPI):
         session: AndroidSession,
         *,
         list_sources: ListSources,
-        generate_labels: GenerateLabels,
     ) -> None:
         self._transport = session
         self._list_sources = list_sources
-        self._generate_labels = generate_labels
 
     async def _list(self, notebook_id: str, *, expected_epoch: int) -> builtins.list[Label]:
         return await list_labels(
@@ -123,14 +113,17 @@ class AndroidLabelsAPI(LabelsAPI):
     ) -> builtins.list[Label]:
         if scope not in ("all", "unlabeled"):
             raise ValueError(f"generate scope must be 'all' or 'unlabeled', got {scope!r}")
-        return await self._generate_labels(notebook_id, scope=scope)
+        async with self._transport.operation_scope("labels.generate") as lease:
+            return await generate_labels(
+                self._transport,
+                notebook_id,
+                regenerate_all=scope == "all",
+                expected_epoch=lease.epoch,
+            )
 
     async def create(self, notebook_id: str, name: str, emoji: str = "") -> Label:
         async with self._transport.operation_scope("labels.create") as lease:
-            before_ids = {
-                label.id for label in await self._list(notebook_id, expected_epoch=lease.epoch)
-            }
-            await create_manual(
+            response = await create_manual(
                 self._transport,
                 kind="label",
                 name=name,
@@ -138,17 +131,17 @@ class AndroidLabelsAPI(LabelsAPI):
                 notebook_id=notebook_id,
                 expected_epoch=lease.epoch,
             )
-            new = [
-                label
-                for label in await self._list(notebook_id, expected_epoch=lease.epoch)
-                if label.id not in before_ids
-            ]
-            if len(new) != 1:
+            created = decode_created_labels(
+                response,
+                notebook_id,
+                method_id=CREATE_LABEL_METHOD,
+            )
+            if len(created) != 1:
                 raise LabelError(
-                    f"create(name={name!r}) expected exactly 1 new label, found {len(new)} "
-                    "(concurrent label creation or read-after-write lag can cause this)"
+                    f"create(name={name!r}) expected exactly 1 created label in the Android "
+                    f"response, found {len(created)}"
                 )
-            (label,) = new
+            (label,) = created
             return label
 
     async def update(
@@ -337,4 +330,4 @@ class AndroidLabelsAPI(LabelsAPI):
                 )
 
 
-__all__ = ["AndroidLabelsAPI", "GenerateLabels"]
+__all__ = ["AndroidLabelsAPI"]

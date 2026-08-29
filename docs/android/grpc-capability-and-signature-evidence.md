@@ -155,15 +155,17 @@ decode the awaited value with the second. This corrects the former reversed-orde
 |---|---|---|---|
 | `te3DCe` | `CopyProject(CopyProjectRequest) returns (Project)` | request context/source project/title at `#1/#2/#3`; response ctor is identical to `CreateProject`/`MutateProject`; successful mobile copy | `Project` exact by ctor identity; request name conventional |
 | `b7Wfje` | `MutateSource(MutateSourceRequest) returns (MutateSourceResponse)` | request contains `SourceId #2`, repeated mutations `#3`, and context `#4`; response ctor wraps `Source #1`; successful mobile mutation/read-back | type names conventional; admitted branch/wrapper pinned, other mutation variants reserved |
+| `yR9Yof` | `CheckSourceFreshness(CheckSourceFreshnessRequest) returns (CheckSourceFreshnessResponse)` | request carries `SourceId #2`, context `#3`; response wraps freshness at `#1`, whose optional bool is `#2` and ID is `#3`; valid-resource Android read succeeded | type names conventional; admitted partial wire shape pinned |
+| `FLmJqe` | `RefreshSource(RefreshSourceRequest) returns (RefreshSourceResponse)` | current constructor carries `SourceId #2`, context `#3`; response wraps `Source #1`; a stale native Google Doc refreshed successfully through the Android bearer | type names conventional; wire shape and valid-resource semantics live pinned |
 | `ciyUvf` | `GenerateReportSuggestions(GenerateReportSuggestionsRequest) returns (GenerateReportSuggestionsResponse)` | request context/project/repeated source IDs at `#1/#2/#3`; response repeated suggestions `#1`, with admitted title/description/repeated source IDs/prompt/audience at `#1/#2/#4/#5/#6`; an accessed nested field `#3` remains unknown | type names conventional; admitted partial wire shape pinned |
-| `agX4Bc` | `CreateLabel(CreateLabelRequest) returns (CreateLabelResponse)` | request context `#1`; dedicated response ctor with repeated labels `#2`; heterogeneous collection rows at `#3` remain unknown; manual-create request and mobile CRUD/read-back succeeded | type names conventional; admitted partial wire shape pinned |
+| `agX4Bc` | `CreateLabel(CreateLabelRequest) returns (CreateLabelResponse)` | request context `#1`; oneof auto-create `#5` versus manual-create `#6`; optional regenerate-all bool `#1`; response repeated labels `#2` and collections `#3`; live collection rows pin name/notebook IDs/ID/emoji at `#1/#2/#3/#4`; false/true/default automatic-label modes and manual CRUD/read-back succeeded | type names conventional; admitted response wire shape pinned for both resource kinds |
 | `le8sX` | `MutateLabel(MutateLabelRequest) returns (MutateLabelResponse)` | request context `#1`; dedicated response ctor distinct from protobuf `Empty`; no response fields are retained/used; property/membership mobile read-back succeeded | type names conventional; no-field partial parser inferred |
 | `GyzE7e` | `DeleteLabels(DeleteLabelsRequest) returns (DeleteLabelsResponse)` | request context `#1`; dedicated response ctor distinct from protobuf `Empty`; no response fields are retained/used; mobile delete/read-back succeeded | type names conventional; no-field partial parser inferred |
 | `Zbrupe` | `CancelDiscoverSourcesJob(CancelDiscoverSourcesJobRequest) returns (google.protobuf.Empty)` | request context `#1`; response ctor is identical to `DeleteProjects`, `DeleteSources`, `DeleteArtifact`, and `DeleteChatTurns`, whose Android bindings independently prove `google.protobuf.Empty`; mobile cancel lifecycle succeeded | request type exact from pinned package source and augmented with current context field; response exact by ctor bridge |
 | `Rytqqe` | `GenerateArtifact(GenerateArtifactRequest) returns (GenerateArtifactResponse)` | context/artifact id at `#1/#2`; response wraps `Artifact #1`; a valid READY artifact reached retryability validation and was rejected as non-retryable | type names conventional; request/response wire and handler semantics pinned |
 | `Krh3pd` | `ExportToDrive(ExportToDriveRequest) returns (ExportToDriveResponse)` | context, artifact/content oneof, title, destination at `#1/#2-or-3/#4/#5`; valid report-to-Docs returned URL `#1`, and Drive read-back/delete succeeded | type names conventional; report-to-Docs live-pinned, other target/destination combinations web-derived |
 
-The conventional rows are deliberately recorded in
+The ten conventional rows are deliberately recorded in
 `grpc-service-signature-inferences.json`. Protobuf type names are not serialized on the wire, so
 mobile calls and handler validation prove message layout but cannot alone prove those names. They
 are generated to provide the complete callable service requested by the project, without
@@ -279,7 +281,7 @@ response:
 
 The copied notebook returned four suggestion rows.
 
-### RefreshSource: route present, operation rejected
+### Historical RefreshSource result: route present, operation rejected
 
 The current web bundle builds the same semantic request as freshness checking:
 
@@ -349,9 +351,95 @@ The same run also filled several "compiled but not UI-exercised" gaps:
 | `DeleteSources` | renamed copied URL source disappeared; source count changed 50 → 49 |
 
 `RemoveRecentlyViewedProject` was also attempted against the owned copy with a valid Android
-context. It returned `INTERNAL`, so it is not marked live-successful in the endpoint matrix. The
-copy was finally recovered by its unique disposable title prefix, deleted through the web
-`DeleteProjects` RPC, and verified absent; no audit-prefixed copy remained.
+context. It returned `INTERNAL`, so it is not marked live-successful in the endpoint matrix. A
+current-context follow-up used the APK-exact request (`project_id #1`, `RequestContext #2`) against
+a fresh uniquely named notebook. It again returned gRPC 13 `INTERNAL`; the notebook remained in
+`ListRecentlyViewedProjects` and remained readable. This closes the request shape while confirming
+a server-handler gap with no state change. Both runs deleted their exact scratch notebook and
+verified absence.
+
+## Corrective Android-backend qualification — 2026-08-29
+
+Later bounded probes corrected the historical RefreshSource mismatch and admitted native settings
+and note-backed mind-map paths. Each claim below distinguishes APK-exact identity from
+current-bundle field recovery and from live semantic proof.
+
+### RefreshSource valid-resource success
+
+The 2026-08-27 URL-source failures above remain accurate for that resource cohort. The current
+authenticated bundle independently closes the request as `SourceId #2` plus `RequestContext #3`
+and the response as `Source #1`. A later run created a nonempty native Google Doc through Drive
+conversion, added it to a disposable notebook, and first observed `CheckSourceFreshness = false`.
+The exact `RefreshSource` request then succeeded through the Android bearer. The Drive document was
+deleted by exact ID with HTTP 204, and the exact notebook cleanup succeeded. Refresh is therefore a
+native Android operation; the earlier `INVALID_ARGUMENT` result is no longer a public parity gap.
+
+### Native note-backed mind-map generation
+
+The official APK supplies the exact `ActOnSourcesRequest`/`ActOnSourcesResponse` FQNs and request
+fields `sources #1`, options `#2`, free-form action `#3`, source options `#7`, request context `#8`,
+chat-session ID `#10`, and origin `#11`. The current authenticated Web constructor closes action
+field `#6` as action string `#1`, repeated key/value context rows `#2`, and language `#3`.
+
+A bounded Android-bearer run sent action `interactive_mindmap` over one disposable text source.
+`ActOnSources` returned a nonempty JSON tree rooted at `NotebookLM Features`; Android `CreateNote`
+then persisted the exact JSON and returned a canonical note ID within the same operation epoch. The
+exact disposable notebook was deleted. This replaces the former Web generation collaborator.
+
+### Native citation-rich saved chat notes
+
+The older APK note descriptor omits rich CreateNote fields, but the current authenticated Web
+protobuf constructor closes the active server contract: repeated `Citation source_passages #4`,
+`TailwindDoc #6`, and `RequestContext #7` alongside the established project/content/metadata/name
+fields `#1/#2/#3/#5`. The same current response constructor exposes `ProjectNote` citations `#4`
+and rich document `#6`. `Citation` carries repeated ranges `#4`, fragment `#5`, source attribution
+`#6`, and object ID `#7`.
+
+A live Android-bearer `CreateNote` saved a marked answer using that exact current-server overlay.
+`GetNotes` returned `ProjectNote` fields `#1` through `#6`; its `TailwindDoc` retained body `#1`,
+objects `#4`, the source identity/range/fragment/object links, and the inline marker anchors. The
+plain marker-bearing content also persisted. The server normalized the top-level source-passage row
+to an empty placeholder, while the full citation remained intact in the document object. The exact
+scratch notebook was deleted and a title-prefix sweep was clean. `chat.save_answer_as_note` is
+therefore native without citation loss.
+
+### Authenticated slide representation transfer
+
+Exact APK AOT call-flow evidence identifies slide download as an SSO HTTP client GET with
+`alr=yes`; the earlier multipart form-token association was false. Authentication remains only for
+configured Google storage hosts and is stripped before untrusted redirect targets. A live bearer
+GET to a `contribution.usercontent.google.com` representation returned HTTP 200 octet-stream, while
+the anonymous control returned a 302 to sign-in HTML. The public Android downloader then saved both
+formats: a 15,017,608-byte PDF beginning `%PDF-` and a 17,392,113-byte PPTX validated as an OOXML
+ZIP. Slide-deck transfer is therefore native and no longer blocked by an unrecovered token flow.
+
+### Native account settings with restoration
+
+The APK-exact `MutateAccount` method accepts repeated `AccountMutation #1` plus
+`RequestContext #2`; the mutation oneof selects `change_property #2`, whose nested
+`new_user_info #1` carries `UserInfo.output_language #5` and `OutputLanguage.language_code #1`.
+Current authenticated Web constructors and accessors establish that nested closure.
+`GetOrCreateAccountRequest` carries `RequestContext #1`; its response wraps `Account #1`.
+
+The same account response carries `TierLimits #2`: current Web mapping and live decoding establish
+optional integer fields `#1` through `#5`, including project/source/word limits at `#2/#3/#4`.
+The semantic name of field `#1` remains conventional/opaque. A restore-safe live run captured the
+prior nonempty output language, mutated to a temporary value, read it back, restored the prior
+language in `finally`, and verified restoration with a fresh native read. All four public settings
+methods are consequently native.
+
+### Sharing collaborator contract boundary
+
+Current authenticated Web builders close `ShareProject` collaborator writes: user target email
+`#1` (alternate ID `#4`), permission `#3`, repeated user permissions under project field `#2`,
+welcome-message fields `#1/#2` under project field `#4`, top-level notification `#2`, and request
+context `#4`. Current accessors close `GetProjectDetailsResponse.shared_users #1`, including email
+`#1`, permission `#2`, profile `#4`, and profile display/avatar `#1/#2`.
+
+These exact bytes and stateful write/read-back behavior are pinned by focused contract tests. No
+live invitation or removal was attempted without a controlled secondary identity, so this is not
+claimed as live collaborator-side-effect proof. Public link and collaborator operations are native;
+only the independently rejected view-level mutation remains a Web compatibility seam.
 
 ### What this changes
 
@@ -359,6 +447,9 @@ copy was finally recovered by its unique disposable title prefix, deleted throug
 - The current mobile host routes every method in the 48-method web library surface.
 - Eleven of the 15 APK gaps have valid-resource semantic proof.
 - Three more have safe route proof only.
-- `RefreshSource` remains the one valid-resource mismatch and should stay explicitly qualified.
+- The later stale-Google-Doc probe closes `RefreshSource` with valid-resource Android success.
+- Exact `RemoveRecentlyViewedProject` still reaches a failing server handler and changes no state.
+- Native account settings and note-backed mind-map generation have live mutation/read-back proof;
+  collaborator sharing is bundle/byte/test qualified without a live invitation.
 
 The complete 48-row cross-reference is maintained in [endpoints.md](endpoints.md).

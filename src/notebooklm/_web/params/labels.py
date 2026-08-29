@@ -26,10 +26,10 @@ def build_generate_labels_params(
 ) -> list[Any]:
     """CREATE_LABEL (agX4Bc) — AI grouping. ``scope`` selects slot ``[4]``:
 
-    ``"all"`` -> ``[]`` (wipe + regenerate every label, destructive, new ids);
-    ``"unlabeled"`` -> ``[0]`` (incremental — only currently-unlabeled sources).
+    ``"all"`` -> ``[True]`` (wipe + regenerate every label, destructive, new ids);
+    ``"unlabeled"`` -> ``[False]`` (incremental — only currently-unlabeled sources).
     """
-    return [_opts(), notebook_id, None, None, ([] if scope == "all" else [0])]
+    return [_opts(), notebook_id, None, None, [scope == "all"]]
 
 
 def build_create_label_params(notebook_id: str, name: str, emoji: str = "") -> list[Any]:

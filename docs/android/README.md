@@ -34,7 +34,7 @@ consolidated document rather than encoded in filenames.
 | [`proto-evidence-ledger.md`](proto-evidence-ledger.md) | exact/local compile closure, replay policy, hashes, and admission decisions |
 | [`schema.proto`](schema.proto) | generated 295-message / 767-field Dart-AOT recovery parsed by CI |
 | [`enums.txt`](enums.txt) | generated 77-enum integer inventory parsed by CI |
-| [`grpc-service-signature-inferences.json`](grpc-service-signature-inferences.json) | nine Web-derived signatures with conventional request/response type names |
+| [`grpc-service-signature-inferences.json`](grpc-service-signature-inferences.json) | ten Web-derived signatures with conventional request/response type names |
 | [`grpc-service-signature-exceptions.json`](grpc-service-signature-exceptions.json) | empty implemented-path exception manifest |
 | [`grpc-runtime-parser-overrides.json`](grpc-runtime-parser-overrides.json) | exact paths intentionally decoded through local live-field overlays |
 
@@ -75,25 +75,28 @@ The generator reports `295 messages, 767 fields` and resolves package identity t
 The reduced compile inputs used by the internal Android adapters live under
 `src/notebooklm/_android/proto_src/`. Regenerate their checked-in Python modules and the full
 descriptor fixture with `python scripts/regenerate_android_protos.py --write`; use `--check` in CI.
-The cumulative `orchestration_service.proto` owns the 44-method orchestration service;
+The cumulative `orchestration_service.proto` owns the 47-method orchestration service;
 `sharing.proto` owns the separately proven two-method exact sharing service, and individual
-orchestration message overlays remain service-free. Nine orchestration signatures are explicitly
+orchestration message overlays remain service-free. Ten orchestration signatures are explicitly
 marked as web-derived conventional-name inferences; all other generated signatures are exact.
-The 46 generated methods exhaustively equal the 46 implemented adapter paths, and the signature
+The 49 generated methods exhaustively equal the 49 implemented adapter paths, and the signature
 exception manifest is empty. Generated descriptors, adapter paths, inference provenance, and the
 hash-pinned external method manifest are checked in both
 directions, so a locally repeated claim cannot admit a normalized or unresolved response type.
 The package and generated protos remain private implementation details. Explicit
 `backend="android"` selection installs Android adapters for all eleven public namespaces. The
 adapters use native Android gRPC/Scotty wherever the mobile contract is usable and isolate the
-remaining schema/handler gaps behind narrow Web compatibility collaborators:
+remaining handler gaps behind narrow Web compatibility collaborators. There are exactly two:
 
-- note-backed mind-map generation, because no mobile generation FQN is recoverable;
-- notebook recent-removal and source refresh, whose exact/candidate mobile handlers reject valid
-  owned resources;
-- the Drive-file convenience method's authenticated download leg (registration/upload is Android);
-- output-language/account-limit settings, collaborator/view-level sharing, and automatic label
-  generation, whose semantics are absent from the admitted mobile closures.
+- notebook recent-removal, whose exact mobile route consistently rejects valid owned resources;
+- sharing view-level mutation, whose separate `MutateProject` branch remains rejected.
+
+Artifact mind-map generation, source refresh and Drive download/upload, account settings,
+collaborator sharing, and automatic labels now remain native under Android selection. The settings
+probe temporarily changed a pre-existing output language, verified the mutation and native
+readback, then restored and re-verified the original value in `finally`. Collaborator writes are
+bundle- and byte-contract-qualified; no live invitation was sent without a controlled secondary
+identity.
 
 `client.backends` describes the installed namespace adapters, so every entry is `android`; it does
 not claim that each internal operation has a native mobile RPC.

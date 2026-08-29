@@ -28,7 +28,13 @@ _MAX_HOPS = 8
 _MAX_APPLICATION_REDIRECT_BYTES = 8_192
 _MIB = 1024 * 1024
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
-_BEARER_HOST = "lh3.googleusercontent.com"
+_PRIMARY_BEARER_HOST = "lh3.googleusercontent.com"
+_BEARER_HOSTS = frozenset(
+    {
+        "contribution.usercontent.google.com",
+        _PRIMARY_BEARER_HOST,
+    }
+)
 _ANDROID_DOWNLOAD_HOST_SUFFIXES = (".googlevideo.com", ".usercontent.google.com")
 _SLIDE_CAPABILITY_INITIAL_HOSTS = frozenset({"contribution.usercontent.google.com"})
 
@@ -81,7 +87,12 @@ _REPRESENTATION_POLICIES: dict[RepresentationKind, _RepresentationPolicy] = {
     ),
     "slide_pdf": _RepresentationPolicy(
         artifact_type="slide_deck",
-        formats=(_FormatPolicy(frozenset({"application/pdf"}), ((b"%PDF-", 0),)),),
+        formats=(
+            _FormatPolicy(
+                frozenset({"application/octet-stream", "application/pdf"}),
+                ((b"%PDF-", 0),),
+            ),
+        ),
         max_bytes=512 * _MIB,
         capability_initial_hosts=_SLIDE_CAPABILITY_INITIAL_HOSTS,
     ),
@@ -91,6 +102,7 @@ _REPRESENTATION_POLICIES: dict[RepresentationKind, _RepresentationPolicy] = {
             _FormatPolicy(
                 frozenset(
                     {
+                        "application/octet-stream",
                         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
                     }
                 ),
@@ -193,7 +205,7 @@ def _append_initial_alr(url: str) -> str | None:
 
 
 def _bearer_for(host: str, credential: BearerCredential | None) -> dict[str, str]:
-    if host == _BEARER_HOST and credential is not None:
+    if host in _BEARER_HOSTS and credential is not None:
         return {"Authorization": f"Bearer {credential.token}"}
     return {}
 
@@ -515,14 +527,11 @@ class AndroidAssetDownloadService(AssetDownloadService):
         staging: Path | None = None
         try:
             initial_host = _validated_host(representation_url)
-            if initial_host == _BEARER_HOST:
+            if initial_host == _PRIMARY_BEARER_HOST or initial_host in (
+                policy.capability_initial_hosts
+            ):
                 current_url = _append_initial_alr(representation_url)
                 bearer_allowed = True
-            elif initial_host in policy.capability_initial_hosts:
-                # Slide PDF/PPTX fields are already signed capability URLs on
-                # contribution.usercontent.google.com. Never attach or acquire
-                # the Android bearer when the first hop is capability-backed.
-                current_url = representation_url
             else:
                 current_url = None
             if current_url is None:
@@ -534,7 +543,7 @@ class AndroidAssetDownloadService(AssetDownloadService):
             assert initial_host is not None
 
             self._assert_epoch(expected_epoch)
-            if initial_host == _BEARER_HOST:
+            if initial_host in _BEARER_HOSTS:
                 credential = await self._bearer_provider.get(expected_epoch)
                 self._assert_epoch(expected_epoch)
             try:
@@ -555,7 +564,7 @@ class AndroidAssetDownloadService(AssetDownloadService):
                         _safe_approved_host(current_url),
                         hop,
                     )
-                if host != _BEARER_HOST:
+                if host not in _BEARER_HOSTS:
                     bearer_allowed = False
                 headers = _bearer_for(host, credential if bearer_allowed else None)
                 response_cm: Any | None = None

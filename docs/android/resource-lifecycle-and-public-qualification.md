@@ -1,7 +1,7 @@
 # Android resource lifecycle and public qualification
 
-**Status:** Consolidated live evidence for notebook copy, notebook metadata, notes and note-backed
-mind maps, source labels, and notebook collections
+**Status:** Consolidated live evidence for notebook copy, notebook metadata, sources, notes and
+note-backed mind maps, source labels, and notebook collections
 
 **Validation window:** 2026-08-27 through 2026-08-29
 
@@ -143,8 +143,12 @@ Source labels add the project UUID at request field `#2` and optional repeated r
 `manual-create #6/#2`. Collections add optional repeated raw notebook UUIDs at `#6/#3` and the
 collection discriminator at request field `#7`.
 
-The public adapter identifies a created object by ID-diff across `GetLabels`. Names are not unique,
-so name matching alone is unsafe. An empty control payload returned `INVALID_ARGUMENT`.
+The create response returns source-label rows at top-level field `#2` and notebook-collection rows at
+top-level field `#3`. A later authenticated collection create pinned each field-`#3` row as name
+`#1`, repeated raw notebook UUID strings `#2`, collection UUID `#3`, and emoji `#4`. The public
+adapter now decodes the exact returned row and requires one result, so concurrent account-level
+creation cannot confuse it through a pre/post `GetLabels` ID diff. Names are not unique, so name
+matching alone remains unsafe. An empty control payload returned `INVALID_ARGUMENT`.
 
 ### Mutate properties and membership
 
@@ -209,7 +213,8 @@ started with an empty set.
 
 Two disposable labels exercised the complete manual lifecycle:
 
-1. `CreateLabel` created an empty uniquely named label; ID-diff found exactly one canonical ID.
+1. `CreateLabel` created an empty uniquely named label and returned its canonical ID in
+   `label_and_sources #2`.
 2. `MutateLabel` changed its name and emoji in one property operation; read-back matched both.
 3. `DeleteLabels` removed that exact ID; a final read returned an empty set.
 4. A second create added one existing source member.
@@ -222,7 +227,7 @@ Two disposable labels exercised the complete manual lifecycle:
 One disposable collection exercised the corresponding account-level lifecycle:
 
 1. `CreateLabel` with discriminator `3` created a uniquely named collection containing one
-   existing notebook ID; ID-diff found its canonical ID.
+   existing notebook ID; the direct response and `GetLabels` read-back agreed on its canonical ID.
 2. `MutateLabel` changed the name and emoji; read-back matched both.
 3. A one-member mutation added a second notebook; read-back contained both IDs.
 4. A second mutation removed the first; read-back retained only the second.
@@ -256,10 +261,13 @@ wire shapes and current owned resources, then completed create/read-back, proper
 membership mutation, and deletion. That later valid-resource result supersedes the earlier rejected
 candidate shapes.
 
-The admitted boundary is `GetLabels`, manual `CreateLabel`, property and one-member `MutateLabel`,
-and `DeleteLabels` for source labels and notebook collections. AI-generated label creation is a
-different request union and remains unproven; the selected Android labels adapter isolates it behind
-the existing Web generation callable.
+The admitted boundary is `GetLabels`, manual and automatic `CreateLabel`, property and one-member
+`MutateLabel`, and `DeleteLabels` for source labels and notebook collections. The current bundle
+pins automatic creation to the `CreateLabel` request union at field `#5`, whose nested optional bool
+at field `#1` distinguishes unlabeled-only (`false`) from destructive regenerate-all (`true`).
+Disposable Android-bearer probes verified both modes and cleanup. The selected Android labels
+adapter therefore performs `labels.generate` natively and does not retain a Web generation
+callable.
 
 ## Public adapter qualification
 
@@ -276,9 +284,35 @@ collection call. No browser was opened. The 82-test Collections SDK/application/
 passed twice. Collections has no MCP or REST route, so no additional frontend envelope was
 required.
 
-Manual source-label Android CRUD, notebook operations, and note CRUD/mind-map operations are now
-selected publicly. Only the individual operations whose mobile contracts are missing or live-failing
-use the compatibility seams described below.
+Manual source-label Android CRUD, notebook operations, source operations, and note CRUD/mind-map
+operations are now selected publicly. Source refresh, upload-only Drive-file import, and note-backed
+mind-map generation no longer require Web collaborators. The isolated notebook recent-removal
+exception described below remains a compatibility seam because its exact mobile route repeatedly
+returned an internal error on fresh disposable resources.
+
+## Native source refresh and Drive-file import
+
+The current bundle closes `RefreshSourceRequest` as `SourceId #2` plus `RequestContext #3`; the
+response wraps the refreshed `Source #1`. Earlier rejected probes used URL sources or incomplete
+candidate conditions. A later bounded run created a nonempty native Google Doc by Drive conversion,
+added it to a disposable notebook, and observed `CheckSourceFreshness = false`. The exact
+`RefreshSource` request then succeeded through the Android bearer. The public method retains its
+documented `None` return while the response is decoded only as protocol evidence. The converted
+Drive document was deleted by exact ID with HTTP 204, followed by deletion of the exact notebook.
+
+Upload-only Drive files use a different local composition. The Android bearer already carries the
+Drive scope, so the upload pipeline now reads Drive v3 metadata and `alt=media` directly. It
+preserves link resource keys, rejects native Google Docs/Slides/Sheets with `add_drive` guidance,
+admits only the public upload extension set, enforces a 200 MiB header and running byte cap, and
+streams into a mode-0700 temporary directory containing a mode-0600 file with the sanitized
+original name. Redirects are disabled and the bearer is sent only to the fixed
+`www.googleapis.com` origin. The temporary directory is removed on success, error, or cancellation.
+
+A live run created a tiny Drive text file, downloaded it through that Android path, uploaded it to
+NotebookLM, waited for READY, and read back the original title. The external Drive file deletion
+returned HTTP 204 and the exact disposable notebook was deleted. This replaces the earlier
+cookie-authenticated Web download collaborator; the subsequent NotebookLM upload remains the
+native Android tentative-registration and Scotty data-plane transaction.
 
 ## Notebook metadata lifecycle
 
@@ -316,8 +350,8 @@ the other sixteen public methods remain native.
 
 ### Result
 
-Two independent runs generated a note-backed mind map through Web and read the same persisted row
-through Android `GetNotes`. IDs matched in both runs. Each Android row carried:
+Two earlier independent runs generated a note-backed mind map through Web and read the same
+persisted row through Android `GetNotes`. IDs matched in both runs. Each Android row carried:
 
 - `ProjectNote.metadata.type = USER_WRITTEN (1)`;
 - `ProjectNote.metadata.note_prompt_type = NOTE_PROMPT_TYPE_UNSPECIFIED (0)`; and
@@ -333,6 +367,19 @@ OR parsed content is a JSON object containing top-level "children" or "nodes"
 
 Ordinary-note listing must negate the same predicate so a Web-generated map is never exposed as a
 text note.
+
+### Native generation and persistence
+
+The APK supplies the exact `ActOnSources` request/response FQNs. Its recovered request includes
+sources `#1` and request context `#8`; the current product constructor closes mind-map action field
+`#6` as action string `#1`, repeated context key/value rows `#2`, and language `#3`. The Android
+adapter sends action `interactive_mindmap`, key `[CONTEXT]`, caller instructions, and language.
+
+A bounded live run used one disposable text source. `ActOnSources` returned a nonempty JSON tree
+with root `NotebookLM Features`; Android `CreateNote` persisted the exact JSON in the same lifecycle
+epoch and returned a canonical note ID. The exact notebook was then deleted. Public generation no
+longer calls the Web generator, while the historical cross-backend rows above remain useful evidence
+for the classifier and read/delete semantics.
 
 ### Deletion lifecycle
 

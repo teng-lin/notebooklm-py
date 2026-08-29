@@ -7,7 +7,7 @@ import builtins
 import logging
 import uuid
 from collections import Counter, defaultdict
-from collections.abc import Awaitable, Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, replace
 from enum import Enum, auto
@@ -37,7 +37,8 @@ from ..exceptions import (
     ValidationError,
 )
 from ..types import Source, SourceFulltext, SourceStatus, SourceType
-from .codecs.notebooks import decode_project, map_get_project_error
+from .codecs.documents import decode_document, tailwind_doc_markdown, tailwind_doc_plain_text
+from .codecs.notebooks import decode_project, map_get_project_error, validate_project_identity
 from .codecs.sources import decode_source, decode_sources
 from .session import AndroidSession
 from .upload import (
@@ -61,6 +62,12 @@ def _write_proto() -> Any:
     return cast(Any, sources_pb2)
 
 
+def _source_content_proto() -> Any:
+    from .proto.notebooklm.internal.android.wire.v1 import source_content_pb2
+
+    return cast(Any, source_content_pb2)
+
+
 def _settings_proto() -> Any:
     from .proto.google.internal.labs.tailwind.v1 import source_settings_pb2
 
@@ -82,6 +89,7 @@ MUTATE_SOURCE_METHOD = f"/{_SERVICE}/MutateSource"
 GENERATE_DOCUMENT_GUIDES_METHOD = f"/{_SERVICE}/GenerateDocumentGuides"
 LOAD_SOURCE_METHOD = f"/{_SERVICE}/LoadSource"
 CHECK_SOURCE_FRESHNESS_METHOD = f"/{_SERVICE}/CheckSourceFreshness"
+REFRESH_SOURCE_METHOD = f"/{_SERVICE}/RefreshSource"
 
 _FilterValue = TypeVar("_FilterValue")
 _CORRELATION_PREFIX = "nblm-"
@@ -327,12 +335,13 @@ class AndroidSourcesAPI(SourcesAPI):
         upload_pipeline: AndroidUploadPipeline,
         *,
         drive_download: DriveDownload | None = None,
-        refresh_source: Callable[[str, str], Awaitable[None]] | None = None,
     ) -> None:
         self._transport = session
         self._upload_pipeline = upload_pipeline
-        self._drive_download = drive_download
-        self._refresh_source = refresh_source
+        native_drive_download = getattr(upload_pipeline, "drive_download_scope", None)
+        self._drive_download = drive_download or (
+            native_drive_download if callable(native_drive_download) else None
+        )
         super().__init__()
 
     async def list(
@@ -383,6 +392,7 @@ class AndroidSourcesAPI(SourcesAPI):
             if mapped is exc:
                 raise
             raise mapped from exc
+        validate_project_identity(response.project, notebook_id, method_id=GET_PROJECT_METHOD)
         decode_project(response.project, method_id=GET_PROJECT_METHOD)
         sources = decode_sources(
             response.project.sources,
@@ -484,6 +494,7 @@ class AndroidSourcesAPI(SourcesAPI):
                 expected_epoch=expected_epoch,
                 timeout=deadline.remaining(),
             )
+            validate_project_identity(response.project, notebook_id, method_id=GET_PROJECT_METHOD)
             decode_project(response.project, method_id=GET_PROJECT_METHOD)
             matches = []
             for row in response.project.sources:
@@ -603,6 +614,7 @@ class AndroidSourcesAPI(SourcesAPI):
                 response_type=_read_proto().GetProjectResponse,
                 expected_epoch=expected_epoch,
             )
+            validate_project_identity(response.project, notebook_id, method_id=GET_PROJECT_METHOD)
             decode_project(response.project, method_id=GET_PROJECT_METHOD)
             return _collect_commit_proofs(
                 response.project.sources,
@@ -763,7 +775,7 @@ class AndroidSourcesAPI(SourcesAPI):
             if proof is None:
                 raise _unresolved_add_error(
                     subject,
-                    stage="phase-two acceptance",
+                    stage="source commit acceptance",
                     kind=kind,
                 )
             source = proof.source
@@ -820,7 +832,7 @@ class AndroidSourcesAPI(SourcesAPI):
             )
             proof = proofs.get(registration.source_id)
             if proof is None:
-                raise _unresolved_add_error(url, stage="phase-two acceptance")
+                raise _unresolved_add_error(url, stage="source commit acceptance")
             source = proof.source
             if wait:
                 source = await self.wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
@@ -888,7 +900,7 @@ class AndroidSourcesAPI(SourcesAPI):
                     stage = (
                         "tentative registration correlation"
                         if registration.ambiguous or source_id is None
-                        else "phase-two acceptance"
+                        else "source commit acceptance"
                     )
                     outcomes.append(
                         SourceUrlBatchItem(
@@ -1023,7 +1035,7 @@ class AndroidSourcesAPI(SourcesAPI):
         drive_download = self._drive_download
         if drive_download is None:
             raise ConfigurationError(
-                "Android Drive-file import requires the client download collaborator."
+                "Android Drive-file import requires the native download pipeline."
             )
         async with drive_download(document_id) as (path, filename, content_type):
             return await self.add_file(
@@ -1118,17 +1130,28 @@ class AndroidSourcesAPI(SourcesAPI):
             return source if return_object else None
 
     async def refresh(self, notebook_id: str, source_id: str) -> None:
-        # The mobile route is present but rejected every valid-resource request
-        # shape recovered so far.  Preserve the public contract through the
-        # exact, narrow Web mutation collaborator until a successful Android
-        # request is captured; all source reads and every other mutation remain
-        # on the selected Android namespace.
-        refresh_source = self._refresh_source
-        if refresh_source is None:
-            raise ConfigurationError(
-                "Android source refresh requires the qualified compatibility collaborator."
+        del notebook_id
+        async with self._transport.operation_scope("sources.refresh") as lease:
+            response = await self._transport.unary(
+                REFRESH_SOURCE_METHOD,
+                _write_proto().RefreshSourceRequest(
+                    source_id=_read_proto().SourceId(id=source_id),
+                    request_context=android_request_context(),
+                ),
+                replay_safe=False,
+                response_type=_write_proto().RefreshSourceResponse,
+                expected_epoch=lease.epoch,
             )
-        await refresh_source(notebook_id, source_id)
+            echoed_id = (
+                response.source.source_id.id
+                if response.HasField("source") and response.source.HasField("source_id")
+                else ""
+            )
+            if echoed_id and echoed_id != source_id:
+                raise DecodingError(
+                    "Android source refresh returned an unexpected source id",
+                    method_id=REFRESH_SOURCE_METHOD,
+                )
 
     async def check_freshness(self, notebook_id: str, source_id: str) -> bool:
         del notebook_id
@@ -1144,6 +1167,12 @@ class AndroidSourcesAPI(SourcesAPI):
         if not response.HasField("source_freshness"):
             return True
         freshness = response.source_freshness
+        echoed_id = freshness.source_id.id if freshness.HasField("source_id") else ""
+        if echoed_id and echoed_id != source_id:
+            raise DecodingError(
+                "Android source freshness returned an unexpected source id",
+                method_id=CHECK_SOURCE_FRESHNESS_METHOD,
+            )
         if not freshness.HasField("is_fresh"):
             return True
         return bool(freshness.is_fresh)
@@ -1218,7 +1247,7 @@ class AndroidSourcesAPI(SourcesAPI):
                 LOAD_SOURCE_METHOD,
                 request,
                 replay_safe=True,
-                response_type=_write_proto().LoadSourceResponse,
+                response_type=_source_content_proto().WireLoadSourceResponse,
             )
         except (AuthError, RateLimitError, ServerError, NetworkError):
             raise
@@ -1238,11 +1267,30 @@ class AndroidSourcesAPI(SourcesAPI):
                 method_id=LOAD_SOURCE_METHOD,
             )
         source = decode_source(response.source, method_id=LOAD_SOURCE_METHOD)
-        content = (
-            response.markdown_string
-            if output_format == "markdown"
-            else (response.plain_text.body if response.HasField("plain_text") else "")
+        document = (
+            decode_document(response.tailwind_doc)
+            if response.HasField("tailwind_doc")
+            else StructuredDocument()
         )
+        if output_format == "markdown":
+            content = response.markdown_string or (
+                tailwind_doc_markdown(response.tailwind_doc)
+                if response.HasField("tailwind_doc")
+                else ""
+            )
+        elif response.HasField("plain_text"):
+            content = response.plain_text.body
+        else:
+            # Current Android LoadSource responses carry the indexed source in
+            # TailwindDoc #4 and omit the older flat #2/#3 renditions. The
+            # shared renderer covers every admitted text-bearing structural
+            # variant; StructuredDocument separately retains the backend's
+            # UTF-16 coordinate space for paragraphs and tables.
+            content = (
+                tailwind_doc_plain_text(response.tailwind_doc)
+                if response.HasField("tailwind_doc")
+                else ""
+            )
         if not content:
             logger.warning(
                 "Android source %s returned empty %s content",
@@ -1256,7 +1304,7 @@ class AndroidSourcesAPI(SourcesAPI):
             _type_code=source._type_code,
             url=source.url,
             char_count=len(content),
-            document=StructuredDocument(),
+            document=document,
         )
 
 

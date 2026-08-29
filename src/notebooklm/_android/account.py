@@ -17,6 +17,12 @@ def _proto() -> Any:
     return cast(Any, account_pb2)
 
 
+def _request_context() -> Any:
+    from .upload import android_request_context
+
+    return android_request_context()
+
+
 class AndroidAccountAPI:
     """Direct-test-only account bootstrap adapter; not a public client namespace."""
 
@@ -30,7 +36,7 @@ class AndroidAccountAPI:
         async with self._transport.operation_scope("account.get_or_create_account") as lease:
             response = await self._transport.unary(
                 GET_OR_CREATE_ACCOUNT_METHOD,
-                proto.GetOrCreateAccountRequest(),
+                proto.GetOrCreateAccountRequest(request_context=_request_context()),
                 replay_safe=False,
                 response_type=proto.GetOrCreateAccountResponse,
                 expected_epoch=lease.epoch,

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, cast
-from unittest.mock import AsyncMock, call
+from unittest.mock import AsyncMock
 
 import pytest
 from google.protobuf.timestamp_pb2 import Timestamp
@@ -77,7 +77,7 @@ class _OperationScopedSession:
         assert expected_epoch == self.epoch
 
 
-class FakeB6Server(_OperationScopedSession):
+class FakeNotesSharingServer(_OperationScopedSession):
     """Stateful unary fake that models the measured disposable lifecycle."""
 
     def __init__(self) -> None:
@@ -106,6 +106,9 @@ class FakeB6Server(_OperationScopedSession):
         }
         self.pending_deletion_reads: dict[str, int] = {}
         self.public = False
+        self.shared_users: dict[str, SharePermission] = {
+            "owner@example.test": SharePermission.OWNER
+        }
 
     def _get_notes(self) -> notes_pb2.GetNotesResponse:
         entries = [notes_pb2.NoteOrStatus()]  # unrecovered status-only arm
@@ -148,6 +151,19 @@ class FakeB6Server(_OperationScopedSession):
             return notes_pb2.DeleteNotesResponse()
         if method == GET_PROJECT_DETAILS_METHOD:
             return sharing_pb2.GetProjectDetailsResponse(
+                shared_users=[
+                    exact_sharing_pb2.SharedUser(
+                        email=email,
+                        permission=permission.value,
+                        profile=exact_sharing_pb2.SharedUserProfile(
+                            display_name=(
+                                "Notebook Owner" if permission is SharePermission.OWNER else ""
+                            ),
+                            avatar_url="https://example.test/avatar.png",
+                        ),
+                    )
+                    for email, permission in self.shared_users.items()
+                ],
                 public_settings=common_pb2.ProjectPublicSettings(
                     is_publicly_readable=self.public,
                     is_discoverable=False,
@@ -156,7 +172,14 @@ class FakeB6Server(_OperationScopedSession):
                 is_public_sharing_allowed=False,
             )
         if method == SHARE_PROJECT_METHOD:
-            self.public = request.project[0].public_document_settings.is_publicly_readable
+            project = request.project[0]
+            if project.HasField("public_document_settings"):
+                self.public = project.public_document_settings.is_publicly_readable
+            for grant in project.user_permissions:
+                if grant.permission == SharePermission._REMOVE.value:
+                    self.shared_users.pop(grant.email, None)
+                else:
+                    self.shared_users[grant.email] = SharePermission(grant.permission)
             return exact_sharing_pb2.ShareProjectResponse()
         raise AssertionError(f"unexpected method: {method}")
 
@@ -345,7 +368,10 @@ def _sharing(fake: Any) -> tuple[AndroidSharingAPI, AsyncMock]:
     )
     compatibility.set_users.side_effect = set_users
     compatibility.remove_user.side_effect = remove_user
-    return AndroidSharingAPI(_session(fake), compatibility=compatibility), compatibility
+    return (
+        AndroidSharingAPI(_session(fake), set_view_level=compatibility.set_view_level),
+        compatibility,
+    )
 
 
 def _visible(note_id: str = "note-1") -> notes_pb2.GetNotesResponse:
@@ -418,7 +444,7 @@ def test_backend_contracts_are_split_and_android_adapters_are_concrete() -> None
 
 @pytest.mark.asyncio
 async def test_fake_server_runs_complete_note_lifecycle_with_exact_orchestration() -> None:
-    server = FakeB6Server()
+    server = FakeNotesSharingServer()
     sleep = AsyncMock()
     notes = AndroidNotesAPI(
         _session(server),
@@ -487,7 +513,7 @@ async def test_fake_server_runs_complete_note_lifecycle_with_exact_orchestration
 
 @pytest.mark.asyncio
 async def test_reusable_create_seam_encodes_saved_response_for_parallel_chat_hook() -> None:
-    server = FakeB6Server()
+    server = FakeNotesSharingServer()
     saved = await create_note(
         _session(server),
         "project-1",
@@ -504,7 +530,7 @@ async def test_reusable_create_seam_encodes_saved_response_for_parallel_chat_hoo
 
 @pytest.mark.asyncio
 async def test_note_partial_updates_preserve_the_omitted_field_inside_one_scope() -> None:
-    server = FakeB6Server()
+    server = FakeNotesSharingServer()
     notes = AndroidNotesAPI(_session(server))
 
     await notes.update("project-1", "note-existing", None, "Renamed title")
@@ -538,7 +564,7 @@ async def test_note_partial_updates_preserve_the_omitted_field_inside_one_scope(
 
 @pytest.mark.asyncio
 async def test_private_typed_mind_map_read_uses_exact_kind_without_web_rows() -> None:
-    server = FakeB6Server()
+    server = FakeNotesSharingServer()
     mind_maps = await AndroidNotesAPI(_session(server))._list_note_backed_mind_maps("project-1")
 
     assert len(mind_maps) == 1
@@ -637,7 +663,7 @@ async def test_private_typed_mind_map_read_rejects_missing_evidenced_id() -> Non
 
 @pytest.mark.asyncio
 async def test_public_mind_map_rows_are_minimal_exact_web_compatible_shape() -> None:
-    server = FakeB6Server()
+    server = FakeNotesSharingServer()
     notes = AndroidNotesAPI(_session(server))
 
     assert await notes.list_mind_maps("project-1") == [["mind-map", '{"children": []}']]
@@ -692,7 +718,7 @@ async def test_public_note_and_map_lists_share_the_exact_union_classifier() -> N
 
 @pytest.mark.asyncio
 async def test_exact_id_get_update_and_delete_preserve_web_map_row_semantics() -> None:
-    server = FakeB6Server()
+    server = FakeNotesSharingServer()
     notes = AndroidNotesAPI(_session(server), deletion_poll_delays=(0.0, 0.0))
 
     fetched = await notes.get("project-1", "mind-map")
@@ -715,7 +741,7 @@ async def test_exact_id_get_update_and_delete_preserve_web_map_row_semantics() -
 
 @pytest.mark.asyncio
 async def test_mind_map_delete_is_kind_safe_idempotent_and_eventually_confirmed() -> None:
-    server = FakeB6Server()
+    server = FakeNotesSharingServer()
     sleep = AsyncMock()
     notes = AndroidNotesAPI(
         _session(server),
@@ -973,7 +999,7 @@ async def test_map_delete_old_workflow_cannot_poll_after_forced_close_reopen() -
 
 @pytest.mark.asyncio
 async def test_fake_server_sharing_set_public_then_reads_status() -> None:
-    server = FakeB6Server()
+    server = FakeNotesSharingServer()
     sharing, compatibility = _sharing(server)
 
     private = await sharing.get_status("project-1")
@@ -981,29 +1007,41 @@ async def test_fake_server_sharing_set_public_then_reads_status() -> None:
     assert private.access is ShareAccess.RESTRICTED
     assert private.max_individuals_share_limit == 1000
     assert private.is_public_sharing_allowed is False
-    assert private.shared_users == []
+    assert len(private.shared_users) == 1
+    assert private.shared_users[0].email == "owner@example.test"
+    assert private.shared_users[0].permission is SharePermission.OWNER
+    assert private.shared_users[0].display_name == "Notebook Owner"
+    assert private.shared_users[0].avatar_url == "https://example.test/avatar.png"
 
     public = await sharing.set_public("project-1", True)
     assert public.is_public is True
     assert public.access is ShareAccess.ANYONE_WITH_LINK
     assert public.view_level is ShareViewLevel.FULL_NOTEBOOK
     assert public.share_url == "https://notebook.google.com/notebook/project-1"
-    assert [method for method, _request, _kwargs in server.calls] == [SHARE_PROJECT_METHOD]
-    share_request = server.calls[0][1]
+    assert [method for method, _request, _kwargs in server.calls] == [
+        GET_PROJECT_DETAILS_METHOD,
+        SHARE_PROJECT_METHOD,
+        GET_PROJECT_DETAILS_METHOD,
+    ]
+    share_request = server.calls[1][1]
     assert isinstance(share_request, exact_sharing_pb2.ShareProjectRequest)
     assert share_request.project[0].public_document_settings.is_publicly_readable is True
-    assert server.operation_scopes == [("sharing.set_public", None)]
-    assert server.calls[0][2] == {
+    assert share_request.HasField("request_context")
+    assert server.operation_scopes == [
+        ("sharing.get_status", None),
+        ("sharing.set_public", None),
+    ]
+    assert server.calls[1][2] == {
         "replay_safe": False,
         "response_type": exact_sharing_pb2.ShareProjectResponse,
         "expected_epoch": 7,
     }
-    compatibility.get_status.assert_has_awaits([call("project-1"), call("project-1")])
+    compatibility.get_status.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_native_sharing_status_projection_remains_available_for_qualified_fields() -> None:
-    server = FakeB6Server()
+    server = FakeNotesSharingServer()
     sharing, compatibility = _sharing(server)
 
     status = await sharing._get_status("project-1")
@@ -1027,8 +1065,11 @@ async def test_sharing_set_public_readback_completes_during_graceful_drain() -> 
 
     status = await task
     assert status.is_public is True
-    assert [method for method, _request, _kwargs in session.calls] == [SHARE_PROJECT_METHOD]
-    assert [kwargs["expected_epoch"] for _method, _request, kwargs in session.calls] == [1]
+    assert [method for method, _request, _kwargs in session.calls] == [
+        SHARE_PROJECT_METHOD,
+        GET_PROJECT_DETAILS_METHOD,
+    ]
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in session.calls] == [1, 1]
     generation = session.supervisor._current
     assert generation is not None
     assert generation.in_flight == 0
@@ -1081,25 +1122,92 @@ async def test_sharing_set_public_old_workflow_cannot_read_back_after_close_reop
 
 
 @pytest.mark.asyncio
-async def test_collaborator_and_view_mutations_use_compatibility_without_android_transport() -> (
-    None
-):
-    server = FakeB6Server()
+async def test_view_level_remains_the_only_sharing_compatibility_seam() -> None:
+    server = FakeNotesSharingServer()
     sharing, compatibility = _sharing(server)
-    operations: tuple[Callable[[], Awaitable[Any]], ...] = (
-        lambda: sharing.set_view_level("project-1", ShareViewLevel.CHAT_ONLY),
-        lambda: sharing.set_users("project-1", [("person@example.test", SharePermission.VIEWER)]),
-        lambda: sharing.remove_user("project-1", "person@example.test"),
-        # Base intent wrappers must reach the same compatibility seam.
-        lambda: sharing.add_user("project-1", "person@example.test"),
-        lambda: sharing.update_user("project-1", "person@example.test", SharePermission.EDITOR),
-    )
-    for operation in operations:
-        assert isinstance(await operation(), ShareStatus)
+    status = await sharing.set_view_level("project-1", ShareViewLevel.CHAT_ONLY)
+    assert isinstance(status, ShareStatus)
     assert server.calls == []
     compatibility.set_view_level.assert_awaited_once_with("project-1", ShareViewLevel.CHAT_ONLY)
-    assert compatibility.set_users.await_count == 3
-    compatibility.remove_user.assert_awaited_once_with("project-1", "person@example.test")
+
+
+@pytest.mark.asyncio
+async def test_collaborator_mutations_and_intent_wrappers_are_native() -> None:
+    server = FakeNotesSharingServer()
+    sharing, compatibility = _sharing(server)
+
+    status = await sharing.set_users(
+        "project-1",
+        [("person@example.test", SharePermission.VIEWER)],
+        notify=True,
+        welcome_message="Welcome",
+    )
+    assert status.shared_users[-1].email == "person@example.test"
+    assert status.shared_users[-1].permission is SharePermission.VIEWER
+    grant_request = server.calls[0][1]
+    grant = grant_request.project[0].user_permissions[0]
+    assert grant.WhichOneof("target") == "email"
+    assert (grant.email, grant.permission) == (
+        "person@example.test",
+        SharePermission.VIEWER.value,
+    )
+    assert grant_request.notify is True
+    assert grant_request.project[0].share_message.omit_message is False
+    assert grant_request.project[0].share_message.message == "Welcome"
+
+    status = await sharing.update_user("project-1", "person@example.test", SharePermission.EDITOR)
+    assert status.shared_users[-1].permission is SharePermission.EDITOR
+    update_request = server.calls[2][1]
+    assert update_request.notify is False
+    assert update_request.project[0].share_message.omit_message is True
+
+    status = await sharing.remove_user("project-1", "person@example.test")
+    assert [user.email for user in status.shared_users] == ["owner@example.test"]
+    remove_request = server.calls[4][1]
+    assert remove_request.project[0].user_permissions[0].permission == SharePermission._REMOVE.value
+    assert remove_request.notify is False
+    assert remove_request.project[0].share_message.omit_message is False
+    assert [method for method, _request, _kwargs in server.calls] == [
+        SHARE_PROJECT_METHOD,
+        GET_PROJECT_DETAILS_METHOD,
+        SHARE_PROJECT_METHOD,
+        GET_PROJECT_DETAILS_METHOD,
+        SHARE_PROJECT_METHOD,
+        GET_PROJECT_DETAILS_METHOD,
+    ]
+    assert server.operation_scopes == [
+        ("sharing.set_users", None),
+        ("sharing.set_users", None),
+        ("sharing.remove_user", None),
+    ]
+    compatibility.set_users.assert_not_awaited()
+    compatibility.remove_user.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "grants, message",
+    [
+        ([], "at least one"),
+        ([("owner@example.test", SharePermission.OWNER)], "OWNER"),
+        ([("gone@example.test", SharePermission._REMOVE)], "remove_user"),
+        (
+            [
+                ("duplicate@example.test", SharePermission.VIEWER),
+                ("duplicate@example.test", SharePermission.EDITOR),
+            ],
+            "Duplicate email",
+        ),
+    ],
+)
+async def test_set_users_rejects_invalid_grants_before_transport(
+    grants: list[tuple[str, SharePermission]], message: str
+) -> None:
+    server = FakeNotesSharingServer()
+    sharing, _compatibility = _sharing(server)
+    with pytest.raises(ValueError, match=message):
+        await sharing.set_users("project-1", grants)
+    assert server.calls == []
+    assert server.operation_scopes == []
 
 
 @pytest.mark.asyncio

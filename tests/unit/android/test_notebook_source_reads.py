@@ -21,6 +21,9 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
     read_pb2,
 )
 from notebooklm._android.proto.google.internal.labs.tailwind.v1 import source_settings_pb2
+from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import (
+    notebooks_pb2 as wire_notebooks_pb2,
+)
 from notebooklm._android.session import AndroidSession
 from notebooklm._android.sources import AndroidSourcesAPI
 from notebooklm._android.upload import AndroidUploadPipeline
@@ -34,6 +37,9 @@ from notebooklm.exceptions import (
     SourceNotFoundError,
 )
 from notebooklm.types import (
+    ChatGoal,
+    ChatResponseLength,
+    ChatSettings,
     DriveSourceStatus,
     SharePermission,
     SourceStatus,
@@ -96,6 +102,7 @@ def _source(
     content_type: int,
     status: int,
     url: str | None = None,
+    google_docs_document_id: str | None = None,
     drive_document_id: str | None = None,
     drive_status: int = 0,
     content_mime: str | None = None,
@@ -103,6 +110,8 @@ def _source(
     metadata = read_pb2.SourceMetadata(original_source_content_type=content_type)
     if url is not None:
         metadata.webpage_metadata.url = url
+    if google_docs_document_id is not None:
+        metadata.google_docs_metadata.document_id = google_docs_document_id
     if drive_document_id is not None or content_mime is not None:
         metadata.google_drive_source_metadata.document_id = drive_document_id or ""
         metadata.google_drive_source_metadata.mime_type = content_mime or ""
@@ -172,9 +181,11 @@ def _graph(
     project: read_pb2.Project | None = None,
 ) -> tuple[FakeSession, AndroidSourcesAPI, AndroidNotebooksAPI]:
     selected = project or _project(sources=_source_fixture())
+    wire_project = wire_notebooks_pb2.WireProjectWithAdvancedSettings()
+    wire_project.ParseFromString(selected.SerializeToString())
     fake = FakeSession(
         {
-            GET_PROJECT_METHOD: read_pb2.GetProjectResponse(project=selected),
+            GET_PROJECT_METHOD: wire_notebooks_pb2.WireGetProjectResponse(project=wire_project),
             LIST_RECENT_PROJECTS_METHOD: read_pb2.ListRecentlyViewedProjectsResponse(
                 projects=[selected]
             ),
@@ -279,7 +290,13 @@ async def test_notebook_requests_and_projection_are_exact() -> None:
         "response_type": read_pb2.ListRecentlyViewedProjectsResponse,
     }
 
-    assert await notebooks.get("notebook-1") == notebook
+    fetched = await notebooks.get("notebook-1")
+    assert fetched.id == notebook.id
+    assert fetched.title == notebook.title
+    assert fetched.chat_settings == ChatSettings(
+        goal=ChatGoal.DEFAULT,
+        response_length=ChatResponseLength.DEFAULT,
+    )
     method, request, kwargs = fake.calls[1]
     assert method == GET_PROJECT_METHOD
     assert request == read_pb2.GetProjectRequest(
@@ -288,8 +305,33 @@ async def test_notebook_requests_and_projection_are_exact() -> None:
     )
     assert kwargs == {
         "replay_safe": True,
-        "response_type": read_pb2.GetProjectResponse,
+        "response_type": wire_notebooks_pb2.WireGetProjectResponse,
     }
+
+
+@pytest.mark.asyncio
+async def test_notebook_get_projects_exact_chat_settings() -> None:
+    fake, _, notebooks = _graph()
+    response = fake.responses[GET_PROJECT_METHOD]
+    response.project.advanced_settings.CopyFrom(
+        wire_notebooks_pb2.WireProjectAdvancedSettings(
+            goal_settings=wire_notebooks_pb2.WireProjectGoalSettings(
+                goal=ChatGoal.CUSTOM.value,
+                custom_prompt="Use terse explanations.",
+            ),
+            response_style_settings=wire_notebooks_pb2.WireProjectResponseStyleSettings(
+                response_length=ChatResponseLength.SHORTER.value
+            ),
+        )
+    )
+
+    notebook = await notebooks.get("notebook-1")
+
+    assert notebook.chat_settings == ChatSettings(
+        goal=ChatGoal.CUSTOM,
+        response_length=ChatResponseLength.SHORTER,
+        custom_prompt="Use terse explanations.",
+    )
 
 
 @pytest.mark.asyncio
@@ -306,12 +348,51 @@ async def test_notebook_role_mapping_uses_names_and_unknown_degrades_to_none() -
 
 
 @pytest.mark.asyncio
+async def test_notebook_projects_exact_premium_capability_block() -> None:
+    project = _project()
+    project.premium_feature_info.CopyFrom(
+        read_pb2.PremiumFeatureInfo(
+            can_edit_advanced_settings=True,
+            can_edit_guidebook_config=True,
+            can_view_analytics=False,
+        )
+    )
+    _, _, notebooks = _graph(project)
+
+    premium = (await notebooks.get(project.id)).premium_features
+
+    assert premium is not None
+    assert premium.can_edit_advanced_settings is True
+    assert premium.can_edit_guidebook_config is True
+    assert premium.can_view_analytics is False
+
+    partial = _project(project_id="partial-premium")
+    partial.premium_feature_info.can_edit_advanced_settings = False
+    _, _, partial_notebooks = _graph(partial)
+    partial_premium = (await partial_notebooks.get(partial.id)).premium_features
+    assert partial_premium is not None
+    assert partial_premium.can_edit_advanced_settings is False
+    assert partial_premium.can_edit_guidebook_config is None
+    assert partial_premium.can_view_analytics is None
+
+
+@pytest.mark.asyncio
 async def test_notebook_required_id_is_never_invented() -> None:
     _, _, notebooks = _graph(_project(project_id=""))
     with pytest.raises(DecodingError, match="did not contain a notebook id") as raised:
         await notebooks.get("requested-id")
     assert raised.value.method_id == GET_PROJECT_METHOD
     assert "Android notebook" not in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_get_project_rejects_a_different_echoed_notebook_id() -> None:
+    _, sources, notebooks = _graph(_project(project_id="other-notebook"))
+
+    with pytest.raises(DecodingError, match="unexpected notebook id"):
+        await notebooks.get("requested-notebook")
+    with pytest.raises(DecodingError, match="unexpected notebook id"):
+        await sources.list("requested-notebook")
 
 
 @pytest.mark.asyncio
@@ -406,6 +487,26 @@ async def test_get_or_none_and_share_url_stay_base_concrete() -> None:
 async def test_get_raw_is_known_field_snake_case_message_dict() -> None:
     fake, _, notebooks = _graph()
     response = fake.responses[GET_PROJECT_METHOD]
+    response.project.metadata.is_public = True
+    response.project.metadata.audio_overview_artifact_ids.append("audio-1")
+    response.project.project_tier_limits.max_projects = 100
+    response.project.advanced_settings.CopyFrom(
+        wire_notebooks_pb2.WireProjectAdvancedSettings(
+            goal_settings=wire_notebooks_pb2.WireProjectGoalSettings(
+                goal=ChatGoal.LEARNING_GUIDE.value
+            ),
+            response_style_settings=wire_notebooks_pb2.WireProjectResponseStyleSettings(
+                response_length=ChatResponseLength.LONGER.value
+            ),
+        )
+    )
+    response.project.sources[0].metadata.expert_intelligence_source_metadata.CopyFrom(
+        read_pb2.ExpertIntelligenceSourceMetadata(
+            content_id="expert-1",
+            title="Expert source",
+            authors=["Author"],
+        )
+    )
     # Retained protobuf unknown fields are intentionally outside the raw API contract.
     response.ParseFromString(response.SerializeToString() + b"\xf8\x07\x01")
 
@@ -413,6 +514,16 @@ async def test_get_raw_is_known_field_snake_case_message_dict() -> None:
 
     assert raw["project"]["id"] == "notebook-1"
     assert raw["project"]["metadata"]["user_role"] == "PROJECT_ROLE_OWNER"
+    assert raw["project"]["metadata"]["is_public"] is True
+    assert raw["project"]["metadata"]["audio_overview_artifact_ids"] == ["audio-1"]
+    assert raw["project"]["advanced_settings"]["goal_settings"]["goal"] == 3
+    assert raw["project"]["project_tier_limits"]["max_projects"] == 100
+    assert (
+        raw["project"]["sources"][0]["metadata"]["expert_intelligence_source_metadata"][
+            "content_id"
+        ]
+        == "expert-1"
+    )
     assert "premium_feature_info" not in raw["project"]
     assert "127" not in raw
 
@@ -465,6 +576,35 @@ async def test_source_codec_fixture_projects_status_kind_drive_and_order() -> No
         "replay_safe": True,
         "response_type": read_pb2.GetProjectResponse,
     }
+
+
+@pytest.mark.parametrize(
+    ("google_docs_id", "drive_id", "expected"),
+    [
+        ("docs-id", None, "docs-id"),
+        ("docs-id", "descriptor-id", "docs-id"),
+        ("", "descriptor-id", "descriptor-id"),
+    ],
+)
+def test_source_codec_prefers_google_docs_id_then_falls_back_to_drive_descriptor(
+    google_docs_id: str,
+    drive_id: str | None,
+    expected: str,
+) -> None:
+    raw = _source(
+        "source-1",
+        title="Drive source",
+        content_type=read_pb2.SOURCE_CONTENT_TYPE_GOOGLE_DOC,
+        status=source_settings_pb2.SOURCE_STATUS_COMPLETE,
+        google_docs_document_id=google_docs_id,
+        drive_document_id=drive_id,
+        content_mime="application/vnd.google-apps.document" if drive_id else None,
+    )
+
+    decoded = decode_source(raw, method_id=GET_PROJECT_METHOD)
+
+    assert decoded.drive_document_id == expected
+    assert decoded.content_mime == ("application/vnd.google-apps.document" if drive_id else None)
 
 
 @pytest.mark.asyncio

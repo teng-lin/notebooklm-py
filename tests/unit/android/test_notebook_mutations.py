@@ -31,6 +31,7 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     read_pb2,
 )
+from notebooklm._android.proto.labs.language.tailwind.common.protos import common_pb2
 from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import notebooks_pb2
 from notebooklm._android.session import AndroidSession
 from notebooklm._notebooks import NotebooksAPI
@@ -40,7 +41,7 @@ from notebooklm.exceptions import (
     ServerError,
     ValidationError,
 )
-from notebooklm.types import PromptSuggestion, SuggestedTopic
+from notebooklm.types import ChatSession, Notebook, PromptSuggestion, SuggestedTopic
 
 
 class SequenceTransport:
@@ -70,8 +71,23 @@ class _Lease:
     epoch: int = 7
 
 
-def _project(project_id: str, title: str, *, emoji: str = "") -> read_pb2.Project:
-    return read_pb2.Project(id=project_id, title=title, emoji=emoji)
+def _project(
+    project_id: str,
+    title: str,
+    *,
+    emoji: str = "",
+    chat_session_id: str | None = None,
+) -> read_pb2.Project:
+    return read_pb2.Project(
+        id=project_id,
+        title=title,
+        emoji=emoji,
+        chat_sessions=(
+            [common_pb2.ChatSession(chat_session_id=chat_session_id)]
+            if chat_session_id is not None
+            else []
+        ),
+    )
 
 
 def _api(transport: SequenceTransport) -> AndroidNotebooksAPI:
@@ -113,6 +129,39 @@ async def test_create_keeps_base_baseline_then_single_send_workflow() -> None:
         "response_type": read_pb2.Project,
         "expected_epoch": 7,
     }
+
+
+@pytest.mark.asyncio
+async def test_create_projects_and_volunteers_exact_chat_session_once() -> None:
+    transport = SequenceTransport(
+        {
+            LIST_RECENT_PROJECTS_METHOD: [read_pb2.ListRecentlyViewedProjectsResponse()],
+            CREATE_PROJECT_METHOD: [_project("new", "Created", chat_session_id="conversation-1")],
+        }
+    )
+    api = _api(transport)
+
+    created = await api.create("Created")
+
+    assert [session.id for session in created.chat_sessions] == ["conversation-1"]
+    assert api._take_created_chat_session_id(created.id) == "conversation-1"
+    assert api._take_created_chat_session_id(created.id) is None
+
+
+def test_created_chat_session_hints_are_bounded_and_refresh_recency() -> None:
+    api = _api(SequenceTransport())
+    for index in range(260):
+        api._remember_created_chat_session(
+            Notebook(
+                id=f"notebook-{index}",
+                title="scratch",
+                chat_sessions=[ChatSession(id=f"session-{index}")],
+            )
+        )
+
+    assert len(api._created_chat_session_ids) == 256
+    assert api._take_created_chat_session_id("notebook-0") is None
+    assert api._take_created_chat_session_id("notebook-259") == "session-259"
 
 
 @pytest.mark.asyncio

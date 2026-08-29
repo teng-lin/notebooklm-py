@@ -58,6 +58,11 @@ class LabsTailwindOrchestrationServiceStub(object):
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_account__pb2.GetOrCreateAccountRequest.SerializeToString,
                 response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_account__pb2.GetOrCreateAccountResponse.FromString,
                 _registered_method=True)
+        self.MutateAccount = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateAccount',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_account__pb2.MutateAccountRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_account__pb2.Account.FromString,
+                _registered_method=True)
         self.GetProject = channel.unary_unary(
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject',
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.GetProjectRequest.SerializeToString,
@@ -127,6 +132,11 @@ class LabsTailwindOrchestrationServiceStub(object):
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CheckSourceFreshness',
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.CheckSourceFreshnessRequest.SerializeToString,
                 response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.CheckSourceFreshnessResponse.FromString,
+                _registered_method=True)
+        self.RefreshSource = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/RefreshSource',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.RefreshSourceRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.RefreshSourceResponse.FromString,
                 _registered_method=True)
         self.GenerateDocumentGuides = channel.unary_unary(
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateDocumentGuides',
@@ -202,6 +212,11 @@ class LabsTailwindOrchestrationServiceStub(object):
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed',
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_chat__pb2.GenerateFreeFormStreamedRequest.SerializeToString,
                 response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_chat__pb2.GenerateFreeFormStreamedResponse.FromString,
+                _registered_method=True)
+        self.ActOnSources = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ActOnSources',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_chat__pb2.ActOnSourcesRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_chat__pb2.ActOnSourcesResponse.FromString,
                 _registered_method=True)
         self.GetNotes = channel.unary_unary(
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetNotes',
@@ -294,6 +309,12 @@ class LabsTailwindOrchestrationServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def MutateAccount(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def GetProject(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -373,6 +394,12 @@ class LabsTailwindOrchestrationServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def CheckSourceFreshness(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def RefreshSource(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -463,6 +490,12 @@ class LabsTailwindOrchestrationServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def GenerateFreeFormStreamed(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ActOnSources(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -560,6 +593,11 @@ def add_LabsTailwindOrchestrationServiceServicer_to_server(servicer, server):
                     request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_account__pb2.GetOrCreateAccountRequest.FromString,
                     response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_account__pb2.GetOrCreateAccountResponse.SerializeToString,
             ),
+            'MutateAccount': grpc.unary_unary_rpc_method_handler(
+                    servicer.MutateAccount,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_account__pb2.MutateAccountRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_account__pb2.Account.SerializeToString,
+            ),
             'GetProject': grpc.unary_unary_rpc_method_handler(
                     servicer.GetProject,
                     request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.GetProjectRequest.FromString,
@@ -629,6 +667,11 @@ def add_LabsTailwindOrchestrationServiceServicer_to_server(servicer, server):
                     servicer.CheckSourceFreshness,
                     request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.CheckSourceFreshnessRequest.FromString,
                     response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.CheckSourceFreshnessResponse.SerializeToString,
+            ),
+            'RefreshSource': grpc.unary_unary_rpc_method_handler(
+                    servicer.RefreshSource,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.RefreshSourceRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.RefreshSourceResponse.SerializeToString,
             ),
             'GenerateDocumentGuides': grpc.unary_unary_rpc_method_handler(
                     servicer.GenerateDocumentGuides,
@@ -704,6 +747,11 @@ def add_LabsTailwindOrchestrationServiceServicer_to_server(servicer, server):
                     servicer.GenerateFreeFormStreamed,
                     request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_chat__pb2.GenerateFreeFormStreamedRequest.FromString,
                     response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_chat__pb2.GenerateFreeFormStreamedResponse.SerializeToString,
+            ),
+            'ActOnSources': grpc.unary_unary_rpc_method_handler(
+                    servicer.ActOnSources,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_chat__pb2.ActOnSourcesRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_chat__pb2.ActOnSourcesResponse.SerializeToString,
             ),
             'GetNotes': grpc.unary_unary_rpc_method_handler(
                     servicer.GetNotes,
@@ -813,6 +861,33 @@ class LabsTailwindOrchestrationService(object):
             '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetOrCreateAccount',
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_account__pb2.GetOrCreateAccountRequest.SerializeToString,
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_account__pb2.GetOrCreateAccountResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def MutateAccount(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateAccount',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_account__pb2.MutateAccountRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_account__pb2.Account.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1191,6 +1266,33 @@ class LabsTailwindOrchestrationService(object):
             '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CheckSourceFreshness',
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.CheckSourceFreshnessRequest.SerializeToString,
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.CheckSourceFreshnessResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RefreshSource(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/RefreshSource',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.RefreshSourceRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.RefreshSourceResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1596,6 +1698,33 @@ class LabsTailwindOrchestrationService(object):
             '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed',
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_chat__pb2.GenerateFreeFormStreamedRequest.SerializeToString,
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_chat__pb2.GenerateFreeFormStreamedResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ActOnSources(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ActOnSources',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_chat__pb2.ActOnSourcesRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_chat__pb2.ActOnSourcesResponse.FromString,
             options,
             channel_credentials,
             insecure,

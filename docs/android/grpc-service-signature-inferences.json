@@ -25,6 +25,13 @@
       "evidence": "docs/android/grpc-capability-and-signature-evidence.md#checksourcefreshness"
     },
     {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/RefreshSource",
+      "request_type": "google.internal.labs.tailwind.orchestration.v1.RefreshSourceRequest",
+      "response_type": "google.internal.labs.tailwind.orchestration.v1.RefreshSourceResponse",
+      "confidence": "type_names_inferred_wire_shape_and_valid_refresh_live_pinned",
+      "evidence": "docs/android/resource-lifecycle-and-public-qualification.md#native-source-refresh-and-drive-file-import"
+    },
+    {
       "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateReportSuggestions",
       "request_type": "google.internal.labs.tailwind.orchestration.v1.GenerateReportSuggestionsRequest",
       "response_type": "google.internal.labs.tailwind.orchestration.v1.GenerateReportSuggestionsResponse",

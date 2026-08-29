@@ -6,7 +6,17 @@ from datetime import timezone
 from typing import Any, cast
 
 from ...exceptions import DecodingError, NotebookNotFoundError, RPCError
-from ...types import Notebook, NotebookDescription, SharePermission, SuggestedTopic
+from ...types import (
+    ChatGoal,
+    ChatResponseLength,
+    ChatSession,
+    ChatSettings,
+    Notebook,
+    NotebookDescription,
+    PremiumFeatureInfo,
+    SharePermission,
+    SuggestedTopic,
+)
 
 
 def _read_proto() -> Any:
@@ -49,10 +59,26 @@ def map_get_project_error(
     )
 
 
+def validate_project_identity(
+    project: Any,
+    expected_id: str,
+    *,
+    method_id: str,
+) -> None:
+    """Reject a nonempty GetProject identity that differs from its request."""
+    echoed_id = str(getattr(project, "id", ""))
+    if echoed_id and echoed_id != expected_id:
+        raise DecodingError(
+            "Android GetProject returned an unexpected notebook id",
+            method_id=method_id,
+        )
+
+
 def _decode_project(
     project: Any,
     *,
     method_id: str,
+    include_chat_settings: bool,
 ) -> Notebook:
     """Decode one Android ``Project`` without inventing required identity."""
     if not project.id:
@@ -69,6 +95,35 @@ def _decode_project(
         role_name = _enum_name(_read_proto().ProjectRole, project.metadata.user_role)
         role = _PROJECT_ROLE_BY_NAME.get(role_name or "")
 
+    chat_settings = None
+    if include_chat_settings:
+        fields = project.DESCRIPTOR.fields_by_name
+        if "advanced_settings" not in fields or not project.HasField("advanced_settings"):
+            chat_settings = ChatSettings(
+                goal=ChatGoal.DEFAULT,
+                response_length=ChatResponseLength.DEFAULT,
+            )
+        else:
+            settings = project.advanced_settings
+            if settings.HasField("goal_settings") and settings.HasField("response_style_settings"):
+                try:
+                    goal = ChatGoal(int(settings.goal_settings.goal))
+                    response_length = ChatResponseLength(
+                        int(settings.response_style_settings.response_length)
+                    )
+                except ValueError:
+                    pass
+                else:
+                    custom_prompt = settings.goal_settings.custom_prompt or None
+                    if goal is not ChatGoal.CUSTOM:
+                        custom_prompt = None
+                    if goal is not ChatGoal.CUSTOM or custom_prompt is not None:
+                        chat_settings = ChatSettings(
+                            goal=goal,
+                            response_length=response_length,
+                            custom_prompt=custom_prompt,
+                        )
+
     return Notebook(
         id=project.id,
         title=project.title,
@@ -78,11 +133,33 @@ def _decode_project(
         last_viewed_at=None,
         modified_at=None,
         emoji=project.emoji,
-        # Project #10 remains an exact-package schema gap in read. The flattened
-        # recovered schema alone cannot admit it into the generated closure.
-        premium_features=None,
-        chat_sessions=[],
-        chat_settings=None,
+        premium_features=(
+            PremiumFeatureInfo(
+                can_edit_advanced_settings=(
+                    project.premium_feature_info.can_edit_advanced_settings
+                    if project.premium_feature_info.HasField("can_edit_advanced_settings")
+                    else None
+                ),
+                can_edit_guidebook_config=(
+                    project.premium_feature_info.can_edit_guidebook_config
+                    if project.premium_feature_info.HasField("can_edit_guidebook_config")
+                    else None
+                ),
+                can_view_analytics=(
+                    project.premium_feature_info.can_view_analytics
+                    if project.premium_feature_info.HasField("can_view_analytics")
+                    else None
+                ),
+            )
+            if project.HasField("premium_feature_info")
+            else None
+        ),
+        chat_sessions=[
+            ChatSession(id=session.chat_session_id)
+            for session in project.chat_sessions
+            if session.chat_session_id
+        ],
+        chat_settings=chat_settings,
     )
 
 
@@ -90,10 +167,15 @@ def decode_project(
     project: Any,
     *,
     method_id: str,
+    include_chat_settings: bool = False,
 ) -> Notebook:
     """Decode one project and normalize projection failures to bounded drift."""
     try:
-        return _decode_project(project, method_id=method_id)
+        return _decode_project(
+            project,
+            method_id=method_id,
+            include_chat_settings=include_chat_settings,
+        )
     except DecodingError:
         raise
     except Exception:
@@ -143,4 +225,5 @@ __all__ = [
     "decode_project",
     "map_get_project_error",
     "message_to_known_dict",
+    "validate_project_identity",
 ]

@@ -26,6 +26,7 @@ import "google/internal/labs/tailwind/orchestration/v1/sources.proto";
 service LabsTailwindOrchestrationService {
   rpc GetOrCreateAccount(GetOrCreateAccountRequest)
       returns (GetOrCreateAccountResponse);
+  rpc MutateAccount(MutateAccountRequest) returns (Account);
 
   rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
   rpc ListRecentlyViewedProjects(ListRecentlyViewedProjectsRequest)
@@ -48,6 +49,7 @@ service LabsTailwindOrchestrationService {
   rpc MutateSource(MutateSourceRequest) returns (MutateSourceResponse);
   rpc CheckSourceFreshness(CheckSourceFreshnessRequest)
       returns (CheckSourceFreshnessResponse);
+  rpc RefreshSource(RefreshSourceRequest) returns (RefreshSourceResponse);
   rpc GenerateDocumentGuides(GenerateDocumentGuidesRequest)
       returns (GenerateDocumentGuidesResponse);
   rpc LoadSource(LoadSourceRequest) returns (LoadSourceResponse);
@@ -68,6 +70,7 @@ service LabsTailwindOrchestrationService {
   rpc DeleteChatTurns(DeleteChatTurnsRequest) returns (google.protobuf.Empty);
   rpc GenerateFreeFormStreamed(GenerateFreeFormStreamedRequest)
       returns (stream GenerateFreeFormStreamedResponse);
+  rpc ActOnSources(ActOnSourcesRequest) returns (ActOnSourcesResponse);
 
   rpc GetNotes(GetNotesRequest) returns (GetNotesResponse);
   rpc CreateNote(CreateNoteRequest) returns (CreateNoteResponse);

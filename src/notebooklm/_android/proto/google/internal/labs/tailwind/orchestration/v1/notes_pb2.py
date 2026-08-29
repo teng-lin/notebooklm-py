@@ -23,43 +23,45 @@ _sym_db = _symbol_database.Default()
 
 
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import chat_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_chat__pb2
+from notebooklm._android.proto.labs.language.tailwind.common.protos import metadata_pb2 as labs_dot_language_dot_tailwind_dot_common_dot_protos_dot_metadata__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n:google/internal/labs/tailwind/orchestration/v1/notes.proto\x12.google.internal.labs.tailwind.orchestration.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe9\x01\n\x0cNoteMetadata\x12\x46\n\x04type\x18\x01 \x01(\x0e\x32\x38.google.internal.labs.tailwind.orchestration.v1.NoteType\x12\x37\n\x13last_edit_timestamp\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12X\n\x10note_prompt_type\x18\x04 \x01(\x0e\x32>.google.internal.labs.tailwind.orchestration.v1.NotePromptType\"\x88\x01\n\x0bProjectNote\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x02 \x01(\t\x12N\n\x08metadata\x18\x03 \x01(\x0b\x32<.google.internal.labs.tailwind.orchestration.v1.NoteMetadata\x12\x0c\n\x04name\x18\x05 \x01(\t\"Y\n\x0cNoteOrStatus\x12I\n\x04note\x18\x02 \x01(\x0b\x32;.google.internal.labs.tailwind.orchestration.v1.ProjectNote\"%\n\x0fGetNotesRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\"_\n\x10GetNotesResponse\x12K\n\x05notes\x18\x01 \x03(\x0b\x32<.google.internal.labs.tailwind.orchestration.v1.NoteOrStatus\"\x96\x01\n\x11\x43reateNoteRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x02 \x01(\t\x12N\n\x08metadata\x18\x03 \x01(\x0b\x32<.google.internal.labs.tailwind.orchestration.v1.NoteMetadata\x12\x0c\n\x04name\x18\x05 \x01(\t\"_\n\x12\x43reateNoteResponse\x12I\n\x04note\x18\x01 \x01(\x0b\x32;.google.internal.labs.tailwind.orchestration.v1.ProjectNote\">\n\x1dNoteMutation_EditNoteMutation\x12\x0f\n\x07\x63ontent\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\"y\n\x0cNoteMutation\x12i\n\x12\x65\x64it_note_mutation\x18\x01 \x01(\x0b\x32M.google.internal.labs.tailwind.orchestration.v1.NoteMutation_EditNoteMutation\"\x89\x01\n\x11MutateNoteRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\x12\x0f\n\x07note_id\x18\x02 \x01(\t\x12O\n\tmutations\x18\x03 \x03(\x0b\x32<.google.internal.labs.tailwind.orchestration.v1.NoteMutation\"_\n\x12MutateNoteResponse\x12I\n\x04note\x18\x01 \x01(\x0b\x32;.google.internal.labs.tailwind.orchestration.v1.ProjectNote\":\n\x12\x44\x65leteNotesRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\x12\x10\n\x08note_ids\x18\x03 \x03(\t\"\x15\n\x13\x44\x65leteNotesResponse*z\n\x0eNotePromptType\x12 \n\x1cNOTE_PROMPT_TYPE_UNSPECIFIED\x10\x00\x12\x0f\n\x0bSTUDY_GUIDE\x10\x01\x12\x10\n\x0c\x42RIEFING_DOC\x10\x02\x12\x07\n\x03\x46\x41Q\x10\x03\x12\x0c\n\x08TIMELINE\x10\x04\x12\x0c\n\x08MIND_MAP\x10\x05*W\n\x08NoteType\x12\x19\n\x15NOTE_TYPE_UNSPECIFIED\x10\x00\x12\x10\n\x0cUSER_WRITTEN\x10\x01\x12\x12\n\x0eSAVED_RESPONSE\x10\x02\x12\n\n\x06\x43USTOM\x10\x03\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n:google/internal/labs/tailwind/orchestration/v1/notes.proto\x12.google.internal.labs.tailwind.orchestration.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x39google/internal/labs/tailwind/orchestration/v1/chat.proto\x1a\x33labs/language/tailwind/common/protos/metadata.proto\"\xe9\x01\n\x0cNoteMetadata\x12\x46\n\x04type\x18\x01 \x01(\x0e\x32\x38.google.internal.labs.tailwind.orchestration.v1.NoteType\x12\x37\n\x13last_edit_timestamp\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12X\n\x10note_prompt_type\x18\x04 \x01(\x0e\x32>.google.internal.labs.tailwind.orchestration.v1.NotePromptType\"\xb6\x02\n\x0bProjectNote\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x02 \x01(\t\x12N\n\x08metadata\x18\x03 \x01(\x0b\x32<.google.internal.labs.tailwind.orchestration.v1.NoteMetadata\x12Q\n\x0fsource_passages\x18\x04 \x03(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.Citation\x12\x0c\n\x04name\x18\x05 \x01(\t\x12Y\n\x14tailwind_doc_content\x18\x06 \x01(\x0b\x32;.google.internal.labs.tailwind.orchestration.v1.TailwindDoc\"Y\n\x0cNoteOrStatus\x12I\n\x04note\x18\x02 \x01(\x0b\x32;.google.internal.labs.tailwind.orchestration.v1.ProjectNote\"%\n\x0fGetNotesRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\"_\n\x10GetNotesResponse\x12K\n\x05notes\x18\x01 \x03(\x0b\x32<.google.internal.labs.tailwind.orchestration.v1.NoteOrStatus\"\x93\x03\n\x11\x43reateNoteRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x02 \x01(\t\x12N\n\x08metadata\x18\x03 \x01(\x0b\x32<.google.internal.labs.tailwind.orchestration.v1.NoteMetadata\x12Q\n\x0fsource_passages\x18\x04 \x03(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.Citation\x12\x0c\n\x04name\x18\x05 \x01(\t\x12Y\n\x14tailwind_doc_content\x18\x06 \x01(\x0b\x32;.google.internal.labs.tailwind.orchestration.v1.TailwindDoc\x12M\n\x0frequest_context\x18\x07 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.RequestContext\"_\n\x12\x43reateNoteResponse\x12I\n\x04note\x18\x01 \x01(\x0b\x32;.google.internal.labs.tailwind.orchestration.v1.ProjectNote\">\n\x1dNoteMutation_EditNoteMutation\x12\x0f\n\x07\x63ontent\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\"y\n\x0cNoteMutation\x12i\n\x12\x65\x64it_note_mutation\x18\x01 \x01(\x0b\x32M.google.internal.labs.tailwind.orchestration.v1.NoteMutation_EditNoteMutation\"\x89\x01\n\x11MutateNoteRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\x12\x0f\n\x07note_id\x18\x02 \x01(\t\x12O\n\tmutations\x18\x03 \x03(\x0b\x32<.google.internal.labs.tailwind.orchestration.v1.NoteMutation\"_\n\x12MutateNoteResponse\x12I\n\x04note\x18\x01 \x01(\x0b\x32;.google.internal.labs.tailwind.orchestration.v1.ProjectNote\":\n\x12\x44\x65leteNotesRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\x12\x10\n\x08note_ids\x18\x03 \x03(\t\"\x15\n\x13\x44\x65leteNotesResponse*z\n\x0eNotePromptType\x12 \n\x1cNOTE_PROMPT_TYPE_UNSPECIFIED\x10\x00\x12\x0f\n\x0bSTUDY_GUIDE\x10\x01\x12\x10\n\x0c\x42RIEFING_DOC\x10\x02\x12\x07\n\x03\x46\x41Q\x10\x03\x12\x0c\n\x08TIMELINE\x10\x04\x12\x0c\n\x08MIND_MAP\x10\x05*W\n\x08NoteType\x12\x19\n\x15NOTE_TYPE_UNSPECIFIED\x10\x00\x12\x10\n\x0cUSER_WRITTEN\x10\x01\x12\x12\n\x0eSAVED_RESPONSE\x10\x02\x12\n\n\x06\x43USTOM\x10\x03\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'google.internal.labs.tailwind.orchestration.v1.notes_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_NOTEPROMPTTYPE']._serialized_start=1502
-  _globals['_NOTEPROMPTTYPE']._serialized_end=1624
-  _globals['_NOTETYPE']._serialized_start=1626
-  _globals['_NOTETYPE']._serialized_end=1713
-  _globals['_NOTEMETADATA']._serialized_start=144
-  _globals['_NOTEMETADATA']._serialized_end=377
-  _globals['_PROJECTNOTE']._serialized_start=380
-  _globals['_PROJECTNOTE']._serialized_end=516
-  _globals['_NOTEORSTATUS']._serialized_start=518
-  _globals['_NOTEORSTATUS']._serialized_end=607
-  _globals['_GETNOTESREQUEST']._serialized_start=609
-  _globals['_GETNOTESREQUEST']._serialized_end=646
-  _globals['_GETNOTESRESPONSE']._serialized_start=648
-  _globals['_GETNOTESRESPONSE']._serialized_end=743
-  _globals['_CREATENOTEREQUEST']._serialized_start=746
-  _globals['_CREATENOTEREQUEST']._serialized_end=896
-  _globals['_CREATENOTERESPONSE']._serialized_start=898
-  _globals['_CREATENOTERESPONSE']._serialized_end=993
-  _globals['_NOTEMUTATION_EDITNOTEMUTATION']._serialized_start=995
-  _globals['_NOTEMUTATION_EDITNOTEMUTATION']._serialized_end=1057
-  _globals['_NOTEMUTATION']._serialized_start=1059
-  _globals['_NOTEMUTATION']._serialized_end=1180
-  _globals['_MUTATENOTEREQUEST']._serialized_start=1183
-  _globals['_MUTATENOTEREQUEST']._serialized_end=1320
-  _globals['_MUTATENOTERESPONSE']._serialized_start=1322
-  _globals['_MUTATENOTERESPONSE']._serialized_end=1417
-  _globals['_DELETENOTESREQUEST']._serialized_start=1419
-  _globals['_DELETENOTESREQUEST']._serialized_end=1477
-  _globals['_DELETENOTESRESPONSE']._serialized_start=1479
-  _globals['_DELETENOTESRESPONSE']._serialized_end=1500
+  _globals['_NOTEPROMPTTYPE']._serialized_start=2041
+  _globals['_NOTEPROMPTTYPE']._serialized_end=2163
+  _globals['_NOTETYPE']._serialized_start=2165
+  _globals['_NOTETYPE']._serialized_end=2252
+  _globals['_NOTEMETADATA']._serialized_start=256
+  _globals['_NOTEMETADATA']._serialized_end=489
+  _globals['_PROJECTNOTE']._serialized_start=492
+  _globals['_PROJECTNOTE']._serialized_end=802
+  _globals['_NOTEORSTATUS']._serialized_start=804
+  _globals['_NOTEORSTATUS']._serialized_end=893
+  _globals['_GETNOTESREQUEST']._serialized_start=895
+  _globals['_GETNOTESREQUEST']._serialized_end=932
+  _globals['_GETNOTESRESPONSE']._serialized_start=934
+  _globals['_GETNOTESRESPONSE']._serialized_end=1029
+  _globals['_CREATENOTEREQUEST']._serialized_start=1032
+  _globals['_CREATENOTEREQUEST']._serialized_end=1435
+  _globals['_CREATENOTERESPONSE']._serialized_start=1437
+  _globals['_CREATENOTERESPONSE']._serialized_end=1532
+  _globals['_NOTEMUTATION_EDITNOTEMUTATION']._serialized_start=1534
+  _globals['_NOTEMUTATION_EDITNOTEMUTATION']._serialized_end=1596
+  _globals['_NOTEMUTATION']._serialized_start=1598
+  _globals['_NOTEMUTATION']._serialized_end=1719
+  _globals['_MUTATENOTEREQUEST']._serialized_start=1722
+  _globals['_MUTATENOTEREQUEST']._serialized_end=1859
+  _globals['_MUTATENOTERESPONSE']._serialized_start=1861
+  _globals['_MUTATENOTERESPONSE']._serialized_end=1956
+  _globals['_DELETENOTESREQUEST']._serialized_start=1958
+  _globals['_DELETENOTESREQUEST']._serialized_end=2016
+  _globals['_DELETENOTESRESPONSE']._serialized_start=2018
+  _globals['_DELETENOTESRESPONSE']._serialized_end=2039
 # @@protoc_insertion_point(module_scope)

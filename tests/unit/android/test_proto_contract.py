@@ -62,8 +62,10 @@ def test_exact_read_packages_and_imports_are_minimal() -> None:
     assert read_pb2.DESCRIPTOR.package == ORCHESTRATION_PACKAGE
     assert source_settings_pb2.DESCRIPTOR.package == SETTINGS_PACKAGE
     assert [dependency.name for dependency in read_pb2.DESCRIPTOR.dependencies] == [
+        "google/internal/labs/tailwind/orchestration/v1/account.proto",
         "google/internal/labs/tailwind/v1/source_settings.proto",
         "google/protobuf/timestamp.proto",
+        "labs/language/tailwind/common/protos/common.proto",
     ]
 
     assert read_pb2.DESCRIPTOR.services_by_name == {}
@@ -74,17 +76,35 @@ def test_orchestration_message_fields_tags_types_and_cardinality_are_exhaustive(
     repeated = True
     string = FieldDescriptor.TYPE_STRING
     boolean = FieldDescriptor.TYPE_BOOL
+    double = FieldDescriptor.TYPE_DOUBLE
     message = FieldDescriptor.TYPE_MESSAGE
     enum = FieldDescriptor.TYPE_ENUM
 
     expected = {
         read_pb2.SourceId: {"id": (1, singular, string, None)},
         read_pb2.WebpageMetadata: {"url": (1, singular, string, None)},
+        read_pb2.GoogleDocsSourceMetadata: {
+            "document_id": (1, singular, string, None),
+        },
         read_pb2.GoogleDriveSourceMetadata: {
             "document_id": (1, singular, string, None),
             "mime_type": (3, singular, string, None),
         },
+        read_pb2.ExpertIntelligenceSourceMetadata: {
+            "content_id": (1, singular, string, None),
+            "title": (3, singular, string, None),
+            "authors": (4, repeated, string, None),
+            "thumbnail_image_url": (5, singular, string, None),
+            "description": (6, singular, string, None),
+            "field_type": (7, singular, double, None),
+        },
         read_pb2.SourceMetadata: {
+            "google_docs_metadata": (
+                1,
+                singular,
+                message,
+                f"{ORCHESTRATION_PACKAGE}.GoogleDocsSourceMetadata",
+            ),
             "original_source_content_type": (
                 5,
                 singular,
@@ -103,6 +123,12 @@ def test_orchestration_message_fields_tags_types_and_cardinality_are_exhaustive(
                 message,
                 f"{ORCHESTRATION_PACKAGE}.GoogleDriveSourceMetadata",
             ),
+            "expert_intelligence_source_metadata": (
+                19,
+                singular,
+                message,
+                f"{ORCHESTRATION_PACKAGE}.ExpertIntelligenceSourceMetadata",
+            ),
         },
         read_pb2.Source: {
             "source_id": (1, singular, message, f"{ORCHESTRATION_PACKAGE}.SourceId"),
@@ -113,6 +139,13 @@ def test_orchestration_message_fields_tags_types_and_cardinality_are_exhaustive(
         read_pb2.ProjectMetadata: {
             "user_role": (1, singular, enum, f"{ORCHESTRATION_PACKAGE}.ProjectRole"),
             "create_time": (9, singular, message, "google.protobuf.Timestamp"),
+            "is_public": (13, singular, boolean, None),
+            "audio_overview_artifact_ids": (17, repeated, string, None),
+        },
+        read_pb2.PremiumFeatureInfo: {
+            "can_edit_advanced_settings": (1, singular, boolean, None),
+            "can_edit_guidebook_config": (2, singular, boolean, None),
+            "can_view_analytics": (3, singular, boolean, None),
         },
         read_pb2.Project: {
             "title": (1, singular, string, None),
@@ -120,6 +153,24 @@ def test_orchestration_message_fields_tags_types_and_cardinality_are_exhaustive(
             "id": (3, singular, string, None),
             "emoji": (4, singular, string, None),
             "metadata": (6, singular, message, f"{ORCHESTRATION_PACKAGE}.ProjectMetadata"),
+            "premium_feature_info": (
+                10,
+                singular,
+                message,
+                f"{ORCHESTRATION_PACKAGE}.PremiumFeatureInfo",
+            ),
+            "project_tier_limits": (
+                11,
+                singular,
+                message,
+                f"{ORCHESTRATION_PACKAGE}.TierLimits",
+            ),
+            "chat_sessions": (
+                12,
+                repeated,
+                message,
+                "labs.language.tailwind.common.protos.ChatSession",
+            ),
         },
         read_pb2.GetProjectRequest: {
             "project_id": (1, singular, string, None),
@@ -162,11 +213,14 @@ def test_source_settings_has_only_fields_two_and_four() -> None:
     }
 
 
-def test_b2_repository_local_wire_fields_are_exhaustive() -> None:
+def test_notebook_repository_local_wire_fields_are_exhaustive() -> None:
     assert notebooks_pb2.DESCRIPTOR.package == LOCAL_WIRE_PACKAGE
     assert not notebooks_pb2.DESCRIPTOR.services_by_name
     assert [dependency.name for dependency in notebooks_pb2.DESCRIPTOR.dependencies] == [
+        "google/internal/labs/tailwind/orchestration/v1/account.proto",
         "google/internal/labs/tailwind/orchestration/v1/notebooks.proto",
+        "google/internal/labs/tailwind/orchestration/v1/read.proto",
+        "labs/language/tailwind/common/protos/common.proto",
         "labs/language/tailwind/common/protos/metadata.proto",
     ]
 
@@ -227,11 +281,44 @@ def test_b2_repository_local_wire_fields_are_exhaustive() -> None:
             ),
         },
         notebooks_pb2.WireProjectWithAdvancedSettings: {
+            "title": (1, singular, string, None),
+            "sources": (
+                2,
+                repeated,
+                message,
+                f"{ORCHESTRATION_PACKAGE}.Source",
+            ),
+            "id": (3, singular, string, None),
+            "emoji": (4, singular, string, None),
+            "metadata": (
+                6,
+                singular,
+                message,
+                f"{ORCHESTRATION_PACKAGE}.ProjectMetadata",
+            ),
             "advanced_settings": (
                 8,
                 singular,
                 message,
                 f"{local}.WireProjectAdvancedSettings",
+            ),
+            "premium_feature_info": (
+                10,
+                singular,
+                message,
+                f"{ORCHESTRATION_PACKAGE}.PremiumFeatureInfo",
+            ),
+            "project_tier_limits": (
+                11,
+                singular,
+                message,
+                f"{ORCHESTRATION_PACKAGE}.TierLimits",
+            ),
+            "chat_sessions": (
+                12,
+                repeated,
+                message,
+                "labs.language.tailwind.common.protos.ChatSession",
             ),
         },
         notebooks_pb2.WireGetProjectResponse: {
@@ -270,7 +357,6 @@ def test_exact_notebook_operation_fields_are_pinned_separately_from_local_overri
     singular = False
     repeated = True
     string = FieldDescriptor.TYPE_STRING
-    int32 = FieldDescriptor.TYPE_INT32
     message = FieldDescriptor.TYPE_MESSAGE
 
     assert exact_notebooks_pb2.DESCRIPTOR.package == package
@@ -353,7 +439,12 @@ def test_exact_notebook_operation_fields_are_pinned_separately_from_local_overri
     }
     assert _field_shapes(exact_notebooks_pb2.NextStep) == {
         "suggestion": (1, singular, string, None),
-        "suggestion_type": (2, singular, int32, None),
+        "suggestion_type": (
+            2,
+            singular,
+            FieldDescriptor.TYPE_ENUM,
+            f"{package}.MagicArtifactType",
+        ),
     }
     assert _field_shapes(exact_notebooks_pb2.NextStepSuggestions) == {
         "next_steps": (1, repeated, message, f"{package}.NextStep")
@@ -370,7 +461,7 @@ def test_exact_notebook_operation_fields_are_pinned_separately_from_local_overri
     }
 
 
-def test_b2_wire_messages_match_captured_serialization() -> None:
+def test_notebook_wire_messages_match_captured_serialization() -> None:
     create = exact_notebooks_pb2.CreateProjectRequest(name="Title")
     delete = exact_notebooks_pb2.DeleteProjectsRequest(project_ids=["id-1"])
     mutate = notebooks_pb2.WireMutateProjectRequest(
@@ -424,6 +515,24 @@ def test_all_reachable_enum_names_and_numbers_are_exact() -> None:
         "SUGGESTION_CONFIG_QUIZ": 8,
         "SUGGESTION_CONFIG_FLASHCARDS": 9,
         "SUGGESTION_CONFIG_VIDEO_OVERVIEW_SHORT": 10,
+    }
+    assert _enum_values(exact_notebooks_pb2.MagicArtifactType) == {
+        "MAGIC_ARTIFACT_TYPE_UNSPECIFIED": 0,
+        "MINDMAP": 1,
+        "AUDIO_OVERVIEW": 2,
+        "VIDEO_OVERVIEW": 3,
+        "NOTE": 4,
+        "TABLE": 5,
+        "LINE_CHART": 6,
+        "FLASHCARDS": 7,
+        "REPORT": 8,
+        "CONVERSATIONAL_TEXT_CHIP": 9,
+        "VIDEO_OVERVIEW_TEXT_CHIP": 10,
+        "AUDIO_OVERVIEW_TEXT_CHIP": 11,
+        "REPORT_TEXT_CHIP": 12,
+        "FLASHCARDS_TEXT_CHIP": 13,
+        "QUIZ_TEXT_CHIP": 14,
+        "SOURCE_DISCOVERY_TEXT_CHIP": 15,
     }
     assert _enum_values(read_pb2.ProjectRole) == {
         "PROJECT_ROLE_UNKNOWN": 0,
@@ -487,7 +596,7 @@ def test_request_wire_shapes_have_no_context_or_extra_fields() -> None:
     assert list_request.SerializeToString(deterministic=True).hex() == "10011801"
 
 
-def test_synthetic_get_project_textproto_exercises_b1_projection() -> None:
+def test_synthetic_get_project_textproto_exercises_read_projection() -> None:
     response = text_format.Parse(
         (FIXTURES / "get_project_response.textproto").read_text(encoding="utf-8"),
         read_pb2.GetProjectResponse(),
@@ -497,6 +606,9 @@ def test_synthetic_get_project_textproto_exercises_b1_projection() -> None:
     assert len(response.project.sources) == 4
     assert response.project.sources[0].metadata.webpage_metadata.url == (
         "https://example.invalid/source"
+    )
+    assert response.project.sources[3].metadata.google_docs_metadata.document_id == (
+        "synthetic-drive-document"
     )
     assert (
         response.project.sources[2].settings.status == source_settings_pb2.SOURCE_STATUS_TENTATIVE
@@ -508,7 +620,8 @@ def test_synthetic_get_project_textproto_exercises_b1_projection() -> None:
         source_settings_pb2.DRIVE_SOURCE_STATUS_ACTIVE
     )
     assert response.project.metadata.create_time.nanos == 123000000
-    assert 10 not in response.project.DESCRIPTOR.fields_by_number
+    assert response.project.DESCRIPTOR.fields_by_number[10].name == "premium_feature_info"
+    assert response.project.DESCRIPTOR.fields_by_number[12].name == "chat_sessions"
 
     reparsed = read_pb2.GetProjectResponse.FromString(
         response.SerializeToString(deterministic=True)
@@ -538,9 +651,13 @@ def test_descriptor_fixture_matches_generated_file_descriptors() -> None:
     files = {file.name: file for file in descriptor_set.file}
 
     assert set(files) == {
+        "google/internal/labs/tailwind/orchestration/v1/account.proto",
         "google/internal/labs/tailwind/orchestration/v1/read.proto",
         "google/internal/labs/tailwind/v1/source_settings.proto",
         "google/protobuf/timestamp.proto",
+        "labs/language/tailwind/common/protos/common.proto",
+        "labs/language/tailwind/common/protos/metadata.proto",
+        "labs/language/tailwind/common/protos/provenance.proto",
     }
     assert _without_implicit_json_names(files[read_pb2.DESCRIPTOR.name]) == (
         descriptor_pb2.FileDescriptorProto.FromString(read_pb2.DESCRIPTOR.serialized_pb)
@@ -550,7 +667,7 @@ def test_descriptor_fixture_matches_generated_file_descriptors() -> None:
     )
 
 
-def test_current_descriptor_fixture_includes_b2_local_wire_overlay() -> None:
+def test_current_descriptor_fixture_includes_notebook_local_wire_overlay() -> None:
     descriptor_set = descriptor_pb2.FileDescriptorSet.FromString(
         (FIXTURES / "android_descriptor_set.pb").read_bytes()
     )

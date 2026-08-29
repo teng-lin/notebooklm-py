@@ -37,6 +37,7 @@ GENERATE_PROMPT_SUGGESTIONS_METHOD = f"/{_SERVICE}/GeneratePromptSuggestions"
 REMOVE_RECENTLY_VIEWED_PROJECT_METHOD = f"/{_SERVICE}/RemoveRecentlyViewedProject"
 
 _LEADING_LIST_MARKER = re.compile(r"[-*+]\s+")
+_MAX_CREATED_CHAT_SESSION_HINTS = 256
 RemoveFromRecent = Callable[[str], Awaitable[None]]
 
 
@@ -112,7 +113,19 @@ class AndroidNotebooksAPI(NotebooksAPI):
             "android_notebook_workflow_epoch",
             default=None,
         )
+        self._created_chat_session_ids: dict[str, str] = {}
         super().__init__(sources_api)
+
+    def _take_created_chat_session_id(self, notebook_id: str) -> str | None:
+        """Consume the exact chat-session hint volunteered by a create response."""
+        return self._created_chat_session_ids.pop(notebook_id, None)
+
+    def _remember_created_chat_session(self, notebook: Notebook) -> None:
+        if notebook.id and notebook.chat_sessions:
+            self._created_chat_session_ids.pop(notebook.id, None)
+            self._created_chat_session_ids[notebook.id] = notebook.chat_sessions[0].id
+            while len(self._created_chat_session_ids) > _MAX_CREATED_CHAT_SESSION_HINTS:
+                self._created_chat_session_ids.pop(next(iter(self._created_chat_session_ids)))
 
     def _epoch_kwargs(self) -> dict[str, Any]:
         epoch = self._workflow_epoch.get()
@@ -124,18 +137,25 @@ class AndroidNotebooksAPI(NotebooksAPI):
     ) -> Any:
         # evidence: docs/android/proto-evidence-ledger.md#field-ledger
         proto = _read_proto()
+        wire = _wire_proto()
         request = proto.GetProjectRequest(
             project_id=notebook_id,
             include_audio_overview_ids=True,
         )
         try:
-            return await self._transport.unary(
+            response = await self._transport.unary(
                 GET_PROJECT_METHOD,
                 request,
                 replay_safe=True,
-                response_type=proto.GetProjectResponse,
+                response_type=wire.WireGetProjectResponse,
                 **self._epoch_kwargs(),
             )
+            _notebook_codec().validate_project_identity(
+                response.project,
+                notebook_id,
+                method_id=GET_PROJECT_METHOD,
+            )
+            return response
         except RPCError as exc:
             mapped = _notebook_codec().map_get_project_error(
                 notebook_id,
@@ -169,7 +189,11 @@ class AndroidNotebooksAPI(NotebooksAPI):
     async def get(self, notebook_id: str) -> Notebook:
         """Get one Android project, translating only status-5 misses."""
         response = await self._get_project_response(notebook_id)
-        return _notebook_codec().decode_project(response.project, method_id=GET_PROJECT_METHOD)
+        return _notebook_codec().decode_project(
+            response.project,
+            method_id=GET_PROJECT_METHOD,
+            include_chat_settings=True,
+        )
 
     async def get_raw(self, notebook_id: str) -> dict[str, Any]:
         """Return the known-field protobuf response as a backend-shaped dict."""
@@ -217,7 +241,9 @@ class AndroidNotebooksAPI(NotebooksAPI):
             response_type=read_proto.Project,
             **self._epoch_kwargs(),
         )
-        return _notebook_codec().decode_project(response, method_id=CREATE_PROJECT_METHOD)
+        notebook = _notebook_codec().decode_project(response, method_id=CREATE_PROJECT_METHOD)
+        self._remember_created_chat_session(notebook)
+        return notebook
 
     async def copy(self, notebook_id: str, title: str) -> Notebook:
         """Copy once, surfacing transport loss as an ambiguous outcome."""
@@ -257,6 +283,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
                 "CopyProject response reused the source notebook id",
                 method_id=COPY_PROJECT_METHOD,
             )
+        self._remember_created_chat_session(notebook)
         return notebook
 
     async def suggest_prompts(
@@ -310,8 +337,10 @@ class AndroidNotebooksAPI(NotebooksAPI):
             # Public notebook deletion is idempotent: an already-absent row is
             # the requested final state. This is status projection, not replay.
             if exc.rpc_code == 5:
+                self._created_chat_session_ids.pop(notebook_id, None)
                 return
             raise
+        self._created_chat_session_ids.pop(notebook_id, None)
 
     async def update(
         self,

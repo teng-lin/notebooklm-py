@@ -67,6 +67,8 @@ async def create_note(
     title: str,
     content: str,
     note_type: int = USER_WRITTEN_NOTE_TYPE,
+    source_passages: list[Any] | None = None,
+    tailwind_doc_content: Any | None = None,
     expected_epoch: int | None = None,
 ) -> Note:
     """Send one non-replayed CreateNote call through the reusable chat/note seam.
@@ -83,6 +85,8 @@ async def create_note(
         title=title,
         content=content,
         note_type=note_type,
+        source_passages=source_passages,
+        tailwind_doc_content=tailwind_doc_content,
     )
     epoch_kwargs: dict[str, Any] = (
         {} if expected_epoch is None else {"expected_epoch": expected_epoch}

@@ -427,21 +427,19 @@ strings -a notebooklm.apk/base.apk \
 Obfuscated class names change between releases. Search by stable service names, URLs, request-field
 strings, and log messages rather than assuming `adlt`, `adlu`, or `acst` will remain stable.
 
-## Recommended implementation for `notebooklm-py`
+## Implemented `notebooklm-py` transport
 
-Do not install microG and do not parse GMS private storage. When an Android transport is added:
+The client does not install microG or parse GMS private storage. The Android transport now:
 
-1. add one internal `mint_mobile_bearer()` beside the existing master-token code;
-2. reuse `_require_gpsoauth()`, `_quiet_gpsoauth_logging()`, and the stored stable Android ID;
-3. use the NotebookLM package, certificate, and full observed scope bundle exactly as above;
-4. keep the bearer in memory with its token-info/server expiry, never in normal logs;
-5. on gRPC `UNAUTHENTICATED` (`16`), clear the in-memory bearer and mint once more;
-6. treat `PERMISSION_DENIED` (`7`) as a scope/account/feature problem, not as an expiry retry; and
-7. initially validate only with `GetOrCreateAccount`, then use the recovered schema in
-   [android/schema.proto](schema.proto).
-
-This is deliberately not implemented yet. A bearer-mint helper has value only when the Python
-client gains an Android gRPC transport; the current web client already has working cookie auth.
+1. mints the mobile bearer internally beside the existing master-token code;
+2. reuses `_require_gpsoauth()`, `_quiet_gpsoauth_logging()`, and the stored stable Android ID;
+3. uses the NotebookLM package, certificate, and full observed scope bundle exactly as above;
+4. keeps the bearer in memory with its expiry and never emits it in normal logs;
+5. invalidates and remints once after gRPC `UNAUTHENTICATED` (`16`);
+6. treats `PERMISSION_DENIED` (`7`) as a scope/account/feature problem rather than an expiry retry;
+   and
+7. validates through the lifecycle-bound Android session before typed namespace calls use the
+   reduced generated schema under `src/notebooklm/_android/proto/`.
 
 ## Limits and risks
 
@@ -449,8 +447,9 @@ client gains an Android gRPC transport; the current web client already has worki
   They can change without notice and may be subject to Google account or product terms.
 - One account and one GMS/app build were validated. Enterprise, supervised, Advanced Protection,
   or region-restricted accounts may behave differently.
-- Only the read-only `GetOrCreateAccount` RPC was used for bearer validation. No write RPC was
-  replayed in this auth study.
+- The original auth study used only read-only `GetOrCreateAccount`. Later qualified implementation
+  probes exercised writes only on disposable copies or reversible account state with `finally`
+  restoration; those results are recorded in the focused Android evidence reports.
 - The full scope bundle grants broader Google access than the product-specific scope alone. Use a
   dedicated test account and protect the master token as a full-account credential.
 - A rooted emulator defeats Android's normal credential isolation. Never use this workflow on a

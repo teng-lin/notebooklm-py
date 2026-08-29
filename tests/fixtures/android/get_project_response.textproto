@@ -26,6 +26,7 @@ project {
     title: "Drive source"
     metadata {
       original_source_content_type: SOURCE_CONTENT_TYPE_GOOGLE_DOC
+      google_docs_metadata { document_id: "synthetic-drive-document" }
       google_drive_source_metadata {
         document_id: "synthetic-drive-document"
         mime_type: "application/vnd.google-apps.document"

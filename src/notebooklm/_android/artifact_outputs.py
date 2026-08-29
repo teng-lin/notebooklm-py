@@ -14,11 +14,26 @@ from typing import Any
 
 from .._artifact.formatters import _extract_app_data
 from .._types.artifact_content import ArtifactMediaType
+from .._types.enums import INTERACTIVE_MIND_MAP_VARIANT, ArtifactTypeCode
 from ..exceptions import ArtifactDownloadError, ArtifactParseError, ValidationError
-from ..types import Artifact, MindMap, MindMapKind
+from ..types import Artifact, ArtifactType, MindMap, MindMapKind
 from .artifact_proto import ARTIFACTS_PROTO as _PROTO
 from .artifact_proto import table_artifact_projection
 from .codecs.artifacts import decode_artifact
+from .codecs.documents import structural_element_markdown, tailwind_doc_markdown
+
+
+def matches_artifact_type(artifact: Artifact, requested: ArtifactType | None) -> bool:
+    """Match public artifact kinds while retaining interactive mind-map compatibility."""
+
+    if requested is None:
+        return True
+    if requested == ArtifactType.MIND_MAP:
+        return artifact._artifact_type == ArtifactTypeCode.MIND_MAP.value or (
+            artifact._artifact_type == ArtifactTypeCode.QUIZ.value
+            and artifact._variant == INTERACTIVE_MIND_MAP_VARIANT
+        )
+    return artifact.kind == requested
 
 
 async def write_text_atomic(
@@ -192,98 +207,12 @@ def decode_interactive_app_data(
     return app_data
 
 
-def _report_inline(paragraph: Any) -> str:
-    parts: builtins.list[str] = []
-    for element in paragraph.elements:
-        if element.HasField("text_run"):
-            text = element.text_run.content
-            if element.text_run.HasField("text_style"):
-                style = element.text_run.text_style
-                if style.code:
-                    text = f"`{text}`"
-                if style.bold:
-                    text = f"**{text}**"
-                if style.italic:
-                    text = f"*{text}*"
-                if style.strikethrough:
-                    text = f"~~{text}~~"
-                if style.underline:
-                    text = f"<u>{text}</u>"
-                if style.math:
-                    text = f"${text}$"
-                if style.url:
-                    text = f"[{text}]({style.url})"
-            parts.append(text)
-        elif element.HasField("image") and element.image.url:
-            parts.append(f"![image]({element.image.url})")
-        elif element.HasField("resource") and element.resource.id:
-            parts.append(f"[resource: {element.resource.id}]")
-    return "".join(parts).strip()
-
-
-def _report_structural_markdown(element: Any) -> str:
-    if element.HasField("paragraph"):
-        paragraph = element.paragraph
-        text = _report_inline(paragraph)
-        if not text:
-            return ""
-        if paragraph.HasField("bullet_info"):
-            bullet = paragraph.bullet_info
-            indent = "  " * max(0, min(int(bullet.nesting_level), 12))
-            if int(bullet.list_type) == 2:
-                ordinal = int(bullet.absolute_ordinal or bullet.ordinal or 1)
-                return f"{indent}{ordinal}. {text}"
-            return f"{indent}- {text}"
-        if paragraph.HasField("paragraph_style"):
-            named_style = int(paragraph.paragraph_style.named_style_type)
-            if named_style == 2:
-                return f"# {text}"
-            if named_style == 3:
-                return f"## {text}"
-            if 4 <= named_style <= 9:
-                return f"{'#' * (named_style - 3)} {text}"
-        return text
-    if element.HasField("table"):
-        rows: builtins.list[builtins.list[str]] = []
-        for row in element.table.table_rows:
-            cells: builtins.list[str] = []
-            for cell in row.table_cells:
-                cell_blocks = [_report_structural_markdown(block) for block in cell.content]
-                cells.append(
-                    "<br>".join(block for block in cell_blocks if block).replace("|", "\\|")
-                )
-            rows.append(cells)
-        if not rows:
-            return ""
-        width = max(len(row) for row in rows)
-        normalized = [row + [""] * (width - len(row)) for row in rows]
-        lines = ["| " + " | ".join(row) + " |" for row in normalized]
-        lines.insert(1, "| " + " | ".join("---" for _ in range(width)) + " |")
-        return "\n".join(lines)
-    if element.HasField("horizontal_rule"):
-        return "---"
-    if element.HasField("code_block"):
-        hint = element.code_block.language_hint
-        return f"```{hint}\n{element.code_block.content}\n```"
-    if element.HasField("a2ui_block"):
-        return f"```json\n{element.a2ui_block.json}\n```"
-    if element.HasField("image") and element.image.url:
-        return f"![image]({element.image.url})"
-    if element.HasField("thought"):
-        return "\n\n".join(
-            block
-            for block in (_report_structural_markdown(child) for child in element.thought.elements)
-            if block
-        )
-    return ""
-
-
 def report_doc_markdown(document: Any) -> str:
     """Render the admitted TailwindDoc structural closure as Markdown."""
 
     if not document.HasField("body"):
         return ""
-    blocks = [_report_structural_markdown(element) for element in document.body.content]
+    blocks = [tailwind_doc_markdown(document)]
     for item in document.objects:
         if not item.HasField("citation"):
             continue
@@ -291,7 +220,7 @@ def report_doc_markdown(document: Any) -> str:
         fragment = " ".join(
             block
             for block in (
-                _report_structural_markdown(element) for element in citation.fragment.elements
+                structural_element_markdown(element) for element in citation.fragment.elements
             )
             if block
         )

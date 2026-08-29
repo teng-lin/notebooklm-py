@@ -6,7 +6,10 @@ syntax = "proto3";
 // flattened Dart recovery alone is insufficient exact-package evidence.
 package notebooklm.internal.android.wire.v1;
 
+import "google/internal/labs/tailwind/orchestration/v1/account.proto";
 import "google/internal/labs/tailwind/orchestration/v1/notebooks.proto";
+import "google/internal/labs/tailwind/orchestration/v1/read.proto";
+import "labs/language/tailwind/common/protos/common.proto";
 import "labs/language/tailwind/common/protos/metadata.proto";
 
 message WireProjectChangeProperty {
@@ -41,11 +44,20 @@ message WireMutateProjectRequest {
   .labs.language.tailwind.common.protos.RequestContext request_context = 3; // evidence: live Android-bearer chat-config mutation, 2026-08-29
 }
 
-// Minimal wire-equivalent GetProject response used only to preserve/read the
-// APK-omitted Project.advanced_settings branch. Unknown Project fields remain
-// in the protobuf unknown-field set and are not claimed here.
+// Wire-equivalent Project projection used to preserve/read the live-proven
+// advanced_settings #8 branch alongside every exact public Project field.
+// The local package avoids claiming an unproven Google FQN for the settings
+// messages; protobuf message identities are not serialized on the wire.
 message WireProjectWithAdvancedSettings {
+  string title = 1;
+  repeated .google.internal.labs.tailwind.orchestration.v1.Source sources = 2;
+  string id = 3;
+  string emoji = 4;
+  .google.internal.labs.tailwind.orchestration.v1.ProjectMetadata metadata = 6;
   WireProjectAdvancedSettings advanced_settings = 8;
+  .google.internal.labs.tailwind.orchestration.v1.PremiumFeatureInfo premium_feature_info = 10;
+  .google.internal.labs.tailwind.orchestration.v1.TierLimits project_tier_limits = 11;
+  repeated .labs.language.tailwind.common.protos.ChatSession chat_sessions = 12;
 }
 
 message WireGetProjectResponse {

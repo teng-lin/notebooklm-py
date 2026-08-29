@@ -139,8 +139,208 @@ def test_android_preference_promotes_every_namespace() -> None:
         assert isinstance(installed, expected_types[namespace])
         assert type(installed).__module__.startswith("notebooklm._android.")
 
+    web_bindings: list[tuple[str, str]] = []
+    for namespace in client.backends:
+        installed = getattr(client, namespace)
+        for attribute, value in vars(installed).items():
+            owner = getattr(value, "__self__", None)
+            module = type(owner).__module__ if owner is not None else type(value).__module__
+            if module.startswith("notebooklm._web."):
+                web_bindings.append((namespace, attribute))
+    assert web_bindings == [
+        ("notebooks", "_remove_from_recent_compat"),
+        ("sharing", "_set_view_level_compat"),
+    ]
+
     assert client.collections._list_notebooks.__self__ is client.notebooks
     assert client.collections._list_notebooks.__func__ is type(client.notebooks).list
+
+
+def test_android_selected_public_callable_inventory_is_exact() -> None:
+    client = NotebookLMClient(_auth(), backend="android")
+    expected_names = {
+        "notebooks": {
+            "copy",
+            "create",
+            "delete",
+            "get",
+            "get_description",
+            "get_metadata",
+            "get_or_none",
+            "get_raw",
+            "get_share_url",
+            "get_source_ids",
+            "get_summary",
+            "list",
+            "remove_from_recent",
+            "rename",
+            "set_emoji",
+            "suggest_prompts",
+            "update",
+        },
+        "sources": {
+            "add_drive",
+            "add_drive_file",
+            "add_file",
+            "add_text",
+            "add_url",
+            "check_freshness",
+            "delete",
+            "get",
+            "get_fulltext",
+            "get_guide",
+            "get_or_none",
+            "list",
+            "refresh",
+            "rename",
+            "wait_all_until_ready",
+            "wait_for_sources",
+            "wait_until_ready",
+            "wait_until_registered",
+        },
+        "artifacts": {
+            "delete",
+            "download_audio",
+            "download_data_table",
+            "download_flashcards",
+            "download_infographic",
+            "download_mind_map",
+            "download_quiz",
+            "download_report",
+            "download_slide_deck",
+            "download_video",
+            "export",
+            "export_data_table",
+            "export_report",
+            "generate_audio",
+            "generate_cinematic_video",
+            "generate_data_table",
+            "generate_flashcards",
+            "generate_infographic",
+            "generate_mind_map",
+            "generate_quiz",
+            "generate_report",
+            "generate_slide_deck",
+            "generate_study_guide",
+            "generate_video",
+            "get",
+            "get_or_none",
+            "get_prompt",
+            "list",
+            "list_audio",
+            "list_data_tables",
+            "list_flashcards",
+            "list_infographics",
+            "list_quizzes",
+            "list_reports",
+            "list_slide_decks",
+            "list_video",
+            "poll_status",
+            "rename",
+            "retry_failed",
+            "revise_slide",
+            "suggest_reports",
+            "wait_for_completion",
+        },
+        "chat": {
+            "ask",
+            "cache_size",
+            "clear_cache",
+            "configure",
+            "delete_conversation",
+            "get_cached_turns",
+            "get_conversation_id",
+            "get_conversation_turns",
+            "get_history",
+            "get_settings",
+            "save_answer_as_note",
+            "set_mode",
+        },
+        "research": {
+            "cancel",
+            "extract_report_urls",
+            "import_sources",
+            "import_sources_with_verification",
+            "poll",
+            "select_cited_sources",
+            "start",
+            "wait_for_completion",
+        },
+        "notes": {
+            "create",
+            "delete",
+            "delete_mind_map",
+            "get",
+            "get_or_none",
+            "list",
+            "list_mind_maps",
+            "update",
+        },
+        "mind_maps": {
+            "delete",
+            "generate",
+            "get",
+            "get_or_none",
+            "get_tree",
+            "list",
+            "list_note_backed",
+            "rename",
+        },
+        "settings": {
+            "get_account_limits",
+            "get_output_language",
+            "get_user_settings",
+            "set_output_language",
+        },
+        "sharing": {
+            "add_user",
+            "get_status",
+            "remove_user",
+            "set_public",
+            "set_users",
+            "set_view_level",
+            "update_user",
+        },
+        "labels": {
+            "add_sources",
+            "create",
+            "delete",
+            "generate",
+            "get",
+            "get_or_none",
+            "list",
+            "remove_sources",
+            "rename",
+            "set_emoji",
+            "sources",
+            "update",
+        },
+        "collections": {
+            "add_notebooks",
+            "create",
+            "delete",
+            "get",
+            "get_or_none",
+            "list",
+            "notebooks",
+            "remove_notebooks",
+            "rename",
+        },
+    }
+
+    observed_names = {
+        namespace: {
+            name
+            for name, member in inspect.getmembers(type(getattr(client, namespace)))
+            if not name.startswith("_")
+            and name not in {"reset_after_open", "set_bound_loop"}
+            and callable(member)
+        }
+        for namespace in client.backends
+    }
+
+    assert observed_names == expected_names
+    assert sum(map(len, observed_names.values())) == 145
 
 
 @pytest.mark.parametrize("backend", [None, "web"])
