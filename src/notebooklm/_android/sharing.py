@@ -34,6 +34,14 @@ class AndroidSharingAPI(SharingAPI):
 
     async def get_status(self, notebook_id: str) -> ShareStatus:
         """Read only the byte-proven public settings, cap, and policy fields."""
+        return await self._get_status(notebook_id)
+
+    async def _get_status(
+        self,
+        notebook_id: str,
+        *,
+        expected_epoch: int | None = None,
+    ) -> ShareStatus:
         request = _WIRE.GetProjectDetailsRequest(project_id=notebook_id)
         try:
             response = await self._transport.unary(
@@ -41,6 +49,7 @@ class AndroidSharingAPI(SharingAPI):
                 request,
                 replay_safe=True,
                 response_type=_WIRE.GetProjectDetailsResponse,
+                expected_epoch=expected_epoch,
             )
         except RPCError as exc:
             mapped = map_get_project_error(
@@ -66,19 +75,21 @@ class AndroidSharingAPI(SharingAPI):
                 )
             ]
         )
-        try:
-            await self._transport.unary(
-                SHARE_PROJECT_METHOD,
-                request,
-                replay_safe=False,
-                response_type=_WIRE.EmptyResponse,
-            )
-        except RPCError as exc:
-            mapped = map_get_project_error(notebook_id, exc, method_id=SHARE_PROJECT_METHOD)
-            if mapped is exc:
-                raise
-            raise mapped from exc
-        return await self.get_status(notebook_id)
+        async with self._transport.operation_scope("sharing.set_public") as lease:
+            try:
+                await self._transport.unary(
+                    SHARE_PROJECT_METHOD,
+                    request,
+                    replay_safe=False,
+                    response_type=_WIRE.EmptyResponse,
+                    expected_epoch=lease.epoch,
+                )
+            except RPCError as exc:
+                mapped = map_get_project_error(notebook_id, exc, method_id=SHARE_PROJECT_METHOD)
+                if mapped is exc:
+                    raise
+                raise mapped from exc
+            return await self._get_status(notebook_id, expected_epoch=lease.epoch)
 
     async def set_view_level(
         self,

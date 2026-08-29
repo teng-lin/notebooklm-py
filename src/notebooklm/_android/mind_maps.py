@@ -1,14 +1,14 @@
 """Android composition for the unified mind-map namespace.
 
 B7 adds no Android wire declarations. Interactive mutations compose the
-``ArtifactsAPI`` collaborator supplied by B4; note-backed operations remain
-evidence-gated pending a decoded note-kind boundary from B6.
+``ArtifactsAPI`` collaborator supplied by B4; note-backed reads compose through
+B6's private exact-kind projection while their mutations remain evidence-gated.
 """
 
 from __future__ import annotations
 
 import builtins
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn, Protocol, cast
 
 from .._mind_maps_api import MindMapsAPI
 from ..types import MindMap, MindMapKind
@@ -24,16 +24,29 @@ def _reject(operation: str) -> NoReturn:
     raise AssertionError("unsupported_operation returned")  # pragma: no cover
 
 
+class _NoteBackedMindMapReader(Protocol):
+    """The private typed B6 projection consumed by Android B7."""
+
+    async def _list_note_backed_mind_maps(
+        self,
+        notebook_id: str,
+    ) -> builtins.list[MindMap]: ...
+
+
 class AndroidMindMapsAPI(MindMapsAPI):
     """Android mind-map adapter composed from base-typed artifact/note APIs."""
 
     def __init__(self, *, artifacts: ArtifactsAPI, notes: NotesAPI) -> None:
         """Retain the exact B4/B6 collaborators without selecting a frontend."""
         super().__init__(artifacts=artifacts, notes=notes)
+        reader = getattr(notes, "_list_note_backed_mind_maps", None)
+        if reader is None or not callable(reader):
+            raise TypeError("notes must provide the private typed note-backed mind-map read seam")
+        self._note_backed_reader = cast(_NoteBackedMindMapReader, notes)
 
     async def list_note_backed(self, notebook_id: str) -> builtins.list[MindMap]:
-        """Reject until B6 exposes decoded, kind-qualified note-backed maps."""
-        _reject("mind_maps.list_note_backed")
+        """Return B6's exact-kind typed projection without reading raw Web rows."""
+        return await self._note_backed_reader._list_note_backed_mind_maps(notebook_id)
 
     async def _send_rename_note_backed(
         self,
@@ -80,6 +93,10 @@ class AndroidMindMapsAPI(MindMapsAPI):
     ) -> MindMap:
         """Reject generation until a valid-resource ActOnSources capture exists."""
         _reject("mind_maps.generate")
+
+    async def _detect_kind(self, notebook_id: str, mind_map_id: str) -> MindMapKind:
+        """Keep inherited auto-delete behind its existing mutation evidence gate."""
+        _reject("mind_maps.delete")
 
     async def get_tree(
         self,

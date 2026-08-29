@@ -17,12 +17,13 @@ from ..exceptions import (
     RPCError,
     ServerError,
 )
-from ..types import Note
+from ..types import MindMap, Note
 from .codecs.notebooks import map_get_project_error
 from .codecs.notes import (
     build_create_note_request,
     build_mutate_note_request,
     decode_note,
+    decode_note_backed_mind_maps,
     decode_note_entries,
 )
 from .errors import unsupported_operation
@@ -106,11 +107,11 @@ class AndroidNotesAPI(NotesAPI):
         if not self._deletion_poll_delays:
             raise ValueError("deletion_poll_delays must contain at least one attempt")
 
-    async def list(self, notebook_id: str) -> builtins.list[Note]:
-        """List user notes while excluding evidenced mind-map rows."""
+    async def _get_notes_response(self, notebook_id: str) -> Any:
+        """Issue the one exact safe read shared by the two typed projections."""
         request = _PROTO.GetNotesRequest(project_id=notebook_id)
         try:
-            response = await self._transport.unary(
+            return await self._transport.unary(
                 GET_NOTES_METHOD,
                 request,
                 replay_safe=True,
@@ -121,7 +122,20 @@ class AndroidNotesAPI(NotesAPI):
             if mapped is exc:
                 raise
             raise mapped from exc
+
+    async def list(self, notebook_id: str) -> builtins.list[Note]:
+        """List user notes while excluding evidenced mind-map rows."""
+        response = await self._get_notes_response(notebook_id)
         return decode_note_entries(response, notebook_id, method_id=GET_NOTES_METHOD)
+
+    async def _list_note_backed_mind_maps(self, notebook_id: str) -> builtins.list[MindMap]:
+        """Return the private typed B7 projection without fabricating Web rows."""
+        response = await self._get_notes_response(notebook_id)
+        return decode_note_backed_mind_maps(
+            response,
+            notebook_id,
+            method_id=GET_NOTES_METHOD,
+        )
 
     async def get(self, notebook_id: str, note_id: str) -> Note:
         """Get a note or raise the public note-miss exception."""
@@ -245,7 +259,7 @@ class AndroidNotesAPI(NotesAPI):
         )
 
     async def list_mind_maps(self, notebook_id: str) -> builtins.list[Any]:
-        """Reject until the NotePromptType read kind is independently write-qualified."""
+        """Reject because Android cannot fabricate the public raw Web row shape."""
         _reject("notes.list_mind_maps")
 
     async def delete_mind_map(self, notebook_id: str, mind_map_id: str) -> None:

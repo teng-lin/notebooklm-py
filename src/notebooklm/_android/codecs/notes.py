@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, cast
 
 from ...exceptions import DecodingError
-from ...types import Note
+from ...types import MindMap, MindMapKind, Note
 from ..proto.google.internal.labs.tailwind.orchestration.v1 import notes_pb2
 
 _PROTO = cast(Any, notes_pb2)
@@ -109,9 +110,72 @@ def decode_note_entries(response: Any, notebook_id: str, *, method_id: str) -> l
     return notes
 
 
+def _parse_mind_map_tree(content: str) -> dict[str, Any] | None:
+    """Parse an evidenced mind-map content string without inferring a shape."""
+    if not content:
+        return None
+    try:
+        tree = json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return tree if isinstance(tree, dict) else None
+
+
+def decode_note_backed_mind_maps(
+    response: Any,
+    notebook_id: str,
+    *,
+    method_id: str,
+) -> list[MindMap]:
+    """Project exact ``MIND_MAP`` note rows directly into the typed B7 value.
+
+    This deliberately does not manufacture the raw positional rows returned by
+    the Web notes RPC. The Android descriptor proves the persisted id, content,
+    name, and prompt kind. Its only timestamp is ``last_edit_timestamp``, so the
+    public creation time remains unknown instead of being guessed from it.
+    """
+    mind_maps: list[MindMap] = []
+    try:
+        for entry in response.notes:
+            # NoteOrStatus #1 remains unrecovered. Status-only rows are not
+            # interpreted as live mind maps or as a particular tombstone kind.
+            if not entry.HasField("note"):
+                continue
+            note = entry.note
+            if not note.HasField("metadata"):
+                continue
+            prompt_name = _enum_name(_PROTO.NotePromptType, note.metadata.note_prompt_type)
+            if prompt_name != "MIND_MAP":
+                continue
+            if not note.id:
+                raise DecodingError(
+                    "Android mind-map note response did not contain a note id",
+                    method_id=method_id,
+                )
+            mind_maps.append(
+                MindMap(
+                    id=note.id,
+                    notebook_id=notebook_id,
+                    title=note.name,
+                    kind=MindMapKind.NOTE_BACKED,
+                    created_at=None,
+                    tree=_parse_mind_map_tree(note.content),
+                )
+            )
+    except DecodingError:
+        raise
+    except Exception:
+        raise DecodingError(
+            "Could not decode Android note-backed mind maps response",
+            method_id=method_id,
+        ) from None
+    return mind_maps
+
+
 __all__ = [
     "build_create_note_request",
     "build_mutate_note_request",
     "decode_note",
+    "decode_note_backed_mind_maps",
     "decode_note_entries",
 ]

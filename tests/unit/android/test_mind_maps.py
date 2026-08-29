@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
 
@@ -11,7 +11,7 @@ from notebooklm._android.mind_maps import AndroidMindMapsAPI
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._notes import NotesAPI
 from notebooklm.exceptions import MindMapNotFoundError, UnsupportedOperationError
-from notebooklm.types import Artifact, MindMapKind
+from notebooklm.types import Artifact, MindMap, MindMapKind
 
 
 def _interactive_artifact(artifact_id: str = "interactive") -> Artifact:
@@ -27,11 +27,12 @@ def _interactive_artifact(artifact_id: str = "interactive") -> Artifact:
 def _graph(
     *,
     artifacts: list[Artifact] | None = None,
+    note_backed: list[MindMap] | None = None,
 ) -> tuple[AndroidMindMapsAPI, MagicMock, MagicMock]:
     notes = MagicMock(spec=NotesAPI)
-    # B6's public method is intentionally raw ``list[Any]`` and unsupported
-    # without decoded kind evidence. A raw-looking value makes accidental use
-    # by B7 fail the interaction assertions below instead of looking typed.
+    notes._list_note_backed_mind_maps = AsyncMock(return_value=note_backed or [])
+    # B6's public method remains a raw ``list[Any]`` evidence gate. A raw-looking
+    # value makes accidental use by B7 fail the interaction assertions below.
     notes.list_mind_maps = AsyncMock(return_value=[["raw-note-row"]])
     notes.update = AsyncMock()
     notes.delete_mind_map = AsyncMock(
@@ -54,6 +55,7 @@ def _graph(
 
 
 def _assert_no_dependency_io(artifacts: MagicMock, notes: MagicMock) -> None:
+    notes._list_note_backed_mind_maps.assert_not_awaited()
     notes.list_mind_maps.assert_not_awaited()
     notes.update.assert_not_awaited()
     notes.delete_mind_map.assert_not_awaited()
@@ -74,6 +76,59 @@ def test_direct_graph_requires_and_retains_exact_base_collaborators() -> None:
     assert api._notes is notes
 
 
+def test_direct_graph_requires_private_typed_notes_read_seam() -> None:
+    artifacts = MagicMock(spec=ArtifactsAPI)
+    notes = MagicMock(spec=NotesAPI)
+
+    with pytest.raises(TypeError, match="private typed note-backed"):
+        AndroidMindMapsAPI(artifacts=artifacts, notes=notes)
+
+
+def _note_backed_mind_map(map_id: str = "note-map") -> MindMap:
+    return MindMap(
+        id=map_id,
+        notebook_id="notebook-1",
+        title="Note-backed",
+        kind=MindMapKind.NOTE_BACKED,
+        created_at=None,
+        tree={"name": "Root", "children": []},
+    )
+
+
+@pytest.mark.asyncio
+async def test_typed_note_backed_read_composes_aggregate_without_raw_note_rows() -> None:
+    note_map = _note_backed_mind_map()
+    api, artifacts, notes = _graph(
+        note_backed=[note_map],
+        artifacts=[_interactive_artifact()],
+    )
+
+    assert await api.list_note_backed("notebook-1") == [note_map]
+    aggregate = await api.list("notebook-1")
+    assert [item.id for item in aggregate] == ["note-map", "interactive"]
+    assert aggregate[0] is note_map
+    assert aggregate[1].kind is MindMapKind.INTERACTIVE
+    assert aggregate[1].tree is None
+
+    assert notes._list_note_backed_mind_maps.await_count == 2
+    notes._list_note_backed_mind_maps.assert_awaited_with("notebook-1")
+    notes.list_mind_maps.assert_not_awaited()
+    artifacts.list.assert_awaited_once_with("notebook-1", ANY)
+
+
+@pytest.mark.asyncio
+async def test_get_and_get_or_none_use_typed_aggregate_read() -> None:
+    api, artifacts, notes = _graph(note_backed=[_note_backed_mind_map()])
+
+    found = await api.get("notebook-1", "note-map")
+    assert found.id == "note-map"
+    assert await api.get_or_none("notebook-1", "missing") is None
+
+    assert notes._list_note_backed_mind_maps.await_count == 2
+    notes.list_mind_maps.assert_not_awaited()
+    assert artifacts.list.await_count == 2
+
+
 UnsupportedCall = Callable[[AndroidMindMapsAPI], Awaitable[object]]
 
 
@@ -81,16 +136,6 @@ UnsupportedCall = Callable[[AndroidMindMapsAPI], Awaitable[object]]
 @pytest.mark.parametrize(
     "invoke",
     [
-        pytest.param(
-            lambda api: api.list_note_backed("notebook-1"),
-            id="list-note-backed",
-        ),
-        pytest.param(lambda api: api.list("notebook-1"), id="list"),
-        pytest.param(lambda api: api.get("notebook-1", "map"), id="get"),
-        pytest.param(
-            lambda api: api.get_or_none("notebook-1", "map"),
-            id="get-or-none",
-        ),
         pytest.param(
             lambda api: api.rename(
                 "notebook-1",

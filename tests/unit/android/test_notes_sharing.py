@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
+from google.protobuf.timestamp_pb2 import Timestamp
 
 from notebooklm._android.notes import (
     CREATE_NOTE_METHOD,
@@ -27,8 +31,11 @@ from notebooklm._android.sharing import (
     SHARE_PROJECT_METHOD,
     AndroidSharingAPI,
 )
+from notebooklm._client_metrics import ClientMetrics
 from notebooklm._notes import NotesAPI
+from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._sharing import SharingAPI
+from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.exceptions import (
     AuthError,
     DecodingError,
@@ -39,13 +46,36 @@ from notebooklm.exceptions import (
     ServerError,
     UnsupportedOperationError,
 )
-from notebooklm.types import ShareAccess, SharePermission, ShareViewLevel
+from notebooklm.types import MindMapKind, ShareAccess, SharePermission, ShareViewLevel
 
 
-class FakeB6Server:
+@dataclass(frozen=True)
+class _OperationLease:
+    epoch: int
+
+
+class _OperationScopedSession:
+    epoch = 7
+
+    def _initialize_operation_scopes(self) -> None:
+        self.operation_scopes: list[tuple[str, int | None]] = []
+
+    @asynccontextmanager
+    async def operation_scope(
+        self,
+        label: str,
+        *,
+        expected_epoch: int | None = None,
+    ) -> AsyncIterator[_OperationLease]:
+        self.operation_scopes.append((label, expected_epoch))
+        yield _OperationLease(self.epoch)
+
+
+class FakeB6Server(_OperationScopedSession):
     """Stateful unary fake that models the measured disposable lifecycle."""
 
     def __init__(self) -> None:
+        self._initialize_operation_scopes()
         self.calls: list[tuple[str, Any, dict[str, Any]]] = []
         self.notes: dict[str, notes_pb2.ProjectNote] = {
             "note-existing": notes_pb2.ProjectNote(
@@ -61,6 +91,7 @@ class FakeB6Server:
                 metadata=notes_pb2.NoteMetadata(
                     type=notes_pb2.CUSTOM,
                     note_prompt_type=notes_pb2.MIND_MAP,
+                    last_edit_timestamp=Timestamp(seconds=1_700_000_000),
                 ),
             ),
         }
@@ -121,10 +152,11 @@ class FakeB6Server:
         raise AssertionError(f"unexpected method: {method}")
 
 
-class SequencedSession:
+class SequencedSession(_OperationScopedSession):
     """Recording session with per-method response/exception queues."""
 
     def __init__(self, outcomes: dict[str, list[Any]]) -> None:
+        self._initialize_operation_scopes()
         self.outcomes = outcomes
         self.calls: list[tuple[str, Any, dict[str, Any]]] = []
 
@@ -134,6 +166,51 @@ class SequencedSession:
         if isinstance(outcome, BaseException):
             raise outcome
         return outcome
+
+
+class SupervisedSharingSession:
+    """Controlled transport that exercises real nested supervisor admission."""
+
+    def __init__(self) -> None:
+        self.supervisor = CallSupervisor(
+            metrics=ClientMetrics(),
+            drain_tracker=TransportDrainTracker(),
+            max_concurrent_rpcs=None,
+        )
+        self.supervisor.set_bound_loop(asyncio.get_running_loop())
+        self.supervisor.reset_after_open()
+        self.supervisor.prepare_generation(1)
+        self.supervisor.start_accepting(1)
+        self.calls: list[tuple[str, Any, dict[str, Any]]] = []
+        self.mutation_started = asyncio.Event()
+        self.mutation_release = asyncio.Event()
+        self.public = False
+
+    def operation_scope(self, label: str, **kwargs: Any) -> Any:
+        return self.supervisor.operation_scope(label, **kwargs)
+
+    async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        expected_epoch = kwargs["expected_epoch"]
+        async with self.supervisor.call_scope(
+            method,
+            None,
+            None,
+            expected_epoch=expected_epoch,
+        ):
+            self.calls.append((method, request, kwargs))
+            if method == SHARE_PROJECT_METHOD:
+                self.mutation_started.set()
+                await self.mutation_release.wait()
+                self.public = request.project[0].public_document_settings.is_publicly_readable
+                return sharing_pb2.EmptyResponse()
+            if method == GET_PROJECT_DETAILS_METHOD:
+                return sharing_pb2.GetProjectDetailsResponse(
+                    public_settings=sharing_pb2.ProjectPublicSettings(
+                        is_publicly_readable=self.public,
+                        is_discoverable=False,
+                    )
+                )
+            raise AssertionError(f"unexpected method: {method}")
 
 
 def _session(fake: object) -> AndroidSession:
@@ -246,6 +323,103 @@ async def test_reusable_create_seam_encodes_saved_response_for_parallel_chat_hoo
     assert method == CREATE_NOTE_METHOD
     assert request.metadata.type == SAVED_RESPONSE_NOTE_TYPE
     assert kwargs["replay_safe"] is False
+
+
+@pytest.mark.asyncio
+async def test_private_typed_mind_map_read_uses_exact_kind_without_web_rows() -> None:
+    server = FakeB6Server()
+    mind_maps = await AndroidNotesAPI(_session(server))._list_note_backed_mind_maps("project-1")
+
+    assert len(mind_maps) == 1
+    mind_map = mind_maps[0]
+    assert (
+        mind_map.id,
+        mind_map.notebook_id,
+        mind_map.title,
+        mind_map.kind,
+        mind_map.created_at,
+        mind_map.tree,
+    ) == (
+        "mind-map",
+        "project-1",
+        "Map",
+        MindMapKind.NOTE_BACKED,
+        None,
+        {"nodes": []},
+    )
+    assert len(server.calls) == 1
+    method, request, kwargs = server.calls[0]
+    assert method == GET_NOTES_METHOD
+    assert request.project_id == "project-1"
+    assert kwargs == {
+        "replay_safe": True,
+        "response_type": notes_pb2.GetNotesResponse,
+    }
+
+
+@pytest.mark.asyncio
+async def test_private_typed_mind_map_read_softens_non_object_json_tree_only() -> None:
+    response = notes_pb2.GetNotesResponse(
+        notes=[
+            notes_pb2.NoteOrStatus(
+                note=notes_pb2.ProjectNote(
+                    id="map-malformed",
+                    content="not-json",
+                    name="Malformed",
+                    metadata=notes_pb2.NoteMetadata(
+                        note_prompt_type=notes_pb2.MIND_MAP,
+                    ),
+                )
+            ),
+            notes_pb2.NoteOrStatus(
+                note=notes_pb2.ProjectNote(
+                    id="map-array",
+                    content="[]",
+                    name="Array",
+                    metadata=notes_pb2.NoteMetadata(
+                        note_prompt_type=notes_pb2.MIND_MAP,
+                    ),
+                )
+            ),
+            notes_pb2.NoteOrStatus(
+                note=notes_pb2.ProjectNote(
+                    id="ordinary",
+                    content='{"name": "Not a map"}',
+                    name="Ordinary",
+                    metadata=notes_pb2.NoteMetadata(type=notes_pb2.USER_WRITTEN),
+                )
+            ),
+            notes_pb2.NoteOrStatus(),
+        ]
+    )
+    session = SequencedSession({GET_NOTES_METHOD: [response]})
+
+    mind_maps = await AndroidNotesAPI(_session(session))._list_note_backed_mind_maps("project-1")
+    assert [(item.id, item.tree) for item in mind_maps] == [
+        ("map-malformed", None),
+        ("map-array", None),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_private_typed_mind_map_read_rejects_missing_evidenced_id() -> None:
+    response = notes_pb2.GetNotesResponse(
+        notes=[
+            notes_pb2.NoteOrStatus(
+                note=notes_pb2.ProjectNote(
+                    content='{"nodes": []}',
+                    name="Missing id",
+                    metadata=notes_pb2.NoteMetadata(
+                        note_prompt_type=notes_pb2.MIND_MAP,
+                    ),
+                )
+            )
+        ]
+    )
+    session = SequencedSession({GET_NOTES_METHOD: [response]})
+
+    with pytest.raises(DecodingError, match="did not contain a note id"):
+        await AndroidNotesAPI(_session(session))._list_note_backed_mind_maps("project-1")
 
 
 @pytest.mark.asyncio
@@ -377,10 +551,85 @@ async def test_fake_server_sharing_set_public_then_reads_status() -> None:
     ]
     share_request = server.calls[1][1]
     assert share_request.project[0].public_document_settings.is_publicly_readable is True
+    assert server.operation_scopes == [("sharing.set_public", None)]
     assert server.calls[1][2] == {
         "replay_safe": False,
         "response_type": sharing_pb2.EmptyResponse,
+        "expected_epoch": 7,
     }
+    assert server.calls[2][2] == {
+        "replay_safe": True,
+        "response_type": sharing_pb2.GetProjectDetailsResponse,
+        "expected_epoch": 7,
+    }
+
+
+@pytest.mark.asyncio
+async def test_sharing_set_public_readback_completes_during_graceful_drain() -> None:
+    session = SupervisedSharingSession()
+    sharing = AndroidSharingAPI(_session(session))
+    task = asyncio.create_task(sharing.set_public("project-1", True))
+    await session.mutation_started.wait()
+
+    await session.supervisor.stop_accepting(1)
+    session.mutation_release.set()
+
+    status = await task
+    assert status.is_public is True
+    assert [method for method, _request, _kwargs in session.calls] == [
+        SHARE_PROJECT_METHOD,
+        GET_PROJECT_DETAILS_METHOD,
+    ]
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in session.calls] == [1, 1]
+    generation = session.supervisor._current
+    assert generation is not None
+    assert generation.in_flight == 0
+    assert generation.drain._in_flight_posts == 0
+
+
+@pytest.mark.asyncio
+async def test_sharing_set_public_cancellation_settles_operation_without_readback() -> None:
+    session = SupervisedSharingSession()
+    sharing = AndroidSharingAPI(_session(session))
+    task = asyncio.create_task(sharing.set_public("project-1", True))
+    await session.mutation_started.wait()
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert [method for method, _request, _kwargs in session.calls] == [SHARE_PROJECT_METHOD]
+    await session.supervisor.wait_for_idle(1, 0.1)
+    generation = session.supervisor._current
+    assert generation is not None
+    assert generation.in_flight == 0
+    assert generation.drain._in_flight_posts == 0
+
+
+@pytest.mark.asyncio
+async def test_sharing_set_public_old_workflow_cannot_read_back_after_close_reopen() -> None:
+    session = SupervisedSharingSession()
+    sharing = AndroidSharingAPI(_session(session))
+    task = asyncio.create_task(sharing.set_public("project-1", True))
+    await session.mutation_started.wait()
+
+    old_generation = session.supervisor._current
+    assert old_generation is not None
+    await session.supervisor.begin_closing(1)
+    session.supervisor.mark_closed(1)
+    session.supervisor.reset_after_open()
+    session.supervisor.prepare_generation(2)
+    session.supervisor.start_accepting(2)
+    session.mutation_release.set()
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await task
+    assert [method for method, _request, _kwargs in session.calls] == [SHARE_PROJECT_METHOD]
+    assert old_generation.in_flight == 0
+    current_generation = session.supervisor._current
+    assert current_generation is not None
+    assert current_generation.epoch == 2
+    assert current_generation.in_flight == 0
 
 
 @pytest.mark.asyncio
@@ -411,3 +660,4 @@ async def test_sharing_status_five_maps_to_notebook_not_found() -> None:
     with pytest.raises(NotebookNotFoundError):
         await AndroidSharingAPI(_session(mutation_session)).set_public("missing-project", True)
     assert mutation_session.calls[0][2]["replay_safe"] is False
+    assert mutation_session.calls[0][2]["expected_epoch"] == 7
