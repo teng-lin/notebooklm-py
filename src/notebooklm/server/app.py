@@ -32,7 +32,7 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
-from typing import cast
+from typing import Literal, cast
 
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -267,14 +267,26 @@ _STALE_AUTH_STARTUP_MARKERS = (
 _SERVER_AUTH_RETRY_INTERVAL_SECONDS = 5.0
 
 
-def _default_factory(profile: str | None = None) -> AbstractAsyncContextManager[NotebookLMClient]:
+def _default_factory(
+    profile: str | None = None,
+    backend: Literal["web", "android"] | None = None,
+) -> AbstractAsyncContextManager[NotebookLMClient]:
     # ``from_storage`` returns a dual awaitable / async-context-manager; we use
     # only the async-context-manager protocol (the canonical, non-deprecated path).
+    if backend is None:
+        return cast(
+            "AbstractAsyncContextManager[NotebookLMClient]",
+            NotebookLMClient.from_storage(
+                profile=profile,
+                keepalive=DEFAULT_SERVER_KEEPALIVE_INTERVAL,
+            ),
+        )
     return cast(
         "AbstractAsyncContextManager[NotebookLMClient]",
         NotebookLMClient.from_storage(
             profile=profile,
             keepalive=DEFAULT_SERVER_KEEPALIVE_INTERVAL,
+            backend=backend,
         ),
     )
 
@@ -299,7 +311,10 @@ def _normalize_client_startup_error(exc: Exception) -> AuthError | None:
 
 
 def create_app(
-    *, profile: str | None = None, client_factory: ClientFactory | None = None
+    *,
+    profile: str | None = None,
+    backend: Literal["web", "android"] | None = None,
+    client_factory: ClientFactory | None = None,
 ) -> FastAPI:
     """Build the FastAPI application.
 
@@ -307,6 +322,8 @@ def create_app(
         profile: Auth profile bound by the default factory (``from_storage(profile=)``).
             ``None`` resolves the active profile. Also drives process-wide profile
             resolution for diagnostics such as ``/v1/server/info``.
+        backend: Preferred API backend for the default client factory. An explicit
+            value takes precedence over ``NOTEBOOKLM_BACKEND``.
         client_factory: Test seam — a zero-arg callable returning an async
             context manager that yields a client. Defaults to
             ``NotebookLMClient.from_storage(profile=profile, keepalive=600.0)``.
@@ -316,7 +333,7 @@ def create_app(
         one client, with the ``/v1`` resource routers (auth-gated) and a public
         ``/healthz`` mounted.
     """
-    factory = client_factory or (lambda: _default_factory(profile))
+    factory = client_factory or (lambda: _default_factory(profile, backend))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

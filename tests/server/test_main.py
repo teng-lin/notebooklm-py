@@ -181,6 +181,21 @@ def test_main_threads_profile_into_create_app(monkeypatch: pytest.MonkeyPatch) -
     launcher.create_app.assert_called_once_with(profile="work")  # type: ignore[attr-defined]
 
 
+def test_main_threads_backend_into_create_app(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_uvicorn_run(monkeypatch)
+    monkeypatch.setenv(SERVER_TOKEN_ENV, "env-secret")
+    launcher.main(["--host", "127.0.0.1", "--backend", "android"])
+    launcher.create_app.assert_called_once_with(  # type: ignore[attr-defined]
+        profile=None,
+        backend="android",
+    )
+
+
+def test_backend_parser_rejects_undeclared_alias() -> None:
+    with pytest.raises(SystemExit):
+        launcher._build_parser().parse_args(["--backend", "auto"])
+
+
 def test_main_rejects_deprecated_token_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     _stub_uvicorn_run(monkeypatch)
     monkeypatch.setenv(SERVER_TOKEN_ENV, "env-secret")

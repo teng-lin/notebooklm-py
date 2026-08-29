@@ -153,6 +153,12 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--backend",
+        choices=("web", "android"),
+        default=None,
+        help="Preferred API backend (default: NOTEBOOKLM_BACKEND, else web).",
+    )
+    parser.add_argument(
         "--log-level",
         default=os.environ.get("NOTEBOOKLM_LOG_LEVEL", "INFO"),
         help="Logging level on stderr (default: INFO).",
@@ -205,7 +211,10 @@ def main(argv: list[str] | None = None) -> None:
 
     import uvicorn
 
-    app = create_app(profile=args.profile)
+    if args.backend is None:
+        app = create_app(profile=args.profile)
+    else:
+        app = create_app(profile=args.profile, backend=args.backend)
     uvicorn.run(
         app,
         host=host,

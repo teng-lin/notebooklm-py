@@ -23,10 +23,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Generator
+import os
+from collections.abc import Callable, Generator, Mapping
 from pathlib import Path
 from types import TracebackType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
 
@@ -43,7 +44,12 @@ from ._auth.account_email import AccountEmailCacheKey, resolve_account_email
 from ._auth.extraction import extract_wiz_field as extract_wiz_field
 from ._auth.session import refresh_auth_session
 from ._chat import ChatAPI
-from ._client_assembly import _assemble_client
+from ._client_assembly import (
+    BackendName,
+    BackendPreference,
+    _assemble_client,
+    resolve_backend_preference,
+)
 from ._client_composed import ClientComposed
 from ._collections import CollectionsAPI
 from ._deprecation import warn_deprecated
@@ -136,6 +142,8 @@ class NotebookLMClient:
     _collaborators: RuntimeCollaborators
     _rpc_executor: RpcExecutor
     _source_uploader: SourceUploadPipeline
+    _backend_preference: BackendPreference
+    _backends: Mapping[str, BackendName]
     sources: SourcesAPI
     notebooks: NotebooksAPI
     artifacts: ArtifactsAPI
@@ -167,6 +175,8 @@ class NotebookLMClient:
         chat_timeout: float | None = AUTO_READ_TIMEOUT,
         chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES,
         import_research_timeout: float | None = AUTO_READ_TIMEOUT,
+        *,
+        backend: Literal["web", "android"] | None = None,
     ):
         """Initialize the NotebookLM client.
 
@@ -291,6 +301,11 @@ class NotebookLMClient:
                 ``notebooklm._auth.keepalive._rotate_cookies`` via a
                 late-bound wrapper. Must be async — it is awaited from
                 the keepalive loop.
+            backend: Preferred namespace backend. ``"web"`` preserves the
+                established implementation; ``"android"`` selects only
+                namespaces that have separately passed substitution
+                qualification. Unqualified namespaces remain web. When omitted,
+                ``NOTEBOOKLM_BACKEND`` is consulted, then the default is web.
         """
         # The full assembly lives in ``notebooklm._client_assembly`` —
         # one private seam shared with the canonical test factory
@@ -322,6 +337,7 @@ class NotebookLMClient:
             chat_timeout=chat_timeout,
             import_research_timeout=import_research_timeout,
             chat_response_max_bytes=chat_response_max_bytes,
+            backend=backend,
         )
 
     #: Per-client memo for the signed-in account email so a *successful* live probe
@@ -344,6 +360,11 @@ class NotebookLMClient:
         ``client.auth`` identity and behavior are unchanged.
         """
         return self._auth
+
+    @property
+    def backends(self) -> Mapping[str, Literal["web", "android"]]:
+        """Read-only mapping of namespaces to their actually installed backend."""
+        return self._backends
 
     async def __aenter__(self) -> NotebookLMClient:
         """Open the client connection."""
@@ -494,6 +515,7 @@ class NotebookLMClient:
         import_research_timeout: float | None = AUTO_READ_TIMEOUT,
         *,
         allow_headless: bool = False,
+        backend: Literal["web", "android"] | None = None,
     ) -> _FromStorageContext:
         """Create a client from Playwright storage state file.
 
@@ -564,6 +586,8 @@ class NotebookLMClient:
             allow_headless: Permit one cold-start layer-3 browser recovery when
                 stored cookies are fully expired. A sibling master token can
                 recover automatically without enabling browser recovery.
+            backend: Preferred namespace backend. An explicit value takes
+                precedence over ``NOTEBOOKLM_BACKEND``; the default is web.
 
         Returns:
             ``_FromStorageContext`` — an awaitable async-context-manager
@@ -587,6 +611,10 @@ class NotebookLMClient:
             # Legacy form (deprecated, removed in v1.0):
             # async with await NotebookLMClient.from_storage() as client: ...
         """
+        backend_preference = resolve_backend_preference(
+            explicit=backend,
+            env=None if backend is not None else os.environ.get("NOTEBOOKLM_BACKEND"),
+        )
         return _FromStorageContext(
             cls,
             path=path,
@@ -605,6 +633,7 @@ class NotebookLMClient:
             upload_timeout=upload_timeout,
             on_rpc_event=on_rpc_event,
             allow_headless=allow_headless,
+            backend_preference=backend_preference,
         )
 
     async def refresh_auth(self, *, allow_headless: bool = False) -> AuthTokens:
@@ -868,7 +897,9 @@ class _FromStorageContext:
             import_research_timeout=kwargs["import_research_timeout"],
             upload_timeout=kwargs["upload_timeout"],
             on_rpc_event=kwargs["on_rpc_event"],
+            backend=kwargs["backend_preference"].preferred,
         )
+        client._backend_preference = kwargs["backend_preference"]
         if isinstance(loaded, _auth_tokens.FileLoadedAuth) and hasattr(client, "_collaborators"):
             client._collaborators.cookie_persistence.register_open_baseline(
                 loaded.store, loaded.persistence_baseline

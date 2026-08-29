@@ -161,10 +161,35 @@ remains an unconditional forced re-mint.
 
 ## Environment Variables
 
+### Backend preference
+
+The client accepts `backend="web"` or `backend="android"` as an optional,
+keyword-only construction argument. The same preference is available as the
+root CLI flag `notebooklm --backend ...`, the `notebooklm-mcp --backend ...`
+option, and the `notebooklm-server --backend ...` option. Resolution is always:
+
+1. explicit SDK or frontend option;
+2. `NOTEBOOKLM_BACKEND`;
+3. `web`.
+
+The preference is fixed when a client is constructed. Android is selected only
+for namespaces that have passed full substitution qualification; any remaining
+namespace stays on its established web implementation. Inspect the read-only
+`client.backends` mapping for the implementations actually installed on a
+client. A preference is not a runtime fallback policy, and neither `auto` nor
+`mobile` is accepted.
+
+Selecting Android does not read credentials during construction. When an
+installed Android namespace needs a durable credential, validation occurs on
+`client.open()` / async-context entry. Use `NotebookLMClient.from_storage(...)`
+or provide the profile-backed `storage_path`; there is no public raw
+`master_token=` argument.
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `NOTEBOOKLM_HOME` | Base directory for all files | `~/.notebooklm` |
 | `NOTEBOOKLM_PROFILE` | Active profile name | `default` |
+| `NOTEBOOKLM_BACKEND` | Preferred namespace backend: `web` or `android`. Explicit SDK/CLI/MCP/REST options take precedence. | `web` |
 | `NOTEBOOKLM_AUTH_JSON` | Inline authentication JSON (for CI/CD) | - |
 | `NOTEBOOKLM_NOTEBOOK` | Default notebook ID for commands without `-n/--notebook` | - |
 | `NOTEBOOKLM_HL` | Default interface/output language code (e.g. `en`, `ja`, `zh_Hans`) | `en` |

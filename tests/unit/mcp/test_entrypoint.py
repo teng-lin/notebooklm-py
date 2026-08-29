@@ -103,6 +103,26 @@ def test_defaults_wire_stdio_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_server.run.assert_called_once_with(transport="stdio", show_banner=False)
 
 
+def test_backend_flag_threads_to_stdio_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_server = MagicMock()
+    captured: dict[str, object] = {}
+
+    def fake_create_server(**kwargs: object) -> MagicMock:
+        captured.update(kwargs)
+        return fake_server
+
+    monkeypatch.setattr(entry, "create_server", fake_create_server)
+    entry.main(["--backend", "android"])
+
+    assert captured == {"profile": None, "backend": "android"}
+    fake_server.run.assert_called_once_with(transport="stdio", show_banner=False)
+
+
+def test_backend_parser_rejects_undeclared_alias() -> None:
+    with pytest.raises(SystemExit):
+        entry._build_parser().parse_args(["--backend", "mobile"])
+
+
 def test_explicit_http_transport_binds_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
     """``--transport http`` on loopback binds the port and needs NO token (auth=None)."""
     fake_server = MagicMock()

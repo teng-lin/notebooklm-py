@@ -33,9 +33,13 @@ public constructor (see the seam policy in ``_web/transport/seams.py``).
 from __future__ import annotations
 
 import dataclasses
+import logging
+import os
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import httpx
 
@@ -72,6 +76,70 @@ from .auth import AuthTokens
 if TYPE_CHECKING:
     from .client import NotebookLMClient
     from .types import ConnectionLimits, RpcTelemetryEvent
+
+
+BackendName = Literal["web", "android"]
+logger = logging.getLogger("notebooklm.backend")
+
+
+@dataclass(frozen=True)
+class BackendPreference:
+    """One construction-time backend preference and how it was selected."""
+
+    preferred: BackendName
+    reason: Literal["explicit", "env", "default"]
+
+
+def resolve_backend_preference(*, explicit: str | None, env: str | None) -> BackendPreference:
+    """Resolve and validate the Phase-B backend preference without performing I/O."""
+    value: str
+    reason: Literal["explicit", "env", "default"]
+    if explicit is not None:
+        value = explicit
+        reason = "explicit"
+    elif env is not None:
+        value = env
+        reason = "env"
+    else:
+        value = "web"
+        reason = "default"
+    if value not in ("web", "android"):
+        raise ValueError(
+            f"Invalid NotebookLM backend {value!r}: expected 'web' or 'android'. "
+            "The aliases 'mobile' and 'auto' are not supported."
+        )
+    return BackendPreference(preferred=cast(BackendName, value), reason=reason)
+
+
+_NAMESPACE_NAMES = (
+    "notebooks",
+    "sources",
+    "artifacts",
+    "chat",
+    "research",
+    "notes",
+    "mind_maps",
+    "settings",
+    "sharing",
+    "labels",
+    "collections",
+)
+
+
+def _derive_installed_backends(client: NotebookLMClient) -> MappingProxyType[str, BackendName]:
+    """Report each immutable namespace selection from its installed class."""
+    installed: dict[str, BackendName] = {}
+    for name in _NAMESPACE_NAMES:
+        module = type(getattr(client, name)).__module__
+        if module.startswith("notebooklm._android."):
+            installed[name] = "android"
+        elif module.startswith("notebooklm._web."):
+            installed[name] = "web"
+        else:
+            raise RuntimeError(
+                f"Cannot determine backend for client.{name}: installed class module is {module!r}"
+            )
+    return MappingProxyType(installed)
 
 
 class _UnsetType:
@@ -111,6 +179,7 @@ def _assemble_client(
     chat_timeout: float | None = AUTO_READ_TIMEOUT,
     import_research_timeout: float | None = AUTO_READ_TIMEOUT,
     chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES,
+    backend: BackendName | None = None,
     # --- Production-default overrides (test factory only) -----------------
     # ``NotebookLMClient.__init__`` never passes these; the sentinels
     # resolve to the exact behavior the constructor had when this logic
@@ -137,6 +206,10 @@ def _assemble_client(
     gate ``tests/_guardrails/test_client_factory_parity.py`` fails
     otherwise.
     """
+    client._backend_preference = resolve_backend_preference(
+        explicit=backend,
+        env=None if backend is not None else os.environ.get("NOTEBOOKLM_BACKEND"),
+    )
     # Normalize the effective storage path onto the auth object so every
     # downstream code path (refresh_auth, lifecycle on-close save,
     # the keepalive loop) writes to the same file. Without this, an
@@ -416,6 +489,16 @@ def _assemble_client(
     # callable for the membership->Notebook join in ``collections.notebooks()``;
     # wired after ``client.notebooks`` exists. Same client/bound loop (ADR-0004).
     client.collections = WebCollectionsAPI(internals.executor, list_notebooks=client.notebooks.list)
+    # B8 records the installed namespace owners but deliberately promotes none:
+    # every factory remains web until its separate B8p qualification commit.
+    client._backends = _derive_installed_backends(client)
+    if client._backend_preference.preferred == "android":
+        unqualified = [name for name, selected in client._backends.items() if selected == "web"]
+        if unqualified:
+            logger.info(
+                "Android backend preference selected; unqualified namespaces remain web: %s",
+                ", ".join(unqualified),
+            )
 
     # The protocol-neutral root is constructed last, after every concrete
     # transport and loop participant exists. Its tuples never mutate after

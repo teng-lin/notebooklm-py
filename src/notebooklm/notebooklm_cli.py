@@ -146,6 +146,12 @@ __all__ = ["cli", "main"]
     help="Profile name (default: from config or 'default'). Use 'notebooklm profile list' to see profiles.",
 )
 @click.option(
+    "--backend",
+    type=click.Choice(("web", "android"), case_sensitive=True),
+    default=None,
+    help="Preferred API backend (default: $NOTEBOOKLM_BACKEND, else web).",
+)
+@click.option(
     "-v",
     "--verbose",
     count=True,
@@ -161,7 +167,7 @@ __all__ = ["cli", "main"]
     ),
 )
 @click.pass_context
-def cli(ctx, storage, profile, verbose, quiet):
+def cli(ctx, storage, profile, backend, verbose, quiet):
     """NotebookLM CLI.
 
     \b
@@ -226,6 +232,7 @@ def cli(ctx, storage, profile, verbose, quiet):
     # namespace (see :class:`notebooklm.cli.services.auth_source.AuthSource`).
     ctx.obj["storage_path"] = Path(storage).expanduser().resolve() if storage else None
     ctx.obj["profile"] = profile
+    ctx.obj["backend"] = backend
     # Mirror the root quiet flag for call sites that already read ctx.obj.
     # ``cli.runtime.is_quiet(ctx)`` remains the canonical reader.
     ctx.obj["quiet"] = bool(quiet)

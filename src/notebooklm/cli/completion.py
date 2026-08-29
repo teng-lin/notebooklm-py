@@ -74,7 +74,7 @@ class CompletionProvider:
             auth = self._load_auth(ctx)
 
             async def _list() -> Any:
-                async with self._make_client(auth) as client:
+                async with self._make_client(auth, ctx) as client:
                     return await client.notebooks.list()
 
             notebooks = self._run(_list())
@@ -99,7 +99,7 @@ class CompletionProvider:
             auth = self._load_auth(ctx)
 
             async def _list() -> Any:
-                async with self._make_client(auth) as client:
+                async with self._make_client(auth, ctx) as client:
                     return await client.sources.list(notebook_id)
 
             sources = self._run(_list())
@@ -124,7 +124,7 @@ class CompletionProvider:
             auth = self._load_auth(ctx)
 
             async def _list() -> Any:
-                async with self._make_client(auth) as client:
+                async with self._make_client(auth, ctx) as client:
                     return await client.artifacts.list(notebook_id)
 
             artifacts = self._run(_list())
@@ -177,12 +177,17 @@ class CompletionProvider:
         except Exception:
             return None
 
-    def _make_client(self, auth: Any) -> Any:
+    def _make_client(self, auth: Any, ctx: Any) -> Any:
         if self._client_factory is not None:
             return self._client_factory(auth)
         from ..client import NotebookLMClient
 
-        return NotebookLMClient(auth)
+        root = ctx.find_root() if hasattr(ctx, "find_root") else ctx
+        obj = getattr(root, "obj", None)
+        backend = obj.get("backend") if isinstance(obj, dict) else None
+        if backend is None:
+            return NotebookLMClient(auth)
+        return NotebookLMClient(auth, backend=backend)
 
     def _run(self, awaitable: Awaitable[Any]) -> Any:
         try:

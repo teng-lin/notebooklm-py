@@ -8467,6 +8467,29 @@
           }
         },
         {
+          "default": null,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Preferred API backend (default: $NOTEBOOKLM_BACKEND, else web).",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "backend",
+          "opts": [
+            "--backend"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "case_sensitive": true,
+            "choices": [
+              "web",
+              "android"
+            ],
+            "name": "choice"
+          }
+        },
+        {
           "default": 0,
           "envvar": null,
           "has_custom_shell_complete": false,

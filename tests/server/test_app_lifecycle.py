@@ -321,6 +321,39 @@ def test_create_app_default_factory_threads_profile(monkeypatch) -> None:  # typ
     assert seen == {"profile": "work", "keepalive": 600.0}
 
 
+def test_create_app_default_factory_threads_backend(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    seen: dict[str, object] = {}
+
+    @asynccontextmanager
+    async def _fake_ctx() -> AsyncIterator[FakeClient]:
+        yield FakeClient()
+
+    def _spy_from_storage(**kwargs: object) -> AbstractAsyncContextManager[FakeClient]:
+        seen.update(kwargs)
+        return _fake_ctx()
+
+    monkeypatch.setattr(NotebookLMClient, "from_storage", staticmethod(_spy_from_storage))
+    app = create_app(profile="work", backend="android")
+    with TestClient(app) as client:
+        assert client.get("/healthz").status_code == 200
+    assert seen == {"profile": "work", "keepalive": 600.0, "backend": "android"}
+
+
+def test_backend_does_not_reparameterize_injected_factory() -> None:
+    calls = 0
+
+    @asynccontextmanager
+    async def factory() -> AsyncIterator[FakeClient]:
+        nonlocal calls
+        calls += 1
+        yield FakeClient()
+
+    app = create_app(backend="android", client_factory=factory)
+    with TestClient(app) as client:
+        assert client.get("/healthz").status_code == 200
+    assert calls == 1
+
+
 def test_docs_and_openapi_are_disabled() -> None:
     """The unauthenticated schema UI is off (no tokenless surface)."""
     app = create_app(client_factory=_factory(FakeClient()))

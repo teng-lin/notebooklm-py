@@ -187,6 +187,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Auth profile to bind for this server process (default: active profile).",
     )
     parser.add_argument(
+        "--backend",
+        choices=("web", "android"),
+        default=None,
+        help="Preferred API backend (default: NOTEBOOKLM_BACKEND, else web).",
+    )
+    parser.add_argument(
         "--transport",
         choices=("stdio", "http"),
         default=os.environ.get("NOTEBOOKLM_MCP_TRANSPORT", "stdio"),
@@ -292,11 +298,14 @@ def main(argv: list[str] | None = None) -> None:
         # Optional remote file transfer: built only here (http path), validated, and
         # absent (None) when no public URL is set — never a startup crash.
         file_transfer = _build_file_transfer()
-        server = create_server(
-            profile=args.profile,
-            auth=build_auth(token, oauth),
-            file_transfer=file_transfer,
-        )
+        server_kwargs = {
+            "profile": args.profile,
+            "auth": build_auth(token, oauth),
+            "file_transfer": file_transfer,
+        }
+        if args.backend is not None:
+            server_kwargs["backend"] = args.backend
+        server = create_server(**server_kwargs)
         # proxy_headers=False: Uvicorn defaults to rewriting the peer address from
         # X-Forwarded-For when the immediate client is a trusted host, which would let a
         # request forge its own source IP and defeat the OAuth login throttle's per-IP
@@ -336,7 +345,10 @@ def main(argv: list[str] | None = None) -> None:
     else:
         # show_banner=False keeps FastMCP's startup banner out of the host's logs
         # (and off stdout — stdio requires uncontaminated JSON-RPC).
-        server = create_server(profile=args.profile)
+        if args.backend is None:
+            server = create_server(profile=args.profile)
+        else:
+            server = create_server(profile=args.profile, backend=args.backend)
         server.run(transport="stdio", show_banner=False)
 
 

@@ -10,13 +10,14 @@ Complete command reference for the `notebooklm` CLI—providing full programmati
 ## Command Structure
 
 ```bash
-notebooklm [-p PROFILE] [--storage PATH] [--version] [-v|--quiet] <command> [OPTIONS] [ARGS]
+notebooklm [-p PROFILE] [--storage PATH] [--backend web|android] [--version] [-v|--quiet] <command> [OPTIONS] [ARGS]
 ```
 
 ### Global Options
 
 - `-p, --profile NAME` - Use a named profile (overrides `NOTEBOOKLM_PROFILE` env var)
 - `--storage PATH` - Override the default storage location
+- `--backend web|android` - Prefer a backend for qualified namespaces (overrides `NOTEBOOKLM_BACKEND`; default `web`)
 - `-v, --verbose` - Increase verbosity (`-v` for INFO, `-vv` for DEBUG)
 - `--quiet` - Suppress status output and INFO/WARN log records (only errors survive). Structured `--json` payloads are still emitted. Mutually exclusive with `-v`/`-vv`; combining the two raises `UsageError` (exit `2`).
 - `--version` - Show version and exit

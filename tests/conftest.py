@@ -106,6 +106,12 @@ def _isolate_notebooklm_home(request, tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_backend_preference(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep an ambient backend preference from changing constructor tests."""
+    monkeypatch.delenv("NOTEBOOKLM_BACKEND", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _reset_poke_state():
     """Reset module-level rotation guards between tests.
 

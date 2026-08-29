@@ -79,6 +79,41 @@ async def test_default_factory_enables_keepalive(monkeypatch: pytest.MonkeyPatch
     assert seen == {"profile": "work", "keepalive": 600.0}
 
 
+async def test_default_factory_threads_explicit_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+
+    @contextlib.asynccontextmanager
+    async def fake_context() -> AsyncIterator[MagicMock]:
+        yield MagicMock()
+
+    def spy_from_storage(**kwargs: object):  # type: ignore[no-untyped-def]
+        seen.update(kwargs)
+        return fake_context()
+
+    monkeypatch.setattr(NotebookLMClient, "from_storage", staticmethod(spy_from_storage))
+    async with Client(create_server(profile="work", backend="android")):
+        pass
+
+    assert seen == {"profile": "work", "keepalive": 600.0, "backend": "android"}
+
+
+async def test_backend_does_not_reparameterize_injected_factory(
+    mock_client: MagicMock,
+) -> None:
+    calls = 0
+
+    @contextlib.asynccontextmanager
+    async def factory() -> AsyncIterator[MagicMock]:
+        nonlocal calls
+        calls += 1
+        yield mock_client
+
+    async with Client(create_server(backend="android", client_factory=factory)):
+        pass
+
+    assert calls == 1
+
+
 def test_get_client_reads_appstate() -> None:
     """get_client unwraps the AppState bound in the request lifespan context."""
     sentinel = MagicMock()
