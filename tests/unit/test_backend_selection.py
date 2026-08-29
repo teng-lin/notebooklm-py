@@ -17,7 +17,9 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 import notebooklm._android.auth as android_auth
+from notebooklm._android.artifacts import AndroidArtifactsAPI
 from notebooklm._android.collections import AndroidCollectionsAPI
+from notebooklm._android.mind_maps import AndroidMindMapsAPI
 from notebooklm._auth.master_token_types import MasterToken
 from notebooklm._auth.profile_store import ProfileStore
 from notebooklm._client_assembly import BackendPreference, resolve_backend_preference
@@ -94,7 +96,7 @@ def test_invalid_environment_fails_during_construction(monkeypatch: pytest.Monke
         NotebookLMClient(_auth())
 
 
-def test_android_preference_promotes_only_qualified_collections_namespace() -> None:
+def test_android_preference_promotes_qualified_artifact_namespaces() -> None:
     client = NotebookLMClient(_auth(), backend="android")
     assert isinstance(client.backends, Mapping)
     assert list(client.backends) == [
@@ -111,10 +113,14 @@ def test_android_preference_promotes_only_qualified_collections_namespace() -> N
         "collections",
     ]
     assert client.backends["collections"] == "android"
+    assert client.backends["artifacts"] == "android"
+    assert client.backends["mind_maps"] == "android"
     assert isinstance(client.collections, AndroidCollectionsAPI)
+    assert isinstance(client.artifacts, AndroidArtifactsAPI)
+    assert isinstance(client.mind_maps, AndroidMindMapsAPI)
     for namespace, backend in client.backends.items():
         installed = getattr(client, namespace)
-        expected = "android" if namespace == "collections" else "web"
+        expected = "android" if namespace in {"artifacts", "mind_maps", "collections"} else "web"
         assert backend == expected
         assert type(installed).__module__.startswith(f"notebooklm._{expected}.")
 
@@ -208,8 +214,7 @@ def test_android_preference_logs_unqualified_namespaces_once(caplog) -> None:  #
     assert [record.levelno for record in records] == [logging.INFO]
     assert [record.getMessage() for record in records] == [
         "Android backend preference selected; unqualified namespaces remain web: "
-        "notebooks, sources, artifacts, chat, research, notes, mind_maps, settings, sharing, "
-        "labels"
+        "notebooks, sources, chat, research, notes, settings, sharing, labels"
     ]
 
 
@@ -320,6 +325,7 @@ def test_android_selection_extends_the_frozen_lifecycle_ownership_graph() -> Non
         client._collaborators.web_transport,
         client._source_uploader,
         client._android_session,
+        client.artifacts._asset_downloads,
     )
     assert lifecycle._loop_participants[-2:] == (
         client._android_bearer_provider,
@@ -367,4 +373,4 @@ async def test_from_storage_threads_explicit_backend(
     client = await NotebookLMClient.from_storage(path=str(storage), backend="android")._build()
     assert client._backend_preference.preferred == "android"
     assert client.backends["collections"] == "android"
-    assert sum(backend == "android" for backend in client.backends.values()) == 1
+    assert sum(backend == "android" for backend in client.backends.values()) == 3

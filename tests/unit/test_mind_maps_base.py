@@ -155,10 +155,12 @@ def test_exact_abstract_set_and_frontends_are_concrete() -> None:
     assert AndroidMindMapsAPI.__abstractmethods__ == frozenset()
 
 
-def test_android_backend_wraps_aggregate_but_inherits_lookup_and_delete_workflows() -> None:
+def test_android_backend_wraps_aggregate_and_delete_but_inherits_lookup_workflows() -> None:
     assert "list" in AndroidMindMapsAPI.__dict__
     assert AndroidMindMapsAPI.list is not MindMapsAPI.list
-    for method_name in {"get", "get_or_none", "delete"}:
+    assert "delete" in AndroidMindMapsAPI.__dict__
+    assert AndroidMindMapsAPI.delete is not MindMapsAPI.delete
+    for method_name in {"get", "get_or_none"}:
         assert method_name not in AndroidMindMapsAPI.__dict__
         assert getattr(AndroidMindMapsAPI, method_name) is getattr(MindMapsAPI, method_name)
 

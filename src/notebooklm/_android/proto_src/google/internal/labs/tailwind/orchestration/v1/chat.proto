@@ -25,6 +25,25 @@ enum QueryOrigin {
   QUERY_ORIGIN_ARTIFACT_VIEWER = 8;
 }
 
+enum NamedStyleType {
+  NAMED_STYLE_TYPE_UNSPECIFIED = 0;
+  NORMAL_TEXT = 1;
+  TITLE = 2;
+  SUBTITLE = 3;
+  HEADING_1 = 4;
+  HEADING_2 = 5;
+  HEADING_3 = 6;
+  HEADING_4 = 7;
+  HEADING_5 = 8;
+  HEADING_6 = 9;
+}
+
+enum ListType {
+  LIST_TYPE_UNSPECIFIED = 0;
+  LIST_TYPE_UNORDERED = 1;
+  LIST_TYPE_ORDERED = 2;
+}
+
 message ConversationEvent {
   enum ConversationEventType {
     EVENT_TYPE_UNKNOWN = 0;
@@ -56,24 +75,115 @@ message AnnotationMapEntry {
   Range content_range = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
 }
 
+message FontInfo {
+  string font_family = 1;
+  int32 weight = 2;
+  double font_size_pt = 3;
+}
+
+message Color {
+  int32 red = 1;
+  int32 green = 2;
+  int32 blue = 3;
+}
+
+message TextStyle {
+  bool bold = 1;
+  bool italic = 2;
+  bool underline = 3;
+  string url = 4;
+  FontInfo font_info = 5;
+  Color text_color = 6;
+  Color background_color = 7;
+  bool code = 8;
+  bool strikethrough = 9;
+  int32 math = 10;
+}
+
 message TextRun {
   string content = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  TextStyle text_style = 2; // evidence: official APK exact TailwindDoc schema
+}
+
+message Image {
+  string url = 1;
+  string source_image_id = 3;
+  int32 block_reason = 4;
+}
+
+message Resource {
+  string id = 1;
 }
 
 message ParagraphElement {
   int32 start_index = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
   int32 end_index = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
   TextRun text_run = 3; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  Image image = 4; // evidence: official APK exact TailwindDoc schema
+  Resource resource = 5; // evidence: official APK exact TailwindDoc schema
+}
+
+message BulletInfo {
+  int32 nesting_level = 3;
+  string glyph = 101;
+  ListType list_type = 102;
+  int32 ordinal = 103;
+  int32 absolute_ordinal = 104;
+}
+
+message ParagraphStyle {
+  NamedStyleType named_style_type = 2;
 }
 
 message Paragraph {
   repeated ParagraphElement elements = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  ParagraphStyle paragraph_style = 2; // evidence: live Android reportDoc
+  BulletInfo bullet_info = 4; // evidence: live Android reportDoc
 }
+
+message TableCell {
+  int32 start_index = 1;
+  int32 end_index = 2;
+  repeated StructuralElement content = 3;
+}
+
+message TableRow {
+  int32 start_index = 1;
+  int32 end_index = 2;
+  repeated TableCell table_cells = 3;
+}
+
+message Table {
+  int32 rows = 1;
+  int32 columns = 2;
+  repeated TableRow table_rows = 3;
+}
+
+message CodeBlock {
+  string content = 1;
+  string language_hint = 2;
+}
+
+message A2uiBlock {
+  string json = 1;
+}
+
+message Thought {
+  repeated StructuralElement elements = 1;
+}
+
+message HorizontalRule {}
 
 message StructuralElement {
   int32 start_index = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
   int32 end_index = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
   Paragraph paragraph = 3; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  Table table = 5; // evidence: live Android reportDoc
+  Image image = 6; // evidence: official APK exact TailwindDoc schema
+  CodeBlock code_block = 7; // evidence: official APK exact TailwindDoc schema
+  A2uiBlock a2ui_block = 8; // evidence: official APK exact TailwindDoc schema
+  Thought thought = 9; // evidence: official APK exact TailwindDoc schema
+  HorizontalRule horizontal_rule = 12; // evidence: live Android reportDoc
 }
 
 message Body {
@@ -107,6 +217,7 @@ message DocumentObject {
 message TailwindDoc {
   Body body = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
   repeated DocumentObject objects = 4; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  int32 type = 5; // evidence: official APK exact TailwindDoc schema
 }
 
 message AnswerResponse {

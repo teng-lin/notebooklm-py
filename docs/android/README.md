@@ -61,11 +61,11 @@ The generator reports `295 messages, 767 fields` and resolves package identity t
 The reduced compile inputs used by the private Android adapters live under
 `src/notebooklm/_android/proto_src/`. Regenerate their checked-in Python modules and the full
 descriptor fixture with `python scripts/regenerate_android_protos.py --write`; use `--check` in CI.
-The cumulative `orchestration_service.proto` owns the 40-method orchestration service;
+The cumulative `orchestration_service.proto` owns the 41-method orchestration service;
 `sharing.proto` owns the separately proven two-method exact sharing service, and individual
 orchestration message overlays remain service-free. Seven orchestration signatures are explicitly
 marked as web-derived conventional-name inferences; all other generated signatures are exact.
-The 42 generated methods exhaustively equal the 42 implemented adapter paths, and the signature
+The 43 generated methods exhaustively equal the 43 implemented adapter paths, and the signature
 exception manifest is empty. Generated descriptors, adapter paths, inference provenance, and the
 hash-pinned external method manifest are checked in both
 directions, so a locally repeated claim cannot admit a normalized or unresolved response type.

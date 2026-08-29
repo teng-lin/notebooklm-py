@@ -9,7 +9,7 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import parse_qsl, urljoin, urlsplit, urlunsplit
 
 from .._artifact._download_client import _is_trusted_download_host
@@ -26,8 +26,81 @@ logger = logging.getLogger(__name__)
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 _MAX_HOPS = 8
 _MAX_APPLICATION_REDIRECT_BYTES = 8_192
+_MIB = 1024 * 1024
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 _BEARER_HOST = "lh3.googleusercontent.com"
+_ANDROID_DOWNLOAD_HOST_SUFFIXES = (".googlevideo.com", ".usercontent.google.com")
+_SLIDE_CAPABILITY_INITIAL_HOSTS = frozenset({"contribution.usercontent.google.com"})
+
+RepresentationKind = Literal[
+    "infographic",
+    "audio",
+    "video",
+    "slide_pdf",
+    "slide_pptx",
+]
+
+
+@dataclass(frozen=True)
+class _FormatPolicy:
+    media_types: frozenset[str]
+    signature_checks: tuple[tuple[bytes, int], ...]
+    suffix_replacement: tuple[str, str] | None = None
+
+
+@dataclass(frozen=True)
+class _RepresentationPolicy:
+    artifact_type: str
+    formats: tuple[_FormatPolicy, ...]
+    max_bytes: int
+    capability_initial_hosts: frozenset[str] = frozenset()
+
+
+_REPRESENTATION_POLICIES: dict[RepresentationKind, _RepresentationPolicy] = {
+    "infographic": _RepresentationPolicy(
+        artifact_type="infographic",
+        formats=(_FormatPolicy(frozenset({"image/png"}), ((_PNG_SIGNATURE, 0),)),),
+        max_bytes=100 * _MIB,
+    ),
+    "audio": _RepresentationPolicy(
+        artifact_type="audio",
+        formats=(
+            _FormatPolicy(frozenset({"audio/mp4"}), ((b"ftyp", 4),)),
+            _FormatPolicy(
+                frozenset({"audio/wav", "audio/x-wav"}),
+                ((b"RIFF", 0), (b"WAVE", 8)),
+                (".m4a", ".wav"),
+            ),
+        ),
+        max_bytes=512 * _MIB,
+    ),
+    "video": _RepresentationPolicy(
+        artifact_type="video",
+        formats=(_FormatPolicy(frozenset({"video/mp4"}), ((b"ftyp", 4),)),),
+        max_bytes=2 * 1024 * _MIB,
+    ),
+    "slide_pdf": _RepresentationPolicy(
+        artifact_type="slide_deck",
+        formats=(_FormatPolicy(frozenset({"application/pdf"}), ((b"%PDF-", 0),)),),
+        max_bytes=512 * _MIB,
+        capability_initial_hosts=_SLIDE_CAPABILITY_INITIAL_HOSTS,
+    ),
+    "slide_pptx": _RepresentationPolicy(
+        artifact_type="slide_deck",
+        formats=(
+            _FormatPolicy(
+                frozenset(
+                    {
+                        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    }
+                ),
+                ((b"PK\x03\x04", 0),),
+            ),
+        ),
+        max_bytes=512 * _MIB,
+        capability_initial_hosts=_SLIDE_CAPABILITY_INITIAL_HOSTS,
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -61,7 +134,26 @@ def _safe_approved_host(url: str) -> str:
         host = (urlsplit(url).hostname or "").lower()
     except ValueError:
         return "<rejected>"
-    return host if _is_trusted_download_host(host) else "<rejected>"
+    return host if _is_android_download_host(host) else "<rejected>"
+
+
+def _is_android_download_host(host: str) -> bool:
+    if (
+        not host
+        or len(host) > 253
+        or any(char not in "abcdefghijklmnopqrstuvwxyz0123456789.-" for char in host)
+    ):
+        return False
+    labels = host.split(".")
+    if any(
+        not label or len(label) > 63 or label.startswith("-") or label.endswith("-")
+        for label in labels
+    ):
+        return False
+    return _is_trusted_download_host(host) or any(
+        host.endswith(suffix) and host != suffix.removeprefix(".")
+        for suffix in _ANDROID_DOWNLOAD_HOST_SUFFIXES
+    )
 
 
 def _validated_host(url: str) -> str | None:
@@ -80,7 +172,7 @@ def _validated_host(url: str) -> str | None:
         or parsed.password is not None
         or parsed.fragment
         or (443 if port is None else port) != 443
-        or not _is_trusted_download_host(host)
+        or not _is_android_download_host(host)
     ):
         return None
     return host
@@ -90,9 +182,7 @@ def _append_initial_alr(url: str) -> str | None:
     try:
         parsed = urlsplit(url)
         alr_values = [
-            value
-            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-            if key == "alr"
+            value for key, value in parse_qsl(parsed.query, keep_blank_values=True) if key == "alr"
         ]
     except ValueError:
         return None
@@ -102,10 +192,55 @@ def _append_initial_alr(url: str) -> str | None:
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, query, parsed.fragment))
 
 
-def _bearer_for(host: str, credential: BearerCredential) -> dict[str, str]:
-    if host == _BEARER_HOST:
+def _bearer_for(host: str, credential: BearerCredential | None) -> dict[str, str]:
+    if host == _BEARER_HOST and credential is not None:
         return {"Authorization": f"Bearer {credential.token}"}
     return {}
+
+
+def _clear_client_cookies(client: Any) -> None:
+    """Keep each manually validated hop free of ambient or response-issued cookies."""
+
+    owners = (client, getattr(client, "_curl", None))
+    for owner in owners:
+        cookies = getattr(owner, "cookies", None)
+        clear = getattr(cookies, "clear", None)
+        if callable(clear):
+            clear()
+
+
+def _format_for_media_type(
+    policy: _RepresentationPolicy,
+    media_type: str,
+) -> _FormatPolicy | None:
+    return next((item for item in policy.formats if media_type in item.media_types), None)
+
+
+def _declared_content_length(headers: Any) -> int | None:
+    raw = headers.get("content-length")
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return -1
+    return value if value >= 0 else -1
+
+
+def _fsync_directory(path: Path) -> None:
+    """Make the atomic rename durable where the platform exposes directory fsync."""
+
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    except OSError:
+        pass
+    finally:
+        os.close(descriptor)
 
 
 async def _close_clients_and_settle_tasks(
@@ -249,20 +384,78 @@ class AndroidAssetDownloadService(AssetDownloadService):
         """Download one PNG without retaining credentials in an escaping traceback."""
 
         service = self
+        result: str | None = None
         failure: BaseException | None = None
-        outcome: _TransferSuccess | TransferFailure | None = None
         try:
-            outcome = await service._download_impl(url, output_path)
+            result = await service._download_public(
+                url,
+                output_path,
+                policy=_REPRESENTATION_POLICIES["infographic"],
+            )
         except BaseException as error:
             failure = sanitize_escaping_exception(error)
         finally:
             del self, service, url
         if failure is not None:
             raise failure
+        assert result is not None
+        return result
+
+    async def download_representation(
+        self,
+        url: str,
+        output_path: str,
+        *,
+        representation: RepresentationKind,
+    ) -> str:
+        """Transfer one exact artifact representation under its MIME/signature policy."""
+
+        service = self
+        result: str | None = None
+        failure: BaseException | None = None
+        try:
+            policy = _REPRESENTATION_POLICIES.get(representation)
+            if policy is None:
+                raise ValueError(f"Unsupported Android artifact representation: {representation}")
+            result = await service._download_public(url, output_path, policy=policy)
+        except BaseException as error:
+            failure = sanitize_escaping_exception(error)
+        finally:
+            del self, service, url
+        if failure is not None:
+            raise failure
+        assert result is not None
+        return result
+
+    async def _download_public(
+        self,
+        representation_url: str,
+        output_path: str,
+        *,
+        policy: _RepresentationPolicy,
+    ) -> str:
+        """Run one policy-selected transfer without retaining its capability URL."""
+
+        service = self
+        failure: BaseException | None = None
+        outcome: _TransferSuccess | TransferFailure | None = None
+        artifact_type = policy.artifact_type
+        try:
+            outcome = await service._download_impl(
+                representation_url,
+                output_path,
+                policy,
+            )
+        except BaseException as error:
+            failure = sanitize_escaping_exception(error)
+        finally:
+            del self, service, representation_url, policy
+        if failure is not None:
+            raise failure
         assert outcome is not None
         if isinstance(outcome, TransferFailure):
             public_error = ArtifactDownloadError(
-                "infographic",
+                artifact_type,
                 details=(
                     "Android transfer failed "
                     f"(code={outcome.code}, host={outcome.approved_host}, hop={outcome.hop})."
@@ -283,6 +476,7 @@ class AndroidAssetDownloadService(AssetDownloadService):
         self,
         representation_url: str,
         output_path: str,
+        policy: _RepresentationPolicy,
     ) -> _TransferSuccess | TransferFailure:
         expected_epoch = self._active_epoch
         if expected_epoch is None:
@@ -300,6 +494,7 @@ class AndroidAssetDownloadService(AssetDownloadService):
                 return await self._transfer_worker(
                     representation_url,
                     output_path,
+                    policy,
                     expected_epoch=lease.epoch,
                 )
             finally:
@@ -309,26 +504,39 @@ class AndroidAssetDownloadService(AssetDownloadService):
         self,
         representation_url: str,
         output_path: str,
+        policy: _RepresentationPolicy,
         *,
         expected_epoch: int,
     ) -> _TransferSuccess | TransferFailure:
         current_url: str | None = representation_url
         client: Any | None = None
         credential: BearerCredential | None = None
+        bearer_allowed = False
         staging: Path | None = None
         try:
             initial_host = _validated_host(representation_url)
-            current_url = _append_initial_alr(representation_url)
-            if initial_host != _BEARER_HOST or current_url is None:
+            if initial_host == _BEARER_HOST:
+                current_url = _append_initial_alr(representation_url)
+                bearer_allowed = True
+            elif initial_host in policy.capability_initial_hosts:
+                # Slide PDF/PPTX fields are already signed capability URLs on
+                # contribution.usercontent.google.com. Never attach or acquire
+                # the Android bearer when the first hop is capability-backed.
+                current_url = representation_url
+            else:
+                current_url = None
+            if current_url is None:
                 return TransferFailure(
                     "url_policy",
                     _safe_approved_host(representation_url),
                     0,
                 )
+            assert initial_host is not None
 
             self._assert_epoch(expected_epoch)
-            credential = await self._bearer_provider.get(expected_epoch)
-            self._assert_epoch(expected_epoch)
+            if initial_host == _BEARER_HOST:
+                credential = await self._bearer_provider.get(expected_epoch)
+                self._assert_epoch(expected_epoch)
             try:
                 client = self._client_factory()
             except (KeyboardInterrupt, SystemExit):
@@ -347,10 +555,13 @@ class AndroidAssetDownloadService(AssetDownloadService):
                         _safe_approved_host(current_url),
                         hop,
                     )
-                headers = _bearer_for(host, credential)
+                if host != _BEARER_HOST:
+                    bearer_allowed = False
+                headers = _bearer_for(host, credential if bearer_allowed else None)
                 response_cm: Any | None = None
                 response: Any | None = None
                 try:
+                    _clear_client_cookies(client)
                     response_cm = client.stream(
                         "GET",
                         current_url,
@@ -368,7 +579,7 @@ class AndroidAssetDownloadService(AssetDownloadService):
                         current_url = urljoin(current_url, location)
                         continue
                     if status != 200:
-                        if status == 401 and host == _BEARER_HOST:
+                        if status == 401 and headers and credential is not None:
                             self._bearer_provider.invalidate(credential.generation)
                         return TransferFailure(f"http_{status}", host, hop)
 
@@ -386,10 +597,21 @@ class AndroidAssetDownloadService(AssetDownloadService):
                             return TransferFailure("application_redirect", host, hop)
                         current_url = redirect_url
                         continue
-                    if media_type != "image/png":
+                    format_policy = _format_for_media_type(policy, media_type)
+                    if format_policy is None:
                         return TransferFailure("content_type", host, hop)
+                    declared_length = _declared_content_length(response.headers)
+                    if declared_length is not None and (
+                        declared_length < 0 or declared_length > policy.max_bytes
+                    ):
+                        return TransferFailure("size", host, hop)
 
                     destination = Path(output_path)
+                    if (
+                        format_policy.suffix_replacement is not None
+                        and destination.suffix.lower() == format_policy.suffix_replacement[0]
+                    ):
+                        destination = destination.with_suffix(format_policy.suffix_replacement[1])
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     fd, staging_name = tempfile.mkstemp(
                         prefix=f".{destination.name}.",
@@ -399,23 +621,33 @@ class AndroidAssetDownloadService(AssetDownloadService):
                     staging = Path(staging_name)
                     total = 0
                     prefix = bytearray()
+                    signatures = format_policy.signature_checks
+                    required_prefix = max(
+                        offset + len(signature) for signature, offset in signatures
+                    )
                     with os.fdopen(fd, "wb") as handle:
                         async for chunk in response.aiter_bytes():
                             if not chunk:
                                 continue
-                            if len(prefix) < len(_PNG_SIGNATURE):
-                                prefix.extend(chunk[: len(_PNG_SIGNATURE) - len(prefix)])
+                            if total + len(chunk) > policy.max_bytes:
+                                return TransferFailure("size", host, hop)
+                            if len(prefix) < required_prefix:
+                                prefix.extend(chunk[: required_prefix - len(prefix)])
                             handle.write(chunk)
                             total += len(chunk)
                         handle.flush()
                         os.fsync(handle.fileno())
                     if total == 0:
                         return TransferFailure("empty", host, hop)
-                    if bytes(prefix) != _PNG_SIGNATURE:
+                    if not all(
+                        bytes(prefix[offset : offset + len(signature)]) == signature
+                        for signature, offset in signatures
+                    ):
                         return TransferFailure("signature", host, hop)
                     self._assert_epoch(expected_epoch)
                     os.replace(staging, destination)
                     staging = None
+                    _fsync_directory(destination.parent)
                     logger.debug(
                         "Android asset complete host=%s hop=%d bytes=%d",
                         host,
@@ -437,6 +669,7 @@ class AndroidAssetDownloadService(AssetDownloadService):
                             raise
                         except BaseException:
                             pass
+                    _clear_client_cookies(client)
                     del headers, response, response_cm
             return TransferFailure(
                 "too_many_hops",
@@ -457,7 +690,7 @@ class AndroidAssetDownloadService(AssetDownloadService):
                 except BaseException:
                     pass
                 self._clients.discard(client)
-            del credential, client, current_url, representation_url, staging
+            del credential, client, current_url, policy, representation_url, staging
 
     async def download_urls_batch(self, urls_and_paths: list[tuple[str, str]]) -> DownloadResult:
         """Keep B4's one-representation transfer boundary explicit."""
@@ -468,4 +701,4 @@ class AndroidAssetDownloadService(AssetDownloadService):
         )
 
 
-__all__ = ["AndroidAssetDownloadService", "TransferFailure"]
+__all__ = ["AndroidAssetDownloadService", "RepresentationKind", "TransferFailure"]

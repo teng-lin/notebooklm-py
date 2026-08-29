@@ -467,13 +467,14 @@ def _assemble_client(
     )
     # Unified mind-map surface over both backends (note-backed + interactive
     # studio artifact); dispatches each op to the correct RPC family (#1256).
-    client.mind_maps = WebMindMapsAPI(
+    web_mind_maps = WebMindMapsAPI(
         rpc=internals.executor,
         mind_maps=mind_maps,
         artifacts=client.artifacts,
         notebooks=client.notebooks,
         notes=client.notes,
     )
+    client.mind_maps = web_mind_maps
     # Pure-RPC features (typed as ``rpc: RpcCaller``). Pass the
     # ``RpcExecutor`` collaborator directly, sourced from the composed
     # executor.
@@ -498,8 +499,12 @@ def _assemble_client(
     android_transports: tuple[TransportLifecycle, ...] = ()
     android_loop_participants: tuple[LoopParticipant, ...] = ()
     if client._backend_preference.preferred == "android":
+        from ._android.artifacts import AndroidArtifactsAPI
+        from ._android.assets import AndroidAssetDownloadService
         from ._android.auth import _make_bearer_provider
         from ._android.collections import AndroidCollectionsAPI
+        from ._android.mind_maps import AndroidMindMapsAPI
+        from ._android.note_backed import NoteBackedMindMapArtifactAdapter
         from ._android.session import AndroidSession
 
         android_bearer_provider = _make_bearer_provider(
@@ -512,7 +517,27 @@ def _assemble_client(
         )
         client._android_bearer_provider = android_bearer_provider
         client._android_session = android_session
-        android_transports = (android_session,)
+        android_asset_downloads = AndroidAssetDownloadService(
+            bearer_provider=android_bearer_provider,
+            supervisor=internals.collaborators.call_supervisor,
+        )
+        note_backed_artifacts = NoteBackedMindMapArtifactAdapter(
+            web_mind_maps.list_note_backed,
+        )
+        client.artifacts = AndroidArtifactsAPI(
+            session=android_session,
+            supervisor=internals.collaborators.call_supervisor,
+            notebooks=client.notebooks,
+            mind_maps=note_backed_artifacts,
+            asset_downloads=android_asset_downloads,
+        )
+        client.mind_maps = AndroidMindMapsAPI(
+            supervisor=internals.collaborators.call_supervisor,
+            artifacts=client.artifacts,
+            notes=client.notes,
+            note_backed_reader=web_mind_maps,
+        )
+        android_transports = (android_session, android_asset_downloads)
         android_loop_participants = (android_bearer_provider, android_session)
         client.collections = AndroidCollectionsAPI(
             android_session,

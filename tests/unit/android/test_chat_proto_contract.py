@@ -74,6 +74,7 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
     string = FieldDescriptor.TYPE_STRING
     boolean = FieldDescriptor.TYPE_BOOL
     int32 = FieldDescriptor.TYPE_INT32
+    double = FieldDescriptor.TYPE_DOUBLE
     message = FieldDescriptor.TYPE_MESSAGE
     enum = FieldDescriptor.TYPE_ENUM
     o = ORCHESTRATION_PACKAGE
@@ -100,19 +101,94 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
             "object_id": (1, singular, message, f"{o}.ObjectId"),
             "content_range": (2, singular, message, f"{o}.Range"),
         },
-        chat_pb2.TextRun: {"content": (1, singular, string, None)},
+        chat_pb2.FontInfo: {
+            "font_family": (1, singular, string, None),
+            "weight": (2, singular, int32, None),
+            "font_size_pt": (3, singular, double, None),
+        },
+        chat_pb2.Color: {
+            "red": (1, singular, int32, None),
+            "green": (2, singular, int32, None),
+            "blue": (3, singular, int32, None),
+        },
+        chat_pb2.TextStyle: {
+            "bold": (1, singular, boolean, None),
+            "italic": (2, singular, boolean, None),
+            "underline": (3, singular, boolean, None),
+            "url": (4, singular, string, None),
+            "font_info": (5, singular, message, f"{o}.FontInfo"),
+            "text_color": (6, singular, message, f"{o}.Color"),
+            "background_color": (7, singular, message, f"{o}.Color"),
+            "code": (8, singular, boolean, None),
+            "strikethrough": (9, singular, boolean, None),
+            "math": (10, singular, int32, None),
+        },
+        chat_pb2.TextRun: {
+            "content": (1, singular, string, None),
+            "text_style": (2, singular, message, f"{o}.TextStyle"),
+        },
+        chat_pb2.Image: {
+            "url": (1, singular, string, None),
+            "source_image_id": (3, singular, string, None),
+            "block_reason": (4, singular, int32, None),
+        },
+        chat_pb2.Resource: {"id": (1, singular, string, None)},
         chat_pb2.ParagraphElement: {
             "start_index": (1, singular, int32, None),
             "end_index": (2, singular, int32, None),
             "text_run": (3, singular, message, f"{o}.TextRun"),
+            "image": (4, singular, message, f"{o}.Image"),
+            "resource": (5, singular, message, f"{o}.Resource"),
+        },
+        chat_pb2.BulletInfo: {
+            "nesting_level": (3, singular, int32, None),
+            "glyph": (101, singular, string, None),
+            "list_type": (102, singular, enum, f"{o}.ListType"),
+            "ordinal": (103, singular, int32, None),
+            "absolute_ordinal": (104, singular, int32, None),
+        },
+        chat_pb2.ParagraphStyle: {
+            "named_style_type": (2, singular, enum, f"{o}.NamedStyleType"),
         },
         chat_pb2.Paragraph: {
             "elements": (1, repeated, message, f"{o}.ParagraphElement"),
+            "paragraph_style": (2, singular, message, f"{o}.ParagraphStyle"),
+            "bullet_info": (4, singular, message, f"{o}.BulletInfo"),
         },
+        chat_pb2.TableCell: {
+            "start_index": (1, singular, int32, None),
+            "end_index": (2, singular, int32, None),
+            "content": (3, repeated, message, f"{o}.StructuralElement"),
+        },
+        chat_pb2.TableRow: {
+            "start_index": (1, singular, int32, None),
+            "end_index": (2, singular, int32, None),
+            "table_cells": (3, repeated, message, f"{o}.TableCell"),
+        },
+        chat_pb2.Table: {
+            "rows": (1, singular, int32, None),
+            "columns": (2, singular, int32, None),
+            "table_rows": (3, repeated, message, f"{o}.TableRow"),
+        },
+        chat_pb2.CodeBlock: {
+            "content": (1, singular, string, None),
+            "language_hint": (2, singular, string, None),
+        },
+        chat_pb2.A2uiBlock: {"json": (1, singular, string, None)},
+        chat_pb2.Thought: {
+            "elements": (1, repeated, message, f"{o}.StructuralElement"),
+        },
+        chat_pb2.HorizontalRule: {},
         chat_pb2.StructuralElement: {
             "start_index": (1, singular, int32, None),
             "end_index": (2, singular, int32, None),
             "paragraph": (3, singular, message, f"{o}.Paragraph"),
+            "table": (5, singular, message, f"{o}.Table"),
+            "image": (6, singular, message, f"{o}.Image"),
+            "code_block": (7, singular, message, f"{o}.CodeBlock"),
+            "a2ui_block": (8, singular, message, f"{o}.A2uiBlock"),
+            "thought": (9, singular, message, f"{o}.Thought"),
+            "horizontal_rule": (12, singular, message, f"{o}.HorizontalRule"),
         },
         chat_pb2.Body: {
             "content": (1, repeated, message, f"{o}.StructuralElement"),
@@ -144,6 +220,7 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
         chat_pb2.TailwindDoc: {
             "body": (1, singular, message, f"{o}.Body"),
             "objects": (4, repeated, message, f"{o}.DocumentObject"),
+            "type": (5, singular, int32, None),
         },
         chat_pb2.AnswerResponse: {
             "response": (1, singular, string, None),
@@ -224,6 +301,23 @@ def test_b5_enum_names_and_numbers_match_checked_in_evidence() -> None:
         "EVENT_TYPE_UNKNOWN": 0,
         "USER_QUERY": 1,
         "GENERATED_RESPONSE": 2,
+    }
+    assert {value.name: value.number for value in chat_pb2.NamedStyleType.DESCRIPTOR.values} == {
+        "NAMED_STYLE_TYPE_UNSPECIFIED": 0,
+        "NORMAL_TEXT": 1,
+        "TITLE": 2,
+        "SUBTITLE": 3,
+        "HEADING_1": 4,
+        "HEADING_2": 5,
+        "HEADING_3": 6,
+        "HEADING_4": 7,
+        "HEADING_5": 8,
+        "HEADING_6": 9,
+    }
+    assert {value.name: value.number for value in chat_pb2.ListType.DESCRIPTOR.values} == {
+        "LIST_TYPE_UNSPECIFIED": 0,
+        "LIST_TYPE_UNORDERED": 1,
+        "LIST_TYPE_ORDERED": 2,
     }
 
 

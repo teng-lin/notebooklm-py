@@ -7,17 +7,18 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, cast
-from unittest.mock import ANY, AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from tests._helpers.android_supervisor import SupervisedAndroidTransport
 
+from notebooklm._android.artifacts import AndroidArtifactsAPI
 from notebooklm._android.mind_maps import AndroidMindMapsAPI
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._notes import NotesAPI
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm.exceptions import MindMapNotFoundError, NoteNotFoundError, UnsupportedOperationError
-from notebooklm.types import Artifact, MindMap, MindMapKind, Note
+from notebooklm.types import Artifact, GenerationStatus, MindMap, MindMapKind, Note
 
 
 @dataclass(frozen=True)
@@ -28,12 +29,21 @@ class _Lease:
 class _Supervisor:
     def __init__(self) -> None:
         self.scopes: list[str] = []
+        self.active_scopes: list[str] = []
+        self.scope_events: list[tuple[str, str]] = []
 
     @asynccontextmanager
     async def operation_scope(self, label: str, **kwargs: Any) -> AsyncIterator[_Lease]:
         assert not kwargs
         self.scopes.append(label)
-        yield _Lease()
+        self.active_scopes.append(label)
+        self.scope_events.append(("enter", label))
+        try:
+            yield _Lease()
+        finally:
+            assert self.active_scopes[-1] == label
+            self.active_scopes.pop()
+            self.scope_events.append(("exit", label))
 
 
 def _interactive_artifact(artifact_id: str = "interactive") -> Artifact:
@@ -50,6 +60,7 @@ def _graph(
     *,
     artifacts: list[Artifact] | None = None,
     note_backed: list[MindMap] | None = None,
+    supervisor: _Supervisor | None = None,
 ) -> tuple[AndroidMindMapsAPI, MagicMock, MagicMock]:
     notes = MagicMock(spec=NotesAPI)
     notes._list_note_backed_mind_maps = AsyncMock(return_value=note_backed or [])
@@ -67,14 +78,22 @@ def _graph(
     notes.update = AsyncMock()
     notes.delete_mind_map = AsyncMock(return_value=None)
 
-    artifact_api = MagicMock(spec=ArtifactsAPI)
+    artifact_api = MagicMock(spec=AndroidArtifactsAPI)
     artifact_api.list = AsyncMock(return_value=artifacts or [])
+    artifact_api._list_all_studio = AsyncMock(return_value=artifacts or [])
     artifact_api.rename = AsyncMock()
     artifact_api.delete = AsyncMock()
+    artifact_api.wait_for_completion = AsyncMock()
+    artifact_api._generate_interactive_mind_map = AsyncMock(
+        return_value=GenerationStatus(task_id="interactive", status="pending")
+    )
+    artifact_api._get_interactive_mind_map_tree = AsyncMock(
+        return_value={"name": "Interactive", "children": []}
+    )
 
     return (
         AndroidMindMapsAPI(
-            supervisor=cast(CallSupervisor, _Supervisor()),
+            supervisor=cast(CallSupervisor, supervisor or _Supervisor()),
             artifacts=artifact_api,
             notes=notes,
         ),
@@ -90,8 +109,12 @@ def _assert_no_dependency_io(artifacts: MagicMock, notes: MagicMock) -> None:
     notes.update.assert_not_awaited()
     notes.delete_mind_map.assert_not_awaited()
     artifacts.list.assert_not_awaited()
+    artifacts._list_all_studio.assert_not_awaited()
     artifacts.rename.assert_not_awaited()
     artifacts.delete.assert_not_awaited()
+    artifacts.wait_for_completion.assert_not_awaited()
+    artifacts._generate_interactive_mind_map.assert_not_awaited()
+    artifacts._get_interactive_mind_map_tree.assert_not_awaited()
 
 
 def test_direct_graph_requires_and_retains_exact_base_collaborators() -> None:
@@ -139,16 +162,17 @@ async def test_typed_note_backed_read_composes_aggregate_without_raw_note_rows()
     )
 
     assert await api.list_note_backed("notebook-1") == [note_map]
+    notes._list_note_backed_mind_maps.reset_mock()
     aggregate = await api.list("notebook-1")
     assert [item.id for item in aggregate] == ["note-map", "interactive"]
     assert aggregate[0] is note_map
     assert aggregate[1].kind is MindMapKind.INTERACTIVE
     assert aggregate[1].tree is None
 
-    assert notes._list_note_backed_mind_maps.await_count == 2
-    notes._list_note_backed_mind_maps.assert_awaited_with("notebook-1")
+    notes._list_note_backed_mind_maps.assert_awaited_once_with("notebook-1")
     notes.list_mind_maps.assert_not_awaited()
-    artifacts.list.assert_awaited_once_with("notebook-1", ANY)
+    artifacts._list_all_studio.assert_awaited_once_with("notebook-1")
+    artifacts.list.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -161,7 +185,8 @@ async def test_get_and_get_or_none_use_typed_aggregate_read() -> None:
 
     assert notes._list_note_backed_mind_maps.await_count == 2
     notes.list_mind_maps.assert_not_awaited()
-    assert artifacts.list.await_count == 2
+    assert artifacts._list_all_studio.await_count == 2
+    artifacts.list.assert_not_awaited()
 
 
 UnsupportedCall = Callable[[AndroidMindMapsAPI], Awaitable[object]]
@@ -179,22 +204,6 @@ UnsupportedCall = Callable[[AndroidMindMapsAPI], Awaitable[object]]
             ),
             id="generate-note-backed",
         ),
-        pytest.param(
-            lambda api: api.generate(
-                "notebook-1",
-                None,
-                kind=MindMapKind.INTERACTIVE,
-            ),
-            id="generate-interactive",
-        ),
-        pytest.param(
-            lambda api: api.get_tree(
-                "notebook-1",
-                "interactive",
-                kind=MindMapKind.INTERACTIVE,
-            ),
-            id="get-tree-interactive",
-        ),
     ],
 )
 async def test_evidence_gated_operations_fail_before_dependency_io(
@@ -206,6 +215,148 @@ async def test_evidence_gated_operations_fail_before_dependency_io(
         await invoke(api)
 
     _assert_no_dependency_io(artifacts, notes)
+
+
+@pytest.mark.asyncio
+async def test_interactive_generate_uses_live_create_wait_list_and_tree_seams() -> None:
+    interactive = _interactive_artifact()
+    api, artifacts, notes = _graph(artifacts=[interactive])
+
+    result = await api.generate(
+        "notebook-1",
+        ["source-1"],
+        kind=MindMapKind.INTERACTIVE,
+        language="en",
+        instructions="focus",
+        wait=True,
+    )
+
+    assert result == MindMap(
+        id="interactive",
+        notebook_id="notebook-1",
+        title="Interactive",
+        kind=MindMapKind.INTERACTIVE,
+        tree={"name": "Interactive", "children": []},
+    )
+    artifacts._generate_interactive_mind_map.assert_awaited_once_with(
+        "notebook-1",
+        ["source-1"],
+        language="en",
+        instructions="focus",
+    )
+    artifacts.wait_for_completion.assert_awaited_once_with("notebook-1", "interactive")
+    artifacts.list.assert_awaited_once()
+    artifacts._get_interactive_mind_map_tree.assert_awaited_once_with("interactive")
+    notes._list_note_backed_mind_maps.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_interactive_generate_without_wait_skips_poll_and_tree() -> None:
+    api, artifacts, _ = _graph()
+
+    result = await api.generate(
+        "notebook-1",
+        None,
+        kind=MindMapKind.INTERACTIVE,
+        wait=False,
+    )
+
+    assert result.id == "interactive"
+    assert result.tree is None
+    artifacts.wait_for_completion.assert_not_awaited()
+    artifacts._get_interactive_mind_map_tree.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_interactive_generate_holds_outer_scope_through_nested_tree_read() -> None:
+    supervisor = _Supervisor()
+    api, artifacts, _ = _graph(
+        artifacts=[_interactive_artifact()],
+        supervisor=supervisor,
+    )
+    tree_started = asyncio.Event()
+    tree_release = asyncio.Event()
+
+    async def _read_tree(_artifact_id: str) -> dict[str, Any]:
+        tree_started.set()
+        await tree_release.wait()
+        return {"name": "Interactive", "children": []}
+
+    artifacts._get_interactive_mind_map_tree.side_effect = _read_tree
+    task = asyncio.create_task(
+        api.generate(
+            "notebook-1",
+            ["source-1"],
+            kind=MindMapKind.INTERACTIVE,
+            wait=True,
+        )
+    )
+    await tree_started.wait()
+
+    try:
+        assert supervisor.active_scopes == ["mind_maps.generate", "mind_maps.get_tree"]
+    finally:
+        tree_release.set()
+
+    assert (await task).tree == {"name": "Interactive", "children": []}
+    assert supervisor.active_scopes == []
+    assert supervisor.scope_events == [
+        ("enter", "mind_maps.generate"),
+        ("enter", "mind_maps.get_tree"),
+        ("exit", "mind_maps.get_tree"),
+        ("exit", "mind_maps.generate"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_explicit_interactive_tree_reads_exact_app_field_without_listing() -> None:
+    api, artifacts, notes = _graph()
+
+    tree = await api.get_tree(
+        "notebook-1",
+        "interactive",
+        kind=MindMapKind.INTERACTIVE,
+    )
+
+    assert tree == {"name": "Interactive", "children": []}
+    artifacts._get_interactive_mind_map_tree.assert_awaited_once_with("interactive")
+    artifacts.list.assert_not_awaited()
+    notes._list_note_backed_mind_maps.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_tree_holds_outer_scope_until_interactive_read_finishes() -> None:
+    supervisor = _Supervisor()
+    api, artifacts, _ = _graph(supervisor=supervisor)
+    tree_started = asyncio.Event()
+    tree_release = asyncio.Event()
+
+    async def _read_tree(_artifact_id: str) -> dict[str, Any]:
+        tree_started.set()
+        await tree_release.wait()
+        return {"name": "Interactive", "children": []}
+
+    artifacts._get_interactive_mind_map_tree.side_effect = _read_tree
+    task = asyncio.create_task(
+        api.get_tree(
+            "notebook-1",
+            "interactive",
+            kind=MindMapKind.INTERACTIVE,
+        )
+    )
+    await tree_started.wait()
+
+    try:
+        assert supervisor.active_scopes == ["mind_maps.get_tree"]
+    finally:
+        tree_release.set()
+
+    assert await task == {"name": "Interactive", "children": []}
+    assert supervisor.active_scopes == []
+    assert supervisor.scope_events == [
+        ("enter", "mind_maps.get_tree"),
+        ("exit", "mind_maps.get_tree"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -264,7 +415,8 @@ async def test_auto_detect_rename_hydrates_interactive_map() -> None:
         _variant=4,
     )
     api, artifacts, notes = _graph(artifacts=[before])
-    artifacts.list.side_effect = [[before], [after]]
+    artifacts.list.return_value = [before]
+    artifacts._list_all_studio.return_value = [after]
 
     renamed = await api.rename("notebook-1", "interactive", "Renamed")
 
@@ -275,7 +427,8 @@ async def test_auto_detect_rename_hydrates_interactive_map() -> None:
         MindMapKind.INTERACTIVE,
     )
     assert notes._list_note_backed_mind_maps.await_count == 2
-    assert artifacts.list.await_count == 2
+    artifacts.list.assert_awaited_once_with("notebook-1")
+    artifacts._list_all_studio.assert_awaited_once_with("notebook-1")
     artifacts.rename.assert_awaited_once_with(
         "notebook-1",
         "interactive",
@@ -324,14 +477,17 @@ async def test_get_tree_reads_note_backed_and_auto_detects_missing() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_tree_auto_detected_interactive_remains_gated_after_reads() -> None:
+async def test_get_tree_auto_detected_interactive_reads_exact_app_tree_after_detection() -> None:
     api, artifacts, notes = _graph(artifacts=[_interactive_artifact()])
 
-    with pytest.raises(UnsupportedOperationError, match="web backend"):
-        await api.get_tree("notebook-1", "interactive")
+    assert await api.get_tree("notebook-1", "interactive") == {
+        "name": "Interactive",
+        "children": [],
+    }
 
     notes._list_note_backed_mind_maps.assert_awaited_once_with("notebook-1")
     artifacts.list.assert_awaited_once_with("notebook-1")
+    artifacts._get_interactive_mind_map_tree.assert_awaited_once_with("interactive")
 
 
 @pytest.mark.asyncio
@@ -399,6 +555,40 @@ async def test_explicit_interactive_delete_composes_without_aggregate_reads() ->
 
 
 @pytest.mark.asyncio
+async def test_delete_holds_outer_scope_until_artifact_delete_finishes() -> None:
+    supervisor = _Supervisor()
+    api, artifacts, _ = _graph(supervisor=supervisor)
+    delete_started = asyncio.Event()
+    delete_release = asyncio.Event()
+
+    async def _delete(_notebook_id: str, _artifact_id: str) -> None:
+        delete_started.set()
+        await delete_release.wait()
+
+    artifacts.delete.side_effect = _delete
+    task = asyncio.create_task(
+        api.delete(
+            "notebook-1",
+            "interactive",
+            kind=MindMapKind.INTERACTIVE,
+        )
+    )
+    await delete_started.wait()
+
+    try:
+        assert supervisor.active_scopes == ["mind_maps.delete"]
+    finally:
+        delete_release.set()
+
+    assert await task is None
+    assert supervisor.active_scopes == []
+    assert supervisor.scope_events == [
+        ("enter", "mind_maps.delete"),
+        ("exit", "mind_maps.delete"),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_note_backed_delete_delegates_to_notes_kind_safe_delete() -> None:
     api, artifacts, notes = _graph()
 
@@ -438,6 +628,14 @@ class _SupervisedArtifacts:
         return await self._transport.unary(
             "artifacts.list",
             (notebook_id, artifact_type),
+            replay_safe=True,
+            response_type=list,
+        )
+
+    async def _list_all_studio(self, notebook_id: str) -> list[Artifact]:
+        return await self._transport.unary(
+            "artifacts.list",
+            (notebook_id, None),
             replay_safe=True,
             response_type=list,
         )

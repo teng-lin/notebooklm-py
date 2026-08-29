@@ -31,7 +31,9 @@ RespT = TypeVar("RespT")
 
 ANDROID_GRPC_TARGET = "notebooklm-pa.googleapis.com:443"
 _NOT_OPEN = "Client not initialized. Use 'async with' context."
-_ANDROID_GRPC_EXTRA = "Android transport needs grpcio. Install: pip install 'notebooklm-py[android]'"
+_ANDROID_GRPC_EXTRA = (
+    "Android transport needs grpcio. Install: pip install 'notebooklm-py[android]'"
+)
 _ANDROID_PROTOBUF_EXTRA = (
     "Android transport needs a protobuf runtime compatible with its generated protocol. "
     "Install: pip install 'notebooklm-py[android]'"

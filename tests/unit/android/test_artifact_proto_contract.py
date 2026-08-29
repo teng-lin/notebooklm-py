@@ -13,6 +13,7 @@ from google.protobuf.descriptor import FieldDescriptor
 from notebooklm._android.artifacts import (
     CREATE_ARTIFACT_METHOD,
     DELETE_ARTIFACT_METHOD,
+    DERIVE_ARTIFACT_METHOD,
     GENERATE_REPORT_SUGGESTIONS_METHOD,
     GET_ARTIFACT_METHOD,
     LIST_ARTIFACTS_METHOD,
@@ -22,7 +23,11 @@ from notebooklm._android.codecs.artifacts import decode_artifact, decode_artifac
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     artifacts_pb2,
 )
-from notebooklm._types.artifact_content import ArtifactMediaType
+from notebooklm._types.artifact_content import (
+    ArtifactMediaType,
+    AudioArtifactUserState,
+    FlashcardArtifactUserState,
+)
 from notebooklm.exceptions import DecodingError
 from notebooklm.types import ArtifactType
 
@@ -66,6 +71,7 @@ def test_full_method_paths_are_exact_and_local_overlay_does_not_claim_a_service(
     assert f"{prefix}ListArtifacts" == LIST_ARTIFACTS_METHOD
     assert f"{prefix}GetArtifact" == GET_ARTIFACT_METHOD
     assert f"{prefix}CreateArtifact" == CREATE_ARTIFACT_METHOD
+    assert f"{prefix}DeriveArtifact" == DERIVE_ARTIFACT_METHOD
     assert f"{prefix}UpdateArtifact" == UPDATE_ARTIFACT_METHOD
     assert f"{prefix}DeleteArtifact" == DELETE_ARTIFACT_METHOD
     assert f"{prefix}GenerateReportSuggestions" == GENERATE_REPORT_SUGGESTIONS_METHOD
@@ -83,6 +89,26 @@ def test_b4_request_response_fields_are_exhaustive() -> None:
             ("artifact", 3, singular, message, f"{ORCHESTRATION_PACKAGE}.Artifact"),
         ),
         artifacts_pb2.CreateArtifactResponse: _expected(
+            ("artifact", 1, singular, message, f"{ORCHESTRATION_PACKAGE}.Artifact"),
+        ),
+        artifacts_pb2.DeriveArtifactRequest: _expected(
+            (
+                "request_context",
+                1,
+                singular,
+                message,
+                "labs.language.tailwind.common.protos.RequestContext",
+            ),
+            ("original_artifact_id", 2, singular, string, None),
+            (
+                "slides_derivation_options",
+                3,
+                singular,
+                message,
+                f"{ORCHESTRATION_PACKAGE}.SlidesDerivationOptions",
+            ),
+        ),
+        artifacts_pb2.DeriveArtifactResponse: _expected(
             ("artifact", 1, singular, message, f"{ORCHESTRATION_PACKAGE}.Artifact"),
         ),
         artifacts_pb2.GetArtifactRequest: _expected(
@@ -300,7 +326,11 @@ def test_b4_artifact_projection_fields_are_exhaustive() -> None:
                 f"{package}.QuizGenerationOptions",
             ),
         ),
+        artifacts_pb2.TemplatizedApp: _expected(
+            ("app_data", 1, singular, string, None),
+        ),
         artifacts_pb2.AppArtifact: _expected(
+            ("app_html", 1, singular, string, None),
             (
                 "generation_options",
                 2,
@@ -308,6 +338,8 @@ def test_b4_artifact_projection_fields_are_exhaustive() -> None:
                 message,
                 f"{package}.AppArtifactGenerationOptions",
             ),
+            ("templatized_app", 3, singular, message, f"{package}.TemplatizedApp"),
+            ("mind_map_json", 4, singular, string, None),
         ),
         artifacts_pb2.AudioOverviewGenerationOptions: _expected(
             ("episode_focus", 1, singular, string, None),
@@ -373,6 +405,7 @@ def test_b4_artifact_projection_fields_are_exhaustive() -> None:
                 message,
                 f"{package}.TailoredReportArtifactGenerationOptions",
             ),
+            ("report_doc", 3, singular, message, f"{package}.TailwindDoc"),
         ),
         artifacts_pb2.ServedImage: _expected(("url", 1, singular, string, None)),
         artifacts_pb2.InfographicGenerationOptions: _expected(
@@ -426,10 +459,58 @@ def test_b4_artifact_projection_fields_are_exhaustive() -> None:
             ),
             ("slides", 3, repeated, message, f"{package}.Slide"),
             ("pdf_download_url", 4, singular, string, None),
+            ("pptx_download_url", 5, singular, string, None),
+        ),
+        artifacts_pb2.SlideEditInstruction: _expected(
+            ("slide_index", 1, singular, integer, None),
+            ("edit_instruction", 2, singular, string, None),
+        ),
+        artifacts_pb2.SlidesDerivationOptions: _expected(
+            (
+                "slide_edit_instructions",
+                1,
+                repeated,
+                message,
+                f"{package}.SlideEditInstruction",
+            ),
         ),
         artifacts_pb2.FileArtifact: _expected(
+            ("file_name", 1, singular, string, None),
+            ("mime_type", 2, singular, string, None),
             ("file_preview_url", 3, singular, string, None),
             ("file_download_url", 4, singular, string, None),
+        ),
+        artifacts_pb2.AudioOverviewState: _expected(
+            ("playback_position", 1, singular, message, "google.protobuf.Duration"),
+        ),
+        artifacts_pb2.VideoOverviewState: _expected(),
+        artifacts_pb2.AppArtifactState: _expected(
+            ("app_state", 1, singular, message, "google.protobuf.Struct"),
+        ),
+        artifacts_pb2.ScheduledNotificationConfig: _expected(),
+        artifacts_pb2.ArtifactState: _expected(
+            (
+                "audio_overview_state",
+                1,
+                singular,
+                message,
+                f"{package}.AudioOverviewState",
+            ),
+            (
+                "video_overview_state",
+                2,
+                singular,
+                message,
+                f"{package}.VideoOverviewState",
+            ),
+            ("app_artifact_state", 3, singular, message, f"{package}.AppArtifactState"),
+            (
+                "scheduled_notification_configs",
+                4,
+                repeated,
+                message,
+                f"{package}.ScheduledNotificationConfig",
+            ),
         ),
         artifacts_pb2.ArtifactSource: _expected(
             ("source_id", 1, singular, message, f"{package}.SourceId"),
@@ -447,6 +528,7 @@ def test_b4_artifact_projection_fields_are_exhaustive() -> None:
             ("last_modified_timestamp", 11, singular, message, "google.protobuf.Timestamp"),
             ("infographic", 15, singular, message, f"{package}.InfographicArtifact"),
             ("slides", 17, singular, message, f"{package}.SlidesArtifact"),
+            ("artifact_user_state", 18, singular, message, f"{package}.ArtifactState"),
             ("etag", 22, singular, string, None),
             ("file", 25, singular, message, f"{package}.FileArtifact"),
         ),
@@ -496,6 +578,7 @@ def test_descriptor_fixture_contains_the_cumulative_android_closure() -> None:
         "google/internal/labs/tailwind/v1/source_settings.proto",
         "google/protobuf/duration.proto",
         "google/protobuf/field_mask.proto",
+        "google/protobuf/struct.proto",
         "google/protobuf/timestamp.proto",
     } <= names
 
@@ -510,7 +593,7 @@ def test_synthetic_fixture_exercises_every_admitted_public_projection() -> None:
 
     audio = by_id["audio-1"]
     assert audio.kind is ArtifactType.AUDIO
-    assert audio.url == "https://lh3.googleusercontent.com/audio-download"
+    assert audio.url == "https://lh3.googleusercontent.com/audio-stream"
     assert audio.generation_prompt == "Audio focus"
     assert audio.duration_seconds == 61.5
     assert audio.source_ids == ("source-a",)
@@ -560,6 +643,53 @@ def test_audio_options_project_only_onto_existing_public_artifact_fields() -> No
     assert not hasattr(artifact, "episode_length")
     assert not hasattr(artifact, "language_code")
     assert not hasattr(artifact, "is_interactive")
+
+
+def test_exact_audio_and_flashcard_user_state_projects_to_public_types() -> None:
+    audio = decode_artifact(
+        artifacts_pb2.Artifact(
+            artifact_id="audio-state",
+            type=artifacts_pb2.ARTIFACT_TYPE_AUDIO_OVERVIEW,
+            artifact_user_state=artifacts_pb2.ArtifactState(
+                audio_overview_state=artifacts_pb2.AudioOverviewState(
+                    playback_position={"seconds": 123, "nanos": 500_000_000}
+                )
+            ),
+        ),
+        method_id=GET_ARTIFACT_METHOD,
+    )
+    assert audio.user_state == AudioArtifactUserState(playback_position_seconds=123.5)
+
+    flashcards = decode_artifact(
+        artifacts_pb2.Artifact(
+            artifact_id="flashcard-state",
+            type=artifacts_pb2.ARTIFACT_TYPE_APP,
+            app=artifacts_pb2.AppArtifact(
+                generation_options=artifacts_pb2.AppArtifactGenerationOptions(
+                    app_type=artifacts_pb2.APP_TYPE_FLASHCARDS
+                )
+            ),
+            artifact_user_state=artifacts_pb2.ArtifactState(
+                app_artifact_state=artifacts_pb2.AppArtifactState(
+                    app_state={
+                        "cardAcquisitionsMapping": {"0": "acquired"},
+                        "currentCardIndex": 2,
+                        "hiddenCardIndices": [4, 7],
+                        "lastShownOrder": [2, 0, 1],
+                        "currentView": "card",
+                    }
+                )
+            ),
+        ),
+        method_id=GET_ARTIFACT_METHOD,
+    )
+    assert flashcards.user_state == FlashcardArtifactUserState(
+        card_acquisitions={"0": "acquired"},
+        current_card_index=2,
+        hidden_card_indices=(4, 7),
+        last_shown_order=(2, 0, 1),
+        current_view="card",
+    )
 
 
 def test_decode_failure_drops_raw_message_capability_and_exception_frames() -> None:

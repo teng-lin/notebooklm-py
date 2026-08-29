@@ -3,8 +3,10 @@ syntax = "proto3";
 package google.internal.labs.tailwind.orchestration.v1;
 
 import "google/internal/labs/tailwind/orchestration/v1/read.proto";
+import "google/internal/labs/tailwind/orchestration/v1/chat.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 import "labs/language/tailwind/common/protos/metadata.proto";
 
@@ -151,8 +153,15 @@ message AppArtifactGenerationOptions {
   QuizGenerationOptions quiz_generation_options = 8; // evidence: docs/android/schema.proto AppArtifactGenerationOptions
 }
 
+message TemplatizedApp {
+  string app_data = 1; // evidence: official APK recovered TemplatizedApp schema
+}
+
 message AppArtifact {
+  string app_html = 1; // evidence: official APK recovered AppArtifact schema
   AppArtifactGenerationOptions generation_options = 2; // evidence: docs/android/schema.proto AppArtifact
+  TemplatizedApp templatized_app = 3; // evidence: official APK recovered AppArtifact schema
+  string mind_map_json = 4; // evidence: live Android GetArtifact interactive-mind-map payload
 }
 
 message AudioOverviewGenerationOptions {
@@ -194,6 +203,7 @@ message TailoredReportArtifactGenerationOptions {
 
 message TailoredReportArtifact {
   TailoredReportArtifactGenerationOptions generation_options = 2; // evidence: docs/android/schema.proto TailoredReportArtifact
+  TailwindDoc report_doc = 3; // evidence: official APK recovered TailoredReportArtifact schema
 }
 
 message ServedImage {
@@ -255,11 +265,42 @@ message SlidesArtifact {
   SlidesGenerationOptions generation_options = 1; // evidence: docs/android/schema.proto SlidesArtifact
   repeated Slide slides = 3; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
   string pdf_download_url = 4; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
+  string pptx_download_url = 5; // evidence: official APK recovered SlidesArtifact schema
+}
+
+message SlideEditInstruction {
+  int32 slide_index = 1; // evidence: official APK deriveSlidesArtifact AOT implementation
+  string edit_instruction = 2; // evidence: official APK deriveSlidesArtifact AOT implementation
+}
+
+message SlidesDerivationOptions {
+  repeated SlideEditInstruction slide_edit_instructions = 1; // evidence: official APK deriveSlidesArtifact AOT implementation
 }
 
 message FileArtifact {
+  string file_name = 1; // evidence: official APK recovered FileArtifact schema
+  string mime_type = 2; // evidence: official APK recovered FileArtifact schema
   string file_preview_url = 3; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
   string file_download_url = 4; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
+}
+
+message AudioOverviewState {
+  google.protobuf.Duration playback_position = 1; // evidence: exact-package supported.proto AudioOverviewState
+}
+
+message VideoOverviewState {}
+
+message AppArtifactState {
+  google.protobuf.Struct app_state = 1; // evidence: exact-package supported.proto AppArtifactState
+}
+
+message ScheduledNotificationConfig {}
+
+message ArtifactState {
+  AudioOverviewState audio_overview_state = 1; // evidence: exact-package supported.proto ArtifactState
+  VideoOverviewState video_overview_state = 2; // evidence: exact-package supported.proto ArtifactState
+  AppArtifactState app_artifact_state = 3; // evidence: exact-package supported.proto ArtifactState
+  repeated ScheduledNotificationConfig scheduled_notification_configs = 4; // evidence: exact-package supported.proto ArtifactState
 }
 
 message ArtifactSource {
@@ -279,6 +320,7 @@ message Artifact {
   google.protobuf.Timestamp last_modified_timestamp = 11; // evidence: docs/android/schema.proto Artifact
   InfographicArtifact infographic = 15; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
   SlidesArtifact slides = 17; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
+  ArtifactState artifact_user_state = 18; // evidence: exact-package supported.proto Artifact
   string etag = 22; // evidence: docs/android/web-parity-gap-live-validation-2026-08-27.md#apk-present-destructive-validation-on-the-copy
   FileArtifact file = 25; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
 }
@@ -290,6 +332,16 @@ message CreateArtifactRequest {
 
 message CreateArtifactResponse {
   Artifact artifact = 1; // evidence: docs/android/endpoints.md#createartifact--generate-a-studio-artifact
+}
+
+message DeriveArtifactRequest {
+  .labs.language.tailwind.common.protos.RequestContext request_context = 1; // evidence: official APK recovered DeriveArtifactRequest schema
+  string original_artifact_id = 2; // evidence: official APK recovered DeriveArtifactRequest schema
+  SlidesDerivationOptions slides_derivation_options = 3; // evidence: official APK recovered DeriveArtifactRequest schema
+}
+
+message DeriveArtifactResponse {
+  Artifact artifact = 1; // evidence: official APK recovered DeriveArtifactResponse schema
 }
 
 message GetArtifactRequest {

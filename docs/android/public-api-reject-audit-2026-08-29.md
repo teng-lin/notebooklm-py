@@ -6,11 +6,12 @@ web bundle (`8cc2569196b28083ba58a33319df79af97ec1832f442c4a182289894edf5eaef`),
 message fields, retained live reports, and new Android-bearer probes against disposable notebook
 copies. No credential material or resource identifiers were logged.
 
-The audit found 44 target callsites, excluding the six `_reject` helper definitions present when
+The audit found 44 target callsites, excluding the `_reject` helper definitions present when
 the audit began. They were not all missing gRPC methods: many were local composition/download gaps
-or omitted fields on RPCs that were already admitted. This implementation pass removed 17 of those
-callsites. The 27 retained calls are 18 artifact gaps, three mind-map branches, three sharing
-operations, two source operations, and one notebook operation; Android chat now has none.
+or omitted fields on RPCs that were already admitted. The completed implementation passes removed
+27 of those callsites. The 17 retained calls are 10 artifact gaps, one note-backed mind-map branch,
+three sharing operations, two source operations, and one notebook operation; Android chat now has
+none.
 
 ## Disposable-copy live results
 
@@ -34,24 +35,28 @@ in `finally` cleanup.
 The completed adapters were then exercised through their real classes on another copied notebook.
 Text, YouTube, freshness, prompt suggestions, and chat configure/read-back all succeeded. Artifact
 kickoff returned `in_progress` tasks for flashcards, report, infographic, slide deck, and video.
-Cinematic video reached `CreateArtifact` but the account returned `RESOURCE_EXHAUSTED` (gRPC 8), so
-its wire route was accepted but quota prevented a successful kickoff in this run. Cleanup again
-deleted the copy.
+Cinematic video reached `CreateArtifact` in an exploratory probe but the account returned
+`RESOURCE_EXHAUSTED` (gRPC 8). More importantly, public `VideoFormat.CINEMATIC` is code 3 while the
+recovered mobile enum assigns code 3 to `BREAKDOWN`; the probe therefore does not validate a
+cinematic route. The public cinematic entry points remain gated before I/O. Cleanup again deleted
+the copy.
 
 ## Artifact generation and mutation
 
 | Public operation | Android mapping | Status |
 |---|---|---|
 | non-deep-dive audio formats | existing `CreateArtifact`; missing exact audio-format field | retain reject |
-| video / cinematic video | existing `CreateArtifact`, exact mobile video options | implementation-ready; implemented in this change |
+| video | existing `CreateArtifact`, exact mobile video options | implementation-ready; implemented in this change |
+| cinematic video | no exact cinematic enum mapping: public code 3 conflicts with mobile `BREAKDOWN`; the only live probe ended `RESOURCE_EXHAUSTED` | retain reject before I/O |
 | report / study guide | existing `CreateArtifact`, exact tailored-report options | implementation-ready; implemented in this change |
 | flashcards | existing `CreateArtifact`, exact app/flashcard options | implementation-ready; implemented in this change |
 | infographic | existing `CreateArtifact`, exact prompt/language/aspect/style options | implemented except unpinned `detail_level` |
 | slide deck | existing `CreateArtifact`, exact prompt/language/type/length options | implementation-ready; implemented in this change |
-| data table | generic `CreateArtifact` type 9, but inner table payload/FQNs unresolved | retain reject |
-| revise slide | APK-exact `DeriveArtifact`; no valid mobile mutation capture | medium follow-up |
+| data table | generic `CreateArtifact` type 9; live bare request rejected because required field `Artifact #19` has no APK payload FQN | retain reject |
+| revise slide | APK-exact `DeriveArtifact`; live derivation returned a new type-8 artifact and reached `READY` | implemented |
 | retry failed | web `GenerateArtifact`; APK absent and invalid-ID routing only | retain reject |
-| artifact mind-map generation | APK-exact outer `ActOnSources`, web-derived missing action field, then `CreateNote` | retain until valid mobile generation capture |
+| artifact note-backed mind-map generation | APK-exact outer `ActOnSources`, web-derived missing nested field-6 FQN, then `CreateNote` | retain reject |
+| interactive mind-map generation | `CreateArtifact` type 4 / app type 4; live `READY` plus direct JSON field `AppArtifact #4` | implemented in `mind_maps.generate` |
 
 ## Artifact downloads and exports
 
@@ -59,13 +64,13 @@ These are primarily local decoding/transfer gaps, not missing creation RPCs.
 
 | Public operation | Evidence/status |
 |---|---|
-| audio / video downloads | exact media URLs are decoded; Android downloader is currently PNG-only and media host/MIME/auth policy is not live-pinned |
-| infographic with `artifacts_data` | normal Android download already works; only the cross-backend raw-prefetch overload is rejected |
-| slide deck | exact PDF URL is known; PPTX field and generalized transfer need admission |
-| report | exact rich report document exists in recovered schema; protobuf-to-Markdown renderer is missing |
-| note-backed mind map | local note JSON is available; interactive app tree payload remains unresolved |
+| audio / video downloads | live progressive `.googlevideo.com` transfer succeeded without forwarded credentials; MP4/`ftyp` and WAV/RIFF policies implemented, and a verified WAV response corrects a registry-derived `.m4a` destination to `.wav` |
+| infographic with `artifacts_data` | normal download and typed/exact-protobuf prefetch both implemented; Web positional rows remain intentionally outside the Android contract |
+| slide deck | exact PDF/PPTX fields and strict transfer implemented; current URLs still need the APK's unrecovered scoped Drive download-form token |
+| report | exact rich document closure and Markdown renderer implemented; live sample covered paragraphs, table, bullets, styles, and rules |
+| mind map | interactive field-4 JSON generate/read/download and typed note-backed `MindMap` prefetch implemented; note-backed generation remains gated |
 | data table | table payload/FQNs unresolved |
-| quiz / flashcards | exact app HTML/templated-app fields exist in recovered schema but are omitted from the current Android decoder |
+| quiz / flashcards | exact full-`GetArtifact` app HTML/templated-app fields admitted and local JSON/Markdown/HTML saves implemented |
 | report/data-table/generic export | web `ExportToDrive`; only invalid-ID Android routing is retained, and valid probes create external Drive resources |
 
 ## Chat settings
@@ -91,8 +96,9 @@ read-modify-write from clobbering settings.
 | auto-detected rename/hydration | existing note/artifact collaborators; implemented |
 | auto-detected delete | existing note/artifact collaborators; implemented |
 | note-backed tree and note-first auto-detection | already-decoded note JSON; implemented |
-| interactive tree | app payload field/JSON grammar unresolved | retain reject |
-| generation | see `ActOnSources` gap above | retain reject |
+| interactive tree | live `AppArtifact #4` direct JSON with bounded `{name,children}` validation | implemented |
+| interactive generation | live `CreateArtifact` type 4 / app type 4 | implemented |
+| note-backed generation | see `ActOnSources` nested-FQN gap above | retain reject |
 
 ## Notebooks and sources
 
@@ -122,7 +128,7 @@ The broader adapter still explicitly rejects non-PDF file upload, fast Drive-cor
 automatic label generation. They need separate transport/schema audits; they are not silently
 counted as complete by this report.
 
-Finally, most of these adapters are still private and intentionally absent from normal client
-assembly. Removing a method-level rejection proves an adapter implementation; it does not by itself
-promote the whole namespace for `backend="android"`. Namespace promotion requires its own complete
-manifest, conformance run, and explicit assembly change.
+The artifact and mind-map adapters are now explicitly assembled for `backend="android"`, together
+with the Android asset transport and Collections. Other partial Android adapters remain private.
+This promotion makes the admitted artifact and mind-map paths reachable through the normal public
+client while preserving the pre-I/O gates documented above.

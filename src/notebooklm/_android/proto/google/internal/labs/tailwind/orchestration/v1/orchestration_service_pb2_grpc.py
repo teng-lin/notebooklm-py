@@ -148,6 +148,11 @@ class LabsTailwindOrchestrationServiceStub(object):
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.CreateArtifactRequest.SerializeToString,
                 response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.CreateArtifactResponse.FromString,
                 _registered_method=True)
+        self.DeriveArtifact = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeriveArtifact',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.DeriveArtifactRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.DeriveArtifactResponse.FromString,
+                _registered_method=True)
         self.DeleteArtifact = channel.unary_unary(
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteArtifact',
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.DeleteArtifactRequest.SerializeToString,
@@ -382,6 +387,12 @@ class LabsTailwindOrchestrationServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def DeriveArtifact(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def DeleteArtifact(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -605,6 +616,11 @@ def add_LabsTailwindOrchestrationServiceServicer_to_server(servicer, server):
                     servicer.CreateArtifact,
                     request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.CreateArtifactRequest.FromString,
                     response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.CreateArtifactResponse.SerializeToString,
+            ),
+            'DeriveArtifact': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeriveArtifact,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.DeriveArtifactRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.DeriveArtifactResponse.SerializeToString,
             ),
             'DeleteArtifact': grpc.unary_unary_rpc_method_handler(
                     servicer.DeleteArtifact,
@@ -1235,6 +1251,33 @@ class LabsTailwindOrchestrationService(object):
             '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateArtifact',
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.CreateArtifactRequest.SerializeToString,
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.CreateArtifactResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DeriveArtifact(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeriveArtifact',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.DeriveArtifactRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.DeriveArtifactResponse.FromString,
             options,
             channel_credentials,
             insecure,

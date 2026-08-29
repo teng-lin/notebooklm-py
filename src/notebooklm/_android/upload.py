@@ -328,7 +328,9 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         try:
             self._transport.assert_epoch(expected_epoch)
         except RuntimeError:
-            raise _RetiredEpochError("Android upload belongs to a retired resource generation") from None
+            raise _RetiredEpochError(
+                "Android upload belongs to a retired resource generation"
+            ) from None
 
     def _client_factory(self) -> AndroidHTTPClientFactory:
         if self._async_client_factory is not None:
@@ -428,7 +430,9 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                     deadline,
                 )
             except TimeoutError:
-                raise _upload_failure(filename=raw_path.name, state=state, detail="timed out") from None
+                raise _upload_failure(
+                    filename=raw_path.name, state=state, detail="timed out"
+                ) from None
 
             needs_rename = requested_title is not None and requested_title != filename
             if wait:
@@ -496,6 +500,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
             self._record_upload_queue_wait(self._monotonic() - queued_at)
         file_obj: IO[bytes] | None = None
         try:
+
             def _open_and_stat() -> tuple[IO[bytes], int]:
                 handle = open(resolved, "rb")  # noqa: SIM115
                 try:
@@ -570,6 +575,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         expected_epoch: int,
     ) -> _HTTPOutcome | _HTTPFailure:
         self._assert_epoch(expected_epoch)
+
         async def _child() -> _HTTPOutcome | _HTTPFailure:
             return await awaitable
 

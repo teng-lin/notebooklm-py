@@ -717,13 +717,18 @@ async def _execute_download_all(
         item_name = item_path.name
 
         try:
-            await download_fn(nb_id_resolved, str(item_path), artifact_id=str(artifact["id"]))
+            result_path = await download_fn(
+                nb_id_resolved,
+                str(item_path),
+                artifact_id=str(artifact["id"]),
+            )
+            written_path = result_path or str(item_path)
             artifacts_results.append(
                 {
                     "id": artifact["id"],
                     "title": artifact["title"],
-                    "filename": item_name,
-                    "path": str(item_path),
+                    "filename": Path(written_path).name,
+                    "path": written_path,
                     "status": "downloaded",
                 }
             )

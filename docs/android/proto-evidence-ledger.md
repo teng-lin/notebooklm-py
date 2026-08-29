@@ -6,8 +6,8 @@ B6 notes/sharing, B9 organization, private B10 Research overlays, and the B11 ac
 **Evidence snapshot:** 2026-08-29
 
 **Scope:** B1 project/source reads, B2 notebook operations, the B3 URL/maintenance/flat-content
-slice and B3b PDF transaction, B4 artifact list/get/create/update/delete plus its generated
-web-derived report-suggestion closure, and the private/direct-test B5 chat surface
+slice and B3b PDF transaction, B4 artifact list/get/create/derive/update/delete plus its generated
+web-derived report-suggestion closure and exact representation payloads, and the private/direct-test B5 chat surface
 (`ListChatSessions`, `ListChatTurns`, `DeleteChatTurns`, and `GenerateFreeFormStreamed`), plus B6
 note CRUD and public-link sharing, B9 source-label and notebook-collection CRUD/membership, the
 private B10 synchronous discovery plus async Research lifecycle, and the direct-test-only B11
@@ -95,9 +95,10 @@ fixtures. Hashes prevent a later local checkout from silently changing what was 
 | [`latest-apk-grpc-audit-2026-08-29.md`](latest-apk-grpc-audit-2026-08-29.md) | `418d3e67f419181774ee3c77c3f9b1e6d100a535fad8be371e76bc97fb8e8694` | newer Google-signed `1.55.10.971450265` build (AOT `77bff7507e393c092b78ff1756bb3d726881050b22728dcc8c46cf0fecd7cda7`) independently confirms that all seven web-derived/backend-supported methods are absent from the shipped client |
 | [`latest_apk_grpc_paths.txt`](../../tests/fixtures/android/latest_apk_grpc_paths.txt) | `b5df4996f271e71ccc14e0ae0f8eaa13e1e337b4bc726b54a487a0c4f6d31697` | complete 53-path `1.55.10` generated-client inventory, including the path-only unresolved `UpsertArtifactUserState` entry |
 | [`latest_apk_grpc_signatures.csv`](../../tests/fixtures/android/latest_apk_grpc_signatures.csv) | `6381163929c18d51eb654bc677846061ea65e9d501b9beb9db3952b749b32b7c` | 52 exact `1.55.10` generated-client bindings with request/response FQNs and object-pool offsets |
-| [`external_method_manifest.csv`](../../tests/fixtures/android/external_method_manifest.csv) | `965cec28a15d98ae3b767488b9e5e1636925396d6b4455eaab317012b36ff0fd` | version-scoped `1.46.7` binary inventory plus independently live/web-proven signatures used by the implemented-adapter admission gate |
+| [`external_method_manifest.csv`](../../tests/fixtures/android/external_method_manifest.csv) | `4b621cbddb48edf119cc6b66e35d720b30bd2706d9f42232e7033da1bf724177` | version-scoped `1.46.7` binary inventory plus independently live/web-proven signatures used by the implemented-adapter admission gate |
 | [`web-bundle-grpc-signature-inference-2026-08-29.md`](web-bundle-grpc-signature-inference-2026-08-29.md) | `67d142cbf2f61324e9705c17071ffde4f087687f52923402c8aafc37ac57cf69` | current authenticated bundle `8cc2569196b28083ba58a33319df79af97ec1832f442c4a182289894edf5eaef`; constructor identity and field-shape evidence for the seven APK-absent methods, with six conventional type names explicitly inferred |
-| [`public-api-reject-audit-2026-08-29.md`](public-api-reject-audit-2026-08-29.md) | `58917b35d37f2345db5b712dcf16c72a04f6675736208a16dfc427fa94a85977` | complete public-adapter rejection inventory, current web/APK mapping, and disposable-copy Android-bearer validation for the newly admitted operations |
+| [`public-api-reject-audit-2026-08-29.md`](public-api-reject-audit-2026-08-29.md) | `32352c78668c4297d7e3ab2e857ccdcd27d953eda813dbe6f64086e3b75ec022` | complete public-adapter rejection inventory, current web/APK mapping, and disposable-copy Android-bearer validation for the newly admitted operations |
+| [`artifact-gap-live-validation-2026-08-29.md`](artifact-gap-live-validation-2026-08-29.md) | `a9081e8574450f738adf934fbadd1a60475e1ce73ce374b1ea024d40bce9c0ab` | official-APK schema audit plus disposable-copy `DeriveArtifact`, interactive mind-map, full-representation, report-document, and progressive-media validation |
 | [`file-transfer-live-validation-2026-08-27.md`](file-transfer-live-validation-2026-08-27.md) | `c713a7cfe5058482aa8fc9a0201ad08487296700223f23829842795f85713107` | official-app/headless PDF upload request and live artifact representation/direct infographic PNG transfer |
 | [`web-parity-gap-live-validation-2026-08-27.md`](web-parity-gap-live-validation-2026-08-27.md) | `c0a3a16b2ff0eba18395e5a53ae2ebddb3b299d8b2cae0d6d868a3e294b08251` | live delete, rename/read-back, report-suggestion cardinality, and disposable note CRUD |
 | [`notebooks-live-validation-2026-08-28.md`](notebooks-live-validation-2026-08-28.md) | `14d74b35a28a936ca90a2a409a4bb5fd94f364bbb64b14d00177f60c38cdebeb` | accepted Android bearer plus disposable emoji set/clear/combined read-back and repeated Recent failure |
@@ -117,13 +118,13 @@ The recovery method and the warning about duplicate packages are committed in
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject` | `.google.internal.labs.tailwind.orchestration.v1.GetProjectRequest` | `.google.internal.labs.tailwind.orchestration.v1.GetProjectResponse` | unary/unary | `project_id #1`, `include_audio_overview_ids #2`; no `RequestContext` |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListRecentlyViewedProjects` | `.google.internal.labs.tailwind.orchestration.v1.ListRecentlyViewedProjectsRequest` | `.google.internal.labs.tailwind.orchestration.v1.ListRecentlyViewedProjectsResponse` | unary/unary | `include_own_projects #2`, `include_audio_overview_ids #3`; no `RequestContext` |
 
-The two B1 signatures above and thirty-eight later exact or web-derived signatures live in the sole
+The two B1 signatures above and thirty-nine later exact or web-derived signatures live in the sole
 `google/internal/labs/tailwind/orchestration/v1/orchestration_service.proto` service declaration.
 The individual message overlays remain service-free so protobuf never reopens one service across
-files. Its generated stub exposes 40 implemented methods: account bootstrap, the two reads above,
-six notebook operations, seven source methods, six artifact methods, four chat methods, four note
+files. Its generated stub exposes 41 implemented methods: account bootstrap, the two reads above,
+six notebook operations, seven source methods, seven artifact methods, four chat methods, four note
 methods, six Research methods, and four organization methods. The exact sharing service adds
-`GetProjectDetails` and `ShareProject`, producing 42 generated paths across the two services. Seven
+`GetProjectDetails` and `ShareProject`, producing 43 generated paths across the two services. Seven
 signatures retain explicit web-derived type-name provenance; the signature-exception manifest is
 empty. The inference and runtime-parser manifests name each adapter seam and evidence link;
 bidirectional descriptor/adapter/external-manifest equality is pinned by
@@ -165,7 +166,7 @@ exact-package `supported.proto` whose SHA-256 is pinned above. The separately ma
 the flattened `schema.proto` in source comments are corroborating Dart-symbol evidence, never the
 sole authority for a Google FQN.
 The B4 message overlay intentionally declares no second protobuf `service`: protobuf cannot reopen
-the same service across files. The cumulative service imports all six implemented signatures.
+the same service across files. The cumulative service imports all seven implemented signatures.
 Blutter's generated-client binding proves `DeleteArtifact` returns `google.protobuf.Empty`;
 `GenerateReportSuggestions` uses generated conventional type names recorded in the inference
 manifest. `AndroidSession` continues to dispatch paths generically with the ledgered message classes.
@@ -175,6 +176,7 @@ manifest. `AndroidSession` continues to dispatch paths generically with the ledg
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListArtifacts` | `.google.internal.labs.tailwind.orchestration.v1.ListArtifactsRequest` | `.google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse` | admitted safe aggregate Studio read |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetArtifact` | `.google.internal.labs.tailwind.orchestration.v1.GetArtifactRequest` | `.google.internal.labs.tailwind.orchestration.v1.GetArtifactResponse` | admitted safe single-artifact polling read; common SDK `get` remains concrete over aggregate `list` so note-backed mind maps remain visible |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateArtifact` | `.google.internal.labs.tailwind.orchestration.v1.CreateArtifactRequest` | `.google.internal.labs.tailwind.orchestration.v1.CreateArtifactResponse` | evidence-qualified quiz and Audio Overview mutations, never replayed |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeriveArtifact` | `.google.internal.labs.tailwind.orchestration.v1.DeriveArtifactRequest` | `.google.internal.labs.tailwind.orchestration.v1.DeriveArtifactResponse` | APK-exact slide derivation, live-successful on a disposable copy, never replayed |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/UpdateArtifact` | `.google.internal.labs.tailwind.orchestration.v1.UpdateArtifactRequest` | `.google.internal.labs.tailwind.orchestration.v1.Artifact` | title-only mutation with etag, never replayed, then list read-back |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteArtifact` | `.google.internal.labs.tailwind.orchestration.v1.DeleteArtifactRequest` | `.google.protobuf.Empty` | admitted exact signature; never replayed; sanitized `NOT_FOUND` is idempotent success |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateReportSuggestions` | generated web-derived `.google.internal.labs.tailwind.orchestration.v1.GenerateReportSuggestionsRequest` | generated web-derived `.google.internal.labs.tailwind.orchestration.v1.GenerateReportSuggestionsResponse` | safe live-added read; conventional names remain explicit in inference manifest |
@@ -189,35 +191,41 @@ field inferred from its plausible Dart name.
 |---|---|---|
 | `MediaStreamingUrl` | `url #1` string; `type #2` `MediaStreamingType` | audio/video representation projection |
 | `QuizGenerationOptions` | `question_quantity #1` `QuestionQuantity`; `quiz_difficulty #2` `QuizDifficulty` | quiz create options |
-| `AppArtifactGenerationOptions` | `app_type #1` `AppType`; `free_text_steering_prompt #3` string; `quiz_generation_options #8` message | quiz kind/prompt/create |
-| `AppArtifact` | `generation_options #2` message | app kind/options; HTML/content fields remain unknown and unsupported |
+| `AppArtifactGenerationOptions` | `app_type #1` `AppType`; `free_text_steering_prompt #3`; `language_code #4`; flashcard options `#7`; quiz options `#8` | quiz, flashcard, and interactive-mind-map create options |
+| `TemplatizedApp` / `AppArtifact` | templated data `#1`; app HTML `#1`, options `#2`, templated app `#3`, live mind-map JSON `#4` | quiz/flashcard local saves and interactive mind-map tree/read/download |
 | `EpisodeLength` | exhaustive values: unspecified `0`, short `1`, medium `2`, long `3` | Audio Overview creation length |
 | `AudioOverviewGenerationOptions` | `episode_focus #1` string; `episode_length #2` `EpisodeLength`; repeated `source_ids #4` imported exact `SourceId`; `language_code #5` string | Audio Overview create and existing prompt/source projections |
 | `AudioOverviewArtifact` | `generation_options #2` message; `is_interactive #5` bool; repeated `media_urls #6`; `duration #7` `google.protobuf.Duration` | create/list/poll projection; `is_interactive` is not projected because public `Artifact` has no corresponding field |
 | `ExplainerVideoGenerationOptions` | `video_focus #3` string | listing prompt |
 | `ExplainerVideoArtifact` | `generation_options #3` message; repeated `media_urls #5`; `duration #6` `google.protobuf.Duration` | listing projection only |
-| `TailoredReportArtifactGenerationOptions` | `type #1` string; `document_directive #6` string | report kind/prompt |
-| `TailoredReportArtifact` | `generation_options #2` message | listing projection only |
+| `TailoredReportArtifactGenerationOptions` | `type #1`; `description #2`; repeated source IDs `#4`; language `#5`; document directive `#6` | report kind/create/prompt |
+| `TailoredReportArtifact` | options `#2`; exact `TailwindDoc report_doc #3` | listing and local Markdown rendering |
 | `ServedImage` | `url #1` string | infographic/slide representation |
 | `InfographicGenerationOptions` | `user_steering_prompt #1` string | listing prompt |
 | `Infographic` | `title #1` string; `image #2` `ServedImage` | PNG selection |
 | `InfographicArtifact` | `generation_options #1` message; repeated `infographics #3` | listing/download projection |
-| `SlidesGenerationOptions` | `user_steering_prompt #1` string | listing prompt |
+| `SlidesGenerationOptions` | steering prompt `#1`; language `#2`; deck type `#3`; length `#4` | listing and create options |
 | `Slide` | `image #1` `ServedImage` | listing projection |
-| `SlidesArtifact` | `generation_options #1` message; repeated `slides #3`; `pdf_download_url #4` string | listing projection only; unsupported PPTX download retains no compiled-only field |
-| `FileArtifact` | `file_preview_url #3`, `file_download_url #4` strings | listing representation projection only |
+| `SlidesArtifact` | options `#1`; repeated slides `#3`; PDF URL `#4`; PPTX URL `#5` | listing and strict PDF/PPTX transfer |
+| `SlideEditInstruction` / `SlidesDerivationOptions` | slide index `#1`, instruction `#2`; repeated instructions `#1` | exact slide revision payload |
+| `FileArtifact` | file name `#1`, MIME type `#2`, preview URL `#3`, download URL `#4` | full file representation projection |
+| `AudioOverviewState` / `VideoOverviewState` | audio playback position `#1` Duration; video state is an exact zero-field marker | audio playback projection; populated video state remains an unknown public state |
+| `AppArtifactState` / `ScheduledNotificationConfig` | app state `#1` Struct; notification config is an exact zero-field marker | flashcard progress projection and lossless unknown-state fallback |
+| `ArtifactState` | audio `#1`; video `#2`; app `#3`; repeated scheduled notification configs `#4` | exact user-state envelope |
 | `ArtifactSource` | `source_id #1` imported exact `SourceId` | source IDs and quiz/audio requests |
-| `Artifact` | `artifact_id #1` string; `title #2` string; `type #3` `ArtifactType`; repeated `sources #4`; `status #5` `ArtifactStatus`; `audio_overview #7`; `tailored_report #8`; `explainer_video #9`; `app #10`; `last_modified_timestamp #11` Timestamp; `infographic #15`; `slides #17`; `etag #22` string; `file #25` | the complete B4 public projection and mutation subset |
+| `Artifact` | `artifact_id #1` string; `title #2` string; `type #3` `ArtifactType`; repeated `sources #4`; `status #5` `ArtifactStatus`; `audio_overview #7`; `tailored_report #8`; `explainer_video #9`; `app #10`; `last_modified_timestamp #11` Timestamp; `infographic #15`; `slides #17`; `artifact_user_state #18`; `etag #22` string; `file #25` | the complete B4 public projection and mutation subset, including typed audio/flashcard state |
 | `CreateArtifactRequest` / `Response` | request `project_id #2`, `artifact #3`; response `artifact #1` | quiz and Audio Overview mutations |
+| `DeriveArtifactRequest` / `Response` | request context `#1`, original artifact ID `#2`, slide options `#3`; response artifact `#1` | live slide revision |
 | `GetArtifactRequest` / `Response` | request `artifact_id #1`; response `artifact #1` | exact single-artifact polling primitive; not substituted for aggregate public `get` |
 | `ListArtifactsRequest` / `Response` | request `project_id #2`; response repeated `artifacts #1` | Studio aggregate listing |
 | `UpdateArtifactRequest` | `artifact #1`; `update_mask #2` FieldMask; `etag #3` string | title rename |
 | `DeleteArtifactRequest` | `artifact_id #2` string | idempotent delete |
 
-The five exact top-level enums are also pinned exhaustively by generated descriptor tests:
-`ArtifactType` 0–10, `ArtifactStatus` 0–6, `AppType` 0–5, `EpisodeLength` 0–3, and
-`MediaStreamingType` 0–4. The two nested quiz enums are 0–3. Unknown future integers remain unknown
-rather than being coerced to a known family.
+The nine exact top-level enums are also pinned exhaustively by generated descriptor tests:
+`ArtifactType` 0–10, `ArtifactStatus` 0–6, `AppType` 0–5, `EpisodeLength` 0–3,
+`MediaStreamingType` 0–4, `VideoOverviewTemplateFormat` 0–5, `VideoOverviewStyle` 0–9,
+`DeckType` 0–2, and `SlideDeckLength` 0–4. The four nested quiz/flashcard enums are 0–3.
+Unknown future integers remain unknown rather than being coerced to a known family.
 
 ### B4 quiz request
 
@@ -257,11 +265,13 @@ and project; its public method currently leaves the optional source filter empty
 ## B4 representation-transfer evidence boundary
 
 Only response-provided URLs are projected: audio field #6, video field #5, infographic image #2,
-slide image #1, slide PDF #4 and file preview/download #3/#4. The first implemented byte
-path is the live-verified infographic PNG from `lh3.googleusercontent.com`; no URL is synthesized
-from an artifact kind. `alr=yes` application redirects are defensive evidence from the
-unauthenticated control. Signed GCS bearer stripping is a fail-closed policy, not a claim that a
-signed-GCS authenticated branch was observed.
+slide image #1, slide PDF/PPTX #4/#5, and file preview/download #3/#4. No URL is synthesized from an
+artifact kind. Infographic PNG and progressive MP4/WAV terminal bytes are live-verified. Bearer
+authentication is limited to exact `lh3.googleusercontent.com` and is stripped before capability
+and `.googlevideo.com` hosts. Every representation has a strict host, MIME, and magic-signature
+policy plus same-directory atomic publication. PDF/PPTX URL selection is implemented, but current
+slide bytes remain gated by the APK's unrecovered scoped Drive form-token exchange; sign-in HTML is
+rejected rather than written as a document.
 
 ### B5 method ledger
 
@@ -403,7 +413,7 @@ retain their established builders.
 
 The compile inputs are
 [`chat.proto`](../../src/notebooklm/_android/proto_src/google/internal/labs/tailwind/orchestration/v1/chat.proto)
-(SHA-256 `86357d33588037ed1a144715f7eca2d6692efb4444cd8023bd931cde95ea3a72`) and
+(SHA-256 `477279ed44a5c29e3124d8e89be4b035c72a7639929c82f3d7c0ba8ecc857928`) and
 [`common.proto`](../../src/notebooklm/_android/proto_src/labs/language/tailwind/common/protos/common.proto)
 (SHA-256 `7d064bf11e3f01465e485004e6dbba078ae9b92f02be53ac2a8a4ac6a420af75`).
 The shared `InputSource` declaration is imported from

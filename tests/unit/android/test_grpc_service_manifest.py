@@ -51,7 +51,7 @@ PARSER_OVERRIDE_MANIFEST = REPO_ROOT / "docs" / "android" / "grpc-runtime-parser
 EXTERNAL_METHOD_MANIFEST = (
     REPO_ROOT / "tests" / "fixtures" / "android" / "external_method_manifest.csv"
 )
-EXTERNAL_METHOD_MANIFEST_SHA256 = "965cec28a15d98ae3b767488b9e5e1636925396d6b4455eaab317012b36ff0fd"
+EXTERNAL_METHOD_MANIFEST_SHA256 = "4b621cbddb48edf119cc6b66e35d720b30bd2706d9f42232e7033da1bf724177"
 LATEST_APK_GRPC_SIGNATURES = (
     REPO_ROOT / "tests" / "fixtures" / "android" / "latest_apk_grpc_signatures.csv"
 )
@@ -169,6 +169,11 @@ _EXPECTED_ORCHESTRATION_SIGNATURES = {
     "CreateArtifact": (
         f"{ORCHESTRATION_PACKAGE}.CreateArtifactRequest",
         f"{ORCHESTRATION_PACKAGE}.CreateArtifactResponse",
+        False,
+    ),
+    "DeriveArtifact": (
+        f"{ORCHESTRATION_PACKAGE}.DeriveArtifactRequest",
+        f"{ORCHESTRATION_PACKAGE}.DeriveArtifactResponse",
         False,
     ),
     "DeleteArtifact": (
@@ -437,9 +442,9 @@ def test_adapter_paths_equal_generated_descriptor_with_no_omitted_exceptions() -
     entries = _manifest_entries()
     assert entries == []
     assert _adapter_paths() == _descriptor_paths()
-    assert len(_adapter_paths()) == 42
-    assert len(_descriptor_paths()) == 42
-    assert sum(path.startswith(f"/{ORCHESTRATION_SERVICE}/") for path in _descriptor_paths()) == 40
+    assert len(_adapter_paths()) == 43
+    assert len(_descriptor_paths()) == 43
+    assert sum(path.startswith(f"/{ORCHESTRATION_SERVICE}/") for path in _descriptor_paths()) == 41
     assert sum(path.startswith(f"/{SHARING_SERVICE}/") for path in _descriptor_paths()) == 2
 
     sharing_paths = {path for path in _adapter_paths() if path.startswith(f"/{SHARING_SERVICE}/")}

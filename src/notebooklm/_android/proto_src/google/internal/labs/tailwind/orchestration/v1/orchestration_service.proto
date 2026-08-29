@@ -53,6 +53,7 @@ service LabsTailwindOrchestrationService {
   rpc ListArtifacts(ListArtifactsRequest) returns (ListArtifactsResponse);
   rpc GetArtifact(GetArtifactRequest) returns (GetArtifactResponse);
   rpc CreateArtifact(CreateArtifactRequest) returns (CreateArtifactResponse);
+  rpc DeriveArtifact(DeriveArtifactRequest) returns (DeriveArtifactResponse);
   rpc DeleteArtifact(DeleteArtifactRequest) returns (google.protobuf.Empty);
   rpc UpdateArtifact(UpdateArtifactRequest) returns (Artifact);
   rpc GenerateReportSuggestions(GenerateReportSuggestionsRequest)

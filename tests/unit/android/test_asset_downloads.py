@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 import pytest
 
+import notebooklm._android.assets as assets_module
 from notebooklm._android.assets import AndroidAssetDownloadService
 from notebooklm._android.auth import BearerCredential
 from notebooklm._client_metrics import ClientMetrics
@@ -20,6 +21,10 @@ from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.exceptions import ArtifactDownloadError, UnsupportedOperationError
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"synthetic-png-body"
+MP4 = b"\x00\x00\x00\x18ftypmp42synthetic-mp4-body"
+WAV = b"RIFF\x24\x00\x00\x00WAVEsynthetic-wav-body"
+PDF = b"%PDF-1.7\nsynthetic-pdf-body"
+PPTX = b"PK\x03\x04synthetic-pptx-body"
 INITIAL = "https://lh3.googleusercontent.com/image.png?capability=initial-secret"
 SIGNED = "https://storage.googleapis.com/bucket/image.png?X-Goog-Signature=signed-secret"
 BEARER = "bearer-secret-value"
@@ -119,6 +124,46 @@ class FakeClient:
             self.close_gate.set()
 
 
+class _FakeCookieJar:
+    def __init__(self) -> None:
+        self.value: str | None = None
+
+    def clear(self) -> None:
+        self.value = None
+
+
+class _CookieContext(FakeResponseContext):
+    def __init__(self, outcome: FakeResponse | BaseException, jar: _FakeCookieJar) -> None:
+        super().__init__(outcome)
+        self._jar = jar
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        await super().__aexit__(exc_type, exc, tb)
+        self._jar.value = "response-issued-secret"
+
+
+class CookieAwareClient(FakeClient):
+    def __init__(self, outcomes: list[FakeResponse | BaseException]) -> None:
+        super().__init__(outcomes)
+        self.cookies = _FakeCookieJar()
+
+    def stream(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str],
+        follow_redirects: bool,
+    ) -> FakeResponseContext:
+        effective_headers = dict(headers)
+        if self.cookies.value is not None:
+            effective_headers["Cookie"] = self.cookies.value
+        self.requests.append((method, url, effective_headers, follow_redirects))
+        context = _CookieContext(self.outcomes.pop(0), self.cookies)
+        self.contexts.append(context)
+        return context
+
+
 class BlockingCloseClient(FakeClient):
     def __init__(self, *, fail_after_release: bool = False) -> None:
         super().__init__([])
@@ -216,6 +261,355 @@ async def test_direct_png_is_streamed_once_from_open_response(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("representation", "media_type", "body"),
+    [
+        ("audio", "audio/mp4", MP4),
+        ("audio", "audio/wav", WAV),
+        ("video", "video/mp4", MP4),
+        ("slide_pdf", "application/pdf", PDF),
+        (
+            "slide_pptx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            PPTX,
+        ),
+    ],
+)
+async def test_typed_representation_enforces_and_publishes_exact_format(
+    tmp_path: Path,
+    representation: str,
+    media_type: str,
+    body: bytes,
+) -> None:
+    response = FakeResponse(
+        200,
+        headers={"content-type": f"{media_type}; charset=binary"},
+        chunks=[body[:3], body[3:7], body[7:]],
+    )
+    client = FakeClient([response])
+    service, bearer, _ = await _open_service(client)
+    destination = tmp_path / f"artifact-{representation}"
+
+    result = await service.download_representation(
+        INITIAL,
+        str(destination),
+        representation=representation,  # type: ignore[arg-type]
+    )
+
+    assert result == str(destination)
+    assert destination.read_bytes() == body
+    assert bearer.calls == [1]
+    assert len(client.requests) == 1
+    assert client.requests[0][2] == {"Authorization": f"Bearer {BEARER}"}
+    assert list(tmp_path.glob(".*.part")) == []
+
+
+@pytest.mark.asyncio
+async def test_live_wav_audio_corrects_registry_m4a_suffix(tmp_path: Path) -> None:
+    client = FakeClient([FakeResponse(200, headers={"content-type": "audio/wav"}, chunks=[WAV])])
+    service, _, _ = await _open_service(client)
+    requested = tmp_path / "audio.m4a"
+
+    result = await service.download_representation(
+        INITIAL,
+        str(requested),
+        representation="audio",
+    )
+
+    actual = tmp_path / "audio.wav"
+    assert result == str(actual)
+    assert actual.read_bytes() == WAV
+    assert not requested.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("representation", "url", "media_type", "body"),
+    [
+        (
+            "slide_pdf",
+            "https://contribution.usercontent.google.com/download?cap=pdf-secret",
+            "application/pdf",
+            PDF,
+        ),
+        (
+            "slide_pptx",
+            "https://contribution.usercontent.google.com/download?cap=pptx-secret",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            PPTX,
+        ),
+    ],
+)
+async def test_slide_capability_initial_never_acquires_or_sends_bearer(
+    tmp_path: Path,
+    representation: str,
+    url: str,
+    media_type: str,
+    body: bytes,
+) -> None:
+    client = FakeClient([FakeResponse(200, headers={"content-type": media_type}, chunks=[body])])
+    service, bearer, _ = await _open_service(client)
+    destination = tmp_path / f"artifact-{representation}"
+
+    await service.download_representation(
+        url,
+        str(destination),
+        representation=representation,  # type: ignore[arg-type]
+    )
+
+    assert destination.read_bytes() == body
+    assert bearer.calls == []
+    assert client.requests == [("GET", url, {}, False)]
+
+
+@pytest.mark.asyncio
+async def test_media_representation_still_rejects_capability_initial_without_bearer(
+    tmp_path: Path,
+) -> None:
+    url = "https://contribution.usercontent.google.com/download?cap=media-secret"
+    client = FakeClient([])
+    service, bearer, _ = await _open_service(client)
+
+    with pytest.raises(ArtifactDownloadError, match="code=url_policy"):
+        await service.download_representation(
+            url,
+            str(tmp_path / "audio.mp4"),
+            representation="audio",
+        )
+
+    assert bearer.calls == []
+    assert client.requests == []
+
+
+@pytest.mark.asyncio
+async def test_slide_capability_initial_is_limited_to_live_exact_host(tmp_path: Path) -> None:
+    url = "https://rr5---sn-ab5sznzy.googlevideo.com/slides.pdf?cap=secret"
+    client = FakeClient([])
+    service, bearer, _ = await _open_service(client)
+
+    with pytest.raises(ArtifactDownloadError, match="code=url_policy"):
+        await service.download_representation(
+            url,
+            str(tmp_path / "slides.pdf"),
+            representation="slide_pdf",
+        )
+
+    assert bearer.calls == []
+    assert client.requests == []
+
+
+@pytest.mark.asyncio
+async def test_progressive_googlevideo_application_redirect_is_allowed_without_bearer(
+    tmp_path: Path,
+) -> None:
+    progressive = "https://rr5---sn-ab5sznzy.googlevideo.com/media?cap=progressive-secret"
+    client = FakeClient(
+        [
+            FakeResponse(
+                200,
+                headers={"content-type": "text/plain"},
+                chunks=[progressive.encode()],
+            ),
+            FakeResponse(200, headers={"content-type": "video/mp4"}, chunks=[MP4]),
+        ]
+    )
+    service, bearer, _ = await _open_service(client)
+    destination = tmp_path / "video.mp4"
+
+    await service.download_representation(
+        INITIAL,
+        str(destination),
+        representation="video",
+    )
+
+    assert destination.read_bytes() == MP4
+    assert bearer.calls == [1]
+    assert [request[1] for request in client.requests] == [f"{INITIAL}&alr=yes", progressive]
+    assert client.requests[0][2] == {"Authorization": f"Bearer {BEARER}"}
+    assert client.requests[1][2] == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "redirect_url",
+    [
+        "https://evil%2f.googlevideo.com/media",
+        "https://evil\\.googlevideo.com/media",
+        "https://evil%00.usercontent.google.com/media",
+    ],
+)
+async def test_malformed_android_media_host_is_rejected_before_dispatch(
+    tmp_path: Path,
+    redirect_url: str,
+) -> None:
+    client = FakeClient([FakeResponse(302, headers={"location": redirect_url})])
+    service, _, _ = await _open_service(client)
+
+    with pytest.raises(ArtifactDownloadError, match="code=url_policy"):
+        await service.download_representation(
+            INITIAL,
+            str(tmp_path / "video.mp4"),
+            representation="video",
+        )
+
+    assert len(client.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_response_cookies_are_cleared_before_every_redirect_hop(tmp_path: Path) -> None:
+    client = CookieAwareClient(
+        [
+            FakeResponse(302, headers={"location": SIGNED}),
+            _png_response(),
+        ]
+    )
+    service, _, _ = await _open_service(client)
+
+    await service.download_url(INITIAL, str(tmp_path / "cookie-free.png"))
+
+    assert len(client.requests) == 2
+    assert all("Cookie" not in request[2] for request in client.requests)
+
+
+@pytest.mark.asyncio
+async def test_bearer_is_not_reattached_after_chain_leaves_exact_origin(tmp_path: Path) -> None:
+    returned = "https://lh3.googleusercontent.com/returned.png?capability=return-secret"
+    client = FakeClient(
+        [
+            FakeResponse(302, headers={"location": SIGNED}),
+            FakeResponse(302, headers={"location": returned}),
+            _png_response(),
+        ]
+    )
+    service, _, _ = await _open_service(client)
+
+    await service.download_url(INITIAL, str(tmp_path / "returned.png"))
+
+    assert client.requests[0][2] == {"Authorization": f"Bearer {BEARER}"}
+    assert client.requests[1][2] == {}
+    assert client.requests[2][2] == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("representation", "media_type", "body", "code", "artifact_type"),
+    [
+        ("audio", "video/mp4", MP4, "content_type", "audio"),
+        ("audio", "audio/mp4", WAV, "signature", "audio"),
+        ("audio", "audio/wav", MP4, "signature", "audio"),
+        ("audio", "audio/wav", b"RIFF\x00\x00\x00\x00NOPE", "signature", "audio"),
+        ("video", "video/mp4", b"not-an-mp4", "signature", "video"),
+        ("slide_pdf", "application/pdf", b"not-a-pdf", "signature", "slide_deck"),
+        (
+            "slide_pptx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            b"not-a-zip",
+            "signature",
+            "slide_deck",
+        ),
+    ],
+)
+async def test_typed_representation_rejects_mime_or_signature_without_publication(
+    tmp_path: Path,
+    representation: str,
+    media_type: str,
+    body: bytes,
+    code: str,
+    artifact_type: str,
+) -> None:
+    destination = tmp_path / "existing.bin"
+    destination.write_bytes(b"existing")
+    client = FakeClient([FakeResponse(200, headers={"content-type": media_type}, chunks=[body])])
+    service, _, _ = await _open_service(client)
+
+    with pytest.raises(ArtifactDownloadError) as raised:
+        await service.download_representation(
+            INITIAL,
+            str(destination),
+            representation=representation,  # type: ignore[arg-type]
+        )
+
+    assert raised.value.artifact_type == artifact_type
+    assert f"code={code}" in str(raised.value)
+    assert destination.read_bytes() == b"existing"
+    assert list(tmp_path.glob(".*.part")) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("declared_length", ["invalid", "11"])
+async def test_declared_size_limit_rejects_before_staging(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    declared_length: str,
+) -> None:
+    policy = assets_module._REPRESENTATION_POLICIES["infographic"]
+    monkeypatch.setitem(
+        assets_module._REPRESENTATION_POLICIES,
+        "infographic",
+        assets_module._RepresentationPolicy(
+            artifact_type=policy.artifact_type,
+            formats=policy.formats,
+            max_bytes=10,
+        ),
+    )
+    response = FakeResponse(
+        200,
+        headers={"content-type": "image/png", "content-length": declared_length},
+        chunks=[PNG],
+    )
+    client = FakeClient([response])
+    service, _, _ = await _open_service(client)
+
+    with pytest.raises(ArtifactDownloadError, match="code=size"):
+        await service.download_url(INITIAL, str(tmp_path / "oversized.png"))
+
+    assert response.iterations == 0
+    assert list(tmp_path.glob(".*.part")) == []
+
+
+@pytest.mark.asyncio
+async def test_streamed_size_limit_rejects_before_overflow_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy = assets_module._REPRESENTATION_POLICIES["infographic"]
+    monkeypatch.setitem(
+        assets_module._REPRESENTATION_POLICIES,
+        "infographic",
+        assets_module._RepresentationPolicy(
+            artifact_type=policy.artifact_type,
+            formats=policy.formats,
+            max_bytes=len(PNG) - 1,
+        ),
+    )
+    client = FakeClient([_png_response(chunks=[PNG[:8], PNG[8:]])])
+    service, _, _ = await _open_service(client)
+
+    with pytest.raises(ArtifactDownloadError, match="code=size"):
+        await service.download_url(INITIAL, str(tmp_path / "oversized.png"))
+
+    assert list(tmp_path.glob(".*.part")) == []
+
+
+@pytest.mark.asyncio
+async def test_unknown_representation_rejects_before_credentials_or_dispatch(
+    tmp_path: Path,
+) -> None:
+    client = FakeClient([])
+    service, bearer, _ = await _open_service(client)
+
+    with pytest.raises(ValueError, match="Unsupported Android artifact representation"):
+        await service.download_representation(
+            INITIAL,
+            str(tmp_path / "out.bin"),
+            representation="unknown",  # type: ignore[arg-type]
+        )
+
+    assert bearer.calls == []
+    assert client.requests == []
+
+
+@pytest.mark.asyncio
 async def test_http_redirect_revalidates_and_drops_bearer_on_signed_gcs(
     tmp_path: Path,
 ) -> None:
@@ -310,9 +704,7 @@ async def test_invalid_initial_url_rejects_before_credentials_and_dispatch(
 
 @pytest.mark.asyncio
 async def test_untrusted_redirect_rejects_before_next_dispatch(tmp_path: Path) -> None:
-    client = FakeClient(
-        [FakeResponse(302, headers={"location": "https://evil.example/secret"})]
-    )
+    client = FakeClient([FakeResponse(302, headers={"location": "https://evil.example/secret"})])
     service, _, _ = await _open_service(client)
     with pytest.raises(ArtifactDownloadError, match="url_policy") as raised:
         await service.download_url(INITIAL, str(tmp_path / "out.png"))
@@ -469,8 +861,7 @@ async def test_post_redirect_failures_drop_all_capabilities_and_raw_objects(
     redirect_kind: str,
 ) -> None:
     next_url = (
-        "https://storage.googleapis.com/bucket/final.png"
-        "?X-Goog-Signature=post-redirect-secret"
+        "https://storage.googleapis.com/bucket/final.png?X-Goog-Signature=post-redirect-secret"
     )
     first = (
         FakeResponse(302, headers={"location": next_url})
@@ -598,9 +989,7 @@ async def test_forced_close_settles_old_task_before_reopen_and_new_epoch_dispatc
     )
     await service.open(loop, 1)
 
-    old_task = asyncio.create_task(
-        service.download_url(INITIAL, str(tmp_path / "old.png"))
-    )
+    old_task = asyncio.create_task(service.download_url(INITIAL, str(tmp_path / "old.png")))
     while not old_client.requests:
         await asyncio.sleep(0)
     await service.prepare_close()

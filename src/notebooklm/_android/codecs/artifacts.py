@@ -11,8 +11,13 @@ from ..._types.artifact_content import (
     ArtifactMedia,
     ArtifactMediaType,
     ArtifactSlide,
+    ArtifactUserState,
+    AudioArtifactUserState,
+    FlashcardArtifactUserState,
+    UnknownArtifactUserState,
 )
 from ..._types.artifacts import Artifact, ReportSuggestion
+from ..._types.enums import FLASHCARDS_VARIANT
 from ...exceptions import DecodingError
 from ..errors import sanitize_escaping_exception
 
@@ -46,12 +51,87 @@ def _media(values: Iterable[Any]) -> tuple[ArtifactMedia, ...]:
 
 def _preferred_media(values: tuple[ArtifactMedia, ...]) -> str | None:
     for item in values:
+        if item.kind is ArtifactMediaType.PROGRESSIVE:
+            return item.url
+    for item in values:
         if item.kind is ArtifactMediaType.DOWNLOAD:
             return item.url
     if not values:
         return None
     first, *_remaining = values
     return first.url
+
+
+def _int_tuple(value: Any) -> tuple[int, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(
+        int(item)
+        for item in value
+        if isinstance(item, (int, float))
+        and not isinstance(item, bool)
+        and float(item).is_integer()
+    )
+
+
+def _decode_user_state(
+    message: Any, *, type_code: int, variant: int | None
+) -> ArtifactUserState | None:
+    from google.protobuf.json_format import MessageToDict
+
+    if not message.HasField("artifact_user_state"):
+        return None
+    state = message.artifact_user_state
+    if type_code == 1 and state.HasField("audio_overview_state"):
+        position = state.audio_overview_state.playback_position
+        return AudioArtifactUserState(
+            playback_position_seconds=int(position.seconds) + int(position.nanos) / 1_000_000_000
+        )
+
+    raw = MessageToDict(state, preserving_proto_field_name=True)
+    if (
+        type_code == 4
+        and variant == FLASHCARDS_VARIANT
+        and state.HasField("app_artifact_state")
+        and state.app_artifact_state.HasField("app_state")
+    ):
+        app_state = MessageToDict(state.app_artifact_state.app_state)
+        known_keys = {
+            "cardAcquisitionsMapping",
+            "currentCardIndex",
+            "hiddenCardIndices",
+            "lastShownOrder",
+            "currentView",
+        }
+        if known_keys.intersection(app_state):
+            acquisitions = app_state.get("cardAcquisitionsMapping")
+            current_index = app_state.get("currentCardIndex")
+            return FlashcardArtifactUserState(
+                card_acquisitions=(
+                    {
+                        str(key): value
+                        for key, value in acquisitions.items()
+                        if isinstance(value, str)
+                    }
+                    if isinstance(acquisitions, dict)
+                    else {}
+                ),
+                current_card_index=(
+                    int(current_index)
+                    if isinstance(current_index, (int, float))
+                    and not isinstance(current_index, bool)
+                    and float(current_index).is_integer()
+                    else None
+                ),
+                hidden_card_indices=_int_tuple(app_state.get("hiddenCardIndices")),
+                last_shown_order=_int_tuple(app_state.get("lastShownOrder")),
+                current_view=(
+                    app_state.get("currentView")
+                    if isinstance(app_state.get("currentView"), str)
+                    else None
+                ),
+            )
+    return UnknownArtifactUserState(raw=raw)
 
 
 def _prompt(message: Any, type_code: int) -> str | None:
@@ -165,6 +245,7 @@ def _decode_artifact(message: Any, *, method_id: str) -> Artifact:
         source_ids=source_ids,
         last_modified_at=last_modified_at,
         etag=message.etag or None,
+        user_state=_decode_user_state(message, type_code=type_code, variant=variant),
     )
 
 

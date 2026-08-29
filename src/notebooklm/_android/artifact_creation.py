@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import builtins
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from .._artifact import validation as _artifact_validation
 from .._types.enums import (
@@ -21,11 +21,9 @@ from .._types.enums import (
     VideoStyle,
 )
 from ..exceptions import ValidationError
+from .artifact_proto import ARTIFACTS_PROTO as _PROTO
+from .artifact_proto import READ_PROTO as _READ_PROTO
 from .errors import unsupported_operation
-from .proto.google.internal.labs.tailwind.orchestration.v1 import artifacts_pb2, read_pb2
-
-_PROTO = cast(Any, artifacts_pb2)
-_READ_PROTO = cast(Any, read_pb2)
 
 _REPORT_CONFIGS: dict[ReportFormat, tuple[str, str, str]] = {
     ReportFormat.BRIEFING_DOC: (
@@ -85,33 +83,29 @@ def _optional_string(value: Any, parameter: str) -> str | None:
 def normalize_creation_options(family: str, **options: Any) -> dict[str, Any]:
     """Validate and normalize a supported family's public options before collaborator I/O."""
 
-    if family in ("video", "cinematic_video"):
+    if family == "cinematic_video":
+        unsupported_operation("artifacts.generate_cinematic_video")
+    if family == "video":
         language = _language(options.get("language"))
         instructions = _optional_string(options.get("instructions"), "instructions")
         video_format = options.get("video_format")
-        if family == "cinematic_video":
-            video_format = VideoFormat.CINEMATIC
         format_code = _enum_code(
             video_format,
             VideoFormat,
             "video_format",
             VideoFormat.EXPLAINER.value,
         )
+        if format_code == VideoFormat.CINEMATIC.value:
+            unsupported_operation("artifacts.generate_cinematic_video")
         video_style = options.get("video_style")
         style_code = _enum_code(
             video_style,
             VideoStyle,
             "video_style",
-            (
-                _PROTO.VIDEO_OVERVIEW_STYLE_UNSPECIFIED
-                if family == "cinematic_video"
-                else VideoStyle.AUTO_SELECT.value
-            ),
+            (VideoStyle.AUTO_SELECT.value),
         )
         style_prompt = _optional_string(options.get("style_prompt"), "style_prompt")
         style_prompt = style_prompt.strip() if style_prompt is not None else None
-        if format_code == VideoFormat.CINEMATIC.value and style_prompt:
-            raise ValidationError("style_prompt is not supported for cinematic videos")
         if format_code == VideoFormat.SHORT.value and (
             (video_style is not None and video_style != VideoStyle.AUTO_SELECT) or style_prompt
         ):
@@ -168,6 +162,12 @@ def normalize_creation_options(family: str, **options: Any) -> dict[str, Any]:
                 "difficulty",
                 QuizDifficulty.MEDIUM.value,
             ),
+        }
+
+    if family == "interactive_mind_map":
+        return {
+            "language": _language(options.get("language")),
+            "instructions": _optional_string(options.get("instructions"), "instructions"),
         }
 
     if family == "infographic":
@@ -240,7 +240,7 @@ def build_create_artifact_plan(
     normalized = normalize_creation_options(family, **options)
     artifact_sources = _sources(source_ids)
 
-    if family in ("video", "cinematic_video"):
+    if family == "video":
         artifact = _PROTO.Artifact(
             type=_PROTO.ARTIFACT_TYPE_EXPLAINER_VIDEO,
             sources=artifact_sources,
@@ -293,6 +293,21 @@ def build_create_artifact_plan(
         expected_type = ArtifactTypeCode.QUIZ.value
         expected_variant = _PROTO.APP_TYPE_FLASHCARDS
         family_label = "flashcards"
+    elif family == "interactive_mind_map":
+        artifact = _PROTO.Artifact(
+            type=_PROTO.ARTIFACT_TYPE_APP,
+            sources=artifact_sources,
+            app=_PROTO.AppArtifact(
+                generation_options=_PROTO.AppArtifactGenerationOptions(
+                    app_type=_PROTO.APP_TYPE_MINDMAP,
+                    free_text_steering_prompt=normalized["instructions"] or "",
+                    language_code=normalized["language"],
+                )
+            ),
+        )
+        expected_type = ArtifactTypeCode.QUIZ.value
+        expected_variant = _PROTO.APP_TYPE_MINDMAP
+        family_label = "interactive mind map"
     elif family == "infographic":
         artifact = _PROTO.Artifact(
             type=_PROTO.ARTIFACT_TYPE_INFOGRAPHIC,

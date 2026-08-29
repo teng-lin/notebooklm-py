@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import traceback
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -15,9 +16,11 @@ import pytest
 from google.protobuf import empty_pb2
 from tests._helpers.android_supervisor import SupervisedAndroidTransport
 
+from notebooklm._android.artifact_outputs import report_doc_markdown
 from notebooklm._android.artifacts import (
     CREATE_ARTIFACT_METHOD,
     DELETE_ARTIFACT_METHOD,
+    DERIVE_ARTIFACT_METHOD,
     GENERATE_REPORT_SUGGESTIONS_METHOD,
     GET_ARTIFACT_METHOD,
     LIST_ARTIFACTS_METHOD,
@@ -27,6 +30,7 @@ from notebooklm._android.artifacts import (
 from notebooklm._android.assets import AndroidAssetDownloadService
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     artifacts_pb2,
+    chat_pb2,
     read_pb2,
 )
 from notebooklm._android.session import AndroidSession
@@ -61,7 +65,7 @@ from notebooklm.exceptions import (
     UnsupportedOperationError,
     ValidationError,
 )
-from notebooklm.types import Artifact, ArtifactType
+from notebooklm.types import Artifact, ArtifactType, MindMap, MindMapKind
 
 _PROTO = artifacts_pb2
 
@@ -121,6 +125,7 @@ class FakeMindMaps:
 class FakeAssets:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
+        self.representation_calls: list[tuple[str, str, str]] = []
         self.error: ArtifactDownloadError | None = None
 
     async def download_url(self, url: str, output_path: str) -> str:
@@ -131,6 +136,18 @@ class FakeAssets:
 
     async def download_urls_batch(self, urls_and_paths: list[tuple[str, str]]) -> Any:
         raise AssertionError(f"batch transfer not expected: {urls_and_paths!r}")
+
+    async def download_representation(
+        self,
+        url: str,
+        output_path: str,
+        *,
+        representation: str,
+    ) -> str:
+        self.representation_calls.append((url, output_path, representation))
+        if self.error is not None:
+            raise self.error
+        return output_path
 
 
 def _supervisor() -> CallSupervisor:
@@ -194,6 +211,7 @@ def _graph(
             LIST_ARTIFACTS_METHOD: _PROTO.ListArtifactsResponse(artifacts=studio_rows),
             GET_ARTIFACT_METHOD: get_response,
             DELETE_ARTIFACT_METHOD: empty_pb2.Empty(),
+            DERIVE_ARTIFACT_METHOD: _PROTO.DeriveArtifactResponse(),
             GENERATE_REPORT_SUGGESTIONS_METHOD: _PROTO.GenerateReportSuggestionsResponse(),
         }
     )
@@ -676,14 +694,7 @@ async def test_generate_audio_rejects_mismatched_response_family() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("cinematic", "expected_format"),
-    [(False, _PROTO.TEMPLATE_FORMAT_BRIEF), (True, _PROTO.TEMPLATE_FORMAT_BREAKDOWN)],
-)
-async def test_generate_video_families_use_exact_mobile_options(
-    cinematic: bool,
-    expected_format: int,
-) -> None:
+async def test_generate_video_families_use_exact_mobile_options() -> None:
     session, _, _, _, api = _graph()
     session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
         artifact=_artifact(
@@ -693,22 +704,14 @@ async def test_generate_video_families_use_exact_mobile_options(
         )
     )
 
-    if cinematic:
-        status = await api.generate_cinematic_video(
-            "notebook-1",
-            source_ids=["source-1"],
-            language="fr",
-            instructions="Use the evidence",
-        )
-    else:
-        status = await api.generate_video(
-            "notebook-1",
-            source_ids=["source-1"],
-            language="fr",
-            instructions="Use the evidence",
-            video_format=VideoFormat.BRIEF,
-            video_style=VideoStyle.WATERCOLOR,
-        )
+    status = await api.generate_video(
+        "notebook-1",
+        source_ids=["source-1"],
+        language="fr",
+        instructions="Use the evidence",
+        video_format=VideoFormat.BRIEF,
+        video_style=VideoStyle.WATERCOLOR,
+    )
 
     assert status.task_id == "video-1"
     method, request, kwargs = session.calls[0]
@@ -721,12 +724,28 @@ async def test_generate_video_families_use_exact_mobile_options(
     assert [source.id for source in options.source_ids] == ["source-1"]
     assert options.language_code == "fr"
     assert options.video_focus == "Use the evidence"
-    assert options.template_format == expected_format
-    assert options.video_overview_style == (
-        _PROTO.VIDEO_OVERVIEW_STYLE_UNSPECIFIED
-        if cinematic
-        else _PROTO.VIDEO_OVERVIEW_STYLE_WATERCOLOR
-    )
+    assert options.template_format == _PROTO.TEMPLATE_FORMAT_BRIEF
+    assert options.video_overview_style == _PROTO.VIDEO_OVERVIEW_STYLE_WATERCOLOR
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("through_video_format", [False, True])
+async def test_cinematic_video_rejects_before_source_or_transport(
+    through_video_format: bool,
+) -> None:
+    session, notebooks, _, _, api = _graph()
+
+    with pytest.raises(UnsupportedOperationError, match="generate_cinematic_video"):
+        if through_video_format:
+            await api.generate_video(
+                "notebook-1",
+                video_format=VideoFormat.CINEMATIC,
+            )
+        else:
+            await api.generate_cinematic_video("notebook-1")
+
+    assert notebooks.calls == []
+    assert session.calls == []
 
 
 @pytest.mark.asyncio
@@ -915,21 +934,411 @@ async def test_failed_quiz_mutation_is_not_replayed() -> None:
 
 
 @pytest.mark.asyncio
+async def test_revise_slide_uses_apk_exact_derive_request_without_replay() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[DERIVE_ARTIFACT_METHOD] = _PROTO.DeriveArtifactResponse(
+        artifact=_artifact(
+            "derived-slides",
+            type_code=_PROTO.ARTIFACT_TYPE_SLIDES,
+            status=_PROTO.ARTIFACT_STATUS_INITIALIZED,
+        )
+    )
+
+    result = await api.revise_slide("notebook-1", "original-slides", 3, "Simplify it")
+
+    assert result.task_id == "derived-slides"
+    assert result.status == "pending"
+    assert session.scopes == ["artifacts.revise_slide"]
+    method, request, kwargs = session.calls[0]
+    assert method == DERIVE_ARTIFACT_METHOD
+    assert request.original_artifact_id == "original-slides"
+    assert request.request_context.client_type != 0
+    assert request.slides_derivation_options.slide_edit_instructions == [
+        _PROTO.SlideEditInstruction(slide_index=3, edit_instruction="Simplify it")
+    ]
+    assert kwargs == {
+        "replay_safe": False,
+        "response_type": _PROTO.DeriveArtifactResponse,
+        "expected_epoch": 7,
+    }
+
+
+@pytest.mark.asyncio
+async def test_revise_slide_negative_index_rejects_before_io() -> None:
+    session, _, _, _, api = _graph()
+
+    with pytest.raises(ValidationError, match="slide_index must be >= 0"):
+        await api.revise_slide("notebook-1", "slides", -1, "prompt")
+
+    assert session.calls == []
+
+
+@pytest.mark.asyncio
+async def test_revise_slide_requires_a_slides_artifact_response() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[DERIVE_ARTIFACT_METHOD] = _PROTO.DeriveArtifactResponse(
+        artifact=_artifact("wrong-family", type_code=_PROTO.ARTIFACT_TYPE_INFOGRAPHIC)
+    )
+
+    with pytest.raises(DecodingError, match="different artifact family") as raised:
+        await api.revise_slide("notebook-1", "slides", 0, "prompt")
+
+    assert raised.value.method_id == DERIVE_ARTIFACT_METHOD
+
+
+@pytest.mark.asyncio
+async def test_revise_slide_requires_artifact_payload() -> None:
+    session, _, _, _, api = _graph()
+
+    with pytest.raises(DecodingError, match="omitted its artifact") as raised:
+        await api.revise_slide("notebook-1", "slides", 0, "prompt")
+
+    assert raised.value.method_id == DERIVE_ARTIFACT_METHOD
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("type_code", "representation", "method_name"),
+    [
+        (_PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW, "audio", "download_audio"),
+        (_PROTO.ARTIFACT_TYPE_EXPLAINER_VIDEO, "video", "download_video"),
+    ],
+)
+async def test_media_download_prefers_exact_download_representation(
+    type_code: int,
+    representation: str,
+    method_name: str,
+) -> None:
+    raw = _artifact("media", type_code=type_code)
+    media_urls = (
+        raw.audio_overview.media_urls
+        if type_code == _PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW
+        else raw.explainer_video.media_urls
+    )
+    media_urls.add(url="https://lh3.googleusercontent.com/adaptive", type=2)
+    media_urls.add(url="https://lh3.googleusercontent.com/download", type=4)
+    session, _, _, assets, api = _graph([raw])
+
+    result = await getattr(api, method_name)("notebook-1", "media.mp4")
+
+    assert result == "media.mp4"
+    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD]
+    assert assets.representation_calls == [
+        ("https://lh3.googleusercontent.com/download", "media.mp4", representation)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_media_download_rejects_adaptive_playlist_before_asset_io() -> None:
+    raw = _artifact("audio", type_code=_PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW)
+    raw.audio_overview.media_urls.add(
+        url="https://lh3.googleusercontent.com/adaptive",
+        type=_PROTO.MEDIA_STREAMING_TYPE_ADAPTIVE_STREAMING_HLS,
+    )
+    _, _, _, assets, api = _graph([raw])
+
+    with pytest.raises(ArtifactParseError, match="downloadable media URL"):
+        await api.download_audio("notebook-1", "audio.mp4")
+
+    assert assets.representation_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("output_format", "expected_url", "representation"),
+    [
+        ("pdf", "https://lh3.googleusercontent.com/slides.pdf", "slide_pdf"),
+        ("pptx", "https://lh3.googleusercontent.com/slides.pptx", "slide_pptx"),
+    ],
+)
+async def test_slide_download_reads_exact_get_artifact_representation(
+    output_format: str,
+    expected_url: str,
+    representation: str,
+) -> None:
+    raw = _artifact("slides", type_code=_PROTO.ARTIFACT_TYPE_SLIDES)
+    raw.slides.pdf_download_url = "https://lh3.googleusercontent.com/slides.pdf"
+    raw.slides.pptx_download_url = "https://lh3.googleusercontent.com/slides.pptx"
+    session, _, _, assets, api = _graph([raw])
+
+    result = await api.download_slide_deck(
+        "notebook-1",
+        f"slides.{output_format}",
+        "slides",
+        output_format,
+    )
+
+    assert result == f"slides.{output_format}"
+    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD, GET_ARTIFACT_METHOD]
+    assert assets.representation_calls == [
+        (expected_url, f"slides.{output_format}", representation)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_download_report_decodes_live_apk_report_doc_and_writes_atomically(tmp_path) -> None:
+    raw = _artifact("report", type_code=_PROTO.ARTIFACT_TYPE_TAILORED_REPORT)
+    structural = raw.tailored_report.report_doc.body.content.add(start_index=0, end_index=12)
+    run = structural.paragraph.elements.add(start_index=0, end_index=12)
+    run.text_run.content = "Hello report"
+    structural.paragraph.paragraph_style.named_style_type = 2
+    bullet = raw.tailored_report.report_doc.body.content.add()
+    bullet.paragraph.bullet_info.list_type = 1
+    bullet.paragraph.bullet_info.nesting_level = 1
+    bullet.paragraph.elements.add().text_run.content = "Key point"
+    rule = raw.tailored_report.report_doc.body.content.add()
+    rule.horizontal_rule.SetInParent()
+    table = raw.tailored_report.report_doc.body.content.add().table
+    for left, right in (("A", "B"), ("1", "2")):
+        row = table.table_rows.add()
+        row.table_cells.add().content.add().paragraph.elements.add().text_run.content = left
+        row.table_cells.add().content.add().paragraph.elements.add().text_run.content = right
+    session, _, _, _, api = _graph([raw])
+    output = tmp_path / "report.md"
+
+    result = await api.download_report("notebook-1", str(output), "report")
+
+    assert result == str(output)
+    assert output.read_text(encoding="utf-8") == (
+        "# Hello report\n\n  - Key point\n\n---\n\n| A | B |\n| --- | --- |\n| 1 | 2 |"
+    )
+    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD, GET_ARTIFACT_METHOD]
+
+
+def test_report_renderer_preserves_exact_non_sample_variants_and_citations() -> None:
+    document = chat_pb2.TailwindDoc()
+    paragraph = document.body.content.add().paragraph
+    styled = paragraph.elements.add().text_run
+    styled.content = "x+y"
+    styled.text_style.underline = True
+    styled.text_style.math = 1
+    paragraph.elements.add().resource.id = "resource-1"
+    document.body.content.add().a2ui_block.json = '{"type":"card"}'
+    citation = document.objects.add(object_id={"id": "citation-1"}).citation
+    citation.fragment.elements.add().paragraph.elements.add().text_run.content = "Quoted fact"
+    citation.source_attribution.ingested_source.source.id = "source-1"
+
+    rendered = report_doc_markdown(document)
+
+    assert "$<u>x+y</u>$[resource: resource-1]" in rendered
+    assert '```json\n{"type":"card"}\n```' in rendered
+    assert "> **Citation citation-1 (source source-1):** Quoted fact" in rendered
+
+
+@pytest.mark.asyncio
+async def test_download_quiz_formats_exact_apk_app_html(tmp_path) -> None:
+    raw = _artifact(
+        "quiz",
+        title="Quiz title",
+        type_code=_PROTO.ARTIFACT_TYPE_APP,
+        variant=_PROTO.APP_TYPE_QUIZ,
+    )
+    raw.app.app_html = (
+        '<main data-app-data="{&quot;quiz&quot;:[{&quot;question&quot;:&quot;Q?&quot;,'
+        "&quot;answerOptions&quot;:[{&quot;text&quot;:&quot;A&quot;,"
+        '&quot;isCorrect&quot;:true}]}]}"></main>'
+    )
+    session, _, _, _, api = _graph([raw])
+    output = tmp_path / "quiz.json"
+
+    result = await api.download_quiz("notebook-1", str(output), "quiz")
+
+    assert result == str(output)
+    assert json.loads(output.read_text(encoding="utf-8")) == {
+        "title": "Quiz title",
+        "questions": [
+            {
+                "question": "Q?",
+                "answerOptions": [{"text": "A", "isCorrect": True}],
+            }
+        ],
+    }
+    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD, GET_ARTIFACT_METHOD]
+
+
+@pytest.mark.asyncio
+async def test_download_quiz_html_does_not_require_embedded_app_data(tmp_path) -> None:
+    raw = _artifact(
+        "quiz-html",
+        title="Quiz title",
+        type_code=_PROTO.ARTIFACT_TYPE_APP,
+        variant=_PROTO.APP_TYPE_QUIZ,
+    )
+    raw.app.app_html = "<main>standalone exact app HTML</main>"
+    _, _, _, _, api = _graph([raw])
+    output = tmp_path / "quiz.html"
+
+    result = await api.download_quiz(
+        "notebook-1",
+        str(output),
+        "quiz-html",
+        output_format="html",
+    )
+
+    assert result == str(output)
+    assert output.read_text(encoding="utf-8") == raw.app.app_html
+
+
+@pytest.mark.asyncio
+async def test_download_flashcards_formats_exact_templatized_app_data(tmp_path) -> None:
+    raw = _artifact(
+        "cards",
+        title="Cards",
+        type_code=_PROTO.ARTIFACT_TYPE_APP,
+        variant=_PROTO.APP_TYPE_FLASHCARDS,
+    )
+    raw.app.templatized_app.app_data = json.dumps({"flashcards": [{"f": "front", "b": "back"}]})
+    _, _, _, _, api = _graph([raw])
+    output = tmp_path / "cards.md"
+
+    await api.download_flashcards(
+        "notebook-1",
+        str(output),
+        "cards",
+        output_format="markdown",
+    )
+
+    assert "**Q:** front" in output.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_media_download_accepts_android_protobuf_prefetch_without_list_io() -> None:
+    raw = _artifact("audio", type_code=_PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW)
+    raw.audio_overview.media_urls.add(
+        url="https://lh3.googleusercontent.com/download",
+        type=_PROTO.MEDIA_STREAMING_TYPE_DOWNLOAD,
+    )
+    session, _, _, assets, api = _graph()
+
+    await api.download_audio(
+        "notebook-1",
+        "audio.mp4",
+        "audio",
+        artifacts_data=[raw],
+    )
+
+    assert session.calls == []
+    assert assets.representation_calls == [
+        ("https://lh3.googleusercontent.com/download", "audio.mp4", "audio")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_interactive_mind_map_generation_uses_live_exact_app_variant() -> None:
+    session, notebooks, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact(
+            "interactive",
+            type_code=_PROTO.ARTIFACT_TYPE_APP,
+            status=_PROTO.ARTIFACT_STATUS_INITIALIZED,
+            variant=_PROTO.APP_TYPE_MINDMAP,
+        )
+    )
+
+    result = await api._generate_interactive_mind_map(
+        "notebook-1",
+        None,
+        language="en",
+        instructions="focus on causality",
+    )
+
+    assert result.task_id == "interactive"
+    assert notebooks.calls == ["notebook-1"]
+    method, request, kwargs = session.calls[0]
+    assert method == CREATE_ARTIFACT_METHOD
+    assert request.artifact.type == _PROTO.ARTIFACT_TYPE_APP
+    assert request.artifact.app.generation_options.app_type == _PROTO.APP_TYPE_MINDMAP
+    assert request.artifact.app.generation_options.language_code == "en"
+    assert request.artifact.app.generation_options.free_text_steering_prompt == (
+        "focus on causality"
+    )
+    assert kwargs["replay_safe"] is False
+
+
+@pytest.mark.asyncio
+async def test_interactive_mind_map_tree_decodes_live_direct_json_field() -> None:
+    raw = _artifact(
+        "interactive",
+        type_code=_PROTO.ARTIFACT_TYPE_APP,
+        variant=_PROTO.APP_TYPE_MINDMAP,
+    )
+    raw.app.mind_map_json = json.dumps({"name": "Root", "children": [{"name": "Leaf"}]})
+    session, _, _, _, api = _graph([raw])
+
+    tree = await api._get_interactive_mind_map_tree("interactive")
+
+    assert tree == {"name": "Root", "children": [{"name": "Leaf"}]}
+    assert [call[0] for call in session.calls] == [GET_ARTIFACT_METHOD]
+
+
+@pytest.mark.asyncio
+async def test_download_interactive_mind_map_writes_validated_json(tmp_path) -> None:
+    raw = _artifact(
+        "interactive",
+        type_code=_PROTO.ARTIFACT_TYPE_APP,
+        variant=_PROTO.APP_TYPE_MINDMAP,
+    )
+    raw.app.mind_map_json = json.dumps({"name": "Root", "children": [{"name": "Leaf"}]})
+    session, _, _, _, api = _graph([raw])
+    output = tmp_path / "mind-map.json"
+
+    result = await api.download_mind_map("notebook-1", str(output), "interactive")
+
+    assert result == str(output)
+    assert json.loads(output.read_text(encoding="utf-8")) == {
+        "name": "Root",
+        "children": [{"name": "Leaf"}],
+    }
+    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD, GET_ARTIFACT_METHOD]
+
+
+@pytest.mark.asyncio
+async def test_download_note_backed_mind_map_uses_typed_prefetch_without_rpc(tmp_path) -> None:
+    session, _, _, _, api = _graph()
+    output = tmp_path / "note-map.json"
+    note_map = MindMap(
+        id="note-map",
+        notebook_id="notebook-1",
+        title="Note map",
+        kind=MindMapKind.NOTE_BACKED,
+        tree={"name": "Root", "children": []},
+    )
+
+    result = await api.download_mind_map(
+        "notebook-1",
+        str(output),
+        "note-map",
+        mind_maps=[note_map],
+        artifacts_data=[],
+    )
+
+    assert result == str(output)
+    assert json.loads(output.read_text(encoding="utf-8")) == note_map.tree
+    assert session.calls == []
+
+
+@pytest.mark.asyncio
+async def test_interactive_mind_map_rejects_malformed_node_tree() -> None:
+    raw = _artifact(
+        "interactive",
+        type_code=_PROTO.ARTIFACT_TYPE_APP,
+        variant=_PROTO.APP_TYPE_MINDMAP,
+    )
+    raw.app.mind_map_json = '{"name":"Root","children":[{"name":7}]}'
+    _, _, _, _, api = _graph([raw])
+
+    with pytest.raises(ArtifactParseError, match="invalid node"):
+        await api._get_interactive_mind_map_tree("interactive")
+
+
+@pytest.mark.asyncio
 async def test_all_unsupported_public_paths_reject_before_collaborator_io() -> None:
     session, notebooks, mind_maps, assets, api = _graph()
     invocations: list[Callable[[], Awaitable[Any]]] = [
         lambda: api.generate_data_table("n"),
-        lambda: api.revise_slide("n", "a", 0, "p"),
         lambda: api.retry_failed("n", "a"),
         lambda: api.generate_mind_map("n"),
-        lambda: api.download_audio("n", "out"),
-        lambda: api.download_video("n", "out"),
-        lambda: api.download_slide_deck("n", "out"),
-        lambda: api.download_report("n", "out"),
-        lambda: api.download_mind_map("n", "out"),
         lambda: api.download_data_table("n", "out"),
-        lambda: api.download_quiz("n", "out"),
-        lambda: api.download_flashcards("n", "out"),
         lambda: api.export_report("n", "a"),
         lambda: api.export_data_table("n", "a"),
         lambda: api.export("n", "a"),
@@ -946,12 +1355,20 @@ async def test_all_unsupported_public_paths_reject_before_collaborator_io() -> N
 
 
 @pytest.mark.asyncio
-async def test_non_none_raw_artifact_rows_reject_before_infographic_io() -> None:
-    session, _, _, assets, api = _graph([_artifact("image")])
-    with pytest.raises(UnsupportedOperationError):
-        await api.download_infographic("notebook-1", "out.png", artifacts_data=[])
+async def test_infographic_prefetch_avoids_list_io() -> None:
+    session, _, _, assets, api = _graph()
+    raw = _artifact("image", url="https://lh3.googleusercontent.com/image?cap=1")
+
+    result = await api.download_infographic(
+        "notebook-1",
+        "out.png",
+        artifact_id="image",
+        artifacts_data=[raw],
+    )
+
+    assert result == "out.png"
     assert session.calls == []
-    assert assets.calls == []
+    assert assets.calls == [(raw.infographic.infographics[0].image.url, "out.png")]
 
 
 @pytest.mark.asyncio
