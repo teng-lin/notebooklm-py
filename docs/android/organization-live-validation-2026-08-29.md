@@ -70,3 +70,16 @@ Implementation may therefore admit `GetLabels`, manual `CreateLabel`, property a
 `MutateLabel`, and `DeleteLabels` for both source labels and notebook collections. AI-generated
 label creation remains separate: this run validated only the manual-create branch and must not be
 used to infer the auto-label request union.
+
+## Public adapter qualification
+
+After assembly selected `AndroidCollectionsAPI` for explicit `backend="android"`, the permanent
+`tests/e2e/test_android_collections_conformance.py` gate passed twice independently against the
+same isolated `ng-master` profile. Each run created a fresh disposable Web-backed notebook and an
+Android-backed collection, then exercised the complete public namespace: `list`, `get_or_none`,
+`get`, `notebooks`, `create`, `rename`, `add_notebooks`, `remove_notebooks`, and `delete`.
+
+Both runs verified the mixed-backend membership expansion, deleted the exact collection ID, and
+deleted the exact disposable notebook ID in `finally`. No collection or notebook created by either
+run remained. No browser was opened; the selected lifecycle loaded the profile's master token only
+during async open and kept gRPC channel construction lazy until the first collection call.
