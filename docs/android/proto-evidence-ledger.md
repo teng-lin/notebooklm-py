@@ -1,7 +1,7 @@
 # Android protobuf evidence ledger
 
 **Status:** admitted B1 read closure plus B2 notebook, B3/B3b source, B4 artifact, B5 chat,
-B6 notes/sharing, and private B10 Research overlays
+B6 notes/sharing, B9 organization, and private B10 Research overlays
 
 **Evidence snapshot:** 2026-08-29
 
@@ -9,8 +9,8 @@ B6 notes/sharing, and private B10 Research overlays
 slice and B3b PDF transaction, B4 artifact list/get/create/update/delete plus its repository-local
 wire-equivalent report-suggestion overlay, and the private/direct-test B5 chat surface
 (`ListChatSessions`, `ListChatTurns`, `DeleteChatTurns`, and `GenerateFreeFormStreamed`), plus B6
-note CRUD and public-link sharing, and the private B10 synchronous discovery plus async Research
-lifecycle
+note CRUD and public-link sharing, B9 source-label and notebook-collection CRUD/membership, and the
+private B10 synchronous discovery plus async Research lifecycle
 
 ## B10 Research method ledger
 
@@ -49,11 +49,11 @@ overlay admits only fields retained by the named Dart protobuf libraries and che
 captured wire tags. One cumulative `orchestration_service.proto` now owns the exact service and
 imports only message signatures independently admitted below; repository-local or otherwise
 unproven signatures remain manual full-path calls listed in the machine-readable
-[`grpc-service-signature-exceptions.json`](grpc-service-signature-exceptions.json). B6 sharing is
-the one explicit exception to an exact
-package overlay: its field bytes are proven, but imported response/empty-message FQNs are not.
-Those messages therefore live under the visibly repository-local `notebooklm.android.wire.v1`
-package and make no claim about Google's type identity.
+[`grpc-service-signature-exceptions.json`](grpc-service-signature-exceptions.json). B6 sharing and
+B9 organization writes are explicit exceptions to exact-package overlays: their field bytes are
+proven, but at least one remote request/response FQN is not. Those messages therefore live under
+the visibly repository-local `notebooklm.android.wire.v1` package and make no claim about Google's
+type identity.
 
 ## Evidence input identities
 
@@ -72,6 +72,8 @@ fixtures. Hashes prevent a later local checkout from silently changing what was 
 | [`web-parity-gap-live-validation-2026-08-27.md`](web-parity-gap-live-validation-2026-08-27.md) | `c0a3a16b2ff0eba18395e5a53ae2ebddb3b299d8b2cae0d6d868a3e294b08251` | live delete, rename/read-back, report-suggestion cardinality, and disposable note CRUD |
 | [`notebooks-live-validation-2026-08-28.md`](notebooks-live-validation-2026-08-28.md) | `a6646ea8f96c3c9c63aafc4d3d30d2fde8276c67155cf60bd885cd42a48a4036` | accepted Android bearer plus disposable emoji set/clear/combined read-back and repeated Recent failure |
 | [`notes-mind-maps-live-validation-2026-08-28.md`](notes-mind-maps-live-validation-2026-08-28.md) | `53510a6cc807dcc8f1f652039e667190763c5c08a4debe64bc52bbf8bf8825f3` | two same-id Web-generation/Android-read classifier runs, kind-safe Android map deletion, and two complete-manifest reruns retaining the cross-backend ordinary-note tombstone boundary |
+| [`organization-live-validation-2026-08-29.md`](organization-live-validation-2026-08-29.md) | `61dc72d8872100406c87bcb5023467df68736d517f50fd7e91fcc2d85f6b3a61` | later valid-resource source-label/collection CRUD and one-member mutation read-backs; supersedes rejected early probes |
+| [`labels-collections-copy-mobile-grpc-2026-08-27.md`](labels-collections-copy-mobile-grpc-2026-08-27.md) | `a8bea49943cc962ed9d21d9b1ca18acbf7405fc36b1bc839090b7cfc072c5b62` | exact live-added organization request tags, resource discriminator, heterogeneous member encoding, and ID-diff rule |
 | [`endpoints.md`](endpoints.md) | `57467b424515cf0dfa4c3e08c636ab6a8d0bfddbe5701cf50675ea39338e4e62` | live request/response envelopes, route results, and captured note/sharing bytes |
 
 The recovery method and the warning about duplicate packages are committed in
@@ -85,12 +87,12 @@ The recovery method and the warning about duplicate packages are committed in
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject` | `.google.internal.labs.tailwind.orchestration.v1.GetProjectRequest` | `.google.internal.labs.tailwind.orchestration.v1.GetProjectResponse` | unary/unary | `project_id #1`, `include_audio_overview_ids #2`; no `RequestContext` |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListRecentlyViewedProjects` | `.google.internal.labs.tailwind.orchestration.v1.ListRecentlyViewedProjectsRequest` | `.google.internal.labs.tailwind.orchestration.v1.ListRecentlyViewedProjectsResponse` | unary/unary | `include_own_projects #2`, `include_audio_overview_ids #3`; no `RequestContext` |
 
-The two B1 signatures above and twenty-two later exact signatures live in the sole
+The two B1 signatures above and twenty-three later exact signatures live in the sole
 `google/internal/labs/tailwind/orchestration/v1/orchestration_service.proto` service declaration.
 The individual message overlays remain service-free so protobuf never reopens one service across
-files. Its generated stub exposes 24 implemented methods: the two reads above, five source methods,
-five artifact methods, three chat methods, three note methods, and six Research methods. Eleven
-other implemented paths
+files. Its generated stub exposes 25 implemented methods: the two reads above, five source methods,
+five artifact methods, three chat methods, three note methods, six Research methods, and exact
+`GetLabels`. Fourteen other implemented paths
 remain manual full-path calls because at least one remote request/response FQN is unproven. The
 exception manifest names each adapter constant, local parser, reason code, and evidence link;
 descriptor/adapter/manifest equality is pinned by
@@ -580,6 +582,44 @@ uses `notebooklm.internal.android.wire.MutateSourceWireRequest`, a visibly repos
 wire-equivalent serializer, with the remote full method path and exact-package bare `Source`
 response. No generated type falsely claims the remote request package.
 
+## B9 organization admission
+
+The archived exact-package `supported.proto` pinned above independently establishes the remote
+`GetLabelsRequest`, `GetLabelsResponse`, `LabelAndSources`, and service signature. The minimal
+`organization.proto` copies only those reachable fields and imports the already admitted exact
+`SourceId`. `GetLabels` is therefore the 25th exact generated-stub method, not a signature
+exception.
+
+| Exact message | Admitted fields |
+|---|---|
+| `GetLabelsRequest` | `project_id #2`, `label_type #3` |
+| `LabelAndSources` | `label #1`, repeated `SourceId source_ids #2`, `label_id #3`, `emoji #4` |
+| `GetLabelsResponse` | repeated `label_and_sources #1`, repeated `notebook_collections #2` |
+
+Live collection rows reuse outer record field `#2` but encode each notebook UUID as bare UTF-8,
+whereas source-label rows encode a nested `SourceId`. A populated collection can therefore not be
+safely projected by treating every member as the exact `SourceId` declaration. Runtime reads use
+the visibly repository-local `GetLabelsWireResponse` with `repeated bytes member_ids #2`, then the
+codec applies the evidenced per-resource interpretation and canonical-UUID validation. This is a
+wire-decoder overlay only; it does not weaken the independently evidenced service signature.
+
+The newer valid-resource live report admits only the manual organization write branches below.
+Their method paths and tags are proven, but the remote request/response protobuf FQNs are not, so
+all three remain explicit machine-readable signature exceptions under the local
+`notebooklm.android.wire.v1` package. AI-generated labels remain unsupported before transport I/O.
+
+| Method | Repository-local populated wire | Runtime rule |
+|---|---|---|
+| `CreateLabel` | request `project_id #2` for labels; `manual_create #6` containing properties `#1`, sources `#2`, notebooks `#3`; collection discriminator `#7 = 3` | non-replayed write; identify exactly one new canonical ID by `GetLabels` before/after diff |
+| `MutateLabel` | resource `#3`, repeated operation `#4`; label project `#2`; collection discriminator `#5 = 3`; property `#1`; member add/remove variants `#2`-`#5` | one member per non-replayed RPC, one final read-back, partial/non-atomic failure across members |
+| `DeleteLabels` | label project `#2`, repeated IDs `#3`; collection discriminator `#4 = 3` | preflight absent IDs as idempotent no-ops, one non-replayed batch delete, then absence read-back |
+
+Every multi-call public adapter workflow holds one outer operation lease and passes its epoch to
+each organization unary call. The adapters and codecs import generated protobuf modules only from
+lazy helpers, preserving dependency-free construction and deferring a missing Android extra to
+async open. `AndroidCollectionsAPI` implements all nine public collection methods;
+`AndroidLabelsAPI` implements manual CRUD/membership while `generate` names Web as the alternative.
+
 ## Deterministic toolchain
 
 | Component | Exact value |
@@ -591,7 +631,7 @@ response. No generated type falsely claims the remote request package.
 | flags | both proto roots via `-I`, `--include_imports`, `--descriptor_set_out`, `--python_out`, `--grpc_python_out`; sorted input list |
 
 Run `python scripts/regenerate_android_protos.py --check` in the locked dev environment. The check
-compiles the cumulative B1-B6 message and exact-service closure into a temporary directory,
+compiles the cumulative B1-B9 message and exact-service closure into a temporary directory,
 performs the repository-local Python import relocation for every exact package root, and
 byte-compares the canonical descriptor set plus the complete generated module tree. Use `--write`
 only when the reviewed proto sources and pinned toolchain intentionally change.

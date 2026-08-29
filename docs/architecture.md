@@ -984,6 +984,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/codecs/chat.py` | Proven Android history, response-document, and citation projection. |
 | `_android/codecs/notes.py` | Evidence-bounded B6 note request builders plus ordinary-note and exact-kind note-backed mind-map projections. |
 | `_android/codecs/sharing.py` | B6 public-link sharing status projection from the repository-local wire overlay. |
+| `_android/codecs/organization.py` | Strict heterogeneous organization decoder: wrapped exact `SourceId` members for labels and bare UTF-8 notebook UUID members for collections. |
 | `_android/errors.py` | Sanitized gRPC-status projection plus the pre-I/O unsupported-operation helper; raw transport exceptions and details never cross this boundary. |
 | `_android/notebooks.py` | Private Android notebook adapter: B1 reads and evidence-admitted B2 create/delete/title-and-emoji update/copy/guide operations. Recent removal remains live-failing and pre-I/O gated. |
 | `_android/session.py` | Lazy Google-TLS gRPC transport participating in root loop/lifecycle supervision, aggregate deadlines, per-call bearer metadata, status mapping, safe-read replay, and full stream leases. |
@@ -996,10 +997,13 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/notes.py` | Private B6 implementation of the eight-method Notes manifest: exact note CRUD write/read-back checks, bounded idempotent deletion polling, exact-kind note-backed mind-map list/delete, and a saved-response creation seam. It remains unselected: Android has only last-edit evidence for public `Note.created_at`; its minimal Android-derived mind-map rows do not prove full Web raw-row parity; and Android exact-ID lookup reports post-delete absence where Web exposes an empty soft-delete tombstone. |
 | `_android/sharing.py` | Private B6 public-link sharing adapter; collaborator and view-level mutations remain evidence-gated. |
 | `_android/mind_maps.py` | Private B7 Android mind-map composition over base-typed artifact/note collaborators. Typed note-backed and aggregate reads use B6's evidenced projection without touching the raw `NotesAPI.list_mind_maps` Web-row boundary. Explicit note-backed delete composes through B6's kind-safe Notes delete; note-backed rename, auto-detected mutation, hydrated interactive rename, generation, and tree reads remain evidence-gated. Explicit non-hydrating interactive rename/delete compose through artifacts. No public client factory selects it. |
+| `_android/organization.py` | Shared B9 lazy-protobuf transport/building seam for exact `GetLabels` plus repository-local manual organization writes; every write is non-replayed and epoch-fenced by its adapter workflow. |
+| `_android/labels.py` | Private B9 manual label CRUD/membership adapter with ID-diff creation, one-member writes, strict read-backs, and pre-I/O rejection of unevidenced AI generation. |
+| `_android/collections.py` | Private B9 implementation of all nine collection methods with ID-diff creation, member-order joins, one-member non-atomic writes, and one outer lifecycle lease per workflow. It is not selected by public assembly yet. |
 | `_android/proto/` | Checked-in generated Python protobuf package. Files are regenerated only by `scripts/regenerate_android_protos.py` with the pinned toolchain and are never generated during installation. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/read_pb2.py` | Exact-package B1 messages and descriptors for `GetProject` and `ListRecentlyViewedProjects`. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/read_pb2_grpc.py` | Deterministic service-free companion for the B1 read message overlay. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2.py` | Sole exact-package cumulative service descriptor: 17 implemented methods with independently evidenced request/response FQNs; 11 local/unproven signatures remain in the machine-readable exception manifest. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2.py` | Sole exact-package cumulative service descriptor: 18 implemented methods with independently evidenced request/response FQNs; 14 local/unproven signatures remain in the machine-readable exception manifest. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2_grpc.py` | Generated `LabsTailwindOrchestrationServiceStub` exposing the cumulative exact unary and unary-stream methods. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/sources_pb2.py` | Exact-package B3/B3b source-operation and `UploadFileRequest` descriptors compiled from the durable `sources.proto` source name; no service guess. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/artifacts_pb2.py` | Exact-package B4 artifact request/response and projection overlay imported by the cumulative service for implemented exact signatures. |
@@ -1007,10 +1011,14 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/chat_pb2_grpc.py` | Deterministic generated companion for the service-free B5 overlay. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/notes_pb2.py` | Service-free exact-package B6 note CRUD overlay. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/notes_pb2_grpc.py` | Deterministic generated companion for the B6 note overlay. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/organization_pb2.py` | Exact-package B9 `GetLabels` request/response and shared record descriptors. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/organization_pb2_grpc.py` | Deterministic service-free companion for the B9 exact message overlay. |
 | `_android/proto/labs/language/tailwind/common/protos/chat_history_pb2.py` | Exact-package `ChatSession.chat_session_id` leaf imported by the B5 sessions response. |
 | `_android/proto/notebooklm/android/internal/v1/report_suggestions_pb2.py` | Repository-local `*Wire` overlay for the live-added, APK-absent report-suggestion method; intentionally makes no Google FQN claim. |
 | `_android/proto/notebooklm/android/wire/v1/sharing_pb2.py` | Repository-local B6 public-link sharing wire overlay; intentionally makes no unproven Google FQN claim. |
 | `_android/proto/notebooklm/android/wire/v1/sharing_pb2_grpc.py` | Deterministic service-free companion for the B6 local sharing overlay. |
+| `_android/proto/notebooklm/android/wire/v1/organization_mutations_pb2.py` | Repository-local B9 heterogeneous read decoder plus manual organization write shapes; makes no remote FQN claim. |
+| `_android/proto/notebooklm/android/wire/v1/organization_mutations_pb2_grpc.py` | Deterministic service-free companion for the B9 local organization overlay. |
 | `_android/proto/google/internal/labs/tailwind/v1/source_settings_pb2.py` | Exact-package `SourceSettings`, `SourceStatus`, and `UserDriveSourceStatus` descriptors. |
 | `_android/proto/google/internal/labs/tailwind/v1/source_settings_pb2_grpc.py` | Generated companion for the service-free SourceSettings proto; retained so the generated tree exactly matches the pinned command. |
 | `_android/proto/notebooklm/internal/android/wire/v1/notebooks_pb2.py` | Repository-local B2 notebook wire-equivalent messages; the local package explicitly avoids claiming unproven Google FQNs. |
@@ -1262,7 +1270,8 @@ src/notebooklm/
 │   │   ├── sharing.py           # B6 public-link sharing projection
 │   │   ├── notebooks.py         # Project and notebook-guide decoding
 │   │   ├── sources.py           # Source projection and enum mapping
-│   │   └── artifacts.py         # Ledgered artifact/representation projection
+│   │   ├── artifacts.py         # Ledgered artifact/representation projection
+│   │   └── organization.py      # Heterogeneous B9 member decoding
 │   ├── errors.py                # Sanitized gRPC status/error mapping
 │   ├── notebooks.py             # Android notebook reads and B2 mutations
 │   ├── session.py               # Supervised lazy gRPC transport
@@ -1275,6 +1284,9 @@ src/notebooklm/
 │   ├── notes.py                 # Private 8-method Notes manifest + saved-response seam
 │   ├── sharing.py               # B6 public-link sharing adapter
 │   ├── mind_maps.py             # B7 artifact composition + note/evidence gates
+│   ├── organization.py          # B9 shared lazy-protobuf organization transport seam
+│   ├── labels.py                # B9 manual source-label adapter
+│   ├── collections.py           # B9 complete collection adapter
 │   ├── proto_src/               # Exact-package reads + evidence-bounded local wire overlays
 │   └── proto/                   # Checked-in generated pb2/pb2_grpc modules
 │       ├── __init__.py          # Dependency-free generated-package marker
@@ -1283,7 +1295,7 @@ src/notebooklm/
 │           │   ├── read_pb2.py              # B1 read messages and descriptors
 │           │   ├── read_pb2_grpc.py         # Deterministic service-free companion
 │           │   ├── orchestration_service_pb2.py      # Cumulative exact service descriptor
-│           │   ├── orchestration_service_pb2_grpc.py # 17-method exact generated stub
+│           │   ├── orchestration_service_pb2_grpc.py # 18-method exact generated stub
 │           │   ├── sources_pb2.py               # B3/B3b source and PDF-request descriptors
 │           │   ├── sources_pb2_grpc.py          # Deterministic service-free companion
 │           │   ├── artifacts_pb2.py         # B4 exact artifact message overlay
@@ -1291,7 +1303,9 @@ src/notebooklm/
 │           │   ├── chat_pb2.py              # Service-free B5 chat messages/descriptors
 │           │   ├── chat_pb2_grpc.py         # Deterministic service-free companion
 │           │   ├── notes_pb2.py             # B6 exact note CRUD overlay
-│           │   └── notes_pb2_grpc.py        # Deterministic service-free companion
+│           │   ├── notes_pb2_grpc.py        # Deterministic service-free companion
+│           │   ├── organization_pb2.py      # B9 exact GetLabels messages
+│           │   └── organization_pb2_grpc.py # Deterministic service-free companion
 │           └── v1/
 │               ├── source_settings_pb2.py       # Source settings/status descriptors
 │               └── source_settings_pb2_grpc.py  # Deterministic service-free companion
@@ -1299,8 +1313,10 @@ src/notebooklm/
 │           ├── report_suggestions_pb2.py       # Local live-added Wire messages
 │           └── report_suggestions_pb2_grpc.py  # Deterministic service-free companion
 │       ├── notebooklm/android/wire/v1/
-│           ├── sharing_pb2.py       # Repository-local B6 sharing wire messages
-│           └── sharing_pb2_grpc.py  # Deterministic service-free companion
+│           ├── sharing_pb2.py                    # Repository-local B6 sharing wire messages
+│           ├── sharing_pb2_grpc.py               # Deterministic service-free companion
+│           ├── organization_mutations_pb2.py     # Repository-local B9 organization wire
+│           └── organization_mutations_pb2_grpc.py # Deterministic service-free companion
 │       ├── notebooklm/internal/android/wire/v1/
 │           ├── notebooks_pb2.py       # Repository-local B2 notebook wire messages
 │           └── notebooks_pb2_grpc.py  # Deterministic service-free companion

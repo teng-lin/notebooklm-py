@@ -6,6 +6,7 @@ import warnings
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import artifacts_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import chat_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_chat__pb2
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import notes_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notes__pb2
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import organization_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import research_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import sources_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2
@@ -38,9 +39,9 @@ class LabsTailwindOrchestrationServiceStub(object):
     protobuf FQN is unproven, stay out of this descriptor and are exhaustively
     recorded in docs/android/grpc-service-signature-exceptions.json.
 
-    GetLabels and account methods remain absent until their corresponding
-    adapter slices land. GetArtifact and Research signatures below are exact and
-    independently live-validated; research.proto itself remains service-free.
+    Only the account method remains absent until its adapter slice lands.
+    GetArtifact, Research, and GetLabels signatures below are exact and
+    independently live-validated; their message overlays remain service-free.
     """
 
     def __init__(self, channel):
@@ -169,6 +170,11 @@ class LabsTailwindOrchestrationServiceStub(object):
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.FinishDiscoverSourcesRunRequest.SerializeToString,
                 response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.FinishDiscoverSourcesRunResponse.FromString,
                 _registered_method=True)
+        self.GetLabels = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.GetLabelsRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.GetLabelsResponse.FromString,
+                _registered_method=True)
 
 
 class LabsTailwindOrchestrationServiceServicer(object):
@@ -178,9 +184,9 @@ class LabsTailwindOrchestrationServiceServicer(object):
     protobuf FQN is unproven, stay out of this descriptor and are exhaustively
     recorded in docs/android/grpc-service-signature-exceptions.json.
 
-    GetLabels and account methods remain absent until their corresponding
-    adapter slices land. GetArtifact and Research signatures below are exact and
-    independently live-validated; research.proto itself remains service-free.
+    Only the account method remains absent until its adapter slice lands.
+    GetArtifact, Research, and GetLabels signatures below are exact and
+    independently live-validated; their message overlays remain service-free.
     """
 
     def GetProject(self, request, context):
@@ -327,6 +333,12 @@ class LabsTailwindOrchestrationServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetLabels(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_LabsTailwindOrchestrationServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -450,6 +462,11 @@ def add_LabsTailwindOrchestrationServiceServicer_to_server(servicer, server):
                     request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.FinishDiscoverSourcesRunRequest.FromString,
                     response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.FinishDiscoverSourcesRunResponse.SerializeToString,
             ),
+            'GetLabels': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetLabels,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.GetLabelsRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.GetLabelsResponse.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService', rpc_method_handlers)
@@ -465,9 +482,9 @@ class LabsTailwindOrchestrationService(object):
     protobuf FQN is unproven, stay out of this descriptor and are exhaustively
     recorded in docs/android/grpc-service-signature-exceptions.json.
 
-    GetLabels and account methods remain absent until their corresponding
-    adapter slices land. GetArtifact and Research signatures below are exact and
-    independently live-validated; research.proto itself remains service-free.
+    Only the account method remains absent until its adapter slice lands.
+    GetArtifact, Research, and GetLabels signatures below are exact and
+    independently live-validated; their message overlays remain service-free.
     """
 
     @staticmethod
@@ -1108,6 +1125,33 @@ class LabsTailwindOrchestrationService(object):
             '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/FinishDiscoverSourcesRun',
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.FinishDiscoverSourcesRunRequest.SerializeToString,
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.FinishDiscoverSourcesRunResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetLabels(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.GetLabelsRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2.GetLabelsResponse.FromString,
             options,
             channel_credentials,
             insecure,

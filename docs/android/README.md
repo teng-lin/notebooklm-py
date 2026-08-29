@@ -27,7 +27,7 @@ themselves.
 | [`schema.proto`](schema.proto) | **generated** | 282 messages / 767 fields recovered from the Dart AOT `BuilderInfo`. **Parsed by CI** — see caveats. |
 | [`enums.txt`](enums.txt) | **generated** | 77 enums / ~1900 values with exact integers. **Parsed by CI.** |
 | [`endpoints.md`](endpoints.md) | reference | The gRPC method surface, and the mobile ⇄ web cross-reference. Start here. |
-| [`proto-evidence-ledger.md`](proto-evidence-ledger.md) | admission ledger | Exact/local cumulative compile closure, replay policy, and evidence-gated omissions for implemented Android B1-B6 adapters. |
+| [`proto-evidence-ledger.md`](proto-evidence-ledger.md) | admission ledger | Exact/local cumulative compile closure, replay policy, and evidence-gated omissions for implemented Android B1-B9 adapters. |
 | [`grpc-service-signature-exceptions.json`](grpc-service-signature-exceptions.json) | machine-readable admission manifest | Implemented full paths omitted from the exact generated service because a remote request or response protobuf FQN remains unproven. |
 | [`capture.md`](capture.md) | runbook | How to intercept the app's HTTP/2 gRPC traffic (emulator, VPN, Mockttp). |
 | [`android-traffic-capture.md`](android-traffic-capture.md) | legacy runbook | Rooted-emulator Cronet/Frida capture procedure retained as dated evidence. |
@@ -48,8 +48,8 @@ The reduced compile inputs used by the private Android adapters live under
 `src/notebooklm/_android/proto_src/`. Regenerate their checked-in Python modules and the full
 descriptor fixture with `python scripts/regenerate_android_protos.py --write`; use `--check` in CI.
 The cumulative `orchestration_service.proto` owns the one exact generated service; individual
-message overlays remain service-free. Its 18 admitted methods plus the 11 explicit signature
-exceptions exhaustively equal the 29 implemented adapter paths.
+message overlays remain service-free. Its 25 admitted methods plus the 14 explicit signature
+exceptions exhaustively equal the 39 implemented adapter paths.
 The package, generated protos, and adapters remain private, direct-testable migration building
 blocks. Normal `NotebookLMClient` assembly continues to select Web for every namespace; no client
 factory branch selects Android Notes.

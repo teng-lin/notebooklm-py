@@ -8,7 +8,16 @@ import re
 from pathlib import Path
 from typing import Any
 
-from notebooklm._android import artifacts, chat, notebooks, notes, research, sharing, sources
+from notebooklm._android import (
+    artifacts,
+    chat,
+    notebooks,
+    notes,
+    organization,
+    research,
+    sharing,
+    sources,
+)
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     orchestration_service_pb2,
     orchestration_service_pb2_grpc,
@@ -22,7 +31,7 @@ ORCHESTRATION_PACKAGE = "google.internal.labs.tailwind.orchestration.v1"
 ORCHESTRATION_SERVICE = f"{ORCHESTRATION_PACKAGE}.LabsTailwindOrchestrationService"
 SHARING_SERVICE = "labs.language.tailwind.sharing.LabsTailwindSharingService"
 
-_ADAPTER_MODULES = (notebooks, sources, artifacts, chat, notes, research, sharing)
+_ADAPTER_MODULES = (notebooks, sources, artifacts, chat, notes, research, organization, sharing)
 _EXPECTED_SIGNATURES = {
     "GetProject": (
         f"{ORCHESTRATION_PACKAGE}.GetProjectRequest",
@@ -144,6 +153,11 @@ _EXPECTED_SIGNATURES = {
         f"{ORCHESTRATION_PACKAGE}.FinishDiscoverSourcesRunResponse",
         False,
     ),
+    "GetLabels": (
+        f"{ORCHESTRATION_PACKAGE}.GetLabelsRequest",
+        f"{ORCHESTRATION_PACKAGE}.GetLabelsResponse",
+        False,
+    ),
 }
 
 
@@ -224,7 +238,7 @@ def test_exact_service_descriptor_and_generated_stub_expose_all_admitted_paths()
 
 def test_adapter_paths_equal_exact_descriptor_plus_machine_readable_exceptions() -> None:
     entries = _manifest_entries()
-    assert len(entries) == 11
+    assert len(entries) == 14
     assert all(
         set(entry)
         == {
@@ -255,8 +269,8 @@ def test_adapter_paths_equal_exact_descriptor_plus_machine_readable_exceptions()
     assert len(exception_paths) == len(entries)
     assert _descriptor_paths().isdisjoint(exception_paths)
     assert _adapter_paths() == _descriptor_paths() | exception_paths
-    assert len(_adapter_paths()) == 35
-    assert len(_descriptor_paths()) == 24
+    assert len(_adapter_paths()) == 39
+    assert len(_descriptor_paths()) == 25
 
     for entry in entries:
         module_name, constant_name = entry["adapter_constant"].rsplit(".", 1)

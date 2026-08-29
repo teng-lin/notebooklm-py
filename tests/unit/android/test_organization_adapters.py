@@ -1,0 +1,567 @@
+"""Stateful wire, lifecycle, and frontend-shaped tests for B9 organization adapters."""
+
+from __future__ import annotations
+
+import ast
+import asyncio
+import builtins
+import inspect
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, cast
+
+import pytest
+
+from notebooklm._android.collections import AndroidCollectionsAPI
+from notebooklm._android.labels import AndroidLabelsAPI
+from notebooklm._android.organization import (
+    COLLECTION_TYPE,
+    CREATE_LABEL_METHOD,
+    DELETE_LABELS_METHOD,
+    GET_LABELS_METHOD,
+    MUTATE_LABEL_METHOD,
+)
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
+    organization_pb2,
+    read_pb2,
+)
+from notebooklm._android.proto.notebooklm.android.wire.v1 import (
+    organization_mutations_pb2,
+)
+from notebooklm._android.session import AndroidSession
+from notebooklm._client_metrics import ClientMetrics
+from notebooklm._collections import CollectionsAPI
+from notebooklm._labels import LabelsAPI
+from notebooklm._runtime.call_supervisor import CallSupervisor
+from notebooklm._transport_drain import TransportDrainTracker
+from notebooklm.exceptions import (
+    CollectionError,
+    CollectionNotFoundError,
+    DecodingError,
+    LabelError,
+    LabelNotFoundError,
+    RPCError,
+    UnsupportedOperationError,
+)
+from notebooklm.types import Collection, Label, Notebook, Source
+
+NB = "00000000-0000-4000-8000-000000000100"
+NB_A = "00000000-0000-4000-8000-000000000201"
+NB_B = "00000000-0000-4000-8000-000000000202"
+NB_MISSING = "00000000-0000-4000-8000-000000000299"
+LABEL_A = "00000000-0000-4000-8000-000000000301"
+LABEL_B = "00000000-0000-4000-8000-000000000302"
+LABEL_MISSING = "00000000-0000-4000-8000-000000000399"
+COLLECTION_A = "00000000-0000-4000-8000-000000000401"
+COLLECTION_B = "00000000-0000-4000-8000-000000000402"
+COLLECTION_MISSING = "00000000-0000-4000-8000-000000000499"
+SOURCE_A = "00000000-0000-4000-8000-000000000501"
+SOURCE_B = "00000000-0000-4000-8000-000000000502"
+SOURCE_MISSING = "00000000-0000-4000-8000-000000000599"
+
+
+@dataclass(frozen=True)
+class _Lease:
+    epoch: int
+
+
+class FakeOrganizationServer:
+    """Stateful server retaining the measured label/collection wire differences."""
+
+    epoch = 7
+
+    def __init__(self) -> None:
+        self.calls: builtins.list[tuple[str, Any, dict[str, Any]]] = []
+        self.operation_scopes: builtins.list[tuple[str, int | None]] = []
+        self.labels: dict[str, dict[str, Label]] = {
+            NB: {
+                LABEL_A: Label(
+                    id=LABEL_A,
+                    name="Papers",
+                    notebook_id=NB,
+                    emoji="📄",
+                    source_ids=[SOURCE_A],
+                )
+            }
+        }
+        self.collections: dict[str, Collection] = {
+            COLLECTION_A: Collection(
+                id=COLLECTION_A,
+                name="Research",
+                emoji="📁",
+                notebook_ids=[NB_A],
+            )
+        }
+        self.next_label_ids = [LABEL_B]
+        self.next_collection_ids = [COLLECTION_B]
+        self.failures: dict[int, BaseException] = {}
+        self.ignore_mutations = False
+
+    @asynccontextmanager
+    async def operation_scope(
+        self,
+        label: str,
+        *,
+        expected_epoch: int | None = None,
+    ) -> AsyncIterator[_Lease]:
+        self.operation_scopes.append((label, expected_epoch))
+        yield _Lease(self.epoch)
+
+    @staticmethod
+    def _label_row(label: Label) -> Any:
+        return organization_mutations_pb2.OrganizationRecordWire(
+            name=label.name,
+            member_ids=[
+                read_pb2.SourceId(id=source_id).SerializeToString()
+                for source_id in label.source_ids
+            ],
+            id=label.id,
+            emoji=label.emoji or "",
+        )
+
+    @staticmethod
+    def _collection_row(collection: Collection) -> Any:
+        return organization_mutations_pb2.OrganizationRecordWire(
+            name=collection.name,
+            member_ids=[notebook_id.encode() for notebook_id in collection.notebook_ids],
+            id=collection.id,
+            emoji=collection.emoji or "",
+        )
+
+    def _response(self) -> Any:
+        return organization_mutations_pb2.GetLabelsWireResponse(
+            labels=[
+                self._label_row(label)
+                for labels in self.labels.values()
+                for label in labels.values()
+            ],
+            collections=[self._collection_row(value) for value in self.collections.values()],
+        )
+
+    async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        self.calls.append((method, request, kwargs))
+        failure = self.failures.get(len(self.calls))
+        if failure is not None:
+            raise failure
+        assert kwargs["expected_epoch"] == self.epoch
+
+        if method == GET_LABELS_METHOD:
+            assert kwargs == {
+                "replay_safe": True,
+                "response_type": organization_mutations_pb2.GetLabelsWireResponse,
+                "expected_epoch": self.epoch,
+            }
+            return self._response()
+
+        assert kwargs == {
+            "replay_safe": False,
+            "response_type": organization_mutations_pb2.OrganizationMutationWireResponse,
+            "expected_epoch": self.epoch,
+        }
+        if method == CREATE_LABEL_METHOD:
+            properties = request.manual_create.properties
+            if request.label_type == COLLECTION_TYPE:
+                for resource_id in self.next_collection_ids:
+                    self.collections[resource_id] = Collection(
+                        id=resource_id,
+                        name=properties.name,
+                        emoji=properties.emoji or None,
+                    )
+            else:
+                bucket = self.labels.setdefault(request.project_id, {})
+                for resource_id in self.next_label_ids:
+                    bucket[resource_id] = Label(
+                        id=resource_id,
+                        name=properties.name,
+                        notebook_id=request.project_id,
+                        emoji=properties.emoji or None,
+                    )
+            return organization_mutations_pb2.OrganizationMutationWireResponse()
+
+        if method == MUTATE_LABEL_METHOD:
+            if self.ignore_mutations:
+                return organization_mutations_pb2.OrganizationMutationWireResponse()
+            target: Label | Collection
+            if request.label_type == COLLECTION_TYPE:
+                target = self.collections[request.label_id]
+            else:
+                target = self.labels[request.project_id][request.label_id]
+            mutation = request.mutations[0]
+            if mutation.HasField("properties"):
+                target.name = mutation.properties.name
+                target.emoji = mutation.properties.emoji or None
+            for field, add, member_attr in (
+                ("add_sources", True, "source_ids"),
+                ("remove_sources", False, "source_ids"),
+                ("add_notebooks", True, "notebook_ids"),
+                ("remove_notebooks", False, "notebook_ids"),
+            ):
+                if not mutation.HasField(field):
+                    continue
+                (member_id,) = getattr(mutation, field).member_ids
+                members = getattr(target, member_attr)
+                if add and member_id not in members:
+                    members.append(member_id)
+                elif not add and member_id in members:
+                    members.remove(member_id)
+            return organization_mutations_pb2.OrganizationMutationWireResponse()
+
+        if method == DELETE_LABELS_METHOD:
+            if request.label_type == COLLECTION_TYPE:
+                for resource_id in request.label_ids:
+                    self.collections.pop(resource_id, None)
+            else:
+                bucket = self.labels.setdefault(request.project_id, {})
+                for resource_id in request.label_ids:
+                    bucket.pop(resource_id, None)
+            return organization_mutations_pb2.OrganizationMutationWireResponse()
+        raise AssertionError(f"unexpected method: {method}")
+
+
+def _apis(
+    server: FakeOrganizationServer,
+) -> tuple[AndroidLabelsAPI, AndroidCollectionsAPI]:
+    sources = [Source(id=SOURCE_A, title="A"), Source(id=SOURCE_B, title="B")]
+    notebooks = [Notebook(id=NB_A, title="A"), Notebook(id=NB_B, title="B")]
+
+    async def list_sources(_notebook_id: str) -> builtins.list[Source]:
+        return sources
+
+    async def list_notebooks() -> builtins.list[Notebook]:
+        return notebooks
+
+    transport = cast(AndroidSession, server)
+    return (
+        AndroidLabelsAPI(transport, list_sources=list_sources),
+        AndroidCollectionsAPI(transport, list_notebooks=list_notebooks),
+    )
+
+
+def test_adapters_are_concrete_and_module_imports_keep_protobuf_lazy() -> None:
+    server = FakeOrganizationServer()
+    labels, collections = _apis(server)
+    assert isinstance(labels, LabelsAPI)
+    assert isinstance(collections, CollectionsAPI)
+    assert server.calls == []
+    assert server.operation_scopes == []
+    assert CollectionsAPI.__abstractmethods__ == {
+        "list",
+        "get_or_none",
+        "get",
+        "notebooks",
+        "create",
+        "rename",
+        "add_notebooks",
+        "remove_notebooks",
+        "delete",
+    }
+    assert all(
+        inspect.iscoroutinefunction(getattr(AndroidCollectionsAPI, name))
+        for name in CollectionsAPI.__abstractmethods__
+    )
+    assert all(
+        inspect.iscoroutinefunction(getattr(AndroidLabelsAPI, name))
+        for name in LabelsAPI.__abstractmethods__
+    )
+
+    root = Path(__file__).resolve().parents[3]
+    for relative in (
+        "src/notebooklm/_android/organization.py",
+        "src/notebooklm/_android/labels.py",
+        "src/notebooklm/_android/collections.py",
+        "src/notebooklm/_android/codecs/organization.py",
+    ):
+        tree = ast.parse((root / relative).read_text(encoding="utf-8"))
+        imports = [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))]
+        rendered = " ".join(ast.unparse(node) for node in imports)
+        assert "google.protobuf" not in rendered
+        assert "._android.proto" not in rendered
+        assert "_pb2" not in rendered
+
+
+async def test_list_both_modes_decodes_heterogeneous_members_and_one_epoch_each() -> None:
+    server = FakeOrganizationServer()
+    labels, collections = _apis(server)
+    assert await labels.list(NB) == [server.labels[NB][LABEL_A]]
+    assert await collections.list() == [server.collections[COLLECTION_A]]
+
+    assert server.operation_scopes == [("labels.list", None), ("collections.list", None)]
+    first_request = server.calls[0][1]
+    second_request = server.calls[1][1]
+    assert first_request == organization_pb2.GetLabelsRequest(project_id=NB)
+    assert second_request == organization_pb2.GetLabelsRequest(label_type=COLLECTION_TYPE)
+    assert [call[2]["expected_epoch"] for call in server.calls] == [7, 7]
+
+
+async def test_get_and_membership_joins_preserve_order_and_skip_missing() -> None:
+    server = FakeOrganizationServer()
+    server.labels[NB][LABEL_A].source_ids[:] = [SOURCE_B, SOURCE_MISSING, SOURCE_A]
+    server.collections[COLLECTION_A].notebook_ids[:] = [NB_B, NB_MISSING, NB_A]
+    labels, collections = _apis(server)
+
+    assert [source.id for source in await labels.sources(NB, LABEL_A)] == [SOURCE_B, SOURCE_A]
+    assert [notebook.id for notebook in await collections.notebooks(COLLECTION_A)] == [NB_B, NB_A]
+    assert await labels.get_or_none(NB, LABEL_MISSING) is None
+    assert await collections.get_or_none(COLLECTION_MISSING) is None
+    with pytest.raises(LabelNotFoundError):
+        await labels.get(NB, LABEL_MISSING)
+    with pytest.raises(CollectionNotFoundError):
+        await collections.get(COLLECTION_MISSING)
+
+
+async def test_create_uses_id_diff_readback_and_one_outer_scope() -> None:
+    server = FakeOrganizationServer()
+    labels, collections = _apis(server)
+
+    created_label = await labels.create(NB, "Duplicate-safe", "🧪")
+    created_collection = await collections.create("Duplicate-safe")
+    assert created_label.id == LABEL_B
+    assert created_collection.id == COLLECTION_B
+    assert [method for method, _request, _kwargs in server.calls] == [
+        GET_LABELS_METHOD,
+        CREATE_LABEL_METHOD,
+        GET_LABELS_METHOD,
+        GET_LABELS_METHOD,
+        CREATE_LABEL_METHOD,
+        GET_LABELS_METHOD,
+    ]
+    assert server.operation_scopes == [("labels.create", None), ("collections.create", None)]
+
+    label_create = server.calls[1][1]
+    assert label_create.project_id == NB
+    assert label_create.label_type == 0
+    assert label_create.manual_create.properties.name == "Duplicate-safe"
+    assert label_create.manual_create.properties.emoji == "🧪"
+    collection_create = server.calls[4][1]
+    assert collection_create.project_id == ""
+    assert collection_create.label_type == COLLECTION_TYPE
+    assert collection_create.manual_create.properties.name == "Duplicate-safe"
+    assert not collection_create.manual_create.properties.HasField("emoji")
+
+
+@pytest.mark.parametrize("kind", ["label", "collection"])
+@pytest.mark.parametrize("new_count", [0, 2])
+async def test_create_id_diff_rejects_zero_or_multiple_new_ids(kind: str, new_count: int) -> None:
+    server = FakeOrganizationServer()
+    server.next_label_ids = [LABEL_B, LABEL_MISSING][:new_count]
+    server.next_collection_ids = [COLLECTION_B, COLLECTION_MISSING][:new_count]
+    labels, collections = _apis(server)
+    if kind == "label":
+        with pytest.raises(LabelError):
+            await labels.create(NB, "ambiguous")
+    else:
+        with pytest.raises(CollectionError):
+            await collections.create("ambiguous")
+
+
+async def test_property_mutations_preserve_other_field_and_verify_readback() -> None:
+    server = FakeOrganizationServer()
+    labels, collections = _apis(server)
+
+    renamed = await labels.rename(NB, LABEL_A, "Renamed")
+    assert renamed is not None and renamed.name == "Renamed" and renamed.emoji == "📄"
+    cleared = await labels.set_emoji(NB, LABEL_A, "")
+    assert cleared is not None and cleared.name == "Renamed" and cleared.emoji is None
+    renamed_collection = await collections.rename(COLLECTION_A, "Archive")
+    assert renamed_collection is not None
+    assert (renamed_collection.name, renamed_collection.emoji) == ("Archive", "📁")
+
+    writes = [request for method, request, _kwargs in server.calls if method == MUTATE_LABEL_METHOD]
+    assert writes[0].mutations[0].properties.name == "Renamed"
+    assert writes[0].mutations[0].properties.emoji == "📄"
+    assert writes[1].mutations[0].properties.name == "Renamed"
+    assert writes[1].mutations[0].properties.HasField("emoji")
+    assert writes[1].mutations[0].properties.emoji == ""
+    assert writes[2].label_type == COLLECTION_TYPE
+    assert writes[2].mutations[0].properties.emoji == "📁"
+
+
+async def test_label_membership_is_one_member_per_rpc_deduped_and_read_back() -> None:
+    server = FakeOrganizationServer()
+    labels, _collections = _apis(server)
+
+    added = await labels.add_sources(NB, LABEL_A, [SOURCE_B, SOURCE_B])
+    assert added is not None and added.source_ids == [SOURCE_A, SOURCE_B]
+    removed = await labels.remove_sources(NB, LABEL_A, [SOURCE_A, SOURCE_A])
+    assert removed is not None and removed.source_ids == [SOURCE_B]
+    mutations = [
+        request.mutations[0]
+        for method, request, _kwargs in server.calls
+        if method == MUTATE_LABEL_METHOD
+    ]
+    assert len(mutations) == 2
+    assert mutations[0].add_sources.member_ids == [SOURCE_B]
+    assert mutations[1].remove_sources.member_ids == [SOURCE_A]
+    assert server.operation_scopes == [
+        ("labels.add_sources", None),
+        ("labels.remove_sources", None),
+    ]
+
+
+async def test_collection_membership_is_one_member_per_rpc_and_non_atomic_on_failure() -> None:
+    server = FakeOrganizationServer()
+    _labels, collections = _apis(server)
+    updated = await collections.add_notebooks(
+        COLLECTION_A,
+        [NB_B, NB_B],
+        return_object=False,
+    )
+    assert updated is None
+    assert server.collections[COLLECTION_A].notebook_ids == [NB_A, NB_B]
+    writes = [call for call in server.calls if call[0] == MUTATE_LABEL_METHOD]
+    assert len(writes) == 1
+    assert writes[0][1].mutations[0].add_notebooks.member_ids == [NB_B]
+
+    failing = FakeOrganizationServer()
+    failing.failures[2] = RPCError("failed", method_id=MUTATE_LABEL_METHOD)
+    _labels, collections = _apis(failing)
+    with pytest.raises(RPCError):
+        await collections.add_notebooks(COLLECTION_A, [NB_B, NB_MISSING])
+    assert failing.collections[COLLECTION_A].notebook_ids == [NB_A, NB_B]
+    assert [method for method, _request, _kwargs in failing.calls] == [
+        MUTATE_LABEL_METHOD,
+        MUTATE_LABEL_METHOD,
+    ]
+    assert failing.operation_scopes == [("collections.add_notebooks", None)]
+
+
+async def test_delete_filters_absent_ids_batches_existing_and_reads_back_absence() -> None:
+    server = FakeOrganizationServer()
+    labels, collections = _apis(server)
+    await labels.delete(NB, [LABEL_MISSING, LABEL_A, LABEL_A])
+    await collections.delete([COLLECTION_MISSING, COLLECTION_A])
+    assert LABEL_A not in server.labels[NB]
+    assert COLLECTION_A not in server.collections
+
+    deletes = [
+        request for method, request, _kwargs in server.calls if method == DELETE_LABELS_METHOD
+    ]
+    assert deletes[0].project_id == NB
+    assert deletes[0].label_ids == [LABEL_A]
+    assert deletes[1].label_type == COLLECTION_TYPE
+    assert deletes[1].label_ids == [COLLECTION_A]
+    assert server.operation_scopes == [("labels.delete", None), ("collections.delete", None)]
+
+
+async def test_unsupported_and_empty_operations_reject_before_scope_or_transport() -> None:
+    server = FakeOrganizationServer()
+    labels, collections = _apis(server)
+    with pytest.raises(UnsupportedOperationError, match="Use the web backend"):
+        await labels.generate(NB)
+    with pytest.raises(ValueError):
+        await labels.update(NB, LABEL_A)
+    with pytest.raises(ValueError):
+        await labels.add_sources(NB, LABEL_A, [])
+    with pytest.raises(ValueError):
+        await collections.remove_notebooks(COLLECTION_A, [])
+    assert await labels.delete(NB, []) is None
+    assert await collections.delete([]) is None
+    assert server.calls == []
+    assert server.operation_scopes == []
+
+
+async def test_status_five_maps_to_public_miss_and_retired_epoch_stops_later_io() -> None:
+    server = FakeOrganizationServer()
+    server.failures[1] = RPCError("missing", method_id=MUTATE_LABEL_METHOD, rpc_code=5)
+    labels, _collections = _apis(server)
+    with pytest.raises(LabelNotFoundError) as caught:
+        await labels.add_sources(NB, LABEL_A, [SOURCE_B])
+    assert caught.value.label_id == LABEL_A
+    assert len(server.calls) == 1
+
+    retired = FakeOrganizationServer()
+    retired.failures[2] = RuntimeError("retired resource generation")
+    labels, _collections = _apis(retired)
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await labels.create(NB, "uncertain")
+    assert [method for method, _request, _kwargs in retired.calls] == [
+        GET_LABELS_METHOD,
+        CREATE_LABEL_METHOD,
+    ]
+
+
+async def test_real_supervisor_outer_lease_keeps_create_alive_during_graceful_drain() -> None:
+    supervisor = CallSupervisor(
+        metrics=ClientMetrics(),
+        drain_tracker=TransportDrainTracker(),
+        max_concurrent_rpcs=None,
+    )
+    loop = asyncio.get_running_loop()
+    supervisor.set_bound_loop(loop)
+    supervisor.reset_after_open()
+    supervisor.prepare_generation(1)
+    supervisor.start_accepting(1)
+
+    class _SupervisedServer(FakeOrganizationServer):
+        epoch = 1
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.write_started = asyncio.Event()
+            self.release_write = asyncio.Event()
+
+        def operation_scope(self, label: str, *, expected_epoch: int | None = None):
+            return supervisor.operation_scope(label, expected_epoch=expected_epoch)
+
+        async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+            if method == CREATE_LABEL_METHOD:
+                self.write_started.set()
+                await self.release_write.wait()
+            return await super().unary(method, request, **kwargs)
+
+    server = _SupervisedServer()
+    _labels, collections = _apis(server)
+    create_task = asyncio.create_task(collections.create("during-drain"))
+    await server.write_started.wait()
+    await supervisor.stop_accepting(1)
+    idle_task = asyncio.create_task(supervisor.wait_for_idle(1, timeout=1.0))
+    await asyncio.sleep(0)
+    assert not idle_task.done()
+
+    server.release_write.set()
+    created = await create_task
+    await idle_task
+    assert created.id == COLLECTION_B
+    assert [method for method, _request, _kwargs in server.calls] == [
+        GET_LABELS_METHOD,
+        CREATE_LABEL_METHOD,
+        GET_LABELS_METHOD,
+    ]
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in server.calls] == [1, 1, 1]
+
+
+async def test_readback_mismatch_is_decode_failure_for_properties_and_membership() -> None:
+    server = FakeOrganizationServer()
+    server.ignore_mutations = True
+    labels, collections = _apis(server)
+    with pytest.raises(DecodingError, match="properties"):
+        await labels.rename(NB, LABEL_A, "not-applied")
+
+    server.calls.clear()
+    server.operation_scopes.clear()
+    with pytest.raises(DecodingError, match="membership"):
+        await collections.add_notebooks(COLLECTION_A, [NB_B])
+
+
+def test_strict_codecs_reject_malformed_ids_without_echoing_them() -> None:
+    from notebooklm._android.codecs.organization import decode_collections, decode_labels
+
+    response = organization_mutations_pb2.GetLabelsWireResponse(
+        labels=[organization_mutations_pb2.OrganizationRecordWire(id="not-an-id")]
+    )
+    with pytest.raises(DecodingError, match="malformed label ID") as caught:
+        decode_labels(response, NB, method_id=GET_LABELS_METHOD)
+    assert "not-an-id" not in str(caught.value)
+
+    response = organization_mutations_pb2.GetLabelsWireResponse(
+        collections=[
+            organization_mutations_pb2.OrganizationRecordWire(
+                id=COLLECTION_A,
+                member_ids=[b"not-an-id"],
+            )
+        ]
+    )
+    with pytest.raises(DecodingError, match="malformed notebook member ID"):
+        decode_collections(response, method_id=GET_LABELS_METHOD)

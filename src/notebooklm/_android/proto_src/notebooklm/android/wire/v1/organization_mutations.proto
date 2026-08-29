@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package notebooklm.android.wire.v1;
+
+// Repository-local wire-equivalent overlay for live-validated organization
+// calls whose remote request/response protobuf FQNs are not independently
+// evidenced. These names intentionally make no claim about Google's types.
+
+message OrganizationRecordWire {
+  string name = 1;
+  repeated bytes member_ids = 2;
+  string id = 3;
+  string emoji = 4;
+}
+
+message GetLabelsWireResponse {
+  repeated OrganizationRecordWire labels = 1;
+  repeated OrganizationRecordWire collections = 2;
+}
+
+message LabelPropertiesWire {
+  optional string name = 1;
+  optional string emoji = 2;
+}
+
+message ManualCreateLabelWire {
+  LabelPropertiesWire properties = 1;
+  repeated string source_ids = 2;
+  repeated string notebook_ids = 3;
+}
+
+message CreateLabelWireRequest {
+  string project_id = 2;
+  ManualCreateLabelWire manual_create = 6;
+  int32 label_type = 7;
+}
+
+message MemberMutationWire {
+  repeated string member_ids = 1;
+}
+
+message LabelMutationWire {
+  LabelPropertiesWire properties = 1;
+  MemberMutationWire add_sources = 2;
+  MemberMutationWire remove_sources = 3;
+  MemberMutationWire add_notebooks = 4;
+  MemberMutationWire remove_notebooks = 5;
+}
+
+message MutateLabelWireRequest {
+  string project_id = 2;
+  string label_id = 3;
+  repeated LabelMutationWire mutations = 4;
+  int32 label_type = 5;
+}
+
+message DeleteLabelsWireRequest {
+  string project_id = 2;
+  repeated string label_ids = 3;
+  int32 label_type = 4;
+}
+
+// Successful write response fields are deliberately ignored. Create identity
+// is established by an exact GetLabels ID-diff; mutations/deletes are verified
+// by read-back. Unknown response bytes remain protobuf unknown fields.
+message OrganizationMutationWireResponse {}

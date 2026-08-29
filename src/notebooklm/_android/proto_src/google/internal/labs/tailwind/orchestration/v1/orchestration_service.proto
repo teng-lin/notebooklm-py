@@ -5,6 +5,7 @@ package google.internal.labs.tailwind.orchestration.v1;
 import "google/internal/labs/tailwind/orchestration/v1/artifacts.proto";
 import "google/internal/labs/tailwind/orchestration/v1/chat.proto";
 import "google/internal/labs/tailwind/orchestration/v1/notes.proto";
+import "google/internal/labs/tailwind/orchestration/v1/organization.proto";
 import "google/internal/labs/tailwind/orchestration/v1/read.proto";
 import "google/internal/labs/tailwind/orchestration/v1/research.proto";
 import "google/internal/labs/tailwind/orchestration/v1/sources.proto";
@@ -16,9 +17,9 @@ import "google/protobuf/empty.proto";
 // protobuf FQN is unproven, stay out of this descriptor and are exhaustively
 // recorded in docs/android/grpc-service-signature-exceptions.json.
 //
-// GetLabels and account methods remain absent until their corresponding
-// adapter slices land. GetArtifact and Research signatures below are exact and
-// independently live-validated; research.proto itself remains service-free.
+// Only the account method remains absent until its adapter slice lands.
+// GetArtifact, Research, and GetLabels signatures below are exact and
+// independently live-validated; their message overlays remain service-free.
 service LabsTailwindOrchestrationService {
   rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
   rpc ListRecentlyViewedProjects(ListRecentlyViewedProjectsRequest)
@@ -58,4 +59,6 @@ service LabsTailwindOrchestrationService {
       returns (google.protobuf.Empty);
   rpc FinishDiscoverSourcesRun(FinishDiscoverSourcesRunRequest)
       returns (FinishDiscoverSourcesRunResponse);
+
+  rpc GetLabels(GetLabelsRequest) returns (GetLabelsResponse);
 }

@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package google.internal.labs.tailwind.orchestration.v1;
+
+import "google/internal/labs/tailwind/orchestration/v1/read.proto";
+
+// Minimal exact-package GetLabels closure copied from the archived
+// gemini-notebook-mobile supported.proto identified in the evidence ledger.
+// The heterogeneous collection-member wire is decoded through the visibly
+// repository-local organization_mutations.proto overlay at runtime; this file
+// preserves the independently evidenced remote type identity.
+message LabelAndSources {
+  string label = 1;
+  repeated SourceId source_ids = 2;
+  string label_id = 3;
+  string emoji = 4;
+}
+
+message GetLabelsRequest {
+  string project_id = 2;
+  int32 label_type = 3;
+}
+
+message GetLabelsResponse {
+  repeated LabelAndSources label_and_sources = 1;
+  repeated LabelAndSources notebook_collections = 2;
+}
