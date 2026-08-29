@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import builtins
+import logging
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, cast
 
@@ -31,6 +32,8 @@ DELETE_NOTES_METHOD = f"/{_SERVICE}/DeleteNotes"
 # dependency-free; protobuf is validated during open and imported on first use.
 USER_WRITTEN_NOTE_TYPE = 1
 SAVED_RESPONSE_NOTE_TYPE = 2
+
+logger = logging.getLogger(__name__)
 
 
 def _proto() -> Any:
@@ -237,11 +240,23 @@ class AndroidNotesAPI(NotesAPI):
                 content=content,
                 method_id=CREATE_NOTE_METHOD,
             )
-            read_back = await self._get_note_or_none(
-                notebook_id,
-                created.id,
-                expected_epoch=lease.epoch,
-            )
+            try:
+                read_back = await self._get_note_or_none(
+                    notebook_id,
+                    created.id,
+                    expected_epoch=lease.epoch,
+                )
+            except (NetworkError, RateLimitError, ServerError):
+                # CreateNote returned a concrete, fully decoded note whose
+                # title/content already match the request. A transient failure
+                # in the optional GetNotes verification cannot make that
+                # confirmed mutation ambiguous; propagating the read error
+                # would invite a caller to retry CreateNote and duplicate it.
+                logger.debug(
+                    "Android CreateNote succeeded but GetNotes verification was unavailable; "
+                    "returning the validated create response"
+                )
+                return created
             if read_back is None:
                 raise NoteNotFoundError(created.id, method_id=GET_NOTES_METHOD)
             _validate_read_back(

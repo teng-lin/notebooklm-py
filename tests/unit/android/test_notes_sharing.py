@@ -43,13 +43,21 @@ from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.exceptions import (
     AuthError,
     DecodingError,
+    NetworkError,
     NotebookNotFoundError,
     NoteNotFoundError,
     RateLimitError,
     RPCError,
     ServerError,
 )
-from notebooklm.types import MindMapKind, ShareAccess, SharePermission, ShareStatus, ShareViewLevel
+from notebooklm.types import (
+    MindMapKind,
+    Note,
+    ShareAccess,
+    SharePermission,
+    ShareStatus,
+    ShareViewLevel,
+)
 
 
 @dataclass(frozen=True)
@@ -901,6 +909,45 @@ async def test_note_write_read_back_drift_fails_loud() -> None:
     with pytest.raises(DecodingError, match="read back"):
         await AndroidNotesAPI(_session(session)).create("project-1", "title", "body")
     assert len(session.calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "read_error",
+    [
+        pytest.param(NetworkError("read connection lost"), id="network"),
+        pytest.param(RateLimitError("read throttled"), id="rate-limit"),
+        pytest.param(ServerError("read unavailable"), id="server"),
+    ],
+)
+async def test_note_create_returns_validated_response_when_readback_is_unavailable(
+    read_error: Exception,
+) -> None:
+    created = notes_pb2.ProjectNote(
+        id="note-created",
+        content="body",
+        name="title",
+        metadata=notes_pb2.NoteMetadata(type=notes_pb2.USER_WRITTEN),
+    )
+    session = SequencedSession(
+        {
+            CREATE_NOTE_METHOD: [notes_pb2.CreateNoteResponse(note=created)],
+            GET_NOTES_METHOD: [read_error],
+        }
+    )
+
+    result = await AndroidNotesAPI(_session(session)).create("project-1", "title", "body")
+
+    assert result == Note(
+        id="note-created",
+        notebook_id="project-1",
+        title="title",
+        content="body",
+    )
+    assert [method for method, _request, _kwargs in session.calls] == [
+        CREATE_NOTE_METHOD,
+        GET_NOTES_METHOD,
+    ]
 
 
 @pytest.mark.asyncio

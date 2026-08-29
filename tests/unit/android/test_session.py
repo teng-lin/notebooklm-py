@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -408,6 +409,30 @@ async def test_unary_status_mapping_is_sanitized(status, error_type) -> None:
         assert error.rpc_code == status.value[0]
     else:
         assert error.original_error is None
+
+
+@pytest.mark.asyncio
+async def test_unknown_wire_error_debug_log_contains_type_not_sensitive_message(caplog) -> None:
+    sensitive = "wire-detail bearer-secret-must-not-be-logged"
+    channel = _Channel()
+    channel.unary_outcomes = [RuntimeError(sensitive)]
+    session, _, _, _, _ = await _open(channel=channel)
+
+    with (
+        caplog.at_level(logging.DEBUG, logger="notebooklm._android.session"),
+        pytest.raises(RPCError) as captured,
+    ):
+        await session.unary(
+            METHOD,
+            _Message(b"request"),
+            replay_safe=False,
+            response_type=_Message,
+        )
+
+    assert captured.value.rpc_code == 2
+    assert "RuntimeError" in caplog.text
+    assert sensitive not in caplog.text
+    assert sensitive not in str(captured.value)
 
 
 @pytest.mark.asyncio

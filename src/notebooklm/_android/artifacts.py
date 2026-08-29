@@ -42,10 +42,15 @@ from ..exceptions import (
 )
 from ..types import Artifact, ArtifactType, GenerationStatus, ReportSuggestion
 from .artifact_collaborators import NoteBackedMindMapLister
-from .artifact_creation import build_create_artifact_plan, normalize_creation_options
+from .artifact_creation import (
+    build_create_artifact_plan,
+    create_artifact_once,
+    normalize_creation_options,
+)
 from .artifact_mutations import (
     EXPORT_TO_DRIVE_METHOD,
     GENERATE_ARTIFACT_METHOD,
+    delete_artifact,
     export_to_drive,
     retry_failed_artifact,
 )
@@ -69,7 +74,6 @@ from .artifact_outputs import validate_artifact_language as _validate_audio_lang
 from .artifact_proto import ARTIFACT_WIRE_PROTO as _WIRE_PROTO
 from .artifact_proto import ARTIFACTS_PROTO as _PROTO
 from .artifact_proto import READ_PROTO as _READ_PROTO
-from .artifact_proto import empty_response_type
 from .assets import AndroidAssetDownloadService, RepresentationKind
 from .codecs.artifacts import decode_artifact, decode_artifacts, decode_report_suggestions
 from .errors import sanitize_escaping_exception
@@ -425,15 +429,11 @@ class AndroidArtifactsAPI(ArtifactsAPI):
                 source_ids,
                 **options,
             )
-            creation_epoch_kwargs: dict[str, Any] = (
-                {} if expected_epoch is None else {"expected_epoch": expected_epoch}
-            )
-            response = await self._transport.unary(
-                CREATE_ARTIFACT_METHOD,
+            response = await create_artifact_once(
+                self._transport,
                 plan.request,
-                replay_safe=False,
-                response_type=_PROTO.CreateArtifactResponse,
-                **creation_epoch_kwargs,
+                method=CREATE_ARTIFACT_METHOD,
+                expected_epoch=expected_epoch,
             )
             artifact = decode_artifact(response.artifact, method_id=CREATE_ARTIFACT_METHOD)
             if artifact._artifact_type != plan.expected_type or (
@@ -496,15 +496,11 @@ class AndroidArtifactsAPI(ArtifactsAPI):
                 audio_overview=_PROTO.AudioOverviewArtifact(generation_options=generation_options),
             ),
         )
-        epoch_kwargs: dict[str, Any] = (
-            {} if expected_epoch is None else {"expected_epoch": expected_epoch}
-        )
-        response = await self._transport.unary(
-            CREATE_ARTIFACT_METHOD,
+        response = await create_artifact_once(
+            self._transport,
             request,
-            replay_safe=False,
-            response_type=_PROTO.CreateArtifactResponse,
-            **epoch_kwargs,
+            method=CREATE_ARTIFACT_METHOD,
+            expected_epoch=expected_epoch,
         )
         artifact = decode_artifact(response.artifact, method_id=CREATE_ARTIFACT_METHOD)
         if artifact._artifact_type != ArtifactTypeCode.AUDIO.value:
@@ -1347,17 +1343,13 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         )
 
     async def delete(self, notebook_id: str, artifact_id: str) -> None:
-        del notebook_id
-        try:
-            await self._transport.unary(
-                DELETE_ARTIFACT_METHOD,
-                _PROTO.DeleteArtifactRequest(artifact_id=artifact_id),
-                replay_safe=False,
-                response_type=empty_response_type(),
-            )
-        except RPCError as error:
-            if error.rpc_code != 5:
-                raise
+        await delete_artifact(
+            self._transport,
+            self._list_all_studio,
+            notebook_id,
+            artifact_id,
+            method=DELETE_ARTIFACT_METHOD,
+        )
 
     async def rename(
         self,

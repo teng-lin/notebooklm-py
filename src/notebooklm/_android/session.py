@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import logging
 import math
 import time
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
@@ -41,6 +42,7 @@ _ANDROID_PROTOBUF_EXTRA = (
 _ANDROID_NOTES_PROTO = (
     "notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1.notes_pb2"
 )
+logger = logging.getLogger(__name__)
 
 
 class _DefaultTelemetry(Enum):
@@ -52,6 +54,12 @@ _DEFAULT_TELEMETRY = _DefaultTelemetry.METHOD
 
 class _DeadlineSignal(Exception):
     """Private, data-free signal for an exhausted aggregate deadline."""
+
+
+def _log_unknown_wire_error(error: Exception) -> None:
+    """Record only the exception type when a wire failure has no safe status."""
+
+    logger.debug("Android gRPC wire error type: %s", type(error).__name__)
 
 
 @dataclass(frozen=True)
@@ -375,6 +383,8 @@ class AndroidSession(LoopBoundPrimitive):
                 raise
             except Exception as error:
                 status = grpc_status(error)
+                if status.name == "UNKNOWN":
+                    _log_unknown_wire_error(error)
                 return _AttemptFailure(
                     status,
                     None if credential is None else credential.generation,
@@ -602,8 +612,11 @@ class AndroidSession(LoopBoundPrimitive):
                         except RPCResponseTooLargeError:
                             raise
                         except Exception as error:
+                            status = grpc_status(error)
+                            if status.name == "UNKNOWN":
+                                _log_unknown_wire_error(error)
                             failure = _AttemptFailure(
-                                grpc_status(error),
+                                status,
                                 credential.generation,
                             )
                 finally:

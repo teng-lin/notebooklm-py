@@ -72,7 +72,10 @@ from notebooklm.exceptions import (
     ArtifactNotReadyError,
     ArtifactParseError,
     DecodingError,
+    NetworkError,
+    RateLimitError,
     RPCError,
+    ServerError,
     ValidationError,
 )
 from notebooklm.types import Artifact, ArtifactType, MindMap, MindMapKind, Note
@@ -769,6 +772,54 @@ async def test_generate_audio_rejects_mismatched_nonempty_response_sources() -> 
 
     with pytest.raises(DecodingError, match="different source ids"):
         await api.generate_audio("notebook-1", source_ids=["source-1"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(
+            NetworkError("connection lost", method_id=CREATE_ARTIFACT_METHOD),
+            id="network",
+        ),
+        pytest.param(
+            RateLimitError(
+                "response lost",
+                method_id=CREATE_ARTIFACT_METHOD,
+                rpc_code=8,
+            ),
+            id="rate-limit",
+        ),
+        pytest.param(
+            ServerError(
+                "response lost",
+                method_id=CREATE_ARTIFACT_METHOD,
+                rpc_code=14,
+            ),
+            id="server",
+        ),
+    ],
+)
+@pytest.mark.parametrize("family", ["audio", "quiz"])
+async def test_create_artifact_lost_response_is_unconfirmed_and_never_replayed(
+    error: BaseException,
+    family: str,
+) -> None:
+    session, _, _, _, api = _graph()
+    session.errors[CREATE_ARTIFACT_METHOD] = error
+
+    with pytest.raises(RPCError, match="list artifacts.*manually") as caught:
+        if family == "audio":
+            await api.generate_audio("notebook-1", source_ids=["source-1"])
+        else:
+            await api.generate_quiz("notebook-1", source_ids=["source-1"])
+
+    assert getattr(caught.value, "unconfirmed", False) is True
+    assert caught.value.method_id == CREATE_ARTIFACT_METHOD
+    assert caught.value.rpc_code == getattr(error, "rpc_code", None)
+    assert caught.value.__cause__ is error
+    assert [call[0] for call in session.calls] == [CREATE_ARTIFACT_METHOD]
+    assert session.calls[0][2]["replay_safe"] is False
 
 
 @pytest.mark.asyncio
@@ -2057,13 +2108,36 @@ async def test_infographic_wraps_transfer_error_without_capability_or_cause() ->
 
 
 @pytest.mark.asyncio
-async def test_delete_is_idempotent_only_for_sanitized_not_found() -> None:
-    session, _, _, _, api = _graph()
+async def test_delete_preflights_ownership_and_is_idempotent_after_that_proof() -> None:
+    session, _, _, _, api = _graph(
+        [
+            _artifact("artifact-1"),
+            _artifact("missing"),
+            _artifact("denied"),
+        ]
+    )
     await api.delete("notebook-1", "artifact-1")
-    method, request, kwargs = session.calls[-1]
+    assert [call[0] for call in session.calls] == [
+        LIST_ARTIFACTS_METHOD,
+        DELETE_ARTIFACT_METHOD,
+    ]
+    list_method, list_request, list_kwargs = session.calls[0]
+    assert list_method == LIST_ARTIFACTS_METHOD
+    assert list_request == _PROTO.ListArtifactsRequest(project_id="notebook-1")
+    assert list_kwargs == {
+        "replay_safe": True,
+        "response_type": _PROTO.ListArtifactsResponse,
+        "expected_epoch": 7,
+    }
+    method, request, kwargs = session.calls[1]
     assert method == DELETE_ARTIFACT_METHOD
     assert request == _PROTO.DeleteArtifactRequest(artifact_id="artifact-1")
-    assert kwargs == {"replay_safe": False, "response_type": empty_pb2.Empty}
+    assert kwargs == {
+        "replay_safe": False,
+        "response_type": empty_pb2.Empty,
+        "expected_epoch": 7,
+    }
+    assert session.scopes == ["artifacts.delete"]
 
     session.errors[DELETE_ARTIFACT_METHOD] = RPCError("missing", rpc_code=5)
     await api.delete("notebook-1", "missing")
@@ -2072,6 +2146,18 @@ async def test_delete_is_idempotent_only_for_sanitized_not_found() -> None:
     with pytest.raises(RPCError) as raised:
         await api.delete("notebook-1", "denied")
     assert raised.value is original
+
+
+@pytest.mark.asyncio
+async def test_delete_ignores_artifact_outside_requested_notebook_without_mutation() -> None:
+    session, _, _, _, api = _graph([_artifact("artifact-in-notebook-1")])
+
+    result = await api.delete("notebook-1", "artifact-from-another-notebook")
+
+    assert result is None
+    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD]
+    assert session.calls[0][1] == _PROTO.ListArtifactsRequest(project_id="notebook-1")
+    assert session.scopes == ["artifacts.delete"]
 
 
 @pytest.mark.asyncio

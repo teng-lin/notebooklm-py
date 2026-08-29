@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._artifact import validation as _artifact_validation
+from .._idempotency import mark_unconfirmed
 from .._types.enums import (
     ArtifactTypeCode,
     InfographicDetail,
@@ -20,10 +21,11 @@ from .._types.enums import (
     VideoFormat,
     VideoStyle,
 )
-from ..exceptions import ValidationError
+from ..exceptions import NetworkError, RateLimitError, RPCError, ServerError, ValidationError
 from .artifact_proto import ARTIFACT_WIRE_PROTO as _WIRE_PROTO
 from .artifact_proto import ARTIFACTS_PROTO as _PROTO
 from .artifact_proto import READ_PROTO as _READ_PROTO
+from .session import AndroidSession
 
 _REPORT_CONFIGS: dict[ReportFormat, tuple[str, str, str]] = {
     ReportFormat.BRIEFING_DOC: (
@@ -65,6 +67,38 @@ class CreateArtifactPlan:
     expected_type: int
     expected_variant: int | None
     family_label: str
+
+
+async def create_artifact_once(
+    session: AndroidSession,
+    request: Any,
+    *,
+    method: str,
+    expected_epoch: int | None,
+) -> Any:
+    """Send ``CreateArtifact`` once and preserve an ambiguous commit outcome."""
+
+    epoch_kwargs: dict[str, Any] = (
+        {} if expected_epoch is None else {"expected_epoch": expected_epoch}
+    )
+    try:
+        return await session.unary(
+            method,
+            request,
+            replay_safe=False,
+            response_type=_PROTO.CreateArtifactResponse,
+            **epoch_kwargs,
+        )
+    except (NetworkError, RateLimitError, ServerError) as exc:
+        rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
+        raise mark_unconfirmed(
+            RPCError(
+                "UNRESOLVED — CreateArtifact may have committed before its response was lost. "
+                "Do not blindly retry; list artifacts and resolve the outcome manually first.",
+                method_id=method,
+                rpc_code=rpc_code,
+            )
+        ) from exc
 
 
 def _enum_code(value: Any, enum_type: type[Any], parameter: str, default: int) -> int:
@@ -413,4 +447,9 @@ def build_create_artifact_plan(
     )
 
 
-__all__ = ["CreateArtifactPlan", "build_create_artifact_plan", "normalize_creation_options"]
+__all__ = [
+    "CreateArtifactPlan",
+    "build_create_artifact_plan",
+    "create_artifact_once",
+    "normalize_creation_options",
+]

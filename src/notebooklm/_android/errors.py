@@ -13,7 +13,6 @@ from ..exceptions import (
     RPCError,
     RPCTimeoutError,
     ServerError,
-    UnsupportedOperationError,
 )
 
 
@@ -134,14 +133,6 @@ def raise_deadline_exceeded(method: str, timeout_seconds: float | None) -> NoRet
     )
 
 
-def unsupported_operation(operation: str) -> NoReturn:
-    """Reject an Android operation before any transport or credential work."""
-
-    raise UnsupportedOperationError(
-        f"{operation} is not supported by the Android backend. Use the web backend instead."
-    )
-
-
 __all__ = [
     "GrpcStatus",
     "grpc_status",
@@ -149,5 +140,4 @@ __all__ = [
     "raise_deadline_exceeded",
     "raise_grpc_status",
     "sanitize_escaping_exception",
-    "unsupported_operation",
 ]

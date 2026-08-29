@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import urlsplit
 
 from .._artifact import validation as _artifact_validation
 from .._types.artifacts import _status_from_code
 from .._types.enums import ExportType
-from ..exceptions import ArtifactFeatureUnavailableError, DecodingError, ValidationError
-from ..types import GenerationStatus
+from ..exceptions import ArtifactFeatureUnavailableError, DecodingError, RPCError, ValidationError
+from ..types import Artifact, GenerationStatus
 from .artifact_proto import ARTIFACTS_PROTO as _PROTO
+from .artifact_proto import empty_response_type
 from .codecs.artifacts import decode_artifact
 from .session import AndroidSession
 
@@ -57,6 +59,33 @@ async def retry_failed_artifact(
     )
 
 
+async def delete_artifact(
+    session: AndroidSession,
+    list_studio: Callable[..., Awaitable[list[Artifact]]],
+    notebook_id: str,
+    artifact_id: str,
+    *,
+    method: str,
+) -> None:
+    """Delete only after proving the global artifact id belongs to the notebook."""
+
+    async with session.operation_scope("artifacts.delete") as lease:
+        artifacts = await list_studio(notebook_id, expected_epoch=lease.epoch)
+        if not any(artifact.id == artifact_id for artifact in artifacts):
+            return
+        try:
+            await session.unary(
+                method,
+                _PROTO.DeleteArtifactRequest(artifact_id=artifact_id),
+                replay_safe=False,
+                response_type=empty_response_type(),
+                expected_epoch=lease.epoch,
+            )
+        except RPCError as error:
+            if error.rpc_code != 5:
+                raise
+
+
 async def export_to_drive(
     session: AndroidSession,
     notebook_id: str,
@@ -101,6 +130,7 @@ async def export_to_drive(
 __all__ = [
     "EXPORT_TO_DRIVE_METHOD",
     "GENERATE_ARTIFACT_METHOD",
+    "delete_artifact",
     "export_to_drive",
     "retry_failed_artifact",
 ]

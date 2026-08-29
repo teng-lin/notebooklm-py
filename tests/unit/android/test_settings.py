@@ -15,6 +15,7 @@ from notebooklm._android.settings import (
     GET_OR_CREATE_ACCOUNT_METHOD,
     MUTATE_ACCOUNT_METHOD,
     AndroidSettingsAPI,
+    _decode_account,
 )
 from notebooklm._settings import SettingsAPI
 from notebooklm.exceptions import DecodingError
@@ -139,3 +140,28 @@ async def test_empty_language_is_a_noop_and_missing_account_is_drift() -> None:
 
     with pytest.raises(DecodingError, match="omitted account"):
         await _api(_FakeSession(omit_account=True)).get_user_settings()
+
+
+def test_explicit_zero_limits_remain_raw_but_do_not_become_known_positive_quotas() -> None:
+    absent = _decode_account(account_pb2.Account(tier_limits=account_pb2.TierLimits()))
+    account = account_pb2.Account(
+        tier_limits=account_pb2.TierLimits(
+            account_type=0,
+            max_projects=0,
+            max_sources_per_project=0,
+            max_words_per_source=0,
+            subscription_tier=0,
+        )
+    )
+
+    assert account.tier_limits.HasField("max_projects")
+    assert account.tier_limits.HasField("max_sources_per_project")
+    decoded = _decode_account(account)
+
+    assert absent.limits == AccountLimits(raw_limits=())
+    assert decoded.limits == AccountLimits(
+        notebook_limit=None,
+        source_limit=None,
+        raw_limits=(0, 0, 0, 0, 0),
+        tier=None,
+    )

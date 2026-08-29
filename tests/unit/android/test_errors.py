@@ -4,16 +4,14 @@ from enum import Enum
 
 import pytest
 
-from notebooklm._android.errors import grpc_status, raise_grpc_status, unsupported_operation
+from notebooklm._android.errors import grpc_status, raise_grpc_status
 from notebooklm.exceptions import (
     AuthError,
     ClientError,
-    ConfigurationError,
     RateLimitError,
     RPCError,
     RPCTimeoutError,
     ServerError,
-    UnsupportedOperationError,
 )
 
 
@@ -80,9 +78,3 @@ def test_status_mapping(name, code, error_type) -> None:
         assert error.original_error is None
     assert error.__cause__ is None
     assert error.__context__ is None
-
-
-def test_unsupported_operation_is_public_configuration_error() -> None:
-    with pytest.raises(UnsupportedOperationError, match="web backend"):
-        unsupported_operation("notebooks.create")
-    assert issubclass(UnsupportedOperationError, ConfigurationError)
