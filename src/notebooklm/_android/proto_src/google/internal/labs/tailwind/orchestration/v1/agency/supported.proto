@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package google.internal.labs.tailwind.orchestration.v1.agency;
+
+// Exact-package agency values reachable from TailwindDoc structural elements.
+
+message TailwindValue {
+  double number_value = 2;
+  string string_value = 3;
+  bool bool_value = 4;
+}
+
+message TailwindStructEntry {
+  string key = 1;
+  TailwindValue value = 2;
+}
+
+message TailwindStruct {
+  repeated TailwindStructEntry fields = 1;
+}
+
+message FunctionResponse {
+  string name = 1;
+}
+
+message FunctionCall {
+  string name = 1;
+  TailwindStruct args = 2;
+}

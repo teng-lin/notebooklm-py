@@ -397,6 +397,24 @@ async def test_empty_update_rejects_before_io() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response",
+    [
+        _project("other-notebook", "Renamed"),
+        _project("notebook-1", "Stale"),
+        _project("notebook-1", "Renamed", emoji="stale"),
+    ],
+)
+async def test_update_rejects_wrong_identity_or_stale_requested_properties(
+    response: read_pb2.Project,
+) -> None:
+    transport = SequenceTransport({MUTATE_PROJECT_METHOD: [response]})
+
+    with pytest.raises(DecodingError, match="unexpected notebook"):
+        await _api(transport).update("notebook-1", title="Renamed", emoji="📘")
+
+
+@pytest.mark.asyncio
 async def test_copy_validates_then_decodes_one_bare_project_response() -> None:
     transport = SequenceTransport({COPY_PROJECT_METHOD: [_project("copy-1", "Copy")]})
     api = _api(transport)
@@ -434,6 +452,14 @@ async def test_copy_rejects_missing_or_reused_response_identity() -> None:
         await api.copy("source-1", "Copy")
     with pytest.raises(DecodingError, match="reused"):
         await api.copy("source-1", "Copy")
+
+
+@pytest.mark.asyncio
+async def test_copy_rejects_a_new_project_with_the_wrong_title() -> None:
+    transport = SequenceTransport({COPY_PROJECT_METHOD: [_project("copy-1", "Unrelated")]})
+
+    with pytest.raises(DecodingError, match="unexpected notebook title"):
+        await _api(transport).copy("source-1", "Copy")
 
 
 @pytest.mark.asyncio

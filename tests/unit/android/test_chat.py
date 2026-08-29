@@ -37,6 +37,7 @@ from notebooklm._chat import ChatAPI
 from notebooklm._types.documents import BlockKind, BlockStyle, ListStyle, StructuredDocument
 from notebooklm._types.enums import ChatGoal, ChatResponseLength
 from notebooklm.exceptions import (
+    ChatError,
     ChatResponseParseError,
     DecodingError,
     UnknownRPCMethodError,
@@ -788,6 +789,33 @@ async def test_follow_up_maps_cached_turns_to_captured_conversation_events() -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("exhausted", [True, False])
+async def test_turn_count_uses_android_exhaustion_token_at_the_safety_ceiling(
+    exhausted: bool,
+) -> None:
+    fake = FakeSession()
+    api, _, _ = _api(fake)
+
+    async def get_conversation_turns(
+        notebook_id: str,
+        conversation_id: str,
+        limit: int = 2,
+    ) -> chat_pb2.ListChatTurnsResponse:
+        del notebook_id, conversation_id
+        return chat_pb2.ListChatTurnsResponse(
+            chat_turns=[chat_pb2.ChatHistoryMessage(observed_event_type=1)] * limit,
+            next_page_token="" if exhausted and limit == 12_800 else "more",
+        )
+
+    api.get_conversation_turns = get_conversation_turns  # type: ignore[method-assign]
+    if exhausted:
+        assert await api._count_prior_server_turns("notebook-1", "conversation-1") == 12_800
+    else:
+        with pytest.raises(ChatError, match="maximum 12,800-row snapshot"):
+            await api._count_prior_server_turns("notebook-1", "conversation-1")
+
+
+@pytest.mark.asyncio
 async def test_stream_eof_without_field_5_finality_fails_and_does_not_cache() -> None:
     fake = FakeSession()
     fake.stream_responses = [[_frame("Partial only", final=False)]]
@@ -882,11 +910,22 @@ async def test_configure_defaults_and_validates_custom_prompt() -> None:
 
 
 @pytest.mark.asyncio
+async def test_configure_rejects_an_unexpected_project_identity() -> None:
+    fake = FakeSession()
+    fake.unary_responses[MUTATE_PROJECT_METHOD] = [read_pb2.Project(id="other-notebook")]
+    api, _, _ = _api(fake)
+
+    with pytest.raises(DecodingError, match="unexpected notebook id"):
+        await api.configure("notebook-1")
+
+
+@pytest.mark.asyncio
 async def test_get_settings_decodes_advanced_project_block() -> None:
     fake = FakeSession()
     fake.unary_responses[GET_PROJECT_METHOD] = [
         wire_notebooks_pb2.WireGetProjectResponse(
             project=wire_notebooks_pb2.WireProjectWithAdvancedSettings(
+                id="notebook-1",
                 advanced_settings=wire_notebooks_pb2.WireProjectAdvancedSettings(
                     goal_settings=wire_notebooks_pb2.WireProjectGoalSettings(
                         goal=ChatGoal.CUSTOM.value,
@@ -895,7 +934,7 @@ async def test_get_settings_decodes_advanced_project_block() -> None:
                     response_style_settings=wire_notebooks_pb2.WireProjectResponseStyleSettings(
                         response_length=ChatResponseLength.SHORTER.value,
                     ),
-                )
+                ),
             )
         )
     ]
@@ -923,7 +962,7 @@ async def test_get_settings_defaults_when_block_is_absent() -> None:
     fake = FakeSession()
     fake.unary_responses[GET_PROJECT_METHOD] = [
         wire_notebooks_pb2.WireGetProjectResponse(
-            project=wire_notebooks_pb2.WireProjectWithAdvancedSettings()
+            project=wire_notebooks_pb2.WireProjectWithAdvancedSettings(id="notebook-1")
         )
     ]
     api, _, _ = _api(fake)
@@ -948,30 +987,47 @@ async def test_get_settings_rejects_a_different_echoed_notebook_id() -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_settings_rejects_a_missing_echoed_notebook_id() -> None:
+    fake = FakeSession()
+    fake.unary_responses[GET_PROJECT_METHOD] = [
+        wire_notebooks_pb2.WireGetProjectResponse(
+            project=wire_notebooks_pb2.WireProjectWithAdvancedSettings()
+        )
+    ]
+    api, _, _ = _api(fake)
+
+    with pytest.raises(DecodingError, match="did not contain a notebook id"):
+        await api.get_settings("requested-notebook")
+
+
+@pytest.mark.asyncio
 async def test_get_settings_rejects_partial_or_unknown_settings() -> None:
     fake = FakeSession()
     fake.unary_responses[GET_PROJECT_METHOD] = [
         wire_notebooks_pb2.WireGetProjectResponse(
             project=wire_notebooks_pb2.WireProjectWithAdvancedSettings(
+                id="notebook-1",
                 advanced_settings=wire_notebooks_pb2.WireProjectAdvancedSettings(
                     goal_settings=wire_notebooks_pb2.WireProjectGoalSettings(goal=99),
                     response_style_settings=wire_notebooks_pb2.WireProjectResponseStyleSettings(
                         response_length=ChatResponseLength.DEFAULT.value
                     ),
-                )
+                ),
             )
         ),
         wire_notebooks_pb2.WireGetProjectResponse(
             project=wire_notebooks_pb2.WireProjectWithAdvancedSettings(
+                id="notebook-1",
                 advanced_settings=wire_notebooks_pb2.WireProjectAdvancedSettings(
                     goal_settings=wire_notebooks_pb2.WireProjectGoalSettings(
                         goal=ChatGoal.DEFAULT.value
                     )
-                )
+                ),
             )
         ),
         wire_notebooks_pb2.WireGetProjectResponse(
             project=wire_notebooks_pb2.WireProjectWithAdvancedSettings(
+                id="notebook-1",
                 advanced_settings=wire_notebooks_pb2.WireProjectAdvancedSettings(
                     goal_settings=wire_notebooks_pb2.WireProjectGoalSettings(
                         goal=ChatGoal.CUSTOM.value
@@ -979,7 +1035,7 @@ async def test_get_settings_rejects_partial_or_unknown_settings() -> None:
                     response_style_settings=wire_notebooks_pb2.WireProjectResponseStyleSettings(
                         response_length=ChatResponseLength.DEFAULT.value
                     ),
-                )
+                ),
             )
         ),
     ]

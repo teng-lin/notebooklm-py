@@ -90,6 +90,7 @@ _GOLDEN_EXPANSION = "tests/integration/test_golden_decoded_vcr_expansion.py"
 _COMPREHENSIVE = "tests/integration/test_vcr_comprehensive.py"
 _GAP_BACKFILL = "tests/integration/test_rpc_gap_backfill_vcr.py"
 _SUGGEST_PROMPTS_VCR = "tests/integration/test_notebooks_suggest_prompts_vcr.py"
+_COPY_NOTEBOOK_VCR = "tests/integration/test_notebook_copy_vcr.py"
 
 GoldenPointer = tuple[str, str]
 
@@ -126,6 +127,9 @@ GOLDEN_COVERAGE: dict[RPCMethod, tuple[GoldenPointer, ...]] = {
     ),
     RPCMethod.CREATE_NOTEBOOK: (
         (_GOLDEN_EXPANSION, "TestNotebooksGoldenDecoded::test_create_decoded_golden"),
+    ),
+    RPCMethod.COPY_NOTEBOOK: (
+        (_COPY_NOTEBOOK_VCR, "test_live_copy_notebook_returns_distinct_project_and_cleans_up"),
     ),
     # --- sources ---
     RPCMethod.ADD_SOURCE: (

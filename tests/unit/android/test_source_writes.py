@@ -18,6 +18,9 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
     read_pb2,
     sources_pb2,
 )
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1.agency import (
+    supported_pb2 as agency_pb2,
+)
 from notebooklm._android.proto.google.internal.labs.tailwind.v1 import source_settings_pb2
 from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import source_content_pb2
 from notebooklm._android.session import AndroidSession
@@ -622,6 +625,9 @@ async def test_add_text_uses_registered_exact_content_and_rejects_idempotent_opt
 @pytest.mark.asyncio
 async def test_add_drive_uses_exact_content_and_validates_identifier_before_io() -> None:
     transport = _successful_transport()
+    transport.handlers[MUTATE_SOURCE_METHOD] = sources_pb2.MutateSourceResponse(
+        source=_source(SOURCE_A, title="Drive title")
+    )
 
     result = await _api(transport).add_drive(
         NOTEBOOK_ID,
@@ -631,7 +637,8 @@ async def test_add_drive_uses_exact_content_and_validates_identifier_before_io()
     )
 
     assert result.id == SOURCE_A
-    assert transport.scopes == ["source.add_drive"]
+    assert result.title == "Drive title"
+    assert transport.scopes == ["source.add_drive", "source.rename"]
     commit = next(call[1] for call in transport.calls if call[0] == ADD_SOURCES_METHOD)
     content = commit.user_content[0]
     assert content.google_drive_content.document_id == "drive-document-id"
@@ -639,6 +646,9 @@ async def test_add_drive_uses_exact_content_and_validates_identifier_before_io()
     assert content.google_drive_content.can_download is True
     assert content.google_drive_content.source_name == "Drive title"
     assert content.tentative_source_id.id == SOURCE_A
+    mutate = next(call[1] for call in transport.calls if call[0] == MUTATE_SOURCE_METHOD)
+    assert mutate.source_id.id == SOURCE_A
+    assert mutate.mutations[0].change_title.title == "Drive title"
 
     before_io = FakeTransport()
     with pytest.raises(ValidationError, match="cannot be empty"):
@@ -1093,13 +1103,13 @@ def test_plain_renderer_covers_all_text_bearing_variants_and_omits_metadata() ->
                 chat_pb2.StructuralElement(
                     start_index=1,
                     end_index=2,
-                    function_call=chat_pb2.FunctionCall(
+                    function_call=agency_pb2.FunctionCall(
                         name="lookup",
-                        args=chat_pb2.TailwindStruct(
+                        args=agency_pb2.TailwindStruct(
                             fields=[
-                                chat_pb2.TailwindStruct_TailwindStructEntry(
+                                agency_pb2.TailwindStructEntry(
                                     key="query",
-                                    value=chat_pb2.TailwindValue(string_value="term"),
+                                    value=agency_pb2.TailwindValue(string_value="term"),
                                 )
                             ]
                         ),
@@ -1108,7 +1118,7 @@ def test_plain_renderer_covers_all_text_bearing_variants_and_omits_metadata() ->
                 chat_pb2.StructuralElement(
                     start_index=2,
                     end_index=3,
-                    function_response=chat_pb2.FunctionResponse(name="lookup"),
+                    function_response=agency_pb2.FunctionResponse(name="lookup"),
                 ),
                 chat_pb2.StructuralElement(
                     image=chat_pb2.Image(url="https://example.invalid/block")

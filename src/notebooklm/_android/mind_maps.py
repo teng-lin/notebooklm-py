@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from .._mind_maps_api import MindMapsAPI
 from .._runtime.call_supervisor import CallSupervisor
-from ..exceptions import MindMapNotFoundError, NoteNotFoundError
+from ..exceptions import ArtifactNotReadyError, MindMapNotFoundError, NoteNotFoundError
 from ..types import ArtifactType, MindMap, MindMapKind
 
 if TYPE_CHECKING:
@@ -169,7 +169,13 @@ class AndroidMindMapsAPI(MindMapsAPI):
                 instructions=instructions,
             )
             if wait:
-                await self._artifacts.wait_for_completion(notebook_id, status.task_id)
+                terminal = await self._artifacts.wait_for_completion(notebook_id, status.task_id)
+                if terminal.is_failed or terminal.is_removed:
+                    raise ArtifactNotReadyError(
+                        "mind_map",
+                        artifact_id=status.task_id,
+                        status=str(terminal.status),
+                    )
             artifact = await self._find_interactive(
                 notebook_id,
                 status.task_id,

@@ -5,11 +5,13 @@ package google.internal.labs.tailwind.orchestration.v1;
 import "google/internal/labs/tailwind/orchestration/v1/read.proto";
 import "labs/language/tailwind/common/protos/metadata.proto";
 
-// Minimal exact-package GetLabels closure copied from the archived
+// Exact-package GetLabels signature/label closure from the archived
 // gemini-notebook-mobile supported.proto identified in the evidence ledger.
-// The heterogeneous collection-member wire is decoded through the visibly
-// repository-local organization_mutations.proto overlay at runtime; this file
-// preserves the independently evidenced remote type identity.
+// That archive labels response field #2 as LabelAndSources; authenticated live
+// rows instead prove NotebookCollection there. The declaration below applies
+// that explicitly ledgered live-derived type correction while preserving the
+// exact response FQN, tag, and cardinality. Runtime still uses the visibly
+// repository-local byte-member overlay for the heterogeneous member encoding.
 message LabelAndSources {
   string label = 1;
   repeated SourceId source_ids = 2;
@@ -24,7 +26,8 @@ message GetLabelsRequest {
 
 message GetLabelsResponse {
   repeated LabelAndSources label_and_sources = 1;
-  repeated LabelAndSources notebook_collections = 2;
+  // Live-derived correction: the archived snapshot says LabelAndSources.
+  repeated NotebookCollection notebook_collections = 2;
 }
 
 // Web-derived organization-write closure. The current bundle registers the

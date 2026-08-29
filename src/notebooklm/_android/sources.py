@@ -1005,7 +1005,8 @@ class AndroidSourcesAPI(SourcesAPI):
         wait_timeout: float = 120.0,
     ) -> Source:
         _validate_drive_file_id(file_id)
-        return await self._add_registered_content(
+        requested_title = title.strip() or None
+        source = await self._add_registered_content(
             notebook_id,
             subject=file_id,
             kind="Drive",
@@ -1022,6 +1023,9 @@ class AndroidSourcesAPI(SourcesAPI):
             wait=wait,
             wait_timeout=wait_timeout,
         )
+        if requested_title is not None and source.title != requested_title:
+            source = await self._best_effort_title(notebook_id, source, requested_title)
+        return source
 
     async def add_drive_file(
         self,

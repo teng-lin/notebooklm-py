@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import builtins
-from typing import Literal
+from typing import Literal, NoReturn
 
 from .._labels import LabelsAPI, ListSources
-from ..exceptions import DecodingError, LabelError, LabelNotFoundError, RPCError
+from ..exceptions import DecodingError, LabelError, LabelNotFoundError, NetworkError, RPCError
 from ..types import Label, Source
 from .codecs.organization import decode_created_labels
 from .organization import (
@@ -142,6 +142,11 @@ class AndroidLabelsAPI(LabelsAPI):
                     f"response, found {len(created)}"
                 )
             (label,) = created
+            if label.name != name or (label.emoji or "") != emoji or bool(label.source_ids):
+                raise DecodingError(
+                    "Android label create response did not echo the requested empty label",
+                    method_id=CREATE_LABEL_METHOD,
+                )
             return label
 
     async def update(
@@ -248,7 +253,12 @@ class AndroidLabelsAPI(LabelsAPI):
                         expected_epoch=lease.epoch,
                     )
                 except RPCError as exc:
-                    _raise_label_write_miss(label_id, exc)
+                    await self._raise_membership_write_error(
+                        notebook_id,
+                        label_id,
+                        exc,
+                        expected_epoch=lease.epoch,
+                    )
             read_back = await self._get_or_none(
                 notebook_id,
                 label_id,
@@ -264,6 +274,30 @@ class AndroidLabelsAPI(LabelsAPI):
                     method_id=MUTATE_LABEL_METHOD,
                 )
             return read_back if return_object else None
+
+    async def _raise_membership_write_error(
+        self,
+        notebook_id: str,
+        label_id: str,
+        error: RPCError,
+        *,
+        expected_epoch: int,
+    ) -> NoReturn:
+        """Map ``NOT_FOUND`` only after proving the label itself is absent."""
+
+        if error.rpc_code != 5:
+            raise error
+        try:
+            label = await self._get_or_none(
+                notebook_id,
+                label_id,
+                expected_epoch=expected_epoch,
+            )
+        except (NetworkError, RPCError):
+            raise error from None
+        if label is None:
+            raise _label_miss(label_id, method_id=MUTATE_LABEL_METHOD) from error
+        raise error
 
     async def add_sources(
         self,

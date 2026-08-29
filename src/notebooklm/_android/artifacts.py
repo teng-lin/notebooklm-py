@@ -62,8 +62,10 @@ from .artifact_outputs import (
     report_doc_markdown,
     select_note_backed_mind_map,
     select_single_file_media_url,
+    validate_echoed_source_ids,
     write_text_atomic,
 )
+from .artifact_outputs import validate_artifact_language as _validate_audio_language
 from .artifact_proto import ARTIFACT_WIRE_PROTO as _WIRE_PROTO
 from .artifact_proto import ARTIFACTS_PROTO as _PROTO
 from .artifact_proto import READ_PROTO as _READ_PROTO
@@ -106,12 +108,6 @@ def _audio_length_code(value: Any) -> int:
     if not isinstance(value, AudioLength):
         raise ValidationError("audio_length must be an AudioLength value")
     return int(value.value)
-
-
-def _validate_audio_language(value: Any) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ValidationError("language must be a non-empty string")
-    return value
 
 
 class AndroidArtifactsAPI(ArtifactsAPI):
@@ -448,6 +444,9 @@ class AndroidArtifactsAPI(ArtifactsAPI):
                     f"Android {plan.family_label} creation returned a different artifact family.",
                     method_id=CREATE_ARTIFACT_METHOD,
                 )
+            validate_echoed_source_ids(
+                artifact, source_ids, plan.family_label, CREATE_ARTIFACT_METHOD
+            )
             return GenerationStatus(
                 task_id=artifact.id,
                 status=_status_from_code(artifact.status),
@@ -513,6 +512,7 @@ class AndroidArtifactsAPI(ArtifactsAPI):
                 "Android audio creation returned a different artifact family.",
                 method_id=CREATE_ARTIFACT_METHOD,
             )
+        validate_echoed_source_ids(artifact, source_ids, "audio", CREATE_ARTIFACT_METHOD)
         return GenerationStatus(
             task_id=artifact.id,
             status=_status_from_code(artifact.status),
@@ -836,6 +836,11 @@ class AndroidArtifactsAPI(ArtifactsAPI):
                 "Android slide revision returned a different artifact family.",
                 method_id=DERIVE_ARTIFACT_METHOD,
             )
+        if artifact.id == artifact_id:
+            raise DecodingError(
+                "Android slide revision reused the original artifact id.",
+                method_id=DERIVE_ARTIFACT_METHOD,
+            )
         return GenerationStatus(
             task_id=artifact.id,
             status=_status_from_code(artifact.status),
@@ -852,15 +857,19 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         language: str | None = "en",
         instructions: str | None = None,
     ) -> MindMapResult:
+        if instructions is not None and not isinstance(instructions, str):
+            raise ValidationError("instructions must be a string or None")
         language_code = _validate_audio_language(self._resolve_language(language))
-        selected_sources = await self._resolve_source_ids(notebook_id, source_ids)
-        return await generate_note_backed_mind_map(
-            self._transport,
-            notebook_id,
-            selected_sources,
-            language=language_code,
-            instructions=instructions,
-        )
+        async with self._transport.operation_scope("artifacts.generate_mind_map") as lease:
+            selected_sources = await self._resolve_source_ids(notebook_id, source_ids)
+            return await generate_note_backed_mind_map(
+                self._transport,
+                notebook_id,
+                selected_sources,
+                language=language_code,
+                instructions=instructions,
+                expected_epoch=lease.epoch,
+            )
 
     async def _generate_interactive_mind_map(
         self,
@@ -1145,19 +1154,19 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         mind_maps: builtins.list[Any] | None = None,
         artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
-        if mind_maps is None:
-            mind_maps = await self._mind_maps.list_note_backed_mind_maps(notebook_id)
-        note_backed = select_note_backed_mind_map(mind_maps, mind_map_id=artifact_id)
-        if note_backed is not None:
-            if note_backed.tree is None:
-                raise ArtifactNotReadyError("mind_map", artifact_id=note_backed.id)
-            return await write_text_atomic(
-                output_path,
-                json.dumps(note_backed.tree, indent=2, ensure_ascii=False),
-                artifact_type="mind_map",
-                artifact_id=note_backed.id,
-            )
         async with self._transport.operation_scope("artifacts.download_mind_map") as lease:
+            if mind_maps is None:
+                mind_maps = await self._mind_maps.list_note_backed_mind_maps(notebook_id)
+            note_backed = select_note_backed_mind_map(mind_maps, mind_map_id=artifact_id)
+            if note_backed is not None:
+                if note_backed.tree is None:
+                    raise ArtifactNotReadyError("mind_map", artifact_id=note_backed.id)
+                return await write_text_atomic(
+                    output_path,
+                    json.dumps(note_backed.tree, indent=2, ensure_ascii=False),
+                    artifact_type="mind_map",
+                    artifact_id=note_backed.id,
+                )
             selected = await self._select_completed_studio_at_epoch(
                 notebook_id,
                 artifact_id,

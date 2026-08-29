@@ -95,10 +95,11 @@ fixtures. Hashes prevent a later local checkout from silently changing what was 
 | Evidence input | SHA-256 | Role |
 |---|---|---|
 | exact-package orchestration `supported.proto` | `829c4ee871fd66421ee098fa266793ec68773e625ff005cc519b2c0f7c191ae9` | service/message FQNs, package, tags, cardinality, import origin |
+| exact-package agency `supported.proto` | `991848507073973890527025f46ea3e0d35f86fad31ca52661394c54f371f643` | exact agency package/FQNs and `TailwindValue`, `TailwindStruct`, `FunctionCall`, and `FunctionResponse` field closure imported by `TailwindDoc` |
 | exact-package `source_settings.proto` | `becd695c4281e23064c16fc1441c61117e5dc2a44c52cadf44af9e31c7cb8b18` | separate settings package, fields #2/#4, complete enums |
 | exact-package sharing `supported.proto` | `f966dfebebe5eee213ad53607d2fddd44c8c33892f2a338d734491d9fb7b4309` | sharing service/message FQNs, tags, cardinality, and common-protos import |
 | exact-package common `common.proto` | `0a2a7acbeebf3a97ad0fffa8b7496cb119c9f0fffb731011c47e9dba43313044` | exact `ChatSession` and `ProjectPublicSettings` message closure without duplicate declarations |
-| [`schema.proto`](schema.proto) | `4fd39a28affc04ce8fa663534a5f9dcbb5b44e157f034168d251024cd1a90905` | flattened Dart recovery used to identify gaps, never as a compile input; retains 13 zero-field messages and exact per-message package/library provenance |
+| [`schema.proto`](schema.proto) | `be9a1b43aab41a5509b1b1ccc15c25e8096a0edce37b118335d1179c90b704db` | flattened Dart recovery used to identify gaps, never as a compile input; retains 13 zero-field messages and exact per-message package/library provenance |
 | [`enums.txt`](enums.txt) | `8c8137c1842d07b54ba9e52feeea7c3ce09246415c26d964d17bec68eee228bc` | exhaustive enum names and integers |
 | blutter `pp.txt` | `2fc0bad6bee700cb628deb9ac1922eeea3d1255b51d8d2e1f63c5537d98965b0` | adjacent generated-client method paths, request/response generic bindings, and response constructors for the six formerly empty-response exceptions |
 | blutter `ida_script/addNames.py` | `982fcbf1c5ef1d7d0aa9d5d0ae8af3c6e6a7c575af9bdba1fc3d7469aa8bc511` | exact protobuf Dart-library identity for `Empty`, `DeleteNotesResponse`, and `ShareProjectResponse`; summarized in [`blutter-grpc-signature-evidence.md`](blutter-grpc-signature-evidence.md) |
@@ -462,9 +463,13 @@ retain their established builders.
 
 The compile inputs are
 [`chat.proto`](../../src/notebooklm/_android/proto_src/google/internal/labs/tailwind/orchestration/v1/chat.proto)
-(SHA-256 `147391d0a2aea74e64e2ff4c61a02d33d26c847144d3f239b45d35a68d6ca25c`) and
+(SHA-256 `f232bf0d5fdc7dcf770147e8f819435a0bc743046973ed83277a7cd37dff79ac`) and
 [`common.proto`](../../src/notebooklm/_android/proto_src/labs/language/tailwind/common/protos/common.proto)
 (SHA-256 `7d064bf11e3f01465e485004e6dbba078ae9b92f02be53ac2a8a4ac6a420af75`).
+The exact agency value closure is imported from
+[`agency/supported.proto`](../../src/notebooklm/_android/proto_src/google/internal/labs/tailwind/orchestration/v1/agency/supported.proto)
+(SHA-256 `991848507073973890527025f46ea3e0d35f86fad31ca52661394c54f371f643`),
+which is byte-identical to the pinned archived exact-package input above.
 The shared `InputSource` declaration is imported from
 [`sources.proto`](../../src/notebooklm/_android/proto_src/google/internal/labs/tailwind/orchestration/v1/sources.proto)
 rather than redeclared in the chat overlay.
@@ -493,7 +498,7 @@ the generated descriptors; no undeclared semantic leaf is available to the adapt
 | `orchestration.v1.TailwindDoc` | `body` (1; `Body`), `objects` (4; repeated `DocumentObject`), `type` (5; exact `ResponseType`) |
 | `orchestration.v1.Body` | `content` (1; repeated `StructuralElement`), `inline_object_locations` (2; repeated `AnnotationMapEntry`) |
 | `orchestration.v1.StructuralElement` | `start_index` (1; int32), `end_index` (2; int32), `paragraph` (3), `table` (5), `image` (6), `code_block` (7), `a2ui_block` (8), `thought` (9), `function_call` (10), `function_response` (11), `horizontal_rule` (12) |
-| `orchestration.v1.FunctionCall` / `FunctionResponse` | `name` (1), `args` (2; `TailwindStruct`) / `name` (1) |
+| `orchestration.v1.agency.FunctionCall` / `FunctionResponse` | `name` (1), `args` (2; `TailwindStruct`) / `name` (1) |
 | `orchestration.v1.Paragraph` / `ParagraphElement` / `TextRun` | `elements` (1; repeated), `paragraph_style` (2), `bullet_info` (4); `start_index` (1), `end_index` (2), `text_run` (3), `image` (4), `resource` (5); `content` (1), `text_style` (2) |
 | `orchestration.v1.Table` / `TableRow` / `TableCell` | `rows` (1), `columns` (2), `table_rows` (3; repeated); `start_index` (1), `end_index` (2), `table_cells` (3; repeated); `start_index` (1), `end_index` (2), `content` (3; repeated) |
 | `orchestration.v1.AnnotationMapEntry` / `ObjectId` / `Range` | `object_id` (1), `content_range` (2); `id` (1); `start_index` (2), `end_index` (3) |
@@ -789,16 +794,20 @@ unrecovered and undeclared rather than being mislabeled or reserved.
 ## Organization admission
 
 The archived exact-package `supported.proto` pinned above independently establishes the remote
-`GetLabelsRequest`, `GetLabelsResponse`, `LabelAndSources`, and service signature. The minimal
-`organization.proto` copies only those reachable fields and imports the already admitted exact
-`SourceId`. `GetLabels` is therefore an exact generated-stub method, not a signature exception.
+`GetLabelsRequest`, `GetLabelsResponse`, `LabelAndSources`, and service signature. It declares
+response field `#2` as another repeated `LabelAndSources`; authenticated Android-bearer rows instead
+prove that field contains notebook collections with the live-derived shape below. The minimal
+`organization.proto` therefore preserves the exact request/response FQNs, service binding, tags, and
+cardinality while explicitly correcting field `#2`'s message type from live evidence. `GetLabels`
+remains an exact generated-stub method, not a signature exception, but its field-`#2` type is not
+claimed as a literal copy of the archived descriptor.
 
-| Exact message | Admitted fields |
+| Evidence-qualified message | Admitted fields |
 |---|---|
 | `GetLabelsRequest` | `project_id #2`, `label_type #3` |
 | `LabelAndSources` | `label #1`, repeated `SourceId source_ids #2`, `label_id #3`, `emoji #4` |
-| `GetLabelsResponse` | repeated `label_and_sources #1`, repeated `notebook_collections #2` |
-| `NotebookCollection` | `name #1`, repeated string `notebook_ids #2`, `id #3`, `emoji #4` |
+| `GetLabelsResponse` | repeated `label_and_sources #1` (archived exact); repeated `NotebookCollection notebook_collections #2` (live-derived type correction; archive declares `LabelAndSources`) |
+| `NotebookCollection` | live-derived `name #1`, repeated string `notebook_ids #2`, `id #3`, `emoji #4` |
 | `CreateLabelResponse` | repeated `label_and_sources #2`, repeated `notebook_collections #3` |
 
 Live collection rows reuse outer record field `#2` but encode each notebook UUID as bare UTF-8,

@@ -283,6 +283,11 @@ class AndroidNotebooksAPI(NotebooksAPI):
                 "CopyProject response reused the source notebook id",
                 method_id=COPY_PROJECT_METHOD,
             )
+        if notebook.title != title:
+            raise DecodingError(
+                "CopyProject response returned an unexpected notebook title",
+                method_id=COPY_PROJECT_METHOD,
+            )
         self._remember_created_chat_session(notebook)
         return notebook
 
@@ -368,6 +373,21 @@ class AndroidNotebooksAPI(NotebooksAPI):
             replay_safe=False,
             response_type=_read_proto().Project,
         )
+        _notebook_codec().validate_project_identity(
+            response,
+            notebook_id,
+            method_id=MUTATE_PROJECT_METHOD,
+        )
+        if title is not None and response.title != title:
+            raise DecodingError(
+                "MutateProject response returned an unexpected notebook title",
+                method_id=MUTATE_PROJECT_METHOD,
+            )
+        if emoji is not None and response.emoji != emoji:
+            raise DecodingError(
+                "MutateProject response returned an unexpected notebook emoji",
+                method_id=MUTATE_PROJECT_METHOD,
+            )
         return _notebook_codec().decode_project(response, method_id=MUTATE_PROJECT_METHOD)
 
     async def get_summary(self, notebook_id: str) -> str:

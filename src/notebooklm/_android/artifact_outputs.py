@@ -15,7 +15,7 @@ from typing import Any
 from .._artifact.formatters import _extract_app_data
 from .._types.artifact_content import ArtifactMediaType
 from .._types.enums import INTERACTIVE_MIND_MAP_VARIANT, ArtifactTypeCode
-from ..exceptions import ArtifactDownloadError, ArtifactParseError, ValidationError
+from ..exceptions import ArtifactDownloadError, ArtifactParseError, DecodingError, ValidationError
 from ..types import Artifact, ArtifactType, MindMap, MindMapKind
 from .artifact_proto import ARTIFACTS_PROTO as _PROTO
 from .artifact_proto import table_artifact_projection
@@ -36,6 +36,27 @@ def matches_artifact_type(artifact: Artifact, requested: ArtifactType | None) ->
     return artifact.kind == requested
 
 
+def validate_artifact_language(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValidationError("language must be a non-empty string")
+    return value
+
+
+def validate_echoed_source_ids(
+    artifact: Artifact,
+    requested_source_ids: builtins.list[str],
+    family_label: str,
+    method_id: str,
+) -> None:
+    """Reject a populated creation echo that belongs to different sources."""
+
+    if artifact.source_ids and set(artifact.source_ids) != set(requested_source_ids):
+        raise DecodingError(
+            f"Android {family_label} creation returned different source ids.",
+            method_id=method_id,
+        )
+
+
 async def write_text_atomic(
     output_path: str,
     content: str,
@@ -47,8 +68,9 @@ async def write_text_atomic(
 
     destination = Path(output_path)
     failure: bool = False
+    staging: Path | None = None
 
-    def _write(payload: str) -> None:
+    def _write_staging(payload: str) -> Path:
         destination.parent.mkdir(parents=True, exist_ok=True)
         descriptor, staging_name = tempfile.mkstemp(
             prefix=f".{destination.name}.",
@@ -60,7 +82,7 @@ async def write_text_atomic(
                 handle.write(payload)
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(staging_name, destination)
+            return Path(staging_name)
         except BaseException:
             try:
                 os.unlink(staging_name)
@@ -68,11 +90,46 @@ async def write_text_atomic(
                 pass
             raise
 
+    worker = asyncio.create_task(asyncio.to_thread(_write_staging, content))
     try:
-        await asyncio.to_thread(_write, content)
+        try:
+            # Shield the worker so caller cancellation cannot abandon a live
+            # filesystem thread. Publication stays on the event-loop thread,
+            # after the final cancellation point, so a cancelled caller can
+            # only leave a fully settled and removed staging file.
+            staging = await asyncio.shield(worker)
+        except asyncio.CancelledError as cancellation:
+            while True:
+                try:
+                    staging = await asyncio.shield(worker)
+                    break
+                except asyncio.CancelledError:
+                    if worker.done():
+                        try:
+                            staging = worker.result()
+                        except (OSError, UnicodeError):
+                            pass
+                        break
+                    continue
+                except (OSError, UnicodeError):
+                    break
+            if staging is not None:
+                try:
+                    staging.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                staging = None
+            raise cancellation
+        os.replace(staging, destination)
+        staging = None
     except (OSError, UnicodeError):
         failure = True
     finally:
+        if staging is not None:
+            try:
+                staging.unlink(missing_ok=True)
+            except OSError:
+                pass
         del content
     if failure:
         raise ArtifactDownloadError(

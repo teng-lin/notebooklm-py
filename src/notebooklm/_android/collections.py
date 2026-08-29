@@ -109,6 +109,16 @@ class AndroidCollectionsAPI(CollectionsAPI):
                     f"Android response, found {len(created)}"
                 )
             (collection,) = created
+            if (
+                collection.name != name
+                or (collection.emoji or "") != ""
+                or bool(collection.notebook_ids)
+            ):
+                raise DecodingError(
+                    "Android collection create response did not echo the requested empty "
+                    "collection",
+                    method_id=CREATE_LABEL_METHOD,
+                )
             return collection
 
     async def rename(

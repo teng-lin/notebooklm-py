@@ -936,6 +936,56 @@ def test_display_name_inside_wrb_payload_scrubbed() -> None:
     assert "SCRUBBED_AVATAR_URL" in scrubbed
 
 
+def test_gbar_config_display_name_scrubbed_and_detected() -> None:
+    """The Google account CONFIG positional name is redacted structurally."""
+    raw = (
+        '[["SCRUBBED_EMAIL@example.com","","opaque",0,0,null,"",1,'
+        '"Alice Example","https://lh3.googleusercontent.com/a/avatar=s32"]]'
+    )
+    ok, leaks = is_clean(
+        raw.replace("https://lh3.googleusercontent.com/a/avatar=s32", "SCRUBBED_AVATAR_URL")
+    )
+    assert not ok
+    assert any("gbar display name" in leak for leak in leaks)
+
+    scrubbed = scrub_string(raw)
+    assert "Alice Example" not in scrubbed
+    assert '"SCRUBBED_NAME","SCRUBBED_AVATAR_URL"' in scrubbed
+    assert is_clean(scrubbed) == (True, [])
+
+
+def test_gbar_config_account_id_scrubbed_and_detected() -> None:
+    """The opaque account-linked CONFIG value never reaches a cassette."""
+    raw = (
+        '[["SCRUBBED_EMAIL@example.com","","opaque-account-identifier",'
+        '0,0,null,"",1,"SCRUBBED_NAME","SCRUBBED_AVATAR_URL"]]'
+    )
+    ok, leaks = is_clean(raw)
+    assert not ok
+    assert any("gbar account ID" in leak for leak in leaks)
+
+    scrubbed = scrub_string(raw)
+    assert "opaque-account-identifier" not in scrubbed
+    assert "SCRUBBED_ACCOUNT_ID" in scrubbed
+    assert is_clean(scrubbed) == (True, [])
+
+
+def test_account_menu_display_name_scrubbed_and_detected() -> None:
+    """A profile-menu name adjacent to the account email cannot survive."""
+    raw = (
+        '<div class="build-name">Alice Example</div>'
+        '<div class="build-email">SCRUBBED_EMAIL@example.com</div>'
+    )
+    ok, leaks = is_clean(raw)
+    assert not ok
+    assert any("account-menu display name" in leak for leak in leaks)
+
+    scrubbed = scrub_string(raw)
+    assert "Alice Example" not in scrubbed
+    assert "SCRUBBED_NAME" in scrubbed
+    assert is_clean(scrubbed) == (True, [])
+
+
 def test_avatar_url_a_path_scrubbed() -> None:
     """The ``/a/`` avatar URL form is scrubbed to SCRUBBED_AVATAR_URL."""
     url = "https://lh3.googleusercontent.com/a/ACg8ocImrMoQR5mQnUHZzuc6Tat88aWfSwMre0nCoCanft5bLuZ3dTV0=s512"

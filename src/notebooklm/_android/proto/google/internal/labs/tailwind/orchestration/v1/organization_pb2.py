@@ -26,7 +26,7 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
 from notebooklm._android.proto.labs.language.tailwind.common.protos import metadata_pb2 as labs_dot_language_dot_tailwind_dot_common_dot_protos_dot_metadata__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\nAgoogle/internal/labs/tailwind/orchestration/v1/organization.proto\x12.google.internal.labs.tailwind.orchestration.v1\x1a\x39google/internal/labs/tailwind/orchestration/v1/read.proto\x1a\x33labs/language/tailwind/common/protos/metadata.proto\"\x8f\x01\n\x0fLabelAndSources\x12\r\n\x05label\x18\x01 \x01(\t\x12L\n\nsource_ids\x18\x02 \x03(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.SourceId\x12\x10\n\x08label_id\x18\x03 \x01(\t\x12\r\n\x05\x65moji\x18\x04 \x01(\t\":\n\x10GetLabelsRequest\x12\x12\n\nproject_id\x18\x02 \x01(\t\x12\x12\n\nlabel_type\x18\x03 \x01(\x05\"\xce\x01\n\x11GetLabelsResponse\x12Z\n\x11label_and_sources\x18\x01 \x03(\x0b\x32?.google.internal.labs.tailwind.orchestration.v1.LabelAndSources\x12]\n\x14notebook_collections\x18\x02 \x03(\x0b\x32?.google.internal.labs.tailwind.orchestration.v1.LabelAndSources\"K\n\x0fLabelProperties\x12\x11\n\x04name\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\x12\n\x05\x65moji\x18\x02 \x01(\tH\x01\x88\x01\x01\x42\x07\n\x05_nameB\x08\n\x06_emoji\"\x92\x01\n\x11ManualCreateLabel\x12S\n\nproperties\x18\x01 \x01(\x0b\x32?.google.internal.labs.tailwind.orchestration.v1.LabelProperties\x12\x12\n\nsource_ids\x18\x02 \x03(\t\x12\x14\n\x0cnotebook_ids\x18\x03 \x03(\t\"A\n\x0f\x41utoCreateLabel\x12\x1b\n\x0eregenerate_all\x18\x01 \x01(\x08H\x00\x88\x01\x01\x42\x11\n\x0f_regenerate_all\"\xce\x02\n\x12\x43reateLabelRequest\x12M\n\x0frequest_context\x18\x01 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.RequestContext\x12\x12\n\nproject_id\x18\x02 \x01(\t\x12V\n\x0b\x61uto_create\x18\x05 \x01(\x0b\x32?.google.internal.labs.tailwind.orchestration.v1.AutoCreateLabelH\x00\x12Z\n\rmanual_create\x18\x06 \x01(\x0b\x32\x41.google.internal.labs.tailwind.orchestration.v1.ManualCreateLabelH\x00\x12\x12\n\nlabel_type\x18\x07 \x01(\x05\x42\r\n\x0b\x63reate_mode\"\xd3\x01\n\x13\x43reateLabelResponse\x12Z\n\x11label_and_sources\x18\x02 \x03(\x0b\x32?.google.internal.labs.tailwind.orchestration.v1.LabelAndSources\x12`\n\x14notebook_collections\x18\x03 \x03(\x0b\x32\x42.google.internal.labs.tailwind.orchestration.v1.NotebookCollection\"S\n\x12NotebookCollection\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x14\n\x0cnotebook_ids\x18\x02 \x03(\t\x12\n\n\x02id\x18\x03 \x01(\t\x12\r\n\x05\x65moji\x18\x04 \x01(\t\"Q\n\x15MutateLabelProperties\x12\x11\n\x04name\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\x12\n\x05\x65moji\x18\x02 \x01(\tH\x01\x88\x01\x01\x42\x07\n\x05_nameB\x08\n\x06_emoji\"(\n\x12\x41\x64\x64SourcesMutation\x12\x12\n\nmember_ids\x18\x01 \x03(\t\"+\n\x15RemoveSourcesMutation\x12\x12\n\nmember_ids\x18\x01 \x03(\t\"*\n\x14\x41\x64\x64NotebooksMutation\x12\x12\n\nmember_ids\x18\x01 \x03(\t\"-\n\x17RemoveNotebooksMutation\x12\x12\n\nmember_ids\x18\x01 \x03(\t\"\xf8\x03\n\rLabelMutation\x12[\n\nproperties\x18\x01 \x01(\x0b\x32\x45.google.internal.labs.tailwind.orchestration.v1.MutateLabelPropertiesH\x00\x12Y\n\x0b\x61\x64\x64_sources\x18\x02 \x01(\x0b\x32\x42.google.internal.labs.tailwind.orchestration.v1.AddSourcesMutationH\x00\x12_\n\x0eremove_sources\x18\x03 \x01(\x0b\x32\x45.google.internal.labs.tailwind.orchestration.v1.RemoveSourcesMutationH\x00\x12]\n\radd_notebooks\x18\x04 \x01(\x0b\x32\x44.google.internal.labs.tailwind.orchestration.v1.AddNotebooksMutationH\x00\x12\x63\n\x10remove_notebooks\x18\x05 \x01(\x0b\x32G.google.internal.labs.tailwind.orchestration.v1.RemoveNotebooksMutationH\x00\x42\n\n\x08mutation\"\xef\x01\n\x12MutateLabelRequest\x12M\n\x0frequest_context\x18\x01 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.RequestContext\x12\x12\n\nproject_id\x18\x02 \x01(\t\x12\x10\n\x08label_id\x18\x03 \x01(\t\x12P\n\tmutations\x18\x04 \x03(\x0b\x32=.google.internal.labs.tailwind.orchestration.v1.LabelMutation\x12\x12\n\nlabel_type\x18\x05 \x01(\x05\"\x15\n\x13MutateLabelResponse\"\x9f\x01\n\x13\x44\x65leteLabelsRequest\x12M\n\x0frequest_context\x18\x01 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.RequestContext\x12\x12\n\nproject_id\x18\x02 \x01(\t\x12\x11\n\tlabel_ids\x18\x03 \x03(\t\x12\x12\n\nlabel_type\x18\x04 \x01(\x05\"\x16\n\x14\x44\x65leteLabelsResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\nAgoogle/internal/labs/tailwind/orchestration/v1/organization.proto\x12.google.internal.labs.tailwind.orchestration.v1\x1a\x39google/internal/labs/tailwind/orchestration/v1/read.proto\x1a\x33labs/language/tailwind/common/protos/metadata.proto\"\x8f\x01\n\x0fLabelAndSources\x12\r\n\x05label\x18\x01 \x01(\t\x12L\n\nsource_ids\x18\x02 \x03(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.SourceId\x12\x10\n\x08label_id\x18\x03 \x01(\t\x12\r\n\x05\x65moji\x18\x04 \x01(\t\":\n\x10GetLabelsRequest\x12\x12\n\nproject_id\x18\x02 \x01(\t\x12\x12\n\nlabel_type\x18\x03 \x01(\x05\"\xd1\x01\n\x11GetLabelsResponse\x12Z\n\x11label_and_sources\x18\x01 \x03(\x0b\x32?.google.internal.labs.tailwind.orchestration.v1.LabelAndSources\x12`\n\x14notebook_collections\x18\x02 \x03(\x0b\x32\x42.google.internal.labs.tailwind.orchestration.v1.NotebookCollection\"K\n\x0fLabelProperties\x12\x11\n\x04name\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\x12\n\x05\x65moji\x18\x02 \x01(\tH\x01\x88\x01\x01\x42\x07\n\x05_nameB\x08\n\x06_emoji\"\x92\x01\n\x11ManualCreateLabel\x12S\n\nproperties\x18\x01 \x01(\x0b\x32?.google.internal.labs.tailwind.orchestration.v1.LabelProperties\x12\x12\n\nsource_ids\x18\x02 \x03(\t\x12\x14\n\x0cnotebook_ids\x18\x03 \x03(\t\"A\n\x0f\x41utoCreateLabel\x12\x1b\n\x0eregenerate_all\x18\x01 \x01(\x08H\x00\x88\x01\x01\x42\x11\n\x0f_regenerate_all\"\xce\x02\n\x12\x43reateLabelRequest\x12M\n\x0frequest_context\x18\x01 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.RequestContext\x12\x12\n\nproject_id\x18\x02 \x01(\t\x12V\n\x0b\x61uto_create\x18\x05 \x01(\x0b\x32?.google.internal.labs.tailwind.orchestration.v1.AutoCreateLabelH\x00\x12Z\n\rmanual_create\x18\x06 \x01(\x0b\x32\x41.google.internal.labs.tailwind.orchestration.v1.ManualCreateLabelH\x00\x12\x12\n\nlabel_type\x18\x07 \x01(\x05\x42\r\n\x0b\x63reate_mode\"\xd3\x01\n\x13\x43reateLabelResponse\x12Z\n\x11label_and_sources\x18\x02 \x03(\x0b\x32?.google.internal.labs.tailwind.orchestration.v1.LabelAndSources\x12`\n\x14notebook_collections\x18\x03 \x03(\x0b\x32\x42.google.internal.labs.tailwind.orchestration.v1.NotebookCollection\"S\n\x12NotebookCollection\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x14\n\x0cnotebook_ids\x18\x02 \x03(\t\x12\n\n\x02id\x18\x03 \x01(\t\x12\r\n\x05\x65moji\x18\x04 \x01(\t\"Q\n\x15MutateLabelProperties\x12\x11\n\x04name\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\x12\n\x05\x65moji\x18\x02 \x01(\tH\x01\x88\x01\x01\x42\x07\n\x05_nameB\x08\n\x06_emoji\"(\n\x12\x41\x64\x64SourcesMutation\x12\x12\n\nmember_ids\x18\x01 \x03(\t\"+\n\x15RemoveSourcesMutation\x12\x12\n\nmember_ids\x18\x01 \x03(\t\"*\n\x14\x41\x64\x64NotebooksMutation\x12\x12\n\nmember_ids\x18\x01 \x03(\t\"-\n\x17RemoveNotebooksMutation\x12\x12\n\nmember_ids\x18\x01 \x03(\t\"\xf8\x03\n\rLabelMutation\x12[\n\nproperties\x18\x01 \x01(\x0b\x32\x45.google.internal.labs.tailwind.orchestration.v1.MutateLabelPropertiesH\x00\x12Y\n\x0b\x61\x64\x64_sources\x18\x02 \x01(\x0b\x32\x42.google.internal.labs.tailwind.orchestration.v1.AddSourcesMutationH\x00\x12_\n\x0eremove_sources\x18\x03 \x01(\x0b\x32\x45.google.internal.labs.tailwind.orchestration.v1.RemoveSourcesMutationH\x00\x12]\n\radd_notebooks\x18\x04 \x01(\x0b\x32\x44.google.internal.labs.tailwind.orchestration.v1.AddNotebooksMutationH\x00\x12\x63\n\x10remove_notebooks\x18\x05 \x01(\x0b\x32G.google.internal.labs.tailwind.orchestration.v1.RemoveNotebooksMutationH\x00\x42\n\n\x08mutation\"\xef\x01\n\x12MutateLabelRequest\x12M\n\x0frequest_context\x18\x01 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.RequestContext\x12\x12\n\nproject_id\x18\x02 \x01(\t\x12\x10\n\x08label_id\x18\x03 \x01(\t\x12P\n\tmutations\x18\x04 \x03(\x0b\x32=.google.internal.labs.tailwind.orchestration.v1.LabelMutation\x12\x12\n\nlabel_type\x18\x05 \x01(\x05\"\x15\n\x13MutateLabelResponse\"\x9f\x01\n\x13\x44\x65leteLabelsRequest\x12M\n\x0frequest_context\x18\x01 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.RequestContext\x12\x12\n\nproject_id\x18\x02 \x01(\t\x12\x11\n\tlabel_ids\x18\x03 \x03(\t\x12\x12\n\nlabel_type\x18\x04 \x01(\x05\"\x16\n\x14\x44\x65leteLabelsResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -38,37 +38,37 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_GETLABELSREQUEST']._serialized_start=375
   _globals['_GETLABELSREQUEST']._serialized_end=433
   _globals['_GETLABELSRESPONSE']._serialized_start=436
-  _globals['_GETLABELSRESPONSE']._serialized_end=642
-  _globals['_LABELPROPERTIES']._serialized_start=644
-  _globals['_LABELPROPERTIES']._serialized_end=719
-  _globals['_MANUALCREATELABEL']._serialized_start=722
-  _globals['_MANUALCREATELABEL']._serialized_end=868
-  _globals['_AUTOCREATELABEL']._serialized_start=870
-  _globals['_AUTOCREATELABEL']._serialized_end=935
-  _globals['_CREATELABELREQUEST']._serialized_start=938
-  _globals['_CREATELABELREQUEST']._serialized_end=1272
-  _globals['_CREATELABELRESPONSE']._serialized_start=1275
-  _globals['_CREATELABELRESPONSE']._serialized_end=1486
-  _globals['_NOTEBOOKCOLLECTION']._serialized_start=1488
-  _globals['_NOTEBOOKCOLLECTION']._serialized_end=1571
-  _globals['_MUTATELABELPROPERTIES']._serialized_start=1573
-  _globals['_MUTATELABELPROPERTIES']._serialized_end=1654
-  _globals['_ADDSOURCESMUTATION']._serialized_start=1656
-  _globals['_ADDSOURCESMUTATION']._serialized_end=1696
-  _globals['_REMOVESOURCESMUTATION']._serialized_start=1698
-  _globals['_REMOVESOURCESMUTATION']._serialized_end=1741
-  _globals['_ADDNOTEBOOKSMUTATION']._serialized_start=1743
-  _globals['_ADDNOTEBOOKSMUTATION']._serialized_end=1785
-  _globals['_REMOVENOTEBOOKSMUTATION']._serialized_start=1787
-  _globals['_REMOVENOTEBOOKSMUTATION']._serialized_end=1832
-  _globals['_LABELMUTATION']._serialized_start=1835
-  _globals['_LABELMUTATION']._serialized_end=2339
-  _globals['_MUTATELABELREQUEST']._serialized_start=2342
-  _globals['_MUTATELABELREQUEST']._serialized_end=2581
-  _globals['_MUTATELABELRESPONSE']._serialized_start=2583
-  _globals['_MUTATELABELRESPONSE']._serialized_end=2604
-  _globals['_DELETELABELSREQUEST']._serialized_start=2607
-  _globals['_DELETELABELSREQUEST']._serialized_end=2766
-  _globals['_DELETELABELSRESPONSE']._serialized_start=2768
-  _globals['_DELETELABELSRESPONSE']._serialized_end=2790
+  _globals['_GETLABELSRESPONSE']._serialized_end=645
+  _globals['_LABELPROPERTIES']._serialized_start=647
+  _globals['_LABELPROPERTIES']._serialized_end=722
+  _globals['_MANUALCREATELABEL']._serialized_start=725
+  _globals['_MANUALCREATELABEL']._serialized_end=871
+  _globals['_AUTOCREATELABEL']._serialized_start=873
+  _globals['_AUTOCREATELABEL']._serialized_end=938
+  _globals['_CREATELABELREQUEST']._serialized_start=941
+  _globals['_CREATELABELREQUEST']._serialized_end=1275
+  _globals['_CREATELABELRESPONSE']._serialized_start=1278
+  _globals['_CREATELABELRESPONSE']._serialized_end=1489
+  _globals['_NOTEBOOKCOLLECTION']._serialized_start=1491
+  _globals['_NOTEBOOKCOLLECTION']._serialized_end=1574
+  _globals['_MUTATELABELPROPERTIES']._serialized_start=1576
+  _globals['_MUTATELABELPROPERTIES']._serialized_end=1657
+  _globals['_ADDSOURCESMUTATION']._serialized_start=1659
+  _globals['_ADDSOURCESMUTATION']._serialized_end=1699
+  _globals['_REMOVESOURCESMUTATION']._serialized_start=1701
+  _globals['_REMOVESOURCESMUTATION']._serialized_end=1744
+  _globals['_ADDNOTEBOOKSMUTATION']._serialized_start=1746
+  _globals['_ADDNOTEBOOKSMUTATION']._serialized_end=1788
+  _globals['_REMOVENOTEBOOKSMUTATION']._serialized_start=1790
+  _globals['_REMOVENOTEBOOKSMUTATION']._serialized_end=1835
+  _globals['_LABELMUTATION']._serialized_start=1838
+  _globals['_LABELMUTATION']._serialized_end=2342
+  _globals['_MUTATELABELREQUEST']._serialized_start=2345
+  _globals['_MUTATELABELREQUEST']._serialized_end=2584
+  _globals['_MUTATELABELRESPONSE']._serialized_start=2586
+  _globals['_MUTATELABELRESPONSE']._serialized_end=2607
+  _globals['_DELETELABELSREQUEST']._serialized_start=2610
+  _globals['_DELETELABELSREQUEST']._serialized_end=2769
+  _globals['_DELETELABELSRESPONSE']._serialized_start=2771
+  _globals['_DELETELABELSRESPONSE']._serialized_end=2793
 # @@protoc_insertion_point(module_scope)

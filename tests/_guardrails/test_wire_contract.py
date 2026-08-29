@@ -40,6 +40,7 @@ import pytest
 import notebooklm.rpc.types as rpc_types
 from notebooklm.rpc.types import ARTIFACT_STATUS_SUGGESTED_WIRE_NAME, ArtifactStatus
 from tests._guardrails._wire_contract import (
+    DOC,
     ENUM_BINDINGS,
     ENUM_GAPS,
     MAPPINGS,
@@ -172,6 +173,23 @@ def test_positional_constant_matches_proto_tag(mapping: Mapping) -> None:
         "Either the constant is wrong, or the mapping in _wire_contract.py names the "
         "wrong field. Do not 'fix' this by editing the expected value without "
         "checking a real captured response."
+    )
+
+
+def test_schema_parser_preserves_absolute_message_type_names() -> None:
+    """Exact-FQN evidence fields remain visible to positional guardrails."""
+    schema = load_proto_schema()
+    message = schema.find("StructuralElement", DOC)
+
+    function_call = message.field("functionCall")
+    function_response = message.field("functionResponse")
+    assert function_call is not None
+    assert function_call.type == (
+        ".google.internal.labs.tailwind.orchestration.v1.agency.FunctionCall"
+    )
+    assert function_response is not None
+    assert function_response.type == (
+        ".google.internal.labs.tailwind.orchestration.v1.agency.FunctionResponse"
     )
 
 

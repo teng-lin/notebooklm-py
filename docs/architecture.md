@@ -1345,6 +1345,9 @@ src/notebooklm/
 │           │   ├── artifacts_pb2_grpc.py    # Deterministic service-free companion
 │           │   ├── chat_pb2.py              # Service-free chat messages/descriptors
 │           │   ├── chat_pb2_grpc.py         # Deterministic service-free companion
+│           │   ├── agency/
+│           │   │   ├── supported_pb2.py      # Agency capability message closure
+│           │   │   └── supported_pb2_grpc.py # Deterministic service-free companion
 │           │   ├── notes_pb2.py             # Exact note CRUD overlay
 │           │   ├── notes_pb2_grpc.py        # Deterministic service-free companion
 │           │   ├── organization_pb2.py      # Exact GetLabels messages

@@ -7,13 +7,13 @@ from collections.abc import Callable
 from typing import Any, cast
 from uuid import uuid4
 
-from .._chat import ChatAPI, _PostedAsk
+from .._chat import _TURN_COUNT_INITIAL_LIMIT, _TURN_COUNT_MAX_LIMIT, ChatAPI, _PostedAsk
 from .._conversation_cache import ConversationCache
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
 from .._runtime.config import DEFAULT_CHAT_TIMEOUT, validate_read_timeout_kwarg
 from .._runtime.contracts import LoopGuard
 from .._types.enums import ChatGoal, ChatResponseLength
-from ..exceptions import ChatResponseParseError, UnknownRPCMethodError, ValidationError
+from ..exceptions import ChatError, ChatResponseParseError, UnknownRPCMethodError, ValidationError
 from ..types import ChatReference, ChatSettings, ConversationTurn, NextStepSuggestion, Note
 from .codecs.chat import decode_document, decode_history, decode_references, decode_turn_key
 from .codecs.notebooks import validate_project_identity
@@ -178,6 +178,31 @@ class AndroidChatAPI(ChatAPI):
         )
         return [turn.observed_event_type for turn in response.chat_turns[: max(0, limit)]]
 
+    async def _count_prior_server_turns(
+        self,
+        notebook_id: str,
+        conversation_id: str,
+    ) -> int:
+        """Count from Android's authoritative rows and exhaustion token."""
+        limit = _TURN_COUNT_INITIAL_LIMIT
+        while True:
+            response = await self.get_conversation_turns(
+                notebook_id,
+                conversation_id,
+                limit=limit,
+            )
+            roles = [turn.observed_event_type for turn in response.chat_turns]
+            question_count = sum(role == 1 for role in roles)
+            if len(roles) < limit or not response.next_page_token:
+                return question_count
+            if limit >= _TURN_COUNT_MAX_LIMIT:
+                raise ChatError(
+                    f"Conversation history filled the maximum "
+                    f"{_TURN_COUNT_MAX_LIMIT:,}-row snapshot; cannot derive an "
+                    "authoritative turn number."
+                )
+            limit *= 2
+
     @staticmethod
     def _conversation_history(cached_turns: list[ConversationTurn]) -> list[Any]:
         proto = _proto()
@@ -311,7 +336,7 @@ class AndroidChatAPI(ChatAPI):
 
         wire = _wire_proto()
         read_proto = _read_proto()
-        await self._transport.unary(
+        response = await self._transport.unary(
             MUTATE_PROJECT_METHOD,
             wire.WireMutateProjectRequest(
                 project_id=notebook_id,
@@ -333,6 +358,7 @@ class AndroidChatAPI(ChatAPI):
             replay_safe=False,
             response_type=read_proto.Project,
         )
+        validate_project_identity(response, notebook_id, method_id=MUTATE_PROJECT_METHOD)
 
     async def get_settings(self, notebook_id: str) -> ChatSettings:
         read_proto = _read_proto()

@@ -1,12 +1,13 @@
 """Unit tests for ``scripts/rescrub-cassettes.py``.
 
 These tests build synthetic "bad" cassettes that contain the exact leak
-shapes the script is meant to clean — an ``/ogw/`` avatar URL plus a
+shapes the script is meant to clean — an ``/ogw/`` avatar URL, an opaque
+account-shell identifier, plus a
 chunked WRB response whose declared byte counts are correct for the
 pre-scrub payload — then run the script in a tmp_path and assert:
 
-* The output no longer contains the raw avatar URL (the canonical
-  ``SCRUBBED_AVATAR_URL`` placeholder appears in its place).
+* The output no longer contains the raw avatar URL or account-shell identifier
+  (their canonical placeholders appear in place).
 * The chunked ``<count>\\n<payload>\\n`` byte-count prefixes were
   re-derived to match the post-scrub payload byte length — this is the
   ``recompute_chunk_prefix`` pass the script promises to run after
@@ -81,7 +82,13 @@ def _build_bad_cassette(path: Path) -> None:
         "https://lh3.googleusercontent.com/ogw/"
         "AF2bZyi16LQ_0jOcB_3NwTmyCfSFpN74FaCfwF0mWwtxF--cwSQ=s32-c-mo"
     )
-    html_body = f'<html><body><img src="{avatar_url}"><img src="{avatar_url}"></body></html>'
+    account_row = (
+        '[["SCRUBBED_EMAIL@example.com","","opaque-account-identifier",'
+        '0,0,null,"",1,"SCRUBBED_NAME","SCRUBBED_AVATAR_URL"]]'
+    )
+    html_body = (
+        f'<html><body><img src="{avatar_url}"><img src="{avatar_url}">{account_row}</body></html>'
+    )
     # Chunked WRB body. The payload references the avatar URL inside the
     # third-position of a wrb.fr envelope so scrub_string collapses it to
     # SCRUBBED_AVATAR_URL and the byte count needs to drop accordingly.
@@ -140,6 +147,8 @@ def test_script_scrubs_ogw_avatar_and_recomputes_byte_counts(tmp_path: Path) -> 
     # The avatar URLs are gone; the placeholder is in their place.
     assert "/ogw/" not in post, f"leak survived rescrub:\n{post}"
     assert "SCRUBBED_AVATAR_URL" in post, f"placeholder not emitted:\n{post}"
+    assert "opaque-account-identifier" not in post, f"account ID survived rescrub:\n{post}"
+    assert "SCRUBBED_ACCOUNT_ID" in post, f"account ID placeholder not emitted:\n{post}"
 
     # Byte counts are correct on the chunked interaction. We re-parse and
     # validate every digit-only header against the next-line payload, the

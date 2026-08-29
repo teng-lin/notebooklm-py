@@ -22,6 +22,7 @@ Assertions per batchexecute interaction (URL carries ``?rpcids=``):
 
 * **D. No leaked patterns** (applies to ALL interactions): escaped display-
   name JSON literals like ``\\"Capitalized Two Words\\"``,
+  opaque Google account-shell identifiers,
   ``lh3.googleusercontent.com/(a|ogw)/`` avatar URLs, and the literal IP
   ``108.5.149.175``.
 
@@ -486,6 +487,24 @@ def test_bad_sharing_trips_leak_check() -> None:
     assert any("escaped display-name" in f for f in failures), (
         f"Expected escaped display-name leak, got: {failures}"
     )
+
+
+def test_account_shell_display_names_trip_leak_check() -> None:
+    """Both non-JSON Google account-shell name shapes remain linted."""
+    gbar = '\\"Alice Example\\",\\"SCRUBBED_AVATAR_URL\\"'
+    menu = (
+        '<div class=\\"build-name\\">Alice Example</div>'
+        '<div class=\\"build-email\\">SCRUBBED_EMAIL@example.com</div>'
+    )
+
+    assert any("gbar display name" in leak for leak in _find_leaks(gbar))
+    assert any("account-menu display name" in leak for leak in _find_leaks(menu))
+
+
+def test_account_shell_opaque_id_trips_leak_check() -> None:
+    """The durable account-linked CONFIG identifier remains linted."""
+    gbar = '\\"SCRUBBED_EMAIL@example.com\\",\\"\\",\\"opaque-account-identifier\\"'
+    assert any("gbar account ID" in leak for leak in _find_leaks(gbar))
 
 
 def test_bad_byte_count_trips_byte_count_check() -> None:

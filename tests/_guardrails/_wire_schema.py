@@ -55,7 +55,9 @@ _SECTION_RE = re.compile(r"^//\s*=====\s*(?P<section>.+?)\s*=====\s*$")
 _MESSAGE_RE = re.compile(r"^message\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\{")
 _FIELD_RE = re.compile(
     r"^\s+(?:(?P<label>repeated|optional)\s+)?"
-    r"(?P<type>[A-Za-z_][A-Za-z0-9_.]*)\s+"
+    # Absolute protobuf type names begin with a dot. Preserve it so exact-FQN
+    # evidence remains parseable instead of silently dropping the field.
+    r"(?P<type>\.?[A-Za-z_][A-Za-z0-9_.]*)\s+"
     r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?P<tag>\d+)\s*;"
 )
 _ENUM_HEADER_RE = re.compile(r"^===\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s+\((?P<count>\d+)\)")

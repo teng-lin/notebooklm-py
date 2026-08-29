@@ -4,9 +4,10 @@
 Collapses every ``lh3.googleusercontent.com/(?:a|ogw)/<token>`` avatar URL to
 the canonical ``SCRUBBED_AVATAR_URL`` placeholder, every double-encoded
 ``authuser%3D<email>`` redirect param to ``authuser%3DSCRUBBED_EMAIL%40example.com``
-(issue #1368), and re-derives the chunked ``<count>\\n<payload>\\n`` byte-count
-prefixes inside every recorded response body. Writes back only if anything
-changed; idempotent on a clean tree.
+(issue #1368), and every durable account-shell CONFIG identifier to
+``SCRUBBED_ACCOUNT_ID``. It also re-derives the chunked
+``<count>\\n<payload>\\n`` byte-count prefixes inside every recorded response
+body. Writes back only if anything changed; idempotent on a clean tree.
 
 Why this script exists
 ----------------------
@@ -25,6 +26,11 @@ form only after 9 cassettes had already been recorded with the maintainer's
 email leaked inside Google account-menu ``continue=`` redirect URLs, so they
 need a re-scrub in place too.
 
+The opaque account-shell value is account-linked but has no stable field name:
+it appears at a positional boundary after the scrubbed email and an empty
+field. Importing that exact structural pattern from the canonical registry
+lets this utility clean recordings made before the pattern was known.
+
 Why we DON'T call ``scrub_string`` here
 ---------------------------------------
 ``cassette_patterns.scrub_string`` applies every pattern in
@@ -39,8 +45,9 @@ Caching Economics", ...) that would be silently clobbered to
 ``SCRUBBED_NAME`` and break the cli-vcr tests that rely on matching
 those titles in the parsed response.
 
-So the script applies ONLY the avatar-URL scrubber by name. Every other
-pattern in the registry — display names, emails, cookies, tokens — is
+So the script applies ONLY the three surgical, false-positive-free scrubbers
+named above. Every other pattern in the registry — display names, emails,
+cookies, tokens — is
 already correctly applied on record by ``vcr_config.scrub_response`` and
 has been for every cassette in the tree; running them again here cannot
 produce new scrubs (the registry is idempotent on its own placeholders),
@@ -124,6 +131,7 @@ sys.path.insert(0, str(_TESTS_DIR))
 
 from cassette_patterns import (  # noqa: E402
     AUTHUSER_EMAIL_DOUBLE_ENCODED_PATTERN,
+    GBAR_ACCOUNT_ID_PATTERN,
     recompute_chunk_prefix,
 )
 
@@ -150,17 +158,25 @@ _AVATAR_URL_REPLACEMENT = "SCRUBBED_AVATAR_URL"
 _AUTHUSER_EMAIL_DOUBLE_ENCODED_RE = re.compile(AUTHUSER_EMAIL_DOUBLE_ENCODED_PATTERN)
 _AUTHUSER_EMAIL_DOUBLE_ENCODED_REPLACEMENT = "authuser%3DSCRUBBED_EMAIL%40example.com"
 
+# Opaque account-linked identifier from the Google account-shell CONFIG row.
+# This is imported from the canonical registry so recording-time and bulk
+# repair behavior cannot drift.
+_GBAR_ACCOUNT_ID_RE = re.compile(GBAR_ACCOUNT_ID_PATTERN)
+_GBAR_ACCOUNT_ID_REPLACEMENT = r"\1SCRUBBED_ACCOUNT_ID\2"
+
 
 def _scrub_body_text(text: str) -> str:
     """Apply this script's surgical scrubbers to a single text body.
 
-    Replaces ``lh3...../(a|ogw)/<token>`` avatar URLs and double-encoded
-    ``authuser%3D<email>`` redirect params with their canonical placeholders.
+    Replaces ``lh3...../(a|ogw)/<token>`` avatar URLs, double-encoded
+    ``authuser%3D<email>`` redirect params, and account-shell opaque IDs with
+    their canonical placeholders.
     Isolated from the rest of the canonical registry by design — see the
     module docstring for why this script doesn't call ``scrub_string``.
     """
     text = _AVATAR_URL_RE.sub(_AVATAR_URL_REPLACEMENT, text)
     text = _AUTHUSER_EMAIL_DOUBLE_ENCODED_RE.sub(_AUTHUSER_EMAIL_DOUBLE_ENCODED_REPLACEMENT, text)
+    text = _GBAR_ACCOUNT_ID_RE.sub(_GBAR_ACCOUNT_ID_REPLACEMENT, text)
     return text
 
 
@@ -231,8 +247,8 @@ def _rescrub_cassette(path: Path) -> tuple[bool, int]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Bulk re-scrub VCR cassettes for lh3.googleusercontent.com/(a|ogw) "
-            "avatar URLs. Re-derives chunk byte-counts in the same pass. "
+            "Bulk re-scrub VCR cassettes for account-shell identity values. "
+            "Re-derives chunk byte-counts in the same pass. "
             "Idempotent."
         )
     )

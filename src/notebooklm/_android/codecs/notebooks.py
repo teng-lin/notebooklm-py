@@ -65,11 +65,16 @@ def validate_project_identity(
     *,
     method_id: str,
 ) -> None:
-    """Reject a nonempty GetProject identity that differs from its request."""
+    """Require an exact project identity on a project-bearing response."""
     echoed_id = str(getattr(project, "id", ""))
-    if echoed_id and echoed_id != expected_id:
+    if not echoed_id:
         raise DecodingError(
-            "Android GetProject returned an unexpected notebook id",
+            "Android project response did not contain a notebook id",
+            method_id=method_id,
+        )
+    if echoed_id != expected_id:
+        raise DecodingError(
+            "Android project response returned an unexpected notebook id",
             method_id=method_id,
         )
 

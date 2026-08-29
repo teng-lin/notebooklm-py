@@ -15,11 +15,15 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
     notebooks_pb2,
     sources_pb2,
 )
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1.agency import (
+    supported_pb2 as agency_pb2,
+)
 from notebooklm._android.proto.labs.language.tailwind.common.protos import common_pb2
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "android"
 ORCHESTRATION_PACKAGE = "google.internal.labs.tailwind.orchestration.v1"
+AGENCY_PACKAGE = f"{ORCHESTRATION_PACKAGE}.agency"
 COMMON_PACKAGE = "labs.language.tailwind.common.protos"
 
 
@@ -56,11 +60,14 @@ def test_chat_packages_imports_and_service_free_overlay_are_exact() -> None:
         "google/internal/labs/tailwind/orchestration/v1/read.proto",
         "google/internal/labs/tailwind/orchestration/v1/sources.proto",
         "google/internal/labs/tailwind/orchestration/v1/notebooks.proto",
+        "google/internal/labs/tailwind/orchestration/v1/agency/supported.proto",
         "google/protobuf/timestamp.proto",
         "labs/language/tailwind/common/protos/common.proto",
         "labs/language/tailwind/common/protos/metadata.proto",
     ]
     assert chat_pb2.DESCRIPTOR.services_by_name == {}
+    assert agency_pb2.DESCRIPTOR.package == AGENCY_PACKAGE
+    assert agency_pb2.DESCRIPTOR.services_by_name == {}
     assert common_pb2.DESCRIPTOR.services_by_name == {}
     assert _field_shapes(common_pb2.ChatSession) == {
         "chat_session_id": (1, False, FieldDescriptor.TYPE_STRING, None)
@@ -182,28 +189,28 @@ def test_chat_request_response_fields_are_exhaustive() -> None:
             "elements": (1, repeated, message, f"{o}.StructuralElement"),
         },
         chat_pb2.HorizontalRule: {},
-        chat_pb2.TailwindValue: {
+        agency_pb2.TailwindValue: {
             "number_value": (2, singular, double, None),
             "string_value": (3, singular, string, None),
             "bool_value": (4, singular, boolean, None),
         },
-        chat_pb2.TailwindStruct_TailwindStructEntry: {
+        agency_pb2.TailwindStructEntry: {
             "key": (1, singular, string, None),
-            "value": (2, singular, message, f"{o}.TailwindValue"),
+            "value": (2, singular, message, f"{AGENCY_PACKAGE}.TailwindValue"),
         },
-        chat_pb2.TailwindStruct: {
+        agency_pb2.TailwindStruct: {
             "fields": (
                 1,
                 repeated,
                 message,
-                f"{o}.TailwindStruct_TailwindStructEntry",
+                f"{AGENCY_PACKAGE}.TailwindStructEntry",
             ),
         },
-        chat_pb2.FunctionCall: {
+        agency_pb2.FunctionCall: {
             "name": (1, singular, string, None),
-            "args": (2, singular, message, f"{o}.TailwindStruct"),
+            "args": (2, singular, message, f"{AGENCY_PACKAGE}.TailwindStruct"),
         },
-        chat_pb2.FunctionResponse: {
+        agency_pb2.FunctionResponse: {
             "name": (1, singular, string, None),
         },
         chat_pb2.StructuralElement: {
@@ -215,8 +222,8 @@ def test_chat_request_response_fields_are_exhaustive() -> None:
             "code_block": (7, singular, message, f"{o}.CodeBlock"),
             "a2ui_block": (8, singular, message, f"{o}.A2uiBlock"),
             "thought": (9, singular, message, f"{o}.Thought"),
-            "function_call": (10, singular, message, f"{o}.FunctionCall"),
-            "function_response": (11, singular, message, f"{o}.FunctionResponse"),
+            "function_call": (10, singular, message, f"{AGENCY_PACKAGE}.FunctionCall"),
+            "function_response": (11, singular, message, f"{AGENCY_PACKAGE}.FunctionResponse"),
             "horizontal_rule": (12, singular, message, f"{o}.HorizontalRule"),
         },
         chat_pb2.Body: {
@@ -350,11 +357,21 @@ def test_chat_request_response_fields_are_exhaustive() -> None:
         },
     }
 
+    agency_message_types = {
+        agency_pb2.TailwindValue,
+        agency_pb2.TailwindStructEntry,
+        agency_pb2.TailwindStruct,
+        agency_pb2.FunctionCall,
+        agency_pb2.FunctionResponse,
+    }
     assert {
         message_type.DESCRIPTOR.name
         for message_type in expected
-        if message_type is not sources_pb2.InputSource
+        if message_type is not sources_pb2.InputSource and message_type not in agency_message_types
     } == set(chat_pb2.DESCRIPTOR.message_types_by_name)
+    assert {message_type.DESCRIPTOR.name for message_type in agency_message_types} == set(
+        agency_pb2.DESCRIPTOR.message_types_by_name
+    )
     for message_type, fields in expected.items():
         assert _field_shapes(message_type) == fields
 

@@ -1479,6 +1479,7 @@ cookies = [
     { name = "rookie-cookies" },
 ]
 dev = [
+    { name = "gpsoauth" },
     { name = "grpcio" },
     { name = "grpcio-tools" },
     { name = "mypy" },
@@ -1523,6 +1524,7 @@ requires-dist = [
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = "==3.4.2" },
     { name = "filelock", specifier = ">=3.13,<4" },
     { name = "gpsoauth", marker = "extra == 'android'", specifier = ">=1.1.0" },
+    { name = "gpsoauth", marker = "extra == 'dev'", specifier = ">=1.1.0" },
     { name = "gpsoauth", marker = "extra == 'headless'", specifier = ">=1.1.0" },
     { name = "grpcio", marker = "extra == 'android'", specifier = "==1.76.0" },
     { name = "grpcio", marker = "extra == 'dev'", specifier = "==1.76.0" },

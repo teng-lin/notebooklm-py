@@ -65,7 +65,7 @@ def test_generated_organization_package_fields_are_pinned() -> None:
             2,
             repeated,
             message,
-            f"{ORCHESTRATION_PACKAGE}.LabelAndSources",
+            f"{ORCHESTRATION_PACKAGE}.NotebookCollection",
         ),
     }
     assert _fields(organization_pb2.LabelProperties) == {
@@ -223,6 +223,23 @@ def test_generated_organization_package_fields_are_pinned() -> None:
         "label_type": (4, singular, int32, None),
     }
     assert _fields(organization_pb2.DeleteLabelsResponse) == {}
+
+
+def test_get_labels_collection_round_trips_raw_notebook_ids() -> None:
+    response = organization_pb2.GetLabelsResponse(
+        notebook_collections=[
+            organization_pb2.NotebookCollection(
+                name="Reading",
+                notebook_ids=["00000000-0000-4000-8000-000000000001"],
+                id="00000000-0000-4000-8000-000000000002",
+                emoji="📚",
+            )
+        ]
+    )
+
+    decoded = organization_pb2.GetLabelsResponse.FromString(response.SerializeToString())
+
+    assert decoded.notebook_collections[0].notebook_ids == ["00000000-0000-4000-8000-000000000001"]
 
 
 def test_repository_local_overlay_fields_are_exhaustive_and_visibly_local() -> None:

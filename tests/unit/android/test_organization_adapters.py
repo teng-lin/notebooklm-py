@@ -100,6 +100,7 @@ class FakeOrganizationServer:
         self.concurrent_label_ids: builtins.list[str] = []
         self.concurrent_collection_ids: builtins.list[str] = []
         self.failures: dict[int, BaseException] = {}
+        self.create_response_override: Any | None = None
         self.ignore_mutations = False
 
     @asynccontextmanager
@@ -217,6 +218,8 @@ class FakeOrganizationServer:
                         id=resource_id,
                         name="Concurrent",
                     )
+                if self.create_response_override is not None:
+                    return self.create_response_override
                 return organization_pb2.CreateLabelResponse(
                     notebook_collections=[
                         self._created_collection_row(collection)
@@ -241,6 +244,8 @@ class FakeOrganizationServer:
                         name="Concurrent",
                         notebook_id=request.project_id,
                     )
+                if self.create_response_override is not None:
+                    return self.create_response_override
                 return organization_pb2.CreateLabelResponse(
                     label_and_sources=[self._created_label_row(label) for label in created]
                 )
@@ -447,6 +452,67 @@ async def test_create_response_rejects_zero_or_multiple_rows(kind: str, new_coun
             await collections.create("ambiguous")
 
 
+@pytest.mark.parametrize(
+    "row",
+    [
+        organization_pb2.LabelAndSources(label="Wrong", label_id=LABEL_B, emoji="🧪"),
+        organization_pb2.LabelAndSources(
+            label="Requested",
+            label_id=LABEL_B,
+            emoji="wrong",
+        ),
+        organization_pb2.LabelAndSources(
+            label="Requested",
+            label_id=LABEL_B,
+            emoji="🧪",
+            source_ids=[read_pb2.SourceId(id=SOURCE_A)],
+        ),
+    ],
+    ids=["wrong-name", "wrong-emoji", "unexpected-member"],
+)
+async def test_label_create_rejects_uncorrelated_direct_response(row: Any) -> None:
+    server = FakeOrganizationServer()
+    server.create_response_override = organization_pb2.CreateLabelResponse(label_and_sources=[row])
+    labels, _collections = _apis(server)
+
+    with pytest.raises(DecodingError, match="requested empty label") as caught:
+        await labels.create(NB, "Requested", "🧪")
+
+    assert caught.value.method_id == CREATE_LABEL_METHOD
+    assert [method for method, _request, _kwargs in server.calls] == [CREATE_LABEL_METHOD]
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        organization_pb2.NotebookCollection(name="Wrong", id=COLLECTION_B),
+        organization_pb2.NotebookCollection(
+            name="Requested",
+            id=COLLECTION_B,
+            emoji="unexpected",
+        ),
+        organization_pb2.NotebookCollection(
+            name="Requested",
+            id=COLLECTION_B,
+            notebook_ids=[NB_A],
+        ),
+    ],
+    ids=["wrong-name", "wrong-emoji", "unexpected-member"],
+)
+async def test_collection_create_rejects_uncorrelated_direct_response(row: Any) -> None:
+    server = FakeOrganizationServer()
+    server.create_response_override = organization_pb2.CreateLabelResponse(
+        notebook_collections=[row]
+    )
+    _labels, collections = _apis(server)
+
+    with pytest.raises(DecodingError, match="requested empty collection") as caught:
+        await collections.create("Requested")
+
+    assert caught.value.method_id == CREATE_LABEL_METHOD
+    assert [method for method, _request, _kwargs in server.calls] == [CREATE_LABEL_METHOD]
+
+
 async def test_property_mutations_preserve_other_field_and_verify_readback() -> None:
     server = FakeOrganizationServer()
     labels, collections = _apis(server)
@@ -607,6 +673,76 @@ async def test_collection_membership_not_found_preserves_write_error_if_readback
     assert server.operation_scopes == [("collections.add_notebooks", None)]
 
 
+async def test_label_membership_not_found_maps_only_after_absence_readback() -> None:
+    present = FakeOrganizationServer()
+    ambiguous = RPCError("not found", method_id=MUTATE_LABEL_METHOD, rpc_code=5)
+    present.failures[1] = ambiguous
+    labels, _collections = _apis(present)
+
+    with pytest.raises(RPCError) as caught:
+        await labels.add_sources(NB, LABEL_A, [SOURCE_B])
+
+    assert caught.value is ambiguous
+    assert type(caught.value) is RPCError
+    assert [method for method, _request, _kwargs in present.calls] == [
+        MUTATE_LABEL_METHOD,
+        GET_LABELS_METHOD,
+    ]
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in present.calls] == [7, 7]
+    assert present.operation_scopes == [("labels.add_sources", None)]
+
+    absent = FakeOrganizationServer()
+    absent.labels[NB].pop(LABEL_A)
+    absent.failures[1] = RPCError("not found", method_id=MUTATE_LABEL_METHOD, rpc_code=5)
+    labels, _collections = _apis(absent)
+
+    with pytest.raises(LabelNotFoundError) as caught_miss:
+        await labels.remove_sources(NB, LABEL_A, [SOURCE_A])
+
+    assert caught_miss.value.label_id == LABEL_A
+    assert [method for method, _request, _kwargs in absent.calls] == [
+        MUTATE_LABEL_METHOD,
+        GET_LABELS_METHOD,
+    ]
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in absent.calls] == [7, 7]
+    assert absent.operation_scopes == [("labels.remove_sources", None)]
+
+
+@pytest.mark.parametrize(
+    "readback_failure",
+    [
+        RPCError("readback failed", method_id=GET_LABELS_METHOD, rpc_code=13),
+        NetworkError("readback connection failed", method_id=GET_LABELS_METHOD),
+        RPCTimeoutError(
+            "readback timed out",
+            timeout_seconds=1,
+            method_id=GET_LABELS_METHOD,
+        ),
+    ],
+    ids=["rpc", "network", "timeout"],
+)
+async def test_label_membership_not_found_preserves_write_error_if_readback_fails(
+    readback_failure: NetworkError | RPCError,
+) -> None:
+    server = FakeOrganizationServer()
+    ambiguous = RPCError("membership not found", method_id=MUTATE_LABEL_METHOD, rpc_code=5)
+    server.failures[1] = ambiguous
+    server.failures[2] = readback_failure
+    labels, _collections = _apis(server)
+
+    with pytest.raises(RPCError) as caught:
+        await labels.add_sources(NB, LABEL_A, [SOURCE_B])
+
+    assert caught.value is ambiguous
+    assert type(caught.value) is RPCError
+    assert [method for method, _request, _kwargs in server.calls] == [
+        MUTATE_LABEL_METHOD,
+        GET_LABELS_METHOD,
+    ]
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in server.calls] == [7, 7]
+    assert server.operation_scopes == [("labels.add_sources", None)]
+
+
 async def test_delete_filters_absent_ids_batches_existing_and_reads_back_absence() -> None:
     server = FakeOrganizationServer()
     labels, collections = _apis(server)
@@ -671,12 +807,16 @@ async def test_generate_validation_and_empty_operations_avoid_android_transport(
 
 async def test_status_five_maps_to_public_miss_and_retired_epoch_stops_later_io() -> None:
     server = FakeOrganizationServer()
+    server.labels[NB].pop(LABEL_A)
     server.failures[1] = RPCError("missing", method_id=MUTATE_LABEL_METHOD, rpc_code=5)
     labels, _collections = _apis(server)
     with pytest.raises(LabelNotFoundError) as caught:
         await labels.add_sources(NB, LABEL_A, [SOURCE_B])
     assert caught.value.label_id == LABEL_A
-    assert len(server.calls) == 1
+    assert [method for method, _request, _kwargs in server.calls] == [
+        MUTATE_LABEL_METHOD,
+        GET_LABELS_METHOD,
+    ]
 
     retired = FakeOrganizationServer()
     retired.failures[1] = RuntimeError("retired resource generation")

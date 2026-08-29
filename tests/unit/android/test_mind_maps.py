@@ -20,7 +20,7 @@ from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._notes import NotesAPI
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._types.research import MindMapResult
-from notebooklm.exceptions import MindMapNotFoundError, NoteNotFoundError
+from notebooklm.exceptions import ArtifactNotReadyError, MindMapNotFoundError, NoteNotFoundError
 from notebooklm.types import Artifact, GenerationStatus, MindMap, MindMapKind, Note
 
 
@@ -86,7 +86,9 @@ def _graph(
     artifact_api._list_all_studio = AsyncMock(return_value=artifacts or [])
     artifact_api.rename = AsyncMock()
     artifact_api.delete = AsyncMock()
-    artifact_api.wait_for_completion = AsyncMock()
+    artifact_api.wait_for_completion = AsyncMock(
+        return_value=GenerationStatus(task_id="interactive", status="completed")
+    )
     artifact_api.generate_mind_map = AsyncMock(
         return_value=MindMapResult(
             mind_map={"name": "Root", "children": []},
@@ -278,6 +280,31 @@ async def test_interactive_generate_without_wait_skips_poll_and_tree() -> None:
     assert result.id == "interactive"
     assert result.tree is None
     artifacts.wait_for_completion.assert_not_awaited()
+    artifacts._get_interactive_mind_map_tree.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal_status", ["failed", "removed"])
+async def test_interactive_generate_rejects_unsuccessful_terminal_wait_status(
+    terminal_status: str,
+) -> None:
+    api, artifacts, _ = _graph(artifacts=[_interactive_artifact()])
+    artifacts.wait_for_completion.return_value = GenerationStatus(
+        task_id="interactive",
+        status=terminal_status,
+        error="generation did not complete",
+    )
+
+    with pytest.raises(ArtifactNotReadyError, match=f"status: {terminal_status}"):
+        await api.generate(
+            "notebook-1",
+            ["source-1"],
+            kind=MindMapKind.INTERACTIVE,
+            wait=True,
+        )
+
+    artifacts.list.assert_not_awaited()
+    artifacts._list_all_studio.assert_not_awaited()
     artifacts._get_interactive_mind_map_tree.assert_not_awaited()
 
 

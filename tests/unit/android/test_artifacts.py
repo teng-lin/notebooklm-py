@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import threading
 import traceback
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -17,8 +18,10 @@ import pytest
 from google.protobuf import empty_pb2
 from tests._helpers.android_supervisor import SupervisedAndroidTransport
 
+from notebooklm._android import artifact_outputs
+from notebooklm._android import artifacts as android_artifacts
 from notebooklm._android import notes as android_notes
-from notebooklm._android.artifact_outputs import report_doc_markdown
+from notebooklm._android.artifact_outputs import report_doc_markdown, write_text_atomic
 from notebooklm._android.artifacts import (
     ACT_ON_SOURCES_METHOD,
     CREATE_ARTIFACT_METHOD,
@@ -189,6 +192,7 @@ def _artifact(
     variant: int = 0,
     etag: str = "etag-1",
     url: str | None = None,
+    source_ids: list[str] | None = None,
 ) -> Any:
     message = _PROTO.Artifact(
         artifact_id=artifact_id,
@@ -201,6 +205,8 @@ def _artifact(
         message.app.generation_options.app_type = variant
     if type_code == _PROTO.ARTIFACT_TYPE_INFOGRAPHIC and url is not None:
         message.infographic.infographics.add(title=title).image.url = url
+    for source_id in source_ids or []:
+        message.sources.add().source_id.id = source_id
     return message
 
 
@@ -606,6 +612,22 @@ async def test_generate_quiz_rejects_mismatched_response_family() -> None:
 
 
 @pytest.mark.asyncio
+async def test_generate_quiz_rejects_mismatched_nonempty_response_sources() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact(
+            "wrong-sources",
+            type_code=_PROTO.ARTIFACT_TYPE_APP,
+            variant=_PROTO.APP_TYPE_QUIZ,
+            source_ids=["source-2"],
+        )
+    )
+
+    with pytest.raises(DecodingError, match="different source ids"):
+        await api.generate_quiz("notebook-1", source_ids=["source-1"])
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("audio_length", "expected_length"),
     [
@@ -732,6 +754,21 @@ async def test_generate_audio_rejects_mismatched_response_family() -> None:
 
     assert [call[0] for call in session.calls] == [CREATE_ARTIFACT_METHOD]
     assert session.calls[0][2]["replay_safe"] is False
+
+
+@pytest.mark.asyncio
+async def test_generate_audio_rejects_mismatched_nonempty_response_sources() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact(
+            "wrong-sources",
+            type_code=_PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW,
+            source_ids=["source-2"],
+        )
+    )
+
+    with pytest.raises(DecodingError, match="different source ids"):
+        await api.generate_audio("notebook-1", source_ids=["source-1"])
 
 
 @pytest.mark.asyncio
@@ -1168,6 +1205,19 @@ async def test_revise_slide_requires_artifact_payload() -> None:
 
 
 @pytest.mark.asyncio
+async def test_revise_slide_requires_a_new_artifact_identity() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[DERIVE_ARTIFACT_METHOD] = _PROTO.DeriveArtifactResponse(
+        artifact=_artifact("slides", type_code=_PROTO.ARTIFACT_TYPE_SLIDES)
+    )
+
+    with pytest.raises(DecodingError, match="reused the original artifact id") as raised:
+        await api.revise_slide("notebook-1", "slides", 0, "prompt")
+
+    assert raised.value.method_id == DERIVE_ARTIFACT_METHOD
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("type_code", "representation", "method_name"),
     [
@@ -1427,6 +1477,44 @@ async def test_download_report_decodes_live_apk_report_doc_and_writes_atomically
     assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD, GET_ARTIFACT_METHOD]
 
 
+@pytest.mark.asyncio
+async def test_atomic_text_publication_settles_worker_without_publishing_after_cancellation(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_started = threading.Event()
+    write_release = threading.Event()
+
+    def _blocking_fsync(_descriptor: int) -> None:
+        write_started.set()
+        assert write_release.wait(timeout=5)
+
+    monkeypatch.setattr(artifact_outputs.os, "fsync", _blocking_fsync)
+    output = tmp_path / "cancelled.md"
+    task = asyncio.create_task(
+        write_text_atomic(
+            str(output),
+            "secret payload",
+            artifact_type="report",
+            artifact_id="report-1",
+        )
+    )
+    assert await asyncio.to_thread(write_started.wait, 5)
+
+    task.cancel()
+    await asyncio.sleep(0)
+    try:
+        assert not task.done()
+        assert not output.exists()
+    finally:
+        write_release.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not output.exists()
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_report_renderer_preserves_exact_non_sample_variants_and_citations() -> None:
     document = chat_pb2.TailwindDoc()
     paragraph = document.body.content.add().paragraph
@@ -1661,6 +1749,50 @@ async def test_download_note_backed_mind_map_self_fetches_without_prefetch(tmp_p
 
 
 @pytest.mark.asyncio
+async def test_download_note_backed_mind_map_holds_outer_scope_through_publication(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport = SupervisedAndroidTransport()
+    write_started = asyncio.Event()
+    write_release = asyncio.Event()
+    output = tmp_path / "note-map.json"
+    note_map = MindMap(
+        id="note-map",
+        notebook_id="notebook-1",
+        title="Note map",
+        kind=MindMapKind.NOTE_BACKED,
+        tree={"name": "Root", "children": []},
+    )
+
+    async def _blocked_write(output_path: str, *_args: Any, **_kwargs: Any) -> str:
+        write_started.set()
+        await write_release.wait()
+        return output_path
+
+    monkeypatch.setattr(android_artifacts, "write_text_atomic", _blocked_write)
+    task = asyncio.create_task(
+        _supervised_graph(transport).download_mind_map(
+            "notebook-1",
+            str(output),
+            "note-map",
+            mind_maps=[note_map],
+            artifacts_data=[],
+        )
+    )
+    await write_started.wait()
+
+    await transport.supervisor.stop_accepting(1)
+    idle = asyncio.create_task(transport.supervisor.wait_for_idle(1, 1.0))
+    await asyncio.sleep(0)
+    assert not idle.done()
+    write_release.set()
+
+    assert await task == str(output)
+    await idle
+
+
+@pytest.mark.asyncio
 async def test_interactive_mind_map_rejects_malformed_node_tree() -> None:
     raw = _artifact(
         "interactive",
@@ -1748,6 +1880,18 @@ async def test_generate_note_backed_mind_map_resolves_default_sources_natively(
     assert notebooks.calls == ["notebook-1"]
     request = session.calls[0][1]
     assert [source.source_id.id for source in request.sources] == ["source-1", "source-2"]
+
+
+@pytest.mark.asyncio
+async def test_generate_note_backed_mind_map_validates_instructions_before_io() -> None:
+    session, notebooks, _, _, api = _graph()
+
+    with pytest.raises(ValidationError, match="instructions must be a string or None"):
+        await api.generate_mind_map("notebook-1", instructions=cast(Any, 7))
+
+    assert notebooks.calls == []
+    assert session.scopes == []
+    assert session.calls == []
 
 
 @pytest.mark.asyncio
@@ -2207,6 +2351,55 @@ async def test_audio_source_resolution_and_mutation_finish_during_graceful_drain
         CREATE_ARTIFACT_METHOD,
     ]
     assert transport.calls[1][2]["expected_epoch"] == 1
+    await transport.supervisor.wait_for_idle(1, 0.1)
+
+
+@pytest.mark.asyncio
+async def test_note_mind_map_source_resolution_and_mutations_finish_during_graceful_drain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport = SupervisedAndroidTransport()
+    sources_started = asyncio.Event()
+    sources_release = asyncio.Event()
+
+    async def _sources(_request: Any, _kwargs: dict[str, Any]) -> Any:
+        sources_started.set()
+        await sources_release.wait()
+        return ["source-1"]
+
+    transport.handlers["notebooks.get_source_ids"] = _sources
+    transport.handlers[ACT_ON_SOURCES_METHOD] = chat_pb2.ActOnSourcesResponse(
+        response=chat_pb2.AnswerResponse(response='{"name":"Root","children":[]}')
+    )
+    create = AsyncMock(
+        return_value=Note(
+            id="note-1",
+            notebook_id="notebook-1",
+            title="Root",
+            content='{"name":"Root","children":[]}',
+        )
+    )
+    monkeypatch.setattr(android_notes, "create_note", create)
+    api = _supervised_graph(transport, notebooks=_SupervisedNotebookSources(transport))
+    task = asyncio.create_task(api.generate_mind_map("notebook-1"))
+    await sources_started.wait()
+
+    await transport.supervisor.stop_accepting(1)
+    sources_release.set()
+
+    assert (await task).note_id == "note-1"
+    assert [method for method, _request, _kwargs in transport.calls] == [
+        "notebooks.get_source_ids",
+        ACT_ON_SOURCES_METHOD,
+    ]
+    assert transport.calls[1][2]["expected_epoch"] == 1
+    create.assert_awaited_once_with(
+        transport,
+        "notebook-1",
+        title="Root",
+        content='{"name":"Root","children":[]}',
+        expected_epoch=1,
+    )
     await transport.supervisor.wait_for_idle(1, 0.1)
 
 

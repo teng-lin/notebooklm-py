@@ -32,8 +32,9 @@ async def generate_note_backed_mind_map(
     *,
     language: str,
     instructions: str | None,
+    expected_epoch: int,
 ) -> MindMapResult:
-    """Generate and persist one note-backed map within a single transport epoch."""
+    """Generate and persist one note-backed map within the caller's transport epoch."""
 
     from .notes import create_note
     from .upload import android_request_context
@@ -56,39 +57,38 @@ async def generate_note_backed_mind_map(
         ),
         request_context=android_request_context(),
     )
-    async with session.operation_scope("artifacts.generate_mind_map") as lease:
-        response = await session.unary(
-            ACT_ON_SOURCES_METHOD,
-            request,
-            replay_safe=False,
-            response_type=chat_proto.ActOnSourcesResponse,
-            expected_epoch=lease.epoch,
-        )
-        raw_tree = response.response.response if response.HasField("response") else ""
-        if not raw_tree:
-            return MindMapResult()
-        try:
-            mind_map: Any = json.loads(raw_tree)
-        except json.JSONDecodeError:
-            mind_map = raw_tree
+    response = await session.unary(
+        ACT_ON_SOURCES_METHOD,
+        request,
+        replay_safe=False,
+        response_type=chat_proto.ActOnSourcesResponse,
+        expected_epoch=expected_epoch,
+    )
+    raw_tree = response.response.response if response.HasField("response") else ""
+    if not raw_tree:
+        return MindMapResult()
+    try:
+        mind_map: Any = json.loads(raw_tree)
+    except json.JSONDecodeError:
+        mind_map = raw_tree
 
-        title = "Mind Map"
-        if isinstance(mind_map, dict):
-            candidate = mind_map.get("name")
-            if isinstance(candidate, str) and candidate:
-                title = candidate
-        note = await create_note(
-            session,
-            notebook_id,
-            title=title,
-            content=raw_tree,
-            expected_epoch=lease.epoch,
-        )
-        return MindMapResult(
-            mind_map=mind_map,
-            note_id=note.id or None,
-            created_at=note.created_at,
-        )
+    title = "Mind Map"
+    if isinstance(mind_map, dict):
+        candidate = mind_map.get("name")
+        if isinstance(candidate, str) and candidate:
+            title = candidate
+    note = await create_note(
+        session,
+        notebook_id,
+        title=title,
+        content=raw_tree,
+        expected_epoch=expected_epoch,
+    )
+    return MindMapResult(
+        mind_map=mind_map,
+        note_id=note.id or None,
+        created_at=note.created_at,
+    )
 
 
 __all__ = ["ACT_ON_SOURCES_METHOD", "generate_note_backed_mind_map"]
