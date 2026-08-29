@@ -23,6 +23,7 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
 from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import b2_notebooks_pb2
 from notebooklm._android.session import AndroidSession
 from notebooklm._android.sources import AndroidSourcesAPI
+from notebooklm._android.upload import AndroidUploadPipeline
 from notebooklm.exceptions import (
     DecodingError,
     RPCError,
@@ -54,7 +55,8 @@ def _project(project_id: str, title: str) -> b1_read_pb2.Project:
 
 def _api(transport: SequenceTransport) -> AndroidNotebooksAPI:
     session = cast(AndroidSession, transport)
-    return AndroidNotebooksAPI(session, AndroidSourcesAPI(session))
+    upload_pipeline = cast(AndroidUploadPipeline, object())
+    return AndroidNotebooksAPI(session, AndroidSourcesAPI(session, upload_pipeline))
 
 
 def _calls(transport: SequenceTransport, method: str) -> list[tuple[str, Any, dict[str, Any]]]:
