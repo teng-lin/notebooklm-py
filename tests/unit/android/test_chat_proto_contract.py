@@ -9,6 +9,7 @@ from typing import Any
 from google.protobuf import descriptor_pb2
 from google.protobuf.descriptor import FieldDescriptor
 
+from notebooklm._android.codecs.chat import decode_document, decode_references
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     b3_sources_pb2,
     b5_chat_pb2,
@@ -84,7 +85,7 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
         b5_chat_pb2.ConversationTurnKey: {
             "session_id": (1, singular, string, None),
             "conversation_id": (2, singular, string, None),
-            "field_type": (3, singular, int32, None),
+            "observed_field_3": (3, singular, int32, None),
         },
         b5_chat_pb2.ObjectId: {"id": (1, singular, string, None)},
         b5_chat_pb2.Range: {
@@ -151,6 +152,7 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
         b5_chat_pb2.ChatHistoryMessage: {
             "message_id": (1, singular, string, None),
             "timestamp": (2, singular, message, "google.protobuf.Timestamp"),
+            "observed_event_type": (3, singular, int32, None),
             "user_query_text": (4, singular, string, None),
             "act_on_sources_response": (
                 5,
@@ -265,6 +267,13 @@ def test_checked_in_b5_wire_fixture_round_trips_without_unknown_semantics() -> N
     ]
     assert decoded["partial_frame"].is_final_response is False
     assert decoded["final_frame"].is_final_response is True
-    assert decoded["final_frame"].answer.response == "Final answer [1]"
+    assert decoded["final_frame"].answer.response == "Final answer [2]"
+    assert decoded["final_frame"].answer.conversation_turn_key.observed_field_3 == 17
+    response_doc = decoded["final_frame"].answer.response_doc
+    assert len(response_doc.objects) == 2
+    assert not response_doc.objects[0].HasField("citation")
+    references = decode_references(response_doc, decode_document(response_doc))
+    assert [reference.citation_number for reference in references] == [2]
     assert decoded["history_response"].next_page_token == "next-page"
+    assert decoded["history_response"].chat_turns[0].observed_event_type == 1
     assert decoded["sessions_response"].sessions[0].chat_session_id == "conversation-1"

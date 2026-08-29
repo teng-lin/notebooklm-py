@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import Any
 
@@ -20,11 +22,15 @@ from notebooklm._android.session import AndroidSession
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._transport_drain import TransportDrainTracker
+from notebooklm.exceptions import AuthError
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 
 
 class _Bearer:
+    def __init__(self) -> None:
+        self.invalidated: list[int] = []
+
     async def activate(self, epoch: int) -> None:
         self.epoch = epoch
 
@@ -33,7 +39,7 @@ class _Bearer:
         return BearerCredential("fake-server-token", 1)
 
     def invalidate(self, generation: int) -> None:
-        raise AssertionError(f"unexpected credential invalidation: {generation}")
+        self.invalidated.append(generation)
 
     async def prepare_close(self) -> None:
         return None
@@ -46,8 +52,9 @@ class _Notebooks:
 
 
 class _ChatService:
-    def __init__(self) -> None:
+    def __init__(self, *, fail_auth_after_partial: bool = False) -> None:
         self.asked = False
+        self.fail_auth_after_partial = fail_auth_after_partial
         self.list_requests: list[Any] = []
         self.generate_requests: list[Any] = []
 
@@ -61,12 +68,14 @@ class _ChatService:
         )
 
     async def generate(self, request: Any, context: Any):
-        del context
         self.generate_requests.append(request)
         yield b5_chat_pb2.GenerateFreeFormStreamedResponse(
             answer=b5_chat_pb2.AnswerResponse(response="Cumulative partial"),
             is_final_response=False,
         )
+        if self.fail_auth_after_partial:
+            await context.abort(grpc.StatusCode.UNAUTHENTICATED, "expired test credential")
+            return
         self.asked = True
         yield b5_chat_pb2.GenerateFreeFormStreamedResponse(
             answer=b5_chat_pb2.AnswerResponse(response="Cumulative final"),
@@ -94,10 +103,11 @@ def _handler(service: _ChatService) -> Any:
     )
 
 
-@pytest.mark.asyncio
-async def test_base_ask_over_real_android_session_and_fake_grpc_server() -> None:
+@asynccontextmanager
+async def _running_api(
+    service: _ChatService,
+) -> AsyncIterator[tuple[AndroidChatAPI, CallSupervisor, _Bearer]]:
     server = grpc.aio.server()
-    service = _ChatService()
     server.add_generic_rpc_handlers((_handler(service),))
     port = server.add_insecure_port("127.0.0.1:0")
     await server.start()
@@ -117,8 +127,9 @@ async def test_base_ask_over_real_android_session_and_fake_grpc_server() -> None
     supervisor.reset_after_open()
     supervisor.prepare_generation(1)
     supervisor.start_accepting(1)
+    bearer = _Bearer()
     session = AndroidSession(
-        _Bearer(),  # type: ignore[arg-type]
+        bearer,  # type: ignore[arg-type]
         supervisor,
         timeout=1.0,
         grpc_loader=lambda: grpc_loader,
@@ -135,11 +146,18 @@ async def test_base_ask_over_real_android_session_and_fake_grpc_server() -> None
     )
 
     try:
-        result = await api.ask("notebook-1", "Question?")
+        yield api, supervisor, bearer
     finally:
         await session.prepare_close()
         await session.close_resources()
         await server.stop(0)
+
+
+@pytest.mark.asyncio
+async def test_base_ask_over_real_android_session_and_fake_grpc_server() -> None:
+    service = _ChatService()
+    async with _running_api(service) as (api, supervisor, _bearer):
+        result = await api.ask("notebook-1", "Question?")
 
     assert result.answer == "Cumulative final"
     assert result.conversation_id == "conversation-1"
@@ -163,3 +181,20 @@ async def test_base_ask_over_real_android_session_and_fake_grpc_server() -> None
     snapshot = supervisor._metrics.snapshot()
     assert snapshot.rpc_calls_started == 2
     assert snapshot.rpc_calls_succeeded == 2
+
+
+@pytest.mark.asyncio
+async def test_b5_stream_does_not_retry_after_midstream_auth_failure() -> None:
+    service = _ChatService(fail_auth_after_partial=True)
+    async with _running_api(service) as (api, _supervisor, bearer):
+        with pytest.raises(AuthError):
+            await api._stream_answer(
+                notebook_id="notebook-1",
+                question="Question?",
+                source_ids=["source-1"],
+                cached_turns=[],
+                conversation_id=None,
+            )
+
+    assert len(service.generate_requests) == 1
+    assert bearer.invalidated == [1]

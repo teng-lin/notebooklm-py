@@ -130,7 +130,7 @@ class AndroidChatAPI(ChatAPI):
             conversation_id,
             limit=limit,
         )
-        return [1] * min(len(response.chat_turns), max(0, limit))
+        return [turn.observed_event_type for turn in response.chat_turns[: max(0, limit)]]
 
     @staticmethod
     def _conversation_history(cached_turns: list[ConversationTurn]) -> list[Any]:

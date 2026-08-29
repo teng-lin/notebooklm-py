@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from types import SimpleNamespace
@@ -114,6 +116,8 @@ class _StreamCall:
             raise StopAsyncIteration from None
         if isinstance(outcome, BaseException):
             raise outcome
+        if callable(outcome):
+            outcome = outcome()
         await asyncio.sleep(0)
         return outcome
 
@@ -193,6 +197,7 @@ async def _open(
     bearer: _Bearer | None = None,
     supervisor: CallSupervisor | None = None,
     timeout: float | None = 1.0,
+    monotonic: Callable[[], float] = time.monotonic,
 ):
     channel = channel or _Channel()
     bearer = bearer or _Bearer()
@@ -208,6 +213,7 @@ async def _open(
         supervisor,
         timeout=timeout,
         grpc_loader=lambda: grpc,
+        monotonic=monotonic,
     )
     session.set_bound_loop(loop)
     session.reset_after_open()
@@ -419,7 +425,38 @@ async def test_stream_is_lazy_holds_scope_and_never_replays_auth_failure() -> No
     assert captured.value.rpc_code == 16
     assert bearer.invalidated == [1]
     assert len(channel.invocations) == 1
+    wire_timeout = channel.invocations[0][3]
+    assert wire_timeout is not None and 0.0 < wire_timeout <= 1.0
     assert supervisor._current is not None and supervisor._current.in_flight == 0
+
+
+@pytest.mark.asyncio
+async def test_stream_uses_one_aggregate_deadline_across_frames() -> None:
+    now = 0.0
+
+    def monotonic() -> float:
+        return now
+
+    def first_frame() -> _Message:
+        nonlocal now
+        now = 1.0
+        return _Message(b"one")
+
+    channel = _Channel()
+    channel.stream_outcomes = [[first_frame, _Message(b"must-not-arrive")]]
+    session, _, _, _, _ = await _open(
+        channel=channel,
+        timeout=1.0,
+        monotonic=monotonic,
+    )
+    stream = session.stream(METHOD, _Message(b"request"), response_type=_Message)
+
+    assert await anext(stream) == _Message(b"one")
+    with pytest.raises(RPCTimeoutError):
+        await anext(stream)
+
+    assert len(channel.invocations) == 1
+    assert channel.stream_calls[0].cancelled is True
 
 
 @pytest.mark.asyncio

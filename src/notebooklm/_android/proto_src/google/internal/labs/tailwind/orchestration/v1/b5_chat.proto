@@ -39,7 +39,7 @@ message ConversationEvent {
 message ConversationTurnKey {
   string session_id = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
   string conversation_id = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  int32 field_type = 3; // opaque captured value; the recovered name is not interpreted
+  int32 observed_field_3 = 3; // exact archive name; opaque captured value
 }
 
 message ObjectId {
@@ -122,6 +122,7 @@ message ActOnSourcesResponse {
 message ChatHistoryMessage {
   string message_id = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
   google.protobuf.Timestamp timestamp = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  int32 observed_event_type = 3; // exact archive name; raw role value consumed by the base
   string user_query_text = 4; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
   ActOnSourcesResponse act_on_sources_response = 5; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
 }

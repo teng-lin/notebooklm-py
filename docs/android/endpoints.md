@@ -426,6 +426,7 @@ one user query with its generated response (captured newest-first):
 #1 (repeated) ChatHistoryMessage {
   #1 str                   # message_id
   #2 Timestamp             # created
+  #3 int32                 # observed_event_type; raw role value
   #4 str                   # user query
   #5 ActOnSourcesResponse {
     #1 AnswerResponse {

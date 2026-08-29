@@ -241,7 +241,7 @@ shows context is optional; the implementation does not fabricate one.
 
 The compile inputs are
 [`b5_chat.proto`](../../src/notebooklm/_android/proto_src/google/internal/labs/tailwind/orchestration/v1/b5_chat.proto)
-(SHA-256 `778377137e4a9fdedb5c09765adc5dc3ba68e4b15ee09dd717680a92af6b6801`) and
+(SHA-256 `232e0c9f04941dadae3269677575c3e6a75705140e892e196ce99a91240d66a3`) and
 [`chat_history.proto`](../../src/notebooklm/_android/proto_src/labs/language/tailwind/common/protos/chat_history.proto)
 (SHA-256 `7e8551fe837ac30f80d3d5f5d07f33c1c1dd24970b33c558c86b4dba799d9bb8`).
 `tests/unit/android/test_chat_proto_contract.py` asserts the following list exhaustively against
@@ -252,10 +252,10 @@ the generated descriptors; no undeclared semantic leaf is available to the adapt
 | `common.protos.ChatSession` | `chat_session_id` (1; string) |
 | `orchestration.v1.InputSource` | `source_id` (1; `SourceId`) |
 | `orchestration.v1.ConversationEvent` | `text` (1; string), `type` (3; captured nested enum) |
-| `orchestration.v1.ConversationTurnKey` | `session_id` (1; string), `conversation_id` (2; string), `field_type` (3; opaque int32) |
+| `orchestration.v1.ConversationTurnKey` | `session_id` (1; string), `conversation_id` (2; string), `observed_field_3` (3; opaque int32) |
 | `orchestration.v1.ListChatSessionsRequest/Response` | `project_id` (3; string); `sessions` (1; repeated `ChatSession`) |
 | `orchestration.v1.ListChatTurnsRequest/Response` | `chat_session_id` (4; string), `page_token` (6; string); `chat_turns` (1; repeated `ChatHistoryMessage`), `next_page_token` (2; string) |
-| `orchestration.v1.ChatHistoryMessage` | `message_id` (1; string), `timestamp` (2; `Timestamp`), `user_query_text` (4; string), `act_on_sources_response` (5; `ActOnSourcesResponse`) |
+| `orchestration.v1.ChatHistoryMessage` | `message_id` (1; string), `timestamp` (2; `Timestamp`), `observed_event_type` (3; raw int32 role), `user_query_text` (4; string), `act_on_sources_response` (5; `ActOnSourcesResponse`) |
 | `orchestration.v1.ActOnSourcesResponse` | `response` (1; `AnswerResponse`) |
 | `orchestration.v1.DeleteChatTurnsRequest` | `chat_session_id` (2; string), `delete_all_history` (4; bool) |
 | `orchestration.v1.GenerateFreeFormStreamedRequest` | `sources` (1; repeated `InputSource`), `user_query` (2; string), `conversation_history` (3; repeated `ConversationEvent`), `chat_session_id` (5; string), `user_message_id` (6; string), `project_id` (8; string), `origin` (9; `QueryOrigin`) |
@@ -272,7 +272,9 @@ the generated descriptors; no undeclared semantic leaf is available to the adapt
 The request origin and conversation-event enums come from the exhaustive checked-in
 [`enums.txt`](enums.txt). Cached turns are mapped in the captured newest-first event order for each
 turn: generated response (`2`) followed by user query (`1`). Every ask supplies a caller-generated
-`user_message_id`; no server turn identifier is guessed.
+`user_message_id`; no server turn identifier is guessed. Prior-turn counting returns each
+`ChatHistoryMessage.observed_event_type` unchanged to the neutral base, which counts only raw role
+value `1` as a question; Android does not replace every row with a synthetic user role.
 
 Stream responses are cumulative snapshots. The adapter retains the latest frame whose response
 field 5 is true, never concatenates frames, and raises `ChatResponseParseError` when EOF arrives
@@ -281,13 +283,15 @@ identity descends
 through `DocumentObject.citation.source_attribution.ingested_source.source`, cited text comes only
 from the proven fragment paragraph fields, and answer anchors join through the proven body
 annotation/object IDs. Unrecovered citation score/range fields are not declared or projected.
+Citation numbering follows the raw one-based `TailwindDoc.objects` ordinal, so a preceding
+non-citation object intentionally leaves a numbering gap instead of renumbering later citations.
 
 The synthetic wire fixture
 [`b5_chat_wire.json`](../../tests/fixtures/android/b5_chat_wire.json) (SHA-256
-`806f6052c5d0c4dddae359b420f7effcf2961ac6bcba70f7c08c10a7a60b8924`) pins a request,
+`674f05b27f5bfd92baac39833fd5769a91c4d85962983e88b47a354494ec52bf`) pins a request,
 partial/final cumulative frames, history, and sessions at serialized-byte level. The generated B5
 descriptor fixture has SHA-256
-`f65fe14f5bb41140af1204fd41d51be2904269f77160f0331508703d8c9b710d`.
+`675b826d6a15c63151eb95bf5d4273e83eceea9b4f1790b01d7c43beb7171497`.
 
 ### B5 evidence-gated omissions
 

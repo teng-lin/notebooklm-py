@@ -159,7 +159,7 @@ def decode_turn_key(answer: Any) -> ConversationTurnKey | None:
     return ConversationTurnKey(
         session_id=key.session_id,
         turn_id=key.conversation_id or None,
-        turn_code=key.field_type,
+        turn_code=key.observed_field_3,
     )
 
 

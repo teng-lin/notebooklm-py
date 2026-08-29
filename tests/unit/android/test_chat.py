@@ -88,9 +88,10 @@ def _api(
     return api, guard, notebooks
 
 
-def _chat_turn(question: str, answer: str, *, message_id: str) -> Any:
+def _chat_turn(question: str, answer: str, *, message_id: str, role: int) -> Any:
     return b5_chat_pb2.ChatHistoryMessage(
         message_id=message_id,
+        observed_event_type=role,
         user_query_text=question,
         act_on_sources_response=b5_chat_pb2.ActOnSourcesResponse(
             response=b5_chat_pb2.AnswerResponse(response=answer)
@@ -124,6 +125,7 @@ def _document() -> Any:
             ],
         ),
         objects=[
+            b5_chat_pb2.DocumentObject(object_id=b5_chat_pb2.ObjectId(id="non-citation-object")),
             b5_chat_pb2.DocumentObject(
                 object_id=b5_chat_pb2.ObjectId(id="chunk-1"),
                 citation=b5_chat_pb2.Citation(
@@ -151,7 +153,7 @@ def _document() -> Any:
                     ),
                     object_id=b5_chat_pb2.ObjectId(id="citation-inner-id"),
                 ),
-            )
+            ),
         ],
     )
 
@@ -163,7 +165,7 @@ def _frame(text: str, *, final: bool) -> Any:
             conversation_turn_key=b5_chat_pb2.ConversationTurnKey(
                 session_id="conversation-1",
                 conversation_id="turn-server-1",
-                field_type=17,
+                observed_field_3=17,
             ),
             response_doc=_document() if final else None,
         ),
@@ -195,15 +197,15 @@ async def test_list_sessions_raw_turns_and_history_decode_exact_requests() -> No
         LIST_CHAT_TURNS_METHOD: [
             b5_chat_pb2.ListChatTurnsResponse(
                 chat_turns=[
-                    _chat_turn("Newest?", "Newest.", message_id="message-2"),
-                    _chat_turn("Oldest?", "Oldest.", message_id="message-1"),
+                    _chat_turn("Newest?", "Newest.", message_id="message-2", role=2),
+                    _chat_turn("Oldest?", "Oldest.", message_id="message-1", role=1),
                 ],
                 next_page_token="captured-next-page",
             ),
             b5_chat_pb2.ListChatTurnsResponse(
                 chat_turns=[
-                    _chat_turn("Newest?", "Newest.", message_id="message-2"),
-                    _chat_turn("Oldest?", "Oldest.", message_id="message-1"),
+                    _chat_turn("Newest?", "Newest.", message_id="message-2", role=2),
+                    _chat_turn("Oldest?", "Oldest.", message_id="message-1", role=1),
                 ]
             ),
         ],
@@ -215,6 +217,7 @@ async def test_list_sessions_raw_turns_and_history_decode_exact_requests() -> No
     assert isinstance(raw, b5_chat_pb2.ListChatTurnsResponse)
     assert raw.next_page_token == "captured-next-page"
     assert len(raw.chat_turns) == 2
+    assert [turn.observed_event_type for turn in raw.chat_turns] == [2, 1]
     assert await api.get_history("notebook-1", limit=2) == [
         ("Oldest?", "Oldest."),
         ("Newest?", "Newest."),
@@ -257,7 +260,7 @@ async def test_list_sessions_raw_turns_and_history_decode_exact_requests() -> No
 
 
 @pytest.mark.asyncio
-async def test_base_ask_uses_final_cumulative_snapshot_and_projects_proven_citations() -> None:
+async def test_base_ask_uses_latest_cumulative_final_without_concatenating_frames() -> None:
     fake = FakeSession()
     fake.unary_responses[LIST_CHAT_SESSIONS_METHOD] = [
         b5_chat_pb2.ListChatSessionsResponse(),
@@ -269,14 +272,14 @@ async def test_base_ask_uses_final_cumulative_snapshot_and_projects_proven_citat
         [
             _frame("Part", final=False),
             _frame("Superseded final", final=True),
-            _frame("Final answer [1]", final=True),
+            _frame("Final answer [2]", final=True),
         ]
     ]
     api, guard, notebooks = _api(fake, source_ids=["source-1", "source-2"])
 
     result = await api.ask("notebook-1", "Question?")
 
-    assert result.answer == "Final answer [1]"
+    assert result.answer == "Final answer [2]"
     assert result.conversation_id == "conversation-1"
     assert result.turn_number == 1
     assert result.is_follow_up is False
@@ -289,7 +292,7 @@ async def test_base_ask_uses_final_cumulative_snapshot_and_projects_proven_citat
     assert result.references == [
         ChatReference(
             source_id="source-1",
-            citation_number=1,
+            citation_number=2,
             cited_text="Source passage",
             start_char=20,
             end_char=33,
@@ -299,7 +302,7 @@ async def test_base_ask_uses_final_cumulative_snapshot_and_projects_proven_citat
         )
     ]
     assert api.get_cached_turns("conversation-1") == [
-        ConversationTurn(query="Question?", answer="Final answer [1]", turn_number=1)
+        ConversationTurn(query="Question?", answer="Final answer [2]", turn_number=1)
     ]
     assert guard.calls == 1
     assert notebooks.calls == ["notebook-1"]
@@ -326,18 +329,18 @@ async def test_base_ask_uses_final_cumulative_snapshot_and_projects_proven_citat
 @pytest.mark.asyncio
 async def test_follow_up_maps_cached_turns_to_captured_conversation_events() -> None:
     fake = FakeSession()
-    fake.unary_responses[LIST_CHAT_TURNS_METHOD] = [
-        b5_chat_pb2.ListChatTurnsResponse(
-            chat_turns=[
-                _chat_turn("Server newest?", "Yes.", message_id="server-2"),
-                _chat_turn("Server oldest?", "Yes.", message_id="server-1"),
-            ]
-        )
-    ]
+    turns = b5_chat_pb2.ListChatTurnsResponse(
+        chat_turns=[
+            _chat_turn("Server newest?", "Yes.", message_id="server-2", role=2),
+            _chat_turn("Server oldest?", "Yes.", message_id="server-1", role=1),
+        ]
+    )
+    fake.unary_responses[LIST_CHAT_TURNS_METHOD] = [turns, turns]
     fake.stream_responses = [[_frame("Final answer", final=True)]]
     api, _, _ = _api(fake)
     api._cache.cache_conversation_turn("conversation-1", "Cached question?", "Cached answer.", 1)
 
+    assert await api._list_turn_roles("notebook-1", "conversation-1", 2) == [2, 1]
     result = await api.ask(
         "notebook-1",
         "Follow-up?",
@@ -345,7 +348,9 @@ async def test_follow_up_maps_cached_turns_to_captured_conversation_events() -> 
         conversation_id="conversation-1",
     )
 
-    assert result.turn_number == 3
+    # The base counts only role 1 as a prior user question; role 2 is not
+    # silently rewritten into another question by the Android adapter.
+    assert result.turn_number == 2
     assert result.is_follow_up is True
     request = fake.stream_calls[0][1]
     assert list(request.conversation_history) == [
