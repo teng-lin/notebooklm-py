@@ -6,13 +6,7 @@ syntax = "proto3";
 // flattened Dart recovery alone is insufficient exact-package evidence.
 package notebooklm.internal.android.wire.v1;
 
-message WireCreateProjectRequest {
-  string name = 1; // evidence: docs/android/endpoints.md#createproject--create-a-notebook
-}
-
-message WireDeleteProjectsRequest {
-  repeated string project_ids = 1; // evidence: docs/android/endpoints.md#deleteprojects--delete-notebooks
-}
+import "google/internal/labs/tailwind/orchestration/v1/notebooks.proto";
 
 message WireProjectChangeProperty {
   string new_title = 2; // evidence: docs/android/endpoints.md#mutateproject--rename--edit-notebook-fields
@@ -35,14 +29,6 @@ message WireCopyProjectRequest {
   string title = 3; // evidence: docs/android/labels-collections-copy-mobile-grpc-2026-08-27.md#copy-a-notebook
 }
 
-message WireGenerateNotebookGuideRequest {
-  string project_id = 1; // evidence: docs/android/endpoints.md#generatenotebookguide
-}
-
-message WireNotebookSummary {
-  string text_summary = 1; // evidence: docs/android/endpoints.md#generatenotebookguide
-}
-
 message WireSuggestedTopic {
   string question = 1; // evidence: docs/android/endpoints.md#generatenotebookguide
   string prompt = 2; // evidence: docs/android/endpoints.md#generatenotebookguide
@@ -53,7 +39,7 @@ message WireSuggestedTopics {
 }
 
 message WireNotebookGuide {
-  WireNotebookSummary summary = 1; // evidence: docs/android/endpoints.md#generatenotebookguide
+  .google.internal.labs.tailwind.orchestration.v1.NotebookSummary summary = 1; // evidence: docs/android/endpoints.md#generatenotebookguide
   WireSuggestedTopics suggested_topics = 2; // evidence: docs/android/endpoints.md#generatenotebookguide
 }
 

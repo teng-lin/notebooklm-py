@@ -12,6 +12,9 @@ from google.protobuf import descriptor_pb2, text_format
 from google.protobuf.descriptor import FieldDescriptor
 
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
+    notebooks_pb2 as exact_notebooks_pb2,
+)
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     read_pb2,
 )
 from notebooklm._android.proto.google.internal.labs.tailwind.v1 import source_settings_pb2
@@ -162,7 +165,9 @@ def test_source_settings_has_only_fields_two_and_four() -> None:
 def test_b2_repository_local_wire_fields_are_exhaustive() -> None:
     assert notebooks_pb2.DESCRIPTOR.package == LOCAL_WIRE_PACKAGE
     assert not notebooks_pb2.DESCRIPTOR.services_by_name
-    assert not notebooks_pb2.DESCRIPTOR.dependencies
+    assert [dependency.name for dependency in notebooks_pb2.DESCRIPTOR.dependencies] == [
+        "google/internal/labs/tailwind/orchestration/v1/notebooks.proto"
+    ]
 
     singular = False
     repeated = True
@@ -170,12 +175,6 @@ def test_b2_repository_local_wire_fields_are_exhaustive() -> None:
     message = FieldDescriptor.TYPE_MESSAGE
     local = LOCAL_WIRE_PACKAGE
     expected = {
-        notebooks_pb2.WireCreateProjectRequest: {
-            "name": (1, singular, string, None),
-        },
-        notebooks_pb2.WireDeleteProjectsRequest: {
-            "project_ids": (1, repeated, string, None),
-        },
         notebooks_pb2.WireProjectChangeProperty: {
             "new_title": (2, singular, string, None),
             "new_emoji": (3, singular, string, None),
@@ -196,12 +195,6 @@ def test_b2_repository_local_wire_fields_are_exhaustive() -> None:
             "source_project_id": (2, singular, string, None),
             "title": (3, singular, string, None),
         },
-        notebooks_pb2.WireGenerateNotebookGuideRequest: {
-            "project_id": (1, singular, string, None),
-        },
-        notebooks_pb2.WireNotebookSummary: {
-            "text_summary": (1, singular, string, None),
-        },
         notebooks_pb2.WireSuggestedTopic: {
             "question": (1, singular, string, None),
             "prompt": (2, singular, string, None),
@@ -210,7 +203,7 @@ def test_b2_repository_local_wire_fields_are_exhaustive() -> None:
             "topics": (1, repeated, message, f"{local}.WireSuggestedTopic"),
         },
         notebooks_pb2.WireNotebookGuide: {
-            "summary": (1, singular, message, f"{local}.WireNotebookSummary"),
+            "summary": (1, singular, message, f"{ORCHESTRATION_PACKAGE}.NotebookSummary"),
             "suggested_topics": (2, singular, message, f"{local}.WireSuggestedTopics"),
         },
         notebooks_pb2.WireGenerateNotebookGuideResponse: {
@@ -225,9 +218,71 @@ def test_b2_repository_local_wire_fields_are_exhaustive() -> None:
         assert _field_shapes(message_type) == expected_fields
 
 
+def test_exact_notebook_operation_fields_are_pinned_separately_from_local_overrides() -> None:
+    package = ORCHESTRATION_PACKAGE
+    singular = False
+    repeated = True
+    string = FieldDescriptor.TYPE_STRING
+    int32 = FieldDescriptor.TYPE_INT32
+    message = FieldDescriptor.TYPE_MESSAGE
+
+    assert exact_notebooks_pb2.DESCRIPTOR.package == package
+    assert exact_notebooks_pb2.DESCRIPTOR.services_by_name == {}
+    assert set(exact_notebooks_pb2.DESCRIPTOR.message_types_by_name) == {
+        "CreateProjectRequest",
+        "DeleteProjectsRequest",
+        "GenerateNotebookGuideRequest",
+        "GenerateNotebookGuideResponse",
+        "MutateProjectRequest",
+        "NextStep",
+        "NextStepSuggestions",
+        "NotebookGuide",
+        "NotebookSummary",
+        "ProjectMutation",
+    }
+    assert _field_shapes(exact_notebooks_pb2.CreateProjectRequest) == {
+        "name": (1, singular, string, None)
+    }
+    assert _field_shapes(exact_notebooks_pb2.DeleteProjectsRequest) == {
+        "project_ids": (1, repeated, string, None)
+    }
+    assert _field_shapes(exact_notebooks_pb2.MutateProjectRequest) == {
+        "project_id": (1, singular, string, None),
+        "mutations": (2, repeated, message, f"{package}.ProjectMutation"),
+    }
+    assert _field_shapes(exact_notebooks_pb2.ProjectMutation.ChangePropertyMutation) == {
+        "new_title": (2, singular, string, None)
+    }
+    assert _field_shapes(exact_notebooks_pb2.ProjectMutation) == {
+        "change_property": (
+            4,
+            singular,
+            message,
+            f"{package}.ProjectMutation.ChangePropertyMutation",
+        )
+    }
+    assert _field_shapes(exact_notebooks_pb2.NextStep) == {
+        "suggestion": (1, singular, string, None),
+        "suggestion_type": (2, singular, int32, None),
+    }
+    assert _field_shapes(exact_notebooks_pb2.NextStepSuggestions) == {
+        "next_steps": (1, repeated, message, f"{package}.NextStep")
+    }
+    assert _field_shapes(exact_notebooks_pb2.NotebookGuide) == {
+        "summary": (1, singular, message, f"{package}.NotebookSummary"),
+        "next_step_suggestions": (6, singular, message, f"{package}.NextStepSuggestions"),
+    }
+    assert _field_shapes(exact_notebooks_pb2.GenerateNotebookGuideRequest) == {
+        "project_id": (1, singular, string, None)
+    }
+    assert _field_shapes(exact_notebooks_pb2.GenerateNotebookGuideResponse) == {
+        "notebook_guide": (1, singular, message, f"{package}.NotebookGuide")
+    }
+
+
 def test_b2_wire_messages_match_captured_serialization() -> None:
-    create = notebooks_pb2.WireCreateProjectRequest(name="Title")
-    delete = notebooks_pb2.WireDeleteProjectsRequest(project_ids=["id-1"])
+    create = exact_notebooks_pb2.CreateProjectRequest(name="Title")
+    delete = exact_notebooks_pb2.DeleteProjectsRequest(project_ids=["id-1"])
     mutate = notebooks_pb2.WireMutateProjectRequest(
         project_id="p",
         mutations=[
@@ -237,7 +292,7 @@ def test_b2_wire_messages_match_captured_serialization() -> None:
         ],
     )
     copy = notebooks_pb2.WireCopyProjectRequest(source_project_id="p", title="Title")
-    guide = notebooks_pb2.WireGenerateNotebookGuideRequest(project_id="p")
+    guide = exact_notebooks_pb2.GenerateNotebookGuideRequest(project_id="p")
 
     assert create.SerializeToString(deterministic=True).hex() == "0a055469746c65"
     assert delete.SerializeToString(deterministic=True).hex() == "0a0469642d31"

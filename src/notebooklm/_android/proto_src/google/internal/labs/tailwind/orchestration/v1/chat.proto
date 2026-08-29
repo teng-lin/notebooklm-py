@@ -5,7 +5,7 @@ package google.internal.labs.tailwind.orchestration.v1;
 import "google/internal/labs/tailwind/orchestration/v1/read.proto";
 import "google/internal/labs/tailwind/orchestration/v1/sources.proto";
 import "google/protobuf/timestamp.proto";
-import "labs/language/tailwind/common/protos/chat_history.proto";
+import "labs/language/tailwind/common/protos/common.proto";
 
 // Service-free exact-package B5 message overlay. The cumulative service in
 // orchestration_service.proto imports the three independently exact method

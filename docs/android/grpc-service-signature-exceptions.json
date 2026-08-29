@@ -3,14 +3,6 @@
   "description": "Implemented Android gRPC paths omitted from exact generated service descriptors because at least one remote protobuf type FQN is not independently evidenced.",
   "exceptions": [
     {
-      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateProject",
-      "adapter_constant": "notebooklm._android.notebooks.CREATE_PROJECT_METHOD",
-      "request_parser": "notebooklm.internal.android.wire.v1.WireCreateProjectRequest",
-      "response_parser": "google.internal.labs.tailwind.orchestration.v1.Project",
-      "reason_code": "request_fqn_unproven",
-      "evidence": "docs/android/proto-evidence-ledger.md#b2-notebook-method-ledger"
-    },
-    {
       "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CopyProject",
       "adapter_constant": "notebooklm._android.notebooks.COPY_PROJECT_METHOD",
       "request_parser": "notebooklm.internal.android.wire.v1.WireCopyProjectRequest",
@@ -21,25 +13,9 @@
     {
       "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteProjects",
       "adapter_constant": "notebooklm._android.notebooks.DELETE_PROJECTS_METHOD",
-      "request_parser": "notebooklm.internal.android.wire.v1.WireDeleteProjectsRequest",
+      "request_parser": "google.internal.labs.tailwind.orchestration.v1.DeleteProjectsRequest",
       "response_parser": "google.protobuf.Empty",
-      "reason_code": "request_response_fqns_unproven",
-      "evidence": "docs/android/proto-evidence-ledger.md#b2-notebook-method-ledger"
-    },
-    {
-      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateProject",
-      "adapter_constant": "notebooklm._android.notebooks.MUTATE_PROJECT_METHOD",
-      "request_parser": "notebooklm.internal.android.wire.v1.WireMutateProjectRequest",
-      "response_parser": "google.internal.labs.tailwind.orchestration.v1.Project",
-      "reason_code": "request_fqn_unproven",
-      "evidence": "docs/android/proto-evidence-ledger.md#b2-notebook-method-ledger"
-    },
-    {
-      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateNotebookGuide",
-      "adapter_constant": "notebooklm._android.notebooks.GENERATE_NOTEBOOK_GUIDE_METHOD",
-      "request_parser": "notebooklm.internal.android.wire.v1.WireGenerateNotebookGuideRequest",
-      "response_parser": "notebooklm.internal.android.wire.v1.WireGenerateNotebookGuideResponse",
-      "reason_code": "request_response_fqns_unproven",
+      "reason_code": "response_fqn_unproven",
       "evidence": "docs/android/proto-evidence-ledger.md#b2-notebook-method-ledger"
     },
     {
@@ -123,19 +99,11 @@
       "evidence": "docs/android/proto-evidence-ledger.md#b9-organization-admission"
     },
     {
-      "path": "/labs.language.tailwind.sharing.LabsTailwindSharingService/GetProjectDetails",
-      "adapter_constant": "notebooklm._android.sharing.GET_PROJECT_DETAILS_METHOD",
-      "request_parser": "notebooklm.android.wire.v1.GetProjectDetailsRequest",
-      "response_parser": "notebooklm.android.wire.v1.GetProjectDetailsResponse",
-      "reason_code": "request_response_fqns_unproven",
-      "evidence": "docs/android/proto-evidence-ledger.md#b6-service-ledger"
-    },
-    {
       "path": "/labs.language.tailwind.sharing.LabsTailwindSharingService/ShareProject",
       "adapter_constant": "notebooklm._android.sharing.SHARE_PROJECT_METHOD",
-      "request_parser": "notebooklm.android.wire.v1.ShareProjectRequest",
+      "request_parser": "labs.language.tailwind.sharing.ShareProjectRequest",
       "response_parser": "notebooklm.android.wire.v1.EmptyResponse",
-      "reason_code": "request_response_fqns_unproven",
+      "reason_code": "response_fqn_unproven",
       "evidence": "docs/android/proto-evidence-ledger.md#b6-service-ledger"
     }
   ]

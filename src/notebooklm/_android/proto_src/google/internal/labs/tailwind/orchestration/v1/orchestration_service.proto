@@ -6,6 +6,7 @@ import "google/internal/labs/tailwind/orchestration/v1/account.proto";
 import "google/internal/labs/tailwind/orchestration/v1/artifacts.proto";
 import "google/internal/labs/tailwind/orchestration/v1/chat.proto";
 import "google/internal/labs/tailwind/orchestration/v1/notes.proto";
+import "google/internal/labs/tailwind/orchestration/v1/notebooks.proto";
 import "google/internal/labs/tailwind/orchestration/v1/organization.proto";
 import "google/internal/labs/tailwind/orchestration/v1/read.proto";
 import "google/internal/labs/tailwind/orchestration/v1/research.proto";
@@ -29,6 +30,10 @@ service LabsTailwindOrchestrationService {
   rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
   rpc ListRecentlyViewedProjects(ListRecentlyViewedProjectsRequest)
       returns (ListRecentlyViewedProjectsResponse);
+  rpc CreateProject(CreateProjectRequest) returns (Project);
+  rpc MutateProject(MutateProjectRequest) returns (Project);
+  rpc GenerateNotebookGuide(GenerateNotebookGuideRequest)
+      returns (GenerateNotebookGuideResponse);
 
   rpc AddTentativeSources(AddTentativeSourcesRequest)
       returns (AddTentativeSourcesResponse);

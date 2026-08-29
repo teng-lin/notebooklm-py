@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package google.internal.labs.tailwind.orchestration.v1;
+
+// Exact-package notebook mutation/guide closure copied from the pinned
+// orchestration supported.proto. The runtime adapter may use a repository-local
+// wire overlay when a live-only field is not present in this archived subset;
+// that parser choice does not change the remote request/response type identity.
+
+message CreateProjectRequest {
+  string name = 1;
+}
+
+message ProjectMutation {
+  message ChangePropertyMutation {
+    string new_title = 2;
+  }
+
+  ChangePropertyMutation change_property = 4;
+}
+
+message MutateProjectRequest {
+  string project_id = 1;
+  repeated ProjectMutation mutations = 2;
+}
+
+message DeleteProjectsRequest {
+  repeated string project_ids = 1;
+}
+
+message NextStep {
+  string suggestion = 1;
+  int32 suggestion_type = 2;
+}
+
+message NextStepSuggestions {
+  repeated NextStep next_steps = 1;
+}
+
+message NotebookSummary {
+  string text_summary = 1;
+}
+
+message NotebookGuide {
+  NotebookSummary summary = 1;
+  NextStepSuggestions next_step_suggestions = 6;
+}
+
+message GenerateNotebookGuideRequest {
+  string project_id = 1;
+}
+
+message GenerateNotebookGuideResponse {
+  NotebookGuide notebook_guide = 1;
+}

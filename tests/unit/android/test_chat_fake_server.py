@@ -17,7 +17,7 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
     chat_pb2,
     sources_pb2,
 )
-from notebooklm._android.proto.labs.language.tailwind.common.protos import chat_history_pb2
+from notebooklm._android.proto.labs.language.tailwind.common.protos import common_pb2
 from notebooklm._android.session import AndroidSession
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
@@ -64,7 +64,7 @@ class _ChatService:
         if not self.asked:
             return chat_pb2.ListChatSessionsResponse()
         return chat_pb2.ListChatSessionsResponse(
-            sessions=[chat_history_pb2.ChatSession(chat_session_id="conversation-1")]
+            sessions=[common_pb2.ChatSession(chat_session_id="conversation-1")]
         )
 
     async def generate(self, request: Any, context: Any):
@@ -95,9 +95,7 @@ def _handler(service: _ChatService) -> Any:
             "GenerateFreeFormStreamed": grpc.unary_stream_rpc_method_handler(
                 service.generate,
                 request_deserializer=chat_pb2.GenerateFreeFormStreamedRequest.FromString,
-                response_serializer=(
-                    chat_pb2.GenerateFreeFormStreamedResponse.SerializeToString
-                ),
+                response_serializer=(chat_pb2.GenerateFreeFormStreamedResponse.SerializeToString),
             ),
         },
     )

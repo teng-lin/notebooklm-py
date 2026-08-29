@@ -29,12 +29,16 @@ from .codecs.notebooks import (
 )
 from .codecs.sources import decode_sources
 from .errors import unsupported_operation
+from .proto.google.internal.labs.tailwind.orchestration.v1 import (
+    notebooks_pb2 as exact_notebooks_pb2,
+)
 from .proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
 from .proto.notebooklm.internal.android.wire.v1 import notebooks_pb2
 from .session import AndroidSession
 
 logger = logging.getLogger(__name__)
 _PROTO = cast(Any, read_pb2)
+_NOTEBOOK_PROTO = cast(Any, exact_notebooks_pb2)
 _WIRE = cast(Any, notebooks_pb2)
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
@@ -151,10 +155,10 @@ class AndroidNotebooksAPI(NotebooksAPI):
                 self._workflow_epoch.reset(token)
 
     async def _send_create(self, title: str) -> Notebook:
-        # evidence: docs/android/proto-evidence-ledger.md#b2-repository-local-wire-field-ledger
+        # evidence: docs/android/proto-evidence-ledger.md#b2-notebook-method-ledger
         response = await self._transport.unary(
             CREATE_PROJECT_METHOD,
-            _WIRE.WireCreateProjectRequest(name=title),
+            _NOTEBOOK_PROTO.CreateProjectRequest(name=title),
             replay_safe=False,
             response_type=_PROTO.Project,
             **self._epoch_kwargs(),
@@ -209,11 +213,12 @@ class AndroidNotebooksAPI(NotebooksAPI):
         _reject("notebooks.suggest_prompts")
 
     async def delete(self, notebook_id: str) -> None:
-        # evidence: docs/android/proto-evidence-ledger.md#b2-repository-local-wire-field-ledger
+        # The exact request FQN is independently evidenced; only the normalized
+        # empty response keeps this path out of the generated service.
         try:
             await self._transport.unary(
                 DELETE_PROJECTS_METHOD,
-                _WIRE.WireDeleteProjectsRequest(project_ids=[notebook_id]),
+                _NOTEBOOK_PROTO.DeleteProjectsRequest(project_ids=[notebook_id]),
                 replay_safe=False,
                 response_type=Empty,
             )
@@ -260,10 +265,11 @@ class AndroidNotebooksAPI(NotebooksAPI):
         return decode_notebook_guide(response, method_id=GENERATE_NOTEBOOK_GUIDE_METHOD)
 
     async def _generate_notebook_guide(self, notebook_id: str) -> Any:
-        # evidence: docs/android/proto-evidence-ledger.md#b2-repository-local-wire-field-ledger
+        # The exact response subset does not expose captured topic field #2,
+        # so only response parsing uses the explicit local wire override.
         return await self._transport.unary(
             GENERATE_NOTEBOOK_GUIDE_METHOD,
-            _WIRE.WireGenerateNotebookGuideRequest(project_id=notebook_id),
+            _NOTEBOOK_PROTO.GenerateNotebookGuideRequest(project_id=notebook_id),
             replay_safe=False,
             response_type=_WIRE.WireGenerateNotebookGuideResponse,
         )

@@ -1009,7 +1009,9 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/account_pb2_grpc.py` | Deterministic service-free companion for the B11 exact account message overlay. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/read_pb2.py` | Exact-package B1 messages and descriptors for `GetProject` and `ListRecentlyViewedProjects`. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/read_pb2_grpc.py` | Deterministic service-free companion for the B1 read message overlay. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2.py` | Sole exact-package cumulative service descriptor: 23 implemented methods with independently evidenced request/response FQNs; 17 local/unproven signatures remain in the machine-readable exception manifest. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/notebooks_pb2.py` | Durable exact-package B2 notebook mutation/guide messages imported by the cumulative service; local parser overrides remain only for live-only fields. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/notebooks_pb2_grpc.py` | Deterministic service-free companion for the exact B2 message overlay. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2.py` | Sole exact-package cumulative orchestration descriptor: 26 implemented methods with independently evidenced request/response FQNs; the separate sharing descriptor adds one exact path and 13 local/unproven signatures remain in the machine-readable exception manifest. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2_grpc.py` | Generated `LabsTailwindOrchestrationServiceStub` exposing the cumulative exact unary and unary-stream methods. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/sources_pb2.py` | Exact-package B3/B3b source-operation and `UploadFileRequest` descriptors compiled from the durable `sources.proto` source name; no service guess. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/artifacts_pb2.py` | Exact-package B4 artifact request/response and projection overlay imported by the cumulative service for implemented exact signatures. |
@@ -1021,15 +1023,18 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/organization_pb2_grpc.py` | Deterministic service-free companion for the B9 exact message overlay. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/research_pb2.py` | Exact-package B10 Research request/response, job/result, and enum descriptors. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/research_pb2_grpc.py` | Deterministic service-free companion for the B10 Research message overlay. |
-| `_android/proto/labs/language/tailwind/common/protos/chat_history_pb2.py` | Exact-package `ChatSession.chat_session_id` leaf imported by the B5 sessions response. |
+| `_android/proto/labs/language/tailwind/common/protos/common_pb2.py` | Exact-package `ChatSession` and `ProjectPublicSettings` closure shared by B5 chat and B6 sharing without duplicate declarations. |
+| `_android/proto/labs/language/tailwind/common/protos/common_pb2_grpc.py` | Deterministic service-free companion for the exact common closure. |
+| `_android/proto/labs/language/tailwind/sharing/sharing_pb2.py` | Exact-package B6 sharing requests/responses plus the separately proven `GetProjectDetails` service descriptor. |
+| `_android/proto/labs/language/tailwind/sharing/sharing_pb2_grpc.py` | Generated `LabsTailwindSharingServiceStub` exposing exact `GetProjectDetails`. |
 | `_android/proto/notebooklm/android/internal/v1/report_suggestions_pb2.py` | Repository-local `*Wire` overlay for the live-added, APK-absent report-suggestion method; intentionally makes no Google FQN claim. |
-| `_android/proto/notebooklm/android/wire/v1/sharing_pb2.py` | Repository-local B6 public-link sharing wire overlay; intentionally makes no unproven Google FQN claim. |
+| `_android/proto/notebooklm/android/wire/v1/sharing_pb2.py` | Repository-local B6 response parser preserving scalar presence for exact `GetProjectDetails`; `ShareProject` uses the exact request type. |
 | `_android/proto/notebooklm/android/wire/v1/sharing_pb2_grpc.py` | Deterministic service-free companion for the B6 local sharing overlay. |
 | `_android/proto/notebooklm/android/wire/v1/organization_mutations_pb2.py` | Repository-local B9 heterogeneous read decoder plus manual organization write shapes; makes no remote FQN claim. |
 | `_android/proto/notebooklm/android/wire/v1/organization_mutations_pb2_grpc.py` | Deterministic service-free companion for the B9 local organization overlay. |
 | `_android/proto/google/internal/labs/tailwind/v1/source_settings_pb2.py` | Exact-package `SourceSettings`, `SourceStatus`, and `UserDriveSourceStatus` descriptors. |
 | `_android/proto/google/internal/labs/tailwind/v1/source_settings_pb2_grpc.py` | Generated companion for the service-free SourceSettings proto; retained so the generated tree exactly matches the pinned command. |
-| `_android/proto/notebooklm/internal/android/wire/v1/notebooks_pb2.py` | Repository-local B2 notebook wire-equivalent messages; the local package explicitly avoids claiming unproven Google FQNs. |
+| `_android/proto/notebooklm/internal/android/wire/v1/notebooks_pb2.py` | Repository-local B2 parser overrides for live-only emoji and guide-topic fields plus the unproven copy request. |
 | `_android/proto/notebooklm/internal/android/wire/v1/notebooks_pb2_grpc.py` | Deterministic service-free companion for the B2 local wire overlay. |
 | `_android/proto_src/` | Minimal compile-ready cumulative Android `.proto` closure. The evidence ledger is `docs/android/proto-evidence-ledger.md`; flattened `docs/android/schema.proto` is never a compile input. |
 | `_runtime/init.py` | Constructor helpers that validate client runtime kwargs, build collaborators (returning a `RuntimeCollaborators` bundle), wire middleware, and bind `ClientComposed`. |
@@ -1308,8 +1313,10 @@ src/notebooklm/
 │           │   ├── account_pb2_grpc.py      # Deterministic service-free companion
 │           │   ├── read_pb2.py              # B1 read messages and descriptors
 │           │   ├── read_pb2_grpc.py         # Deterministic service-free companion
+│           │   ├── notebooks_pb2.py         # B2 exact notebook messages/descriptors
+│           │   ├── notebooks_pb2_grpc.py    # Deterministic service-free companion
 │           │   ├── orchestration_service_pb2.py      # Cumulative exact service descriptor
-│           │   ├── orchestration_service_pb2_grpc.py # 23-method exact generated stub
+│           │   ├── orchestration_service_pb2_grpc.py # 26-method exact generated stub
 │           │   ├── sources_pb2.py               # B3/B3b source and PDF-request descriptors
 │           │   ├── sources_pb2_grpc.py          # Deterministic service-free companion
 │           │   ├── artifacts_pb2.py         # B4 exact artifact message overlay
@@ -1338,13 +1345,17 @@ src/notebooklm/
 │           └── notebooks_pb2_grpc.py  # Deterministic service-free companion
 │       ├── notebooklm/internal/android/wire/source_mutation_wire_pb2.py       # B3 source title mutation wire overlay
 │       ├── notebooklm/internal/android/wire/source_mutation_wire_pb2_grpc.py  # Deterministic service-free companion
-│       └── labs/language/tailwind/common/protos/
-│           ├── chat_history_pb2.py       # B5 exact-package ChatSession leaf
-│           ├── chat_history_pb2_grpc.py  # Deterministic service-free companion
-│           ├── metadata_pb2.py           # B3b exact request-context messages
-│           ├── metadata_pb2_grpc.py      # Deterministic service-free companion
-│           ├── provenance_pb2.py         # B3b exact provenance messages
-│           └── provenance_pb2_grpc.py    # Deterministic service-free companion
+│       └── labs/language/tailwind/
+│           ├── common/protos/
+│           │   ├── common_pb2.py          # Shared B5/B6 exact common messages
+│           │   ├── common_pb2_grpc.py     # Deterministic service-free companion
+│           │   ├── metadata_pb2.py        # B3b exact request-context messages
+│           │   ├── metadata_pb2_grpc.py   # Deterministic service-free companion
+│           │   ├── provenance_pb2.py      # B3b exact provenance messages
+│           │   └── provenance_pb2_grpc.py # Deterministic service-free companion
+│           └── sharing/
+│               ├── sharing_pb2.py         # B6 exact messages + GetProjectDetails service
+│               └── sharing_pb2_grpc.py    # Exact generated sharing stub
 ├── _web/                        # Private batchexecute web-backend implementation package
 │   ├── __init__.py              # Package boundary
 │   ├── contracts.py             # Web-only Kernel and RpcCaller Protocols

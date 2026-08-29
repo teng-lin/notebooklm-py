@@ -14,7 +14,7 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
     chat_pb2,
     sources_pb2,
 )
-from notebooklm._android.proto.labs.language.tailwind.common.protos import chat_history_pb2
+from notebooklm._android.proto.labs.language.tailwind.common.protos import common_pb2
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "android"
@@ -50,17 +50,21 @@ def _without_implicit_json_names(
 
 def test_b5_packages_imports_and_service_free_overlay_are_exact() -> None:
     assert chat_pb2.DESCRIPTOR.package == ORCHESTRATION_PACKAGE
-    assert chat_history_pb2.DESCRIPTOR.package == COMMON_PACKAGE
+    assert common_pb2.DESCRIPTOR.package == COMMON_PACKAGE
     assert [dependency.name for dependency in chat_pb2.DESCRIPTOR.dependencies] == [
         "google/internal/labs/tailwind/orchestration/v1/read.proto",
         "google/internal/labs/tailwind/orchestration/v1/sources.proto",
         "google/protobuf/timestamp.proto",
-        "labs/language/tailwind/common/protos/chat_history.proto",
+        "labs/language/tailwind/common/protos/common.proto",
     ]
     assert chat_pb2.DESCRIPTOR.services_by_name == {}
-    assert chat_history_pb2.DESCRIPTOR.services_by_name == {}
-    assert _field_shapes(chat_history_pb2.ChatSession) == {
+    assert common_pb2.DESCRIPTOR.services_by_name == {}
+    assert _field_shapes(common_pb2.ChatSession) == {
         "chat_session_id": (1, False, FieldDescriptor.TYPE_STRING, None)
+    }
+    assert _field_shapes(common_pb2.ProjectPublicSettings) == {
+        "is_publicly_readable": (1, False, FieldDescriptor.TYPE_BOOL, None),
+        "is_discoverable": (2, False, FieldDescriptor.TYPE_BOOL, None),
     }
 
 
@@ -233,13 +237,13 @@ def test_chat_descriptor_fixture_matches_generated_file_descriptors() -> None:
         "google/internal/labs/tailwind/orchestration/v1/chat.proto",
         "google/internal/labs/tailwind/v1/source_settings.proto",
         "google/protobuf/timestamp.proto",
-        "labs/language/tailwind/common/protos/chat_history.proto",
+        "labs/language/tailwind/common/protos/common.proto",
     } <= set(files)
     assert _without_implicit_json_names(files[chat_pb2.DESCRIPTOR.name]) == (
         descriptor_pb2.FileDescriptorProto.FromString(chat_pb2.DESCRIPTOR.serialized_pb)
     )
-    assert _without_implicit_json_names(files[chat_history_pb2.DESCRIPTOR.name]) == (
-        descriptor_pb2.FileDescriptorProto.FromString(chat_history_pb2.DESCRIPTOR.serialized_pb)
+    assert _without_implicit_json_names(files[common_pb2.DESCRIPTOR.name]) == (
+        descriptor_pb2.FileDescriptorProto.FromString(common_pb2.DESCRIPTOR.serialized_pb)
     )
 
 

@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "description": "Repository-local runtime protobuf parsers used by exact generated service paths when live wire semantics exceed the admitted exact-package field subset.",
+  "overrides": [
+    {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateProject",
+      "side": "request",
+      "remote_type": "google.internal.labs.tailwind.orchestration.v1.MutateProjectRequest",
+      "adapter_parser": "notebooklm.internal.android.wire.v1.WireMutateProjectRequest",
+      "reason_code": "live_only_field",
+      "evidence": "docs/android/proto-evidence-ledger.md#b2-exact-and-repository-local-field-ledger"
+    },
+    {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateNotebookGuide",
+      "side": "response",
+      "remote_type": "google.internal.labs.tailwind.orchestration.v1.GenerateNotebookGuideResponse",
+      "adapter_parser": "notebooklm.internal.android.wire.v1.WireGenerateNotebookGuideResponse",
+      "reason_code": "live_only_field",
+      "evidence": "docs/android/proto-evidence-ledger.md#b2-exact-and-repository-local-field-ledger"
+    },
+    {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",
+      "side": "response",
+      "remote_type": "google.internal.labs.tailwind.orchestration.v1.GetLabelsResponse",
+      "adapter_parser": "notebooklm.android.wire.v1.GetLabelsWireResponse",
+      "reason_code": "heterogeneous_member_wire",
+      "evidence": "docs/android/proto-evidence-ledger.md#b9-organization-admission"
+    },
+    {
+      "path": "/labs.language.tailwind.sharing.LabsTailwindSharingService/GetProjectDetails",
+      "side": "response",
+      "remote_type": "labs.language.tailwind.sharing.GetProjectDetailsResponse",
+      "adapter_parser": "notebooklm.android.wire.v1.GetProjectDetailsResponse",
+      "reason_code": "presence_semantics",
+      "evidence": "docs/android/proto-evidence-ledger.md#b6-service-ledger"
+    }
+  ]
+}

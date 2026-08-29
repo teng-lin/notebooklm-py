@@ -24,6 +24,10 @@ from notebooklm._android.notes import (
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     notes_pb2,
 )
+from notebooklm._android.proto.labs.language.tailwind.common.protos import common_pb2
+from notebooklm._android.proto.labs.language.tailwind.sharing import (
+    sharing_pb2 as exact_sharing_pb2,
+)
 from notebooklm._android.proto.notebooklm.android.wire.v1 import sharing_pb2
 from notebooklm._android.session import AndroidSession
 from notebooklm._android.sharing import (
@@ -142,7 +146,7 @@ class FakeB6Server(_OperationScopedSession):
             return sharing_pb2.EmptyResponse()
         if method == GET_PROJECT_DETAILS_METHOD:
             return sharing_pb2.GetProjectDetailsResponse(
-                public_settings=sharing_pb2.ProjectPublicSettings(
+                public_settings=common_pb2.ProjectPublicSettings(
                     is_publicly_readable=self.public,
                     is_discoverable=False,
                 ),
@@ -208,7 +212,7 @@ class SupervisedSharingSession:
                 return sharing_pb2.EmptyResponse()
             if method == GET_PROJECT_DETAILS_METHOD:
                 return sharing_pb2.GetProjectDetailsResponse(
-                    public_settings=sharing_pb2.ProjectPublicSettings(
+                    public_settings=common_pb2.ProjectPublicSettings(
                         is_publicly_readable=self.public,
                         is_discoverable=False,
                     )
@@ -941,7 +945,9 @@ async def test_fake_server_sharing_set_public_then_reads_status() -> None:
         SHARE_PROJECT_METHOD,
         GET_PROJECT_DETAILS_METHOD,
     ]
+    assert isinstance(server.calls[0][1], exact_sharing_pb2.GetProjectDetailsRequest)
     share_request = server.calls[1][1]
+    assert isinstance(share_request, exact_sharing_pb2.ShareProjectRequest)
     assert share_request.project[0].public_document_settings.is_publicly_readable is True
     assert server.operation_scopes == [("sharing.set_public", None)]
     assert server.calls[1][2] == {

@@ -22,37 +22,30 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import notebooks_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n3notebooklm/internal/android/wire/v1/notebooks.proto\x12#notebooklm.internal.android.wire.v1\"(\n\x18WireCreateProjectRequest\x12\x0c\n\x04name\x18\x01 \x01(\t\"0\n\x19WireDeleteProjectsRequest\x12\x13\n\x0bproject_ids\x18\x01 \x03(\t\"T\n\x19WireProjectChangeProperty\x12\x11\n\tnew_title\x18\x02 \x01(\t\x12\x16\n\tnew_emoji\x18\x03 \x01(\tH\x00\x88\x01\x01\x42\x0c\n\n_new_emoji\"n\n\x13WireProjectMutation\x12W\n\x0f\x63hange_property\x18\x04 \x01(\x0b\x32>.notebooklm.internal.android.wire.v1.WireProjectChangeProperty\"{\n\x18WireMutateProjectRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\x12K\n\tmutations\x18\x02 \x03(\x0b\x32\x38.notebooklm.internal.android.wire.v1.WireProjectMutation\"B\n\x16WireCopyProjectRequest\x12\x19\n\x11source_project_id\x18\x02 \x01(\t\x12\r\n\x05title\x18\x03 \x01(\t\"6\n WireGenerateNotebookGuideRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\"+\n\x13WireNotebookSummary\x12\x14\n\x0ctext_summary\x18\x01 \x01(\t\"6\n\x12WireSuggestedTopic\x12\x10\n\x08question\x18\x01 \x01(\t\x12\x0e\n\x06prompt\x18\x02 \x01(\t\"^\n\x13WireSuggestedTopics\x12G\n\x06topics\x18\x01 \x03(\x0b\x32\x37.notebooklm.internal.android.wire.v1.WireSuggestedTopic\"\xb2\x01\n\x11WireNotebookGuide\x12I\n\x07summary\x18\x01 \x01(\x0b\x32\x38.notebooklm.internal.android.wire.v1.WireNotebookSummary\x12R\n\x10suggested_topics\x18\x02 \x01(\x0b\x32\x38.notebooklm.internal.android.wire.v1.WireSuggestedTopics\"s\n!WireGenerateNotebookGuideResponse\x12N\n\x0enotebook_guide\x18\x01 \x01(\x0b\x32\x36.notebooklm.internal.android.wire.v1.WireNotebookGuideb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n3notebooklm/internal/android/wire/v1/notebooks.proto\x12#notebooklm.internal.android.wire.v1\x1a>google/internal/labs/tailwind/orchestration/v1/notebooks.proto\"T\n\x19WireProjectChangeProperty\x12\x11\n\tnew_title\x18\x02 \x01(\t\x12\x16\n\tnew_emoji\x18\x03 \x01(\tH\x00\x88\x01\x01\x42\x0c\n\n_new_emoji\"n\n\x13WireProjectMutation\x12W\n\x0f\x63hange_property\x18\x04 \x01(\x0b\x32>.notebooklm.internal.android.wire.v1.WireProjectChangeProperty\"{\n\x18WireMutateProjectRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\x12K\n\tmutations\x18\x02 \x03(\x0b\x32\x38.notebooklm.internal.android.wire.v1.WireProjectMutation\"B\n\x16WireCopyProjectRequest\x12\x19\n\x11source_project_id\x18\x02 \x01(\t\x12\r\n\x05title\x18\x03 \x01(\t\"6\n\x12WireSuggestedTopic\x12\x10\n\x08question\x18\x01 \x01(\t\x12\x0e\n\x06prompt\x18\x02 \x01(\t\"^\n\x13WireSuggestedTopics\x12G\n\x06topics\x18\x01 \x03(\x0b\x32\x37.notebooklm.internal.android.wire.v1.WireSuggestedTopic\"\xb9\x01\n\x11WireNotebookGuide\x12P\n\x07summary\x18\x01 \x01(\x0b\x32?.google.internal.labs.tailwind.orchestration.v1.NotebookSummary\x12R\n\x10suggested_topics\x18\x02 \x01(\x0b\x32\x38.notebooklm.internal.android.wire.v1.WireSuggestedTopics\"s\n!WireGenerateNotebookGuideResponse\x12N\n\x0enotebook_guide\x18\x01 \x01(\x0b\x32\x36.notebooklm.internal.android.wire.v1.WireNotebookGuideb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'notebooklm.internal.android.wire.v1.notebooks_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_WIRECREATEPROJECTREQUEST']._serialized_start=92
-  _globals['_WIRECREATEPROJECTREQUEST']._serialized_end=132
-  _globals['_WIREDELETEPROJECTSREQUEST']._serialized_start=134
-  _globals['_WIREDELETEPROJECTSREQUEST']._serialized_end=182
-  _globals['_WIREPROJECTCHANGEPROPERTY']._serialized_start=184
-  _globals['_WIREPROJECTCHANGEPROPERTY']._serialized_end=268
-  _globals['_WIREPROJECTMUTATION']._serialized_start=270
-  _globals['_WIREPROJECTMUTATION']._serialized_end=380
-  _globals['_WIREMUTATEPROJECTREQUEST']._serialized_start=382
-  _globals['_WIREMUTATEPROJECTREQUEST']._serialized_end=505
-  _globals['_WIRECOPYPROJECTREQUEST']._serialized_start=507
-  _globals['_WIRECOPYPROJECTREQUEST']._serialized_end=573
-  _globals['_WIREGENERATENOTEBOOKGUIDEREQUEST']._serialized_start=575
-  _globals['_WIREGENERATENOTEBOOKGUIDEREQUEST']._serialized_end=629
-  _globals['_WIRENOTEBOOKSUMMARY']._serialized_start=631
-  _globals['_WIRENOTEBOOKSUMMARY']._serialized_end=674
-  _globals['_WIRESUGGESTEDTOPIC']._serialized_start=676
-  _globals['_WIRESUGGESTEDTOPIC']._serialized_end=730
-  _globals['_WIRESUGGESTEDTOPICS']._serialized_start=732
-  _globals['_WIRESUGGESTEDTOPICS']._serialized_end=826
-  _globals['_WIRENOTEBOOKGUIDE']._serialized_start=829
-  _globals['_WIRENOTEBOOKGUIDE']._serialized_end=1007
-  _globals['_WIREGENERATENOTEBOOKGUIDERESPONSE']._serialized_start=1009
-  _globals['_WIREGENERATENOTEBOOKGUIDERESPONSE']._serialized_end=1124
+  _globals['_WIREPROJECTCHANGEPROPERTY']._serialized_start=156
+  _globals['_WIREPROJECTCHANGEPROPERTY']._serialized_end=240
+  _globals['_WIREPROJECTMUTATION']._serialized_start=242
+  _globals['_WIREPROJECTMUTATION']._serialized_end=352
+  _globals['_WIREMUTATEPROJECTREQUEST']._serialized_start=354
+  _globals['_WIREMUTATEPROJECTREQUEST']._serialized_end=477
+  _globals['_WIRECOPYPROJECTREQUEST']._serialized_start=479
+  _globals['_WIRECOPYPROJECTREQUEST']._serialized_end=545
+  _globals['_WIRESUGGESTEDTOPIC']._serialized_start=547
+  _globals['_WIRESUGGESTEDTOPIC']._serialized_end=601
+  _globals['_WIRESUGGESTEDTOPICS']._serialized_start=603
+  _globals['_WIRESUGGESTEDTOPICS']._serialized_end=697
+  _globals['_WIRENOTEBOOKGUIDE']._serialized_start=700
+  _globals['_WIRENOTEBOOKGUIDE']._serialized_end=885
+  _globals['_WIREGENERATENOTEBOOKGUIDERESPONSE']._serialized_start=887
+  _globals['_WIREGENERATENOTEBOOKGUIDERESPONSE']._serialized_end=1002
 # @@protoc_insertion_point(module_scope)

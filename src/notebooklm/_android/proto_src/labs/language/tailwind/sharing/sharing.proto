@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package labs.language.tailwind.sharing;
+
+import "labs/language/tailwind/common/protos/common.proto";
+
+// Exact-package partial closure for the sharing operations used by the
+// private adapter. ShareProject remains outside the generated service because
+// the external method manifest records only a normalized empty response, not
+// the remote response protobuf FQN.
+
+message ShareProjectRequest {
+  message PublicDocumentSettings {
+    bool is_publicly_readable = 1;
+    bool is_discoverable = 2;
+  }
+
+  message ProjectToShare {
+    string project_id = 1;
+    PublicDocumentSettings public_document_settings = 3;
+  }
+
+  repeated ProjectToShare project = 1;
+}
+
+message GetProjectDetailsRequest {
+  string project_id = 1;
+}
+
+message GetProjectDetailsResponse {
+  .labs.language.tailwind.common.protos.ProjectPublicSettings public_settings = 2;
+  int32 max_individuals_share_limit = 3;
+  bool is_public_sharing_allowed = 4;
+}
+
+service LabsTailwindSharingService {
+  rpc GetProjectDetails(GetProjectDetailsRequest) returns (GetProjectDetailsResponse);
+}

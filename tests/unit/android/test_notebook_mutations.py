@@ -23,6 +23,9 @@ from notebooklm._android.notebooks import (
     AndroidNotebooksAPI,
 )
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
+    notebooks_pb2 as exact_notebooks_pb2,
+)
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     read_pb2,
 )
 from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import notebooks_pb2
@@ -100,7 +103,7 @@ async def test_create_keeps_base_baseline_then_single_send_workflow() -> None:
         CREATE_PROJECT_METHOD,
     ]
     _, request, kwargs = transport.calls[1]
-    assert request == notebooks_pb2.WireCreateProjectRequest(name="Created")
+    assert request == exact_notebooks_pb2.CreateProjectRequest(name="Created")
     assert kwargs == {
         "replay_safe": False,
         "response_type": read_pb2.Project,
@@ -195,7 +198,7 @@ async def test_delete_sends_one_id_and_never_replays() -> None:
     assert await _api(transport).delete("notebook-1") is None
 
     _, request, kwargs = transport.calls[0]
-    assert request == notebooks_pb2.WireDeleteProjectsRequest(project_ids=["notebook-1"])
+    assert request == exact_notebooks_pb2.DeleteProjectsRequest(project_ids=["notebook-1"])
     assert kwargs == {"replay_safe": False, "response_type": Empty}
 
 
@@ -403,7 +406,7 @@ async def test_copy_lost_response_is_ambiguous_and_never_replayed() -> None:
 def _guide_response() -> notebooks_pb2.WireGenerateNotebookGuideResponse:
     return notebooks_pb2.WireGenerateNotebookGuideResponse(
         notebook_guide=notebooks_pb2.WireNotebookGuide(
-            summary=notebooks_pb2.WireNotebookSummary(text_summary="A summary"),
+            summary=exact_notebooks_pb2.NotebookSummary(text_summary="A summary"),
             suggested_topics=notebooks_pb2.WireSuggestedTopics(
                 topics=[
                     notebooks_pb2.WireSuggestedTopic(
@@ -431,7 +434,7 @@ async def test_summary_and_description_each_make_one_nonreplayed_stateful_call()
         SuggestedTopic(question="What happened?", prompt="Explain what happened")
     ]
     for _, request, kwargs in transport.calls:
-        assert request == notebooks_pb2.WireGenerateNotebookGuideRequest(project_id="notebook-1")
+        assert request == exact_notebooks_pb2.GenerateNotebookGuideRequest(project_id="notebook-1")
         assert kwargs == {
             "replay_safe": False,
             "response_type": notebooks_pb2.WireGenerateNotebookGuideResponse,

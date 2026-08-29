@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package labs.language.tailwind.common.protos;
+
+// Exact-package common leaves copied from the pinned external common.proto.
+
+message ChatSession {
+  string chat_session_id = 1;
+}
+
+message ProjectPublicSettings {
+  bool is_publicly_readable = 1;
+  bool is_discoverable = 2;
+}

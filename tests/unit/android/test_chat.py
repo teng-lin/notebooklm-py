@@ -23,7 +23,7 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
     read_pb2,
     sources_pb2,
 )
-from notebooklm._android.proto.labs.language.tailwind.common.protos import chat_history_pb2
+from notebooklm._android.proto.labs.language.tailwind.common.protos import common_pb2
 from notebooklm._android.session import AndroidSession
 from notebooklm._chat import ChatAPI
 from notebooklm._types.documents import StructuredDocument
@@ -190,10 +190,10 @@ async def test_list_sessions_raw_turns_and_history_decode_exact_requests() -> No
     fake.unary_responses = {
         LIST_CHAT_SESSIONS_METHOD: [
             chat_pb2.ListChatSessionsResponse(
-                sessions=[chat_history_pb2.ChatSession(chat_session_id="conversation-1")]
+                sessions=[common_pb2.ChatSession(chat_session_id="conversation-1")]
             ),
             chat_pb2.ListChatSessionsResponse(
-                sessions=[chat_history_pb2.ChatSession(chat_session_id="conversation-1")]
+                sessions=[common_pb2.ChatSession(chat_session_id="conversation-1")]
             ),
         ],
         LIST_CHAT_TURNS_METHOD: [
@@ -267,7 +267,7 @@ async def test_base_ask_uses_latest_cumulative_final_without_concatenating_frame
     fake.unary_responses[LIST_CHAT_SESSIONS_METHOD] = [
         chat_pb2.ListChatSessionsResponse(),
         chat_pb2.ListChatSessionsResponse(
-            sessions=[chat_history_pb2.ChatSession(chat_session_id="conversation-1")]
+            sessions=[common_pb2.ChatSession(chat_session_id="conversation-1")]
         ),
     ]
     fake.stream_responses = [

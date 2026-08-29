@@ -22,27 +22,18 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
+from notebooklm._android.proto.labs.language.tailwind.common.protos import common_pb2 as labs_dot_language_dot_tailwind_dot_common_dot_protos_dot_common__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n(notebooklm/android/wire/v1/sharing.proto\x12\x1anotebooklm.android.wire.v1\"\x0f\n\rEmptyResponse\"N\n\x15ProjectPublicSettings\x12\x1c\n\x14is_publicly_readable\x18\x01 \x01(\x08\x12\x17\n\x0fis_discoverable\x18\x02 \x01(\x08\".\n\x18GetProjectDetailsRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\"\xf7\x01\n\x19GetProjectDetailsResponse\x12J\n\x0fpublic_settings\x18\x02 \x01(\x0b\x32\x31.notebooklm.android.wire.v1.ProjectPublicSettings\x12(\n\x1bmax_individuals_share_limit\x18\x03 \x01(\x05H\x00\x88\x01\x01\x12&\n\x19is_public_sharing_allowed\x18\x04 \x01(\x08H\x01\x88\x01\x01\x42\x1e\n\x1c_max_individuals_share_limitB\x1c\n\x1a_is_public_sharing_allowed\"c\n*ShareProjectRequest_PublicDocumentSettings\x12\x1c\n\x14is_publicly_readable\x18\x01 \x01(\x08\x12\x17\n\x0fis_discoverable\x18\x02 \x01(\x08\"\xa2\x01\n\"ShareProjectRequest_ProjectToShare\x12\x12\n\nproject_id\x18\x01 \x01(\t\x12h\n\x18public_document_settings\x18\x03 \x01(\x0b\x32\x46.notebooklm.android.wire.v1.ShareProjectRequest_PublicDocumentSettings\"f\n\x13ShareProjectRequest\x12O\n\x07project\x18\x01 \x03(\x0b\x32>.notebooklm.android.wire.v1.ShareProjectRequest_ProjectToShareb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n(notebooklm/android/wire/v1/sharing.proto\x12\x1anotebooklm.android.wire.v1\x1a\x31labs/language/tailwind/common/protos/common.proto\"\x0f\n\rEmptyResponse\"\x81\x02\n\x19GetProjectDetailsResponse\x12T\n\x0fpublic_settings\x18\x02 \x01(\x0b\x32;.labs.language.tailwind.common.protos.ProjectPublicSettings\x12(\n\x1bmax_individuals_share_limit\x18\x03 \x01(\x05H\x00\x88\x01\x01\x12&\n\x19is_public_sharing_allowed\x18\x04 \x01(\x08H\x01\x88\x01\x01\x42\x1e\n\x1c_max_individuals_share_limitB\x1c\n\x1a_is_public_sharing_allowedb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'notebooklm.android.wire.v1.sharing_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_EMPTYRESPONSE']._serialized_start=72
-  _globals['_EMPTYRESPONSE']._serialized_end=87
-  _globals['_PROJECTPUBLICSETTINGS']._serialized_start=89
-  _globals['_PROJECTPUBLICSETTINGS']._serialized_end=167
-  _globals['_GETPROJECTDETAILSREQUEST']._serialized_start=169
-  _globals['_GETPROJECTDETAILSREQUEST']._serialized_end=215
-  _globals['_GETPROJECTDETAILSRESPONSE']._serialized_start=218
-  _globals['_GETPROJECTDETAILSRESPONSE']._serialized_end=465
-  _globals['_SHAREPROJECTREQUEST_PUBLICDOCUMENTSETTINGS']._serialized_start=467
-  _globals['_SHAREPROJECTREQUEST_PUBLICDOCUMENTSETTINGS']._serialized_end=566
-  _globals['_SHAREPROJECTREQUEST_PROJECTTOSHARE']._serialized_start=569
-  _globals['_SHAREPROJECTREQUEST_PROJECTTOSHARE']._serialized_end=731
-  _globals['_SHAREPROJECTREQUEST']._serialized_start=733
-  _globals['_SHAREPROJECTREQUEST']._serialized_end=835
+  _globals['_EMPTYRESPONSE']._serialized_start=123
+  _globals['_EMPTYRESPONSE']._serialized_end=138
+  _globals['_GETPROJECTDETAILSRESPONSE']._serialized_start=141
+  _globals['_GETPROJECTDETAILSRESPONSE']._serialized_end=398
 # @@protoc_insertion_point(module_scope)

@@ -6,6 +6,7 @@ import warnings
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import account_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_account__pb2
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import artifacts_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import chat_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_chat__pb2
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import notebooks_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import notes_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notes__pb2
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import organization_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_organization__pb2
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2
@@ -66,6 +67,21 @@ class LabsTailwindOrchestrationServiceStub(object):
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListRecentlyViewedProjects',
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.ListRecentlyViewedProjectsRequest.SerializeToString,
                 response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.ListRecentlyViewedProjectsResponse.FromString,
+                _registered_method=True)
+        self.CreateProject = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateProject',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.CreateProjectRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.Project.FromString,
+                _registered_method=True)
+        self.MutateProject = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateProject',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.MutateProjectRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.Project.FromString,
+                _registered_method=True)
+        self.GenerateNotebookGuide = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateNotebookGuide',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.GenerateNotebookGuideRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.GenerateNotebookGuideResponse.FromString,
                 _registered_method=True)
         self.AddTentativeSources = channel.unary_unary(
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/AddTentativeSources',
@@ -196,6 +212,24 @@ class LabsTailwindOrchestrationServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def ListRecentlyViewedProjects(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CreateProject(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def MutateProject(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GenerateNotebookGuide(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -338,6 +372,21 @@ def add_LabsTailwindOrchestrationServiceServicer_to_server(servicer, server):
                     servicer.ListRecentlyViewedProjects,
                     request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.ListRecentlyViewedProjectsRequest.FromString,
                     response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.ListRecentlyViewedProjectsResponse.SerializeToString,
+            ),
+            'CreateProject': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateProject,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.CreateProjectRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.Project.SerializeToString,
+            ),
+            'MutateProject': grpc.unary_unary_rpc_method_handler(
+                    servicer.MutateProject,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.MutateProjectRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.Project.SerializeToString,
+            ),
+            'GenerateNotebookGuide': grpc.unary_unary_rpc_method_handler(
+                    servicer.GenerateNotebookGuide,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.GenerateNotebookGuideRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.GenerateNotebookGuideResponse.SerializeToString,
             ),
             'AddTentativeSources': grpc.unary_unary_rpc_method_handler(
                     servicer.AddTentativeSources,
@@ -532,6 +581,87 @@ class LabsTailwindOrchestrationService(object):
             '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListRecentlyViewedProjects',
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.ListRecentlyViewedProjectsRequest.SerializeToString,
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.ListRecentlyViewedProjectsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CreateProject(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateProject',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.CreateProjectRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.Project.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def MutateProject(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateProject',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.MutateProjectRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2.Project.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GenerateNotebookGuide(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateNotebookGuide',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.GenerateNotebookGuideRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notebooks__pb2.GenerateNotebookGuideResponse.FromString,
             options,
             channel_credentials,
             insecure,

@@ -11,9 +11,11 @@ from ..types import ShareStatus
 from .codecs.notebooks import map_get_project_error
 from .codecs.sharing import decode_share_status
 from .errors import unsupported_operation
+from .proto.labs.language.tailwind.sharing import sharing_pb2 as exact_sharing_pb2
 from .proto.notebooklm.android.wire.v1 import sharing_pb2
 from .session import AndroidSession
 
+_PROTO = cast(Any, exact_sharing_pb2)
 _WIRE = cast(Any, sharing_pb2)
 
 _SERVICE = "labs.language.tailwind.sharing.LabsTailwindSharingService"
@@ -42,7 +44,7 @@ class AndroidSharingAPI(SharingAPI):
         *,
         expected_epoch: int | None = None,
     ) -> ShareStatus:
-        request = _WIRE.GetProjectDetailsRequest(project_id=notebook_id)
+        request = _PROTO.GetProjectDetailsRequest(project_id=notebook_id)
         try:
             response = await self._transport.unary(
                 GET_PROJECT_DETAILS_METHOD,
@@ -64,11 +66,11 @@ class AndroidSharingAPI(SharingAPI):
 
     async def set_public(self, notebook_id: str, public: bool) -> ShareStatus:
         """Set public readability once and return a fresh status read."""
-        request = _WIRE.ShareProjectRequest(
+        request = _PROTO.ShareProjectRequest(
             project=[
-                _WIRE.ShareProjectRequest_ProjectToShare(
+                _PROTO.ShareProjectRequest.ProjectToShare(
                     project_id=notebook_id,
-                    public_document_settings=_WIRE.ShareProjectRequest_PublicDocumentSettings(
+                    public_document_settings=_PROTO.ShareProjectRequest.PublicDocumentSettings(
                         is_publicly_readable=public,
                         is_discoverable=False,
                     ),
