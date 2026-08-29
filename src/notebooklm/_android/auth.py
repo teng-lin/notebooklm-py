@@ -6,6 +6,7 @@ import asyncio
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Protocol
 
 from .._auth.master_token_types import MasterToken
@@ -65,6 +66,13 @@ class _OAuthMinter(Protocol):
         master_token: MasterToken,
         spec: OAuthClientSpec,
     ) -> MintedOAuthToken: ...
+
+
+class _NoMasterTokenProfile:
+    """I/O-free reader for direct clients without a profile-backed path."""
+
+    def read_master_token(self) -> None:
+        return None
 
 
 @dataclass(frozen=True)
@@ -351,6 +359,15 @@ class BearerProvider(LoopBoundPrimitive):
         if task is not None:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+
+
+def _make_bearer_provider(storage_path: Path | None) -> BearerProvider:
+    """Assemble the concrete credential owners without reading the profile."""
+
+    profile_reader = (
+        ProfileStore(storage_path) if storage_path is not None else _NoMasterTokenProfile()
+    )
+    return BearerProvider(profile_reader, MintService())
 
 
 __all__ = ["BearerCredential", "BearerProvider", "NOTEBOOKLM_OAUTH_SPEC"]

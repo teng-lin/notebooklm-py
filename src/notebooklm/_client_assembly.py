@@ -90,13 +90,6 @@ class BackendPreference:
     reason: Literal["explicit", "env", "default"]
 
 
-class _NoMasterTokenProfile:
-    """I/O-free profile reader used when direct construction has no storage path."""
-
-    def read_master_token(self) -> None:
-        return None
-
-
 def resolve_backend_preference(*, explicit: str | None, env: str | None) -> BackendPreference:
     """Resolve and validate the Phase-B backend preference without performing I/O."""
     value: str
@@ -505,18 +498,13 @@ def _assemble_client(
     android_transports: tuple[TransportLifecycle, ...] = ()
     android_loop_participants: tuple[LoopParticipant, ...] = ()
     if client._backend_preference.preferred == "android":
-        from ._android.auth import BearerProvider
+        from ._android.auth import _make_bearer_provider
         from ._android.collections import AndroidCollectionsAPI
         from ._android.session import AndroidSession
-        from ._auth.mint_service import MintService
-        from ._auth.profile_store import ProfileStore
 
-        profile_reader = (
-            ProfileStore(Path(auth.storage_path))
-            if auth.storage_path is not None
-            else _NoMasterTokenProfile()
+        android_bearer_provider = _make_bearer_provider(
+            Path(auth.storage_path) if auth.storage_path is not None else None
         )
-        android_bearer_provider = BearerProvider(profile_reader, MintService())
         android_session = AndroidSession(
             android_bearer_provider,
             internals.collaborators.call_supervisor,

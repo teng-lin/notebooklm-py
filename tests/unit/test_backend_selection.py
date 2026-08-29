@@ -167,6 +167,39 @@ assert set(client.backends.values()) == {"web"}
     assert completed.returncode == 0, completed.stderr
 
 
+def test_android_construction_defers_optional_runtime_imports_to_open() -> None:
+    script = """
+import builtins
+
+original_import = builtins.__import__
+
+def guarded_import(name, *args, **kwargs):
+    if name == "grpc" or name == "gpsoauth" or name.startswith("google.protobuf"):
+        raise AssertionError(f"Android construction imported {name}")
+    return original_import(name, *args, **kwargs)
+
+builtins.__import__ = guarded_import
+from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
+
+client = NotebookLMClient(
+    AuthTokens(cookies={"SID": "sid"}, csrf_token="csrf", session_id="session"),
+    backend="android",
+)
+assert client.backends["collections"] == "android"
+"""
+    env = os.environ.copy()
+    env.pop("NOTEBOOKLM_BACKEND", None)
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
 def test_android_preference_logs_unqualified_namespaces_once(caplog) -> None:  # type: ignore[no-untyped-def]
     with caplog.at_level(logging.INFO, logger="notebooklm.backend"):
         NotebookLMClient(_auth(), backend="android")

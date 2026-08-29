@@ -1056,6 +1056,7 @@ def test_service_importers_callers_and_lock_boundary_are_exact() -> None:
         "_auth/master_token_bootstrap.py",
     }
     assert _service_calls() == {
+        ("_android/auth.py", "_make_bearer_provider", "construct"),
         ("_auth/master_token.py", "_bootstrapper", "construct"),
         ("_auth/master_token.py", "exchange_master_token", "construct"),
         ("_auth/master_token.py", "exchange_master_token", "exchange"),

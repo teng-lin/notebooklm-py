@@ -1551,6 +1551,7 @@ def test_direct_production_store_callers_are_exact_and_function_granular() -> No
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         actual.update(_store_calls(path, tree))
     assert actual == {
+        ("_android/auth.py", "_make_bearer_provider", "ProfileStore"),
         (
             "_android/auth.py",
             "BearerProvider.activate",
