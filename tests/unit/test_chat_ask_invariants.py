@@ -355,7 +355,8 @@ class TestChatRefreshRetry:
             session_id="OLD_SID",
         )
 
-        async def refresh() -> AuthTokens:
+        async def refresh(expected_epoch: int) -> AuthTokens:
+            assert expected_epoch == 1
             # Mutate the live auth tokens — the next snapshot picks this up.
             auth.csrf_token = "NEW_CSRF"
             auth.session_id = "NEW_SID"

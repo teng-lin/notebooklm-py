@@ -613,7 +613,7 @@ def test_runtime_import_visitor_detects_web_sources_facade_and_module() -> None:
     tree = ast.parse(
         "from notebooklm._web.sources import WebSourcesAPI\n"
         "import notebooklm._web.sources\n"
-        "WebSourcesAPI(rpc, uploader=uploader)\n"
+        "WebSourcesAPI(rpc, supervisor=supervisor, uploader=uploader)\n"
     )
     visitor = _RuntimeImportVisitor(
         forbidden_names=_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES,

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (retroactive). Documents the contract shipped in the tier-7 thread-safety/concurrency arc; reaffirmed by the seam extractions in tier-8/tier-10 and the later `_runtime/` package split.
+Accepted (retroactive). Documents the contract shipped in the tier-7 thread-safety/concurrency arc; reaffirmed by the seam extractions in tier-8/tier-10, the later `_runtime/` package split, and the 2026-08-28 B0 root-lifecycle amendment.
 
 ## Context
 
@@ -19,10 +19,11 @@ The audit chose the simplest possible contract: *an open `NotebookLMClient` inst
 The contract is enforced at two layers:
 
 - `src/notebooklm/_loop_affinity.py` exposes `assert_bound_loop(bound_loop)` which compares the current loop to the captured one and raises `RuntimeError` with an actionable diagnostic if they differ.
-- `src/notebooklm/_runtime/lifecycle.py::ClientLifecycle.open()` captures the loop with `asyncio.get_running_loop()` and exposes it as `get_bound_loop()`. It propagates the binding into collaborators that own loop-bound primitives.
-- `src/notebooklm/_web/transport/runtime.py::RuntimeTransport.perform_authed_post()` calls the injected loop check before it enters the middleware chain and before any loop-bound primitive is touched.
+- `src/notebooklm/_runtime/lifecycle.py::ClientLifecycle.open()` captures the loop with `asyncio.get_running_loop()` and propagates it through its immutable loop-participant tuple before opening the transport participants. Public open/drain/close wave joins validate the same loop.
+- `src/notebooklm/_runtime/call_supervisor.py::CallSupervisor` is the concrete admission authority. It owns the loop binding used by RPC calls, generation-bearing operation scopes, artifact poll leaders, and source workflows; its admission check runs before auth/Kernel access.
+- `src/notebooklm/_web/transport/runtime.py::RuntimeTransport.perform_authed_post()` takes an admission-only generation lease before auth snapshot/materialization, then enters the supervisor's terminal metrics/semaphore call scope. Terminal Kernel access checks the same epoch.
 
-`ClientLifecycle.get_bound_loop()` returns `None` before `open()` is called, and `assert_bound_loop(None)` is a silent no-op. That keeps fresh test fixtures from being misclassified as cross-loop calls before they have opened a transport. The neutral `LoopGuard` capability lives in `src/notebooklm/_runtime/contracts.py`; the web-only `Kernel` and `RpcCaller` capabilities live in `src/notebooklm/_web/contracts.py`. Single-consumer protocols stay local to their owners, such as `AuthMetadata` in `src/notebooklm/_web/sources/upload.py` and `OperationScopeProvider` in `src/notebooklm/_artifact/polling.py`.
+`ClientLifecycle.get_bound_loop()` and `CallSupervisor.get_bound_loop()` return `None` before `open()` is called, and `assert_bound_loop(None)` is a silent no-op. That keeps fresh test fixtures from being misclassified as cross-loop calls before they have opened a transport. The neutral `LoopGuard` capability lives in `src/notebooklm/_runtime/contracts.py`; the web-only `Kernel` and `RpcCaller` capabilities live in `src/notebooklm/_web/contracts.py`. The single-consumer `AuthMetadata` Protocol stays local to `src/notebooklm/_web/sources/upload.py`. B0 retired `OperationScopeProvider`; consumers needing admitted async work receive the concrete shared `CallSupervisor`.
 
 ## Decision
 
@@ -34,7 +35,7 @@ One `NotebookLMClient` instance is bound to the event loop that ran `open()`. Th
 
 The contract is enforced via `assert_bound_loop()` (raises `RuntimeError`) rather than via a defensive lock or a silent fallback. A noisy failure on the first violating call is strictly preferable to a deadlock or a leaked conversation ID.
 
-`ClientLifecycle.get_bound_loop()` returns `None` before `open()` is called; the affinity helper treats `None` as a silent no-op so test fixtures that construct a client without opening it are not penalised.
+The root lifecycle and supervisor report no bound loop before `open()`; the affinity helper treats `None` as a silent no-op so test fixtures that construct a client without opening it are not penalised.
 
 ## Consequences
 
@@ -42,7 +43,7 @@ The contract is enforced via `assert_bound_loop()` (raises `RuntimeError`) rathe
 
 - The failure mode is *fast and visible*. A cross-loop reuse fails on the first call, with a stack trace pointing at `assert_bound_loop`, not as a mysterious hang ten minutes later.
 - The contract is *one sentence long*. New contributors do not need to learn six lifecycle rules — they need to learn one rule and one error message.
-- Each seam (drain, auth refresh, keepalive, transport) can use plain `asyncio.Lock` / `asyncio.Semaphore` without defensive re-binding logic. The cost of cross-loop safety is paid once at the lifecycle layer, not in each seam.
+- Each owner can use plain `asyncio.Lock` / `asyncio.Semaphore`: the root lifecycle coordinates binding/reset for its registered loop participants, while the supervisor and terminal epoch checks enforce use. Owners do not silently re-key live primitives across loops.
 
 **Unwanted:**
 

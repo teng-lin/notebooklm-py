@@ -165,7 +165,7 @@ def test_phase8_source_listing_service_name_and_facade_wiring_are_current() -> N
     from notebooklm._web.sources.listing import SourceLister
 
     core = MagicMock()
-    api = WebSourcesAPI(core, uploader=MagicMock())
+    api = WebSourcesAPI(core, supervisor=core, uploader=MagicMock())
 
     assert isinstance(api._lister, SourceLister)
 
@@ -318,8 +318,7 @@ def test_artifacts_constructible_without_notes_api(mock_auth: AuthTokens) -> Non
     core = MagicMock()
     api = WebArtifactsAPI(
         rpc=core,
-        drain=core,
-        lifecycle=core,
+        supervisor=core,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
         note_service=MagicMock(spec=NoteService),
@@ -366,8 +365,7 @@ def test_artifacts_before_notes_construction_order(mock_auth: AuthTokens) -> Non
     def _make_artifacts() -> ArtifactsAPI:
         return WebArtifactsAPI(
             rpc=core,
-            drain=core,
-            lifecycle=core,
+            supervisor=core,
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
             note_service=MagicMock(spec=NoteService),
@@ -404,8 +402,7 @@ def _make_core_for_mind_map_flow() -> tuple[FakeSession, list[tuple[Any, Any]]]:
     sanctioned constructor-injection substrate (ADR-0007). The factory wires
     the injected mock onto ``fake.rpc_executor.rpc_call`` (the ``RpcCaller``
     surface the mind-map flow threads into ``ArtifactsAPI``) and supplies
-    benign defaults for the ``assert_bound_loop`` / ``operation_scope`` /
-    ``register_drain_hook`` surfaces the artifacts runtime touches.
+    benign defaults for every CallSupervisor surface artifact polling touches.
 
     Returns ``(core, calls)`` where ``calls`` is a list of ``(method, params)``
     tuples populated as the test exercises the API.
@@ -456,8 +453,7 @@ def _build_artifacts_with_real_mind_map_service(core: FakeSession) -> ArtifactsA
     mind_maps = NoteBackedMindMapService(note_service)
     return WebArtifactsAPI(
         rpc=core.rpc_executor,
-        drain=core,
-        lifecycle=core,
+        supervisor=core,
         notebooks=MagicMock(get_source_ids=AsyncMock(return_value=["src_1"])),
         mind_maps=mind_maps,
         note_service=note_service,

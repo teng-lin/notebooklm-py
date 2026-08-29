@@ -23,7 +23,7 @@ These tests pin three contracts:
 ADR-0014 Rule 2; the tests here
 do not exercise RPC traffic — they pin the constructor contract — so
 the collaborator stubs only need to silently accept the calls
-``ArtifactsAPI.__init__`` makes (``drain.register_drain_hook``).
+``ArtifactsAPI.__init__`` makes (``supervisor.register_drain_hook``).
 """
 
 from unittest.mock import AsyncMock, MagicMock
@@ -35,17 +35,15 @@ from notebooklm._web.mind_maps import NoteBackedMindMapService
 from notebooklm._web.notes import NoteService
 
 
-def _make_collaborators() -> tuple[MagicMock, MagicMock, MagicMock]:
-    """Return ``(rpc, drain, lifecycle)`` stubs for constructor-contract tests.
+def _make_collaborators() -> tuple[MagicMock, MagicMock]:
+    """Return ``(rpc, supervisor)`` stubs for constructor-contract tests.
 
-    ``drain`` must accept ``register_drain_hook`` (called by
-    :meth:`ArtifactsAPI.__init__` to register the polling-service
-    close-time cleanup hook); the other collaborators are inert.
+    ``supervisor`` accepts the polling-service drain-hook registration; the
+    RPC collaborator is inert.
     """
     rpc = MagicMock()
-    drain = MagicMock()
-    lifecycle = MagicMock()
-    return rpc, drain, lifecycle
+    supervisor = MagicMock()
+    return rpc, supervisor
 
 
 @pytest.mark.asyncio
@@ -58,15 +56,14 @@ async def test_list_mind_maps_delegates_to_injected_facade():
     injected adapter. Confirming the adapter sees the call still pins
     the contract.
     """
-    rpc, drain, lifecycle = _make_collaborators()
+    rpc, supervisor = _make_collaborators()
     fake_mind_maps = MagicMock(spec=NoteBackedMindMapService)
     fake_mind_maps.list_mind_maps = AsyncMock(return_value=["sentinel-row"])
     fake_note_service = MagicMock(spec=NoteService)
 
     api = WebArtifactsAPI(
         rpc=rpc,
-        drain=drain,
-        lifecycle=lifecycle,
+        supervisor=supervisor,
         notebooks=MagicMock(),
         mind_maps=fake_mind_maps,
         note_service=fake_note_service,
@@ -79,10 +76,10 @@ async def test_list_mind_maps_delegates_to_injected_facade():
 
 def test_mind_maps_and_note_service_are_required():
     """Both new kwargs are required — no implicit fallback installs them."""
-    rpc, drain, lifecycle = _make_collaborators()
+    rpc, supervisor = _make_collaborators()
     fake_mind_maps = MagicMock(spec=NoteBackedMindMapService)
     fake_note_service = MagicMock(spec=NoteService)
-    kw = {"rpc": rpc, "drain": drain, "lifecycle": lifecycle, "notebooks": MagicMock()}
+    kw = {"rpc": rpc, "supervisor": supervisor, "notebooks": MagicMock()}
 
     # Missing both.
     with pytest.raises(TypeError):
@@ -99,11 +96,11 @@ def test_mind_maps_and_note_service_are_required():
 
 def test_mind_maps_and_note_service_are_keyword_only():
     """All ``ArtifactsAPI`` parameters remain keyword-only."""
-    rpc, drain, lifecycle = _make_collaborators()
+    rpc, supervisor = _make_collaborators()
     fake_mind_maps = MagicMock(spec=NoteBackedMindMapService)
     fake_note_service = MagicMock(spec=NoteService)
     with pytest.raises(TypeError):
-        WebArtifactsAPI(rpc, drain, lifecycle, MagicMock(), fake_mind_maps, fake_note_service)  # type: ignore[misc]
+        WebArtifactsAPI(rpc, supervisor, MagicMock(), fake_mind_maps, fake_note_service)  # type: ignore[misc]
 
 
 def test_legacy_mind_map_service_kwarg_is_rejected():
@@ -112,33 +109,30 @@ def test_legacy_mind_map_service_kwarg_is_rejected():
     Passing it must raise ``TypeError`` so silent breakage on partial
     upgrades surfaces immediately.
     """
-    rpc, drain, lifecycle = _make_collaborators()
+    rpc, supervisor = _make_collaborators()
     fake_mind_maps = MagicMock(spec=NoteBackedMindMapService)
     fake_note_service = MagicMock(spec=NoteService)
     with pytest.raises(TypeError):
         WebArtifactsAPI(  # type: ignore[call-arg]
             rpc=rpc,
-            drain=drain,
-            lifecycle=lifecycle,
+            supervisor=supervisor,
             notebooks=MagicMock(),
             mind_map_service=fake_mind_maps,
             note_service=fake_note_service,
         )
 
 
-def test_artifacts_no_longer_exposes_core_property_alias():
+def test_artifacts_uses_one_supervisor_without_legacy_runtime_aliases():
     """Phase 5 removes the ``_core`` ``@property`` alias on ArtifactsAPI.
 
     The transitional ``_core`` shim added in Phase 3 is dead code; after
-    the runtime-adapter inlining the three runtime collaborators are
-    stored on ``ArtifactsAPI`` directly as ``_rpc`` / ``_drain`` /
-    ``_lifecycle`` rather than behind a single ``_runtime`` attribute.
+    B0 replaces the separate drain and lifecycle capabilities with the one
+    required supervisor used by the polling service.
     """
-    rpc, drain, lifecycle = _make_collaborators()
+    rpc, supervisor = _make_collaborators()
     api = WebArtifactsAPI(
         rpc=rpc,
-        drain=drain,
-        lifecycle=lifecycle,
+        supervisor=supervisor,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
         note_service=MagicMock(spec=NoteService),
@@ -146,5 +140,24 @@ def test_artifacts_no_longer_exposes_core_property_alias():
     # The descriptor must be gone — not just empty, not just delegating.
     assert not hasattr(api, "_core")
     assert api._rpc is rpc
-    assert api._drain is drain
-    assert api._lifecycle is lifecycle
+    assert api._supervisor is supervisor
+    assert api._polling._supervisor is supervisor
+    assert not hasattr(api, "_drain")
+    assert not hasattr(api, "_lifecycle")
+
+
+@pytest.mark.parametrize("legacy_kwarg", ["drain", "lifecycle"])
+def test_legacy_artifact_runtime_kwargs_are_rejected(legacy_kwarg: str) -> None:
+    """B0 has no overload that reconstructs the old split capabilities."""
+    rpc, supervisor = _make_collaborators()
+    kwargs = {
+        "rpc": rpc,
+        "supervisor": supervisor,
+        "notebooks": MagicMock(),
+        "mind_maps": MagicMock(spec=NoteBackedMindMapService),
+        "note_service": MagicMock(spec=NoteService),
+        legacy_kwarg: MagicMock(),
+    }
+
+    with pytest.raises(TypeError):
+        WebArtifactsAPI(**kwargs)  # type: ignore[arg-type]

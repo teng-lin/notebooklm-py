@@ -18,8 +18,8 @@ pytestmark = pytest.mark.allow_no_vcr
 
 class TestAutoRefreshIntegration:
     @pytest.mark.asyncio
-    async def test_client_has_refresh_callback_wired(self):
-        """NotebookLMClient should wire refresh_auth as callback."""
+    async def test_client_has_refresh_callback_wired(self, monkeypatch: pytest.MonkeyPatch):
+        """NotebookLMClient should wire refresh_auth as an epoch-aware callback."""
         auth = AuthTokens(
             cookies={"SID": "test"},
             csrf_token="csrf",
@@ -27,12 +27,24 @@ class TestAutoRefreshIntegration:
         )
 
         client = NotebookLMClient(auth)
-        # Bound methods aren't identical, so compare underlying function
-        assert client._collaborators.auth_coord._refresh_callback is not None
-        assert (
-            client._collaborators.auth_coord._refresh_callback.__func__
-            is NotebookLMClient.refresh_auth
-        )
+        callback = client._collaborators.auth_coord._refresh_callback
+        assert callback is not None
+
+        observed_epochs: list[int] = []
+
+        async def fake_refresh_auth(*, expected_epoch: int) -> AuthTokens:
+            observed_epochs.append(expected_epoch)
+            return client._auth
+
+        monkeypatch.setattr(client, "_refresh_auth_for_epoch", fake_refresh_auth)
+
+        async with client:
+            expected_epoch = client._collaborators.auth_coord._active_epoch
+            assert expected_epoch is not None
+            result = await callback(expected_epoch)
+
+        assert result is client._auth
+        assert observed_epochs == [expected_epoch]
         # ``_refresh_lock`` is lazily created on first ``_await_refresh``.
         # At construction time it is ``None`` so the client can be
         # instantiated outside a running loop; the helper allocates the
@@ -55,8 +67,9 @@ class TestAutoRefreshIntegration:
         # Track refresh calls
         refresh_calls = []
 
-        async def tracking_refresh():
+        async def tracking_refresh(expected_epoch: int):
             refresh_calls.append(True)
+            client._collaborators.auth_coord.assert_epoch(expected_epoch)
             # Simulate successful refresh
             client._auth.csrf_token = "new_csrf"
             # Wave 3 of plan ``host-protocol-removal`` deleted the
@@ -65,6 +78,7 @@ class TestAutoRefreshIntegration:
             client._collaborators.auth_coord.update_auth_headers(
                 auth=client._auth,
                 kernel=client._collaborators.kernel,
+                expected_epoch=expected_epoch,
             )
             return client._auth
 
@@ -110,8 +124,9 @@ class TestAutoRefreshIntegration:
 
         refresh_calls = []
 
-        async def tracking_refresh():
+        async def tracking_refresh(expected_epoch: int):
             refresh_calls.append(True)
+            client._collaborators.auth_coord.assert_epoch(expected_epoch)
             client._auth.csrf_token = "new_csrf"
             # Wave 3 of plan ``host-protocol-removal`` deleted the
             # Session-level ``update_auth_headers`` forward; call the
@@ -119,6 +134,7 @@ class TestAutoRefreshIntegration:
             client._collaborators.auth_coord.update_auth_headers(
                 auth=client._auth,
                 kernel=client._collaborators.kernel,
+                expected_epoch=expected_epoch,
             )
             return client._auth
 
@@ -175,12 +191,14 @@ class TestAutoRefreshIntegration:
 
         refresh_calls = []
 
-        async def tracking_refresh():
+        async def tracking_refresh(expected_epoch: int):
             refresh_calls.append(True)
+            client._collaborators.auth_coord.assert_epoch(expected_epoch)
             client._auth.csrf_token = "new_csrf"
             client._collaborators.auth_coord.update_auth_headers(
                 auth=client._auth,
                 kernel=client._collaborators.kernel,
+                expected_epoch=expected_epoch,
             )
             return client._auth
 
@@ -242,11 +260,13 @@ class TestAutoRefreshIntegration:
         client = NotebookLMClient(auth)
         client._composed.chain_host._refresh_retry_delay = 0
 
-        async def tracking_refresh():
+        async def tracking_refresh(expected_epoch: int):
+            client._collaborators.auth_coord.assert_epoch(expected_epoch)
             client._auth.csrf_token = "new_csrf"
             client._collaborators.auth_coord.update_auth_headers(
                 auth=client._auth,
                 kernel=client._collaborators.kernel,
+                expected_epoch=expected_epoch,
             )
             return client._auth
 
@@ -286,7 +306,8 @@ class TestAutoRefreshIntegration:
         client = NotebookLMClient(auth)
         client._composed.chain_host._refresh_retry_delay = 0.1  # 100ms delay
 
-        async def mock_refresh():
+        async def mock_refresh(expected_epoch: int):
+            client._collaborators.auth_coord.assert_epoch(expected_epoch)
             return auth
 
         client._collaborators.auth_coord._refresh_callback = mock_refresh
@@ -329,7 +350,8 @@ class TestAutoRefreshIntegration:
         client = NotebookLMClient(auth)
         client._composed.chain_host._refresh_retry_delay = 0
 
-        async def failing_refresh():
+        async def failing_refresh(expected_epoch: int):
+            client._collaborators.auth_coord.assert_epoch(expected_epoch)
             # Simulates refresh_auth detecting redirect to login
             raise ValueError("Authentication expired. Run 'notebooklm login' to re-authenticate.")
 
@@ -374,7 +396,8 @@ class TestAutoRefreshIntegration:
 
         refresh_calls = []
 
-        async def tracking_refresh():
+        async def tracking_refresh(expected_epoch: int):
+            client._collaborators.auth_coord.assert_epoch(expected_epoch)
             refresh_calls.append(True)
             return client._auth
 
@@ -431,7 +454,8 @@ class TestAutoRefreshIntegration:
 
         refresh_calls = []
 
-        async def tracking_refresh():
+        async def tracking_refresh(expected_epoch: int):
+            client._collaborators.auth_coord.assert_epoch(expected_epoch)
             refresh_calls.append(True)
             return client._auth
 

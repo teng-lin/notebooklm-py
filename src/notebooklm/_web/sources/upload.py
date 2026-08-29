@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from collections.abc import Awaitable, Callable
-from contextlib import nullcontext
-from dataclasses import replace
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, replace
 from pathlib import Path
 from time import monotonic
-from typing import IO, TYPE_CHECKING, Any, Concatenate, ParamSpec, Protocol, TypeVar, cast
+from typing import IO, TYPE_CHECKING, Any, Protocol
 
 import httpx
 
@@ -99,8 +99,6 @@ from .listing import SourceLister
 
 if TYPE_CHECKING:
     from ..._runtime.call_supervisor import CallSupervisor
-    from ..._runtime.lifecycle import ClientLifecycle
-    from ..._transport_drain import TransportDrainTracker
 
 
 class AuthMetadata(Protocol):
@@ -161,32 +159,12 @@ class AsyncClientFactory(Protocol):
 ListSources = Callable[[str], Awaitable[list[Source]]]
 QueueWaitRecorder = Callable[[float], None]
 
-_P = ParamSpec("_P")
-_T = TypeVar("_T")
 
+@dataclass(frozen=True)
+class _TransportChildOutcome:
+    """Internal child result that keeps process exits inside the task boundary."""
 
-def _track_transport_operation(
-    method: Callable[Concatenate[SourceUploadPipeline, _P], Awaitable[_T]],
-) -> Callable[Concatenate[SourceUploadPipeline, _P], Awaitable[_T]]:
-    """Keep a direct-upload task attached to its resource generation."""
-
-    async def wrapped(self: SourceUploadPipeline, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        epoch, task = self._begin_transport_operation()
-        try:
-            return await method(self, *args, **kwargs)
-        finally:
-            self._finish_transport_operation(epoch, task)
-
-    return wrapped
-
-
-# Single-loop-per-client invariant per ADR-0004; not safe for multi-loop fan-out.
-_BACKGROUND_CANCEL_TASKS: set[asyncio.Task[None]] = set()
-
-
-def _retain_background_cancel_task(task: asyncio.Task[None]) -> None:
-    _BACKGROUND_CANCEL_TASKS.add(task)
-    task.add_done_callback(_BACKGROUND_CANCEL_TASKS.discard)
+    error: BaseException | None = None
 
 
 class SourceUploadPipeline(LoopBoundPrimitive):
@@ -198,9 +176,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         self,
         *,
         rpc: RpcCaller,
-        drain: TransportDrainTracker | None = None,
-        supervisor: CallSupervisor | None = None,
-        lifecycle: ClientLifecycle,
+        supervisor: CallSupervisor,
         kernel: Kernel,
         auth: AuthMetadata,
         upload_timeout: httpx.Timeout | None = None,
@@ -212,11 +188,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         poller: SourcePoller | None = None,
     ):
         self._rpc = rpc
-        if supervisor is None and drain is None:
-            raise TypeError("SourceUploadPipeline requires supervisor or drain")
-        self._supervisor = supervisor if supervisor is not None else drain
-        self._full_workflow_supervision = supervisor is not None
-        self._lifecycle = lifecycle
+        self._supervisor = supervisor
         self._kernel = kernel
         self._auth = auth
         self._upload_timeout = upload_timeout
@@ -226,12 +198,9 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         self._upload_semaphore: asyncio.Semaphore | None = None
         # Bounds concurrent Drive auto-route downloads (#1884); loop-bound.
         self._download_semaphore: asyncio.Semaphore | None = None
-        # Epoch zero preserves the pipeline's historical standalone use in unit
-        # tests and internal adapters that construct it without opening a root
-        # ``ClientLifecycle``.  Root-managed generations start at one, and once
-        # such a generation is fenced the pipeline never falls back to zero.
-        self._active_epoch: int | None = 0
+        self._active_epoch: int | None = None
         self._closing = False
+        self._registry_lock: asyncio.Lock | None = None
         self._transport_tasks: set[asyncio.Task[Any]] = set()
         self._transport_clients: set[httpx.AsyncClient] = set()
         # ``_bound_loop`` + ``set_bound_loop`` come from the
@@ -286,18 +255,12 @@ class SourceUploadPipeline(LoopBoundPrimitive):
     def _authuser_header(self) -> str:
         return format_authuser_value(self._auth.authuser, self._auth.account_email)
 
-    def _live_cookies(self) -> httpx.Cookies:
-        cookies = getattr(self._kernel, "cookies", None)
-        if isinstance(cookies, httpx.Cookies):
-            return cookies
-        get_http_client = getattr(self._kernel, "get_http_client", None)
-        if get_http_client is not None:
-            return get_http_client().cookies
-        if cookies is None:
-            return httpx.Cookies()
-        return cast(httpx.Cookies, cookies)
+    def _live_cookies(self, expected_epoch: int) -> httpx.Cookies:
+        """Return cookies only from the HTTP client owning ``expected_epoch``."""
+        self._assert_transport_epoch(expected_epoch)
+        return self._kernel.get_http_client(expected_epoch=expected_epoch).cookies
 
-    def live_cookies(self) -> httpx.Cookies:
+    def live_cookies(self, expected_epoch: int) -> httpx.Cookies:
         """Public accessor for the freshest live cookie jar (post-rotation, #1884).
 
         Exposes :meth:`_live_cookies` so ``SourcesAPI.add_drive_file`` can
@@ -305,7 +268,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         master jar the upload leg uses (kept fresh by keepalive rotation, unlike
         the on-disk cookies) — without reaching a private method across the seam.
         """
-        return self._live_cookies()
+        return self._live_cookies(expected_epoch)
 
     def _on_loop_rebind(
         self,
@@ -322,6 +285,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         """
         self._upload_semaphore = None
         self._download_semaphore = None
+        self._registry_lock = None
 
     def reset_after_open(self) -> None:
         """Discard the lazy upload semaphore so a reopened client rebinds it.
@@ -342,6 +306,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         self.reset_after_open()
         self._active_epoch = epoch
         self._closing = False
+        self._registry_lock = asyncio.Lock()
         self._transport_tasks.clear()
         self._transport_clients.clear()
 
@@ -349,26 +314,101 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         """Fence first, then interrupt every old-epoch upload resource."""
         self._closing = True
         self._active_epoch = None
-        current = asyncio.current_task()
-        tasks = [task for task in self._transport_tasks if task is not current and not task.done()]
-        clients = list(self._transport_clients)
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*(client.aclose() for client in clients), return_exceptions=True)
-        await asyncio.gather(*tasks, return_exceptions=True)
+        tasks, clients = await self._snapshot_transport_resources()
+        error = await self._settle_transport_resources(tasks, clients)
+        if error is not None:
+            raise error
 
     async def close_resources(self) -> None:
         """Settle and clear all direct-upload handles after partial open/close."""
+        # ``prepare_close`` normally installed this fence.  Repeat it before
+        # the first await so rollback/partial-open cleanup is independently
+        # safe and cannot race a late child registration.
+        self._closing = True
+        self._active_epoch = None
         try:
-            await asyncio.gather(
-                *(client.aclose() for client in self._transport_clients),
-                return_exceptions=True,
-            )
+            tasks, clients = await self._snapshot_transport_resources()
+            error = await self._settle_transport_resources(tasks, clients)
+            if error is not None:
+                raise error
         finally:
             self._transport_clients.clear()
             self._transport_tasks.clear()
             self._active_epoch = None
             self._closing = True
+            self._registry_lock = None
+
+    async def _snapshot_transport_resources(
+        self,
+    ) -> tuple[list[asyncio.Task[Any]], list[httpx.AsyncClient]]:
+        """Snapshot every old-generation resource after the epoch fence lands."""
+        lock = self._registry_lock
+        if lock is None:
+            return [], []
+        current = asyncio.current_task()
+        async with lock:
+            tasks = [task for task in self._transport_tasks if task is not current]
+            clients = list(self._transport_clients)
+        return tasks, clients
+
+    async def _settle_transport_resources(
+        self,
+        tasks: list[asyncio.Task[Any]],
+        clients: list[httpx.AsyncClient],
+    ) -> BaseException | None:
+        """Cancel/gather every task and attempt every client close.
+
+        Process-exit signals retain precedence, but no individual teardown
+        failure is allowed to skip a sibling task, request body, or client.
+        """
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        client_error = await self._close_clients(clients)
+        task_results = await asyncio.gather(*tasks, return_exceptions=True)
+        task_errors = [
+            result.error if isinstance(result, _TransportChildOutcome) else result
+            for result in task_results
+        ]
+        process_exit = next(
+            (
+                result
+                for result in (*task_errors, client_error)
+                if isinstance(result, (KeyboardInterrupt, SystemExit))
+            ),
+            None,
+        )
+        if process_exit is not None:
+            return process_exit
+        if client_error is not None:
+            return client_error
+        return next(
+            (
+                result
+                for result in task_errors
+                if isinstance(result, BaseException)
+                and not isinstance(result, asyncio.CancelledError)
+            ),
+            None,
+        )
+
+    @staticmethod
+    async def _close_clients(
+        clients: list[httpx.AsyncClient],
+    ) -> BaseException | None:
+        """Attempt every client close without leaking process exits via child tasks."""
+        process_exit: KeyboardInterrupt | SystemExit | None = None
+        first_failure: BaseException | None = None
+        for client in clients:
+            try:
+                await client.aclose()
+            except (KeyboardInterrupt, SystemExit) as exc:
+                if process_exit is None:
+                    process_exit = exc
+            except BaseException as exc:
+                if first_failure is None:
+                    first_failure = exc
+        return process_exit or first_failure
 
     def _assert_transport_epoch(self, expected_epoch: int) -> None:
         if self._closing or self._active_epoch != expected_epoch:
@@ -377,10 +417,13 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                 f"(expected={expected_epoch}, active={self._active_epoch!r})."
             )
 
-    def _begin_transport_operation(self) -> tuple[int, asyncio.Task[Any]]:
-        epoch = self._active_epoch
+    def _begin_transport_operation(
+        self,
+        expected_epoch: int,
+    ) -> tuple[int, asyncio.Task[Any]]:
+        epoch = expected_epoch
         task = asyncio.current_task()
-        if epoch is None or task is None:
+        if task is None:
             raise RuntimeError("NotebookLMClient upload transport is not open.")
         self._assert_transport_epoch(epoch)
         self._transport_tasks.add(task)
@@ -390,16 +433,58 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         del epoch
         self._transport_tasks.discard(task)
 
-    def _capture_transport_epoch(self) -> int:
-        epoch = self._active_epoch
-        if epoch is None:
-            raise RuntimeError("NotebookLMClient upload transport is not open.")
-        self._assert_transport_epoch(epoch)
-        return epoch
+    @asynccontextmanager
+    async def transport_operation_scope(self, label: str) -> AsyncIterator[int]:
+        """Admit and track one direct-upload workflow under one epoch."""
+        self._supervisor.assert_bound_loop()
+        async with self._supervisor.operation_scope(label) as lease:
+            epoch, task = self._begin_transport_operation(lease.epoch)
+            try:
+                yield lease.epoch
+            finally:
+                self._finish_transport_operation(epoch, task)
 
     def _track_transport_client(self, client: httpx.AsyncClient, epoch: int) -> None:
+        """Publish a new client in one checkpoint-free fencing section."""
         self._assert_transport_epoch(epoch)
+        if self._registry_lock is None:
+            raise RuntimeError("NotebookLMClient upload transport is not open.")
         self._transport_clients.add(client)
+
+    async def _spawn_transport_child(
+        self,
+        label: str,
+        factory: Callable[[], Awaitable[Any]],
+        *,
+        expected_epoch: int,
+    ) -> asyncio.Task[_TransportChildOutcome]:
+        """Spawn child I/O whose task is registered before its first await.
+
+        Registration happens inside the admitted child factory.  Therefore a
+        parent cancelled in the tiny interval before ``spawn_child`` publishes
+        its return value cannot lose the task from uploader teardown.
+        """
+
+        async def _tracked() -> _TransportChildOutcome:
+            task = asyncio.current_task()
+            try:
+                self._assert_transport_epoch(expected_epoch)
+                if task is None:
+                    raise RuntimeError("NotebookLMClient upload child has no owning task.")
+                if self._registry_lock is None:
+                    raise RuntimeError("NotebookLMClient upload transport is not open.")
+                self._transport_tasks.add(task)
+                await factory()
+                return _TransportChildOutcome()
+            except asyncio.CancelledError:
+                raise
+            except BaseException as exc:
+                return _TransportChildOutcome(exc)
+            finally:
+                if task is not None:
+                    self._transport_tasks.discard(task)
+
+        return await self._supervisor.spawn_child(label, _tracked)
 
     def get_upload_semaphore(self) -> asyncio.Semaphore:
         """Return the Sources-owned upload semaphore, creating it on first use.
@@ -411,6 +496,15 @@ class SourceUploadPipeline(LoopBoundPrimitive):
             self._upload_semaphore = asyncio.Semaphore(self._max_concurrent_uploads)
         return self._upload_semaphore
 
+    @asynccontextmanager
+    async def _upload_slot(self) -> AsyncIterator[None]:
+        upload_sem = self.get_upload_semaphore()
+        upload_wait_start = monotonic()
+        async with upload_sem:
+            if self._record_upload_queue_wait is not None:
+                self._record_upload_queue_wait(monotonic() - upload_wait_start)
+            yield
+
     def get_download_semaphore(self) -> asyncio.Semaphore:
         """Return the Drive auto-route download semaphore (#1884), lazily built.
 
@@ -419,7 +513,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         FIRST (the download seam, as ``add_file`` is the upload seam) so a
         cross-loop ``add_drive_file`` fails before it touches this primitive (#1196).
         """
-        self._lifecycle.assert_bound_loop()
+        self._supervisor.assert_bound_loop()
         if self._download_semaphore is None:
             self._download_semaphore = asyncio.Semaphore(self._max_concurrent_uploads)
         return self._download_semaphore
@@ -428,7 +522,6 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         """Account-routing value for Google URLs (#1884), matching the upload leg."""
         return format_authuser_value(self._auth.authuser, self._auth.account_email)
 
-    @_track_transport_operation
     async def add_file(
         self,
         notebook_id: str,
@@ -454,8 +547,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         content_type = _resolve_upload_content_type(raw_path, mime_type)
         _validate_upload_file_supported(raw_path, content_type)
         # Assert affinity before entering the supervisor's loop-bound scope.
-        self._lifecycle.assert_bound_loop()
-        if not self._full_workflow_supervision:
+        async with self.transport_operation_scope(f"upload:{upload_index}") as epoch:
             return await self._add_file_admitted(
                 notebook_id,
                 raw_path,
@@ -465,18 +557,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                 on_progress=on_progress,
                 upload_index=upload_index,
                 _mime_type=mime_type,
-            )
-        assert self._supervisor is not None
-        async with self._supervisor.operation_scope(f"upload:{upload_index}"):
-            return await self._add_file_admitted(
-                notebook_id,
-                raw_path,
-                wait,
-                wait_timeout,
-                title=title,
-                on_progress=on_progress,
-                upload_index=upload_index,
-                _mime_type=mime_type,
+                _expected_epoch=epoch,
             )
 
     async def _add_file_admitted(
@@ -490,6 +571,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         on_progress: Callable[[int, int], object] | None = None,
         upload_index: int = 0,
         _mime_type: str | None,
+        _expected_epoch: int,
     ) -> Source:
         """Add a file source to a notebook using resumable upload.
 
@@ -521,68 +603,54 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         content_type = _resolve_upload_content_type(file_path, _mime_type)
         _validate_upload_file_supported(file_path, content_type)
         transient_error_types = _transient_error_types_for_upload(content_type)
-        assert self._supervisor is not None
-        transfer_scope = (
-            nullcontext()
-            if self._full_workflow_supervision
-            else self._supervisor.operation_scope(f"upload:{upload_index}")
-        )
-        async with transfer_scope:
-            upload_sem = self.get_upload_semaphore()
-            upload_wait_start = monotonic()
-            async with upload_sem:
-                if self._record_upload_queue_wait is not None:
-                    self._record_upload_queue_wait(monotonic() - upload_wait_start)
-
-                # ``open()`` and ``fstat()`` are synchronous syscalls. For
-                # network filesystems or deep directories they can block
-                # the event loop for tens of milliseconds, stalling every
-                # other concurrent task (auth refresh, sibling uploads,
-                # the cancellation watchdog) for the duration of the
-                # syscall. Run them on a worker thread so the loop keeps
-                # ticking. ``fstat`` is paired with ``open`` in the same
-                # closure so we don't pay the round-trip cost twice.
-                def _open_and_stat(path: Path) -> tuple[IO[bytes], int]:
-                    fh = open(path, "rb")  # noqa: SIM115
-                    try:
-                        size = os.fstat(fh.fileno()).st_size
-                    except BaseException:
-                        fh.close()
-                        raise
-                    return fh, size
-
-                file_obj, file_size = await asyncio.to_thread(_open_and_stat, file_path)
-                handed_off = False
+        async with self._upload_slot():
+            # ``open()`` and ``fstat()`` are synchronous syscalls. For
+            # network filesystems or deep directories they can block
+            # the event loop for tens of milliseconds, stalling every
+            # other concurrent task (auth refresh, sibling uploads,
+            # the cancellation watchdog) for the duration of the
+            # syscall. Run them on a worker thread so the loop keeps
+            # ticking. ``fstat`` is paired with ``open`` in the same
+            # closure so we don't pay the round-trip cost twice.
+            def _open_and_stat(path: Path) -> tuple[IO[bytes], int]:
+                fh = open(path, "rb")  # noqa: SIM115
                 try:
-                    registration = await self._register_file_source_for_upload(
-                        notebook_id, filename
+                    size = os.fstat(fh.fileno()).st_size
+                except BaseException:
+                    fh.close()
+                    raise
+                return fh, size
+
+            file_obj, file_size = await asyncio.to_thread(_open_and_stat, file_path)
+            handed_off = False
+            try:
+                registration = await self._register_file_source_for_upload(notebook_id, filename)
+                source_id = registration.value
+                stage: SourceAddStage = "start_session"
+                try:
+                    upload_url = await self.start_resumable_upload(
+                        notebook_id,
+                        filename,
+                        file_size,
+                        source_id,
+                        content_type,
+                        expected_epoch=_expected_epoch,
                     )
-                    source_id = registration.value
-                    stage: SourceAddStage = "start_session"
-                    try:
-                        upload_url = await self.start_resumable_upload(
-                            notebook_id,
-                            filename,
-                            file_size,
-                            source_id,
-                            content_type,
-                        )
-                        stage = "upload_finalize"
-                        handed_off = True
-                        await self.upload_file_streaming(
-                            upload_url,
-                            file_obj,
-                            filename=filename,
-                            on_progress=on_progress,
-                            total_bytes=file_size,
-                        )
-                    except Exception as exc:  # noqa: BLE001 - preserve all post-register failures
-                        raise_partial_upload_failure(
-                            exc, filename, source_id=source_id, stage=stage
-                        )
-                finally:
-                    if not handed_off:
-                        file_obj.close()
+                    stage = "upload_finalize"
+                    handed_off = True
+                    await self.upload_file_streaming(
+                        upload_url,
+                        file_obj,
+                        filename=filename,
+                        on_progress=on_progress,
+                        total_bytes=file_size,
+                        expected_epoch=_expected_epoch,
+                    )
+                except Exception as exc:  # noqa: BLE001 - preserve post-register failures
+                    raise_partial_upload_failure(exc, filename, source_id=source_id, stage=stage)
+            finally:
+                if not handed_off:
+                    file_obj.close()
 
         needs_title_rename = title is not None and title != filename
         if wait:
@@ -1004,9 +1072,11 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         file_size: int,
         source_id: str,
         content_type: str,
+        *,
+        expected_epoch: int,
     ) -> str:
         """Start a resumable upload session and get the upload URL."""
-        expected_epoch = self._capture_transport_epoch()
+        self._assert_transport_epoch(expected_epoch)
         request = build_resumable_upload_start_request(
             notebook_id=notebook_id,
             filename=filename,
@@ -1018,35 +1088,41 @@ class SourceUploadPipeline(LoopBoundPrimitive):
             authuser_header=self._authuser_header(),
         )
 
-        async with self._client_factory()(
+        cookies = self._live_cookies(expected_epoch)
+        self._assert_transport_epoch(expected_epoch)
+        client = self._client_factory()(
             timeout=self._resolve_upload_timeout(httpx.Timeout(10.0, read=60.0)),
-            cookies=self._live_cookies(),
-        ) as client:
-            self._track_transport_client(client, expected_epoch)
-            self._assert_transport_epoch(expected_epoch)
-            response = await client.post(
-                request.url,
-                headers=request.headers,
-                content=request.body,
-            )
-            # Classify a rejection (e.g. an unsupported ``.pub`` → HTTP 400) instead of
-            # leaking a raw ``httpx.HTTPStatusError`` to callers (#1892).
-            raise_for_upload_status(response, filename)
-
-            upload_url = response.headers.get("x-goog-upload-url")
-            if not upload_url:
-                raise SourceAddError(
-                    filename, message="Failed to get upload URL from response headers"
+            cookies=cookies,
+        )
+        self._track_transport_client(client, expected_epoch)
+        try:
+            async with client:
+                self._assert_transport_epoch(expected_epoch)
+                response = await client.post(
+                    request.url,
+                    headers=request.headers,
+                    content=request.body,
                 )
+                # Classify a rejection (e.g. an unsupported ``.pub`` → HTTP 400) instead of
+                # leaking a raw ``httpx.HTTPStatusError`` to callers (#1892).
+                raise_for_upload_status(response, filename)
 
-            try:
-                return _validate_resumable_upload_url(upload_url)
-            except ValidationError as exc:
-                raise SourceAddError(
-                    filename,
-                    cause=exc,
-                    message=f"Received invalid resumable upload URL from NotebookLM: {exc}",
-                ) from exc
+                upload_url = response.headers.get("x-goog-upload-url")
+                if not upload_url:
+                    raise SourceAddError(
+                        filename, message="Failed to get upload URL from response headers"
+                    )
+
+                try:
+                    return _validate_resumable_upload_url(upload_url)
+                except ValidationError as exc:
+                    raise SourceAddError(
+                        filename,
+                        cause=exc,
+                        message=f"Received invalid resumable upload URL from NotebookLM: {exc}",
+                    ) from exc
+        finally:
+            self._transport_clients.discard(client)
 
     async def upload_file_streaming(
         self,
@@ -1057,9 +1133,10 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         on_progress: Callable[[int, int], object] | None = None,
         total_bytes: int | None = None,
         logger: Any | None = None,
+        expected_epoch: int,
     ) -> None:
         """Stream upload file content to the resumable upload URL."""
-        expected_epoch = self._capture_transport_epoch()
+        self._assert_transport_epoch(expected_epoch)
         if logger is None:
             logger = module_logger
         path_fallback: Path | None = file_obj if isinstance(file_obj, Path) else None
@@ -1114,80 +1191,116 @@ class SourceUploadPipeline(LoopBoundPrimitive):
 
             async def _do_finalize() -> None:
                 nonlocal finalize_started
-                async with self._client_factory()(
-                    timeout=self._resolve_upload_timeout(httpx.Timeout(10.0, read=300.0)),
-                    cookies=self._live_cookies(),
-                ) as client:
-                    self._track_transport_client(client, expected_epoch)
+                try:
+                    cookies = self._live_cookies(expected_epoch)
                     self._assert_transport_epoch(expected_epoch)
-                    finalize_started = True
-                    # The curl_cffi transport streams the request body from disk via
-                    # low-level libcurl (no full-file buffer); httpx streams natively
-                    # through the async-generator ``content=`` path. isinstance (not
-                    # duck-typing) because test mocks auto-spawn any attribute.
-                    from ..._curl_cffi_transport import CurlCffiAsyncClient
+                    client = self._client_factory()(
+                        timeout=self._resolve_upload_timeout(httpx.Timeout(10.0, read=300.0)),
+                        cookies=cookies,
+                    )
+                    self._track_transport_client(client, expected_epoch)
+                    try:
+                        async with client:
+                            self._assert_transport_epoch(expected_epoch)
+                            finalize_started = True
+                            # The curl_cffi transport streams the request body from disk via
+                            # low-level libcurl (no full-file buffer); httpx streams natively
+                            # through the async-generator ``content=`` path. isinstance (not
+                            # duck-typing) because test mocks auto-spawn any attribute.
+                            from ..._curl_cffi_transport import CurlCffiAsyncClient
 
-                    if isinstance(client, CurlCffiAsyncClient) and total_bytes is not None:
-                        source = path_fallback if path_fallback is not None else file_obj
-                        response = await client.stream_upload(
-                            upload_url, source, total_bytes=total_bytes, headers=headers
-                        )
-                        if on_progress is not None:
-                            await maybe_await_callback(on_progress, progress_total, progress_total)
-                    else:
-                        response = await client.post(
-                            upload_url, headers=headers, content=file_stream()
-                        )
-                    # The finalize POST can also be rejected upstream (propagates via
-                    # ``asyncio.shield`` below); classify it too (#1892).
-                    raise_for_upload_status(response, diag_name)
+                            if isinstance(client, CurlCffiAsyncClient) and total_bytes is not None:
+                                source = path_fallback if path_fallback is not None else file_obj
+                                response = await client.stream_upload(
+                                    upload_url, source, total_bytes=total_bytes, headers=headers
+                                )
+                                if on_progress is not None:
+                                    await maybe_await_callback(
+                                        on_progress, progress_total, progress_total
+                                    )
+                            else:
+                                response = await client.post(
+                                    upload_url, headers=headers, content=file_stream()
+                                )
+                            # The finalize POST can also be rejected upstream (propagates via
+                            # ``asyncio.shield`` below); classify it too (#1892).
+                            raise_for_upload_status(response, diag_name)
+                    finally:
+                        self._transport_clients.discard(client)
+                finally:
+                    # A caller-owned file object is the request body resource.
+                    # Close it *inside* the tracked task so gathering the task
+                    # proves teardown complete; a done callback is too late for
+                    # a close/reopen boundary.
+                    if path_fallback is None:
+                        try:
+                            file_obj.close()  # type: ignore[union-attr]
+                        except Exception as close_exc:  # noqa: BLE001
+                            logger.debug("Caller FD close in finalize failed: %r", close_exc)
 
-            def _on_finalize_done(t: asyncio.Task[None]) -> None:
+            def _on_finalize_done(t: asyncio.Task[_TransportChildOutcome]) -> None:
+                # ``CallSupervisor.spawn_child`` admits the wrapper before it
+                # publishes the task.  A caller may cancel in the narrow gap
+                # before ``_do_finalize`` reaches its own ``finally``; keep an
+                # idempotent fallback for that no-first-step boundary.
                 if path_fallback is None:
                     try:
                         file_obj.close()  # type: ignore[union-attr]
                     except Exception as close_exc:  # noqa: BLE001
                         logger.debug("Caller FD close in finalize-done failed: %r", close_exc)
-                if not t.cancelled() and (exc := t.exception()) is not None:
-                    logger.debug("Background finalize POST failed: %r", exc)
+                if not t.cancelled():
+                    outcome = t.result()
+                    if outcome.error is not None:
+                        logger.debug("Background finalize POST failed: %r", outcome.error)
 
-            assert self._supervisor is not None
-            spawn_child = getattr(self._supervisor, "spawn_child", None)
-            if spawn_child is None:
-                finalize_task = asyncio.create_task(_do_finalize())
-            else:
-                finalize_task = await spawn_child(
-                    f"upload-finalize:{diag_name}",
-                    _do_finalize,
-                )
+            finalize_task = await self._spawn_transport_child(
+                f"upload-finalize:{diag_name}",
+                _do_finalize,
+                expected_epoch=expected_epoch,
+            )
             finalize_task.add_done_callback(_on_finalize_done)
             close_wired = True
             try:
-                await asyncio.shield(finalize_task)
-            except asyncio.CancelledError:
+                outcome = await asyncio.shield(finalize_task)
+                if outcome.error is not None:
+                    raise outcome.error
+            except asyncio.CancelledError as cancelled:
                 if not finalize_started:
                     finalize_task.cancel()
-                    _retain_background_cancel_task(
-                        asyncio.create_task(
-                            self.cancel_upload_session(
+                    await asyncio.gather(finalize_task, return_exceptions=True)
+                    cancel_task: asyncio.Task[Any] | None = None
+                    try:
+                        cancel_task = await self._spawn_transport_child(
+                            f"upload-cancel:{diag_name}",
+                            lambda: self.cancel_upload_session(
                                 upload_url,
                                 auth_route,
                                 logger=logger,
                                 _expected_epoch=expected_epoch,
-                            )
+                            ),
+                            expected_epoch=expected_epoch,
                         )
-
-                    if spawn_child is None:
-                        cancel_task = asyncio.create_task(_cancel())
-                    else:
-                        cancel_task = await spawn_child(
-                            f"upload-cancel:{diag_name}",
-                            _cancel,
-                        )
-                    _retain_background_cancel_task(cancel_task)
+                        cancel_outcome = await asyncio.shield(cancel_task)
+                        if cancel_outcome.error is not None:
+                            raise cancel_outcome.error
+                    except asyncio.CancelledError:
+                        if cancel_task is not None:
+                            cancel_task.cancel()
+                            await asyncio.gather(cancel_task, return_exceptions=True)
+                        raise cancelled from None
+                    except RuntimeError:
+                        # Forced close has already fenced the generation.
+                        # Teardown is local-only and must not emit a Scotty
+                        # cancel against reopened resources.
+                        raise cancelled from None
                     raise
                 try:
-                    await asyncio.shield(finalize_task)
+                    outcome = await asyncio.shield(finalize_task)
+                    if outcome.error is not None:
+                        logger.debug(
+                            "Background finalize POST failed before cancellation propagated: %r",
+                            outcome.error,
+                        )
                 except Exception as exc:  # noqa: BLE001
                     logger.debug(
                         "Background finalize POST failed before cancellation propagated: %r",
@@ -1208,7 +1321,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         auth_route: str,
         *,
         logger: Any,
-        _expected_epoch: int | None = None,
+        _expected_epoch: int,
     ) -> None:
         """Best-effort POST a Scotty resumable-upload cancel command.
 
@@ -1217,8 +1330,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         untrusted server-named host must never reach an outbound header.
         """
         try:
-            if _expected_epoch is not None:
-                self._assert_transport_epoch(_expected_epoch)
+            self._assert_transport_epoch(_expected_epoch)
             upload_url = _validate_resumable_upload_url(upload_url)
             origin = _upload_url_origin(upload_url)
             headers = {
@@ -1229,14 +1341,19 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                 "Referer": f"{origin}/",
                 "x-goog-upload-command": "cancel",
             }
-            async with self._client_factory()(
+            cookies = self._live_cookies(_expected_epoch)
+            self._assert_transport_epoch(_expected_epoch)
+            client = self._client_factory()(
                 timeout=httpx.Timeout(10.0, read=10.0),
-                cookies=self._live_cookies(),
-            ) as client:
-                if _expected_epoch is not None:
-                    self._track_transport_client(client, _expected_epoch)
+                cookies=cookies,
+            )
+            self._track_transport_client(client, _expected_epoch)
+            try:
+                async with client:
                     self._assert_transport_epoch(_expected_epoch)
-                await client.post(upload_url, headers=headers)
+                    await client.post(upload_url, headers=headers)
+            finally:
+                self._transport_clients.discard(client)
         except Exception as exc:  # noqa: BLE001
             logger.debug(
                 "Best-effort Scotty cancel for %s failed: %r",

@@ -81,8 +81,10 @@ class FakeKernelPost:
         headers: Any,
         body: bytes,
         read_timeout: float | None = None,
+        expected_epoch: int | None = None,
         max_response_bytes: int | None | object = _UNSET,
     ) -> httpx.Response:
+        del expected_epoch
         call = {"url": url, "headers": headers, "body": body, "read_timeout": read_timeout}
         if max_response_bytes is not _UNSET:
             call["max_response_bytes"] = max_response_bytes
@@ -99,6 +101,10 @@ def _activate_supervisor(core: NotebookLMClient) -> None:
     supervisor = core._collaborators.call_supervisor
     supervisor.set_bound_loop(asyncio.get_running_loop())
     supervisor.reset_after_open()
+    supervisor.prepare_generation(1)
+    supervisor.start_accepting(1)
+    core._collaborators.kernel.activate_epoch(1)
+    core._collaborators.auth_coord.activate_epoch(1)
 
 
 @pytest.mark.asyncio
@@ -259,8 +265,10 @@ async def test_chain_terminal_log_label_defaults_for_direct_calls() -> None:
         headers: Any,
         body: bytes,
         read_timeout: float | None = None,
+        expected_epoch: int | None = None,
         max_response_bytes: int | None | object = _UNSET,
     ) -> httpx.Response:
+        del expected_epoch
         request = httpx.Request("POST", url, headers=dict(headers), content=body)
         raise httpx.RequestError("boom", request=request)
 
@@ -278,31 +286,12 @@ async def test_chain_terminal_log_label_defaults_for_direct_calls() -> None:
 
 @pytest.mark.asyncio
 async def test_chain_seeded_with_final_adr_009_ordering() -> None:
-    """``NotebookLMClient.__init__`` seeds the chain with the FINAL ADR-0009 ordering.
+    """The web-only chain retains the final four B0 wire middlewares.
 
-    PR 12.3 landed ``TracingMiddleware`` at the innermost position; PR 12.4
-    prepended ``MetricsMiddleware``; PR 12.5 prepended ``DrainMiddleware``
-    outermost; PR 12.6 inserted ``ErrorInjectionMiddleware`` between
-    Metrics and Tracing; PR 12.7 inserted ``RetryMiddleware`` between
-    Metrics and ErrorInjection; PR 12.8 inserted ``AuthRefreshMiddleware``
-    between Retry and ErrorInjection; PR 12.9 inserted
-    ``SemaphoreMiddleware`` between Metrics and Retry (codex catch — see
-    ADR-0009 close-out notes). The list now reads the final ADR-0009
-    ordering
-    ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``
-    (outermost → innermost).
-
-    Order rationale (per ADR-0009):
-    - Drain outermost — every in-flight call counts toward shutdown wait
-    - Metrics outside Semaphore — latency includes queue wait
-    - Semaphore outside Retry — retry attempts stay in one slot
-    - Retry outside AuthRefresh — orthogonal failure modes
-    - AuthRefresh outside ErrorInjection — test-injected 401s exercise refresh
-    - ErrorInjection inside Retry — synthetic transient failures trigger retry
-    - Tracing innermost — logs actual HTTP attempts including retries
-
-    The list is exposed as ``self._middlewares`` so the cleanup audit can
-    verify ordering by inspecting the production attribute directly.
+    CallSupervisor now owns drain, metrics, and semaphore policy outside this
+    chain. The remaining order is ``Retry -> AuthRefresh -> ErrorInjection ->
+    Tracing -> HTTP terminal`` so retries and refresh remain orthogonal,
+    injected failures exercise both, and tracing observes physical attempts.
     """
     from notebooklm._web.transport.middleware.auth_refresh import AuthRefreshMiddleware
     from notebooklm._web.transport.middleware.error_injection import ErrorInjectionMiddleware

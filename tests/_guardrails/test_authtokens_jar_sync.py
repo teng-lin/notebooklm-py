@@ -155,7 +155,7 @@ _NON_AUTHTOKENS_CANDIDATES: frozenset[tuple[str, str, str, str, str, int]] = fro
         (
             "_auth/session.py",
             "_try_headless_reauth",
-            "kernel.get_http_client()",
+            "kernel.get_http_client(expected_epoch=expected_epoch)",
             "cookies",
             "Load",
             1,
@@ -163,7 +163,7 @@ _NON_AUTHTOKENS_CANDIDATES: frozenset[tuple[str, str, str, str, str, int]] = fro
         (
             "_auth/session.py",
             "_try_master_token_reauth",
-            "kernel.get_http_client()",
+            "kernel.get_http_client(expected_epoch=expected_epoch)",
             "cookies",
             "Load",
             1,
@@ -171,7 +171,7 @@ _NON_AUTHTOKENS_CANDIDATES: frozenset[tuple[str, str, str, str, str, int]] = fro
         (
             "_auth/session.py",
             "_try_refresh_cmd_reauth",
-            "kernel.get_http_client()",
+            "kernel.get_http_client(expected_epoch=expected_epoch)",
             "cookies",
             "Load",
             1,
@@ -179,7 +179,7 @@ _NON_AUTHTOKENS_CANDIDATES: frozenset[tuple[str, str, str, str, str, int]] = fro
         (
             "_auth/session.py",
             "_try_storage_cookie_reload",
-            "kernel.get_http_client()",
+            "kernel.get_http_client(expected_epoch=expected_epoch)",
             "cookies",
             "Load",
             1,
@@ -187,7 +187,7 @@ _NON_AUTHTOKENS_CANDIDATES: frozenset[tuple[str, str, str, str, str, int]] = fro
         (
             "_web/sources/upload.py",
             "SourceUploadPipeline._live_cookies",
-            "get_http_client()",
+            "self._kernel.get_http_client(expected_epoch=expected_epoch)",
             "cookies",
             "Load",
             1,

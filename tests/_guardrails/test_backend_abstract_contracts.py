@@ -242,7 +242,7 @@ _ARTIFACT_DOCSTRING_SHA256 = {
     (
         "ArtifactsAPI",
         "__init__",
-    ): "09da024e21fc5f9c539de20764d3ef909ebf9796d16fee78b42b25b8e3f6d81a",
+    ): "9ec76bfff5af89ad60160608597d1662260664f30aff665871151fb16a7852d0",
     (
         "WebArtifactsAPI",
         "class",
@@ -250,7 +250,7 @@ _ARTIFACT_DOCSTRING_SHA256 = {
     (
         "WebArtifactsAPI",
         "__init__",
-    ): "513a71c5f23b3dcb71fb22fc2cb23b57833b48ec87fa350e7e9cceb74760cac7",
+    ): "d1b96af651ebc15337c480fd5d9cdb4efb6948dc326f2e6ecc08406982b2e701",
 }
 
 
@@ -322,7 +322,7 @@ def test_artifact_workflow_ownership_and_docstrings_are_preserved() -> None:
 
 
 def test_artifact_class_constructor_docstrings_and_web_signature_are_pinned() -> None:
-    """Public runtime help and the concrete Web constructor remain stable."""
+    """B0 pins the one-supervisor constructor boundary and runtime help."""
     from notebooklm._artifacts import ArtifactsAPI
     from notebooklm._web.artifacts import WebArtifactsAPI
 
@@ -335,7 +335,7 @@ def test_artifact_class_constructor_docstrings_and_web_signature_are_pinned() ->
         assert hashlib.sha256(doc.encode()).hexdigest() == expected
 
     base_parameters = inspect.signature(ArtifactsAPI).parameters
-    assert tuple(base_parameters) == ("drain", "lifecycle", "notebooks", "asset_downloads")
+    assert tuple(base_parameters) == ("supervisor", "notebooks", "asset_downloads")
     assert all(
         parameter.kind is inspect.Parameter.KEYWORD_ONLY for parameter in base_parameters.values()
     )
@@ -346,8 +346,7 @@ def test_artifact_class_constructor_docstrings_and_web_signature_are_pinned() ->
     web_parameters = inspect.signature(WebArtifactsAPI).parameters
     assert tuple(web_parameters) == (
         "rpc",
-        "drain",
-        "lifecycle",
+        "supervisor",
         "notebooks",
         "mind_maps",
         "note_service",

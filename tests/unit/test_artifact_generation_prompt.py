@@ -161,8 +161,7 @@ def artifacts_api() -> ArtifactsAPI:
     notebooks.get_source_ids = AsyncMock(return_value=[])
     return WebArtifactsAPI(
         rpc=core,
-        drain=core,
-        lifecycle=core,
+        supervisor=core,
         notebooks=notebooks,
         mind_maps=mind_maps,
         note_service=MagicMock(spec=NoteService),
@@ -197,8 +196,7 @@ class TestArtifactsAPIGetPrompt:
         notebooks.get_source_ids = AsyncMock(return_value=[])
         api = WebArtifactsAPI(
             rpc=core,
-            drain=core,
-            lifecycle=core,
+            supervisor=core,
             notebooks=notebooks,
             mind_maps=mind_maps,
             note_service=MagicMock(spec=NoteService),
@@ -219,8 +217,7 @@ class TestArtifactsAPIGetPrompt:
         notebooks.get_source_ids = AsyncMock(return_value=[])
         api = WebArtifactsAPI(
             rpc=core,
-            drain=core,
-            lifecycle=core,
+            supervisor=core,
             notebooks=notebooks,
             mind_maps=mind_maps,
             note_service=MagicMock(spec=NoteService),

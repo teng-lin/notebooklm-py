@@ -85,4 +85,5 @@ class ClientComposed:
             raise RuntimeError("ClientComposed._runtime_collaborators already bound")
         self._runtime_collaborators = collaborators
 
+
 __all__ = ["ClientComposed"]

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Any
 
 import httpx
 import pytest
@@ -46,7 +47,7 @@ from notebooklm import (
 )
 from notebooklm._app.errors import ErrorCategory, classify
 from notebooklm.rpc import RPCMethod
-from tests._fixtures.kernel_test_helpers import install_http_client_for_test
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 # mock-transport idempotency tests; no HTTP, no cassette. Opt out
 # of the tier-enforcement hook in tests/integration/conftest.py.
@@ -132,33 +133,34 @@ def _get_notebook_with_sources_response(
     return _wrb_response(RPCMethod.GET_NOTEBOOK.value, [nb_info])
 
 
-def _make_client_with_transport(
+async def _open_client_with_transport(
     transport: httpx.AsyncBaseTransport,
     auth_tokens,
     *,
     server_error_max_retries: int = 3,
 ) -> NotebookLMClient:
-    """Construct a ``NotebookLMClient`` whose underlying httpx client
-    uses the supplied mock transport.
+    """Open a ``NotebookLMClient`` whose live HTTP client uses ``transport``.
 
-    Bypasses the full ``ClientLifecycle.open()`` path (which would try to
-    construct a real ``httpx.AsyncClient`` with cookies + connection
-    pool) by stubbing in a pre-built ``AsyncClient`` wired to the
-    ``transport`` argument.
+    The real root lifecycle creates and activates the resource generation;
+    only the HTTP client factory is injected to keep traffic synthetic.
     """
-    client = NotebookLMClient(
+
+    def _client_factory(**kwargs: Any) -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=transport, **kwargs)
+
+    client = build_client_shell_for_tests(
         auth_tokens,
         server_error_max_retries=server_error_max_retries,
+        async_client_factory=_client_factory,
     )
-    install_http_client_for_test(
-        client._collaborators.kernel,
-        httpx.AsyncClient(
-            transport=transport,
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-            },
-        ),
-    )
+    await client.__aenter__()
+    generation = client._collaborators.call_supervisor._current
+    assert generation is not None
+    epoch = client._collaborators.lifecycle._epoch
+    assert generation.epoch == epoch
+    assert client._collaborators.web_transport._active_epoch == epoch
+    assert client._collaborators.kernel._active_epoch == epoch
+    assert client._collaborators.auth_coord._active_epoch == epoch
     return client
 
 
@@ -211,11 +213,11 @@ async def test_notebooks_create_idempotent_on_5xx_retry(auth_tokens) -> None:
         return httpx.Response(404, text="unexpected")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _open_client_with_transport(transport, auth_tokens)
     try:
         notebook = await client.notebooks.create(title)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
     assert notebook.id == nb_id_new
     assert notebook.title == title
@@ -253,11 +255,11 @@ async def test_notebooks_create_re_creates_when_probe_finds_nothing(auth_tokens)
         return httpx.Response(404, text="unexpected")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _open_client_with_transport(transport, auth_tokens)
     try:
         notebook = await client.notebooks.create(title)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
     assert notebook.id == nb_id_new
     # Two CREATE_NOTEBOOK calls: original (502) + retry (200)
@@ -299,13 +301,13 @@ async def test_notebooks_create_probe_decode_failure_aborts_instead_of_retrying(
         return httpx.Response(404, text="unexpected")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _open_client_with_transport(transport, auth_tokens)
     with caplog.at_level(logging.WARNING, logger="notebooklm._notebooks"):
         try:
             with pytest.raises(RPCError, match="Cannot confirm notebook"):
                 await client.notebooks.create(title)
         finally:
-            await client._collaborators.kernel.get_http_client().aclose()
+            await client.close()
 
     # The load-bearing assertion: ONE create, not two.
     assert create_rpc_count == 1, f"expected 1 CREATE_NOTEBOOK, got {create_rpc_count}"
@@ -343,12 +345,12 @@ async def test_notebooks_create_baseline_failure_warns_but_proceeds(auth_tokens,
         return httpx.Response(404, text="unexpected")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _open_client_with_transport(transport, auth_tokens)
     with caplog.at_level(logging.WARNING, logger="notebooklm._notebooks"):
         try:
             notebook = await client.notebooks.create(title)
         finally:
-            await client._collaborators.kernel.get_http_client().aclose()
+            await client.close()
 
     assert notebook.id == nb_id
     assert list_rpc_count == 1
@@ -400,12 +402,12 @@ async def test_notebooks_create_baseline_failure_refuses_to_adopt_a_pre_existing
         return httpx.Response(404, text="unexpected")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _open_client_with_transport(transport, auth_tokens)
     try:
         with pytest.raises(RPCError, match="disambiguate") as exc_info:
             await client.notebooks.create(title)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
     # Names the row the caller is being sent to look at, and says why it cannot
     # be attributed — otherwise "check your notebook list" is unactionable.
@@ -459,11 +461,11 @@ async def test_notebooks_create_baseline_failure_still_retries_when_probe_finds_
         return httpx.Response(404, text="unexpected")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _open_client_with_transport(transport, auth_tokens)
     try:
         notebook = await client.notebooks.create(title)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
     assert notebook.id == nb_id_new
     assert create_rpc_count == 2, f"expected 2 CREATE_NOTEBOOK, got {create_rpc_count}"
@@ -496,12 +498,12 @@ async def test_notebooks_create_raises_on_ambiguous_probe(auth_tokens) -> None:
         return httpx.Response(404, text="unexpected")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _open_client_with_transport(transport, auth_tokens)
     try:
         with pytest.raises(RPCError, match="disambiguate") as exc_info:
             await client.notebooks.create(title)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
     # The probe listed fine but cannot attribute either notebook, so the create's
     # outcome is unknown — an unconfirmed create (#2220), not a plain protocol
@@ -554,11 +556,11 @@ async def test_sources_add_url_idempotent_on_5xx_retry(auth_tokens) -> None:
         return httpx.Response(404, text="unexpected")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _open_client_with_transport(transport, auth_tokens)
     try:
         source = await client.sources.add_url(notebook_id, url)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
     assert source.id == src_id
     assert source.url == url
@@ -595,11 +597,11 @@ async def test_sources_add_youtube_idempotent_on_5xx_retry(auth_tokens) -> None:
         return httpx.Response(404, text="unexpected")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _open_client_with_transport(transport, auth_tokens)
     try:
         source = await client.sources.add_url(notebook_id, url)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
     assert source.id == src_id
     assert source.url == url
@@ -627,12 +629,12 @@ async def test_sources_add_text_raises_when_idempotent_True(auth_tokens) -> None
         return httpx.Response(500, text="should not be called")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _open_client_with_transport(transport, auth_tokens)
     try:
         with pytest.raises(NonIdempotentRetryError, match="add_text cannot be marked idempotent"):
             await client.sources.add_text("nb_test", "Title", "Content", idempotent=True)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
     assert not seen_request, "add_text(idempotent=True) must raise before issuing any RPC"
 
@@ -663,11 +665,11 @@ async def test_sources_add_text_default_behavior_unchanged(auth_tokens) -> None:
         return httpx.Response(404, text="unexpected")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _open_client_with_transport(transport, auth_tokens)
     try:
         source = await client.sources.add_text(notebook_id, title, "the body")
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
     assert source.id == src_id
     assert add_count == 1, f"expected exactly 1 ADD_SOURCE call, got {add_count}"
@@ -718,7 +720,7 @@ async def test_disable_internal_retries_propagates_to_perform_authed_post(
     monkeypatch.setattr(_runtime_helpers.asyncio, "sleep", _no_sleep)
 
     # --- with disable_internal_retries=True: exactly 1 POST ------------
-    client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=2)
+    client = await _open_client_with_transport(transport, auth_tokens, server_error_max_retries=2)
     try:
         request_count = 0
         with pytest.raises(ServerError):
@@ -731,10 +733,10 @@ async def test_disable_internal_retries_propagates_to_perform_authed_post(
             f"with disable_internal_retries=True expected 1 POST, got {request_count}"
         )
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
     # --- without the flag: default retry loop fires ---------------------
-    client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=2)
+    client = await _open_client_with_transport(transport, auth_tokens, server_error_max_retries=2)
     try:
         request_count = 0
         with pytest.raises(ServerError):
@@ -745,7 +747,7 @@ async def test_disable_internal_retries_propagates_to_perform_authed_post(
         # initial + 2 retries = 3 POSTs
         assert request_count == 3, f"with default retries expected 3 POSTs, got {request_count}"
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
     # Bite-check: the patched seam must actually have been exercised. The
     # default-retries path fires one backoff sleep per retry (2 retries), so a

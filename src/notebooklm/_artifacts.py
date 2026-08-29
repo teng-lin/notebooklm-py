@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import builtins
-import inspect
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -38,8 +37,6 @@ from .types import Artifact, ArtifactType, GenerationStatus, ReportSuggestion
 
 if TYPE_CHECKING:
     from ._runtime.call_supervisor import CallSupervisor
-    from ._runtime.lifecycle import ClientLifecycle
-    from ._transport_drain import TransportDrainTracker
 
 logger = logging.getLogger(__name__)
 
@@ -72,40 +69,29 @@ class ArtifactsAPI(ABC):
     def __init__(
         self,
         *,
-        drain: TransportDrainTracker | CallSupervisor,
-        lifecycle: ClientLifecycle,
+        supervisor: CallSupervisor,
         notebooks: NotebookSourceIdProvider,
         asset_downloads: AssetDownloadService,
     ) -> None:
         """Initialize the backend-neutral artifacts API.
 
         Args:
-            drain: Transport drain coordinator. Owns ``operation_scope`` for
-                polling and ``register_drain_hook`` for close-time cleanup.
-            lifecycle: Client lifecycle seam. Owns ``assert_bound_loop`` used
-                before polling touches loop-bound state.
+            supervisor: The single logical-call admission authority. Owns the
+                polling caller scope, leader-child task, loop-affinity guard,
+                and close-time drain-hook registration.
             notebooks: Base-typed source-id resolver used by shared generation
                 workflows.
             asset_downloads: Required backend-supplied neutral asset-transfer
                 service, configured with that backend's per-hop credential policy.
         """
-        self._drain = drain
-        self._lifecycle = lifecycle
+        self._supervisor = supervisor
         self._notebooks = notebooks
         self._asset_downloads = asset_downloads
         self._poll_registry = PollRegistry()
-        spawn_child = getattr(self._drain, "spawn_child", None)
-        if not inspect.iscoroutinefunction(spawn_child):
-            spawn_child = None
         self._polling = ArtifactPollingService(
-            loop_guard=(
-                self._drain if hasattr(self._drain, "assert_bound_loop") else self._lifecycle
-            ),
-            op_scope=self._drain,
+            supervisor=self._supervisor,
             poll_registry=self._poll_registry,
-            spawn_child=spawn_child,
         )
-        self._drain.register_drain_hook("artifacts.polls", self._polling.drain)
 
     @abstractmethod
     async def _list_studio(

@@ -27,6 +27,7 @@ Test plan:
 from __future__ import annotations
 
 import json
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -34,7 +35,7 @@ import pytest
 
 from notebooklm import NotebookLMClient, RateLimitError
 from notebooklm.rpc import RPCMethod
-from tests._fixtures.kernel_test_helpers import install_http_client_for_test
+from tests._helpers.client_factory import build_client_shell_for_tests
 from tests.integration.conftest import install_post_as_stream
 
 # Uses synthetic HTTPX responses via mock — no cassette, no real HTTP.
@@ -65,6 +66,29 @@ def _build_200_list_notebooks() -> httpx.Response:
     return httpx.Response(200, text=body, request=_DUMMY_REQUEST)
 
 
+async def _open_client_with_post(auth_tokens, mock_post: AsyncMock) -> NotebookLMClient:
+    """Open a real root generation whose HTTP stream delegates to ``mock_post``."""
+
+    def _client_factory(**kwargs: Any) -> httpx.AsyncClient:
+        http_client = httpx.AsyncClient(**kwargs)
+        install_post_as_stream(None, http_client, mock_post)
+        return http_client
+
+    client = build_client_shell_for_tests(
+        auth_tokens,
+        async_client_factory=_client_factory,
+    )
+    await client.__aenter__()
+    generation = client._collaborators.call_supervisor._current
+    assert generation is not None
+    epoch = client._collaborators.lifecycle._epoch
+    assert generation.epoch == epoch
+    assert client._collaborators.web_transport._active_epoch == epoch
+    assert client._collaborators.kernel._active_epoch == epoch
+    assert client._collaborators.auth_coord._active_epoch == epoch
+    return client
+
+
 @pytest.mark.asyncio
 async def test_default_retries_succeed_after_three_429s(auth_tokens) -> None:
     """Default ``rate_limit_max_retries=3`` retries 3 times then succeeds.
@@ -82,19 +106,17 @@ async def test_default_retries_succeed_after_three_429s(auth_tokens) -> None:
     )
 
     # NotebookLMClient default — NO ``rate_limit_max_retries`` kwarg.
-    client = NotebookLMClient(auth_tokens)
+    client = await _open_client_with_post(auth_tokens, mock_post)
     assert client._composed.chain_host._rate_limit_max_retries == 3, (
         "rate_limit_max_retries default must be 3; check that NotebookLMClient.__init__ "
         "forwards the runtime default."
     )
 
-    mock_http = AsyncMock(spec=httpx.AsyncClient)
-    mock_http.post = mock_post
-    install_post_as_stream(None, mock_http, mock_post)
-    install_http_client_for_test(client._collaborators.kernel, mock_http)
-
-    with patch("asyncio.sleep", AsyncMock()) as mock_sleep:
-        result = await client.notebooks.list()
+    try:
+        with patch("asyncio.sleep", AsyncMock()) as mock_sleep:
+            result = await client.notebooks.list()
+    finally:
+        await client.close()
 
     assert result == []
     assert mock_post.await_count == 4, (
@@ -115,16 +137,14 @@ async def test_default_retries_exhausted_raises_rate_limit_error(auth_tokens) ->
     """
     mock_post = AsyncMock(return_value=_build_429("1"))
 
-    client = NotebookLMClient(auth_tokens)
+    client = await _open_client_with_post(auth_tokens, mock_post)
     assert client._composed.chain_host._rate_limit_max_retries == 3
 
-    mock_http = AsyncMock(spec=httpx.AsyncClient)
-    mock_http.post = mock_post
-    install_post_as_stream(None, mock_http, mock_post)
-    install_http_client_for_test(client._collaborators.kernel, mock_http)
-
-    with patch("asyncio.sleep", AsyncMock()) as mock_sleep, pytest.raises(RateLimitError):
-        await client.notebooks.list()
+    try:
+        with patch("asyncio.sleep", AsyncMock()) as mock_sleep, pytest.raises(RateLimitError):
+            await client.notebooks.list()
+    finally:
+        await client.close()
 
     assert mock_post.await_count == 4, (
         f"Initial + 3 retries = 4 POSTs before raise; got {mock_post.await_count}"
@@ -157,19 +177,18 @@ async def test_default_retries_use_exponential_backoff_when_header_missing(
         ]
     )
 
-    client = NotebookLMClient(auth_tokens)
-    mock_http = AsyncMock(spec=httpx.AsyncClient)
-    mock_http.post = mock_post
-    install_post_as_stream(None, mock_http, mock_post)
-    install_http_client_for_test(client._collaborators.kernel, mock_http)
+    client = await _open_client_with_post(auth_tokens, mock_post)
 
     sleep_calls: list[float] = []
 
     async def _record_sleep(seconds: float) -> None:
         sleep_calls.append(seconds)
 
-    with patch("asyncio.sleep", side_effect=_record_sleep):
-        result = await client.notebooks.list()
+    try:
+        with patch("asyncio.sleep", side_effect=_record_sleep):
+            result = await client.notebooks.list()
+    finally:
+        await client.close()
 
     assert result == []
     assert mock_post.await_count == 4
@@ -204,23 +223,24 @@ async def test_disable_internal_retries_skips_429_loop_under_new_default(
 
     mock_post = AsyncMock(return_value=_build_429("1"))
 
-    client = NotebookLMClient(auth_tokens)
+    client = await _open_client_with_post(auth_tokens, mock_post)
     assert client._composed.chain_host._rate_limit_max_retries == 3
-
-    mock_http = AsyncMock(spec=httpx.AsyncClient)
-    mock_http.post = mock_post
-    install_post_as_stream(None, mock_http, mock_post)
-    install_http_client_for_test(client._collaborators.kernel, mock_http)
 
     def _build_request(_snap):
         return ("https://example.invalid/x", b"body", None)
 
-    with patch("asyncio.sleep", AsyncMock()) as mock_sleep, pytest.raises(TransportRateLimited):
-        await client._composed.transport.perform_authed_post(
-            build_request=_build_request,
-            log_label="test",
-            disable_internal_retries=True,
-        )
+    try:
+        with (
+            patch("asyncio.sleep", AsyncMock()) as mock_sleep,
+            pytest.raises(TransportRateLimited),
+        ):
+            await client._composed.transport.perform_authed_post(
+                build_request=_build_request,
+                log_label="test",
+                disable_internal_retries=True,
+            )
+    finally:
+        await client.close()
 
     assert mock_post.await_count == 1, (
         f"disable_internal_retries=True must short-circuit the 429 retry "

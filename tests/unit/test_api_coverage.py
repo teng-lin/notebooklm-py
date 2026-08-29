@@ -141,7 +141,7 @@ class TestGetSourceGuide:
         """
         rpc_call = AsyncMock(return_value=return_value)
         core = make_fake_core(rpc_call=rpc_call)
-        sources = WebSourcesAPI(core.rpc_executor, uploader=MagicMock())
+        sources = WebSourcesAPI(core.rpc_executor, supervisor=core, uploader=MagicMock())
         return sources, rpc_call
 
     @pytest.mark.asyncio
@@ -195,8 +195,7 @@ class TestGetSuggestedReportFormats:
         core = make_fake_core(rpc_call=rpc_call)
         artifacts = WebArtifactsAPI(
             rpc=core.rpc_executor,
-            drain=core,
-            lifecycle=core,
+            supervisor=core,
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
             note_service=MagicMock(spec=NoteService),
@@ -228,7 +227,7 @@ class TestAddSourceDrive:
             ]
         )
         core = make_fake_core(rpc_call=rpc_call)
-        sources = WebSourcesAPI(core.rpc_executor, uploader=MagicMock())
+        sources = WebSourcesAPI(core.rpc_executor, supervisor=core, uploader=MagicMock())
 
         await sources.add_drive(
             "notebook_123",
@@ -297,7 +296,7 @@ class TestPayloadFixes:
         """
         rpc_call = AsyncMock(return_value=True)
         core = make_fake_core(rpc_call=rpc_call)
-        sources = WebSourcesAPI(core.rpc_executor, uploader=MagicMock())
+        sources = WebSourcesAPI(core.rpc_executor, supervisor=core, uploader=MagicMock())
         return sources, rpc_call
 
     @pytest.mark.asyncio

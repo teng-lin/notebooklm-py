@@ -9,6 +9,7 @@ from notebooklm import NotebookLMClient
 from notebooklm.auth import AuthTokens
 
 REFRESH_HTML = '"SNlM0e":"fresh_csrf" "FdrFJe":"fresh_session"'
+TEST_EPOCH = 1
 
 
 @pytest.mark.asyncio
@@ -36,10 +37,9 @@ async def test_coordinator_refresh_crosses_client_and_session_composition_seam()
     async with client:
         callback = client._collaborators.auth_coord._refresh_callback
         assert callback is not None
-        assert getattr(callback, "__self__", None) is client
-        assert getattr(callback, "__func__", None) is NotebookLMClient.refresh_auth
+        assert client._collaborators.auth_coord._active_epoch == TEST_EPOCH
 
-        await client._collaborators.auth_coord.await_refresh()
+        await client._collaborators.auth_coord.await_refresh(TEST_EPOCH)
 
     assert len(requests) == 1
     assert requests[0].method == "GET"

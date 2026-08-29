@@ -1,10 +1,10 @@
-"""MetricsMiddleware — per-RPC telemetry emitter for the middleware chain.
+"""Legacy metrics-middleware characterization helper.
 
-Per ADR-0009 §"Chain ordering", ``MetricsMiddleware`` sits
-just inside ``DrainMiddleware`` (and just outside ``SemaphoreMiddleware``) in
-the chain ordering
-``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``,
-which keeps Metrics outside the semaphore.
+B0 moved production terminal accounting to the protocol-neutral
+``CallSupervisor``; the installed web chain is now
+``[Retry, AuthRefresh, ErrorInjection, Tracing]``.  This class remains for
+direct middleware compatibility tests and is not installed by the composition
+root.
 
 Pure observer: never mutates ``request`` or transforms ``response``. Around
 ``next_call`` it captures the wall-clock elapsed time of the chain-inner
@@ -37,9 +37,8 @@ caller-initiated unwinds, not RPC failures; they propagate without
 incrementing counters or emitting events. Same scope as TracingMiddleware,
 same reason.
 
-The chain owns per-RPC telemetry emission, and ``RpcExecutor.rpc_call``
-keeps only the ``rpc_calls_started`` counter plus the reqid plumbing —
-concerns that live OUTSIDE the chain and are not transport-layer events.
+``CallSupervisor`` now owns per-RPC terminal telemetry. ``RpcExecutor.rpc_call``
+keeps logical ``rpc_calls_started`` placement plus request-id plumbing.
 
 Decode-time errors (e.g. ``NoData`` raised after a 200-OK transport return)
 do not increment ``rpc_calls_failed``: the chain wraps only the transport

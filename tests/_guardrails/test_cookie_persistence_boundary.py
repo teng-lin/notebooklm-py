@@ -600,12 +600,16 @@ class _MemberCollector(ast.NodeVisitor):
             return self._class_receiver(node)
         if (
             self.path == WEB_LIFECYCLE_PATH
-            and self.owner == "WebTransportLifecycle.open"
+            and self.owner
+            in {
+                "WebTransportLifecycle.open",
+                "WebTransportLifecycle.save_cookies",
+            }
             and len(self.functions) == 1
             and ast.unparse(node) == "self._cookie_persistence"
         ):
             # The concrete web transport receives this collaborator through
-            # its typed constructor and owns the open-baseline phase.
+            # its typed constructor and owns both persistence phases.
             return True
         if (
             member == "merge_cookie_observation"
@@ -1032,19 +1036,16 @@ def test_auth_tokens_and_cookie_snapshot_accesses_are_confined() -> None:
         "_LegacySnapshotAdapter.set",
         "CookiePersistence.__init__",
     }
-    assert _attribute_owners(LIFECYCLE_PATH, "cookie_snapshot") == {
-        "ClientLifecycle.save_cookies",
-    }
+    assert _attribute_owners(LIFECYCLE_PATH, "cookie_snapshot") == set()
     assert _attribute_owners(WEB_LIFECYCLE_PATH, "cookie_snapshot") == {
         "WebTransportLifecycle.open",
+        "WebTransportLifecycle.save_cookies",
     }
-    assert _attribute_owners(LIFECYCLE_PATH, "_auth") == {
-        "ClientLifecycle.__init__",
-        "ClientLifecycle.save_cookies",
-    }
+    assert _attribute_owners(LIFECYCLE_PATH, "_auth") == set()
     assert _attribute_owners(WEB_LIFECYCLE_PATH, "_auth") == {
         "WebTransportLifecycle.__init__",
         "WebTransportLifecycle.open",
+        "WebTransportLifecycle.save_cookies",
     }
 
 
@@ -1057,8 +1058,8 @@ def test_private_persistence_callers_and_capabilities_are_exact() -> None:
         escapes.update(rejected)
     assert calls == {
         ("_runtime/init.py", "build_collaborators"),
-        ("_runtime/lifecycle.py", "ClientLifecycle.save_cookies"),
         ("_web/transport/lifecycle.py", "WebTransportLifecycle.open"),
+        ("_web/transport/lifecycle.py", "WebTransportLifecycle.save_cookies"),
         ("client.py", "_FromStorageContext._build"),
     }
     assert escapes == set()
@@ -1099,13 +1100,15 @@ def test_canonical_and_explicit_v0_routes_keep_capabilities_separate() -> None:
     assert "merge_cookie_observation" not in legacy
     assert "save_cookies_to_storage" in legacy
     lifecycle = ast.unparse(
-        _methods(_class(_tree(LIFECYCLE_PATH), "ClientLifecycle"))["save_cookies"]
+        _methods(_class(_tree(WEB_LIFECYCLE_PATH), "WebTransportLifecycle"))["save_cookies"]
     )
     assert "if self._cookie_saver is None" in lifecycle
     assert lifecycle.index("self._cookie_saver is None") < lifecycle.index("_save_canonical")
     assert "_save_v0_callback" in lifecycle
-    init = ast.unparse(_methods(_class(_tree(LIFECYCLE_PATH), "ClientLifecycle"))["__init__"])
-    assert "self._cookie_saver: CookieSaver | None = cookie_saver" in init
+    init = ast.unparse(
+        _methods(_class(_tree(WEB_LIFECYCLE_PATH), "WebTransportLifecycle"))["__init__"]
+    )
+    assert "self._cookie_saver = cookie_saver" in init
     assert "_uses_default_cookie_saver" not in init
 
 
@@ -1175,7 +1178,7 @@ def test_cookie_save_result_inventory_catches_qualified_bypasses(source: str) ->
 
 
 def test_persistence_route_debug_events_are_exact_and_value_free() -> None:
-    method = _methods(_class(_tree(LIFECYCLE_PATH), "ClientLifecycle"))["save_cookies"]
+    method = _methods(_class(_tree(WEB_LIFECYCLE_PATH), "WebTransportLifecycle"))["save_cookies"]
     route = next(
         statement
         for statement in method.body
@@ -1485,6 +1488,7 @@ def test_client_chain_spelling_without_constructor_provenance_is_untrusted() -> 
 def test_public_exports_and_compatibility_signatures_remain_narrow() -> None:
     import notebooklm._web.transport.cookie_persistence as module
     from notebooklm._runtime.lifecycle import ClientLifecycle
+    from notebooklm._web.transport.lifecycle import WebTransportLifecycle
 
     assert module.__all__ == ["CookiePersistence", "SaveCookiesToStorage"]
     assert str(inspect.signature(module.SaveCookiesToStorage.__call__)) == (
@@ -1500,6 +1504,10 @@ def test_public_exports_and_compatibility_signatures_remain_narrow() -> None:
     assert str(inspect.signature(module.CookiePersistence._save_canonical)) == (
         "(self, jar: 'httpx.Cookies', path: 'Path | None', *, to_thread: 'ToThread') -> 'None'"
     )
-    lifecycle_parameters = inspect.signature(ClientLifecycle).parameters
-    assert lifecycle_parameters["auth"].default is None
-    assert lifecycle_parameters["cookie_persistence_path"].default is None
+    assert str(inspect.signature(ClientLifecycle)) == (
+        "(*, supervisor: 'LifecycleSupervisor', transports: 'Sequence[TransportLifecycle]', "
+        "loop_participants: 'Sequence[LoopParticipant]') -> 'None'"
+    )
+    web_lifecycle_parameters = inspect.signature(WebTransportLifecycle).parameters
+    assert web_lifecycle_parameters["auth"].default is inspect.Parameter.empty
+    assert web_lifecycle_parameters["cookie_persistence_path"].default is inspect.Parameter.empty

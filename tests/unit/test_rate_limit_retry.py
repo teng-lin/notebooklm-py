@@ -55,6 +55,16 @@ def _activate_call_supervisor(core: object) -> None:
     supervisor = core._collaborators.call_supervisor  # type: ignore[attr-defined]
     supervisor.set_bound_loop(asyncio.get_running_loop())
     supervisor.reset_after_open()
+    supervisor.prepare_generation(1)
+    supervisor.start_accepting(1)
+    kernel = core._collaborators.kernel  # type: ignore[attr-defined]
+    installed_client = kernel.http_client
+    if installed_client is not None:
+        install_http_client_for_test(kernel, None)
+    kernel.activate_epoch(1)
+    if installed_client is not None:
+        install_http_client_for_test(kernel, installed_client)
+    core._collaborators.auth_coord.activate_epoch(1)  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio

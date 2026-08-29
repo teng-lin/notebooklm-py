@@ -40,6 +40,7 @@ EVENT_TIMEOUT_S = 5.0
 
 async def _trigger_refresh(core):
     """Drive ``RpcExecutor.try_refresh_and_retry`` with throwaway args."""
+    resource_epoch = _assert_open_generation(core)
     return await core._rpc_executor.try_refresh_and_retry(
         RPCMethod.LIST_NOTEBOOKS,
         [],
@@ -47,7 +48,25 @@ async def _trigger_refresh(core):
         False,
         AuthError("simulated"),
         _refresh_budget=RefreshBudget(),
+        _resource_epoch=resource_epoch,
     )
+
+
+def _assert_open_generation(core) -> int:
+    """Return the lifecycle-created epoch after proving every owner agrees."""
+    collaborators = core._collaborators
+    lifecycle = collaborators.lifecycle
+    generation = collaborators.call_supervisor._current
+
+    assert lifecycle.is_open()
+    assert generation is not None
+    epoch = lifecycle._epoch
+    assert epoch > 0
+    assert generation.epoch == epoch
+    assert collaborators.web_transport._active_epoch == epoch
+    assert collaborators.kernel._active_epoch == epoch
+    assert collaborators.auth_coord._active_epoch == epoch
+    return epoch
 
 
 async def _wait_for_inflight_refresh_task(core, ticks: int = 20) -> bool:
@@ -69,8 +88,12 @@ async def test_concurrent_callers_share_single_refresh():
     call_count = 0
     core_box: list = []
 
-    async def cb():
+    callback_epochs: list[int] = []
+
+    async def cb(expected_epoch: int):
         nonlocal call_count
+        callback_epochs.append(expected_epoch)
+        assert expected_epoch == _assert_open_generation(core_box[0])
         call_count += 1
         callback_entered.set()
         await release_refresh.wait()
@@ -102,6 +125,8 @@ async def test_concurrent_callers_share_single_refresh():
         # this loop just lets the scheduler tick.
         if not await _wait_for_inflight_refresh_task(core):
             pytest.fail("Refresh task did not appear in 20 ticks")
+        refresh_task = core._collaborators.auth_coord._refresh_task
+        assert refresh_task is not None and not refresh_task.done()
 
         assert call_count == 1, f"Multiple refreshes fired before release: {call_count}"
 
@@ -110,6 +135,12 @@ async def test_concurrent_callers_share_single_refresh():
 
         assert all(r == "ok" for r in results)
         assert call_count == 1, f"Post-release call_count drifted to {call_count}"
+        assert callback_epochs == [_assert_open_generation(core)]
+        assert refresh_task.done()
+        refresh_result = refresh_task.result()
+        assert refresh_result.error is None
+        assert refresh_result.value is not None
+        assert refresh_result.value.csrf_token == "CSRF_REFRESHED"
         assert core.auth.csrf_token == "CSRF_REFRESHED"
 
 
@@ -126,20 +157,27 @@ async def test_refresh_failure_propagates_to_all_waiters():
     enter = asyncio.Event()
     release = asyncio.Event()
     call_count = 0
+    callback_epochs: list[int] = []
+    core_box: list = []
 
-    async def cb():
+    async def cb(expected_epoch: int):
         nonlocal call_count
+        callback_epochs.append(expected_epoch)
+        assert expected_epoch == _assert_open_generation(core_box[0])
         call_count += 1
         enter.set()
         await release.wait()
         raise boom
 
     async with make_core(refresh_callback=cb) as core:
+        core_box.append(core)
         tasks = [asyncio.create_task(_trigger_refresh(core)) for _ in range(3)]
 
         await asyncio.wait_for(enter.wait(), EVENT_TIMEOUT_S)
         if not await _wait_for_inflight_refresh_task(core):
             pytest.fail("Refresh task did not appear in 20 ticks")
+        refresh_task = core._collaborators.auth_coord._refresh_task
+        assert refresh_task is not None and not refresh_task.done()
 
         assert call_count == 1, (
             f"Failure propagation test invalid: {call_count} callbacks fired "
@@ -150,6 +188,9 @@ async def test_refresh_failure_propagates_to_all_waiters():
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         assert call_count == 1, f"Refresh re-fired after failure: {call_count}"
+        assert callback_epochs == [_assert_open_generation(core)]
+        assert refresh_task.done()
+        assert refresh_task.result().error is boom
         # Identity check: every waiter must observe the SAME RuntimeError as
         # __cause__. This proves shared-task propagation — a per-waiter retry
         # would produce distinct RuntimeError instances even with the same msg.
@@ -164,9 +205,13 @@ async def test_refresh_failure_propagates_to_all_waiters():
 @pytest.mark.asyncio
 async def test_second_wave_creates_distinct_refresh_task():
     call_count = 0
+    callback_epochs: list[int] = []
+    expected_epoch: int | None = None
 
-    async def cb():
+    async def cb(resource_epoch: int):
         nonlocal call_count
+        callback_epochs.append(resource_epoch)
+        assert resource_epoch == expected_epoch
         call_count += 1
         return AuthTokens(
             csrf_token=f"R{call_count}",
@@ -175,6 +220,7 @@ async def test_second_wave_creates_distinct_refresh_task():
         )
 
     async with make_core(refresh_callback=cb) as core:
+        expected_epoch = _assert_open_generation(core)
 
         async def fake_retry(*args, **kwargs):
             return "ok"
@@ -184,10 +230,15 @@ async def test_second_wave_creates_distinct_refresh_task():
         await _trigger_refresh(core)
         first_task = core._collaborators.auth_coord._refresh_task
         assert first_task is not None and first_task.done()
+        assert first_task.result().error is None
+        assert first_task.result().value is not None
 
         await _trigger_refresh(core)
         second_task = core._collaborators.auth_coord._refresh_task
         assert second_task is not None and second_task.done()
+        assert second_task.result().error is None
+        assert second_task.result().value is not None
 
         assert first_task is not second_task, "Second wave reused completed task"
         assert call_count == 2
+        assert callback_epochs == [expected_epoch, expected_epoch]

@@ -55,8 +55,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Awaitable, Callable, Coroutine
-from typing import TYPE_CHECKING, Any, cast
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import httpx
 
@@ -77,6 +78,27 @@ if TYPE_CHECKING:
 logger = logging.getLogger(CORE_LOGGER_NAME)
 
 
+@dataclass(frozen=True)
+class _RefreshResult:
+    """A refresh result that never raises across its shared Task boundary."""
+
+    value: AuthTokens | None = None
+    error: BaseException | None = None
+
+
+async def _run_refresh_after_gate(
+    gate: asyncio.Future[None],
+    callback: Callable[[int], Awaitable[AuthTokens]],
+    expected_epoch: int,
+) -> _RefreshResult:
+    """Defer callback invocation until task creation releases the refresh lock."""
+    try:
+        await gate
+        return _RefreshResult(value=await callback(expected_epoch))
+    except BaseException as exc:
+        return _RefreshResult(error=exc)
+
+
 class AuthRefreshCoordinator(LoopBoundPrimitive):
     """Owns refresh single-flight, snapshot serialization, and auth-header sync.
 
@@ -88,15 +110,15 @@ class AuthRefreshCoordinator(LoopBoundPrimitive):
     def __init__(
         self,
         *,
-        refresh_callback: Callable[[], Awaitable[AuthTokens]] | None = None,
+        refresh_callback: Callable[[int], Awaitable[AuthTokens]] | None = None,
         metrics: ClientMetrics | None = None,
     ) -> None:
         # Lazily-created — ``asyncio.Lock()`` needs a running loop in some
         # Python versions, and this object can be constructed outside one.
         self._refresh_lock: asyncio.Lock | None = None
-        self._refresh_task: asyncio.Task[AuthTokens] | None = None
+        self._refresh_task: asyncio.Task[_RefreshResult] | None = None
         self._refresh_task_epoch: int | None = None
-        self._refresh_callback: Callable[[], Awaitable[AuthTokens]] | None = refresh_callback
+        self._refresh_callback: Callable[[int], Awaitable[AuthTokens]] | None = refresh_callback
         # ``await_refresh`` records lock-wait latency via this metrics dep.
         # The same ``self._metrics`` slot is read by :meth:`snapshot` and
         # :meth:`update_auth_tokens` too. ``None`` is a safe
@@ -147,11 +169,6 @@ class AuthRefreshCoordinator(LoopBoundPrimitive):
                 "NotebookLMClient auth generation is retired "
                 f"(expected={expected_epoch}, active={self._active_epoch!r})."
             )
-
-    @property
-    def current_epoch(self) -> int | None:
-        """Return the active web generation for direct refresh entry points."""
-        return self._active_epoch
 
     def _on_loop_rebind(
         self,
@@ -428,7 +445,7 @@ class AuthRefreshCoordinator(LoopBoundPrimitive):
     # Single-flight refresh task.
     # ------------------------------------------------------------------
 
-    async def await_refresh(self, expected_epoch: int | None = None) -> None:
+    async def await_refresh(self, expected_epoch: int) -> None:
         """Run / join the shared refresh task.
 
         Concurrent callers share one refresh task so a thundering herd of
@@ -456,8 +473,7 @@ class AuthRefreshCoordinator(LoopBoundPrimitive):
         # ``get_refresh_lock`` — a cross-loop call would hang on the
         # ``await lock.acquire()`` if we let it through.
         assert_bound_loop(self._bound_loop)
-        if expected_epoch is not None:
-            self.assert_epoch(expected_epoch)
+        self.assert_epoch(expected_epoch)
         if self._refresh_callback is None:
             raise RuntimeError(
                 "AuthRefreshCoordinator.await_refresh called without a "
@@ -473,10 +489,10 @@ class AuthRefreshCoordinator(LoopBoundPrimitive):
         # single-flight task creation below is preserved.
         lock = self.get_refresh_lock()
         wait_start = time.perf_counter()
+        start_gate: asyncio.Future[None] | None = None
         await lock.acquire()
         try:
-            if expected_epoch is not None:
-                self.assert_epoch(expected_epoch)
+            self.assert_epoch(expected_epoch)
             # ``record_lock_wait`` lives INSIDE the ``try`` so a metric-side
             # exception (e.g. a misconfigured spy in tests, or a runtime bug
             # in :class:`ClientMetrics`) cannot leave the refresh lock held —
@@ -486,19 +502,33 @@ class AuthRefreshCoordinator(LoopBoundPrimitive):
             if self._metrics is not None:
                 self._metrics.record_lock_wait(time.perf_counter() - wait_start)
             if self._refresh_task is not None and not self._refresh_task.done():
+                if self._refresh_task_epoch != expected_epoch:
+                    raise RuntimeError(
+                        "Auth refresh belongs to a different resource generation "
+                        f"(expected={expected_epoch}, active={self._refresh_task_epoch})."
+                    )
                 refresh_task = self._refresh_task
                 logger.debug("Joining existing refresh task")
             else:
-                coro = cast(Coroutine[Any, Any, AuthTokens], self._refresh_callback())
-                self._refresh_task = asyncio.create_task(coro)
+                start_gate = asyncio.get_running_loop().create_future()
+                refresh_task = asyncio.create_task(
+                    _run_refresh_after_gate(
+                        start_gate,
+                        self._refresh_callback,
+                        expected_epoch,
+                    )
+                )
+                self._refresh_task = refresh_task
                 self._refresh_task_epoch = expected_epoch
-                refresh_task = self._refresh_task
         finally:
             lock.release()
+        if start_gate is not None and not start_gate.done():
+            start_gate.set_result(None)
 
-        await asyncio.shield(refresh_task)
-        if expected_epoch is not None:
-            self.assert_epoch(expected_epoch)
+        result = await asyncio.shield(refresh_task)
+        if result.error is not None:
+            raise result.error
+        self.assert_epoch(expected_epoch)
 
     async def cancel_inflight_refresh(self) -> None:
         """Cancel any in-flight refresh task during ``ClientLifecycle.close``.
@@ -544,7 +574,12 @@ class AuthRefreshCoordinator(LoopBoundPrimitive):
         refresh_task = self._refresh_task
         if refresh_task is not None and not refresh_task.done():
             refresh_task.cancel()
-            await asyncio.gather(refresh_task, return_exceptions=True)
+        if refresh_task is not None:
+            settled = (await asyncio.gather(refresh_task, return_exceptions=True))[0]
+            if isinstance(settled, _RefreshResult) and isinstance(
+                settled.error, (KeyboardInterrupt, SystemExit)
+            ):
+                raise settled.error
 
 
 __all__ = ["AuthRefreshCoordinator"]

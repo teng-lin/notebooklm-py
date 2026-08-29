@@ -623,17 +623,14 @@ the guard rails are narrow.
 ### Guarantees
 
 **Per-loop async safety.** A `NotebookLMClient` instance is bound to the
-event loop on which it was opened. A loop-affinity guard checks
-the active loop on the authed POST hot path — `rpc_call()` →
-`query_post()` → `_perform_authed_post()` — and raises a clear `RuntimeError`
-when the instance is re-used from a different loop. **Scope limitation:** the
-guard fires on the hot path only. `ChatAPI.ask` adds its own
-`assert_bound_loop()` check as its first statement, so cross-loop chat raises the
-same friendly loop-affinity `RuntimeError`. One cold path remains:
-
-- `close()` awaits `save_cookies` + `aclose` and never routes through
-  `_perform_authed_post` or a loop guard; a cross-loop close gets a deep asyncio
-  `RuntimeError` — opaque, not the friendly loop-affinity message.
+event loop on which it was opened. `CallSupervisor` checks the active loop
+before admitted RPC/workflow operations touch loop-bound state, and
+`ChatAPI.ask` checks its injected `LoopGuard` before chat orchestration.
+`ClientLifecycle` also checks public open/drain/close wave ownership before
+awaiting a wave or transport. Cross-loop use therefore raises the same clear
+loop-affinity `RuntimeError` at the owning boundary rather than surfacing a deep
+primitive error. A completed close followed by open on a different loop is
+supported and resets the registered loop participants.
 
 **Best practice:** one client per loop, full stop.
 
@@ -786,9 +783,9 @@ client = NotebookLMClient(auth, limits=limits, max_concurrent_rpcs=64)
 
 For single-request CLI workloads the defaults are wasteful but harmless.
 
-**`max_concurrent_rpcs` knob**. A semaphore at
-`_perform_authed_post` caps simultaneous in-flight RPC POSTs. Default
-`16` — well below the default pool size so short-lived helper requests
+**`max_concurrent_rpcs` knob**. The client-wide semaphore owned by
+`CallSupervisor` caps simultaneous terminal transport-call scopes. Default `16`
+— well below the default pool size so short-lived helper requests
 (refresh GETs, upload preflights) still have pool headroom. Pass `None`
 to opt out entirely (e.g. when an external rate-limiter handles
 back-pressure). The backoff for 429 / 5xx retries is held **inside** the
@@ -866,9 +863,12 @@ await client.close(drain=True, drain_timeout=30.0)
 
 `client.drain(timeout=...)` is also available when your framework owns
 transport shutdown separately. Once drain starts, new operations raise
-`RuntimeError`; if the timeout expires, the client remains in draining mode.
+`RuntimeError`; the resources remain open (`is_connected` stays true) but the
+client cannot admit new top-level work until `close()` followed by `open()`
+creates a new generation. If the timeout expires, the client remains in draining mode.
 `close(drain=True, ...)` still closes the transport after a drain timeout and
-then re-raises the timeout.
+then re-raises the timeout. Concurrent close callers join one root lifecycle
+wave rather than re-running feature hooks or transport teardown.
 
 **Upload-timeout configuration**. `client.sources.add_file(...)`
 and the related upload entry points accept an `upload_timeout` argument
@@ -919,12 +919,13 @@ These validations run in `NotebookLMClient.__init__` /
 
 ## Internal module map
 
-Kernel owns the `httpx.AsyncClient`; `NotebookLMClient` constructs the
-runtime graph and owns the public surface. Per the
-[ADR-0010](adr/0010-session-kernel-split.md) split, `Kernel.__init__` in
-`src/notebooklm/_web/transport/kernel.py` constructs the `httpx.AsyncClient` and is
-responsible for closing it on `aclose()`. `_runtime/init.py` constructs
-the collaborator bundle, `RuntimeTransport`, middleware chain, and
+Kernel owns the live `httpx.AsyncClient`; `NotebookLMClient` constructs the
+runtime graph and owns the public surface. `WebTransportLifecycle` opens,
+epoch-fences, and closes the Kernel and owns web keepalive/cookie-persistence
+work. The protocol-neutral root `ClientLifecycle` orchestrates transactional
+open/drain/close waves over that web participant and the upload pipeline; it
+owns no HTTP or auth resource. `_runtime/init.py` constructs the collaborator
+bundle, `RuntimeTransport`, middleware chain, and
 `RpcExecutor`, then binds them into `ClientComposed`. The supporting state
 (metrics, drain bookkeeping, request-id counter, transport plumbing,
 conversation cache, etc.) is split across single-responsibility runtime
@@ -938,18 +939,20 @@ compatibility shim was removed in v0.5.0.
 
 | Module | Owns | Notes |
 |---|---|---|
-| `_client_composed` | `ClientComposed`: bound runtime holder for transport, executor, middleware chain metadata, and the collaborator bundle. | The composition root binds this once; public methods read the bound collaborators from the client. |
-| `_web/transport/kernel.py` | Concrete `Kernel` transport core; owns the `httpx.AsyncClient` (constructed in `Kernel.__init__`, closed in `Kernel.aclose()`) and the cookie jar. | Pure web transport surface (see `Kernel` Protocol in `_web/contracts.py`). |
+| `_client_composed` | `ClientComposed`: bound runtime holder for transport, executor, middleware chain metadata, and the collaborator bundle. | The composition root binds this once. It owns no semaphore or loop-bound primitive; `CallSupervisor` owns both admission and the global RPC gate. |
+| `_web/transport/kernel.py` | Concrete `Kernel` transport core; owns the epoch-fenced live `httpx.AsyncClient` and cookie jar. | Opened/closed by `WebTransportLifecycle`; pure web transport surface (see `Kernel` Protocol in `_web/contracts.py`). |
 | `_runtime/init.py` | Client composition root helpers: constructor validation, collaborator construction, `RuntimeTransport`, middleware chain, and `RpcExecutor` wiring. | `NotebookLMClient` calls this during construction and stores the result directly. |
-| `_web/transport/runtime.py` | Authenticated transport leg used by `RpcExecutor` and the middleware chain terminal. | Routes through `Kernel.post` and centralizes request-envelope materialization. |
+| `_runtime/call_supervisor.py` | `CallSupervisor`: generation admission, operation/call leases, admitted child tasks, drain hooks, terminal RPC telemetry, and the client-wide RPC semaphore. | Concrete shared infrastructure service; owns the transitional `TransportDrainTracker`. |
+| `_runtime/lifecycle.py` | `ClientLifecycle`: protocol-neutral resource state plus transactional/coalesced open, drain, close, and rollback waves. | Orchestrates immutable transport and loop-participant tuples; owns no web resources. |
+| `_web/transport/lifecycle.py` | `WebTransportLifecycle`: Kernel/auth epoch activation and fencing, keepalive, cookie persistence, and web teardown. | Installed as one root transport participant alongside `SourceUploadPipeline`. |
+| `_web/transport/runtime.py` | Authenticated transport leg used by `RpcExecutor` and the middleware chain terminal. | Takes an admission-only epoch lease before auth snapshot/materialization, then enters the supervisor's terminal metrics/semaphore scope and routes the four-middleware web chain to `Kernel.post`. |
 | `_runtime/config.py` | Module-level constants: `DEFAULT_TIMEOUT`, `DEFAULT_CHAT_TIMEOUT`, `DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT`/`_PER_SOURCE_TIMEOUT`/`_MAX_TIMEOUT`, `DEFAULT_KEEPALIVE_MIN_INTERVAL`, `DEFAULT_MAX_CONCURRENT_RPCS`, `DEFAULT_MAX_CONCURRENT_UPLOADS`, `CORE_LOGGER_NAME`, `normalize_max_concurrent_uploads`. | Pure constants; importable without side effects. |
 | `_runtime/helpers.py` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval`. | Cross-seam pure helpers; behaviour-bearing (and therefore unit-tested). |
 | `_web/transport/error_injection.py` | `ERROR_INJECT_ENV_VAR`, `_get_error_injection_mode`, `_refuse_synthetic_error_outside_test_context`. | Env-var resolver + startup guard for the synthetic-error harness. |
 | `_web/transport/auth.py` | `AuthRefreshCoordinator`: refresh-task lifecycle, refresh lock, `AuthSnapshot` rotation. | Lazy `asyncio.Lock` construction; never instantiated outside a running loop. |
 | `_conversation_cache` | Per-instance true-LRU `_conversation_cache` for `ChatAPI` continuity; bounds the conversation count and the turns retained per conversation. | Pure in-process state; not shared across client instances. |
 | `_web/transport/cookie_persistence.py` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. | Exposes a `SaveCookiesToStorage` Protocol host. |
-| `_transport_drain` | `TransportDrainTracker`: in-flight transport counters, `_TransportOperationToken`, lazy `asyncio.Condition` powering `client.drain(...)`. | Construction is event-loop-agnostic; the `Condition` is allocated on first use. |
-| `_runtime/lifecycle.py` | `ClientLifecycle`: loop-affinity guard, `aclose` plumbing, keepalive task wiring. | Client lifecycle collaborator. |
+| `_transport_drain` | `TransportDrainTracker`: transitional in-flight counters and `_TransportOperationToken`. | Owned by `CallSupervisor`; generation admission and public drain policy do not live here. |
 | `_client_metrics` | `ClientMetrics`: `ClientMetricsSnapshot` counters, `_metrics_lock`, `on_rpc_event` callback, queue-wait recorders. | `__init__` is event-loop-agnostic; `emit_rpc_event` is `async` and intentionally awaits the user callback (back-pressure). |
 | `_polling_registry` | Pending-poll registry shared by long-running artifact generations. | Used by artifacts to coordinate and cancel pending polls. |
 | `_web/transport/reqid_counter.py` | `ReqidCounter`: monotonic `_reqid` for the chat backend, lazy `asyncio.Lock` for concurrent `ChatAPI.ask` callers. | Baseline `_value=100000`, default `step=100000` — both are chat-API contract values; do not change. |
@@ -965,11 +968,14 @@ runtime facade. `ChatAPI`, `ArtifactsAPI`, and `SourceUploadPipeline` each take
 their direct collaborators by keyword-only constructor argument. In the split
 namespaces, the neutral `ChatAPI` takes its loop guard and notebook provider,
 while `WebChatAPI` adds `RpcCaller`, `RuntimeTransport`, and `ReqidCounter`;
-the neutral `ArtifactsAPI` takes lifecycle, drain, notebook-source, and the
-required backend-configured asset-transfer collaborator, while
+the neutral `ArtifactsAPI` takes the concrete shared `CallSupervisor`,
+notebook-source, and the required backend-configured asset-transfer
+collaborator, while
 `WebArtifactsAPI` adds its web RPC and note/mind-map collaborators.
-`SourceUploadPipeline` is web-only and takes its RPC, kernel, lifecycle,
-drain, and auth collaborators directly. The
+`SourceUploadPipeline` is web-only and takes its RPC, supervisor, kernel, and
+auth collaborators directly; it also implements the phased transport-lifecycle
+surface used by the root. The old single-consumer `OperationScopeProvider`
+Protocol no longer exists. The
 feature-local composite-runtime Protocols (`ChatRuntime`,
 `ArtifactsRuntime`, `UploadRuntime`) and their adapter dataclasses that
 previously bundled three collaborators apiece were retired once it was

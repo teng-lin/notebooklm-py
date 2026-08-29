@@ -63,6 +63,15 @@ def _install_probe_client(client: NotebookLMClient) -> httpx.AsyncClient:
     return http_client
 
 
+async def _open_probe_client(client: NotebookLMClient) -> httpx.AsyncClient:
+    """Open through the root lifecycle, then install the pytest-httpx client."""
+    await client.__aenter__()
+    kernel = client._collaborators.kernel
+    original = kernel.get_http_client()
+    await original.aclose()
+    return _install_probe_client(client)
+
+
 def _write_storage_state(path) -> None:
     """Write a minimal SID-bearing storage_state.json (required-cookie policy)."""
     path.write_text(
@@ -156,7 +165,7 @@ async def test_live_probe_persists_back_and_memoizes(httpx_mock: HTTPXMock, tmp_
     )
 
     client = NotebookLMClient(_make_auth(storage_path=storage))
-    http_client = _install_probe_client(client)
+    await _open_probe_client(client)
     try:
         assert await client.get_account_email() == "carol@example.com"
         # Self-heal wrote the email back to storage for the next process.
@@ -164,7 +173,7 @@ async def test_live_probe_persists_back_and_memoizes(httpx_mock: HTTPXMock, tmp_
         # A second call is served from the memo — no new HTTP.
         assert await client.get_account_email() == "carol@example.com"
     finally:
-        await http_client.aclose()
+        await client.close(drain=False)
 
     assert len(httpx_mock.get_requests()) == 1
 
@@ -176,16 +185,81 @@ async def test_no_live_fallback_returns_none_without_http(httpx_mock: HTTPXMock)
     assert httpx_mock.get_requests() == []
 
 
+async def test_drained_client_rejects_live_probe_before_http(monkeypatch) -> None:
+    """The account probe uses the same top-level admission fence as other I/O."""
+    client = NotebookLMClient(_make_auth())
+    await client.__aenter__()
+    probe_called = False
+
+    async def probe(_http_client, _authuser):  # type: ignore[no-untyped-def]
+        nonlocal probe_called
+        probe_called = True
+        return "should-not-run@example.com"
+
+    monkeypatch.setattr(client_module, "_probe_authuser", probe)
+    try:
+        await client.drain()
+        with pytest.raises(RuntimeError, match="not accepting new operations"):
+            await client.get_account_email()
+    finally:
+        await client.close(drain=False)
+
+    assert probe_called is False
+
+
+async def test_drained_client_keeps_network_free_account_identity_available() -> None:
+    client = NotebookLMClient(_make_auth(account_email="cached@example.com"))
+    await client.__aenter__()
+    try:
+        await client.drain()
+        assert await client.get_account_email() == "cached@example.com"
+    finally:
+        await client.close(drain=False)
+
+
+async def test_old_live_probe_cannot_publish_after_forced_close_reopen(monkeypatch) -> None:
+    """A retired probe neither reaches epoch 2 resources nor caches its result."""
+    client = NotebookLMClient(_make_auth())
+    old_http_client = await _open_probe_client(client)
+    probe_started = asyncio.Event()
+    release_probe = asyncio.Event()
+    seen_clients: list[httpx.AsyncClient] = []
+
+    async def blocked_probe(http_client, _authuser):  # type: ignore[no-untyped-def]
+        seen_clients.append(http_client)
+        probe_started.set()
+        await release_probe.wait()
+        return "retired@example.com"
+
+    monkeypatch.setattr(client_module, "_probe_authuser", blocked_probe)
+    task = asyncio.create_task(client.get_account_email())
+    await probe_started.wait()
+
+    await client.close(drain=False)
+    await client.__aenter__()
+    new_http_client = client._collaborators.kernel.get_http_client()
+    release_probe.set()
+    try:
+        with pytest.raises(RuntimeError, match="resource generation is retired"):
+            await task
+    finally:
+        await client.close(drain=False)
+
+    assert seen_clients == [old_http_client]
+    assert new_http_client is not old_http_client
+    assert client._account_email_cache is None
+
+
 async def test_probe_transport_error_returns_none(httpx_mock: HTTPXMock) -> None:
     """A probe transport blip degrades to None, never raises."""
     httpx_mock.add_exception(httpx.ConnectError("boom"), url=_PROBE_URL)
 
     client = NotebookLMClient(_make_auth())
-    http_client = _install_probe_client(client)
+    await _open_probe_client(client)
     try:
         assert await client.get_account_email() is None
     finally:
-        await http_client.aclose()
+        await client.close(drain=False)
 
 
 async def test_probe_login_redirect_returns_none(httpx_mock: HTTPXMock) -> None:
@@ -209,11 +283,11 @@ async def test_probe_login_redirect_returns_none(httpx_mock: HTTPXMock) -> None:
     )
 
     client = NotebookLMClient(_make_auth())
-    http_client = _install_probe_client(client)
+    await _open_probe_client(client)
     try:
         assert await client.get_account_email() is None
     finally:
-        await http_client.aclose()
+        await client.close(drain=False)
 
 
 async def test_inline_auth_probe_hit_does_not_persist(httpx_mock: HTTPXMock, monkeypatch) -> None:
@@ -229,11 +303,11 @@ async def test_inline_auth_probe_hit_does_not_persist(httpx_mock: HTTPXMock, mon
     )
 
     client = NotebookLMClient(_make_auth())  # storage_path is None
-    http_client = _install_probe_client(client)
+    await _open_probe_client(client)
     try:
         assert await client.get_account_email() == "dave@example.com"
     finally:
-        await http_client.aclose()
+        await client.close(drain=False)
 
     # No path → nothing to persist to; the write branch must be skipped.
     write_spy.assert_not_called()
@@ -268,7 +342,7 @@ async def test_account_email_cache_is_keyed_to_profile_session_generation(
         content=_wiz_html_with_email("old@example.com").encode(),
     )
     client = NotebookLMClient(_make_auth())
-    http_client = _install_probe_client(client)
+    http_client = await _open_probe_client(client)
     try:
         assert await client.get_account_email() == "old@example.com"
         target = http_client.cookies
@@ -290,7 +364,7 @@ async def test_account_email_cache_is_keyed_to_profile_session_generation(
         )
         assert await client.get_account_email(live_fallback=False) is None
     finally:
-        await http_client.aclose()
+        await client.close(drain=False)
 
 
 async def test_live_probe_restarts_after_profile_session_replacement(
@@ -301,7 +375,7 @@ async def test_live_probe_restarts_after_profile_session_replacement(
     storage = tmp_path / "storage_state.json"
     _write_storage_state(storage)
     client = NotebookLMClient(_make_auth(storage_path=storage))
-    http_client = _install_probe_client(client)
+    http_client = await _open_probe_client(client)
     http_client.cookies.set("SID", "x", domain=".google.com", path="/")
     http_client.cookies.set("__Secure-1PSIDTS", "y", domain=".google.com", path="/")
     probe_started = asyncio.Event()
@@ -355,7 +429,7 @@ async def test_live_probe_restarts_after_profile_session_replacement(
     try:
         assert await task == "new@example.com"
     finally:
-        await http_client.aclose()
+        await client.close(drain=False)
 
     assert read_account_metadata(storage) == {
         "authuser": 2,
@@ -371,7 +445,7 @@ async def test_live_probe_self_heal_cannot_overwrite_advanced_profile(
     storage = tmp_path / "storage_state.json"
     _write_storage_state(storage)
     client = NotebookLMClient(_make_auth(storage_path=storage))
-    http_client = _install_probe_client(client)
+    await _open_probe_client(client)
     probe_started = asyncio.Event()
     release_probe = asyncio.Event()
 
@@ -407,7 +481,7 @@ async def test_live_probe_self_heal_cannot_overwrite_advanced_profile(
     try:
         assert await task == "old@example.com"
     finally:
-        await http_client.aclose()
+        await client.close(drain=False)
 
     assert read_account_metadata(storage) == {
         "authuser": 2,
@@ -442,7 +516,7 @@ async def test_live_probe_does_not_self_heal_into_previously_advanced_profile(
     live.set("SID", "x", domain=".google.com", path="/")
     live.set("__Secure-1PSIDTS", "y", domain=".google.com", path="/")
     client = NotebookLMClient(_make_auth(storage_path=storage, cookie_jar=live))
-    http_client = _install_probe_client(client)
+    await _open_probe_client(client)
 
     async def probe_old_session(_http_client, authuser):  # type: ignore[no-untyped-def]
         assert authuser == 0
@@ -452,7 +526,7 @@ async def test_live_probe_does_not_self_heal_into_previously_advanced_profile(
     try:
         assert await client.get_account_email() == "old@example.com"
     finally:
-        await http_client.aclose()
+        await client.close(drain=False)
 
     assert read_account_metadata(storage) == {"authuser": 2}
 
@@ -545,8 +619,8 @@ async def test_post_probe_storage_corruption_does_not_escape(
         corrupt_then_write,
     )
     client = NotebookLMClient(_make_auth(storage_path=storage))
-    http_client = _install_probe_client(client)
+    await _open_probe_client(client)
     try:
         assert await client.get_account_email() == "live@example.com"
     finally:
-        await http_client.aclose()
+        await client.close(drain=False)

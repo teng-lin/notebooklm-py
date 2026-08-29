@@ -213,7 +213,7 @@ def test_capped_client_reopen_on_new_loop_rebinds_semaphore(
     loop reused a stale ``asyncio.Semaphore`` bound to the dead loop — which
     on Python 3.10/3.11 raised "bound to a different event loop" or misparked
     waiters when the slot was acquired. Post-fix ``ClientLifecycle.open``
-    calls ``ClientComposed.reset_after_open`` so the semaphore is rebuilt on
+    calls ``CallSupervisor.reset_after_open`` so the semaphore is rebuilt on
     the new loop and a fan-out still completes (and is still gated by the cap).
 
     Like the cross-loop test above, this is intentionally NOT ``async def``:
@@ -225,8 +225,10 @@ def test_capped_client_reopen_on_new_loop_rebinds_semaphore(
 
     # Build a capped client once; reuse the instance across two loops.
     core = build_client_shell_for_tests(auth=_make_auth(), max_concurrent_rpcs=2)
+    loop_a_semaphore: asyncio.Semaphore | None = None
 
     async def _open_swap_and_close_under_loop_a() -> None:
+        nonlocal loop_a_semaphore
         await core.__aenter__()
         prior_cookies = core._collaborators.kernel.get_http_client().cookies
         await core._collaborators.kernel.get_http_client().aclose()
@@ -241,18 +243,19 @@ def test_capped_client_reopen_on_new_loop_rebinds_semaphore(
         # One dispatch on loop A so the semaphore is actually constructed and
         # bound to loop A — that is the stale primitive a naive reopen reuses.
         await core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+        loop_a_semaphore = core._collaborators.call_supervisor._rpc_semaphore
+        assert loop_a_semaphore is not None
         await core.close()
 
     asyncio.run(_open_swap_and_close_under_loop_a())
-    # The reset happens on open(), not close(): the stale semaphore is still
-    # cached here, bound to the now-dead loop A.
-    assert core._composed._rpc_semaphore is not None
+    # Closing retires the generation and drops its public semaphore reference.
+    assert core._collaborators.call_supervisor._rpc_semaphore is None
 
     async def _reopen_and_dispatch_under_loop_b() -> None:
         await core.__aenter__()
         # reset_after_open() must have discarded the loop-A semaphore so the
         # next get_rpc_semaphore() rebuilds it on loop B.
-        assert core._composed._rpc_semaphore is None
+        assert core._collaborators.call_supervisor._rpc_semaphore is None
         prior_cookies = core._collaborators.kernel.get_http_client().cookies
         await core._collaborators.kernel.get_http_client().aclose()
         install_http_client_for_test(
@@ -270,6 +273,9 @@ def test_capped_client_reopen_on_new_loop_rebinds_semaphore(
             results = await asyncio.gather(
                 *[core._rpc_executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, []) for _ in range(8)]
             )
+            loop_b_semaphore = core._collaborators.call_supervisor._rpc_semaphore
+            assert loop_b_semaphore is not None
+            assert loop_b_semaphore is not loop_a_semaphore
         finally:
             await core.close()
         assert len(results) == 8

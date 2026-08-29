@@ -186,6 +186,14 @@ def test_shared_wiring_identities_hold_on_both_paths() -> None:
             f"{label}: artifacts (WebArtifactsAPI._rpc) must dispatch through the "
             "client's shared RpcExecutor"
         )
+        assert (
+            getattr(client.artifacts, "_supervisor", _missing)
+            is client._collaborators.call_supervisor
+        ), f"{label}: artifacts must share the client's CallSupervisor"
+        assert (
+            getattr(client.artifacts._polling, "_supervisor", _missing)
+            is client._collaborators.call_supervisor
+        ), f"{label}: artifact polling must share the client's CallSupervisor"
         assert type(client.notes) is WebNotesAPI
         assert isinstance(client.notes, NotesAPI)
         assert getattr(client.notes, "_notes", _missing) is client.artifacts._note_service, (

@@ -33,6 +33,7 @@ from notebooklm.auth import AuthTokens
 
 REFRESH_HTML = '"SNlM0e":"new_csrf_token_123" "FdrFJe":"new_session_id_456"'
 LOGIN_REDIRECT = "https://accounts.google.com/signin/v2/identifier"
+TEST_EPOCH = 1
 
 
 def _auth(storage_path: Path | None = None) -> AuthTokens:
@@ -48,7 +49,11 @@ class _RecordingKernel:
     def __init__(self, http_client: httpx.AsyncClient) -> None:
         self._http_client = http_client
 
-    def get_http_client(self) -> httpx.AsyncClient:
+    def assert_epoch(self, expected_epoch: int) -> None:
+        assert expected_epoch == TEST_EPOCH
+
+    def get_http_client(self, *, expected_epoch: int | None = None) -> httpx.AsyncClient:
+        assert expected_epoch == TEST_EPOCH
         return self._http_client
 
 
@@ -56,7 +61,14 @@ class _RecordingLifecycle:
     def __init__(self) -> None:
         self.saved = 0
 
-    async def save_cookies(self, cookie_persistence: Any, jar: httpx.Cookies, path=None) -> None:
+    async def save_cookies(
+        self,
+        jar: httpx.Cookies,
+        path=None,
+        *,
+        expected_epoch: int | None = None,
+    ) -> None:
+        assert expected_epoch == TEST_EPOCH
         self.saved += 1
 
 
@@ -64,12 +76,30 @@ class _RecordingAuthCoord:
     def __init__(self) -> None:
         self.ops: list[str] = []
 
-    async def update_auth_tokens(self, *, auth: AuthTokens, csrf: str, session_id: str) -> None:
+    def assert_epoch(self, expected_epoch: int) -> None:
+        assert expected_epoch == TEST_EPOCH
+
+    async def update_auth_tokens(
+        self,
+        *,
+        auth: AuthTokens,
+        csrf: str,
+        session_id: str,
+        expected_epoch: int | None = None,
+    ) -> None:
+        assert expected_epoch == TEST_EPOCH
         self.ops.append("update")
         auth.csrf_token = csrf
         auth.session_id = session_id
 
-    def update_auth_headers(self, *, auth: AuthTokens, kernel: Any) -> None:
+    def update_auth_headers(
+        self,
+        *,
+        auth: AuthTokens,
+        kernel: Any,
+        expected_epoch: int | None = None,
+    ) -> None:
+        assert expected_epoch == TEST_EPOCH
         self.ops.append("headers")
 
 
@@ -83,9 +113,17 @@ def _bundle(http_client: httpx.AsyncClient, auth: AuthTokens) -> dict[str, Any]:
         "auth": auth,
         "kernel": _RecordingKernel(http_client),
         "auth_coord": _RecordingAuthCoord(),
-        "lifecycle": _RecordingLifecycle(),
+        "web_transport": _RecordingLifecycle(),
         "cookie_persistence": _RecordingCookiePersistence(),
+        "expected_epoch": TEST_EPOCH,
     }
+
+
+def _magic_kernel() -> _RecordingKernel:
+    """Return a kernel spy that rejects calls outside the pinned generation."""
+    http_client = MagicMock()
+    http_client.cookies = httpx.Cookies()
+    return _RecordingKernel(http_client)  # type: ignore[arg-type]
 
 
 def _redirect_then_ok_handler(state: dict[str, int]):
@@ -151,10 +189,11 @@ async def test_rung_declines_without_opt_in(
     calls: list[str] = []
     _patch_refresh_cmd_machinery(monkeypatch, calls)
 
-    kernel = MagicMock()
-    kernel.get_http_client.return_value.cookies = httpx.Cookies()
+    kernel = _magic_kernel()
     ok = await session_mod._try_refresh_cmd_reauth(
-        auth=_auth(storage_path=tmp_path / "storage_state.json"), kernel=kernel
+        auth=_auth(storage_path=tmp_path / "storage_state.json"),
+        kernel=kernel,
+        expected_epoch=TEST_EPOCH,
     )
     assert ok is False
     assert calls == [], "cold-start machinery must NOT run without the opt-in"
@@ -170,10 +209,11 @@ async def test_rung_invoked_with_opt_in(
     calls: list[str] = []
     _patch_refresh_cmd_machinery(monkeypatch, calls)
 
-    kernel = MagicMock()
-    kernel.get_http_client.return_value.cookies = httpx.Cookies()
+    kernel = _magic_kernel()
     storage = tmp_path / "storage_state.json"
-    ok = await session_mod._try_refresh_cmd_reauth(auth=_auth(storage_path=storage), kernel=kernel)
+    ok = await session_mod._try_refresh_cmd_reauth(
+        auth=_auth(storage_path=storage), kernel=kernel, expected_epoch=TEST_EPOCH
+    )
     assert ok is True
     assert len(calls) == 1, "the coalesced refresh-cmd machinery must run once"
     assert calls[0] == str(storage.expanduser().resolve())
@@ -188,10 +228,11 @@ async def test_rung_declines_without_command(
     calls: list[str] = []
     _patch_refresh_cmd_machinery(monkeypatch, calls)
 
-    kernel = MagicMock()
-    kernel.get_http_client.return_value.cookies = httpx.Cookies()
+    kernel = _magic_kernel()
     ok = await session_mod._try_refresh_cmd_reauth(
-        auth=_auth(storage_path=tmp_path / "storage_state.json"), kernel=kernel
+        auth=_auth(storage_path=tmp_path / "storage_state.json"),
+        kernel=kernel,
+        expected_epoch=TEST_EPOCH,
     )
     assert ok is False
     assert calls == []
@@ -208,7 +249,7 @@ async def test_rung_declines_without_storage_path(
     _patch_refresh_cmd_machinery(monkeypatch, calls)
 
     ok = await session_mod._try_refresh_cmd_reauth(
-        auth=_auth(storage_path=None), kernel=MagicMock()
+        auth=_auth(storage_path=None), kernel=_magic_kernel(), expected_epoch=TEST_EPOCH
     )
     assert ok is False
     assert calls == []
@@ -225,10 +266,11 @@ async def test_rung_declines_under_recursion_guard(
     calls: list[str] = []
     _patch_refresh_cmd_machinery(monkeypatch, calls)
 
-    kernel = MagicMock()
-    kernel.get_http_client.return_value.cookies = httpx.Cookies()
+    kernel = _magic_kernel()
     ok = await session_mod._try_refresh_cmd_reauth(
-        auth=_auth(storage_path=tmp_path / "storage_state.json"), kernel=kernel
+        auth=_auth(storage_path=tmp_path / "storage_state.json"),
+        kernel=kernel,
+        expected_epoch=TEST_EPOCH,
     )
     assert ok is False
     assert calls == []
@@ -337,10 +379,9 @@ async def test_rung_threads_work_profile_from_storage_path(
     monkeypatch.setattr(refresh_mod, "build_httpx_cookies_from_storage", lambda p: httpx.Cookies())
     monkeypatch.setattr(cookies_mod, "build_httpx_cookies_from_storage", lambda p: httpx.Cookies())
 
-    kernel = MagicMock()
-    kernel.get_http_client.return_value.cookies = httpx.Cookies()
+    kernel = _magic_kernel()
     ok = await session_mod._try_refresh_cmd_reauth(
-        auth=_auth(storage_path=work_storage), kernel=kernel
+        auth=_auth(storage_path=work_storage), kernel=kernel, expected_epoch=TEST_EPOCH
     )
 
     assert ok is True

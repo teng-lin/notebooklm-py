@@ -75,7 +75,7 @@ async def test_probed_url_result_honors_the_title_but_does_not_re_wait() -> None
     The wait half of the #1988 contract is unchanged: ``wait`` is handled inside
     the service, so ``SourcesAPI`` must not re-await ``wait_until_ready``.
     """
-    api = WebSourcesAPI(MagicMock(), uploader=MagicMock())
+    api = WebSourcesAPI(MagicMock(), supervisor=MagicMock(), uploader=MagicMock())
     existing = Source(id="existing", title="Upstream title", url="https://example.test")
     api._adder.add_url = AsyncMock(
         return_value=_IdempotentCreateResult(existing, _CreateResultKind.PROBED)

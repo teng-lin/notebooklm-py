@@ -39,8 +39,7 @@ def artifacts_api():
     mock_core = make_fake_core(rpc_call=AsyncMock())
     return WebArtifactsAPI(
         rpc=mock_core,
-        drain=mock_core,
-        lifecycle=mock_core,
+        supervisor=mock_core,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
         note_service=MagicMock(spec=NoteService),

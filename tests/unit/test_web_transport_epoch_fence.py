@@ -58,8 +58,10 @@ async def test_kernel_rejects_retired_epoch_before_wire_io() -> None:
 @pytest.mark.asyncio
 async def test_auth_refresh_waiter_cannot_publish_into_reopened_generation() -> None:
     gate = asyncio.Event()
+    callback_epochs: list[int] = []
 
-    async def refresh() -> AuthTokens:
+    async def refresh(expected_epoch: int) -> AuthTokens:
+        callback_epochs.append(expected_epoch)
         await gate.wait()
         return AuthTokens(csrf_token="new", session_id="new", cookies={})
 
@@ -75,6 +77,10 @@ async def test_auth_refresh_waiter_cannot_publish_into_reopened_generation() -> 
 
     with pytest.raises(RuntimeError, match="expected=1, active=2"):
         await waiter
+
+    assert callback_epochs == [1]
+    assert coordinator._active_epoch == 2
+    assert coordinator._refresh_task_epoch == 1
 
 
 def test_web_transport_lifecycle_has_physical_web_owner() -> None:

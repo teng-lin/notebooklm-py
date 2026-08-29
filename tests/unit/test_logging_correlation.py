@@ -254,6 +254,7 @@ async def test_retry_inherits_parent_request_id():
         raise_on_null_status: bool = False,
         _refresh_budget=None,
         _retry_deadline=None,
+        _resource_epoch: int | None = None,
     ):
         captured_ids.append(get_request_id())
         # First call: raise to trigger retry path; second call: succeed.
@@ -265,6 +266,7 @@ async def test_retry_inherits_parent_request_id():
                 source_path,
                 allow_null,
                 _is_retry=True,
+                _resource_epoch=_resource_epoch,
             )
         return "ok"
 

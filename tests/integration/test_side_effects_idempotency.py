@@ -64,23 +64,22 @@ def _list_notebooks_response(notebooks: list[tuple[str, str]]) -> str:
     return _wrb_response(RPCMethod.LIST_NOTEBOOKS.value, [raw])
 
 
-def _make_client_with_transport(
+async def _make_client_with_transport(
     transport: httpx.AsyncBaseTransport,
     auth_tokens,
     *,
     server_error_max_retries: int = 3,
 ) -> NotebookLMClient:
-    """Construct a ``NotebookLMClient`` wired to the supplied mock transport.
-
-    Bypasses the full ``ClientLifecycle.open()`` path so the test doesn't try
-    to build a real ``httpx.AsyncClient`` with cookies + connection pool.
-    """
+    """Open a real lifecycle generation, then install the mock transport."""
     client = NotebookLMClient(
         auth_tokens,
         server_error_max_retries=server_error_max_retries,
     )
+    await client.__aenter__()
+    kernel = client._collaborators.kernel
+    await kernel.get_http_client(expected_epoch=1).aclose()
     install_http_client_for_test(
-        client._collaborators.kernel,
+        kernel,
         httpx.AsyncClient(
             transport=transport,
             headers={
@@ -174,7 +173,7 @@ async def test_delete_notebook_retries_remain_enabled(
     monkeypatch.setattr(_runtime_helpers.asyncio, "sleep", _no_sleep)
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=2)
+    client = await _make_client_with_transport(transport, auth_tokens, server_error_max_retries=2)
     try:
         from notebooklm import ServerError
 
@@ -190,7 +189,7 @@ async def test_delete_notebook_retries_remain_enabled(
         # ``resolve_sleep`` seam (2 retries → 2 backoff sleeps).
         assert sleep_calls >= 1, "patched asyncio.sleep was never invoked"
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
 
 async def test_delete_source_retries_remain_enabled(
@@ -217,7 +216,7 @@ async def test_delete_source_retries_remain_enabled(
     monkeypatch.setattr(_runtime_helpers.asyncio, "sleep", _no_sleep)
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=2)
+    client = await _make_client_with_transport(transport, auth_tokens, server_error_max_retries=2)
     try:
         from notebooklm import ServerError
 
@@ -227,7 +226,7 @@ async def test_delete_source_retries_remain_enabled(
         # Bite-check: patched sleep observed between retries.
         assert sleep_calls >= 1, "patched asyncio.sleep was never invoked"
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
 
 async def test_delete_artifact_retries_remain_enabled(
@@ -254,7 +253,7 @@ async def test_delete_artifact_retries_remain_enabled(
     monkeypatch.setattr(_runtime_helpers.asyncio, "sleep", _no_sleep)
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=2)
+    client = await _make_client_with_transport(transport, auth_tokens, server_error_max_retries=2)
     try:
         from notebooklm import ServerError
 
@@ -264,7 +263,7 @@ async def test_delete_artifact_retries_remain_enabled(
         # Bite-check: patched sleep observed between retries.
         assert sleep_calls >= 1, "patched asyncio.sleep was never invoked"
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
 
 # ===========================================================================
@@ -299,14 +298,14 @@ async def test_refresh_source_emits_rate_limited_warn(
         return httpx.Response(404, text="unexpected")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         with caplog.at_level(logging.WARNING, logger="notebooklm._idempotency"):
             for _ in range(invocations):
                 ok = await client.sources.refresh("nb_x", "src_x")
                 assert ok is None  # v0.8.0 (#1290): returns None on success
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
     warn_records = [
         r
@@ -356,7 +355,7 @@ async def test_share_notebook_does_not_retry_on_5xx(
     # ``asyncio.sleep`` adding wall-time but still surfacing the bug).
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=5)
+    client = await _make_client_with_transport(transport, auth_tokens, server_error_max_retries=5)
     try:
         from notebooklm import ServerError
 
@@ -369,7 +368,7 @@ async def test_share_notebook_does_not_retry_on_5xx(
             f"(no blind retry), got {share_count}"
         )
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
 
 # ===========================================================================
@@ -433,12 +432,12 @@ async def test_notebooks_create_probe_propagates_network_error(
     monkeypatch.setattr(_runtime_helpers.asyncio, "sleep", _no_sleep)
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         with pytest.raises(NetworkError):
             await client.notebooks.create("Some Title")
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
     # Bite-check: the retry-safe LIST_NOTEBOOKS / CREATE_NOTEBOOK 5xx path
     # exercises the backoff sleep, so the patched seam was invoked —
@@ -517,12 +516,12 @@ async def test_notebooks_create_probe_propagates_non_network_exception(
         return httpx.Response(404, text="unexpected")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         with pytest.raises(RPCError, match="Cannot confirm notebook"):
             await client.notebooks.create(title)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
     # The load-bearing assertion. Restore the probe's ``return None`` and this
     # becomes 2 — a second notebook created on the strength of a probe that

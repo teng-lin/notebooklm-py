@@ -101,8 +101,16 @@ class Kernel:
         """
         return self.get_cookies()
 
-    def get_cookies(self) -> httpx.Cookies:
-        """Return the current transport jar or its retained closed-state owner."""
+    def get_cookies(self, *, expected_epoch: int | None = None) -> httpx.Cookies:
+        """Return the current transport jar or its retained closed-state owner.
+
+        Network-free identity reads deliberately omit ``expected_epoch`` so
+        they remain available before open and after close.  A live workflow
+        supplies its admitted epoch and is fenced before it can observe a
+        reopened generation's cookie jar.
+        """
+        if expected_epoch is not None:
+            self.assert_epoch(expected_epoch)
         if self._http_client is not None:
             return self._http_client.cookies
         if self._cookies is None:

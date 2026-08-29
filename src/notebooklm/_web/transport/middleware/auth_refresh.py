@@ -2,7 +2,8 @@
 
 Per ADR-0009 §"Chain ordering", ``AuthRefreshMiddleware`` sits just *inside*
 ``RetryMiddleware`` and just *outside* ``ErrorInjectionMiddleware``. The chain
-is ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``.
+is ``[Retry, AuthRefresh, ErrorInjection, Tracing]``; ``CallSupervisor`` owns
+the protocol-neutral drain, metrics, and semaphore wrapper outside it.
 
 This middleware owns the **auth-refresh-once retry** loop. The leaf is a
 *pure* ``Kernel.post`` terminal that lets ``httpx.HTTPStatusError`` /
@@ -138,7 +139,7 @@ class AuthRefreshMiddleware:
         is_auth_error: Callable[[Exception], bool],
         refresh_callback_enabled: Callable[[], bool],
         refresh_retry_delay: Callable[[], float],
-        snapshot_provider: Callable[[], Awaitable[AuthSnapshot]] | None = None,
+        snapshot_provider: Callable[[int], Awaitable[AuthSnapshot]] | None = None,
         sleep: Callable[[float], Awaitable[object]] | None = None,
         logger: logging.Logger | None = None,
         metrics: ClientMetrics | None = None,
@@ -161,8 +162,7 @@ class AuthRefreshMiddleware:
         """Catch auth-error ``HTTPStatusError``, refresh, retry exactly once.
 
         Reads ``log_label`` from ``request.context`` for log lines (defensive
-        sentinel fallback matches DrainMiddleware / RetryMiddleware /
-        ErrorInjectionMiddleware).
+        sentinel fallback matches RetryMiddleware / ErrorInjectionMiddleware).
 
         Enforces **at most one refresh per logical call** even when
         ``RetryMiddleware`` (outside this middleware) re-invokes the chain on
@@ -266,11 +266,14 @@ class AuthRefreshMiddleware:
             # ``HTTPStatusError`` in ``TransportAuthExpired`` — the chain's
             # historical refresh-failure shape that callers / tests pin.
             expected_epoch = request.context.get(RPC_CONTEXT_RESOURCE_EPOCH)
-            refresh = (
-                self._refresh_callable
-                if expected_epoch is None
-                else lambda: self._refresh_callable(expected_epoch)
-            )
+            if not isinstance(expected_epoch, int):
+                raise RuntimeError(
+                    "Authenticated retry is missing its resource generation."
+                ) from None
+
+            async def refresh() -> None:
+                await self._refresh_callable(expected_epoch)
+
             await refresh_and_count(
                 refresh=refresh,
                 on_refresh_failure=lambda _refresh_error: TransportAuthExpired(
@@ -357,7 +360,10 @@ class AuthRefreshMiddleware:
             return request
 
         build_request = cast(BuildRequest, raw_build_request)
-        snapshot = await self._snapshot_provider()
+        expected_epoch = request.context.get(RPC_CONTEXT_RESOURCE_EPOCH)
+        if not isinstance(expected_epoch, int):
+            raise RuntimeError("Authenticated retry is missing its resource generation.")
+        snapshot = await self._snapshot_provider(expected_epoch)
         # Keep ``auth_snapshot`` and the rebuilt envelope paired in one
         # synchronous block; see ``test_concurrency_refresh_race``.
         request.context[RPC_CONTEXT_AUTH_SNAPSHOT] = snapshot

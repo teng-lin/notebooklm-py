@@ -1,5 +1,7 @@
 """Tests for NotebookLM runtime endpoint configuration."""
 
+import asyncio
+
 import pytest
 
 from notebooklm._env import (
@@ -16,7 +18,7 @@ from notebooklm._web.sources.upload import SourceUploadPipeline
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import RPCMethod, get_batchexecute_url, get_query_url, get_upload_url
-from notebooklm.types import ShareStatus
+from notebooklm.types import RpcTelemetryEvent, ShareStatus
 from tests._helpers.client_factory import build_client_shell_for_tests
 
 
@@ -136,6 +138,30 @@ def test_core_build_url_uses_enterprise_base_url(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_invalid_rpc_base_url_keeps_pre_chain_accounting(monkeypatch) -> None:
+    """Request-build validation stays outside terminal metrics and queue timing."""
+    events: list[RpcTelemetryEvent] = []
+    client = build_client_shell_for_tests(
+        AuthTokens(cookies={}, csrf_token="csrf", session_id="sid"),
+        on_rpc_event=events.append,
+    )
+    await client.__aenter__()
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://evil.example")
+    try:
+        with pytest.raises(ValueError, match="NOTEBOOKLM_BASE_URL"):
+            await client.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+    finally:
+        await client.close(drain=False)
+
+    snapshot = client.metrics_snapshot()
+    assert snapshot.rpc_calls_started == 1
+    assert snapshot.rpc_calls_succeeded == 0
+    assert snapshot.rpc_calls_failed == 0
+    assert snapshot.rpc_queue_wait_seconds_total == 0.0
+    assert events == []
+
+
+@pytest.mark.asyncio
 async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_mock):
     monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
     auth = AuthTokens(cookies={"SID": "test"}, csrf_token="csrf", session_id="sid")
@@ -148,17 +174,19 @@ async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_m
 
     core = build_client_shell_for_tests(auth)
     await core.__aenter__()
+    uploader = SourceUploadPipeline(
+        rpc=core,
+        supervisor=core._collaborators.call_supervisor,
+        kernel=core._collaborators.kernel,
+        auth=core._auth,
+        record_upload_queue_wait=core._collaborators.metrics.record_upload_queue_wait,
+    )
+    await uploader.open(asyncio.get_running_loop(), 1)
     try:
         api = WebSourcesAPI(
             core,
-            uploader=SourceUploadPipeline(
-                rpc=core,
-                drain=core,
-                lifecycle=core,
-                kernel=core._collaborators.kernel,
-                auth=core._auth,
-                record_upload_queue_wait=core._collaborators.metrics.record_upload_queue_wait,
-            ),
+            supervisor=core._collaborators.call_supervisor,
+            uploader=uploader,
         )
         result = await api._start_resumable_upload(
             "nb_123",
@@ -168,6 +196,8 @@ async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_m
             "text/plain",
         )
     finally:
+        await uploader.prepare_close()
+        await uploader.close_resources()
         await core.close()
 
     request = httpx_mock.get_request()

@@ -29,6 +29,7 @@ from tests._fixtures.kernel_test_helpers import install_http_client_for_test
 from tests._helpers.client_factory import build_client_shell_for_tests
 
 REFRESH_HTML = '"SNlM0e":"new_csrf_token_123" "FdrFJe":"new_session_id_456"'
+TEST_EPOCH = 1
 
 
 def _auth(**overrides: object) -> AuthTokens:
@@ -59,8 +60,11 @@ class _RecordingKernel:
     def __init__(self, http_client: httpx.AsyncClient) -> None:
         self._http_client = http_client
 
+    def assert_epoch(self, expected_epoch: int) -> None:
+        assert expected_epoch == TEST_EPOCH
+
     def get_http_client(self, *, expected_epoch: int | None = None) -> httpx.AsyncClient:
-        assert expected_epoch is None
+        assert expected_epoch == TEST_EPOCH
         return self._http_client
 
 
@@ -81,14 +85,13 @@ class _RecordingLifecycle:
 
     async def save_cookies(
         self,
-        cookie_persistence: Any,
         jar: httpx.Cookies,
         path: Path | None = None,
         *,
         expected_epoch: int | None = None,
     ) -> None:
         assert path is None
-        assert expected_epoch is None
+        assert expected_epoch == TEST_EPOCH
         self.operations.append("save_cookies")
         self.saved_jars.append(jar)
 
@@ -111,9 +114,8 @@ class _RecordingAuthCoord:
     def __init__(self, operations: list[str]) -> None:
         self._operations = operations
 
-    @property
-    def current_epoch(self) -> None:
-        return None
+    def assert_epoch(self, expected_epoch: int) -> None:
+        assert expected_epoch == TEST_EPOCH
 
     async def update_auth_tokens(
         self,
@@ -123,7 +125,7 @@ class _RecordingAuthCoord:
         session_id: str,
         expected_epoch: int | None = None,
     ) -> None:
-        assert expected_epoch is None
+        assert expected_epoch == TEST_EPOCH
         self._operations.append("update_auth_tokens")
         auth.csrf_token = csrf
         auth.session_id = session_id
@@ -142,7 +144,7 @@ class _RecordingAuthCoord:
         account_email: str | None,
         expected_epoch: int | None = None,
     ) -> bool | None:
-        assert expected_epoch is None
+        assert expected_epoch == TEST_EPOCH
         return auth._replace_profile_session(
             target_cookie_jar=target_cookie_jar,
             source_cookie_jar=source_cookie_jar,
@@ -161,7 +163,7 @@ class _RecordingAuthCoord:
         kernel: Any,
         expected_epoch: int | None = None,
     ) -> None:
-        assert expected_epoch is None
+        assert expected_epoch == TEST_EPOCH
         self._operations.append("update_auth_headers")
 
 
@@ -185,21 +187,21 @@ class RecordingRefreshBundle:
     auth: AuthTokens
     http_client: httpx.AsyncClient
     operations: list[str] = field(default_factory=list)
-    lifecycle: _RecordingLifecycle = field(default_factory=_RecordingLifecycle)
+    web_transport: _RecordingLifecycle = field(default_factory=_RecordingLifecycle)
 
     def __post_init__(self) -> None:
         self.kernel = _RecordingKernel(self.http_client)
         # Share storage so the legacy ordering
         # (``[..., "save_cookies"]``) still resolves through a single
         # log without re-aggregating two test-side lists.
-        self.lifecycle.operations = self.operations
+        self.web_transport.operations = self.operations
         self.auth_coord = _RecordingAuthCoord(self.operations)
         self.cookie_persistence = _RecordingCookiePersistence()
 
     @property
     def saved_jars(self) -> list[httpx.Cookies]:
         """Back-compat passthrough so existing assertions still read the recorded jars."""
-        return self.lifecycle.saved_jars
+        return self.web_transport.saved_jars
 
 
 def _client(handler: httpx.MockTransport | httpx.AsyncBaseTransport) -> httpx.AsyncClient:
@@ -220,8 +222,9 @@ def _invoke(bundle: RecordingRefreshBundle):
         auth=bundle.auth,
         kernel=bundle.kernel,  # type: ignore[arg-type]
         auth_coord=bundle.auth_coord,  # type: ignore[arg-type]
-        lifecycle=bundle.lifecycle,  # type: ignore[arg-type]
+        web_transport=bundle.web_transport,  # type: ignore[arg-type]
         cookie_persistence=bundle.cookie_persistence,
+        expected_epoch=TEST_EPOCH,
     )
 
 
@@ -871,6 +874,7 @@ async def test_cancelled_baseline_adoption_still_synchronizes_public_cookie_view
                 auth_coord=_RecordingAuthCoord([]),  # type: ignore[arg-type]
                 cookie_persistence=BlockingPersistence(),  # type: ignore[arg-type]
                 rejected_cookie_jar=rejected,
+                expected_epoch=TEST_EPOCH,
             )
         )
         await adoption_started.wait()
@@ -948,8 +952,10 @@ async def test_profile_reload_adopts_disk_baseline_before_persisting_response_co
         cookies=stale,
         follow_redirects=True,
     ) as http_client:
+        core._collaborators.kernel.activate_epoch(TEST_EPOCH)
+        core._collaborators.auth_coord.activate_epoch(TEST_EPOCH)
         install_http_client_for_test(core._collaborators.kernel, http_client)
-        await core.refresh_auth()
+        await core._refresh_auth_for_epoch(expected_epoch=TEST_EPOCH)
 
     persisted = json.loads(storage.read_text(encoding="utf-8"))["cookies"]
     assert next(row["value"] for row in persisted if row["name"] == "SID") == "response-c"
@@ -1662,6 +1668,8 @@ async def test_refresh_auth_session_persists_through_client_core_save_cookies(
         cookies=auth.cookie_jar,
         follow_redirects=True,
     )
+    core._collaborators.kernel.activate_epoch(TEST_EPOCH)
+    core._collaborators.auth_coord.activate_epoch(TEST_EPOCH)
     install_http_client_for_test(core._collaborators.kernel, http_client)
     core._collaborators.cookie_persistence.capture_open_snapshot(http_client.cookies)
     try:
@@ -1675,8 +1683,9 @@ async def test_refresh_auth_session_persists_through_client_core_save_cookies(
             auth=core._auth,
             kernel=core._collaborators.kernel,
             auth_coord=core._collaborators.auth_coord,
-            lifecycle=core._collaborators.lifecycle,
+            web_transport=core._collaborators.web_transport,
             cookie_persistence=core._collaborators.cookie_persistence,
+            expected_epoch=TEST_EPOCH,
         )
     finally:
         await http_client.aclose()
@@ -1690,15 +1699,29 @@ async def test_refresh_auth_session_persists_through_client_core_save_cookies(
 
 
 def test_client_refresh_auth_is_facade_only() -> None:
-    source = textwrap.dedent(inspect.getsource(NotebookLMClient.refresh_auth))
-    tree = ast.parse(source)
-    function = next(node for node in ast.walk(tree) if isinstance(node, ast.AsyncFunctionDef))
+    public_tree = ast.parse(textwrap.dedent(inspect.getsource(NotebookLMClient.refresh_auth)))
+    public_function = next(
+        node for node in ast.walk(public_tree) if isinstance(node, ast.AsyncFunctionDef)
+    )
+    helper_tree = ast.parse(
+        textwrap.dedent(inspect.getsource(NotebookLMClient._refresh_auth_for_epoch))
+    )
+    helper_function = next(
+        node for node in ast.walk(helper_tree) if isinstance(node, ast.AsyncFunctionDef)
+    )
+
+    assert any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "_refresh_auth_for_epoch"
+        for node in ast.walk(public_function)
+    )
 
     calls_refresh_session = any(
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
         and node.func.id == "refresh_auth_session"
-        for node in ast.walk(function)
+        for node in ast.walk(helper_function)
     )
     forbidden_names = {
         "extract_wiz_field",
@@ -1713,7 +1736,7 @@ def test_client_refresh_auth_is_facade_only() -> None:
         "session_id",
     }
     violations: list[tuple[int, str]] = []
-    for node in ast.walk(function):
+    for node in ast.walk(helper_function):
         if isinstance(node, ast.Name) and node.id in forbidden_names:
             violations.append((node.lineno, node.id))
         elif isinstance(node, ast.Attribute) and node.attr in forbidden_attrs:

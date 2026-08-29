@@ -52,6 +52,7 @@ from ._runtime.config import (
     validate_read_timeout_kwarg,
 )
 from ._runtime.init import compose_client_internals
+from ._runtime.lifecycle import ClientLifecycle
 from ._web.artifacts import WebArtifactsAPI
 from ._web.chat import WebChatAPI
 from ._web.collections import WebCollectionsAPI
@@ -116,7 +117,7 @@ def _assemble_client(
     # lived inline. The test factory forwards its caller's values
     # explicitly to preserve the historical shell semantics (e.g.
     # ``refresh_callback=None`` → no auth refresh coordination).
-    refresh_callback: Callable[[], Awaitable[AuthTokens]] | None | _UnsetType = _UNSET,
+    refresh_callback: Callable[[int], Awaitable[AuthTokens]] | None | _UnsetType = _UNSET,
     refresh_retry_delay: float = 0.2,
     connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
     keepalive_storage_path: Path | None | _UnsetType = _UNSET,
@@ -184,7 +185,9 @@ def _assemble_client(
     # The test factory overrides this (typically with ``None`` or a fake)
     # to keep shells network-free.
     if isinstance(refresh_callback, _UnsetType):
-        refresh_callback = client.refresh_auth
+
+        async def refresh_callback(expected_epoch: int) -> AuthTokens:
+            return await client._refresh_auth_for_epoch(expected_epoch=expected_epoch)
 
     # Canonicalize the keepalive storage path so different representations
     # of the same physical file (relative vs absolute, ``~`` shorthand,
@@ -269,6 +272,12 @@ def _assemble_client(
         sleep=sleep,
         is_auth_error=is_auth_error,
     )
+    # ``ClientComposed`` owned this validation before B0 moved the semaphore
+    # into ``CallSupervisor``.  Keep the check at the same assembly position
+    # so combinations of invalid public kwargs preserve Phase A's deterministic
+    # first error instead of whichever collaborator happens to validate first.
+    if max_concurrent_rpcs is not None and max_concurrent_rpcs < 1:
+        raise ValueError(f"max_concurrent_rpcs must be >= 1, got {max_concurrent_rpcs!r}")
     client._composed = ClientComposed()
 
     internals = compose_client_internals(
@@ -295,11 +304,6 @@ def _assemble_client(
         seams=client._seams,
         composed=client._composed,
     )
-    # Owned reference to the collaborator bundle so
-    # :meth:`metrics_snapshot` (and any future
-    # NotebookLMClient-side collaborator consumers) read from the
-    # same bundle feature internals use.
-    client._collaborators = internals.collaborators
     # Owned reference to the RPC executor so ``client.rpc_call``
     # dispatches through it directly rather than through a
     # compatibility wrapper. The executor satisfies the
@@ -310,17 +314,15 @@ def _assemble_client(
     # ``rpc_call`` sees the swap on every feature consumer).
     client._rpc_executor = internals.executor
 
-    # ADR-0014 Rule 2: the upload pipeline takes its three runtime
-    # collaborators (``rpc`` + ``drain`` + ``lifecycle``) directly
-    # instead of via a composite-runtime adapter. ``Kernel`` and
-    # ``AuthMetadata`` continue to flow as separate parameters per
-    # the ADR-0014 Rule 6 example. This assembly function is
+    # ADR-0014 Rule 2: the upload pipeline takes its direct runtime
+    # collaborators (``rpc`` + ``supervisor`` + ``kernel`` + ``auth``)
+    # instead of reaching through a composite-runtime adapter. This
+    # assembly function is
     # the composition root that knows these internals;
     # ``SourcesAPI`` no longer reads them back off a broad host.
     source_uploader = SourceUploadPipeline(
         rpc=internals.executor,
         supervisor=internals.collaborators.call_supervisor,
-        lifecycle=internals.collaborators.lifecycle,
         kernel=internals.collaborators.kernel,
         # ADR-0016's Auth Instance Invariant: the upload pipeline
         # reads the client-owned ``client._auth`` reference set above
@@ -344,6 +346,7 @@ def _assemble_client(
     # directly from the composition root's executor.
     client.sources = WebSourcesAPI(
         internals.executor,
+        supervisor=internals.collaborators.call_supervisor,
         uploader=source_uploader,
         upload_timeout=upload_timeout,
         max_concurrent_uploads=max_concurrent_uploads,
@@ -356,16 +359,12 @@ def _assemble_client(
     # NoteService.create_note directly to persist a generated mind map.
     note_service = NoteService(internals.executor)
     mind_maps = NoteBackedMindMapService(note_service)
-    # ADR-0014 Rule 2: the artifacts API takes its three runtime
-    # collaborators (``rpc`` + ``drain`` + ``lifecycle``) directly
-    # instead of via a composite-runtime adapter. ``rpc`` covers
-    # RPC dispatch; ``drain`` covers ``operation_scope`` and the
-    # close-time ``register_drain_hook`` used by the polling
-    # service; ``lifecycle`` covers ``assert_bound_loop``.
+    # The artifacts API takes RPC dispatch plus the single call supervisor.
+    # That supervisor is the one authority for polling operation scopes,
+    # same-generation leader tasks, loop affinity, and drain-hook registration.
     client.artifacts = WebArtifactsAPI(
         rpc=internals.executor,
-        drain=internals.collaborators.call_supervisor,
-        lifecycle=internals.collaborators.lifecycle,
+        supervisor=internals.collaborators.call_supervisor,
         notebooks=client.notebooks,
         mind_maps=mind_maps,
         note_service=note_service,
@@ -380,7 +379,7 @@ def _assemble_client(
         rpc=internals.executor,
         transport=client._composed.transport,
         reqid=internals.collaborators.reqid,
-        loop_guard=internals.collaborators.lifecycle,
+        loop_guard=internals.collaborators.call_supervisor,
         chat_timeout=resolve_chat_read_timeout(chat_timeout, timeout),
         chat_response_max_bytes=chat_response_max_bytes,
         notebooks=client.notebooks,
@@ -417,3 +416,23 @@ def _assemble_client(
     # callable for the membership->Notebook join in ``collections.notebooks()``;
     # wired after ``client.notebooks`` exists. Same client/bound loop (ADR-0004).
     client.collections = WebCollectionsAPI(internals.executor, list_notebooks=client.notebooks.list)
+
+    # The protocol-neutral root is constructed last, after every concrete
+    # transport and loop participant exists. Its tuples never mutate after
+    # publication, so open/close waves cannot observe a partially assembled
+    # graph or silently omit a later-added owner.
+    lifecycle = ClientLifecycle(
+        supervisor=internals.collaborators.call_supervisor,
+        transports=(internals.collaborators.web_transport, source_uploader),
+        loop_participants=(
+            internals.collaborators.call_supervisor,
+            internals.collaborators.reqid,
+            internals.collaborators.auth_coord,
+            client.chat,
+        ),
+    )
+    client._collaborators = dataclasses.replace(
+        internals.collaborators,
+        _lifecycle=lifecycle,
+    )
+    client._composed.bind_runtime_collaborators(client._collaborators)

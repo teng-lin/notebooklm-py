@@ -21,7 +21,10 @@ class Kernel(Protocol):
         *,
         read_timeout: float | None = None,
         max_response_bytes: int | None = None,
+        expected_epoch: int | None = None,
     ) -> httpx.Response: ...
+
+    def get_http_client(self, *, expected_epoch: int | None = None) -> httpx.AsyncClient: ...
 
     @property
     def cookies(self) -> httpx.Cookies: ...

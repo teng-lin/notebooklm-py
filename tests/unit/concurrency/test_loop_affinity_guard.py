@@ -134,7 +134,7 @@ def test_next_reqid_guards_against_cross_loop_call() -> None:
 def test_await_refresh_guards_against_cross_loop_call() -> None:
     """``AuthRefreshCoordinator.await_refresh`` must raise on cross-loop misuse."""
 
-    async def _refresh_cb() -> Any:
+    async def _refresh_cb(_expected_epoch: int) -> Any:
         raise AssertionError("refresh callback should not run on cross-loop call")
 
     coord = AuthRefreshCoordinator(refresh_callback=_refresh_cb)
@@ -148,7 +148,7 @@ def test_await_refresh_guards_against_cross_loop_call() -> None:
         # a safe fallback). The cross-loop guard short-circuits before any
         # metric is recorded either way.
         async def inner() -> None:
-            await coord.await_refresh()
+            await coord.await_refresh(1)
 
         with pytest.raises(RuntimeError, match="different event loop"):
             asyncio.run(inner())
@@ -169,7 +169,7 @@ def test_wait_for_completion_guards_against_cross_loop_call() -> None:
             side_effect=RuntimeError("NotebookLM client used from a different event loop")
         )
 
-        service = ArtifactPollingService(loop_guard=capabilities, op_scope=capabilities)
+        service = ArtifactPollingService(supervisor=capabilities)
 
         async def _unused_poll(_nb: str, _task: str) -> Any:
             raise AssertionError("poll_status should not run on cross-loop call")
@@ -234,30 +234,26 @@ def test_add_file_guards_against_cross_loop_call(monkeypatch: pytest.MonkeyPatch
     ``client.sources.add_file(...)`` could attach the semaphore to the
     wrong loop before the documented ``RuntimeError`` guard fired.
 
-    The new contract: ``add_file`` calls ``lifecycle.assert_bound_loop()``
+    The new contract: ``add_file`` calls ``supervisor.assert_bound_loop()``
     as its first statement (mirroring
     ``ArtifactPollingService.wait_for_completion`` and ``ChatAPI.ask``)
     so cross-loop misuse surfaces a clean ``RuntimeError`` before any
     loop-bound primitive is touched. :class:`SourceUploadPipeline` takes
-    the lifecycle (``LoopGuard``) collaborator directly via its
-    ``lifecycle`` constructor slot.
+    the call supervisor directly via its ``supervisor`` constructor slot.
     """
     from notebooklm._web.sources.upload import SourceUploadPipeline
 
-    lifecycle = MagicMock()
-    lifecycle.assert_bound_loop = MagicMock(
+    supervisor = MagicMock()
+    supervisor.assert_bound_loop = MagicMock(
         side_effect=RuntimeError("NotebookLM client used from a different event loop")
     )
     rpc = MagicMock()
-    drain = MagicMock()
     kernel = MagicMock()
     auth = MagicMock()
 
     # Construct the pipeline outside any running loop — its ``__init__`` is
     # event-loop-agnostic; the cross-loop guard fires inside ``add_file``.
-    pipeline = SourceUploadPipeline(
-        rpc=rpc, drain=drain, lifecycle=lifecycle, kernel=kernel, auth=auth
-    )
+    pipeline = SourceUploadPipeline(rpc=rpc, supervisor=supervisor, kernel=kernel, auth=auth)
     register_file_source = MagicMock(side_effect=AssertionError("register should not run"))
     start_resumable_upload = MagicMock(side_effect=AssertionError("start should not run"))
     upload_file_streaming = MagicMock(side_effect=AssertionError("stream should not run"))
@@ -280,8 +276,8 @@ def test_add_file_guards_against_cross_loop_call(monkeypatch: pytest.MonkeyPatch
     # manager the audit specifically calls out) was never entered, upload
     # collaborators were never touched, and the lazy upload semaphore was
     # never allocated.
-    lifecycle.assert_bound_loop.assert_called_once()
-    drain.operation_scope.assert_not_called()
+    supervisor.assert_bound_loop.assert_called_once()
+    supervisor.operation_scope.assert_not_called()
     register_file_source.assert_not_called()
     start_resumable_upload.assert_not_called()
     upload_file_streaming.assert_not_called()

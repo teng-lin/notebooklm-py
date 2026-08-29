@@ -114,13 +114,15 @@ def _make_sources_api() -> tuple[SourcesAPI, FakeSession]:
     core = make_fake_core(rpc_call=AsyncMock())
     uploader = SourceUploadPipeline(
         rpc=core.rpc_executor,
-        drain=core,
-        lifecycle=core,
+        supervisor=core,
         kernel=core.kernel,
         auth=core.auth,
         record_upload_queue_wait=core.record_upload_queue_wait,
     )
-    return WebSourcesAPI(core.rpc_executor, uploader=uploader), core
+    uploader._active_epoch = 1
+    uploader._closing = False
+    uploader._registry_lock = asyncio.Lock()
+    return WebSourcesAPI(core.rpc_executor, supervisor=core, uploader=uploader), core
 
 
 class _SlowReadFile:

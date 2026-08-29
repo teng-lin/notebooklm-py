@@ -45,6 +45,7 @@ import pytest
 
 from notebooklm._web.transport.error_injection import ERROR_INJECT_ENV_VAR
 from notebooklm._web.transport.errors import TransportRateLimited, TransportServerError
+from notebooklm._web.transport.middleware.context import RPC_CONTEXT_RESOURCE_EPOCH
 from notebooklm._web.transport.middleware.core import NextCall, RpcRequest, RpcResponse, build_chain
 from notebooklm._web.transport.middleware.error_injection import ErrorInjectionMiddleware
 
@@ -52,6 +53,8 @@ from notebooklm._web.transport.middleware.error_injection import ErrorInjectionM
 # fully-qualified import path documented in ``tests/_fixtures/__init__.py``.
 from tests._fixtures.chain import make_request
 from tests.cassette_patterns import build_synthetic_error_response
+
+_TEST_EPOCH = 7
 
 
 def _static_terminal(response: httpx.Response) -> NextCall:
@@ -367,7 +370,8 @@ async def test_auth_refresh_outside_error_injection_triggers_refresh_on_expired_
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "expired_csrf")
     refresh_calls: list[None] = []
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         refresh_calls.append(None)
 
     auth_refresh = AuthRefreshMiddleware(
@@ -383,7 +387,14 @@ async def test_auth_refresh_outside_error_injection_triggers_refresh_on_expired_
     )
 
     with pytest.raises(httpx.HTTPStatusError) as excinfo:
-        await chain(make_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
+        await chain(
+            make_request(
+                context={
+                    "log_label": "RPC LIST_NOTEBOOKS",
+                    RPC_CONTEXT_RESOURCE_EPOCH: _TEST_EPOCH,
+                }
+            )
+        )
 
     # AuthRefresh caught the synthetic 400 from ErrorInjection and drove
     # ONE refresh — the retry leg's 400 propagates unchanged (exactly-once
@@ -412,7 +423,8 @@ async def test_auth_refresh_outside_error_injection_completes_when_env_flips_off
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "expired_csrf")
     refresh_calls: list[None] = []
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         # Simulate a successful token rotation that disarms the injector
         # before the retry leg runs.
         refresh_calls.append(None)
@@ -430,7 +442,14 @@ async def test_auth_refresh_outside_error_injection_completes_when_env_flips_off
         _static_terminal(httpx.Response(200, content=b"after-refresh-success")),
     )
 
-    response = await chain(make_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
+    response = await chain(
+        make_request(
+            context={
+                "log_label": "RPC LIST_NOTEBOOKS",
+                RPC_CONTEXT_RESOURCE_EPOCH: _TEST_EPOCH,
+            }
+        )
+    )
 
     assert len(refresh_calls) == 1
     assert response.response.status_code == 200

@@ -50,6 +50,7 @@ from notebooklm.auth import AuthTokens
 # Tight enough to fail fast if a regression hangs the suite, generous enough
 # not to flake on a slow CI runner. Mirrors ``test_refresh_state_machine.py``.
 EVENT_TIMEOUT_S = 5.0
+TEST_EPOCH = 1
 
 
 class _KernelStub:
@@ -63,7 +64,12 @@ class _KernelStub:
     def __init__(self, http_client: httpx.AsyncClient | None = None) -> None:
         self.http_client = http_client
 
-    def get_http_client(self) -> httpx.AsyncClient:
+    def assert_epoch(self, expected_epoch: int) -> None:
+        assert expected_epoch == TEST_EPOCH
+
+    def get_http_client(self, *, expected_epoch: int | None = None) -> httpx.AsyncClient:
+        if expected_epoch is not None:
+            self.assert_epoch(expected_epoch)
         assert self.http_client is not None, "Test forgot to wire an http client."
         return self.http_client
 
@@ -343,8 +349,9 @@ async def test_await_refresh_releases_lock_when_metric_raises() -> None:
     """
     call_count = 0
 
-    async def cb() -> AuthTokens:
+    async def cb(expected_epoch: int) -> AuthTokens:
         nonlocal call_count
+        assert expected_epoch == TEST_EPOCH
         call_count += 1
         return AuthTokens(
             csrf_token=f"R{call_count}",
@@ -357,9 +364,10 @@ async def test_await_refresh_releases_lock_when_metric_raises() -> None:
         refresh_callback=cb,
         metrics=cast(ClientMetrics, metrics),
     )
+    coord.activate_epoch(TEST_EPOCH)
 
     with pytest.raises(RuntimeError, match="metrics blew up"):
-        await coord.await_refresh()
+        await coord.await_refresh(TEST_EPOCH)
 
     # The refresh task is never created when the metric raises before
     # task-creation runs, so a leaked lock would not be masked by a joined
@@ -371,7 +379,7 @@ async def test_await_refresh_releases_lock_when_metric_raises() -> None:
     # hanging the suite.
     metrics2 = _RecordingMetrics()
     coord._metrics = cast(ClientMetrics, metrics2)
-    await asyncio.wait_for(coord.await_refresh(), timeout=EVENT_TIMEOUT_S)
+    await asyncio.wait_for(coord.await_refresh(TEST_EPOCH), timeout=EVENT_TIMEOUT_S)
     assert call_count == 1
     assert len(metrics2.lock_waits) == 1
 
@@ -434,8 +442,9 @@ async def test_await_refresh_is_single_flight() -> None:
     release_refresh = asyncio.Event()
     call_count = 0
 
-    async def cb() -> AuthTokens:
+    async def cb(expected_epoch: int) -> AuthTokens:
         nonlocal call_count
+        assert expected_epoch == TEST_EPOCH
         call_count += 1
         callback_entered.set()
         await release_refresh.wait()
@@ -446,8 +455,9 @@ async def test_await_refresh_is_single_flight() -> None:
         )
 
     coord = AuthRefreshCoordinator(refresh_callback=cb)
+    coord.activate_epoch(TEST_EPOCH)
 
-    tasks = [asyncio.create_task(coord.await_refresh()) for _ in range(3)]
+    tasks = [asyncio.create_task(coord.await_refresh(TEST_EPOCH)) for _ in range(3)]
     await asyncio.wait_for(callback_entered.wait(), EVENT_TIMEOUT_S)
 
     # Yield enough times for waiters 2/3 to reach ``await shield(task)``.
@@ -469,8 +479,9 @@ async def test_await_refresh_creates_new_task_after_first_done() -> None:
     """A second refresh wave creates a *new* task once the first is done."""
     call_count = 0
 
-    async def cb() -> AuthTokens:
+    async def cb(expected_epoch: int) -> AuthTokens:
         nonlocal call_count
+        assert expected_epoch == TEST_EPOCH
         call_count += 1
         return AuthTokens(
             csrf_token=f"R{call_count}",
@@ -479,17 +490,61 @@ async def test_await_refresh_creates_new_task_after_first_done() -> None:
         )
 
     coord = AuthRefreshCoordinator(refresh_callback=cb)
+    coord.activate_epoch(TEST_EPOCH)
 
-    await coord.await_refresh()
+    await coord.await_refresh(TEST_EPOCH)
     first_task = coord._refresh_task
     assert first_task is not None and first_task.done()
 
-    await coord.await_refresh()
+    await coord.await_refresh(TEST_EPOCH)
     second_task = coord._refresh_task
     assert second_task is not None and second_task.done()
 
     assert first_task is not second_task, "Second wave reused completed task"
     assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_refresh_process_exit_is_captured_then_re_raised_to_waiter() -> None:
+    process_exit = KeyboardInterrupt("refresh shutdown")
+
+    async def cb(expected_epoch: int) -> AuthTokens:
+        assert expected_epoch == TEST_EPOCH
+        raise process_exit
+
+    coord = AuthRefreshCoordinator(refresh_callback=cb)
+    coord.activate_epoch(TEST_EPOCH)
+
+    with pytest.raises(KeyboardInterrupt, match="refresh shutdown") as raised:
+        await coord.await_refresh(TEST_EPOCH)
+
+    assert raised.value is process_exit
+    assert coord._refresh_task is not None
+    assert coord._refresh_task.done()
+    assert coord._refresh_task.result().error is process_exit
+
+
+@pytest.mark.asyncio
+async def test_eager_refresh_task_never_invokes_callback_under_refresh_lock() -> None:
+    coord: AuthRefreshCoordinator
+
+    async def cb(expected_epoch: int) -> AuthTokens:
+        assert expected_epoch == TEST_EPOCH
+        assert not coord.get_refresh_lock().locked()
+        return _fresh_auth()
+
+    coord = AuthRefreshCoordinator(refresh_callback=cb)
+    coord.activate_epoch(TEST_EPOCH)
+    loop = asyncio.get_running_loop()
+    eager_factory = getattr(asyncio, "eager_task_factory", None)
+    if eager_factory is None:
+        pytest.skip("asyncio eager task factory requires Python 3.12+")
+    prior_factory = loop.get_task_factory()
+    loop.set_task_factory(eager_factory)
+    try:
+        await coord.await_refresh(TEST_EPOCH)
+    finally:
+        loop.set_task_factory(prior_factory)
 
 
 @pytest.mark.asyncio
@@ -508,8 +563,9 @@ async def test_await_refresh_cancellation_preserves_task_slot() -> None:
     release = asyncio.Event()
     call_count = 0
 
-    async def cb() -> AuthTokens:
+    async def cb(expected_epoch: int) -> AuthTokens:
         nonlocal call_count
+        assert expected_epoch == TEST_EPOCH
         call_count += 1
         enter.set()
         await release.wait()
@@ -520,9 +576,10 @@ async def test_await_refresh_cancellation_preserves_task_slot() -> None:
         )
 
     coord = AuthRefreshCoordinator(refresh_callback=cb)
+    coord.activate_epoch(TEST_EPOCH)
 
-    waiter_a = asyncio.create_task(coord.await_refresh())
-    waiter_b = asyncio.create_task(coord.await_refresh())
+    waiter_a = asyncio.create_task(coord.await_refresh(TEST_EPOCH))
+    waiter_b = asyncio.create_task(coord.await_refresh(TEST_EPOCH))
     await asyncio.wait_for(enter.wait(), EVENT_TIMEOUT_S)
 
     # Yield so both waiters reach ``await shield(task)``.
@@ -747,7 +804,8 @@ async def test_reset_after_open_discards_locks_preserves_task_and_callback() -> 
     ``_refresh_callback`` wiring MUST survive the reset.
     """
 
-    async def _callback() -> AuthTokens:
+    async def _callback(expected_epoch: int) -> AuthTokens:
+        assert expected_epoch == TEST_EPOCH
         return _fresh_auth()  # pragma: no cover — never awaited here
 
     coord = AuthRefreshCoordinator(refresh_callback=_callback)

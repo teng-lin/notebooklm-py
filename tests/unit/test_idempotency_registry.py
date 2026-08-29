@@ -552,17 +552,21 @@ def _build_rpc_executor() -> Any:
         refresh_budget: Any = None,
         retry_deadline: Any = None,
         read_timeout: float | None = None,
+        expected_epoch: int | None = None,
+        epoch_observer: Any = None,
     ) -> httpx.Response:
+        admitted_epoch = 1 if expected_epoch is None else expected_epoch
+        if epoch_observer is not None:
+            epoch_observer(admitted_epoch)
         captured["disable_internal_retries"] = disable_internal_retries
         captured["log_label"] = log_label
         captured["rpc_method"] = rpc_method
+        captured["expected_epoch"] = expected_epoch
         return httpx.Response(200, text=")]}'\n[]")
 
-    # ADR-0014 Rule 5 (Wave 4 of session-decoupling): RpcExecutor takes
-    # its four collaborators (kernel/transport/auth_refresh/metrics) as
-    # keyword-only args. Use four MagicMock collaborators so each role
-    # can be inspected independently.
-    kernel = MagicMock()
+    # ADR-0014 Rule 5: RpcExecutor takes its direct runtime collaborators as
+    # keyword-only args. Use separate mocks so each role can be inspected
+    # independently.
     transport = MagicMock()
     transport.perform_authed_post = AsyncMock(side_effect=_fake_perform_authed_post)
     auth_refresh = MagicMock()
@@ -586,7 +590,6 @@ def _build_rpc_executor() -> Any:
         return False
 
     executor = RpcExecutor(
-        kernel=kernel,
         transport=transport,
         auth_refresh=auth_refresh,
         metrics=metrics,

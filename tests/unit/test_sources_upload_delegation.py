@@ -26,6 +26,7 @@ These tests pin three things:
 from __future__ import annotations
 
 import ast
+from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -82,6 +83,10 @@ class _RecordingPipeline:
 
         return _call
 
+    @asynccontextmanager
+    async def transport_operation_scope(self, _label: str):
+        yield 1
+
     def __getattr__(self, name: str):
         # Only fabricate recorders for the real upload entry points. Dunder
         # lookups (``__wrapped__``, ``__members__``, copy/pickle probes, etc.)
@@ -115,13 +120,12 @@ def _make_sources_api() -> WebSourcesAPI:
     core.record_upload_queue_wait = MagicMock()
     uploader = SourceUploadPipeline(
         rpc=core,
-        drain=core,
-        lifecycle=core,
+        supervisor=core,
         kernel=core.kernel,
         auth=core.auth,
         record_upload_queue_wait=core.record_upload_queue_wait,
     )
-    return WebSourcesAPI(core, uploader=uploader)
+    return WebSourcesAPI(core, supervisor=core, uploader=uploader)
 
 
 def _make_api_with_recording_pipeline() -> tuple[WebSourcesAPI, _RecordingPipeline]:
@@ -204,7 +208,7 @@ async def test_start_resumable_upload_delegates_to_pipeline() -> None:
     assert result == "<start_resumable_upload-result>"
     args, kwargs = pipeline.calls["start_resumable_upload"]
     assert args == ("nb-3", "movie.mp4", 123456, "src-abc", "video/mp4")
-    assert kwargs == {}
+    assert kwargs == {"expected_epoch": 1}
 
 
 @pytest.mark.asyncio
@@ -232,6 +236,7 @@ async def test_upload_file_streaming_delegates_to_pipeline() -> None:
     assert kwargs["filename"] == "movie.mp4"
     assert kwargs["on_progress"] is progress
     assert kwargs["total_bytes"] == 123456
+    assert kwargs["expected_epoch"] == 1
     assert "logger" in kwargs
 
 
@@ -257,6 +262,7 @@ async def test_cancel_upload_session_delegates_to_pipeline() -> None:
         "0",
     )
     assert "logger" in kwargs
+    assert kwargs["_expected_epoch"] == 1
 
 
 def _strip_docstrings(node: ast.AST) -> None:
@@ -345,7 +351,7 @@ def test_sources_upload_helpers_are_pure_delegators() -> None:
     # reads the ``self._uploader.live_cookies`` seam to authenticate the Drive
     # fetch — it does not re-implement or delegate a resumable-upload operation
     # (its upload leg goes through the public ``self.add_file``, already covered).
-    _uploader_seam_only = {"__init__", "add_drive_file"}
+    _uploader_seam_only = {"__init__", "add_drive_file", "add_url", "_add_urls_batch"}
     uploader_methods = {
         node.name
         for node in class_def.body
@@ -379,6 +385,18 @@ def test_sources_upload_helpers_are_pure_delegators() -> None:
             f"{wrapper} must be a single-statement delegator, found {len(stmts)} statements"
         )
         ret = stmts[0]
+        if wrapper in {
+            "_start_resumable_upload",
+            "_upload_file_streaming",
+            "_cancel_upload_session",
+        }:
+            assert isinstance(ret, ast.AsyncWith), f"{wrapper} must hold an upload epoch scope"
+            assert len(ret.items) == 1 and len(ret.body) == 1
+            context_call = ret.items[0].context_expr
+            assert isinstance(context_call, ast.Call)
+            assert isinstance(context_call.func, ast.Attribute)
+            assert context_call.func.attr == "transport_operation_scope"
+            ret = ret.body[0]
         # ``_cancel_upload_session`` returns None (bare ``await`` Expr); the
         # others ``return await``. Accept either await-only delegation shape.
         assert isinstance(ret, (ast.Return, ast.Expr)), f"{wrapper} must await its delegation"

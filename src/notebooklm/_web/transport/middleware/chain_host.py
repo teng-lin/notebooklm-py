@@ -119,7 +119,7 @@ class MiddlewareChainHost:
             raise RuntimeError("MiddlewareChainHost not fully constructed: _transport is None")
         return await transport.terminal(request)
 
-    async def await_refresh(self, expected_epoch: int | None = None) -> None:
+    async def await_refresh(self, expected_epoch: int) -> None:
         """Run / join the shared refresh task on the coordinator.
 
         Dynamic delegation — looks up ``self._auth_refresh.await_refresh``

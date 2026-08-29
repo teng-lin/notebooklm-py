@@ -59,19 +59,22 @@ def _wrb_response(rpc_id: str, payload) -> str:
     return f")]}}'\n{len(chunk)}\n{chunk}\n"
 
 
-def _make_client_with_transport(
+async def _make_client_with_transport(
     transport: httpx.AsyncBaseTransport,
     auth_tokens,
     *,
     server_error_max_retries: int = 3,
 ) -> NotebookLMClient:
-    """Construct a ``NotebookLMClient`` wired to a mock httpx transport."""
+    """Open a real lifecycle generation, then install the mock transport."""
     client = NotebookLMClient(
         auth_tokens,
         server_error_max_retries=server_error_max_retries,
     )
+    await client.__aenter__()
+    kernel = client._collaborators.kernel
+    await kernel.get_http_client(expected_epoch=1).aclose()
     install_http_client_for_test(
-        client._collaborators.kernel,
+        kernel,
         httpx.AsyncClient(
             transport=transport,
             headers={
@@ -159,12 +162,12 @@ async def test_start_fast_research_no_inner_retry_on_5xx(auth_tokens) -> None:
         return httpx.Response(404, text="unexpected")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=3)
+    client = await _make_client_with_transport(transport, auth_tokens, server_error_max_retries=3)
     try:
         with pytest.raises(ServerError):
             await client.research.start(notebook_id, "what is quantum computing?")
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
     # NON_IDEMPOTENT_NO_RETRY forces effective_disable_internal_retries=True
     # so the inner retry loop does not fire — exactly ONE POST.
@@ -191,12 +194,12 @@ async def test_start_deep_research_no_inner_retry_on_5xx(auth_tokens) -> None:
         return httpx.Response(404, text="unexpected")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=3)
+    client = await _make_client_with_transport(transport, auth_tokens, server_error_max_retries=3)
     try:
         with pytest.raises(ServerError):
             await client.research.start(notebook_id, "deep dive query", mode="deep")
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
     assert request_count == 1, (
         f"expected exactly 1 START_DEEP_RESEARCH (NON_IDEMPOTENT_NO_RETRY), got {request_count}"
@@ -227,12 +230,12 @@ async def test_import_research_no_inner_retry_on_5xx(auth_tokens) -> None:
         return httpx.Response(404, text="unexpected")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=3)
+    client = await _make_client_with_transport(transport, auth_tokens, server_error_max_retries=3)
     try:
         with pytest.raises(ServerError):
             await client.research.import_sources(notebook_id, task_id, sources)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
     assert request_count == 1, (
         f"expected exactly 1 IMPORT_RESEARCH (NON_IDEMPOTENT_NO_RETRY), got {request_count}"
@@ -268,11 +271,11 @@ async def test_start_fast_research_happy_path_one_post(auth_tokens) -> None:
         return httpx.Response(404, text="unexpected")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         result = await client.research.start(notebook_id, "test query")
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client.close()
 
     assert result is not None
     assert result.task_id == "task_xyz"

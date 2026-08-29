@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -24,6 +25,21 @@ CookieSaver = SaveCookiesToStorage
 CookieRotator = Callable[..., Awaitable[None]]
 
 logger = logging.getLogger(CORE_LOGGER_NAME)
+
+
+@dataclass(frozen=True)
+class _BackgroundResult:
+    """A keepalive result that never raises across its Task boundary."""
+
+    error: BaseException | None = None
+
+
+async def _capture_background(factory: Callable[[], Awaitable[None]]) -> _BackgroundResult:
+    try:
+        await factory()
+    except BaseException as exc:
+        return _BackgroundResult(exc)
+    return _BackgroundResult()
 
 
 async def _default_cookie_rotator(*args: Any, **kwargs: Any) -> None:
@@ -51,7 +67,7 @@ class WebTransportLifecycle:
         keepalive_interval: float | None,
         keepalive_storage_path: Path | None,
         cookie_persistence_path: Path | None,
-        save_cookies: Callable[[CookiePersistence, httpx.Cookies, Path | None], Awaitable[None]],
+        cookie_saver: CookieSaver | None,
         cookie_rotator: CookieRotator,
     ) -> None:
         self._auth = auth
@@ -64,9 +80,9 @@ class WebTransportLifecycle:
         self._keepalive_interval = keepalive_interval
         self._keepalive_storage_path = keepalive_storage_path
         self._cookie_persistence_path = cookie_persistence_path
-        self._save_cookies = save_cookies
+        self._cookie_saver = cookie_saver
         self._cookie_rotator = cookie_rotator
-        self._keepalive_task: asyncio.Task[None] | None = None
+        self._keepalive_task: asyncio.Task[_BackgroundResult] | None = None
         self._active_epoch: int | None = None
 
     async def open(self, loop: asyncio.AbstractEventLoop, epoch: int) -> None:
@@ -91,7 +107,9 @@ class WebTransportLifecycle:
         )
         self._auth.cookie_snapshot = self._cookie_persistence.loaded_cookie_snapshot
         if self._keepalive_interval is not None:
-            self._keepalive_task = asyncio.create_task(self._keepalive_loop(epoch))
+            self._keepalive_task = asyncio.create_task(
+                _capture_background(lambda: self._keepalive_loop(epoch))
+            )
 
     async def prepare_close(self) -> None:
         """Fence Kernel/Auth synchronously, then settle web background work."""
@@ -101,22 +119,83 @@ class WebTransportLifecycle:
         self._auth_coord.fence_epoch(epoch)
         task = self._keepalive_task
         self._keepalive_task = None
-        if task is not None and not task.done():
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
-        await self._auth_coord.cancel_inflight_refresh()
+        keepalive_error: BaseException | None = None
+        if task is not None:
+            if not task.done():
+                task.cancel()
+            settled = (await asyncio.gather(task, return_exceptions=True))[0]
+            if isinstance(settled, _BackgroundResult):
+                if not isinstance(settled.error, asyncio.CancelledError):
+                    keepalive_error = settled.error
+            elif not isinstance(settled, asyncio.CancelledError):
+                keepalive_error = settled
+        auth_error: BaseException | None = None
+        try:
+            await self._auth_coord.cancel_inflight_refresh()
+        except BaseException as exc:
+            auth_error = exc
+        process_exit = next(
+            (
+                error
+                for error in (keepalive_error, auth_error)
+                if isinstance(error, (KeyboardInterrupt, SystemExit))
+            ),
+            None,
+        )
+        if process_exit is not None:
+            raise process_exit
+        if keepalive_error is not None:
+            raise keepalive_error
+        if auth_error is not None:
+            raise auth_error
 
     async def close_resources(self) -> None:
         """Persist cookies best-effort and clear the Kernel handle in all cases."""
         try:
             if self._kernel.http_client is not None:
                 try:
-                    await self._save_cookies(self._cookie_persistence, self._kernel.cookies, None)
+                    await self.save_cookies(self._kernel.cookies)
                 except Exception as exc:  # noqa: BLE001 - persistence is best effort
                     logger.warning("Failed to sync refreshed cookies during close: %s", exc)
         finally:
             await self._kernel.aclose()
             self._active_epoch = None
+
+    async def save_cookies(
+        self,
+        jar: httpx.Cookies,
+        path: Path | None = None,
+        *,
+        expected_epoch: int | None = None,
+    ) -> None:
+        """Persist the live web jar through the one web-owned save boundary."""
+        if expected_epoch is not None:
+            self._kernel.assert_epoch(expected_epoch)
+        effective_path = path if path is not None else self._cookie_persistence_path
+        if self._cookie_saver is None:
+            logger.debug(
+                "Cookie persistence route: type=canonical_store status=dispatch path=%s",
+                effective_path,
+            )
+            await self._cookie_persistence._save_canonical(
+                jar,
+                effective_path,
+                to_thread=asyncio.to_thread,
+            )
+        else:
+            logger.debug(
+                "Cookie persistence route: type=explicit_v0_callback status=dispatch path=%s",
+                effective_path,
+            )
+            await self._cookie_persistence._save_v0_callback(
+                jar,
+                effective_path,
+                save_cookies_to_storage=self._cookie_saver,
+                to_thread=asyncio.to_thread,
+            )
+        if expected_epoch is not None:
+            self._kernel.assert_epoch(expected_epoch)
+        self._auth.cookie_snapshot = self._cookie_persistence.loaded_cookie_snapshot
 
     async def _keepalive_loop(self, epoch: int) -> None:
         assert self._keepalive_interval is not None
@@ -135,7 +214,7 @@ class WebTransportLifecycle:
                 if self._keepalive_storage_path is None:
                     continue
                 try:
-                    await self._save_cookies(self._cookie_persistence, client.cookies, None)
+                    await self.save_cookies(client.cookies, expected_epoch=epoch)
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:  # noqa: BLE001

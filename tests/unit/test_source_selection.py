@@ -9,6 +9,7 @@ Verifies correct encoding of source IDs in RPC parameters:
 - source_ids_double = [[sid] for sid in source_ids]
 """
 
+import asyncio
 import json
 from inspect import Parameter, signature
 from unittest.mock import AsyncMock, MagicMock
@@ -153,6 +154,9 @@ def mock_core():
     async def _operation_scope_factory(label: str):
         yield None
 
+    async def _spawn_child(label: str, factory):
+        return asyncio.create_task(factory(), name=label)
+
     drain_hooks: dict = {}
 
     def _register_drain_hook(name: str, hook):
@@ -160,11 +164,8 @@ def mock_core():
 
     core = SimpleNamespace(
         rpc_executor=SimpleNamespace(rpc_call=rpc_call),
-        # ``rpc_call`` mirrors ``rpc_executor.rpc_call`` so the SimpleNamespace
-        # also satisfies the composite ``ArtifactsRuntime`` shape
-        # (``RpcCaller`` + ``LoopGuard`` + ``OperationScopeProvider`` +
-        # ``DrainHookRegistration``) when threaded into ``ArtifactsAPI`` as
-        # the runtime adapter.
+        # The same object supplies every CallSupervisor surface consumed by
+        # artifact polling; WebArtifactsAPI receives it once via supervisor=.
         rpc_call=rpc_call,
         auth=auth,
         next_reqid=AsyncMock(return_value=100000),
@@ -173,6 +174,7 @@ def mock_core():
         session_transport=session_transport,
         _last_chat_request=None,
         operation_scope=MagicMock(side_effect=_operation_scope_factory),
+        spawn_child=_spawn_child,
         register_drain_hook=MagicMock(side_effect=_register_drain_hook),
         _drain_hooks=drain_hooks,
     )
@@ -323,8 +325,7 @@ class TestArtifactsSourceSelection:
         """Test generate_audio with explicitly provided source_ids."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -375,8 +376,7 @@ class TestArtifactsSourceSelection:
         """Explicit audio format and length are encoded instead of API defaults."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -401,8 +401,7 @@ class TestArtifactsSourceSelection:
         """Test generate_audio with source_ids=None fetches all sources."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=mock_notebooks_api,
             **mock_mind_map_service,
         )
@@ -437,8 +436,7 @@ class TestArtifactsSourceSelection:
         """Test generate_video has correct source encoding format."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -476,8 +474,7 @@ class TestArtifactsSourceSelection:
         """Explicit video format and style are encoded instead of API defaults."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -502,8 +499,7 @@ class TestArtifactsSourceSelection:
         """Test custom video style prompt is encoded like the live Web UI."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -527,8 +523,7 @@ class TestArtifactsSourceSelection:
     ):
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -546,8 +541,7 @@ class TestArtifactsSourceSelection:
     ):
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -566,8 +560,7 @@ class TestArtifactsSourceSelection:
     ):
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -586,8 +579,7 @@ class TestArtifactsSourceSelection:
     ):
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -606,8 +598,7 @@ class TestArtifactsSourceSelection:
     ):
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -625,8 +616,7 @@ class TestArtifactsSourceSelection:
         """Test generate_report has correct source encoding format."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -662,8 +652,7 @@ class TestArtifactsSourceSelection:
         """extra_instructions is appended to the built-in prompt with \\n\\n separator."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -691,8 +680,7 @@ class TestArtifactsSourceSelection:
 
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -718,8 +706,7 @@ class TestArtifactsSourceSelection:
         """Test generate_quiz has correct source encoding format."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -753,8 +740,7 @@ class TestArtifactsSourceSelection:
         """Explicit quiz quantity and difficulty are encoded instead of defaults."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -776,8 +762,7 @@ class TestArtifactsSourceSelection:
         """Test generate_flashcards has correct source encoding format."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -813,8 +798,7 @@ class TestArtifactsSourceSelection:
         """
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -837,8 +821,7 @@ class TestArtifactsSourceSelection:
         """Test generate_infographic has correct source encoding format."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -871,8 +854,7 @@ class TestArtifactsSourceSelection:
         """Test generate_infographic encodes explicit visual options in config slots."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -904,8 +886,7 @@ class TestArtifactsSourceSelection:
         """Test generate_slide_deck has correct source encoding format."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -935,8 +916,7 @@ class TestArtifactsSourceSelection:
         """Explicit slide deck format and length are encoded instead of defaults."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -959,8 +939,7 @@ class TestArtifactsSourceSelection:
         """Test generate_data_table has correct source encoding format."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -987,8 +966,7 @@ class TestArtifactsSourceSelection:
         """Test generate_mind_map has correct source encoding format."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=mock_notebooks_api,
             **mock_mind_map_service,
         )
@@ -1030,8 +1008,7 @@ class TestArtifactsSourceSelection:
         """Test generate_mind_map passes language and instructions to RPC payload."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -1068,8 +1045,7 @@ class TestArtifactsSourceSelection:
 
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -1100,8 +1076,7 @@ class TestArtifactValidationFootguns:
     def _api(self, mock_core, mock_mind_map_service):
         return WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )
@@ -1209,8 +1184,7 @@ class TestEmptySourceIds:
         """Test generation with empty source_ids list produces empty arrays."""
         api = WebArtifactsAPI(
             rpc=mock_core,
-            drain=mock_core,
-            lifecycle=mock_core,
+            supervisor=mock_core,
             notebooks=MagicMock(),
             **mock_mind_map_service,
         )

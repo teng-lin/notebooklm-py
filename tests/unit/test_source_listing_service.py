@@ -350,7 +350,7 @@ async def test_explicit_empty_filter_matches_no_sources() -> None:
 
 @pytest.mark.asyncio
 async def test_sources_api_list_delegates_strict_and_filters() -> None:
-    api = WebSourcesAPI(MagicMock(), uploader=MagicMock())
+    api = WebSourcesAPI(MagicMock(), supervisor=MagicMock(), uploader=MagicMock())
     expected = [Source(id="src_1", _type_code=3, status=SourceStatus.READY)]
     api._lister.list = AsyncMock(return_value=expected)  # type: ignore[method-assign]
 

@@ -29,8 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import random
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Awaitable, Callable
 from unittest.mock import MagicMock
 
 import httpx
@@ -63,7 +62,7 @@ def _no_backoff_jitter(monkeypatch):
 
 def _make_core(
     *,
-    refresh_callback: Callable[[], Any] | None = None,
+    refresh_callback: Callable[[int], Awaitable[AuthTokens]] | None = None,
     rate_limit_max_retries: int = 0,
     server_error_max_retries: int = 0,
 ) -> NotebookLMClient:
@@ -186,10 +185,10 @@ async def test_chain_host_auth_refresh_rebind_steers_live_refresh() -> None:
     core = _make_core()
     chain_host = core._composed.chain_host
 
-    fake_calls: list[None] = []
+    fake_calls: list[int] = []
 
-    async def fake_refresh() -> None:
-        fake_calls.append(None)
+    async def fake_refresh(expected_epoch: int) -> None:
+        fake_calls.append(expected_epoch)
 
     # Stage B2 PR 1's MiddlewareChainHost.await_refresh re-reads
     # self._auth_refresh.await_refresh on every call. Rebind the
@@ -197,10 +196,10 @@ async def test_chain_host_auth_refresh_rebind_steers_live_refresh() -> None:
     # implementation.
     chain_host._auth_refresh.await_refresh = fake_refresh  # type: ignore[method-assign]
 
-    await chain_host.await_refresh()
-    await chain_host.await_refresh()
+    await chain_host.await_refresh(7)
+    await chain_host.await_refresh(9)
 
-    assert len(fake_calls) == 2
+    assert fake_calls == [7, 9]
 
 
 # ---------------------------------------------------------------------------

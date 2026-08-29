@@ -3,7 +3,8 @@
 Per ADR-0009 §"Chain ordering", ``ErrorInjectionMiddleware`` sits just *inside*
 ``RetryMiddleware`` / ``AuthRefreshMiddleware`` and just *outside*
 ``TracingMiddleware``. The chain is
-``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``.
+``[Retry, AuthRefresh, ErrorInjection, Tracing]``; ``CallSupervisor`` owns the
+protocol-neutral drain, metrics, and semaphore wrapper outside it.
 
 Test-only path. Production behavior is unchanged when no builder is wired
 into the middleware — the constructor's default ``builder=None`` makes

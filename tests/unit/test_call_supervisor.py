@@ -97,6 +97,24 @@ class _BlockingChildBeginDrain(TransportDrainTracker):
         raise AssertionError("unreachable")
 
 
+class _CancelAfterChildAdmissionDrain(TransportDrainTracker):
+    """Cancel the spawning parent immediately after both child tokens exist."""
+
+    async def begin_transport_task(
+        self,
+        task: asyncio.Task[object],
+        log_label: str,
+    ) -> _TransportOperationToken:
+        # Let the gated wrapper reach ``await gate`` first, then make the
+        # cancellation pending before spawn_child publishes the Task.
+        await asyncio.sleep(0)
+        token = await super().begin_transport_task(task, log_label)
+        parent = asyncio.current_task()
+        assert parent is not None
+        parent.cancel("after-child-admission")
+        return token
+
+
 def _supervisor(
     *,
     metrics: ClientMetrics | None = None,
@@ -110,6 +128,8 @@ def _supervisor(
     )
     supervisor.set_bound_loop(asyncio.get_running_loop())
     supervisor.reset_after_open()
+    supervisor.prepare_generation(1)
+    supervisor.start_accepting(1)
     return supervisor
 
 
@@ -176,6 +196,45 @@ async def test_run_is_lazy_and_deadline_bounds_semaphore_queue() -> None:
     snapshot = metrics.snapshot()
     assert snapshot.rpc_calls_failed == 1
     assert snapshot.rpc_calls_succeeded == 1
+
+
+@pytest.mark.asyncio
+async def test_web_queue_is_unbounded_while_transport_deadline_bounds_queue() -> None:
+    supervisor = _supervisor()
+    first_entered = asyncio.Event()
+    release_first = asyncio.Event()
+    web_invoked = False
+    bounded_invoked = False
+
+    async def _hold(_lease: object) -> None:
+        first_entered.set()
+        await release_first.wait()
+
+    async def _web(_lease: object) -> None:
+        nonlocal web_invoked
+        web_invoked = True
+
+    async def _bounded(_lease: object) -> None:
+        nonlocal bounded_invoked
+        bounded_invoked = True
+
+    first = asyncio.create_task(supervisor.run("first", "FIRST", None, _hold))
+    await first_entered.wait()
+    web = asyncio.create_task(supervisor.run("web", "WEB", None, _web))
+    while supervisor.drain_tracker._in_flight_posts < 2:
+        await asyncio.sleep(0)
+    assert web.done() is False
+    assert web_invoked is False
+
+    deadline = RuntimeDeadline.start(0.001)
+    with pytest.raises(TimeoutError):
+        await supervisor.run("bounded", "BOUNDED", deadline, _bounded)
+    assert bounded_invoked is False
+    assert web.done() is False
+
+    release_first.set()
+    await asyncio.gather(first, web)
+    assert web_invoked is True
 
 
 @pytest.mark.asyncio
@@ -328,6 +387,34 @@ async def test_recancellation_during_child_admission_retains_both_settlements() 
 
 
 @pytest.mark.asyncio
+async def test_parent_cancel_after_child_admission_settles_each_token_once() -> None:
+    drain = _CancelAfterChildAdmissionDrain()
+    supervisor = _supervisor(drain=drain, max_concurrent_rpcs=None)
+    factory_invoked = False
+
+    async def _child() -> None:
+        nonlocal factory_invoked
+        factory_invoked = True
+
+    async def _parent() -> None:
+        async with supervisor.operation_scope("parent"):
+            await supervisor.spawn_child("gated-child", _child)
+
+    caller = asyncio.create_task(_parent())
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await caller
+
+    assert raised.value.args == ("after-child-admission",)
+    assert factory_invoked is True
+    await asyncio.gather(*tuple(supervisor._settlement_tasks))
+    await asyncio.sleep(0)
+    generation = supervisor._current
+    assert generation is not None
+    assert generation.in_flight == 0
+    assert drain._in_flight_posts == 0
+
+
+@pytest.mark.asyncio
 async def test_recancellation_after_normal_body_preserves_first_cancelled_error() -> None:
     drain = _BlockingFinishDrain()
     supervisor = _supervisor(drain=drain, max_concurrent_rpcs=None)
@@ -370,6 +457,184 @@ async def test_recorder_failure_never_skips_drain_and_body_error_wins() -> None:
 
 
 @pytest.mark.asyncio
+async def test_terminal_event_failure_on_success_wins_after_settlement() -> None:
+    events: list[str] = []
+    terminal_error = RuntimeError("terminal event failed")
+    metrics = _SpyMetrics(
+        events,
+        emit_error=terminal_error,
+        queue_error=RuntimeError("queue recorder failed"),
+    )
+    supervisor = _supervisor(metrics=metrics, drain=_SpyDrain(events))
+
+    with pytest.raises(RuntimeError, match="terminal event failed") as raised:
+        async with supervisor.call_scope("call", "METHOD", None):
+            events.append("body")
+
+    assert raised.value is terminal_error
+    assert events == ["drain:begin", "body", "event:success", "drain:finish", "queue"]
+    generation = supervisor._current
+    assert generation is not None
+    assert generation.in_flight == 0
+
+
+@pytest.mark.asyncio
+async def test_queue_recorder_failure_on_success_is_observed_after_settlement() -> None:
+    events: list[str] = []
+    queue_error = RuntimeError("queue recorder failed")
+    metrics = _SpyMetrics(events, queue_error=queue_error)
+    supervisor = _supervisor(metrics=metrics, drain=_SpyDrain(events))
+
+    with pytest.raises(RuntimeError, match="queue recorder failed") as raised:
+        async with supervisor.call_scope("call", "METHOD", None):
+            events.append("body")
+
+    assert raised.value is queue_error
+    assert events == ["drain:begin", "body", "event:success", "drain:finish", "queue"]
+    generation = supervisor._current
+    assert generation is not None
+    assert generation.in_flight == 0
+
+
+@pytest.mark.asyncio
+async def test_settlement_process_exit_is_captured_then_observed_by_caller() -> None:
+    events: list[str] = []
+    process_exit = SystemExit("shutdown")
+    metrics = _SpyMetrics(events, queue_error=process_exit)
+    supervisor = _supervisor(metrics=metrics, drain=_SpyDrain(events))
+
+    with pytest.raises(SystemExit, match="shutdown") as raised:
+        async with supervisor.call_scope("call", "METHOD", None):
+            pass
+
+    assert raised.value is process_exit
+    generation = supervisor._current
+    assert generation is not None
+    assert generation.in_flight == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "recorder_error",
+    [RuntimeError("queue failed"), KeyboardInterrupt("interrupt"), SystemExit("shutdown")],
+    ids=["ordinary", "keyboard-interrupt", "system-exit"],
+)
+async def test_detached_recorder_failure_reaches_loop_handler_once(
+    recorder_error: BaseException,
+) -> None:
+    events: list[str] = []
+    drain = _BlockingFinishDrain()
+    metrics = _SpyMetrics(events, queue_error=recorder_error)
+    supervisor = _supervisor(metrics=metrics, drain=drain, max_concurrent_rpcs=None)
+    body_started = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    handled: list[dict[str, object]] = []
+    previous_handler = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, context: handled.append(context))
+
+    async def _invoke(_lease: object) -> None:
+        body_started.set()
+        await asyncio.Future()
+
+    try:
+        caller = asyncio.create_task(supervisor.run("call", None, None, _invoke))
+        await body_started.wait()
+        caller.cancel("first")
+        await drain.finish_started.wait()
+        caller.cancel("second")
+        with pytest.raises(asyncio.CancelledError) as raised:
+            await caller
+        assert raised.value.args == ("first",)
+
+        retained = tuple(supervisor._settlement_tasks)
+        assert len(retained) == 1
+        drain.finish_release.set()
+        await asyncio.gather(*retained)
+        await asyncio.sleep(0)
+
+        assert len(handled) == 1
+        assert handled[0]["exception"] is recorder_error
+        assert handled[0]["task"] is retained[0]
+        assert not supervisor._settlement_tasks
+    finally:
+        loop.set_exception_handler(previous_handler)
+
+
+@pytest.mark.asyncio
+async def test_method_none_applies_admission_and_queue_without_rpc_accounting() -> None:
+    events: list[str] = []
+    metrics = _SpyMetrics(events)
+    supervisor = _supervisor(metrics=metrics, drain=_SpyDrain(events))
+
+    supervisor.record_started(None)
+    async with supervisor.call_scope("chat", None, None):
+        events.append("body")
+
+    assert events == ["drain:begin", "body", "drain:finish", "queue"]
+    snapshot = metrics.snapshot()
+    assert snapshot.rpc_calls_started == 0
+    assert snapshot.rpc_calls_succeeded == 0
+    assert snapshot.rpc_calls_failed == 0
+    assert snapshot.rpc_queue_wait_seconds_total >= 0.0
+
+
+@pytest.mark.asyncio
+async def test_record_started_preserves_preopen_error_and_zero_metrics() -> None:
+    metrics = ClientMetrics()
+    supervisor = CallSupervisor(
+        metrics=metrics,
+        drain_tracker=TransportDrainTracker(),
+        max_concurrent_rpcs=None,
+    )
+
+    with pytest.raises(RuntimeError) as raised:
+        supervisor.record_started("LIST_NOTEBOOKS")
+
+    assert str(raised.value) == "Client not initialized. Use 'async with' context."
+    assert metrics.snapshot().rpc_calls_started == 0
+
+
+@pytest.mark.asyncio
+async def test_record_started_keeps_phase_a_counting_before_drain_rejection() -> None:
+    metrics = ClientMetrics()
+    supervisor = _supervisor(metrics=metrics, max_concurrent_rpcs=None)
+
+    async with supervisor.operation_scope("workflow"):
+        await supervisor.stop_accepting(1)
+        supervisor.record_started("NESTED")
+
+        async def _outsider() -> None:
+            supervisor.record_started("OUTSIDER")
+            async with supervisor.call_scope("outsider", "OUTSIDER", None):
+                raise AssertionError("unreachable")
+
+        with pytest.raises(RuntimeError, match="state=draining"):
+            await asyncio.create_task(_outsider())
+
+    assert metrics.snapshot().rpc_calls_started == 2
+
+
+@pytest.mark.asyncio
+async def test_expected_epoch_rejects_before_legacy_admission_or_invocation() -> None:
+    events: list[str] = []
+    supervisor = _supervisor(drain=_SpyDrain(events), max_concurrent_rpcs=None)
+    invoked = False
+
+    async def _invoke(_lease: object) -> None:
+        nonlocal invoked
+        invoked = True
+
+    with pytest.raises(RuntimeError, match=r"expected=2, active=1"):
+        await supervisor.run("retired", "METHOD", None, _invoke, expected_epoch=2)
+
+    assert invoked is False
+    assert events == []
+    generation = supervisor._current
+    assert generation is not None
+    assert generation.in_flight == 0
+
+
+@pytest.mark.asyncio
 async def test_spawn_child_requires_parent_and_invokes_factory_only_after_admission() -> None:
     supervisor = _supervisor(max_concurrent_rpcs=None)
     invoked = False
@@ -391,10 +656,35 @@ async def test_spawn_child_requires_parent_and_invokes_factory_only_after_admiss
 
 
 @pytest.mark.asyncio
+async def test_immediately_cancelled_child_settles_both_admission_tokens() -> None:
+    supervisor = _supervisor(max_concurrent_rpcs=None)
+
+    async def _child() -> None:
+        await asyncio.sleep(10)
+
+    async with supervisor.operation_scope("parent"):
+        child = await supervisor.spawn_child("cancel-before-first-step", _child)
+        child.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await child
+        generation = supervisor._current
+        assert generation is not None
+        assert generation.in_flight == 1  # parent only
+        assert supervisor.drain_tracker._in_flight_posts == 1
+
+    await supervisor.wait_for_idle(1, 0.1)
+    assert supervisor.drain_tracker._in_flight_posts == 0
+
+
+@pytest.mark.asyncio
 async def test_retired_parent_cannot_enter_reopened_generation() -> None:
     supervisor = _supervisor(max_concurrent_rpcs=None)
     async with supervisor.operation_scope("old") as old:
+        await supervisor.begin_closing(old.epoch)
+        supervisor.mark_closed(old.epoch)
         supervisor.reset_after_open()
+        supervisor.prepare_generation(2)
+        supervisor.start_accepting(2)
         assert old.epoch == 1
         with pytest.raises(RuntimeError, match="retired resource generation"):
             async with supervisor.operation_scope("old nested"):
@@ -455,6 +745,7 @@ async def test_forced_close_late_settlement_cannot_mutate_new_generation() -> No
     assert old_generation is not None
     await supervisor.begin_closing(1)
     supervisor.mark_closed(1)
+    assert supervisor._retired == {1: old_generation}
     supervisor.prepare_generation(2)
     supervisor.drain_tracker.reset_after_open()
     supervisor.start_accepting(2)
@@ -467,6 +758,7 @@ async def test_forced_close_late_settlement_cannot_mutate_new_generation() -> No
         release_old.set()
         await old_task
         assert old_generation.in_flight == 0
+        assert 1 not in supervisor._retired
         assert new_generation.in_flight == 1
     assert new_generation.in_flight == 0
 

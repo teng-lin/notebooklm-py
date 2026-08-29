@@ -366,8 +366,8 @@ def test_status_from_code_never_returns_wait_only_states():
 # ---------------------------------------------------------------------------
 
 
-class _StubProvider:
-    """Minimal loop-guard / op-scope stub.
+class _StubSupervisor:
+    """Minimal supervisor stub for direct ``poll_status`` tests.
 
     ``poll_status`` never touches either collaborator, but the constructor
     requires them; a plain class avoids ``MagicMock`` blocking the
@@ -379,12 +379,14 @@ class _StubProvider:
     def assert_bound_loop(self) -> None:
         return None
 
+    def register_drain_hook(self, _name: str, _hook: object) -> None:
+        return None
+
 
 def _make_polling_service() -> ArtifactPollingService:
-    provider = _StubProvider()
+    supervisor = _StubSupervisor()
     return ArtifactPollingService(
-        loop_guard=provider,
-        op_scope=provider,
+        supervisor=supervisor,  # type: ignore[arg-type]
         sleep=AsyncMock(),
         monotonic=lambda: 0.0,
     )
@@ -506,8 +508,7 @@ def _make_parse_api():
     notebooks.get_source_ids = AsyncMock(return_value=[])
     return WebArtifactsAPI(
         rpc=core,
-        drain=core,
-        lifecycle=core,
+        supervisor=core,
         notebooks=notebooks,
         mind_maps=MagicMock(),
         note_service=MagicMock(),

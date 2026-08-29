@@ -25,13 +25,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 
 import httpx
 import pytest
 
 from notebooklm import NotebookLMClient
 from notebooklm.rpc import RPCMethod
-from tests._fixtures.kernel_test_helpers import install_http_client_for_test
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 # mock-transport cancel-during-create tests; no HTTP, no cassette.
 # Opt out of the tier-enforcement hook in tests/integration/conftest.py.
@@ -53,20 +54,26 @@ def _rpc_id_in_request(request: httpx.Request) -> str | None:
     return None
 
 
-def _make_client_with_transport(
+async def _open_client_with_transport(
     transport: httpx.AsyncBaseTransport, auth_tokens
 ) -> NotebookLMClient:
-    """Wire a ``NotebookLMClient`` to a mock transport, bypassing full open()."""
-    client = NotebookLMClient(auth_tokens)
-    install_http_client_for_test(
-        client._collaborators.kernel,
-        httpx.AsyncClient(
-            transport=transport,
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-            },
-        ),
+    """Open through the root lifecycle with a synthetic HTTP transport."""
+
+    def _client_factory(**kwargs: Any) -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=transport, **kwargs)
+
+    client = build_client_shell_for_tests(
+        auth_tokens,
+        async_client_factory=_client_factory,
     )
+    await client.__aenter__()
+    generation = client._collaborators.call_supervisor._current
+    assert generation is not None
+    epoch = client._collaborators.lifecycle._epoch
+    assert generation.epoch == epoch
+    assert client._collaborators.web_transport._active_epoch == epoch
+    assert client._collaborators.kernel._active_epoch == epoch
+    assert client._collaborators.auth_coord._active_epoch == epoch
     return client
 
 
@@ -129,7 +136,7 @@ async def test_cancel_during_update_note_shields_or_cleans_up(auth_tokens) -> No
     transport. Either branch proves the orphan-note bug is gone.
     """
     transport = _NoteCancelTransport()
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _open_client_with_transport(transport, auth_tokens)
 
     try:
         create_task = asyncio.create_task(
@@ -203,11 +210,7 @@ async def test_cancel_during_update_note_shields_or_cleans_up(auth_tokens) -> No
                 f"cleanup should only run on cancel: rpc_ids={rpc_ids!r}"
             )
     finally:
-        # Defensive cleanup so a failing assertion doesn't leak the http
-        # client and warn at gc time.
-        if client._collaborators.kernel.http_client is not None:
-            await client._collaborators.kernel.get_http_client().aclose()
-            install_http_client_for_test(client._collaborators.kernel, None)
+        await client.close()
 
 
 @pytest.mark.asyncio
@@ -220,7 +223,7 @@ async def test_no_cancel_no_cleanup(auth_tokens) -> None:
     transport = _NoteCancelTransport()
     # Release UPDATE_NOTE immediately — no cancel will arrive.
     transport.release_update.set()
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _open_client_with_transport(transport, auth_tokens)
 
     try:
         note = await client.notes.create("nb_test", title="Hello", content="World")
@@ -234,6 +237,4 @@ async def test_no_cancel_no_cleanup(auth_tokens) -> None:
             f"over-eager: rpc_ids={rpc_ids!r}"
         )
     finally:
-        if client._collaborators.kernel.http_client is not None:
-            await client._collaborators.kernel.get_http_client().aclose()
-            install_http_client_for_test(client._collaborators.kernel, None)
+        await client.close()

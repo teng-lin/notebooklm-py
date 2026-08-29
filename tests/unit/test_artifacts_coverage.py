@@ -45,8 +45,7 @@ def mock_artifacts_api():
     mock_notebooks.get_source_ids = AsyncMock(return_value=[])
     api = WebArtifactsAPI(
         rpc=mock_core,
-        drain=mock_core,
-        lifecycle=mock_core,
+        supervisor=mock_core,
         notebooks=mock_notebooks,
         mind_maps=mind_maps,
         note_service=note_service,

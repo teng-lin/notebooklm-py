@@ -1,14 +1,12 @@
-"""SemaphoreMiddleware — web RPC concurrency gate for the chain.
+"""Legacy semaphore-middleware characterization helper.
 
-Per ADR-0009 §"Chain ordering", ``SemaphoreMiddleware``
-sits between ``MetricsMiddleware`` and ``RetryMiddleware``. The chain
-ordering is ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection,
-Tracing]``.
+B0 moved the client-wide RPC gate to the protocol-neutral ``CallSupervisor``;
+the installed web chain is now ``[Retry, AuthRefresh, ErrorInjection, Tracing]``.
+This class remains for direct middleware compatibility tests and is not
+installed by the composition root.
 
-Placing the semaphore here (rather than around the chain dispatch in
-``RuntimeTransport.perform_authed_post``) keeps two contracts intact: queued tasks
-stay counted by ``DrainMiddleware`` (Drain sits outside the semaphore wait),
-and Metrics latency includes RPC queue wait:
+When composed directly in the retired seven-middleware ordering, placing the
+semaphore here kept three contracts intact:
 
 - **Drain admits queued tasks** — ``DrainMiddleware`` (outermost) increments
   ``_in_flight_posts`` before this middleware acquires the slot, so a
@@ -22,13 +20,9 @@ and Metrics latency includes RPC queue wait:
   ErrorInjection, Tracing, terminal) WITHOUT releasing the semaphore. This
   preserves the "one slot per logical RPC" backpressure contract.
 
-The semaphore is supplied as a zero-arg async-context-manager factory rather
-than the raw ``asyncio.Semaphore`` so the middleware can be live-bound to
-``ClientComposed.get_rpc_semaphore`` — which lazily constructs the semaphore
-on first use (loop affinity) and returns a ``contextlib.nullcontext`` when
-``max_concurrent_rpcs is None`` (unbounded opt-out). A direct semaphore
-binding would have to be reset on loop reuse and would have a 2-call
-recursive-acquire deadlock risk; the factory closure avoids both.
+The retained helper still accepts a zero-arg async-context-manager factory so
+its direct characterization tests can exercise bounded and no-op gates. Live
+production semaphore ownership and loop reset now belong to ``CallSupervisor``.
 
 See ``docs/adr/0009-middleware-chain.md`` §"Chain ordering" for the rationale.
 """
@@ -43,11 +37,8 @@ from typing import Any
 from .context import RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS
 from .core import NextCall, RpcRequest, RpcResponse
 
-# ``RpcRequest.context`` key used to communicate the per-call queue-wait
-# duration from this middleware up to ``RuntimeTransport.perform_authed_post``
-# (which forwards it to ``ClientMetrics.record_rpc_queue_wait``). Kept as a
-# compatibility alias for older internal imports; new code should use the
-# centralized ``RPC_CONTEXT_*`` vocabulary from ``_middleware.context``.
+# Retained compatibility alias for direct tests/imports of the legacy helper.
+# Production queue timing is recorded by ``CallSupervisor``.
 RPC_QUEUE_WAIT_CONTEXT_KEY = RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS
 
 
@@ -63,9 +54,8 @@ class SemaphoreMiddleware:
     - ``semaphore_factory``: zero-arg callable returning an async context
       manager. Called once per chain invocation; the returned context manager
       is entered around ``next_call``. Production wires
-      ``ClientComposed.get_rpc_semaphore`` so the live (lazily
-      constructed, loop-bound) semaphore is observed on each call. Tests can
-      pass ``lambda: contextlib.nullcontext()`` to disable gating.
+      a test-selected gate. Tests can pass
+      ``lambda: contextlib.nullcontext()`` to disable gating.
 
     Side effect: writes the per-call queue-wait duration to
     ``request.context[RPC_QUEUE_WAIT_CONTEXT_KEY]`` so the host can forward

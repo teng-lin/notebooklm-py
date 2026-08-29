@@ -211,7 +211,7 @@ async def test_default_source_lister_matches_sources_api_list_for_metadata_path(
         ]
     )
     uploader = MagicMock()
-    sources_api = WebSourcesAPI(rpc, uploader=uploader)
+    sources_api = WebSourcesAPI(rpc, supervisor=MagicMock(), uploader=uploader)
     source_lister = create_default_source_lister(rpc)
 
     assert await source_lister.list("nb_123") == await sources_api.list("nb_123")

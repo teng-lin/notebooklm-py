@@ -406,8 +406,7 @@ class TestArtifactsAPI:
         core = make_fake_core(rpc_call=AsyncMock(return_value=[[]]))
         api = WebArtifactsAPI(
             rpc=core,
-            drain=core,
-            lifecycle=core,
+            supervisor=core,
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
             note_service=MagicMock(spec=NoteService),
@@ -439,8 +438,7 @@ class TestArtifactsAPI:
         core = make_fake_core(rpc_call=AsyncMock(return_value=artifact_rows))
         api = WebArtifactsAPI(
             rpc=core,
-            drain=core,
-            lifecycle=core,
+            supervisor=core,
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
             note_service=MagicMock(spec=NoteService),
@@ -463,8 +461,7 @@ class TestArtifactsAPI:
         core = make_fake_core(rpc_call=AsyncMock(return_value=[[studio_artifact]]))
         api = WebArtifactsAPI(
             rpc=core,
-            drain=core,
-            lifecycle=core,
+            supervisor=core,
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
             note_service=MagicMock(spec=NoteService),
@@ -492,8 +489,7 @@ class TestArtifactsAPI:
         mind_maps.list_mind_maps = AsyncMock()
         api = WebArtifactsAPI(
             rpc=core,
-            drain=core,
-            lifecycle=core,
+            supervisor=core,
             notebooks=MagicMock(),
             mind_maps=mind_maps,
             note_service=MagicMock(spec=NoteService),
@@ -520,8 +516,7 @@ class TestArtifactsAPI:
         )
         api = WebArtifactsAPI(
             rpc=core,
-            drain=core,
-            lifecycle=core,
+            supervisor=core,
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
             note_service=MagicMock(spec=NoteService),
@@ -543,8 +538,7 @@ class TestArtifactsAPI:
         core = MagicMock()
         api = WebArtifactsAPI(
             rpc=core,
-            drain=core,
-            lifecycle=core,
+            supervisor=core,
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
             note_service=MagicMock(spec=NoteService),

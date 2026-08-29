@@ -62,7 +62,7 @@ class MiddlewareChainBuilder:
         retry_timeout_provider: Callable[[], float | None],
         refresh_retry_delay_provider: Callable[[], float],
         refresh_callable: Callable[..., Awaitable[Any]],
-        auth_snapshot_provider: Callable[[], Awaitable[Any]],
+        auth_snapshot_provider: Callable[[int], Awaitable[Any]],
         is_auth_error: Callable[[Exception], bool],
         refresh_callback_enabled_provider: Callable[[], bool],
     ) -> None:

@@ -139,15 +139,13 @@ class TestResearchWaitCommand:
     full CLI ``wait`` -> resolve -> poll-loop -> render -> exit-code chain
     without needing a cassette that records a multi-tick progression.
 
-    ``fast_sleep`` no-ops ``asyncio.sleep`` so that if the poll loop ever sleeps
-    before reaching its verdict the test still runs at full speed; on the
-    single-poll terminal path the terminal check short-circuits before any
-    sleep, so it is belt-and-braces here.
+    No sleep seam is installed here: the empty poll is terminal before the
+    polling loop sleeps. In text mode the CLI also owns an elapsed-time ticker;
+    replacing ``asyncio.sleep`` with a non-yielding no-op would starve the poll
+    coroutine rather than speed up this path.
     """
 
-    def test_wait_no_research_text(
-        self, runner, mock_auth_for_vcr, mock_context, fast_sleep
-    ) -> None:
+    def test_wait_no_research_text(self, runner, mock_auth_for_vcr, mock_context) -> None:
         """``research wait`` on an idle notebook exits 1 with a no-research message.
 
         Unlike ``research status`` (a non-blocking probe that exits 0), ``wait``
@@ -164,9 +162,7 @@ class TestResearchWaitCommand:
         assert "Traceback" not in result.output
         assert cassette.play_count == 1, "expected exactly one recorded poll RPC to replay"
 
-    def test_wait_no_research_json(
-        self, runner, mock_auth_for_vcr, mock_context, fast_sleep
-    ) -> None:
+    def test_wait_no_research_json(self, runner, mock_auth_for_vcr, mock_context) -> None:
         """``research wait --json`` on an idle notebook emits the ``no_research`` envelope.
 
         Shape-only: a JSON object whose ``status`` is ``no_research`` and which

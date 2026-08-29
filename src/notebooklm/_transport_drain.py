@@ -241,9 +241,9 @@ class TransportDrainTracker(LoopBoundPrimitive):
 
         Wraps :meth:`begin_transport_post` / :meth:`finish_transport_post`
         so feature code can write ``async with tracker.operation_scope("upload"):``
-        without managing the token by hand. Satisfies the
-        ``_artifact.polling.OperationScopeProvider`` Protocol directly
-        (inlined into that module in issue #1327).
+        without managing the token by hand. B0 keeps this as the legacy
+        bookkeeping implementation owned by ``CallSupervisor``; artifact
+        polling receives the supervisor rather than this tracker directly.
         """
         token = await self.begin_transport_post(label)
         try:
@@ -264,37 +264,53 @@ class TransportDrainTracker(LoopBoundPrimitive):
     async def run_drain_hooks(self) -> None:
         """Fire every registered drain hook in registration order.
 
-        Called from two sites during a graceful ``close(drain=True)``: first
-        from ``NotebookLMClient.close`` *before* the drain wait (so a poll
-        counted in ``operation_scope`` is cancelled-and-settled rather than
-        blocking ``drain()`` — issue #1161), then again from
-        ``ClientLifecycle.close`` after the auth-refresh task has been
-        cancelled and before the HTTP client is shut down. Hooks must
+        Called twice by ``ClientLifecycle`` during a graceful close: once in
+        the prephase before the idle wait (so a supervised poll is
+        cancelled-and-settled rather than blocking drain — issue #1161), and
+        once after transport preparation before resource close. Hooks must
         therefore tolerate being re-run; the production poll hook
         (``artifacts.polls``) is a no-op on the second run because
         already-settled poll tasks are filtered out of
         ``PollRegistry.active_tasks``. The ``drain=False`` and lifecycle-only
         paths invoke it just once.
 
-        Exceptions in individual hooks are caught and logged via
+        Ordinary exceptions in individual hooks are caught and logged via
         ``logger.warning`` (with the registration ``name`` so operators can
         identify the misbehaving feature), then suppressed so a single
         misbehaving hook cannot block the shutdown path. The hooks fire
         concurrently via ``asyncio.gather(..., return_exceptions=True)`` —
-        the per-hook log happens after the gather completes.
+        the per-hook log happens after the gather completes. A captured
+        ``KeyboardInterrupt`` or ``SystemExit`` is re-raised only after every
+        sibling hook settles so root lifecycle precedence can preserve it.
         """
         named_hooks = list(self._drain_hooks.items())
         if not named_hooks:
             return
-        results = await asyncio.gather(
-            *(hook() for _name, hook in named_hooks),
-            return_exceptions=True,
-        )
+
+        async def _run_hook(
+            hook: Callable[[], Awaitable[None]],
+        ) -> BaseException | None:
+            # KeyboardInterrupt/SystemExit must not cross an internal Task
+            # boundary: asyncio would surface it before sibling results were
+            # inspected, violating the attempt-all teardown contract.
+            try:
+                await hook()
+            except BaseException as exc:
+                return exc
+            return None
+
+        results = await asyncio.gather(*(_run_hook(hook) for _name, hook in named_hooks))
+        process_exit: KeyboardInterrupt | SystemExit | None = None
         for (name, _hook), result in zip(named_hooks, results, strict=True):
-            if isinstance(result, BaseException):
+            if isinstance(result, (KeyboardInterrupt, SystemExit)):
+                if process_exit is None:
+                    process_exit = result
+            elif isinstance(result, BaseException):
                 logger.warning(
                     "Drain hook %r raised during close: %s", name, result, exc_info=result
                 )
+        if process_exit is not None:
+            raise process_exit
 
     async def drain(self, timeout: float | None = None) -> None:
         """Stop accepting new top-level work and wait for in-flight ops to finish.

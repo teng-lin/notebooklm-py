@@ -105,7 +105,7 @@ class ClientMetricsSnapshot:
     the response envelope. Wire-schema drift
     is the stated #1 breakage class, so this counter separates "Google reshaped
     a response" from an ordinary 5xx / network failure (which lands in
-    ``rpc_calls_failed`` via the transport-leg ``MetricsMiddleware``). A decode
+    ``rpc_calls_failed`` via the transport-leg ``CallSupervisor``). A decode
     error recovered by a refresh-and-retry is NOT counted; only the error that
     ultimately surfaces is.
 

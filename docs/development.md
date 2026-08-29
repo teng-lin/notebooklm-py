@@ -1,7 +1,7 @@
 # Contributing Guide
 
 **Status:** Active
-**Last Updated:** 2026-07-04
+**Last Updated:** 2026-08-28
 
 This guide covers everything you need to contribute to `notebooklm-py`: architecture overview, testing, and releasing.
 
@@ -110,7 +110,7 @@ src/notebooklm/
 | **Adapters** | `cli/`, `mcp/`, `server/` | User commands/tools/routes, transport-specific input/output, auth envelopes |
 | **App core** | `_app/*.py` | Transport-neutral workflows reused by adapters |
 | **Client** | `client.py`, `_*.py` | High-level Python API, returns typed dataclasses |
-| **Runtime** | `client.py`, `_client_composed.py`, `_runtime/init.py`, `_web/transport/kernel.py`, runtime collaborators | `NotebookLMClient` composition root plus seam-module helpers (HTTP client lifecycle, RPC dispatch, metrics, drain bookkeeping, request-id counter, auth refresh, conversation cache, polling registry, cookie persistence) |
+| **Runtime** | `client.py`, `_client_composed.py`, `_runtime/`, `_web/transport/`, runtime collaborators | `NotebookLMClient` composition root; protocol-neutral root lifecycle and call supervision; web resource lifecycle, RPC dispatch, auth, and HTTP transport; feature-owned polling/upload state |
 | **Web wire** | `_web/wire/*.py` | Batchexecute encoding/decoding, runtime ID overrides, strict positional access |
 | **RPC facade** | `rpc/*.py` | Public power-user compatibility exports and method IDs |
 
@@ -125,16 +125,18 @@ a narrow Protocol surface so it can be unit-tested against a stub:
 
 | Module | Class | Responsibility |
 |---|---|---|
-| `_client_composed.py` | `ClientComposed` | Client-owned holder for transport, executor, chain host, middleware metadata, and session collaborator bundle. |
+| `_client_composed.py` | `ClientComposed` | Write-once holder for transport, executor, chain host, middleware metadata, and the runtime collaborator bundle. It owns no loop primitive or RPC semaphore. |
 | `_runtime/init.py` | `RuntimeCollaborators` helpers | Validates constructor args, builds collaborators, wires middleware, and binds `ClientComposed`. |
 | `_client_metrics.py` | `ClientMetrics` | `ClientMetricsSnapshot` counters, queue-wait recorders, `on_rpc_event` async callback. |
-| `_transport_drain.py` | `TransportDrainTracker` | In-flight transport counters, `_TransportOperationToken`, lazy `asyncio.Condition` powering `client.drain(...)`. |
+| `_transport_drain.py` | `TransportDrainTracker` | Transitional in-flight bookkeeping owned by `CallSupervisor`; it is not the public drain-policy or generation owner. |
+| `_runtime/call_supervisor.py` | `CallSupervisor` | Concrete client-wide admission authority: generation-bearing call/operation leases, drain hooks, admitted child tasks, terminal RPC metrics, and the global RPC semaphore. |
 | `_web/transport/reqid_counter.py` | `ReqidCounter` | Monotonic `_reqid` counter for chat backend (baseline 100000, step 100000). |
 | `_web/transport/auth.py` | `AuthRefreshCoordinator` | Refresh-task lifecycle, refresh lock, `AuthSnapshot` rotation. |
 | `_runtime/contracts.py` | Neutral runtime Protocol | `LoopGuard`, used by transport-neutral orchestration. |
 | `_web/contracts.py` | Web transport Protocols | `Kernel` and `RpcCaller`, used only by batchexecute implementations. Single-consumer capabilities stay local to their owner modules. |
-| `_runtime/lifecycle.py` | `ClientLifecycle` | Loop-affinity guard, `aclose` plumbing, keepalive task wiring. |
-| `_web/transport/runtime.py` | `RuntimeTransport` | Authenticated transport leg used by `RpcExecutor` and the middleware chain terminal. |
+| `_runtime/lifecycle.py` | `ClientLifecycle` | Protocol-neutral resource/admission state and transactional, coalesced open/drain/close waves over immutable transport and loop-participant tuples. |
+| `_web/transport/lifecycle.py` | `WebTransportLifecycle` | Web Kernel/auth epoch activation and fencing, keepalive, cookie persistence, and web resource teardown. |
+| `_web/transport/runtime.py` | `RuntimeTransport` | Authenticated transport leg: admission-only epoch proof for snapshot/materialization, then `CallSupervisor` terminal accounting/semaphore and the four-middleware web chain. |
 | `_web/transport/executor.py` | `RpcExecutor` | RPC dispatch executor with direct collaborator dependencies. |
 | `_web/transport/request_types.py` | `AuthSnapshot`, `BuildRequest`, request materialization | Shared request construction Interface. |
 | `_web/transport/errors.py` | transport exceptions, `parse_retry_after`, `raise_mapped_post_error` | Terminal `Kernel.post` error mapping for middleware retry/auth behavior. |
@@ -145,10 +147,11 @@ a narrow Protocol surface so it can be unit-tested against a stub:
 
 Transport-neutral orchestration uses `LoopGuard` from
 `notebooklm._runtime.contracts`; batchexecute implementations use `Kernel`
-and `RpcCaller` from `notebooklm._web.contracts`. Single-consumer capability
-shapes stay in the owning feature module (`AuthMetadata` in `_web/sources/upload.py`,
-`OperationScopeProvider` in `_artifact/polling.py`), and the unused
-`AsyncWorkRuntime` composite was deleted. The broad `Session` Protocol
+and `RpcCaller` from `notebooklm._web.contracts`. The single-consumer
+`AuthMetadata` capability stays in `_web/sources/upload.py`. B0 removed
+`OperationScopeProvider`; artifact polling and source workflows use the shared
+concrete `CallSupervisor` for operation scopes, admitted children, loop checks,
+and drain hooks. The unused `AsyncWorkRuntime` composite was deleted. The broad `Session` Protocol
 that previously bundled these together was deleted in the final phase
 of the capability refactor (see [`docs/refactor-history.md`](refactor-history.md)
 and ADR-0013); each feature now depends on the narrowest slice it needs
@@ -464,8 +467,11 @@ First-party `_from_store` persistence retains no `AuthTokens`. A missing saver r
 unconditionally through the private canonical merge. Only an explicit `cookie_saver=` routes
 through `_save_v0_callback`; it lazily initializes its own retryable adapter snapshot and suppresses
 the writer when the source is invalid.
-`ClientLifecycle` alone owns the client `AuthTokens` mirror and refreshes `cookie_snapshot` after
-open and accepted canonical or compatibility saves. Tests inject a saver on the client when they
+At Phase 10, the then-web-specific `ClientLifecycle` owned the client
+`AuthTokens` mirror and refreshed `cookie_snapshot` after open and accepted
+canonical or compatibility saves. B0 moved those responsibilities into
+`WebTransportLifecycle`; the current root `ClientLifecycle` owns only
+protocol-neutral lifecycle waves and state. Tests inject a saver on the client when they
 intend to exercise the callback contract; canonical tests target the private typed seam.
 Measured owners are 457 lines in `_web/transport/cookie_persistence.py`, 618 in `_runtime/init.py`, 628 in
 `_runtime/lifecycle.py`, and 992 in `client.py`.

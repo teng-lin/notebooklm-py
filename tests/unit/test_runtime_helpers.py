@@ -33,10 +33,13 @@ import pytest
 from notebooklm._runtime.helpers import is_auth_error, resolve_sleep
 from notebooklm._web.transport.errors import TransportServerError
 from notebooklm._web.transport.middleware.auth_refresh import AuthRefreshMiddleware
+from notebooklm._web.transport.middleware.context import RPC_CONTEXT_RESOURCE_EPOCH
 from notebooklm._web.transport.middleware.core import NextCall, RpcRequest, RpcResponse, build_chain
 from notebooklm._web.transport.middleware.retry import RetryMiddleware
 from notebooklm.rpc import AuthError, RPCError, ServerError
 from tests._fixtures.chain import make_request
+
+_TEST_EPOCH = 7
 
 # ---------------------------------------------------------------------------
 # Direct unit tests for resolve_sleep
@@ -228,7 +231,8 @@ async def test_auth_refresh_middleware_observes_monkeypatched_asyncio_sleep(
 
     refresh_calls: list[int] = []
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         refresh_calls.append(1)
 
     def _live_delay() -> float:
@@ -244,7 +248,7 @@ async def test_auth_refresh_middleware_observes_monkeypatched_asyncio_sleep(
     )
     chain = build_chain([middleware], _scripted_terminal([_auth_error_http(401), _ok()]))
 
-    response = await chain(make_request())
+    response = await chain(make_request(context={RPC_CONTEXT_RESOURCE_EPOCH: _TEST_EPOCH}))
 
     assert response.response.status_code == 200
     assert refresh_calls == [1]

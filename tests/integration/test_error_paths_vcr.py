@@ -203,8 +203,9 @@ class TestErrorPaths:
         # ``test_auth_refresh_vcr.py`` exercises that full three-leg flow.
         refresh_calls: list[object] = []
 
-        async def stub_refresh() -> AuthTokens:
+        async def stub_refresh(expected_epoch: int) -> AuthTokens:
             refresh_calls.append(None)
+            client._collaborators.auth_coord.assert_epoch(expected_epoch)
             # Mutate the in-memory CSRF token to simulate a successful refresh.
             # The retry loop rebuilds the request body from the refreshed
             # auth snapshot after refresh, so
@@ -220,6 +221,7 @@ class TestErrorPaths:
             client._collaborators.auth_coord.update_auth_headers(
                 auth=client._auth,
                 kernel=client._collaborators.kernel,
+                expected_epoch=expected_epoch,
             )
             return client._auth
 

@@ -47,7 +47,6 @@ if TYPE_CHECKING:
     from ..._runtime.call_supervisor import CallSupervisor
     from ..contracts import RpcCaller
     from .auth import AuthRefreshCoordinator
-    from .kernel import Kernel
     from .runtime import RuntimeTransport
 
 logger = logging.getLogger("notebooklm._rpc_executor")
@@ -90,15 +89,14 @@ class DecodeResponse(Protocol):
 class RpcExecutor:
     """Owns raw batchexecute RPC encode, transport dispatch, decode, and retry.
 
-    Per ADR-0014 Rule 5, the constructor takes its four runtime collaborators
-    (Kernel, RuntimeTransport, AuthRefreshCoordinator, ClientMetrics) directly
+    Per ADR-0014 Rule 5, the constructor takes its runtime collaborators
+    (RuntimeTransport, AuthRefreshCoordinator, ClientMetrics, CallSupervisor) directly
     via keyword-only arguments rather than reaching them through an owner facade.
     """
 
     def __init__(
         self,
         *,
-        kernel: Kernel,
         transport: RuntimeTransport,
         auth_refresh: AuthRefreshCoordinator,
         metrics: ClientMetrics,
@@ -110,7 +108,6 @@ class RpcExecutor:
         refresh_callback_enabled_provider: Callable[[], bool],
         refresh_retry_delay_provider: Callable[[], float],
     ):
-        self._kernel = kernel
         self._transport = transport
         self._auth_refresh = auth_refresh
         self._metrics = metrics
@@ -136,6 +133,7 @@ class RpcExecutor:
         raise_on_null_status: bool = False,
         _refresh_budget: RefreshBudget | None = None,
         _retry_deadline: RuntimeDeadline | None = None,
+        _resource_epoch: int | None = None,
     ) -> Any:
         """Run an RPC wrapped with telemetry and request-id bookkeeping.
 
@@ -185,14 +183,6 @@ class RpcExecutor:
         :func:`notebooklm._web.wire.decoder.decode_response` for why it is opt-in per
         call site (#2188).
         """
-        # Pre-open guard — preserves the historical ``RuntimeError`` surface by
-        # routing through ``Kernel.get_http_client()`` (which raises the same
-        # message when the client hasn't been opened). Going through the
-        # kernel accessor instead of the now-narrowed :class:`RpcOwner`
-        # Protocol attribute keeps the early-fail behavior intact while
-        # removing ``_http_client`` from the Protocol surface.
-        self._kernel.get_http_client()
-
         # Only the outer call mints a request id; the decode-time retry path
         # (``_is_retry=True``) inherits the parent's id so a single
         # decode-error → refresh → retry sequence appears under one
@@ -212,6 +202,7 @@ class RpcExecutor:
                 raise_on_null_status=raise_on_null_status,
                 _refresh_budget=_refresh_budget,
                 _retry_deadline=_retry_deadline,
+                _resource_epoch=_resource_epoch,
             )
 
         self._call_supervisor.record_started(method.name)
@@ -235,6 +226,7 @@ class RpcExecutor:
                 raise_on_null_status=raise_on_null_status,
                 _refresh_budget=_refresh_budget,
                 _retry_deadline=_retry_deadline,
+                _resource_epoch=_resource_epoch,
             )
         finally:
             if _reqid_token is not None:
@@ -254,6 +246,7 @@ class RpcExecutor:
         raise_on_null_status: bool = False,
         _refresh_budget: RefreshBudget | None = None,
         _retry_deadline: RuntimeDeadline | None = None,
+        _resource_epoch: int | None = None,
     ) -> Any:
         start = time.perf_counter()
         logger.debug("RPC %s starting", method.name)
@@ -304,6 +297,17 @@ class RpcExecutor:
             body = build_request_body(rpc_request, snapshot.csrf_token)
             return url, body, {}
 
+        resource_epoch = _resource_epoch
+
+        def _bind_resource_epoch(epoch: int) -> None:
+            nonlocal resource_epoch
+            if resource_epoch is not None and resource_epoch != epoch:
+                raise RuntimeError(
+                    "RPC retry belongs to a retired resource generation "
+                    f"(expected={resource_epoch}, admitted={epoch})."
+                )
+            resource_epoch = epoch
+
         try:
             response = await self._transport.perform_authed_post(
                 build_request=_build,
@@ -313,6 +317,8 @@ class RpcExecutor:
                 refresh_budget=_refresh_budget,
                 retry_deadline=_retry_deadline,
                 read_timeout=read_timeout,
+                expected_epoch=resource_epoch,
+                epoch_observer=_bind_resource_epoch,
             )
         except TransportAuthExpired as exc:
             # Preserve the historical raw transport exception on refresh failure.
@@ -420,6 +426,7 @@ class RpcExecutor:
                     raise_on_null_status=raise_on_null_status,
                     _refresh_budget=_refresh_budget,
                     _retry_deadline=_retry_deadline,
+                    _resource_epoch=resource_epoch,
                 )
                 return refreshed
 
@@ -598,6 +605,7 @@ class RpcExecutor:
         raise_on_null_status: bool = False,
         _refresh_budget: RefreshBudget,
         _retry_deadline: RuntimeDeadline | None = None,
+        _resource_epoch: int | None = None,
     ) -> Any | None:
         """Refresh auth after a decode-time auth error and retry once.
 
@@ -639,8 +647,14 @@ class RpcExecutor:
         default on its post-refresh retry leg, undermining the wider budget
         it was explicitly given.
         """
+        if _resource_epoch is None:
+            raise RuntimeError("Decoded auth retry is missing its resource generation.")
+
+        async def refresh() -> None:
+            await self._auth_refresh.await_refresh(_resource_epoch)
+
         await refresh_and_count(
-            refresh=self._auth_refresh.await_refresh,
+            refresh=refresh,
             on_refresh_failure=lambda _refresh_error: original_error,
             sleep=self._sleep,
             refresh_retry_delay=self._refresh_retry_delay_provider(),
@@ -673,6 +687,7 @@ class RpcExecutor:
             raise_on_null_status=raise_on_null_status,
             _refresh_budget=_refresh_budget,
             _retry_deadline=_retry_deadline,
+            _resource_epoch=_resource_epoch,
         )
 
     def _start_retry_deadline(self) -> RuntimeDeadline | None:

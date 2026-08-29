@@ -39,8 +39,6 @@ from .rows import artifacts as _artifact_rows
 
 if TYPE_CHECKING:
     from .._runtime.call_supervisor import CallSupervisor
-    from .._runtime.lifecycle import ClientLifecycle
-    from .._transport_drain import TransportDrainTracker
 
 logger = logging.getLogger("notebooklm._artifacts")
 
@@ -65,8 +63,7 @@ class WebArtifactsAPI(ArtifactsAPI):
         self,
         *,
         rpc: RpcCaller,
-        drain: "TransportDrainTracker | CallSupervisor",
-        lifecycle: "ClientLifecycle",
+        supervisor: "CallSupervisor",
         notebooks: NotebookSourceIdProvider,
         mind_maps: NoteBackedMindMapService,
         note_service: NoteService,
@@ -78,11 +75,9 @@ class WebArtifactsAPI(ArtifactsAPI):
             rpc: RPC dispatch surface (:class:`RpcCaller`) — used for direct
                 artifact RPCs (delete, rename, export, list_raw) and threaded
                 into the generation and download services.
-            drain: Transport drain coordinator — owns ``operation_scope`` (used
-                by the polling service) and ``register_drain_hook`` (used here
-                to register the polling-service close-time cleanup hook).
-            lifecycle: Client lifecycle seam — owns ``assert_bound_loop`` used
-                by the polling service before it touches loop-bound state.
+            supervisor: The single logical-call admission authority used for
+                polling scopes, child leaders, loop-affinity checks, and drain
+                hook registration.
             notebooks: Source-id resolver. Required — wire from
                 ``NotebookLMClient`` (no implicit fallback). Threaded into the
                 generation service.
@@ -95,8 +90,7 @@ class WebArtifactsAPI(ArtifactsAPI):
             storage_path: Path to storage state file for loading download cookies.
         """
         super().__init__(
-            drain=drain,
-            lifecycle=lifecycle,
+            supervisor=supervisor,
             notebooks=notebooks,
             asset_downloads=AssetDownloadService(storage_path=storage_path),
         )

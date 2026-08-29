@@ -24,17 +24,26 @@ async def test_snapshot_provider_captures_client_auth_by_identity() -> None:
     client = build_client_shell_for_tests(auth)
     captured: dict[str, AuthTokens] = {}
 
-    async def snapshot(*, auth: AuthTokens) -> AuthSnapshot:
-        captured["auth"] = auth
-        return AuthSnapshot(
-            csrf_token=auth.csrf_token,
-            session_id=auth.session_id,
-            authuser=auth.authuser,
-            account_email=auth.account_email,
-        )
+    async with client:
+        lifecycle = client._collaborators.lifecycle
+        generation = client._collaborators.call_supervisor._current
+        expected_epoch = lifecycle._epoch
+        assert lifecycle.is_open()
+        assert expected_epoch > 0
+        assert generation is not None and generation.epoch == expected_epoch
 
-    client._collaborators.auth_coord.snapshot = snapshot  # type: ignore[method-assign]
+        async def snapshot(*, auth: AuthTokens, expected_epoch: int | None = None) -> AuthSnapshot:
+            assert expected_epoch == lifecycle._epoch
+            captured["auth"] = auth
+            return AuthSnapshot(
+                csrf_token=auth.csrf_token,
+                session_id=auth.session_id,
+                authuser=auth.authuser,
+                account_email=auth.account_email,
+            )
 
-    await client._composed.transport._snapshot_provider()
+        client._collaborators.auth_coord.snapshot = snapshot  # type: ignore[method-assign]
+
+        await client._composed.transport._snapshot_provider(expected_epoch)
 
     assert captured["auth"] is client._auth

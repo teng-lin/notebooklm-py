@@ -10,11 +10,13 @@ chain-metadata carrier — see §"Decision: `RpcRequest.context: dict[str,
 Any]` is the long-term shape" below for the rationale and the policy
 governing additions to the vocabulary table.
 
-Amended (2026-08-28, backend migration Phase B0a): the protocol-neutral
+Amended (2026-08-28, backend migration Phase B0): the protocol-neutral
 outer policy is now owned by `_runtime.call_supervisor.CallSupervisor`.
-`RuntimeTransport.perform_authed_post` enters one supervisor call scope, which
-applies `Drain -> Metrics -> Semaphore` and then invokes the remaining web
-chain. The web-only chain is therefore exactly
+`RuntimeTransport.perform_authed_post` first holds an admission-only operation
+lease while it checks the resource epoch and performs the auth snapshot/request
+materialization that historically preceded terminal metrics. It then enters a
+supervisor call scope, which applies `Drain -> Metrics -> Semaphore` and invokes
+the remaining web chain. The web-only chain is therefore exactly
 `Retry -> AuthRefresh -> ErrorInjection -> Tracing -> terminal`. This preserves
 the original ordering and retry-slot cohort while allowing the Android
 transport to consume the same admission, queueing, and telemetry policy
@@ -32,6 +34,15 @@ immutable generation lease; close/reopen retires a generation record instead
 of clearing its counters, so late old work cannot decrement or enter a newly
 opened generation. Web semaphore wait remains unbounded; transports that pass
 an aggregate `RuntimeDeadline` get deadline-bounded queue admission.
+
+This 2026-08-28 amendment is the authoritative current-state rule wherever the
+historical Tier-12 decision body or PR 12.9 close-out notes below still name
+`DrainMiddleware`, `MetricsMiddleware`, `SemaphoreMiddleware`,
+`RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS`, or `ClientComposed.get_rpc_semaphore` as
+production owners. Those modules/constants remain compatibility and migration
+artifacts, but `MiddlewareChainBuilder.build()` no longer wires the outer three.
+`ClientComposed` is now only a write-once composition holder; it owns neither
+the semaphore nor any loop-bound primitive.
 
 This ADR shipped in PR 12.1 of the Tier-12/13 greenfield migration as
 type-only scaffolding: the Protocol, dataclasses, and `build_chain` helper
@@ -64,14 +75,18 @@ The `Kernel.post` terminal revisit has landed. The live
 older closure-callback target described below; that historical target is
 kept as tier-12 context, not as the current implementation signature.
 
-### 2026-08-28 Phase B amendment — protocol-neutral outer call policy
+### 2026-08-28 Phase B0 amendment — protocol-neutral outer call policy
 
 The outer `Drain → Metrics → Semaphore` policy is promoted to the concrete
 protocol-neutral `CallSupervisor`, leaving the web request chain as
-`Retry → AuthRefresh → ErrorInjection → Tracing → terminal`. This is an
-extraction of the established ordering, not a change to web retry/auth
-behavior; Android enters the same supervisor without entering the HTTP-shaped
-chain.
+`Retry → AuthRefresh → ErrorInjection → Tracing → terminal`. An admission-only
+operation lease now precedes auth snapshot/materialization so a retired workflow
+cannot inspect a newly opened resource generation, while the nested unary call
+scope starts terminal metrics and semaphore timing only after materialization,
+preserving the established web accounting boundary. This is an extraction of
+the established ordering, not a change to web retry/auth behavior. A future
+Android transport can enter the same supervisor without entering the
+HTTP-shaped chain; B0 itself installs only the web runtime.
 
 The web context adds `resource_epoch: int`. It is captured once at logical-call
 entry and reused by every retry/auth-refresh leg. `RuntimeTransport` forwards

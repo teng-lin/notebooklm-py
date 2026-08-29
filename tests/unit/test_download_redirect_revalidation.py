@@ -54,8 +54,7 @@ def mock_artifacts_api(tmp_path):
     )
     api = WebArtifactsAPI(
         rpc=mock_core,
-        drain=mock_core,
-        lifecycle=mock_core,
+        supervisor=mock_core,
         notebooks=AsyncMock(),
         mind_maps=AsyncMock(spec=NoteBackedMindMapService),
         note_service=AsyncMock(spec=NoteService),

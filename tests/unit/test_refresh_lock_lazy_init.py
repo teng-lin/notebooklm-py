@@ -36,6 +36,7 @@ _UNIT_CONFTEST_SPEC.loader.exec_module(_unit_conftest)
 make_core = _unit_conftest.make_core
 
 EVENT_TIMEOUT_S = 5.0
+TEST_EPOCH = 1
 
 
 def _auth_tokens() -> AuthTokens:
@@ -46,8 +47,9 @@ def _auth_tokens() -> AuthTokens:
     )
 
 
-async def _noop_refresh() -> AuthTokens:
+async def _noop_refresh(expected_epoch: int) -> AuthTokens:
     """Throwaway callback — never invoked by the construction test."""
+    assert expected_epoch == TEST_EPOCH
     return _auth_tokens()
 
 
@@ -104,6 +106,7 @@ async def _trigger_refresh(core: NotebookLMClient) -> object:
         False,
         AuthError("simulated"),
         _refresh_budget=RefreshBudget(),
+        _resource_epoch=TEST_EPOCH,
     )
 
 
@@ -120,8 +123,9 @@ async def test_refresh_lock_allocated_on_first_await() -> None:
     call_count = 0
     core_box: list[NotebookLMClient] = []
 
-    async def cb() -> AuthTokens:
+    async def cb(expected_epoch: int) -> AuthTokens:
         nonlocal call_count
+        assert expected_epoch == TEST_EPOCH
         call_count += 1
         tokens = AuthTokens(
             csrf_token="CSRF_REFRESHED",
@@ -178,7 +182,8 @@ async def test_refresh_lock_instance_stable_across_calls() -> None:
     parallel).
     """
 
-    async def cb() -> AuthTokens:
+    async def cb(expected_epoch: int) -> AuthTokens:
+        assert expected_epoch == TEST_EPOCH
         return AuthTokens(
             csrf_token="R",
             session_id="S",

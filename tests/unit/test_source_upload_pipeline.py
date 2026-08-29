@@ -8,12 +8,16 @@ import io
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
 
+from notebooklm._client_metrics import ClientMetrics
+from notebooklm._runtime.call_supervisor import CallSupervisor
+from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm._web.sources.upload import (
     SourceUploadPipeline,
     _extract_register_file_source_id,
@@ -34,14 +38,7 @@ from notebooklm.types import Source, SourceAddError
 
 
 class UploadRuntime:
-    """Test stub bundling ``rpc_call`` + ``operation_scope`` +
-    ``assert_bound_loop`` on a single object so one instance can be
-    passed as all three of :class:`SourceUploadPipeline`'s ``rpc`` /
-    ``drain`` / ``lifecycle`` collaborator slots. (The production
-    composite Protocol of the same name was retired together with its
-    adapter dataclass; this stub kept the historical name to minimise
-    churn across the test file.)
-    """
+    """RPC and supervisor stub for an active upload generation."""
 
     def __init__(self) -> None:
         self.queue_waits: list[float] = []
@@ -55,9 +52,9 @@ class UploadRuntime:
         self.labels.append(log_label)
 
         @asynccontextmanager
-        async def scope() -> AsyncIterator[None]:
+        async def scope() -> AsyncIterator[SimpleNamespace]:
             try:
-                yield None
+                yield SimpleNamespace(epoch=1)
             finally:
                 self.finished.append(log_label)
 
@@ -74,6 +71,9 @@ class UploadRuntime:
 
     def assert_bound_loop(self) -> None:
         return None
+
+    async def spawn_child(self, label: str, factory: Any) -> asyncio.Task[Any]:
+        return asyncio.create_task(factory(), name=label)
 
 
 class HttpRuntime:
@@ -97,6 +97,10 @@ class HttpRuntime:
     @property
     def cookies(self) -> httpx.Cookies:
         return self._cookies
+
+    def get_http_client(self, *, expected_epoch: int) -> HttpRuntime:
+        assert expected_epoch == 1
+        return self
 
 
 class RecordingRpc:
@@ -145,21 +149,21 @@ def make_pipeline(
     session = session or UploadRuntime()
     kernel = kernel or HttpRuntime()
     auth = auth or kernel
-    # The ``UploadRuntime`` test stub bundles ``rpc_call``,
-    # ``operation_scope``, and ``assert_bound_loop`` so a single instance
-    # structurally satisfies all three of the constructor's
-    # ``rpc`` / ``drain`` / ``lifecycle`` collaborator slots.
-    return SourceUploadPipeline(
+    pipeline = SourceUploadPipeline(
         rpc=session,  # type: ignore[arg-type]
-        drain=session,  # type: ignore[arg-type]
-        supervisor=supervisor,  # type: ignore[arg-type]
-        lifecycle=session,  # type: ignore[arg-type]
+        supervisor=supervisor or session,  # type: ignore[arg-type]
         kernel=kernel,
         auth=auth,  # type: ignore[arg-type]
         max_concurrent_uploads=max_concurrent_uploads,
         record_upload_queue_wait=session.record_upload_queue_wait,
         async_client_factory=async_client_factory,
     )
+    # Direct pipeline tests model the web/upload transports after lifecycle
+    # open has activated generation 1 and installed the resource registry.
+    pipeline._active_epoch = 1
+    pipeline._closing = False
+    pipeline._registry_lock = asyncio.Lock()
+    return pipeline
 
 
 def track_opened_files(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
@@ -178,9 +182,8 @@ def track_opened_files(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
 def upload_client_factory(failure: BaseException) -> MagicMock:
     client = AsyncMock()
     client.post = AsyncMock(side_effect=failure)
-    client_cm = AsyncMock()
-    client_cm.__aenter__.return_value = client
-    return MagicMock(return_value=client_cm)
+    client.__aenter__.return_value = client
+    return MagicMock(return_value=client)
 
 
 def test_extract_register_file_source_id_accepts_known_response_shapes() -> None:
@@ -498,7 +501,12 @@ async def test_add_file_uses_pipeline_steps_and_finishes_transport(
     assert len(runtime.queue_waits) == 1
     register_file_source.assert_awaited_once_with("nb_123", "report.pdf")
     start_resumable_upload.assert_awaited_once_with(
-        "nb_123", "report.pdf", 5, "src_123", "application/pdf"
+        "nb_123",
+        "report.pdf",
+        5,
+        "src_123",
+        "application/pdf",
+        expected_epoch=1,
     )
 
 
@@ -660,9 +668,8 @@ async def test_upload_failure_closes_file_object_after_ownership_transfer() -> N
     response = httpx.Response(400, request=request)
     client = AsyncMock()
     client.post = AsyncMock(return_value=response)
-    client_cm = AsyncMock()
-    client_cm.__aenter__.return_value = client
-    client_factory = MagicMock(return_value=client_cm)
+    client.__aenter__.return_value = client
+    client_factory = MagicMock(return_value=client)
     runtime = HttpRuntime()
     service = make_pipeline(kernel=runtime, auth=runtime, async_client_factory=client_factory)
     file_obj = io.BytesIO(b"hello")
@@ -673,6 +680,7 @@ async def test_upload_failure_closes_file_object_after_ownership_transfer() -> N
             file_obj,
             filename="report.pdf",
             total_bytes=5,
+            expected_epoch=1,
         )
 
     assert file_obj.closed
@@ -1112,9 +1120,8 @@ async def test_start_resumable_upload_uses_injected_http_client() -> None:
     response.raise_for_status = MagicMock()
     client = AsyncMock()
     client.post = AsyncMock(return_value=response)
-    client_cm = AsyncMock()
-    client_cm.__aenter__.return_value = client
-    client_factory = MagicMock(return_value=client_cm)
+    client.__aenter__.return_value = client
+    client_factory = MagicMock(return_value=client)
     runtime = HttpRuntime()
     service = make_pipeline(kernel=runtime, auth=runtime, async_client_factory=client_factory)
 
@@ -1124,6 +1131,7 @@ async def test_start_resumable_upload_uses_injected_http_client() -> None:
         12,
         "src_123",
         "application/pdf",
+        expected_epoch=1,
     )
 
     assert upload_url == "https://notebooklm.google.com/upload/_/?upload_id=session"
@@ -1141,9 +1149,8 @@ async def test_start_resumable_upload_rejects_untrusted_upload_header_url() -> N
     response.raise_for_status = MagicMock()
     client = AsyncMock()
     client.post = AsyncMock(return_value=response)
-    client_cm = AsyncMock()
-    client_cm.__aenter__.return_value = client
-    client_factory = MagicMock(return_value=client_cm)
+    client.__aenter__.return_value = client
+    client_factory = MagicMock(return_value=client)
     runtime = HttpRuntime()
     service = make_pipeline(kernel=runtime, auth=runtime, async_client_factory=client_factory)
 
@@ -1154,6 +1161,7 @@ async def test_start_resumable_upload_rejects_untrusted_upload_header_url() -> N
             12,
             "src_123",
             "application/pdf",
+            expected_epoch=1,
         )
 
 
@@ -1183,9 +1191,8 @@ async def test_start_resumable_upload_maps_upstream_status_to_notebooklm_error(
     response = httpx.Response(status, request=req, text="upstream rejected the upload")
     client = AsyncMock()
     client.post = AsyncMock(return_value=response)
-    client_cm = AsyncMock()
-    client_cm.__aenter__.return_value = client
-    client_factory = MagicMock(return_value=client_cm)
+    client.__aenter__.return_value = client
+    client_factory = MagicMock(return_value=client)
     runtime = HttpRuntime()
     service = make_pipeline(kernel=runtime, auth=runtime, async_client_factory=client_factory)
 
@@ -1196,6 +1203,7 @@ async def test_start_resumable_upload_maps_upstream_status_to_notebooklm_error(
             12,
             "src_123",
             "application/vnd.ms-publisher",
+            expected_epoch=1,
         )
     # The filename rides in the classified message; the raw httpx error is chained.
     assert "newsletter.pub" in str(exc_info.value)
@@ -1214,6 +1222,7 @@ async def test_upload_file_streaming_rejects_untrusted_url_before_post(tmp_path)
         await service.upload_file_streaming(
             "https://evil.example/upload/_/?upload_id=secret",
             file_path,
+            expected_epoch=1,
         )
 
     client_factory.assert_not_called()
@@ -1227,9 +1236,8 @@ async def test_upload_file_streaming_redacts_upload_url_in_debug_logs(tmp_path) 
     response.raise_for_status = MagicMock()
     client = AsyncMock()
     client.post = AsyncMock(return_value=response)
-    client_cm = AsyncMock()
-    client_cm.__aenter__.return_value = client
-    client_factory = MagicMock(return_value=client_cm)
+    client.__aenter__.return_value = client
+    client_factory = MagicMock(return_value=client)
     runtime = HttpRuntime()
     service = make_pipeline(kernel=runtime, auth=runtime, async_client_factory=client_factory)
     logger = MagicMock()
@@ -1238,6 +1246,7 @@ async def test_upload_file_streaming_redacts_upload_url_in_debug_logs(tmp_path) 
         "https://notebooklm.google.com/upload/_/?upload_id=SECRET_UPLOAD_ID",
         file_path,
         logger=logger,
+        expected_epoch=1,
     )
 
     debug_messages = [str(call) for call in logger.debug.call_args_list]
@@ -1254,9 +1263,8 @@ def _mock_post_client() -> tuple[AsyncMock, MagicMock]:
     response.headers = {}
     client = AsyncMock()
     client.post = AsyncMock(return_value=response)
-    client_cm = AsyncMock()
-    client_cm.__aenter__.return_value = client
-    return client, MagicMock(return_value=client_cm)
+    client.__aenter__.return_value = client
+    return client, MagicMock(return_value=client)
 
 
 # --- Origin/Referer must track the URL the bytes actually go to ------------
@@ -1281,7 +1289,12 @@ async def test_start_resumable_upload_origin_tracks_the_upload_endpoint(
     service = make_pipeline(kernel=runtime, auth=runtime, async_client_factory=client_factory)
 
     upload_url = await service.start_resumable_upload(
-        "nb_123", "report.pdf", 12, "src_123", "application/pdf"
+        "nb_123",
+        "report.pdf",
+        12,
+        "src_123",
+        "application/pdf",
+        expected_epoch=1,
     )
 
     assert upload_url == "https://notebooklm.google.com/upload/_/?upload_id=session"
@@ -1304,6 +1317,7 @@ async def test_upload_file_streaming_origin_tracks_validated_upload_url(
     await service.upload_file_streaming(
         "https://notebook.google.com/upload/_/?upload_id=session",
         file_path,
+        expected_epoch=1,
     )
 
     headers = client.post.await_args.kwargs["headers"]
@@ -1324,6 +1338,7 @@ async def test_cancel_upload_session_origin_tracks_validated_upload_url(
         "https://notebook.google.com/upload/_/?upload_id=session",
         "0",
         logger=MagicMock(),
+        _expected_epoch=1,
     )
 
     headers = client.post.await_args.kwargs["headers"]
@@ -1349,6 +1364,7 @@ async def test_cancel_upload_session_builds_no_headers_before_validation() -> No
         "https://evil.example/upload/_/?upload_id=secret",
         "0",
         logger=MagicMock(),
+        _expected_epoch=1,
     )
 
     client_factory.assert_not_called()
@@ -1366,6 +1382,7 @@ async def test_cancel_upload_session_redacts_credentials_on_validation_failure()
         "https://alice:s3cr3t@notebooklm.google.com/upload/_/?upload_id=SECRET_UPLOAD_ID",
         "0",
         logger=logger,
+        _expected_epoch=1,
     )
 
     client_factory.assert_not_called()
@@ -1376,3 +1393,315 @@ async def test_cancel_upload_session_redacts_credentials_on_validation_failure()
     assert all("alice" not in message for message in debug_messages)
     assert all("s3cr3t" not in message for message in debug_messages)
     assert all("SECRET_UPLOAD_ID" not in message for message in debug_messages)
+
+
+class _EpochKernel(HttpRuntime):
+    """Cookie owner accepting whichever generation the test has activated."""
+
+    def get_http_client(self, *, expected_epoch: int) -> HttpRuntime:
+        assert expected_epoch > 0
+        return self
+
+
+class _BlockedEnterClient:
+    def __init__(self, entered: asyncio.Event, attempts: list[str]) -> None:
+        self._entered = entered
+        self._attempts = attempts
+        self._release = asyncio.Event()
+        self.posts = 0
+
+    async def __aenter__(self) -> _BlockedEnterClient:
+        self._entered.set()
+        await self._release.wait()
+        return self
+
+    async def __aexit__(self, *_args: Any) -> None:
+        await self.aclose()
+
+    async def post(self, *_args: Any, **_kwargs: Any) -> httpx.Response:
+        self.posts += 1
+        request = httpx.Request("POST", "https://notebooklm.google.com/upload/_/")
+        return httpx.Response(200, request=request)
+
+    async def aclose(self) -> None:
+        self._attempts.append("old-client")
+        self._release.set()
+
+
+class _SuccessfulClient:
+    def __init__(self, attempts: list[str]) -> None:
+        self._attempts = attempts
+        self.posts = 0
+
+    async def __aenter__(self) -> _SuccessfulClient:
+        return self
+
+    async def __aexit__(self, *_args: Any) -> None:
+        await self.aclose()
+
+    async def post(self, url: str, **_kwargs: Any) -> httpx.Response:
+        self.posts += 1
+        return httpx.Response(200, request=httpx.Request("POST", url))
+
+    async def aclose(self) -> None:
+        self._attempts.append("new-client")
+
+
+@pytest.mark.asyncio
+async def test_forced_close_gathers_stream_body_and_cannot_cancel_or_touch_reopened_epoch() -> None:
+    """Every old upload handle settles before epoch 2 is made visible."""
+    loop = asyncio.get_running_loop()
+    supervisor = CallSupervisor(
+        metrics=ClientMetrics(),
+        drain_tracker=TransportDrainTracker(),
+        max_concurrent_rpcs=None,
+    )
+    supervisor.set_bound_loop(loop)
+    supervisor.prepare_generation(1)
+    supervisor.start_accepting(1)
+
+    entered = asyncio.Event()
+    close_attempts: list[str] = []
+    old_client = _BlockedEnterClient(entered, close_attempts)
+    new_client = _SuccessfulClient(close_attempts)
+    clients = iter((old_client, new_client))
+    kernel = _EpochKernel()
+    pipeline = SourceUploadPipeline(
+        rpc=UploadRuntime(),  # type: ignore[arg-type]
+        supervisor=supervisor,
+        kernel=kernel,
+        auth=kernel,
+        async_client_factory=lambda **_kwargs: next(clients),  # type: ignore[arg-type]
+    )
+    await pipeline.open(loop, 1)
+    old_body = io.BytesIO(b"old generation bytes")
+
+    async def _old_upload() -> None:
+        async with pipeline.transport_operation_scope("old-upload") as epoch:
+            await pipeline.upload_file_streaming(
+                "https://notebooklm.google.com/upload/_/?upload_id=old",
+                old_body,
+                total_bytes=len(old_body.getvalue()),
+                expected_epoch=epoch,
+            )
+
+    old_operation = asyncio.create_task(_old_upload())
+    await entered.wait()
+    # The outer workflow and its finalize child are both uploader-owned.
+    assert old_operation in pipeline._transport_tasks
+    assert len(pipeline._transport_tasks) == 2
+
+    await supervisor.begin_closing(1)
+    await pipeline.prepare_close()
+    await pipeline.close_resources()
+    await asyncio.gather(old_operation, return_exceptions=True)
+    supervisor.mark_closed(1)
+
+    assert old_body.closed
+    assert old_client.posts == 0
+    assert close_attempts.count("old-client") >= 1
+    assert pipeline._transport_tasks == set()
+    assert pipeline._transport_clients == set()
+
+    supervisor.reset_after_open()
+    supervisor.prepare_generation(2)
+    await pipeline.open(loop, 2)
+    supervisor.start_accepting(2)
+    new_body = io.BytesIO(b"new generation bytes")
+    async with pipeline.transport_operation_scope("new-upload") as epoch:
+        assert epoch == 2
+        await pipeline.upload_file_streaming(
+            "https://notebooklm.google.com/upload/_/?upload_id=new",
+            new_body,
+            total_bytes=len(new_body.getvalue()),
+            expected_epoch=epoch,
+        )
+
+    assert old_client.posts == 0
+    assert new_client.posts == 1
+    assert new_body.closed
+
+
+class _FailingCloseClient:
+    def __init__(
+        self,
+        name: str,
+        attempts: list[str],
+        failure: BaseException | None,
+    ) -> None:
+        self._name = name
+        self._attempts = attempts
+        self._failure = failure
+
+    async def aclose(self) -> None:
+        self._attempts.append(self._name)
+        failure, self._failure = self._failure, None
+        if failure is not None:
+            raise failure
+
+
+@pytest.mark.asyncio
+async def test_upload_teardown_attempts_all_tasks_and_clients_before_process_exit() -> None:
+    """One cleanup failure or process exit cannot skip sibling resources."""
+    pipeline = make_pipeline()
+    attempts: list[str] = []
+    task_started = asyncio.Event()
+
+    async def _owned_task(name: str) -> None:
+        task_started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            attempts.append(name)
+
+    first_task = asyncio.create_task(_owned_task("task-one"))
+    second_task = asyncio.create_task(_owned_task("task-two"))
+    await task_started.wait()
+    pipeline._transport_tasks.update((first_task, second_task))
+    pipeline._transport_clients.update(
+        {
+            _FailingCloseClient("ordinary-client", attempts, RuntimeError("close failed")),
+            _FailingCloseClient("exit-client", attempts, SystemExit(19)),
+            _FailingCloseClient("healthy-client", attempts, None),
+        }  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        await pipeline.prepare_close()
+
+    assert exc_info.value.code == 19
+    assert set(attempts) == {
+        "task-one",
+        "task-two",
+        "ordinary-client",
+        "exit-client",
+        "healthy-client",
+    }
+    # Fail-once clients let the mandatory close_resources pass prove that it
+    # retries and clears the complete registry even after prepare_close failed.
+    await pipeline.close_resources()
+    assert pipeline._transport_tasks == set()
+    assert pipeline._transport_clients == set()
+    assert pipeline._registry_lock is None
+
+
+@pytest.mark.asyncio
+async def test_pre_dispatch_cancellation_awaits_tracked_scotty_cancel_child() -> None:
+    """Caller cancellation is not re-raised while Scotty cancel is still live."""
+    cancel_started = asyncio.Event()
+    release_cancel = asyncio.Event()
+    finalize_gate = asyncio.Event()
+
+    class DelayedSupervisor(UploadRuntime):
+        async def spawn_child(self, label: str, factory: Any) -> asyncio.Task[Any]:
+            async def _run() -> Any:
+                if label.startswith("upload-finalize:"):
+                    await finalize_gate.wait()
+                return await factory()
+
+            return asyncio.create_task(_run(), name=label)
+
+    class CancelClient:
+        async def __aenter__(self) -> CancelClient:
+            return self
+
+        async def __aexit__(self, *_args: Any) -> None:
+            return None
+
+        async def post(self, url: str, **_kwargs: Any) -> httpx.Response:
+            cancel_started.set()
+            await release_cancel.wait()
+            return httpx.Response(200, request=httpx.Request("POST", url))
+
+        async def aclose(self) -> None:
+            return None
+
+    supervisor = DelayedSupervisor()
+    kernel = _EpochKernel()
+    pipeline = make_pipeline(
+        session=supervisor,
+        supervisor=supervisor,
+        kernel=kernel,
+        auth=kernel,
+        async_client_factory=lambda **_kwargs: CancelClient(),  # type: ignore[arg-type]
+    )
+    body = io.BytesIO(b"not dispatched")
+    operation = asyncio.create_task(
+        pipeline.upload_file_streaming(
+            "https://notebooklm.google.com/upload/_/?upload_id=cancel-me",
+            body,
+            total_bytes=len(body.getvalue()),
+            expected_epoch=1,
+        )
+    )
+    await asyncio.sleep(0)
+    operation.cancel()
+    await cancel_started.wait()
+
+    assert not operation.done()
+    assert any(task.get_name().startswith("upload-cancel:") for task in pipeline._transport_tasks)
+
+    release_cancel.set()
+    with pytest.raises(asyncio.CancelledError):
+        await operation
+    assert body.closed
+    assert pipeline._transport_tasks == set()
+
+
+@pytest.mark.asyncio
+async def test_upload_child_is_admitted_in_draining_and_rejected_in_closing() -> None:
+    """A held workflow may finish nested I/O only until forced closing begins."""
+    loop = asyncio.get_running_loop()
+    supervisor = CallSupervisor(
+        metrics=ClientMetrics(),
+        drain_tracker=TransportDrainTracker(),
+        max_concurrent_rpcs=None,
+    )
+    supervisor.set_bound_loop(loop)
+    supervisor.prepare_generation(1)
+    supervisor.start_accepting(1)
+    close_attempts: list[str] = []
+    created: list[_SuccessfulClient] = []
+
+    def _factory(**_kwargs: Any) -> _SuccessfulClient:
+        client = _SuccessfulClient(close_attempts)
+        created.append(client)
+        return client
+
+    kernel = _EpochKernel()
+    pipeline = SourceUploadPipeline(
+        rpc=UploadRuntime(),  # type: ignore[arg-type]
+        supervisor=supervisor,
+        kernel=kernel,
+        auth=kernel,
+        async_client_factory=_factory,  # type: ignore[arg-type]
+    )
+    await pipeline.open(loop, 1)
+
+    async with pipeline.transport_operation_scope("held-upload") as epoch:
+        await supervisor.stop_accepting(epoch)
+        draining_body = io.BytesIO(b"finish while draining")
+        await pipeline.upload_file_streaming(
+            "https://notebooklm.google.com/upload/_/?upload_id=draining",
+            draining_body,
+            total_bytes=len(draining_body.getvalue()),
+            expected_epoch=epoch,
+        )
+        assert draining_body.closed
+        assert created[0].posts == 1
+
+        await supervisor.begin_closing(epoch)
+        closing_body = io.BytesIO(b"must not dispatch")
+        with pytest.raises(RuntimeError, match="not accepting child work"):
+            await pipeline.upload_file_streaming(
+                "https://notebooklm.google.com/upload/_/?upload_id=closing",
+                closing_body,
+                total_bytes=len(closing_body.getvalue()),
+                expected_epoch=epoch,
+            )
+        assert closing_body.closed
+        assert len(created) == 1
+
+    await pipeline.prepare_close()
+    await pipeline.close_resources()
+    supervisor.mark_closed(1)

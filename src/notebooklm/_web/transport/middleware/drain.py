@@ -1,8 +1,9 @@
-"""DrainMiddleware — in-flight transport-operation tracker for the middleware chain.
+"""Legacy drain-middleware characterization helper.
 
-Per ADR-0009 §"Chain ordering", ``DrainMiddleware`` sits at
-the OUTERMOST position of the chain
-``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``.
+B0 moved production admission to the protocol-neutral ``CallSupervisor``;
+the installed web chain is now ``[Retry, AuthRefresh, ErrorInjection, Tracing]``.
+This class remains as a narrow internal compatibility/characterization helper
+for direct middleware tests and is not installed by the composition root.
 
 Pure observer of the transport leg with bookkeeping side-effects: brackets
 ``next_call`` with calls to :meth:`TransportDrainTracker.begin_transport_post`
@@ -12,9 +13,9 @@ caller (``RuntimeTransport.perform_authed_post``) always populates ``log_label``
 so the middleware reads it via ``RPC_CONTEXT_LOG_LABEL`` and falls back
 to a synthetic ``"<unknown-chain-call>"`` only for malformed requests.
 
-Drain admission is owned by the chain rather than by the logical RPC
-wrapper or ``_web.transport.chat.chat_aware_authed_post`` (the chat-streaming
-entry); those two call sites carry no explicit bookkeeping calls.
+Production drain admission is owned by ``CallSupervisor`` around both RPC and
+chat transport entry.  The behavior below describes direct uses of this
+retained helper.
 
 Drain admission semantics:
 - ``begin_transport_post`` STILL rejects new top-level work once

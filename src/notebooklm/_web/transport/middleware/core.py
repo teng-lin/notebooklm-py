@@ -224,10 +224,10 @@ def build_chain(
     ``B.__call__(request, →C)`` where ``→C`` invokes
     ``C.__call__(request, →T)``.
 
-    This matches the chain ordering documented in ADR-0009: ``[Drain,
-    Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]`` —
-    Drain at index 0 is the outermost wrapper, Tracing at index 6 is the
-    innermost wrapper around the terminal.
+    This matches the amended ADR-0009 web ordering: ``[Retry, AuthRefresh,
+    ErrorInjection, Tracing]`` — Retry at index 0 is the outermost web wrapper,
+    and Tracing at index 3 is the innermost wrapper around the terminal.
+    ``CallSupervisor`` owns Drain → Metrics → Semaphore outside this chain.
 
     Implementation: wrap in reverse, so the last middleware in the sequence
     is composed first (it becomes the innermost wrapper, with ``terminal``

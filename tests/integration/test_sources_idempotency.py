@@ -158,7 +158,7 @@ def _get_notebook_response(src_rows: list) -> str:
     return _wrb_response(RPCMethod.GET_NOTEBOOK.value, [["Test Notebook", src_rows]])
 
 
-def _make_client_with_transport(
+async def _make_client_with_transport(
     transport: httpx.AsyncBaseTransport,
     auth_tokens,
     *,
@@ -166,18 +166,19 @@ def _make_client_with_transport(
 ) -> NotebookLMClient:
     """Construct a NotebookLMClient backed by a mock transport.
 
-    Mirrors the helper used in tests/integration/concurrency/
-    test_idempotency_create.py: stub in a pre-built httpx.AsyncClient
-    wired to the supplied mock transport, bypassing the full
-    ``ClientLifecycle.open()`` path that would otherwise build a real connection
-    pool.
+    Open the real lifecycle first so the supervisor, transports, and epoch-one
+    admission generation are active.  Only then swap the generation-owned HTTP
+    client for the deterministic mock transport used by these integration tests.
     """
     client = NotebookLMClient(
         auth_tokens,
         server_error_max_retries=server_error_max_retries,
     )
+    await client.__aenter__()
+    kernel = client._collaborators.kernel
+    await kernel.get_http_client(expected_epoch=1).aclose()
     install_http_client_for_test(
-        client._collaborators.kernel,
+        kernel,
         httpx.AsyncClient(
             transport=transport,
             headers={
@@ -241,7 +242,7 @@ async def test_add_url_probe_short_circuits_when_first_response_lost(auth_tokens
         return httpx.Response(404, text=f"unexpected rpc_id={rpc_id}")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         source = await client.sources.add_url(notebook_id, url)
     finally:
@@ -323,7 +324,7 @@ async def test_add_url_probe_ignores_a_pre_existing_copy_of_the_same_url(
             counts=counts,
         )
     )
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         with pytest.raises(ServerError):
             await client.sources.add_url(notebook_id, _PROBE_URL)
@@ -359,7 +360,7 @@ async def test_add_url_probe_raises_when_baseline_unavailable_and_a_copy_exists(
     )
     # No executor-level retries: the baseline 500 should fail fast here, the
     # point of the test being what the *probe* does afterwards.
-    client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=0)
+    client = await _make_client_with_transport(transport, auth_tokens, server_error_max_retries=0)
     try:
         with pytest.raises(SourceAddError, match="pre-create baseline snapshot failed"):
             await client.sources.add_url(notebook_id, _PROBE_URL)
@@ -390,7 +391,7 @@ async def test_add_url_baseline_unavailable_without_a_match_still_retries(auth_t
             baseline_status=500,  # baseline snapshot unavailable
         )
     )
-    client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=0)
+    client = await _make_client_with_transport(transport, auth_tokens, server_error_max_retries=0)
     try:
         with pytest.raises(ServerError):
             await client.sources.add_url(notebook_id, _PROBE_URL)
@@ -416,7 +417,7 @@ async def test_add_url_probe_raises_when_multiple_new_matches_appear(auth_tokens
             counts=counts,
         )
     )
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         with pytest.raises(SourceAddError, match="probe found 2 new sources"):
             await client.sources.add_url(notebook_id, _PROBE_URL)
@@ -470,7 +471,7 @@ async def test_add_url_probe_does_not_match_unrelated_sources(auth_tokens, rows_
             counts=counts,
         )
     )
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         with pytest.raises(ServerError):
             await client.sources.add_url(notebook_id, _PROBE_URL)
@@ -509,7 +510,7 @@ async def test_add_url_probe_matches_on_the_second_attempt(auth_tokens) -> None:
         return httpx.Response(404, text=f"unexpected rpc_id={rpc_id}")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         source = await client.sources.add_url(notebook_id, _PROBE_URL)
     finally:
@@ -547,7 +548,7 @@ async def test_add_url_probe_decode_failure_aborts_instead_of_retrying(auth_toke
         return httpx.Response(404, text=f"unexpected rpc_id={rpc_id}")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     with caplog.at_level(logging.WARNING, logger="notebooklm._sources"):
         try:
             with pytest.raises(SourceAddError, match="Cannot confirm URL source") as exc_info:
@@ -603,7 +604,7 @@ async def test_add_url_recovered_create_still_honors_the_requested_title(auth_to
         return httpx.Response(404, text=f"unexpected rpc_id={rpc_id}")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         source = await client.sources.add_url(notebook_id, _PROBE_URL, title=requested_title)
     finally:
@@ -649,7 +650,7 @@ async def test_add_url_bulk_cost_is_one_baseline_read_per_call(auth_tokens) -> N
         return httpx.Response(404, text=f"unexpected rpc_id={rpc_id}")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         for url in urls:
             await client.sources.add_url(notebook_id, url)
@@ -749,7 +750,7 @@ async def test_add_drive_probe_short_circuits_when_first_response_lost(
             counts=counts,
         )
     )
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         source = await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, title)
     finally:
@@ -790,7 +791,7 @@ async def test_add_drive_probe_ignores_a_pre_existing_copy_of_the_same_file(
             counts=counts,
         )
     )
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         with pytest.raises(ServerError):
             await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, title)
@@ -827,7 +828,7 @@ async def test_add_drive_probe_raises_when_baseline_unavailable_and_a_copy_exist
     )
     # No executor-level retries: the baseline 500 should fail fast here, the
     # point of the test being what the *probe* does afterwards.
-    client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=0)
+    client = await _make_client_with_transport(transport, auth_tokens, server_error_max_retries=0)
     try:
         with pytest.raises(SourceAddError, match="pre-create baseline snapshot failed") as exc_info:
             await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, title)
@@ -860,7 +861,7 @@ async def test_add_drive_probe_raises_when_multiple_new_matches_appear(auth_toke
             counts=counts,
         )
     )
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         with pytest.raises(SourceAddError, match="probe found 2 new sources"):
             await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, title)
@@ -882,7 +883,7 @@ async def test_add_drive_rejects_a_blank_file_id_before_writing(auth_tokens) -> 
         return httpx.Response(200, text="should never be reached")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         with pytest.raises(ValidationError):
             await client.sources.add_drive("nb_test", "   ", "My Drive Doc")
@@ -954,7 +955,7 @@ async def test_add_drive_probe_does_not_match_unrelated_sources(
             counts=counts,
         )
     )
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         with pytest.raises(ServerError):
             await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, title)
@@ -1022,7 +1023,7 @@ async def test_register_file_source_probe_short_circuits_when_first_response_los
         return httpx.Response(404, text=f"unexpected rpc_id={rpc_id}")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         # Stub start_resumable_upload + upload_file_streaming so this test
         # exercises only the ADD_SOURCE_FILE register step's idempotency.
@@ -1100,7 +1101,7 @@ async def test_register_file_source_does_not_match_pre_existing_filename(
         return httpx.Response(404, text=f"unexpected rpc_id={rpc_id}")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         with (
             patch.object(
@@ -1177,7 +1178,7 @@ async def test_register_file_source_baseline_unavailable_raises_on_ambiguity(
         return httpx.Response(404, text=f"unexpected rpc_id={rpc_id}")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=0)
+    client = await _make_client_with_transport(transport, auth_tokens, server_error_max_retries=0)
     try:
         with (
             patch.object(
@@ -1263,7 +1264,7 @@ async def test_add_text_no_probe_no_retry_under_5xx(
     )
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         with pytest.raises(NotebookLMError):
             await client.sources.add_text(notebook_id, title, content)
@@ -1317,7 +1318,7 @@ async def test_add_url_probe_network_error_propagates(auth_tokens) -> None:
         return httpx.Response(404, text=f"unexpected rpc_id={rpc_id}")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=0)
+    client = await _make_client_with_transport(transport, auth_tokens, server_error_max_retries=0)
     try:
         with pytest.raises(NetworkError, match="probe synthetic connection error"):
             await client.sources.add_url(notebook_id, url)
@@ -1392,7 +1393,7 @@ async def test_add_drive_recovered_create_still_honors_the_requested_title(auth_
         return httpx.Response(404, text=f"unexpected rpc_id={rpc_id}")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         source = await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, requested_title)
     finally:
@@ -1429,7 +1430,7 @@ async def test_add_drive_probe_transport_error_propagates(auth_tokens) -> None:
         return httpx.Response(404, text=f"unexpected rpc_id={rpc_id}")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=0)
+    client = await _make_client_with_transport(transport, auth_tokens, server_error_max_retries=0)
     try:
         with pytest.raises(ServerError):
             await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, "My Drive Doc")
@@ -1466,7 +1467,7 @@ async def test_add_drive_probe_decode_failure_aborts_instead_of_retrying(
         return httpx.Response(404, text=f"unexpected rpc_id={rpc_id}")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     with caplog.at_level(logging.WARNING, logger="notebooklm._sources"):
         try:
             with pytest.raises(SourceAddError, match="Cannot confirm Drive source") as exc_info:
@@ -1508,7 +1509,7 @@ async def test_add_drive_probe_matches_on_the_second_attempt(auth_tokens) -> Non
         return httpx.Response(404, text=f"unexpected rpc_id={rpc_id}")
 
     transport = httpx.MockTransport(handler)
-    client = _make_client_with_transport(transport, auth_tokens)
+    client = await _make_client_with_transport(transport, auth_tokens)
     try:
         source = await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, "My Drive Doc")
     finally:
@@ -1536,7 +1537,7 @@ async def test_add_drive_baseline_unavailable_without_a_match_still_retries(auth
             baseline_status=500,  # baseline snapshot unavailable
         )
     )
-    client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=0)
+    client = await _make_client_with_transport(transport, auth_tokens, server_error_max_retries=0)
     try:
         with pytest.raises(ServerError):
             await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, "My Drive Doc")

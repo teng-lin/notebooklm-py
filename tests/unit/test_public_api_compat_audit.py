@@ -189,6 +189,7 @@ def test_collect_manifest_includes_representative_client_namespace_methods(scrip
     assert {
         "artifacts.download_audio",
         "chat.ask",
+        "collections.list",
         "mind_maps.generate",
         "mind_maps.get",
         "notebooks.list",
@@ -202,6 +203,22 @@ def test_collect_manifest_includes_representative_client_namespace_methods(scrip
 
 def test_mind_maps_namespace_is_audited(script):
     assert "mind_maps" in script.CLIENT_NAMESPACE_ATTRIBUTES
+
+
+def test_all_eleven_client_namespaces_are_audited(script):
+    assert set(script.CLIENT_NAMESPACE_ATTRIBUTES) == {
+        "artifacts",
+        "chat",
+        "collections",
+        "labels",
+        "mind_maps",
+        "notes",
+        "notebooks",
+        "research",
+        "settings",
+        "sharing",
+        "sources",
+    }
 
 
 def test_collect_manifest_captures_return_annotation(script):

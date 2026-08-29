@@ -1,9 +1,9 @@
 """RetryMiddleware — 429/5xx retry loop for the chain.
 
-Per ADR-0009 §"Chain ordering", ``RetryMiddleware`` sits just *inside*
-``SemaphoreMiddleware`` and just *outside* ``AuthRefreshMiddleware``. The
-chain is
-``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``.
+Per amended ADR-0009, ``RetryMiddleware`` is the outermost web-specific
+middleware and sits just outside ``AuthRefreshMiddleware``. The installed web
+chain is ``[Retry, AuthRefresh, ErrorInjection, Tracing]``; protocol-neutral
+drain, metrics, and semaphore policy wraps it in ``CallSupervisor``.
 
 This middleware owns the **retry-on-429** and **retry-on-5xx/network** loops.
 The chain leaf is a single ``Kernel.post`` attempt that raises

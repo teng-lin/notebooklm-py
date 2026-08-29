@@ -96,13 +96,10 @@ async def test_session_close_drains_artifact_poll_hook() -> None:
     from notebooklm._web.notes import NoteService
 
     core = build_client_shell_for_tests(_auth())
-    # ``ArtifactsAPI`` consumes its three runtime collaborators
-    # (``rpc`` + ``drain`` + ``lifecycle``) directly — mirrors production
-    # wiring in ``NotebookLMClient.__init__``.
+    # Artifact polling receives the same call supervisor as production.
     artifacts = WebArtifactsAPI(
         rpc=core._rpc_executor,
-        drain=core._collaborators.drain_tracker,
-        lifecycle=core._collaborators.lifecycle,
+        supervisor=core._collaborators.call_supervisor,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
         note_service=MagicMock(spec=NoteService),

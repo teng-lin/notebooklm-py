@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from ..._runtime.call_supervisor import CallSupervisor
 from ..._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
 from ..._sources import SourcesAPI
 from ..._types.research import SourceGuide
@@ -58,6 +59,7 @@ class WebSourcesAPI(SourcesAPI):
         self,
         rpc: RpcCaller,
         *,
+        supervisor: CallSupervisor,
         uploader: SourceUploadPipeline,
         upload_timeout: httpx.Timeout | None = None,
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
@@ -68,8 +70,10 @@ class WebSourcesAPI(SourcesAPI):
             rpc: The narrow :class:`RpcCaller` capability — sources
                 only needs ``rpc_call(...)`` for its own RPC paths
                 (delete, rename, refresh, freshness, drive add, text add).
-                Upload-flow capabilities (``kernel``, ``auth``,
-                ``operation_scope``) are owned by ``uploader``.
+                Upload-flow capabilities (``kernel`` and ``auth``) are owned
+                by ``uploader``.
+            supervisor: Client-wide logical-call supervisor. It owns admission
+                for URL workflows that span multiple transport calls.
             uploader: Stateful file-upload pipeline. REQUIRED — wired explicitly
                 by :class:`NotebookLMClient` (the only composition root that
                 knows the concrete ``Kernel`` + ``AuthMetadata`` +
@@ -102,6 +106,7 @@ class WebSourcesAPI(SourcesAPI):
         super().__init__()
         self._upload_timeout = upload_timeout
         self._max_concurrent_uploads = max_concurrent_uploads
+        self._supervisor = supervisor
         self._uploader = uploader
         self._uploader.configure_source_limit_lookup(self._get_source_limit)
         # Single owner for the source-lifecycle verbs: the upload pipeline reuses
@@ -196,24 +201,30 @@ class WebSourcesAPI(SourcesAPI):
         Example:
             source = await client.sources.add_url(nb_id, url, wait=True)
         """
-        result = await self._adder.add_url(
-            notebook_id,
-            url,
-            wait=wait,
-            wait_timeout=wait_timeout,
-            add_youtube_source=self._add_youtube_source,
-            add_url_source=self._add_url_source,
-            list_sources=self.list,
-            wait_until_ready=self.wait_until_ready,
-            extract_youtube_video_id=self._extract_youtube_video_id,
-            is_youtube_url=is_youtube_url,
-            logger=logger,
-            return_result=True,
-        )
-        # Baseline-filtered probe ⇒ even a PROBED result is ours to rename (#2204).
-        return await honor_requested_title_if_fresh(
-            self.rename, notebook_id, result, title, logger, probe_proves_freshness=True
-        )
+        async with self._supervisor.operation_scope("source.add_url"):
+            result = await self._adder.add_url(
+                notebook_id,
+                url,
+                wait=wait,
+                wait_timeout=wait_timeout,
+                add_youtube_source=self._add_youtube_source,
+                add_url_source=self._add_url_source,
+                list_sources=self.list,
+                wait_until_ready=self.wait_until_ready,
+                extract_youtube_video_id=self._extract_youtube_video_id,
+                is_youtube_url=is_youtube_url,
+                logger=logger,
+                return_result=True,
+            )
+            # Baseline-filtered probe ⇒ even a PROBED result is ours to rename (#2204).
+            return await honor_requested_title_if_fresh(
+                self.rename,
+                notebook_id,
+                result,
+                title,
+                logger,
+                probe_proves_freshness=True,
+            )
 
     async def _add_urls_batch(
         self,
@@ -228,14 +239,15 @@ class WebSourcesAPI(SourcesAPI):
         path never replays an uncertain write and returns typed positional
         outcomes after reconciling silently omitted failures.
         """
-        return await self._batch_adder.add_urls(
-            notebook_id,
-            urls,
-            rpc=self._rpc,
-            list_sources=self.list,
-            extract_youtube_video_id=self._extract_youtube_video_id,
-            logger=logger,
-        )
+        async with self._supervisor.operation_scope("source.add_urls_batch"):
+            return await self._batch_adder.add_urls(
+                notebook_id,
+                urls,
+                rpc=self._rpc,
+                list_sources=self.list,
+                extract_youtube_video_id=self._extract_youtube_video_id,
+                logger=logger,
+            )
 
     async def add_text(
         self,
@@ -430,20 +442,21 @@ class WebSourcesAPI(SourcesAPI):
             ValidationError: unparseable id/URL, an upload-unsupported type
                 (HTML/other), or a native (non-downloadable) Google Doc/Slides/Sheet.
         """
-        service = DriveImportService(
-            fetch=DriveFetcher(
-                cookies_provider=self._uploader.live_cookies,
-                authuser=self._uploader.authuser_value(),
-            ),
-            add_file=self.add_file,
-        )
-        # Gate the whole download→upload op on a DEDICATED download semaphore;
-        # reusing the upload one would deadlock because ``add_file`` needs it.
-        # It bounds temporary-file fan-out to ``max_concurrent_uploads``.
-        async with self._uploader.get_download_semaphore():
-            return await service.add_drive_file(
-                notebook_id, document_id, title=title, wait=wait, wait_timeout=wait_timeout
+        async with self._uploader.transport_operation_scope("drive-upload") as epoch:
+            service = DriveImportService(
+                fetch=DriveFetcher(
+                    cookies_provider=lambda: self._uploader.live_cookies(epoch),
+                    authuser=self._uploader.authuser_value(),
+                ),
+                add_file=self.add_file,
             )
+            # Gate the whole download→upload op on a DEDICATED download semaphore;
+            # reusing the upload one would deadlock because ``add_file`` needs it.
+            # It bounds temporary-file fan-out to ``max_concurrent_uploads``.
+            async with self._uploader.get_download_semaphore():
+                return await service.add_drive_file(
+                    notebook_id, document_id, title=title, wait=wait, wait_timeout=wait_timeout
+                )
 
     async def delete(self, notebook_id: str, source_id: str) -> None:
         """Delete a source from a notebook.
@@ -753,13 +766,15 @@ class WebSourcesAPI(SourcesAPI):
         content_type: str,
     ) -> str:
         """Start a resumable upload session and get the upload URL."""
-        return await self._uploader.start_resumable_upload(
-            notebook_id,
-            filename,
-            file_size,
-            source_id,
-            content_type,
-        )
+        async with self._uploader.transport_operation_scope("upload-start") as epoch:
+            return await self._uploader.start_resumable_upload(
+                notebook_id,
+                filename,
+                file_size,
+                source_id,
+                content_type,
+                expected_epoch=epoch,
+            )
 
     async def _upload_file_streaming(
         self,
@@ -789,14 +804,16 @@ class WebSourcesAPI(SourcesAPI):
             total_bytes: Total bytes expected (required for the FD path; inferred
                 from the path for legacy direct-call tests).
         """
-        return await self._uploader.upload_file_streaming(
-            upload_url,
-            file_obj,
-            filename=filename,
-            on_progress=on_progress,
-            total_bytes=total_bytes,
-            logger=logger,
-        )
+        async with self._uploader.transport_operation_scope("upload-finalize") as epoch:
+            return await self._uploader.upload_file_streaming(
+                upload_url,
+                file_obj,
+                filename=filename,
+                on_progress=on_progress,
+                total_bytes=total_bytes,
+                logger=logger,
+                expected_epoch=epoch,
+            )
 
     async def _cancel_upload_session(self, upload_url: str, auth_route: str) -> None:
         """Best-effort POST a Scotty resumable-upload cancel command.
@@ -813,11 +830,13 @@ class WebSourcesAPI(SourcesAPI):
         needed at this layer. No base URL is passed: ``Origin``/``Referer`` are
         derived from the validated upload URL inside the pipeline.
         """
-        await self._uploader.cancel_upload_session(
-            upload_url,
-            auth_route,
-            logger=logger,
-        )
+        async with self._uploader.transport_operation_scope("upload-cancel") as epoch:
+            await self._uploader.cancel_upload_session(
+                upload_url,
+                auth_route,
+                logger=logger,
+                _expected_epoch=epoch,
+            )
 
 
 __all__ = ["WebSourcesAPI"]

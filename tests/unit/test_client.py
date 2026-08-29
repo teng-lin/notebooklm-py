@@ -317,6 +317,15 @@ class TestFromStorage:
 
 class TestRefreshAuth:
     @pytest.mark.asyncio
+    async def test_refresh_auth_before_open_preserves_legacy_error(self, mock_auth):
+        client = NotebookLMClient(mock_auth)
+
+        with pytest.raises(RuntimeError) as raised:
+            await client.refresh_auth()
+
+        assert str(raised.value) == "Client not initialized. Use 'async with' context."
+
+    @pytest.mark.asyncio
     async def test_refresh_auth_success(self, mock_auth, httpx_mock: HTTPXMock):
         """Test successful auth refresh."""
         client = NotebookLMClient(mock_auth)
@@ -369,7 +378,8 @@ class TestRefreshAuth:
         )
         calls: list[tuple[str, str]] = []
 
-        async def fake_update(*, auth, csrf: str, session_id: str) -> None:
+        async def fake_update(*, auth, csrf: str, session_id: str, expected_epoch: int) -> None:
+            assert expected_epoch == 1
             calls.append((csrf, session_id))
             auth.csrf_token = csrf
             auth.session_id = session_id
@@ -753,7 +763,7 @@ class TestSessionRefreshCallback:
             session_id="sid",
         )
 
-        async def mock_refresh():
+        async def mock_refresh(_epoch: int):
             pass
 
         core = build_client_shell_for_tests(auth, refresh_callback=mock_refresh)
@@ -786,7 +796,7 @@ class TestSessionRefreshCallback:
             session_id="sid",
         )
 
-        async def mock_refresh():
+        async def mock_refresh(_epoch: int):
             pass
 
         # With callback: lazy — lock is None until first refresh attempt.
@@ -810,6 +820,16 @@ def _activate_call_supervisor(core: NotebookLMClient) -> None:
     supervisor = core._collaborators.call_supervisor
     supervisor.set_bound_loop(asyncio.get_running_loop())
     supervisor.reset_after_open()
+    supervisor.prepare_generation(1)
+    supervisor.start_accepting(1)
+    kernel = core._collaborators.kernel
+    installed_client = kernel.http_client
+    if installed_client is not None:
+        install_http_client_for_test(kernel, None)
+    kernel.activate_epoch(1)
+    if installed_client is not None:
+        install_http_client_for_test(kernel, installed_client)
+    core._collaborators.auth_coord.activate_epoch(1)
 
 
 class TestRpcCallAutoRetry:
@@ -824,7 +844,7 @@ class TestRpcCallAutoRetry:
 
         refresh_called = []
 
-        async def mock_refresh():
+        async def mock_refresh(_epoch: int):
             refresh_called.append(True)
             return auth
 
@@ -876,7 +896,7 @@ class TestRpcCallAutoRetry:
 
         refresh_called = []
 
-        async def mock_refresh():
+        async def mock_refresh(_epoch: int):
             refresh_called.append(True)
             return auth
 
@@ -930,7 +950,7 @@ class TestRpcCallAutoRetry:
 
         refresh_called = []
 
-        async def mock_refresh():
+        async def mock_refresh(_epoch: int):
             refresh_called.append(True)
             return auth
 
@@ -1008,7 +1028,7 @@ class TestRpcCallAutoRetry:
 
         refresh_count = [0]
 
-        async def mock_refresh():
+        async def mock_refresh(_epoch: int):
             refresh_count[0] += 1
             return auth
 
@@ -1053,7 +1073,7 @@ class TestRpcCallAutoRetry:
 
         refresh_called = []
 
-        async def mock_refresh():
+        async def mock_refresh(_epoch: int):
             refresh_called.append(True)
             return auth
 
@@ -1092,7 +1112,7 @@ class TestRpcCallAutoRetry:
             session_id="sid",
         )
 
-        async def failing_refresh():
+        async def failing_refresh(_epoch: int):
             raise ValueError("Refresh failed - cookies expired")
 
         core = build_client_shell_for_tests(
@@ -1127,7 +1147,7 @@ class TestRpcCallAutoRetry:
 
         refresh_count = [0]
 
-        async def mock_refresh():
+        async def mock_refresh(_epoch: int):
             refresh_count[0] += 1
             await asyncio.sleep(0.05)  # Simulate slow refresh
             return auth
@@ -1189,7 +1209,7 @@ class TestRpcCallAutoRetry:
 
         refresh_called = []
 
-        async def mock_refresh():
+        async def mock_refresh(_epoch: int):
             refresh_called.append(True)
             return auth
 
@@ -1278,7 +1298,7 @@ class TestRpcCallAutoRetry:
             session_id="sid",
         )
 
-        async def failing_refresh():
+        async def failing_refresh(_epoch: int):
             raise ValueError("Refresh failed - cookies expired")
 
         core = build_client_shell_for_tests(

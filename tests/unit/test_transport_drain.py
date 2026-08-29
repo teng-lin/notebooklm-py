@@ -294,6 +294,30 @@ def test_token_is_frozen_dataclass() -> None:
         token.task = None  # type: ignore[misc]
 
 
+@pytest.mark.asyncio
+async def test_drain_hooks_attempt_siblings_before_reraising_process_exit() -> None:
+    tracker = TransportDrainTracker()
+    events: list[str] = []
+    process_exit = SystemExit("shutdown")
+
+    async def exits() -> None:
+        events.append("exit")
+        raise process_exit
+
+    async def sibling() -> None:
+        await asyncio.sleep(0)
+        events.append("sibling")
+
+    tracker.register_drain_hook("exit", exits)
+    tracker.register_drain_hook("sibling", sibling)
+
+    with pytest.raises(SystemExit, match="shutdown") as raised:
+        await tracker.run_drain_hooks()
+
+    assert raised.value is process_exit
+    assert events == ["exit", "sibling"]
+
+
 # ---------------------------------------------------------------------------
 # Cross-loop affinity guard on the admission entry-point (audit C1)
 # ---------------------------------------------------------------------------

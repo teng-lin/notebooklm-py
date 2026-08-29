@@ -62,7 +62,9 @@ def test_compose_client_internals_returns_client_internals() -> None:
 
     assert isinstance(internals, ClientInternals)
     assert holder.executor is internals.executor
-    assert holder.runtime_collaborators is internals.collaborators
+    with pytest.raises(RuntimeError, match="_runtime_collaborators is None"):
+        _ = holder.runtime_collaborators
+    assert internals.collaborators._lifecycle is None
     assert holder.transport is internals.executor._transport
     assert holder.chain_host._transport is holder.transport
     assert holder.chain_builder is not None
@@ -101,6 +103,26 @@ def test_invalid_max_concurrent_rpcs_rejected_before_zero_cap_semaphore() -> Non
 
     with pytest.raises(ValueError, match="max_concurrent_rpcs must be >= 1, got 0"):
         build_client_shell_for_tests(auth, max_concurrent_rpcs=0)
+
+
+@pytest.mark.parametrize(
+    "other_invalid",
+    [
+        {"rate_limit_max_retries": -1},
+        {"max_concurrent_uploads": 0},
+    ],
+)
+def test_max_concurrent_rpcs_keeps_phase_a_validation_precedence(
+    other_invalid: dict[str, int],
+) -> None:
+    with pytest.raises(ValueError) as raised:
+        NotebookLMClient(
+            _make_auth(),
+            max_concurrent_rpcs=0,
+            **other_invalid,  # type: ignore[arg-type]
+        )
+
+    assert str(raised.value) == "max_concurrent_rpcs must be >= 1, got 0"
 
 
 def test_prebuilt_client_composed_has_no_runtime_policy_configuration() -> None:
@@ -239,21 +261,10 @@ def test_compose_client_internals_preserves_late_binding_for_refresh_retry_delay
     assert internals.executor._refresh_retry_delay_provider() == 0.99
 
 
-def test_compose_client_internals_executor_timeout_provider_reads_lifecycle() -> None:
-    """The executor's ``timeout_provider`` reads from the live
-    ``ClientLifecycle._timeout`` collaborator attribute.
+def test_compose_client_internals_executor_timeout_provider_reads_config() -> None:
+    """The executor captures validated timeout without depending on root lifecycle."""
+    internals = compose_client_internals(auth=_make_auth(), timeout=99.0)
 
-    Pins the documented closure shape
-    ``timeout_provider=lambda: collaborators.lifecycle._timeout`` (plan
-    line 253). A lifecycle-side mutation must surface on the next executor
-    call without re-binding.
-    """
-    internals = compose_client_internals(auth=_make_auth())
-
-    initial = internals.collaborators.lifecycle._timeout
-    assert internals.executor._timeout_provider() == initial
-
-    internals.collaborators.lifecycle._timeout = 99.0
     assert internals.executor._timeout_provider() == 99.0
 
 
@@ -306,6 +317,7 @@ def test_client_composed_chain_host_binder_raises_on_double_bind() -> None:
 def test_client_composed_runtime_collaborators_binder_raises_on_double_bind() -> None:
     holder = ClientComposed()
     internals = compose_client_internals(auth=_make_auth(), composed=holder)
+    holder.bind_runtime_collaborators(internals.collaborators)
 
     with pytest.raises(RuntimeError, match="_runtime_collaborators already bound"):
         holder.bind_runtime_collaborators(internals.collaborators)
@@ -344,7 +356,6 @@ def test_client_shell_reads_composition_from_client_composed() -> None:
     assert client._rpc_executor._transport is client._composed.transport
     assert client._composed.chain_host._transport is client._composed.transport
     assert (
-        client._collaborators.call_supervisor.drain_tracker
-        is client._collaborators.drain_tracker
+        client._collaborators.call_supervisor.drain_tracker is client._collaborators.drain_tracker
     )
     assert client._composed.middlewares[0]._metrics is client._collaborators.metrics

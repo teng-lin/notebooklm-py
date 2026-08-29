@@ -8,14 +8,15 @@ from dataclasses import dataclass, field
 import pytest
 
 from notebooklm._runtime.lifecycle import ClientLifecycle, _ResourceState
-from notebooklm.types import ConnectionLimits
 
 
 @dataclass
 class _Supervisor:
     events: list[str] = field(default_factory=list)
     wait_gate: asyncio.Event | None = None
+    stop_error: BaseException | None = None
     wait_error: BaseException | None = None
+    hook_errors: list[BaseException] = field(default_factory=list)
     start_error: BaseException | None = None
     closing_error: BaseException | None = None
     mark_error: BaseException | None = None
@@ -36,6 +37,8 @@ class _Supervisor:
 
     async def stop_accepting(self, epoch: int) -> None:
         self.events.append(f"drain:{epoch}")
+        if self.stop_error is not None:
+            raise self.stop_error
 
     async def wait_for_idle(self, epoch: int, timeout: float | None) -> None:
         self.events.append(f"idle:{epoch}:{timeout}")
@@ -56,6 +59,8 @@ class _Supervisor:
 
     async def run_drain_hooks(self) -> None:
         self.events.append("hooks")
+        if self.hook_errors:
+            raise self.hook_errors.pop(0)
 
 
 @dataclass
@@ -111,15 +116,19 @@ def _lifecycle(
     participants: tuple[_Participant, ...] = (),
 ) -> ClientLifecycle:
     return ClientLifecycle(
-        timeout=1,
-        connect_timeout=1,
-        limits=ConnectionLimits(),
-        keepalive_interval=None,
-        keepalive_storage_path=None,
         supervisor=supervisor,
         transports=transports,
-        loop_participants=participants,
+        loop_participants=(supervisor, *participants),
     )
+
+
+async def _wait_for_event(events: list[str], prefix: str) -> None:
+    """Yield until a lifecycle phase records ``prefix`` or fail deterministically."""
+    for _ in range(100):
+        if any(event.startswith(prefix) for event in events):
+            return
+        await asyncio.sleep(0)
+    raise AssertionError(f"lifecycle event {prefix!r} was not observed: {events!r}")
 
 
 @pytest.mark.asyncio
@@ -219,6 +228,101 @@ async def test_open_commit_failure_rolls_back_releases_joiners_and_allows_reopen
 
 
 @pytest.mark.asyncio
+async def test_first_cancel_during_failed_open_waits_for_rollback_and_wins() -> None:
+    events: list[str] = []
+    rollback_gate = asyncio.Event()
+    original = LookupError("open failed")
+    lifecycle = _lifecycle(
+        _Supervisor(events=events),
+        _Transport(
+            "web",
+            events,
+            open_error=original,
+            prepare_gate=rollback_gate,
+        ),
+    )
+
+    owner = asyncio.create_task(lifecycle.open())
+    while "prepare:web" not in events:
+        await asyncio.sleep(0)
+    owner.cancel("first cancellation")
+    await asyncio.sleep(0)
+
+    assert not owner.done()
+    rollback_gate.set()
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await owner
+
+    assert raised.value.args == ("first cancellation",)
+    assert not lifecycle.is_open()
+    assert "close:web" in events
+
+
+@pytest.mark.asyncio
+async def test_recancel_during_failed_open_detaches_rollback_with_first_cancel() -> None:
+    events: list[str] = []
+    rollback_gate = asyncio.Event()
+    lifecycle = _lifecycle(
+        _Supervisor(events=events),
+        _Transport(
+            "web",
+            events,
+            open_error=LookupError("open failed"),
+            prepare_gate=rollback_gate,
+        ),
+    )
+
+    owner = asyncio.create_task(lifecycle.open())
+    while "prepare:web" not in events:
+        await asyncio.sleep(0)
+    owner.cancel("first cancellation")
+    await asyncio.sleep(0)
+    owner.cancel("second cancellation")
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await owner
+    assert raised.value.args == ("first cancellation",)
+
+    rollback_gate.set()
+    for _ in range(100):
+        if "close:web" in events:
+            break
+        await asyncio.sleep(0)
+    assert "close:web" in events
+    assert not lifecycle.is_open()
+
+
+@pytest.mark.asyncio
+async def test_cancel_immediately_after_prepare_before_commit_rolls_back() -> None:
+    events: list[str] = []
+    rollback_gate = asyncio.Event()
+    transport = _Transport("web", events, prepare_gate=rollback_gate)
+    lifecycle = _lifecycle(_Supervisor(events=events), transport)
+    owner: asyncio.Task[None] | None = None
+
+    async def cancel_before_commit(loop: asyncio.AbstractEventLoop, epoch: int) -> None:
+        await _Transport.open(transport, loop, epoch)
+        assert owner is not None
+        loop.call_soon(owner.cancel, "between prepare and commit")
+
+    transport.open = cancel_before_commit  # type: ignore[method-assign]
+    owner = asyncio.create_task(lifecycle.open())
+    while "prepare:web" not in events:
+        await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    assert not owner.done()
+    rollback_gate.set()
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await owner
+
+    assert raised.value.args == ("between prepare and commit",)
+    assert "accept:1" not in events
+    assert "close:web" in events
+    assert not lifecycle.is_open()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("waiter_action", ["close", "drain"])
 async def test_failed_open_is_re_raised_to_close_and_drain_waiters(waiter_action: str) -> None:
     events: list[str] = []
@@ -264,6 +368,36 @@ async def test_cancelling_non_owner_open_does_not_abort_owner() -> None:
     await owner
     assert lifecycle.is_open()
     assert transport.opens == [1]
+
+
+@pytest.mark.asyncio
+async def test_open_joiner_retries_after_owner_cancellation_rollback() -> None:
+    events: list[str] = []
+    gate = asyncio.Event()
+    transport = _Transport("web", events, open_gate=gate)
+    lifecycle = _lifecycle(_Supervisor(events=events), transport)
+
+    owner = asyncio.create_task(lifecycle.open())
+    while transport.opens != [1]:
+        await asyncio.sleep(0)
+    joiner = asyncio.create_task(lifecycle.open())
+    await asyncio.sleep(0)
+
+    owner.cancel("owner-aborted")
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await owner
+    assert raised.value.args == ("owner-aborted",)
+
+    # The aborted wave releases the non-owner only after rollback. It then
+    # claims a fresh generation instead of inheriting the owner's cancellation.
+    gate.set()
+    await joiner
+    assert lifecycle.is_open()
+    assert transport.opens == [1, 2]
+    assert events.count("closed:1") == 1
+    assert events.count("accept:2") == 1
+
+    await lifecycle.close(drain=False)
 
 
 @pytest.mark.asyncio
@@ -360,13 +494,13 @@ async def test_graceful_prephase_cancellation_releases_joiners_and_allows_retry(
 
 @pytest.mark.asyncio
 async def test_rollback_process_exit_beats_original_open_failure() -> None:
-    from notebooklm._runtime.lifecycle import _OpenOutcome, _OpenWave
+    from notebooklm._runtime.lifecycle import _capture, _OpenOutcome, _OpenWave
 
     process_exit = SystemExit("shutdown")
     supervisor = _Supervisor(mark_error=process_exit)
     lifecycle = _lifecycle(supervisor, _Transport("web", []))
     loop = asyncio.get_running_loop()
-    prepare_task = asyncio.create_task(asyncio.sleep(0))
+    prepare_task = asyncio.create_task(_capture(asyncio.sleep(0)))
     await prepare_task
     result = loop.create_future()
     wave = _OpenWave(loop, asyncio.current_task(), 1, prepare_task, result)
@@ -403,6 +537,183 @@ async def test_manual_drain_keeps_resources_open_and_close_waves_coalesce() -> N
 
 
 @pytest.mark.asyncio
+async def test_drain_racing_opening_waits_for_commit_then_drains_generation() -> None:
+    events: list[str] = []
+    open_gate = asyncio.Event()
+    supervisor = _Supervisor(events=events)
+    lifecycle = _lifecycle(
+        supervisor,
+        _Transport("web", events, open_gate=open_gate),
+    )
+
+    opening = asyncio.create_task(lifecycle.open())
+    await _wait_for_event(events, "open:web:1")
+    draining = asyncio.create_task(lifecycle.drain(timeout=0.5))
+    await asyncio.sleep(0)
+
+    assert lifecycle._state is _ResourceState.OPENING
+    assert not lifecycle.is_open()
+    assert not draining.done()
+    assert "drain:1" not in events
+
+    open_gate.set()
+    await asyncio.gather(opening, draining)
+
+    assert lifecycle._state is _ResourceState.OPEN
+    assert lifecycle.is_open()
+    assert events.index("accept:1") < events.index("drain:1")
+    assert events.index("drain:1") < events.index("idle:1:0.5")
+    await lifecycle.close(drain=False)
+
+
+@pytest.mark.asyncio
+async def test_drain_racing_manual_drain_waits_on_same_open_generation() -> None:
+    events: list[str] = []
+    idle_gate = asyncio.Event()
+    supervisor = _Supervisor(events=events, wait_gate=idle_gate)
+    lifecycle = _lifecycle(supervisor, _Transport("web", events))
+    await lifecycle.open()
+
+    first = asyncio.create_task(lifecycle.drain(timeout=0.5))
+    await _wait_for_event(events, "idle:1:0.5")
+    second = asyncio.create_task(lifecycle.drain(timeout=1.0))
+    await _wait_for_event(events, "idle:1:1.0")
+
+    assert lifecycle._state is _ResourceState.OPEN
+    assert lifecycle.is_open()
+    assert not first.done()
+    assert not second.done()
+
+    idle_gate.set()
+    await asyncio.gather(first, second)
+
+    assert lifecycle._state is _ResourceState.OPEN
+    assert lifecycle.is_open()
+    assert events.count("drain:1") == 2
+    await lifecycle.close(drain=False)
+
+
+@pytest.mark.asyncio
+async def test_drain_racing_closing_joins_close_wave_without_redraining() -> None:
+    events: list[str] = []
+    prepare_gate = asyncio.Event()
+    supervisor = _Supervisor(events=events)
+    lifecycle = _lifecycle(
+        supervisor,
+        _Transport("web", events, prepare_gate=prepare_gate),
+    )
+    await lifecycle.open()
+
+    closing = asyncio.create_task(lifecycle.close(drain=False))
+    await _wait_for_event(events, "prepare:web")
+    draining = asyncio.create_task(lifecycle.drain(timeout=0.5))
+    await asyncio.sleep(0)
+
+    assert lifecycle._state is _ResourceState.CLOSING
+    assert lifecycle.is_open()
+    assert not draining.done()
+    assert "drain:1" not in events
+    assert not any(event.startswith("idle:1:") for event in events)
+
+    prepare_gate.set()
+    await asyncio.gather(closing, draining)
+
+    assert lifecycle._state is _ResourceState.CLOSED
+    assert not lifecycle.is_open()
+    assert events.count("prepare:web") == 1
+    assert events.count("close:web") == 1
+
+
+@pytest.mark.asyncio
+async def test_resource_state_and_is_open_transitions_cover_every_phase() -> None:
+    events: list[str] = []
+    open_gate = asyncio.Event()
+    prepare_gate = asyncio.Event()
+    supervisor = _Supervisor(events=events)
+    transport = _Transport(
+        "web",
+        events,
+        open_gate=open_gate,
+        prepare_gate=prepare_gate,
+    )
+    lifecycle = _lifecycle(supervisor, transport)
+
+    assert lifecycle._state is _ResourceState.CLOSED
+    assert not lifecycle.is_open()
+
+    opening = asyncio.create_task(lifecycle.open())
+    await _wait_for_event(events, "open:web:1")
+    assert lifecycle._state is _ResourceState.OPENING
+    assert not lifecycle.is_open()
+
+    open_gate.set()
+    await opening
+    assert lifecycle._state is _ResourceState.OPEN
+    assert lifecycle.is_open()
+
+    closing = asyncio.create_task(lifecycle.close(drain=False))
+    await _wait_for_event(events, "prepare:web")
+    assert lifecycle._state is _ResourceState.CLOSING
+    assert lifecycle.is_open()
+
+    prepare_gate.set()
+    await closing
+    assert lifecycle._state is _ResourceState.CLOSED
+    assert not lifecycle.is_open()
+
+
+@pytest.mark.asyncio
+async def test_second_close_waiter_cancellation_aborts_hung_first_graceful_prephase() -> None:
+    events: list[str] = []
+    idle_gate = asyncio.Event()
+    supervisor = _Supervisor(events=events, wait_gate=idle_gate)
+    lifecycle = _lifecycle(supervisor, _Transport("web", events))
+    await lifecycle.open()
+
+    first = asyncio.create_task(lifecycle.close(drain_timeout=30.0))
+    await _wait_for_event(events, "idle:1:30.0")
+    second = asyncio.create_task(lifecycle.close(drain=False))
+    await asyncio.sleep(0)
+    second.cancel("second waiter cancelled")
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await second
+    await first
+
+    assert raised.value.args == ("second waiter cancelled",)
+    assert not idle_gate.is_set()
+    assert lifecycle._state is _ResourceState.CLOSED
+    assert not lifecycle.is_open()
+    assert events.count("prepare:web") == 1
+    assert events.count("close:web") == 1
+    assert events.count("closed:1") == 1
+
+
+@pytest.mark.asyncio
+async def test_invalid_graceful_timeout_precedes_hooks_and_forced_close_ignores_it() -> None:
+    events: list[str] = []
+    lifecycle = _lifecycle(_Supervisor(events=events), _Transport("web", events))
+    await lifecycle.open()
+
+    with pytest.raises(ValueError, match="timeout must be"):
+        await lifecycle.close(drain_timeout=-1)
+
+    assert lifecycle._state is _ResourceState.OPEN
+    assert lifecycle.is_open()
+    assert "drain:1" not in events
+    assert "hooks" not in events
+    assert "prepare:web" not in events
+
+    await lifecycle.close(drain=False, drain_timeout=-1)
+
+    assert lifecycle._state is _ResourceState.CLOSED
+    assert not lifecycle.is_open()
+    assert "drain:1" not in events
+    assert not any(event.startswith("idle:1:") for event in events)
+    assert events.count("hooks") == 1
+
+
+@pytest.mark.asyncio
 async def test_drain_timeout_precedes_ordered_transport_failures() -> None:
     events: list[str] = []
     timeout = TimeoutError("idle timed out")
@@ -422,6 +733,236 @@ async def test_drain_timeout_precedes_ordered_transport_failures() -> None:
     assert raised.value.__cause__ is first_error
     assert not lifecycle.is_open()
     assert "close:second" in events
+
+
+@pytest.mark.asyncio
+async def test_process_exit_precedes_graceful_timeout_and_teardown_failures() -> None:
+    events: list[str] = []
+    timeout = TimeoutError("idle timed out")
+    process_exit = SystemExit("shutdown")
+    lifecycle = _lifecycle(
+        _Supervisor(events=events, wait_error=timeout),
+        _Transport(
+            "web",
+            events,
+            prepare_error=ValueError("prepare failed"),
+            close_error=process_exit,
+        ),
+    )
+    await lifecycle.open()
+
+    with pytest.raises(SystemExit, match="shutdown") as raised:
+        await lifecycle.close(drain_timeout=0.01)
+
+    assert raised.value is process_exit
+    assert lifecycle._state is _ResourceState.CLOSED
+    assert not lifecycle.is_open()
+    assert "prepare:web" in events
+    assert "close:web" in events
+    assert "closed:1" in events
+
+
+@pytest.mark.asyncio
+async def test_close_phase_process_exit_waits_for_siblings_and_marks_closed() -> None:
+    events: list[str] = []
+    process_exit = KeyboardInterrupt("shutdown")
+    lifecycle = _lifecycle(
+        _Supervisor(events=events),
+        _Transport("first", events, prepare_error=process_exit),
+        _Transport("second", events),
+    )
+    await lifecycle.open()
+
+    with pytest.raises(KeyboardInterrupt, match="shutdown") as raised:
+        await lifecycle.close(drain=False)
+
+    assert raised.value is process_exit
+    assert not lifecycle.is_open()
+    assert "prepare:second" in events
+    assert "close:first" in events
+    assert "close:second" in events
+    assert "closed:1" in events
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["stop_accepting", "pre_drain_hook", "wait_for_idle"])
+@pytest.mark.parametrize("exit_type", [KeyboardInterrupt, SystemExit])
+async def test_graceful_prephase_process_exit_finishes_every_close_phase(
+    phase: str,
+    exit_type: type[BaseException],
+) -> None:
+    events: list[str] = []
+    process_exit = exit_type(f"{phase} exit")
+    supervisor = _Supervisor(events=events)
+    if phase == "stop_accepting":
+        supervisor.stop_error = process_exit
+    elif phase == "pre_drain_hook":
+        supervisor.hook_errors.append(process_exit)
+    else:
+        supervisor.wait_error = process_exit
+    lifecycle = _lifecycle(supervisor, _Transport("web", events))
+    await lifecycle.open()
+
+    with pytest.raises(exit_type, match=f"{phase} exit") as raised:
+        await lifecycle.close()
+
+    assert raised.value is process_exit
+    assert not lifecycle.is_open()
+    assert events.count("hooks") == 2
+    assert any(event.startswith("idle:1:") for event in events)
+    assert events.index("drain:1") < events.index("hooks")
+    assert events.index("hooks") < next(
+        index for index, event in enumerate(events) if event.startswith("idle:1:")
+    )
+    assert next(
+        index for index, event in enumerate(events) if event.startswith("idle:1:")
+    ) < events.index("closing:1")
+    assert events.index("closing:1") < events.index("prepare:web")
+    assert events.index("prepare:web") < events.index("hooks", events.index("hooks") + 1)
+    assert events.index("hooks", events.index("hooks") + 1) < events.index("close:web")
+    assert events.index("close:web") < events.index("closed:1")
+
+
+@pytest.mark.asyncio
+async def test_observed_retained_process_exit_is_not_forwarded_to_loop_handler() -> None:
+    events: list[str] = []
+    process_exit = SystemExit("observed exit")
+    lifecycle = _lifecycle(
+        _Supervisor(events=events),
+        _Transport("web", events, prepare_error=process_exit),
+    )
+    await lifecycle.open()
+    loop = asyncio.get_running_loop()
+    contexts: list[dict[str, object]] = []
+    prior_handler = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, context: contexts.append(context))
+    try:
+        with pytest.raises(SystemExit, match="observed exit") as raised:
+            await lifecycle.close(drain=False)
+        await asyncio.sleep(0)
+    finally:
+        loop.set_exception_handler(prior_handler)
+
+    assert raised.value is process_exit
+    assert contexts == []
+
+
+@pytest.mark.asyncio
+async def test_detached_retained_process_exit_is_forwarded_to_loop_handler_once() -> None:
+    events: list[str] = []
+    prepare_gate = asyncio.Event()
+    process_exit = SystemExit("detached exit")
+    lifecycle = _lifecycle(
+        _Supervisor(events=events),
+        _Transport(
+            "web",
+            events,
+            prepare_gate=prepare_gate,
+            prepare_error=process_exit,
+        ),
+    )
+    await lifecycle.open()
+    loop = asyncio.get_running_loop()
+    contexts: list[dict[str, object]] = []
+    prior_handler = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, context: contexts.append(context))
+    try:
+        closing = asyncio.create_task(lifecycle.close(drain=False))
+        while "prepare:web" not in events:
+            await asyncio.sleep(0)
+        closing.cancel("first cancellation")
+        await asyncio.sleep(0)
+        closing.cancel("second cancellation")
+        with pytest.raises(asyncio.CancelledError) as raised:
+            await closing
+        assert raised.value.args == ("first cancellation",)
+
+        prepare_gate.set()
+        for _ in range(100):
+            if not lifecycle.is_open() and contexts:
+                break
+            await asyncio.sleep(0)
+    finally:
+        loop.set_exception_handler(prior_handler)
+
+    assert not lifecycle.is_open()
+    assert len(contexts) == 1
+    assert contexts[0]["exception"] is process_exit
+
+
+@pytest.mark.asyncio
+async def test_observer_suppresses_handler_after_another_waiter_detaches() -> None:
+    events: list[str] = []
+    prepare_gate = asyncio.Event()
+    process_exit = SystemExit("shared exit")
+    lifecycle = _lifecycle(
+        _Supervisor(events=events),
+        _Transport(
+            "web",
+            events,
+            prepare_gate=prepare_gate,
+            prepare_error=process_exit,
+        ),
+    )
+    await lifecycle.open()
+    loop = asyncio.get_running_loop()
+    contexts: list[dict[str, object]] = []
+    prior_handler = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, context: contexts.append(context))
+    try:
+        detached = asyncio.create_task(lifecycle.close(drain=False))
+        while "prepare:web" not in events:
+            await asyncio.sleep(0)
+        detached.cancel("first cancellation")
+        await asyncio.sleep(0)
+        detached.cancel("second cancellation")
+        with pytest.raises(asyncio.CancelledError):
+            await detached
+
+        loop.call_soon(prepare_gate.set)
+        with pytest.raises(SystemExit, match="shared exit") as raised:
+            await lifecycle.close(drain=False)
+        await asyncio.sleep(0)
+    finally:
+        loop.set_exception_handler(prior_handler)
+
+    assert raised.value is process_exit
+    assert contexts == []
+
+
+@pytest.mark.asyncio
+async def test_eager_task_factory_never_runs_wave_code_under_state_lock() -> None:
+    events: list[str] = []
+    supervisor = _Supervisor(events=events)
+    transport = _Transport("web", events)
+    lifecycle = _lifecycle(supervisor, transport)
+
+    original_open = transport.open
+    original_prepare = transport.prepare_close
+
+    async def checked_open(loop: asyncio.AbstractEventLoop, epoch: int) -> None:
+        assert not lifecycle._state_lock.locked()
+        await original_open(loop, epoch)
+
+    async def checked_prepare() -> None:
+        assert not lifecycle._state_lock.locked()
+        await original_prepare()
+
+    transport.open = checked_open  # type: ignore[method-assign]
+    transport.prepare_close = checked_prepare  # type: ignore[method-assign]
+    loop = asyncio.get_running_loop()
+    eager_factory = getattr(asyncio, "eager_task_factory", None)
+    if eager_factory is None:
+        pytest.skip("asyncio eager task factory requires Python 3.12+")
+    prior_factory = loop.get_task_factory()
+    loop.set_task_factory(eager_factory)
+    try:
+        await lifecycle.open()
+        await lifecycle.close(drain=False)
+    finally:
+        loop.set_task_factory(prior_factory)
+
+    assert not lifecycle.is_open()
 
 
 @pytest.mark.asyncio
@@ -486,7 +1027,61 @@ async def test_close_reopen_allocates_a_new_resource_epoch() -> None:
     await lifecycle.open()
 
     assert transport.opens == [1, 2]
-    assert lifecycle.current_epoch == 2
+    assert lifecycle._epoch == 2
+
+
+@pytest.mark.parametrize("resource_state", ["open", "opening", "closing"])
+@pytest.mark.parametrize("action", ["open", "drain", "close"])
+def test_foreign_loop_public_lifecycle_calls_are_rejected(
+    resource_state: str,
+    action: str,
+) -> None:
+    events: list[str] = []
+    supervisor = _Supervisor(events=events)
+    transport = _Transport("web", events)
+    lifecycle = _lifecycle(supervisor, transport)
+    owner_loop = asyncio.new_event_loop()
+    foreign_loop = asyncio.new_event_loop()
+    gate: asyncio.Event | None = None
+    active_wave: asyncio.Task[None] | None = None
+
+    async def invoke() -> None:
+        if action == "open":
+            await lifecycle.open()
+        elif action == "drain":
+            await lifecycle.drain()
+        else:
+            await lifecycle.close(drain=False)
+
+    try:
+        if resource_state == "open":
+            owner_loop.run_until_complete(lifecycle.open())
+            assert lifecycle._state is _ResourceState.OPEN
+        elif resource_state == "opening":
+            gate = asyncio.Event()
+            transport.open_gate = gate
+            active_wave = owner_loop.create_task(lifecycle.open())
+            owner_loop.run_until_complete(_wait_for_event(events, "open:web:1"))
+            assert lifecycle._state is _ResourceState.OPENING
+        else:
+            owner_loop.run_until_complete(lifecycle.open())
+            gate = asyncio.Event()
+            transport.prepare_gate = gate
+            active_wave = owner_loop.create_task(lifecycle.close(drain=False))
+            owner_loop.run_until_complete(_wait_for_event(events, "prepare:web"))
+            assert lifecycle._state is _ResourceState.CLOSING
+
+        with pytest.raises(RuntimeError, match="different event loop"):
+            foreign_loop.run_until_complete(invoke())
+    finally:
+        if gate is not None:
+            gate.set()
+        if active_wave is not None:
+            owner_loop.run_until_complete(active_wave)
+        if lifecycle.is_open():
+            owner_loop.run_until_complete(lifecycle.close(drain=False))
+        foreign_loop.close()
+        owner_loop.close()
 
 
 @pytest.mark.asyncio

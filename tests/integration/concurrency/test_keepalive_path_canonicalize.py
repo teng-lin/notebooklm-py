@@ -3,7 +3,7 @@
 Regression test for keepalive-path canonicalization: the rotation throttle keys the
 in-process dedupe (``_LAST_POKE_ATTEMPT_MONOTONIC`` /
 ``_POKE_LOCKS_BY_LOOP``) by the raw ``Path`` object stored on
-``ClientLifecycle._keepalive_storage_path``. Without canonicalization, two
+``WebTransportLifecycle._keepalive_storage_path``. Without canonicalization, two
 clients constructed with different syntactic representations of the SAME
 underlying file (e.g. a relative path and the absolute path; a
 ``~``-prefixed path and the expanded one; with or without a symlink
@@ -17,7 +17,7 @@ path before it reaches ``_get_poke_lock`` / ``_try_claim_rotation`` /
 ``_rotation_lock_path``.
 
 The public ``storage_path`` argument type (``str | Path | None``) is preserved;
-only the internal-derived ``ClientLifecycle._keepalive_storage_path`` is
+only the internal-derived ``WebTransportLifecycle._keepalive_storage_path`` is
 canonicalized.
 """
 
@@ -83,8 +83,8 @@ def test_relative_and_absolute_paths_share_dedupe_key(
     # The dedupe key seen by ``_get_poke_lock`` / ``_try_claim_rotation``
     # / ``_rotation_lock_path`` is exactly this internal field. Both must
     # be canonical and equal.
-    rel_keepalive = client_rel._collaborators.lifecycle._keepalive_storage_path
-    abs_keepalive = client_abs._collaborators.lifecycle._keepalive_storage_path
+    rel_keepalive = client_rel._collaborators.web_transport._keepalive_storage_path
+    abs_keepalive = client_abs._collaborators.web_transport._keepalive_storage_path
     assert rel_keepalive is not None
     assert abs_keepalive is not None
     assert rel_keepalive == abs_keepalive, (
@@ -132,8 +132,8 @@ def test_tilde_path_is_expanded(
     client_tilde = NotebookLMClient(_auth_tokens, storage_path=tilde_path)
     client_expanded = NotebookLMClient(_auth_tokens, storage_path=expanded_path)
 
-    tilde_key = client_tilde._collaborators.lifecycle._keepalive_storage_path
-    expanded_key = client_expanded._collaborators.lifecycle._keepalive_storage_path
+    tilde_key = client_tilde._collaborators.web_transport._keepalive_storage_path
+    expanded_key = client_expanded._collaborators.web_transport._keepalive_storage_path
     assert tilde_key is not None
     assert expanded_key is not None
     assert tilde_key == expanded_key
@@ -175,7 +175,7 @@ def test_public_storage_path_argument_unchanged(
     assert client.auth.storage_path == raw_path
     assert client.auth.storage_path != target.resolve()
     # And the internal keepalive field IS canonicalized.
-    keepalive_key = client._collaborators.lifecycle._keepalive_storage_path
+    keepalive_key = client._collaborators.web_transport._keepalive_storage_path
     assert keepalive_key is not None
     assert keepalive_key == target.resolve()
     assert keepalive_key.is_absolute()
@@ -202,8 +202,8 @@ def test_symlink_is_resolved(tmp_path: Path, _auth_tokens: AuthTokens) -> None:
     client_link = NotebookLMClient(_auth_tokens, storage_path=link)
     client_target = NotebookLMClient(_auth_tokens, storage_path=target)
 
-    link_key = client_link._collaborators.lifecycle._keepalive_storage_path
-    target_key = client_target._collaborators.lifecycle._keepalive_storage_path
+    link_key = client_link._collaborators.web_transport._keepalive_storage_path
+    target_key = client_target._collaborators.web_transport._keepalive_storage_path
     assert link_key is not None
     assert target_key is not None
     assert link_key == target_key
@@ -213,4 +213,4 @@ def test_symlink_is_resolved(tmp_path: Path, _auth_tokens: AuthTokens) -> None:
 def test_none_storage_path_stays_none(_auth_tokens: AuthTokens) -> None:
     """Canonicalization must be a no-op when there is no storage path."""
     client = NotebookLMClient(_auth_tokens)
-    assert client._collaborators.lifecycle._keepalive_storage_path is None
+    assert client._collaborators.web_transport._keepalive_storage_path is None

@@ -123,11 +123,12 @@ async def test_stale_csrf_triggers_refresh_and_retry(
     # mutation is observable from outside the test. Using ``list[object]``
     # keeps the counter intent obvious without overspecifying element type.
     refresh_calls: list[object] = []
-    original_refresh = client.refresh_auth
+    original_refresh = client._refresh_auth_for_epoch
 
-    async def tracking_refresh() -> AuthTokens:
+    async def tracking_refresh(expected_epoch: int) -> AuthTokens:
         refresh_calls.append(None)
-        return await original_refresh()
+        client._collaborators.auth_coord.assert_epoch(expected_epoch)
+        return await original_refresh(expected_epoch=expected_epoch)
 
     # The refresh callback is reached through the auth coordinator; patch it on
     # the coordinator so the wrapper is what the retry loop sees.

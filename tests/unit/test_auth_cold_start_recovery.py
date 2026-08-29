@@ -6,7 +6,7 @@ import asyncio
 import json
 import re
 import sys
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -493,9 +493,8 @@ async def test_cold_and_live_l4_recovery_share_one_master_token_mint(tmp_path, m
         csrf_token="stale-csrf",
         session_id="stale-session",
         storage_path=storage,
+        cookie_jar=live_jar,
     )
-    kernel = MagicMock()
-    kernel.get_http_client.return_value.cookies = live_jar
     redirect = _LoginRedirectError("Authentication expired")
     validate = AsyncMock(return_value=None)
 
@@ -504,28 +503,47 @@ async def test_cold_and_live_l4_recovery_share_one_master_token_mint(tmp_path, m
         "_try_headless_reauth_result",
         AsyncMock(return_value=None),
     )
-    with _patch_mint(AsyncMock(side_effect=mint)) as mint_mock:
-        cold = asyncio.create_task(
-            recovery_mod.coalesced_cold_recovery(
-                storage_path=storage,
-                allow_headless=False,
-                validate=validate,
-                initial_error=redirect,
-            )
-        )
-        await started.wait()
-        live = asyncio.create_task(
-            session_mod._try_master_token_reauth(auth=live_auth, kernel=kernel)
-        )
-        await asyncio.sleep(0)
-        assert not live.done()
-        release.set()
-        cold_result, live_result = await asyncio.gather(cold, live)
+    async with NotebookLMClient(live_auth) as client:
+        collaborators = client._collaborators
+        lifecycle = collaborators.lifecycle
+        generation = collaborators.call_supervisor._current
+        expected_epoch = lifecycle._epoch
+        assert lifecycle.is_open()
+        assert expected_epoch > 0
+        assert generation is not None and generation.epoch == expected_epoch
+        assert collaborators.kernel._active_epoch == expected_epoch
 
-    mint_mock.assert_awaited_once()
-    assert live_result is True
-    assert cold_result.cookie_jar.get("SID", domain=".google.com") == "fresh"
-    assert live_jar.get("SID", domain=".google.com") == "fresh"
+        with _patch_mint(AsyncMock(side_effect=mint)) as mint_mock:
+            cold = asyncio.create_task(
+                recovery_mod.coalesced_cold_recovery(
+                    storage_path=storage,
+                    allow_headless=False,
+                    validate=validate,
+                    initial_error=redirect,
+                )
+            )
+            await started.wait()
+            live = asyncio.create_task(
+                session_mod._try_master_token_reauth(
+                    auth=live_auth,
+                    kernel=collaborators.kernel,
+                    expected_epoch=expected_epoch,
+                )
+            )
+            await asyncio.sleep(0)
+            assert not live.done()
+            release.set()
+            cold_result, live_result = await asyncio.gather(cold, live)
+
+        mint_mock.assert_awaited_once()
+        assert live_result is True
+        assert cold_result.cookie_jar.get("SID", domain=".google.com") == "fresh"
+        assert (
+            collaborators.kernel.get_http_client(expected_epoch=expected_epoch).cookies.get(
+                "SID", domain=".google.com"
+            )
+            == "fresh"
+        )
 
 
 @pytest.mark.asyncio

@@ -9,8 +9,10 @@ behaviour rather than tautologies.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from urllib.parse import SplitResult, urlsplit
@@ -358,46 +360,57 @@ class TestSourceLimitHint:
 # =============================================================================
 # SourceUploadPipeline collaborator/instance branches
 # =============================================================================
-class _Lifecycle:
+class _Supervisor:
     def __init__(self) -> None:
         self.asserted = 0
 
     def assert_bound_loop(self) -> None:
         self.asserted += 1
 
-
-class _Drain:
     def operation_scope(self, _label: str):
         @asynccontextmanager
-        async def scope() -> AsyncIterator[None]:
-            yield None
+        async def scope() -> AsyncIterator[SimpleNamespace]:
+            yield SimpleNamespace(epoch=1)
 
         return scope()
+
+    async def spawn_child(self, label: str, factory: Any) -> asyncio.Task[Any]:
+        return asyncio.create_task(factory(), name=label)
+
+
+class _Kernel:
+    def __init__(self) -> None:
+        self.jar = httpx.Cookies()
+        self.get_http_client = MagicMock(return_value=SimpleNamespace(cookies=self.jar))
 
 
 def _make_pipeline(
     *,
     kernel: Any | None = None,
     rpc: Any | None = None,
+    supervisor: Any | None = None,
     async_client_factory: Any | None = None,
     get_source_limit: Any | None = None,
 ) -> SourceUploadPipeline:
     auth = MagicMock()
     auth.authuser = 0
     auth.account_email = None
-    return SourceUploadPipeline(
+    pipeline = SourceUploadPipeline(
         rpc=rpc or MagicMock(),
-        drain=_Drain(),
-        lifecycle=_Lifecycle(),
-        kernel=kernel if kernel is not None else MagicMock(),
+        supervisor=supervisor or _Supervisor(),
+        kernel=kernel if kernel is not None else _Kernel(),
         auth=auth,
         async_client_factory=async_client_factory,
         get_source_limit=get_source_limit,
     )
+    pipeline._active_epoch = 1
+    pipeline._closing = False
+    pipeline._registry_lock = asyncio.Lock()
+    return pipeline
 
 
 def test_live_cookies_uses_get_http_client_when_kernel_lacks_cookies() -> None:
-    """A kernel without a ``cookies`` attribute falls back to get_http_client (521)."""
+    """The active upload epoch is forwarded to the kernel cookie owner."""
 
     class KernelWithHttpClient:
         # No ``cookies`` attribute on purpose.
@@ -409,34 +422,32 @@ def test_live_cookies_uses_get_http_client_when_kernel_lacks_cookies() -> None:
 
     kernel = KernelWithHttpClient()
     pipeline = _make_pipeline(kernel=kernel)
-    cookies = pipeline._live_cookies()
+    cookies = pipeline._live_cookies(1)
     assert cookies is kernel._jar
-    kernel.get_http_client.assert_called_once()
+    kernel.get_http_client.assert_called_once_with(expected_epoch=1)
 
 
-def test_live_cookies_returns_empty_jar_when_cookies_is_none() -> None:
-    """A kernel exposing ``cookies = None`` and no http client returns an empty jar (522-523)."""
+def test_live_cookies_rejects_a_retired_epoch_before_reading_kernel() -> None:
+    """A stale workflow cannot read cookies from the replacement transport."""
+    kernel = _Kernel()
+    pipeline = _make_pipeline(kernel=kernel)
 
-    class KernelNoCookies:
-        cookies = None
-        get_http_client = None
+    with pytest.raises(RuntimeError, match="upload generation is retired"):
+        pipeline._live_cookies(2)
 
-    pipeline = _make_pipeline(kernel=KernelNoCookies())
-    cookies = pipeline._live_cookies()
-    assert isinstance(cookies, httpx.Cookies)
-    assert len(cookies.jar) == 0
+    kernel.get_http_client.assert_not_called()
 
 
-def test_live_cookies_casts_non_cookies_truthy_value() -> None:
-    """A truthy non-Cookies ``cookies`` with no http client is cast through ."""
-    sentinel = object()
+def test_live_cookies_rejects_after_transport_is_fenced() -> None:
+    """Close fencing prevents cookie reads even when the epoch scalar matches."""
+    kernel = _Kernel()
+    pipeline = _make_pipeline(kernel=kernel)
+    pipeline._closing = True
 
-    class KernelOddCookies:
-        cookies = sentinel
-        get_http_client = None
+    with pytest.raises(RuntimeError, match="upload generation is retired"):
+        pipeline._live_cookies(1)
 
-    pipeline = _make_pipeline(kernel=KernelOddCookies())
-    assert pipeline._live_cookies() is sentinel
+    kernel.get_http_client.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -453,25 +464,24 @@ async def test_list_sources_delegates_to_lister() -> None:
 @pytest.mark.asyncio
 async def test_add_file_asserts_bound_loop_before_work(tmp_path) -> None:
     """``add_file`` calls assert_bound_loop before touching the semaphore (605-607)."""
-    lifecycle = _Lifecycle()
+    supervisor = _Supervisor()
     auth = MagicMock()
     auth.authuser = 0
     auth.account_email = None
     pipeline = SourceUploadPipeline(
         rpc=MagicMock(),
-        drain=_Drain(),
-        lifecycle=lifecycle,
+        supervisor=supervisor,
         kernel=MagicMock(),
         auth=auth,
     )
     # Make assert_bound_loop the thing that fails so we prove it runs first,
     # before any filesystem resolution or semaphore allocation.
-    lifecycle.assert_bound_loop = MagicMock(  # type: ignore[method-assign]
+    supervisor.assert_bound_loop = MagicMock(  # type: ignore[method-assign]
         side_effect=RuntimeError("wrong loop")
     )
     with pytest.raises(RuntimeError, match="wrong loop"):
         await pipeline.add_file("nb_1", str(tmp_path / "missing.pdf"))
-    lifecycle.assert_bound_loop.assert_called_once()
+    supervisor.assert_bound_loop.assert_called_once()
 
 
 def test_get_download_semaphore_asserts_bound_loop_before_building(tmp_path) -> None:
@@ -481,19 +491,19 @@ def test_get_download_semaphore_asserts_bound_loop_before_building(tmp_path) -> 
     ``add_drive_file`` must fail before it can acquire the lazy semaphore on the
     wrong loop (or start a fetch), mirroring ``add_file``'s upload-seam guard.
     """
-    lifecycle = _Lifecycle()
+    supervisor = _Supervisor()
     auth = MagicMock()
     auth.authuser = 0
     auth.account_email = None
     pipeline = SourceUploadPipeline(
-        rpc=MagicMock(), drain=_Drain(), lifecycle=lifecycle, kernel=MagicMock(), auth=auth
+        rpc=MagicMock(), supervisor=supervisor, kernel=MagicMock(), auth=auth
     )
-    lifecycle.assert_bound_loop = MagicMock(  # type: ignore[method-assign]
+    supervisor.assert_bound_loop = MagicMock(  # type: ignore[method-assign]
         side_effect=RuntimeError("wrong loop")
     )
     with pytest.raises(RuntimeError, match="wrong loop"):
         pipeline.get_download_semaphore()
-    lifecycle.assert_bound_loop.assert_called_once()
+    supervisor.assert_bound_loop.assert_called_once()
     # The primitive was NOT built — the guard fired first.
     assert pipeline._download_semaphore is None
 
@@ -810,22 +820,19 @@ class TestUploadFileStreamingFileObject:
 
         captured: dict[str, Any] = {}
 
-        @asynccontextmanager
-        async def _factory_cm(**_kwargs: Any):
-            client = AsyncMock()
+        client = AsyncMock()
 
-            async def _post(url: str, headers: dict[str, str], content: Any) -> Any:
-                captured["headers"] = headers
-                chunks = [chunk async for chunk in content]
-                captured["body"] = b"".join(chunks)
-                resp = MagicMock()
-                resp.raise_for_status = MagicMock()
-                return resp
+        async def _post(url: str, headers: dict[str, str], content: Any) -> Any:
+            captured["headers"] = headers
+            chunks = [chunk async for chunk in content]
+            captured["body"] = b"".join(chunks)
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            return resp
 
-            client.post = _post
-            yield client
-
-        factory = MagicMock(side_effect=lambda **kw: _factory_cm(**kw))
+        client.post = _post
+        client.__aenter__.return_value = client
+        factory = MagicMock(return_value=client)
         pipeline = _make_pipeline(async_client_factory=factory)
         upload_url = "https://notebooklm.google.com/upload/_/?upload_id=session"
         try:
@@ -835,6 +842,7 @@ class TestUploadFileStreamingFileObject:
                 filename="payload.bin",
                 on_progress=_on_progress,
                 total_bytes=len(data),
+                expected_epoch=1,
             )
         finally:
             if not file_obj.closed:
@@ -857,21 +865,18 @@ class TestUploadFileStreamingFileObject:
         file_obj = open(src, "rb")  # noqa: SIM115
         captured: dict[str, Any] = {}
 
-        @asynccontextmanager
-        async def _factory_cm(**_kwargs: Any):
-            client = AsyncMock()
+        client = AsyncMock()
 
-            async def _post(url: str, headers: dict[str, str], content: Any) -> Any:
-                chunks = [chunk async for chunk in content]
-                captured["body"] = b"".join(chunks)
-                resp = MagicMock()
-                resp.raise_for_status = MagicMock()
-                return resp
+        async def _post(url: str, headers: dict[str, str], content: Any) -> Any:
+            chunks = [chunk async for chunk in content]
+            captured["body"] = b"".join(chunks)
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            return resp
 
-            client.post = _post
-            yield client
-
-        factory = MagicMock(side_effect=lambda **kw: _factory_cm(**kw))
+        client.post = _post
+        client.__aenter__.return_value = client
+        factory = MagicMock(return_value=client)
         pipeline = _make_pipeline(async_client_factory=factory)
         try:
             await pipeline.upload_file_streaming(
@@ -879,6 +884,7 @@ class TestUploadFileStreamingFileObject:
                 file_obj,
                 filename="payload.bin",
                 total_bytes=len(data),
+                expected_epoch=1,
             )
         finally:
             if not file_obj.closed:
@@ -901,5 +907,6 @@ class TestUploadFileStreamingFileObject:
                 "http://insecure.example.com/?upload_id=x",  # not https -> validation fails
                 file_obj,
                 filename="payload.bin",
+                expected_epoch=1,
             )
         assert file_obj.closed

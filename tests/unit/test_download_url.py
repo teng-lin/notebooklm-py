@@ -39,8 +39,7 @@ def mock_artifacts_api():
     note_service = MagicMock(spec=NoteService)
     api = WebArtifactsAPI(
         rpc=mock_core,
-        drain=mock_core,
-        lifecycle=mock_core,
+        supervisor=mock_core,
         notebooks=MagicMock(),
         mind_maps=mind_maps,
         note_service=note_service,

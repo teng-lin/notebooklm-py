@@ -129,12 +129,14 @@ def _install_zero_retry_seam(
         client = _zero_retry_client(*args, **kwargs)
         if refresh_calls is not None:
 
-            async def _stub_refresh() -> AuthTokens:
+            async def _stub_refresh(expected_epoch: int) -> AuthTokens:
                 refresh_calls.append(None)
+                client._collaborators.auth_coord.assert_epoch(expected_epoch)
                 client._auth.csrf_token = "refreshed_csrf_token"
                 client._collaborators.auth_coord.update_auth_headers(
                     auth=client._auth,
                     kernel=client._collaborators.kernel,
+                    expected_epoch=expected_epoch,
                 )
                 return client._auth
 

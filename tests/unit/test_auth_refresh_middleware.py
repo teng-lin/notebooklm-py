@@ -52,13 +52,25 @@ from notebooklm._web.transport.errors import (
     TransportServerError,
 )
 from notebooklm._web.transport.middleware.auth_refresh import AuthRefreshMiddleware
-from notebooklm._web.transport.middleware.context import RPC_CONTEXT_RETRY_DEADLINE
+from notebooklm._web.transport.middleware.context import (
+    RPC_CONTEXT_RESOURCE_EPOCH,
+    RPC_CONTEXT_RETRY_DEADLINE,
+)
 from notebooklm._web.transport.middleware.core import NextCall, RpcRequest, RpcResponse, build_chain
 from notebooklm._web.transport.request_types import AuthSnapshot
 
 # The ``tests/`` package chain is complete; ``tests._fixtures.chain`` is the
 # fully-qualified import path documented in ``tests/_fixtures/__init__.py``.
-from tests._fixtures.chain import make_request
+from tests._fixtures.chain import make_request as make_chain_request
+
+_TEST_EPOCH = 7
+
+
+def _epoch_request(**overrides: Any) -> RpcRequest:
+    """Build a request carrying the admission lease's resource generation."""
+    context = dict(overrides.pop("context", {}))
+    context[RPC_CONTEXT_RESOURCE_EPOCH] = _TEST_EPOCH
+    return make_chain_request(context=context, **overrides)
 
 
 def _recording_sleep() -> tuple[Callable[[float], Awaitable[None]], list[float]]:
@@ -94,17 +106,18 @@ def _scripted_terminal(behaviors: list[Any]) -> tuple[NextCall, list[RpcRequest]
 
 def _make_middleware(
     *,
-    refresh_callable: Callable[[], Awaitable[None]] | None = None,
+    refresh_callable: Callable[[int], Awaitable[None]] | None = None,
     refresh_enabled: bool = True,
     refresh_retry_delay: float = 0.0,
     sleep: Callable[[float], Awaitable[object]] | None = None,
     metrics: ClientMetrics | None = None,
-    snapshot_provider: Callable[[], Awaitable[AuthSnapshot]] | None = None,
+    snapshot_provider: Callable[[int], Awaitable[AuthSnapshot]] | None = None,
     auth_error_predicate: Callable[[Exception], bool] = is_auth_error,
 ) -> AuthRefreshMiddleware:
     """Build an ``AuthRefreshMiddleware`` with sensible defaults for tests."""
 
-    async def _noop_refresh() -> None:
+    async def _noop_refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         return None
 
     return AuthRefreshMiddleware(
@@ -130,7 +143,7 @@ async def test_passes_through_on_success() -> None:
     middleware = _make_middleware()
     chain = build_chain([middleware], terminal)
 
-    response = await chain(make_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
+    response = await chain(_epoch_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
 
     assert len(calls) == 1
     assert response.response.status_code == 200
@@ -151,7 +164,7 @@ async def test_passes_through_on_rate_limited() -> None:
     chain = build_chain([middleware], terminal)
 
     with pytest.raises(TransportRateLimited) as excinfo:
-        await chain(make_request())
+        await chain(_epoch_request())
 
     assert excinfo.value is boom
     assert len(calls) == 1
@@ -170,7 +183,7 @@ async def test_passes_through_on_server_error() -> None:
     chain = build_chain([middleware], terminal)
 
     with pytest.raises(TransportServerError) as excinfo:
-        await chain(make_request())
+        await chain(_epoch_request())
 
     assert excinfo.value is boom
     assert len(calls) == 1
@@ -188,14 +201,15 @@ async def test_passes_through_when_refresh_callback_not_configured() -> None:
     terminal, calls = _scripted_terminal([boom])
     refresh_calls: list[None] = []
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         refresh_calls.append(None)
 
     middleware = _make_middleware(refresh_callable=refresh, refresh_enabled=False)
     chain = build_chain([middleware], terminal)
 
     with pytest.raises(httpx.HTTPStatusError) as excinfo:
-        await chain(make_request())
+        await chain(_epoch_request())
 
     assert excinfo.value is boom
     assert len(calls) == 1
@@ -209,14 +223,15 @@ async def test_passes_through_on_non_auth_http_error() -> None:
     terminal, calls = _scripted_terminal([boom])
     refresh_calls: list[None] = []
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         refresh_calls.append(None)
 
     middleware = _make_middleware(refresh_callable=refresh)
     chain = build_chain([middleware], terminal)
 
     with pytest.raises(httpx.HTTPStatusError) as excinfo:
-        await chain(make_request())
+        await chain(_epoch_request())
 
     assert excinfo.value is boom
     assert refresh_calls == []
@@ -237,7 +252,8 @@ async def test_passes_through_when_disable_internal_retries_set() -> None:
     terminal, calls = _scripted_terminal([boom])
     refresh_calls: list[None] = []
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         refresh_calls.append(None)
 
     middleware = _make_middleware(refresh_callable=refresh)
@@ -245,7 +261,7 @@ async def test_passes_through_when_disable_internal_retries_set() -> None:
 
     with pytest.raises(httpx.HTTPStatusError) as excinfo:
         await chain(
-            make_request(
+            _epoch_request(
                 context={
                     "log_label": "RPC CREATE_NOTEBOOK",
                     "disable_internal_retries": True,
@@ -269,14 +285,15 @@ async def test_refreshes_when_disable_internal_retries_falsy() -> None:
     terminal, calls = _scripted_terminal([boom, httpx.Response(200, content=b"retry-ok")])
     refresh_calls: list[None] = []
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         refresh_calls.append(None)
 
     middleware = _make_middleware(refresh_callable=refresh)
     chain = build_chain([middleware], terminal)
 
     response = await chain(
-        make_request(
+        _epoch_request(
             context={
                 "log_label": "RPC LIST_NOTEBOOKS",
                 "disable_internal_retries": False,
@@ -301,13 +318,14 @@ async def test_refreshes_and_retries_on_auth_error() -> None:
     terminal, calls = _scripted_terminal([boom, httpx.Response(200, content=b"retry-ok")])
     refresh_calls: list[None] = []
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         refresh_calls.append(None)
 
     middleware = _make_middleware(refresh_callable=refresh)
     chain = build_chain([middleware], terminal)
 
-    response = await chain(make_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
+    response = await chain(_epoch_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
 
     assert refresh_calls == [None]
     assert len(calls) == 2  # initial + retry
@@ -328,7 +346,8 @@ async def test_refresh_rebuilds_request_envelope_from_fresh_snapshot() -> None:
     )
     build_snapshots: list[AuthSnapshot] = []
 
-    async def snapshot_provider() -> AuthSnapshot:
+    async def snapshot_provider(expected_epoch: int) -> AuthSnapshot:
+        assert expected_epoch == _TEST_EPOCH
         return fresh_snapshot
 
     def build_request(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
@@ -341,7 +360,7 @@ async def test_refresh_rebuilds_request_envelope_from_fresh_snapshot() -> None:
 
     middleware = _make_middleware(snapshot_provider=snapshot_provider)
     chain = build_chain([middleware], terminal)
-    request = make_request(
+    request = _epoch_request(
         url="https://example.test/x?sid=SID_OLD",
         headers={"X-Goog-AuthUser": "0"},
         body=b"body-CSRF_OLD",
@@ -371,13 +390,14 @@ async def test_refreshes_on_all_auth_status_codes(status: int) -> None:
     terminal, calls = _scripted_terminal([boom, httpx.Response(200, content=b"ok")])
     refresh_calls: list[None] = []
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         refresh_calls.append(None)
 
     middleware = _make_middleware(refresh_callable=refresh)
     chain = build_chain([middleware], terminal)
 
-    response = await chain(make_request())
+    response = await chain(_epoch_request())
 
     assert refresh_calls == [None]
     assert len(calls) == 2
@@ -394,7 +414,7 @@ async def test_refresh_retry_delay_honored() -> None:
     middleware = _make_middleware(refresh_retry_delay=1.5, sleep=sleep)
     chain = build_chain([middleware], terminal)
 
-    await chain(make_request())
+    await chain(_epoch_request())
 
     assert slept == [1.5]
 
@@ -409,7 +429,7 @@ async def test_refresh_retry_delay_zero_skips_sleep() -> None:
     middleware = _make_middleware(refresh_retry_delay=0.0, sleep=sleep)
     chain = build_chain([middleware], terminal)
 
-    await chain(make_request())
+    await chain(_epoch_request())
 
     assert slept == []
 
@@ -443,7 +463,7 @@ async def test_refresh_retry_delay_clamped_by_inherited_deadline() -> None:
     middleware = _make_middleware(refresh_retry_delay=100.0, sleep=sleep)
     chain = build_chain([middleware], terminal)
 
-    await chain(make_request(context={RPC_CONTEXT_RETRY_DEADLINE: deadline}))
+    await chain(_epoch_request(context={RPC_CONTEXT_RETRY_DEADLINE: deadline}))
 
     # Clamped to the remaining 2s, not the full 100s.
     assert slept == [2.0]
@@ -461,14 +481,15 @@ async def test_refresh_failure_raises_transport_auth_expired() -> None:
     terminal, calls = _scripted_terminal([boom])  # only one attempt — refresh fails before retry
     refresh_error = RuntimeError("refresh blew up")
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         raise refresh_error
 
     middleware = _make_middleware(refresh_callable=refresh)
     chain = build_chain([middleware], terminal)
 
     with pytest.raises(TransportAuthExpired) as excinfo:
-        await chain(make_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
+        await chain(_epoch_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
 
     assert excinfo.value.original is boom
     assert excinfo.value.__cause__ is refresh_error
@@ -498,14 +519,15 @@ async def test_auth_refresh_skipped_when_context_marks_already_refreshed() -> No
     terminal, _calls = _scripted_terminal([boom])
     refresh_calls: list[None] = []
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         refresh_calls.append(None)
 
     middleware = _make_middleware(refresh_callable=refresh)
     chain = build_chain([middleware], terminal)
 
     # Simulate a chain re-entry where a prior leg already refreshed.
-    request = make_request(context={"auth_refreshed": True})
+    request = _epoch_request(context={"auth_refreshed": True})
 
     with pytest.raises(httpx.HTTPStatusError) as excinfo:
         await chain(request)
@@ -522,13 +544,14 @@ async def test_context_auth_refreshed_flag_set_after_first_refresh() -> None:
     boom = _auth_error()
     terminal, _calls = _scripted_terminal([boom, httpx.Response(200, content=b"ok")])
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         return None
 
     middleware = _make_middleware(refresh_callable=refresh)
     chain = build_chain([middleware], terminal)
 
-    request = make_request(context={"log_label": "RPC LIST_NOTEBOOKS"})
+    request = _epoch_request(context={"log_label": "RPC LIST_NOTEBOOKS"})
     await chain(request)
 
     assert request.context["auth_refreshed"] is True
@@ -551,14 +574,15 @@ async def test_second_auth_error_on_retry_propagates_no_recursion() -> None:
     terminal, calls = _scripted_terminal([first_boom, second_boom])
     refresh_calls: list[None] = []
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         refresh_calls.append(None)
 
     middleware = _make_middleware(refresh_callable=refresh)
     chain = build_chain([middleware], terminal)
 
     with pytest.raises(httpx.HTTPStatusError) as excinfo:
-        await chain(make_request())
+        await chain(_epoch_request())
 
     assert excinfo.value is second_boom
     assert len(refresh_calls) == 1  # exactly one refresh
@@ -577,13 +601,14 @@ async def test_metrics_increment_on_successful_refresh() -> None:
     terminal, _calls = _scripted_terminal([boom, httpx.Response(200, content=b"ok")])
     metrics = ClientMetrics()
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         return None
 
     middleware = _make_middleware(refresh_callable=refresh, metrics=metrics)
     chain = build_chain([middleware], terminal)
 
-    await chain(make_request())
+    await chain(_epoch_request())
 
     assert metrics.snapshot().rpc_auth_retries == 1
 
@@ -595,14 +620,15 @@ async def test_metrics_not_incremented_on_refresh_failure() -> None:
     terminal, _calls = _scripted_terminal([boom])
     metrics = ClientMetrics()
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         raise RuntimeError("refresh failed")
 
     middleware = _make_middleware(refresh_callable=refresh, metrics=metrics)
     chain = build_chain([middleware], terminal)
 
     with pytest.raises(TransportAuthExpired):
-        await chain(make_request())
+        await chain(_epoch_request())
 
     assert metrics.snapshot().rpc_auth_retries == 0
 
@@ -618,14 +644,15 @@ async def test_log_shape_on_successful_refresh(caplog: pytest.LogCaptureFixture)
     boom = _auth_error()
     terminal, _calls = _scripted_terminal([boom, httpx.Response(200, content=b"ok")])
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         return None
 
     middleware = _make_middleware(refresh_callable=refresh)
     chain = build_chain([middleware], terminal)
 
     with caplog.at_level("INFO", logger="notebooklm._core"):
-        await chain(make_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
+        await chain(_epoch_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
 
     info_msgs = [r.message for r in caplog.records if r.levelname == "INFO"]
     assert any(
@@ -640,7 +667,8 @@ async def test_log_shape_on_refresh_failure(caplog: pytest.LogCaptureFixture) ->
     boom = _auth_error()
     terminal, _calls = _scripted_terminal([boom])
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         raise RuntimeError("login expired")
 
     middleware = _make_middleware(refresh_callable=refresh)
@@ -650,7 +678,7 @@ async def test_log_shape_on_refresh_failure(caplog: pytest.LogCaptureFixture) ->
         caplog.at_level("WARNING", logger="notebooklm._core"),
         pytest.raises(TransportAuthExpired),
     ):
-        await chain(make_request())
+        await chain(_epoch_request())
 
     warn_msgs = [r.message for r in caplog.records if r.levelname == "WARNING"]
     assert any("Token refresh failed: login expired" in m for m in warn_msgs)
@@ -669,14 +697,15 @@ async def test_missing_log_label_falls_back_to_sentinel(
     boom = _auth_error()
     terminal, _calls = _scripted_terminal([boom, httpx.Response(200, content=b"ok")])
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         return None
 
     middleware = _make_middleware(refresh_callable=refresh)
     chain = build_chain([middleware], terminal)
 
     with caplog.at_level("INFO", logger="notebooklm._core"):
-        await chain(make_request(context={}))  # no log_label
+        await chain(_epoch_request(context={}))  # no log_label
 
     info_msgs = [r.message for r in caplog.records if r.levelname == "INFO"]
     assert any("<unknown-chain-call>" in m for m in info_msgs)
@@ -692,7 +721,8 @@ async def test_refresh_retry_delay_is_live_bound() -> None:
     """Mutating the delay between chain calls takes effect on the next call."""
     delay = [0.0]
 
-    async def refresh() -> None:
+    async def refresh(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         return None
 
     sleep, slept = _recording_sleep()
@@ -711,14 +741,14 @@ async def test_refresh_retry_delay_is_live_bound() -> None:
     chain = build_chain([middleware], terminal)
 
     # Call 1: delay=0 → no sleep.
-    await chain(make_request())
+    await chain(_epoch_request())
     assert slept == []
 
     # Mutate the delay.
     delay[0] = 0.5
 
     # Call 2: delay=0.5 → one sleep of 0.5.
-    await chain(make_request())
+    await chain(_epoch_request())
     assert slept == [0.5]
 
 
@@ -731,7 +761,8 @@ def test_middleware_satisfies_protocol() -> None:
     """``AuthRefreshMiddleware`` instance is assignable to ``Middleware``."""
     from notebooklm._web.transport.middleware.core import Middleware
 
-    async def _noop() -> None:
+    async def _noop(expected_epoch: int) -> None:
+        assert expected_epoch == _TEST_EPOCH
         return None
 
     middleware: Middleware = AuthRefreshMiddleware(

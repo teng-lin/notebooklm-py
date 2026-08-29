@@ -1,11 +1,13 @@
 """Unit tests for WebSourcesAPI file upload pipeline and YouTube detection."""
 
 import ast
+import asyncio
 import inspect
 import textwrap
 import warnings
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
@@ -62,8 +64,8 @@ def mock_core():
 
     def operation_scope(_label):
         @asynccontextmanager
-        async def scope() -> AsyncIterator[None]:
-            yield None
+        async def scope() -> AsyncIterator[SimpleNamespace]:
+            yield SimpleNamespace(epoch=1)
 
         return scope()
 
@@ -75,6 +77,11 @@ def mock_core():
     # misuse. MagicMock blocks ``assert``-prefixed attribute access as a
     # foot-gun guard, so the no-op stub must be installed explicitly.
     core.assert_bound_loop = MagicMock()
+
+    async def spawn_child(label, factory):
+        return asyncio.create_task(factory(), name=label)
+
+    core.spawn_child = spawn_child
     return core
 
 
@@ -91,13 +98,15 @@ def sources_api(mock_core):
     """
     uploader = SourceUploadPipeline(
         rpc=mock_core,
-        drain=mock_core,
-        lifecycle=mock_core,
+        supervisor=mock_core,
         kernel=mock_core.kernel,
         auth=mock_core.auth,
         record_upload_queue_wait=mock_core.record_upload_queue_wait,
     )
-    return WebSourcesAPI(mock_core, uploader=uploader)
+    uploader._active_epoch = 1
+    uploader._closing = False
+    uploader._registry_lock = asyncio.Lock()
+    return WebSourcesAPI(mock_core, supervisor=mock_core, uploader=uploader)
 
 
 @pytest.mark.asyncio

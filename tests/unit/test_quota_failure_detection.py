@@ -81,8 +81,7 @@ def _make_api(rpc_call: AsyncMock | None = None):
     notebooks.get_source_ids = AsyncMock(return_value=[])
     return WebArtifactsAPI(
         rpc=core,
-        drain=core,
-        lifecycle=core,
+        supervisor=core,
         notebooks=notebooks,
         mind_maps=mind_maps,
         note_service=note_service,

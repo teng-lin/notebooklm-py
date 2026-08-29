@@ -35,6 +35,7 @@ from notebooklm.auth import AuthTokens
 
 REFRESH_HTML = '"SNlM0e":"new_csrf_token_123" "FdrFJe":"new_session_id_456"'
 LOGIN_REDIRECT = "https://accounts.google.com/signin/v2/identifier"
+TEST_EPOCH = 1
 
 
 def _write_recovered_storage(path: Path) -> None:
@@ -76,8 +77,11 @@ class _RecordingKernel:
     def __init__(self, http_client: httpx.AsyncClient) -> None:
         self._http_client = http_client
 
+    def assert_epoch(self, expected_epoch: int) -> None:
+        assert expected_epoch == TEST_EPOCH
+
     def get_http_client(self, *, expected_epoch: int | None = None) -> httpx.AsyncClient:
-        assert expected_epoch is None
+        assert expected_epoch == TEST_EPOCH
         return self._http_client
 
 
@@ -87,13 +91,12 @@ class _RecordingLifecycle:
 
     async def save_cookies(
         self,
-        cookie_persistence: Any,
         jar: httpx.Cookies,
         path=None,
         *,
         expected_epoch: int | None = None,
     ) -> None:
-        assert expected_epoch is None
+        assert expected_epoch == TEST_EPOCH
         self.saved += 1
 
 
@@ -101,9 +104,8 @@ class _RecordingAuthCoord:
     def __init__(self) -> None:
         self.ops: list[str] = []
 
-    @property
-    def current_epoch(self) -> None:
-        return None
+    def assert_epoch(self, expected_epoch: int) -> None:
+        assert expected_epoch == TEST_EPOCH
 
     async def update_auth_tokens(
         self,
@@ -113,7 +115,7 @@ class _RecordingAuthCoord:
         session_id: str,
         expected_epoch: int | None = None,
     ) -> None:
-        assert expected_epoch is None
+        assert expected_epoch == TEST_EPOCH
         self.ops.append("update")
         auth.csrf_token = csrf
         auth.session_id = session_id
@@ -132,7 +134,7 @@ class _RecordingAuthCoord:
         account_email: str | None,
         expected_epoch: int | None = None,
     ) -> bool | None:
-        assert expected_epoch is None
+        assert expected_epoch == TEST_EPOCH
         return auth._replace_profile_session(
             target_cookie_jar=target_cookie_jar,
             source_cookie_jar=source_cookie_jar,
@@ -151,7 +153,7 @@ class _RecordingAuthCoord:
         kernel: Any,
         expected_epoch: int | None = None,
     ) -> None:
-        assert expected_epoch is None
+        assert expected_epoch == TEST_EPOCH
         self.ops.append("headers")
 
 
@@ -165,8 +167,9 @@ def _bundle(http_client: httpx.AsyncClient, auth: AuthTokens) -> dict[str, Any]:
         "auth": auth,
         "kernel": _RecordingKernel(http_client),
         "auth_coord": _RecordingAuthCoord(),
-        "lifecycle": _RecordingLifecycle(),
+        "web_transport": _RecordingLifecycle(),
         "cookie_persistence": _RecordingCookiePersistence(),
+        "expected_epoch": TEST_EPOCH,
     }
 
 
@@ -259,10 +262,13 @@ async def test_headless_reauth_uses_storage_specific_browser_profile(
         tmp_path / "B.json",
         tmp_path / "work" / "storage_state.json",
     ):
+        http_client = MagicMock()
+        http_client.cookies = httpx.Cookies()
         await session_mod._try_headless_reauth(
             auth=_auth(storage_path=storage_path),
-            kernel=MagicMock(),
+            kernel=_RecordingKernel(http_client),  # type: ignore[arg-type]
             allow_headless=True,
+            expected_epoch=TEST_EPOCH,
         )
 
     assert browser_profiles == [
@@ -341,12 +347,14 @@ async def test_concurrent_refreshes_coalesce_to_one_browser(monkeypatch, tmp_pat
         auth = _auth(storage_path=storage)
         b = _bundle(http_client, auth)
 
-        async def _do_refresh() -> AuthTokens:
+        async def _do_refresh(expected_epoch: int) -> AuthTokens:
+            assert expected_epoch == TEST_EPOCH
             return await refresh_auth_session(allow_headless=True, **b)
 
         # Route N concurrent callers through ONE coordinator single-flight.
         coord = AuthRefreshCoordinator(refresh_callback=_do_refresh)
         coord.set_bound_loop(asyncio.get_running_loop())
-        await asyncio.gather(*[coord.await_refresh() for _ in range(8)])
+        coord.activate_epoch(TEST_EPOCH)
+        await asyncio.gather(*[coord.await_refresh(TEST_EPOCH) for _ in range(8)])
 
     assert drives["count"] == 1
