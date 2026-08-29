@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import traceback
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Any, cast
 
 import httpx
 import pytest
 from google.protobuf import empty_pb2
+from tests._helpers.android_supervisor import SupervisedAndroidTransport
 
 from notebooklm._android.artifacts import (
     CREATE_ARTIFACT_METHOD,
@@ -50,11 +54,23 @@ from notebooklm.types import Artifact, ArtifactType
 _PROTO = artifacts_pb2
 
 
+@dataclass(frozen=True)
+class _Lease:
+    epoch: int = 7
+
+
 class FakeSession:
     def __init__(self, responses: dict[str, Any] | None = None) -> None:
         self.responses = responses or {}
         self.calls: list[tuple[str, Any, dict[str, Any]]] = []
         self.errors: dict[str, BaseException] = {}
+        self.scopes: list[str] = []
+
+    @asynccontextmanager
+    async def operation_scope(self, label: str, **kwargs: Any) -> AsyncIterator[_Lease]:
+        assert not kwargs
+        self.scopes.append(label)
+        yield _Lease()
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
         self.calls.append((method, request, kwargs))
@@ -179,6 +195,22 @@ def _graph(
     return session, notebooks, mind_maps, assets, api
 
 
+def _supervised_graph(
+    transport: SupervisedAndroidTransport,
+    *,
+    notebooks: Any | None = None,
+    mind_maps: Any | None = None,
+    assets: Any | None = None,
+) -> AndroidArtifactsAPI:
+    return AndroidArtifactsAPI(
+        session=cast(AndroidSession, transport),
+        supervisor=transport.supervisor,
+        notebooks=cast(NotebookSourceIdProvider, notebooks or FakeNotebooks()),
+        mind_maps=cast(Any, mind_maps or FakeMindMaps()),
+        asset_downloads=cast(AndroidAssetDownloadService, assets or FakeAssets()),
+    )
+
+
 def test_adapter_is_concrete_and_requires_the_narrow_note_lister() -> None:
     assert AndroidArtifactsAPI.__abstractmethods__ == frozenset()
     assert ArtifactsAPI.__abstractmethods__
@@ -220,7 +252,11 @@ async def test_list_merges_studio_then_notes_and_filters_suggested() -> None:
     method, request, kwargs = session.calls[0]
     assert method == LIST_ARTIFACTS_METHOD
     assert request == _PROTO.ListArtifactsRequest(project_id="notebook-1")
-    assert kwargs == {"replay_safe": True, "response_type": _PROTO.ListArtifactsResponse}
+    assert kwargs == {
+        "replay_safe": True,
+        "response_type": _PROTO.ListArtifactsResponse,
+        "expected_epoch": 7,
+    }
 
 
 @pytest.mark.asyncio
@@ -390,7 +426,11 @@ async def test_generate_quiz_uses_exact_request_and_never_replays_mutation() -> 
     assert notebooks.calls == ["notebook-1"]
     method, request, kwargs = session.calls[0]
     assert method == CREATE_ARTIFACT_METHOD
-    assert kwargs == {"replay_safe": False, "response_type": _PROTO.CreateArtifactResponse}
+    assert kwargs == {
+        "replay_safe": False,
+        "response_type": _PROTO.CreateArtifactResponse,
+        "expected_epoch": 7,
+    }
     assert request.project_id == "notebook-1"
     assert request.artifact.type == _PROTO.ARTIFACT_TYPE_APP
     assert [source.source_id.id for source in request.artifact.sources] == [
@@ -529,9 +569,7 @@ async def test_infographic_selects_requested_or_latest_ready_representation() ->
         "https://lh3.googleusercontent.com/new?cap=2",
         "latest.png",
     )
-    assert await api.download_infographic(
-        "notebook-1", "old.png", artifact_id="old"
-    ) == "old.png"
+    assert await api.download_infographic("notebook-1", "old.png", artifact_id="old") == "old.png"
     assert assets.calls[-1][0].endswith("/old?cap=1")
 
 
@@ -616,7 +654,11 @@ async def test_rename_preflights_etag_updates_once_and_reads_back() -> None:
     assert request.artifact.title == "After"
     assert list(request.update_mask.paths) == ["title"]
     assert request.etag == "etag-before"
-    assert kwargs == {"replay_safe": False, "response_type": _PROTO.Artifact}
+    assert kwargs == {
+        "replay_safe": False,
+        "response_type": _PROTO.Artifact,
+        "expected_epoch": 7,
+    }
 
 
 @pytest.mark.asyncio
@@ -653,7 +695,232 @@ async def test_rename_rejects_wrong_bare_update_identity_without_replay() -> Non
     assert session.calls[1][2] == {
         "replay_safe": False,
         "response_type": _PROTO.Artifact,
+        "expected_epoch": 7,
     }
+
+
+@pytest.mark.asyncio
+async def test_rename_readback_finishes_during_graceful_drain_in_one_epoch() -> None:
+    transport = SupervisedAndroidTransport()
+    mutation_started = asyncio.Event()
+    mutation_release = asyncio.Event()
+
+    def _list(_request: Any, _kwargs: dict[str, Any]) -> Any:
+        lists = [call for call in transport.calls if call[0] == LIST_ARTIFACTS_METHOD]
+        artifact = (
+            _artifact("artifact-1", title="Before", etag="etag-before")
+            if len(lists) == 1
+            else _artifact("artifact-1", title="After", etag="etag-after")
+        )
+        return _PROTO.ListArtifactsResponse(artifacts=[artifact])
+
+    async def _update(_request: Any, _kwargs: dict[str, Any]) -> Any:
+        mutation_started.set()
+        await mutation_release.wait()
+        return _artifact("artifact-1", title="After")
+
+    transport.handlers[LIST_ARTIFACTS_METHOD] = _list
+    transport.handlers[UPDATE_ARTIFACT_METHOD] = _update
+    task = asyncio.create_task(
+        _supervised_graph(transport).rename("notebook-1", "artifact-1", "After")
+    )
+    await mutation_started.wait()
+
+    await transport.supervisor.stop_accepting(1)
+    mutation_release.set()
+
+    result = await task
+    assert result is not None and result.title == "After"
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in transport.calls] == [
+        1,
+        1,
+        1,
+    ]
+    await transport.supervisor.wait_for_idle(1, 0.1)
+
+
+@pytest.mark.asyncio
+async def test_rename_readback_cannot_cross_forced_close_and_reopen() -> None:
+    transport = SupervisedAndroidTransport()
+    mutation_started = asyncio.Event()
+    mutation_release = asyncio.Event()
+    transport.handlers[LIST_ARTIFACTS_METHOD] = _PROTO.ListArtifactsResponse(
+        artifacts=[_artifact("artifact-1")]
+    )
+
+    async def _update(_request: Any, _kwargs: dict[str, Any]) -> Any:
+        mutation_started.set()
+        await mutation_release.wait()
+        return _artifact("artifact-1", title="After")
+
+    transport.handlers[UPDATE_ARTIFACT_METHOD] = _update
+    task = asyncio.create_task(
+        _supervised_graph(transport).rename("notebook-1", "artifact-1", "After")
+    )
+    await mutation_started.wait()
+
+    old_generation = await transport.force_close_and_reopen()
+    mutation_release.set()
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await task
+    assert [method for method, _request, _kwargs in transport.calls] == [
+        LIST_ARTIFACTS_METHOD,
+        UPDATE_ARTIFACT_METHOD,
+    ]
+    assert old_generation.in_flight == 0
+
+
+class _SupervisedMindMapLister:
+    def __init__(self, transport: SupervisedAndroidTransport) -> None:
+        self._transport = transport
+
+    async def list_mind_map_artifacts(self, notebook_id: str) -> list[Artifact]:
+        return await self._transport.unary(
+            "notes.list_mind_map_artifacts",
+            notebook_id,
+            replay_safe=True,
+            response_type=list,
+        )
+
+
+@pytest.mark.asyncio
+async def test_aggregate_list_finishes_during_graceful_drain() -> None:
+    transport = SupervisedAndroidTransport()
+    studio_started = asyncio.Event()
+    studio_release = asyncio.Event()
+
+    async def _studio(_request: Any, _kwargs: dict[str, Any]) -> Any:
+        studio_started.set()
+        await studio_release.wait()
+        return _PROTO.ListArtifactsResponse(artifacts=[_artifact("studio")])
+
+    transport.handlers[LIST_ARTIFACTS_METHOD] = _studio
+    transport.handlers["notes.list_mind_map_artifacts"] = [_mind_map()]
+    api = _supervised_graph(transport, mind_maps=_SupervisedMindMapLister(transport))
+    task = asyncio.create_task(api.list("notebook-1"))
+    await studio_started.wait()
+
+    await transport.supervisor.stop_accepting(1)
+    studio_release.set()
+
+    assert [item.id for item in await task] == ["studio", "note-map"]
+    assert [method for method, _request, _kwargs in transport.calls] == [
+        LIST_ARTIFACTS_METHOD,
+        "notes.list_mind_map_artifacts",
+    ]
+    await transport.supervisor.wait_for_idle(1, 0.1)
+
+
+@pytest.mark.asyncio
+async def test_aggregate_list_cannot_cross_forced_close_and_reopen() -> None:
+    transport = SupervisedAndroidTransport()
+    studio_started = asyncio.Event()
+    studio_release = asyncio.Event()
+
+    async def _studio(_request: Any, _kwargs: dict[str, Any]) -> Any:
+        studio_started.set()
+        await studio_release.wait()
+        return _PROTO.ListArtifactsResponse(artifacts=[_artifact("studio")])
+
+    transport.handlers[LIST_ARTIFACTS_METHOD] = _studio
+    transport.handlers["notes.list_mind_map_artifacts"] = [_mind_map()]
+    api = _supervised_graph(transport, mind_maps=_SupervisedMindMapLister(transport))
+    task = asyncio.create_task(api.list("notebook-1"))
+    await studio_started.wait()
+
+    old_generation = await transport.force_close_and_reopen()
+    studio_release.set()
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await task
+    assert [method for method, _request, _kwargs in transport.calls] == [LIST_ARTIFACTS_METHOD]
+    assert old_generation.in_flight == 0
+
+
+class _SupervisedNotebookSources:
+    def __init__(self, transport: SupervisedAndroidTransport) -> None:
+        self._transport = transport
+
+    async def get_source_ids(self, notebook_id: str) -> list[str]:
+        return await self._transport.unary(
+            "notebooks.get_source_ids",
+            notebook_id,
+            replay_safe=True,
+            response_type=list,
+        )
+
+
+@pytest.mark.asyncio
+async def test_quiz_source_resolution_and_mutation_finish_during_graceful_drain() -> None:
+    transport = SupervisedAndroidTransport()
+    sources_started = asyncio.Event()
+    sources_release = asyncio.Event()
+
+    async def _sources(_request: Any, _kwargs: dict[str, Any]) -> Any:
+        sources_started.set()
+        await sources_release.wait()
+        return ["source-1"]
+
+    transport.handlers["notebooks.get_source_ids"] = _sources
+    transport.handlers[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact("quiz", type_code=_PROTO.ARTIFACT_TYPE_APP, variant=2)
+    )
+    api = _supervised_graph(transport, notebooks=_SupervisedNotebookSources(transport))
+    task = asyncio.create_task(api.generate_quiz("notebook-1"))
+    await sources_started.wait()
+
+    await transport.supervisor.stop_accepting(1)
+    sources_release.set()
+
+    assert (await task).task_id == "quiz"
+    assert [method for method, _request, _kwargs in transport.calls] == [
+        "notebooks.get_source_ids",
+        CREATE_ARTIFACT_METHOD,
+    ]
+    assert transport.calls[1][2]["expected_epoch"] == 1
+
+
+class _SupervisedAssets:
+    def __init__(self, transport: SupervisedAndroidTransport) -> None:
+        self._transport = transport
+
+    async def download_url(self, url: str, output_path: str) -> str:
+        return await self._transport.unary(
+            "assets.download_url",
+            (url, output_path),
+            replay_safe=False,
+            response_type=str,
+        )
+
+
+@pytest.mark.asyncio
+async def test_infographic_transfer_cannot_cross_forced_close_and_reopen() -> None:
+    transport = SupervisedAndroidTransport()
+    studio_started = asyncio.Event()
+    studio_release = asyncio.Event()
+
+    async def _studio(_request: Any, _kwargs: dict[str, Any]) -> Any:
+        studio_started.set()
+        await studio_release.wait()
+        return _PROTO.ListArtifactsResponse(
+            artifacts=[_artifact("image", url="https://lh3.googleusercontent.com/image.png")]
+        )
+
+    transport.handlers[LIST_ARTIFACTS_METHOD] = _studio
+    transport.handlers["assets.download_url"] = "out.png"
+    api = _supervised_graph(transport, assets=_SupervisedAssets(transport))
+    task = asyncio.create_task(api.download_infographic("notebook-1", "out.png"))
+    await studio_started.wait()
+
+    old_generation = await transport.force_close_and_reopen()
+    studio_release.set()
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await task
+    assert [method for method, _request, _kwargs in transport.calls] == [LIST_ARTIFACTS_METHOD]
+    assert old_generation.in_flight == 0
+
 
 @pytest.mark.asyncio
 async def test_report_suggestions_use_local_wire_overlay_and_preserve_defaulted_rows() -> None:
@@ -685,9 +952,7 @@ async def test_report_suggestions_use_local_wire_overlay_and_preserve_defaulted_
     )
     assert kwargs == {
         "replay_safe": True,
-        "response_type": (
-            report_suggestions_pb2.GenerateReportSuggestionsResponseWire
-        ),
+        "response_type": (report_suggestions_pb2.GenerateReportSuggestionsResponseWire),
     }
 
 
@@ -695,9 +960,7 @@ def test_artifact_source_uses_the_imported_exact_package_source_id() -> None:
     request = _PROTO.CreateArtifactRequest(
         project_id="notebook-1",
         artifact=_PROTO.Artifact(
-            sources=[
-                _PROTO.ArtifactSource(source_id=read_pb2.SourceId(id="source-1"))
-            ]
+            sources=[_PROTO.ArtifactSource(source_id=read_pb2.SourceId(id="source-1"))]
         ),
     )
     assert request.artifact.sources[0].source_id.id == "source-1"

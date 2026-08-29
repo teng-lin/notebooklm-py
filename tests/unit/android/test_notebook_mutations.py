@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import Counter
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Any, cast
 
 import pytest
 from google.protobuf.empty_pb2 import Empty
+from tests._helpers.android_supervisor import SupervisedAndroidTransport
 
 from notebooklm._android.notebooks import (
     COPY_PROJECT_METHOD,
@@ -41,6 +46,13 @@ class SequenceTransport:
     def __init__(self, outcomes: dict[str, list[Any]] | None = None) -> None:
         self.outcomes = outcomes or {}
         self.calls: list[tuple[str, Any, dict[str, Any]]] = []
+        self.scopes: list[str] = []
+
+    @asynccontextmanager
+    async def operation_scope(self, label: str, **kwargs: Any) -> AsyncIterator[_Lease]:
+        assert not kwargs
+        self.scopes.append(label)
+        yield _Lease()
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
         self.calls.append((method, request, kwargs))
@@ -48,6 +60,11 @@ class SequenceTransport:
         if isinstance(outcome, BaseException):
             raise outcome
         return outcome
+
+
+@dataclass(frozen=True)
+class _Lease:
+    epoch: int = 7
 
 
 def _project(project_id: str, title: str, *, emoji: str = "") -> read_pb2.Project:
@@ -69,9 +86,7 @@ async def test_create_keeps_base_baseline_then_single_send_workflow() -> None:
     transport = SequenceTransport(
         {
             LIST_RECENT_PROJECTS_METHOD: [
-                read_pb2.ListRecentlyViewedProjectsResponse(
-                    projects=[_project("old", "Existing")]
-                )
+                read_pb2.ListRecentlyViewedProjectsResponse(projects=[_project("old", "Existing")])
             ],
             CREATE_PROJECT_METHOD: [_project("new", "Created")],
         }
@@ -86,7 +101,11 @@ async def test_create_keeps_base_baseline_then_single_send_workflow() -> None:
     ]
     _, request, kwargs = transport.calls[1]
     assert request == notebooks_pb2.WireCreateProjectRequest(name="Created")
-    assert kwargs == {"replay_safe": False, "response_type": read_pb2.Project}
+    assert kwargs == {
+        "replay_safe": False,
+        "response_type": read_pb2.Project,
+        "expected_epoch": 7,
+    }
 
 
 @pytest.mark.asyncio
@@ -111,6 +130,62 @@ async def test_create_transport_loss_uses_base_probe_without_replaying_send() ->
         LIST_RECENT_PROJECTS_METHOD: 2,
         CREATE_PROJECT_METHOD: 1,
     }
+
+
+@pytest.mark.asyncio
+async def test_create_workflow_finishes_during_graceful_drain_in_one_epoch() -> None:
+    transport = SupervisedAndroidTransport()
+    create_started = asyncio.Event()
+    create_release = asyncio.Event()
+    transport.handlers[LIST_RECENT_PROJECTS_METHOD] = read_pb2.ListRecentlyViewedProjectsResponse()
+
+    async def _create(_request: Any, _kwargs: dict[str, Any]) -> Any:
+        create_started.set()
+        await create_release.wait()
+        return _project("new", "Created")
+
+    transport.handlers[CREATE_PROJECT_METHOD] = _create
+    task = asyncio.create_task(_api(cast(Any, transport)).create("Created"))
+    await create_started.wait()
+
+    await transport.supervisor.stop_accepting(1)
+    create_release.set()
+
+    assert (await task).id == "new"
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in transport.calls] == [1, 1]
+    await transport.supervisor.wait_for_idle(1, 0.1)
+
+
+@pytest.mark.asyncio
+async def test_create_probe_cannot_cross_forced_close_and_reopen() -> None:
+    transport = SupervisedAndroidTransport()
+    create_started = asyncio.Event()
+    create_release = asyncio.Event()
+    transport.handlers[LIST_RECENT_PROJECTS_METHOD] = read_pb2.ListRecentlyViewedProjectsResponse()
+
+    async def _lost_create(_request: Any, _kwargs: dict[str, Any]) -> Any:
+        create_started.set()
+        await create_release.wait()
+        return ServerError("lost", method_id=CREATE_PROJECT_METHOD, rpc_code=14)
+
+    transport.handlers[CREATE_PROJECT_METHOD] = _lost_create
+    task = asyncio.create_task(_api(cast(Any, transport)).create("Created"))
+    await create_started.wait()
+
+    old_generation = await transport.force_close_and_reopen()
+    create_release.set()
+
+    with pytest.raises(RPCError) as raised:
+        await task
+    assert isinstance(raised.value.__cause__, RuntimeError)
+    assert "retired resource generation" in str(raised.value.__cause__)
+    assert [method for method, _request, _kwargs in transport.calls] == [
+        LIST_RECENT_PROJECTS_METHOD,
+        CREATE_PROJECT_METHOD,
+    ]
+    assert old_generation.in_flight == 0
+    assert transport.supervisor._current is not None
+    assert transport.supervisor._current.epoch == 2
 
 
 @pytest.mark.asyncio
@@ -240,9 +315,7 @@ async def test_emoji_update_uses_live_verified_optional_tag_three(
 
 @pytest.mark.asyncio
 async def test_inherited_set_emoji_delegates_and_explicit_empty_value_stays_on_wire() -> None:
-    transport = SequenceTransport(
-        {MUTATE_PROJECT_METHOD: [_project("notebook-1", "Existing")]}
-    )
+    transport = SequenceTransport({MUTATE_PROJECT_METHOD: [_project("notebook-1", "Existing")]})
     api = _api(transport)
 
     updated = await api.set_emoji("notebook-1", "")
@@ -251,7 +324,10 @@ async def test_inherited_set_emoji_delegates_and_explicit_empty_value_stays_on_w
     assert updated.emoji == ""
     request = transport.calls[0][1]
     assert request.mutations[0].change_property.HasField("new_emoji")
-    assert request.SerializeToString(deterministic=True).hex() == "0a0a6e6f7465626f6f6b2d31120422021a00"
+    assert (
+        request.SerializeToString(deterministic=True).hex()
+        == "0a0a6e6f7465626f6f6b2d31120422021a00"
+    )
 
 
 @pytest.mark.asyncio

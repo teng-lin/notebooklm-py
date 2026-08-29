@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import builtins
 import logging
+from contextvars import ContextVar
 from typing import Any, NoReturn, cast
 
 from google.protobuf.empty_pb2 import Empty
@@ -52,14 +53,22 @@ def _reject(operation: str) -> NoReturn:
 
 
 class AndroidNotebooksAPI(NotebooksAPI):
-    """Read-only Android notebook adapter for the directly tested B1 graph."""
+    """Android notebook adapter for the directly tested B1/B2 graph."""
 
     _create_method_id = f"/{_SERVICE}/CreateProject"
 
     def __init__(self, session: AndroidSession, sources_api: NotebookSourceLister) -> None:
         """Bind the Android session and required structural source-listing collaborator."""
         self._transport = session
+        self._workflow_epoch: ContextVar[int | None] = ContextVar(
+            "android_notebook_workflow_epoch",
+            default=None,
+        )
         super().__init__(sources_api)
+
+    def _epoch_kwargs(self) -> dict[str, Any]:
+        epoch = self._workflow_epoch.get()
+        return {} if epoch is None else {"expected_epoch": epoch}
 
     async def _get_project_response(
         self,
@@ -76,6 +85,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
                 request,
                 replay_safe=True,
                 response_type=_PROTO.GetProjectResponse,
+                **self._epoch_kwargs(),
             )
         except RPCError as exc:
             mapped = map_get_project_error(notebook_id, exc, method_id=GET_PROJECT_METHOD)
@@ -95,6 +105,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
             request,
             replay_safe=True,
             response_type=_PROTO.ListRecentlyViewedProjectsResponse,
+            **self._epoch_kwargs(),
         )
         return [
             decode_project(project, method_id=LIST_RECENT_PROJECTS_METHOD)
@@ -132,7 +143,12 @@ class AndroidNotebooksAPI(NotebooksAPI):
 
     async def create(self, title: str) -> Notebook:
         """Create through the base transport-neutral probe workflow."""
-        return await super().create(title)
+        async with self._transport.operation_scope("notebooks.create") as lease:
+            token = self._workflow_epoch.set(lease.epoch)
+            try:
+                return await super().create(title)
+            finally:
+                self._workflow_epoch.reset(token)
 
     async def _send_create(self, title: str) -> Notebook:
         # evidence: docs/android/proto-evidence-ledger.md#b2-repository-local-wire-field-ledger
@@ -141,6 +157,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
             _WIRE.WireCreateProjectRequest(name=title),
             replay_safe=False,
             response_type=_PROTO.Project,
+            **self._epoch_kwargs(),
         )
         return decode_project(response, method_id=CREATE_PROJECT_METHOD)
 

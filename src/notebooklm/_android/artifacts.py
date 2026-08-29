@@ -115,13 +115,22 @@ class AndroidArtifactsAPI(ArtifactsAPI):
             asset_downloads=asset_downloads,
         )
 
-    async def _list_all_studio(self, notebook_id: str) -> builtins.list[Artifact]:
+    async def _list_all_studio(
+        self,
+        notebook_id: str,
+        *,
+        expected_epoch: int | None = None,
+    ) -> builtins.list[Artifact]:
         # evidence: docs/android/proto-evidence-ledger.md#b4-service-ledger
+        epoch_kwargs: dict[str, Any] = (
+            {} if expected_epoch is None else {"expected_epoch": expected_epoch}
+        )
         response = await self._transport.unary(
             LIST_ARTIFACTS_METHOD,
             _PROTO.ListArtifactsRequest(project_id=notebook_id),
             replay_safe=True,
             response_type=_PROTO.ListArtifactsResponse,
+            **epoch_kwargs,
         )
         return [
             artifact
@@ -133,12 +142,17 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         self,
         notebook_id: str,
         artifact_type: ArtifactType | None,
+        *,
+        expected_epoch: int | None = None,
     ) -> tuple[builtins.list[Artifact], builtins.list[Artifact] | None]:
         """Return the aggregate plus ``None`` when note availability is unknown."""
 
         studio = [
             artifact
-            for artifact in await self._list_all_studio(notebook_id)
+            for artifact in await self._list_all_studio(
+                notebook_id,
+                expected_epoch=expected_epoch,
+            )
             if _matches_type(artifact, artifact_type)
         ]
         if artifact_type is not None and artifact_type != ArtifactType.MIND_MAP:
@@ -163,8 +177,13 @@ class AndroidArtifactsAPI(ArtifactsAPI):
     ) -> builtins.list[Artifact]:
         """Merge ordered Studio artifacts with the required notes-owned mind maps."""
 
-        artifacts, _note_state = await self._list_with_note_state(notebook_id, artifact_type)
-        return artifacts
+        async with self._transport.operation_scope("artifacts.list") as lease:
+            artifacts, _note_state = await self._list_with_note_state(
+                notebook_id,
+                artifact_type,
+                expected_epoch=lease.epoch,
+            )
+            return artifacts
 
     async def _list_studio(
         self,
@@ -225,14 +244,29 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         source_ids: builtins.list[str],
         **options: Any,
     ) -> GenerationStatus:
+        return await self._send_create_artifact_at_epoch(
+            notebook_id,
+            family,
+            source_ids,
+            expected_epoch=None,
+            **options,
+        )
+
+    async def _send_create_artifact_at_epoch(
+        self,
+        notebook_id: str,
+        family: str,
+        source_ids: builtins.list[str],
+        *,
+        expected_epoch: int | None,
+        **options: Any,
+    ) -> GenerationStatus:
         if family != "quiz":
             _reject(f"artifacts.generate_{family}")
         if not source_ids:
             raise ValidationError("Quiz generation requires at least one source id")
         quantity = _validate_quiz_option(options.get("quantity"), QuizQuantity, "quantity")
-        difficulty = _validate_quiz_option(
-            options.get("difficulty"), QuizDifficulty, "difficulty"
-        )
+        difficulty = _validate_quiz_option(options.get("difficulty"), QuizDifficulty, "difficulty")
         instructions = options.get("instructions")
         if instructions is not None and not isinstance(instructions, str):
             raise ValidationError("instructions must be a string or None")
@@ -258,11 +292,15 @@ class AndroidArtifactsAPI(ArtifactsAPI):
                 ),
             ),
         )
+        epoch_kwargs: dict[str, Any] = (
+            {} if expected_epoch is None else {"expected_epoch": expected_epoch}
+        )
         response = await self._transport.unary(
             CREATE_ARTIFACT_METHOD,
             request,
             replay_safe=False,
             response_type=_PROTO.CreateArtifactResponse,
+            **epoch_kwargs,
         )
         artifact = decode_artifact(response.artifact, method_id=CREATE_ARTIFACT_METHOD)
         if artifact._artifact_type != ArtifactTypeCode.QUIZ.value or artifact._variant not in (
@@ -278,6 +316,33 @@ class AndroidArtifactsAPI(ArtifactsAPI):
             status=_status_from_code(artifact.status),
             url=artifact.url,
         )
+
+    async def generate_quiz(
+        self,
+        notebook_id: str,
+        source_ids: builtins.list[str] | None = None,
+        instructions: str | None = None,
+        quantity: QuizQuantity | None = None,
+        difficulty: QuizDifficulty | None = None,
+    ) -> GenerationStatus:
+        """Generate a quiz within one source-resolution and mutation lease."""
+        if source_ids == []:
+            raise ValidationError("Quiz generation requires at least one source id")
+        _validate_quiz_option(quantity, QuizQuantity, "quantity")
+        _validate_quiz_option(difficulty, QuizDifficulty, "difficulty")
+        if instructions is not None and not isinstance(instructions, str):
+            raise ValidationError("instructions must be a string or None")
+        async with self._transport.operation_scope("artifacts.generate_quiz") as lease:
+            resolved_source_ids = await self._resolve_source_ids(notebook_id, source_ids)
+            return await self._send_create_artifact_at_epoch(
+                notebook_id,
+                "quiz",
+                resolved_source_ids,
+                expected_epoch=lease.epoch,
+                instructions=instructions,
+                quantity=quantity,
+                difficulty=difficulty,
+            )
 
     async def generate_audio(
         self,
@@ -424,9 +489,43 @@ class AndroidArtifactsAPI(ArtifactsAPI):
     ) -> str:
         if artifacts_data is not None:
             _reject("artifacts.download_infographic(artifacts_data=...)")
+        adapter = self
+        result: str | None = None
+        failure: BaseException | None = None
+        try:
+            async with adapter._transport.operation_scope(
+                "artifacts.download_infographic"
+            ) as lease:
+                result = await adapter._download_infographic_at_epoch(
+                    notebook_id,
+                    output_path,
+                    artifact_id,
+                    expected_epoch=lease.epoch,
+                )
+        except BaseException as error:
+            failure = sanitize_escaping_exception(error)
+        finally:
+            del self, adapter
+        if failure is not None:
+            failure.__cause__ = None
+            failure.__context__ = None
+            raise failure from None
+        return cast(str, result)
+
+    async def _download_infographic_at_epoch(
+        self,
+        notebook_id: str,
+        output_path: str,
+        artifact_id: str | None,
+        *,
+        expected_epoch: int,
+    ) -> str:
         candidates = [
             item
-            for item in await self._list_all_studio(notebook_id)
+            for item in await self._list_all_studio(
+                notebook_id,
+                expected_epoch=expected_epoch,
+            )
             if item._artifact_type == ArtifactTypeCode.INFOGRAPHIC.value
             and item.status == ArtifactStatus.COMPLETED.value
         ]
@@ -557,10 +656,31 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         *,
         return_object: bool = True,
     ) -> Artifact | None:
+        async with self._transport.operation_scope("artifacts.rename") as lease:
+            return await self._rename_at_epoch(
+                notebook_id,
+                artifact_id,
+                new_title,
+                return_object=return_object,
+                expected_epoch=lease.epoch,
+            )
+
+    async def _rename_at_epoch(
+        self,
+        notebook_id: str,
+        artifact_id: str,
+        new_title: str,
+        *,
+        return_object: bool,
+        expected_epoch: int,
+    ) -> Artifact | None:
         before = next(
             (
                 artifact
-                for artifact in await self._list_all_studio(notebook_id)
+                for artifact in await self._list_all_studio(
+                    notebook_id,
+                    expected_epoch=expected_epoch,
+                )
                 if artifact.id == artifact_id
             ),
             None,
@@ -581,6 +701,7 @@ class AndroidArtifactsAPI(ArtifactsAPI):
             ),
             replay_safe=False,
             response_type=_PROTO.Artifact,
+            expected_epoch=expected_epoch,
         )
         updated = decode_artifact(response, method_id=UPDATE_ARTIFACT_METHOD)
         if updated.id != artifact_id:
@@ -591,7 +712,10 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         read_back = next(
             (
                 artifact
-                for artifact in await self._list_all_studio(notebook_id)
+                for artifact in await self._list_all_studio(
+                    notebook_id,
+                    expected_epoch=expected_epoch,
+                )
                 if artifact.id == artifact_id
             ),
             None,

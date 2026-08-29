@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import pytest
+from tests._helpers.android_supervisor import SupervisedAndroidTransport
 
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     read_pb2,
@@ -677,6 +678,58 @@ async def test_null_rename_echo_hydrates_exact_id_and_detects_miss() -> None:
     missing.handlers[GET_PROJECT_METHOD] = _project()
     with pytest.raises(SourceNotFoundError):
         await _api(missing).rename(NOTEBOOK_ID, SOURCE_A, "Requested", return_object=False)
+
+
+@pytest.mark.asyncio
+async def test_rename_readback_finishes_during_graceful_drain_in_one_epoch() -> None:
+    transport = SupervisedAndroidTransport()
+    mutation_started = asyncio.Event()
+    mutation_release = asyncio.Event()
+
+    async def _mutate(_request: Any, _kwargs: dict[str, Any]) -> Any:
+        mutation_started.set()
+        await mutation_release.wait()
+        return read_pb2.Source()
+
+    transport.handlers[MUTATE_SOURCE_METHOD] = _mutate
+    transport.handlers[GET_PROJECT_METHOD] = _project(_source(SOURCE_A, title="Hydrated"))
+    task = asyncio.create_task(_api(cast(Any, transport)).rename(NOTEBOOK_ID, SOURCE_A, "Hydrated"))
+    await mutation_started.wait()
+
+    await transport.supervisor.stop_accepting(1)
+    mutation_release.set()
+
+    result = await task
+    assert result is not None and result.title == "Hydrated"
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in transport.calls] == [1, 1]
+    await transport.supervisor.wait_for_idle(1, 0.1)
+
+
+@pytest.mark.asyncio
+async def test_rename_readback_cannot_cross_forced_close_and_reopen() -> None:
+    transport = SupervisedAndroidTransport()
+    mutation_started = asyncio.Event()
+    mutation_release = asyncio.Event()
+
+    async def _mutate(_request: Any, _kwargs: dict[str, Any]) -> Any:
+        mutation_started.set()
+        await mutation_release.wait()
+        return read_pb2.Source()
+
+    transport.handlers[MUTATE_SOURCE_METHOD] = _mutate
+    transport.handlers[GET_PROJECT_METHOD] = _project(_source(SOURCE_A))
+    task = asyncio.create_task(_api(cast(Any, transport)).rename(NOTEBOOK_ID, SOURCE_A, "Hydrated"))
+    await mutation_started.wait()
+
+    old_generation = await transport.force_close_and_reopen()
+    mutation_release.set()
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await task
+    assert [method for method, _request, _kwargs in transport.calls] == [MUTATE_SOURCE_METHOD]
+    assert old_generation.in_flight == 0
+    assert transport.supervisor._current is not None
+    assert transport.supervisor._current.epoch == 2
 
 
 @pytest.mark.asyncio

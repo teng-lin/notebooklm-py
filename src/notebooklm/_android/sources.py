@@ -141,8 +141,7 @@ def _unresolved_file_registration_error(filename: str) -> SourceAddError:
     error = SourceAddError(
         filename,
         message=(
-            "Android PDF upload tentative registration outcome is unconfirmed "
-            f"for {filename!r}."
+            f"Android PDF upload tentative registration outcome is unconfirmed for {filename!r}."
         ),
     )
     cast(Any, error).stage = "register"
@@ -299,9 +298,28 @@ class AndroidSourcesAPI(SourcesAPI):
             statuses, enum_type=SourceStatus, parameter="statuses"
         )
         type_filter = _snapshot_enum_filter(types, enum_type=SourceType, parameter="types")
+        return await self._list_project_sources(
+            notebook_id,
+            strict=strict,
+            status_filter=status_filter,
+            type_filter=type_filter,
+        )
+
+    async def _list_project_sources(
+        self,
+        notebook_id: str,
+        *,
+        strict: bool,
+        status_filter: frozenset[SourceStatus] | None,
+        type_filter: frozenset[SourceType] | None,
+        expected_epoch: int | None = None,
+    ) -> builtins.list[Source]:
         request = _READ_PROTO.GetProjectRequest(
             project_id=notebook_id,
             include_audio_overview_ids=True,
+        )
+        epoch_kwargs: dict[str, Any] = (
+            {} if expected_epoch is None else {"expected_epoch": expected_epoch}
         )
         try:
             response = await self._transport.unary(
@@ -309,6 +327,7 @@ class AndroidSourcesAPI(SourcesAPI):
                 request,
                 replay_safe=True,
                 response_type=_READ_PROTO.GetProjectResponse,
+                **epoch_kwargs,
             )
         except RPCError as exc:
             mapped = map_get_project_error(notebook_id, exc, method_id=GET_PROJECT_METHOD)
@@ -866,34 +885,49 @@ class AndroidSourcesAPI(SourcesAPI):
                 )
             ],
         )
-        try:
-            response = await self._transport.unary(
-                MUTATE_SOURCE_METHOD,
-                request,
-                replay_safe=False,
-                response_type=_READ_PROTO.Source,
-            )
-        except (AuthError, RateLimitError, ServerError, NetworkError):
-            raise
-        except RPCError as exc:
-            if exc.rpc_code != 5:
-                raise
-            raise SourceNotFoundError(source_id, method_id=MUTATE_SOURCE_METHOD) from None
-
-        echoed_id = response.source_id.id if response.HasField("source_id") else ""
-        if echoed_id:
-            if echoed_id != source_id:
-                raise DecodingError(
-                    "Android source mutation returned an unexpected source id",
-                    method_id=MUTATE_SOURCE_METHOD,
+        async with self._transport.operation_scope("source.rename") as lease:
+            try:
+                response = await self._transport.unary(
+                    MUTATE_SOURCE_METHOD,
+                    request,
+                    replay_safe=False,
+                    response_type=_READ_PROTO.Source,
+                    expected_epoch=lease.epoch,
                 )
-            if not return_object:
-                return None
-            return decode_source(response, method_id=MUTATE_SOURCE_METHOD)
-        source = await self.get_or_none(notebook_id, source_id)
-        if source is None:
-            raise SourceNotFoundError(source_id, method_id=MUTATE_SOURCE_METHOD)
-        return source if return_object else None
+            except (AuthError, RateLimitError, ServerError, NetworkError):
+                raise
+            except RPCError as exc:
+                if exc.rpc_code != 5:
+                    raise
+                raise SourceNotFoundError(source_id, method_id=MUTATE_SOURCE_METHOD) from None
+
+            echoed_id = response.source_id.id if response.HasField("source_id") else ""
+            if echoed_id:
+                if echoed_id != source_id:
+                    raise DecodingError(
+                        "Android source mutation returned an unexpected source id",
+                        method_id=MUTATE_SOURCE_METHOD,
+                    )
+                if not return_object:
+                    return None
+                return decode_source(response, method_id=MUTATE_SOURCE_METHOD)
+            source = next(
+                (
+                    item
+                    for item in await self._list_project_sources(
+                        notebook_id,
+                        strict=False,
+                        status_filter=None,
+                        type_filter=None,
+                        expected_epoch=lease.epoch,
+                    )
+                    if item.id == source_id
+                ),
+                None,
+            )
+            if source is None:
+                raise SourceNotFoundError(source_id, method_id=MUTATE_SOURCE_METHOD)
+            return source if return_object else None
 
     async def refresh(self, notebook_id: str, source_id: str) -> None:
         _reject("sources.refresh")

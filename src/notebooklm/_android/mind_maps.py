@@ -12,6 +12,7 @@ import builtins
 from typing import TYPE_CHECKING, Any, NoReturn, Protocol, cast
 
 from .._mind_maps_api import MindMapsAPI
+from .._runtime.call_supervisor import CallSupervisor
 from ..types import MindMap, MindMapKind
 from .errors import unsupported_operation
 
@@ -37,9 +38,16 @@ class _NoteBackedMindMapReader(Protocol):
 class AndroidMindMapsAPI(MindMapsAPI):
     """Android mind-map adapter composed from base-typed artifact/note APIs."""
 
-    def __init__(self, *, artifacts: ArtifactsAPI, notes: NotesAPI) -> None:
+    def __init__(
+        self,
+        *,
+        supervisor: CallSupervisor,
+        artifacts: ArtifactsAPI,
+        notes: NotesAPI,
+    ) -> None:
         """Retain the exact B4/B6 collaborators without selecting a frontend."""
         super().__init__(artifacts=artifacts, notes=notes)
+        self._supervisor = supervisor
         reader = getattr(notes, "_list_note_backed_mind_maps", None)
         if reader is None or not callable(reader):
             raise TypeError("notes must provide the private typed note-backed mind-map read seam")
@@ -48,6 +56,11 @@ class AndroidMindMapsAPI(MindMapsAPI):
     async def list_note_backed(self, notebook_id: str) -> builtins.list[MindMap]:
         """Return B6's exact-kind typed projection without reading raw Web rows."""
         return await self._note_backed_reader._list_note_backed_mind_maps(notebook_id)
+
+    async def list(self, notebook_id: str) -> builtins.list[MindMap]:
+        """List both backings within one supervisor generation."""
+        async with self._supervisor.operation_scope("mind_maps.list"):
+            return await super().list(notebook_id)
 
     async def _send_rename_note_backed(
         self,
@@ -74,13 +87,14 @@ class AndroidMindMapsAPI(MindMapsAPI):
         """
         if kind is not MindMapKind.INTERACTIVE or return_object:
             _reject("mind_maps.rename")
-        return await super().rename(
-            notebook_id,
-            mind_map_id,
-            new_title,
-            kind=kind,
-            return_object=False,
-        )
+        async with self._supervisor.operation_scope("mind_maps.rename"):
+            return await super().rename(
+                notebook_id,
+                mind_map_id,
+                new_title,
+                kind=kind,
+                return_object=False,
+            )
 
     async def generate(
         self,

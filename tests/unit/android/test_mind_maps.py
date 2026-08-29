@@ -2,16 +2,38 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from typing import Any, cast
 from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
+from tests._helpers.android_supervisor import SupervisedAndroidTransport
 
 from notebooklm._android.mind_maps import AndroidMindMapsAPI
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._notes import NotesAPI
+from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm.exceptions import MindMapNotFoundError, UnsupportedOperationError
 from notebooklm.types import Artifact, MindMap, MindMapKind
+
+
+@dataclass(frozen=True)
+class _Lease:
+    epoch: int = 7
+
+
+class _Supervisor:
+    def __init__(self) -> None:
+        self.scopes: list[str] = []
+
+    @asynccontextmanager
+    async def operation_scope(self, label: str, **kwargs: Any) -> AsyncIterator[_Lease]:
+        assert not kwargs
+        self.scopes.append(label)
+        yield _Lease()
 
 
 def _interactive_artifact(artifact_id: str = "interactive") -> Artifact:
@@ -43,7 +65,11 @@ def _graph(
     artifact_api.delete = AsyncMock()
 
     return (
-        AndroidMindMapsAPI(artifacts=artifact_api, notes=notes),
+        AndroidMindMapsAPI(
+            supervisor=cast(CallSupervisor, _Supervisor()),
+            artifacts=artifact_api,
+            notes=notes,
+        ),
         artifact_api,
         notes,
     )
@@ -65,6 +91,7 @@ def test_direct_graph_requires_and_retains_exact_base_collaborators() -> None:
     api, artifacts, notes = _graph()
     parameters = inspect.signature(AndroidMindMapsAPI).parameters
 
+    assert parameters["supervisor"].default is inspect.Parameter.empty
     assert parameters["artifacts"].default is inspect.Parameter.empty
     assert parameters["notes"].default is inspect.Parameter.empty
     assert api._artifacts is artifacts
@@ -76,7 +103,11 @@ def test_direct_graph_requires_private_typed_notes_read_seam() -> None:
     notes = MagicMock(spec=NotesAPI)
 
     with pytest.raises(TypeError, match="private typed note-backed"):
-        AndroidMindMapsAPI(artifacts=artifacts, notes=notes)
+        AndroidMindMapsAPI(
+            supervisor=cast(CallSupervisor, _Supervisor()),
+            artifacts=artifacts,
+            notes=notes,
+        )
 
 
 def _note_backed_mind_map(map_id: str = "note-map") -> MindMap:
@@ -286,3 +317,171 @@ async def test_note_backed_delete_delegates_to_notes_kind_safe_delete() -> None:
     notes.list_mind_maps.assert_not_awaited()
     artifacts.list.assert_not_awaited()
     artifacts.delete.assert_not_awaited()
+
+
+class _SupervisedNotes:
+    def __init__(self, transport: SupervisedAndroidTransport) -> None:
+        self._transport = transport
+
+    async def _list_note_backed_mind_maps(self, notebook_id: str) -> list[MindMap]:
+        return await self._transport.unary(
+            "notes.list_note_backed",
+            notebook_id,
+            replay_safe=True,
+            response_type=list,
+        )
+
+
+class _SupervisedArtifacts:
+    def __init__(self, transport: SupervisedAndroidTransport) -> None:
+        self._transport = transport
+
+    async def list(self, notebook_id: str, artifact_type: Any = None) -> list[Artifact]:
+        return await self._transport.unary(
+            "artifacts.list",
+            (notebook_id, artifact_type),
+            replay_safe=True,
+            response_type=list,
+        )
+
+    async def rename(
+        self,
+        notebook_id: str,
+        mind_map_id: str,
+        new_title: str,
+        *,
+        return_object: bool,
+    ) -> None:
+        await self._transport.unary(
+            "artifacts.rename",
+            (notebook_id, mind_map_id, new_title, return_object),
+            replay_safe=False,
+            response_type=type(None),
+        )
+
+
+def _supervised_api(transport: SupervisedAndroidTransport) -> AndroidMindMapsAPI:
+    return AndroidMindMapsAPI(
+        supervisor=transport.supervisor,
+        artifacts=cast(Any, _SupervisedArtifacts(transport)),
+        notes=cast(Any, _SupervisedNotes(transport)),
+    )
+
+
+@pytest.mark.asyncio
+async def test_aggregate_list_finishes_during_graceful_drain() -> None:
+    transport = SupervisedAndroidTransport()
+    notes_started = asyncio.Event()
+    notes_release = asyncio.Event()
+
+    async def _notes(_request: Any, _kwargs: dict[str, Any]) -> Any:
+        notes_started.set()
+        await notes_release.wait()
+        return [_note_backed_mind_map()]
+
+    transport.handlers["notes.list_note_backed"] = _notes
+    transport.handlers["artifacts.list"] = [_interactive_artifact()]
+    task = asyncio.create_task(_supervised_api(transport).list("notebook-1"))
+    await notes_started.wait()
+
+    await transport.supervisor.stop_accepting(1)
+    notes_release.set()
+
+    assert [item.id for item in await task] == ["note-map", "interactive"]
+    assert [method for method, _request, _kwargs in transport.calls] == [
+        "notes.list_note_backed",
+        "artifacts.list",
+    ]
+    await transport.supervisor.wait_for_idle(1, 0.1)
+
+
+@pytest.mark.asyncio
+async def test_aggregate_list_cannot_cross_forced_close_and_reopen() -> None:
+    transport = SupervisedAndroidTransport()
+    notes_started = asyncio.Event()
+    notes_release = asyncio.Event()
+
+    async def _notes(_request: Any, _kwargs: dict[str, Any]) -> Any:
+        notes_started.set()
+        await notes_release.wait()
+        return [_note_backed_mind_map()]
+
+    transport.handlers["notes.list_note_backed"] = _notes
+    transport.handlers["artifacts.list"] = [_interactive_artifact()]
+    task = asyncio.create_task(_supervised_api(transport).list("notebook-1"))
+    await notes_started.wait()
+
+    old_generation = await transport.force_close_and_reopen()
+    notes_release.set()
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await task
+    assert [method for method, _request, _kwargs in transport.calls] == ["notes.list_note_backed"]
+    assert old_generation.in_flight == 0
+
+
+@pytest.mark.asyncio
+async def test_interactive_rename_finishes_during_graceful_drain() -> None:
+    transport = SupervisedAndroidTransport()
+    list_started = asyncio.Event()
+    list_release = asyncio.Event()
+
+    async def _artifacts(_request: Any, _kwargs: dict[str, Any]) -> Any:
+        list_started.set()
+        await list_release.wait()
+        return [_interactive_artifact()]
+
+    transport.handlers["artifacts.list"] = _artifacts
+    transport.handlers["artifacts.rename"] = None
+    task = asyncio.create_task(
+        _supervised_api(transport).rename(
+            "notebook-1",
+            "interactive",
+            "Renamed",
+            kind=MindMapKind.INTERACTIVE,
+            return_object=False,
+        )
+    )
+    await list_started.wait()
+
+    await transport.supervisor.stop_accepting(1)
+    list_release.set()
+
+    assert await task is None
+    assert [method for method, _request, _kwargs in transport.calls] == [
+        "artifacts.list",
+        "artifacts.rename",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_interactive_rename_cannot_cross_forced_close_and_reopen() -> None:
+    transport = SupervisedAndroidTransport()
+    list_started = asyncio.Event()
+    list_release = asyncio.Event()
+
+    async def _artifacts(_request: Any, _kwargs: dict[str, Any]) -> Any:
+        list_started.set()
+        await list_release.wait()
+        return [_interactive_artifact()]
+
+    transport.handlers["artifacts.list"] = _artifacts
+    transport.handlers["artifacts.rename"] = None
+    task = asyncio.create_task(
+        _supervised_api(transport).rename(
+            "notebook-1",
+            "interactive",
+            "Renamed",
+            kind=MindMapKind.INTERACTIVE,
+            return_object=False,
+        )
+    )
+    await list_started.wait()
+
+    old_generation = await transport.force_close_and_reopen()
+    list_release.set()
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await task
+    assert [method for method, _request, _kwargs in transport.calls] == ["artifacts.list"]
+    assert old_generation.in_flight == 0
