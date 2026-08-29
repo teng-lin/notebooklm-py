@@ -138,6 +138,52 @@ async def test_open_closes_client_when_cookie_snapshot_raises() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("cleanup_error", "expected_type"),
+    [
+        (RuntimeError("cleanup failed"), LookupError),
+        (SystemExit("cleanup shutdown"), SystemExit),
+    ],
+)
+async def test_open_failure_arbitrates_client_cleanup_error(
+    cleanup_error: BaseException,
+    expected_type: type[BaseException],
+) -> None:
+    original = LookupError("snapshot failed")
+
+    class _FailingCloseClient(httpx.AsyncClient):
+        async def aclose(self) -> None:
+            try:
+                await super().aclose()
+            finally:
+                raise cleanup_error
+
+    def async_client_factory(**kwargs: object) -> httpx.AsyncClient:
+        return _FailingCloseClient(**kwargs)  # type: ignore[arg-type]
+
+    kernel = Kernel(async_client_factory=async_client_factory)
+
+    def fail_snapshot(_: httpx.Cookies) -> None:
+        raise original
+
+    with pytest.raises(expected_type) as raised:
+        await kernel.open(
+            auth=_auth_tokens(),
+            timeout=30.0,
+            connect_timeout=10.0,
+            limits=ConnectionLimits(),
+            capture_cookie_snapshot=fail_snapshot,
+        )
+
+    if isinstance(cleanup_error, SystemExit):
+        assert raised.value is cleanup_error
+        assert raised.value.__cause__ is original
+    else:
+        assert raised.value is original
+    assert kernel.http_client is None
+
+
+@pytest.mark.asyncio
 async def test_post_uses_live_http_client_streaming_post() -> None:
     seen_requests: list[httpx.Request] = []
 

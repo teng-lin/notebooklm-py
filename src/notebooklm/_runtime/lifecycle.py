@@ -276,13 +276,52 @@ class ClientLifecycle:
             except asyncio.CancelledError as exc:
                 if cancelled is not None:
                     self._end_retained_wait(cleanup, detached=True)
+                    if isinstance(error, (KeyboardInterrupt, SystemExit)):
+                        raise error from None
                     raise cancelled from None
                 cancelled = exc
         self._end_retained_wait(cleanup, observed=True)
+        # A process-exit signal that failed the open was observed before any
+        # later caller cancellation or rollback outcome.  Preserve that
+        # precedence explicitly: the rollback task normally republishes the
+        # same signal, but a commit-time signal is not part of
+        # ``wave.prepare_task`` and therefore cannot be rediscovered there.
+        if isinstance(error, (KeyboardInterrupt, SystemExit)):
+            raise error
         if cleanup_result.error is not None:
             raise cleanup_result.error
         if cancelled is not None:
             raise cancelled
+
+    def _observe_close_race(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        epoch: int,
+    ) -> tuple[_CloseWave | None, bool]:
+        """Observe whether ``epoch`` was claimed or retired by ``close()``.
+
+        A public ``drain()`` cannot hold ``_state_lock`` across admission
+        awaits.  Consequently, a close wave may claim ``CLOSING`` after drain
+        snapshots ``OPEN`` but before either supervisor transition lands.  The
+        returned boolean distinguishes a fully retired/replaced epoch from an
+        epoch that remains independently drainable.
+        """
+        with self._state_lock:
+            if self._epoch != epoch or self._state is _ResourceState.CLOSED:
+                return None, True
+            if self._state is _ResourceState.CLOSING:
+                wave = cast(_CloseWave, self._close_wave)
+                self._assert_wave_loop(loop, wave.loop, "drain")
+                return wave, False
+            return None, False
+
+    async def _join_close_race(self, loop: asyncio.AbstractEventLoop, epoch: int) -> bool:
+        """Join a close that raced drain, or acknowledge a retired epoch."""
+        wave, retired = self._observe_close_race(loop, epoch)
+        if wave is not None:
+            await self._await_close_wave(wave)
+            return True
+        return retired
 
     async def _run_transport_phase(self, method: str) -> list[BaseException | None]:
         tasks = [
@@ -371,8 +410,29 @@ class ClientLifecycle:
                 assert close_wave is not None
                 await self._await_close_wave(close_wave)
                 return
-            await self._supervisor.stop_accepting(epoch)
-            await self._supervisor.wait_for_idle(epoch, timeout)
+            try:
+                await self._supervisor.stop_accepting(epoch)
+            except RuntimeError:
+                # ``close()`` may have claimed and even retired this epoch
+                # while the admission transition was awaiting its condition.
+                # Suppress only that lifecycle race; unrelated supervisor
+                # failures still propagate.
+                if await self._join_close_race(loop, epoch):
+                    return
+                raise
+            if await self._join_close_race(loop, epoch):
+                return
+            try:
+                await self._supervisor.wait_for_idle(epoch, timeout)
+            except RuntimeError:
+                if await self._join_close_race(loop, epoch):
+                    return
+                raise
+            # A forced close can retire an in-flight generation while this
+            # waiter is parked.  Match the existing CLOSING-observer contract
+            # by joining that wave before returning.
+            if await self._join_close_race(loop, epoch):
+                return
             return
 
     async def close(

@@ -352,6 +352,25 @@ async def test_web_close_resources_saves_then_closes_kernel() -> None:
 
 
 @pytest.mark.asyncio
+async def test_web_close_resources_preserves_cookie_save_process_exit_over_close_failure() -> None:
+    fixture = _make_web()
+    await fixture.lifecycle.open(asyncio.get_running_loop(), 1)
+    process_exit = SystemExit("cookie save shutdown")
+    close_failure = RuntimeError("kernel close failed")
+    fixture.lifecycle.save_cookies = AsyncMock(side_effect=process_exit)  # type: ignore[method-assign]
+    close_mock = AsyncMock(side_effect=close_failure)
+    fixture.kernel.aclose = close_mock  # type: ignore[method-assign]
+
+    with pytest.raises(SystemExit, match="cookie save shutdown") as raised:
+        await fixture.lifecycle.close_resources()
+
+    assert raised.value is process_exit
+    assert raised.value.__cause__ is close_failure
+    close_mock.assert_awaited_once()
+    assert fixture.lifecycle._active_epoch is None
+
+
+@pytest.mark.asyncio
 async def test_web_save_cookies_uses_canonical_owner_and_mirrors_snapshot(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,

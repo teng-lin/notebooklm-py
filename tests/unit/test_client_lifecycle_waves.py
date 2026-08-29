@@ -7,7 +7,10 @@ from dataclasses import dataclass, field
 
 import pytest
 
+from notebooklm._client_metrics import ClientMetrics
+from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._runtime.lifecycle import ClientLifecycle, _ResourceState
+from notebooklm._transport_drain import TransportDrainTracker
 
 
 @dataclass
@@ -256,6 +259,47 @@ async def test_first_cancel_during_failed_open_waits_for_rollback_and_wins() -> 
     assert raised.value.args == ("first cancellation",)
     assert not lifecycle.is_open()
     assert "close:web" in events
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("recancel", [False, True])
+async def test_process_exit_from_failed_open_beats_cancellation_during_rollback(
+    recancel: bool,
+) -> None:
+    events: list[str] = []
+    rollback_gate = asyncio.Event()
+    process_exit = SystemExit("open shutdown")
+    supervisor = _Supervisor(events=events, start_error=process_exit)
+    lifecycle = _lifecycle(
+        supervisor,
+        _Transport("web", events, prepare_gate=rollback_gate),
+    )
+
+    async def capture_open_outcome() -> BaseException | None:
+        try:
+            await lifecycle.open()
+        except BaseException as exc:
+            return exc
+        return None
+
+    owner = asyncio.create_task(capture_open_outcome())
+    await _wait_for_event(events, "prepare:web")
+    owner.cancel("caller cancellation")
+    await asyncio.sleep(0)
+
+    assert not owner.done()
+    if recancel:
+        owner.cancel("caller recancellation")
+    else:
+        rollback_gate.set()
+    assert await owner is process_exit
+
+    rollback_gate.set()
+    for _ in range(100):
+        if not lifecycle.is_open() and lifecycle._open_wave is None:
+            break
+        await asyncio.sleep(0)
+    assert not lifecycle.is_open()
 
 
 @pytest.mark.asyncio
@@ -619,6 +663,57 @@ async def test_drain_racing_closing_joins_close_wave_without_redraining() -> Non
     await asyncio.gather(closing, draining)
 
     assert lifecycle._state is _ResourceState.CLOSED
+    assert not lifecycle.is_open()
+    assert events.count("prepare:web") == 1
+    assert events.count("close:web") == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("close_finishes_before_drain_resumes", [False, True])
+async def test_drain_that_snapshotted_open_joins_or_observes_racing_close(
+    close_finishes_before_drain_resumes: bool,
+) -> None:
+    events: list[str] = []
+    prepare_gate = asyncio.Event()
+    transport = _Transport("web", events, prepare_gate=prepare_gate)
+    supervisor = CallSupervisor(
+        metrics=ClientMetrics(),
+        drain_tracker=TransportDrainTracker(),
+        max_concurrent_rpcs=None,
+    )
+    lifecycle = ClientLifecycle(
+        supervisor=supervisor,
+        transports=(transport,),
+        loop_participants=(supervisor,),
+    )
+    await lifecycle.open()
+
+    stop_entered = asyncio.Event()
+    release_stop = asyncio.Event()
+    real_stop_accepting = supervisor.stop_accepting
+
+    async def delayed_stop_accepting(epoch: int) -> None:
+        stop_entered.set()
+        await release_stop.wait()
+        await real_stop_accepting(epoch)
+
+    supervisor.stop_accepting = delayed_stop_accepting  # type: ignore[method-assign]
+    draining = asyncio.create_task(lifecycle.drain())
+    await stop_entered.wait()
+    closing = asyncio.create_task(lifecycle.close(drain=False))
+    await _wait_for_event(events, "prepare:web")
+
+    if close_finishes_before_drain_resumes:
+        prepare_gate.set()
+        await closing
+        release_stop.set()
+    else:
+        release_stop.set()
+        await asyncio.sleep(0)
+        assert not draining.done()
+        prepare_gate.set()
+
+    await asyncio.gather(closing, draining)
     assert not lifecycle.is_open()
     assert events.count("prepare:web") == 1
     assert events.count("close:web") == 1

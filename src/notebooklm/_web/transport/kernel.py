@@ -176,8 +176,20 @@ class Kernel:
         # partial open cannot orphan a live client.
         try:
             capture_cookie_snapshot(self._http_client.cookies)
-        except BaseException:
-            await self.aclose()
+        except BaseException as open_error:
+            cleanup_error: BaseException | None = None
+            try:
+                await self.aclose()
+            except BaseException as exc:
+                cleanup_error = exc
+
+            # The original open failure beats ordinary cleanup failure.  A
+            # process-exit signal from either phase still wins, with the
+            # earlier open-phase signal taking precedence when both exist.
+            if isinstance(open_error, (KeyboardInterrupt, SystemExit)):
+                raise
+            if isinstance(cleanup_error, (KeyboardInterrupt, SystemExit)):
+                raise cleanup_error from open_error
             raise
 
     async def post(

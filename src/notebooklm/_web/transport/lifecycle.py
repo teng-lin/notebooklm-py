@@ -151,15 +151,34 @@ class WebTransportLifecycle:
 
     async def close_resources(self) -> None:
         """Persist cookies best-effort and clear the Kernel handle in all cases."""
+        save_process_exit: KeyboardInterrupt | SystemExit | None = None
         try:
             if self._kernel.http_client is not None:
                 try:
                     await self.save_cookies(self._kernel.cookies)
+                except (KeyboardInterrupt, SystemExit) as exc:
+                    save_process_exit = exc
                 except Exception as exc:  # noqa: BLE001 - persistence is best effort
                     logger.warning("Failed to sync refreshed cookies during close: %s", exc)
         finally:
-            await self._kernel.aclose()
-            self._active_epoch = None
+            close_error: BaseException | None = None
+            try:
+                await self._kernel.aclose()
+            except BaseException as exc:
+                close_error = exc
+            finally:
+                self._active_epoch = None
+
+            # Cookie persistence runs before Kernel teardown, so an observed
+            # process-exit signal from that phase beats a later ordinary close
+            # failure.  Kernel process exits still propagate when no earlier
+            # signal exists.
+            if save_process_exit is not None:
+                if close_error is not None:
+                    raise save_process_exit from close_error
+                raise save_process_exit
+            if close_error is not None:
+                raise close_error
 
     async def save_cookies(
         self,
