@@ -359,7 +359,7 @@ class AndroidSourcesAPI(SourcesAPI):
             raise
         except (KeyboardInterrupt, SystemExit):
             raise
-        except RPCError:
+        except (RPCError, NetworkError):
             logger.warning(
                 "Android source commit reconciliation failed; preserving only prior "
                 "affirmative response evidence"
@@ -398,7 +398,7 @@ class AndroidSourcesAPI(SourcesAPI):
             raise
         except (KeyboardInterrupt, SystemExit):
             raise
-        except RPCError:
+        except (RPCError, NetworkError):
             pass
         else:
             try:
@@ -460,14 +460,13 @@ class AndroidSourcesAPI(SourcesAPI):
                 raise
             except (KeyboardInterrupt, SystemExit):
                 raise
-            except (AuthError, RateLimitError, ServerError, NetworkError):
-                raise
-            except RPCError as exc:
-                raise _unresolved_add_error(
+            except (RPCError, NetworkError) as exc:
+                failure = _unresolved_add_error(
                     url,
                     stage="tentative registration",
                     cause=exc,
-                ) from None
+                )
+                raise failure from None
 
             if registration.omitted:
                 raise _known_registration_error(url)
@@ -513,7 +512,7 @@ class AndroidSourcesAPI(SourcesAPI):
                 raise
             except (KeyboardInterrupt, SystemExit):
                 raise
-            except RPCError as exc:
+            except (RPCError, NetworkError) as exc:
                 return [
                     SourceUrlBatchItem(
                         url=url,

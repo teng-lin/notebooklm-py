@@ -28,7 +28,12 @@ from notebooklm._android.sources import (
     AndroidSourcesAPI,
 )
 from notebooklm.exceptions import (
+    AuthError,
+    NetworkError,
+    RateLimitError,
     RPCError,
+    RPCTimeoutError,
+    ServerError,
     SourceAddError,
     SourceNotFoundError,
     SourceTimeoutError,
@@ -41,6 +46,18 @@ SOURCE_A = "00000000-0000-4000-8000-000000000101"
 SOURCE_B = "00000000-0000-4000-8000-000000000102"
 URL_A = " https://example.invalid/%2f?a=1#fragment "
 URL_B = "https://example.invalid/second"
+
+
+def _uncertain_transport_errors() -> list[Exception]:
+    return [
+        AuthError("auth", method_id=ADD_TENTATIVE_SOURCES_METHOD, rpc_code=16),
+        RateLimitError("rate", method_id=ADD_TENTATIVE_SOURCES_METHOD, rpc_code=8),
+        ServerError("server", method_id=ADD_TENTATIVE_SOURCES_METHOD, rpc_code=14),
+        NetworkError("network", method_id=ADD_TENTATIVE_SOURCES_METHOD),
+        RPCTimeoutError(
+            "timeout", timeout_seconds=1.0, method_id=ADD_TENTATIVE_SOURCES_METHOD
+        ),
+    ]
 
 
 @dataclass(frozen=True)
@@ -269,6 +286,30 @@ async def test_uncertain_registration_is_marked_and_never_replayed_or_probed() -
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("transport_error", _uncertain_transport_errors())
+async def test_typed_uncertain_registration_is_wrapped_for_single_and_batch(
+    transport_error: Exception,
+) -> None:
+    for batch in (False, True):
+        transport = FakeTransport()
+        transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = transport_error
+        api = _api(transport)
+
+        if batch:
+            outcomes = await api._add_urls_batch(NOTEBOOK_ID, [URL_A, URL_B])
+            failures = [item.error for item in outcomes]
+        else:
+            with pytest.raises(SourceAddError) as raised:
+                await api.add_url(NOTEBOOK_ID, URL_A)
+            failures = [raised.value]
+
+        assert all(error is not None for error in failures)
+        assert all(getattr(error, "unconfirmed", False) for error in failures)
+        assert [call[0] for call in transport.calls] == [ADD_TENTATIVE_SOURCES_METHOD]
+        assert DELETE_SOURCES_METHOD not in [call[0] for call in transport.calls]
+
+
+@pytest.mark.asyncio
 async def test_uncertain_commit_uses_one_exact_id_read_and_never_replays_write() -> None:
     transport = FakeTransport()
     transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _registration_handler([SOURCE_A])
@@ -305,6 +346,44 @@ async def test_each_write_is_dispatched_once_after_auth_timeout_or_disconnect(
     assert methods.count(ADD_TENTATIVE_SOURCES_METHOD) == 1
     assert methods.count(ADD_SOURCES_METHOD) == 1
     assert methods.count(GET_PROJECT_METHOD) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("transport_error", _uncertain_transport_errors())
+async def test_typed_uncertain_commit_uses_one_read_without_replay_or_cleanup(
+    transport_error: Exception,
+) -> None:
+    transport = _successful_transport()
+    transport.handlers[ADD_SOURCES_METHOD] = transport_error
+
+    source = await _api(transport).add_url(NOTEBOOK_ID, URL_A)
+
+    assert source.id == SOURCE_A
+    methods = [call[0] for call in transport.calls]
+    assert methods.count(ADD_TENTATIVE_SOURCES_METHOD) == 1
+    assert methods.count(ADD_SOURCES_METHOD) == 1
+    assert methods.count(GET_PROJECT_METHOD) == 1
+    assert DELETE_SOURCES_METHOD not in methods
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("transport_error", _uncertain_transport_errors())
+async def test_typed_failed_readback_preserves_affirmative_response_proof(
+    transport_error: Exception,
+) -> None:
+    transport = _successful_transport(
+        commit_sources=[_source(SOURCE_A, status=source_settings_pb2.SOURCE_STATUS_COMPLETE)]
+    )
+    transport.handlers[GET_PROJECT_METHOD] = transport_error
+
+    source = await _api(transport).add_url(NOTEBOOK_ID, URL_A)
+
+    assert source.id == SOURCE_A
+    assert source.status is SourceStatus.READY
+    methods = [call[0] for call in transport.calls]
+    assert methods.count(ADD_SOURCES_METHOD) == 1
+    assert methods.count(GET_PROJECT_METHOD) == 1
+    assert DELETE_SOURCES_METHOD not in methods
     assert DELETE_SOURCES_METHOD not in methods
 
 
