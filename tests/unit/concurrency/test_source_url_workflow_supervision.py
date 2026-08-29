@@ -13,6 +13,7 @@ from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.auth import AuthTokens
+from notebooklm.exceptions import NonIdempotentRetryError, ValidationError
 from notebooklm.types import Source
 from tests._helpers.client_factory import build_client_shell_for_tests
 
@@ -91,6 +92,93 @@ async def test_drain_after_url_admission_allows_full_workflow_to_finish() -> Non
 
     assert result.title == "Requested title"
     assert stages == ["baseline", "create", "readiness", "rename"]
+
+
+@pytest.mark.asyncio
+async def test_drain_after_text_write_allows_readiness_leg_to_finish() -> None:
+    supervisor = _supervisor()
+    api = _sources(supervisor)
+    write_finished = asyncio.Event()
+    continue_workflow = asyncio.Event()
+    stages: list[str] = []
+
+    class _Adder:
+        async def add_text(self, *_args: object, **_kwargs: object) -> Source:
+            async with supervisor.call_scope("text write", None, None):
+                stages.append("write")
+            write_finished.set()
+            await continue_workflow.wait()
+            async with supervisor.call_scope("text readiness", None, None):
+                stages.append("readiness")
+            return Source(id="src_text", title="Notes")
+
+    api._adder = _Adder()  # type: ignore[assignment]
+    task = asyncio.create_task(api.add_text("nb_1", "Notes", "body", wait=True))
+    await asyncio.wait_for(write_finished.wait(), timeout=1.0)
+    await supervisor.stop_accepting(1)
+    continue_workflow.set()
+
+    result = await asyncio.wait_for(task, timeout=1.0)
+    await supervisor.wait_for_idle(1, timeout=1.0)
+
+    assert result.id == "src_text"
+    assert stages == ["write", "readiness"]
+
+
+@pytest.mark.asyncio
+async def test_drain_after_drive_write_allows_readiness_and_title_legs_to_finish() -> None:
+    supervisor = _supervisor()
+    api = _sources(supervisor)
+    write_finished = asyncio.Event()
+    continue_workflow = asyncio.Event()
+    stages: list[str] = []
+
+    class _Adder:
+        async def add_drive(self, *_args: object, **_kwargs: object) -> Source:
+            async with supervisor.call_scope("drive baseline", None, None):
+                stages.append("baseline")
+            async with supervisor.call_scope("drive write", None, None):
+                stages.append("write")
+            write_finished.set()
+            await continue_workflow.wait()
+            async with supervisor.call_scope("drive readiness", None, None):
+                stages.append("readiness")
+            return Source(id="src_drive", title="Upstream title")
+
+    async def _rename(*_args: object, **_kwargs: object) -> Source:
+        async with supervisor.call_scope("drive rename", None, None):
+            stages.append("rename")
+        return Source(id="src_drive", title="Requested title")
+
+    api._adder = _Adder()  # type: ignore[assignment]
+    api.rename = _rename  # type: ignore[method-assign]
+    task = asyncio.create_task(api.add_drive("nb_1", "drive_1", "Requested title", wait=True))
+    await asyncio.wait_for(write_finished.wait(), timeout=1.0)
+    await supervisor.stop_accepting(1)
+    continue_workflow.set()
+
+    result = await asyncio.wait_for(task, timeout=1.0)
+    await supervisor.wait_for_idle(1, timeout=1.0)
+
+    assert result.title == "Requested title"
+    assert stages == ["baseline", "write", "readiness", "rename"]
+
+
+@pytest.mark.asyncio
+async def test_source_validation_runs_before_workflow_admission() -> None:
+    supervisor = _supervisor()
+    api = _sources(supervisor)
+    adder = MagicMock()
+    api._adder = adder  # type: ignore[assignment]
+    await supervisor.stop_accepting(1)
+
+    with pytest.raises(NonIdempotentRetryError, match="cannot be marked idempotent"):
+        await api.add_text("nb_1", "Notes", "body", idempotent=True)
+    with pytest.raises(ValidationError, match="file_id cannot be empty"):
+        await api.add_drive("nb_1", "  ", "Drive title")
+
+    adder.add_text.assert_not_called()
+    adder.add_drive.assert_not_called()
 
 
 @pytest.mark.asyncio

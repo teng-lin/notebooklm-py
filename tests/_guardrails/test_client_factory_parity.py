@@ -171,9 +171,27 @@ def test_shared_wiring_identities_hold_on_both_paths() -> None:
         assert getattr(client.sources, "_rpc", _missing) is client._rpc_executor, (
             f"{label}: sources must dispatch through the client's shared RpcExecutor"
         )
+        assert (
+            getattr(client.sources, "_supervisor", _missing)
+            is client._collaborators.call_supervisor
+        ), f"{label}: sources must share the client's CallSupervisor"
         assert getattr(client.sources, "_uploader", _missing) is client._source_uploader, (
             f"{label}: sources and lifecycle must share the client-owned upload pipeline"
         )
+        assert (
+            getattr(client._source_uploader, "_supervisor", _missing)
+            is client._collaborators.call_supervisor
+        ), f"{label}: uploader must share the client's CallSupervisor"
+        assert getattr(client._source_uploader, "_rpc", _missing) is client._rpc_executor, (
+            f"{label}: uploader must dispatch through the client's shared RpcExecutor"
+        )
+        assert (
+            getattr(client._source_uploader, "_kernel", _missing) is client._collaborators.kernel
+        ), f"{label}: uploader must share the client's Kernel"
+        assert (
+            getattr(client._collaborators.lifecycle, "_supervisor", _missing)
+            is client._collaborators.call_supervisor
+        ), f"{label}: lifecycle must share the client's CallSupervisor"
         assert getattr(client._source_uploader, "_lister", _missing) is getattr(
             client.sources, "_lister", _missing
         ), f"{label}: sources and uploader must share one SourceLister"

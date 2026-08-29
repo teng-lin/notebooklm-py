@@ -41,6 +41,24 @@ ValidateVideoId = Callable[[str], bool]
 YoutubeDetector = Callable[[str], bool]
 
 
+def _validate_add_text_idempotency(idempotent: bool) -> None:
+    """Reject an unsupported text idempotency promise before admission."""
+    if idempotent:
+        raise NonIdempotentRetryError(
+            "add_text cannot be marked idempotent: text sources have no "
+            "reliable server-side dedupe key (titles non-unique, content "
+            "not exposed). For idempotent text imports, embed a UUID in "
+            "the title and dedupe client-side. See "
+            "docs/python-api.md#idempotency."
+        )
+
+
+def _validate_drive_file_id(file_id: str) -> None:
+    """Reject a blank Drive identifier before admission or any write."""
+    if not file_id or not file_id.strip():
+        raise ValidationError("Drive file_id cannot be empty or whitespace-only")
+
+
 def _describe_sources(sources: list[Source]) -> str:
     """Render matched sources as ``id (title)`` for an ambiguity message.
 
@@ -448,14 +466,7 @@ class SourceAddService:
         logger: logging.Logger,
     ) -> Source:
         """Add a text source to a notebook."""
-        if idempotent:
-            raise NonIdempotentRetryError(
-                "add_text cannot be marked idempotent: text sources have no "
-                "reliable server-side dedupe key (titles non-unique, content "
-                "not exposed). For idempotent text imports, embed a UUID in "
-                "the title and dedupe client-side. See "
-                "docs/python-api.md#idempotency."
-            )
+        _validate_add_text_idempotency(idempotent)
         logger.debug("Adding text source to notebook %s: %s", notebook_id, title)
         # Nested template block per the Gemini-3.5 wire migration (#1546): the
         # text spec grew from 8 to 11 elements (slot 3 None -> 2, trailing 1) and
@@ -578,13 +589,12 @@ class SourceAddService:
            :meth:`~notebooklm._sources.SourcesAPI.rename` after the add if you
            need a specific title.
         """
-        if not file_id or not file_id.strip():
-            # Fail before the write rather than POSTing a blank Drive id. A
-            # blank id is also unmatchable by the probe below (a row's
-            # ``drive_document_id`` is never ``""``), so without this guard a
-            # transport failure would retry the blank add and could leave two
-            # garbage sources behind.
-            raise ValidationError("Drive file_id cannot be empty or whitespace-only")
+        # Fail before the write rather than POSTing a blank Drive id. A blank
+        # id is also unmatchable by the probe below (a row's
+        # ``drive_document_id`` is never ``""``), so without this guard a
+        # transport failure would retry the blank add and could leave two
+        # garbage sources behind.
+        _validate_drive_file_id(file_id)
         logger.debug("Adding Drive source to notebook %s: %s", notebook_id, title)
         source_data = [
             [file_id, mime_type, 1, title],

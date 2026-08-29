@@ -27,7 +27,12 @@ from ..params.sources import build_rename_source_params
 from ..rows.sources import interpret_source_freshness
 from ..settings import build_get_user_settings_params, extract_account_limits
 from . import upload as _source_upload
-from .add import SourceAddService, honor_requested_title_if_fresh
+from .add import (
+    SourceAddService,
+    _validate_add_text_idempotency,
+    _validate_drive_file_id,
+    honor_requested_title_if_fresh,
+)
 from .batch import SourceBatchAddService, SourceUrlBatchItem
 from .content import SourceContentRenderer
 from .drive_import import DriveFetcher, DriveImportService
@@ -290,17 +295,19 @@ class WebSourcesAPI(SourcesAPI):
         Raises:
             NonIdempotentRetryError: When ``idempotent=True``.
         """
-        return await self._adder.add_text(
-            notebook_id,
-            title,
-            content,
-            wait=wait,
-            wait_timeout=wait_timeout,
-            idempotent=idempotent,
-            rpc=self._rpc,
-            wait_until_ready=self.wait_until_ready,
-            logger=logger,
-        )
+        _validate_add_text_idempotency(idempotent)
+        async with self._supervisor.operation_scope("source.add_text"):
+            return await self._adder.add_text(
+                notebook_id,
+                title,
+                content,
+                wait=wait,
+                wait_timeout=wait_timeout,
+                idempotent=idempotent,
+                rpc=self._rpc,
+                wait_until_ready=self.wait_until_ready,
+                logger=logger,
+            )
 
     async def add_file(
         self,
@@ -391,23 +398,25 @@ class WebSourcesAPI(SourcesAPI):
             source = await client.sources.add_drive(notebook_id, file_id="1abc123xyz",
                 title="My Document", mime_type=DriveMimeType.GOOGLE_DOC.value, wait=True)
         """
-        result = await self._adder.add_drive(
-            notebook_id,
-            file_id,
-            title,
-            mime_type=mime_type,
-            wait=wait,
-            wait_timeout=wait_timeout,
-            rpc=self._rpc,
-            list_sources=self.list,
-            wait_until_ready=self.wait_until_ready,
-            logger=logger,
-            return_result=True,
-        )
-        # Baseline-filtered probe ⇒ even a PROBED result is ours to rename (#2113).
-        return await honor_requested_title_if_fresh(
-            self.rename, notebook_id, result, title, logger, probe_proves_freshness=True
-        )
+        _validate_drive_file_id(file_id)
+        async with self._supervisor.operation_scope("source.add_drive"):
+            result = await self._adder.add_drive(
+                notebook_id,
+                file_id,
+                title,
+                mime_type=mime_type,
+                wait=wait,
+                wait_timeout=wait_timeout,
+                rpc=self._rpc,
+                list_sources=self.list,
+                wait_until_ready=self.wait_until_ready,
+                logger=logger,
+                return_result=True,
+            )
+            # Baseline-filtered probe ⇒ even a PROBED result is ours to rename (#2113).
+            return await honor_requested_title_if_fresh(
+                self.rename, notebook_id, result, title, logger, probe_proves_freshness=True
+            )
 
     async def add_drive_file(
         self,

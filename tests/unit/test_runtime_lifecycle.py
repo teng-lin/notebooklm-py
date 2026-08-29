@@ -537,6 +537,7 @@ def test_production_assembly_freezes_exact_root_ownership_graph() -> None:
     collaborators = client._collaborators
     lifecycle = collaborators.lifecycle
 
+    assert lifecycle._supervisor is collaborators.call_supervisor
     assert lifecycle._transports == (
         collaborators.web_transport,
         client._source_uploader,
@@ -549,6 +550,10 @@ def test_production_assembly_freezes_exact_root_ownership_graph() -> None:
     )
     assert lifecycle._transports.count(client._source_uploader) == 1
     assert client._source_uploader not in lifecycle._loop_participants
+    assert client.sources._supervisor is collaborators.call_supervisor
+    assert client._source_uploader._supervisor is collaborators.call_supervisor
+    assert client._source_uploader._rpc is client._rpc_executor
+    assert client._source_uploader._kernel is collaborators.kernel
     assert client._composed.runtime_collaborators is collaborators
     assert client._composed.runtime_collaborators.lifecycle is lifecycle
 
