@@ -19,6 +19,7 @@ from ..exceptions import ChatResponseParseError
 from ..types import ChatReference, ChatSettings, ConversationTurn, Note
 from .codecs.chat import decode_document, decode_history, decode_references, decode_turn_key
 from .errors import unsupported_operation
+from .notes import SAVED_RESPONSE_NOTE_TYPE, create_note
 from .proto.google.internal.labs.tailwind.orchestration.v1 import (
     b1_read_pb2,
     b5_chat_pb2,
@@ -244,7 +245,14 @@ class AndroidChatAPI(ChatAPI):
         clean_answer: str,
         citation_anchors: list[tuple[ChatReference, int]],
     ) -> Note:
-        _reject("chat.save_answer_as_note")
+        del references, clean_answer, citation_anchors
+        return await create_note(
+            self._transport,
+            notebook_id,
+            title=title,
+            content=answer_text,
+            note_type=SAVED_RESPONSE_NOTE_TYPE,
+        )
 
 
 __all__ = [

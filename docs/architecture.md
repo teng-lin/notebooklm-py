@@ -982,6 +982,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/codecs/sources.py` | Android source projection, enum-name mapping, duplicate handling, and strict/default drift behavior. |
 | `_android/codecs/artifacts.py` | Ledgered Android artifact and representation projection with bounded decode failures. |
 | `_android/codecs/chat.py` | Proven Android history, response-document, and citation projection. |
+| `_android/codecs/notes.py` | Evidence-bounded B6 note request builders and protobuf-to-public note projection. |
+| `_android/codecs/sharing.py` | B6 public-link sharing status projection from the repository-local wire overlay. |
 | `_android/errors.py` | Sanitized gRPC-status projection plus the pre-I/O unsupported-operation helper; raw transport exceptions and details never cross this boundary. |
 | `_android/notebooks.py` | Private Android notebook adapter: B1 reads and evidence-admitted B2 create/delete/title-update/copy/guide operations. |
 | `_android/session.py` | Lazy Google-TLS gRPC transport participating in root loop/lifecycle supervision, aggregate deadlines, per-call bearer metadata, status mapping, safe-read replay, and full stream leases. |
@@ -990,7 +992,9 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/evidence.py` | One pinned Android evidence profile for the captured app version and distinct registration/finalize user agents. |
 | `_android/artifacts.py` | Private B4 partial artifact adapter: aggregate Studio/note-backed listing, Studio-only polling, quiz create, delete/rename, infographic PNG download and report suggestions; every other public family rejects before I/O. |
 | `_android/assets.py` | B4 response-aware Android asset transport. It validates every hop, attaches bearer only to the exact approved origin, strips it for signed-GCS hops, streams one open PNG response through same-directory staging and publishes atomically. |
-| `_android/chat.py` | Private B5 Android chat adapter over sessions, raw turns, history deletion, and the cumulative server stream; base `ChatAPI` retains locks/cache/follow-up orchestration and public result construction. |
+| `_android/chat.py` | Private B5 Android chat adapter over sessions, raw turns, history deletion, the cumulative server stream, and the B6 saved-response note seam; base `ChatAPI` retains locks/cache/follow-up orchestration and public result construction. |
+| `_android/notes.py` | Private B6 note CRUD adapter with exact write/read-back checks, bounded deletion polling, and a reusable saved-response creation seam. |
+| `_android/sharing.py` | Private B6 public-link sharing adapter; collaborator and view-level mutations remain evidence-gated. |
 | `_android/mind_maps.py` | Private B7 Android mind-map composition over base-typed artifact/note collaborators. The raw `NotesAPI.list_mind_maps` boundary is not treated as decoded `MindMap` data: aggregate reads, note-backed rename, and hydrated interactive rename reject before dependency I/O. Explicit non-hydrating interactive rename/delete compose through artifacts; generation and tree reads remain evidence-gated. No public client factory selects it. |
 | `_android/proto/` | Checked-in generated Python protobuf package. Files are regenerated only by `scripts/regenerate_android_protos.py` with the pinned toolchain and are never generated during installation. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/b1_read_pb2.py` | Exact-package B1 messages and descriptors for `GetProject` and `ListRecentlyViewedProjects`. |
@@ -999,8 +1003,12 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/b4_artifacts_pb2.py` | Exact-package B4 artifact request/response and projection overlay; dispatch uses ledgered generic-session method paths so the B1 service descriptor remains unchanged. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/b5_chat_pb2.py` | Service-free exact-package B5 chat overlay for sessions, turns, delete, streamed answers, and the proven citation/document closure. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/b5_chat_pb2_grpc.py` | Deterministic generated companion for the service-free B5 overlay. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/b6_notes_pb2.py` | Service-free exact-package B6 note CRUD overlay. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/b6_notes_pb2_grpc.py` | Deterministic generated companion for the B6 note overlay. |
 | `_android/proto/labs/language/tailwind/common/protos/chat_history_pb2.py` | Exact-package `ChatSession.chat_session_id` leaf imported by the B5 sessions response. |
 | `_android/proto/notebooklm/android/internal/v1/b4_report_suggestions_pb2.py` | Repository-local `*Wire` overlay for the live-added, APK-absent report-suggestion method; intentionally makes no Google FQN claim. |
+| `_android/proto/notebooklm/android/wire/v1/b6_sharing_pb2.py` | Repository-local B6 public-link sharing wire overlay; intentionally makes no unproven Google FQN claim. |
+| `_android/proto/notebooklm/android/wire/v1/b6_sharing_pb2_grpc.py` | Deterministic service-free companion for the B6 local sharing overlay. |
 | `_android/proto/google/internal/labs/tailwind/v1/source_settings_pb2.py` | Exact-package `SourceSettings`, `SourceStatus`, and `UserDriveSourceStatus` descriptors. |
 | `_android/proto/google/internal/labs/tailwind/v1/source_settings_pb2_grpc.py` | Generated companion for the service-free SourceSettings proto; retained so the generated tree exactly matches the pinned command. |
 | `_android/proto/notebooklm/internal/android/wire/v1/b2_notebooks_pb2.py` | Repository-local B2 notebook wire-equivalent messages; the local package explicitly avoids claiming unproven Google FQNs. |
@@ -1070,6 +1078,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/chat.py` | `WebChatAPI`, the concrete streamed-query and `batchexecute` chat backend; owns request IDs, streamed transport, positional history/turn decoding, chat RPCs, and saved-chat note persistence |
 | `_web/mind_maps.py` | `WebMindMapsAPI` plus `NoteBackedMindMapService`, the concrete `batchexecute` mind-map backend and shared web note-row adapter |
 | `_web/notes.py` | `WebNotesAPI` plus `NoteService`, the concrete `batchexecute` notes backend and shared note-row primitives |
+| `_web/note_tasks.py` | Lifecycle-aware registry for shielded web note finalize/cleanup tasks; graceful drain settles admitted work while forced close cancels and gathers it. |
 | `_web/settings.py` | `WebSettingsAPI` plus account-setting request/response helpers |
 | `_web/sharing.py` | `WebSharingAPI` plus the legacy `SHARE_ARTIFACT` `ShareManager` |
 | `_web/params/` | Web `batchexecute` positional request payload builders, separated from backend-neutral namespace APIs |
@@ -1247,6 +1256,8 @@ src/notebooklm/
 │   ├── codecs/                  # Android protobuf projections
 │   │   ├── __init__.py          # Codec package marker
 │   │   ├── chat.py              # B5 history/document/citation projection
+│   │   ├── notes.py             # B6 note request builders and projection
+│   │   ├── sharing.py           # B6 public-link sharing projection
 │   │   ├── notebooks.py         # Project and notebook-guide decoding
 │   │   ├── sources.py           # Source projection and enum mapping
 │   │   └── artifacts.py         # Ledgered artifact/representation projection
@@ -1259,6 +1270,8 @@ src/notebooklm/
 │   ├── artifacts.py             # B4 partial artifact API and unsupported surface
 │   ├── assets.py                # B4 response-aware bearer-safe PNG transfer
 │   ├── chat.py                  # B5 Android chat reads/delete/stream and unsupported stubs
+│   ├── notes.py                 # B6 note CRUD and saved-response creation seam
+│   ├── sharing.py               # B6 public-link sharing adapter
 │   ├── mind_maps.py             # B7 artifact composition + note/evidence gates
 │   ├── proto_src/               # Exact-package reads + evidence-bounded local wire overlays
 │   └── proto/                   # Checked-in generated pb2/pb2_grpc modules
@@ -1272,13 +1285,18 @@ src/notebooklm/
 │           │   ├── b4_artifacts_pb2.py         # B4 exact artifact message overlay
 │           │   ├── b4_artifacts_pb2_grpc.py    # Deterministic service-free companion
 │           │   ├── b5_chat_pb2.py              # Service-free B5 chat messages/descriptors
-│           │   └── b5_chat_pb2_grpc.py         # Deterministic service-free companion
+│           │   ├── b5_chat_pb2_grpc.py         # Deterministic service-free companion
+│           │   ├── b6_notes_pb2.py             # B6 exact note CRUD overlay
+│           │   └── b6_notes_pb2_grpc.py        # Deterministic service-free companion
 │           └── v1/
 │               ├── source_settings_pb2.py       # Source settings/status descriptors
 │               └── source_settings_pb2_grpc.py  # Deterministic service-free companion
 │       ├── notebooklm/android/internal/v1/
 │           ├── b4_report_suggestions_pb2.py       # Local live-added Wire messages
 │           └── b4_report_suggestions_pb2_grpc.py  # Deterministic service-free companion
+│       ├── notebooklm/android/wire/v1/
+│           ├── b6_sharing_pb2.py       # Repository-local B6 sharing wire messages
+│           └── b6_sharing_pb2_grpc.py  # Deterministic service-free companion
 │       ├── notebooklm/internal/android/wire/v1/
 │           ├── b2_notebooks_pb2.py       # Repository-local B2 notebook wire messages
 │           └── b2_notebooks_pb2_grpc.py  # Deterministic service-free companion
@@ -1454,6 +1472,7 @@ src/notebooklm/
 │   │   └── table.py             # Positional data-table decoding
 │   ├── mind_maps.py             # WebMindMapsAPI + NoteBackedMindMapService
 │   ├── notes.py                 # WebNotesAPI + NoteService
+│   ├── note_tasks.py            # Lifecycle registry for shielded note finalize/cleanup tasks
 │   ├── settings.py              # WebSettingsAPI + web settings helpers
 │   ├── sharing.py               # WebSharingAPI + legacy ShareManager
 │   ├── params/                   # Web batchexecute payload builders

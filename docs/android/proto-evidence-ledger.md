@@ -334,8 +334,8 @@ are byte-checked by the deterministic regeneration command below.
   semantic values.
 - Chat configure/settings remain unsupported and fail before transport I/O. `set_mode` deliberately
   reaches that same configure rejection.
-- Saved-from-chat note creation has only the neutral `_send_note` hook seam. Android note behavior
-  belongs to B6 and is not invented here.
+- Saved-from-chat note creation delegates to B6's exact `CreateNote` sender with the captured
+  `SAVED_RESPONSE` note type; no additional citation payload fields are invented.
 - Document tables, styles, non-paragraph structural variants, speculative citation score/range
   slots, and next-step suggestions are left as protobuf unknown fields.
 - `ListChatTurns` returns its raw first response page. The public-shaped history decoder applies its

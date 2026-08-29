@@ -16,9 +16,11 @@ from notebooklm._android.chat import (
     LIST_CHAT_TURNS_METHOD,
     AndroidChatAPI,
 )
+from notebooklm._android.notes import CREATE_NOTE_METHOD, SAVED_RESPONSE_NOTE_TYPE
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     b1_read_pb2,
     b5_chat_pb2,
+    b6_notes_pb2,
     sources_pb2,
 )
 from notebooklm._android.proto.labs.language.tailwind.common.protos import chat_history_pb2
@@ -417,26 +419,6 @@ UnsupportedCall = Callable[[AndroidChatAPI], Awaitable[object]]
         pytest.param(lambda api: api.configure("notebook-1"), id="configure"),
         pytest.param(lambda api: api.get_settings("notebook-1"), id="get-settings"),
         pytest.param(lambda api: api.set_mode("notebook-1", ChatMode.DEFAULT), id="set-mode"),
-        pytest.param(
-            lambda api: api.save_answer_as_note(
-                "notebook-1",
-                AskResult(
-                    answer="Answer [1]",
-                    conversation_id="conversation-1",
-                    turn_number=1,
-                    is_follow_up=False,
-                    references=[
-                        ChatReference(
-                            source_id="source-1",
-                            citation_number=1,
-                            chunk_id="chunk-1",
-                        )
-                    ],
-                    answer_document=StructuredDocument(),
-                ),
-            ),
-            id="save-answer-as-note",
-        ),
     ],
 )
 async def test_b5_unsupported_operations_fail_before_transport_io(invoke: UnsupportedCall) -> None:
@@ -445,6 +427,53 @@ async def test_b5_unsupported_operations_fail_before_transport_io(invoke: Unsupp
     with pytest.raises(UnsupportedOperationError, match="web backend"):
         await invoke(api)
     assert fake.unary_calls == []
+    assert fake.stream_calls == []
+
+
+@pytest.mark.asyncio
+async def test_save_answer_as_note_uses_b6_saved_response_seam() -> None:
+    fake = FakeSession()
+    fake.unary_responses[CREATE_NOTE_METHOD] = [
+        b6_notes_pb2.CreateNoteResponse(
+            note=b6_notes_pb2.ProjectNote(
+                id="note-1",
+                content="Answer [1]",
+                metadata=b6_notes_pb2.NoteMetadata(type=SAVED_RESPONSE_NOTE_TYPE),
+                name="Saved answer",
+            )
+        )
+    ]
+    api, _, _ = _api(fake)
+    result = AskResult(
+        answer="Answer [1]",
+        conversation_id="conversation-1",
+        turn_number=1,
+        is_follow_up=False,
+        references=[
+            ChatReference(
+                source_id="source-1",
+                citation_number=1,
+                chunk_id="chunk-1",
+            )
+        ],
+        answer_document=StructuredDocument(),
+    )
+
+    note = await api.save_answer_as_note("notebook-1", result, title="Saved answer")
+
+    assert (note.id, note.title, note.content) == ("note-1", "Saved answer", "Answer [1]")
+    assert fake.unary_calls == [
+        (
+            CREATE_NOTE_METHOD,
+            b6_notes_pb2.CreateNoteRequest(
+                project_id="notebook-1",
+                content="Answer [1]",
+                metadata=b6_notes_pb2.NoteMetadata(type=SAVED_RESPONSE_NOTE_TYPE),
+                name="Saved answer",
+            ),
+            {"replay_safe": False, "response_type": b6_notes_pb2.CreateNoteResponse},
+        )
+    ]
     assert fake.stream_calls == []
 
 
