@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package google.internal.labs.tailwind.orchestration.v1;
+
+import "google/internal/labs/tailwind/v1/source_settings.proto";
+import "google/protobuf/timestamp.proto";
+
+// Minimal exact-package B1 closure. Only fields reachable from GetProject and
+// ListRecentlyViewedProjects public projections are declared. In particular,
+// RequestContext, Project tier limits #11, and chat sessions #12 are omitted.
+
+enum ProjectRole {
+  PROJECT_ROLE_UNKNOWN = 0;
+  PROJECT_ROLE_OWNER = 1;
+  PROJECT_ROLE_WRITER = 2;
+  PROJECT_ROLE_READER = 3;
+  PROJECT_ROLE_NOT_SHARED = 4;
+}
+
+enum OriginalSourceContentType {
+  SOURCE_CONTENT_TYPE_UNKNOWN = 0;
+  SOURCE_CONTENT_TYPE_GOOGLE_DOC = 1;
+  SOURCE_CONTENT_TYPE_GOOGLE_SLIDES = 2;
+  SOURCE_CONTENT_TYPE_PDF = 3;
+  SOURCE_CONTENT_TYPE_TEXT = 4;
+  SOURCE_CONTENT_TYPE_URL = 5;
+  SOURCE_CONTENT_TYPE_POWERPOINT = 6;
+  SOURCE_CONTENT_TYPE_GOOGLE_SHEET = 7;
+  SOURCE_CONTENT_TYPE_MARKDOWN = 8;
+  SOURCE_CONTENT_TYPE_YOUTUBE_VIDEO = 9;
+  SOURCE_CONTENT_TYPE_AUDIO = 10;
+  SOURCE_CONTENT_TYPE_WORD = 11;
+  SOURCE_CONTENT_TYPE_EXCEL = 12;
+  SOURCE_CONTENT_TYPE_IMAGE = 13;
+  SOURCE_CONTENT_TYPE_DRIVE = 14;
+  SOURCE_CONTENT_TYPE_GMAIL = 15;
+  SOURCE_CONTENT_TYPE_CSV = 16;
+  SOURCE_CONTENT_TYPE_EPUB = 17;
+  SOURCE_CONTENT_TYPE_GEMINI_CHAT = 18;
+  SOURCE_CONTENT_TYPE_AI_MODE_CHAT = 19;
+  SOURCE_CONTENT_TYPE_EXPERT_INTELLIGENCE = 20;
+}
+
+message SourceId {
+  string id = 1; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+}
+
+message WebpageMetadata {
+  string url = 1; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+}
+
+message GoogleDriveSourceMetadata {
+  string document_id = 1; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+  string mime_type = 3; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+}
+
+message SourceMetadata {
+  OriginalSourceContentType original_source_content_type = 5; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+  WebpageMetadata webpage_metadata = 8; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+  GoogleDriveSourceMetadata google_drive_source_metadata = 10; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+}
+
+message Source {
+  SourceId source_id = 1; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+  string title = 2; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+  SourceMetadata metadata = 3; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+  .google.internal.labs.tailwind.v1.SourceSettings settings = 4; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+}
+
+message ProjectMetadata {
+  ProjectRole user_role = 1; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+  google.protobuf.Timestamp create_time = 9; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+}
+
+message Project {
+  string title = 1; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+  repeated Source sources = 2; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+  string id = 3; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+  string emoji = 4; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+  ProjectMetadata metadata = 6; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+}
+
+message GetProjectRequest {
+  string project_id = 1; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+  bool include_audio_overview_ids = 2; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+}
+
+message GetProjectResponse {
+  Project project = 1; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+}
+
+message ListRecentlyViewedProjectsRequest {
+  bool include_own_projects = 2; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+  bool include_audio_overview_ids = 3; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+}
+
+message ListRecentlyViewedProjectsResponse {
+  repeated Project projects = 1; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+}
+
+service LabsTailwindOrchestrationService {
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
+  rpc ListRecentlyViewedProjects(ListRecentlyViewedProjectsRequest)
+      returns (ListRecentlyViewedProjectsResponse);
+}

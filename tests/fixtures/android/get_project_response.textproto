@@ -1,0 +1,48 @@
+project {
+  title: "Synthetic B1 project"
+  sources {
+    source_id { id: "00000000-0000-4000-8000-000000000001" }
+    title: "Public web source"
+    metadata {
+      original_source_content_type: SOURCE_CONTENT_TYPE_URL
+      webpage_metadata { url: "https://example.invalid/source" }
+    }
+    settings { status: SOURCE_STATUS_COMPLETE }
+  }
+  sources {
+    source_id { id: "00000000-0000-4000-8000-000000000002" }
+    title: "PDF source"
+    metadata { original_source_content_type: SOURCE_CONTENT_TYPE_PDF }
+    settings { status: SOURCE_STATUS_PENDING }
+  }
+  sources {
+    source_id { id: "00000000-0000-4000-8000-000000000003" }
+    title: "Tentative source"
+    metadata { original_source_content_type: SOURCE_CONTENT_TYPE_MARKDOWN }
+    settings { status: SOURCE_STATUS_TENTATIVE }
+  }
+  sources {
+    source_id { id: "00000000-0000-4000-8000-000000000004" }
+    title: "Drive source"
+    metadata {
+      original_source_content_type: SOURCE_CONTENT_TYPE_GOOGLE_DOC
+      google_drive_source_metadata {
+        document_id: "synthetic-drive-document"
+        mime_type: "application/vnd.google-apps.document"
+      }
+    }
+    settings {
+      status: SOURCE_STATUS_ERROR
+      user_drive_source_status: DRIVE_SOURCE_STATUS_ACTIVE
+    }
+  }
+  id: "00000000-0000-4000-8000-000000000000"
+  emoji: "📘"
+  metadata {
+    user_role: PROJECT_ROLE_OWNER
+    create_time {
+      seconds: 1787832000
+      nanos: 123000000
+    }
+  }
+}

@@ -1,0 +1,20 @@
+projects {
+  title: "First synthetic project"
+  id: "00000000-0000-4000-8000-000000000010"
+  emoji: ""
+  metadata {
+    user_role: PROJECT_ROLE_OWNER
+    create_time { seconds: 1787832000 }
+  }
+}
+projects {
+  title: "Second synthetic project"
+  sources {
+    source_id { id: "00000000-0000-4000-8000-000000000011" }
+    title: "Synthetic text"
+    metadata { original_source_content_type: SOURCE_CONTENT_TYPE_TEXT }
+    settings { status: SOURCE_STATUS_COMPLETE }
+  }
+  id: "00000000-0000-4000-8000-000000000012"
+  metadata { user_role: PROJECT_ROLE_READER }
+}

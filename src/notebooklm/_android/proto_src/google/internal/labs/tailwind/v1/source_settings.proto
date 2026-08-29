@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package google.internal.labs.tailwind.v1;
+
+// Exact package, tags, and complete enum values recovered from
+// source_settings.pb.dart. B1 admits only the two settings fields its source
+// codec consumes; no flattened-schema gaps are filled.
+
+enum SourceStatus {
+  SOURCE_STATUS_UNSPECIFIED = 0;
+  SOURCE_STATUS_PENDING = 1;
+  SOURCE_STATUS_COMPLETE = 2;
+  SOURCE_STATUS_ERROR = 3;
+  SOURCE_STATUS_PENDING_DELETION = 4;
+  SOURCE_STATUS_TENTATIVE = 5;
+}
+
+enum UserDriveSourceStatus {
+  DRIVE_SOURCE_STATUS_UNSPECIFIED = 0;
+  DRIVE_SOURCE_STATUS_INACCESSIBLE = 1;
+  DRIVE_SOURCE_STATUS_SYNCING = 2;
+  DRIVE_SOURCE_STATUS_ACTIVE = 3;
+  DRIVE_SOURCE_STATUS_DELETED = 4;
+  DRIVE_SOURCE_STATUS_GEN_AI_ACCESS_DENIED = 5;
+}
+
+message SourceSettings {
+  SourceStatus status = 2; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+  UserDriveSourceStatus user_drive_source_status = 4; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+}

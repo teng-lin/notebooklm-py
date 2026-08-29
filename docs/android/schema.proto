@@ -6,11 +6,11 @@
 // Method: blutter (ported to Dart 3.13) decompiled each GeneratedMessage's BuilderInfo._i();
 //   field tag/name/type/cardinality parsed from the disassembled registrations
 //   (aOS=string, aOM=message, aE=enum, aI=int, aOB=bool, aD=double, pPM=repeated message, ...).
-//   See docs/mobile/capture.md and docs/mobile/endpoints.md.
+//   See docs/android/capture.md and docs/android/endpoints.md.
 //
 // Ground truth: field NUMBERS, NAMES, and cardinality are from the binary (not inferred).
 //   Scalar kinds from adders are exact; a few int widths (int32/int64) and enum vs message may
-//   need confirmation. Wire-capture cross-check (docs/mobile/endpoints.md) agrees on every
+//   need confirmation. Wire-capture cross-check (docs/android/endpoints.md) agrees on every
 //   RPC request/response message checked.
 //
 // 282 messages, 767 fields. Regenerate with scripts/parse_pbschema.py over a blutter dump.
