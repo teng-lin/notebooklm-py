@@ -227,7 +227,7 @@ ignore_missing_imports = true
 files = ["src/notebooklm"]
 # Generated protobuf modules expose message attributes dynamically. Their
 # contract is checked by descriptor/regeneration tests rather than mypy.
-exclude = ["tests/", "src/notebooklm/_android/proto/google/"]
+exclude = ["tests/", "src/notebooklm/_android/proto/"]
 
 # Public library modules and moved implementation modules that back exported
 # public types are checked more strictly before the package advertises PEP 561
@@ -273,7 +273,7 @@ line-length = 100
 src = ["src", "tests"]
 # Preserve protoc's byte-for-byte output. Generated modules are reviewed via
 # the descriptor contract and deterministic regeneration gate instead.
-extend-exclude = ["src/notebooklm/_android/proto/google/**"]
+extend-exclude = ["src/notebooklm/_android/proto/**"]
 
 [tool.ruff.lint]
 select = [

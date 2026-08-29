@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate or verify the checked-in B1 Android protobuf artifacts.
+"""Regenerate or verify the checked-in Android protobuf artifacts.
 
 Generation is deliberately hermetic with respect to repository inputs: the
 tool versions and flags are exact, input files are sorted, and output is first
@@ -28,10 +28,11 @@ EXPECTED_PROTOC = "libprotoc 31.1"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = REPO_ROOT / "src" / "notebooklm" / "_android" / "proto_src"
 OUTPUT_ROOT = REPO_ROOT / "src" / "notebooklm" / "_android" / "proto"
-DESCRIPTOR_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "android" / "b1_descriptor_set.pb"
+DESCRIPTOR_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "android" / "android_descriptor_set.pb"
 PROTO_FILES = (
     Path("google/internal/labs/tailwind/orchestration/v1/b1_read.proto"),
     Path("google/internal/labs/tailwind/v1/source_settings.proto"),
+    Path("notebooklm/internal/android/wire/v1/b2_notebooks.proto"),
 )
 EXPECTED_GENERATED = frozenset(
     {
@@ -39,6 +40,8 @@ EXPECTED_GENERATED = frozenset(
         Path("google/internal/labs/tailwind/orchestration/v1/b1_read_pb2_grpc.py"),
         Path("google/internal/labs/tailwind/v1/source_settings_pb2.py"),
         Path("google/internal/labs/tailwind/v1/source_settings_pb2_grpc.py"),
+        Path("notebooklm/internal/android/wire/v1/b2_notebooks_pb2.py"),
+        Path("notebooklm/internal/android/wire/v1/b2_notebooks_pb2_grpc.py"),
     }
 )
 
@@ -79,7 +82,7 @@ def _compile(temp_root: Path) -> tuple[Path, Path]:
     from grpc_tools import protoc
 
     generated_root = temp_root / "generated"
-    descriptor_path = temp_root / "b1_descriptor_set.pb"
+    descriptor_path = temp_root / "android_descriptor_set.pb"
     generated_root.mkdir(parents=True)
     bundled_well_known_types = Path(grpc_tools.__file__).resolve().parent / "_proto"
 
@@ -101,7 +104,7 @@ def _compile(temp_root: Path) -> tuple[Path, Path]:
     actual_generated = _generated_files(generated_root)
     if actual_generated != EXPECTED_GENERATED:
         raise RuntimeError(
-            "generated file set differs from the pinned B1 closure: "
+            "generated file set differs from the pinned Android closure: "
             f"expected={sorted(map(str, EXPECTED_GENERATED))}, "
             f"actual={sorted(map(str, actual_generated))}"
         )
@@ -152,7 +155,7 @@ def _check(generated_root: Path, descriptor_path: Path) -> None:
     checked_in = _generated_files(OUTPUT_ROOT)
     if checked_in != EXPECTED_GENERATED:
         problems.append(
-            "checked-in generated file set differs from B1 closure: "
+            "checked-in generated file set differs from the Android closure: "
             f"expected={sorted(map(str, EXPECTED_GENERATED))}, "
             f"actual={sorted(map(str, checked_in))}"
         )
@@ -198,10 +201,10 @@ def main(argv: list[str] | None = None) -> int:
             generated_root, descriptor_path = _compile(Path(temp_dir))
             if args.write:
                 _write(generated_root, descriptor_path)
-                print("Updated checked-in B1 Android protobuf artifacts")
+                print("Updated checked-in Android protobuf artifacts")
             else:
                 _check(generated_root, descriptor_path)
-                print("OK: B1 Android protobuf descriptors and generated tree are deterministic")
+                print("OK: Android protobuf descriptors and generated tree are deterministic")
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1

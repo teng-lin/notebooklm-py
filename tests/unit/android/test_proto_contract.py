@@ -1,4 +1,4 @@
-"""Exact-package and deterministic-generation gates for the B1 Android proto closure."""
+"""Exact-package, local-wire, and deterministic Android protobuf gates."""
 
 from __future__ import annotations
 
@@ -16,11 +16,13 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
     b1_read_pb2_grpc,
 )
 from notebooklm._android.proto.google.internal.labs.tailwind.v1 import source_settings_pb2
+from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import b2_notebooks_pb2
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "android"
 ORCHESTRATION_PACKAGE = "google.internal.labs.tailwind.orchestration.v1"
 SETTINGS_PACKAGE = "google.internal.labs.tailwind.v1"
+LOCAL_WIRE_PACKAGE = "notebooklm.internal.android.wire.v1"
 
 
 def _field_shapes(message: Any) -> dict[str, tuple[int, bool, int, str | None]]:
@@ -174,6 +176,92 @@ def test_source_settings_has_only_fields_two_and_four() -> None:
     }
 
 
+def test_b2_repository_local_wire_fields_are_exhaustive() -> None:
+    assert b2_notebooks_pb2.DESCRIPTOR.package == LOCAL_WIRE_PACKAGE
+    assert not b2_notebooks_pb2.DESCRIPTOR.services_by_name
+    assert not b2_notebooks_pb2.DESCRIPTOR.dependencies
+
+    singular = False
+    repeated = True
+    string = FieldDescriptor.TYPE_STRING
+    message = FieldDescriptor.TYPE_MESSAGE
+    local = LOCAL_WIRE_PACKAGE
+    expected = {
+        b2_notebooks_pb2.WireCreateProjectRequest: {
+            "name": (1, singular, string, None),
+        },
+        b2_notebooks_pb2.WireDeleteProjectsRequest: {
+            "project_ids": (1, repeated, string, None),
+        },
+        b2_notebooks_pb2.WireProjectChangeProperty: {
+            "new_title": (2, singular, string, None),
+        },
+        b2_notebooks_pb2.WireProjectMutation: {
+            "change_property": (
+                4,
+                singular,
+                message,
+                f"{local}.WireProjectChangeProperty",
+            ),
+        },
+        b2_notebooks_pb2.WireMutateProjectRequest: {
+            "project_id": (1, singular, string, None),
+            "mutations": (2, repeated, message, f"{local}.WireProjectMutation"),
+        },
+        b2_notebooks_pb2.WireCopyProjectRequest: {
+            "source_project_id": (2, singular, string, None),
+            "title": (3, singular, string, None),
+        },
+        b2_notebooks_pb2.WireGenerateNotebookGuideRequest: {
+            "project_id": (1, singular, string, None),
+        },
+        b2_notebooks_pb2.WireNotebookSummary: {
+            "text_summary": (1, singular, string, None),
+        },
+        b2_notebooks_pb2.WireSuggestedTopic: {
+            "question": (1, singular, string, None),
+            "prompt": (2, singular, string, None),
+        },
+        b2_notebooks_pb2.WireSuggestedTopics: {
+            "topics": (1, repeated, message, f"{local}.WireSuggestedTopic"),
+        },
+        b2_notebooks_pb2.WireNotebookGuide: {
+            "summary": (1, singular, message, f"{local}.WireNotebookSummary"),
+            "suggested_topics": (2, singular, message, f"{local}.WireSuggestedTopics"),
+        },
+        b2_notebooks_pb2.WireGenerateNotebookGuideResponse: {
+            "notebook_guide": (1, singular, message, f"{local}.WireNotebookGuide"),
+        },
+    }
+
+    assert {message_type.DESCRIPTOR.name for message_type in expected} == set(
+        b2_notebooks_pb2.DESCRIPTOR.message_types_by_name
+    )
+    for message_type, expected_fields in expected.items():
+        assert _field_shapes(message_type) == expected_fields
+
+
+def test_b2_wire_messages_match_captured_serialization() -> None:
+    create = b2_notebooks_pb2.WireCreateProjectRequest(name="Title")
+    delete = b2_notebooks_pb2.WireDeleteProjectsRequest(project_ids=["id-1"])
+    mutate = b2_notebooks_pb2.WireMutateProjectRequest(
+        project_id="p",
+        mutations=[
+            b2_notebooks_pb2.WireProjectMutation(
+                change_property=b2_notebooks_pb2.WireProjectChangeProperty(new_title="T")
+            )
+        ],
+    )
+    copy = b2_notebooks_pb2.WireCopyProjectRequest(source_project_id="p", title="Title")
+    guide = b2_notebooks_pb2.WireGenerateNotebookGuideRequest(project_id="p")
+
+    assert create.SerializeToString(deterministic=True).hex() == "0a055469746c65"
+    assert delete.SerializeToString(deterministic=True).hex() == "0a0469642d31"
+    assert mutate.SerializeToString(deterministic=True).hex() == "0a017012052203120154"
+    assert copy.SerializeToString(deterministic=True).hex() == "1201701a055469746c65"
+    assert guide.SerializeToString(deterministic=True).hex() == "0a0170"
+
+
 def test_all_reachable_enum_names_and_numbers_are_exact() -> None:
     assert _enum_values(b1_read_pb2.ProjectRole) == {
         "PROJECT_ROLE_UNKNOWN": 0,
@@ -297,6 +385,25 @@ def test_descriptor_fixture_matches_generated_file_descriptors() -> None:
     )
     assert _without_implicit_json_names(files[source_settings_pb2.DESCRIPTOR.name]) == (
         descriptor_pb2.FileDescriptorProto.FromString(source_settings_pb2.DESCRIPTOR.serialized_pb)
+    )
+
+
+def test_current_descriptor_fixture_includes_b2_local_wire_overlay() -> None:
+    descriptor_set = descriptor_pb2.FileDescriptorSet.FromString(
+        (FIXTURES / "android_descriptor_set.pb").read_bytes()
+    )
+    files = {file.name: file for file in descriptor_set.file}
+
+    assert set(files) == {
+        "google/internal/labs/tailwind/orchestration/v1/b1_read.proto",
+        "google/internal/labs/tailwind/v1/source_settings.proto",
+        "google/protobuf/timestamp.proto",
+        "notebooklm/internal/android/wire/v1/b2_notebooks.proto",
+    }
+    local = files[b2_notebooks_pb2.DESCRIPTOR.name]
+    assert local.package == LOCAL_WIRE_PACKAGE
+    assert _without_implicit_json_names(local) == descriptor_pb2.FileDescriptorProto.FromString(
+        b2_notebooks_pb2.DESCRIPTOR.serialized_pb
     )
 
 

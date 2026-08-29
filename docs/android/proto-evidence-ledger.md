@@ -1,10 +1,10 @@
-# B1 Android protobuf evidence ledger
+# Android protobuf evidence ledger
 
-**Status:** admitted B1 read closure
+**Status:** admitted B1 read closure plus B2 notebook wire overlay
 
 **Evidence snapshot:** 2026-08-27
 
-**Scope:** `GetProject`, `ListRecentlyViewedProjects`, and only their public read projection
+**Scope:** B1 notebook/source reads and the B2 notebook operations listed below
 
 This ledger is the admission boundary for `src/notebooklm/_android/proto_src/`. The recovered
 [`schema.proto`](schema.proto) is Dart-AOT evidence, not a compile input: it flattened several
@@ -38,8 +38,24 @@ The recovery method and the warning about duplicate packages are committed in
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject` | `.google.internal.labs.tailwind.orchestration.v1.GetProjectRequest` | `.google.internal.labs.tailwind.orchestration.v1.GetProjectResponse` | unary/unary | `project_id #1`, `include_audio_overview_ids #2`; no `RequestContext` |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListRecentlyViewedProjects` | `.google.internal.labs.tailwind.orchestration.v1.ListRecentlyViewedProjectsRequest` | `.google.internal.labs.tailwind.orchestration.v1.ListRecentlyViewedProjectsResponse` | unary/unary | `include_own_projects #2`, `include_audio_overview_ids #3`; no `RequestContext` |
 
-The service descriptor contains exactly these two methods in B1. Later work packages add overlays;
-they do not widen this file because a method happens to exist in the APK or flattened schema.
+The exact-package service descriptor contains exactly these two methods in B1. B2 does not widen
+that descriptor: its captures prove method paths and serialized layouts, but not the complete
+package/import identity of every reachable request/response message. B2 therefore uses the
+repository-local wire overlay below with manual full-path calls.
+
+## B2 notebook method ledger
+
+`Wire*` means a message in the deliberately non-Google package
+`notebooklm.internal.android.wire.v1`. It claims wire equivalence only. Bare `Project` responses
+reuse the B1 exact-package message, and empty deletion uses `google.protobuf.Empty` directly.
+
+| Full method | Request parser | Response parser | Replay | Evidence |
+|---|---|---|---|---|
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateProject` | `WireCreateProjectRequest` | exact-package `Project` (bare) | never in transport; base create probes before retry | [`endpoints.md`](endpoints.md#createproject--create-a-notebook) |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteProjects` | `WireDeleteProjectsRequest` | `google.protobuf.Empty` | never | [`endpoints.md`](endpoints.md#deleteprojects--delete-notebooks) |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateProject` | `WireMutateProjectRequest` | exact-package `Project` (bare) | never | [`endpoints.md`](endpoints.md#mutateproject--rename--edit-notebook-fields) |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CopyProject` | `WireCopyProjectRequest` | exact-package `Project` (bare) | never; transport ambiguity is surfaced | [copy validation](labels-collections-copy-mobile-grpc-2026-08-27.md#copy-a-notebook) |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateNotebookGuide` | `WireGenerateNotebookGuideRequest` | `WireGenerateNotebookGuideResponse` | never; stateful | [`endpoints.md`](endpoints.md#generatenotebookguide) |
 
 ## Import closure
 
@@ -84,6 +100,31 @@ cardinality admitted. Every row is asserted exhaustively against the generated d
 | `orchestration.v1.ListRecentlyViewedProjectsRequest` | `include_own_projects` | 2 | singular | bool; exact service closure + successful capture |
 | `orchestration.v1.ListRecentlyViewedProjectsRequest` | `include_audio_overview_ids` | 3 | singular | bool; exact service closure + successful capture |
 | `orchestration.v1.ListRecentlyViewedProjectsResponse` | `projects` | 1 | repeated | `Project`; exact wrapper declaration |
+
+### B2 repository-local wire field ledger
+
+Every row below is asserted against the generated descriptor and against deterministic serialized
+bytes. Context fields observed in the official app are omitted because the direct bearer evidence
+shows context is optional; the implementation does not fabricate one.
+
+| Local message | Field | Tag | Cardinality | Type/evidence |
+|---|---|---:|---|---|
+| `WireCreateProjectRequest` | `name` | 1 | singular | string; captured create request |
+| `WireDeleteProjectsRequest` | `project_ids` | 1 | repeated | string; captured single-ID delete request |
+| `WireProjectChangeProperty` | `new_title` | 2 | singular | string; captured title-only mutation |
+| `WireProjectMutation` | `change_property` | 4 | singular | local nested message; captured mutation variant |
+| `WireMutateProjectRequest` | `project_id` | 1 | singular | string; captured mutation request |
+| `WireMutateProjectRequest` | `mutations` | 2 | repeated | local nested message; captured cardinality |
+| `WireCopyProjectRequest` | `source_project_id` | 2 | singular | string; direct successful replay |
+| `WireCopyProjectRequest` | `title` | 3 | singular | string; direct successful replay |
+| `WireGenerateNotebookGuideRequest` | `project_id` | 1 | singular | string; captured stateful request |
+| `WireNotebookSummary` | `text_summary` | 1 | singular | string; captured guide response |
+| `WireSuggestedTopic` | `question` | 1 | singular | string; captured guide topic row |
+| `WireSuggestedTopic` | `prompt` | 2 | singular | string; captured guide topic row |
+| `WireSuggestedTopics` | `topics` | 1 | repeated | local topic row; captured response cardinality |
+| `WireNotebookGuide` | `summary` | 1 | singular | local summary message; captured response |
+| `WireNotebookGuide` | `suggested_topics` | 2 | singular | local topic envelope; captured response |
+| `WireGenerateNotebookGuideResponse` | `notebook_guide` | 1 | singular | local guide message; captured response wrapper |
 
 ## Blocked Project premium field 10
 

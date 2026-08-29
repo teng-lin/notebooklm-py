@@ -975,19 +975,23 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_client_assembly.py` | Single private assembly seam (`_assemble_client`) that wires every constructor-set attribute; shared by `NotebookLMClient.__init__` and the canonical test factory (`tests/_helpers/client_factory.py`) so the two construction paths cannot drift. |
 | `_client_composed.py` | Client-owned composition holder for transport, executor, chain host, middleware metadata, and runtime collaborator bundle. |
 | `_web/transport/seams.py` | Constructor-only injectable seams used by tests and collaborator construction. |
-| `_android/` | Private Android backend package. Its package marker is dependency-free; B1 generated protobuf modules remain private/direct-test-only and no client factory branch selects them. |
+| `_android/` | Private Android backend package. Its package marker is dependency-free; generated protobuf modules remain private/direct-test-only and no client factory branch selects them. |
 | `_android/auth.py` | Generation-fenced `BearerProvider`: off-loop typed profile reads, shared mint waves, bounded expiry caching, compare-and-clear invalidation, and secret-safe teardown. |
+| `_android/codecs/` | Typed protobuf-to-public-dataclass projection package for private Android adapters. |
+| `_android/codecs/notebooks.py` | Android project and notebook-guide projections plus bounded notebook decode/status errors. |
+| `_android/codecs/sources.py` | Android source projection, enum-name mapping, duplicate handling, and strict/default drift behavior. |
 | `_android/errors.py` | Sanitized gRPC-status projection plus the pre-I/O unsupported-operation helper; raw transport exceptions and details never cross this boundary. |
+| `_android/notebooks.py` | Private Android notebook adapter: B1 reads and evidence-admitted B2 create/delete/title-update/copy/guide operations. |
 | `_android/session.py` | Lazy Google-TLS gRPC transport participating in root loop/lifecycle supervision, aggregate deadlines, per-call bearer metadata, status mapping, safe-read replay, and full stream leases. |
-| `_android/notebooks.py` | Private B1 Android notebook read adapter (`ListRecentlyViewedProjects`/`GetProject`) with explicit pre-I/O rejection for every unsupported mutation. |
-| `_android/sources.py` | Private B1 Android source read adapter over `GetProject`, including validated filter snapshots and explicit pre-I/O rejection for unsupported writes/content operations. |
-| `_android/codecs/` | Android protobuf-to-public-type projections. Notebook/source codecs validate required identities, map enums by name, bound decode failures, and retain the first duplicate source row. |
+| `_android/sources.py` | Private Android source adapter: B1 dependency-complete reads and explicit pre-I/O unsupported mutations. |
 | `_android/proto/` | Checked-in generated Python protobuf package. Files are regenerated only by `scripts/regenerate_android_protos.py` with the pinned toolchain and are never generated during installation. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/b1_read_pb2.py` | Exact-package B1 messages and descriptors for `GetProject` and `ListRecentlyViewedProjects`. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/b1_read_pb2_grpc.py` | Generated `LabsTailwindOrchestrationServiceStub` limited to the two B1 read methods. |
 | `_android/proto/google/internal/labs/tailwind/v1/source_settings_pb2.py` | Exact-package `SourceSettings`, `SourceStatus`, and `UserDriveSourceStatus` descriptors. |
 | `_android/proto/google/internal/labs/tailwind/v1/source_settings_pb2_grpc.py` | Generated companion for the service-free SourceSettings proto; retained so the generated tree exactly matches the pinned command. |
-| `_android/proto_src/` | Minimal compile-ready B1 `.proto` closure. The evidence ledger is `docs/android/proto-evidence-ledger.md`; flattened `docs/android/schema.proto` is never a compile input. |
+| `_android/proto/notebooklm/internal/android/wire/v1/b2_notebooks_pb2.py` | Repository-local B2 notebook wire-equivalent messages; the local package explicitly avoids claiming unproven Google FQNs. |
+| `_android/proto/notebooklm/internal/android/wire/v1/b2_notebooks_pb2_grpc.py` | Deterministic service-free companion for the B2 local wire overlay. |
+| `_android/proto_src/` | Minimal compile-ready Android `.proto` closure. The evidence ledger is `docs/android/proto-evidence-ledger.md`; flattened `docs/android/schema.proto` is never a compile input. |
 | `_runtime/init.py` | Constructor helpers that validate client runtime kwargs, build collaborators (returning a `RuntimeCollaborators` bundle), wire middleware, and bind `ClientComposed`. |
 | `_web/transport/kernel.py` | Concrete `Kernel` transport core (owns `httpx.AsyncClient` + cookie jar) |
 | `_runtime/config.py` | `DEFAULT_*` knobs and module-level constants. `CORE_LOGGER_NAME = "notebooklm._core"` is intentionally preserved as a compatibility logging contract even though the `_core` module was deleted; renaming it silently breaks downstream `caplog`/logger filters. |
@@ -1223,18 +1227,18 @@ src/notebooklm/
 │   ├── source_research.py       # Click-free `source add-research` start/wait/import workflow + validate_add_research_flags (importer injected; SourceAddResearchPlan/Result)
 │   ├── source_wait.py           # Click-free `source wait` readiness-poll core: execute_source_wait + typed SourceWaitOutcome (wait_context injected) + wait_all_sources (single-snapshot loop via client.sources.wait_all_until_ready — one notebook poll per tick, order-preserving; #1870) shared by the MCP tool + REST route (#1871) + the MAX_WAIT_TIMEOUT / MAX_WAIT_SOURCE_IDS caps
 │   └── views.py                 # Transport-neutral output-projection views: share_status_view (access/permission/view_level enum→label), source_view (kind/status_label/drive_status_label + is_drive_degraded added), notebook_view (role_label added), notebook_viewed_keys (last_viewed_at + its deprecated modified_at alias, for hand-built CLI JSON envelopes), ask_result_view (raw_response debug blob stripped); shared by the MCP tools + REST routes so both emit the identical enriched shape (Option B)
-├── _android/                    # Private Android backend package (not selected in B1)
+├── _android/                    # Private Android backend package (not publicly selected)
 │   ├── __init__.py              # Dependency-free package marker
-│   ├── auth.py                  # Generation-aware, secret-safe Android bearer provider
-│   ├── errors.py                # Sanitized gRPC status and unsupported-operation mapping
-│   ├── session.py               # Lazy supervised Android gRPC transport
-│   ├── notebooks.py             # B1 Android notebook reads and unsupported stubs
-│   ├── sources.py               # B1 Android source reads and unsupported stubs
-│   ├── codecs/                  # Protobuf-to-public-domain projections
-│   │   ├── __init__.py
-│   │   ├── notebooks.py         # Project decode, raw dict and not-found mapping
-│   │   └── sources.py           # Source/status/type decode and duplicate handling
-│   ├── proto_src/               # Minimal exact-package B1 proto source closure
+│   ├── auth.py                  # Epoch-aware short-lived bearer provider
+│   ├── codecs/                  # Android protobuf projections
+│   │   ├── __init__.py          # Codec package marker
+│   │   ├── notebooks.py         # Project and notebook-guide decoding
+│   │   └── sources.py           # Source projection and enum mapping
+│   ├── errors.py                # Sanitized gRPC status/error mapping
+│   ├── notebooks.py             # Android notebook reads and B2 mutations
+│   ├── session.py               # Supervised lazy gRPC transport
+│   ├── sources.py               # Android source reads and unsupported gates
+│   ├── proto_src/               # Exact-package reads + evidence-bounded local wire overlays
 │   └── proto/                   # Checked-in generated pb2/pb2_grpc modules
 │       ├── __init__.py          # Dependency-free generated-package marker
 │       └── google/internal/labs/tailwind/
@@ -1244,6 +1248,9 @@ src/notebooklm/
 │           └── v1/
 │               ├── source_settings_pb2.py       # Source settings/status descriptors
 │               └── source_settings_pb2_grpc.py  # Deterministic service-free companion
+│       └── notebooklm/internal/android/wire/v1/
+│           ├── b2_notebooks_pb2.py       # Repository-local B2 notebook wire messages
+│           └── b2_notebooks_pb2_grpc.py  # Deterministic service-free companion
 ├── _web/                        # Private batchexecute web-backend implementation package
 │   ├── __init__.py              # Package boundary
 │   ├── contracts.py             # Web-only Kernel and RpcCaller Protocols

@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+// These are deliberately repository-local wire-equivalent messages, not a
+// claim about Google's protobuf package or import graph. The B2 captures prove
+// the serialized fields below and the full gRPC method paths, while the
+// flattened Dart recovery alone is insufficient exact-package evidence.
+package notebooklm.internal.android.wire.v1;
+
+message WireCreateProjectRequest {
+  string name = 1; // evidence: docs/android/endpoints.md#createproject--create-a-notebook
+}
+
+message WireDeleteProjectsRequest {
+  repeated string project_ids = 1; // evidence: docs/android/endpoints.md#deleteprojects--delete-notebooks
+}
+
+message WireProjectChangeProperty {
+  string new_title = 2; // evidence: docs/android/endpoints.md#mutateproject--rename--edit-notebook-fields
+}
+
+message WireProjectMutation {
+  WireProjectChangeProperty change_property = 4; // evidence: docs/android/endpoints.md#mutateproject--rename--edit-notebook-fields
+}
+
+message WireMutateProjectRequest {
+  string project_id = 1; // evidence: docs/android/endpoints.md#mutateproject--rename--edit-notebook-fields
+  repeated WireProjectMutation mutations = 2; // evidence: docs/android/endpoints.md#mutateproject--rename--edit-notebook-fields
+}
+
+message WireCopyProjectRequest {
+  string source_project_id = 2; // evidence: docs/android/labels-collections-copy-mobile-grpc-2026-08-27.md#copy-a-notebook
+  string title = 3; // evidence: docs/android/labels-collections-copy-mobile-grpc-2026-08-27.md#copy-a-notebook
+}
+
+message WireGenerateNotebookGuideRequest {
+  string project_id = 1; // evidence: docs/android/endpoints.md#generatenotebookguide
+}
+
+message WireNotebookSummary {
+  string text_summary = 1; // evidence: docs/android/endpoints.md#generatenotebookguide
+}
+
+message WireSuggestedTopic {
+  string question = 1; // evidence: docs/android/endpoints.md#generatenotebookguide
+  string prompt = 2; // evidence: docs/android/endpoints.md#generatenotebookguide
+}
+
+message WireSuggestedTopics {
+  repeated WireSuggestedTopic topics = 1; // evidence: docs/android/endpoints.md#generatenotebookguide
+}
+
+message WireNotebookGuide {
+  WireNotebookSummary summary = 1; // evidence: docs/android/endpoints.md#generatenotebookguide
+  WireSuggestedTopics suggested_topics = 2; // evidence: docs/android/endpoints.md#generatenotebookguide
+}
+
+message WireGenerateNotebookGuideResponse {
+  WireNotebookGuide notebook_guide = 1; // evidence: docs/android/endpoints.md#generatenotebookguide
+}
