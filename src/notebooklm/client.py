@@ -304,9 +304,10 @@ class NotebookLMClient:
                 late-bound wrapper. Must be async — it is awaited from
                 the keepalive loop.
             backend: Preferred namespace backend. ``"web"`` preserves the
-                established implementation; ``"android"`` selects only
-                namespaces that have separately passed substitution
-                qualification. Unqualified namespaces remain web. When omitted,
+                established implementation; ``"android"`` installs the Android
+                adapter for every public namespace. A few operations retain
+                documented Web compatibility collaborators where the official
+                mobile schema exposes no equivalent wire contract. When omitted,
                 ``NOTEBOOKLM_BACKEND`` is consulted, then the default is web.
         """
         # The full assembly lives in ``notebooklm._client_assembly`` —
@@ -365,7 +366,12 @@ class NotebookLMClient:
 
     @property
     def backends(self) -> Mapping[str, Literal["web", "android"]]:
-        """Read-only mapping of namespaces to their actually installed backend."""
+        """Read-only mapping of namespaces to their installed adapter backend.
+
+        The value describes the namespace object, not every internal operation:
+        an Android adapter may use a documented narrow Web compatibility seam
+        when the official mobile schema has no equivalent RPC.
+        """
         return self._backends
 
     async def __aenter__(self) -> NotebookLMClient:
@@ -589,7 +595,8 @@ class NotebookLMClient:
                 stored cookies are fully expired. A sibling master token can
                 recover automatically without enabling browser recovery.
             backend: Preferred namespace backend. An explicit value takes
-                precedence over ``NOTEBOOKLM_BACKEND``; the default is web.
+                precedence over ``NOTEBOOKLM_BACKEND``; Android installs the
+                complete Android namespace graph and the default is web.
 
         Returns:
             ``_FromStorageContext`` — an awaitable async-context-manager

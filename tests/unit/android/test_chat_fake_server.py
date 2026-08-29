@@ -1,4 +1,4 @@
-"""B5 chat orchestration through a real in-process gRPC server."""
+"""chat orchestration through a real in-process gRPC server."""
 
 from __future__ import annotations
 
@@ -174,7 +174,7 @@ async def test_base_ask_over_real_android_session_and_fake_grpc_server() -> None
             origin=chat_pb2.QUERY_ORIGIN_CHAT_TEXT_BOX,
         )
     ]
-    # Only the two unary session lookups emit public RPC telemetry. B5's
+    # Only the two unary session lookups emit public RPC telemetry. chat's
     # direct-test stream is deliberately invoked with telemetry_method=None.
     snapshot = supervisor._metrics.snapshot()
     assert snapshot.rpc_calls_started == 2

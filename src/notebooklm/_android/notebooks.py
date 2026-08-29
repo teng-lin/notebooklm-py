@@ -1,14 +1,13 @@
-"""Android backend implementation of the B1 notebook read surface."""
+"""Android backend implementation of the read notebook read surface."""
 
 from __future__ import annotations
 
 import builtins
 import logging
 import re
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
-from typing import Any, NoReturn, cast
-
-from google.protobuf.empty_pb2 import Empty
+from typing import Any, cast
 
 from .._idempotency import mark_unconfirmed
 from .._notebook_metadata import NotebookSourceLister
@@ -22,26 +21,9 @@ from ..exceptions import (
     ValidationError,
 )
 from ..types import Notebook, NotebookDescription, PromptSuggestion
-from .codecs.notebooks import (
-    decode_notebook_guide,
-    decode_project,
-    map_get_project_error,
-    message_to_known_dict,
-)
-from .codecs.sources import decode_sources
-from .errors import unsupported_operation
-from .proto.google.internal.labs.tailwind.orchestration.v1 import (
-    notebooks_pb2 as exact_notebooks_pb2,
-)
-from .proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
-from .proto.notebooklm.internal.android.wire.v1 import notebooks_pb2
 from .session import AndroidSession
-from .upload import android_request_context
 
 logger = logging.getLogger(__name__)
-_PROTO = cast(Any, read_pb2)
-_NOTEBOOK_PROTO = cast(Any, exact_notebooks_pb2)
-_WIRE = cast(Any, notebooks_pb2)
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 GET_PROJECT_METHOD = f"/{_SERVICE}/GetProject"
@@ -52,8 +34,47 @@ DELETE_PROJECTS_METHOD = f"/{_SERVICE}/DeleteProjects"
 MUTATE_PROJECT_METHOD = f"/{_SERVICE}/MutateProject"
 GENERATE_NOTEBOOK_GUIDE_METHOD = f"/{_SERVICE}/GenerateNotebookGuide"
 GENERATE_PROMPT_SUGGESTIONS_METHOD = f"/{_SERVICE}/GeneratePromptSuggestions"
+REMOVE_RECENTLY_VIEWED_PROJECT_METHOD = f"/{_SERVICE}/RemoveRecentlyViewedProject"
 
 _LEADING_LIST_MARKER = re.compile(r"[-*+]\s+")
+RemoveFromRecent = Callable[[str], Awaitable[None]]
+
+
+def _read_proto() -> Any:
+    from .proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
+
+    return cast(Any, read_pb2)
+
+
+def _notebook_proto() -> Any:
+    from .proto.google.internal.labs.tailwind.orchestration.v1 import notebooks_pb2
+
+    return cast(Any, notebooks_pb2)
+
+
+def _wire_proto() -> Any:
+    from .proto.notebooklm.internal.android.wire.v1 import notebooks_pb2
+
+    return cast(Any, notebooks_pb2)
+
+
+def _notebook_codec() -> Any:
+    from .codecs import notebooks
+
+    return notebooks
+
+
+def _android_request_context() -> Any:
+    from .upload import android_request_context
+
+    return android_request_context()
+
+
+def _empty_message_type() -> type[Any]:
+    """Import the optional protobuf response only when Android is selected."""
+    from google.protobuf.empty_pb2 import Empty
+
+    return Empty
 
 
 def _strip_leading_list_marker(text: str) -> str:
@@ -64,19 +85,29 @@ def _strip_leading_list_marker(text: str) -> str:
     return lstripped.rstrip()
 
 
-def _reject(operation: str) -> NoReturn:
-    unsupported_operation(operation)
-    raise AssertionError("unsupported_operation returned")  # pragma: no cover
-
-
 class AndroidNotebooksAPI(NotebooksAPI):
-    """Android notebook adapter for the directly tested B1/B2 graph."""
+    """Android notebook adapter for the directly tested read/notebook graph."""
 
     _create_method_id = f"/{_SERVICE}/CreateProject"
 
-    def __init__(self, session: AndroidSession, sources_api: NotebookSourceLister) -> None:
-        """Bind the Android session and required structural source-listing collaborator."""
+    def __init__(
+        self,
+        session: AndroidSession,
+        sources_api: NotebookSourceLister,
+        *,
+        remove_from_recent: RemoveFromRecent | None = None,
+    ) -> None:
+        """Bind Android transport plus the one qualified Web compatibility seam.
+
+        The official Android ``RemoveRecentlyViewedProject`` binding is exact,
+        but the production route consistently returns status 13 without
+        changing the recent-project list. Public client assembly supplies the
+        already-authenticated Web implementation for that single operation.
+        Direct adapter users may omit the collaborator to exercise the exact
+        Android route for evidence/conformance work.
+        """
         self._transport = session
+        self._remove_from_recent_compat = remove_from_recent
         self._workflow_epoch: ContextVar[int | None] = ContextVar(
             "android_notebook_workflow_epoch",
             default=None,
@@ -92,7 +123,8 @@ class AndroidNotebooksAPI(NotebooksAPI):
         notebook_id: str,
     ) -> Any:
         # evidence: docs/android/proto-evidence-ledger.md#field-ledger
-        request = _PROTO.GetProjectRequest(
+        proto = _read_proto()
+        request = proto.GetProjectRequest(
             project_id=notebook_id,
             include_audio_overview_ids=True,
         )
@@ -101,11 +133,15 @@ class AndroidNotebooksAPI(NotebooksAPI):
                 GET_PROJECT_METHOD,
                 request,
                 replay_safe=True,
-                response_type=_PROTO.GetProjectResponse,
+                response_type=proto.GetProjectResponse,
                 **self._epoch_kwargs(),
             )
         except RPCError as exc:
-            mapped = map_get_project_error(notebook_id, exc, method_id=GET_PROJECT_METHOD)
+            mapped = _notebook_codec().map_get_project_error(
+                notebook_id,
+                exc,
+                method_id=GET_PROJECT_METHOD,
+            )
             if mapped is exc:
                 raise
             raise mapped from exc
@@ -113,7 +149,8 @@ class AndroidNotebooksAPI(NotebooksAPI):
     async def list(self) -> builtins.list[Notebook]:
         """List Android projects in the server's recent-first order."""
         # evidence: docs/android/proto-evidence-ledger.md#field-ledger
-        request = _PROTO.ListRecentlyViewedProjectsRequest(
+        proto = _read_proto()
+        request = proto.ListRecentlyViewedProjectsRequest(
             include_own_projects=True,
             include_audio_overview_ids=True,
         )
@@ -121,18 +158,18 @@ class AndroidNotebooksAPI(NotebooksAPI):
             LIST_RECENT_PROJECTS_METHOD,
             request,
             replay_safe=True,
-            response_type=_PROTO.ListRecentlyViewedProjectsResponse,
+            response_type=proto.ListRecentlyViewedProjectsResponse,
             **self._epoch_kwargs(),
         )
         return [
-            decode_project(project, method_id=LIST_RECENT_PROJECTS_METHOD)
+            _notebook_codec().decode_project(project, method_id=LIST_RECENT_PROJECTS_METHOD)
             for project in response.projects
         ]
 
     async def get(self, notebook_id: str) -> Notebook:
         """Get one Android project, translating only status-5 misses."""
         response = await self._get_project_response(notebook_id)
-        return decode_project(response.project, method_id=GET_PROJECT_METHOD)
+        return _notebook_codec().decode_project(response.project, method_id=GET_PROJECT_METHOD)
 
     async def get_raw(self, notebook_id: str) -> dict[str, Any]:
         """Return the known-field protobuf response as a backend-shaped dict."""
@@ -140,14 +177,16 @@ class AndroidNotebooksAPI(NotebooksAPI):
         # The raw contract is the full response envelope, matching the web
         # method's transport-shaped return rather than silently unwrapping the
         # project only for Android.
-        return message_to_known_dict(response, method_id=GET_PROJECT_METHOD)
+        return _notebook_codec().message_to_known_dict(response, method_id=GET_PROJECT_METHOD)
 
     async def get_source_ids(self, notebook_id: str) -> builtins.list[str]:
         """Return ordered, first-occurrence source IDs from one project read."""
         response = await self._get_project_response(notebook_id)
         # Validate the containing entity before accepting an apparently empty
         # repeated field from a malformed/default response.
-        decode_project(response.project, method_id=GET_PROJECT_METHOD)
+        _notebook_codec().decode_project(response.project, method_id=GET_PROJECT_METHOD)
+        from .codecs.sources import decode_sources
+
         return [
             source.id
             for source in decode_sources(
@@ -168,15 +207,17 @@ class AndroidNotebooksAPI(NotebooksAPI):
                 self._workflow_epoch.reset(token)
 
     async def _send_create(self, title: str) -> Notebook:
-        # evidence: docs/android/proto-evidence-ledger.md#b2-notebook-method-ledger
+        # evidence: docs/android/proto-evidence-ledger.md#notebook-method-ledger
+        notebook_proto = _notebook_proto()
+        read_proto = _read_proto()
         response = await self._transport.unary(
             CREATE_PROJECT_METHOD,
-            _NOTEBOOK_PROTO.CreateProjectRequest(name=title),
+            notebook_proto.CreateProjectRequest(name=title),
             replay_safe=False,
-            response_type=_PROTO.Project,
+            response_type=read_proto.Project,
             **self._epoch_kwargs(),
         )
-        return decode_project(response, method_id=CREATE_PROJECT_METHOD)
+        return _notebook_codec().decode_project(response, method_id=CREATE_PROJECT_METHOD)
 
     async def copy(self, notebook_id: str, title: str) -> Notebook:
         """Copy once, surfacing transport loss as an ambiguous outcome."""
@@ -185,17 +226,19 @@ class AndroidNotebooksAPI(NotebooksAPI):
         if not title or not title.strip():
             raise ValidationError("title must not be empty")
 
-        # evidence: docs/android/proto-evidence-ledger.md#b2-repository-local-wire-field-ledger
+        # evidence: docs/android/proto-evidence-ledger.md#notebook-exact-and-web-derived-field-ledger
+        notebook_proto = _notebook_proto()
+        read_proto = _read_proto()
         try:
             response = await self._transport.unary(
                 COPY_PROJECT_METHOD,
-                _NOTEBOOK_PROTO.CopyProjectRequest(
-                    request_context=android_request_context(),
+                notebook_proto.CopyProjectRequest(
+                    request_context=_android_request_context(),
                     source_project_id=notebook_id,
                     title=title,
                 ),
                 replay_safe=False,
-                response_type=_PROTO.Project,
+                response_type=read_proto.Project,
             )
         except (NetworkError, RateLimitError, ServerError) as exc:
             rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
@@ -208,7 +251,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
                     rpc_code=rpc_code,
                 )
             ) from exc
-        notebook = decode_project(response, method_id=COPY_PROJECT_METHOD)
+        notebook = _notebook_codec().decode_project(response, method_id=COPY_PROJECT_METHOD)
         if notebook.id == notebook_id:
             raise DecodingError(
                 "CopyProject response reused the source notebook id",
@@ -229,17 +272,19 @@ class AndroidNotebooksAPI(NotebooksAPI):
         if source_ids is None:
             source_ids = await self.get_source_ids(notebook_id)
         resolved_query = query if query and query.strip() else ""
+        notebook_proto = _notebook_proto()
+        read_proto = _read_proto()
         response = await self._transport.unary(
             GENERATE_PROMPT_SUGGESTIONS_METHOD,
-            _NOTEBOOK_PROTO.GeneratePromptSuggestionsRequest(
-                request_context=android_request_context(),
+            notebook_proto.GeneratePromptSuggestionsRequest(
+                request_context=_android_request_context(),
                 project_id=notebook_id,
-                source_ids=[_PROTO.SourceId(id=source_id) for source_id in source_ids],
+                source_ids=[read_proto.SourceId(id=source_id) for source_id in source_ids],
                 config_id=mode,
                 query=resolved_query,
             ),
             replay_safe=True,
-            response_type=_NOTEBOOK_PROTO.GeneratePromptSuggestionsResponse,
+            response_type=notebook_proto.GeneratePromptSuggestionsResponse,
         )
         return [
             PromptSuggestion(
@@ -253,11 +298,13 @@ class AndroidNotebooksAPI(NotebooksAPI):
         # The official generated client proves both the exact request FQN and
         # the google.protobuf.Empty response binding.
         try:
+            empty_type = _empty_message_type()
+            notebook_proto = _notebook_proto()
             await self._transport.unary(
                 DELETE_PROJECTS_METHOD,
-                _NOTEBOOK_PROTO.DeleteProjectsRequest(project_ids=[notebook_id]),
+                notebook_proto.DeleteProjectsRequest(project_ids=[notebook_id]),
                 replay_safe=False,
-                response_type=Empty,
+                response_type=empty_type,
             )
         except RPCError as exc:
             # Public notebook deletion is idempotent: an already-absent row is
@@ -276,10 +323,11 @@ class AndroidNotebooksAPI(NotebooksAPI):
         if title is None and emoji is None:
             raise ValidationError("At least one of title or emoji must be provided")
 
-        # evidence: docs/android/proto-evidence-ledger.md#b2-repository-local-wire-field-ledger
+        # evidence: docs/android/proto-evidence-ledger.md#notebook-exact-and-web-derived-field-ledger
         # ``new_emoji`` is proto3-optional because an explicitly present empty
         # string clears the emoji; omitting it preserves the current value.
-        request = _WIRE.WireMutateProjectRequest(project_id=notebook_id)
+        wire_proto = _wire_proto()
+        request = wire_proto.WireMutateProjectRequest(project_id=notebook_id)
         change = request.mutations.add().change_property
         if title is not None:
             change.new_title = title
@@ -289,30 +337,61 @@ class AndroidNotebooksAPI(NotebooksAPI):
             MUTATE_PROJECT_METHOD,
             request,
             replay_safe=False,
-            response_type=_PROTO.Project,
+            response_type=_read_proto().Project,
         )
-        return decode_project(response, method_id=MUTATE_PROJECT_METHOD)
+        return _notebook_codec().decode_project(response, method_id=MUTATE_PROJECT_METHOD)
 
     async def get_summary(self, notebook_id: str) -> str:
         response = await self._generate_notebook_guide(notebook_id)
-        return decode_notebook_guide(response, method_id=GENERATE_NOTEBOOK_GUIDE_METHOD).summary
+        return (
+            _notebook_codec()
+            .decode_notebook_guide(
+                response,
+                method_id=GENERATE_NOTEBOOK_GUIDE_METHOD,
+            )
+            .summary
+        )
 
     async def get_description(self, notebook_id: str) -> NotebookDescription:
         response = await self._generate_notebook_guide(notebook_id)
-        return decode_notebook_guide(response, method_id=GENERATE_NOTEBOOK_GUIDE_METHOD)
+        return _notebook_codec().decode_notebook_guide(
+            response,
+            method_id=GENERATE_NOTEBOOK_GUIDE_METHOD,
+        )
 
     async def _generate_notebook_guide(self, notebook_id: str) -> Any:
         # The exact response subset does not expose captured topic field #2,
         # so only response parsing uses the explicit local wire override.
+        notebook_proto = _notebook_proto()
+        wire_proto = _wire_proto()
         return await self._transport.unary(
             GENERATE_NOTEBOOK_GUIDE_METHOD,
-            _NOTEBOOK_PROTO.GenerateNotebookGuideRequest(project_id=notebook_id),
+            notebook_proto.GenerateNotebookGuideRequest(project_id=notebook_id),
             replay_safe=False,
-            response_type=_WIRE.WireGenerateNotebookGuideResponse,
+            response_type=wire_proto.WireGenerateNotebookGuideResponse,
         )
 
     async def remove_from_recent(self, notebook_id: str) -> None:
-        _reject("notebooks.remove_from_recent")
+        """Remove one project through the qualified compatibility seam.
+
+        When the public graph supplies the Web collaborator, no known-broken
+        Android mutation is attempted first. The exact APK route remains
+        available only to explicit direct-adapter conformance callers.
+        """
+        if self._remove_from_recent_compat is not None:
+            await self._remove_from_recent_compat(notebook_id)
+            return
+        empty_type = _empty_message_type()
+        notebook_proto = _notebook_proto()
+        await self._transport.unary(
+            REMOVE_RECENTLY_VIEWED_PROJECT_METHOD,
+            notebook_proto.RemoveRecentlyViewedProjectRequest(
+                project_id=notebook_id,
+                request_context=_android_request_context(),
+            ),
+            replay_safe=False,
+            response_type=empty_type,
+        )
 
 
 __all__ = [
@@ -325,4 +404,5 @@ __all__ = [
     "GET_PROJECT_METHOD",
     "LIST_RECENT_PROJECTS_METHOD",
     "MUTATE_PROJECT_METHOD",
+    "REMOVE_RECENTLY_VIEWED_PROJECT_METHOD",
 ]

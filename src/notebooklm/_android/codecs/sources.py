@@ -8,11 +8,19 @@ from typing import Any, cast
 
 from ...exceptions import DecodingError
 from ...types import DriveSourceStatus, Source, SourceStatus
-from ..proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
-from ..proto.google.internal.labs.tailwind.v1 import source_settings_pb2
 
-_PROTO = cast(Any, read_pb2)
-_SETTINGS_PROTO = cast(Any, source_settings_pb2)
+
+def _read_proto() -> Any:
+    from ..proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
+
+    return cast(Any, read_pb2)
+
+
+def _settings_proto() -> Any:
+    from ..proto.google.internal.labs.tailwind.v1 import source_settings_pb2
+
+    return cast(Any, source_settings_pb2)
+
 
 _SOURCE_TYPE_CODE_BY_NAME: dict[str, int] = {
     "SOURCE_CONTENT_TYPE_UNKNOWN": 0,
@@ -52,7 +60,7 @@ _DRIVE_STATUS_BY_NAME: dict[str, DriveSourceStatus] = {
 
 
 class _MissingSourceIdError(Exception):
-    """Internal discriminator for the one malformed row B1 may skip."""
+    """Internal discriminator for the one malformed row read may skip."""
 
     def __init__(self, message: str, *, method_id: str) -> None:
         super().__init__(message)
@@ -89,7 +97,7 @@ def _decode_source(
     if source.HasField("metadata"):
         metadata = source.metadata
         type_name = _enum_name(
-            _PROTO.OriginalSourceContentType,
+            _read_proto().OriginalSourceContentType,
             metadata.original_source_content_type,
         )
         # Unrepresentable and ambiguous kinds (including generic DRIVE and
@@ -106,12 +114,13 @@ def _decode_source(
     drive_status = None
     if source.HasField("settings"):
         settings = source.settings
-        status_name = _enum_name(_SETTINGS_PROTO.SourceStatus, settings.status)
+        settings_proto = _settings_proto()
+        status_name = _enum_name(settings_proto.SourceStatus, settings.status)
         status = _SOURCE_STATUS_BY_NAME.get(status_name or "", SourceStatus.UNKNOWN)
 
         if settings.user_drive_source_status != 0:
             drive_name = _enum_name(
-                _SETTINGS_PROTO.UserDriveSourceStatus,
+                settings_proto.UserDriveSourceStatus,
                 settings.user_drive_source_status,
             )
             drive_status = _DRIVE_STATUS_BY_NAME.get(

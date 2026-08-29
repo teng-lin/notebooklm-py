@@ -32,6 +32,8 @@ service LabsTailwindOrchestrationService {
       returns (ListRecentlyViewedProjectsResponse);
   rpc CreateProject(CreateProjectRequest) returns (Project);
   rpc DeleteProjects(DeleteProjectsRequest) returns (google.protobuf.Empty);
+  rpc RemoveRecentlyViewedProject(RemoveRecentlyViewedProjectRequest)
+      returns (google.protobuf.Empty);
   rpc MutateProject(MutateProjectRequest) returns (Project);
   rpc CopyProject(CopyProjectRequest) returns (Project);
   rpc GenerateNotebookGuide(GenerateNotebookGuideRequest)

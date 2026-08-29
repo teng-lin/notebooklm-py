@@ -1,4 +1,4 @@
-"""Private Android implementation of the B5 notebook chat contract."""
+"""Android implementation of the public notebook chat contract."""
 
 from __future__ import annotations
 
@@ -6,8 +6,6 @@ import logging
 from collections.abc import Callable
 from typing import Any, cast
 from uuid import uuid4
-
-from google.protobuf.empty_pb2 import Empty
 
 from .._chat import ChatAPI, _PostedAsk
 from .._conversation_cache import ConversationCache
@@ -19,21 +17,9 @@ from ..exceptions import ChatResponseParseError, UnknownRPCMethodError, Validati
 from ..types import ChatReference, ChatSettings, ConversationTurn, Note
 from .codecs.chat import decode_document, decode_history, decode_references, decode_turn_key
 from .notes import SAVED_RESPONSE_NOTE_TYPE, create_note
-from .proto.google.internal.labs.tailwind.orchestration.v1 import (
-    chat_pb2,
-    read_pb2,
-    sources_pb2,
-)
-from .proto.notebooklm.internal.android.wire.v1 import notebooks_pb2 as wire_notebooks_pb2
 from .session import AndroidSession
-from .upload import android_request_context
 
 logger = logging.getLogger("notebooklm._chat.api")
-_PROTO = cast(Any, chat_pb2)
-_READ_PROTO = cast(Any, read_pb2)
-_SOURCES_PROTO = cast(Any, sources_pb2)
-_WIRE = cast(Any, wire_notebooks_pb2)
-
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 LIST_CHAT_SESSIONS_METHOD = f"/{_SERVICE}/ListChatSessions"
 LIST_CHAT_TURNS_METHOD = f"/{_SERVICE}/ListChatTurns"
@@ -43,12 +29,42 @@ GET_PROJECT_METHOD = f"/{_SERVICE}/GetProject"
 MUTATE_PROJECT_METHOD = f"/{_SERVICE}/MutateProject"
 
 
+def _proto() -> Any:
+    from .proto.google.internal.labs.tailwind.orchestration.v1 import chat_pb2
+
+    return cast(Any, chat_pb2)
+
+
+def _read_proto() -> Any:
+    from .proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
+
+    return cast(Any, read_pb2)
+
+
+def _sources_proto() -> Any:
+    from .proto.google.internal.labs.tailwind.orchestration.v1 import sources_pb2
+
+    return cast(Any, sources_pb2)
+
+
+def _wire_proto() -> Any:
+    from .proto.notebooklm.internal.android.wire.v1 import notebooks_pb2
+
+    return cast(Any, notebooks_pb2)
+
+
+def _empty_type() -> Any:
+    from google.protobuf.empty_pb2 import Empty
+
+    return Empty
+
+
 def _new_turn_id() -> str:
     return str(uuid4())
 
 
 class AndroidChatAPI(ChatAPI):
-    """Direct-test Android chat adapter; intentionally absent from public assembly."""
+    """Android chat adapter installed by public Android backend selection."""
 
     def __init__(
         self,
@@ -73,11 +89,12 @@ class AndroidChatAPI(ChatAPI):
 
     async def get_conversation_id(self, notebook_id: str) -> str | None:
         """Return the first (current) chat session volunteered for a project."""
+        proto = _proto()
         response = await self._transport.unary(
             LIST_CHAT_SESSIONS_METHOD,
-            _PROTO.ListChatSessionsRequest(project_id=notebook_id),
+            proto.ListChatSessionsRequest(project_id=notebook_id),
             replay_safe=True,
-            response_type=_PROTO.ListChatSessionsResponse,
+            response_type=proto.ListChatSessionsResponse,
         )
         if not response.sessions:
             return None
@@ -95,11 +112,12 @@ class AndroidChatAPI(ChatAPI):
         backend-neutral signature and is applied only by decoded consumers.
         """
         del notebook_id, limit
+        proto = _proto()
         return await self._transport.unary(
             LIST_CHAT_TURNS_METHOD,
-            _PROTO.ListChatTurnsRequest(chat_session_id=conversation_id),
+            proto.ListChatTurnsRequest(chat_session_id=conversation_id),
             replay_safe=True,
-            response_type=_PROTO.ListChatTurnsResponse,
+            response_type=proto.ListChatTurnsResponse,
         )
 
     async def get_history(
@@ -134,17 +152,18 @@ class AndroidChatAPI(ChatAPI):
 
     @staticmethod
     def _conversation_history(cached_turns: list[ConversationTurn]) -> list[Any]:
+        proto = _proto()
         events: list[Any] = []
         for turn in cached_turns:
             events.extend(
                 (
-                    _PROTO.ConversationEvent(
+                    proto.ConversationEvent(
                         text=turn.answer,
-                        type=_PROTO.ConversationEvent.GENERATED_RESPONSE,
+                        type=proto.ConversationEvent.GENERATED_RESPONSE,
                     ),
-                    _PROTO.ConversationEvent(
+                    proto.ConversationEvent(
                         text=turn.query,
-                        type=_PROTO.ConversationEvent.USER_QUERY,
+                        type=proto.ConversationEvent.USER_QUERY,
                     ),
                 )
             )
@@ -163,9 +182,12 @@ class AndroidChatAPI(ChatAPI):
         if not isinstance(turn_id, str) or not turn_id:
             raise ValueError("turn_id_factory must return a non-empty string")
 
-        request = _PROTO.GenerateFreeFormStreamedRequest(
+        proto = _proto()
+        read_proto = _read_proto()
+        sources_proto = _sources_proto()
+        request = proto.GenerateFreeFormStreamedRequest(
             sources=[
-                _SOURCES_PROTO.InputSource(source_id=_READ_PROTO.SourceId(id=source_id))
+                sources_proto.InputSource(source_id=read_proto.SourceId(id=source_id))
                 for source_id in source_ids
             ],
             user_query=question,
@@ -173,7 +195,7 @@ class AndroidChatAPI(ChatAPI):
             chat_session_id=conversation_id or "",
             user_message_id=turn_id,
             project_id=notebook_id,
-            origin=_PROTO.QUERY_ORIGIN_CHAT_TEXT_BOX,
+            origin=proto.QUERY_ORIGIN_CHAT_TEXT_BOX,
         )
 
         final_response = None
@@ -181,7 +203,7 @@ class AndroidChatAPI(ChatAPI):
             GENERATE_FREE_FORM_STREAMED_METHOD,
             request,
             timeout=self._chat_timeout,
-            response_type=_PROTO.GenerateFreeFormStreamedResponse,
+            response_type=proto.GenerateFreeFormStreamedResponse,
             telemetry_method=None,
         ):
             if response.is_final_response:
@@ -212,14 +234,15 @@ class AndroidChatAPI(ChatAPI):
         conversation_id: str,
     ) -> None:
         del notebook_id
+        proto = _proto()
         await self._transport.unary(
             DELETE_CHAT_TURNS_METHOD,
-            _PROTO.DeleteChatTurnsRequest(
+            proto.DeleteChatTurnsRequest(
                 chat_session_id=conversation_id,
                 delete_all_history=True,
             ),
             replay_safe=False,
-            response_type=Empty,
+            response_type=_empty_type(),
         )
 
     async def configure(
@@ -237,18 +260,22 @@ class AndroidChatAPI(ChatAPI):
             raise ValidationError("custom_prompt is required when goal is CUSTOM")
         active_prompt = custom_prompt if goal == ChatGoal.CUSTOM else ""
 
+        from .upload import android_request_context
+
+        wire = _wire_proto()
+        read_proto = _read_proto()
         await self._transport.unary(
             MUTATE_PROJECT_METHOD,
-            _WIRE.WireMutateProjectRequest(
+            wire.WireMutateProjectRequest(
                 project_id=notebook_id,
                 mutations=[
-                    _WIRE.WireProjectMutation(
-                        advanced_settings=_WIRE.WireProjectAdvancedSettings(
-                            goal_settings=_WIRE.WireProjectGoalSettings(
+                    wire.WireProjectMutation(
+                        advanced_settings=wire.WireProjectAdvancedSettings(
+                            goal_settings=wire.WireProjectGoalSettings(
                                 goal=goal.value,
                                 custom_prompt=active_prompt,
                             ),
-                            response_style_settings=_WIRE.WireProjectResponseStyleSettings(
+                            response_style_settings=wire.WireProjectResponseStyleSettings(
                                 response_length=response_length.value,
                             ),
                         )
@@ -257,18 +284,20 @@ class AndroidChatAPI(ChatAPI):
                 request_context=android_request_context(),
             ),
             replay_safe=False,
-            response_type=_READ_PROTO.Project,
+            response_type=read_proto.Project,
         )
 
     async def get_settings(self, notebook_id: str) -> ChatSettings:
+        read_proto = _read_proto()
+        wire = _wire_proto()
         response = await self._transport.unary(
             GET_PROJECT_METHOD,
-            _READ_PROTO.GetProjectRequest(
+            read_proto.GetProjectRequest(
                 project_id=notebook_id,
                 include_audio_overview_ids=True,
             ),
             replay_safe=True,
-            response_type=_WIRE.WireGetProjectResponse,
+            response_type=wire.WireGetProjectResponse,
         )
         if not response.HasField("project"):
             raise UnknownRPCMethodError(

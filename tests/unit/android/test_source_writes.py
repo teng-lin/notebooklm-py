@@ -1,4 +1,4 @@
-"""Offline B3 source-write, reconciliation, and content contract tests."""
+"""Offline source-write, reconciliation, and content contract tests."""
 
 from __future__ import annotations
 

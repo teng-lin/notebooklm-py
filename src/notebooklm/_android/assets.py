@@ -693,7 +693,7 @@ class AndroidAssetDownloadService(AssetDownloadService):
             del credential, client, current_url, policy, representation_url, staging
 
     async def download_urls_batch(self, urls_and_paths: list[tuple[str, str]]) -> DownloadResult:
-        """Keep B4's one-representation transfer boundary explicit."""
+        """Keep the artifact contract's one-representation transfer boundary explicit."""
 
         del urls_and_paths
         raise UnsupportedOperationError(

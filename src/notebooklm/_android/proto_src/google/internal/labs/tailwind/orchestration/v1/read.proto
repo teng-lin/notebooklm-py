@@ -5,7 +5,7 @@ package google.internal.labs.tailwind.orchestration.v1;
 import "google/internal/labs/tailwind/v1/source_settings.proto";
 import "google/protobuf/timestamp.proto";
 
-// Minimal exact-package B1 message closure. Only fields reachable from
+// Minimal exact-package read message closure. Only fields reachable from
 // GetProject and ListRecentlyViewedProjects public projections are declared.
 // The cumulative exact service lives in orchestration_service.proto so one
 // descriptor owns the service instead of attempting to reopen it across

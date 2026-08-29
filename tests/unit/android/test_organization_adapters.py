@@ -1,4 +1,4 @@
-"""Stateful wire, lifecycle, and frontend-shaped tests for B9 organization adapters."""
+"""Stateful wire, lifecycle, and frontend-shaped tests for organization adapters."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import pytest
 
@@ -45,7 +45,6 @@ from notebooklm.exceptions import (
     NetworkError,
     RPCError,
     RPCTimeoutError,
-    UnsupportedOperationError,
 )
 from notebooklm.types import Collection, Label, Notebook, Source
 
@@ -100,6 +99,7 @@ class FakeOrganizationServer:
         self.next_collection_ids = [COLLECTION_B]
         self.failures: dict[int, BaseException] = {}
         self.ignore_mutations = False
+        self.generate_calls: builtins.list[tuple[str, str]] = []
 
     @asynccontextmanager
     async def operation_scope(
@@ -240,9 +240,21 @@ def _apis(
     async def list_notebooks() -> builtins.list[Notebook]:
         return notebooks
 
+    async def generate_labels(
+        notebook_id: str,
+        *,
+        scope: Literal["all", "unlabeled"] = "unlabeled",
+    ) -> builtins.list[Label]:
+        server.generate_calls.append((notebook_id, scope))
+        return list(server.labels.get(notebook_id, {}).values())
+
     transport = cast(AndroidSession, server)
     return (
-        AndroidLabelsAPI(transport, list_sources=list_sources),
+        AndroidLabelsAPI(
+            transport,
+            list_sources=list_sources,
+            generate_labels=generate_labels,
+        ),
         AndroidCollectionsAPI(transport, list_notebooks=list_notebooks),
     )
 
@@ -542,11 +554,13 @@ async def test_delete_filters_absent_ids_batches_existing_and_reads_back_absence
     assert server.operation_scopes == [("labels.delete", None), ("collections.delete", None)]
 
 
-async def test_unsupported_and_empty_operations_reject_before_scope_or_transport() -> None:
+async def test_generate_compatibility_and_empty_operations_avoid_android_transport() -> None:
     server = FakeOrganizationServer()
     labels, collections = _apis(server)
-    with pytest.raises(UnsupportedOperationError, match="Use the web backend"):
-        await labels.generate(NB)
+    assert await labels.generate(NB) == list(server.labels[NB].values())
+    assert await labels.generate(NB, scope="all") == list(server.labels[NB].values())
+    with pytest.raises(ValueError, match="generate scope"):
+        await labels.generate(NB, scope=cast(Any, "invalid"))
     with pytest.raises(ValueError):
         await labels.update(NB, LABEL_A)
     with pytest.raises(ValueError):
@@ -557,6 +571,7 @@ async def test_unsupported_and_empty_operations_reject_before_scope_or_transport
     assert await collections.delete([]) is None
     assert server.calls == []
     assert server.operation_scopes == []
+    assert server.generate_calls == [(NB, "unlabeled"), (NB, "all")]
 
 
 async def test_status_five_maps_to_public_miss_and_retired_epoch_stops_later_io() -> None:

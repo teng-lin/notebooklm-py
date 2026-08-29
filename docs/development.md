@@ -52,7 +52,7 @@ src/notebooklm/
 ├── _web/notes.py        # WebNotesAPI + NoteService implementation
 ├── _mind_maps_api.py    # Backend-neutral abstract MindMapsAPI
 ├── _web/mind_maps.py    # WebMindMapsAPI + NoteBackedMindMapService
-├── _android/mind_maps.py # Private B7 artifact composition; note/generation/tree gated
+├── _android/mind_maps.py # Selected mind-map artifact/note composition; generation seam documented
 ├── _labels.py           # Backend-neutral abstract LabelsAPI
 ├── _web/labels.py       # WebLabelsAPI implementation
 ├── _collections.py      # Backend-neutral abstract CollectionsAPI
@@ -149,7 +149,7 @@ a narrow Protocol surface so it can be unit-tested against a stub:
 Transport-neutral orchestration uses `LoopGuard` from
 `notebooklm._runtime.contracts`; batchexecute implementations use `Kernel`
 and `RpcCaller` from `notebooklm._web.contracts`. The single-consumer
-`AuthMetadata` capability stays in `_web/sources/upload.py`. B0 removed
+`AuthMetadata` capability stays in `_web/sources/upload.py`. The supervisor-ownership refactor removed
 `OperationScopeProvider`; artifact polling and source workflows use the shared
 concrete `CallSupervisor` for operation scopes, admitted children, loop checks,
 and drain hooks. The unused `AsyncWorkRuntime` composite was deleted. The broad `Session` Protocol
@@ -409,7 +409,7 @@ The current measured persistence boundary is 1,090 lines in `_auth/storage.py`, 
 `_auth/cookie_filter.py`, and 89 in `_auth/master_token_file.py` (2,753 total). `storage.py`
 remains the v0.x signature/result facade; the extracted owners do not create a second facade.
 
-`_auth/tokens.py` now owns the Phase 9 stored-auth composition: captured-inline/file sources,
+`_auth/tokens.py` now owns stored-auth composition: captured-inline/file sources,
 `LoadPolicy`, paired `SessionSeed`/`TokenAcquisition`, final-attempt `AccountRouteResolver`, the
 closed `LoadedAuth` result, and `StoredAuthLoader`. Its only structural test seam is
 `TokenAcquirer`; inject that seam for ladder-result tests, and patch the call-time
@@ -461,13 +461,13 @@ cancellation: the caller is cancelled immediately, while an already-dispatched w
 and commit. File auth alone constructs the store; inline env auth logs the existing skip and does
 not persist. Patch the private typed helper/store method for these tests, not the retired private
 `refresh.save_cookies_to_storage` alias. The public saver/facade and client/runtime saver-injection
-seams remain exact. Phase 12C measures **40 modules / 15,237 lines / 128 unique edges (117 module +
+seams remain exact. The completed ownership refactor measures **40 modules / 15,237 lines / 128 unique edges (117 module +
 11 function-local)**. Module-only and all-scope SCC sets are both empty. The final touched production
 LOC is: account 252, account-repair 132, account-types 50, cookie-types 396, cookies 961, keepalive
 438, master-token 455, master-token-types 68, PSIDTS recovery 1,222, recovery 530, refresh 1,184,
 single-flight 268, and storage 1,127. These are ratchet evidence, not a budget to spend.
 
-Phase 10 completes runtime ownership. `NotebookLMClient.from_storage` registers a
+Runtime ownership is complete. `NotebookLMClient.from_storage` registers a
 `FileLoadedAuth` result's exact `ProfileStore`/baseline pair with `CookiePersistence`, without a
 second disk read. A direct file client prepares its baseline once before transport construction;
 missing, malformed, or invalid input becomes a sticky typed failure for canonical saves. A
@@ -477,9 +477,9 @@ First-party `_from_store` persistence retains no `AuthTokens`. A missing saver r
 unconditionally through the private canonical merge. Only an explicit `cookie_saver=` routes
 through `_save_v0_callback`; it lazily initializes its own retryable adapter snapshot and suppresses
 the writer when the source is invalid.
-At Phase 10, the then-web-specific `ClientLifecycle` owned the client
+The former web-specific `ClientLifecycle` owned the client
 `AuthTokens` mirror and refreshed `cookie_snapshot` after open and accepted
-canonical or compatibility saves. B0 moved those responsibilities into
+canonical or compatibility saves. The lifecycle split moved those responsibilities into
 `WebTransportLifecycle`; the current root `ClientLifecycle` owns only
 protocol-neutral lifecycle waves and state. Tests inject a saver on the client when they
 intend to exercise the callback contract; canonical tests target the private typed seam.

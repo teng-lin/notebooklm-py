@@ -157,7 +157,7 @@ def _prompt(message: Any, type_code: int) -> str | None:
 
 
 def _decode_artifact(message: Any, *, method_id: str) -> Artifact:
-    """Decode only the B4-ledgered artifact fields."""
+    """Decode only the artifact-ledgered artifact fields."""
 
     artifact_id = message.artifact_id
     if not artifact_id:

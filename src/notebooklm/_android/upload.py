@@ -1,4 +1,4 @@
-"""Epoch-fenced Android PDF registration and Scotty upload transaction."""
+"""Epoch-fenced Android file registration and Scotty upload transaction."""
 
 from __future__ import annotations
 
@@ -14,11 +14,14 @@ from pathlib import Path
 from typing import IO, Any, Protocol, TypeVar, cast
 from urllib.parse import urlsplit
 
+import httpx
+
 from .._callbacks import maybe_await_callback
 from .._deadline import RuntimeDeadline
 from .._loop_affinity import assert_bound_loop
 from .._loop_bound import LoopBoundPrimitive
 from .._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS, normalize_max_concurrent_uploads
+from .._types.sources import _HTML_FILE_EXTENSIONS
 from ..exceptions import (
     NetworkError,
     RPCError,
@@ -27,20 +30,103 @@ from ..exceptions import (
 )
 from ..types import Source, SourceStatus
 from .auth import BearerProvider
-from .errors import sanitize_escaping_exception, unsupported_operation
+from .errors import sanitize_escaping_exception
 from .evidence import ANDROID_EVIDENCE_PROFILE
-from .proto.labs.language.tailwind.common.protos import metadata_pb2, provenance_pb2
 from .session import AndroidSession
 
 _T = TypeVar("_T")
-_METADATA_PROTO = cast(Any, metadata_pb2)
-_PROVENANCE_PROTO = cast(Any, provenance_pb2)
+
+
+def _metadata_proto() -> Any:
+    from .proto.labs.language.tailwind.common.protos import metadata_pb2
+
+    return cast(Any, metadata_pb2)
+
+
+def _provenance_proto() -> Any:
+    from .proto.labs.language.tailwind.common.protos import provenance_pb2
+
+    return cast(Any, provenance_pb2)
+
 
 UPLOAD_ORIGIN = "https://notebooklm-pa.googleapis.com"
 UPLOAD_PATH_PREFIX = "/upload/upload/"
-PDF_MIME_TYPE = "application/pdf"
 _SAFE_BEARER_HOSTS = frozenset({"notebooklm-pa.googleapis.com", "lh3.googleusercontent.com"})
 _CHUNK_SIZE = 64 * 1024
+_HTML_UPLOAD_CONTENT_TYPES = frozenset({"text/html", "application/xhtml+xml"})
+_EXTENSION_CONTENT_TYPES = {
+    ".md": "text/markdown",
+    ".markdown": "text/markdown",
+}
+
+
+def _resolve_upload_content_type(file_path: Path, mime_type: str | None) -> str:
+    """Mirror the backend-neutral public upload MIME policy."""
+
+    if mime_type is not None:
+        content_type = mime_type.strip()
+        if not content_type:
+            raise ValidationError("mime_type cannot be empty or whitespace-only")
+        return content_type
+    guessed, _encoding = mimetypes.guess_type(file_path.name)
+    if guessed:
+        return guessed
+    return _EXTENSION_CONTENT_TYPES.get(
+        file_path.suffix.lower(),
+        "application/octet-stream",
+    )
+
+
+def _validate_upload_file_supported(file_path: Path, content_type: str) -> None:
+    """Reject the same HTML-family uploads as the public Web upload path."""
+
+    normalized = content_type.split(";", 1)[0].strip().lower()
+    if (
+        file_path.suffix.lower() in _HTML_FILE_EXTENSIONS
+        or normalized in _HTML_UPLOAD_CONTENT_TYPES
+    ):
+        raise ValidationError(
+            "HTML file uploads are not supported by NotebookLM's upload endpoint: "
+            f"{file_path.name}. Convert the page to .txt, .md, or .pdf first, then retry."
+        )
+
+
+def _resolve_upload_timeouts(
+    configured: httpx.Timeout | float | None,
+) -> tuple[float, httpx.Timeout | None]:
+    """Resolve one public upload timeout into aggregate and per-request budgets.
+
+    ``httpx.Timeout`` is preserved wholesale for both HTTP legs, matching the
+    Web uploader's public contract.  The aggregate lifecycle fence is deliberately
+    wider than either leg so registration, queueing, and finalization can complete
+    without silently replacing the caller's component-specific values.
+    """
+
+    if configured is None:
+        return 300.0, None
+    if isinstance(configured, httpx.Timeout):
+        components = [
+            component
+            for component in (
+                configured.connect,
+                configured.read,
+                configured.write,
+                configured.pool,
+            )
+            if component is not None
+        ]
+        for component in components:
+            if not math.isfinite(float(component)) or float(component) <= 0.0:
+                raise ValueError("upload_timeout components must be finite positive numbers")
+        # A fully-unbounded httpx timeout remains unbounded at each HTTP request;
+        # retain the historical 300s lifecycle fence for the surrounding control
+        # plane rather than manufacturing arbitrary component values.
+        aggregate = 300.0 if not components else max(300.0, 2.0 * sum(components))
+        return aggregate, configured
+    numeric = float(configured)
+    if not math.isfinite(numeric) or numeric <= 0.0:
+        raise ValueError("upload_timeout must be a finite positive number")
+    return numeric, None
 
 
 class _RetiredEpochError(RuntimeError):
@@ -89,11 +175,11 @@ def android_provenance() -> Any:
     """Build the exact captured Android provenance message."""
 
     profile = ANDROID_EVIDENCE_PROFILE
-    return _PROVENANCE_PROTO.Provenance(
-        origin_product_type=_PROVENANCE_PROTO.Provenance.GOOGLE_NOTEBOOKLM,
-        client_info=_PROVENANCE_PROTO.ClientInfo(
-            application_platform=_PROVENANCE_PROTO.ClientInfo.NATIVE,
-            device=_PROVENANCE_PROTO.ClientInfo.MOBILE_ANDROID,
+    return _provenance_proto().Provenance(
+        origin_product_type=_provenance_proto().Provenance.GOOGLE_NOTEBOOKLM,
+        client_info=_provenance_proto().ClientInfo(
+            application_platform=_provenance_proto().ClientInfo.NATIVE,
+            device=_provenance_proto().ClientInfo.MOBILE_ANDROID,
             application_version=profile.app_version,
         ),
     )
@@ -102,9 +188,9 @@ def android_provenance() -> Any:
 def android_request_context() -> Any:
     """Build the exact captured Android request context."""
 
-    return _METADATA_PROTO.RequestContext(
-        client_type=_METADATA_PROTO.ANDROID_APP,
-        client_metadata=_METADATA_PROTO.ClientMetadata(
+    return _metadata_proto().RequestContext(
+        client_type=_metadata_proto().ANDROID_APP,
+        client_metadata=_metadata_proto().ClientMetadata(
             client_version=ANDROID_EVIDENCE_PROFILE.app_version
         ),
         provenance=android_provenance(),
@@ -137,20 +223,13 @@ def build_upload_start_body(project_id: str, source_id: str) -> bytes:
     return json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
-def _resolve_pdf_mime(path: Path, supplied: str | None) -> str:
-    inferred = supplied if supplied is not None else mimetypes.guess_type(path.name)[0]
-    if inferred is None or inferred.strip().lower() != PDF_MIME_TYPE:
-        unsupported_operation("sources.add_file for non-PDF files")
-    return PDF_MIME_TYPE
-
-
 def _validate_project_id(project_id: str) -> None:
     if (
         not project_id
         or any(character in project_id for character in "/?#\\")
         or any(ord(character) < 0x20 or ord(character) == 0x7F for character in project_id)
     ):
-        raise ValidationError("Invalid notebook id for Android PDF upload")
+        raise ValidationError("Invalid notebook id for Android file upload")
 
 
 def _one_header(headers: Mapping[str, str], name: str) -> str | None:
@@ -208,7 +287,7 @@ def validate_upload_session_url(raw_url: str, project_id: str) -> str:
 def _upload_failure(filename: str, state: _UploadState, detail: str) -> SourceAddError:
     error = SourceAddError(
         filename,
-        message=f"Android PDF upload failed during {state.stage}: {detail}.",
+        message=f"Android file upload failed during {state.stage}: {detail}.",
     )
     error.cause = None
     cast(Any, error).stage = state.stage
@@ -236,17 +315,17 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         *,
         session: AndroidSession,
         bearer_provider: BearerProvider,
-        upload_timeout: float = 300.0,
+        upload_timeout: httpx.Timeout | float | None = None,
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
         record_upload_queue_wait: Callable[[float], None] | None = None,
         async_client_factory: AndroidHTTPClientFactory | None = None,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
-        if not math.isfinite(float(upload_timeout)) or float(upload_timeout) <= 0.0:
-            raise ValueError("upload_timeout must be a finite positive number")
+        aggregate_timeout, http_timeout = _resolve_upload_timeouts(upload_timeout)
         self._transport = session
         self._bearer_provider = bearer_provider
-        self._upload_timeout = float(upload_timeout)
+        self._upload_timeout = aggregate_timeout
+        self._http_timeout = http_timeout
         self._max_concurrent_uploads = normalize_max_concurrent_uploads(max_concurrent_uploads)
         self._record_upload_queue_wait = record_upload_queue_wait
         self._async_client_factory = async_client_factory
@@ -345,7 +424,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
             self._upload_semaphore = asyncio.Semaphore(self._max_concurrent_uploads)
         return self._upload_semaphore
 
-    async def upload_pdf(
+    async def upload_file(
         self,
         notebook_id: str,
         file_path: str | Path,
@@ -360,13 +439,13 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         wait_until_ready: WaitForSource,
         rename_uploaded: RenameUploaded,
     ) -> Source:
-        """Upload one PDF without retaining this secret owner in failures."""
+        """Upload one NotebookLM-supported file without retaining secret owners."""
 
         pipeline = self
         result: Source | None = None
         failure: BaseException | None = None
         try:
-            result = await pipeline._upload_pdf_impl(
+            result = await pipeline._upload_file_impl(
                 notebook_id,
                 file_path,
                 mime_type,
@@ -387,7 +466,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
             raise failure
         return cast(Source, result)
 
-    async def _upload_pdf_impl(
+    async def _upload_file_impl(
         self,
         notebook_id: str,
         file_path: str | Path,
@@ -403,7 +482,8 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         rename_uploaded: RenameUploaded,
     ) -> Source:
         raw_path = Path(file_path)
-        _resolve_pdf_mime(raw_path, mime_type)
+        content_type = _resolve_upload_content_type(raw_path, mime_type)
+        _validate_upload_file_supported(raw_path, content_type)
         _validate_project_id(notebook_id)
         requested_title = None
         if title is not None:
@@ -424,6 +504,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                         deadline,
                         state,
                         on_progress,
+                        content_type,
                         lease.epoch,
                         register_tentative,
                     ),
@@ -464,7 +545,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                     import logging
 
                     logging.getLogger(__name__).warning(
-                        "Android PDF source %s uploaded but title finalization failed",
+                        "Android file source %s uploaded but title finalization failed",
                         source_id,
                     )
             return source
@@ -478,6 +559,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         deadline: RuntimeDeadline,
         state: _UploadState,
         on_progress: ProgressCallback | None,
+        content_type: str,
         expected_epoch: int,
         register_tentative: RegisterTentative,
     ) -> tuple[str, str]:
@@ -529,6 +611,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                     source_id,
                     filename,
                     file_size,
+                    content_type,
                     expected_epoch,
                     deadline,
                 ),
@@ -622,6 +705,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         source_id: str,
         filename: str,
         file_size: int,
+        content_type: str,
         expected_epoch: int,
         deadline: RuntimeDeadline,
     ) -> _HTTPOutcome | _HTTPFailure:
@@ -638,13 +722,13 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                 "X-Goog-Upload-Command": "start",
                 "X-Goog-Upload-File-Name": filename,
                 "X-Goog-Upload-Header-Content-Length": str(file_size),
-                "X-Goog-Upload-Header-Content-Type": PDF_MIME_TYPE,
+                "X-Goog-Upload-Header-Content-Type": content_type,
                 "X-Goog-Upload-Protocol": "resumable",
             }
             client = self._client_factory()(
                 cookies=None,
                 follow_redirects=False,
-                timeout=deadline.remaining(),
+                timeout=self._http_timeout or deadline.remaining(),
             )
             self._assert_epoch(expected_epoch)
             self._transport_clients.add(client)
@@ -709,7 +793,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
             client = self._client_factory()(
                 cookies=None,
                 follow_redirects=False,
-                timeout=deadline.remaining(),
+                timeout=self._http_timeout or deadline.remaining(),
             )
             self._assert_epoch(expected_epoch)
             self._transport_clients.add(client)

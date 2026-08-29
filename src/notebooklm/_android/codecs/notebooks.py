@@ -5,14 +5,15 @@ from __future__ import annotations
 from datetime import timezone
 from typing import Any, cast
 
-from google.protobuf.json_format import MessageToDict
-from google.protobuf.message import Message
-
 from ...exceptions import DecodingError, NotebookNotFoundError, RPCError
 from ...types import Notebook, NotebookDescription, SharePermission, SuggestedTopic
-from ..proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
 
-_PROTO = cast(Any, read_pb2)
+
+def _read_proto() -> Any:
+    from ..proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
+
+    return cast(Any, read_pb2)
+
 
 _PROJECT_ROLE_BY_NAME: dict[str, SharePermission] = {
     "PROJECT_ROLE_OWNER": SharePermission.OWNER,
@@ -65,7 +66,7 @@ def _decode_project(
     if project.HasField("metadata"):
         if project.metadata.HasField("create_time"):
             created_at = project.metadata.create_time.ToDatetime(tzinfo=timezone.utc)
-        role_name = _enum_name(_PROTO.ProjectRole, project.metadata.user_role)
+        role_name = _enum_name(_read_proto().ProjectRole, project.metadata.user_role)
         role = _PROJECT_ROLE_BY_NAME.get(role_name or "")
 
     return Notebook(
@@ -77,7 +78,7 @@ def _decode_project(
         last_viewed_at=None,
         modified_at=None,
         emoji=project.emoji,
-        # Project #10 remains an exact-package schema gap in B1. The flattened
+        # Project #10 remains an exact-package schema gap in read. The flattened
         # recovered schema alone cannot admit it into the generated closure.
         premium_features=None,
         chat_sessions=[],
@@ -102,9 +103,11 @@ def decode_project(
         ) from None
 
 
-def message_to_known_dict(message: Message, *, method_id: str) -> dict[str, Any]:
+def message_to_known_dict(message: Any, *, method_id: str) -> dict[str, Any]:
     """Return backend-shaped data for fields known to the generated descriptor."""
     try:
+        from google.protobuf.json_format import MessageToDict
+
         return MessageToDict(message, preserving_proto_field_name=True)
     except Exception:
         raise DecodingError(

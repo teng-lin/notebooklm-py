@@ -6,18 +6,14 @@ web bundle (`8cc2569196b28083ba58a33319df79af97ec1832f442c4a182289894edf5eaef`),
 message fields, retained live reports, and new Android-bearer probes against disposable notebook
 copies. No credential material or resource identifiers were logged.
 
-The audit found 44 target callsites, excluding the `_reject` helper definitions present when
-the audit began. They were not all missing gRPC methods: many were local composition/download gaps
-or omitted fields on RPCs that were already admitted. The completed implementation passes removed
-38 of those callsites. The six retained calls are three sharing operations, two source operations,
-and one notebook operation. Android artifacts, chat, and mind maps now have no public rejection
-branch.
+The audit found 44 target callsites, excluding the `_reject` helper definitions present when the
+audit began. They were not all missing gRPC methods: many were local composition/download gaps or
+omitted fields on RPCs that were already admitted. Every callsite has now been removed. The complete
+Android namespace graph contains no `_reject` or `unsupported_operation` branch.
 
-Those six are callsites in private, currently unselected Android adapters. Explicit Android
-selection still installs the Web notebook/source/sharing namespaces, so the corresponding public
-methods remain available through Web. In particular, Web `sources.add_drive_file` downloads an
-upload-only Drive file and feeds it through the upload pipeline; it is distinct from native
-`sources.add_drive` reference ingestion and remains usable when Android artifacts are selected.
+Where the admitted mobile contract is absent or a valid owned-resource request is demonstrably
+rejected, the selected Android adapter receives a narrow Web compatibility callable. This keeps the
+public contract available without inventing Google FQNs or silently switching the whole namespace.
 
 ## Disposable-copy live results
 
@@ -34,9 +30,9 @@ in `finally` cleanup.
 | `GeneratePromptSuggestions` | success; three structurally valid suggestions | implemented `notebooks.suggest_prompts` |
 | `CheckSourceFreshness` | prior and repeat valid-resource success | implemented |
 | `GetDriveSourceStatus` | `UNIMPLEMENTED` (gRPC 12) | do not use as a readiness dependency |
-| `RemoveRecentlyViewedProject` | `INTERNAL` (gRPC 13) | keep rejected |
-| `RefreshSource` | retained valid-resource `INVALID_ARGUMENT` | keep rejected |
-| view-level `MutateProject` branch | `PERMISSION_DENIED` (gRPC 7) on owned copy | keep rejected pending mobile authorization evidence |
+| `RemoveRecentlyViewedProject` | `INTERNAL` (gRPC 13) | exact direct route retained for conformance; public operation delegates through the Web compatibility callable |
+| `RefreshSource` | retained valid-resource `INVALID_ARGUMENT` | public operation delegates through the Web compatibility callable |
+| view-level `MutateProject` branch | `PERMISSION_DENIED` (gRPC 7) on owned copy | collaborator/view-level sharing delegates through the Web compatibility API |
 
 The completed adapters were then exercised through their real classes on another copied notebook.
 Text, YouTube, freshness, prompt suggestions, and chat configure/read-back all succeeded. Artifact
@@ -109,30 +105,31 @@ read-modify-write from clobbering settings.
 | Public operation | Status |
 |---|---|
 | `notebooks.suggest_prompts` | exact APK FQNs/tags plus successful Android response; implemented |
-| `notebooks.remove_from_recent` | exact APK signature but repeated valid-resource `INTERNAL`; retain reject |
+| `notebooks.remove_from_recent` | exact APK signature but repeated valid-resource `INTERNAL`; implemented through a narrow Web compatibility callable |
 | YouTube `add_url` and batch | dedicated exact `VideoContent #8`; live success; implemented |
 | `sources.add_text` | exact `TextContent #2`; live success; implemented |
 | `sources.add_drive` | exact `GoogleDriveContent #1`; valid existing-Drive-reference success; implemented without `GetDriveSourceStatus` |
-| `sources.add_drive_file` | Web supports its distinct download-then-upload workflow and remains publicly selected; the private Android source adapter would need authenticated Drive download plus Android upload composition | retain private-adapter reject |
-| `sources.refresh` | valid-resource mobile rejection | retain reject |
+| `sources.add_drive_file` | narrow authenticated Web download context followed by Android registration/Scotty upload | implemented without switching the namespace or upload leg to Web |
+| `sources.add_file` | generic Android tentative registration/Scotty upload; a disposable text file reached ready/list read-back live | implemented for all public file types |
+| `sources.refresh` | valid-resource mobile rejection | implemented through a narrow Web compatibility callable |
 | `sources.check_freshness` | valid-resource Android success | implemented |
 
 ## Sharing
 
-Public visibility is already implemented. Collaborator requests are structurally recoverable from
-the web bundle, but the admitted Android `ShareProject`/`GetProjectDetails` closure contains only
-public-document settings and does not decode users. `set_users`, inherited add/update-user, and
-`remove_user` therefore remain rejected until collaborator mutation and read-back succeed on a
-disposable account pair. `set_view_level` also remains rejected after the owned-copy Android path
-returned `PERMISSION_DENIED`.
+Public-link mutation remains native Android. The admitted Android
+`ShareProject`/`GetProjectDetails` closure contains only public-document settings and does not decode
+users; the owned-copy view-level mutation also returned `PERMISSION_DENIED`. Complete status,
+collaborator mutations, and view-level changes therefore use the injected Web `SharingAPI`, while
+the installed public namespace remains `AndroidSharingAPI`.
 
-## Other Android gates outside the requested files
+## Remaining compatibility seams and public assembly
 
-The broader adapter still explicitly rejects non-PDF file upload, fast Drive-corpus research, and
-automatic label generation. They need separate transport/schema audits; they are not silently
-counted as complete by this report.
+Fast Drive-corpus research is native: a live `DiscoverSourcesManifold` request with
+`ResearchQuery.source_type #2 = 2` returned a canonical run UUID, followed by exact cancellation and
+scratch cleanup. Automatic label generation uses the injected Web callable because the mobile
+organization union proves only manual labels. Account output-language/limit settings likewise use
+the Web `SettingsAPI` because Android `MutateAccount` exposes unrelated consent flags.
 
-The artifact and mind-map adapters are now explicitly assembled for `backend="android"`, together
-with the Android asset transport and Collections. Other partial Android adapters remain private.
-This promotion makes the admitted artifact and mind-map paths reachable through the normal public
-client while preserving the pre-I/O gates documented above.
+Explicit `backend="android"` now installs Android adapters for all eleven public namespaces plus the
+Android session, asset transport, and upload pipeline. `client.backends` reports the installed
+adapter graph; the operation-level seams above remain explicit and tested.

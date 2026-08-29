@@ -383,7 +383,8 @@ transport-neutral `LoopGuard` remains in
 `Kernel` is the typed web transport surface implemented by the concrete
 client-owned kernel and consumed by the web upload pipeline. The remaining
 single-consumer capability Protocol, `AuthMetadata`, lives beside that consumer
-in `_web/sources/upload.py`. B0 removed `OperationScopeProvider`: artifact
+in `_web/sources/upload.py`. The supervisor-ownership refactor removed
+`OperationScopeProvider`: artifact
 polling and source workflows now receive the concrete, shared `CallSupervisor`,
 which owns generation-bearing operation scopes, admitted child tasks, loop
 checks, and drain-hook registration. The unused `AsyncWorkRuntime` composite
@@ -544,7 +545,7 @@ Beyond the client-owned runtime graph, several feature APIs are implemented via 
 | `_artifact_formatters` | [`_artifact/formatters.py`](../src/notebooklm/_artifact/formatters.py) | Markdown, HTML, and plain text formatters for artifacts. |
 | `_web/artifact/listing` | [`_web/artifact/listing.py`](../src/notebooklm/_web/artifact/listing.py) | Web artifact listing, raw-row decoding, and note-backed mind-map composition. |
 | `_web/artifact/table` | [`_web/artifact/table.py`](../src/notebooklm/_web/artifact/table.py) | Web positional data-table row extraction. |
-| `_web/` | [`_web/`](../src/notebooklm/_web) | Private home for the batchexecute web backend. Phase A moves web-wire codecs and row decoding, request construction, and concrete namespace implementations here while public namespace classes become transport-neutral bases. Direct imports are constrained by `tests/_guardrails/test_backend_boundaries.py`. |
+| `_web/` | [`_web/`](../src/notebooklm/_web) | Private home for the batchexecute web backend. Web-wire codecs, row decoding, request construction, and concrete namespace implementations live here while public namespace classes remain transport-neutral bases. Direct imports are constrained by `tests/_guardrails/test_backend_boundaries.py`. |
 | `_web/rows/*` | [`_web/rows/`](../src/notebooklm/_web/rows) | Web wire-shape adapters for artifacts, chat, collections, documents, labels, notebooks, notes, research, sharing, and sources. Public notebook/sharing/collection factories stay on their dataclasses as lazy shims into this package; deep-research task parsing and conversation-role decoding live here too. Strict decode behavior is pinned in the row-adapter, chat-history, research-parser, and wire-contract tests. |
 | `_web/wire/*` | [`_web/wire/`](../src/notebooklm/_web/wire) | Batchexecute envelope encoding, response/status decoding, strict positional access, and runtime RPC-ID overrides. `notebooklm.rpc` preserves the public power-user path and legacy root attributes as identity re-exports; no former deep `notebooklm.rpc.*` implementation modules remain. |
 | `_types/` | [`_types/`](../src/notebooklm/_types) | Private package holding the transport-neutral enum, dataclass, and `Protocol` implementations behind the public `types.py` / per-feature public schemas. Split per domain (`artifacts.py`, `artifact_content.py`, `chat.py`, `documents.py`, `enums.py`, `labels.py`, `mind_maps.py`, `notebooks.py`, `notes.py`, `research.py`, `sharing.py`, `sources.py`, plus `common.py` for shared shapes like `ConnectionLimits`). |
@@ -605,19 +606,19 @@ The measured persistence boundary is 1,090 lines in `storage.py`, 602 in
 `profile_migration.py`, 876 in `profile_store.py`, 96 in `cookie_filter.py`, and 89 in
 `master_token_file.py`: 2,753 lines total.
 The migration module is internal composition, not a public `ProfileStore` extension surface.
-The Phase 9 loader owners remain in `tokens.py` and `refresh.py`. Phase 10 consumes their closed
+The loader owners remain in `tokens.py` and `refresh.py`. Runtime composition consumes their closed
 `FileLoadedAuth` result by registering its exact `ProfileStore`/baseline pair in runtime
 `CookiePersistence`, without rereading disk. Direct clients prepare a one-shot disk baseline before
 transport; fileless clients capture only the live compatibility projection. A missing saver always
 uses ordered typed merges; only an explicit `cookie_saver=` retains the v0.x callback surface and
-its per-key adapter snapshot. In Phase 10, the then-web-specific
-`ClientLifecycle` owned the sole `AuthTokens.cookie_snapshot` mirror. B0 moved
+its per-key adapter snapshot. The former web-specific
+`ClientLifecycle` owned the sole `AuthTokens.cookie_snapshot` mirror. The lifecycle split moved
 that web responsibility to `WebTransportLifecycle`; the current root
-`ClientLifecycle` owns no auth or cookie state. Measured Phase 10 owners are 457 lines in
+`ClientLifecycle` owns no auth or cookie state. Measured runtime owners are 457 lines in
 `_web/transport/cookie_persistence.py`, 618 in `_runtime/init.py`, 628 in `_runtime/lifecycle.py`, and 992 in
 `client.py`.
 
-Phase 12C completes state ownership without changing the public ladder or on-disk schema. The
+The completed state-ownership refactor does not change the public ladder or on-disk schema. The
 measured auth graph is **40 modules / 15,237 lines / 128 unique edges (117 module + 11
 function-local)**; both the module-only and all-scope SCC sets are empty. The former
 `cookies/master_token/psidts_recovery/storage` all-scope cycle is gone. Final touched owner sizes
@@ -862,7 +863,7 @@ from `compose_client_internals(...)` and shared with every feature API.
 Feature APIs receive the collaborator they need (`RpcExecutor` for
 `RpcCaller`, `CallSupervisor` for admitted workflows/children/hooks and the
 chat `LoopGuard`, and the concrete `Kernel` for web upload cookies/posting) per
-ADR-0014 Rules 1 + 3 as amended by B0. Features that need more than one
+ADR-0014 Rules 1 + 3 under the current supervisor ownership. Features that need more than one
 capability — `ChatAPI`, `ArtifactsAPI`, and `SourceUploadPipeline` — take each
 collaborator by keyword-only constructor argument. The composition wiring is centralized in
 [`_client_assembly.py`](../src/notebooklm/_client_assembly.py), which is
@@ -957,7 +958,7 @@ Vocabulary that recurs in this document and the surrounding code.
 | `batchexecute` | Google's internal RPC protocol over HTTPS. The wire is positional lists keyed by an obfuscated method id; see [`rpc/types.py`](../src/notebooklm/rpc/types.py). |
 | Capability Protocol | A narrow structural `Protocol` (e.g. `RpcCaller`, `LoopGuard`) a feature depends on instead of taking the deleted concrete `Session` class or a broad runtime facade. See [ADR-0013](./adr/0013-composable-session-capabilities.md). |
 | Chain / leaf / terminal | The middleware chain's ordering vocabulary. The chain wraps outermost-first; the **leaf** is the innermost middleware (`TracingMiddleware`); the **terminal** is the authed-POST function (`RuntimeTransport.terminal → Kernel.post`) that ends the chain. |
-| Drain | Graceful-shutdown waiting on admitted transport operations to complete. Policy and generation ownership live in `CallSupervisor`; `TransportDrainTracker` remains its transitional bookkeeping implementation during B0a. |
+| Drain | Graceful-shutdown waiting on admitted transport operations to complete. Policy and generation ownership live in `CallSupervisor`; `TransportDrainTracker` remains its transitional bookkeeping implementation. |
 | `idempotent_create(...)` | Caller-owned probe-then-create wrapper used by source-add / Drive-add flows. Distinct from the `IdempotencyRegistry` (which only classifies retry safety inside the executor). |
 | `operation_variant` | Optional kwarg on `rpc_call(...)` that selects a method-variant-specific idempotency policy from the registry (e.g. `ADD_SOURCE` `"url"` vs `"drive"`). Unknown variants raise `IdempotencyVariantError`. |
 | RPC method id | A short obfuscated identifier (`rpcids=`) Google uses to route batchexecute calls. Source of truth: `RPCMethod` enum in `rpc/types.py`. |
@@ -975,25 +976,25 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_client_assembly.py` | Single private assembly seam (`_assemble_client`) that wires every constructor-set attribute; shared by `NotebookLMClient.__init__` and the canonical test factory (`tests/_helpers/client_factory.py`) so the two construction paths cannot drift. |
 | `_client_composed.py` | Client-owned composition holder for transport, executor, chain host, middleware metadata, and runtime collaborator bundle. |
 | `_web/transport/seams.py` | Constructor-only injectable seams used by tests and collaborator construction. |
-| `_android/` | Android backend package. Its package marker and selected adapter imports are dependency-free; generated protobuf modules remain lazy. Explicit Android preference selects Artifacts, Mind Maps, and Collections; the remaining partial adapters stay private/direct-test-only. |
+| `_android/` | Android backend package. Its package marker and selected adapter imports are dependency-free; generated protobuf modules remain lazy. Explicit Android preference installs Android adapters for all eleven public namespaces, with operation-level Web compatibility seams only where the admitted mobile contract has no usable equivalent. |
 | `_android/auth.py` | Generation-fenced `BearerProvider`: off-loop typed profile reads, shared mint waves, bounded expiry caching, compare-and-clear invalidation, and secret-safe teardown. |
-| `_android/codecs/` | Typed protobuf-to-public-dataclass projection package for private Android adapters. |
-| `_android/codecs/account.py` | Strict frozen B11 account-flag projection; missing account/user/premium message blocks fail closed. |
+| `_android/codecs/` | Typed protobuf-to-public-dataclass projection package for Android adapters. |
+| `_android/codecs/account.py` | Strict frozen account-flag projection; missing account/user/premium message blocks fail closed. |
 | `_android/codecs/notebooks.py` | Android project and notebook-guide projections plus bounded notebook decode/status errors. |
 | `_android/codecs/sources.py` | Android source projection, enum-name mapping, duplicate handling, and strict/default drift behavior. |
 | `_android/codecs/artifacts.py` | Ledgered Android artifact, representation, and exact `Artifact.artifact_user_state #18` projection with bounded decode failures; preserves recognized audio/flashcard state and unknown populated state. |
 | `_android/codecs/chat.py` | Proven Android history, response-document, and citation projection. |
-| `_android/codecs/notes.py` | Evidence-bounded B6 note request builders plus ordinary-note and exact-kind note-backed mind-map projections. |
-| `_android/codecs/sharing.py` | B6 public-link sharing status projection from the repository-local wire overlay. |
+| `_android/codecs/notes.py` | Evidence-bounded note request builders plus ordinary-note and exact-kind note-backed mind-map projections. |
+| `_android/codecs/sharing.py` | Public-link sharing status projection from the repository-local wire overlay. |
 | `_android/codecs/organization.py` | Strict heterogeneous organization decoder: wrapped exact `SourceId` members for labels and bare UTF-8 notebook UUID members for collections. |
-| `_android/codecs/research.py` | Strict B10 discovery job/result projection with exact mode/status mapping and bounded drift errors. |
+| `_android/codecs/research.py` | Strict research discovery job/result projection with exact mode/status mapping and bounded drift errors. |
 | `_android/errors.py` | Sanitized gRPC-status projection plus the pre-I/O unsupported-operation helper; raw transport exceptions and details never cross this boundary. |
-| `_android/notebooks.py` | Private Android notebook adapter: B1 reads and evidence-admitted B2 create/delete/title-and-emoji update/copy/guide operations. Recent removal remains live-failing and pre-I/O gated. |
+| `_android/notebooks.py` | Selected Android notebook adapter: reads and evidence-admitted notebook create/delete/title-and-emoji update/copy/guide operations; the exact but live-failing recent-removal route is isolated behind a Web compatibility callable. |
 | `_android/session.py` | Lazy Google-TLS gRPC transport participating in root loop/lifecycle supervision, aggregate deadlines, per-call bearer metadata, status mapping, safe-read replay, and full stream leases. |
-| `_android/sources.py` | Private B1/B3/B3b Android source adapter: `GetProject` reads, exact two-write URL/text/YouTube/Drive adds and reconciliation, freshness checks, maintenance/content methods, and PDF upload callbacks; unresolved source families reject before I/O. |
-| `_android/upload.py` | Required private `AndroidUploadPipeline`: epoch-fenced PDF-only tentative registration plus strict bearer-authenticated Scotty start/finalize, one aggregate upload deadline, separate FD/body concurrency, three web-compatible return branches, and secret-safe local teardown. It is not wired into public backend selection. |
+| `_android/sources.py` | Selected Android source adapter: `GetProject` reads, exact URL/text/YouTube/Drive adds, freshness checks, maintenance/content methods, and generic file uploads. Refresh uses a narrow Web compatibility callable after valid mobile requests proved unusable; Drive-file download uses the shared authenticated Web download seam before Android registration/upload. |
+| `_android/upload.py` | Selected `AndroidUploadPipeline`: epoch-fenced generic tentative registration plus strict bearer-authenticated Scotty start/finalize, one aggregate upload deadline, separate FD/body concurrency, Web-compatible return branches, and secret-safe local teardown. |
 | `_android/evidence.py` | One pinned Android evidence profile for the captured app version and distinct registration/finalize user agents. |
-| `_android/artifacts.py` | Publicly selected B4 artifact adapter: aggregate listing/polling, all public generation families, live `DeriveArtifact` slide revision, retry, interactive and note-backed mind maps, strict media/slide transfers, local report/quiz/flashcard/mind-map/data-table saves, delete/rename, infographic download, report suggestions, and Drive export. |
+| `_android/artifacts.py` | Publicly selected artifact adapter: aggregate listing/polling, all public generation families, live `DeriveArtifact` slide revision, retry, interactive and note-backed mind maps, strict media/slide transfers, local report/quiz/flashcard/mind-map/data-table saves, delete/rename, infographic download, report suggestions, and Drive export. |
 | `_android/artifact_creation.py` | Exact Android `CreateArtifact` option/request builders for video (including cinematic code 3), tailored reports/study guides/concept explanations, flashcards, quizzes, infographics, slide decks, data tables, and interactive mind maps. |
 | `_android/artifact_collaborators.py` | Narrow typed protocols for note-backed mind-map listing and the existing Web generation compatibility seam used by Android assembly. |
 | `_android/artifact_mutations.py` | Web-derived mobile `GenerateArtifact` retry and `ExportToDrive` mutations with exact request/response types, lifecycle fencing, and bounded response validation. |
@@ -1001,48 +1002,49 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/artifact_proto.py` | Lazy handles for exact artifact/read protobuf modules and repository-local evidence overlays so public Android backend construction does not eagerly import generated descriptors. |
 | `_android/note_backed.py` | Narrow adapter projecting the selected typed note-backed mind-map reader into aggregate Android artifact rows. |
 | `_android/assets.py` | Publicly selected, lifecycle-drained Android asset transport. It validates canonical hosts and every hop, clears ambient cookies, attaches bearer only to the initial exact `lh3` segment, enforces representation-specific length/stream/signature limits, corrects verified WAV destinations to `.wav`, and publishes through same-directory staging atomically. Slide PDF/PPTX transfer remains live-blocked by the unrecovered scoped Drive form token. |
-| `_android/chat.py` | Private B5 Android chat adapter over settings, sessions, raw turns, history deletion, the cumulative server stream, and the B6 saved-response note seam; base `ChatAPI` retains locks/cache/follow-up orchestration and public result construction. |
-| `_android/notes.py` | Private B6 implementation of the eight-method Notes manifest: exact note CRUD write/read-back checks, bounded idempotent deletion polling, exact-kind note-backed mind-map list/delete, and a saved-response creation seam. It remains unselected: Android has only last-edit evidence for public `Note.created_at`; its minimal Android-derived mind-map rows do not prove full Web raw-row parity; and Android exact-ID lookup reports post-delete absence where Web exposes an empty soft-delete tombstone. |
-| `_android/sharing.py` | Private B6 public-link sharing adapter; collaborator and view-level mutations remain evidence-gated. |
-| `_android/mind_maps.py` | Publicly selected B7 Android mind-map composition over base-typed artifact/note collaborators. Interactive generation/tree reads and note-backed generation/rename/delete/tree/prefetch compose through live typed operations; note-backed generation is supplied by the narrow Web compatibility collaborator. |
-| `_android/organization.py` | Shared B9 lazy-protobuf transport/building seam for exact `GetLabels` plus generated web-derived manual organization writes; every write is non-replayed and epoch-fenced by its adapter workflow. |
-| `_android/labels.py` | Private B9 manual label CRUD/membership adapter with ID-diff creation, one-member writes, strict read-backs, and pre-I/O rejection of unevidenced AI generation. |
-| `_android/collections.py` | B9 implementation of all nine collection methods with ID-diff creation, member-order joins, one-member non-atomic writes, and one outer lifecycle lease per workflow. Explicit `backend="android"` selects this complete namespace; default and Web selection remain Web. |
-| `_android/research.py` | Private B10 synchronous and async Research adapter with stateful non-replayed starts/cancel/import, replay-safe polls, and epoch-fenced workflows. |
-| `_android/account.py` | Private B11 `GetOrCreateAccount` adapter: lazy protobuf import, one epoch lease, conservative non-replay, and no public client namespace. |
+| `_android/chat.py` | Selected Android chat adapter over settings, sessions, raw turns, history deletion, the cumulative server stream, and the saved-response note seam; base `ChatAPI` retains locks/cache/follow-up orchestration and public result construction. |
+| `_android/notes.py` | Selected implementation of the eight-method Notes manifest: exact note CRUD write/read-back checks, bounded idempotent deletion polling, exact-kind note-backed mind-map list/delete, and a saved-response creation seam. Unknown creation time remains `None`, raw map rows preserve the supported ID/content prefix, and genuine post-delete absence remains `None`. |
+| `_android/settings.py` | Selected settings adapter that preserves output-language and account-limit semantics through a narrow Web compatibility collaborator because the admitted Android account closure exposes neither contract. |
+| `_android/sharing.py` | Selected sharing adapter: public-link mutation stays native Android while full collaborator/view/status semantics use the Web compatibility collaborator omitted by the mobile closure. |
+| `_android/mind_maps.py` | Publicly selected Android mind-map composition over base-typed artifact/note collaborators. Interactive generation/tree reads and note-backed rename/delete/tree/prefetch compose through live typed operations; note-backed generation is supplied by the narrow Web compatibility collaborator. |
+| `_android/organization.py` | Shared lazy-protobuf transport/building seam for exact `GetLabels` plus generated web-derived manual organization writes; every write is non-replayed and epoch-fenced by its adapter workflow. |
+| `_android/labels.py` | Selected label adapter with native manual CRUD/membership, ID-diff creation, one-member writes, and strict read-backs; AI generation uses the injected Web callable absent from the mobile request union. |
+| `_android/collections.py` | Complete implementation of all nine collection methods with ID-diff creation, member-order joins, one-member non-atomic writes, and one outer lifecycle lease per workflow. Explicit `backend="android"` selects this namespace; default and Web selection remain Web. |
+| `_android/research.py` | Selected synchronous and async Research adapter with native Web/Drive fast starts, Web deep starts, stateful non-replayed cancel/import, replay-safe polls, and epoch-fenced workflows. |
+| `_android/account.py` | Private account `GetOrCreateAccount` adapter: lazy protobuf import, one epoch lease, conservative non-replay, and no public client namespace. |
 | `_android/proto/` | Checked-in generated Python protobuf package. Files are regenerated only by `scripts/regenerate_android_protos.py` with the pinned toolchain and are never generated during installation. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/account_pb2.py` | Exact-package B11 `UserInfo`, `PremiumUserInfo`, `Account`, and GetOrCreateAccount request/response descriptors. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/account_pb2_grpc.py` | Deterministic service-free companion for the B11 exact account message overlay. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/read_pb2.py` | Exact-package B1 messages and descriptors for `GetProject` and `ListRecentlyViewedProjects`. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/read_pb2_grpc.py` | Deterministic service-free companion for the B1 read message overlay. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/notebooks_pb2.py` | Durable exact-package B2 notebook mutation/guide messages imported by the cumulative service; local parser overrides remain only for live-only fields. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/notebooks_pb2_grpc.py` | Deterministic service-free companion for the exact B2 message overlay. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2.py` | Sole exact-package cumulative orchestration descriptor: 43 implemented methods, including live APK-exact `DeriveArtifact` and nine conventional-name signatures explicitly tracked as current-web-bundle inferences; the separate sharing descriptor adds two exact paths and the exception manifest is empty. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/account_pb2.py` | Exact-package account `UserInfo`, `PremiumUserInfo`, `Account`, and GetOrCreateAccount request/response descriptors. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/account_pb2_grpc.py` | Deterministic service-free companion for the exact account message overlay. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/read_pb2.py` | Exact-package read messages and descriptors for `GetProject` and `ListRecentlyViewedProjects`. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/read_pb2_grpc.py` | Deterministic service-free companion for the read message overlay. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/notebooks_pb2.py` | Durable exact-package notebook mutation/guide messages imported by the cumulative service; local parser overrides remain only for live-only fields. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/notebooks_pb2_grpc.py` | Deterministic service-free companion for the exact notebook message overlay. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2.py` | Sole exact-package cumulative orchestration descriptor: 44 implemented methods, including exact `RemoveRecentlyViewedProject`, live APK-exact `DeriveArtifact`, and nine conventional-name signatures explicitly tracked as current-web-bundle inferences; the separate sharing descriptor adds two exact paths and the exception manifest is empty. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2_grpc.py` | Generated `LabsTailwindOrchestrationServiceStub` exposing the cumulative exact unary and unary-stream methods. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/sources_pb2.py` | B3/B3b source-operation and `UploadFileRequest` descriptors plus the explicitly web-derived `MutateSource` request/response wrapper. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/artifacts_pb2.py` | B4 artifact request/response and projection overlay, including the explicitly web-derived report-suggestion closure. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/chat_pb2.py` | Service-free exact-package B5 chat overlay for sessions, turns, delete, streamed answers, and the proven citation/document closure. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/chat_pb2_grpc.py` | Deterministic generated companion for the service-free B5 overlay. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/notes_pb2.py` | Service-free exact-package B6 note CRUD overlay. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/notes_pb2_grpc.py` | Deterministic generated companion for the B6 note overlay. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/organization_pb2.py` | Exact-package B9 `GetLabels` closure plus explicitly web-derived manual organization-write signatures and partial response parsers. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/organization_pb2_grpc.py` | Deterministic service-free companion for the B9 exact message overlay. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/research_pb2.py` | Exact-package B10 Research request/response, job/result, and enum descriptors. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/research_pb2_grpc.py` | Deterministic service-free companion for the B10 Research message overlay. |
-| `_android/proto/labs/language/tailwind/common/protos/common_pb2.py` | Exact-package `ChatSession` and `ProjectPublicSettings` closure shared by B5 chat and B6 sharing without duplicate declarations. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/sources_pb2.py` | Source-operation and `UploadFileRequest` descriptors plus the explicitly web-derived `MutateSource` request/response wrapper. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/artifacts_pb2.py` | Artifact request/response and projection overlay, including the explicitly web-derived report-suggestion closure. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/chat_pb2.py` | Service-free exact-package chat overlay for sessions, turns, delete, streamed answers, and the proven citation/document closure. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/chat_pb2_grpc.py` | Deterministic generated companion for the service-free chat overlay. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/notes_pb2.py` | Service-free exact-package note CRUD overlay. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/notes_pb2_grpc.py` | Deterministic generated companion for the note overlay. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/organization_pb2.py` | Exact-package organization `GetLabels` closure plus explicitly web-derived manual organization-write signatures and partial response parsers. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/organization_pb2_grpc.py` | Deterministic service-free companion for the exact organization message overlay. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/research_pb2.py` | Exact-package Research request/response, job/result, and enum descriptors. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/research_pb2_grpc.py` | Deterministic service-free companion for the Research message overlay. |
+| `_android/proto/labs/language/tailwind/common/protos/common_pb2.py` | Exact-package `ChatSession` and `ProjectPublicSettings` closure shared by chat and sharing without duplicate declarations. |
 | `_android/proto/labs/language/tailwind/common/protos/common_pb2_grpc.py` | Deterministic service-free companion for the exact common closure. |
-| `_android/proto/labs/language/tailwind/sharing/sharing_pb2.py` | Exact-package B6 sharing requests/responses plus the separately proven two-method sharing service descriptor. |
+| `_android/proto/labs/language/tailwind/sharing/sharing_pb2.py` | Exact-package sharing requests/responses plus the separately proven two-method sharing service descriptor. |
 | `_android/proto/labs/language/tailwind/sharing/sharing_pb2_grpc.py` | Generated `LabsTailwindSharingServiceStub` exposing exact `GetProjectDetails` and `ShareProject`. |
-| `_android/proto/notebooklm/android/wire/v1/sharing_pb2.py` | Repository-local B6 response parser preserving scalar presence for exact `GetProjectDetails`; `ShareProject` uses the exact request type. |
-| `_android/proto/notebooklm/android/wire/v1/sharing_pb2_grpc.py` | Deterministic service-free companion for the B6 local sharing overlay. |
-| `_android/proto/notebooklm/android/wire/v1/organization_mutations_pb2.py` | Repository-local B9 heterogeneous `GetLabels` read decoder; manual writes use the generated web-derived organization messages. |
-| `_android/proto/notebooklm/android/wire/v1/organization_mutations_pb2_grpc.py` | Deterministic service-free companion for the B9 local organization overlay. |
+| `_android/proto/notebooklm/android/wire/v1/sharing_pb2.py` | Repository-local sharing response parser preserving scalar presence for exact `GetProjectDetails`; `ShareProject` uses the exact request type. |
+| `_android/proto/notebooklm/android/wire/v1/sharing_pb2_grpc.py` | Deterministic service-free companion for the local sharing overlay. |
+| `_android/proto/notebooklm/android/wire/v1/organization_mutations_pb2.py` | Repository-local organization heterogeneous `GetLabels` read decoder; manual writes use the generated web-derived organization messages. |
+| `_android/proto/notebooklm/android/wire/v1/organization_mutations_pb2_grpc.py` | Deterministic service-free companion for the organization local organization overlay. |
 | `_android/proto/google/internal/labs/tailwind/v1/source_settings_pb2.py` | Exact-package `SourceSettings`, `SourceStatus`, and `UserDriveSourceStatus` descriptors. |
 | `_android/proto/google/internal/labs/tailwind/v1/source_settings_pb2_grpc.py` | Generated companion for the service-free SourceSettings proto; retained so the generated tree exactly matches the pinned command. |
-| `_android/proto/notebooklm/internal/android/wire/v1/notebooks_pb2.py` | Repository-local B2 parser overrides for live-only emoji and guide-topic fields. |
-| `_android/proto/notebooklm/internal/android/wire/v1/notebooks_pb2_grpc.py` | Deterministic service-free companion for the B2 local wire overlay. |
-| `_android/proto/notebooklm/internal/android/wire/v1/artifacts_pb2.py` | Repository-local B4 table/audio/infographic wire overlay for evidence-backed fields absent from the inspected APK descriptor. |
-| `_android/proto/notebooklm/internal/android/wire/v1/artifacts_pb2_grpc.py` | Deterministic service-free companion for the B4 local artifact wire overlay. |
+| `_android/proto/notebooklm/internal/android/wire/v1/notebooks_pb2.py` | Repository-local notebook parser overrides for live-only emoji and guide-topic fields. |
+| `_android/proto/notebooklm/internal/android/wire/v1/notebooks_pb2_grpc.py` | Deterministic service-free companion for the notebook local wire overlay. |
+| `_android/proto/notebooklm/internal/android/wire/v1/artifacts_pb2.py` | Repository-local artifact table/audio/infographic wire overlay for evidence-backed fields absent from the inspected APK descriptor. |
+| `_android/proto/notebooklm/internal/android/wire/v1/artifacts_pb2_grpc.py` | Deterministic service-free companion for the artifact local artifact wire overlay. |
 | `_android/proto_src/` | Minimal compile-ready cumulative Android `.proto` closure. The evidence ledger is `docs/android/proto-evidence-ledger.md`; flattened `docs/android/schema.proto` is never a compile input. |
 | `_runtime/init.py` | Constructor helpers that validate client runtime kwargs, build collaborators (returning a `RuntimeCollaborators` bundle), wire middleware, and bind `ClientComposed`. |
 | `_web/transport/kernel.py` | Concrete `Kernel` transport core (owns `httpx.AsyncClient` + cookie jar) |
@@ -1054,7 +1056,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_callbacks.py` | Sync-or-async callback invocation helper used by telemetry/retry hooks |
 | `_lookup.py` | `unwrap_or_raise(obj, exc)` — the shared single-row-lookup helper backing the public `get`/`get_or_none` pair (ADR-0019 Enforcement tier-2). The four `sources`/`artifacts`/`notes`/`mind_maps` `get()` methods call it directly to raise their `*NotFoundError` on a miss (the v0.8.0 flip, issue #1247); `notebooks.get()` already raised on its own path and does not route through it. |
 | `_loop_bound.py` | `LoopBoundPrimitive` — template-method base for the loop-affinity `set_bound_loop` protocol. Owns the `_bound_loop` field + a `set_bound_loop` that always stores the binding and fires the `_on_loop_rebind(old, new)` hook only on a real loop change (hook before store). Trivial owners (`TransportDrainTracker`/`ReqidCounter`/`AuthRefreshCoordinator`) use the default no-op hook; clear-on-rebind owners (`CallSupervisor`/`SourceUploadPipeline`/`ChatAPI`) override it to discard cached loop-bound primitives/locks. `ClientComposed` is now only a write-once holder and owns no loop state. The base owns only binding + rebind; the cross-loop *assert* stays in `_loop_affinity`, and each participant keeps its own `reset_after_open`. |
-| `_deprecation.py` | Deprecation helper, gated by `NOTEBOOKLM_QUIET_DEPRECATIONS`. The immutable `DEPRECATION_SPECS` table owns the two Phase 13D auth-storage messages, replacements, since/removal versions, categories, and public-boundary stacklevels; `warn_registered_deprecation` emits them through `warn_deprecated`. `scripts/check_deprecation_targets.py` parses the table and callsites without importing application code and fails closed on malformed, missing, stale, lapsed, or structurally unresolved entries. Unrelated one-off deprecations continue to use `warn_deprecated`; `deprecations_quiet` / `_deprecations_quiet` / `_QUIET_ENV_VAR` retain the live suppression gate. ADR-0018 forbids inline `warnings.warn(..., DeprecationWarning)` outside this module — `tests/_guardrails/test_no_inline_deprecation_warnings.py` enforces it (only for `DeprecationWarning`; inline `RuntimeWarning`/`UserWarning` remains allowed). The permanent `save_cookies_to_storage(original_snapshot=None)` race advisory is therefore still an ungated `RuntimeWarning`. See `docs/deprecations.md`. |
+| `_deprecation.py` | Deprecation helper, gated by `NOTEBOOKLM_QUIET_DEPRECATIONS`. The immutable `DEPRECATION_SPECS` table owns the two registered auth-storage messages, replacements, since/removal versions, categories, and public-boundary stacklevels; `warn_registered_deprecation` emits them through `warn_deprecated`. `scripts/check_deprecation_targets.py` parses the table and callsites without importing application code and fails closed on malformed, missing, stale, lapsed, or structurally unresolved entries. Unrelated one-off deprecations continue to use `warn_deprecated`; `deprecations_quiet` / `_deprecations_quiet` / `_QUIET_ENV_VAR` retain the live suppression gate. ADR-0018 forbids inline `warnings.warn(..., DeprecationWarning)` outside this module — `tests/_guardrails/test_no_inline_deprecation_warnings.py` enforces it (only for `DeprecationWarning`; inline `RuntimeWarning`/`UserWarning` remains allowed). The permanent `save_cookies_to_storage(original_snapshot=None)` race advisory is therefore still an ungated `RuntimeWarning`. See `docs/deprecations.md`. |
 | `_runtime/helpers.py` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval` |
 | `_web/transport/error_injection.py` | Synthetic-error env-var resolver + startup guard |
 | `_client_metrics.py` | `ClientMetrics` — `ClientMetricsSnapshot` counters + `on_rpc_event` callback |
@@ -1164,7 +1166,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_version_info.py` | Human-facing `version_string()` — package version + short git commit (embedded by `hatch_build.py` at build time, or live `git` from a checkout) |
 | `_chat.py` | Abstract `ChatAPI`, shared chat orchestration, and its bounded recently-deleted-conversation tracker; `delete_conversation` records the id under the conversation lock so a concurrent null-conversation ask can recover the server's real post-POST conversation id (#1875) |
 | `_web/transport/middleware/chain.py` | Constructs the middleware chain in the canonical ADR-0009 order |
-| `_web/transport/middleware/*.py` | Production web middlewares (`retry`, `auth`, `error_injection`, `tracing`) plus retained historical drain/metrics/semaphore modules that are no longer wired after B0 |
+| `_web/transport/middleware/*.py` | Production web middlewares (`retry`, `auth`, `error_injection`, `tracing`) plus retained historical drain/metrics/semaphore modules that are no longer wired after the supervisor migration |
 | `rpc/types.py` | RPC method IDs (source of truth) |
 | `auth.py` | Authentication facade — **almost pure re-exports** (the only remaining function body is `async def enumerate_accounts`, which binds `_poke_session` as a default dependency; ADR-0003 records the optional-`async` audit command). Every other top-level name forwards from the relevant `_auth/*` module: `auth._validate_required_cookies` is identity-equal to `_auth.cookie_policy._validate_required_cookies`, and `load_auth_from_storage` / `AuthTokens` live in `_auth/tokens.py`. **ADR-0003's flat-re-export goal was closed by ADR-0014.** Tests that need to rebind policy names patch `_auth.cookie_policy.X` directly. |
 | `_auth/paths.py` | Storage paths and filesystem helpers |
@@ -1280,28 +1282,28 @@ src/notebooklm/
 │   ├── source_research.py       # Click-free `source add-research` start/wait/import workflow + validate_add_research_flags (importer injected; SourceAddResearchPlan/Result)
 │   ├── source_wait.py           # Click-free `source wait` readiness-poll core: execute_source_wait + typed SourceWaitOutcome (wait_context injected) + wait_all_sources (single-snapshot loop via client.sources.wait_all_until_ready — one notebook poll per tick, order-preserving; #1870) shared by the MCP tool + REST route (#1871) + the MAX_WAIT_TIMEOUT / MAX_WAIT_SOURCE_IDS caps
 │   └── views.py                 # Transport-neutral output-projection views: share_status_view (access/permission/view_level enum→label), source_view (kind/status_label/drive_status_label + is_drive_degraded added), notebook_view (role_label added), notebook_viewed_keys (last_viewed_at + its deprecated modified_at alias, for hand-built CLI JSON envelopes), ask_result_view (raw_response debug blob stripped); shared by the MCP tools + REST routes so both emit the identical enriched shape (Option B)
-├── _android/                    # Android backend; public Artifacts/Mind Maps/Collections selection
+├── _android/                    # Android backend; all 11 public namespace adapters selected together
 │   ├── __init__.py              # Dependency-free package marker
 │   ├── auth.py                  # Epoch-aware short-lived bearer provider
-│   ├── account.py               # B11 private non-replayed account bootstrap adapter
+│   ├── account.py               # Private non-replayed account bootstrap adapter
 │   ├── codecs/                  # Android protobuf projections
 │   │   ├── __init__.py          # Codec package marker
-│   │   ├── account.py           # Strict frozen B11 account projection
-│   │   ├── chat.py              # B5 history/document/citation projection
-│   │   ├── notes.py             # B6 note request builders and projection
-│   │   ├── sharing.py           # B6 public-link sharing projection
+│   │   ├── account.py           # Strict frozen account projection
+│   │   ├── chat.py              # Chat history/document/citation projection
+│   │   ├── notes.py             # Note request builders and projection
+│   │   ├── sharing.py           # Public-link sharing projection
 │   │   ├── notebooks.py         # Project and notebook-guide decoding
 │   │   ├── sources.py           # Source projection and enum mapping
 │   │   ├── artifacts.py         # Ledgered artifact/representation projection
-│   │   ├── organization.py      # Heterogeneous B9 member decoding
-│   │   └── research.py          # Strict B10 job/result projection
+│   │   ├── organization.py      # Heterogeneous organization member decoding
+│   │   └── research.py          # Strict Research job/result projection
 │   ├── errors.py                # Sanitized gRPC status/error mapping
-│   ├── notebooks.py             # Android notebook reads and B2 mutations
+│   ├── notebooks.py             # Selected Android notebook reads/mutations + recent-removal seam
 │   ├── session.py               # Supervised lazy gRPC transport
-│   ├── sources.py               # B1 reads + B3 operations + B3b PDF callbacks
-│   ├── upload.py                # Epoch-fenced Android PDF/Scotty transaction
+│   ├── sources.py               # Selected source surface + bounded compatibility seams
+│   ├── upload.py                # Epoch-fenced generic Android Scotty transaction
 │   ├── evidence.py              # Pinned captured app/UA evidence profile
-│   ├── artifacts.py             # Publicly selected complete B4 artifact API
+│   ├── artifacts.py             # Publicly selected complete Artifact API
 │   ├── artifact_creation.py      # Exact CreateArtifact option/request builders
 │   ├── artifact_collaborators.py # Narrow note-backed compatibility protocols
 │   ├── artifact_mutations.py     # Retry and Drive export mobile mutations
@@ -1309,62 +1311,63 @@ src/notebooklm/
 │   ├── artifact_proto.py         # Lazy artifact/read protobuf handles
 │   ├── note_backed.py            # Typed note-backed map → aggregate artifact adapter
 │   ├── assets.py                # Lifecycle-drained, bearer-safe typed asset transfer
-│   ├── chat.py                  # B5 Android chat reads/delete/stream/settings
-│   ├── notes.py                 # Private 8-method Notes manifest + saved-response seam
-│   ├── sharing.py               # B6 public-link sharing adapter
-│   ├── mind_maps.py             # Public B7 typed artifact/note composition + compatibility generation
-│   ├── organization.py          # B9 shared lazy-protobuf organization transport seam
-│   ├── labels.py                # B9 manual source-label adapter
-│   ├── collections.py           # B9 complete collection adapter
-│   ├── research.py              # B10 private discovery lifecycle adapter
+│   ├── chat.py                  # Selected Android chat reads/delete/stream/settings
+│   ├── notes.py                 # Selected 8-method Notes manifest + saved-response seam
+│   ├── settings.py              # Selected settings wrapper over the evidence-bounded Web seam
+│   ├── sharing.py               # Selected native public-link + Web collaborator/view adapter
+│   ├── mind_maps.py             # Public typed artifact/note composition + compatibility generation
+│   ├── organization.py          # Shared lazy-protobuf organization transport seam
+│   ├── labels.py                # Selected native manual labels + AI-generation seam
+│   ├── collections.py           # Complete collection adapter
+│   ├── research.py              # Selected Web/Drive discovery lifecycle adapter
 │   ├── proto_src/               # Exact-package reads + evidence-bounded local wire overlays
 │   └── proto/                   # Checked-in generated pb2/pb2_grpc modules
 │       ├── __init__.py          # Dependency-free generated-package marker
 │       ├── google/internal/labs/tailwind/
 │           ├── orchestration/v1/
-│           │   ├── account_pb2.py           # B11 exact account messages/descriptors
+│           │   ├── account_pb2.py           # Exact account messages/descriptors
 │           │   ├── account_pb2_grpc.py      # Deterministic service-free companion
-│           │   ├── read_pb2.py              # B1 read messages and descriptors
+│           │   ├── read_pb2.py              # Project/source read messages and descriptors
 │           │   ├── read_pb2_grpc.py         # Deterministic service-free companion
-│           │   ├── notebooks_pb2.py         # B2 exact notebook messages/descriptors
+│           │   ├── notebooks_pb2.py         # Exact notebook messages/descriptors
 │           │   ├── notebooks_pb2_grpc.py    # Deterministic service-free companion
 │           │   ├── orchestration_service_pb2.py      # Cumulative exact service descriptor
-│           │   ├── orchestration_service_pb2_grpc.py # 43-method generated stub
-│           │   ├── sources_pb2.py               # B3/B3b source and PDF-request descriptors
+│           │   ├── orchestration_service_pb2_grpc.py # 44-method generated stub
+│           │   ├── sources_pb2.py               # Source and generic-upload descriptors
 │           │   ├── sources_pb2_grpc.py          # Deterministic service-free companion
-│           │   ├── artifacts_pb2.py         # B4 exact artifact message overlay
+│           │   ├── artifacts_pb2.py         # Exact artifact message overlay
 │           │   ├── artifacts_pb2_grpc.py    # Deterministic service-free companion
-│           │   ├── chat_pb2.py              # Service-free B5 chat messages/descriptors
+│           │   ├── chat_pb2.py              # Service-free chat messages/descriptors
 │           │   ├── chat_pb2_grpc.py         # Deterministic service-free companion
-│           │   ├── notes_pb2.py             # B6 exact note CRUD overlay
+│           │   ├── notes_pb2.py             # Exact note CRUD overlay
 │           │   ├── notes_pb2_grpc.py        # Deterministic service-free companion
-│           │   ├── organization_pb2.py      # B9 exact GetLabels messages
+│           │   ├── organization_pb2.py      # Exact GetLabels messages
 │           │   ├── organization_pb2_grpc.py # Deterministic service-free companion
-│           │   ├── research_pb2.py          # B10 exact Research messages/descriptors
+│           │   ├── research_pb2.py          # Exact Research messages/descriptors
 │           │   └── research_pb2_grpc.py     # Deterministic service-free companion
 │           └── v1/
 │               ├── source_settings_pb2.py       # Source settings/status descriptors
 │               └── source_settings_pb2_grpc.py  # Deterministic service-free companion
 │       ├── notebooklm/android/wire/v1/
-│           ├── sharing_pb2.py                    # Repository-local B6 sharing wire messages
+│           ├── sharing_pb2.py                    # Repository-local sharing wire messages
 │           ├── sharing_pb2_grpc.py               # Deterministic service-free companion
-│           ├── organization_mutations_pb2.py     # Repository-local B9 organization wire
+│           ├── organization_mutations_pb2.py     # Repository-local organization wire
 │           └── organization_mutations_pb2_grpc.py # Deterministic service-free companion
 │       ├── notebooklm/internal/android/wire/v1/
-│           ├── notebooks_pb2.py       # Repository-local B2 notebook wire messages
+│           ├── notebooks_pb2.py       # Repository-local notebook wire messages
 │           ├── notebooks_pb2_grpc.py  # Deterministic service-free companion
-│           ├── artifacts_pb2.py       # Repository-local B4 artifact wire messages
+│           ├── artifacts_pb2.py       # Repository-local artifact wire messages
 │           └── artifacts_pb2_grpc.py  # Deterministic service-free companion
 │       └── labs/language/tailwind/
 │           ├── common/protos/
-│           │   ├── common_pb2.py          # Shared B5/B6 exact common messages
+│           │   ├── common_pb2.py          # Shared chat/sharing exact common messages
 │           │   ├── common_pb2_grpc.py     # Deterministic service-free companion
-│           │   ├── metadata_pb2.py        # B3b exact request-context messages
+│           │   ├── metadata_pb2.py        # upload exact request-context messages
 │           │   ├── metadata_pb2_grpc.py   # Deterministic service-free companion
-│           │   ├── provenance_pb2.py      # B3b exact provenance messages
+│           │   ├── provenance_pb2.py      # upload exact provenance messages
 │           │   └── provenance_pb2_grpc.py # Deterministic service-free companion
 │           └── sharing/
-│               ├── sharing_pb2.py         # B6 exact messages + two-method sharing service
+│               ├── sharing_pb2.py         # Exact messages + two-method sharing service
 │               └── sharing_pb2_grpc.py    # Exact two-method generated sharing stub
 ├── _web/                        # Private batchexecute web-backend implementation package
 │   ├── __init__.py              # Package boundary

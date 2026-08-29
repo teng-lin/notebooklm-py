@@ -279,6 +279,7 @@ def test_exact_notebook_operation_fields_are_pinned_separately_from_local_overri
         "CreateProjectRequest",
         "CopyProjectRequest",
         "DeleteProjectsRequest",
+        "RemoveRecentlyViewedProjectRequest",
         "GeneratePromptSuggestionsRequest",
         "GeneratePromptSuggestionsResponse",
         "GenerateNotebookGuideRequest",
@@ -296,6 +297,15 @@ def test_exact_notebook_operation_fields_are_pinned_separately_from_local_overri
     }
     assert _field_shapes(exact_notebooks_pb2.DeleteProjectsRequest) == {
         "project_ids": (1, repeated, string, None)
+    }
+    assert _field_shapes(exact_notebooks_pb2.RemoveRecentlyViewedProjectRequest) == {
+        "project_id": (1, singular, string, None),
+        "request_context": (
+            2,
+            singular,
+            message,
+            "labs.language.tailwind.common.protos.RequestContext",
+        ),
     }
     assert _field_shapes(exact_notebooks_pb2.CopyProjectRequest) == {
         "request_context": (

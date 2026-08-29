@@ -9,13 +9,13 @@ Accepted.
 NotebookLM exposes both the browser-oriented batchexecute surface used by this
 project and an authenticated mobile gRPC surface. The mobile surface could be
 used only as a wire-shape oracle, developed into an alternative production
-transport, or deliberately ignored. That product decision must precede the
-Phase A public-namespace splits: without a real second backend, those splits
-would be relocation without an operational destination.
+transport, or deliberately ignored. That product decision must precede a
+public-namespace split: without a real second backend, the split would be
+relocation without an operational destination.
 
 The existing public namespace APIs and dataclasses already express the
-backend-neutral behavior callers rely on. The mobile surface does not yet cover
-every namespace or operation, and the web backend remains the mature path.
+backend-neutral behavior callers rely on. The mobile surface does not expose
+every public operation, and the web backend remains the mature path.
 Runtime failover inside an operation would also make mutation outcomes and
 client state ambiguous.
 
@@ -24,50 +24,40 @@ client state ambiguous.
 Develop the mobile backend as a **resilience transport** behind the existing
 public namespace APIs.
 
-During the Phase B pilot it is explicitly opt-in and the web backend remains
-the default. A client chooses one backend at construction and does not switch
-or silently fall back during its lifetime. Mobile implementations serve each
-supported namespace end to end; an unsupported operation raises the public
-unsupported-operation error before I/O and names the web alternative.
+It is explicitly opt-in and the web backend remains the default. A client
+chooses its namespace graph at construction and does not switch that graph
+during its lifetime. Explicit `backend="android"` installs Android adapter
+objects for all eleven public namespaces. Where the recovered mobile contract
+cannot express a public operation, the composition root injects a narrow,
+named Web compatibility callable instead of hiding a namespace-level fallback.
 
 Offline web/mobile wire tests and authenticated conformance runs are release
 gates, but oracle value is a consequence rather than the product boundary. A
 later decision may select mobile automatically for eligible master-token
-profiles only after the wave-one namespaces pass repeated conformance runs.
+profiles only after the complete graph passes repeated conformance runs.
 
 ## Consequences
 
-- Phase A's backend-neutral bases and `_web` extraction have a concrete second
+- The backend-neutral bases and `_web` extraction have a concrete second
   implementation target, so work after the first decoding package may proceed.
 - Users gain an opt-in path that avoids the browser-cookie ladder for supported
   operations while the complete web backend remains available.
-- Partial mobile coverage must be explicit. No mobile method may call web code
-  as a fallback, and no live client may mix backend state.
+- Partial operation coverage must be explicit. Compatibility is injected at
+  assembly through operation-shaped collaborators and documented per method;
+  Android adapters do not import or construct Web implementations.
 - Both backends return the same public dataclasses and exceptions; the base
   classes' exact abstract methods are pinned as the coverage manifest.
 - Automatic backend selection and default changes remain deferred until the
-  Phase B evidence threshold is met.
+  Android conformance threshold is met.
 
-### B7 mind-map evidence gate
+### Mind-map contract
 
-The private Android mind-map adapter composes the base-typed artifact and note
-namespace interfaces; it adds no mobile protobuf declarations and is not wired
-into a public client factory. Unified list, lookup, rename, and delete behavior
-stays in the backend-neutral `MindMapsAPI`, except for a narrow protected rename
-send hook needed to preserve the exact stored web note content. The public
-`NotesAPI.list_mind_maps` boundary remains raw `list[Any]`; B6 does not claim
-that its Android result contains decoded `MindMap` values, and B7 neither casts
-those rows nor infers kind from JSON or flattened-schema symbols. Consequently,
-Android aggregate reads, auto-detection, note-backed rename, and hydrated
-interactive rename reject before dependency I/O. Explicit interactive rename
-with `return_object=False` and explicit interactive delete still compose through
-the artifact namespace;
-note-backed delete delegates to B6's own pre-I/O evidence gate. `generate`
-remains unsupported before I/O until a valid-resource
-`ActOnSources` generation exchange is captured, and `get_tree` remains
-unsupported before I/O until an exact fixture proves the interactive-tree
-field. Compiled-only method presence and invalid-ID route responses do not meet
-either admission threshold.
+The selected Android mind-map adapter composes the base-typed artifact and note
+namespace interfaces; it adds no separate mobile protobuf declarations.
+Interactive generation, tree reads, rename, and delete use the Android artifact
+contract. Note-backed list, tree, rename, and delete use the Android Notes
+contract. Note-backed generation alone uses an injected Web compatibility
+callable because no mobile request identity was recovered for that operation.
 
 ## Alternatives considered
 

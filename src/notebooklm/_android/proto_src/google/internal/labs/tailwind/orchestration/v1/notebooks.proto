@@ -31,6 +31,14 @@ message DeleteProjectsRequest {
   repeated string project_ids = 1;
 }
 
+// Exact official-APK request/response binding. The request tags are recovered
+// from the generated mobile message and the response is google.protobuf.Empty
+// in the generated RpcClientMethod signature.
+message RemoveRecentlyViewedProjectRequest {
+  string project_id = 1;
+  .labs.language.tailwind.common.protos.RequestContext request_context = 2;
+}
+
 // Web-derived signature candidate for te3DCe -> CopyProject. The current web
 // bundle uses the same response constructor as CreateProject and
 // MutateProject, while a successful Android-bearer replay pins fields #2/#3.

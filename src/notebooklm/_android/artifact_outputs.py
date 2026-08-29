@@ -301,7 +301,7 @@ def report_doc_markdown(document: Any) -> str:
         object_id = item.object_id.id or citation.object_id.id
         label = f"Citation {object_id}" if object_id else "Citation"
         if source_id:
-            label = f"{label} (source {source_id})"
+            label = f"{label} ({source_id})"
         blocks.append(f"> **{label}:** {fragment}".rstrip())
     return "\n\n".join(block for block in blocks if block).strip()
 

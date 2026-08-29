@@ -1,19 +1,17 @@
 # Android protobuf evidence ledger
 
-**Status:** admitted B1 read closure plus B2 notebook, B3/B3b source, B4 artifact, B5 chat,
-B6 notes/sharing, B9 organization, private B10 Research overlays, and the B11 account bootstrap
+**Status:** admitted read, notebook, source/upload, artifact, chat, notes/sharing,
+organization, and Research contracts, plus the private account-bootstrap contract
 
 **Evidence snapshot:** 2026-08-29
 
-**Scope:** B1 project/source reads, B2 notebook operations, the B3 URL/maintenance/flat-content
-slice and B3b PDF transaction, B4 artifact list/get/create/derive/update/delete plus its generated
-web-derived report-suggestion closure and exact representation payloads, and the private/direct-test B5 chat surface
-(`ListChatSessions`, `ListChatTurns`, `DeleteChatTurns`, and `GenerateFreeFormStreamed`), plus B6
-note CRUD and public-link sharing, B9 source-label and notebook-collection CRUD/membership, the
-private B10 synchronous discovery plus async Research lifecycle, and the direct-test-only B11
-account bootstrap projection
+**Scope:** project/source reads; notebook operations; URL, maintenance, content, and generic file
+source operations; artifact list/get/create/derive/update/delete plus the generated web-derived
+report-suggestion closure and exact representation payloads; chat sessions, turns, deletion, and
+streaming; note CRUD and public-link sharing; label and collection CRUD/membership; synchronous and
+asynchronous Research; and the direct-test-only account-bootstrap projection
 
-## B11 account method ledger
+## Account method ledger
 
 The exact-package `account.proto` overlay copies the complete semantic account subset from the
 pinned `supported.proto`: `UserInfo.accepted_tos #1`, `opted_in_to_marketing_emails #4`, and
@@ -28,7 +26,7 @@ three nested response message blocks before returning the frozen four-boolean `A
 projection. Transport replay is disabled: despite its read-shaped result, the method name and
 account-bootstrap semantics allow the first call to create state.
 
-## B10 Research method ledger
+## Research method ledger
 
 The service-free `research.proto` overlay copies the exact-package message and enum declarations
 from the pinned `supported.proto`. The four async routes absent from the APK were independently
@@ -59,10 +57,10 @@ URL rows as `UserContent.web_content #3`; report rows use `text_content #2` and
 
 This ledger is the admission boundary for `src/notebooklm/_android/proto_src/`. The recovered
 [`schema.proto`](schema.proto) is Dart-AOT evidence, not a compile input: it flattened several
-libraries and contains duplicate package-local persistence declarations. The checked-in B1 proto
+libraries and contains duplicate package-local persistence declarations. The checked-in read proto
 sources instead preserve the exact wire packages from the descriptor/Dart library boundary and
 copy only the fields below. Missing fields remain protobuf unknown fields; they are not filled from
-plausible-looking flattened declarations. B5 follows the same rule: its exact-package message
+plausible-looking flattened declarations. Chat follows the same rule: its exact-package message
 overlay admits only fields retained by the named Dart protobuf libraries and checked against
 captured wire tags. One cumulative `orchestration_service.proto` owns the exact orchestration
 service, while `labs/language/tailwind/sharing/sharing.proto` owns the separately evidenced exact
@@ -96,11 +94,11 @@ fixtures. Hashes prevent a later local checkout from silently changing what was 
 | [`latest_apk_grpc_paths.txt`](../../tests/fixtures/android/latest_apk_grpc_paths.txt) | `b5df4996f271e71ccc14e0ae0f8eaa13e1e337b4bc726b54a487a0c4f6d31697` | complete 53-path `1.55.10` generated-client inventory, including the path-only unresolved `UpsertArtifactUserState` entry |
 | [`latest_apk_grpc_signatures.csv`](../../tests/fixtures/android/latest_apk_grpc_signatures.csv) | `6381163929c18d51eb654bc677846061ea65e9d501b9beb9db3952b749b32b7c` | 52 exact `1.55.10` generated-client bindings with request/response FQNs and object-pool offsets |
 | [`external_method_manifest.csv`](../../tests/fixtures/android/external_method_manifest.csv) | `88a7b9cddd5b52d68ff07a5d2ca1154e64808fdf3c8a89dc0e160b730ecfb56b` | version-scoped `1.46.7` binary inventory plus independently live/web-proven signatures used by the implemented-adapter admission gate |
-| [`public-api-audit.md`](public-api-audit.md) | `9718942d71d2eb65814b9d1224913cc5e1086b65697df1dc2674232197aff9be` | complete public-adapter rejection inventory, current web/APK mapping, and disposable-copy Android-bearer validation for the newly admitted operations |
-| [`artifact-contracts-and-live-validation.md`](artifact-contracts-and-live-validation.md) | `a983b1357766bb76c862332724ce9303954bdcb25a4a342c19c1fbd3311ad9f6` | consolidated artifact generation, representation, data-table, retry/export, mind-map, and transfer evidence; preserves all four source-report hashes and cleanup qualifications |
+| [`public-api-audit.md`](public-api-audit.md) | `7b2890d83d6ab4bf3ad49c21a7c98681586b7c4a9fcdbef979e16e85ca29e8bd` | complete public-adapter rejection inventory, current web/APK mapping, and disposable-copy Android-bearer validation for the newly admitted operations |
+| [`artifact-contracts-and-live-validation.md`](artifact-contracts-and-live-validation.md) | `07c59ac0fe9958d021b7b60ded3270ed29399a995b1232e6465961c295e5015c` | consolidated artifact generation, representation, data-table, retry/export, mind-map, and transfer evidence; preserves all four source-report hashes and cleanup qualifications |
 | [`file-transfer-evidence.md`](file-transfer-evidence.md) | `41bde4d2d96f21b5d34f4fa081aeb24818c0f19f2238f0e13b213665f92b60cd` | official-app/headless PDF upload request and live artifact representation/direct infographic PNG transfer |
-| [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md) | `710bc49dc4f47fb44cdd5947231ab960d1d0c2671c80e01b5d180bc238a73080` | consolidated notebook copy/metadata, note/mind-map, label/collection, membership, cleanup, and public-qualification evidence; preserves all four source-report hashes |
-| [`endpoints.md`](endpoints.md) | `696ec14db595097895a7641a581348f3d8dbe80a37c08bb72dffcaa6c9be9ae5` | live request/response envelopes, route results, version-scoped APK inventories, captured note/sharing bytes, and the account-bootstrap replay boundary |
+| [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md) | `088e33302f26a3510e7aee348b0a6f9870df70076d73b83d99a055897d321e3b` | consolidated notebook copy/metadata, note/mind-map, label/collection, membership, cleanup, and public-qualification evidence; preserves all four source-report hashes |
+| [`endpoints.md`](endpoints.md) | `817fff71e2a3224fc9e643e3234655a08239bdd56437ea226af98fd47bf198aa` | live request/response envelopes, route results, version-scoped APK inventories, captured note/sharing bytes, and the account-bootstrap replay boundary |
 
 The recovery method and the warning about duplicate packages are committed in
 [`README.md`](README.md#caveats-that-will-bite-you). Live request/response shapes are documented in
@@ -108,41 +106,42 @@ The recovery method and the warning about duplicate packages are committed in
 
 ## Cumulative generated service ledger
 
-| Full method | Request FQN | Response FQN | Cardinality | Request fields populated by B1 |
+| Full method | Request FQN | Response FQN | Cardinality | Request fields populated |
 |---|---|---|---|---|
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject` | `.google.internal.labs.tailwind.orchestration.v1.GetProjectRequest` | `.google.internal.labs.tailwind.orchestration.v1.GetProjectResponse` | unary/unary | `project_id #1`, `include_audio_overview_ids #2`; no `RequestContext` |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListRecentlyViewedProjects` | `.google.internal.labs.tailwind.orchestration.v1.ListRecentlyViewedProjectsRequest` | `.google.internal.labs.tailwind.orchestration.v1.ListRecentlyViewedProjectsResponse` | unary/unary | `include_own_projects #2`, `include_audio_overview_ids #3`; no `RequestContext` |
 
-The two B1 signatures above and forty-one later exact or web-derived signatures live in the sole
+The two read signatures above and forty-two later exact or web-derived signatures live in the sole
 `google/internal/labs/tailwind/orchestration/v1/orchestration_service.proto` service declaration.
 The individual message overlays remain service-free so protobuf never reopens one service across
-files. Its generated stub exposes 43 implemented methods: account bootstrap, the two reads above,
-six notebook operations, seven source methods, nine artifact methods, four chat methods, four note
+files. Its generated stub exposes 44 implemented methods: account bootstrap, the two reads above,
+seven notebook operations, seven source methods, nine artifact methods, four chat methods, four note
 methods, six Research methods, and four organization methods. The exact sharing service adds
-`GetProjectDetails` and `ShareProject`, producing 45 generated paths across the two services. Nine
+`GetProjectDetails` and `ShareProject`, producing 46 generated paths across the two services. Nine
 signatures retain explicit web-derived type-name provenance; the signature-exception manifest is
 empty. The inference and runtime-parser manifests name each adapter seam and evidence link;
 bidirectional descriptor/adapter/external-manifest equality is pinned by
 `tests/unit/android/test_grpc_service_manifest.py`.
 
-B2's pinned exact-package source and external method manifest admit `CreateProject`,
-`DeleteProjects`, `MutateProject`, and `GenerateNotebookGuide` to the generated service. Blutter's
+The notebook contract's pinned exact-package source and external method manifest admit `CreateProject`,
+`DeleteProjects`, `MutateProject`, `RemoveRecentlyViewedProject`, and `GenerateNotebookGuide` to the
+generated service. Blutter's
 generated-client binding proves that `DeleteProjects` returns `google.protobuf.Empty`; `CopyProject`
 uses a generated conventional request name inferred from the current web registry, with the response
 proven as the same exact-package `Project` constructor used by create/mutate. Runtime uses
 local parsers only for the live emoji field and captured guide-topic field described below.
 The durable reduced compile input is
 [`notebooks.proto`](../../src/notebooklm/_android/proto_src/google/internal/labs/tailwind/orchestration/v1/notebooks.proto)
-(SHA-256 `aed9d1d43070516b85c93c450114104ac66275a0d177aecc8cc07d3ab3f7ae27`);
+(SHA-256 `4959a8826576267478028518ea679e8e38e99968869eb684387faa11b2bc5e41`);
 the cumulative service reuses the established exact `Project` from `read.proto` rather than
-duplicating it in the B2 source.
+duplicating it in the notebook source.
 
-## B2 notebook method ledger
+## Notebook method ledger
 
 `Wire*` means a message in the deliberately non-Google package
 `notebooklm.internal.android.wire.v1`. It claims wire equivalence only. The durable exact-package
 `notebooks.proto` owns admitted method messages; local wire messages remain only where the adapter
-needs a field absent from that archived semantic subset. Bare `Project` responses reuse the B1
+needs a field absent from that archived semantic subset. Bare `Project` responses reuse the read
 exact-package message, and empty deletion uses `google.protobuf.Empty` directly.
 
 | Full method | Request parser | Response parser | Replay | Evidence |
@@ -152,22 +151,23 @@ exact-package message, and empty deletion uses `google.protobuf.Empty` directly.
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateProject` | local `WireMutateProjectRequest` runtime override for live-only emoji #3; remote FQN is exact | exact-package `Project` (bare) | never | [`endpoints.md`](endpoints.md#mutateproject--rename--edit-notebook-fields) |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CopyProject` | generated web-derived `CopyProjectRequest` | exact-package `Project` (bare) | never; transport ambiguity is surfaced | [web signature inference](grpc-capability-and-signature-evidence.md#signature-matrix) |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateNotebookGuide` | exact-package `GenerateNotebookGuideRequest` | local `WireGenerateNotebookGuideResponse` runtime override for captured topic field #2; remote FQN is exact | never; stateful | [`endpoints.md`](endpoints.md#generatenotebookguide) |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/RemoveRecentlyViewedProject` | exact-package `RemoveRecentlyViewedProjectRequest` | exact `google.protobuf.Empty` | never; direct mobile route remains conformance-only after live `INTERNAL`; public adapter uses the Web compatibility callable | [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md#notebook-metadata-lifecycle) |
 
-## B4 service ledger
+## Artifact service ledger
 
 The archived artifact declarations in `artifacts.proto` were independently checked against the
 exact-package `supported.proto` whose SHA-256 is pinned above. The separately marked
 `GenerateReportSuggestions` closure is derived from the current web bundle instead. References to
 the flattened `schema.proto` in source comments are corroborating Dart-symbol evidence, never the
 sole authority for a Google FQN.
-The B4 message overlay intentionally declares no second protobuf `service`: protobuf cannot reopen
+The artifact message overlay intentionally declares no second protobuf `service`: protobuf cannot reopen
 the same service across files. The cumulative service imports all nine implemented artifact
 signatures. Blutter's generated-client binding proves `DeleteArtifact` returns
 `google.protobuf.Empty`; `GenerateReportSuggestions`, `GenerateArtifact`, and `ExportToDrive` use
 generated conventional type names recorded in the inference manifest. `AndroidSession` continues
 to dispatch paths generically with the ledgered message classes.
 
-| Full method | Exact request FQN | Exact response FQN | B4 disposition |
+| Full method | Exact request FQN | Exact response FQN | Artifact disposition |
 |---|---|---|---|
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListArtifacts` | `.google.internal.labs.tailwind.orchestration.v1.ListArtifactsRequest` | `.google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse` | admitted safe aggregate Studio read |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetArtifact` | `.google.internal.labs.tailwind.orchestration.v1.GetArtifactRequest` | `.google.internal.labs.tailwind.orchestration.v1.GetArtifactResponse` | admitted safe single-artifact polling read; common SDK `get` remains concrete over aggregate `list` so note-backed mind maps remain visible |
@@ -179,13 +179,13 @@ to dispatch paths generically with the ledgered message classes.
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateArtifact` | generated web-derived `.google.internal.labs.tailwind.orchestration.v1.GenerateArtifactRequest` | generated web-derived `.google.internal.labs.tailwind.orchestration.v1.GenerateArtifactResponse` | failed-artifact retry; live route and precondition behavior pinned; never replayed |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ExportToDrive` | generated web-derived `.google.internal.labs.tailwind.orchestration.v1.ExportToDriveRequest` | generated web-derived `.google.internal.labs.tailwind.orchestration.v1.ExportToDriveResponse` | report-to-Docs live-successful with read-back and exact cleanup; never replayed |
 
-## B4 exact artifact field ledger
+## Artifact exact field ledger
 
 This table is exhaustive for `artifacts.proto`; fields present in the archived message but not
-needed by B4 are deliberately left unknown. “Exact” means the pinned exact-package archive, not a
+needed by the adapter are deliberately left unknown. “Exact” means the pinned exact-package archive, not a
 field inferred from its plausible Dart name.
 
-| Exact-package message | Admitted fields (`name #tag`, cardinality and type) | B4 use |
+| Exact-package message | Admitted fields (`name #tag`, cardinality and type) | Adapter use |
 |---|---|---|
 | `MediaStreamingUrl` | `url #1` string; `type #2` `MediaStreamingType` | audio/video representation projection |
 | `QuizGenerationOptions` | `question_quantity #1` `QuestionQuantity`; `quiz_difficulty #2` `QuizDifficulty` | quiz create options |
@@ -211,7 +211,7 @@ field inferred from its plausible Dart name.
 | `AppArtifactState` / `ScheduledNotificationConfig` | app state `#1` Struct; notification config is an exact zero-field marker | flashcard progress projection and lossless unknown-state fallback |
 | `ArtifactState` | audio `#1`; video `#2`; app `#3`; repeated scheduled notification configs `#4` | exact user-state envelope |
 | `ArtifactSource` | `source_id #1` imported exact `SourceId` | source IDs and quiz/audio requests |
-| `Artifact` | `artifact_id #1` string; `title #2` string; `type #3` `ArtifactType`; repeated `sources #4`; `status #5` `ArtifactStatus`; `audio_overview #7`; `tailored_report #8`; `explainer_video #9`; `app #10`; `last_modified_timestamp #11` Timestamp; `infographic #15`; `slides #17`; `artifact_user_state #18`; `etag #22` string; `file #25` | the complete B4 public projection and mutation subset, including typed audio/flashcard state |
+| `Artifact` | `artifact_id #1` string; `title #2` string; `type #3` `ArtifactType`; repeated `sources #4`; `status #5` `ArtifactStatus`; `audio_overview #7`; `tailored_report #8`; `explainer_video #9`; `app #10`; `last_modified_timestamp #11` Timestamp; `infographic #15`; `slides #17`; `artifact_user_state #18`; `etag #22` string; `file #25` | the complete artifact public projection and mutation subset, including typed audio/flashcard state |
 | `CreateArtifactRequest` / `Response` | request `project_id #2`, `artifact #3`; response `artifact #1` | quiz and Audio Overview mutations |
 | `GenerateArtifactRequest` / `Response` | request context `#1`, artifact ID `#2`; response artifact `#1` | failed-artifact retry through a web-derived conventional FQN |
 | `ExportToDriveRequest` / `Response` | request context `#1`, oneof artifact ID `#2` or literal content `#3`, title `#4`, destination `#5`; response URL `#1` | report/table export through a web-derived conventional FQN |
@@ -227,15 +227,15 @@ The nine exact top-level enums are also pinned exhaustively by generated descrip
 `DeckType` 0–2, and `SlideDeckLength` 0–4. The four nested quiz/flashcard enums are 0–3.
 Unknown future integers remain unknown rather than being coerced to a known family.
 
-### B4 quiz request
+### Artifact quiz request
 
 The successful quiz branch sends `CreateArtifactRequest.project_id #2` and `artifact #3`, with
 `Artifact.type = ARTIFACT_TYPE_APP`, repeated `Artifact.sources #4`, and
 `AppArtifact.generation_options.app_type = APP_TYPE_QUIZ`. Quantity/difficulty use the exact nested
 enums at quiz option fields #1/#2; free text uses app option field #3. No other family builder is
-admitted in the B4 quiz slice.
+admitted in the artifact quiz slice.
 
-### B4 Audio Overview request
+### Artifact Audio Overview request
 
 The captured Audio Overview branch uses the same exact `CreateArtifact` method with
 `Artifact.type = ARTIFACT_TYPE_AUDIO_OVERVIEW`. It requires at least one source ID and a non-empty
@@ -252,18 +252,18 @@ The exact `GetArtifact` request carries only `artifact_id #1` in the admitted cl
 for one safe polling read per tick. The public aggregate `get`/`get_or_none` methods deliberately
 remain list-based so their established note-backed mind-map semantics are unchanged.
 
-### B4 web-derived report suggestion closure
+### Artifact web-derived report suggestion closure
 
 `GenerateReportSuggestions` is live-successful but absent from the APK method/symbol archive. The
 current web registry proves distinct request/response constructors and call sites pin request
 context/project/repeated source IDs at `#1/#2/#3`. The response carries repeated suggestion rows at
 `#1`; each row carries title/description/repeated source IDs/prompt/audience level at
 `#1/#2/#4/#5/#6`. An accessed nested field at `#3` remains semantically unrecovered and therefore
-undeclared. B4 now compiles that admitted partial closure under conventional Google-package type
+undeclared. artifact now compiles that admitted partial closure under conventional Google-package type
 names and records the naming inference explicitly. The adapter populates Android request context
 and project; its public method currently leaves the optional source filter empty.
 
-## B4 representation-transfer evidence boundary
+## Artifact representation-transfer evidence boundary
 
 Only response-provided URLs are projected: audio field #6, video field #5, infographic image #2,
 slide image #1, slide PDF/PPTX #4/#5, and file preview/download #3/#4. No URL is synthesized from an
@@ -274,9 +274,9 @@ policy plus same-directory atomic publication. PDF/PPTX URL selection is impleme
 slide bytes remain gated by the APK's unrecovered scoped Drive form-token exchange; sign-in HTML is
 rejected rather than written as a document.
 
-### B5 method ledger
+### Chat method ledger
 
-B5's message overlay remains service-free because protobuf services cannot be extended across
+The chat message overlay remains service-free because protobuf services cannot be extended across
 source files. The cumulative service imports the exact `ListChatSessions`, `ListChatTurns`,
 `DeleteChatTurns`, and `GenerateFreeFormStreamed` signatures. The recovered generated-client
 binding proves that `DeleteChatTurns` returns `google.protobuf.Empty`.
@@ -288,7 +288,7 @@ binding proves that `DeleteChatTurns` returns `google.protobuf.Empty`.
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteChatTurns` | `.google.internal.labs.tailwind.orchestration.v1.DeleteChatTurnsRequest` | exact `.google.protobuf.Empty` | unary/unary | non-replay-safe |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed` | `.google.internal.labs.tailwind.orchestration.v1.GenerateFreeFormStreamedRequest` | `.google.internal.labs.tailwind.orchestration.v1.GenerateFreeFormStreamedResponse` | unary/server-streaming | no retry; one aggregate deadline; `telemetry_method=None` |
 
-## B6 service ledger
+## Notes and sharing service ledger
 
 The full method paths below come from the exact method inventory and were routed live. Note CRUD
 also has valid-resource semantic proof on a disposable copied notebook: create and mutate read back
@@ -303,11 +303,11 @@ response parser remains local only to preserve proto3 scalar presence for fields
 The durable reduced sharing source is
 [`sharing.proto`](../../src/notebooklm/_android/proto_src/labs/language/tailwind/sharing/sharing.proto)
 (SHA-256 `db74d043a10b5f4cd8db29de5d8891bd89c9fe02e11573da784f087aee118ff8`);
-it imports the exact B5
+it imports the exact chat
 [`common.proto`](../../src/notebooklm/_android/proto_src/labs/language/tailwind/common/protos/common.proto)
 so `ProjectPublicSettings` has one declaration.
 
-| Full method | Request/response evidence | Replay policy | B6 projection |
+| Full method | Request/response evidence | Replay policy | Public projection |
 |---|---|---|---|
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetNotes` | exact-package `GetNotesRequest` / `GetNotesResponse`; two same-ID cross-backend live runs | safe read | ordinary notes exclude prompt-typed and JSON-shaped maps; private minimal map rows expose exact `[id, content]` only and do not claim full Web raw-row parity |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateNote` | exact-package `CreateNoteRequest` / `CreateNoteResponse` | never replay | create, then exact read-back |
@@ -321,11 +321,11 @@ so `ProjectPublicSettings` has one declaration.
 note miss after its existence preflight. A delete status 5 after a successful preflight is the
 idempotent concurrent-absence outcome.
 
-Each of the eight manifest-shaped callables on the private Android Notes adapter owns exactly one
+Each of the eight manifest-shaped callables on the selected Android Notes adapter owns exactly one
 supervisor operation scope.
 Create/update read-back and both delete preflight/poll workflows pass that scope's `expected_epoch`
 to every unary call instead of composing through another public method. The private typed
-note-backed map read used by B7 is scoped independently as well. Graceful drain therefore admits
+note-backed map read used by mind-map is scoped independently as well. Graceful drain therefore admits
 the already-started workflow through its final read, cancellation settles the complete operation,
 and a forced close/reopen rejects any old-epoch read-back or poll before it can touch the new
 transport generation.
@@ -338,9 +338,9 @@ transport generation.
 | `google/protobuf/timestamp.proto` | `google.protobuf` | `ProjectMetadata.create_time #9` |
 
 No common, agency, artifact, chat, mutation, context, Empty, Struct, Duration, or FieldMask proto is
-reachable from the B1 read projection.
+reachable from the read projection.
 
-B6 adds the exact `google.protobuf.Timestamp`-typed `last_edit_timestamp` note field but deliberately
+Notes add the exact `google.protobuf.Timestamp`-typed `last_edit_timestamp` field but deliberately
 does not project it as public `Note.created_at`: a last edit is not evidence of creation time. The
 sharing and zero-byte response types need no external imports because their overlays are local.
 
@@ -378,7 +378,7 @@ cardinality admitted. Every row is asserted exhaustively against the generated d
 | `orchestration.v1.ListRecentlyViewedProjectsRequest` | `include_audio_overview_ids` | 3 | singular | bool; exact service closure + successful capture |
 | `orchestration.v1.ListRecentlyViewedProjectsResponse` | `projects` | 1 | repeated | `Project`; exact wrapper declaration |
 
-### B2 exact and web-derived field ledger
+### Notebook exact and web-derived field ledger
 
 Every row below is asserted against the generated descriptor and deterministic serialized bytes.
 The web-derived copy request populates the observed Android request context; older exact requests
@@ -400,6 +400,7 @@ retain their established builders.
 | web-derived `CopyProjectRequest` | `source_project_id` | 2 | singular | string; direct successful replay |
 | web-derived `CopyProjectRequest` | `title` | 3 | singular | string; direct successful replay |
 | exact `GenerateNotebookGuideRequest` | `project_id` | 1 | singular | string; pinned source and captured stateful request |
+| exact `RemoveRecentlyViewedProjectRequest` | `project_id`, `request_context` | 1, 2 | singular | string plus exact common `RequestContext`; official APK binding and live route probe |
 | exact `NotebookSummary` | `text_summary` | 1 | singular | string; pinned source and captured guide response |
 | exact `NextStep` / `NextStepSuggestions` | `suggestion`, `suggestion_type` / `next_steps` | 1, 2 / 1 | singular / repeated | pinned semantic guide closure |
 | exact `NotebookGuide` / `GenerateNotebookGuideResponse` | `summary`, `next_step_suggestions` / `notebook_guide` | 1, 6 / 1 | singular | pinned semantic response FQN closure |
@@ -410,16 +411,16 @@ retain their established builders.
 | `WireNotebookGuide` | `suggested_topics` | 2 | singular | local topic envelope; captured response |
 | `WireGenerateNotebookGuideResponse` | `notebook_guide` | 1 | singular | local guide message; captured response wrapper |
 
-### B5 field ledger
+### Chat field ledger
 
 The compile inputs are
 [`chat.proto`](../../src/notebooklm/_android/proto_src/google/internal/labs/tailwind/orchestration/v1/chat.proto)
-(SHA-256 `477279ed44a5c29e3124d8e89be4b035c72a7639929c82f3d7c0ba8ecc857928`) and
+(SHA-256 `eec39186f02bba37c96bbef38984cabc729ea40a2f7d94a287ad4c0e8f302771`) and
 [`common.proto`](../../src/notebooklm/_android/proto_src/labs/language/tailwind/common/protos/common.proto)
 (SHA-256 `7d064bf11e3f01465e485004e6dbba078ae9b92f02be53ac2a8a4ac6a420af75`).
 The shared `InputSource` declaration is imported from
 [`sources.proto`](../../src/notebooklm/_android/proto_src/google/internal/labs/tailwind/orchestration/v1/sources.proto)
-rather than redeclared in the B5 overlay.
+rather than redeclared in the chat overlay.
 `tests/unit/android/test_chat_proto_contract.py` asserts the following list exhaustively against
 the generated descriptors; no undeclared semantic leaf is available to the adapter.
 
@@ -470,7 +471,7 @@ descriptors are part of the canonical cumulative
 [`android_descriptor_set.pb`](../../tests/fixtures/android/android_descriptor_set.pb) fixture and
 are byte-checked by the deterministic regeneration command below.
 
-### B5 evidence boundaries
+### Chat evidence boundaries
 
 - Session/history/free-form chat requests leave unrecovered context fields unset. The separately
   live-proven configure mutation does populate the shared captured Android `RequestContext`,
@@ -481,7 +482,7 @@ are byte-checked by the deterministic regeneration command below.
   A disposable Android write/read-back pinned the nested fields; partial or unknown read blocks fail
   loudly instead of being defaulted into a destructive merge. Inherited `set_mode` reaches the same
   admitted configure sender.
-- Saved-from-chat note creation delegates to B6's exact `CreateNote` sender with the captured
+- Saved-from-chat note creation delegates to the Notes adapter's exact `CreateNote` sender with the captured
   `SAVED_RESPONSE` note type; no additional citation payload fields are invented.
 - Document tables, styles, non-paragraph structural variants, speculative citation score/range
   slots, and next-step suggestions are left as protobuf unknown fields.
@@ -489,7 +490,7 @@ are byte-checked by the deterministic regeneration command below.
   caller limit and reverses the captured newest-first rows; it does not guess pagination policy from
   the presence of `next_page_token`.
 
-## B6 field ledger
+## Notes and sharing field ledger
 
 The exact-package note overlay declares only these recovered fields:
 
@@ -532,7 +533,7 @@ Collaborator/owner response tag #1 is absent from the recovered mobile descripto
 returns `shared_users=[]`. Populated but unnamed response tags #7/#8 remain protobuf unknown fields.
 No collaborator mutation, view-level mutation, or Android settings API is admitted.
 
-## Cross-backend mind-map classifier and the B5 seam
+## Cross-backend mind-map classifier and the chat seam
 
 The exact prompt enum remains one sufficient map-kind signal, but it is not necessary. Two sanitized
 live runs generated a note-backed map through Web and read the same id over Android. Both Android
@@ -541,25 +542,22 @@ with a top-level `children` key. Android therefore uses the union of the exact p
 legacy Web JSON-object signals: `MIND_MAP`, or parsed object membership of `children` or `nodes`.
 Ordinary note listing excludes that same union.
 
-The private Android adapter projects only `[ProjectNote.id, ProjectNote.content]`, the two fields
-proved by same-ID capture. The established public Web method returns raw rows with additional
-metadata/source slots. No exact Android capture proves those slots or a wire-equivalent replacement,
-so the minimal projection is useful for direct conformance and kind-safe deletion but does not pass
-the full substitution gate. `delete_mind_map` preflights this kind-specific list, sends one
+The selected Android adapter projects `[ProjectNote.id, ProjectNote.content]`, the two fields proved
+by same-ID capture and the supported leading slots of the intentionally opaque public raw-row
+contract. It does not fabricate optional Web metadata/source slots whose mobile equivalents are
+unproven. `delete_mind_map` preflights this kind-specific list, sends one
 non-replayed `DeleteNotes`, and polls bounded `GetNotes` reads until that map id is absent. An ordinary
 note id and an already-absent map are read-only idempotent successes. The retained capture narrative is
 [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md).
 
-The second promotion blocker is the public `Note.created_at` contract. B6 has exact
-`last_edit_timestamp` evidence only; it deliberately does not copy that value into creation time.
-The third is deletion read-back: Android exact-ID lookup reports absence after `DeleteNotes`, while
-Web exact-ID lookup exposes the same persisted soft-delete id with empty title/content. Both ordinary
-lists exclude it, but the established `get_or_none` results differ. Until exact evidence resolves all
-three gaps, normal client assembly must keep the Notes namespace on Web.
+The public `Note.created_at` field remains `None` because the mobile contract exposes only
+`last_edit_timestamp`; copying the latter would mislabel an edit as creation. Android exact-ID
+lookup reports genuine absence after `DeleteNotes`, so `get_or_none` returns `None` as required by
+the public contract instead of exposing Web's private soft-delete tombstone. Raw note-backed map
+rows preserve the supported `[id, content]` prefix without fabricating unproven metadata slots.
 
-The exact `CreateNote` builder and sender are reusable by the B5 `AndroidChatAPI` private save-note
-hook with `note_type=SAVED_RESPONSE_NOTE_TYPE`; B6 does not duplicate or fabricate the chat
-adapter.
+The exact `CreateNote` builder and sender are reusable by the Android chat save-note hook with
+`note_type=SAVED_RESPONSE_NOTE_TYPE`; the Notes adapter does not duplicate or fabricate chat fields.
 
 ## Blocked Project premium field 10
 
@@ -568,21 +566,21 @@ leaves, and the [web/Android audit](../notes/web-rpc-vs-mobile-grpc-audit-2026-0
 observed a three-bool block on the web wire. Neither proves the exact protobuf package, FQN, or
 import origin. The authoritative exact-package orchestration closure omits both
 `PremiumFeatureInfo` and `Project #10`, and no independent descriptor or retained Dart-library
-artifact is committed. B1 therefore declares neither symbol, pins tag #10 absent, and projects the
+artifact is committed. The read contract therefore declares neither symbol, pins tag #10 absent, and projects the
 public `premium_features` field as `None`.
 
 The same rule omits tier limits #11 and chat sessions #12. No unrecovered gaps or differently tagged
 local-persistence `Project` duplicate enters the compile closure. A later work package may add a
 small overlay only after committing independent exact-package descriptor/Dart-library evidence.
 
-## B3 source-operation admission
+## Source-operation admission
 
 The exact-package `supported.proto` snapshot above also supplies the orchestration request/message
 FQNs, field tags/cardinality, import boundary, and service method manifest for
 `AddTentativeSources`, `AddSources`, `DeleteSources`, `GenerateDocumentGuides`, and `LoadSource`.
-B3 copies only the fields
+The source contract copies only the fields
 its builders and codecs reach into
-`google/internal/labs/tailwind/orchestration/v1/sources.proto`; it imports the B1 types rather
+`google/internal/labs/tailwind/orchestration/v1/sources.proto`; it imports the read types rather
 than redeclaring `Source` or `SourceId`. The message overlay intentionally declares no service. The
 cumulative service imports those five exact signatures plus the web-derived `MutateSource`
 signature. Blutter's generated-client binding proves `DeleteSources` returns
@@ -597,7 +595,7 @@ signature. Blutter's generated-client binding proves `DeleteSources` returns
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateDocumentGuides` | `.google.internal.labs.tailwind.orchestration.v1.GenerateDocumentGuidesRequest` | `.google.internal.labs.tailwind.orchestration.v1.GenerateDocumentGuidesResponse` | safe read |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/LoadSource` | `.google.internal.labs.tailwind.orchestration.v1.LoadSourceRequest` | `.google.internal.labs.tailwind.orchestration.v1.LoadSourceResponse` | safe read |
 
-### B3 field ledger
+### Source field ledger
 
 | Package.Message | Fields admitted | Evidence/use |
 |---|---|---|
@@ -607,7 +605,7 @@ signature. Blutter's generated-client binding proves `DeleteSources` returns
 | `orchestration.v1.DocumentGuide` | `source #1`, `snippet #2`, `main_ideas #3` | exact closure; exact-ID guide projection |
 | `orchestration.v1.GenerateDocumentGuidesRequest/Response` | repeated `sources #1` / repeated `guides #1` | exact method closure |
 | `orchestration.v1.TentativeSourceMetadata` | `name #1` | exact closure; bijective correlation key |
-| `orchestration.v1.AddTentativeSourcesRequest` | repeated metadata `#1`, `project_id #2`, `request_context #3`, `provenance #4` | exact closure; B3 URL builders leave #3/#4 absent, B3b PDF registration populates them |
+| `orchestration.v1.AddTentativeSourcesRequest` | repeated metadata `#1`, `project_id #2`, `request_context #3`, `provenance #4` | exact closure; URL builders leave #3/#4 absent, file-upload registration populates them |
 | `orchestration.v1.AddTentativeSourcesResponse` | repeated `tentative_sources #1` | exact wrapper |
 | `orchestration.v1.WebContent` | `url #1` | exact closure; outbound URL bytes |
 | `orchestration.v1.UserContent` | `web_content #3`, `tentative_source_id #9` | exact closure; URL commit branch |
@@ -617,10 +615,10 @@ signature. Blutter's generated-client binding proves `DeleteSources` returns
 | `orchestration.v1.LoadSourceRequest/Response` | `source_id #1` / `source #1`, `plain_text #2`, `markdown_string #3` | exact method closure; TailwindDoc #4 remains unknown to the public document codec |
 
 `WebContent.source_name #2`, the YouTube branch, text/Drive branches, freshness/refresh, and the
-deep TailwindDoc grammar are omitted because B3 neither populates nor decodes them. Their presence
+deep TailwindDoc grammar are omitted because source neither populates nor decodes them. Their presence
 in the flattened recovery is not a reachability reason.
 
-## B3b exact-package PDF upload admission
+## Generic file-upload admission
 
 The upload closure does not infer packages from the flattened message list. The independently
 recovered Dart library boundaries in [`schema.proto`](schema.proto) name
@@ -628,8 +626,8 @@ recovered Dart library boundaries in [`schema.proto`](schema.proto) name
 `labs.language.tailwind.common.protos/metadata.pb.dart`, and
 `labs.language.tailwind.common.protos/provenance.pb.dart`. Those package/library identities,
 together with the exhaustive nested enum inventory in [`enums.txt`](enums.txt), admit the exact
-FQNs below. The live report then proves that every declared field is reachable in the successful
-PDF request. No capability, execution-mode, app-API, or unused provenance field is copied.
+FQNs below. Live PDF and text-file probes prove the declared fields are reachable in successful
+requests. No capability, execution-mode, app-API, or unused provenance field is copied.
 
 | Package.Message | Fields/enums admitted | Evidence/use |
 |---|---|---|
@@ -641,7 +639,7 @@ PDF request. No capability, execution-mode, app-API, or unused provenance field 
 | `orchestration.v1.UploadFileRequest` | `project_id #3`, `request_context #4`, `source_id #5`, `provenance #6` | exact orchestration Dart library boundary + structurally matched successful start JSON |
 
 `UploadFileRequest` is used as a deterministic binary descriptor/field-number gate. Runtime JSON
-is an explicit captured-field builder, not a generic protobuf-to-dictionary layer. The only B3b
+is an explicit captured-field builder, not a generic protobuf-to-dictionary layer. The only upload
 registration route remains the already admitted `AddTentativeSources` unary method, always
 non-replayed. Scotty start/finalize are HTTP and add no guessed gRPC service declarations.
 
@@ -652,13 +650,13 @@ The valid-resource replay in
 (SHA-256 `d764ab9da1961c53737a44b50a2c6a45bac6c9d27a2a21431ba3caaa253ca07b`)
 proves the method path and request bytes — `SourceId #2`, repeated mutation `#3`, change-title
 message `#1`, title `#1`. The current web bundle additionally proves request context `#4` and a
-dedicated response wrapper containing exact-package `Source #1`. B3 now uses generated
+dedicated response wrapper containing exact-package `Source #1`. The source adapter now uses generated
 `MutateSourceRequest`/`MutateSourceResponse`; their conventional type names remain explicitly
 marked as web-derived inference rather than APK extraction.
 `SourceMutation` is a oneof: the implemented title branch is `#1`; live branches `#2/#3` remain
 unrecovered and undeclared rather than being mislabeled or reserved.
 
-## B9 organization admission
+## Organization admission
 
 The archived exact-package `supported.proto` pinned above independently establishes the remote
 `GetLabelsRequest`, `GetLabelsResponse`, `LabelAndSources`, and service signature. The minimal
@@ -687,7 +685,8 @@ undeclared. Those structural/type-name inferences are generated and explicitly m
 `CreateLabelResponse` admits proven source-label rows at `#2` but deliberately leaves heterogeneous
 collection rows at `#3` unknown. Mutate/delete use dedicated response constructors with no fields
 retained by the bundle, so their generated partial parsers admit no fields; they are not labeled
-`google.protobuf.Empty`. AI-generated labels remain unsupported before transport I/O.
+`google.protobuf.Empty`. AI-generated labels use the explicitly injected Web compatibility callable
+because the mobile mutation union does not name that branch.
 
 | Method | Generated web-derived populated wire | Runtime rule |
 |---|---|---|
@@ -712,9 +711,9 @@ async open. `AndroidCollectionsAPI` implements all nine public collection method
 | flags | both proto roots via `-I`, `--include_imports`, `--descriptor_set_out`, `--python_out`, `--grpc_python_out`; sorted input list |
 
 Run `python scripts/regenerate_android_protos.py --check` in the locked dev environment. The check
-compiles the cumulative B1-B11 message and exact-service closure into a temporary directory,
+compiles the cumulative read-account message and exact-service closure into a temporary directory,
 performs the repository-local Python import relocation for every exact package root, and
 byte-compares the canonical descriptor set plus the complete generated module tree. Use `--write`
 only when the reviewed proto sources and pinned toolchain intentionally change.
 `notes_sharing_request_wires.json` independently pins every populated
-B6 request byte sequence.
+note and sharing request byte sequence.

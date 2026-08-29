@@ -91,7 +91,7 @@ class BackendPreference:
 
 
 def resolve_backend_preference(*, explicit: str | None, env: str | None) -> BackendPreference:
-    """Resolve and validate the Phase-B backend preference without performing I/O."""
+    """Resolve and validate the backend preference without performing I/O."""
     value: str
     reason: Literal["explicit", "env", "default"]
     if explicit is not None:
@@ -345,9 +345,9 @@ def _assemble_client(
         sleep=sleep,
         is_auth_error=is_auth_error,
     )
-    # ``ClientComposed`` owned this validation before B0 moved the semaphore
-    # into ``CallSupervisor``.  Keep the check at the same assembly position
-    # so combinations of invalid public kwargs preserve Phase A's deterministic
+    # ``ClientComposed`` owned this validation before semaphore ownership moved
+    # into ``CallSupervisor``. Keep the check at the same assembly position
+    # so combinations of invalid public kwargs preserve the deterministic
     # first error instead of whichever collaborator happens to validate first.
     if max_concurrent_rpcs is not None and max_concurrent_rpcs < 1:
         raise ValueError(f"max_concurrent_rpcs must be >= 1, got {max_concurrent_rpcs!r}")
@@ -489,11 +489,12 @@ def _assemble_client(
     # SourcesAPI) for the membership->Source join in ``labels.sources()``;
     # wired after ``client.sources`` exists. Same client/bound loop (ADR-0004).
     client.labels = WebLabelsAPI(internals.executor, list_sources=client.sources.list)
-    # Collections are the first whole namespace admitted for Android selection.
-    # The adapter stays mixed-backend by design: member expansion receives the
-    # already-selected ``notebooks.list`` capability instead of manufacturing a
-    # second namespace. Android dependency/token validation remains deferred to
-    # async open, and the gRPC channel remains lazy until the first collection RPC.
+    # Android selection replaces the complete public namespace graph while keeping
+    # narrow Web compatibility collaborators only where the official mobile schema
+    # exposes no equivalent operation. Cross-namespace joins receive the selected
+    # Android capabilities instead of manufacturing a second frontend. Android
+    # dependency/token validation remains deferred to async open, and the gRPC
+    # channel remains lazy until the first Android RPC.
     client._android_bearer_provider = None
     client._android_session = None
     android_transports: tuple[TransportLifecycle, ...] = ()
@@ -502,10 +503,19 @@ def _assemble_client(
         from ._android.artifacts import AndroidArtifactsAPI
         from ._android.assets import AndroidAssetDownloadService
         from ._android.auth import _make_bearer_provider
+        from ._android.chat import AndroidChatAPI
         from ._android.collections import AndroidCollectionsAPI
+        from ._android.labels import AndroidLabelsAPI
         from ._android.mind_maps import AndroidMindMapsAPI
         from ._android.note_backed import NoteBackedMindMapArtifactAdapter
+        from ._android.notebooks import AndroidNotebooksAPI
+        from ._android.notes import AndroidNotesAPI
+        from ._android.research import AndroidResearchAPI
         from ._android.session import AndroidSession
+        from ._android.settings import AndroidSettingsAPI
+        from ._android.sharing import AndroidSharingAPI
+        from ._android.sources import AndroidSourcesAPI
+        from ._android.upload import AndroidUploadPipeline
 
         android_bearer_provider = _make_bearer_provider(
             Path(auth.storage_path) if auth.storage_path is not None else None
@@ -521,10 +531,34 @@ def _assemble_client(
             bearer_provider=android_bearer_provider,
             supervisor=internals.collaborators.call_supervisor,
         )
-        note_backed_artifacts = NoteBackedMindMapArtifactAdapter(
-            web_mind_maps.list_note_backed,
+        android_upload_pipeline = AndroidUploadPipeline(
+            session=android_session,
+            bearer_provider=android_bearer_provider,
+            upload_timeout=upload_timeout,
+            max_concurrent_uploads=max_concurrent_uploads,
+            record_upload_queue_wait=internals.collaborators.metrics.record_upload_queue_wait,
         )
+        web_sources = client.sources
+        web_notebooks = client.notebooks
         web_artifacts = client.artifacts
+        web_settings = client.settings
+        web_sharing = client.sharing
+        web_labels = client.labels
+        client.sources = AndroidSourcesAPI(
+            android_session,
+            android_upload_pipeline,
+            drive_download=source_uploader.drive_download_scope,
+            refresh_source=web_sources.refresh,
+        )
+        client.notebooks = AndroidNotebooksAPI(
+            android_session,
+            client.sources,
+            remove_from_recent=web_notebooks.remove_from_recent,
+        )
+        client.notes = AndroidNotesAPI(android_session)
+        note_backed_artifacts = NoteBackedMindMapArtifactAdapter(
+            client.notes._list_note_backed_mind_maps,
+        )
         client.artifacts = AndroidArtifactsAPI(
             session=android_session,
             supervisor=internals.collaborators.call_supervisor,
@@ -537,13 +571,40 @@ def _assemble_client(
             supervisor=internals.collaborators.call_supervisor,
             artifacts=client.artifacts,
             notes=client.notes,
-            note_backed_reader=web_mind_maps,
         )
-        android_transports = (android_session, android_asset_downloads)
-        android_loop_participants = (android_bearer_provider, android_session)
+        client.chat = AndroidChatAPI(
+            session=android_session,
+            loop_guard=internals.collaborators.call_supervisor,
+            chat_timeout=resolve_chat_read_timeout(chat_timeout, timeout),
+            notebooks=client.notebooks,
+            created_chat_sessions=client.notebooks,
+        )
+        client.research = AndroidResearchAPI(
+            android_session,
+            client.sources,
+            base_timeout=timeout,
+            import_research_timeout=import_research_timeout,
+        )
+        client.settings = AndroidSettingsAPI(compatibility=web_settings)
+        client.sharing = AndroidSharingAPI(android_session, compatibility=web_sharing)
+        client.labels = AndroidLabelsAPI(
+            android_session,
+            list_sources=client.sources.list,
+            generate_labels=web_labels.generate,
+        )
         client.collections = AndroidCollectionsAPI(
             android_session,
             list_notebooks=client.notebooks.list,
+        )
+        android_transports = (
+            android_session,
+            android_asset_downloads,
+            android_upload_pipeline,
+        )
+        android_loop_participants = (
+            android_bearer_provider,
+            android_session,
+            android_upload_pipeline,
         )
     else:
         client.collections = WebCollectionsAPI(

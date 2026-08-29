@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 // These are deliberately repository-local wire-equivalent messages, not a
-// claim about Google's protobuf package or import graph. The B2 captures prove
+// claim about Google's protobuf package or import graph. The notebook captures prove
 // the serialized fields below and the full gRPC method paths, while the
 // flattened Dart recovery alone is insufficient exact-package evidence.
 package notebooklm.internal.android.wire.v1;

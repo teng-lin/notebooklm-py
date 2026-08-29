@@ -1,9 +1,9 @@
 """Android composition for the unified mind-map namespace.
 
-B7 adds no Android wire declarations. Interactive mutations compose the
-``ArtifactsAPI`` collaborator supplied by B4; note-backed reads and mutations
+The mind-map adapter adds no Android wire declarations. Interactive mutations compose the
+``ArtifactsAPI`` collaborator supplied by the artifact namespace; note-backed reads and mutations
 compose through a typed note-backed projection and note CRUD seams. Interactive
-tree reads and generation use the live-proven B4 artifact representation.
+tree reads and generation use the live-proven artifact representation.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 
 class _NoteBackedMindMapReader(Protocol):
-    """The private typed B6 projection consumed by Android B7."""
+    """The private typed Notes projection consumed by Android mind maps."""
 
     async def _list_note_backed_mind_maps(
         self,
@@ -48,7 +48,7 @@ class AndroidMindMapsAPI(MindMapsAPI):
         | _SelectedNoteBackedMindMapReader
         | None = None,
     ) -> None:
-        """Retain the exact B4/B6 collaborators without selecting a frontend."""
+        """Retain the exact artifact/Notes collaborators without selecting a frontend."""
         super().__init__(artifacts=artifacts, notes=notes)
         self._supervisor = supervisor
         reader_owner = notes if note_backed_reader is None else note_backed_reader
@@ -63,7 +63,7 @@ class AndroidMindMapsAPI(MindMapsAPI):
         )
 
     async def list_note_backed(self, notebook_id: str) -> builtins.list[MindMap]:
-        """Return B6's exact-kind typed projection without reading raw Web rows."""
+        """Return Notes' exact-kind typed projection without reading raw Web rows."""
         return await self._list_note_backed(notebook_id)
 
     async def list(self, notebook_id: str) -> builtins.list[MindMap]:

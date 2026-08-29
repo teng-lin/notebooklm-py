@@ -172,12 +172,13 @@ option, and the `notebooklm-server --backend ...` option. Resolution is always:
 2. `NOTEBOOKLM_BACKEND`;
 3. `web`.
 
-The preference is fixed when a client is constructed. Android is selected only
-for namespaces that have passed full substitution qualification; any remaining
-namespace stays on its established web implementation. Inspect the read-only
-`client.backends` mapping for the implementations actually installed on a
-client. A preference is not a runtime fallback policy, and neither `auto` nor
-`mobile` is accepted.
+The preference is fixed when a client is constructed. `backend="android"`
+installs an Android adapter for every public namespace; the read-only
+`client.backends` mapping therefore reports `android` for all eleven entries.
+A small number of operations use documented, narrow Web compatibility
+collaborators where the official mobile schema exposes no equivalent RPC. The
+mapping describes the installed namespace adapters, not the transport of every
+internal operation. Neither `auto` nor `mobile` is accepted.
 
 Selecting Android does not read credentials during construction. When an
 installed Android namespace needs a durable credential, validation occurs on

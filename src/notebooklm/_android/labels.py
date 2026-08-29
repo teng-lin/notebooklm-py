@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import builtins
-from typing import Literal
+from typing import Literal, Protocol
 
 from .._labels import LabelsAPI, ListSources
 from ..exceptions import DecodingError, LabelError, LabelNotFoundError, RPCError
 from ..types import Label, Source
-from .errors import unsupported_operation
 from .organization import (
     DELETE_LABELS_METHOD,
     GET_LABELS_METHOD,
@@ -21,6 +20,17 @@ from .organization import (
     mutate_properties,
 )
 from .session import AndroidSession
+
+
+class GenerateLabels(Protocol):
+    """Narrow compatibility seam for Web-only AI label organization."""
+
+    async def __call__(
+        self,
+        notebook_id: str,
+        *,
+        scope: Literal["all", "unlabeled"] = "unlabeled",
+    ) -> builtins.list[Label]: ...
 
 
 def _label_miss(label_id: str, *, method_id: str) -> LabelNotFoundError:
@@ -36,9 +46,16 @@ def _raise_label_write_miss(label_id: str, error: RPCError) -> None:
 class AndroidLabelsAPI(LabelsAPI):
     """Evidence-qualified manual source-label CRUD and membership adapter."""
 
-    def __init__(self, session: AndroidSession, *, list_sources: ListSources) -> None:
+    def __init__(
+        self,
+        session: AndroidSession,
+        *,
+        list_sources: ListSources,
+        generate_labels: GenerateLabels,
+    ) -> None:
         self._transport = session
         self._list_sources = list_sources
+        self._generate_labels = generate_labels
 
     async def _list(self, notebook_id: str, *, expected_epoch: int) -> builtins.list[Label]:
         return await list_labels(
@@ -104,8 +121,9 @@ class AndroidLabelsAPI(LabelsAPI):
         *,
         scope: Literal["all", "unlabeled"] = "unlabeled",
     ) -> builtins.list[Label]:
-        del notebook_id, scope
-        unsupported_operation("labels.generate")
+        if scope not in ("all", "unlabeled"):
+            raise ValueError(f"generate scope must be 'all' or 'unlabeled', got {scope!r}")
+        return await self._generate_labels(notebook_id, scope=scope)
 
     async def create(self, notebook_id: str, name: str, emoji: str = "") -> Label:
         async with self._transport.operation_scope("labels.create") as lease:
@@ -319,4 +337,4 @@ class AndroidLabelsAPI(LabelsAPI):
                 )
 
 
-__all__ = ["AndroidLabelsAPI"]
+__all__ = ["AndroidLabelsAPI", "GenerateLabels"]

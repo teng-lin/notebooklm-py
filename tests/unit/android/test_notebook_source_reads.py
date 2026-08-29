@@ -1,4 +1,4 @@
-"""Offline contract tests for the B1 Android notebook/source read graph."""
+"""Offline contract tests for the Android notebook/source read graph."""
 
 from __future__ import annotations
 
@@ -32,7 +32,6 @@ from notebooklm.exceptions import (
     NotebookNotFoundError,
     RPCError,
     SourceNotFoundError,
-    UnsupportedOperationError,
 )
 from notebooklm.types import (
     DriveSourceStatus,
@@ -243,6 +242,10 @@ def test_direct_graph_requires_and_retains_structural_sources_collaborator() -> 
     assert parameter.annotation == "NotebookSourceLister"
     assert get_type_hints(AndroidNotebooksAPI.__init__)["sources_api"] is NotebookSourceLister
     assert notebooks._sources is sources
+
+    compatibility = inspect.signature(AndroidNotebooksAPI).parameters["remove_from_recent"]
+    assert compatibility.default is None
+    assert compatibility.kind is inspect.Parameter.KEYWORD_ONLY
 
 
 @pytest.mark.asyncio
@@ -487,7 +490,7 @@ async def test_checked_in_textproto_fixture_projects_through_both_adapters() -> 
     notebook = await notebooks.get("00000000-0000-4000-8000-000000000000")
     decoded = await sources.list(notebook.id)
 
-    assert notebook.title == "Synthetic B1 project"
+    assert notebook.title == "Synthetic read project"
     assert notebook.sources_count == 4
     assert [source.kind for source in decoded] == [
         SourceType.WEB_PAGE,
@@ -618,43 +621,3 @@ async def test_notebook_metadata_composes_exact_android_source_collaborator() ->
         (SourceType.MARKDOWN, "Draft", None),
         (SourceType.UNKNOWN, "Drive file", None),
     ]
-
-
-NotebookUnsupportedCall = Callable[[AndroidNotebooksAPI], Awaitable[object]]
-SourceUnsupportedCall = Callable[[AndroidSourcesAPI], Awaitable[object]]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "invoke",
-    [
-        pytest.param(lambda api: api.remove_from_recent("notebook"), id="remove-recent"),
-    ],
-)
-async def test_every_unsupported_notebook_method_fails_before_io(
-    invoke: NotebookUnsupportedCall,
-) -> None:
-    fake, _, notebooks = _graph()
-    with pytest.raises(UnsupportedOperationError, match="web backend"):
-        await invoke(notebooks)
-    assert fake.calls == []
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "invoke",
-    [
-        pytest.param(
-            lambda api: api.add_drive_file("notebook", "document"),
-            id="add-drive-file",
-        ),
-        pytest.param(lambda api: api.refresh("notebook", "source"), id="refresh"),
-    ],
-)
-async def test_every_unsupported_source_method_fails_before_io(
-    invoke: SourceUnsupportedCall,
-) -> None:
-    fake, sources, _ = _graph()
-    with pytest.raises(UnsupportedOperationError, match="web backend"):
-        await invoke(sources)
-    assert fake.calls == []

@@ -3,7 +3,7 @@ syntax = "proto3";
 package google.internal.labs.tailwind.v1;
 
 // Exact package, tags, and complete enum values recovered from
-// source_settings.pb.dart. B1 admits only the two settings fields its source
+// source_settings.pb.dart. read admits only the two settings fields its source
 // codec consumes; no flattened-schema gaps are filled.
 
 enum SourceStatus {

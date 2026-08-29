@@ -35,7 +35,6 @@ from .add import (
 )
 from .batch import SourceBatchAddService, SourceUrlBatchItem
 from .content import SourceContentRenderer
-from .drive_import import DriveFetcher, DriveImportService
 from .listing import SourceLister
 from .upload import SourceUploadPipeline
 
@@ -451,21 +450,19 @@ class WebSourcesAPI(SourcesAPI):
             ValidationError: unparseable id/URL, an upload-unsupported type
                 (HTML/other), or a native (non-downloadable) Google Doc/Slides/Sheet.
         """
-        async with self._uploader.transport_operation_scope("drive-upload") as epoch:
-            service = DriveImportService(
-                fetch=DriveFetcher(
-                    cookies_provider=lambda: self._uploader.live_cookies(epoch),
-                    authuser=self._uploader.authuser_value(),
-                ),
-                add_file=self.add_file,
+        async with self._uploader.drive_download_scope(document_id) as (
+            path,
+            filename,
+            content_type,
+        ):
+            return await self.add_file(
+                notebook_id,
+                path,
+                mime_type=content_type,
+                title=title if title else (filename or None),
+                wait=wait,
+                wait_timeout=wait_timeout,
             )
-            # Gate the whole download→upload op on a DEDICATED download semaphore;
-            # reusing the upload one would deadlock because ``add_file`` needs it.
-            # It bounds temporary-file fan-out to ``max_concurrent_uploads``.
-            async with self._uploader.get_download_semaphore():
-                return await service.add_drive_file(
-                    notebook_id, document_id, title=title, wait=wait, wait_timeout=wait_timeout
-                )
 
     async def delete(self, notebook_id: str, source_id: str) -> None:
         """Delete a source from a notebook.

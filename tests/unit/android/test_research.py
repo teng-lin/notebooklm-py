@@ -1,4 +1,4 @@
-"""Evidence, wire, lifecycle, and frontend tests for private Android Research."""
+"""Evidence, wire, lifecycle, and frontend tests for public Android Research."""
 
 from __future__ import annotations
 
@@ -43,7 +43,6 @@ from notebooklm.exceptions import (
     RPCError,
     RPCTimeoutError,
     ServerError,
-    UnsupportedOperationError,
     ValidationError,
 )
 from notebooklm.types import Source
@@ -249,12 +248,24 @@ async def test_synchronous_discover_sources_uses_committed_mobile_binding_once()
 
 
 @pytest.mark.asyncio
-async def test_fast_drive_rejects_before_transport_admission() -> None:
-    api, transport = _api({})
-    with pytest.raises(UnsupportedOperationError):
-        await api.start("nb", "q", source="drive")
-    assert transport.scopes == []
-    assert transport.calls == []
+async def test_fast_drive_uses_drive_corpus_on_the_mobile_fast_route() -> None:
+    api, transport = _api(
+        {
+            START_FAST_METHOD: [
+                research_pb2.DiscoverSourcesManifoldResponse(source_discovery_job_id=RUN_ID)
+            ]
+        }
+    )
+
+    result = await api.start("nb", "q", source="drive")
+
+    assert result.task_id == RUN_ID
+    assert transport.scopes == ["research.start"]
+    method, request, kwargs = transport.calls[0]
+    assert method == START_FAST_METHOD
+    assert request.query.source_type == 2
+    assert request.discovery_mode == research_pb2.DEFAULT_LLM_SEARCH
+    assert kwargs["replay_safe"] is False
 
 
 @pytest.mark.asyncio

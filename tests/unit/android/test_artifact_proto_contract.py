@@ -1,4 +1,4 @@
-"""Exact-package descriptor and projection gates for the B4 artifact closure."""
+"""Exact-package descriptor and projection gates for the artifact closure."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Generated-service coverage for implemented private Android RPC paths."""
+"""Generated-service coverage for implemented Android RPC paths."""
 
 from __future__ import annotations
 
@@ -98,6 +98,11 @@ _EXPECTED_ORCHESTRATION_SIGNATURES = {
     ),
     "DeleteProjects": (
         f"{ORCHESTRATION_PACKAGE}.DeleteProjectsRequest",
+        "google.protobuf.Empty",
+        False,
+    ),
+    "RemoveRecentlyViewedProject": (
+        f"{ORCHESTRATION_PACKAGE}.RemoveRecentlyViewedProjectRequest",
         "google.protobuf.Empty",
         False,
     ),
@@ -452,9 +457,9 @@ def test_adapter_paths_equal_generated_descriptor_with_no_omitted_exceptions() -
     entries = _manifest_entries()
     assert entries == []
     assert _adapter_paths() == _descriptor_paths()
-    assert len(_adapter_paths()) == 45
-    assert len(_descriptor_paths()) == 45
-    assert sum(path.startswith(f"/{ORCHESTRATION_SERVICE}/") for path in _descriptor_paths()) == 43
+    assert len(_adapter_paths()) == 46
+    assert len(_descriptor_paths()) == 46
+    assert sum(path.startswith(f"/{ORCHESTRATION_SERVICE}/") for path in _descriptor_paths()) == 44
     assert sum(path.startswith(f"/{SHARING_SERVICE}/") for path in _descriptor_paths()) == 2
 
     sharing_paths = {path for path in _adapter_paths() if path.startswith(f"/{SHARING_SERVICE}/")}

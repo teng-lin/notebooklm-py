@@ -522,6 +522,34 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         """Account-routing value for Google URLs (#1884), matching the upload leg."""
         return format_authuser_value(self._auth.authuser, self._auth.account_email)
 
+    @asynccontextmanager
+    async def drive_download_scope(
+        self,
+        document_id: str,
+    ) -> AsyncIterator[tuple[Path, str, str | None]]:
+        """Yield one authenticated Drive download for a backend upload adapter.
+
+        This is the narrow cross-backend seam for the public ``add_drive_file``
+        convenience operation.  It owns account routing, live-cookie access,
+        download admission, Drive reference validation, and guaranteed temp-file
+        cleanup; consumers receive only a path, display filename, and MIME type.
+        """
+
+        from .drive_import import DriveFetcher, parse_drive_ref
+
+        async with (
+            self.transport_operation_scope("drive-download") as epoch,
+            self.get_download_semaphore(),
+        ):
+            download = await DriveFetcher(
+                cookies_provider=lambda: self.live_cookies(epoch),
+                authuser=self.authuser_value(),
+            )(parse_drive_ref(document_id))
+            try:
+                yield download.path, download.filename, download.content_type
+            finally:
+                download.path.unlink(missing_ok=True)
+
     async def add_file(
         self,
         notebook_id: str,

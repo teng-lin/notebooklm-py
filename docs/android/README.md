@@ -72,20 +72,31 @@ The default package-directory selectors preserve the complete 54-file historical
 The generator reports `295 messages, 767 fields` and resolves package identity through the sibling
 `objs.txt`; an unresolved package remains explicit rather than being inferred from its directory.
 
-The reduced compile inputs used by the private Android adapters live under
+The reduced compile inputs used by the internal Android adapters live under
 `src/notebooklm/_android/proto_src/`. Regenerate their checked-in Python modules and the full
 descriptor fixture with `python scripts/regenerate_android_protos.py --write`; use `--check` in CI.
-The cumulative `orchestration_service.proto` owns the 43-method orchestration service;
+The cumulative `orchestration_service.proto` owns the 44-method orchestration service;
 `sharing.proto` owns the separately proven two-method exact sharing service, and individual
 orchestration message overlays remain service-free. Nine orchestration signatures are explicitly
 marked as web-derived conventional-name inferences; all other generated signatures are exact.
-The 45 generated methods exhaustively equal the 45 implemented adapter paths, and the signature
+The 46 generated methods exhaustively equal the 46 implemented adapter paths, and the signature
 exception manifest is empty. Generated descriptors, adapter paths, inference provenance, and the
 hash-pinned external method manifest are checked in both
 directions, so a locally repeated claim cannot admit a normalized or unresolved response type.
-The package, generated protos, and most adapters remain private, direct-testable migration building
-blocks. Explicit `backend="android"` selection installs Android Artifacts, Mind Maps, and
-Collections; every other namespace remains Web, including Sources, Notes, Sharing, and Labels.
+The package and generated protos remain private implementation details. Explicit
+`backend="android"` selection installs Android adapters for all eleven public namespaces. The
+adapters use native Android gRPC/Scotty wherever the mobile contract is usable and isolate the
+remaining schema/handler gaps behind narrow Web compatibility collaborators:
+
+- note-backed mind-map generation, because no mobile generation FQN is recoverable;
+- notebook recent-removal and source refresh, whose exact/candidate mobile handlers reject valid
+  owned resources;
+- the Drive-file convenience method's authenticated download leg (registration/upload is Android);
+- output-language/account-limit settings, collaborator/view-level sharing, and automatic label
+  generation, whose semantics are absent from the admitted mobile closures.
+
+`client.backends` describes the installed namespace adapters, so every entry is `android`; it does
+not claim that each internal operation has a native mobile RPC.
 
 ## Public Collections qualification
 
@@ -100,7 +111,7 @@ uv run pytest tests/e2e/test_android_collections_conformance.py -m e2e -vv
 uv run pytest tests/e2e/test_android_collections_conformance.py -m e2e -vv
 ```
 
-## Private Notes conformance
+## Android Notes conformance
 
 The authenticated conformance probe exercises the complete eight-method Notes manifest, including
 ordinary note CRUD and note-backed mind-map list/delete. Use a dedicated profile that contains both
@@ -116,20 +127,11 @@ uv run pytest tests/e2e/test_android_notes_conformance.py -m e2e -vv
 ```
 
 This test is opt-in and destructive only to the uniquely prefixed resources it creates. Keep the
-profile isolated as described in the repository agent guidance, inspect the final cleanup result, and
-do not treat a successful run as public-promotion evidence by itself. Three substitution blockers remain:
-
-- Android exposes only last-edit timestamp evidence where the public `Note` model also exposes
-  `created_at`; copying last-edit into creation time would be a semantic guess.
-- Android `list_mind_maps` can project only the evidenced id/content/name/type/prompt/last-edit fields.
-  The public method preserves Web's raw row boundary, whose additional metadata/source slots have not
-  been proven wire-equivalent on Android.
-- After Android deletion, Android exact-ID lookup reports absence while Web exact-ID lookup exposes the
-  persisted soft-delete tombstone as the same note id with empty title/content. Both list projections
-  exclude it, but the established `get_or_none` results are not substitutable.
-
-Until exact capture evidence resolves all three gaps, the eight methods remain a private conformance target
-and the Notes namespace remains Web in normal SDK, CLI, MCP, and REST assembly.
+profile isolated as described in the repository agent guidance and inspect the final cleanup result.
+The Android projection preserves only evidenced semantics: unknown creation time is `None`, raw
+mind-map rows contain the public contract's supported `[id, content]` prefix, and exact absence after
+deletion returns `None`. The Web soft-delete tombstone is a storage leak rather than a documented
+`get_or_none` guarantee, so Android does not fabricate it.
 
 ## Caveats that will bite you
 

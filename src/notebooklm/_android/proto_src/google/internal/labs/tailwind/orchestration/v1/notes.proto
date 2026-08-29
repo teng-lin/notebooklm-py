@@ -4,10 +4,10 @@ package google.internal.labs.tailwind.orchestration.v1;
 
 import "google/protobuf/timestamp.proto";
 
-// Exact-package B6 note overlay. The flattened recovery preserves this Dart
+// Exact-package note overlay. The flattened recovery preserves this Dart
 // library's package, message names, enum values, field tags, and cardinality.
 // RequestContext and ProjectNote.tailwind_doc_content #6 are deliberately
-// omitted because no B6 public projection populates or reads them.
+// omitted because no public projection populates or reads them.
 
 enum NotePromptType {
   NOTE_PROMPT_TYPE_UNSPECIFIED = 0;

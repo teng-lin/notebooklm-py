@@ -1,4 +1,4 @@
-"""Descriptor and byte fixtures for the B6 notes/sharing overlays."""
+"""Descriptor and byte fixtures for the Notes and Sharing overlays."""
 
 from __future__ import annotations
 

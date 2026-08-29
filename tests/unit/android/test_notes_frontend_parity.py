@@ -8,17 +8,69 @@ from typing import Any, cast
 import pytest
 from tests._helpers.android_notes import StatefulAndroidNotesTransport
 
+from notebooklm._android.codecs.notes import (
+    decode_note,
+    decode_note_backed_mind_map_rows,
+    decode_note_by_id,
+)
 from notebooklm._android.notes import (
     DELETE_NOTES_METHOD,
     GET_NOTES_METHOD,
     MUTATE_NOTE_METHOD,
     AndroidNotesAPI,
 )
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import notes_pb2
 from notebooklm._android.session import AndroidSession
 from notebooklm._app.notes import NoteSaveResult, execute_note_save
+from notebooklm._web.rows.notes import NoteRow
 
 NOTEBOOK_ID = "11111111-1111-1111-1111-111111111111"
 NOTE_ID = "55555555-5555-5555-5555-555555555555"
+
+
+def test_android_notes_satisfy_public_nullable_raw_and_absence_contracts() -> None:
+    """Pin public semantics, not incidental Web soft-delete storage details."""
+    note = notes_pb2.ProjectNote(
+        id=NOTE_ID,
+        name="Title",
+        content="Body",
+        metadata=notes_pb2.NoteMetadata(type=notes_pb2.USER_WRITTEN),
+    )
+    note.metadata.last_edit_timestamp.FromSeconds(1_700_000_000)
+
+    decoded = decode_note(note, NOTEBOOK_ID, method_id=GET_NOTES_METHOD)
+    # ``Note.created_at`` is explicitly optional. The only Android timestamp
+    # is last-edit time, so preserving None is the honest public projection.
+    assert decoded.created_at is None
+
+    map_note = notes_pb2.ProjectNote(
+        id="map-1",
+        name="Map title",
+        content='{"children": []}',
+        metadata=notes_pb2.NoteMetadata(note_prompt_type=notes_pb2.MIND_MAP),
+    )
+    response = notes_pb2.GetNotesResponse(notes=[notes_pb2.NoteOrStatus(note=map_note)])
+    raw_rows = decode_note_backed_mind_map_rows(response, method_id=GET_NOTES_METHOD)
+    # The public return is opaque ``list[Any]``; this exact two-slot row is
+    # also the established Web legacy shape and remains consumable by NoteRow.
+    assert raw_rows == [["map-1", '{"children": []}']]
+    assert (NoteRow(raw_rows[0]).id, NoteRow(raw_rows[0]).content) == (
+        "map-1",
+        '{"children": []}',
+    )
+
+    # A status-only/absent Android projection is a genuine public miss. The
+    # contract for get_or_none is None, not Web's private persisted tombstone.
+    absent = notes_pb2.GetNotesResponse(notes=[notes_pb2.NoteOrStatus()])
+    assert (
+        decode_note_by_id(
+            absent,
+            NOTEBOOK_ID,
+            NOTE_ID,
+            method_id=GET_NOTES_METHOD,
+        )
+        is None
+    )
 
 
 def _api(transport: StatefulAndroidNotesTransport) -> AndroidNotesAPI:

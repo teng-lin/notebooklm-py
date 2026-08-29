@@ -1,4 +1,4 @@
-"""Exact/local protobuf contract tests for B9 organization methods."""
+"""Exact/local protobuf contract tests for organization methods."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Offline Android PDF upload wire, lifecycle, and security tests."""
+"""Offline Android file-upload wire, lifecycle, and security tests."""
 
 from __future__ import annotations
 
@@ -39,7 +39,6 @@ from notebooklm.exceptions import (
     SourceAddError,
     SourceProcessingError,
     SourceTimeoutError,
-    UnsupportedOperationError,
     ValidationError,
 )
 from notebooklm.types import SourceStatus
@@ -250,9 +249,7 @@ class FakeCurlHTTPClient(CurlCffiAsyncClient):
             if on_chunk is not None:
                 await on_chunk(len(chunk))
         assert len(body) == total_bytes
-        self.harness.calls.append(
-            _HTTPCall(method, url, dict(headers), bytes(body), False)
-        )
+        self.harness.calls.append(_HTTPCall(method, url, dict(headers), bytes(body), False))
         return httpx.Response(
             self.harness.final_status,
             headers=self.harness.final_headers,
@@ -268,9 +265,7 @@ def _pdf_source(
     return _READ.Source(
         source_id=_READ.SourceId(id=SOURCE_ID),
         title=title,
-        metadata=_READ.SourceMetadata(
-            original_source_content_type=_READ.SOURCE_CONTENT_TYPE_PDF
-        ),
+        metadata=_READ.SourceMetadata(original_source_content_type=_READ.SOURCE_CONTENT_TYPE_PDF),
         settings=_SETTINGS.SourceSettings(status=status),
     )
 
@@ -303,13 +298,12 @@ async def _graph(
         )
 
     session.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _registration
-    session.handlers[GET_PROJECT_METHOD] = _project(
-        _SETTINGS.SOURCE_STATUS_COMPLETE
-    )
+    session.handlers[GET_PROJECT_METHOD] = _project(_SETTINGS.SOURCE_STATUS_COMPLETE)
     session.handlers[MUTATE_SOURCE_METHOD] = _WRITE.MutateSourceResponse()
 
     factory: Callable[..., Any]
     if curl:
+
         def factory(**kwargs: Any) -> FakeCurlHTTPClient:
             harness.factory_kwargs.append(kwargs)
             client = FakeCurlHTTPClient(harness)
@@ -527,17 +521,13 @@ async def test_title_cancellation_and_lifecycle_failure_propagate(
 
 
 @pytest.mark.asyncio
-async def test_non_pdf_and_blank_title_reject_before_filesystem_bearer_or_wire(tmp_path: Path) -> None:
+async def test_missing_file_and_blank_title_reject_before_bearer_or_wire(tmp_path: Path) -> None:
     harness = HTTPHarness()
     session, bearer, _, api = await _graph(harness)
     missing = tmp_path / "missing.txt"
 
-    with pytest.raises(UnsupportedOperationError) as unsupported:
+    with pytest.raises(FileNotFoundError):
         await api.add_file(NOTEBOOK_ID, missing)
-    assert str(unsupported.value) == (
-        "sources.add_file for non-PDF files is not supported by the Android backend. "
-        "Use the web backend instead."
-    )
     with pytest.raises(ValidationError, match="Title cannot be empty"):
         await api.add_file(NOTEBOOK_ID, tmp_path / "missing.pdf", title="   ")
     with pytest.raises(FileNotFoundError):
@@ -546,6 +536,23 @@ async def test_non_pdf_and_blank_title_reject_before_filesystem_bearer_or_wire(t
     assert session.calls == []
     assert bearer.calls == []
     assert harness.calls == []
+
+
+@pytest.mark.asyncio
+async def test_non_pdf_upload_preserves_inferred_content_type_on_android_wire(
+    tmp_path: Path,
+) -> None:
+    harness = HTTPHarness()
+    _, _, _, api = await _graph(harness)
+    path = tmp_path / "notes.txt"
+    path.write_text("hello", encoding="utf-8")
+
+    result = await api.add_file(NOTEBOOK_ID, path)
+
+    assert result.id == SOURCE_ID
+    start = next(call for call in harness.calls if call.method == "POST")
+    assert start.headers["X-Goog-Upload-Header-Content-Type"] == "text/plain"
+    assert next(call for call in harness.calls if call.method == "PUT").body == b"hello"
 
 
 @pytest.mark.asyncio
@@ -574,8 +581,7 @@ async def test_registration_failure_never_starts_upload_replays_or_cleans_up(
     assert raised.value.cause is None
     if unconfirmed:
         assert str(raised.value) == (
-            "Android PDF upload tentative registration outcome is unconfirmed "
-            "for 'document.pdf'."
+            "Android file upload tentative registration outcome is unconfirmed for 'document.pdf'."
         )
         assert cast(Any, raised.value).stage == "register"
         assert "URL add" not in str(raised.value)
@@ -625,7 +631,7 @@ async def test_filename_title_is_not_custom_and_performs_zero_project_reads(tmp_
         SESSION_URL + "&upload_id=second",
         SESSION_URL.replace("upload_protocol=resumable", "upload_protocol=other"),
         SESSION_URL.replace("upload_id=session-capability", "upload_id="),
-        SESSION_URL.replace("?", "?upload_id=one,") ,
+        SESSION_URL.replace("?", "?upload_id=one,"),
         SESSION_URL + "\r\nX-Evil: 1",
     ],
 )
@@ -663,9 +669,7 @@ async def test_http_failure_never_replays_or_cleans_up_and_only_401_invalidates(
     assert cast(Any, raised.value).source_id == SOURCE_ID
     assert cast(Any, raised.value).stage == stage
     assert raised.value.cause is None
-    assert [call.method for call in harness.calls].count(
-        "POST" if stage == "start" else "PUT"
-    ) == 1
+    assert [call.method for call in harness.calls].count("POST" if stage == "start" else "PUT") == 1
     assert all("Delete" not in call[0] for call in session.calls)
     expected_generation = 1 if stage == "start" else 2
     assert bearer.invalidated == ([expected_generation] if status == 401 else [])
@@ -797,7 +801,9 @@ async def test_caller_cancellation_closes_resources_and_sends_no_later_io(tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_progress_callback_failure_propagates_its_type_and_closes_body(tmp_path: Path) -> None:
+async def test_progress_callback_failure_propagates_its_type_and_closes_body(
+    tmp_path: Path,
+) -> None:
     harness = HTTPHarness()
     _, _, pipeline, api = await _graph(harness)
     path, _ = _write_pdf(tmp_path)

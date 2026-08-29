@@ -1,4 +1,4 @@
-"""Descriptor and checked-in wire gates for the B5 Android chat overlay."""
+"""Descriptor and checked-in wire gates for the chat Android chat overlay."""
 
 from __future__ import annotations
 

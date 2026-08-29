@@ -10,7 +10,7 @@ import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 import "labs/language/tailwind/common/protos/metadata.proto";
 
-// Exact-package B4 artifact overlay. Every declaration below was checked for
+// Exact-package artifact overlay. Every declaration below was checked for
 // FQN/name/tag/type/cardinality against the archived exact-package
 // supported.proto pinned in docs/android/proto-evidence-ledger.md. A nearby
 // schema.proto citation is corroborating Dart-symbol evidence, never the sole
@@ -104,7 +104,7 @@ enum SlideDeckLength {
 
 message MediaStreamingUrl {
   string url = 1; // evidence: docs/android/file-transfer-evidence.md#1-list-and-select-a-ready-representation
-  MediaStreamingType type = 2; // evidence: docs/android/proto-evidence-ledger.md#b4-artifact-field-ledger
+  MediaStreamingType type = 2; // evidence: docs/android/proto-evidence-ledger.md#artifact-exact-field-ledger
 }
 
 message QuizGenerationOptions {
@@ -146,7 +146,7 @@ message FlashcardsGenerationOptions {
 }
 
 message AppArtifactGenerationOptions {
-  AppType app_type = 1; // evidence: docs/android/proto-evidence-ledger.md#b4-artifact-field-ledger
+  AppType app_type = 1; // evidence: docs/android/proto-evidence-ledger.md#artifact-exact-field-ledger
   string free_text_steering_prompt = 3; // evidence: docs/android/schema.proto AppArtifactGenerationOptions
   string language_code = 4; // evidence: exact-package supported.proto AppArtifactGenerationOptions
   FlashcardsGenerationOptions flashcards_generation_options = 7; // evidence: exact-package supported.proto AppArtifactGenerationOptions

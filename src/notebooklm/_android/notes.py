@@ -1,4 +1,4 @@
-"""Android backend implementation of the evidence-qualified B6 notes surface."""
+"""Android backend implementation of the public Notes surface."""
 
 from __future__ import annotations
 
@@ -69,9 +69,9 @@ async def create_note(
     note_type: int = USER_WRITTEN_NOTE_TYPE,
     expected_epoch: int | None = None,
 ) -> Note:
-    """Send one non-replayed CreateNote call through the reusable B5/B6 seam.
+    """Send one non-replayed CreateNote call through the reusable chat/note seam.
 
-    The parallel B5 AndroidChatAPI only needs to call this seam with
+    The parallel chat AndroidChatAPI only needs to call this seam with
     ``SAVED_RESPONSE_NOTE_TYPE`` from its private save-note hook. This package
     intentionally does not define or duplicate that adapter.
     """
@@ -177,7 +177,7 @@ class AndroidNotesAPI(NotesAPI):
             return await self._list_notes(notebook_id, expected_epoch=lease.epoch)
 
     async def _list_note_backed_mind_maps(self, notebook_id: str) -> builtins.list[MindMap]:
-        """Return the private typed B7 projection without fabricating Web rows."""
+        """Return the private typed mind-map projection without fabricating Web rows."""
         from .codecs.notes import decode_note_backed_mind_maps
 
         async with self._transport.operation_scope("notes.list_note_backed_mind_maps") as lease:

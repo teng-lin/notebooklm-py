@@ -447,7 +447,7 @@ stateful; do not replay until decoded.**
 
 **Request:** `#1` context, `#4 str[36]` (`chat_session_id`), optional `#6` page token.
 
-**Response** — the full chat history (~1 MB in the sample). The exact-package B5 overlay admits
+**Response** — the full chat history (~1 MB in the sample). The exact-package chat overlay admits
 top-level `#1` as repeated `ChatHistoryMessage` and `#2` as `nextPageToken`. Each message combines
 one user query with its generated response (captured newest-first):
 
@@ -468,7 +468,7 @@ one user query with its generated response (captured newest-first):
 #2 str                     # next_page_token when another page exists
 ```
 
-The private B5 adapter returns this protobuf response raw. Its decoded history view applies the
+The selected Android chat adapter returns this protobuf response raw. Its decoded history view applies the
 caller limit and reverses the newest-first rows into the Python API's oldest-first Q&A order; it
 does not infer pagination behavior from `nextPageToken`.
 
@@ -616,7 +616,7 @@ AddTentativeSources response:
 
 AddSources request:
   #1 { #3 { #1 str }         # the source payload — URL string (len 47 in sample)
-        #9 { #1 str[36] } }  # tentative source_id from phase 1
+        #9 { #1 str[36] } }  # tentative source_id from registration
   #2 str[36]                 # project_id
   #3 context
 AddSources response:
@@ -775,7 +775,7 @@ response (streamed, each frame a fuller snapshot):
 ```
 
 Each streamed frame re-sends the whole answer-so-far, so the **final frame is the complete
-answer**; earlier frames are partial. B5 uses one whole-stream deadline with no retry, accepts only
+answer**; earlier frames are partial. chat uses one whole-stream deadline with no retry, accepts only
 a frame whose response field `#5` declares finality, and raises `ChatResponseParseError` if EOF
 arrives first. It never concatenates frames. Citations are exposed only through proven
 `AnswerResponse.responseDoc` fields: `TailwindDoc.objects → DocumentObject.citation →

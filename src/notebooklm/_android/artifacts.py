@@ -153,7 +153,7 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         *,
         expected_epoch: int | None = None,
     ) -> builtins.list[Artifact]:
-        # evidence: docs/android/proto-evidence-ledger.md#b4-service-ledger
+        # evidence: docs/android/proto-evidence-ledger.md#artifact-service-ledger
         epoch_kwargs: dict[str, Any] = (
             {} if expected_epoch is None else {"expected_epoch": expected_epoch}
         )
@@ -483,7 +483,7 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         format_code = _audio_format_code(audio_format)
         episode_length = _audio_length_code(audio_length)
 
-        # evidence: docs/android/proto-evidence-ledger.md#b4-audio-overview-request
+        # evidence: docs/android/proto-evidence-ledger.md#artifact-audio-overview-request
         generation_options = _PROTO.AudioOverviewGenerationOptions(
             episode_focus=instructions or "",
             episode_length=episode_length,

@@ -322,11 +322,11 @@ still require a real APK/mobile descriptor or successful live request proving a 
 
 ## Public assembly and local representation boundary
 
-With explicit `backend="android"`, normal client assembly selects `AndroidArtifactsAPI`,
-`AndroidMindMapsAPI`, and `AndroidAssetDownloadService` alongside Android Collections. The asset
-service participates in client lifecycle shutdown, and generated protobuf modules remain lazy until
-an Android operation needs them. The selected mind-map surface combines interactive Studio
-artifacts with the existing typed note-backed projection.
+With explicit `backend="android"`, normal client assembly selects the complete eleven-namespace
+Android adapter graph, including `AndroidArtifactsAPI`, `AndroidMindMapsAPI`, and
+`AndroidAssetDownloadService`. The asset service participates in client lifecycle shutdown, and
+generated protobuf modules remain lazy until an Android operation needs them. The selected mind-map
+surface combines interactive Studio artifacts with the typed Android note-backed projection.
 
 The local download surface accepts typed Android `Artifact` objects and exact protobuf artifacts
 for infographic prefetch. Note-backed mind-map prefetch accepts typed `MindMap` objects; it does

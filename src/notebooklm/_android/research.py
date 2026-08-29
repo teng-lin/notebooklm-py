@@ -1,4 +1,4 @@
-"""Private Android implementation of the evidence-qualified Research slice."""
+"""Android implementation of the public Research namespace."""
 
 from __future__ import annotations
 
@@ -6,11 +6,10 @@ import uuid
 from collections.abc import Sequence
 from typing import Any, cast
 
-from google.protobuf.empty_pb2 import Empty
-
 from .._idempotency import mark_unconfirmed
 from .._notebook_metadata import NotebookSourceLister
 from .._research import _INITIAL_INTERVAL_UNSET, ResearchAPI
+from .._runtime.config import AUTO_READ_TIMEOUT, DEFAULT_TIMEOUT
 from .._types.research import (
     RESEARCH_RESULT_TYPE_REPORT,
     RESEARCH_SOURCE_TYPE_WEB,
@@ -33,13 +32,28 @@ from .codecs.research import (
     decode_discovered_source,
     decode_research_jobs,
 )
-from .errors import unsupported_operation
-from .proto.google.internal.labs.tailwind.orchestration.v1 import research_pb2, sources_pb2
 from .session import AndroidSession
 from .upload import android_request_context
 
-_PROTO = cast(Any, research_pb2)
-_SOURCE_PROTO = cast(Any, sources_pb2)
+
+def _proto() -> Any:
+    from .proto.google.internal.labs.tailwind.orchestration.v1 import research_pb2
+
+    return cast(Any, research_pb2)
+
+
+def _source_proto() -> Any:
+    from .proto.google.internal.labs.tailwind.orchestration.v1 import sources_pb2
+
+    return cast(Any, sources_pb2)
+
+
+def _empty_type() -> Any:
+    from google.protobuf.empty_pb2 import Empty
+
+    return Empty
+
+
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 DISCOVER_SOURCES_METHOD = f"/{_SERVICE}/DiscoverSources"
 START_FAST_METHOD = f"/{_SERVICE}/DiscoverSourcesManifold"
@@ -74,18 +88,28 @@ def _validate_start(source: str, mode: str, query: str) -> tuple[str, str]:
     if source_lower == "drive":
         if mode_lower == "deep":
             raise ValidationError("Deep Research only supports Web sources.")
-        unsupported_operation("research.start fast Drive corpus")
     if not query or not query.strip():
         raise ValidationError("query must not be empty")
     return source_lower, mode_lower
 
 
 class AndroidResearchAPI(ResearchAPI):
-    """Android bearer-gRPC Research adapter; private until B10 promotion."""
+    """Android bearer-gRPC adapter for the complete public Research contract."""
 
-    def __init__(self, session: AndroidSession, source_lister: NotebookSourceLister) -> None:
+    def __init__(
+        self,
+        session: AndroidSession,
+        source_lister: NotebookSourceLister,
+        *,
+        base_timeout: float | None = DEFAULT_TIMEOUT,
+        import_research_timeout: float | None = AUTO_READ_TIMEOUT,
+    ) -> None:
         self._transport = session
-        super().__init__(source_lister=source_lister)
+        super().__init__(
+            source_lister=source_lister,
+            base_timeout=base_timeout,
+            import_research_timeout=import_research_timeout,
+        )
 
     async def _discover_sources(self, notebook_id: str, query: str) -> ResearchTask:
         """Run the separate synchronous mobile DiscoverSources operation once."""
@@ -94,13 +118,13 @@ class AndroidResearchAPI(ResearchAPI):
         async with self._transport.operation_scope("research.discover_sources") as lease:
             response = await self._transport.unary(
                 DISCOVER_SOURCES_METHOD,
-                _PROTO.DiscoverSourcesRequest(
-                    discovery_context=_PROTO.DiscoveryContext(context=query),
-                    discovery_mode=_PROTO.DEFAULT_LLM_SEARCH,
+                _proto().DiscoverSourcesRequest(
+                    discovery_context=_proto().DiscoveryContext(context=query),
+                    discovery_mode=_proto().DEFAULT_LLM_SEARCH,
                     project_id=notebook_id,
                 ),
                 replay_safe=False,
-                response_type=_PROTO.DiscoverSourcesResponse,
+                response_type=_proto().DiscoverSourcesResponse,
                 expected_epoch=lease.epoch,
             )
             task_id = response.discover_sources_feedback_key.discover_sources_id
@@ -134,19 +158,20 @@ class AndroidResearchAPI(ResearchAPI):
         source: str = "web",
         mode: str = "fast",
     ) -> ResearchStart:
-        _, mode_lower = _validate_start(source, mode, query)
-        query_message = _PROTO.ResearchQuery(query=query, source_type=RESEARCH_SOURCE_TYPE_WEB)
+        source_lower, mode_lower = _validate_start(source, mode, query)
+        source_type = RESEARCH_SOURCE_TYPE_WEB if source_lower == "web" else 2
+        query_message = _proto().ResearchQuery(query=query, source_type=source_type)
         async with self._transport.operation_scope("research.start") as lease:
             if mode_lower == "fast":
                 response = await self._transport.unary(
                     START_FAST_METHOD,
-                    _PROTO.DiscoverSourcesManifoldRequest(
+                    _proto().DiscoverSourcesManifoldRequest(
                         query=query_message,
-                        discovery_mode=_PROTO.DEFAULT_LLM_SEARCH,
+                        discovery_mode=_proto().DEFAULT_LLM_SEARCH,
                         project_id=notebook_id,
                     ),
                     replay_safe=False,
-                    response_type=_PROTO.DiscoverSourcesManifoldResponse,
+                    response_type=_proto().DiscoverSourcesManifoldResponse,
                     expected_epoch=lease.epoch,
                 )
                 run_id = _canonical_uuid(
@@ -155,14 +180,14 @@ class AndroidResearchAPI(ResearchAPI):
                 return ResearchStart(run_id, None, notebook_id, query, mode_lower)
             response = await self._transport.unary(
                 START_DEEP_METHOD,
-                _PROTO.DiscoverSourcesAsyncRequest(
+                _proto().DiscoverSourcesAsyncRequest(
                     fixed_flags=[1],
                     query=query_message,
-                    discovery_mode=_PROTO.DEEP_RESEARCH,
+                    discovery_mode=_proto().DEEP_RESEARCH,
                     project_id=notebook_id,
                 ),
                 replay_safe=False,
-                response_type=_PROTO.DiscoverSourcesAsyncResponse,
+                response_type=_proto().DiscoverSourcesAsyncResponse,
                 expected_epoch=lease.epoch,
             )
             run_id = _canonical_uuid(response.source_discovery_job_id, method_id=START_DEEP_METHOD)
@@ -182,9 +207,9 @@ class AndroidResearchAPI(ResearchAPI):
     async def _list_tasks(self, notebook_id: str, *, expected_epoch: int) -> list[ResearchTask]:
         response = await self._transport.unary(
             LIST_JOBS_METHOD,
-            _PROTO.ListDiscoverSourcesJobRequest(project_id=notebook_id),
+            _proto().ListDiscoverSourcesJobRequest(project_id=notebook_id),
             replay_safe=True,
-            response_type=_PROTO.ListDiscoverSourcesJobResponse,
+            response_type=_proto().ListDiscoverSourcesJobResponse,
             expected_epoch=expected_epoch,
         )
         return decode_research_jobs(response, method_id=LIST_JOBS_METHOD)
@@ -223,12 +248,12 @@ class AndroidResearchAPI(ResearchAPI):
             try:
                 await self._transport.unary(
                     CANCEL_JOB_METHOD,
-                    _PROTO.CancelDiscoverSourcesJobRequest(
+                    _proto().CancelDiscoverSourcesJobRequest(
                         request_context=android_request_context(),
                         source_discovery_job_id=run_id,
                     ),
                     replay_safe=False,
-                    response_type=Empty,
+                    response_type=_empty_type(),
                     expected_epoch=lease.epoch,
                 )
             except RateLimitError:
@@ -266,18 +291,18 @@ class AndroidResearchAPI(ResearchAPI):
                 )
             if source.result_type == RESEARCH_RESULT_TYPE_REPORT and source.report_markdown:
                 entries.append(
-                    _SOURCE_PROTO.UserContent(
-                        text_content=_SOURCE_PROTO.TextContent(
+                    _source_proto().UserContent(
+                        text_content=_source_proto().TextContent(
                             source_name=source.title,
                             content=source.report_markdown,
                         ),
-                        text_content_type=_SOURCE_PROTO.UserContent.CONTENT_TYPE_MARKDOWN,
+                        text_content_type=_source_proto().UserContent.CONTENT_TYPE_MARKDOWN,
                     )
                 )
             elif source.url:
                 entries.append(
-                    _SOURCE_PROTO.UserContent(
-                        web_content=_SOURCE_PROTO.WebContent(
+                    _source_proto().UserContent(
+                        web_content=_source_proto().WebContent(
                             url=source.url,
                             source_name=source.title,
                         )
@@ -288,14 +313,14 @@ class AndroidResearchAPI(ResearchAPI):
         async with self._transport.operation_scope("research.import_sources") as lease:
             response = await self._transport.unary(
                 FINISH_RUN_METHOD,
-                _PROTO.FinishDiscoverSourcesRunRequest(
+                _proto().FinishDiscoverSourcesRunRequest(
                     source_discovery_job_id=run_id,
                     project_id=notebook_id,
                     user_content=entries,
                 ),
                 replay_safe=False,
                 timeout=_remaining_budget,
-                response_type=_PROTO.FinishDiscoverSourcesRunResponse,
+                response_type=_proto().FinishDiscoverSourcesRunResponse,
                 expected_epoch=lease.epoch,
             )
             return [

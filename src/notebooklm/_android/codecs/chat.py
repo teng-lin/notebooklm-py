@@ -1,4 +1,4 @@
-"""Projection of the admitted Android B5 chat protobuf fields."""
+"""Projection of the admitted Android chat protobuf fields."""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def _decode_blocks(elements: Any) -> tuple[DocumentBlock, ...]:
 
 
 def decode_document(document: Any) -> StructuredDocument:
-    """Decode only B5-proven paragraph text and answer annotation fields."""
+    """Decode only chat-proven paragraph text and answer annotation fields."""
     if not document.HasField("body"):
         return StructuredDocument()
 

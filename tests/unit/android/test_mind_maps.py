@@ -1,4 +1,4 @@
-"""Offline B7 Android mind-map composition and evidence-gate tests."""
+"""Offline mind-map Android mind-map composition and evidence-gate tests."""
 
 from __future__ import annotations
 
@@ -65,8 +65,8 @@ def _graph(
 ) -> tuple[AndroidMindMapsAPI, MagicMock, MagicMock]:
     notes = MagicMock(spec=NotesAPI)
     notes._list_note_backed_mind_maps = AsyncMock(return_value=note_backed or [])
-    # B6's public method remains a raw ``list[Any]`` evidence gate. A raw-looking
-    # value makes accidental use by B7 fail the interaction assertions below.
+    # Notes' public method remains a raw ``list[Any]`` evidence gate. A raw-looking
+    # value makes accidental use by mind-map fail the interaction assertions below.
     notes.list_mind_maps = AsyncMock(return_value=[["raw-note-row"]])
     notes.get = AsyncMock(
         return_value=Note(

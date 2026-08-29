@@ -19,7 +19,7 @@ def build_create_note_request(
     content: str,
     note_type: int,
 ) -> Any:
-    """Build the byte-proven CreateNote request shared with the B5 chat hook."""
+    """Build the byte-proven CreateNote request shared with the chat hook."""
     return _PROTO.CreateNoteRequest(
         project_id=notebook_id,
         content=content,
@@ -199,7 +199,7 @@ def decode_note_backed_mind_maps(
     *,
     method_id: str,
 ) -> list[MindMap]:
-    """Project exactly classified note-backed rows into the typed B7 value.
+    """Project exactly classified note-backed rows into the typed mind-map value.
 
     This deliberately does not manufacture the raw positional rows returned by
     the Web notes RPC. The Android descriptor proves persisted id, content, and

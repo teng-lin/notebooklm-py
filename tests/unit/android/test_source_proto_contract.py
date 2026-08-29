@@ -1,4 +1,4 @@
-"""Descriptor and deterministic-wire gates for the B3 source overlays."""
+"""Descriptor and deterministic-wire gates for the source overlays."""
 
 from __future__ import annotations
 

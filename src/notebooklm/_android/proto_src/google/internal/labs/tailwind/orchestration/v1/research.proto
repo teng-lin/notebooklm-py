@@ -7,8 +7,8 @@ import "google/internal/labs/tailwind/orchestration/v1/sources.proto";
 import "google/protobuf/timestamp.proto";
 import "labs/language/tailwind/common/protos/metadata.proto";
 
-// Exact-package B10 Research closure. It is intentionally service-free:
-// protobuf services cannot be reopened across files, and the B1 descriptor is
+// Exact-package Research closure. It is intentionally service-free:
+// protobuf services cannot be reopened across files, and the read descriptor is
 // not widened by later evidence-qualified message overlays.
 
 enum DiscoveryMode {

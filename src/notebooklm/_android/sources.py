@@ -1,4 +1,4 @@
-"""Android source reads plus evidence-qualified B3 source operations."""
+"""Android source reads plus evidence-qualified source operations."""
 
 from __future__ import annotations
 
@@ -7,13 +7,12 @@ import builtins
 import logging
 import uuid
 from collections import Counter, defaultdict
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Awaitable, Callable, Collection, Sequence
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, replace
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any, Literal, NoReturn, TypeVar, cast
-
-from google.protobuf import empty_pb2
+from typing import Any, Literal, Protocol, TypeVar, cast
 
 from .._deadline import RuntimeDeadline
 from .._idempotency import mark_unconfirmed
@@ -24,6 +23,7 @@ from .._types.research import SourceGuide
 from .._url_utils import is_youtube_url
 from ..exceptions import (
     AuthError,
+    ConfigurationError,
     DecodingError,
     NetworkError,
     NonIdempotentRetryError,
@@ -39,12 +39,6 @@ from ..exceptions import (
 from ..types import Source, SourceFulltext, SourceStatus, SourceType
 from .codecs.notebooks import decode_project, map_get_project_error
 from .codecs.sources import decode_source, decode_sources
-from .errors import unsupported_operation
-from .proto.google.internal.labs.tailwind.orchestration.v1 import (
-    read_pb2,
-    sources_pb2,
-)
-from .proto.google.internal.labs.tailwind.v1 import source_settings_pb2
 from .session import AndroidSession
 from .upload import (
     AndroidUploadPipeline,
@@ -53,9 +47,31 @@ from .upload import (
 )
 
 logger = logging.getLogger(__name__)
-_READ_PROTO = cast(Any, read_pb2)
-_WRITE_PROTO = cast(Any, sources_pb2)
-_SETTINGS_PROTO = cast(Any, source_settings_pb2)
+
+
+def _read_proto() -> Any:
+    from .proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
+
+    return cast(Any, read_pb2)
+
+
+def _write_proto() -> Any:
+    from .proto.google.internal.labs.tailwind.orchestration.v1 import sources_pb2
+
+    return cast(Any, sources_pb2)
+
+
+def _settings_proto() -> Any:
+    from .proto.google.internal.labs.tailwind.v1 import source_settings_pb2
+
+    return cast(Any, source_settings_pb2)
+
+
+def _empty_type() -> Any:
+    from google.protobuf.empty_pb2 import Empty
+
+    return Empty
+
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 GET_PROJECT_METHOD = f"/{_SERVICE}/GetProject"
@@ -72,9 +88,13 @@ _CORRELATION_PREFIX = "nblm-"
 _CANONICAL_ID_LENGTH = 36
 
 
-def _reject(operation: str) -> NoReturn:
-    unsupported_operation(operation)
-    raise AssertionError("unsupported_operation returned")  # pragma: no cover
+class DriveDownload(Protocol):
+    """Narrow authenticated download context used by ``add_drive_file``."""
+
+    def __call__(
+        self,
+        document_id: str,
+    ) -> AbstractAsyncContextManager[tuple[Path, str, str | None]]: ...
 
 
 def _snapshot_enum_filter(
@@ -161,7 +181,7 @@ def _unresolved_file_registration_error(filename: str) -> SourceAddError:
     error = SourceAddError(
         filename,
         message=(
-            f"Android PDF upload tentative registration outcome is unconfirmed for {filename!r}."
+            f"Android file upload tentative registration outcome is unconfirmed for {filename!r}."
         ),
     )
     cast(Any, error).stage = "register"
@@ -236,11 +256,11 @@ class _CommitProof:
 
 
 def _proof_kind(raw_status: int) -> _ProofKind | None:
-    if raw_status == _SETTINGS_PROTO.SOURCE_STATUS_PENDING:
+    if raw_status == _settings_proto().SOURCE_STATUS_PENDING:
         return _ProofKind.PENDING
-    if raw_status == _SETTINGS_PROTO.SOURCE_STATUS_COMPLETE:
+    if raw_status == _settings_proto().SOURCE_STATUS_COMPLETE:
         return _ProofKind.COMPLETE
-    if raw_status == _SETTINGS_PROTO.SOURCE_STATUS_ERROR:
+    if raw_status == _settings_proto().SOURCE_STATUS_ERROR:
         return _ProofKind.ERROR
     return None
 
@@ -299,11 +319,20 @@ def _merge_commit_proof(
 
 
 class AndroidSourcesAPI(SourcesAPI):
-    """Direct-test Android source adapter through the B3 evidence slice."""
+    """Android source adapter installed by public Android backend selection."""
 
-    def __init__(self, session: AndroidSession, upload_pipeline: AndroidUploadPipeline) -> None:
+    def __init__(
+        self,
+        session: AndroidSession,
+        upload_pipeline: AndroidUploadPipeline,
+        *,
+        drive_download: DriveDownload | None = None,
+        refresh_source: Callable[[str, str], Awaitable[None]] | None = None,
+    ) -> None:
         self._transport = session
         self._upload_pipeline = upload_pipeline
+        self._drive_download = drive_download
+        self._refresh_source = refresh_source
         super().__init__()
 
     async def list(
@@ -334,7 +363,7 @@ class AndroidSourcesAPI(SourcesAPI):
         type_filter: frozenset[SourceType] | None,
         expected_epoch: int | None = None,
     ) -> builtins.list[Source]:
-        request = _READ_PROTO.GetProjectRequest(
+        request = _read_proto().GetProjectRequest(
             project_id=notebook_id,
             include_audio_overview_ids=True,
         )
@@ -346,7 +375,7 @@ class AndroidSourcesAPI(SourcesAPI):
                 GET_PROJECT_METHOD,
                 request,
                 replay_safe=True,
-                response_type=_READ_PROTO.GetProjectResponse,
+                response_type=_read_proto().GetProjectResponse,
                 **epoch_kwargs,
             )
         except RPCError as exc:
@@ -375,9 +404,9 @@ class AndroidSourcesAPI(SourcesAPI):
         *,
         expected_epoch: int,
     ) -> builtins.list[_Registration]:
-        request = _WRITE_PROTO.AddTentativeSourcesRequest(
+        request = _write_proto().AddTentativeSourcesRequest(
             tentative_sources_metadata=[
-                _WRITE_PROTO.TentativeSourceMetadata(name=name) for name in names
+                _write_proto().TentativeSourceMetadata(name=name) for name in names
             ],
             project_id=notebook_id,
         )
@@ -385,7 +414,7 @@ class AndroidSourcesAPI(SourcesAPI):
             ADD_TENTATIVE_SOURCES_METHOD,
             request,
             replay_safe=False,
-            response_type=_WRITE_PROTO.AddTentativeSourcesResponse,
+            response_type=_write_proto().AddTentativeSourcesResponse,
             expected_epoch=expected_epoch,
         )
         return _correlate_registrations(names, response)
@@ -397,8 +426,8 @@ class AndroidSourcesAPI(SourcesAPI):
         expected_epoch: int,
         timeout: float,
     ) -> str:
-        request = _WRITE_PROTO.AddTentativeSourcesRequest(
-            tentative_sources_metadata=[_WRITE_PROTO.TentativeSourceMetadata(name=filename)],
+        request = _write_proto().AddTentativeSourcesRequest(
+            tentative_sources_metadata=[_write_proto().TentativeSourceMetadata(name=filename)],
             project_id=notebook_id,
             request_context=android_request_context(),
             provenance=android_provenance(),
@@ -408,7 +437,7 @@ class AndroidSourcesAPI(SourcesAPI):
                 ADD_TENTATIVE_SOURCES_METHOD,
                 request,
                 replay_safe=False,
-                response_type=_WRITE_PROTO.AddTentativeSourcesResponse,
+                response_type=_write_proto().AddTentativeSourcesResponse,
                 expected_epoch=expected_epoch,
                 timeout=timeout,
             )
@@ -446,12 +475,12 @@ class AndroidSourcesAPI(SourcesAPI):
         while not deadline.expired():
             response = await self._transport.unary(
                 GET_PROJECT_METHOD,
-                _READ_PROTO.GetProjectRequest(
+                _read_proto().GetProjectRequest(
                     project_id=notebook_id,
                     include_audio_overview_ids=True,
                 ),
                 replay_safe=True,
-                response_type=_READ_PROTO.GetProjectResponse,
+                response_type=_read_proto().GetProjectResponse,
                 expected_epoch=expected_epoch,
                 timeout=deadline.remaining(),
             )
@@ -472,15 +501,15 @@ class AndroidSourcesAPI(SourcesAPI):
             if matches:
                 row = next(iter(matches))
                 last_status = row.settings.status if row.HasField("settings") else 0
-                if last_status == _SETTINGS_PROTO.SOURCE_STATUS_ERROR:
+                if last_status == _settings_proto().SOURCE_STATUS_ERROR:
                     raise SourceProcessingError(source_id, status=last_status)
                 accepted = (
-                    last_status == _SETTINGS_PROTO.SOURCE_STATUS_COMPLETE
+                    last_status == _settings_proto().SOURCE_STATUS_COMPLETE
                     if ready
                     else last_status
                     in {
-                        _SETTINGS_PROTO.SOURCE_STATUS_PENDING,
-                        _SETTINGS_PROTO.SOURCE_STATUS_COMPLETE,
+                        _settings_proto().SOURCE_STATUS_PENDING,
+                        _settings_proto().SOURCE_STATUS_COMPLETE,
                     }
                 )
                 if accepted:
@@ -531,17 +560,17 @@ class AndroidSourcesAPI(SourcesAPI):
         del notebook_id
         response = await self._transport.unary(
             MUTATE_SOURCE_METHOD,
-            _WRITE_PROTO.MutateSourceRequest(
-                source_id=_READ_PROTO.SourceId(id=source_id),
+            _write_proto().MutateSourceRequest(
+                source_id=_read_proto().SourceId(id=source_id),
                 mutations=[
-                    _WRITE_PROTO.SourceMutation(
-                        change_title=_WRITE_PROTO.ChangeTitle(title=new_title)
+                    _write_proto().SourceMutation(
+                        change_title=_write_proto().ChangeTitle(title=new_title)
                     )
                 ],
                 request_context=android_request_context(),
             ),
             replay_safe=False,
-            response_type=_WRITE_PROTO.MutateSourceResponse,
+            response_type=_write_proto().MutateSourceResponse,
             expected_epoch=expected_epoch,
         )
         source = response.source if response.HasField("source") else None
@@ -562,7 +591,7 @@ class AndroidSourcesAPI(SourcesAPI):
         *,
         expected_epoch: int,
     ) -> tuple[dict[str, _CommitProof], set[str]]:
-        request = _READ_PROTO.GetProjectRequest(
+        request = _read_proto().GetProjectRequest(
             project_id=notebook_id,
             include_audio_overview_ids=True,
         )
@@ -571,7 +600,7 @@ class AndroidSourcesAPI(SourcesAPI):
                 GET_PROJECT_METHOD,
                 request,
                 replay_safe=True,
-                response_type=_READ_PROTO.GetProjectResponse,
+                response_type=_read_proto().GetProjectResponse,
                 expected_epoch=expected_epoch,
             )
             decode_project(response.project, method_id=GET_PROJECT_METHOD)
@@ -599,7 +628,7 @@ class AndroidSourcesAPI(SourcesAPI):
         expected_epoch: int,
     ) -> tuple[dict[str, _CommitProof], set[str]]:
         candidate_ids = [source_id for _, source_id in entries]
-        request = _WRITE_PROTO.AddSourcesRequest(
+        request = _write_proto().AddSourcesRequest(
             user_content=[content for content, _ in entries],
             project_id=notebook_id,
             request_context=android_request_context(),
@@ -611,7 +640,7 @@ class AndroidSourcesAPI(SourcesAPI):
                 ADD_SOURCES_METHOD,
                 request,
                 replay_safe=False,
-                response_type=_WRITE_PROTO.AddSourcesResponse,
+                response_type=_write_proto().AddSourcesResponse,
                 expected_epoch=expected_epoch,
             )
         except asyncio.CancelledError:
@@ -663,15 +692,15 @@ class AndroidSourcesAPI(SourcesAPI):
         user_contents = []
         for url, source_id in entries:
             content_kwargs = (
-                {"video_content": _WRITE_PROTO.VideoContent(youtube_url=url)}
+                {"video_content": _write_proto().VideoContent(youtube_url=url)}
                 if is_youtube_url(url)
-                else {"web_content": _WRITE_PROTO.WebContent(url=url)}
+                else {"web_content": _write_proto().WebContent(url=url)}
             )
             user_contents.append(
                 (
-                    _WRITE_PROTO.UserContent(
+                    _write_proto().UserContent(
                         **content_kwargs,
-                        tentative_source_id=_READ_PROTO.SourceId(id=source_id),
+                        tentative_source_id=_read_proto().SourceId(id=source_id),
                     ),
                     source_id,
                 )
@@ -903,13 +932,13 @@ class AndroidSourcesAPI(SourcesAPI):
             subject=title,
             kind="text",
             operation_label="source.add_text",
-            build_content=lambda source_id: _WRITE_PROTO.UserContent(
-                text_content=_WRITE_PROTO.TextContent(
+            build_content=lambda source_id: _write_proto().UserContent(
+                text_content=_write_proto().TextContent(
                     source_name=title,
                     content=content,
                 ),
-                text_content_type=_WRITE_PROTO.UserContent.CONTENT_TYPE_TEXT,
-                tentative_source_id=_READ_PROTO.SourceId(id=source_id),
+                text_content_type=_write_proto().UserContent.CONTENT_TYPE_TEXT,
+                tentative_source_id=_read_proto().SourceId(id=source_id),
             ),
             wait=wait,
             wait_timeout=wait_timeout,
@@ -930,7 +959,7 @@ class AndroidSourcesAPI(SourcesAPI):
         result: Source | None = None
         failure: BaseException | None = None
         try:
-            result = await adapter._upload_pipeline.upload_pdf(
+            result = await adapter._upload_pipeline.upload_file(
                 notebook_id,
                 file_path,
                 mime_type,
@@ -969,14 +998,14 @@ class AndroidSourcesAPI(SourcesAPI):
             subject=file_id,
             kind="Drive",
             operation_label="source.add_drive",
-            build_content=lambda source_id: _WRITE_PROTO.UserContent(
-                google_drive_content=_WRITE_PROTO.GoogleDriveContent(
+            build_content=lambda source_id: _write_proto().UserContent(
+                google_drive_content=_write_proto().GoogleDriveContent(
                     document_id=file_id,
                     mime_type=mime_type,
                     can_download=True,
                     source_name=title,
                 ),
-                tentative_source_id=_READ_PROTO.SourceId(id=source_id),
+                tentative_source_id=_read_proto().SourceId(id=source_id),
             ),
             wait=wait,
             wait_timeout=wait_timeout,
@@ -991,17 +1020,32 @@ class AndroidSourcesAPI(SourcesAPI):
         wait: bool = False,
         wait_timeout: float = 120.0,
     ) -> Source:
-        _reject("sources.add_drive_file")
+        drive_download = self._drive_download
+        if drive_download is None:
+            raise ConfigurationError(
+                "Android Drive-file import requires the client download collaborator."
+            )
+        async with drive_download(document_id) as (path, filename, content_type):
+            return await self.add_file(
+                notebook_id,
+                path,
+                mime_type=content_type,
+                title=title if title else (filename or None),
+                wait=wait,
+                wait_timeout=wait_timeout,
+            )
 
     async def delete(self, notebook_id: str, source_id: str) -> None:
         del notebook_id
-        request = _WRITE_PROTO.DeleteSourcesRequest(source_ids=[_READ_PROTO.SourceId(id=source_id)])
+        request = _write_proto().DeleteSourcesRequest(
+            source_ids=[_read_proto().SourceId(id=source_id)]
+        )
         try:
             await self._transport.unary(
                 DELETE_SOURCES_METHOD,
                 request,
                 replay_safe=False,
-                response_type=empty_pb2.Empty,
+                response_type=_empty_type(),
             )
         except (AuthError, RateLimitError, ServerError, NetworkError):
             raise
@@ -1017,10 +1061,12 @@ class AndroidSourcesAPI(SourcesAPI):
         *,
         return_object: bool = True,
     ) -> Source | None:
-        request = _WRITE_PROTO.MutateSourceRequest(
-            source_id=_READ_PROTO.SourceId(id=source_id),
+        request = _write_proto().MutateSourceRequest(
+            source_id=_read_proto().SourceId(id=source_id),
             mutations=[
-                _WRITE_PROTO.SourceMutation(change_title=_WRITE_PROTO.ChangeTitle(title=new_title))
+                _write_proto().SourceMutation(
+                    change_title=_write_proto().ChangeTitle(title=new_title)
+                )
             ],
             request_context=android_request_context(),
         )
@@ -1030,7 +1076,7 @@ class AndroidSourcesAPI(SourcesAPI):
                     MUTATE_SOURCE_METHOD,
                     request,
                     replay_safe=False,
-                    response_type=_WRITE_PROTO.MutateSourceResponse,
+                    response_type=_write_proto().MutateSourceResponse,
                     expected_epoch=lease.epoch,
                 )
             except (AuthError, RateLimitError, ServerError, NetworkError):
@@ -1072,18 +1118,28 @@ class AndroidSourcesAPI(SourcesAPI):
             return source if return_object else None
 
     async def refresh(self, notebook_id: str, source_id: str) -> None:
-        _reject("sources.refresh")
+        # The mobile route is present but rejected every valid-resource request
+        # shape recovered so far.  Preserve the public contract through the
+        # exact, narrow Web mutation collaborator until a successful Android
+        # request is captured; all source reads and every other mutation remain
+        # on the selected Android namespace.
+        refresh_source = self._refresh_source
+        if refresh_source is None:
+            raise ConfigurationError(
+                "Android source refresh requires the qualified compatibility collaborator."
+            )
+        await refresh_source(notebook_id, source_id)
 
     async def check_freshness(self, notebook_id: str, source_id: str) -> bool:
         del notebook_id
         response = await self._transport.unary(
             CHECK_SOURCE_FRESHNESS_METHOD,
-            _WRITE_PROTO.CheckSourceFreshnessRequest(
-                source_id=_READ_PROTO.SourceId(id=source_id),
+            _write_proto().CheckSourceFreshnessRequest(
+                source_id=_read_proto().SourceId(id=source_id),
                 request_context=android_request_context(),
             ),
             replay_safe=True,
-            response_type=_WRITE_PROTO.CheckSourceFreshnessResponse,
+            response_type=_write_proto().CheckSourceFreshnessResponse,
         )
         if not response.HasField("source_freshness"):
             return True
@@ -1094,15 +1150,15 @@ class AndroidSourcesAPI(SourcesAPI):
 
     async def get_guide(self, notebook_id: str, source_id: str) -> SourceGuide:
         del notebook_id
-        request = _WRITE_PROTO.GenerateDocumentGuidesRequest(
-            sources=[_WRITE_PROTO.InputSource(source_id=_READ_PROTO.SourceId(id=source_id))]
+        request = _write_proto().GenerateDocumentGuidesRequest(
+            sources=[_write_proto().InputSource(source_id=_read_proto().SourceId(id=source_id))]
         )
         try:
             response = await self._transport.unary(
                 GENERATE_DOCUMENT_GUIDES_METHOD,
                 request,
                 replay_safe=True,
-                response_type=_WRITE_PROTO.GenerateDocumentGuidesResponse,
+                response_type=_write_proto().GenerateDocumentGuidesResponse,
             )
         except (AuthError, RateLimitError, ServerError, NetworkError):
             raise
@@ -1156,13 +1212,13 @@ class AndroidSourcesAPI(SourcesAPI):
                     "Install it with: pip install 'notebooklm-py[markdown]'"
                 ) from None
 
-        request = _WRITE_PROTO.LoadSourceRequest(source_id=_READ_PROTO.SourceId(id=source_id))
+        request = _write_proto().LoadSourceRequest(source_id=_read_proto().SourceId(id=source_id))
         try:
             response = await self._transport.unary(
                 LOAD_SOURCE_METHOD,
                 request,
                 replay_safe=True,
-                response_type=_WRITE_PROTO.LoadSourceResponse,
+                response_type=_write_proto().LoadSourceResponse,
             )
         except (AuthError, RateLimitError, ServerError, NetworkError):
             raise

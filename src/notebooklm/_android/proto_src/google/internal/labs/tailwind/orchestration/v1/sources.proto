@@ -6,54 +6,54 @@ import "google/internal/labs/tailwind/orchestration/v1/read.proto";
 import "labs/language/tailwind/common/protos/metadata.proto";
 import "labs/language/tailwind/common/protos/provenance.proto";
 
-// Exact-package source-operation closure admitted by B3, plus the explicitly
+// Exact-package source-operation closure admitted by source, plus the explicitly
 // web-derived MutateSource signature. Its method/type names follow the current
 // bundle registration; the populated field tags are pinned by successful
 // Android-bearer replay.
 
 message InputSource {
-  SourceId source_id = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  SourceId source_id = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
 }
 
 message Snippet {
-  string text_snippet = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  string text_snippet = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
 }
 
 message MainIdeas {
-  repeated string text_ideas = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  repeated string text_ideas = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
 }
 
 message DocumentGuide {
-  InputSource source = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
-  Snippet snippet = 2; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
-  MainIdeas main_ideas = 3; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  InputSource source = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
+  Snippet snippet = 2; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
+  MainIdeas main_ideas = 3; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
 }
 
 message GenerateDocumentGuidesRequest {
-  repeated InputSource sources = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  repeated InputSource sources = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
 }
 
 message GenerateDocumentGuidesResponse {
-  repeated DocumentGuide guides = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  repeated DocumentGuide guides = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
 }
 
 message TentativeSourceMetadata {
-  string name = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  string name = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
 }
 
 message AddTentativeSourcesRequest {
-  repeated TentativeSourceMetadata tentative_sources_metadata = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
-  string project_id = 2; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  repeated TentativeSourceMetadata tentative_sources_metadata = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
+  string project_id = 2; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
   .labs.language.tailwind.common.protos.RequestContext request_context = 3; // evidence: docs/android/file-transfer-evidence.md
   .labs.language.tailwind.common.protos.Provenance provenance = 4; // evidence: docs/android/file-transfer-evidence.md
 }
 
 message AddTentativeSourcesResponse {
-  repeated Source tentative_sources = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  repeated Source tentative_sources = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
 }
 
 message WebContent {
-  string url = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  string url = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
   string source_name = 2; // evidence: docs/android/deep-research-evidence.md
 }
 
@@ -87,24 +87,24 @@ message UserContent {
 
   GoogleDriveContent google_drive_content = 1;
   TextContent text_content = 2; // evidence: docs/android/deep-research-evidence.md
-  WebContent web_content = 3; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  WebContent web_content = 3; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
   TextContentType text_content_type = 4; // evidence: docs/android/deep-research-evidence.md
   VideoContent video_content = 8;
-  SourceId tentative_source_id = 9; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  SourceId tentative_source_id = 9; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
 }
 
 message AddSourcesRequest {
-  repeated UserContent user_content = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
-  string project_id = 2; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  repeated UserContent user_content = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
+  string project_id = 2; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
   .labs.language.tailwind.common.protos.RequestContext request_context = 3;
 }
 
 message AddSourcesResponse {
-  repeated Source sources = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  repeated Source sources = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
 }
 
 message DeleteSourcesRequest {
-  repeated SourceId source_ids = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  repeated SourceId source_ids = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
 }
 
 message ChangeTitle {
@@ -147,18 +147,18 @@ message CheckSourceFreshnessResponse {
 }
 
 message PlainTextSourceContent {
-  string header = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
-  string body = 2; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  string header = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
+  string body = 2; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
 }
 
 message LoadSourceRequest {
-  SourceId source_id = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  SourceId source_id = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
 }
 
 message LoadSourceResponse {
-  Source source = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
-  PlainTextSourceContent plain_text = 2; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
-  string markdown_string = 3; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  Source source = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
+  PlainTextSourceContent plain_text = 2; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
+  string markdown_string = 3; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
   // TailwindDoc #4 remains unknown to this decoder until its offset grammar is admitted.
 }
 

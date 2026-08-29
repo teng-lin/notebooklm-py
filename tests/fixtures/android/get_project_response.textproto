@@ -1,5 +1,5 @@
 project {
-  title: "Synthetic B1 project"
+  title: "Synthetic read project"
   sources {
     source_id { id: "00000000-0000-4000-8000-000000000001" }
     title: "Public web source"

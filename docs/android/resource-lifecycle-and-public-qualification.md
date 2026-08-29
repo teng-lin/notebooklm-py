@@ -258,25 +258,27 @@ candidate shapes.
 
 The admitted boundary is `GetLabels`, manual `CreateLabel`, property and one-member `MutateLabel`,
 and `DeleteLabels` for source labels and notebook collections. AI-generated label creation is a
-different request union and remains unproven.
+different request union and remains unproven; the selected Android labels adapter isolates it behind
+the existing Web generation callable.
 
 ## Public adapter qualification
 
-Explicit `backend="android"` selects `AndroidCollectionsAPI`. Its permanent authenticated E2E gate
+Explicit `backend="android"` selects all eleven Android namespace adapters, including
+`AndroidCollectionsAPI`. Its permanent authenticated E2E gate
 passed twice independently. Each run created a fresh disposable Web-backed notebook and an
 Android-backed collection, then exercised `list`, `get_or_none`, `get`, `notebooks`, `create`,
 `rename`, `add_notebooks`, `remove_notebooks`, and `delete`.
 
-Both runs verified mixed-backend membership expansion, deleted the exact collection and notebook
+Both runs verified membership expansion, deleted the exact collection and notebook
 IDs in `finally`, and left no created resource behind. The selected lifecycle loaded the isolated
 profile's credential only during async open and kept gRPC channel construction lazy until the first
 collection call. No browser was opened. The 82-test Collections SDK/application/CLI/VCR slice also
 passed twice. Collections has no MCP or REST route, so no additional frontend envelope was
 required.
 
-Manual source-label Android CRUD is live-qualified at the private adapter boundary, but the public
-label namespace remains Web-selected. The same distinction applies to the partial Android notebook
-and note adapters described below.
+Manual source-label Android CRUD, notebook operations, and note CRUD/mind-map operations are now
+selected publicly. Only the individual operations whose mobile contracts are missing or live-failing
+use the compatibility seams described below.
 
 ## Notebook metadata lifecycle
 
@@ -304,11 +306,11 @@ semantics but not an unrecovered Google descriptor name.
 
 ### Promotion boundary
 
-Emoji set, explicit clear, and combined title/emoji update are admitted at the private Android
-adapter boundary. `RemoveRecentlyViewedProject` remains unsupported: reproducing status `13` on a
-fresh notebook rules out the earlier copied-notebook setup, but does not establish a successful
-mobile response contract. Web success is not a substitute for Android namespace conformance, and
-the public notebook namespace remains Web-selected.
+Emoji set, explicit clear, and combined title/emoji update are native Android operations.
+`RemoveRecentlyViewedProject` remains unusable through the exact mobile route: reproducing status
+`13` on a fresh notebook rules out the earlier copied-notebook setup. The selected
+`AndroidNotebooksAPI` therefore delegates only `remove_from_recent` to an injected Web callable;
+the other sixteen public methods remain native.
 
 ## Note-backed mind-map lifecycle
 
@@ -366,10 +368,10 @@ however, exposed the persisted soft-delete row as `Note(id=<same id>, title="", 
 matching Web's raw `[id, None, 2]` tombstone behavior. Android's recovered `NoteOrStatus` note arm
 did not expose a `ProjectNote` capable of reproducing that exact result.
 
-This remains a substitution blocker. The private Android adapter correctly treats the status-only
-or absent projection as deleted and must not fabricate a Web tombstone `Note`. Note-backed typed
-reads and mutations may still serve the public Android-composed mind-map namespace through their
-narrow compatibility seams.
+This is not a public-contract blocker. `get_or_none` promises `None` for genuine absence, while the
+Web tombstone is a storage-specific leak rather than a documented result. The selected Android
+adapter correctly treats the status-only or absent projection as deleted and does not fabricate a
+Web tombstone `Note`.
 
 ## Reproducer usage
 

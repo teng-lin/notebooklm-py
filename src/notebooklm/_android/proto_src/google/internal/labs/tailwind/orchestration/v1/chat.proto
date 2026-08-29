@@ -7,9 +7,9 @@ import "google/internal/labs/tailwind/orchestration/v1/sources.proto";
 import "google/protobuf/timestamp.proto";
 import "labs/language/tailwind/common/protos/common.proto";
 
-// Service-free exact-package B5 message overlay. The cumulative service in
+// Service-free exact-package chat message overlay. The cumulative service in
 // orchestration_service.proto imports the three independently exact method
-// signatures. Only captured fields consumed by the B5 chat contract are
+// signatures. Only captured fields consumed by the chat contract are
 // declared here; RequestContext, Provenance, unconsumed document variants, and
 // speculative citation fields remain unknown fields.
 
@@ -51,28 +51,28 @@ message ConversationEvent {
     GENERATED_RESPONSE = 2;
   }
 
-  string text = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  ConversationEventType type = 3; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  string text = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  ConversationEventType type = 3; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message ConversationTurnKey {
-  string session_id = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  string conversation_id = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  string session_id = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  string conversation_id = 2; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   int32 observed_field_3 = 3; // exact archive name; opaque captured value
 }
 
 message ObjectId {
-  string id = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  string id = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message Range {
-  int32 start_index = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  int32 end_index = 3; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  int32 start_index = 2; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  int32 end_index = 3; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message AnnotationMapEntry {
-  ObjectId object_id = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  Range content_range = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  ObjectId object_id = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  Range content_range = 2; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message FontInfo {
@@ -101,7 +101,7 @@ message TextStyle {
 }
 
 message TextRun {
-  string content = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  string content = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   TextStyle text_style = 2; // evidence: official APK exact TailwindDoc schema
 }
 
@@ -116,9 +116,9 @@ message Resource {
 }
 
 message ParagraphElement {
-  int32 start_index = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  int32 end_index = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  TextRun text_run = 3; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  int32 start_index = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  int32 end_index = 2; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  TextRun text_run = 3; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   Image image = 4; // evidence: official APK exact TailwindDoc schema
   Resource resource = 5; // evidence: official APK exact TailwindDoc schema
 }
@@ -136,7 +136,7 @@ message ParagraphStyle {
 }
 
 message Paragraph {
-  repeated ParagraphElement elements = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  repeated ParagraphElement elements = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   ParagraphStyle paragraph_style = 2; // evidence: live Android reportDoc
   BulletInfo bullet_info = 4; // evidence: live Android reportDoc
 }
@@ -175,9 +175,9 @@ message Thought {
 message HorizontalRule {}
 
 message StructuralElement {
-  int32 start_index = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  int32 end_index = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  Paragraph paragraph = 3; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  int32 start_index = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  int32 end_index = 2; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  Paragraph paragraph = 3; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   Table table = 5; // evidence: live Android reportDoc
   Image image = 6; // evidence: official APK exact TailwindDoc schema
   CodeBlock code_block = 7; // evidence: official APK exact TailwindDoc schema
@@ -187,91 +187,91 @@ message StructuralElement {
 }
 
 message Body {
-  repeated StructuralElement content = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  repeated AnnotationMapEntry inline_object_locations = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  repeated StructuralElement content = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  repeated AnnotationMapEntry inline_object_locations = 2; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message TailwindDocFragment {
-  repeated StructuralElement elements = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  repeated StructuralElement elements = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message SourceRevision {
-  SourceId source = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  SourceId source = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message CitationSource {
-  SourceRevision ingested_source = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  SourceRevision ingested_source = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message Citation {
-  TailwindDocFragment fragment = 5; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  CitationSource source_attribution = 6; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  TailwindDocFragment fragment = 5; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  CitationSource source_attribution = 6; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   ObjectId object_id = 7; // retained only as a captured field; projection uses the enclosing id
 }
 
 message DocumentObject {
-  ObjectId object_id = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  Citation citation = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  ObjectId object_id = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  Citation citation = 2; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message TailwindDoc {
-  Body body = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  repeated DocumentObject objects = 4; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  Body body = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  repeated DocumentObject objects = 4; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   int32 type = 5; // evidence: official APK exact TailwindDoc schema
 }
 
 message AnswerResponse {
-  string response = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  ConversationTurnKey conversation_turn_key = 3; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  TailwindDoc response_doc = 5; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  string response = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  ConversationTurnKey conversation_turn_key = 3; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  TailwindDoc response_doc = 5; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message ActOnSourcesResponse {
-  AnswerResponse response = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  AnswerResponse response = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message ChatHistoryMessage {
-  string message_id = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  google.protobuf.Timestamp timestamp = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  string message_id = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  google.protobuf.Timestamp timestamp = 2; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   int32 observed_event_type = 3; // exact archive name; raw role value consumed by the base
-  string user_query_text = 4; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  ActOnSourcesResponse act_on_sources_response = 5; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  string user_query_text = 4; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  ActOnSourcesResponse act_on_sources_response = 5; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message ListChatSessionsRequest {
-  string project_id = 3; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  string project_id = 3; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message ListChatSessionsResponse {
-  repeated .labs.language.tailwind.common.protos.ChatSession sessions = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  repeated .labs.language.tailwind.common.protos.ChatSession sessions = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message ListChatTurnsRequest {
-  string chat_session_id = 4; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  string page_token = 6; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  string chat_session_id = 4; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  string page_token = 6; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message ListChatTurnsResponse {
-  repeated ChatHistoryMessage chat_turns = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  string next_page_token = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  repeated ChatHistoryMessage chat_turns = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  string next_page_token = 2; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message DeleteChatTurnsRequest {
-  string chat_session_id = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  bool delete_all_history = 4; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  string chat_session_id = 2; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  bool delete_all_history = 4; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message GenerateFreeFormStreamedRequest {
-  repeated InputSource sources = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  string user_query = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  repeated ConversationEvent conversation_history = 3; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  string chat_session_id = 5; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  string user_message_id = 6; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  string project_id = 8; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  QueryOrigin origin = 9; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  repeated InputSource sources = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  string user_query = 2; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  repeated ConversationEvent conversation_history = 3; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  string chat_session_id = 5; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  string user_message_id = 6; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  string project_id = 8; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  QueryOrigin origin = 9; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
 message GenerateFreeFormStreamedResponse {
-  AnswerResponse answer = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
-  bool is_final_response = 5; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  AnswerResponse answer = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  bool is_final_response = 5; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }

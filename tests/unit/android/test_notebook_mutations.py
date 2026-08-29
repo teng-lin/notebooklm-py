@@ -1,4 +1,4 @@
-"""Offline B2 Android notebook mutation and guide contracts."""
+"""Offline notebook Android notebook mutation and guide contracts."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from notebooklm._android.notebooks import (
     GENERATE_PROMPT_SUGGESTIONS_METHOD,
     LIST_RECENT_PROJECTS_METHOD,
     MUTATE_PROJECT_METHOD,
+    REMOVE_RECENTLY_VIEWED_PROJECT_METHOD,
     AndroidNotebooksAPI,
 )
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
@@ -32,14 +33,11 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
 )
 from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import notebooks_pb2
 from notebooklm._android.session import AndroidSession
-from notebooklm._android.sources import AndroidSourcesAPI
-from notebooklm._android.upload import AndroidUploadPipeline
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm.exceptions import (
     DecodingError,
     RPCError,
     ServerError,
-    UnsupportedOperationError,
     ValidationError,
 )
 from notebooklm.types import PromptSuggestion, SuggestedTopic
@@ -78,8 +76,12 @@ def _project(project_id: str, title: str, *, emoji: str = "") -> read_pb2.Projec
 
 def _api(transport: SequenceTransport) -> AndroidNotebooksAPI:
     session = cast(AndroidSession, transport)
-    upload_pipeline = cast(AndroidUploadPipeline, object())
-    return AndroidNotebooksAPI(session, AndroidSourcesAPI(session, upload_pipeline))
+
+    class EmptySources:
+        async def list(self, _notebook_id: str) -> list[Any]:
+            return []
+
+    return AndroidNotebooksAPI(session, EmptySources())
 
 
 def _calls(transport: SequenceTransport, method: str) -> list[tuple[str, Any, dict[str, Any]]]:
@@ -532,10 +534,57 @@ async def test_suggest_prompts_validates_before_io_and_normalizes_blank_query() 
 
 
 @pytest.mark.asyncio
-async def test_remaining_notebook_operations_still_reject_before_io() -> None:
-    transport = SequenceTransport()
-    api = _api(transport)
+async def test_remove_from_recent_uses_exact_apk_signature_and_android_context() -> None:
+    transport = SequenceTransport({REMOVE_RECENTLY_VIEWED_PROJECT_METHOD: [Empty()]})
 
-    with pytest.raises(UnsupportedOperationError, match="web backend"):
-        await api.remove_from_recent("notebook-1")
+    assert await _api(transport).remove_from_recent("notebook-1") is None
+
+    assert len(transport.calls) == 1
+    method, request, kwargs = transport.calls[0]
+    assert method == REMOVE_RECENTLY_VIEWED_PROJECT_METHOD
+    assert request == exact_notebooks_pb2.RemoveRecentlyViewedProjectRequest(
+        project_id="notebook-1",
+        request_context=request.request_context,
+    )
+    assert request.request_context.client_type != 0
+    assert request.request_context.client_metadata.client_version
+    assert kwargs == {"replay_safe": False, "response_type": Empty}
+
+
+@pytest.mark.asyncio
+async def test_remove_from_recent_uses_compatibility_seam_without_broken_android_call() -> None:
+    transport = SequenceTransport()
+    compat = AsyncMock(return_value=None)
+    session = cast(AndroidSession, transport)
+
+    class EmptySources:
+        async def list(self, _notebook_id: str) -> list[Any]:
+            return []
+
+    api = AndroidNotebooksAPI(
+        session,
+        EmptySources(),
+        remove_from_recent=compat,
+    )
+
+    assert await api.remove_from_recent("notebook-1") is None
+
+    compat.assert_awaited_once_with("notebook-1")
     assert transport.calls == []
+
+
+@pytest.mark.asyncio
+async def test_remove_from_recent_failure_propagates_without_replay() -> None:
+    error = ServerError(
+        "server rejected remove-recent",
+        method_id=REMOVE_RECENTLY_VIEWED_PROJECT_METHOD,
+        rpc_code=13,
+    )
+    transport = SequenceTransport({REMOVE_RECENTLY_VIEWED_PROJECT_METHOD: [error]})
+
+    with pytest.raises(ServerError) as raised:
+        await _api(transport).remove_from_recent("notebook-1")
+
+    assert raised.value is error
+    assert len(transport.calls) == 1
+    assert transport.calls[0][2]["replay_safe"] is False

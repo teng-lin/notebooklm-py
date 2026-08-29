@@ -1,4 +1,4 @@
-"""Offline fake-server orchestration tests for B6 Android notes and sharing."""
+"""Offline fake-server orchestration tests for Android Notes and Sharing."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import pytest
 from google.protobuf.timestamp_pb2 import Timestamp
@@ -48,9 +48,8 @@ from notebooklm.exceptions import (
     RateLimitError,
     RPCError,
     ServerError,
-    UnsupportedOperationError,
 )
-from notebooklm.types import MindMapKind, ShareAccess, SharePermission, ShareViewLevel
+from notebooklm.types import MindMapKind, ShareAccess, SharePermission, ShareStatus, ShareViewLevel
 
 
 @dataclass(frozen=True)
@@ -73,6 +72,9 @@ class _OperationScopedSession:
     ) -> AsyncIterator[_OperationLease]:
         self.operation_scopes.append((label, expected_epoch))
         yield _OperationLease(self.epoch)
+
+    def assert_epoch(self, expected_epoch: int) -> None:
+        assert expected_epoch == self.epoch
 
 
 class FakeB6Server(_OperationScopedSession):
@@ -196,6 +198,11 @@ class SupervisedSharingSession:
     def operation_scope(self, label: str, **kwargs: Any) -> Any:
         return self.supervisor.operation_scope(label, **kwargs)
 
+    def assert_epoch(self, expected_epoch: int) -> None:
+        current = self.supervisor._current
+        if current is None or current.epoch != expected_epoch:
+            raise RuntimeError("retired resource generation")
+
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
         expected_epoch = kwargs["expected_epoch"]
         async with self.supervisor.call_scope(
@@ -298,6 +305,47 @@ class SupervisedNotesSession:
 
 def _session(fake: object) -> AndroidSession:
     return cast(AndroidSession, fake)
+
+
+def _sharing(fake: Any) -> tuple[AndroidSharingAPI, AsyncMock]:
+    compatibility = AsyncMock(spec=SharingAPI)
+
+    async def get_status(notebook_id: str) -> ShareStatus:
+        public = bool(getattr(fake, "public", False))
+        return ShareStatus(
+            notebook_id=notebook_id,
+            is_public=public,
+            access=(ShareAccess.ANYONE_WITH_LINK if public else ShareAccess.RESTRICTED),
+            view_level=ShareViewLevel.FULL_NOTEBOOK,
+            shared_users=[],
+            share_url=(f"https://notebook.google.com/notebook/{notebook_id}" if public else None),
+            max_individuals_share_limit=1000,
+            is_public_sharing_allowed=False,
+        )
+
+    async def set_users(
+        notebook_id: str,
+        _grants: list[tuple[str, SharePermission]],
+        *,
+        notify: bool = True,
+        welcome_message: str = "",
+    ) -> ShareStatus:
+        del notify, welcome_message
+        return await get_status(notebook_id)
+
+    async def remove_user(notebook_id: str, _email: str) -> ShareStatus:
+        return await get_status(notebook_id)
+
+    compatibility.get_status.side_effect = get_status
+    compatibility.set_view_level.side_effect = lambda notebook_id, level: ShareStatus(
+        notebook_id=notebook_id,
+        is_public=False,
+        access=ShareAccess.RESTRICTED,
+        view_level=level,
+    )
+    compatibility.set_users.side_effect = set_users
+    compatibility.remove_user.side_effect = remove_user
+    return AndroidSharingAPI(_session(fake), compatibility=compatibility), compatibility
 
 
 def _visible(note_id: str = "note-1") -> notes_pb2.GetNotesResponse:
@@ -926,7 +974,7 @@ async def test_map_delete_old_workflow_cannot_poll_after_forced_close_reopen() -
 @pytest.mark.asyncio
 async def test_fake_server_sharing_set_public_then_reads_status() -> None:
     server = FakeB6Server()
-    sharing = AndroidSharingAPI(_session(server))
+    sharing, compatibility = _sharing(server)
 
     private = await sharing.get_status("project-1")
     assert private.is_public is False
@@ -940,32 +988,37 @@ async def test_fake_server_sharing_set_public_then_reads_status() -> None:
     assert public.access is ShareAccess.ANYONE_WITH_LINK
     assert public.view_level is ShareViewLevel.FULL_NOTEBOOK
     assert public.share_url == "https://notebook.google.com/notebook/project-1"
-    assert [method for method, _request, _kwargs in server.calls] == [
-        GET_PROJECT_DETAILS_METHOD,
-        SHARE_PROJECT_METHOD,
-        GET_PROJECT_DETAILS_METHOD,
-    ]
-    assert isinstance(server.calls[0][1], exact_sharing_pb2.GetProjectDetailsRequest)
-    share_request = server.calls[1][1]
+    assert [method for method, _request, _kwargs in server.calls] == [SHARE_PROJECT_METHOD]
+    share_request = server.calls[0][1]
     assert isinstance(share_request, exact_sharing_pb2.ShareProjectRequest)
     assert share_request.project[0].public_document_settings.is_publicly_readable is True
     assert server.operation_scopes == [("sharing.set_public", None)]
-    assert server.calls[1][2] == {
+    assert server.calls[0][2] == {
         "replay_safe": False,
         "response_type": exact_sharing_pb2.ShareProjectResponse,
         "expected_epoch": 7,
     }
-    assert server.calls[2][2] == {
-        "replay_safe": True,
-        "response_type": sharing_pb2.GetProjectDetailsResponse,
-        "expected_epoch": 7,
-    }
+    compatibility.get_status.assert_has_awaits([call("project-1"), call("project-1")])
+
+
+@pytest.mark.asyncio
+async def test_native_sharing_status_projection_remains_available_for_qualified_fields() -> None:
+    server = FakeB6Server()
+    sharing, compatibility = _sharing(server)
+
+    status = await sharing._get_status("project-1")
+
+    assert status.is_public is False
+    assert status.max_individuals_share_limit == 1000
+    assert status.is_public_sharing_allowed is False
+    assert [method for method, _request, _kwargs in server.calls] == [GET_PROJECT_DETAILS_METHOD]
+    compatibility.get_status.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_sharing_set_public_readback_completes_during_graceful_drain() -> None:
     session = SupervisedSharingSession()
-    sharing = AndroidSharingAPI(_session(session))
+    sharing = _sharing(session)[0]
     task = asyncio.create_task(sharing.set_public("project-1", True))
     await session.mutation_started.wait()
 
@@ -974,11 +1027,8 @@ async def test_sharing_set_public_readback_completes_during_graceful_drain() -> 
 
     status = await task
     assert status.is_public is True
-    assert [method for method, _request, _kwargs in session.calls] == [
-        SHARE_PROJECT_METHOD,
-        GET_PROJECT_DETAILS_METHOD,
-    ]
-    assert [kwargs["expected_epoch"] for _method, _request, kwargs in session.calls] == [1, 1]
+    assert [method for method, _request, _kwargs in session.calls] == [SHARE_PROJECT_METHOD]
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in session.calls] == [1]
     generation = session.supervisor._current
     assert generation is not None
     assert generation.in_flight == 0
@@ -988,7 +1038,7 @@ async def test_sharing_set_public_readback_completes_during_graceful_drain() -> 
 @pytest.mark.asyncio
 async def test_sharing_set_public_cancellation_settles_operation_without_readback() -> None:
     session = SupervisedSharingSession()
-    sharing = AndroidSharingAPI(_session(session))
+    sharing = _sharing(session)[0]
     task = asyncio.create_task(sharing.set_public("project-1", True))
     await session.mutation_started.wait()
 
@@ -1007,7 +1057,7 @@ async def test_sharing_set_public_cancellation_settles_operation_without_readbac
 @pytest.mark.asyncio
 async def test_sharing_set_public_old_workflow_cannot_read_back_after_close_reopen() -> None:
     session = SupervisedSharingSession()
-    sharing = AndroidSharingAPI(_session(session))
+    sharing = _sharing(session)[0]
     task = asyncio.create_task(sharing.set_public("project-1", True))
     await session.mutation_started.wait()
 
@@ -1031,31 +1081,35 @@ async def test_sharing_set_public_old_workflow_cannot_read_back_after_close_reop
 
 
 @pytest.mark.asyncio
-async def test_collaborator_and_view_mutations_reject_before_transport() -> None:
+async def test_collaborator_and_view_mutations_use_compatibility_without_android_transport() -> (
+    None
+):
     server = FakeB6Server()
-    sharing = AndroidSharingAPI(_session(server))
+    sharing, compatibility = _sharing(server)
     operations: tuple[Callable[[], Awaitable[Any]], ...] = (
         lambda: sharing.set_view_level("project-1", ShareViewLevel.CHAT_ONLY),
         lambda: sharing.set_users("project-1", [("person@example.test", SharePermission.VIEWER)]),
         lambda: sharing.remove_user("project-1", "person@example.test"),
-        # Base intent wrappers must reach the unsupported set_users seam.
+        # Base intent wrappers must reach the same compatibility seam.
         lambda: sharing.add_user("project-1", "person@example.test"),
         lambda: sharing.update_user("project-1", "person@example.test", SharePermission.EDITOR),
     )
     for operation in operations:
-        with pytest.raises(UnsupportedOperationError):
-            await operation()
+        assert isinstance(await operation(), ShareStatus)
     assert server.calls == []
+    compatibility.set_view_level.assert_awaited_once_with("project-1", ShareViewLevel.CHAT_ONLY)
+    assert compatibility.set_users.await_count == 3
+    compatibility.remove_user.assert_awaited_once_with("project-1", "person@example.test")
 
 
 @pytest.mark.asyncio
 async def test_sharing_status_five_maps_to_notebook_not_found() -> None:
     session = SequencedSession({GET_PROJECT_DETAILS_METHOD: [RPCError("missing", rpc_code=5)]})
     with pytest.raises(NotebookNotFoundError):
-        await AndroidSharingAPI(_session(session)).get_status("missing-project")
+        await _sharing(session)[0]._get_status("missing-project")
 
     mutation_session = SequencedSession({SHARE_PROJECT_METHOD: [RPCError("missing", rpc_code=5)]})
     with pytest.raises(NotebookNotFoundError):
-        await AndroidSharingAPI(_session(mutation_session)).set_public("missing-project", True)
+        await _sharing(mutation_session)[0].set_public("missing-project", True)
     assert mutation_session.calls[0][2]["replay_safe"] is False
     assert mutation_session.calls[0][2]["expected_epoch"] == 7

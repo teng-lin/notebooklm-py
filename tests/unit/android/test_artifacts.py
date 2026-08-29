@@ -1,4 +1,4 @@
-"""Offline contract tests for the evidence-qualified B4 artifact adapter."""
+"""Offline contract tests for the evidence-qualified artifact adapter."""
 
 from __future__ import annotations
 
@@ -1464,7 +1464,7 @@ def test_report_renderer_preserves_exact_non_sample_variants_and_citations() -> 
 
     assert "$<u>x+y</u>$[resource: resource-1]" in rendered
     assert '```json\n{"type":"card"}\n```' in rendered
-    assert "> **Citation citation-1 (source source-1):** Quoted fact" in rendered
+    assert "> **Citation citation-1 (source-1):** Quoted fact" in rendered
 
 
 @pytest.mark.asyncio

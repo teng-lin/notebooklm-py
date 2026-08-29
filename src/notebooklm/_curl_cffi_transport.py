@@ -509,18 +509,18 @@ class CurlCffiAsyncClient:
                     curl.setopt(CurlOpt.UPLOAD, 1)
                     curl.setopt(CurlOpt.CUSTOMREQUEST, method.encode())  # UPLOAD defaults to PUT
                     curl.setopt(CurlOpt.INFILESIZE_LARGE, total_bytes)
+
                     def _read(size: int) -> bytes:
                         if cancel_requested.is_set():
                             return b""
                         chunk = fh.read(size)
                         if chunk and on_chunk is not None:
+
                             async def _invoke_callback() -> None:
                                 await on_chunk(len(chunk))
 
                             callback: concurrent.futures.Future[None] = (
-                                asyncio.run_coroutine_threadsafe(
-                                    _invoke_callback(), event_loop
-                                )
+                                asyncio.run_coroutine_threadsafe(_invoke_callback(), event_loop)
                             )
                             callback.result()
                         return chunk
@@ -579,9 +579,7 @@ class CurlCffiAsyncClient:
                 if b":" not in line:
                     continue
                 name, value = line.split(b":", 1)
-                header_items.append(
-                    (name.decode("latin-1"), value.strip().decode("latin-1"))
-                )
+                header_items.append((name.decode("latin-1"), value.strip().decode("latin-1")))
         return httpx.Response(
             status_code=status,
             headers=header_items,

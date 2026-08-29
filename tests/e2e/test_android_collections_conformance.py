@@ -33,10 +33,7 @@ async def test_android_collections_complete_lifecycle_and_cleanup() -> None:
 
     async with NotebookLMClient.from_storage(backend="android") as client:
         assert client.backends["collections"] == "android"
-        assert all(
-            backend == ("android" if namespace == "collections" else "web")
-            for namespace, backend in client.backends.items()
-        )
+        assert set(client.backends.values()) == {"android"}
 
         try:
             notebook = await client.notebooks.create(f"{run_prefix}-notebook")

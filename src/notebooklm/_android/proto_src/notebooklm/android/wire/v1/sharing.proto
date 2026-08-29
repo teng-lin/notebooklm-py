@@ -4,7 +4,7 @@ package notebooklm.android.wire.v1;
 
 import "labs/language/tailwind/common/protos/common.proto";
 
-// Repository-local B6 response parser. The exact service path, message names,
+// Repository-local sharing response parser. The exact service path, message names,
 // imported public-settings FQN, and field tags are evidenced. This local
 // wrapper exists only so proto3 optional preserves scalar presence on fields
 // #3/#4; the exact-package response descriptor remains the remote type.

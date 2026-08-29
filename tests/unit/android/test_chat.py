@@ -1,4 +1,4 @@
-"""Direct B5 Android chat adapter and neutral orchestration tests."""
+"""Direct chat Android chat adapter and neutral orchestration tests."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ from notebooklm.types import AskResult, ChatMode, ChatReference, ChatSettings, C
 
 
 class FakeSession:
-    """Recording B5 fake server at the AndroidSession seam."""
+    """Recording chat fake server at the AndroidSession seam."""
 
     def __init__(self) -> None:
         self.unary_responses: dict[str, list[Any]] = {}
