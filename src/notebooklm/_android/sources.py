@@ -55,7 +55,7 @@ class AndroidSourcesAPI(SourcesAPI):
     """Read-only Android source adapter for the directly tested B1 graph."""
 
     def __init__(self, session: AndroidSession) -> None:
-        self._session = session
+        self._transport = session
         super().__init__()
 
     async def list(
@@ -84,7 +84,7 @@ class AndroidSourcesAPI(SourcesAPI):
             include_audio_overview_ids=True,
         )
         try:
-            response = await self._session.unary(
+            response = await self._transport.unary(
                 GET_PROJECT_METHOD,
                 request,
                 replay_safe=True,

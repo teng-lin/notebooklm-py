@@ -693,6 +693,7 @@ def test_production_consumers_are_exactly_the_phase_11d_owners() -> None:
         for path, _line, detail in [item.split(":", 2)]
     }
     assert normalized == {
+        ("_android/auth.py", "from-import"),
         ("_auth/master_token.py", "from-import"),
         ("_auth/master_token.py", "bare-call:MasterToken"),
         ("_auth/master_token_bootstrap.py", "from-import"),

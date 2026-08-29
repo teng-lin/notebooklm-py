@@ -8,7 +8,11 @@ from types import SimpleNamespace
 import pytest
 
 from notebooklm._android.auth import BearerCredential
-from notebooklm._android.session import ANDROID_GRPC_TARGET, AndroidSession
+from notebooklm._android.session import (
+    ANDROID_GRPC_TARGET,
+    AndroidSession,
+    _default_grpc_loader,
+)
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._transport_drain import TransportDrainTracker
@@ -205,6 +209,8 @@ async def _open(
         timeout=timeout,
         grpc_loader=lambda: grpc,
     )
+    session.set_bound_loop(loop)
+    session.reset_after_open()
     await session.open(loop, 1)
     return session, bearer, channel, grpc, supervisor
 
@@ -212,9 +218,7 @@ async def _open(
 @pytest.mark.asyncio
 async def test_open_is_lazy_and_unary_uses_fixed_tls_channel_and_metadata() -> None:
     events = []
-    session, bearer, channel, grpc, supervisor = await _open(
-        supervisor=_supervisor(events=events)
-    )
+    session, bearer, channel, grpc, supervisor = await _open(supervisor=_supervisor(events=events))
 
     assert grpc.loads == 0
     result = await session.unary(
@@ -273,6 +277,8 @@ async def test_close_reopen_uses_fresh_epoch_channel_and_callable_cache() -> Non
     supervisor.reset_after_open()
     supervisor.prepare_generation(2)
     supervisor.start_accepting(2)
+    session.set_bound_loop(loop)
+    session.reset_after_open()
     await session.open(loop, 2)
     result = await session.unary(
         METHOD,
@@ -473,7 +479,7 @@ async def test_bearer_wait_consumes_aggregate_deadline_before_wire() -> None:
 
 
 @pytest.mark.asyncio
-async def test_preopen_error_stream_laziness_missing_extra_and_phased_close(monkeypatch) -> None:
+async def test_preopen_error_stream_laziness_missing_extra_and_phased_close() -> None:
     supervisor = _supervisor()
     bearer = _Bearer()
     session = AndroidSession(bearer, supervisor)  # type: ignore[arg-type]
@@ -493,8 +499,17 @@ async def test_preopen_error_stream_laziness_missing_extra_and_phased_close(monk
     supervisor.reset_after_open()
     supervisor.prepare_generation(1)
     supervisor.start_accepting(1)
-    monkeypatch.setattr("notebooklm._android.session.importlib.import_module", lambda name: (_ for _ in ()).throw(ImportError(name)))
-    missing = AndroidSession(bearer, supervisor)  # type: ignore[arg-type]
+
+    def missing_import(name: str) -> object:
+        raise ImportError(name)
+
+    missing = AndroidSession(  # type: ignore[arg-type]
+        bearer,
+        supervisor,
+        grpc_loader=lambda: _default_grpc_loader(missing_import),
+    )
+    missing.set_bound_loop(loop)
+    missing.reset_after_open()
     await missing.open(loop, 1)
     with pytest.raises(MissingDependencyError, match=r"notebooklm-py\[android\]"):
         await missing.unary(

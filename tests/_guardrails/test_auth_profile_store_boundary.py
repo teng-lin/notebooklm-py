@@ -512,6 +512,7 @@ def test_production_importers_are_exactly_approved_store_owners_and_loader() -> 
         )
     }
     assert actual == {
+        "_android/auth.py",
         "_web/transport/cookie_persistence.py",
         "_runtime/init.py",
         "account_email.py",
@@ -1550,6 +1551,11 @@ def test_direct_production_store_callers_are_exact_and_function_granular() -> No
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         actual.update(_store_calls(path, tree))
     assert actual == {
+        (
+            "_android/auth.py",
+            "BearerProvider.activate",
+            "<store-method-capability-escape:read_master_token>",
+        ),
         ("_web/transport/cookie_persistence.py", "CookiePersistence.__init__", "ProfileStore"),
         (
             "_web/transport/cookie_persistence.py",

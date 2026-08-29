@@ -68,7 +68,8 @@ def grpc_status(error: Exception) -> GrpcStatus:
     if isinstance(raw_name, str) and raw_name in _STATUS_CODES:
         return GrpcStatus(raw_name, _STATUS_CODES[raw_name])
     if isinstance(raw_value, tuple) and raw_value:
-        raw_value = raw_value[0]
+        first_value, *_remaining_values = raw_value
+        raw_value = first_value
     if type(raw_value) is int and raw_value in _STATUS_NAMES:
         return GrpcStatus(_STATUS_NAMES[raw_value], raw_value)
     if type(raw_code) is int and raw_code in _STATUS_NAMES:

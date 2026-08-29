@@ -13,6 +13,7 @@ from typing import Any, Generic, Protocol, TypeVar, cast
 
 from .._deadline import RuntimeDeadline
 from .._loop_affinity import assert_bound_loop
+from .._loop_bound import LoopBoundPrimitive
 from .._runtime.call_supervisor import CallLease, CallSupervisor
 from ..exceptions import MissingDependencyError
 from .auth import BearerCredential, BearerProvider
@@ -29,9 +30,7 @@ RespT = TypeVar("RespT")
 
 ANDROID_GRPC_TARGET = "notebooklm-pa.googleapis.com:443"
 _NOT_OPEN = "Client not initialized. Use 'async with' context."
-_ANDROID_EXTRA = (
-    "Android transport needs grpcio. Install: pip install 'notebooklm-py[android]'"
-)
+_ANDROID_EXTRA = "Android transport needs grpcio. Install: pip install 'notebooklm-py[android]'"
 
 
 class _DefaultTelemetry(Enum):
@@ -56,9 +55,11 @@ class _AttemptFailure:
     bearer_generation: int | None
 
 
-def _default_grpc_loader() -> Any:
+def _default_grpc_loader(
+    import_module: Callable[[str], Any] = importlib.import_module,
+) -> Any:
     try:
-        return importlib.import_module("grpc")
+        return import_module("grpc")
     except ImportError:
         raise MissingDependencyError(_ANDROID_EXTRA) from None
 
@@ -87,7 +88,7 @@ def _serialize_message(message: object) -> bytes:
     return cast(_Serializable, message).SerializeToString()
 
 
-class AndroidSession:
+class AndroidSession(LoopBoundPrimitive):
     """One lazy gRPC channel plus protocol-neutral call supervision."""
 
     name = "android"
@@ -119,16 +120,26 @@ class AndroidSession:
 
         return self._active_epoch
 
-    async def open(self, loop: asyncio.AbstractEventLoop, epoch: int) -> None:
-        """Activate credentials and reset lazy transport state without connecting."""
+    def set_bound_loop(self, loop: asyncio.AbstractEventLoop | None) -> None:
+        """Receive the root lifecycle's loop binding before transport open."""
 
-        assert_bound_loop(loop)
-        self._bound_loop = loop
-        self._active_epoch = epoch
-        self._closing = False
+        super().set_bound_loop(loop)
+
+    def reset_after_open(self) -> None:
+        """Discard transport-owned lazy state for the next resource generation."""
+
         self._connection_lock = None
         self._channel = None
         self._callables.clear()
+
+    async def open(self, loop: asyncio.AbstractEventLoop, epoch: int) -> None:
+        """Activate credentials and reset lazy transport state without connecting."""
+
+        if self._bound_loop is not loop:
+            raise RuntimeError("Android transport was not bound by the client lifecycle.")
+        assert_bound_loop(self._bound_loop)
+        self._active_epoch = epoch
+        self._closing = False
         await self._bearer_provider.activate(epoch)
 
     async def prepare_close(self) -> None:
@@ -173,7 +184,9 @@ class AndroidSession:
         method: str,
         telemetry_method: str | None | _DefaultTelemetry,
     ) -> str | None:
-        return method if telemetry_method is _DEFAULT_TELEMETRY else cast(str | None, telemetry_method)
+        return (
+            method if telemetry_method is _DEFAULT_TELEMETRY else cast(str | None, telemetry_method)
+        )
 
     async def _ensure_channel(
         self,
@@ -489,9 +502,7 @@ class AndroidSession:
                                 request,
                                 metadata=metadata,
                                 timeout=(
-                                    None
-                                    if lease.deadline is None
-                                    else lease.deadline.remaining()
+                                    None if lease.deadline is None else lease.deadline.remaining()
                                 ),
                             )
                             iterator = call.__aiter__()

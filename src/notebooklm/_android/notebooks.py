@@ -36,7 +36,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
 
     def __init__(self, session: AndroidSession, sources_api: AndroidSourcesAPI) -> None:
         """Bind the Android session and its exact non-null source collaborator."""
-        self._session = session
+        self._transport = session
         super().__init__(sources_api)
 
     async def _get_project_response(
@@ -49,7 +49,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
             include_audio_overview_ids=True,
         )
         try:
-            return await self._session.unary(
+            return await self._transport.unary(
                 GET_PROJECT_METHOD,
                 request,
                 replay_safe=True,
@@ -68,7 +68,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
             include_own_projects=True,
             include_audio_overview_ids=True,
         )
-        response = await self._session.unary(
+        response = await self._transport.unary(
             LIST_RECENT_PROJECTS_METHOD,
             request,
             replay_safe=True,
