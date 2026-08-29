@@ -6,7 +6,7 @@ import builtins
 import logging
 from collections.abc import Callable, Collection
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, NoReturn, TypeVar, cast
 
 from .._sources import SourcesAPI
 from .._types.research import SourceGuide
@@ -19,11 +19,17 @@ from .proto.google.internal.labs.tailwind.orchestration.v1 import b1_read_pb2
 from .session import AndroidSession
 
 logger = logging.getLogger(__name__)
+_PROTO = cast(Any, b1_read_pb2)
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 GET_PROJECT_METHOD = f"/{_SERVICE}/GetProject"
 
 _FilterValue = TypeVar("_FilterValue")
+
+
+def _reject(operation: str) -> NoReturn:
+    unsupported_operation(operation)
+    raise AssertionError("unsupported_operation returned")  # pragma: no cover
 
 
 def _snapshot_enum_filter(
@@ -73,7 +79,7 @@ class AndroidSourcesAPI(SourcesAPI):
         )
 
         # evidence: docs/android/proto-evidence-ledger.md#field-ledger
-        request = b1_read_pb2.GetProjectRequest(
+        request = _PROTO.GetProjectRequest(
             project_id=notebook_id,
             include_audio_overview_ids=True,
         )
@@ -82,7 +88,7 @@ class AndroidSourcesAPI(SourcesAPI):
                 GET_PROJECT_METHOD,
                 request,
                 replay_safe=True,
-                response_type=b1_read_pb2.GetProjectResponse,
+                response_type=_PROTO.GetProjectResponse,
             )
         except RPCError as exc:
             mapped = map_get_project_error(notebook_id, exc, method_id=GET_PROJECT_METHOD)
@@ -115,14 +121,14 @@ class AndroidSourcesAPI(SourcesAPI):
         wait_timeout: float = 120.0,
         title: str | None = None,
     ) -> Source:
-        unsupported_operation("sources.add_url")
+        _reject("sources.add_url")
 
     async def _add_urls_batch(
         self,
         notebook_id: str,
         urls: builtins.list[str],
     ) -> builtins.list[Any]:
-        unsupported_operation("sources._add_urls_batch")
+        _reject("sources._add_urls_batch")
 
     async def add_text(
         self,
@@ -134,7 +140,7 @@ class AndroidSourcesAPI(SourcesAPI):
         wait_timeout: float = 120.0,
         idempotent: bool = False,
     ) -> Source:
-        unsupported_operation("sources.add_text")
+        _reject("sources.add_text")
 
     async def add_file(
         self,
@@ -147,7 +153,7 @@ class AndroidSourcesAPI(SourcesAPI):
         title: str | None = None,
         on_progress: Callable[[int, int], object] | None = None,
     ) -> Source:
-        unsupported_operation("sources.add_file")
+        _reject("sources.add_file")
 
     async def add_drive(
         self,
@@ -159,7 +165,7 @@ class AndroidSourcesAPI(SourcesAPI):
         wait: bool = False,
         wait_timeout: float = 120.0,
     ) -> Source:
-        unsupported_operation("sources.add_drive")
+        _reject("sources.add_drive")
 
     async def add_drive_file(
         self,
@@ -170,10 +176,10 @@ class AndroidSourcesAPI(SourcesAPI):
         wait: bool = False,
         wait_timeout: float = 120.0,
     ) -> Source:
-        unsupported_operation("sources.add_drive_file")
+        _reject("sources.add_drive_file")
 
     async def delete(self, notebook_id: str, source_id: str) -> None:
-        unsupported_operation("sources.delete")
+        _reject("sources.delete")
 
     async def rename(
         self,
@@ -183,16 +189,16 @@ class AndroidSourcesAPI(SourcesAPI):
         *,
         return_object: bool = True,
     ) -> Source | None:
-        unsupported_operation("sources.rename")
+        _reject("sources.rename")
 
     async def refresh(self, notebook_id: str, source_id: str) -> None:
-        unsupported_operation("sources.refresh")
+        _reject("sources.refresh")
 
     async def check_freshness(self, notebook_id: str, source_id: str) -> bool:
-        unsupported_operation("sources.check_freshness")
+        _reject("sources.check_freshness")
 
     async def get_guide(self, notebook_id: str, source_id: str) -> SourceGuide:
-        unsupported_operation("sources.get_guide")
+        _reject("sources.get_guide")
 
     async def get_fulltext(
         self,
@@ -201,7 +207,7 @@ class AndroidSourcesAPI(SourcesAPI):
         *,
         output_format: Literal["text", "markdown"] = "text",
     ) -> SourceFulltext:
-        unsupported_operation("sources.get_fulltext")
+        _reject("sources.get_fulltext")
 
 
 __all__ = ["AndroidSourcesAPI", "GET_PROJECT_METHOD"]

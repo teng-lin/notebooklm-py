@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import timezone
-from typing import Any
+from typing import Any, cast
 
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import Message
@@ -11,6 +11,8 @@ from google.protobuf.message import Message
 from ...exceptions import DecodingError, NotebookNotFoundError, RPCError
 from ...types import Notebook, SharePermission
 from ..proto.google.internal.labs.tailwind.orchestration.v1 import b1_read_pb2
+
+_PROTO = cast(Any, b1_read_pb2)
 
 _PROJECT_ROLE_BY_NAME: dict[str, SharePermission] = {
     "PROJECT_ROLE_OWNER": SharePermission.OWNER,
@@ -47,7 +49,7 @@ def map_get_project_error(
 
 
 def _decode_project(
-    project: b1_read_pb2.Project,
+    project: Any,
     *,
     method_id: str,
 ) -> Notebook:
@@ -63,7 +65,7 @@ def _decode_project(
     if project.HasField("metadata"):
         if project.metadata.HasField("create_time"):
             created_at = project.metadata.create_time.ToDatetime(tzinfo=timezone.utc)
-        role_name = _enum_name(b1_read_pb2.ProjectRole, project.metadata.user_role)
+        role_name = _enum_name(_PROTO.ProjectRole, project.metadata.user_role)
         role = _PROJECT_ROLE_BY_NAME.get(role_name or "")
 
     return Notebook(
@@ -84,7 +86,7 @@ def _decode_project(
 
 
 def decode_project(
-    project: b1_read_pb2.Project,
+    project: Any,
     *,
     method_id: str,
 ) -> Notebook:

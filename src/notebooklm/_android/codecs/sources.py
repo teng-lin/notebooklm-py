@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, cast
 
 from ...exceptions import DecodingError
 from ...types import DriveSourceStatus, Source, SourceStatus
 from ..proto.google.internal.labs.tailwind.orchestration.v1 import b1_read_pb2
 from ..proto.google.internal.labs.tailwind.v1 import source_settings_pb2
+
+_PROTO = cast(Any, b1_read_pb2)
+_SETTINGS_PROTO = cast(Any, source_settings_pb2)
 
 _SOURCE_TYPE_CODE_BY_NAME: dict[str, int] = {
     "SOURCE_CONTENT_TYPE_UNKNOWN": 0,
@@ -61,7 +64,7 @@ def _enum_name(enum: Any, value: int) -> str | None:
 
 
 def _decode_source(
-    source: b1_read_pb2.Source,
+    source: Any,
     *,
     method_id: str,
     index: int | None = None,
@@ -82,7 +85,7 @@ def _decode_source(
     if source.HasField("metadata"):
         metadata = source.metadata
         type_name = _enum_name(
-            b1_read_pb2.OriginalSourceContentType,
+            _PROTO.OriginalSourceContentType,
             metadata.original_source_content_type,
         )
         # Unrepresentable and ambiguous kinds (including generic DRIVE and
@@ -99,12 +102,12 @@ def _decode_source(
     drive_status = None
     if source.HasField("settings"):
         settings = source.settings
-        status_name = _enum_name(source_settings_pb2.SourceStatus, settings.status)
+        status_name = _enum_name(_SETTINGS_PROTO.SourceStatus, settings.status)
         status = _SOURCE_STATUS_BY_NAME.get(status_name or "", SourceStatus.UNKNOWN)
 
         if settings.user_drive_source_status != 0:
             drive_name = _enum_name(
-                source_settings_pb2.UserDriveSourceStatus,
+                _SETTINGS_PROTO.UserDriveSourceStatus,
                 settings.user_drive_source_status,
             )
             drive_status = _DRIVE_STATUS_BY_NAME.get(
@@ -132,7 +135,7 @@ def _decode_source(
 
 
 def decode_source(
-    source: b1_read_pb2.Source,
+    source: Any,
     *,
     method_id: str,
     index: int | None = None,
@@ -151,7 +154,7 @@ def decode_source(
 
 
 def decode_sources(
-    sources: Iterable[b1_read_pb2.Source],
+    sources: Iterable[Any],
     *,
     method_id: str,
     strict: bool,

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import builtins
 import logging
-from typing import Any
+from typing import Any, NoReturn, cast
 
 from .._notebooks import NotebooksAPI
 from ..exceptions import RPCError
@@ -16,10 +17,16 @@ from .session import AndroidSession
 from .sources import AndroidSourcesAPI
 
 logger = logging.getLogger(__name__)
+_PROTO = cast(Any, b1_read_pb2)
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 GET_PROJECT_METHOD = f"/{_SERVICE}/GetProject"
 LIST_RECENT_PROJECTS_METHOD = f"/{_SERVICE}/ListRecentlyViewedProjects"
+
+
+def _reject(operation: str) -> NoReturn:
+    unsupported_operation(operation)
+    raise AssertionError("unsupported_operation returned")  # pragma: no cover
 
 
 class AndroidNotebooksAPI(NotebooksAPI):
@@ -35,9 +42,9 @@ class AndroidNotebooksAPI(NotebooksAPI):
     async def _get_project_response(
         self,
         notebook_id: str,
-    ) -> b1_read_pb2.GetProjectResponse:
+    ) -> Any:
         # evidence: docs/android/proto-evidence-ledger.md#field-ledger
-        request = b1_read_pb2.GetProjectRequest(
+        request = _PROTO.GetProjectRequest(
             project_id=notebook_id,
             include_audio_overview_ids=True,
         )
@@ -46,7 +53,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
                 GET_PROJECT_METHOD,
                 request,
                 replay_safe=True,
-                response_type=b1_read_pb2.GetProjectResponse,
+                response_type=_PROTO.GetProjectResponse,
             )
         except RPCError as exc:
             mapped = map_get_project_error(notebook_id, exc, method_id=GET_PROJECT_METHOD)
@@ -54,10 +61,10 @@ class AndroidNotebooksAPI(NotebooksAPI):
                 raise
             raise mapped from exc
 
-    async def list(self) -> list[Notebook]:
+    async def list(self) -> builtins.list[Notebook]:
         """List Android projects in the server's recent-first order."""
         # evidence: docs/android/proto-evidence-ledger.md#field-ledger
-        request = b1_read_pb2.ListRecentlyViewedProjectsRequest(
+        request = _PROTO.ListRecentlyViewedProjectsRequest(
             include_own_projects=True,
             include_audio_overview_ids=True,
         )
@@ -65,7 +72,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
             LIST_RECENT_PROJECTS_METHOD,
             request,
             replay_safe=True,
-            response_type=b1_read_pb2.ListRecentlyViewedProjectsResponse,
+            response_type=_PROTO.ListRecentlyViewedProjectsResponse,
         )
         return [
             decode_project(project, method_id=LIST_RECENT_PROJECTS_METHOD)
@@ -85,7 +92,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
         # project only for Android.
         return message_to_known_dict(response, method_id=GET_PROJECT_METHOD)
 
-    async def get_source_ids(self, notebook_id: str) -> list[str]:
+    async def get_source_ids(self, notebook_id: str) -> builtins.list[str]:
         """Return ordered, first-occurrence source IDs from one project read."""
         response = await self._get_project_response(notebook_id)
         # Validate the containing entity before accepting an apparently empty
@@ -103,26 +110,26 @@ class AndroidNotebooksAPI(NotebooksAPI):
 
     async def create(self, title: str) -> Notebook:
         """Reject B1 create before the base class can perform its list probe."""
-        unsupported_operation("notebooks.create")
+        _reject("notebooks.create")
 
     async def _send_create(self, title: str) -> Notebook:
-        unsupported_operation("notebooks.create")
+        _reject("notebooks.create")
 
     async def copy(self, notebook_id: str, title: str) -> Notebook:
-        unsupported_operation("notebooks.copy")
+        _reject("notebooks.copy")
 
     async def suggest_prompts(
         self,
         notebook_id: str,
         *,
-        source_ids: list[str] | None = None,
+        source_ids: builtins.list[str] | None = None,
         mode: int = 4,
         query: str | None = None,
-    ) -> list[PromptSuggestion]:
-        unsupported_operation("notebooks.suggest_prompts")
+    ) -> builtins.list[PromptSuggestion]:
+        _reject("notebooks.suggest_prompts")
 
     async def delete(self, notebook_id: str) -> None:
-        unsupported_operation("notebooks.delete")
+        _reject("notebooks.delete")
 
     async def update(
         self,
@@ -131,16 +138,16 @@ class AndroidNotebooksAPI(NotebooksAPI):
         title: str | None = None,
         emoji: str | None = None,
     ) -> Notebook:
-        unsupported_operation("notebooks.update")
+        _reject("notebooks.update")
 
     async def get_summary(self, notebook_id: str) -> str:
-        unsupported_operation("notebooks.get_summary")
+        _reject("notebooks.get_summary")
 
     async def get_description(self, notebook_id: str) -> NotebookDescription:
-        unsupported_operation("notebooks.get_description")
+        _reject("notebooks.get_description")
 
     async def remove_from_recent(self, notebook_id: str) -> None:
-        unsupported_operation("notebooks.remove_from_recent")
+        _reject("notebooks.remove_from_recent")
 
 
 __all__ = [
