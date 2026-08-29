@@ -56,7 +56,7 @@ from ._runtime.config import (
     validate_read_timeout_kwarg,
 )
 from ._runtime.init import compose_client_internals
-from ._runtime.lifecycle import ClientLifecycle
+from ._runtime.lifecycle import ClientLifecycle, LoopParticipant, TransportLifecycle
 from ._web.artifacts import WebArtifactsAPI
 from ._web.chat import WebChatAPI
 from ._web.collections import WebCollectionsAPI
@@ -88,6 +88,13 @@ class BackendPreference:
 
     preferred: BackendName
     reason: Literal["explicit", "env", "default"]
+
+
+class _NoMasterTokenProfile:
+    """I/O-free profile reader used when direct construction has no storage path."""
+
+    def read_master_token(self) -> None:
+        return None
 
 
 def resolve_backend_preference(*, explicit: str | None, env: str | None) -> BackendPreference:
@@ -488,12 +495,47 @@ def _assemble_client(
     # SourcesAPI) for the membership->Source join in ``labels.sources()``;
     # wired after ``client.sources`` exists. Same client/bound loop (ADR-0004).
     client.labels = WebLabelsAPI(internals.executor, list_sources=client.sources.list)
-    # Collections (account-level notebook groups). Takes a narrow ``list_notebooks``
-    # callable for the membership->Notebook join in ``collections.notebooks()``;
-    # wired after ``client.notebooks`` exists. Same client/bound loop (ADR-0004).
-    client.collections = WebCollectionsAPI(internals.executor, list_notebooks=client.notebooks.list)
-    # B8 records the installed namespace owners but deliberately promotes none:
-    # every factory remains web until its separate B8p qualification commit.
+    # Collections are the first whole namespace admitted for Android selection.
+    # The adapter stays mixed-backend by design: member expansion receives the
+    # already-selected ``notebooks.list`` capability instead of manufacturing a
+    # second namespace. Android dependency/token validation remains deferred to
+    # async open, and the gRPC channel remains lazy until the first collection RPC.
+    client._android_bearer_provider = None
+    client._android_session = None
+    android_transports: tuple[TransportLifecycle, ...] = ()
+    android_loop_participants: tuple[LoopParticipant, ...] = ()
+    if client._backend_preference.preferred == "android":
+        from ._android.auth import BearerProvider
+        from ._android.collections import AndroidCollectionsAPI
+        from ._android.session import AndroidSession
+        from ._auth.mint_service import MintService
+        from ._auth.profile_store import ProfileStore
+
+        profile_reader = (
+            ProfileStore(Path(auth.storage_path))
+            if auth.storage_path is not None
+            else _NoMasterTokenProfile()
+        )
+        android_bearer_provider = BearerProvider(profile_reader, MintService())
+        android_session = AndroidSession(
+            android_bearer_provider,
+            internals.collaborators.call_supervisor,
+            timeout=timeout,
+        )
+        client._android_bearer_provider = android_bearer_provider
+        client._android_session = android_session
+        android_transports = (android_session,)
+        android_loop_participants = (android_bearer_provider, android_session)
+        client.collections = AndroidCollectionsAPI(
+            android_session,
+            list_notebooks=client.notebooks.list,
+        )
+    else:
+        client.collections = WebCollectionsAPI(
+            internals.executor,
+            list_notebooks=client.notebooks.list,
+        )
+
     client._backends = _derive_installed_backends(client)
     if client._backend_preference.preferred == "android":
         unqualified = [name for name, selected in client._backends.items() if selected == "web"]
@@ -507,15 +549,23 @@ def _assemble_client(
     # transport and loop participant exists. Its tuples never mutate after
     # publication, so open/close waves cannot observe a partially assembled
     # graph or silently omit a later-added owner.
+    transports: tuple[TransportLifecycle, ...] = (
+        internals.collaborators.web_transport,
+        source_uploader,
+        *android_transports,
+    )
+    loop_participants: tuple[LoopParticipant, ...] = (
+        internals.collaborators.call_supervisor,
+        internals.collaborators.reqid,
+        internals.collaborators.auth_coord,
+        client.chat,
+        *android_loop_participants,
+    )
+
     lifecycle = ClientLifecycle(
         supervisor=internals.collaborators.call_supervisor,
-        transports=(internals.collaborators.web_transport, source_uploader),
-        loop_participants=(
-            internals.collaborators.call_supervisor,
-            internals.collaborators.reqid,
-            internals.collaborators.auth_coord,
-            client.chat,
-        ),
+        transports=transports,
+        loop_participants=loop_participants,
     )
     client._collaborators = dataclasses.replace(
         internals.collaborators,

@@ -144,6 +144,8 @@ class NotebookLMClient:
     _source_uploader: SourceUploadPipeline
     _backend_preference: BackendPreference
     _backends: Mapping[str, BackendName]
+    _android_bearer_provider: Any
+    _android_session: Any
     sources: SourcesAPI
     notebooks: NotebooksAPI
     artifacts: ArtifactsAPI

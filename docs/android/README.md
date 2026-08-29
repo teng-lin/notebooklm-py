@@ -50,9 +50,9 @@ descriptor fixture with `python scripts/regenerate_android_protos.py --write`; u
 The cumulative `orchestration_service.proto` owns the one exact generated service; individual
 message overlays remain service-free. Its 25 admitted methods plus the 14 explicit signature
 exceptions exhaustively equal the 39 implemented adapter paths.
-The package, generated protos, and adapters remain private, direct-testable migration building
-blocks. Normal `NotebookLMClient` assembly continues to select Web for every namespace; no client
-factory branch selects Android Notes.
+The package, generated protos, and most adapters remain private, direct-testable migration building
+blocks. Explicit `backend="android"` selection installs Android Collections, the first complete
+substitution-qualified namespace; every other namespace remains Web, including Notes and Labels.
 
 ## Private Notes conformance
 

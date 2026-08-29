@@ -5,6 +5,9 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+import os
+import subprocess
+import sys
 from collections.abc import Mapping
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -13,10 +16,14 @@ import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
+import notebooklm._android.auth as android_auth
+from notebooklm._android.collections import AndroidCollectionsAPI
+from notebooklm._auth.master_token_types import MasterToken
 from notebooklm._auth.profile_store import ProfileStore
 from notebooklm._client_assembly import BackendPreference, resolve_backend_preference
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
+from notebooklm.exceptions import ConfigurationError, MissingDependencyError
 
 
 def _auth() -> AuthTokens:
@@ -87,7 +94,7 @@ def test_invalid_environment_fails_during_construction(monkeypatch: pytest.Monke
         NotebookLMClient(_auth())
 
 
-def test_android_preference_does_not_promote_unqualified_namespaces() -> None:
+def test_android_preference_promotes_only_qualified_collections_namespace() -> None:
     client = NotebookLMClient(_auth(), backend="android")
     assert isinstance(client.backends, Mapping)
     assert list(client.backends) == [
@@ -103,11 +110,61 @@ def test_android_preference_does_not_promote_unqualified_namespaces() -> None:
         "labels",
         "collections",
     ]
-    assert set(client.backends.values()) == {"web"}
+    assert client.backends["collections"] == "android"
+    assert isinstance(client.collections, AndroidCollectionsAPI)
     for namespace, backend in client.backends.items():
         installed = getattr(client, namespace)
-        assert backend == "web"
-        assert type(installed).__module__.startswith("notebooklm._web.")
+        expected = "android" if namespace == "collections" else "web"
+        assert backend == expected
+        assert type(installed).__module__.startswith(f"notebooklm._{expected}.")
+
+    assert client.collections._list_notebooks.__self__ is client.notebooks
+    assert client.collections._list_notebooks.__func__ is type(client.notebooks).list
+
+
+@pytest.mark.parametrize("backend", [None, "web"])
+def test_default_and_explicit_web_keep_every_namespace_on_web(backend: str | None) -> None:
+    client = NotebookLMClient(_auth(), backend=backend)  # type: ignore[arg-type]
+    assert set(client.backends.values()) == {"web"}
+    assert client._android_bearer_provider is None
+    assert client._android_session is None
+
+
+def test_default_web_construction_does_not_import_android_or_optional_runtime() -> None:
+    script = """
+import builtins
+
+original_import = builtins.__import__
+
+def guarded_import(name, *args, **kwargs):
+    if (
+        name == "grpc"
+        or name == "gpsoauth"
+        or name.startswith("google.protobuf")
+        or name.startswith("notebooklm._android")
+    ):
+        raise AssertionError(f"default Web construction imported {name}")
+    return original_import(name, *args, **kwargs)
+
+builtins.__import__ = guarded_import
+from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
+
+client = NotebookLMClient(
+    AuthTokens(cookies={"SID": "sid"}, csrf_token="csrf", session_id="session")
+)
+assert set(client.backends.values()) == {"web"}
+"""
+    env = os.environ.copy()
+    env.pop("NOTEBOOKLM_BACKEND", None)
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_android_preference_logs_unqualified_namespaces_once(caplog) -> None:  # type: ignore[no-untyped-def]
@@ -119,7 +176,7 @@ def test_android_preference_logs_unqualified_namespaces_once(caplog) -> None:  #
     assert [record.getMessage() for record in records] == [
         "Android backend preference selected; unqualified namespaces remain web: "
         "notebooks, sources, artifacts, chat, research, notes, mind_maps, settings, sharing, "
-        "labels, collections"
+        "labels"
     ]
 
 
@@ -158,21 +215,83 @@ def test_selection_construction_reads_no_files_tokens_or_network(
     wrapper = NotebookLMClient.from_storage(path="does-not-exist.json", backend="android")
 
     assert direct._backend_preference.preferred == "android"
+    assert isinstance(direct.collections, AndroidCollectionsAPI)
     assert wrapper._client is None
     forbidden.assert_not_called()
 
 
-async def test_unpromoted_android_preference_does_not_require_token_at_open(
+async def test_selected_android_reads_token_only_at_open_and_fails_without_one(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    token_read = MagicMock(side_effect=AssertionError("unselected Android token was read"))
-    monkeypatch.setattr(ProfileStore, "read_master_token", token_read)
-
-    async with NotebookLMClient(_auth(), backend="android") as client:
-        assert client.is_connected
-        assert set(client.backends.values()) == {"web"}
+    client = NotebookLMClient(_auth(), backend="android")
+    assert client._android_session is not None
+    assert client._android_bearer_provider is not None
+    token_read = MagicMock(return_value=None)
+    client._android_bearer_provider._profile_store.read_master_token = token_read
+    client._android_session._grpc_loader = lambda: object()
+    client._android_session._protobuf_loader = lambda: object()
+    monkeypatch.setattr(android_auth, "_require_gpsoauth", lambda: object())
 
     token_read.assert_not_called()
+    with pytest.raises(ConfigurationError, match="master-token profile"):
+        await client.__aenter__()
+    token_read.assert_called_once_with()
+
+
+async def test_selected_android_missing_dependency_fails_at_open_not_construction() -> None:
+    client = NotebookLMClient(_auth(), backend="android")
+    assert client._android_session is not None
+    missing = MissingDependencyError("missing android runtime")
+    client._android_session._grpc_loader = MagicMock(side_effect=missing)
+
+    with pytest.raises(MissingDependencyError, match="missing android runtime"):
+        await client.__aenter__()
+
+
+async def test_selected_android_open_binds_auth_and_session_without_eager_channel(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = tmp_path / "storage_state.json"
+    client = NotebookLMClient(_auth(), storage_path=storage, backend="android")
+    assert client._android_session is not None
+    assert client._android_bearer_provider is not None
+    client._android_session._grpc_loader = lambda: object()
+    client._android_session._protobuf_loader = lambda: object()
+    token_read = MagicMock(
+        return_value=MasterToken(email="test@example.com", android_id="1234", secret="secret")
+    )
+    client._android_bearer_provider._profile_store.read_master_token = token_read
+    monkeypatch.setattr(android_auth, "_require_gpsoauth", lambda: object())
+
+    await client.__aenter__()
+    try:
+        assert client.is_connected
+        assert client._android_session.active_epoch is not None
+        assert client._android_session._channel is None
+        assert client._android_bearer_provider._master_token is not None
+    finally:
+        await client.close()
+
+    assert client._android_session.active_epoch is None
+    assert client._android_bearer_provider._master_token is None
+    token_read.assert_called_once_with()
+
+
+def test_android_selection_extends_the_frozen_lifecycle_ownership_graph() -> None:
+    client = NotebookLMClient(_auth(), backend="android")
+    lifecycle = client._collaborators.lifecycle
+    assert client._android_session is not None
+    assert client._android_bearer_provider is not None
+    assert lifecycle._transports == (
+        client._collaborators.web_transport,
+        client._source_uploader,
+        client._android_session,
+    )
+    assert lifecycle._loop_participants[-2:] == (
+        client._android_bearer_provider,
+        client._android_session,
+    )
 
 
 def test_from_storage_freezes_environment_preference_at_wrapper_construction(
@@ -214,4 +333,5 @@ async def test_from_storage_threads_explicit_backend(
     )
     client = await NotebookLMClient.from_storage(path=str(storage), backend="android")._build()
     assert client._backend_preference.preferred == "android"
-    assert set(client.backends.values()) == {"web"}
+    assert client.backends["collections"] == "android"
+    assert sum(backend == "android" for backend in client.backends.values()) == 1
