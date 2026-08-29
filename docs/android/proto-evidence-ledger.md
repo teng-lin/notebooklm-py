@@ -844,7 +844,7 @@ source set. Every scratch notebook was deleted.
 |---|---|
 | `grpcio-tools` | `1.76.0` |
 | embedded `protoc` | `libprotoc 31.1` |
-| protobuf Python runtime | `6.31.1` |
+| protobuf Python runtime | `6.33.5` |
 | gRPC Python runtime | `1.76.0` |
 | flags | both proto roots via `-I`, `--include_imports`, `--descriptor_set_out`, `--python_out`, `--grpc_python_out`; sorted input list |
 

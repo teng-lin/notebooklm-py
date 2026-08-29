@@ -692,12 +692,12 @@ def test_locked_dependency_extras_keep_android_out_of_all() -> None:
 
     assert extras["android"] == [
         "grpcio==1.76.0",
-        "protobuf==6.31.1",
+        "protobuf==6.33.5",
         "gpsoauth>=1.1.0",
     ]
     assert "grpcio==1.76.0" in extras["dev"]
     assert "grpcio-tools==1.76.0" in extras["dev"]
-    assert "protobuf==6.31.1" in extras["dev"]
+    assert "protobuf==6.33.5" in extras["dev"]
     assert extras["all"] == ["notebooklm-py[browser,dev,headless,markdown,mcp,server]"]
 
 

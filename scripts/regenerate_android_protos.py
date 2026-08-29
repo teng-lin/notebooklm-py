@@ -21,7 +21,7 @@ from pathlib import Path
 EXPECTED_DISTRIBUTIONS = {
     "grpcio": "1.76.0",
     "grpcio-tools": "1.76.0",
-    "protobuf": "6.31.1",
+    "protobuf": "6.33.5",
 }
 EXPECTED_PROTOC = "libprotoc 31.1"
 
