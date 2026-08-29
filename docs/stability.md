@@ -58,6 +58,7 @@ __version__  # Package version string (read-only)
 # Client
 NotebookLMClient
 NotebookLMClient.from_storage()
+NotebookLMClient.backends
 NotebookLMClient.notebooks
 NotebookLMClient.sources
 NotebookLMClient.artifacts
