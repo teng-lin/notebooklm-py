@@ -14,6 +14,7 @@ from notebooklm._android.artifacts import (
     CREATE_ARTIFACT_METHOD,
     DELETE_ARTIFACT_METHOD,
     GENERATE_REPORT_SUGGESTIONS_METHOD,
+    GET_ARTIFACT_METHOD,
     LIST_ARTIFACTS_METHOD,
     UPDATE_ARTIFACT_METHOD,
 )
@@ -45,8 +46,12 @@ def _shapes(message: Any) -> dict[str, tuple[int, bool, int, str | None]]:
     return result
 
 
-def _expected(*items: tuple[str, int, bool, int, str | None]) -> dict[str, tuple[int, bool, int, str | None]]:
-    return {name: (number, repeated, kind, target) for name, number, repeated, kind, target in items}
+def _expected(
+    *items: tuple[str, int, bool, int, str | None],
+) -> dict[str, tuple[int, bool, int, str | None]]:
+    return {
+        name: (number, repeated, kind, target) for name, number, repeated, kind, target in items
+    }
 
 
 def _enum_values(enum: Any) -> dict[str, int]:
@@ -64,6 +69,7 @@ def test_b4_exact_package_and_repository_local_overlay_are_distinct() -> None:
 def test_full_method_paths_are_exact_and_local_overlay_does_not_claim_a_service() -> None:
     prefix = f"/{ORCHESTRATION_PACKAGE}.LabsTailwindOrchestrationService/"
     assert f"{prefix}ListArtifacts" == LIST_ARTIFACTS_METHOD
+    assert f"{prefix}GetArtifact" == GET_ARTIFACT_METHOD
     assert f"{prefix}CreateArtifact" == CREATE_ARTIFACT_METHOD
     assert f"{prefix}UpdateArtifact" == UPDATE_ARTIFACT_METHOD
     assert f"{prefix}DeleteArtifact" == DELETE_ARTIFACT_METHOD
@@ -140,6 +146,12 @@ def test_b4_reachable_enum_names_and_numbers_are_exhaustive() -> None:
         "APP_TYPE_MINDMAP": 4,
         "APP_TYPE_CANVAS": 5,
     }
+    assert _enum_values(artifacts_pb2.EpisodeLength) == {
+        "EPISODE_LENGTH_UNSPECIFIED": 0,
+        "EPISODE_LENGTH_SHORT": 1,
+        "EPISODE_LENGTH_MEDIUM": 2,
+        "EPISODE_LENGTH_LONG": 3,
+    }
     assert _enum_values(artifacts_pb2.MediaStreamingType) == {
         "MEDIA_STREAMING_TYPE_UNSPECIFIED": 0,
         "MEDIA_STREAMING_TYPE_PROGRESSIVE_STREAMING": 1,
@@ -165,6 +177,7 @@ def test_b4_artifact_projection_fields_are_exhaustive() -> None:
     singular = False
     repeated = True
     string = FieldDescriptor.TYPE_STRING
+    boolean = FieldDescriptor.TYPE_BOOL
     integer = FieldDescriptor.TYPE_INT32
     message = FieldDescriptor.TYPE_MESSAGE
     enum = FieldDescriptor.TYPE_ENUM
@@ -214,6 +227,9 @@ def test_b4_artifact_projection_fields_are_exhaustive() -> None:
         ),
         artifacts_pb2.AudioOverviewGenerationOptions: _expected(
             ("episode_focus", 1, singular, string, None),
+            ("episode_length", 2, singular, enum, f"{package}.EpisodeLength"),
+            ("source_ids", 4, repeated, message, f"{package}.SourceId"),
+            ("language_code", 5, singular, string, None),
         ),
         artifacts_pb2.AudioOverviewArtifact: _expected(
             (
@@ -223,6 +239,7 @@ def test_b4_artifact_projection_fields_are_exhaustive() -> None:
                 message,
                 f"{package}.AudioOverviewGenerationOptions",
             ),
+            ("is_interactive", 5, singular, boolean, None),
             ("media_urls", 6, repeated, message, f"{package}.MediaStreamingUrl"),
             ("duration", 7, singular, message, duration),
         ),
@@ -387,6 +404,32 @@ def test_synthetic_fixture_exercises_every_admitted_public_projection() -> None:
     assert by_id["table-1"].kind is ArtifactType.DATA_TABLE
     assert by_id["file-1"].url.endswith("file-download")  # type: ignore[union-attr]
     assert by_id["suggested-1"].status == artifacts_pb2.ARTIFACT_STATUS_SUGGESTED
+
+
+def test_audio_options_project_only_onto_existing_public_artifact_fields() -> None:
+    raw = artifacts_pb2.Artifact(
+        artifact_id="audio-nested",
+        title="Audio",
+        type=artifacts_pb2.ARTIFACT_TYPE_AUDIO_OVERVIEW,
+        status=artifacts_pb2.ARTIFACT_STATUS_READY,
+        audio_overview=artifacts_pb2.AudioOverviewArtifact(
+            generation_options=artifacts_pb2.AudioOverviewGenerationOptions(
+                episode_focus="Nested focus",
+                episode_length=artifacts_pb2.EPISODE_LENGTH_LONG,
+                source_ids=[{"id": "source-nested"}],
+                language_code="fr",
+            ),
+            is_interactive=True,
+        ),
+    )
+
+    artifact = decode_artifact(raw, method_id=GET_ARTIFACT_METHOD)
+
+    assert artifact.generation_prompt == "Nested focus"
+    assert artifact.source_ids == ("source-nested",)
+    assert not hasattr(artifact, "episode_length")
+    assert not hasattr(artifact, "language_code")
+    assert not hasattr(artifact, "is_interactive")
 
 
 def test_decode_failure_drops_raw_message_capability_and_exception_frames() -> None:

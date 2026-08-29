@@ -85,11 +85,12 @@ The recovery method and the warning about duplicate packages are committed in
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject` | `.google.internal.labs.tailwind.orchestration.v1.GetProjectRequest` | `.google.internal.labs.tailwind.orchestration.v1.GetProjectResponse` | unary/unary | `project_id #1`, `include_audio_overview_ids #2`; no `RequestContext` |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListRecentlyViewedProjects` | `.google.internal.labs.tailwind.orchestration.v1.ListRecentlyViewedProjectsRequest` | `.google.internal.labs.tailwind.orchestration.v1.ListRecentlyViewedProjectsResponse` | unary/unary | `include_own_projects #2`, `include_audio_overview_ids #3`; no `RequestContext` |
 
-The two B1 signatures above and twenty-one later exact signatures live in the sole
+The two B1 signatures above and twenty-two later exact signatures live in the sole
 `google/internal/labs/tailwind/orchestration/v1/orchestration_service.proto` service declaration.
 The individual message overlays remain service-free so protobuf never reopens one service across
-files. Its generated stub exposes 23 implemented methods: the two reads above, five source methods,
-four artifact methods, three chat methods, three note methods, and six Research methods. Eleven other implemented paths
+files. Its generated stub exposes 24 implemented methods: the two reads above, five source methods,
+five artifact methods, three chat methods, three note methods, and six Research methods. Eleven
+other implemented paths
 remain manual full-path calls because at least one remote request/response FQN is unproven. The
 exception manifest names each adapter constant, local parser, reason code, and evidence link;
 descriptor/adapter/manifest equality is pinned by
@@ -120,17 +121,16 @@ Every Google-package FQN, field name, tag, type and cardinality compiled in
 `supported.proto` whose SHA-256 is pinned above. References to the flattened `schema.proto` in
 source comments are corroborating Dart-symbol evidence, never the authority for a Google FQN.
 The B4 message overlay intentionally declares no second protobuf `service`: protobuf cannot reopen
-the same service across files. The cumulative exact service imports its four implemented exact
+the same service across files. The cumulative exact service imports its five implemented exact
 signatures. `GenerateReportSuggestions` remains an explicit manifest exception because its
-repository-local `*Wire` types make no Google FQN claim. `GetArtifact` is exact message evidence but
-is not in this implemented-path slice and remains absent for the later surface work package.
-`AndroidSession` continues to dispatch paths generically with the ledgered message classes.
+repository-local `*Wire` types make no Google FQN claim. `AndroidSession` continues to dispatch
+paths generically with the ledgered message classes.
 
 | Full method | Exact request FQN | Exact response FQN | B4 disposition |
 |---|---|---|---|
-| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListArtifacts` | `.google.internal.labs.tailwind.orchestration.v1.ListArtifactsRequest` | `.google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse` | admitted safe read; one call per Studio list/poll tick |
-| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetArtifact` | `.google.internal.labs.tailwind.orchestration.v1.GetArtifactRequest` | `.google.internal.labs.tailwind.orchestration.v1.GetArtifactResponse` | message closure admitted; common SDK `get` remains concrete over aggregate `list` |
-| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateArtifact` | `.google.internal.labs.tailwind.orchestration.v1.CreateArtifactRequest` | `.google.internal.labs.tailwind.orchestration.v1.CreateArtifactResponse` | quiz-only mutation, never replayed |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListArtifacts` | `.google.internal.labs.tailwind.orchestration.v1.ListArtifactsRequest` | `.google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse` | admitted safe aggregate Studio read |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetArtifact` | `.google.internal.labs.tailwind.orchestration.v1.GetArtifactRequest` | `.google.internal.labs.tailwind.orchestration.v1.GetArtifactResponse` | admitted safe single-artifact polling read; common SDK `get` remains concrete over aggregate `list` so note-backed mind maps remain visible |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateArtifact` | `.google.internal.labs.tailwind.orchestration.v1.CreateArtifactRequest` | `.google.internal.labs.tailwind.orchestration.v1.CreateArtifactResponse` | evidence-qualified quiz and Audio Overview mutations, never replayed |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/UpdateArtifact` | `.google.internal.labs.tailwind.orchestration.v1.UpdateArtifactRequest` | `.google.internal.labs.tailwind.orchestration.v1.Artifact` | title-only mutation with etag, never replayed, then list read-back |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteArtifact` | `.google.internal.labs.tailwind.orchestration.v1.DeleteArtifactRequest` | `.google.protobuf.Empty` | never replayed; sanitized `NOT_FOUND` is idempotent success |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateReportSuggestions` | APK-absent; repository-local `GenerateReportSuggestionsRequestWire` | APK-absent; repository-local `GenerateReportSuggestionsResponseWire` | safe live-added read; no Google message-FQN claim |
@@ -147,8 +147,9 @@ field inferred from its plausible Dart name.
 | `QuizGenerationOptions` | `question_quantity #1` `QuestionQuantity`; `quiz_difficulty #2` `QuizDifficulty` | quiz create options |
 | `AppArtifactGenerationOptions` | `app_type #1` `AppType`; `free_text_steering_prompt #3` string; `quiz_generation_options #8` message | quiz kind/prompt/create |
 | `AppArtifact` | `generation_options #2` message | app kind/options; HTML/content fields remain unknown and unsupported |
-| `AudioOverviewGenerationOptions` | `episode_focus #1` string | listing prompt |
-| `AudioOverviewArtifact` | `generation_options #2` message; repeated `media_urls #6`; `duration #7` `google.protobuf.Duration` | listing projection only |
+| `EpisodeLength` | exhaustive values: unspecified `0`, short `1`, medium `2`, long `3` | Audio Overview creation length |
+| `AudioOverviewGenerationOptions` | `episode_focus #1` string; `episode_length #2` `EpisodeLength`; repeated `source_ids #4` imported exact `SourceId`; `language_code #5` string | Audio Overview create and existing prompt/source projections |
+| `AudioOverviewArtifact` | `generation_options #2` message; `is_interactive #5` bool; repeated `media_urls #6`; `duration #7` `google.protobuf.Duration` | create/list/poll projection; `is_interactive` is not projected because public `Artifact` has no corresponding field |
 | `ExplainerVideoGenerationOptions` | `video_focus #3` string | listing prompt |
 | `ExplainerVideoArtifact` | `generation_options #3` message; repeated `media_urls #5`; `duration #6` `google.protobuf.Duration` | listing projection only |
 | `TailoredReportArtifactGenerationOptions` | `type #1` string; `document_directive #6` string | report kind/prompt |
@@ -161,17 +162,18 @@ field inferred from its plausible Dart name.
 | `Slide` | `image #1` `ServedImage` | listing projection |
 | `SlidesArtifact` | `generation_options #1` message; repeated `slides #3`; `pdf_download_url #4` string | listing projection only; unsupported PPTX download retains no compiled-only field |
 | `FileArtifact` | `file_preview_url #3`, `file_download_url #4` strings | listing representation projection only |
-| `ArtifactSource` | `source_id #1` imported exact `SourceId` | source IDs and quiz request |
+| `ArtifactSource` | `source_id #1` imported exact `SourceId` | source IDs and quiz/audio requests |
 | `Artifact` | `artifact_id #1` string; `title #2` string; `type #3` `ArtifactType`; repeated `sources #4`; `status #5` `ArtifactStatus`; `audio_overview #7`; `tailored_report #8`; `explainer_video #9`; `app #10`; `last_modified_timestamp #11` Timestamp; `infographic #15`; `slides #17`; `etag #22` string; `file #25` | the complete B4 public projection and mutation subset |
-| `CreateArtifactRequest` / `Response` | request `project_id #2`, `artifact #3`; response `artifact #1` | quiz mutation |
-| `GetArtifactRequest` / `Response` | request `artifact_id #1`; response `artifact #1` | exact closure, not separately dispatched by common `get` |
-| `ListArtifactsRequest` / `Response` | request `project_id #2`; response repeated `artifacts #1` | Studio listing and polling |
+| `CreateArtifactRequest` / `Response` | request `project_id #2`, `artifact #3`; response `artifact #1` | quiz and Audio Overview mutations |
+| `GetArtifactRequest` / `Response` | request `artifact_id #1`; response `artifact #1` | exact single-artifact polling primitive; not substituted for aggregate public `get` |
+| `ListArtifactsRequest` / `Response` | request `project_id #2`; response repeated `artifacts #1` | Studio aggregate listing |
 | `UpdateArtifactRequest` | `artifact #1`; `update_mask #2` FieldMask; `etag #3` string | title rename |
 | `DeleteArtifactRequest` | `artifact_id #2` string | idempotent delete |
 
-The four exact enums are also pinned exhaustively by generated descriptor tests: `ArtifactType`
-0–10, `ArtifactStatus` 0–6, `AppType` 0–5 and `MediaStreamingType` 0–4. The two nested quiz enums
-are 0–3. Unknown future integers remain unknown rather than being coerced to a known family.
+The five exact top-level enums are also pinned exhaustively by generated descriptor tests:
+`ArtifactType` 0–10, `ArtifactStatus` 0–6, `AppType` 0–5, `EpisodeLength` 0–3, and
+`MediaStreamingType` 0–4. The two nested quiz enums are 0–3. Unknown future integers remain unknown
+rather than being coerced to a known family.
 
 ### B4 quiz request
 
@@ -179,7 +181,23 @@ The successful quiz branch sends `CreateArtifactRequest.project_id #2` and `arti
 `Artifact.type = ARTIFACT_TYPE_APP`, repeated `Artifact.sources #4`, and
 `AppArtifact.generation_options.app_type = APP_TYPE_QUIZ`. Quantity/difficulty use the exact nested
 enums at quiz option fields #1/#2; free text uses app option field #3. No other family builder is
-admitted and every unsupported public generation method rejects before source-ID resolution.
+admitted in the B4 quiz slice.
+
+### B4 Audio Overview request
+
+The captured Audio Overview branch uses the same exact `CreateArtifact` method with
+`Artifact.type = ARTIFACT_TYPE_AUDIO_OVERVIEW`. It requires at least one source ID and a non-empty
+language code. Every ordered source ID is duplicated in top-level `Artifact.sources #4` and nested
+`AudioOverviewGenerationOptions.source_ids #4`; focus is field `#1`, `EpisodeLength` is field `#2`,
+and language is field `#5`. Public `AudioLength.SHORT`, `DEFAULT`, and `LONG` map exactly to enum
+values `1`, `2`, and `3`; omitted length sends medium/default `2`. The captured exact closure has no
+audio-format field, so only omitted format or `AudioFormat.DEEP_DIVE` is accepted. BRIEF, CRITIQUE,
+and DEBATE reject before source resolution or transport I/O. Creation is non-replay-safe and source
+resolution plus mutation share one lifecycle operation/epoch lease.
+
+The exact `GetArtifact` request carries only `artifact_id #1` in the admitted closure and is used
+for one safe polling read per tick. The public aggregate `get`/`get_or_none` methods deliberately
+remain list-based so their established note-backed mind-map semantics are unchanged.
 
 ### B4 live-added report suggestion overlay
 

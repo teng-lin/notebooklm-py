@@ -16,8 +16,8 @@ import "google/protobuf/empty.proto";
 // protobuf FQN is unproven, stay out of this descriptor and are exhaustively
 // recorded in docs/android/grpc-service-signature-exceptions.json.
 //
-// GetArtifact, GetLabels, and account methods remain absent until their
-// corresponding adapter slices land. Research signatures below are exact and
+// GetLabels and account methods remain absent until their corresponding
+// adapter slices land. GetArtifact and Research signatures below are exact and
 // independently live-validated; research.proto itself remains service-free.
 service LabsTailwindOrchestrationService {
   rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
@@ -33,6 +33,7 @@ service LabsTailwindOrchestrationService {
   rpc LoadSource(LoadSourceRequest) returns (LoadSourceResponse);
 
   rpc ListArtifacts(ListArtifactsRequest) returns (ListArtifactsResponse);
+  rpc GetArtifact(GetArtifactRequest) returns (GetArtifactResponse);
   rpc CreateArtifact(CreateArtifactRequest) returns (CreateArtifactResponse);
   rpc UpdateArtifact(UpdateArtifactRequest) returns (Artifact);
   rpc DeleteArtifact(DeleteArtifactRequest) returns (google.protobuf.Empty);

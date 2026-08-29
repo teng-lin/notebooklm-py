@@ -48,6 +48,13 @@ enum AppType {
   APP_TYPE_CANVAS = 5;
 }
 
+enum EpisodeLength {
+  EPISODE_LENGTH_UNSPECIFIED = 0;
+  EPISODE_LENGTH_SHORT = 1;
+  EPISODE_LENGTH_MEDIUM = 2;
+  EPISODE_LENGTH_LONG = 3;
+}
+
 enum MediaStreamingType {
   MEDIA_STREAMING_TYPE_UNSPECIFIED = 0;
   MEDIA_STREAMING_TYPE_PROGRESSIVE_STREAMING = 1;
@@ -91,11 +98,15 @@ message AppArtifact {
 }
 
 message AudioOverviewGenerationOptions {
-  string episode_focus = 1; // evidence: docs/android/schema.proto AudioOverviewGenerationOptions
+  string episode_focus = 1; // evidence: exact-package supported.proto AudioOverviewGenerationOptions
+  EpisodeLength episode_length = 2; // evidence: exact-package supported.proto AudioOverviewGenerationOptions
+  repeated SourceId source_ids = 4; // evidence: exact-package supported.proto AudioOverviewGenerationOptions
+  string language_code = 5; // evidence: exact-package supported.proto AudioOverviewGenerationOptions
 }
 
 message AudioOverviewArtifact {
-  AudioOverviewGenerationOptions generation_options = 2; // evidence: docs/android/schema.proto AudioOverviewArtifact
+  AudioOverviewGenerationOptions generation_options = 2; // evidence: exact-package supported.proto AudioOverviewArtifact
+  bool is_interactive = 5; // evidence: exact-package supported.proto AudioOverviewArtifact
   repeated MediaStreamingUrl media_urls = 6; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md#1-list-and-select-a-ready-representation
   google.protobuf.Duration duration = 7; // evidence: docs/android/schema.proto AudioOverviewArtifact
 }

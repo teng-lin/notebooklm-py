@@ -5,7 +5,13 @@ artifacts {
   sources { source_id { id: "source-a" } }
   status: ARTIFACT_STATUS_READY
   audio_overview {
-    generation_options { episode_focus: "Audio focus" }
+    generation_options {
+      episode_focus: "Audio focus"
+      episode_length: EPISODE_LENGTH_LONG
+      source_ids { id: "source-a" }
+      language_code: "en"
+    }
+    is_interactive: true
     media_urls {
       url: "https://lh3.googleusercontent.com/audio-stream"
       type: MEDIA_STREAMING_TYPE_PROGRESSIVE_STREAMING

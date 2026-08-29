@@ -48,8 +48,8 @@ The reduced compile inputs used by the private Android adapters live under
 `src/notebooklm/_android/proto_src/`. Regenerate their checked-in Python modules and the full
 descriptor fixture with `python scripts/regenerate_android_protos.py --write`; use `--check` in CI.
 The cumulative `orchestration_service.proto` owns the one exact generated service; individual
-message overlays remain service-free. Its 17 admitted methods plus the 11 explicit signature
-exceptions exhaustively equal the 28 implemented adapter paths.
+message overlays remain service-free. Its 18 admitted methods plus the 11 explicit signature
+exceptions exhaustively equal the 29 implemented adapter paths.
 The package, generated protos, and adapters remain private, direct-testable migration building
 blocks. Normal `NotebookLMClient` assembly continues to select Web for every namespace; no client
 factory branch selects Android Notes.

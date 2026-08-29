@@ -57,6 +57,7 @@ _REPORT_PROTO = cast(Any, report_suggestions_pb2)
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 LIST_ARTIFACTS_METHOD = f"/{_SERVICE}/ListArtifacts"
+GET_ARTIFACT_METHOD = f"/{_SERVICE}/GetArtifact"
 CREATE_ARTIFACT_METHOD = f"/{_SERVICE}/CreateArtifact"
 DELETE_ARTIFACT_METHOD = f"/{_SERVICE}/DeleteArtifact"
 UPDATE_ARTIFACT_METHOD = f"/{_SERVICE}/UpdateArtifact"
@@ -91,6 +92,29 @@ def _validate_quiz_option(value: Any, enum_type: type[Any], parameter: str) -> i
     if not isinstance(value, enum_type):
         raise ValidationError(f"{parameter} must be a {enum_type.__name__} value")
     return int(value.value)
+
+
+def _validate_audio_format(value: Any) -> None:
+    if value is None:
+        return
+    if not isinstance(value, AudioFormat):
+        raise ValidationError("audio_format must be an AudioFormat value")
+    if value is not AudioFormat.DEEP_DIVE:
+        _reject(f"artifacts.generate_audio(audio_format={value.name.lower()})")
+
+
+def _audio_length_code(value: Any) -> int:
+    if value is None:
+        return AudioLength.DEFAULT.value
+    if not isinstance(value, AudioLength):
+        raise ValidationError("audio_length must be an AudioLength value")
+    return int(value.value)
+
+
+def _validate_audio_language(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValidationError("language must be a non-empty string")
+    return value
 
 
 class AndroidArtifactsAPI(ArtifactsAPI):
@@ -190,39 +214,57 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         notebook_id: str,
         task_id: str,
     ) -> builtins.list[Artifact]:
-        """Select the target raw proto before decoding one Studio poll row."""
+        """Read one exact Studio polling target without querying note-backed rows."""
+        del notebook_id
+        artifact = await self._get_studio_artifact(task_id)
+        return [] if artifact is None else [artifact]
 
-        result: builtins.list[Artifact] = []
+    async def _get_studio_artifact(
+        self,
+        artifact_id: str,
+        *,
+        expected_epoch: int | None = None,
+    ) -> Artifact | None:
+        """Decode one exact ``GetArtifact`` response; ``NOT_FOUND`` is absence."""
+
+        adapter = self
+        result: Artifact | None = None
         failure: BaseException | None = None
         response: Any | None = None
-        matches: builtins.list[Any] = []
-        raw_target: Any | None = None
+        raw_artifact: Any | None = None
         try:
-            response = await self._transport.unary(
-                LIST_ARTIFACTS_METHOD,
-                _PROTO.ListArtifactsRequest(project_id=notebook_id),
+            epoch_kwargs: dict[str, Any] = (
+                {} if expected_epoch is None else {"expected_epoch": expected_epoch}
+            )
+            response = await adapter._transport.unary(
+                GET_ARTIFACT_METHOD,
+                _PROTO.GetArtifactRequest(artifact_id=artifact_id),
                 replay_safe=True,
-                response_type=_PROTO.ListArtifactsResponse,
+                response_type=_PROTO.GetArtifactResponse,
+                **epoch_kwargs,
             )
             assert response is not None
-            matches = [
-                raw_artifact
-                for raw_artifact in response.artifacts
-                if raw_artifact.artifact_id == task_id
-            ]
-            if len(matches) > 1:
+            if not response.HasField("artifact"):
                 raise DecodingError(
-                    "Android artifact polling returned a duplicate target id.",
-                    method_id=LIST_ARTIFACTS_METHOD,
+                    "Android GetArtifact response omitted its artifact.",
+                    method_id=GET_ARTIFACT_METHOD,
                 )
-            if matches:
-                raw_target, *_unexpected = matches
-                result = [decode_artifact(raw_target, method_id=LIST_ARTIFACTS_METHOD)]
+            raw_artifact = response.artifact
+            result = decode_artifact(raw_artifact, method_id=GET_ARTIFACT_METHOD)
+            if result.id != artifact_id:
+                raise DecodingError(
+                    "Android GetArtifact response returned a different artifact id.",
+                    method_id=GET_ARTIFACT_METHOD,
+                )
+        except RPCError as error:
+            if error.rpc_code != 5:
+                failure = sanitize_escaping_exception(error)
         except BaseException as error:
             failure = sanitize_escaping_exception(error)
         finally:
-            matches.clear()
-            del matches, raw_target, response, self
+            if failure is not None:
+                result = None
+            del raw_artifact, response, self, adapter
         if failure is not None:
             failure.__cause__ = None
             failure.__context__ = None
@@ -261,6 +303,16 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         expected_epoch: int | None,
         **options: Any,
     ) -> GenerationStatus:
+        if family == "audio":
+            return await self._send_create_audio_at_epoch(
+                notebook_id,
+                source_ids,
+                language=options.get("language"),
+                instructions=options.get("instructions"),
+                audio_format=options.get("audio_format"),
+                audio_length=options.get("audio_length"),
+                expected_epoch=expected_epoch,
+            )
         if family != "quiz":
             _reject(f"artifacts.generate_{family}")
         if not source_ids:
@@ -317,6 +369,66 @@ class AndroidArtifactsAPI(ArtifactsAPI):
             url=artifact.url,
         )
 
+    async def _send_create_audio_at_epoch(
+        self,
+        notebook_id: str,
+        source_ids: builtins.list[str],
+        *,
+        language: Any,
+        instructions: Any,
+        audio_format: Any,
+        audio_length: Any,
+        expected_epoch: int | None,
+    ) -> GenerationStatus:
+        if not source_ids:
+            raise ValidationError("Audio generation requires at least one source id")
+        language_code = _validate_audio_language(language)
+        if instructions is not None and not isinstance(instructions, str):
+            raise ValidationError("instructions must be a string or None")
+        _validate_audio_format(audio_format)
+        episode_length = _audio_length_code(audio_length)
+
+        # evidence: docs/android/proto-evidence-ledger.md#b4-audio-overview-request
+        request = _PROTO.CreateArtifactRequest(
+            project_id=notebook_id,
+            artifact=_PROTO.Artifact(
+                type=_PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW,
+                sources=[
+                    _PROTO.ArtifactSource(source_id=_READ_PROTO.SourceId(id=source_id))
+                    for source_id in source_ids
+                ],
+                audio_overview=_PROTO.AudioOverviewArtifact(
+                    generation_options=_PROTO.AudioOverviewGenerationOptions(
+                        episode_focus=instructions or "",
+                        episode_length=episode_length,
+                        source_ids=[_READ_PROTO.SourceId(id=source_id) for source_id in source_ids],
+                        language_code=language_code,
+                    )
+                ),
+            ),
+        )
+        epoch_kwargs: dict[str, Any] = (
+            {} if expected_epoch is None else {"expected_epoch": expected_epoch}
+        )
+        response = await self._transport.unary(
+            CREATE_ARTIFACT_METHOD,
+            request,
+            replay_safe=False,
+            response_type=_PROTO.CreateArtifactResponse,
+            **epoch_kwargs,
+        )
+        artifact = decode_artifact(response.artifact, method_id=CREATE_ARTIFACT_METHOD)
+        if artifact._artifact_type != ArtifactTypeCode.AUDIO.value:
+            raise DecodingError(
+                "Android audio creation returned a different artifact family.",
+                method_id=CREATE_ARTIFACT_METHOD,
+            )
+        return GenerationStatus(
+            task_id=artifact.id,
+            status=_status_from_code(artifact.status),
+            url=artifact.url,
+        )
+
     async def generate_quiz(
         self,
         notebook_id: str,
@@ -353,7 +465,27 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         audio_format: AudioFormat | None = None,
         audio_length: AudioLength | None = None,
     ) -> GenerationStatus:
-        _reject("artifacts.generate_audio")
+        if source_ids == []:
+            raise ValidationError("Audio generation requires at least one source id")
+        if language is not None and not isinstance(language, str):
+            raise ValidationError("language must be a non-empty string")
+        if instructions is not None and not isinstance(instructions, str):
+            raise ValidationError("instructions must be a string or None")
+        _validate_audio_format(audio_format)
+        _audio_length_code(audio_length)
+        language_code = _validate_audio_language(self._resolve_language(language))
+
+        async with self._transport.operation_scope("artifacts.generate_audio") as lease:
+            resolved_source_ids = await self._resolve_source_ids(notebook_id, source_ids)
+            return await self._send_create_audio_at_epoch(
+                notebook_id,
+                resolved_source_ids,
+                language=language_code,
+                instructions=instructions,
+                audio_format=audio_format,
+                audio_length=audio_length,
+                expected_epoch=lease.epoch,
+            )
 
     async def generate_video(
         self,
@@ -768,6 +900,7 @@ __all__ = [
     "CREATE_ARTIFACT_METHOD",
     "DELETE_ARTIFACT_METHOD",
     "GENERATE_REPORT_SUGGESTIONS_METHOD",
+    "GET_ARTIFACT_METHOD",
     "LIST_ARTIFACTS_METHOD",
     "NoteBackedMindMapLister",
     "UPDATE_ARTIFACT_METHOD",

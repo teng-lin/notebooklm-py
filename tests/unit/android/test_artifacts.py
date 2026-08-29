@@ -19,6 +19,7 @@ from notebooklm._android.artifacts import (
     CREATE_ARTIFACT_METHOD,
     DELETE_ARTIFACT_METHOD,
     GENERATE_REPORT_SUGGESTIONS_METHOD,
+    GET_ARTIFACT_METHOD,
     LIST_ARTIFACTS_METHOD,
     UPDATE_ARTIFACT_METHOD,
     AndroidArtifactsAPI,
@@ -38,7 +39,13 @@ from notebooklm._notebook_metadata import NotebookSourceIdProvider
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm._types.common import UnknownTypeWarning
-from notebooklm._types.enums import ArtifactTypeCode, QuizDifficulty, QuizQuantity
+from notebooklm._types.enums import (
+    ArtifactTypeCode,
+    AudioFormat,
+    AudioLength,
+    QuizDifficulty,
+    QuizQuantity,
+)
 from notebooklm.exceptions import (
     ArtifactDownloadError,
     ArtifactNotFoundError,
@@ -173,9 +180,14 @@ def _mind_map(artifact_id: str = "note-map") -> Artifact:
 def _graph(
     studio: list[Any] | None = None,
 ) -> tuple[FakeSession, FakeNotebooks, FakeMindMaps, FakeAssets, AndroidArtifactsAPI]:
+    studio_rows = studio or []
+    get_response = _PROTO.GetArtifactResponse()
+    if studio_rows:
+        get_response.artifact.CopyFrom(studio_rows[-1])
     session = FakeSession(
         {
-            LIST_ARTIFACTS_METHOD: _PROTO.ListArtifactsResponse(artifacts=studio or []),
+            LIST_ARTIFACTS_METHOD: _PROTO.ListArtifactsResponse(artifacts=studio_rows),
+            GET_ARTIFACT_METHOD: get_response,
             DELETE_ARTIFACT_METHOD: empty_pb2.Empty(),
             GENERATE_REPORT_SUGGESTIONS_METHOD: (
                 report_suggestions_pb2.GenerateReportSuggestionsResponseWire()
@@ -319,7 +331,7 @@ async def test_non_transient_note_failure_propagates_identity(error: BaseExcepti
 
 
 @pytest.mark.asyncio
-async def test_get_prompt_get_and_poll_use_expected_list_paths() -> None:
+async def test_public_get_stays_aggregate_while_poll_uses_exact_get_artifact() -> None:
     session, _, mind_maps, _, api = _graph(
         [_artifact("quiz", type_code=_PROTO.ARTIFACT_TYPE_APP, variant=2)]
     )
@@ -335,12 +347,12 @@ async def test_get_prompt_get_and_poll_use_expected_list_paths() -> None:
     assert [call[0] for call in session.calls] == [
         LIST_ARTIFACTS_METHOD,
         LIST_ARTIFACTS_METHOD,
-        LIST_ARTIFACTS_METHOD,
+        GET_ARTIFACT_METHOD,
     ]
 
 
 @pytest.mark.asyncio
-async def test_wait_ready_tick_is_one_studio_list_and_zero_note_reads() -> None:
+async def test_wait_ready_tick_is_one_get_artifact_and_zero_note_reads() -> None:
     session, _, mind_maps, _, api = _graph(
         [_artifact("ready", url="https://lh3.googleusercontent.com/ready.png")]
     )
@@ -355,12 +367,12 @@ async def test_wait_ready_tick_is_one_studio_list_and_zero_note_reads() -> None:
     )
 
     assert result.is_complete
-    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD]
+    assert [call[0] for call in session.calls] == [GET_ARTIFACT_METHOD]
     assert mind_maps.calls == []
 
 
 @pytest.mark.asyncio
-async def test_poll_selects_target_before_unrelated_malformed_row_decode() -> None:
+async def test_poll_get_artifact_does_not_decode_unrelated_list_rows() -> None:
     malformed = _artifact("", title="unrelated malformed")
     target = _artifact(
         "target",
@@ -372,24 +384,87 @@ async def test_poll_selects_target_before_unrelated_malformed_row_decode() -> No
     result = await api.poll_status("notebook-1", "target")
 
     assert result.is_complete
-    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD]
+    assert [call[0] for call in session.calls] == [GET_ARTIFACT_METHOD]
     assert mind_maps.calls == []
 
 
 @pytest.mark.asyncio
-async def test_poll_rejects_duplicate_exact_target_ids_conservatively() -> None:
-    session, _, mind_maps, _, api = _graph(
-        [
-            _artifact("target", type_code=_PROTO.ARTIFACT_TYPE_APP, variant=2),
-            _artifact("target", type_code=_PROTO.ARTIFACT_TYPE_APP, variant=2),
-        ]
+async def test_poll_rejects_wrong_get_artifact_identity() -> None:
+    session, _, mind_maps, _, api = _graph()
+    session.responses[GET_ARTIFACT_METHOD] = _PROTO.GetArtifactResponse(
+        artifact=_artifact("other", type_code=_PROTO.ARTIFACT_TYPE_APP, variant=2)
     )
     await _activate(api._supervisor)
 
-    with pytest.raises(DecodingError, match="duplicate target id"):
+    with pytest.raises(DecodingError, match="different artifact id") as raised:
         await api.poll_status("notebook-1", "target")
 
-    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD]
+    assert raised.value.method_id == GET_ARTIFACT_METHOD
+    assert [call[0] for call in session.calls] == [GET_ARTIFACT_METHOD]
+    assert mind_maps.calls == []
+
+
+@pytest.mark.asyncio
+async def test_private_get_artifact_helper_uses_exact_request_and_epoch() -> None:
+    session, _, _, _, api = _graph([_artifact("target")])
+
+    result = await api._get_studio_artifact("target", expected_epoch=42)
+
+    assert result is not None and result.id == "target"
+    method, request, kwargs = session.calls[0]
+    assert method == GET_ARTIFACT_METHOD
+    assert request == _PROTO.GetArtifactRequest(artifact_id="target")
+    assert kwargs == {
+        "replay_safe": True,
+        "response_type": _PROTO.GetArtifactResponse,
+        "expected_epoch": 42,
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_missing_payload_is_bounded_decode_error() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[GET_ARTIFACT_METHOD] = _PROTO.GetArtifactResponse()
+
+    with pytest.raises(DecodingError, match="omitted its artifact") as raised:
+        await api._get_studio_artifact("target")
+
+    assert raised.value.method_id == GET_ARTIFACT_METHOD
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_identity_failure_drops_capability_response_from_frames() -> None:
+    secret = "https://lh3.googleusercontent.com/image.png?cap=get-secret"
+    raw_response = _PROTO.GetArtifactResponse(artifact=_artifact("other", url=secret))
+    session, _, _, _, api = _graph()
+    session.responses[GET_ARTIFACT_METHOD] = raw_response
+
+    with pytest.raises(DecodingError) as raised:
+        await api._get_studio_artifact("target")
+
+    error = raised.value
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert secret not in str(error)
+    for frame, _line in traceback.walk_tb(error.__traceback__):
+        if "/src/notebooklm/" not in frame.f_code.co_filename:
+            continue
+        assert secret not in repr(frame.f_locals)
+        assert raw_response not in frame.f_locals.values()
+
+
+@pytest.mark.asyncio
+async def test_poll_maps_get_artifact_not_found_to_not_found_status() -> None:
+    session, _, mind_maps, _, api = _graph()
+    session.errors[GET_ARTIFACT_METHOD] = RPCError("missing", rpc_code=5)
+    await _activate(api._supervisor)
+
+    status = await api.poll_status("notebook-1", "missing")
+
+    assert status.is_not_found
+    assert [call[0] for call in session.calls] == [GET_ARTIFACT_METHOD]
     assert mind_maps.calls == []
 
 
@@ -475,6 +550,129 @@ async def test_generate_quiz_rejects_mismatched_response_family() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("audio_length", "expected_length"),
+    [
+        (None, _PROTO.EPISODE_LENGTH_MEDIUM),
+        (AudioLength.SHORT, _PROTO.EPISODE_LENGTH_SHORT),
+        (AudioLength.LONG, _PROTO.EPISODE_LENGTH_LONG),
+    ],
+)
+async def test_generate_audio_uses_exact_duplicated_source_wire(
+    audio_length: AudioLength | None,
+    expected_length: int,
+) -> None:
+    session, notebooks, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact(
+            "audio-1",
+            type_code=_PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW,
+            status=_PROTO.ARTIFACT_STATUS_PROCESSING,
+        )
+    )
+
+    status = await api.generate_audio(
+        "notebook-1",
+        source_ids=["source-1", "source-2"],
+        language="fr",
+        instructions="Focus on the evidence",
+        audio_format=AudioFormat.DEEP_DIVE,
+        audio_length=audio_length,
+    )
+
+    assert status.task_id == "audio-1"
+    assert status.is_in_progress
+    assert notebooks.calls == []
+    method, request, kwargs = session.calls[0]
+    assert method == CREATE_ARTIFACT_METHOD
+    assert kwargs == {
+        "replay_safe": False,
+        "response_type": _PROTO.CreateArtifactResponse,
+        "expected_epoch": 7,
+    }
+    assert request.project_id == "notebook-1"
+    assert request.artifact.type == _PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW
+    assert [source.source_id.id for source in request.artifact.sources] == [
+        "source-1",
+        "source-2",
+    ]
+    options = request.artifact.audio_overview.generation_options
+    assert [source.id for source in options.source_ids] == ["source-1", "source-2"]
+    assert options.episode_focus == "Focus on the evidence"
+    assert options.episode_length == expected_length
+    assert options.language_code == "fr"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "audio_format",
+    [AudioFormat.BRIEF, AudioFormat.CRITIQUE, AudioFormat.DEBATE],
+)
+async def test_generate_audio_rejects_unevidenced_formats_before_io(
+    audio_format: AudioFormat,
+) -> None:
+    session, notebooks, _, _, api = _graph()
+
+    with pytest.raises(UnsupportedOperationError, match="audio_format"):
+        await api.generate_audio("notebook-1", audio_format=audio_format)
+
+    assert session.calls == []
+    assert notebooks.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"source_ids": []}, "at least one source"),
+        ({"source_ids": ["source-1"], "language": ""}, "non-empty"),
+        ({"source_ids": ["source-1"], "language": "  "}, "non-empty"),
+        ({"source_ids": ["source-1"], "language": object()}, "non-empty"),
+        ({"source_ids": ["source-1"], "instructions": object()}, "instructions"),
+        ({"source_ids": ["source-1"], "audio_format": 1}, "AudioFormat"),
+        ({"source_ids": ["source-1"], "audio_length": 2}, "AudioLength"),
+    ],
+)
+async def test_generate_audio_validation_is_pre_transport(
+    kwargs: dict[str, Any],
+    message: str,
+) -> None:
+    session, notebooks, _, _, api = _graph()
+
+    with pytest.raises(ValidationError, match=message):
+        await api.generate_audio("notebook-1", **kwargs)
+
+    assert session.calls == []
+    assert notebooks.calls == []
+
+
+@pytest.mark.asyncio
+async def test_generate_audio_rejects_empty_resolved_sources_without_mutation() -> None:
+    session, notebooks, _, _, api = _graph()
+    notebooks.source_ids = []
+
+    with pytest.raises(ValidationError, match="at least one source"):
+        await api.generate_audio("notebook-1")
+
+    assert notebooks.calls == ["notebook-1"]
+    assert session.calls == []
+
+
+@pytest.mark.asyncio
+async def test_generate_audio_rejects_mismatched_response_family() -> None:
+    session, _, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact("wrong", type_code=_PROTO.ARTIFACT_TYPE_APP, variant=2)
+    )
+
+    with pytest.raises(DecodingError, match="different artifact family"):
+        await api.generate_audio("notebook-1", source_ids=["source-1"])
+
+    assert [call[0] for call in session.calls] == [CREATE_ARTIFACT_METHOD]
+    assert session.calls[0][2]["replay_safe"] is False
+
+
+@pytest.mark.asyncio
 async def test_missing_artifact_identity_is_a_bounded_decode_error() -> None:
     raw_title = "raw title must not become a decoder diagnostic"
     session, _, _, _, api = _graph([_artifact("", title=raw_title)])
@@ -512,7 +710,6 @@ async def test_failed_quiz_mutation_is_not_replayed() -> None:
 async def test_all_unsupported_public_paths_reject_before_collaborator_io() -> None:
     session, notebooks, mind_maps, assets, api = _graph()
     invocations: list[Callable[[], Awaitable[Any]]] = [
-        lambda: api.generate_audio("n"),
         lambda: api.generate_video("n"),
         lambda: api.generate_cinematic_video("n"),
         lambda: api.generate_report("n"),
@@ -879,6 +1076,65 @@ async def test_quiz_source_resolution_and_mutation_finish_during_graceful_drain(
         CREATE_ARTIFACT_METHOD,
     ]
     assert transport.calls[1][2]["expected_epoch"] == 1
+
+
+@pytest.mark.asyncio
+async def test_audio_source_resolution_and_mutation_finish_during_graceful_drain() -> None:
+    transport = SupervisedAndroidTransport()
+    sources_started = asyncio.Event()
+    sources_release = asyncio.Event()
+
+    async def _sources(_request: Any, _kwargs: dict[str, Any]) -> Any:
+        sources_started.set()
+        await sources_release.wait()
+        return ["source-1"]
+
+    transport.handlers["notebooks.get_source_ids"] = _sources
+    transport.handlers[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact("audio", type_code=_PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW)
+    )
+    api = _supervised_graph(transport, notebooks=_SupervisedNotebookSources(transport))
+    task = asyncio.create_task(api.generate_audio("notebook-1"))
+    await sources_started.wait()
+
+    await transport.supervisor.stop_accepting(1)
+    sources_release.set()
+
+    assert (await task).task_id == "audio"
+    assert [method for method, _request, _kwargs in transport.calls] == [
+        "notebooks.get_source_ids",
+        CREATE_ARTIFACT_METHOD,
+    ]
+    assert transport.calls[1][2]["expected_epoch"] == 1
+    await transport.supervisor.wait_for_idle(1, 0.1)
+
+
+@pytest.mark.asyncio
+async def test_audio_mutation_cannot_cross_forced_close_and_reopen() -> None:
+    transport = SupervisedAndroidTransport()
+    sources_started = asyncio.Event()
+    sources_release = asyncio.Event()
+
+    async def _sources(_request: Any, _kwargs: dict[str, Any]) -> Any:
+        sources_started.set()
+        await sources_release.wait()
+        return ["source-1"]
+
+    transport.handlers["notebooks.get_source_ids"] = _sources
+    transport.handlers[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact("audio", type_code=_PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW)
+    )
+    api = _supervised_graph(transport, notebooks=_SupervisedNotebookSources(transport))
+    task = asyncio.create_task(api.generate_audio("notebook-1"))
+    await sources_started.wait()
+
+    old_generation = await transport.force_close_and_reopen()
+    sources_release.set()
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await task
+    assert [method for method, _request, _kwargs in transport.calls] == ["notebooks.get_source_ids"]
+    assert old_generation.in_flight == 0
 
 
 class _SupervisedAssets:

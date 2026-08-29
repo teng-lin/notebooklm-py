@@ -38,8 +38,8 @@ class LabsTailwindOrchestrationServiceStub(object):
     protobuf FQN is unproven, stay out of this descriptor and are exhaustively
     recorded in docs/android/grpc-service-signature-exceptions.json.
 
-    GetArtifact, GetLabels, and account methods remain absent until their
-    corresponding adapter slices land. Research signatures below are exact and
+    GetLabels and account methods remain absent until their corresponding
+    adapter slices land. GetArtifact and Research signatures below are exact and
     independently live-validated; research.proto itself remains service-free.
     """
 
@@ -88,6 +88,11 @@ class LabsTailwindOrchestrationServiceStub(object):
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListArtifacts',
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.ListArtifactsRequest.SerializeToString,
                 response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.ListArtifactsResponse.FromString,
+                _registered_method=True)
+        self.GetArtifact = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetArtifact',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.GetArtifactRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.GetArtifactResponse.FromString,
                 _registered_method=True)
         self.CreateArtifact = channel.unary_unary(
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateArtifact',
@@ -173,8 +178,8 @@ class LabsTailwindOrchestrationServiceServicer(object):
     protobuf FQN is unproven, stay out of this descriptor and are exhaustively
     recorded in docs/android/grpc-service-signature-exceptions.json.
 
-    GetArtifact, GetLabels, and account methods remain absent until their
-    corresponding adapter slices land. Research signatures below are exact and
+    GetLabels and account methods remain absent until their corresponding
+    adapter slices land. GetArtifact and Research signatures below are exact and
     independently live-validated; research.proto itself remains service-free.
     """
 
@@ -221,6 +226,12 @@ class LabsTailwindOrchestrationServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def ListArtifacts(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetArtifact(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -359,6 +370,11 @@ def add_LabsTailwindOrchestrationServiceServicer_to_server(servicer, server):
                     request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.ListArtifactsRequest.FromString,
                     response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.ListArtifactsResponse.SerializeToString,
             ),
+            'GetArtifact': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetArtifact,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.GetArtifactRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.GetArtifactResponse.SerializeToString,
+            ),
             'CreateArtifact': grpc.unary_unary_rpc_method_handler(
                     servicer.CreateArtifact,
                     request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.CreateArtifactRequest.FromString,
@@ -449,8 +465,8 @@ class LabsTailwindOrchestrationService(object):
     protobuf FQN is unproven, stay out of this descriptor and are exhaustively
     recorded in docs/android/grpc-service-signature-exceptions.json.
 
-    GetArtifact, GetLabels, and account methods remain absent until their
-    corresponding adapter slices land. Research signatures below are exact and
+    GetLabels and account methods remain absent until their corresponding
+    adapter slices land. GetArtifact and Research signatures below are exact and
     independently live-validated; research.proto itself remains service-free.
     """
 
@@ -660,6 +676,33 @@ class LabsTailwindOrchestrationService(object):
             '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListArtifacts',
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.ListArtifactsRequest.SerializeToString,
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.ListArtifactsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetArtifact(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetArtifact',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.GetArtifactRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_artifacts__pb2.GetArtifactResponse.FromString,
             options,
             channel_credentials,
             insecure,

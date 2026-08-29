@@ -64,6 +64,11 @@ _EXPECTED_SIGNATURES = {
         f"{ORCHESTRATION_PACKAGE}.ListArtifactsResponse",
         False,
     ),
+    "GetArtifact": (
+        f"{ORCHESTRATION_PACKAGE}.GetArtifactRequest",
+        f"{ORCHESTRATION_PACKAGE}.GetArtifactResponse",
+        False,
+    ),
     "CreateArtifact": (
         f"{ORCHESTRATION_PACKAGE}.CreateArtifactRequest",
         f"{ORCHESTRATION_PACKAGE}.CreateArtifactResponse",
@@ -250,8 +255,8 @@ def test_adapter_paths_equal_exact_descriptor_plus_machine_readable_exceptions()
     assert len(exception_paths) == len(entries)
     assert _descriptor_paths().isdisjoint(exception_paths)
     assert _adapter_paths() == _descriptor_paths() | exception_paths
-    assert len(_adapter_paths()) == 34
-    assert len(_descriptor_paths()) == 23
+    assert len(_adapter_paths()) == 35
+    assert len(_descriptor_paths()) == 24
 
     for entry in entries:
         module_name, constant_name = entry["adapter_constant"].rsplit(".", 1)
