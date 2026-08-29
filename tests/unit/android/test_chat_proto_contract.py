@@ -223,7 +223,7 @@ def test_b5_enum_names_and_numbers_match_checked_in_evidence() -> None:
     }
 
 
-def test_b5_descriptor_fixture_matches_generated_file_descriptors() -> None:
+def test_chat_descriptor_fixture_matches_generated_file_descriptors() -> None:
     descriptor_set = descriptor_pb2.FileDescriptorSet.FromString(
         (FIXTURES / "android_descriptor_set.pb").read_bytes()
     )
@@ -244,7 +244,7 @@ def test_b5_descriptor_fixture_matches_generated_file_descriptors() -> None:
 
 
 def test_checked_in_b5_wire_fixture_round_trips_without_unknown_semantics() -> None:
-    fixture = json.loads((FIXTURES / "b5_chat_wire.json").read_text(encoding="utf-8"))
+    fixture = json.loads((FIXTURES / "chat_wire.json").read_text(encoding="utf-8"))
     types = {
         "generate_request": chat_pb2.GenerateFreeFormStreamedRequest,
         "partial_frame": chat_pb2.GenerateFreeFormStreamedResponse,

@@ -35,6 +35,8 @@ themselves.
 | [`deep-research-mobile-grpc-2026-08-27.md`](deep-research-mobile-grpc-2026-08-27.md) | live report | APK-absent Deep Research methods routed by the mobile backend, wire contract, reproducer, and interception. |
 | [`labels-collections-copy-mobile-grpc-2026-08-27.md`](labels-collections-copy-mobile-grpc-2026-08-27.md) | live report | Full label/collection CRUD and memberships plus notebook copy through the mobile backend. |
 | [`web-parity-gap-live-validation-2026-08-27.md`](web-parity-gap-live-validation-2026-08-27.md) | live report | Complete APK-vs-web gap routing audit, rich-copy fidelity, source/report probes, and destructive validation on the copy. |
+| [`notebooks-live-validation-2026-08-28.md`](notebooks-live-validation-2026-08-28.md) | live report | Sanitized Android notebook emoji set/clear/combined read-back plus the repeated Recent-removal failure. |
+| [`notes-mind-maps-live-validation-2026-08-28.md`](notes-mind-maps-live-validation-2026-08-28.md) | live report | Sanitized cross-backend note-backed mind-map classification and kind-safe Android deletion proof. |
 | [`blutter-dart3.13.patch`](blutter-dart3.13.patch) | tooling | Port of [blutter](https://github.com/worawit/blutter) to Dart 3.13, needed to decompile this app's snapshot. |
 
 `schema.proto` and `enums.txt` are **regenerable artifacts, not hand-written docs**.
@@ -44,8 +46,40 @@ The generator is [`scripts/parse_pbschema.py`](../../scripts/parse_pbschema.py).
 The reduced compile inputs used by the private Android adapters live under
 `src/notebooklm/_android/proto_src/`. Regenerate their checked-in Python modules and the full
 descriptor fixture with `python scripts/regenerate_android_protos.py --write`; use `--check` in CI.
-These adapters are direct-testable migration building blocks, not a public backend selector. The
-normal `NotebookLMClient` assembly continues to construct the web notes and sharing implementations.
+The package, generated protos, and adapters remain private, direct-testable migration building
+blocks. Normal `NotebookLMClient` assembly continues to select Web for every namespace; no client
+factory branch selects Android Notes.
+
+## Private Notes conformance
+
+The authenticated conformance probe exercises the complete eight-method Notes manifest, including
+ordinary note CRUD and note-backed mind-map list/delete. Use a dedicated profile that contains both
+valid Web cookies and a sibling Android `master_token.json`, backed by an account on which disposable
+notebooks may be created and deleted. The test prefixes and registers its resources, performs a final
+prefix scan, and should pass twice against the same account to prove cleanup and rerun safety:
+
+```bash
+export NOTEBOOKLM_PROFILE=agent-b8p-notes
+export NOTEBOOKLM_ANDROID_NOTES_CONFORMANCE=1
+uv run pytest tests/e2e/test_android_notes_conformance.py -m e2e -vv
+uv run pytest tests/e2e/test_android_notes_conformance.py -m e2e -vv
+```
+
+This test is opt-in and destructive only to the uniquely prefixed resources it creates. Keep the
+profile isolated as described in the repository agent guidance, inspect the final cleanup result, and
+do not treat a successful run as public-promotion evidence by itself. Three substitution blockers remain:
+
+- Android exposes only last-edit timestamp evidence where the public `Note` model also exposes
+  `created_at`; copying last-edit into creation time would be a semantic guess.
+- Android `list_mind_maps` can project only the evidenced id/content/name/type/prompt/last-edit fields.
+  The public method preserves Web's raw row boundary, whose additional metadata/source slots have not
+  been proven wire-equivalent on Android.
+- After Android deletion, Android exact-ID lookup reports absence while Web exact-ID lookup exposes the
+  persisted soft-delete tombstone as the same note id with empty title/content. Both list projections
+  exclude it, but the established `get_or_none` results are not substitutable.
+
+Until exact capture evidence resolves all three gaps, the eight methods remain a private conformance target
+and the Notes namespace remains Web in normal SDK, CLI, MCP, and REST assembly.
 
 ## Caveats that will bite you
 

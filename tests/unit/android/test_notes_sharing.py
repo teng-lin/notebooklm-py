@@ -84,13 +84,16 @@ class FakeB6Server(_OperationScopedSession):
                 name="Existing title",
                 metadata=notes_pb2.NoteMetadata(type=notes_pb2.USER_WRITTEN),
             ),
+            # Live Web-generated maps retain USER_WRITTEN/UNSPECIFIED on the
+            # Android wire; the top-level tree key is the cross-backend kind
+            # signal.
             "mind-map": notes_pb2.ProjectNote(
                 id="mind-map",
-                content='{"nodes": []}',
+                content='{"children": []}',
                 name="Map",
                 metadata=notes_pb2.NoteMetadata(
-                    type=notes_pb2.CUSTOM,
-                    note_prompt_type=notes_pb2.MIND_MAP,
+                    type=notes_pb2.USER_WRITTEN,
+                    note_prompt_type=notes_pb2.NOTE_PROMPT_TYPE_UNSPECIFIED,
                     last_edit_timestamp=Timestamp(seconds=1_700_000_000),
                 ),
             ),
@@ -213,6 +216,82 @@ class SupervisedSharingSession:
             raise AssertionError(f"unexpected method: {method}")
 
 
+class SupervisedNotesSession:
+    """Stateful Notes transport backed by the real workflow supervisor."""
+
+    def __init__(self, *, block_method: str) -> None:
+        self.supervisor = CallSupervisor(
+            metrics=ClientMetrics(),
+            drain_tracker=TransportDrainTracker(),
+            max_concurrent_rpcs=None,
+        )
+        self.supervisor.set_bound_loop(asyncio.get_running_loop())
+        self.supervisor.reset_after_open()
+        self.supervisor.prepare_generation(1)
+        self.supervisor.start_accepting(1)
+        self.block_method = block_method
+        self.calls: list[tuple[str, Any, dict[str, Any]]] = []
+        self.mutation_started = asyncio.Event()
+        self.mutation_release = asyncio.Event()
+        self.notes: dict[str, notes_pb2.ProjectNote] = {
+            "note-1": notes_pb2.ProjectNote(
+                id="note-1",
+                content="body",
+                name="title",
+                metadata=notes_pb2.NoteMetadata(type=notes_pb2.USER_WRITTEN),
+            ),
+            "map-1": notes_pb2.ProjectNote(
+                id="map-1",
+                content='{"children": []}',
+                name="Map",
+                metadata=notes_pb2.NoteMetadata(type=notes_pb2.USER_WRITTEN),
+            ),
+        }
+
+    def operation_scope(self, label: str, **kwargs: Any) -> Any:
+        return self.supervisor.operation_scope(label, **kwargs)
+
+    def _get_notes(self) -> notes_pb2.GetNotesResponse:
+        return notes_pb2.GetNotesResponse(
+            notes=[notes_pb2.NoteOrStatus(note=note) for note in self.notes.values()]
+        )
+
+    async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        expected_epoch = kwargs["expected_epoch"]
+        async with self.supervisor.call_scope(
+            method,
+            None,
+            None,
+            expected_epoch=expected_epoch,
+        ):
+            self.calls.append((method, request, kwargs))
+            if method == GET_NOTES_METHOD:
+                return self._get_notes()
+            if method == self.block_method:
+                self.mutation_started.set()
+                await self.mutation_release.wait()
+            if method == CREATE_NOTE_METHOD:
+                note = notes_pb2.ProjectNote(
+                    id="note-created",
+                    content=request.content,
+                    name=request.name,
+                    metadata=request.metadata,
+                )
+                self.notes[note.id] = note
+                return notes_pb2.CreateNoteResponse(note=note)
+            if method == MUTATE_NOTE_METHOD:
+                note = self.notes[request.note_id]
+                edit = request.mutations[0].edit_note_mutation
+                note.content = edit.content
+                note.name = edit.name
+                return notes_pb2.MutateNoteResponse(note=note)
+            if method == DELETE_NOTES_METHOD:
+                for note_id in request.note_ids:
+                    self.notes.pop(note_id, None)
+                return sharing_pb2.EmptyResponse()
+            raise AssertionError(f"unexpected method: {method}")
+
+
 def _session(fake: object) -> AndroidSession:
     return cast(AndroidSession, fake)
 
@@ -233,6 +312,8 @@ def _visible(note_id: str = "note-1") -> notes_pb2.GetNotesResponse:
 
 
 def test_backend_contracts_are_split_and_android_adapters_are_concrete() -> None:
+    import inspect
+
     assert NotesAPI.__abstractmethods__ == frozenset(
         {
             "create",
@@ -250,6 +331,37 @@ def test_backend_contracts_are_split_and_android_adapters_are_concrete() -> None
     )
     assert AndroidNotesAPI.__abstractmethods__ == frozenset()
     assert AndroidSharingAPI.__abstractmethods__ == frozenset()
+    assert {
+        name
+        for name, value in AndroidNotesAPI.__dict__.items()
+        if not name.startswith("_") and inspect.iscoroutinefunction(value)
+    } == {
+        "list",
+        "get",
+        "get_or_none",
+        "create",
+        "update",
+        "delete",
+        "list_mind_maps",
+        "delete_mind_map",
+    }
+    assert {
+        name: str(inspect.signature(getattr(AndroidNotesAPI, name)))
+        for name in NotesAPI.__abstractmethods__
+    } == {
+        "list": "(self, notebook_id: 'str') -> 'builtins.list[Note]'",
+        "get": "(self, notebook_id: 'str', note_id: 'str') -> 'Note'",
+        "get_or_none": "(self, notebook_id: 'str', note_id: 'str') -> 'Note | None'",
+        "create": (
+            "(self, notebook_id: 'str', title: 'str' = 'New Note', content: 'str' = '') -> 'Note'"
+        ),
+        "update": (
+            "(self, notebook_id: 'str', note_id: 'str', content: 'str', title: 'str') -> 'None'"
+        ),
+        "delete": "(self, notebook_id: 'str', note_id: 'str') -> 'None'",
+        "list_mind_maps": "(self, notebook_id: 'str') -> 'builtins.list[Any]'",
+        "delete_mind_map": ("(self, notebook_id: 'str', mind_map_id: 'str') -> 'None'"),
+    }
 
 
 @pytest.mark.asyncio
@@ -300,12 +412,25 @@ async def test_fake_server_runs_complete_note_lifecycle_with_exact_orchestration
     }
     for method, _request, kwargs in server.calls:
         if method in writes:
-            assert kwargs == {"replay_safe": False, "response_type": writes[method]}
+            assert kwargs == {
+                "replay_safe": False,
+                "response_type": writes[method],
+                "expected_epoch": 7,
+            }
         elif method == GET_NOTES_METHOD:
             assert kwargs == {
                 "replay_safe": True,
                 "response_type": notes_pb2.GetNotesResponse,
+                "expected_epoch": 7,
             }
+    assert server.operation_scopes == [
+        ("notes.list", None),
+        ("notes.create", None),
+        ("notes.update", None),
+        ("notes.get", None),
+        ("notes.delete", None),
+        ("notes.get_or_none", None),
+    ]
 
 
 @pytest.mark.asyncio
@@ -323,6 +448,40 @@ async def test_reusable_create_seam_encodes_saved_response_for_parallel_chat_hoo
     assert method == CREATE_NOTE_METHOD
     assert request.metadata.type == SAVED_RESPONSE_NOTE_TYPE
     assert kwargs["replay_safe"] is False
+
+
+@pytest.mark.asyncio
+async def test_note_partial_updates_preserve_the_omitted_field_inside_one_scope() -> None:
+    server = FakeB6Server()
+    notes = AndroidNotesAPI(_session(server))
+
+    await notes.update("project-1", "note-existing", None, "Renamed title")
+    renamed = await notes.get("project-1", "note-existing")
+    assert (renamed.title, renamed.content) == ("Renamed title", "Existing body")
+
+    await notes.update("project-1", "note-existing", "Replaced body", None)
+    replaced = await notes.get("project-1", "note-existing")
+    assert (replaced.title, replaced.content) == ("Renamed title", "Replaced body")
+
+    mutation_requests = [
+        request for method, request, _kwargs in server.calls if method == MUTATE_NOTE_METHOD
+    ]
+    assert [
+        (
+            request.mutations[0].edit_note_mutation.name,
+            request.mutations[0].edit_note_mutation.content,
+        )
+        for request in mutation_requests
+    ] == [
+        ("Renamed title", "Existing body"),
+        ("Renamed title", "Replaced body"),
+    ]
+    assert server.operation_scopes == [
+        ("notes.update", None),
+        ("notes.get", None),
+        ("notes.update", None),
+        ("notes.get", None),
+    ]
 
 
 @pytest.mark.asyncio
@@ -345,7 +504,7 @@ async def test_private_typed_mind_map_read_uses_exact_kind_without_web_rows() ->
         "Map",
         MindMapKind.NOTE_BACKED,
         None,
-        {"nodes": []},
+        {"children": []},
     )
     assert len(server.calls) == 1
     method, request, kwargs = server.calls[0]
@@ -354,7 +513,9 @@ async def test_private_typed_mind_map_read_uses_exact_kind_without_web_rows() ->
     assert kwargs == {
         "replay_safe": True,
         "response_type": notes_pb2.GetNotesResponse,
+        "expected_epoch": 7,
     }
+    assert server.operation_scopes == [("notes.list_note_backed_mind_maps", None)]
 
 
 @pytest.mark.asyncio
@@ -423,15 +584,168 @@ async def test_private_typed_mind_map_read_rejects_missing_evidenced_id() -> Non
 
 
 @pytest.mark.asyncio
-async def test_note_unsupported_operations_reject_before_transport() -> None:
+async def test_public_mind_map_rows_are_minimal_exact_web_compatible_shape() -> None:
     server = FakeB6Server()
     notes = AndroidNotesAPI(_session(server))
 
-    with pytest.raises(UnsupportedOperationError):
-        await notes.list_mind_maps("project-1")
-    with pytest.raises(UnsupportedOperationError):
-        await notes.delete_mind_map("project-1", "mind-map")
-    assert server.calls == []
+    assert await notes.list_mind_maps("project-1") == [["mind-map", '{"children": []}']]
+    assert [method for method, _request, _kwargs in server.calls] == [GET_NOTES_METHOD]
+    assert server.operation_scopes == [("notes.list_mind_maps", None)]
+
+
+@pytest.mark.asyncio
+async def test_public_note_and_map_lists_share_the_exact_union_classifier() -> None:
+    response = notes_pb2.GetNotesResponse(
+        notes=[
+            notes_pb2.NoteOrStatus(
+                note=notes_pb2.ProjectNote(
+                    id="prompt-map",
+                    content="not-json",
+                    metadata=notes_pb2.NoteMetadata(note_prompt_type=notes_pb2.MIND_MAP),
+                )
+            ),
+            notes_pb2.NoteOrStatus(
+                note=notes_pb2.ProjectNote(id="children-map", content='{"children": []}')
+            ),
+            notes_pb2.NoteOrStatus(
+                note=notes_pb2.ProjectNote(id="nodes-map", content='{"nodes": []}')
+            ),
+            notes_pb2.NoteOrStatus(
+                note=notes_pb2.ProjectNote(
+                    id="ordinary-nested",
+                    content='{"wrapper": {"children": []}}',
+                    name="Nested key",
+                )
+            ),
+            notes_pb2.NoteOrStatus(
+                note=notes_pb2.ProjectNote(
+                    id="ordinary-array",
+                    content='[{"nodes": []}]',
+                    name="Array",
+                )
+            ),
+        ]
+    )
+    session = SequencedSession({GET_NOTES_METHOD: [response, response]})
+    notes = AndroidNotesAPI(_session(session))
+
+    ordinary = await notes.list("project-1")
+    assert [item.id for item in ordinary] == ["ordinary-nested", "ordinary-array"]
+    assert await notes.list_mind_maps("project-1") == [
+        ["prompt-map", "not-json"],
+        ["children-map", '{"children": []}'],
+        ["nodes-map", '{"nodes": []}'],
+    ]
+
+
+@pytest.mark.asyncio
+async def test_exact_id_get_update_and_delete_preserve_web_map_row_semantics() -> None:
+    server = FakeB6Server()
+    notes = AndroidNotesAPI(_session(server), deletion_poll_delays=(0.0, 0.0))
+
+    fetched = await notes.get("project-1", "mind-map")
+    assert (fetched.id, fetched.title, fetched.content) == (
+        "mind-map",
+        "Map",
+        '{"children": []}',
+    )
+    assert "mind-map" not in {item.id for item in await notes.list("project-1")}
+
+    updated_content = '{"children": [{"name": "Updated"}]}'
+    await notes.update("project-1", "mind-map", updated_content, "Updated map")
+    updated = await notes.get_or_none("project-1", "mind-map")
+    assert updated is not None
+    assert (updated.title, updated.content) == ("Updated map", updated_content)
+
+    await notes.delete("project-1", "mind-map")
+    assert await notes.get_or_none("project-1", "mind-map") is None
+
+
+@pytest.mark.asyncio
+async def test_mind_map_delete_is_kind_safe_idempotent_and_eventually_confirmed() -> None:
+    server = FakeB6Server()
+    sleep = AsyncMock()
+    notes = AndroidNotesAPI(
+        _session(server),
+        sleep=sleep,
+        deletion_poll_delays=(0.0, 0.0),
+    )
+
+    # An ordinary sibling can never be deleted through the map-specific API.
+    await notes.delete_mind_map("project-1", "note-existing")
+    assert [method for method, _request, _kwargs in server.calls] == [GET_NOTES_METHOD]
+
+    await notes.delete_mind_map("project-1", "mind-map")
+    assert "mind-map" not in server.notes
+    assert "note-existing" in server.notes
+    delete_calls = [call for call in server.calls if call[0] == DELETE_NOTES_METHOD]
+    assert len(delete_calls) == 1
+    method, request, kwargs = delete_calls[0]
+    assert method == DELETE_NOTES_METHOD
+    assert list(request.note_ids) == ["mind-map"]
+    assert kwargs == {
+        "replay_safe": False,
+        "response_type": sharing_pb2.EmptyResponse,
+        "expected_epoch": 7,
+    }
+    sleep.assert_not_awaited()
+
+    # A second delete is a read-only idempotent success.
+    await notes.delete_mind_map("project-1", "mind-map")
+    assert len([call for call in server.calls if call[0] == DELETE_NOTES_METHOD]) == 1
+    assert server.operation_scopes == [
+        ("notes.delete_mind_map", None),
+        ("notes.delete_mind_map", None),
+        ("notes.delete_mind_map", None),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_mind_map_delete_status_five_after_preflight_is_idempotent() -> None:
+    map_response = notes_pb2.GetNotesResponse(
+        notes=[
+            notes_pb2.NoteOrStatus(
+                note=notes_pb2.ProjectNote(
+                    id="map-1",
+                    content='{"nodes": []}',
+                    metadata=notes_pb2.NoteMetadata(type=notes_pb2.USER_WRITTEN),
+                )
+            )
+        ]
+    )
+    session = SequencedSession(
+        {
+            GET_NOTES_METHOD: [map_response],
+            DELETE_NOTES_METHOD: [RPCError("already absent", rpc_code=5)],
+        }
+    )
+
+    await AndroidNotesAPI(_session(session)).delete_mind_map("project-1", "map-1")
+    assert session.calls[-1][2]["replay_safe"] is False
+
+
+@pytest.mark.asyncio
+async def test_mind_map_delete_bounded_confirmation_fails_loud() -> None:
+    visible = notes_pb2.GetNotesResponse(
+        notes=[
+            notes_pb2.NoteOrStatus(
+                note=notes_pb2.ProjectNote(id="map-1", content='{"children": []}')
+            )
+        ]
+    )
+    session = SequencedSession(
+        {
+            GET_NOTES_METHOD: [visible, visible, visible],
+            DELETE_NOTES_METHOD: [sharing_pb2.EmptyResponse()],
+        }
+    )
+
+    with pytest.raises(RPCError, match="mind map remained visible"):
+        await AndroidNotesAPI(
+            _session(session),
+            deletion_poll_delays=(0.0, 0.0),
+        ).delete_mind_map("project-1", "map-1")
+    assert len(session.calls) == 4
 
 
 @pytest.mark.asyncio
@@ -525,6 +839,84 @@ async def test_eventual_delete_is_bounded_when_row_never_disappears() -> None:
             deletion_poll_delays=(0.0, 0.0),
         ).delete("project-1", "note-1")
     assert len(session.calls) == 4
+
+
+@pytest.mark.asyncio
+async def test_note_create_readback_completes_in_one_epoch_during_graceful_drain() -> None:
+    session = SupervisedNotesSession(block_method=CREATE_NOTE_METHOD)
+    notes = AndroidNotesAPI(_session(session))
+    task = asyncio.create_task(notes.create("project-1", "Created title", "Created body"))
+    await session.mutation_started.wait()
+
+    await session.supervisor.stop_accepting(1)
+    session.mutation_release.set()
+
+    created = await task
+    assert (created.id, created.title, created.content) == (
+        "note-created",
+        "Created title",
+        "Created body",
+    )
+    assert [method for method, _request, _kwargs in session.calls] == [
+        CREATE_NOTE_METHOD,
+        GET_NOTES_METHOD,
+    ]
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in session.calls] == [1, 1]
+    generation = session.supervisor._current
+    assert generation is not None
+    assert generation.in_flight == 0
+    assert generation.drain._in_flight_posts == 0
+
+
+@pytest.mark.asyncio
+async def test_note_delete_cancellation_settles_scope_without_polling() -> None:
+    session = SupervisedNotesSession(block_method=DELETE_NOTES_METHOD)
+    notes = AndroidNotesAPI(_session(session), deletion_poll_delays=(0.0,))
+    task = asyncio.create_task(notes.delete("project-1", "note-1"))
+    await session.mutation_started.wait()
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert [method for method, _request, _kwargs in session.calls] == [
+        GET_NOTES_METHOD,
+        DELETE_NOTES_METHOD,
+    ]
+    await session.supervisor.wait_for_idle(1, 0.1)
+    generation = session.supervisor._current
+    assert generation is not None
+    assert generation.in_flight == 0
+    assert generation.drain._in_flight_posts == 0
+
+
+@pytest.mark.asyncio
+async def test_map_delete_old_workflow_cannot_poll_after_forced_close_reopen() -> None:
+    session = SupervisedNotesSession(block_method=DELETE_NOTES_METHOD)
+    notes = AndroidNotesAPI(_session(session), deletion_poll_delays=(0.0,))
+    task = asyncio.create_task(notes.delete_mind_map("project-1", "map-1"))
+    await session.mutation_started.wait()
+
+    old_generation = session.supervisor._current
+    assert old_generation is not None
+    await session.supervisor.begin_closing(1)
+    session.supervisor.mark_closed(1)
+    session.supervisor.reset_after_open()
+    session.supervisor.prepare_generation(2)
+    session.supervisor.start_accepting(2)
+    session.mutation_release.set()
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await task
+    assert [method for method, _request, _kwargs in session.calls] == [
+        GET_NOTES_METHOD,
+        DELETE_NOTES_METHOD,
+    ]
+    assert old_generation.in_flight == 0
+    current_generation = session.supervisor._current
+    assert current_generation is not None
+    assert current_generation.epoch == 2
+    assert current_generation.in_flight == 0
 
 
 @pytest.mark.asyncio

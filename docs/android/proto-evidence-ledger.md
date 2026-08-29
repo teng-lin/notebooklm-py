@@ -39,6 +39,8 @@ fixtures. Hashes prevent a later local checkout from silently changing what was 
 | exact method manifest | `c2cf4bf2e6cdefd35232f01572070fbe07d11ef9bad99b556f76b5e3748f38a3` | full method paths, request/response FQNs, unary cardinality |
 | [`file-transfer-live-validation-2026-08-27.md`](file-transfer-live-validation-2026-08-27.md) | `c713a7cfe5058482aa8fc9a0201ad08487296700223f23829842795f85713107` | official-app/headless PDF upload request and live artifact representation/direct infographic PNG transfer |
 | [`web-parity-gap-live-validation-2026-08-27.md`](web-parity-gap-live-validation-2026-08-27.md) | `c0a3a16b2ff0eba18395e5a53ae2ebddb3b299d8b2cae0d6d868a3e294b08251` | live delete, rename/read-back, report-suggestion cardinality, and disposable note CRUD |
+| [`notebooks-live-validation-2026-08-28.md`](notebooks-live-validation-2026-08-28.md) | `a6646ea8f96c3c9c63aafc4d3d30d2fde8276c67155cf60bd885cd42a48a4036` | accepted Android bearer plus disposable emoji set/clear/combined read-back and repeated Recent failure |
+| [`notes-mind-maps-live-validation-2026-08-28.md`](notes-mind-maps-live-validation-2026-08-28.md) | `53510a6cc807dcc8f1f652039e667190763c5c08a4debe64bc52bbf8bf8825f3` | two same-id Web-generation/Android-read classifier runs, kind-safe Android map deletion, and two complete-manifest reruns retaining the cross-backend ordinary-note tombstone boundary |
 | [`endpoints.md`](endpoints.md) | `57467b424515cf0dfa4c3e08c636ab6a8d0bfddbe5701cf50675ea39338e4e62` | live request/response envelopes, route results, and captured note/sharing bytes |
 
 The recovery method and the warning about duplicate packages are committed in
@@ -183,10 +185,10 @@ omitted.
 
 | Full method | Request/response evidence | Replay policy | B6 projection |
 |---|---|---|---|
-| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetNotes` | exact-package `GetNotesRequest` / `GetNotesResponse` | safe read | user notes; `MIND_MAP` rows excluded |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetNotes` | exact-package `GetNotesRequest` / `GetNotesResponse`; two same-ID cross-backend live runs | safe read | ordinary notes exclude prompt-typed and JSON-shaped maps; private minimal map rows expose exact `[id, content]` only and do not claim full Web raw-row parity |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateNote` | exact-package `CreateNoteRequest` / `CreateNoteResponse` | never replay | create, then exact read-back |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateNote` | exact-package `MutateNoteRequest` / `MutateNoteResponse` | never replay | existence preflight, edit, exact read-back |
-| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteNotes` | exact request; zero-byte success response parsed by local `EmptyResponse` | never replay | idempotent preflight plus bounded eventual-absence reads |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteNotes` | exact request; zero-byte success response parsed by local `EmptyResponse`; live map deletion preserved an ordinary sibling and a second delete succeeded | never replay | kind-safe idempotent preflight plus bounded eventual-absence reads for notes and note-backed maps |
 | `/labs.language.tailwind.sharing.LabsTailwindSharingService/GetProjectDetails` | exact method/message names; local wire-equivalent fields | safe read | public settings #2, cap #3, policy #4 only |
 | `/labs.language.tailwind.sharing.LabsTailwindSharingService/ShareProject` | exact method/message names; local wire-equivalent fields; zero-byte success | never replay | public readability, then `GetProjectDetails` |
 
@@ -194,6 +196,15 @@ omitted.
 `NoteNotFoundError`. Create/share status 5 maps to the notebook miss. Mutate status 5 maps to the
 note miss after its existence preflight. A delete status 5 after a successful preflight is the
 idempotent concurrent-absence outcome.
+
+Each of the eight manifest-shaped callables on the private Android Notes adapter owns exactly one
+supervisor operation scope.
+Create/update read-back and both delete preflight/poll workflows pass that scope's `expected_epoch`
+to every unary call instead of composing through another public method. The private typed
+note-backed map read used by B7 is scoped independently as well. Graceful drain therefore admits
+the already-started workflow through its final read, cancellation settles the complete operation,
+and a forced close/reopen rejects any old-epoch read-back or poll before it can touch the new
+transport generation.
 
 ## Import closure
 
@@ -254,6 +265,7 @@ shows context is optional; the implementation does not fabricate one.
 | `WireCreateProjectRequest` | `name` | 1 | singular | string; captured create request |
 | `WireDeleteProjectsRequest` | `project_ids` | 1 | repeated | string; captured single-ID delete request |
 | `WireProjectChangeProperty` | `new_title` | 2 | singular | string; captured title-only mutation |
+| `WireProjectChangeProperty` | `new_emoji` | 3 | optional | string; repository-local name, live set/clear/combined mutation plus bare-response and `GetProject` read-back |
 | `WireProjectMutation` | `change_property` | 4 | singular | local nested message; captured mutation variant |
 | `WireMutateProjectRequest` | `project_id` | 1 | singular | string; captured mutation request |
 | `WireMutateProjectRequest` | `mutations` | 2 | repeated | local nested message; captured cardinality |
@@ -321,7 +333,7 @@ Citation numbering follows the raw one-based `TailwindDoc.objects` ordinal, so a
 non-citation object intentionally leaves a numbering gap instead of renumbering later citations.
 
 The synthetic wire fixture
-[`b5_chat_wire.json`](../../tests/fixtures/android/b5_chat_wire.json) (SHA-256
+[`chat_wire.json`](../../tests/fixtures/android/chat_wire.json) (SHA-256
 `674f05b27f5bfd92baac39833fd5769a91c4d85962983e88b47a354494ec52bf`) pins a request,
 partial/final cumulative frames, history, and sessions at serialized-byte level. The generated
 descriptors are part of the canonical cumulative
@@ -383,11 +395,30 @@ Collaborator/owner response tag #1 is absent from the recovered mobile descripto
 returns `shared_users=[]`. Populated but unnamed response tags #7/#8 remain protobuf unknown fields.
 No collaborator mutation, view-level mutation, or Android settings API is admitted.
 
-## Evidence-gated omissions and the B5 seam
+## Cross-backend mind-map classifier and the B5 seam
 
-`NotePromptType.MIND_MAP` is exact evidence sufficient to exclude those rows from ordinary note
-listing. It does not independently prove the public raw mind-map return shape or kind-safe delete,
-so `list_mind_maps` and `delete_mind_map` reject before transport I/O.
+The exact prompt enum remains one sufficient map-kind signal, but it is not necessary. Two sanitized
+live runs generated a note-backed map through Web and read the same id over Android. Both Android
+rows were `NoteType.USER_WRITTEN`, `NotePromptType.NOTE_PROMPT_TYPE_UNSPECIFIED`, and a JSON object
+with a top-level `children` key. Android therefore uses the union of the exact prompt signal and the
+legacy Web JSON-object signals: `MIND_MAP`, or parsed object membership of `children` or `nodes`.
+Ordinary note listing excludes that same union.
+
+The private Android adapter projects only `[ProjectNote.id, ProjectNote.content]`, the two fields
+proved by same-ID capture. The established public Web method returns raw rows with additional
+metadata/source slots. No exact Android capture proves those slots or a wire-equivalent replacement,
+so the minimal projection is useful for direct conformance and kind-safe deletion but does not pass
+the full substitution gate. `delete_mind_map` preflights this kind-specific list, sends one
+non-replayed `DeleteNotes`, and polls bounded `GetNotes` reads until that map id is absent. An ordinary
+note id and an already-absent map are read-only idempotent successes. The retained capture narrative is
+[`notes-mind-maps-live-validation-2026-08-28.md`](notes-mind-maps-live-validation-2026-08-28.md).
+
+The second promotion blocker is the public `Note.created_at` contract. B6 has exact
+`last_edit_timestamp` evidence only; it deliberately does not copy that value into creation time.
+The third is deletion read-back: Android exact-ID lookup reports absence after `DeleteNotes`, while
+Web exact-ID lookup exposes the same persisted soft-delete id with empty title/content. Both ordinary
+lists exclude it, but the established `get_or_none` results differ. Until exact evidence resolves all
+three gaps, normal client assembly must keep the Notes namespace on Web.
 
 The exact `CreateNote` builder and sender are reusable by the B5 `AndroidChatAPI` private save-note
 hook with `note_type=SAVED_RESPONSE_NOTE_TYPE`; B6 does not duplicate or fabricate the chat
@@ -499,5 +530,5 @@ Run `python scripts/regenerate_android_protos.py --check` in the locked dev envi
 compiles the cumulative B1-B6 closure into a temporary directory, performs the repository-local
 Python import relocation for every exact package root, and byte-compares the canonical descriptor
 set plus the complete generated module tree. Use `--write` only when the reviewed proto sources and
-pinned toolchain intentionally change. `b6_request_wires.json` independently pins every populated
+pinned toolchain intentionally change. `notes_sharing_request_wires.json` independently pins every populated
 B6 request byte sequence.

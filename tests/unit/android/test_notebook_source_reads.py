@@ -629,7 +629,6 @@ SourceUnsupportedCall = Callable[[AndroidSourcesAPI], Awaitable[object]]
     "invoke",
     [
         pytest.param(lambda api: api.suggest_prompts("notebook"), id="suggest-prompts"),
-        pytest.param(lambda api: api.set_emoji("notebook", "📘"), id="set-emoji"),
         pytest.param(lambda api: api.remove_from_recent("notebook"), id="remove-recent"),
     ],
 )

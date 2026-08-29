@@ -113,7 +113,9 @@ def test_local_sharing_overlay_exposes_only_byte_proven_fields() -> None:
 
 
 def test_request_wire_fixture_pins_all_populated_fields() -> None:
-    expected = json.loads((FIXTURES / "b6_request_wires.json").read_text(encoding="utf-8"))
+    expected = json.loads(
+        (FIXTURES / "notes_sharing_request_wires.json").read_text(encoding="utf-8")
+    )
     messages = {
         "get_notes": notes_pb2.GetNotesRequest(project_id="project-1"),
         "create_note": build_create_note_request(

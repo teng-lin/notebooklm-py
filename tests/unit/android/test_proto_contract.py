@@ -195,6 +195,7 @@ def test_b2_repository_local_wire_fields_are_exhaustive() -> None:
         },
         notebooks_pb2.WireProjectChangeProperty: {
             "new_title": (2, singular, string, None),
+            "new_emoji": (3, singular, string, None),
         },
         notebooks_pb2.WireProjectMutation: {
             "change_property": (

@@ -35,12 +35,7 @@ def _graph(
     # value makes accidental use by B7 fail the interaction assertions below.
     notes.list_mind_maps = AsyncMock(return_value=[["raw-note-row"]])
     notes.update = AsyncMock()
-    notes.delete_mind_map = AsyncMock(
-        side_effect=UnsupportedOperationError(
-            "notes.delete_mind_map is not supported by the Android backend. "
-            "Use the web backend instead."
-        )
-    )
+    notes.delete_mind_map = AsyncMock(return_value=None)
 
     artifact_api = MagicMock(spec=ArtifactsAPI)
     artifact_api.list = AsyncMock(return_value=artifacts or [])
@@ -275,15 +270,17 @@ async def test_explicit_interactive_delete_composes_without_aggregate_reads() ->
 
 
 @pytest.mark.asyncio
-async def test_note_backed_delete_delegates_to_b6_evidence_gate() -> None:
+async def test_note_backed_delete_delegates_to_notes_kind_safe_delete() -> None:
     api, artifacts, notes = _graph()
 
-    with pytest.raises(UnsupportedOperationError, match="notes.delete_mind_map"):
+    assert (
         await api.delete(
             "notebook-1",
             "note-map",
             kind=MindMapKind.NOTE_BACKED,
         )
+        is None
+    )
 
     notes.delete_mind_map.assert_awaited_once_with("notebook-1", "note-map")
     notes.list_mind_maps.assert_not_awaited()

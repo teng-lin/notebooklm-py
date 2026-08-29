@@ -31,7 +31,14 @@ RespT = TypeVar("RespT")
 
 ANDROID_GRPC_TARGET = "notebooklm-pa.googleapis.com:443"
 _NOT_OPEN = "Client not initialized. Use 'async with' context."
-_ANDROID_EXTRA = "Android transport needs grpcio. Install: pip install 'notebooklm-py[android]'"
+_ANDROID_GRPC_EXTRA = "Android transport needs grpcio. Install: pip install 'notebooklm-py[android]'"
+_ANDROID_PROTOBUF_EXTRA = (
+    "Android transport needs a protobuf runtime compatible with its generated protocol. "
+    "Install: pip install 'notebooklm-py[android]'"
+)
+_ANDROID_NOTES_PROTO = (
+    "notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1.notes_pb2"
+)
 
 
 class _DefaultTelemetry(Enum):
@@ -62,7 +69,27 @@ def _default_grpc_loader(
     try:
         return import_module("grpc")
     except ImportError:
-        raise MissingDependencyError(_ANDROID_EXTRA) from None
+        raise MissingDependencyError(_ANDROID_GRPC_EXTRA) from None
+
+
+def _default_protobuf_loader(
+    import_module: Callable[[str], Any] = importlib.import_module,
+) -> Any:
+    try:
+        runtime_version = import_module("google.protobuf.runtime_version")
+    except ImportError:
+        raise MissingDependencyError(_ANDROID_PROTOBUF_EXTRA) from None
+
+    version_error = getattr(runtime_version, "VersionError", ())
+    try:
+        # Import the exact generated closure used by Notes, so protobuf's
+        # generated/runtime compatibility check runs during client open rather
+        # than surprising the first Notes call.
+        return import_module(_ANDROID_NOTES_PROTO)
+    except ImportError:
+        raise MissingDependencyError(_ANDROID_PROTOBUF_EXTRA) from None
+    except version_error:
+        raise MissingDependencyError(_ANDROID_PROTOBUF_EXTRA) from None
 
 
 async def _await_with_deadline(
@@ -101,12 +128,14 @@ class AndroidSession(LoopBoundPrimitive):
         *,
         timeout: float | None = 30.0,
         grpc_loader: Callable[[], Any] = _default_grpc_loader,
+        protobuf_loader: Callable[[], Any] = _default_protobuf_loader,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self._bearer_provider = bearer_provider
         self._call_supervisor = call_supervisor
         self._timeout = timeout
         self._grpc_loader = grpc_loader
+        self._protobuf_loader = protobuf_loader
         self._monotonic = monotonic
         self._bound_loop: asyncio.AbstractEventLoop | None = None
         self._active_epoch: int | None = None
@@ -134,11 +163,15 @@ class AndroidSession(LoopBoundPrimitive):
         self._callables.clear()
 
     async def open(self, loop: asyncio.AbstractEventLoop, epoch: int) -> None:
-        """Activate credentials and reset lazy transport state without connecting."""
+        """Validate dependencies and credentials without opening a channel."""
 
         if self._bound_loop is not loop:
             raise RuntimeError("Android transport was not bound by the client lifecycle.")
         assert_bound_loop(self._bound_loop)
+        # Import validation belongs to asynchronous open for a selected
+        # namespace. Channel construction remains lazy until the first call.
+        self._grpc_loader()
+        self._protobuf_loader()
         self._active_epoch = epoch
         self._closing = False
         await self._bearer_provider.activate(epoch)

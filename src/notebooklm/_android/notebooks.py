@@ -216,13 +216,16 @@ class AndroidNotebooksAPI(NotebooksAPI):
     ) -> Notebook:
         if title is None and emoji is None:
             raise ValidationError("At least one of title or emoji must be provided")
-        if emoji is not None:
-            _reject("notebooks.update emoji")
-        assert title is not None
 
         # evidence: docs/android/proto-evidence-ledger.md#b2-repository-local-wire-field-ledger
+        # ``new_emoji`` is proto3-optional because an explicitly present empty
+        # string clears the emoji; omitting it preserves the current value.
         request = _WIRE.WireMutateProjectRequest(project_id=notebook_id)
-        request.mutations.add().change_property.new_title = title
+        change = request.mutations.add().change_property
+        if title is not None:
+            change.new_title = title
+        if emoji is not None:
+            change.new_emoji = emoji
         response = await self._transport.unary(
             MUTATE_PROJECT_METHOD,
             request,

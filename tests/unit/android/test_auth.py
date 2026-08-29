@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import pytest
 
+import notebooklm._android.auth as android_auth
 from notebooklm._android.auth import NOTEBOOKLM_OAUTH_SPEC, BearerProvider
 from notebooklm._auth.master_token_types import MasterToken
 from notebooklm._auth.mint_service import MintedOAuthToken, OAuthMintError
@@ -220,7 +221,23 @@ async def test_close_fences_cancel_resistant_late_mint_and_redacts_repr() -> Non
 
 
 @pytest.mark.asyncio
-async def test_missing_token_and_dependency_have_sanitized_diagnostics() -> None:
+async def test_missing_token_and_dependency_have_sanitized_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def missing_dependency() -> None:
+        raise MissingDependencyError("wrong import detail and secret")
+
+    monkeypatch.setattr(android_auth, "_require_gpsoauth", missing_dependency)
+    dependency = BearerProvider(_Profile(_record()), _Minter([]))
+    dependency.set_bound_loop(asyncio.get_running_loop())
+    dependency.reset_after_open()
+    with pytest.raises(MissingDependencyError, match=r"notebooklm-py\[android\]") as captured:
+        await dependency.activate(1)
+    assert "wrong import detail" not in str(captured.value)
+    assert captured.value.__cause__ is None
+    assert captured.value.__context__ is None
+
+    monkeypatch.setattr(android_auth, "_require_gpsoauth", lambda: object())
     missing = BearerProvider(_Profile(None), _Minter([]))
     missing.set_bound_loop(asyncio.get_running_loop())
     missing.reset_after_open()

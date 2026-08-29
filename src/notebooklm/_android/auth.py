@@ -14,6 +14,7 @@ from .._auth.mint_service import (
     MintService,
     OAuthClientSpec,
     OAuthMintError,
+    _require_gpsoauth,
 )
 from .._auth.profile_store import ProfileStore
 from .._loop_affinity import assert_bound_loop
@@ -167,6 +168,13 @@ class BearerProvider(LoopBoundPrimitive):
         """Read and retain the typed durable credential without minting."""
 
         self._assert_loop()
+        dependency_missing = False
+        try:
+            _require_gpsoauth()
+        except MissingDependencyError:
+            dependency_missing = True
+        if dependency_missing:
+            raise MissingDependencyError(_ANDROID_EXTRA_MESSAGE)
         self._provider_epoch += 1
         provider_epoch = self._provider_epoch
         self._active_session_epoch = epoch

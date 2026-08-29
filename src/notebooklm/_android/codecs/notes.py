@@ -12,13 +12,6 @@ from ..proto.google.internal.labs.tailwind.orchestration.v1 import notes_pb2
 _PROTO = cast(Any, notes_pb2)
 
 
-def _enum_name(enum: Any, value: int) -> str | None:
-    try:
-        return str(enum.Name(value))
-    except ValueError:
-        return None
-
-
 def build_create_note_request(
     notebook_id: str,
     *,
@@ -85,7 +78,7 @@ def decode_note(note: Any, notebook_id: str, *, method_id: str) -> Note:
 
 
 def decode_note_entries(response: Any, notebook_id: str, *, method_id: str) -> list[Note]:
-    """Decode user notes, skipping status-only rows and evidenced mind-map rows."""
+    """Decode user notes, skipping status-only rows and all evidenced map rows."""
     notes: list[Note] = []
     try:
         entries = response.notes
@@ -95,10 +88,8 @@ def decode_note_entries(response: Any, notebook_id: str, *, method_id: str) -> l
             if not entry.HasField("note"):
                 continue
             note = entry.note
-            if note.HasField("metadata"):
-                prompt_name = _enum_name(_PROTO.NotePromptType, note.metadata.note_prompt_type)
-                if prompt_name == "MIND_MAP":
-                    continue
+            if is_note_backed_mind_map(note):
+                continue
             notes.append(decode_note(note, notebook_id, method_id=method_id))
     except DecodingError:
         raise
@@ -108,6 +99,35 @@ def decode_note_entries(response: Any, notebook_id: str, *, method_id: str) -> l
             method_id=method_id,
         ) from None
     return notes
+
+
+def decode_note_by_id(
+    response: Any,
+    notebook_id: str,
+    note_id: str,
+    *,
+    method_id: str,
+) -> Note | None:
+    """Decode an exact persisted row without applying ``list`` kind filters.
+
+    Web ``get_or_none`` scans the combined note/mind-map rows before parsing,
+    so an exact map id is still a valid ``Note`` lookup even though ``list``
+    excludes it. Update/delete preflights inherit that contract.
+    """
+
+    try:
+        for entry in response.notes:
+            if not entry.HasField("note") or entry.note.id != note_id:
+                continue
+            return decode_note(entry.note, notebook_id, method_id=method_id)
+    except DecodingError:
+        raise
+    except Exception:
+        raise DecodingError(
+            "Could not decode Android note exact-id response",
+            method_id=method_id,
+        ) from None
+    return None
 
 
 def _parse_mind_map_tree(content: str) -> dict[str, Any] | None:
@@ -121,18 +141,71 @@ def _parse_mind_map_tree(content: str) -> dict[str, Any] | None:
     return tree if isinstance(tree, dict) else None
 
 
+def is_note_backed_mind_map(note: Any) -> bool:
+    """Classify a ProjectNote with the union proven by both backends live.
+
+    Android-created rows can carry the exact ``MIND_MAP`` prompt enum. Maps
+    generated through the Web backend were observed twice with
+    ``USER_WRITTEN`` and an unspecified prompt, while their JSON object carried
+    ``children``. The legacy Web classifier also admits a top-level ``nodes``
+    key. Either exact signal is therefore sufficient; neither is required to
+    agree with the other.
+    """
+    if note.HasField("metadata") and note.metadata.note_prompt_type == _PROTO.MIND_MAP:
+        return True
+    tree = _parse_mind_map_tree(note.content)
+    return tree is not None and ("children" in tree or "nodes" in tree)
+
+
+def decode_note_backed_mind_map_rows(
+    response: Any,
+    *,
+    method_id: str,
+) -> list[list[str]]:
+    """Return the smallest honest legacy raw row: ``[id, content]``.
+
+    Those two values are exact Android ``ProjectNote`` fields and occupy the
+    same leading slots consumed by the public Web mind-map callers. Android
+    does not expose enough evidence to append Web metadata, so no further slots
+    are synthesized.
+    """
+    rows: list[list[str]] = []
+    try:
+        for entry in response.notes:
+            if not entry.HasField("note"):
+                continue
+            note = entry.note
+            if not is_note_backed_mind_map(note):
+                continue
+            if not note.id:
+                raise DecodingError(
+                    "Android mind-map note response did not contain a note id",
+                    method_id=method_id,
+                )
+            rows.append([note.id, note.content])
+    except DecodingError:
+        raise
+    except Exception:
+        raise DecodingError(
+            "Could not decode Android note-backed mind-map rows",
+            method_id=method_id,
+        ) from None
+    return rows
+
+
 def decode_note_backed_mind_maps(
     response: Any,
     notebook_id: str,
     *,
     method_id: str,
 ) -> list[MindMap]:
-    """Project exact ``MIND_MAP`` note rows directly into the typed B7 value.
+    """Project exactly classified note-backed rows into the typed B7 value.
 
     This deliberately does not manufacture the raw positional rows returned by
-    the Web notes RPC. The Android descriptor proves the persisted id, content,
-    name, and prompt kind. Its only timestamp is ``last_edit_timestamp``, so the
-    public creation time remains unknown instead of being guessed from it.
+    the Web notes RPC. The Android descriptor proves persisted id, content, and
+    name; prompt metadata plus the twice-observed JSON signal prove the union
+    classifier. Its only timestamp is ``last_edit_timestamp``, so the public
+    creation time remains unknown instead of being guessed from it.
     """
     mind_maps: list[MindMap] = []
     try:
@@ -142,10 +215,7 @@ def decode_note_backed_mind_maps(
             if not entry.HasField("note"):
                 continue
             note = entry.note
-            if not note.HasField("metadata"):
-                continue
-            prompt_name = _enum_name(_PROTO.NotePromptType, note.metadata.note_prompt_type)
-            if prompt_name != "MIND_MAP":
+            if not is_note_backed_mind_map(note):
                 continue
             if not note.id:
                 raise DecodingError(
@@ -176,6 +246,9 @@ __all__ = [
     "build_create_note_request",
     "build_mutate_note_request",
     "decode_note",
+    "decode_note_by_id",
+    "decode_note_backed_mind_map_rows",
     "decode_note_backed_mind_maps",
     "decode_note_entries",
+    "is_note_backed_mind_map",
 ]

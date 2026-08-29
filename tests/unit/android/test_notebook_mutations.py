@@ -50,8 +50,8 @@ class SequenceTransport:
         return outcome
 
 
-def _project(project_id: str, title: str) -> read_pb2.Project:
-    return read_pb2.Project(id=project_id, title=title)
+def _project(project_id: str, title: str, *, emoji: str = "") -> read_pb2.Project:
+    return read_pb2.Project(id=project_id, title=title, emoji=emoji)
 
 
 def _api(transport: SequenceTransport) -> AndroidNotebooksAPI:
@@ -199,22 +199,59 @@ async def test_inherited_rename_delegates_to_android_title_update() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "kwargs",
+    ("kwargs", "response", "expected_change"),
     [
-        {"emoji": "📘"},
-        {"title": "Renamed", "emoji": "📘"},
-        {"title": "Renamed", "emoji": ""},
+        (
+            {"emoji": "📘"},
+            _project("notebook-1", "Existing", emoji="📘"),
+            notebooks_pb2.WireProjectChangeProperty(new_emoji="📘"),
+        ),
+        (
+            {"title": "Renamed", "emoji": "📘"},
+            _project("notebook-1", "Renamed", emoji="📘"),
+            notebooks_pb2.WireProjectChangeProperty(new_title="Renamed", new_emoji="📘"),
+        ),
+        (
+            {"title": "Renamed", "emoji": ""},
+            _project("notebook-1", "Renamed"),
+            notebooks_pb2.WireProjectChangeProperty(new_title="Renamed", new_emoji=""),
+        ),
     ],
 )
-async def test_any_emoji_update_rejects_the_whole_call_before_io(
+async def test_emoji_update_uses_live_verified_optional_tag_three(
     kwargs: dict[str, str],
+    response: read_pb2.Project,
+    expected_change: notebooks_pb2.WireProjectChangeProperty,
 ) -> None:
-    transport = SequenceTransport()
+    transport = SequenceTransport({MUTATE_PROJECT_METHOD: [response]})
 
-    with pytest.raises(UnsupportedOperationError, match="emoji"):
-        await _api(transport).update("notebook-1", **kwargs)
+    updated = await _api(transport).update("notebook-1", **kwargs)
 
-    assert transport.calls == []
+    assert (updated.title, updated.emoji) == (response.title, response.emoji)
+    assert len(transport.calls) == 1
+    _, request, call_kwargs = transport.calls[0]
+    assert request == notebooks_pb2.WireMutateProjectRequest(
+        project_id="notebook-1",
+        mutations=[notebooks_pb2.WireProjectMutation(change_property=expected_change)],
+    )
+    assert request.mutations[0].change_property.HasField("new_emoji")
+    assert call_kwargs == {"replay_safe": False, "response_type": read_pb2.Project}
+
+
+@pytest.mark.asyncio
+async def test_inherited_set_emoji_delegates_and_explicit_empty_value_stays_on_wire() -> None:
+    transport = SequenceTransport(
+        {MUTATE_PROJECT_METHOD: [_project("notebook-1", "Existing")]}
+    )
+    api = _api(transport)
+
+    updated = await api.set_emoji("notebook-1", "")
+
+    assert AndroidNotebooksAPI.set_emoji is NotebooksAPI.set_emoji
+    assert updated.emoji == ""
+    request = transport.calls[0][1]
+    assert request.mutations[0].change_property.HasField("new_emoji")
+    assert request.SerializeToString(deterministic=True).hex() == "0a0a6e6f7465626f6f6b2d31120422021a00"
 
 
 @pytest.mark.asyncio
@@ -348,7 +385,6 @@ async def test_remaining_notebook_operations_still_reject_before_io() -> None:
 
     for invoke in (
         lambda: api.suggest_prompts("notebook-1"),
-        lambda: api.set_emoji("notebook-1", "📘"),
         lambda: api.remove_from_recent("notebook-1"),
     ):
         with pytest.raises(UnsupportedOperationError, match="web backend"):

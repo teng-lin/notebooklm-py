@@ -2,7 +2,8 @@
 
 B7 adds no Android wire declarations. Interactive mutations compose the
 ``ArtifactsAPI`` collaborator supplied by B4; note-backed reads compose through
-B6's private exact-kind projection while their mutations remain evidence-gated.
+B6's private typed projection, and explicit note-backed deletion composes
+through B6's kind-safe delete. Rename and auto-detected mutation remain gated.
 """
 
 from __future__ import annotations

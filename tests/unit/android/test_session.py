@@ -14,6 +14,7 @@ from notebooklm._android.session import (
     ANDROID_GRPC_TARGET,
     AndroidSession,
     _default_grpc_loader,
+    _default_protobuf_loader,
 )
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
@@ -547,14 +548,8 @@ async def test_preopen_error_stream_laziness_missing_extra_and_phased_close() ->
     )
     missing.set_bound_loop(loop)
     missing.reset_after_open()
-    await missing.open(loop, 1)
     with pytest.raises(MissingDependencyError, match=r"notebooklm-py\[android\]"):
-        await missing.unary(
-            METHOD,
-            _Message(b"request"),
-            replay_safe=True,
-            response_type=_Message,
-        )
+        await missing.open(loop, 1)
 
     opened, _, channel, _, _ = await _open()
     await opened.unary(
@@ -577,3 +572,64 @@ def test_private_android_package_import_does_not_load_grpc() -> None:
 
     assert android.__all__ == []
     assert "grpc" not in sys.modules
+
+
+@pytest.mark.parametrize(
+    "missing_module",
+    [
+        "google.protobuf.runtime_version",
+        "notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1.notes_pb2",
+    ],
+)
+def test_default_protobuf_loader_maps_missing_runtime_or_generated_closure(
+    missing_module: str,
+) -> None:
+    calls: list[str] = []
+
+    class FakeVersionError(Exception):
+        pass
+
+    def import_module(name: str) -> object:
+        calls.append(name)
+        if name == missing_module:
+            raise ImportError(f"raw import detail for {name}")
+        if name == "google.protobuf.runtime_version":
+            return SimpleNamespace(VersionError=FakeVersionError)
+        return object()
+
+    with pytest.raises(MissingDependencyError, match="protobuf runtime") as captured:
+        _default_protobuf_loader(import_module)
+
+    assert "raw import detail" not in str(captured.value)
+    assert calls == [
+        "google.protobuf.runtime_version",
+        *(
+            []
+            if missing_module == "google.protobuf.runtime_version"
+            else [
+                "notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1.notes_pb2"
+            ]
+        ),
+    ]
+
+
+def test_default_protobuf_loader_maps_generated_runtime_version_mismatch() -> None:
+    calls: list[str] = []
+
+    class FakeVersionError(Exception):
+        pass
+
+    def import_module(name: str) -> object:
+        calls.append(name)
+        if name == "google.protobuf.runtime_version":
+            return SimpleNamespace(VersionError=FakeVersionError)
+        raise FakeVersionError("raw incompatible-version detail")
+
+    with pytest.raises(MissingDependencyError, match="protobuf runtime") as captured:
+        _default_protobuf_loader(import_module)
+
+    assert "raw incompatible-version detail" not in str(captured.value)
+    assert calls == [
+        "google.protobuf.runtime_version",
+        "notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1.notes_pb2",
+    ]
