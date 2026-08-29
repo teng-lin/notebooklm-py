@@ -114,7 +114,7 @@
     "_AUTH_FIRST_PARTY_COMPATIBILITY_NAMES": 32,
     "_REEXPORTED_RPC_ENUMS": 24,
     "_RPC_LEGACY_REEXPORTS": 47,
-    "_TOP_LEVEL_EXCEPTION_EXPORTS": 50,
+    "_TOP_LEVEL_EXCEPTION_EXPORTS": 51,
     "_TOP_LEVEL_TYPE_EXPORTS": 60
   },
   "tests/_guardrails/test_server_classify_consistency.py": {

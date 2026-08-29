@@ -414,6 +414,7 @@ _TOP_LEVEL_EXCEPTION_EXPORTS = [
     "SourceProcessingError",
     "SourceTimeoutError",
     "UnknownRPCMethodError",
+    "UnsupportedOperationError",
     "ValidationError",
     "WaitTimeoutError",
 ]
