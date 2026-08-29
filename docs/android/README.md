@@ -28,7 +28,7 @@ themselves.
 | [`enums.txt`](enums.txt) | **generated** | 77 enums / ~1900 values with exact integers. **Parsed by CI.** |
 | [`proto-evidence-ledger.md`](proto-evidence-ledger.md) | admission ledger | Exact-package B1 reads and repository-local B2 wire overlays admitted to generated code. |
 | [`endpoints.md`](endpoints.md) | reference | The gRPC method surface, and the mobile ⇄ web cross-reference. Start here. |
-| [`proto-evidence-ledger.md`](proto-evidence-ledger.md) | admission ledger | Exact/local compile closure and evidence-gated omissions for implemented Android B1 and B5 adapters. |
+| [`proto-evidence-ledger.md`](proto-evidence-ledger.md) | admission ledger | Exact/local cumulative compile closure and evidence-gated omissions for implemented Android B1-B5 adapters. |
 | [`capture.md`](capture.md) | runbook | How to intercept the app's HTTP/2 gRPC traffic (emulator, VPN, Mockttp). |
 | [`android-traffic-capture.md`](android-traffic-capture.md) | legacy runbook | Rooted-emulator Cronet/Frida capture procedure retained as dated evidence. |
 | [`auth-research.md`](auth-research.md) | live report | Exact NotebookLM Android OAuth identity, scope bundle, and bearer validation. |

@@ -241,9 +241,12 @@ shows context is optional; the implementation does not fabricate one.
 
 The compile inputs are
 [`b5_chat.proto`](../../src/notebooklm/_android/proto_src/google/internal/labs/tailwind/orchestration/v1/b5_chat.proto)
-(SHA-256 `232e0c9f04941dadae3269677575c3e6a75705140e892e196ce99a91240d66a3`) and
+(SHA-256 `e59dc263d0ec4f03a67aef9b82fb1a82d75eed4dc58ac7d0ac56bdd14b991f27`) and
 [`chat_history.proto`](../../src/notebooklm/_android/proto_src/labs/language/tailwind/common/protos/chat_history.proto)
 (SHA-256 `7e8551fe837ac30f80d3d5f5d07f33c1c1dd24970b33c558c86b4dba799d9bb8`).
+The shared `InputSource` declaration is imported from
+[`sources.proto`](../../src/notebooklm/_android/proto_src/google/internal/labs/tailwind/orchestration/v1/sources.proto)
+rather than redeclared in the B5 overlay.
 `tests/unit/android/test_chat_proto_contract.py` asserts the following list exhaustively against
 the generated descriptors; no undeclared semantic leaf is available to the adapter.
 
@@ -289,9 +292,10 @@ non-citation object intentionally leaves a numbering gap instead of renumbering 
 The synthetic wire fixture
 [`b5_chat_wire.json`](../../tests/fixtures/android/b5_chat_wire.json) (SHA-256
 `674f05b27f5bfd92baac39833fd5769a91c4d85962983e88b47a354494ec52bf`) pins a request,
-partial/final cumulative frames, history, and sessions at serialized-byte level. The generated B5
-descriptor fixture has SHA-256
-`675b826d6a15c63151eb95bf5d4273e83eceea9b4f1790b01d7c43beb7171497`.
+partial/final cumulative frames, history, and sessions at serialized-byte level. The generated
+descriptors are part of the canonical cumulative
+[`android_descriptor_set.pb`](../../tests/fixtures/android/android_descriptor_set.pb) fixture and
+are byte-checked by the deterministic regeneration command below.
 
 ### B5 evidence-gated omissions
 
@@ -410,7 +414,7 @@ response. No generated type falsely claims the remote request package.
 | flags | both proto roots via `-I`, `--include_imports`, `--descriptor_set_out`, `--python_out`, `--grpc_python_out`; sorted input list |
 
 Run `python scripts/regenerate_android_protos.py --check` in the locked dev environment. The check
-compiles the B1 and B5 closures independently into a temporary directory, performs the
-repository-local Python import relocation for both exact package roots, and byte-compares both
-descriptor sets plus the complete generated module tree. Use `--write` only when the reviewed proto
-sources and pinned toolchain intentionally change.
+compiles the cumulative B1-B5 closure into a temporary directory, performs the repository-local
+Python import relocation for every exact package root, and byte-compares the canonical descriptor
+set plus the complete generated module tree. Use `--write` only when the reviewed proto sources and
+pinned toolchain intentionally change.
