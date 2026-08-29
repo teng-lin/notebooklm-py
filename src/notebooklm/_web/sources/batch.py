@@ -13,12 +13,12 @@ import logging
 import re
 from collections import Counter, defaultdict, deque
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
 from ipaddress import IPv6Address, ip_address
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from ..._idempotency import mark_unconfirmed
+from ..._source.batch import SourceUrlBatchItem
 from ..._types.enums import GrpcStatusCode, SourceStatus, normalize_rpc_code
 from ...exceptions import (
     AuthError,
@@ -35,19 +35,6 @@ from ..rows.sources import unwrap_add_source_rows
 
 ListSources = Callable[..., Awaitable[list[Source]]]
 _PERCENT_ESCAPE = re.compile(r"%[0-9a-fA-F]{2}")
-
-
-@dataclass(frozen=True)
-class SourceUrlBatchItem:
-    """One positional outcome from a true-batch URL add."""
-
-    url: str
-    source: Source | None = None
-    error: SourceAddError | None = None
-
-    def __post_init__(self) -> None:
-        if (self.source is None) == (self.error is None):
-            raise ValueError("exactly one of source or error must be set")
 
 
 def _url_spec(url: str, *, youtube: bool) -> list[Any]:

@@ -609,11 +609,6 @@ async def test_every_unsupported_notebook_method_fails_before_io(
 @pytest.mark.parametrize(
     "invoke",
     [
-        pytest.param(lambda api: api.add_url("notebook", "https://example.test"), id="add-url"),
-        pytest.param(
-            lambda api: api._add_urls_batch("notebook", ["https://example.test"]),
-            id="add-urls-batch",
-        ),
         pytest.param(lambda api: api.add_text("notebook", "title", "body"), id="add-text"),
         pytest.param(lambda api: api.add_file("notebook", "document.pdf"), id="add-file"),
         pytest.param(
@@ -624,15 +619,11 @@ async def test_every_unsupported_notebook_method_fails_before_io(
             lambda api: api.add_drive_file("notebook", "document"),
             id="add-drive-file",
         ),
-        pytest.param(lambda api: api.delete("notebook", "source"), id="delete"),
-        pytest.param(lambda api: api.rename("notebook", "source", "new"), id="rename"),
         pytest.param(lambda api: api.refresh("notebook", "source"), id="refresh"),
         pytest.param(
             lambda api: api.check_freshness("notebook", "source"),
             id="check-freshness",
         ),
-        pytest.param(lambda api: api.get_guide("notebook", "source"), id="get-guide"),
-        pytest.param(lambda api: api.get_fulltext("notebook", "source"), id="get-fulltext"),
     ],
 )
 async def test_every_unsupported_source_method_fails_before_io(

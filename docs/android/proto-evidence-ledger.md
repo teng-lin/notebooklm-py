@@ -1,10 +1,11 @@
 # Android protobuf evidence ledger
 
-**Status:** admitted B1 read closure plus B2 notebook wire overlay
+**Status:** admitted B1 read closure plus B2 notebook and B3 source-operation overlays
 
 **Evidence snapshot:** 2026-08-27
 
-**Scope:** B1 notebook/source reads and the B2 notebook operations listed below
+**Scope:** B1 project/source reads, B2 notebook operations, and the B3 URL, maintenance, and
+flat-content slice
 
 This ledger is the admission boundary for `src/notebooklm/_android/proto_src/`. The recovered
 [`schema.proto`](schema.proto) is Dart-AOT evidence, not a compile input: it flattened several
@@ -139,6 +140,59 @@ public `premium_features` field as `None`.
 The same rule omits tier limits #11 and chat sessions #12. No unrecovered gaps or differently tagged
 local-persistence `Project` duplicate enters the compile closure. A later work package may add a
 small overlay only after committing independent exact-package descriptor/Dart-library evidence.
+
+## B3 source-operation admission
+
+The exact-package `supported.proto` snapshot above also supplies the orchestration message FQNs,
+field tags/cardinality, import boundary, and service method manifest for `AddTentativeSources`,
+`AddSources`, `DeleteSources`, `GenerateDocumentGuides`, and `LoadSource`. B3 copies only the fields
+its builders and codecs reach into
+`google/internal/labs/tailwind/orchestration/v1/b3_sources.proto`; it imports the B1 types rather
+than redeclaring `Source` or `SourceId`. The overlay intentionally declares no service: the runtime
+uses the evidence-qualified full method paths through `AndroidSession`'s generic typed callable,
+so a second partial service descriptor cannot diverge from B1's checked service.
+
+| Full method | Request FQN | Response FQN | Replay |
+|---|---|---|---|
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/AddTentativeSources` | `.google.internal.labs.tailwind.orchestration.v1.AddTentativeSourcesRequest` | `.google.internal.labs.tailwind.orchestration.v1.AddTentativeSourcesResponse` | never |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/AddSources` | `.google.internal.labs.tailwind.orchestration.v1.AddSourcesRequest` | `.google.internal.labs.tailwind.orchestration.v1.AddSourcesResponse` | never |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteSources` | `.google.internal.labs.tailwind.orchestration.v1.DeleteSourcesRequest` | `.google.protobuf.Empty` | never |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateDocumentGuides` | `.google.internal.labs.tailwind.orchestration.v1.GenerateDocumentGuidesRequest` | `.google.internal.labs.tailwind.orchestration.v1.GenerateDocumentGuidesResponse` | safe read |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/LoadSource` | `.google.internal.labs.tailwind.orchestration.v1.LoadSourceRequest` | `.google.internal.labs.tailwind.orchestration.v1.LoadSourceResponse` | safe read |
+
+### B3 field ledger
+
+| Package.Message | Fields admitted | Evidence/use |
+|---|---|---|
+| `orchestration.v1.InputSource` | `source_id #1` | exact closure; guide request/correlation |
+| `orchestration.v1.Snippet` | `text_snippet #1` | exact closure; guide summary |
+| `orchestration.v1.MainIdeas` | repeated `text_ideas #1` | exact closure; guide keywords |
+| `orchestration.v1.DocumentGuide` | `source #1`, `snippet #2`, `main_ideas #3` | exact closure; exact-ID guide projection |
+| `orchestration.v1.GenerateDocumentGuidesRequest/Response` | repeated `sources #1` / repeated `guides #1` | exact method closure |
+| `orchestration.v1.TentativeSourceMetadata` | `name #1` | exact closure; bijective correlation key |
+| `orchestration.v1.AddTentativeSourcesRequest` | repeated metadata `#1`, `project_id #2` | exact closure; B3 does not admit context/provenance |
+| `orchestration.v1.AddTentativeSourcesResponse` | repeated `tentative_sources #1` | exact wrapper |
+| `orchestration.v1.WebContent` | `url #1` | exact closure; outbound URL bytes |
+| `orchestration.v1.UserContent` | `web_content #3`, `tentative_source_id #9` | exact closure; URL commit branch |
+| `orchestration.v1.AddSourcesRequest/Response` | repeated `user_content #1`, `project_id #2` / repeated `sources #1` | exact method closure |
+| `orchestration.v1.DeleteSourcesRequest` | repeated `source_ids #1` | exact method closure |
+| `orchestration.v1.PlainTextSourceContent` | `header #1`, `body #2` | exact response closure; flat text uses body |
+| `orchestration.v1.LoadSourceRequest/Response` | `source_id #1` / `source #1`, `plain_text #2`, `markdown_string #3` | exact method closure; TailwindDoc #4 remains unknown to the public document codec |
+
+`WebContent.source_name #2`, the YouTube branch, text/Drive branches, freshness/refresh, and the
+deep TailwindDoc grammar are omitted because B3 neither populates nor decodes them. Their presence
+in the flattened recovery is not a reachability reason.
+
+### Repository-local MutateSource overlay
+
+The valid-resource replay in
+[`web-parity-gap-live-validation-2026-08-27.md`](web-parity-gap-live-validation-2026-08-27.md#mutatesource)
+(SHA-256 `c0a3a16b2ff0eba18395e5a53ae2ebddb3b299d8b2cae0d6d868a3e294b08251`)
+proves the method path and request bytes — `SourceId #2`, repeated mutation `#3`, change-title
+message `#1`, title `#1` — but does not prove a retained request protobuf FQN/import. B3 therefore
+uses `notebooklm.internal.android.wire.MutateSourceWireRequest`, a visibly repository-local
+wire-equivalent serializer, with the remote full method path and exact-package bare `Source`
+response. No generated type falsely claims the remote request package.
 
 ## Deterministic toolchain
 

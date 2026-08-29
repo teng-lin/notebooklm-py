@@ -9,20 +9,14 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Collection
 from pathlib import Path
 from time import monotonic
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 from ._lookup import unwrap_or_raise
+from ._source.batch import SourceUrlBatchItem
 from ._source.polling import SourcePoller, SourceWaitResult
 from ._types.research import SourceGuide
 from .exceptions import SourceNotFoundError
 from .types import Source, SourceFulltext, SourceStatus, SourceType
-
-if TYPE_CHECKING:
-    from ._web.sources.batch import SourceUrlBatchItem
-else:
-    # Keep runtime annotation resolution import-safe without introducing a
-    # transport-specific dependency or a duplicate shared batch-result type.
-    SourceUrlBatchItem = Any
 
 logger = logging.getLogger(__name__)
 

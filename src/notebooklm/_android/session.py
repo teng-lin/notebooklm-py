@@ -7,6 +7,7 @@ import importlib
 import math
 import time
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, Generic, Protocol, TypeVar, cast
@@ -14,7 +15,7 @@ from typing import Any, Generic, Protocol, TypeVar, cast
 from .._deadline import RuntimeDeadline
 from .._loop_affinity import assert_bound_loop
 from .._loop_bound import LoopBoundPrimitive
-from .._runtime.call_supervisor import CallLease, CallSupervisor
+from .._runtime.call_supervisor import CallLease, CallSupervisor, OperationLease
 from ..exceptions import MissingDependencyError
 from .auth import BearerCredential, BearerProvider
 from .errors import (
@@ -225,6 +226,21 @@ class AndroidSession(LoopBoundPrimitive):
                 f"(expected={expected_epoch}, active={self._active_epoch})."
             )
 
+    def operation_scope(
+        self,
+        label: str,
+        *,
+        expected_epoch: int | None = None,
+    ) -> AbstractAsyncContextManager[OperationLease]:
+        """Expose the one supervisor-owned workflow admission seam."""
+
+        return self._call_supervisor.operation_scope(label, expected_epoch=expected_epoch)
+
+    def assert_epoch(self, expected_epoch: int) -> None:
+        """Reject a workflow lease from a retired resource generation."""
+
+        self._assert_epoch(expected_epoch)
+
     async def _unary_callable(
         self,
         method: str,
@@ -338,6 +354,7 @@ class AndroidSession(LoopBoundPrimitive):
         timeout: float | None = None,
         response_type: type[RespT],
         telemetry_method: str | None | _DefaultTelemetry = _DEFAULT_TELEMETRY,
+        expected_epoch: int | None = None,
     ) -> RespT:
         """Invoke a unary RPC without retaining this secret owner in failures."""
 
@@ -352,6 +369,7 @@ class AndroidSession(LoopBoundPrimitive):
                 timeout=timeout,
                 response_type=response_type,
                 telemetry_method=telemetry_method,
+                expected_epoch=expected_epoch,
             )
         except BaseException as error:
             failure = sanitize_escaping_exception(error)
@@ -370,10 +388,14 @@ class AndroidSession(LoopBoundPrimitive):
         timeout: float | None,
         response_type: type[RespT],
         telemetry_method: str | None | _DefaultTelemetry,
+        expected_epoch: int | None,
     ) -> RespT:
         """Invoke one typed unary RPC, optionally replaying one safe read."""
 
-        expected_epoch = self._require_active()
+        active_epoch = self._require_active()
+        if expected_epoch is not None and expected_epoch != active_epoch:
+            self._assert_epoch(expected_epoch)
+        expected_epoch = active_epoch
         telemetry = self._telemetry_method(method, telemetry_method)
         self._call_supervisor.record_started(telemetry)
         deadline = self._deadline(timeout)

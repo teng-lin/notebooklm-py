@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package google.internal.labs.tailwind.orchestration.v1;
+
+import "google/internal/labs/tailwind/orchestration/v1/b1_read.proto";
+
+// Exact-package source-operation closure admitted by B3. The source mutation
+// route is deliberately absent: only its wire bytes, not its request FQN, are
+// evidenced, so it uses the repository-local overlay beside this file.
+
+message InputSource {
+  SourceId source_id = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+}
+
+message Snippet {
+  string text_snippet = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+}
+
+message MainIdeas {
+  repeated string text_ideas = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+}
+
+message DocumentGuide {
+  InputSource source = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  Snippet snippet = 2; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  MainIdeas main_ideas = 3; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+}
+
+message GenerateDocumentGuidesRequest {
+  repeated InputSource sources = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+}
+
+message GenerateDocumentGuidesResponse {
+  repeated DocumentGuide guides = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+}
+
+message TentativeSourceMetadata {
+  string name = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+}
+
+message AddTentativeSourcesRequest {
+  repeated TentativeSourceMetadata tentative_sources_metadata = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  string project_id = 2; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+}
+
+message AddTentativeSourcesResponse {
+  repeated Source tentative_sources = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+}
+
+message WebContent {
+  string url = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+}
+
+message UserContent {
+  WebContent web_content = 3; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  SourceId tentative_source_id = 9; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+}
+
+message AddSourcesRequest {
+  repeated UserContent user_content = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  string project_id = 2; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+}
+
+message AddSourcesResponse {
+  repeated Source sources = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+}
+
+message DeleteSourcesRequest {
+  repeated SourceId source_ids = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+}
+
+message PlainTextSourceContent {
+  string header = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  string body = 2; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+}
+
+message LoadSourceRequest {
+  SourceId source_id = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+}
+
+message LoadSourceResponse {
+  Source source = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  PlainTextSourceContent plain_text = 2; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  string markdown_string = 3; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  // TailwindDoc #4 remains unknown to this decoder until its offset grammar is admitted.
+}

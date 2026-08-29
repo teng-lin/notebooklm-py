@@ -51,8 +51,12 @@ _DRIVE_STATUS_BY_NAME: dict[str, DriveSourceStatus] = {
 }
 
 
-class _MissingSourceIdError(DecodingError):
+class _MissingSourceIdError(Exception):
     """Internal discriminator for the one malformed row B1 may skip."""
+
+    def __init__(self, message: str, *, method_id: str) -> None:
+        super().__init__(message)
+        self.method_id = method_id
 
 
 def _enum_name(enum: Any, value: int) -> str | None:
@@ -143,6 +147,8 @@ def decode_source(
     """Decode one source and normalize projection failures to bounded drift."""
     try:
         return _decode_source(source, method_id=method_id, index=index)
+    except _MissingSourceIdError as exc:
+        raise DecodingError(str(exc), method_id=exc.method_id) from None
     except DecodingError:
         raise
     except Exception:
@@ -165,12 +171,19 @@ def decode_sources(
     decoded: list[Source] = []
     for index, raw_source in enumerate(sources):
         try:
-            source = decode_source(raw_source, method_id=method_id, index=index)
-        except _MissingSourceIdError:
+            source = _decode_source(raw_source, method_id=method_id, index=index)
+        except _MissingSourceIdError as exc:
             if strict:
-                raise
+                raise DecodingError(str(exc), method_id=exc.method_id) from None
             logger.warning("Skipping Android source without an id at index %d", index)
             continue
+        except DecodingError:
+            raise
+        except Exception:
+            raise DecodingError(
+                f"Could not decode Android source response at index {index}",
+                method_id=method_id,
+            ) from None
 
         previous = seen.get(source.id)
         if previous is not None:

@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package notebooklm.internal.android.wire;
+
+import "google/internal/labs/tailwind/orchestration/v1/b1_read.proto";
+
+// Repository-local wire-equivalent overlay. The mobile route and serialized
+// tags are live-proven, but no exact request package/FQN descriptor survived.
+
+message ChangeTitle {
+  string title = 1; // evidence: docs/android/web-parity-gap-live-validation-2026-08-27.md#mutatesource
+}
+
+message SourceMutation {
+  ChangeTitle change_title = 1; // evidence: docs/android/web-parity-gap-live-validation-2026-08-27.md#mutatesource
+}
+
+message MutateSourceWireRequest {
+  google.internal.labs.tailwind.orchestration.v1.SourceId source_id = 2; // evidence: docs/android/web-parity-gap-live-validation-2026-08-27.md#mutatesource
+  repeated SourceMutation mutations = 3; // evidence: docs/android/web-parity-gap-live-validation-2026-08-27.md#mutatesource
+}

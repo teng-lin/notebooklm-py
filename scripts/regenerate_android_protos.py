@@ -31,22 +31,30 @@ OUTPUT_ROOT = REPO_ROOT / "src" / "notebooklm" / "_android" / "proto"
 DESCRIPTOR_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "android" / "android_descriptor_set.pb"
 PROTO_FILES = (
     Path("google/internal/labs/tailwind/orchestration/v1/b1_read.proto"),
+    Path("google/internal/labs/tailwind/orchestration/v1/b3_sources.proto"),
     Path("google/internal/labs/tailwind/v1/source_settings.proto"),
     Path("notebooklm/internal/android/wire/v1/b2_notebooks.proto"),
+    Path("notebooklm/internal/android/wire/source_mutation_wire.proto"),
 )
 EXPECTED_GENERATED = frozenset(
     {
         Path("google/internal/labs/tailwind/orchestration/v1/b1_read_pb2.py"),
         Path("google/internal/labs/tailwind/orchestration/v1/b1_read_pb2_grpc.py"),
+        Path("google/internal/labs/tailwind/orchestration/v1/b3_sources_pb2.py"),
+        Path("google/internal/labs/tailwind/orchestration/v1/b3_sources_pb2_grpc.py"),
         Path("google/internal/labs/tailwind/v1/source_settings_pb2.py"),
         Path("google/internal/labs/tailwind/v1/source_settings_pb2_grpc.py"),
         Path("notebooklm/internal/android/wire/v1/b2_notebooks_pb2.py"),
         Path("notebooklm/internal/android/wire/v1/b2_notebooks_pb2_grpc.py"),
+        Path("notebooklm/internal/android/wire/source_mutation_wire_pb2.py"),
+        Path("notebooklm/internal/android/wire/source_mutation_wire_pb2_grpc.py"),
     }
 )
 
 _GENERATED_IMPORT_PREFIX = "from google.internal.labs.tailwind"
 _REPOSITORY_IMPORT_PREFIX = "from notebooklm._android.proto.google.internal.labs.tailwind"
+_GENERATED_LOCAL_PREFIX = "from notebooklm.internal.android.wire"
+_REPOSITORY_LOCAL_PREFIX = "from notebooklm._android.proto.notebooklm.internal.android.wire"
 
 
 def _verify_toolchain() -> None:
@@ -129,6 +137,7 @@ def _relocate_generated_imports(generated_root: Path) -> None:
     for path in sorted(generated_root.rglob("*.py")):
         content = path.read_text(encoding="utf-8")
         relocated = content.replace(_GENERATED_IMPORT_PREFIX, _REPOSITORY_IMPORT_PREFIX)
+        relocated = relocated.replace(_GENERATED_LOCAL_PREFIX, _REPOSITORY_LOCAL_PREFIX)
         path.write_text(relocated, encoding="utf-8")
 
 
@@ -165,7 +174,7 @@ def _check(generated_root: Path, descriptor_path: Path) -> None:
     if not DESCRIPTOR_FIXTURE.is_file():
         problems.append(f"missing descriptor fixture: {DESCRIPTOR_FIXTURE.relative_to(REPO_ROOT)}")
     elif DESCRIPTOR_FIXTURE.read_bytes() != descriptor_path.read_bytes():
-        problems.append("checked-in B1 descriptor set differs from pinned regeneration")
+        problems.append("checked-in Android descriptor set differs from pinned regeneration")
 
     if problems:
         raise RuntimeError("Android protobuf regeneration check failed:\n" + "\n".join(problems))
@@ -197,7 +206,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         _verify_toolchain()
-        with tempfile.TemporaryDirectory(prefix="notebooklm-b1-proto-") as temp_dir:
+        with tempfile.TemporaryDirectory(prefix="notebooklm-android-proto-") as temp_dir:
             generated_root, descriptor_path = _compile(Path(temp_dir))
             if args.write:
                 _write(generated_root, descriptor_path)
