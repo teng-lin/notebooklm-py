@@ -8,9 +8,8 @@ persists; UPDATE_NOTE applies the title/content payload that callers expect).
 Post-fix:
 - UPDATE_NOTE call is wrapped in ``asyncio.shield`` so an outer cancel cannot
   abort an in-flight finalize.
-- On ``CancelledError`` raised by the shielded await, a best-effort
-  DELETE_NOTE fires via ``asyncio.create_task`` (NOT awaited — re-raise must
-  not block on cleanup), then the cancellation re-raises.
+- On ``CancelledError`` raised during child publication or the shielded await,
+  a best-effort DELETE_NOTE child is supervised without blocking the re-raise.
 
 Acceptance invariant:
   cancel mid-flight after CREATE_NOTE returns but before UPDATE_NOTE
@@ -144,21 +143,25 @@ async def test_cancel_during_update_note_shields_or_cleans_up(auth_tokens) -> No
         )
 
         # Let CREATE_NOTE run to completion AND let UPDATE_NOTE enter the
-        # transport. This is the window where the bug used to allow an
-        # orphan note to be left behind on cancel.
+        # transport. The child reaches this seam before NoteTaskRegistry.spawn
+        # necessarily publishes it back to the parent, pinning both the
+        # publication-reservation race and the later shielded-await window.
         await asyncio.wait_for(transport.update_started.wait(), timeout=2.0)
+        registry = client.notes._notes._task_registry
+        assert registry.active_tasks() == [create_task]
 
-        # Cancel mid-UPDATE_NOTE. With the shield in place, UPDATE_NOTE
-        # keeps running until release_update is set; the outer awaiter
-        # receives CancelledError and schedules best-effort DELETE_NOTE.
+        # Cancel mid-UPDATE_NOTE. If the child has been published, the shield
+        # keeps it running; if publication is still reserved, spawn_child
+        # cancels and settles it. Both paths must schedule DELETE_NOTE.
         create_task.cancel()
 
         # Yield so the cancellation can be delivered and any best-effort
         # cleanup task can be scheduled.
         await asyncio.sleep(0)
 
-        # Release the in-flight UPDATE_NOTE so the inner shielded task can
-        # finish (it would otherwise hang the mock transport indefinitely).
+        # Release UPDATE_NOTE so the published/shielded branch can finish. In
+        # the reserved-publication branch the supervisor has already cancelled
+        # and settled it, so setting the event is harmless.
         transport.release_update.set()
 
         # Drain the outer task. May raise CancelledError (cancel propagated

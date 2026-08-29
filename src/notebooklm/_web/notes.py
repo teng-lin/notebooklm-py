@@ -359,30 +359,40 @@ class NoteService:
         # write to an already-soft-deleted row — observable as an
         # inconsistent row state on the server side and a swallowed
         # exception in the cleanup task.
-        update_task = await self._task_registry.spawn(
-            f"note-update-{notebook_id}-{note_id}",
-            lambda: self.update_note(notebook_id, note_id, content, title),
-        )
+        update_task: asyncio.Task[None] | None = None
         try:
+            # Keep publication inside the cancellation handler. The child can
+            # enter UPDATE_NOTE before ``spawn`` returns it to this parent; a
+            # cancel in that window makes the supervisor cancel and settle the
+            # unpublished child before raising. CREATE_NOTE has still persisted
+            # its row, so that path needs the same orphan cleanup as a cancel at
+            # the shield below.
+            update_task = await self._task_registry.spawn(
+                f"note-update-{notebook_id}-{note_id}",
+                lambda: self.update_note(notebook_id, note_id, content, title),
+            )
             await asyncio.shield(update_task)
         except asyncio.CancelledError:
             # Ordered fire-and-forget cleanup: first wait for the
-            # shielded UPDATE_NOTE to finish (success OR error),
-            # THEN issue the best-effort DELETE_NOTE. The re-raise
-            # MUST NOT await the wrapper task. The per-service registry
-            # strongly retains it and the root drain hook settles it before
-            # Web transport teardown.
+            # published, shielded UPDATE_NOTE to finish (success OR error),
+            # THEN issue the best-effort DELETE_NOTE. If cancellation landed
+            # during child publication, ``spawn_child`` has already cancelled
+            # and settled that unpublished UPDATE_NOTE, so cleanup can delete
+            # directly. The re-raise MUST NOT await the wrapper task. The
+            # per-service registry strongly retains it and the root drain hook
+            # settles it before Web transport teardown.
             async def _finalize_then_cleanup() -> None:
                 try:
-                    try:
-                        await update_task
-                    except Exception:  # noqa: BLE001 — log and proceed to delete
-                        logger.debug(
-                            "Shielded UPDATE_NOTE failed before cleanup for note %s in notebook %s",
-                            note_id,
-                            notebook_id,
-                            exc_info=True,
-                        )
+                    if update_task is not None:
+                        try:
+                            await update_task
+                        except Exception:  # noqa: BLE001 — log and proceed to delete
+                            logger.debug(
+                                "Shielded UPDATE_NOTE failed before cleanup for note %s in notebook %s",
+                                note_id,
+                                notebook_id,
+                                exc_info=True,
+                            )
                 finally:
                     await self._delete_note_best_effort(notebook_id, note_id)
 
