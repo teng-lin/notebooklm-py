@@ -193,12 +193,19 @@ class AndroidNotebooksAPI(NotebooksAPI):
 
     async def delete(self, notebook_id: str) -> None:
         # evidence: docs/android/proto-evidence-ledger.md#b2-repository-local-wire-field-ledger
-        await self._transport.unary(
-            DELETE_PROJECTS_METHOD,
-            _WIRE.WireDeleteProjectsRequest(project_ids=[notebook_id]),
-            replay_safe=False,
-            response_type=Empty,
-        )
+        try:
+            await self._transport.unary(
+                DELETE_PROJECTS_METHOD,
+                _WIRE.WireDeleteProjectsRequest(project_ids=[notebook_id]),
+                replay_safe=False,
+                response_type=Empty,
+            )
+        except RPCError as exc:
+            # Public notebook deletion is idempotent: an already-absent row is
+            # the requested final state. This is status projection, not replay.
+            if exc.rpc_code == 5:
+                return
+            raise
 
     async def update(
         self,

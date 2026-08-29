@@ -122,6 +122,33 @@ async def test_delete_sends_one_id_and_never_replays() -> None:
 
 
 @pytest.mark.asyncio
+async def test_delete_already_absent_is_idempotent_without_replay() -> None:
+    transport = SequenceTransport(
+        {
+            DELETE_PROJECTS_METHOD: [
+                RPCError("not found", method_id=DELETE_PROJECTS_METHOD, rpc_code=5)
+            ]
+        }
+    )
+
+    assert await _api(transport).delete("missing") is None
+    assert len(transport.calls) == 1
+    assert transport.calls[0][2]["replay_safe"] is False
+
+
+@pytest.mark.asyncio
+async def test_delete_non_not_found_failure_propagates_without_replay() -> None:
+    failure = RPCError("denied", method_id=DELETE_PROJECTS_METHOD, rpc_code=7)
+    transport = SequenceTransport({DELETE_PROJECTS_METHOD: [failure]})
+
+    with pytest.raises(RPCError) as caught:
+        await _api(transport).delete("notebook-1")
+
+    assert caught.value is failure
+    assert len(transport.calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_title_only_update_decodes_bare_project_without_followup_read() -> None:
     transport = SequenceTransport({MUTATE_PROJECT_METHOD: [_project("notebook-1", "Renamed")]})
 
@@ -267,6 +294,22 @@ async def test_summary_and_description_each_make_one_nonreplayed_stateful_call()
             "replay_safe": False,
             "response_type": b2_notebooks_pb2.WireGenerateNotebookGuideResponse,
         }
+
+
+def test_guide_decode_failure_is_bounded_and_suppresses_raw_cause() -> None:
+    from notebooklm._android.codecs.notebooks import decode_notebook_guide
+
+    class BrokenResponse:
+        def HasField(self, field: str) -> bool:
+            raise ValueError(f"raw guide diagnostic for {field}")
+
+    with pytest.raises(DecodingError, match="Could not decode") as caught:
+        decode_notebook_guide(BrokenResponse(), method_id=GENERATE_NOTEBOOK_GUIDE_METHOD)
+
+    assert caught.value.method_id == GENERATE_NOTEBOOK_GUIDE_METHOD
+    assert caught.value.__cause__ is None
+    assert caught.value.__suppress_context__ is True
+    assert "raw guide diagnostic" not in str(caught.value)
 
 
 @pytest.mark.asyncio
