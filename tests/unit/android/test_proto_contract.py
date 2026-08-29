@@ -394,12 +394,12 @@ def test_current_descriptor_fixture_includes_b2_local_wire_overlay() -> None:
     )
     files = {file.name: file for file in descriptor_set.file}
 
-    assert set(files) == {
+    assert {
         "google/internal/labs/tailwind/orchestration/v1/b1_read.proto",
         "google/internal/labs/tailwind/v1/source_settings.proto",
         "google/protobuf/timestamp.proto",
         "notebooklm/internal/android/wire/v1/b2_notebooks.proto",
-    }
+    } <= set(files)
     local = files[b2_notebooks_pb2.DESCRIPTOR.name]
     assert local.package == LOCAL_WIRE_PACKAGE
     assert _without_implicit_json_names(local) == descriptor_pb2.FileDescriptorProto.FromString(

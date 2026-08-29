@@ -54,9 +54,7 @@ def _uncertain_transport_errors() -> list[Exception]:
         RateLimitError("rate", method_id=ADD_TENTATIVE_SOURCES_METHOD, rpc_code=8),
         ServerError("server", method_id=ADD_TENTATIVE_SOURCES_METHOD, rpc_code=14),
         NetworkError("network", method_id=ADD_TENTATIVE_SOURCES_METHOD),
-        RPCTimeoutError(
-            "timeout", timeout_seconds=1.0, method_id=ADD_TENTATIVE_SOURCES_METHOD
-        ),
+        RPCTimeoutError("timeout", timeout_seconds=1.0, method_id=ADD_TENTATIVE_SOURCES_METHOD),
     ]
 
 
