@@ -206,7 +206,7 @@ class AndroidResearchAPI(ResearchAPI):
                 return self._public_poll_result(tasks[0], tasks)
             return ResearchTask.not_found(task_id) if task_id else ResearchTask.empty()
 
-    async def wait_for_completion(
+    async def _wait_for_completion(
         self,
         notebook_id: str,
         task_id: str | None = None,
@@ -215,7 +215,7 @@ class AndroidResearchAPI(ResearchAPI):
         initial_interval: float = _INITIAL_INTERVAL_UNSET,
     ) -> ResearchTask:
         async with self._transport.operation_scope("research.wait_for_completion"):
-            return await super().wait_for_completion(
+            return await super()._wait_for_completion(
                 notebook_id,
                 task_id,
                 timeout=timeout,
@@ -306,7 +306,7 @@ class AndroidResearchAPI(ResearchAPI):
                 if header.HasField("source_id") and header.source_id.id
             ]
 
-    async def import_sources_with_verification(
+    async def _import_sources_with_verification(
         self,
         notebook_id: str,
         task_id: str,
@@ -319,7 +319,7 @@ class AndroidResearchAPI(ResearchAPI):
         allow_duplicate: bool = False,
     ) -> list[dict[str, str]]:
         async with self._transport.operation_scope("research.import_sources_with_verification"):
-            return await super().import_sources_with_verification(
+            return await super()._import_sources_with_verification(
                 notebook_id,
                 task_id,
                 sources,

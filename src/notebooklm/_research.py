@@ -129,6 +129,22 @@ class ResearchAPI(ABC):
         initial_interval: float = _INITIAL_INTERVAL_UNSET,
     ) -> ResearchTask:
         """Poll one pinned run until it reaches a terminal state."""
+        return await self._wait_for_completion(
+            notebook_id,
+            task_id,
+            timeout=timeout,
+            initial_interval=initial_interval,
+        )
+
+    async def _wait_for_completion(
+        self,
+        notebook_id: str,
+        task_id: str | None = None,
+        *,
+        timeout: float = 1800,
+        initial_interval: float = _INITIAL_INTERVAL_UNSET,
+    ) -> ResearchTask:
+        """Poll one pinned run until it reaches a terminal state."""
         if initial_interval is _INITIAL_INTERVAL_UNSET:
             interval = _DEFAULT_RESEARCH_POLL_INTERVAL
         elif isinstance(initial_interval, bool) or not isinstance(initial_interval, (int, float)):
@@ -177,6 +193,30 @@ class ResearchAPI(ABC):
         """Issue one non-replayed raw import request."""
 
     async def import_sources_with_verification(
+        self,
+        notebook_id: str,
+        task_id: str,
+        sources: Sequence[ResearchSourceInput],
+        *,
+        max_elapsed: float = 1800,
+        initial_delay: float = 5,
+        backoff_factor: float = 2,
+        max_delay: float = 60,
+        allow_duplicate: bool = False,
+    ) -> list[dict[str, str]]:
+        """Import with evidence-bound read-back and retry policy."""
+        return await self._import_sources_with_verification(
+            notebook_id,
+            task_id,
+            sources,
+            max_elapsed=max_elapsed,
+            initial_delay=initial_delay,
+            backoff_factor=backoff_factor,
+            max_delay=max_delay,
+            allow_duplicate=allow_duplicate,
+        )
+
+    async def _import_sources_with_verification(
         self,
         notebook_id: str,
         task_id: str,

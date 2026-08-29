@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from collections import deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -28,6 +29,7 @@ from notebooklm._app.research import poll_and_classify
 from notebooklm._research import ResearchAPI
 from notebooklm._types.enums import DiscoveryMode
 from notebooklm._types.research import ResearchSource, ResearchStatus
+from notebooklm._web.research import WebResearchAPI
 from notebooklm.exceptions import (
     AmbiguousResearchTaskError,
     DecodingError,
@@ -137,6 +139,18 @@ def test_exact_public_manifest_and_abstract_set() -> None:
         {"start", "poll", "cancel", "import_sources"}
     )
     assert AndroidResearchAPI.__abstractmethods__ == frozenset()
+    for name in (
+        "wait_for_completion",
+        "import_sources_with_verification",
+        "extract_report_urls",
+        "select_cited_sources",
+    ):
+        assert inspect.getattr_static(WebResearchAPI, name) is inspect.getattr_static(
+            ResearchAPI, name
+        )
+        assert inspect.getattr_static(AndroidResearchAPI, name) is inspect.getattr_static(
+            ResearchAPI, name
+        )
 
 
 def test_research_proto_is_service_free_and_pins_six_exact_messages() -> None:

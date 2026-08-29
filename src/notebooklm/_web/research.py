@@ -219,7 +219,7 @@ class WebResearchAPI(BaseResearchAPI):
         return _research_pub.normalize_url(url)
 
     @classmethod
-    def extract_report_urls(cls, report: str) -> set[str]:
+    def _web_extract_report_urls(cls, report: str) -> set[str]:
         """Extract normalized URLs from research report markdown/text.
 
         Thin wrapper retained for backward compatibility. Delegates to
@@ -228,7 +228,7 @@ class WebResearchAPI(BaseResearchAPI):
         return _research_pub.extract_report_urls(report)
 
     @classmethod
-    def select_cited_sources(
+    def _web_select_cited_sources(
         cls,
         sources: Sequence[ResearchSourceInput],
         report: str,
@@ -465,7 +465,7 @@ class WebResearchAPI(BaseResearchAPI):
 
         return ResearchTask.empty()
 
-    async def wait_for_completion(
+    async def _web_wait_for_completion(
         self,
         notebook_id: str,
         task_id: str | None = None,
@@ -728,7 +728,7 @@ class WebResearchAPI(BaseResearchAPI):
 
         return imported
 
-    async def import_sources_with_verification(
+    async def _import_sources_with_verification(
         self,
         notebook_id: str,
         task_id: str,
