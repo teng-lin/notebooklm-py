@@ -1255,6 +1255,8 @@ src/notebooklm/
 │           ├── orchestration/v1/
 │           │   ├── b1_read_pb2.py              # B1 read messages and descriptors
 │           │   ├── b1_read_pb2_grpc.py         # Two-method orchestration service stub
+│           │   ├── b3_sources_pb2.py            # B3 exact source-operation messages
+│           │   ├── b3_sources_pb2_grpc.py       # Deterministic service-free companion
 │           │   ├── b4_artifacts_pb2.py         # B4 exact artifact message overlay
 │           │   └── b4_artifacts_pb2_grpc.py    # Deterministic service-free companion
 │           └── v1/
@@ -1263,9 +1265,11 @@ src/notebooklm/
 │       ├── notebooklm/android/internal/v1/
 │           ├── b4_report_suggestions_pb2.py       # Local live-added Wire messages
 │           └── b4_report_suggestions_pb2_grpc.py  # Deterministic service-free companion
-│       └── notebooklm/internal/android/wire/v1/
+│       ├── notebooklm/internal/android/wire/v1/
 │           ├── b2_notebooks_pb2.py       # Repository-local B2 notebook wire messages
 │           └── b2_notebooks_pb2_grpc.py  # Deterministic service-free companion
+│       ├── notebooklm/internal/android/wire/source_mutation_wire_pb2.py       # B3 source title mutation wire overlay
+│       └── notebooklm/internal/android/wire/source_mutation_wire_pb2_grpc.py  # Deterministic service-free companion
 ├── _web/                        # Private batchexecute web-backend implementation package
 │   ├── __init__.py              # Package boundary
 │   ├── contracts.py             # Web-only Kernel and RpcCaller Protocols
@@ -1320,6 +1324,7 @@ src/notebooklm/
 │   └── lifecycle.py             # Root lifecycle waves + phased transport orchestration
 ├── _source/                     # Neutral source services + lazy compatibility exports
 │   ├── __init__.py              # Lazy package-level shims for moved web service names
+│   ├── batch.py                 # Backend-neutral per-URL batch result record
 │   ├── markdown.py              # Source fulltext HTML-to-Markdown conversion policy
 │   └── polling.py               # Source polling coordinator
 ├── _artifact/                   # Artifact-feature subpackage (promoted from flat _artifact_*.py, #1328)

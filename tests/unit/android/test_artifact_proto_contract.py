@@ -339,10 +339,10 @@ def test_local_report_overlay_fields_are_exhaustive() -> None:
 
 def test_descriptor_fixture_contains_the_cumulative_android_closure() -> None:
     descriptor_set = descriptor_pb2.FileDescriptorSet.FromString(
-        (FIXTURES / "descriptor_set.pb").read_bytes()
+        (FIXTURES / "android_descriptor_set.pb").read_bytes()
     )
     names = {file.name for file in descriptor_set.file}
-    assert names == {
+    assert {
         "google/internal/labs/tailwind/orchestration/v1/b1_read.proto",
         "google/internal/labs/tailwind/orchestration/v1/b4_artifacts.proto",
         "google/internal/labs/tailwind/v1/source_settings.proto",
@@ -350,7 +350,7 @@ def test_descriptor_fixture_contains_the_cumulative_android_closure() -> None:
         "google/protobuf/field_mask.proto",
         "google/protobuf/timestamp.proto",
         "notebooklm/android/internal/v1/b4_report_suggestions.proto",
-    }
+    } <= names
 
 
 def test_synthetic_fixture_exercises_every_admitted_public_projection() -> None:
