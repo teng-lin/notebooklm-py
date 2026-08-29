@@ -16,10 +16,13 @@ This ledger is the admission boundary for `src/notebooklm/_android/proto_src/`. 
 libraries and contains duplicate package-local persistence declarations. The checked-in B1 proto
 sources instead preserve the exact wire packages from the descriptor/Dart library boundary and
 copy only the fields below. Missing fields remain protobuf unknown fields; they are not filled from
-plausible-looking flattened declarations. B5 follows the same rule: its exact-package,
-service-free overlay admits only fields retained by the named Dart protobuf libraries and checked
-against captured wire tags. The adapter carries full method paths separately; it does not extend or
-invent a protobuf service descriptor. B6 sharing is the one explicit exception to an exact
+plausible-looking flattened declarations. B5 follows the same rule: its exact-package message
+overlay admits only fields retained by the named Dart protobuf libraries and checked against
+captured wire tags. One cumulative `orchestration_service.proto` now owns the exact service and
+imports only message signatures independently admitted below; repository-local or otherwise
+unproven signatures remain manual full-path calls listed in the machine-readable
+[`grpc-service-signature-exceptions.json`](grpc-service-signature-exceptions.json). B6 sharing is
+the one explicit exception to an exact
 package overlay: its field bytes are proven, but imported response/empty-message FQNs are not.
 Those messages therefore live under the visibly repository-local `notebooklm.android.wire.v1`
 package and make no claim about Google's type identity.
@@ -47,17 +50,26 @@ The recovery method and the warning about duplicate packages are committed in
 [`README.md`](README.md#caveats-that-will-bite-you). Live request/response shapes are documented in
 [`endpoints.md`](endpoints.md#getproject).
 
-## Service ledger
+## Cumulative generated service ledger
 
 | Full method | Request FQN | Response FQN | Cardinality | Request fields populated by B1 |
 |---|---|---|---|---|
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject` | `.google.internal.labs.tailwind.orchestration.v1.GetProjectRequest` | `.google.internal.labs.tailwind.orchestration.v1.GetProjectResponse` | unary/unary | `project_id #1`, `include_audio_overview_ids #2`; no `RequestContext` |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListRecentlyViewedProjects` | `.google.internal.labs.tailwind.orchestration.v1.ListRecentlyViewedProjectsRequest` | `.google.internal.labs.tailwind.orchestration.v1.ListRecentlyViewedProjectsResponse` | unary/unary | `include_own_projects #2`, `include_audio_overview_ids #3`; no `RequestContext` |
 
-The exact-package service descriptor contains exactly these two methods in B1. B2 does not widen
-that descriptor: its captures prove method paths and serialized layouts, but not the complete
-package/import identity of every reachable request/response message. B2 therefore uses the
-repository-local wire overlay below with manual full-path calls.
+The two B1 signatures above and fifteen later exact signatures live in the sole
+`google/internal/labs/tailwind/orchestration/v1/orchestration_service.proto` service declaration.
+The individual message overlays remain service-free so protobuf never reopens one service across
+files. Its generated stub exposes 17 implemented methods: the two reads above, five source methods,
+four artifact methods, three chat methods, and three note methods. Eleven other implemented paths
+remain manual full-path calls because at least one remote request/response FQN is unproven. The
+exception manifest names each adapter constant, local parser, reason code, and evidence link;
+descriptor/adapter/manifest equality is pinned by
+`tests/unit/android/test_grpc_service_manifest.py`.
+
+B2 does not enter the exact service descriptor: its captures prove method paths and serialized
+layouts, but not the complete package/import identity of every reachable request/response message.
+B2 therefore uses the repository-local wire overlay below with manual full-path calls.
 
 ## B2 notebook method ledger
 
@@ -79,10 +91,12 @@ Every Google-package FQN, field name, tag, type and cardinality compiled in
 `artifacts.proto` was independently checked against the exact-package archived
 `supported.proto` whose SHA-256 is pinned above. References to the flattened `schema.proto` in
 source comments are corroborating Dart-symbol evidence, never the authority for a Google FQN.
-The B4 overlay intentionally declares no second protobuf `service`: protobuf cannot reopen the
-same service across files, and widening B1's two-method generated stub would make the reviewed B1
-closure unstable. `AndroidSession` dispatches these exact unary paths with the ledgered message
-classes.
+The B4 message overlay intentionally declares no second protobuf `service`: protobuf cannot reopen
+the same service across files. The cumulative exact service imports its four implemented exact
+signatures. `GenerateReportSuggestions` remains an explicit manifest exception because its
+repository-local `*Wire` types make no Google FQN claim. `GetArtifact` is exact message evidence but
+is not in this implemented-path slice and remains absent for the later surface work package.
+`AndroidSession` continues to dispatch paths generically with the ledgered message classes.
 
 | Full method | Exact request FQN | Exact response FQN | B4 disposition |
 |---|---|---|---|
@@ -159,14 +173,13 @@ from an artifact kind. `alr=yes` application redirects are defensive evidence fr
 unauthenticated control. Signed GCS bearer stripping is a fail-closed policy, not a claim that a
 signed-GCS authenticated branch was observed.
 
-### B5 direct method ledger
+### B5 method ledger
 
-B5 is deliberately service-free: protobuf services cannot be extended across source files, and
-widening the B1 service declaration would falsely imply that a reconstructed full service
-descriptor was checked in. The adapter uses the exact captured paths below. The three ordinary
-responses use exact-package message overlays. `DeleteChatTurns` returned zero bytes; B5 therefore
-deserializes it with the wire-equivalent `google.protobuf.Empty` implementation without claiming
-that WKT as the service method's evidence-gated response FQN.
+B5's message overlay remains service-free because protobuf services cannot be extended across
+source files. The cumulative service imports the exact `ListChatSessions`, `ListChatTurns`, and
+`GenerateFreeFormStreamed` signatures. `DeleteChatTurns` returned zero bytes, so B5 deserializes it
+with the wire-equivalent `google.protobuf.Empty` implementation without claiming that WKT as the
+remote response FQN; that path remains an explicit manifest exception.
 
 | Full method | Request overlay | Response deserializer | Cardinality | Retry/telemetry contract |
 |---|---|---|---|---|
@@ -181,7 +194,11 @@ The full method paths below come from the exact method inventory and were routed
 also has valid-resource semantic proof on a disposable copied notebook: create and mutate read back
 the exact title/content, and delete was eventually visible (the first read could retain the row;
 the next excluded it). Request context fields were optional in that successful replay and remain
-omitted.
+omitted. The cumulative orchestration service admits `GetNotes`, `CreateNote`, and `MutateNote`.
+`DeleteNotes` remains an exception because its zero-byte response protobuf FQN is unproven. Both
+sharing paths remain exceptions because their field-proven parsers intentionally use a
+repository-local package rather than claiming the remote message FQNs; no sharing service is
+fabricated.
 
 | Full method | Request/response evidence | Replay policy | B6 projection |
 |---|---|---|---|
@@ -445,9 +462,10 @@ field tags/cardinality, import boundary, and service method manifest for `AddTen
 `AddSources`, `DeleteSources`, `GenerateDocumentGuides`, and `LoadSource`. B3 copies only the fields
 its builders and codecs reach into
 `google/internal/labs/tailwind/orchestration/v1/sources.proto`; it imports the B1 types rather
-than redeclaring `Source` or `SourceId`. The overlay intentionally declares no service: the runtime
-uses the evidence-qualified full method paths through `AndroidSession`'s generic typed callable,
-so a second partial service descriptor cannot diverge from B1's checked service.
+than redeclaring `Source` or `SourceId`. The message overlay intentionally declares no service. The
+cumulative service imports the five exact signatures below, while the repository-local
+`MutateSource` request remains an explicit manifest exception. Runtime dispatch stays on
+`AndroidSession`'s generic typed callable.
 
 | Full method | Request FQN | Response FQN | Replay |
 |---|---|---|---|
@@ -527,8 +545,9 @@ response. No generated type falsely claims the remote request package.
 | flags | both proto roots via `-I`, `--include_imports`, `--descriptor_set_out`, `--python_out`, `--grpc_python_out`; sorted input list |
 
 Run `python scripts/regenerate_android_protos.py --check` in the locked dev environment. The check
-compiles the cumulative B1-B6 closure into a temporary directory, performs the repository-local
-Python import relocation for every exact package root, and byte-compares the canonical descriptor
-set plus the complete generated module tree. Use `--write` only when the reviewed proto sources and
-pinned toolchain intentionally change. `notes_sharing_request_wires.json` independently pins every populated
+compiles the cumulative B1-B6 message and exact-service closure into a temporary directory,
+performs the repository-local Python import relocation for every exact package root, and
+byte-compares the canonical descriptor set plus the complete generated module tree. Use `--write`
+only when the reviewed proto sources and pinned toolchain intentionally change.
+`notes_sharing_request_wires.json` independently pins every populated
 B6 request byte sequence.

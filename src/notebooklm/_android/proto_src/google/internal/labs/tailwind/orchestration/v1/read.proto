@@ -5,9 +5,12 @@ package google.internal.labs.tailwind.orchestration.v1;
 import "google/internal/labs/tailwind/v1/source_settings.proto";
 import "google/protobuf/timestamp.proto";
 
-// Minimal exact-package B1 closure. Only fields reachable from GetProject and
-// ListRecentlyViewedProjects public projections are declared. In particular,
-// RequestContext, Project tier limits #11, and chat sessions #12 are omitted.
+// Minimal exact-package B1 message closure. Only fields reachable from
+// GetProject and ListRecentlyViewedProjects public projections are declared.
+// The cumulative exact service lives in orchestration_service.proto so one
+// descriptor owns the service instead of attempting to reopen it across
+// message overlays. In particular, RequestContext, Project tier limits #11,
+// and chat sessions #12 are omitted.
 
 enum ProjectRole {
   PROJECT_ROLE_UNKNOWN = 0;
@@ -96,10 +99,4 @@ message ListRecentlyViewedProjectsRequest {
 
 message ListRecentlyViewedProjectsResponse {
   repeated Project projects = 1; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
-}
-
-service LabsTailwindOrchestrationService {
-  rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
-  rpc ListRecentlyViewedProjects(ListRecentlyViewedProjectsRequest)
-      returns (ListRecentlyViewedProjectsResponse);
 }

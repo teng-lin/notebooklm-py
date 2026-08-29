@@ -998,9 +998,11 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/mind_maps.py` | Private B7 Android mind-map composition over base-typed artifact/note collaborators. Typed note-backed and aggregate reads use B6's evidenced projection without touching the raw `NotesAPI.list_mind_maps` Web-row boundary. Explicit note-backed delete composes through B6's kind-safe Notes delete; note-backed rename, auto-detected mutation, hydrated interactive rename, generation, and tree reads remain evidence-gated. Explicit non-hydrating interactive rename/delete compose through artifacts. No public client factory selects it. |
 | `_android/proto/` | Checked-in generated Python protobuf package. Files are regenerated only by `scripts/regenerate_android_protos.py` with the pinned toolchain and are never generated during installation. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/read_pb2.py` | Exact-package B1 messages and descriptors for `GetProject` and `ListRecentlyViewedProjects`. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/read_pb2_grpc.py` | Generated `LabsTailwindOrchestrationServiceStub` limited to the two B1 read methods. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/read_pb2_grpc.py` | Deterministic service-free companion for the B1 read message overlay. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2.py` | Sole exact-package cumulative service descriptor: 17 implemented methods with independently evidenced request/response FQNs; 11 local/unproven signatures remain in the machine-readable exception manifest. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2_grpc.py` | Generated `LabsTailwindOrchestrationServiceStub` exposing the cumulative exact unary and unary-stream methods. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/sources_pb2.py` | Exact-package B3/B3b source-operation and `UploadFileRequest` descriptors compiled from the durable `sources.proto` source name; no service guess. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/artifacts_pb2.py` | Exact-package B4 artifact request/response and projection overlay; dispatch uses ledgered generic-session method paths so the B1 service descriptor remains unchanged. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/artifacts_pb2.py` | Exact-package B4 artifact request/response and projection overlay imported by the cumulative service for implemented exact signatures. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/chat_pb2.py` | Service-free exact-package B5 chat overlay for sessions, turns, delete, streamed answers, and the proven citation/document closure. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/chat_pb2_grpc.py` | Deterministic generated companion for the service-free B5 overlay. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/notes_pb2.py` | Service-free exact-package B6 note CRUD overlay. |
@@ -1279,7 +1281,9 @@ src/notebooklm/
 │       ├── google/internal/labs/tailwind/
 │           ├── orchestration/v1/
 │           │   ├── read_pb2.py              # B1 read messages and descriptors
-│           │   ├── read_pb2_grpc.py         # Two-method orchestration service stub
+│           │   ├── read_pb2_grpc.py         # Deterministic service-free companion
+│           │   ├── orchestration_service_pb2.py      # Cumulative exact service descriptor
+│           │   ├── orchestration_service_pb2_grpc.py # 17-method exact generated stub
 │           │   ├── sources_pb2.py               # B3/B3b source and PDF-request descriptors
 │           │   ├── sources_pb2_grpc.py          # Deterministic service-free companion
 │           │   ├── artifacts_pb2.py         # B4 exact artifact message overlay

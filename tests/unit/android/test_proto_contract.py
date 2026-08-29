@@ -13,7 +13,6 @@ from google.protobuf.descriptor import FieldDescriptor
 
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     read_pb2,
-    read_pb2_grpc,
 )
 from notebooklm._android.proto.google.internal.labs.tailwind.v1 import source_settings_pb2
 from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import notebooks_pb2
@@ -56,7 +55,7 @@ def _without_implicit_json_names(
     return normalized
 
 
-def test_exact_packages_imports_and_service_are_minimal() -> None:
+def test_exact_read_packages_and_imports_are_minimal() -> None:
     assert read_pb2.DESCRIPTOR.package == ORCHESTRATION_PACKAGE
     assert source_settings_pb2.DESCRIPTOR.package == SETTINGS_PACKAGE
     assert [dependency.name for dependency in read_pb2.DESCRIPTOR.dependencies] == [
@@ -64,23 +63,7 @@ def test_exact_packages_imports_and_service_are_minimal() -> None:
         "google/protobuf/timestamp.proto",
     ]
 
-    services = read_pb2.DESCRIPTOR.services_by_name
-    assert list(services) == ["LabsTailwindOrchestrationService"]
-    methods = services["LabsTailwindOrchestrationService"].methods
-    assert [method.name for method in methods] == [
-        "GetProject",
-        "ListRecentlyViewedProjects",
-    ]
-    assert [method.input_type.full_name for method in methods] == [
-        f"{ORCHESTRATION_PACKAGE}.GetProjectRequest",
-        f"{ORCHESTRATION_PACKAGE}.ListRecentlyViewedProjectsRequest",
-    ]
-    assert [method.output_type.full_name for method in methods] == [
-        f"{ORCHESTRATION_PACKAGE}.GetProjectResponse",
-        f"{ORCHESTRATION_PACKAGE}.ListRecentlyViewedProjectsResponse",
-    ]
-    assert all(not method.client_streaming and not method.server_streaming for method in methods)
-    assert hasattr(read_pb2_grpc, "LabsTailwindOrchestrationServiceStub")
+    assert read_pb2.DESCRIPTOR.services_by_name == {}
 
 
 def test_orchestration_message_fields_tags_types_and_cardinality_are_exhaustive() -> None:

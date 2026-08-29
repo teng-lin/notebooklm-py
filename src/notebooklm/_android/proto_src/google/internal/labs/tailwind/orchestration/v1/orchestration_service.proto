@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package google.internal.labs.tailwind.orchestration.v1;
+
+import "google/internal/labs/tailwind/orchestration/v1/artifacts.proto";
+import "google/internal/labs/tailwind/orchestration/v1/chat.proto";
+import "google/internal/labs/tailwind/orchestration/v1/notes.proto";
+import "google/internal/labs/tailwind/orchestration/v1/read.proto";
+import "google/internal/labs/tailwind/orchestration/v1/sources.proto";
+import "google/protobuf/empty.proto";
+
+// Cumulative exact service closure for implemented Android calls whose request
+// and response FQNs are independently evidenced. Implemented paths backed by
+// repository-local wire-equivalent messages, or by a zero-byte response whose
+// protobuf FQN is unproven, stay out of this descriptor and are exhaustively
+// recorded in docs/android/grpc-service-signature-exceptions.json.
+//
+// GetArtifact and later Research/Labels/account methods are deliberately absent:
+// this service slice covers the adapter paths implemented at admission time.
+service LabsTailwindOrchestrationService {
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
+  rpc ListRecentlyViewedProjects(ListRecentlyViewedProjectsRequest)
+      returns (ListRecentlyViewedProjectsResponse);
+
+  rpc AddTentativeSources(AddTentativeSourcesRequest)
+      returns (AddTentativeSourcesResponse);
+  rpc AddSources(AddSourcesRequest) returns (AddSourcesResponse);
+  rpc DeleteSources(DeleteSourcesRequest) returns (google.protobuf.Empty);
+  rpc GenerateDocumentGuides(GenerateDocumentGuidesRequest)
+      returns (GenerateDocumentGuidesResponse);
+  rpc LoadSource(LoadSourceRequest) returns (LoadSourceResponse);
+
+  rpc ListArtifacts(ListArtifactsRequest) returns (ListArtifactsResponse);
+  rpc CreateArtifact(CreateArtifactRequest) returns (CreateArtifactResponse);
+  rpc UpdateArtifact(UpdateArtifactRequest) returns (Artifact);
+  rpc DeleteArtifact(DeleteArtifactRequest) returns (google.protobuf.Empty);
+
+  rpc ListChatSessions(ListChatSessionsRequest) returns (ListChatSessionsResponse);
+  rpc ListChatTurns(ListChatTurnsRequest) returns (ListChatTurnsResponse);
+  rpc GenerateFreeFormStreamed(GenerateFreeFormStreamedRequest)
+      returns (stream GenerateFreeFormStreamedResponse);
+
+  rpc GetNotes(GetNotesRequest) returns (GetNotesResponse);
+  rpc CreateNote(CreateNoteRequest) returns (CreateNoteResponse);
+  rpc MutateNote(MutateNoteRequest) returns (MutateNoteResponse);
+}

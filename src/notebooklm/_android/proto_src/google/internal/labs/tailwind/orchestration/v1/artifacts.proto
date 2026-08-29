@@ -11,10 +11,9 @@ import "google/protobuf/timestamp.proto";
 // FQN/name/tag/type/cardinality against the archived exact-package
 // supported.proto pinned in docs/android/proto-evidence-ledger.md. A nearby
 // schema.proto citation is corroborating Dart-symbol evidence, never the sole
-// authority for a Google-package declaration. The B1 service remains
-// intentionally unchanged: AndroidSession dispatches the exact,
-// separately-ledgered paths and these messages provide only the reachable
-// request/response closure.
+// authority for a Google-package declaration. The cumulative service in
+// orchestration_service.proto imports the implemented exact signatures; this
+// file provides only their reachable request/response closure.
 
 enum ArtifactType {
   ARTIFACT_TYPE_UNKNOWN = 0;

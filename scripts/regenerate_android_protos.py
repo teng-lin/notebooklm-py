@@ -29,19 +29,16 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = REPO_ROOT / "src" / "notebooklm" / "_android" / "proto_src"
 OUTPUT_ROOT = REPO_ROOT / "src" / "notebooklm" / "_android" / "proto"
 DESCRIPTOR_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "android" / "android_descriptor_set.pb"
-READ_DESCRIPTOR_FIXTURE = (
-    REPO_ROOT / "tests" / "fixtures" / "android" / "read_descriptor_set.pb"
-)
+READ_DESCRIPTOR_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "android" / "read_descriptor_set.pb"
 DESCRIPTOR_FIXTURE_ROOT = DESCRIPTOR_FIXTURE.parent
-EXPECTED_DESCRIPTOR_FIXTURES = frozenset(
-    {DESCRIPTOR_FIXTURE.name, READ_DESCRIPTOR_FIXTURE.name}
-)
+EXPECTED_DESCRIPTOR_FIXTURES = frozenset({DESCRIPTOR_FIXTURE.name, READ_DESCRIPTOR_FIXTURE.name})
 READ_PROTO_FILES = (
     Path("google/internal/labs/tailwind/orchestration/v1/read.proto"),
     Path("google/internal/labs/tailwind/v1/source_settings.proto"),
 )
 PROTO_FILES = (
     Path("google/internal/labs/tailwind/orchestration/v1/read.proto"),
+    Path("google/internal/labs/tailwind/orchestration/v1/orchestration_service.proto"),
     Path("google/internal/labs/tailwind/orchestration/v1/sources.proto"),
     Path("google/internal/labs/tailwind/orchestration/v1/artifacts.proto"),
     Path("google/internal/labs/tailwind/orchestration/v1/chat.proto"),
@@ -59,6 +56,8 @@ EXPECTED_GENERATED = frozenset(
     {
         Path("google/internal/labs/tailwind/orchestration/v1/read_pb2.py"),
         Path("google/internal/labs/tailwind/orchestration/v1/read_pb2_grpc.py"),
+        Path("google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2.py"),
+        Path("google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2_grpc.py"),
         Path("google/internal/labs/tailwind/orchestration/v1/sources_pb2.py"),
         Path("google/internal/labs/tailwind/orchestration/v1/sources_pb2_grpc.py"),
         Path("google/internal/labs/tailwind/orchestration/v1/artifacts_pb2.py"),

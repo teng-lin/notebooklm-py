@@ -7,11 +7,11 @@ import "google/internal/labs/tailwind/orchestration/v1/sources.proto";
 import "google/protobuf/timestamp.proto";
 import "labs/language/tailwind/common/protos/chat_history.proto";
 
-// Service-free exact-package B5 overlay. The full method paths are carried by
-// the adapter because protobuf services cannot be extended across files. Only
-// captured fields consumed by the B5 chat contract are declared here;
-// RequestContext, Provenance, unconsumed document variants, and speculative
-// citation fields remain unknown fields.
+// Service-free exact-package B5 message overlay. The cumulative service in
+// orchestration_service.proto imports the three independently exact method
+// signatures. Only captured fields consumed by the B5 chat contract are
+// declared here; RequestContext, Provenance, unconsumed document variants, and
+// speculative citation fields remain unknown fields.
 
 enum QueryOrigin {
   QUERY_ORIGIN_UNSPECIFIED = 0;
