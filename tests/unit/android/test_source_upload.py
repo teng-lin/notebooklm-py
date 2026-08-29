@@ -742,11 +742,23 @@ async def test_one_aggregate_timeout_closes_client_body_and_dispatches_no_finali
 ) -> None:
     harness = HTTPHarness()
     harness.block_post = asyncio.Event()
-    _, bearer, pipeline, api = await _graph(harness, upload_timeout=0.02)
+    # Keep enough budget to reach the deliberately blocked POST even on a
+    # loaded Windows xdist worker.  A 20 ms budget could expire during the
+    # preceding file-open/registration stages and test the wrong boundary.
+    _, bearer, pipeline, api = await _graph(harness, upload_timeout=1.0)
     path, _ = _write_pdf(tmp_path)
 
-    with pytest.raises(SourceAddError, match="timed out") as raised:
-        await api.add_file(NOTEBOOK_ID, path)
+    upload = asyncio.create_task(api.add_file(NOTEBOOK_ID, path))
+    try:
+        # Prove the aggregate deadline is being exercised at the intended
+        # start-request boundary before checking its public stage metadata.
+        await asyncio.wait_for(harness.post_started.wait(), timeout=2.0)
+        with pytest.raises(SourceAddError, match="timed out") as raised:
+            await upload
+    finally:
+        if not upload.done():
+            upload.cancel()
+        await asyncio.gather(upload, return_exceptions=True)
 
     assert cast(Any, raised.value).stage == "start"
     assert bearer.calls == [7]
