@@ -160,7 +160,7 @@ def test_request_wire_fixture_pins_all_populated_fields() -> None:
         ),
     }
     assert {
-        name: message.SerializeToString(deterministic=True).hex()
+        name: list(message.SerializeToString(deterministic=True))
         for name, message in messages.items()
     } == expected
 

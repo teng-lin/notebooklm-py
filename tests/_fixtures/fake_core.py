@@ -157,6 +157,7 @@ def make_fake_core(**overrides: Any) -> FakeSession:
         # CallSupervisor-shaped polling seams plus the loop/operation surfaces
         # used by source upload tests.
         "assert_bound_loop": MagicMock(return_value=None),
+        "is_closing": MagicMock(return_value=False),
         "operation_scope": MagicMock(side_effect=_operation_scope),
         "spawn_child": _spawn_child,
         # CallSupervisor delegates close-time artifact hook registration to

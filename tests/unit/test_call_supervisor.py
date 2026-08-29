@@ -706,13 +706,16 @@ async def test_lifecycle_transitions_gate_top_level_nested_and_child_work() -> N
     )
     supervisor.set_bound_loop(asyncio.get_running_loop())
     supervisor.prepare_generation(7)
+    assert supervisor.is_closing() is False
     with pytest.raises(RuntimeError, match="state=closed"):
         async with supervisor.operation_scope("before commit"):
             raise AssertionError("unreachable")
 
     supervisor.start_accepting(7)
+    assert supervisor.is_closing() is False
     async with supervisor.operation_scope("accepted"):
         await supervisor.stop_accepting(7)
+        assert supervisor.is_closing() is False
         async with supervisor.operation_scope("nested"):
             child = await supervisor.spawn_child("nested child", lambda: asyncio.sleep(0))
             await child
@@ -720,6 +723,7 @@ async def test_lifecycle_transitions_gate_top_level_nested_and_child_work() -> N
         with pytest.raises(RuntimeError, match="state=draining"):
             await outsider
         await supervisor.begin_closing(7)
+        assert supervisor.is_closing() is True
         with pytest.raises(RuntimeError, match="state=closing"):
             async with supervisor.operation_scope("closing nested"):
                 raise AssertionError("unreachable")

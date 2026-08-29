@@ -30,10 +30,13 @@ from notebooklm._android.sharing import (
 from notebooklm._notes import NotesAPI
 from notebooklm._sharing import SharingAPI
 from notebooklm.exceptions import (
+    AuthError,
     DecodingError,
     NotebookNotFoundError,
     NoteNotFoundError,
+    RateLimitError,
     RPCError,
+    ServerError,
     UnsupportedOperationError,
 )
 from notebooklm.types import ShareAccess, SharePermission, ShareViewLevel
@@ -283,6 +286,25 @@ async def test_missing_note_and_notebook_status_mapping_is_bounded() -> None:
     with pytest.raises(NotebookNotFoundError):
         await AndroidNotesAPI(_session(create_session)).create("missing-project", "title", "body")
     assert create_session.calls[0][2]["replay_safe"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [AuthError, RateLimitError, ServerError])
+async def test_note_update_preserves_typed_transport_error(error_type: type[RPCError]) -> None:
+    error = error_type("typed transport failure")
+    session = SequencedSession(
+        {
+            GET_NOTES_METHOD: [_visible()],
+            MUTATE_NOTE_METHOD: [error],
+        }
+    )
+
+    with pytest.raises(error_type) as caught:
+        await AndroidNotesAPI(_session(session)).update(
+            "project-1", "note-1", "new body", "new title"
+        )
+
+    assert caught.value is error
 
 
 @pytest.mark.asyncio

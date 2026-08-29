@@ -12,7 +12,7 @@ _T = TypeVar("_T")
 
 
 class NoteTaskRegistry:
-    """Own same-generation note children until completion or root drain.
+    """Own same-generation note children until completion or forced teardown.
 
     ``CallSupervisor.spawn_child`` closes the eager-task admission race, while
     this registry closes the smaller publication race between the awaited
@@ -55,7 +55,18 @@ class NoteTaskRegistry:
         return list(dict.fromkeys(active))
 
     async def drain(self) -> None:
-        """Cancel and settle all registered work, including spawn-time races."""
+        """Settle registered work when the root has entered forced teardown.
+
+        The root also runs hooks during the graceful ``DRAINING`` prephase.
+        Admitted note children already hold supervisor tokens, so that pass
+        must leave them running and let ``wait_for_idle`` observe their natural
+        completion. The later ``CLOSING`` pass (or the only pass for
+        ``drain=False``) cancels and gathers both published children and
+        reservation parents, closing the spawn-publication race before Web
+        transport resources are released.
+        """
+        if not self._supervisor.is_closing():
+            return
         while tasks := self.active_tasks():
             for task in tasks:
                 task.cancel()

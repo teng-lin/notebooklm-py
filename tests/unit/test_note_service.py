@@ -320,7 +320,7 @@ class TestCreateNoteCancellation:
         assert service._task_registry.active_tasks() == []
 
     @pytest.mark.asyncio
-    async def test_root_drain_cancels_and_settles_registered_finalize_work(self) -> None:
+    async def test_root_drain_leaves_registered_finalize_work_running(self) -> None:
         supervisor = CallSupervisor(
             metrics=ClientMetrics(),
             drain_tracker=TransportDrainTracker(),
@@ -332,14 +332,16 @@ class TestCreateNoteCancellation:
         supervisor.prepare_generation(1)
         supervisor.start_accepting(1)
         update_started = asyncio.Event()
-        never_finish = asyncio.Event()
+        update_can_finish = asyncio.Event()
+        seen_methods: list[RPCMethod] = []
 
         async def rpc_call(method: RPCMethod, *_args: object, **_kwargs: object) -> object:
+            seen_methods.append(method)
             if method is RPCMethod.CREATE_NOTE:
                 return [["note-drained"]]
             if method is RPCMethod.UPDATE_NOTE:
                 update_started.set()
-                await never_finish.wait()
+                await update_can_finish.wait()
                 return None
             if method is RPCMethod.DELETE_NOTE:
                 return None
@@ -351,8 +353,12 @@ class TestCreateNoteCancellation:
 
         await supervisor.stop_accepting(1)
         await asyncio.wait_for(supervisor.run_drain_hooks(), timeout=1)
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        assert not task.done()
+        assert RPCMethod.DELETE_NOTE not in seen_methods
+
+        update_can_finish.set()
+        note = await asyncio.wait_for(task, timeout=1)
+        assert note.id == "note-drained"
         await supervisor.wait_for_idle(1, timeout=1)
 
         generation = supervisor._current

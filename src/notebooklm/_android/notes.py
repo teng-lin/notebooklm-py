@@ -8,7 +8,15 @@ from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, NoReturn, cast
 
 from .._notes import NotesAPI
-from ..exceptions import DecodingError, NoteNotFoundError, RPCError
+from ..exceptions import (
+    AuthError,
+    DecodingError,
+    NetworkError,
+    NoteNotFoundError,
+    RateLimitError,
+    RPCError,
+    ServerError,
+)
 from ..types import Note
 from .codecs.notebooks import map_get_project_error
 from .codecs.notes import (
@@ -177,6 +185,8 @@ class AndroidNotesAPI(NotesAPI):
                 replay_safe=False,
                 response_type=_PROTO.MutateNoteResponse,
             )
+        except (AuthError, RateLimitError, ServerError, NetworkError):
+            raise
         except RPCError as exc:
             if exc.rpc_code == 5:
                 raise NoteNotFoundError(

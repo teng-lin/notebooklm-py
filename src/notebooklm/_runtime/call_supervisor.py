@@ -166,6 +166,19 @@ class CallSupervisor(LoopBoundPrimitive):
             raise RuntimeError("Client not initialized. Use 'async with' context.")
         assert_bound_loop(self._bound_loop)
 
+    def is_closing(self) -> bool:
+        """Return whether the current generation is in forced teardown.
+
+        Feature-owned drain hooks use this narrow query to distinguish the
+        graceful ``DRAINING`` prephase, where admitted child work must settle
+        naturally, from ``CLOSING``, where registered work must be cancelled
+        and gathered before transport resources are released.
+        """
+        self.assert_bound_loop()
+        generation = self._current
+        assert generation is not None
+        return generation.state is AdmissionState.CLOSING
+
     def record_started(self, method: str | None) -> None:
         """Validate and count one logical RPC start.
 
