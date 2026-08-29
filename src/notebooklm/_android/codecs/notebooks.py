@@ -9,7 +9,7 @@ from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import Message
 
 from ...exceptions import DecodingError
-from ...types import Notebook, PremiumFeatureInfo, SharePermission
+from ...types import Notebook, SharePermission
 from ..proto.google.internal.labs.tailwind.orchestration.v1 import b1_read_pb2
 
 _PROJECT_ROLE_BY_NAME: dict[str, SharePermission] = {
@@ -47,15 +47,6 @@ def decode_project(
         role_name = _enum_name(b1_read_pb2.ProjectRole, project.metadata.user_role)
         role = _PROJECT_ROLE_BY_NAME.get(role_name or "")
 
-    premium_features = None
-    if project.HasField("premium_feature_info"):
-        flags = project.premium_feature_info
-        premium_features = PremiumFeatureInfo(
-            can_edit_advanced_settings=flags.can_edit_advanced_settings,
-            can_edit_guidebook_config=flags.can_edit_guidebook_config,
-            can_view_analytics=flags.can_view_analytics,
-        )
-
     return Notebook(
         id=project.id,
         title=project.title,
@@ -65,7 +56,9 @@ def decode_project(
         last_viewed_at=None,
         modified_at=None,
         emoji=project.emoji,
-        premium_features=premium_features,
+        # Project #10 remains an exact-package schema gap in B1. The flattened
+        # recovered schema alone cannot admit it into the generated closure.
+        premium_features=None,
         chat_sessions=[],
         chat_settings=None,
     )

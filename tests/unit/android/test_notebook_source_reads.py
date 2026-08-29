@@ -105,11 +105,6 @@ def _project(
             user_role=b1_read_pb2.PROJECT_ROLE_OWNER,
             create_time=_timestamp(1_700_000_000, 123_000_000),
         ),
-        premium_feature_info=b1_read_pb2.PremiumFeatureInfo(
-            can_edit_advanced_settings=True,
-            can_edit_guidebook_config=False,
-            can_view_analytics=True,
-        ),
         sources=sources or [],
     )
 
@@ -229,10 +224,7 @@ async def test_notebook_requests_and_projection_are_exact() -> None:
     assert notebook.modified_at is None
     assert notebook.chat_sessions == []
     assert notebook.chat_settings is None
-    assert notebook.premium_features is not None
-    assert notebook.premium_features.can_edit_advanced_settings is True
-    assert notebook.premium_features.can_edit_guidebook_config is False
-    assert notebook.premium_features.can_view_analytics is True
+    assert notebook.premium_features is None
 
     method, request, kwargs = fake.calls[0]
     assert method == LIST_RECENT_PROJECTS_METHOD
@@ -317,7 +309,7 @@ async def test_get_raw_is_known_field_snake_case_message_dict() -> None:
 
     assert raw["project"]["id"] == "notebook-1"
     assert raw["project"]["metadata"]["user_role"] == "PROJECT_ROLE_OWNER"
-    assert "premium_feature_info" in raw["project"]
+    assert "premium_feature_info" not in raw["project"]
     assert "127" not in raw
 
 
