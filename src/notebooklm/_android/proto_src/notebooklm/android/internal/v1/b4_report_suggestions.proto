@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+// Repository-local wire-equivalent overlay. The APK has no generated symbols
+// for this live-added server method, so these names intentionally make no
+// Google package/FQN claim.
+package notebooklm.android.internal.v1;
+
+message GenerateReportSuggestionsRequestWire {
+  string project_id = 2; // evidence: docs/android/web-parity-gap-live-validation-2026-08-27.md#generatereportsuggestions
+}
+
+message ReportSuggestionWire {
+  string title = 1; // evidence: docs/android/proto-evidence-ledger.md#b4-live-added-report-suggestion-overlay
+  string description = 2; // evidence: docs/android/proto-evidence-ledger.md#b4-live-added-report-suggestion-overlay
+  string prompt = 5; // evidence: docs/android/proto-evidence-ledger.md#b4-live-added-report-suggestion-overlay
+  int32 audience_level = 6; // evidence: docs/android/proto-evidence-ledger.md#b4-live-added-report-suggestion-overlay
+}
+
+message GenerateReportSuggestionsResponseWire {
+  repeated ReportSuggestionWire suggestions = 1; // evidence: docs/android/web-parity-gap-live-validation-2026-08-27.md#generatereportsuggestions
+}

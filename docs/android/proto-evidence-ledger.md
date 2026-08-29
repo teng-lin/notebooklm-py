@@ -1,11 +1,12 @@
 # Android protobuf evidence ledger
 
-**Status:** admitted B1 read closure plus B2 notebook and B3 source-operation overlays
+**Status:** admitted B1 read closure plus B2 notebook, B3 source, and B4 artifact overlays
 
 **Evidence snapshot:** 2026-08-27
 
-**Scope:** B1 project/source reads, B2 notebook operations, and the B3 URL, maintenance, and
-flat-content slice
+**Scope:** B1 project/source reads, B2 notebook operations, the B3 URL/maintenance/flat-content
+slice, and B4 artifact list/get/create/update/delete plus its repository-local wire-equivalent
+report-suggestion overlay
 
 This ledger is the admission boundary for `src/notebooklm/_android/proto_src/`. The recovered
 [`schema.proto`](schema.proto) is Dart-AOT evidence, not a compile input: it flattened several
@@ -16,7 +17,7 @@ plausible-looking flattened declarations.
 
 ## Evidence input identities
 
-The external exact-package snapshot was reviewed, reduced to B1, and then made self-contained by
+The external exact-package snapshot was reviewed, reduced to the admitted B1/B4 fields, and then made self-contained by
 this ledger, the checked-in proto sources, descriptor set, and synthetic fixtures. Hashes prevent a
 later local checkout from silently changing what was admitted.
 
@@ -27,6 +28,9 @@ later local checkout from silently changing what was admitted.
 | [`schema.proto`](schema.proto) | `aa9f49d302ff9a64cc16d08b2f2f9031f77a348b3707dd98df37be91a67355ec` | flattened Dart recovery used to identify gaps, never as a compile input; hash includes the curated `docs/android/` path comments |
 | [`enums.txt`](enums.txt) | `8c8137c1842d07b54ba9e52feeea7c3ce09246415c26d964d17bec68eee228bc` | exhaustive enum names and integers |
 | exact method manifest | `c2cf4bf2e6cdefd35232f01572070fbe07d11ef9bad99b556f76b5e3748f38a3` | full method paths, request/response FQNs, unary cardinality |
+| [`file-transfer-live-validation-2026-08-27.md`](file-transfer-live-validation-2026-08-27.md) | `c713a7cfe5058482aa8fc9a0201ad08487296700223f23829842795f85713107` | live `ListArtifacts` representations and direct infographic PNG transfer |
+| [`web-parity-gap-live-validation-2026-08-27.md`](web-parity-gap-live-validation-2026-08-27.md) | `c0a3a16b2ff0eba18395e5a53ae2ebddb3b299d8b2cae0d6d868a3e294b08251` | live delete, rename/read-back and report-suggestion response cardinality |
+| [`endpoints.md`](endpoints.md) | `57467b424515cf0dfa4c3e08c636ab6a8d0bfddbe5701cf50675ea39338e4e62` | live request/response envelopes and route results |
 
 The recovery method and the warning about duplicate packages are committed in
 [`README.md`](README.md#caveats-that-will-bite-you). Live request/response shapes are documented in
@@ -57,6 +61,92 @@ reuse the B1 exact-package message, and empty deletion uses `google.protobuf.Emp
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateProject` | `WireMutateProjectRequest` | exact-package `Project` (bare) | never | [`endpoints.md`](endpoints.md#mutateproject--rename--edit-notebook-fields) |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CopyProject` | `WireCopyProjectRequest` | exact-package `Project` (bare) | never; transport ambiguity is surfaced | [copy validation](labels-collections-copy-mobile-grpc-2026-08-27.md#copy-a-notebook) |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateNotebookGuide` | `WireGenerateNotebookGuideRequest` | `WireGenerateNotebookGuideResponse` | never; stateful | [`endpoints.md`](endpoints.md#generatenotebookguide) |
+
+## B4 service ledger
+
+Every Google-package FQN, field name, tag, type and cardinality compiled in
+`b4_artifacts.proto` was independently checked against the exact-package archived
+`supported.proto` whose SHA-256 is pinned above. References to the flattened `schema.proto` in
+source comments are corroborating Dart-symbol evidence, never the authority for a Google FQN.
+The B4 overlay intentionally declares no second protobuf `service`: protobuf cannot reopen the
+same service across files, and widening B1's two-method generated stub would make the reviewed B1
+closure unstable. `AndroidSession` dispatches these exact unary paths with the ledgered message
+classes.
+
+| Full method | Exact request FQN | Exact response FQN | B4 disposition |
+|---|---|---|---|
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListArtifacts` | `.google.internal.labs.tailwind.orchestration.v1.ListArtifactsRequest` | `.google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse` | admitted safe read; one call per Studio list/poll tick |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetArtifact` | `.google.internal.labs.tailwind.orchestration.v1.GetArtifactRequest` | `.google.internal.labs.tailwind.orchestration.v1.GetArtifactResponse` | message closure admitted; common SDK `get` remains concrete over aggregate `list` |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateArtifact` | `.google.internal.labs.tailwind.orchestration.v1.CreateArtifactRequest` | `.google.internal.labs.tailwind.orchestration.v1.CreateArtifactResponse` | quiz-only mutation, never replayed |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/UpdateArtifact` | `.google.internal.labs.tailwind.orchestration.v1.UpdateArtifactRequest` | `.google.internal.labs.tailwind.orchestration.v1.Artifact` | title-only mutation with etag, never replayed, then list read-back |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteArtifact` | `.google.internal.labs.tailwind.orchestration.v1.DeleteArtifactRequest` | `.google.protobuf.Empty` | never replayed; sanitized `NOT_FOUND` is idempotent success |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateReportSuggestions` | APK-absent; repository-local `GenerateReportSuggestionsRequestWire` | APK-absent; repository-local `GenerateReportSuggestionsResponseWire` | safe live-added read; no Google message-FQN claim |
+
+## B4 exact artifact field ledger
+
+This table is exhaustive for `b4_artifacts.proto`; fields present in the archived message but not
+needed by B4 are deliberately left unknown. “Exact” means the pinned exact-package archive, not a
+field inferred from its plausible Dart name.
+
+| Exact-package message | Admitted fields (`name #tag`, cardinality and type) | B4 use |
+|---|---|---|
+| `MediaStreamingUrl` | `url #1` string; `type #2` `MediaStreamingType` | audio/video representation projection |
+| `QuizGenerationOptions` | `question_quantity #1` `QuestionQuantity`; `quiz_difficulty #2` `QuizDifficulty` | quiz create options |
+| `AppArtifactGenerationOptions` | `app_type #1` `AppType`; `free_text_steering_prompt #3` string; `quiz_generation_options #8` message | quiz kind/prompt/create |
+| `AppArtifact` | `generation_options #2` message | app kind/options; HTML/content fields remain unknown and unsupported |
+| `AudioOverviewGenerationOptions` | `episode_focus #1` string | listing prompt |
+| `AudioOverviewArtifact` | `generation_options #2` message; repeated `media_urls #6`; `duration #7` `google.protobuf.Duration` | listing projection only |
+| `ExplainerVideoGenerationOptions` | `video_focus #3` string | listing prompt |
+| `ExplainerVideoArtifact` | `generation_options #3` message; repeated `media_urls #5`; `duration #6` `google.protobuf.Duration` | listing projection only |
+| `TailoredReportArtifactGenerationOptions` | `type #1` string; `document_directive #6` string | report kind/prompt |
+| `TailoredReportArtifact` | `generation_options #2` message | listing projection only |
+| `ServedImage` | `url #1` string | infographic/slide representation |
+| `InfographicGenerationOptions` | `user_steering_prompt #1` string | listing prompt |
+| `Infographic` | `title #1` string; `image #2` `ServedImage` | PNG selection |
+| `InfographicArtifact` | `generation_options #1` message; repeated `infographics #3` | listing/download projection |
+| `SlidesGenerationOptions` | `user_steering_prompt #1` string | listing prompt |
+| `Slide` | `image #1` `ServedImage` | listing projection |
+| `SlidesArtifact` | `generation_options #1` message; repeated `slides #3`; `pdf_download_url #4` string | listing projection only; unsupported PPTX download retains no compiled-only field |
+| `FileArtifact` | `file_preview_url #3`, `file_download_url #4` strings | listing representation projection only |
+| `ArtifactSource` | `source_id #1` imported exact `SourceId` | source IDs and quiz request |
+| `Artifact` | `artifact_id #1` string; `title #2` string; `type #3` `ArtifactType`; repeated `sources #4`; `status #5` `ArtifactStatus`; `audio_overview #7`; `tailored_report #8`; `explainer_video #9`; `app #10`; `last_modified_timestamp #11` Timestamp; `infographic #15`; `slides #17`; `etag #22` string; `file #25` | the complete B4 public projection and mutation subset |
+| `CreateArtifactRequest` / `Response` | request `project_id #2`, `artifact #3`; response `artifact #1` | quiz mutation |
+| `GetArtifactRequest` / `Response` | request `artifact_id #1`; response `artifact #1` | exact closure, not separately dispatched by common `get` |
+| `ListArtifactsRequest` / `Response` | request `project_id #2`; response repeated `artifacts #1` | Studio listing and polling |
+| `UpdateArtifactRequest` | `artifact #1`; `update_mask #2` FieldMask; `etag #3` string | title rename |
+| `DeleteArtifactRequest` | `artifact_id #2` string | idempotent delete |
+
+The four exact enums are also pinned exhaustively by generated descriptor tests: `ArtifactType`
+0–10, `ArtifactStatus` 0–6, `AppType` 0–5 and `MediaStreamingType` 0–4. The two nested quiz enums
+are 0–3. Unknown future integers remain unknown rather than being coerced to a known family.
+
+### B4 quiz request
+
+The successful quiz branch sends `CreateArtifactRequest.project_id #2` and `artifact #3`, with
+`Artifact.type = ARTIFACT_TYPE_APP`, repeated `Artifact.sources #4`, and
+`AppArtifact.generation_options.app_type = APP_TYPE_QUIZ`. Quantity/difficulty use the exact nested
+enums at quiz option fields #1/#2; free text uses app option field #3. No other family builder is
+admitted and every unsupported public generation method rejects before source-ID resolution.
+
+### B4 live-added report suggestion overlay
+
+`GenerateReportSuggestions` is live-successful but absent from the APK method/symbol archive. B4
+therefore compiles `notebooklm.android.internal.v1` `*Wire` messages, not Google-package symbols.
+The live request pins project UUID field #2 and the response pins repeated suggestion field #1.
+The nested wire row uses the response-observed web-equivalent semantic positions: title #1,
+description #2, prompt #5 and audience level #6. This is explicitly a repository-local decoding
+contract admitted for direct tests; it must be replaced, not renamed into a Google FQN, if an exact
+descriptor later appears. Optional request context #1 and source filter #3 are omitted because B4
+does not send them.
+
+## B4 representation-transfer evidence boundary
+
+Only response-provided URLs are projected: audio field #6, video field #5, infographic image #2,
+slide image #1, slide PDF #4 and file preview/download #3/#4. The first implemented byte
+path is the live-verified infographic PNG from `lh3.googleusercontent.com`; no URL is synthesized
+from an artifact kind. `alr=yes` application redirects are defensive evidence from the
+unauthenticated control. Signed GCS bearer stripping is a fail-closed policy, not a claim that a
+signed-GCS authenticated branch was observed.
 
 ## Import closure
 

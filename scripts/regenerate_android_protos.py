@@ -32,7 +32,9 @@ DESCRIPTOR_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "android" / "android_des
 PROTO_FILES = (
     Path("google/internal/labs/tailwind/orchestration/v1/b1_read.proto"),
     Path("google/internal/labs/tailwind/orchestration/v1/b3_sources.proto"),
+    Path("google/internal/labs/tailwind/orchestration/v1/b4_artifacts.proto"),
     Path("google/internal/labs/tailwind/v1/source_settings.proto"),
+    Path("notebooklm/android/internal/v1/b4_report_suggestions.proto"),
     Path("notebooklm/internal/android/wire/v1/b2_notebooks.proto"),
     Path("notebooklm/internal/android/wire/source_mutation_wire.proto"),
 )
@@ -42,8 +44,12 @@ EXPECTED_GENERATED = frozenset(
         Path("google/internal/labs/tailwind/orchestration/v1/b1_read_pb2_grpc.py"),
         Path("google/internal/labs/tailwind/orchestration/v1/b3_sources_pb2.py"),
         Path("google/internal/labs/tailwind/orchestration/v1/b3_sources_pb2_grpc.py"),
+        Path("google/internal/labs/tailwind/orchestration/v1/b4_artifacts_pb2.py"),
+        Path("google/internal/labs/tailwind/orchestration/v1/b4_artifacts_pb2_grpc.py"),
         Path("google/internal/labs/tailwind/v1/source_settings_pb2.py"),
         Path("google/internal/labs/tailwind/v1/source_settings_pb2_grpc.py"),
+        Path("notebooklm/android/internal/v1/b4_report_suggestions_pb2.py"),
+        Path("notebooklm/android/internal/v1/b4_report_suggestions_pb2_grpc.py"),
         Path("notebooklm/internal/android/wire/v1/b2_notebooks_pb2.py"),
         Path("notebooklm/internal/android/wire/v1/b2_notebooks_pb2_grpc.py"),
         Path("notebooklm/internal/android/wire/source_mutation_wire_pb2.py"),
