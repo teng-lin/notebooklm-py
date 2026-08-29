@@ -70,6 +70,15 @@ def _already_present_entry(source: Source) -> dict[str, str]:
     return {**_source_entry(source), "url": source.url or ""}
 
 
+def _only_source(candidates: Sequence[Source]) -> Source | None:
+    """Return the sole source in *candidates*, without positional indexing."""
+    if len(candidates) != 1:
+        return None
+    for candidate in candidates:
+        return candidate
+    return None
+
+
 def _is_failed_precondition(error: RPCError) -> bool:
     return normalize_grpc_status(error.rpc_code) is GrpcStatusCode.FAILED_PRECONDITION
 
@@ -348,18 +357,15 @@ class ResearchAPI(ABC):
                 probe_error: NetworkError | RPCError | None = None
                 try:
                     current = await self._source_lister.list(notebook_id, strict=False)
-                except (AuthError, RateLimitError):
-                    raise
-                except NetworkError as error:
-                    probe_error = error
-                except ServerError as error:
-                    probe_error = error
-                except RPCError as error:
+                except (NetworkError, RPCError) as error:
                     probe_error = error
                 if probe_error is not None:
-                    if failed_precondition:
-                        raise failure from None
-                    raise mark_unconfirmed(failure) from None
+                    if failed_precondition and last_error is None:
+                        raise failure from probe_error
+                    ambiguous_failure = last_error if failed_precondition else failure
+                    assert ambiguous_failure is not None
+                    raise mark_unconfirmed(ambiguous_failure) from probe_error
+                reconciliation_error: RPCError | None = None
                 try:
                     inputs, models, landed = self._reconcile_url_subset(
                         current=current,
@@ -368,15 +374,21 @@ class ResearchAPI(ABC):
                         inputs=inputs,
                         models=models,
                     )
-                except RPCError:
+                except RPCError as error:
+                    reconciliation_error = error
+                if reconciliation_error is not None:
                     if failed_precondition:
-                        raise failure from None
-                    raise
+                        if last_error is not None:
+                            raise mark_unconfirmed(last_error) from reconciliation_error
+                        raise failure from reconciliation_error
+                    raise reconciliation_error
                 verified.extend(landed)
                 verified_ids.update(entry["id"] for entry in landed)
                 if not inputs:
                     return _imported_result(verified, already_present)
                 if failed_precondition:
+                    if last_error is not None:
+                        raise mark_unconfirmed(last_error) from failure
                     raise failure
                 remaining = max_elapsed - (time.monotonic() - started)
                 last_error = failure
@@ -391,11 +403,10 @@ class ResearchAPI(ABC):
             if requested and len(returned_ids) < len(requested) and baseline_ids is not None:
                 try:
                     current = await self._source_lister.list(notebook_id, strict=False)
-                except (AuthError, RateLimitError):
-                    raise
-                except (NetworkError, ServerError):
-                    current = []
-                except RPCError:
+                # Finish already returned success, so this read is optional
+                # result enrichment rather than mutation verification. Never
+                # turn its failure into a signal that invites replaying Finish.
+                except (NetworkError, RPCError):
                     current = []
                 by_url: dict[str, list[Source]] = defaultdict(list)
                 for current_source in current:
@@ -407,7 +418,7 @@ class ResearchAPI(ABC):
                         by_url[_normalized_import_url(current_source.url)].append(current_source)
                 for url in requested:
                     matches = by_url.get(url, [])
-                    landed_source = matches[0] if len(matches) == 1 else None
+                    landed_source = _only_source(matches)
                     if landed_source is not None and landed_source.id not in returned_ids:
                         imported.append(_source_entry(landed_source))
                         returned_ids.add(landed_source.id)
@@ -450,7 +461,8 @@ class ResearchAPI(ABC):
         for source_input, model in zip(inputs, models, strict=True):
             matches = by_url.get(_normalized_import_url(model.url), []) if model.url else []
             if matches:
-                landed_source = matches[0]
+                landed_source = _only_source(matches)
+                assert landed_source is not None
                 landed_id = landed_source.id or ""
                 if landed_id not in landed_ids:
                     landed_ids.add(landed_id)

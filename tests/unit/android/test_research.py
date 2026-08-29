@@ -27,6 +27,7 @@ from notebooklm._android.research import (
     START_FAST_METHOD,
     AndroidResearchAPI,
 )
+from notebooklm._app.errors import ErrorCategory, classify
 from notebooklm._app.research import poll_and_classify
 from notebooklm._research import ResearchAPI
 from notebooklm._runtime.config import MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT
@@ -571,27 +572,56 @@ async def test_timeout_then_failed_precondition_reconciles_each_exact_id_without
 
 
 @pytest.mark.asyncio
-async def test_retry_failed_precondition_without_new_exact_id_surfaces_without_third_write() -> (
+async def test_retry_failed_precondition_without_new_exact_id_keeps_prior_write_unconfirmed() -> (
     None
 ):
     first = ResearchSource("https://example.com/a", "A")
     second = ResearchSource("https://example.com/b", "B")
     landed_first = Source(id="source-a", title="A", url=first.url)
+    write_error = RPCTimeoutError("lost", timeout_seconds=10)
     failed_precondition = RPCError("rejected retry", rpc_code=9)
     api, transport = _api(
         {
             FINISH_RUN_METHOD: [
-                RPCTimeoutError("lost", timeout_seconds=10),
+                write_error,
                 failed_precondition,
             ]
         },
         _Lister([[], [landed_first], [landed_first]]),
     )
 
-    with pytest.raises(RPCError, match="rejected retry") as caught:
+    with pytest.raises(RPCTimeoutError, match="lost") as caught:
         await api.import_sources_with_verification("nb", RUN_ID, [first, second], initial_delay=0)
 
-    assert caught.value is failed_precondition
+    assert caught.value is write_error
+    assert caught.value.__cause__ is failed_precondition
+    assert getattr(caught.value, "unconfirmed", False) is True
+    classified = classify(caught.value)
+    assert classified.category is ErrorCategory.RPC
+    assert classified.retriable is False
+    assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 2
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_precondition_probe_failure_keeps_prior_write_unconfirmed() -> None:
+    first = ResearchSource("https://example.com/a", "A")
+    second = ResearchSource("https://example.com/b", "B")
+    landed_first = Source(id="source-a", title="A", url=first.url)
+    write_error = RPCTimeoutError("lost", timeout_seconds=10)
+    failed_precondition = RPCError("rejected retry", rpc_code=9)
+    probe_error = AuthError("probe credentials expired")
+    api, transport = _api(
+        {FINISH_RUN_METHOD: [write_error, failed_precondition]},
+        _Lister([[], [landed_first], probe_error]),
+    )
+
+    with pytest.raises(RPCTimeoutError, match="lost") as caught:
+        await api.import_sources_with_verification("nb", RUN_ID, [first, second], initial_delay=0)
+
+    assert caught.value is write_error
+    assert caught.value.__cause__ is probe_error
+    assert getattr(caught.value, "unconfirmed", False) is True
+    assert classify(caught.value).retriable is False
     assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 2
 
 
@@ -641,11 +671,52 @@ async def test_finish_rate_limit_propagates_without_reconciliation_or_retry() ->
     assert [call[0] for call in transport.calls] == [FINISH_RUN_METHOD]
 
 
+@pytest.mark.parametrize(
+    "enrichment_error",
+    [
+        pytest.param(AuthError("reauthenticate"), id="auth"),
+        pytest.param(RateLimitError("slow down", retry_after=3), id="rate-limit"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_successful_finish_returns_confirmed_raw_result_when_enrichment_fails(
+    enrichment_error: BaseException,
+) -> None:
+    api, transport = _api(
+        {
+            FINISH_RUN_METHOD: [
+                research_pb2.FinishDiscoverSourcesRunResponse(
+                    sources=[
+                        research_pb2.ImportedSourceHeader(
+                            source_id=read_pb2.SourceId(id="source-a"), title="A"
+                        )
+                    ]
+                )
+            ]
+        },
+        _Lister([[], enrichment_error]),
+    )
+
+    result = await api.import_sources_with_verification(
+        "nb",
+        RUN_ID,
+        [
+            ResearchSource("https://example.com/a", "A"),
+            ResearchSource("https://example.com/b", "B"),
+        ],
+    )
+
+    assert result == [{"id": "source-a", "title": "A"}]
+    assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 1
+
+
 @pytest.mark.asyncio
 async def test_failed_probe_marks_timeout_unconfirmed_without_resending_finish() -> None:
+    write_error = RPCTimeoutError("lost", timeout_seconds=10)
+    probe_error = RPCError("probe unavailable", rpc_code=14)
     api, transport = _api(
-        {FINISH_RUN_METHOD: [RPCTimeoutError("lost", timeout_seconds=10)]},
-        _Lister([[], RPCError("probe unavailable", rpc_code=14)]),
+        {FINISH_RUN_METHOD: [write_error]},
+        _Lister([[], probe_error]),
     )
 
     with pytest.raises(RPCTimeoutError) as caught:
@@ -653,24 +724,40 @@ async def test_failed_probe_marks_timeout_unconfirmed_without_resending_finish()
             "nb", RUN_ID, [ResearchSource("https://example.com/a", "A")]
         )
 
+    assert caught.value is write_error
+    assert caught.value.__cause__ is probe_error
     assert getattr(caught.value, "unconfirmed", False) is True
     assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 1
 
 
+@pytest.mark.parametrize(
+    "probe_error",
+    [
+        pytest.param(AuthError("probe credentials expired"), id="auth"),
+        pytest.param(RateLimitError("slow down", retry_after=3), id="rate-limit"),
+    ],
+)
 @pytest.mark.asyncio
-async def test_probe_rate_limit_propagates_typed_signal_without_resending_finish() -> None:
-    rate_limit = RateLimitError("slow down", retry_after=3)
+async def test_probe_typed_failure_marks_write_unconfirmed_and_non_retriable(
+    probe_error: BaseException,
+) -> None:
+    write_error = RPCTimeoutError("lost", timeout_seconds=10)
     api, transport = _api(
-        {FINISH_RUN_METHOD: [RPCTimeoutError("lost", timeout_seconds=10)]},
-        _Lister([[], rate_limit]),
+        {FINISH_RUN_METHOD: [write_error]},
+        _Lister([[], probe_error]),
     )
 
-    with pytest.raises(RateLimitError) as caught:
+    with pytest.raises(RPCTimeoutError, match="lost") as caught:
         await api.import_sources_with_verification(
             "nb", RUN_ID, [ResearchSource("https://example.com/a", "A")]
         )
 
-    assert caught.value is rate_limit
+    assert caught.value is write_error
+    assert caught.value.__cause__ is probe_error
+    assert getattr(caught.value, "unconfirmed", False) is True
+    classified = classify(caught.value)
+    assert classified.category is ErrorCategory.RPC
+    assert classified.retriable is False
     assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 1
 
 

@@ -550,7 +550,7 @@ def research_wait(
             def _wait_context():
                 resume_hint = "notebooklm research status"
                 if plan.task_id is not None:
-                    resume_hint += f" --run-id {plan.task_id}"
+                    resume_hint += f" -n {plan.notebook_id} --run-id {plan.task_id}"
                 return status_with_elapsed(
                     "Waiting for research to complete...",
                     json_output=plan.json_output,

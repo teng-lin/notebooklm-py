@@ -244,7 +244,7 @@ class TestWaitCancelled:
         assert payload["error"] is True
         assert payload["code"] == "CANCELLED"
         # Resume hint surfaces the research-specific command.
-        assert "notebooklm research status" in payload.get("resume_hint", "")
+        assert payload["resume_hint"] == "notebooklm research status"
 
     def test_cancelled_exact_run_resume_hint_stays_pinned(self, runner_and_mocks):
         runner, _ = runner_and_mocks
@@ -259,7 +259,9 @@ class TestWaitCancelled:
 
         assert result.exit_code == 130
         payload = json.loads(result.output)
-        assert payload["resume_hint"] == "notebooklm research status --run-id task_exact"
+        assert payload["resume_hint"] == (
+            "notebooklm research status -n nb_123 --run-id task_exact"
+        )
 
 
 # ---------------------------------------------------------------------------

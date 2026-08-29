@@ -196,8 +196,8 @@ class AndroidResearchAPI(ResearchAPI):
                 task_id=task_id,
                 raise_on_ambiguous=task_id is None,
             )
-            if tasks:
-                return self._public_poll_result(tasks[0], tasks)
+            for selected_task in tasks:
+                return self._public_poll_result(selected_task, tasks)
             return ResearchTask.not_found(task_id) if task_id else ResearchTask.empty()
 
     async def _wait_for_completion(
