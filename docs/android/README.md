@@ -54,6 +54,19 @@ The package, generated protos, and most adapters remain private, direct-testable
 blocks. Explicit `backend="android"` selection installs Android Collections, the first complete
 substitution-qualified namespace; every other namespace remains Web, including Notes and Labels.
 
+## Public Collections qualification
+
+Collections is selected only for explicit `backend="android"`. Its permanent live gate exercises
+all nine public methods and cleans up one uniquely named notebook and collection. Run the same gate
+twice against an isolated profile containing both Web cookies and a sibling master token:
+
+```bash
+export NOTEBOOKLM_PROFILE=agent-b8p-collections
+export NOTEBOOKLM_ANDROID_COLLECTIONS_CONFORMANCE=1
+uv run pytest tests/e2e/test_android_collections_conformance.py -m e2e -vv
+uv run pytest tests/e2e/test_android_collections_conformance.py -m e2e -vv
+```
+
 ## Private Notes conformance
 
 The authenticated conformance probe exercises the complete eight-method Notes manifest, including
