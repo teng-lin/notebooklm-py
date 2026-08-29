@@ -28,7 +28,11 @@ from ..exceptions import (
     ServerError,
     ValidationError,
 )
-from .codecs.research import decode_discovered_source, decode_research_jobs
+from .codecs.research import (
+    canonical_research_job_id,
+    decode_discovered_source,
+    decode_research_jobs,
+)
 from .errors import unsupported_operation
 from .proto.google.internal.labs.tailwind.orchestration.v1 import research_pb2, sources_pb2
 from .session import AndroidSession
@@ -45,18 +49,7 @@ FINISH_RUN_METHOD = f"/{_SERVICE}/FinishDiscoverSourcesRun"
 
 
 def _canonical_uuid(value: str, *, method_id: str) -> str:
-    try:
-        parsed = uuid.UUID(value)
-    except (AttributeError, ValueError):
-        raise DecodingError(
-            "Android Research response omitted a canonical run id", method_id=method_id
-        ) from None
-    canonical = str(parsed)
-    if value.lower() != canonical:
-        raise DecodingError(
-            "Android Research response returned a non-canonical run id", method_id=method_id
-        )
-    return canonical
+    return canonical_research_job_id(value, method_id=method_id)
 
 
 def _validated_run_id(value: str) -> str:
@@ -65,7 +58,7 @@ def _validated_run_id(value: str) -> str:
     except (AttributeError, ValueError):
         raise ValidationError("run_id must be a canonical UUID") from None
     canonical = str(parsed)
-    if value.lower() != canonical:
+    if value != canonical:
         raise ValidationError("run_id must be a canonical UUID")
     return canonical
 
@@ -110,6 +103,7 @@ class AndroidResearchAPI(ResearchAPI):
                 expected_epoch=lease.epoch,
             )
             task_id = response.discover_sources_feedback_key.discover_sources_id
+            task_id = _canonical_uuid(task_id, method_id=DISCOVER_SOURCES_METHOD)
             sources = tuple(
                 source
                 for row in response.discovered_sources
@@ -238,7 +232,7 @@ class AndroidResearchAPI(ResearchAPI):
             except (NetworkError, ServerError) as exc:
                 try:
                     tasks = await self._list_tasks(notebook_id, expected_epoch=lease.epoch)
-                except (NetworkError, ServerError):
+                except (NetworkError, ServerError, DecodingError):
                     raise mark_unconfirmed(exc) from None
                 selected = next((task for task in tasks if task.task_id == run_id), None)
                 if selected is not None and selected.status_code in (2, 4):

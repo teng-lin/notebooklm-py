@@ -443,6 +443,25 @@ async def test_wait_resolves_notebook_id_through_injected_resolver() -> None:
     assert result.notebook_id == "nb_resolved"
 
 
+async def test_wait_threads_an_explicit_task_id_without_changing_default_calls() -> None:
+    client = _client(wait=_task(status=ResearchStatus.COMPLETED, task_id="task_exact"))
+    plan = ResearchWaitPlan(
+        notebook_id="nb_1",
+        timeout=300,
+        interval=5,
+        task_id="task_exact",
+    )
+
+    await execute_research_wait(plan, client=client, resolve_id=_resolve_passthrough)
+
+    client.research.wait_for_completion.assert_awaited_once_with(
+        "nb_1",
+        "task_exact",
+        timeout=300.0,
+        initial_interval=5.0,
+    )
+
+
 # ===========================================================================
 # execute_research_wait — import gating
 # ===========================================================================

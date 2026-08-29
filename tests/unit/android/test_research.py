@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from collections import deque
 from collections.abc import AsyncIterator
@@ -10,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
+from tests._helpers.android_supervisor import SupervisedAndroidTransport
 
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     read_pb2,
@@ -27,12 +29,15 @@ from notebooklm._android.research import (
 )
 from notebooklm._app.research import poll_and_classify
 from notebooklm._research import ResearchAPI
+from notebooklm._runtime.config import MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT
 from notebooklm._types.enums import DiscoveryMode
 from notebooklm._types.research import ResearchSource, ResearchStatus
 from notebooklm._web.research import WebResearchAPI
 from notebooklm.exceptions import (
     AmbiguousResearchTaskError,
+    AuthError,
     DecodingError,
+    RateLimitError,
     ResearchTaskMismatchError,
     RPCError,
     RPCTimeoutError,
@@ -71,13 +76,29 @@ class _Transport:
 
 
 class _Lister:
-    def __init__(self, rows: list[list[Source]] | None = None) -> None:
+    def __init__(self, rows: list[list[Source] | BaseException] | None = None) -> None:
         self.rows = deque(rows or [[]])
         self.calls: list[tuple[str, bool]] = []
 
     async def list(self, notebook_id: str, *, strict: bool = False) -> list[Source]:
         self.calls.append((notebook_id, strict))
-        return self.rows.popleft() if self.rows else []
+        value = self.rows.popleft() if self.rows else []
+        if isinstance(value, BaseException):
+            raise value
+        return value
+
+
+class _SupervisedLister:
+    def __init__(self, transport: SupervisedAndroidTransport) -> None:
+        self._transport = transport
+
+    async def list(self, notebook_id: str, *, strict: bool = False) -> list[Source]:
+        return await self._transport.unary(
+            "sources.list",
+            (notebook_id, strict),
+            replay_safe=True,
+            response_type=list,
+        )
 
 
 def _api(
@@ -266,6 +287,49 @@ async def test_unpinned_poll_is_ambiguous_and_pinned_miss_is_not_found() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "job_id",
+    [
+        "",
+        "not-a-job-id",
+        "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        RUN_ID.replace("-", ""),
+    ],
+)
+async def test_poll_rejects_identityless_malformed_and_noncanonical_job_ids(
+    job_id: str,
+) -> None:
+    response = research_pb2.ListDiscoverSourcesJobResponse(jobs=[_job(job_id, status=1)])
+    api, _ = _api({LIST_JOBS_METHOD: [response]})
+
+    with pytest.raises(DecodingError, match="canonical job id"):
+        await api.poll("nb", RUN_ID)
+
+
+@pytest.mark.asyncio
+async def test_poll_rejects_duplicate_job_ids_even_with_contradictory_statuses() -> None:
+    response = research_pb2.ListDiscoverSourcesJobResponse(
+        jobs=[_job(RUN_ID, status=1), _job(RUN_ID, status=2)]
+    )
+    api, _ = _api({LIST_JOBS_METHOD: [response]})
+
+    with pytest.raises(DecodingError, match="duplicate job id"):
+        await api.poll("nb", RUN_ID)
+
+
+@pytest.mark.asyncio
+async def test_omitted_proto_status_remains_nonterminal_and_unevidenced() -> None:
+    response = research_pb2.ListDiscoverSourcesJobResponse(jobs=[_job(RUN_ID, status=0)])
+    api, _ = _api({LIST_JOBS_METHOD: [response]})
+
+    result = await api.poll("nb", RUN_ID)
+
+    assert result.status is ResearchStatus.IN_PROGRESS
+    assert result.status_code is None
+    assert result.termination_reason is None
+
+
+@pytest.mark.asyncio
 async def test_wait_timeout_holds_outer_scope_and_threads_one_epoch() -> None:
     api, transport = _api(
         {
@@ -312,6 +376,20 @@ async def test_cancel_lost_response_still_in_progress_is_unconfirmed_without_res
         await api.cancel("nb", RUN_ID)
     assert getattr(caught.value, "unconfirmed", False) is True
     assert [call[0] for call in transport.calls].count(CANCEL_JOB_METHOD) == 1
+
+
+@pytest.mark.asyncio
+async def test_cancel_duplicate_readback_keeps_original_outcome_unconfirmed() -> None:
+    response = research_pb2.ListDiscoverSourcesJobResponse(
+        jobs=[_job(RUN_ID, status=1), _job(RUN_ID, status=4)]
+    )
+    api, transport = _api({CANCEL_JOB_METHOD: [ServerError("lost")], LIST_JOBS_METHOD: [response]})
+
+    with pytest.raises(ServerError, match="lost") as caught:
+        await api.cancel("nb", RUN_ID)
+
+    assert getattr(caught.value, "unconfirmed", False) is True
+    assert [call[0] for call in transport.calls] == [CANCEL_JOB_METHOD, LIST_JOBS_METHOD]
 
 
 @pytest.mark.asyncio
@@ -367,6 +445,233 @@ async def test_finish_encodes_url_and_markdown_and_never_replays() -> None:
     )
     assert transport.calls[0][2]["replay_safe"] is False
     assert result == [{"id": OTHER_ID, "title": "A"}]
+
+
+@pytest.mark.asyncio
+async def test_zero_elapsed_import_uses_one_natural_android_observation_window() -> None:
+    api, transport = _api(
+        {
+            FINISH_RUN_METHOD: [
+                research_pb2.FinishDiscoverSourcesRunResponse(
+                    sources=[
+                        research_pb2.ImportedSourceHeader(
+                            source_id=read_pb2.SourceId(id="source-a"), title="A"
+                        )
+                    ]
+                )
+            ]
+        },
+        _Lister([[]]),
+    )
+
+    result = await api.import_sources_with_verification(
+        "nb",
+        RUN_ID,
+        [ResearchSource("https://example.com/a", "A")],
+        max_elapsed=0,
+    )
+
+    assert result == [{"id": "source-a", "title": "A"}]
+    finish_calls = [call for call in transport.calls if call[0] == FINISH_RUN_METHOD]
+    assert len(finish_calls) == 1
+    assert finish_calls[0][2]["timeout"] is None
+
+
+@pytest.mark.asyncio
+async def test_retry_below_minimum_observation_window_never_sends_second_finish() -> None:
+    api, transport = _api(
+        {FINISH_RUN_METHOD: [RPCTimeoutError("lost", timeout_seconds=10)]},
+        _Lister([[], []]),
+    )
+
+    with pytest.raises(RPCTimeoutError) as caught:
+        await api.import_sources_with_verification(
+            "nb",
+            RUN_ID,
+            [ResearchSource("https://example.com/a", "A")],
+            max_elapsed=MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT - 1,
+            initial_delay=0,
+        )
+
+    assert getattr(caught.value, "unconfirmed", False) is True
+    finish_calls = [call for call in transport.calls if call[0] == FINISH_RUN_METHOD]
+    assert len(finish_calls) == 1
+    assert finish_calls[0][2]["timeout"] is None
+
+
+@pytest.mark.asyncio
+async def test_already_present_side_channel_matches_web_shape_and_deduplicates_requests() -> None:
+    existing = Source(id="source-a", title="Existing A", url="https://example.com/a/")
+    api, transport = _api({}, _Lister([[existing]]))
+
+    result = await api.import_sources_with_verification(
+        "nb",
+        RUN_ID,
+        [
+            ResearchSource("https://example.com/a", "A"),
+            ResearchSource("HTTPS://EXAMPLE.COM/a/", "A repeated"),
+        ],
+    )
+
+    assert result == []
+    assert result.already_present == [
+        {"id": "source-a", "title": "Existing A", "url": "https://example.com/a/"}
+    ]
+    assert transport.calls == []
+
+
+@pytest.mark.asyncio
+async def test_allow_duplicate_timeout_requires_a_new_exact_source_before_success() -> None:
+    existing = Source(id="baseline-a", title="Existing A", url="https://example.com/a")
+    duplicate = Source(id="source-a-2", title="New A", url="https://example.com/a")
+    api, transport = _api(
+        {FINISH_RUN_METHOD: [RPCTimeoutError("lost", timeout_seconds=10)]},
+        _Lister([[existing], [existing, duplicate]]),
+    )
+
+    result = await api.import_sources_with_verification(
+        "nb",
+        RUN_ID,
+        [ResearchSource("https://example.com/a", "A")],
+        allow_duplicate=True,
+    )
+
+    assert result == [{"id": "source-a-2", "title": "New A"}]
+    assert result.already_present == []
+    assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 1
+
+
+@pytest.mark.asyncio
+async def test_timeout_then_failed_precondition_reconciles_each_exact_id_without_third_write() -> (
+    None
+):
+    first = ResearchSource("https://example.com/a", "A")
+    second = ResearchSource("https://example.com/b", "B")
+    landed_first = Source(id="source-a", title="A", url=first.url)
+    landed_second = Source(id="source-b", title="B", url=second.url)
+    api, transport = _api(
+        {
+            FINISH_RUN_METHOD: [
+                RPCTimeoutError("lost", timeout_seconds=10),
+                RPCError("rejected retry", rpc_code=9),
+            ]
+        },
+        _Lister([[], [landed_first], [landed_first, landed_second]]),
+    )
+
+    result = await api.import_sources_with_verification(
+        "nb", RUN_ID, [first, second], initial_delay=0
+    )
+
+    assert result == [
+        {"id": "source-a", "title": "A"},
+        {"id": "source-b", "title": "B"},
+    ]
+    assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 2
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_precondition_without_new_exact_id_surfaces_without_third_write() -> (
+    None
+):
+    first = ResearchSource("https://example.com/a", "A")
+    second = ResearchSource("https://example.com/b", "B")
+    landed_first = Source(id="source-a", title="A", url=first.url)
+    failed_precondition = RPCError("rejected retry", rpc_code=9)
+    api, transport = _api(
+        {
+            FINISH_RUN_METHOD: [
+                RPCTimeoutError("lost", timeout_seconds=10),
+                failed_precondition,
+            ]
+        },
+        _Lister([[], [landed_first], [landed_first]]),
+    )
+
+    with pytest.raises(RPCError, match="rejected retry") as caught:
+        await api.import_sources_with_verification("nb", RUN_ID, [first, second], initial_delay=0)
+
+    assert caught.value is failed_precondition
+    assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 2
+
+
+@pytest.mark.asyncio
+async def test_failed_baseline_still_allows_one_successful_finish_without_retry() -> None:
+    api, transport = _api(
+        {FINISH_RUN_METHOD: [research_pb2.FinishDiscoverSourcesRunResponse()]},
+        _Lister([ServerError("baseline unavailable", rpc_code=14)]),
+    )
+
+    result = await api.import_sources_with_verification(
+        "nb", RUN_ID, [ResearchSource("https://example.com/a", "A")]
+    )
+
+    assert result == []
+    assert [call[0] for call in transport.calls] == [FINISH_RUN_METHOD]
+
+
+@pytest.mark.asyncio
+async def test_baseline_auth_error_propagates_without_sending_finish() -> None:
+    auth_error = AuthError("reauthenticate")
+    api, transport = _api({}, _Lister([auth_error]))
+
+    with pytest.raises(AuthError) as caught:
+        await api.import_sources_with_verification(
+            "nb", RUN_ID, [ResearchSource("https://example.com/a", "A")]
+        )
+
+    assert caught.value is auth_error
+    assert transport.calls == []
+
+
+@pytest.mark.asyncio
+async def test_finish_rate_limit_propagates_without_reconciliation_or_retry() -> None:
+    rate_limit = RateLimitError("slow down", retry_after=7)
+    lister = _Lister([[]])
+    api, transport = _api({FINISH_RUN_METHOD: [rate_limit]}, lister)
+
+    with pytest.raises(RateLimitError) as caught:
+        await api.import_sources_with_verification(
+            "nb", RUN_ID, [ResearchSource("https://example.com/a", "A")]
+        )
+
+    assert caught.value is rate_limit
+    assert caught.value.retry_after == 7
+    assert lister.calls == [("nb", False)]
+    assert [call[0] for call in transport.calls] == [FINISH_RUN_METHOD]
+
+
+@pytest.mark.asyncio
+async def test_failed_probe_marks_timeout_unconfirmed_without_resending_finish() -> None:
+    api, transport = _api(
+        {FINISH_RUN_METHOD: [RPCTimeoutError("lost", timeout_seconds=10)]},
+        _Lister([[], RPCError("probe unavailable", rpc_code=14)]),
+    )
+
+    with pytest.raises(RPCTimeoutError) as caught:
+        await api.import_sources_with_verification(
+            "nb", RUN_ID, [ResearchSource("https://example.com/a", "A")]
+        )
+
+    assert getattr(caught.value, "unconfirmed", False) is True
+    assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 1
+
+
+@pytest.mark.asyncio
+async def test_probe_rate_limit_propagates_typed_signal_without_resending_finish() -> None:
+    rate_limit = RateLimitError("slow down", retry_after=3)
+    api, transport = _api(
+        {FINISH_RUN_METHOD: [RPCTimeoutError("lost", timeout_seconds=10)]},
+        _Lister([[], rate_limit]),
+    )
+
+    with pytest.raises(RateLimitError) as caught:
+        await api.import_sources_with_verification(
+            "nb", RUN_ID, [ResearchSource("https://example.com/a", "A")]
+        )
+
+    assert caught.value is rate_limit
+    assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 1
 
 
 @pytest.mark.asyncio
@@ -457,6 +762,164 @@ async def test_report_timeout_has_zero_resend_and_marks_outcome_unconfirmed() ->
         )
     assert getattr(caught.value, "unconfirmed", False) is True
     assert [call[0] for call in transport.calls] == [FINISH_RUN_METHOD]
+
+
+@pytest.mark.asyncio
+async def test_real_supervisor_finish_completes_in_one_epoch_during_graceful_drain() -> None:
+    transport = SupervisedAndroidTransport()
+    baseline_started = asyncio.Event()
+    baseline_release = asyncio.Event()
+
+    async def _baseline(_request: Any, _kwargs: dict[str, Any]) -> list[Source]:
+        baseline_started.set()
+        await baseline_release.wait()
+        return []
+
+    transport.handlers["sources.list"] = _baseline
+    transport.handlers[FINISH_RUN_METHOD] = research_pb2.FinishDiscoverSourcesRunResponse(
+        sources=[
+            research_pb2.ImportedSourceHeader(source_id=read_pb2.SourceId(id="source-a"), title="A")
+        ]
+    )
+    api = AndroidResearchAPI(transport, _SupervisedLister(transport))  # type: ignore[arg-type]
+    task = asyncio.create_task(
+        api.import_sources_with_verification(
+            "nb",
+            RUN_ID,
+            [ResearchSource("https://example.com/a", "A")],
+            max_elapsed=0,
+        )
+    )
+    await baseline_started.wait()
+
+    await transport.supervisor.stop_accepting(1)
+    baseline_release.set()
+
+    assert await task == [{"id": "source-a", "title": "A"}]
+    assert [method for method, _request, _kwargs in transport.calls] == [
+        "sources.list",
+        FINISH_RUN_METHOD,
+    ]
+    assert transport.calls[1][2]["expected_epoch"] == 1
+    assert transport.calls[1][2]["replay_safe"] is False
+    assert transport.calls[1][2]["timeout"] is None
+    await transport.supervisor.wait_for_idle(1, 0.1)
+
+
+@pytest.mark.asyncio
+async def test_real_supervisor_finish_cannot_cross_forced_close_and_reopen() -> None:
+    transport = SupervisedAndroidTransport()
+    baseline_started = asyncio.Event()
+    baseline_release = asyncio.Event()
+
+    async def _baseline(_request: Any, _kwargs: dict[str, Any]) -> list[Source]:
+        baseline_started.set()
+        await baseline_release.wait()
+        return []
+
+    transport.handlers["sources.list"] = _baseline
+    transport.handlers[FINISH_RUN_METHOD] = research_pb2.FinishDiscoverSourcesRunResponse()
+    api = AndroidResearchAPI(transport, _SupervisedLister(transport))  # type: ignore[arg-type]
+    task = asyncio.create_task(
+        api.import_sources_with_verification(
+            "nb", RUN_ID, [ResearchSource("https://example.com/a", "A")]
+        )
+    )
+    await baseline_started.wait()
+
+    old_generation = await transport.force_close_and_reopen()
+    baseline_release.set()
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await task
+    assert [method for method, _request, _kwargs in transport.calls] == ["sources.list"]
+    assert old_generation.in_flight == 0
+
+
+@pytest.mark.asyncio
+async def test_real_supervisor_caller_cancellation_settles_import_scope_without_finish() -> None:
+    transport = SupervisedAndroidTransport()
+    baseline_started = asyncio.Event()
+    never_release = asyncio.Event()
+
+    async def _baseline(_request: Any, _kwargs: dict[str, Any]) -> list[Source]:
+        baseline_started.set()
+        await never_release.wait()
+        return []
+
+    transport.handlers["sources.list"] = _baseline
+    api = AndroidResearchAPI(transport, _SupervisedLister(transport))  # type: ignore[arg-type]
+    task = asyncio.create_task(
+        api.import_sources_with_verification(
+            "nb", RUN_ID, [ResearchSource("https://example.com/a", "A")]
+        )
+    )
+    await baseline_started.wait()
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert [method for method, _request, _kwargs in transport.calls] == ["sources.list"]
+    await transport.supervisor.wait_for_idle(1, 0.1)
+
+
+@pytest.mark.asyncio
+async def test_real_supervisor_cancel_exact_readback_completes_during_graceful_drain() -> None:
+    transport = SupervisedAndroidTransport()
+    cancel_started = asyncio.Event()
+    cancel_release = asyncio.Event()
+
+    async def _cancel(_request: Any, _kwargs: dict[str, Any]) -> ServerError:
+        cancel_started.set()
+        await cancel_release.wait()
+        return ServerError("lost")
+
+    transport.handlers[CANCEL_JOB_METHOD] = _cancel
+    transport.handlers[LIST_JOBS_METHOD] = research_pb2.ListDiscoverSourcesJobResponse(
+        jobs=[_job(OTHER_ID, status=1), _job(RUN_ID, status=4)]
+    )
+    api = AndroidResearchAPI(transport, _SupervisedLister(transport))  # type: ignore[arg-type]
+    task = asyncio.create_task(api.cancel("nb", RUN_ID))
+    await cancel_started.wait()
+
+    await transport.supervisor.stop_accepting(1)
+    cancel_release.set()
+
+    await task
+    assert [method for method, _request, _kwargs in transport.calls] == [
+        CANCEL_JOB_METHOD,
+        LIST_JOBS_METHOD,
+    ]
+    assert transport.calls[0][2]["replay_safe"] is False
+    assert [call[2]["expected_epoch"] for call in transport.calls] == [1, 1]
+    await transport.supervisor.wait_for_idle(1, 0.1)
+
+
+@pytest.mark.asyncio
+async def test_real_supervisor_cancel_readback_cannot_cross_forced_close_and_reopen() -> None:
+    transport = SupervisedAndroidTransport()
+    cancel_started = asyncio.Event()
+    cancel_release = asyncio.Event()
+
+    async def _cancel(_request: Any, _kwargs: dict[str, Any]) -> ServerError:
+        cancel_started.set()
+        await cancel_release.wait()
+        return ServerError("lost")
+
+    transport.handlers[CANCEL_JOB_METHOD] = _cancel
+    transport.handlers[LIST_JOBS_METHOD] = research_pb2.ListDiscoverSourcesJobResponse()
+    api = AndroidResearchAPI(transport, _SupervisedLister(transport))  # type: ignore[arg-type]
+    task = asyncio.create_task(api.cancel("nb", RUN_ID))
+    await cancel_started.wait()
+
+    old_generation = await transport.force_close_and_reopen()
+    cancel_release.set()
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await task
+    assert [method for method, _request, _kwargs in transport.calls] == [CANCEL_JOB_METHOD]
+    assert old_generation.in_flight == 0
 
 
 @pytest.mark.asyncio

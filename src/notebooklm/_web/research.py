@@ -571,6 +571,12 @@ class WebResearchAPI(BaseResearchAPI):
             if sleep_for > 0:
                 await asyncio.sleep(sleep_for)
 
+    def _wait_observed_status(self, result: ResearchTask) -> ResearchStatus:
+        """Preserve Web wait's pre-neutralization pinned-absence status."""
+        if result.status is ResearchStatus.NOT_FOUND:
+            return ResearchStatus.NO_RESEARCH
+        return result.status
+
     async def cancel(self, notebook_id: str, run_id: str) -> None:
         """Cancel an in-flight research (DiscoverSources) run.
 

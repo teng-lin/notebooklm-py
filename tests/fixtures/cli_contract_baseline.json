@@ -9020,6 +9020,25 @@
           }
         },
         {
+          "default": null,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Poll one exact research run instead of the notebook's unfiltered history.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "run_id",
+          "opts": [
+            "--run-id",
+            "--task-id"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
           "default": false,
           "envvar": null,
           "has_custom_shell_complete": false,
@@ -9055,6 +9074,25 @@
           "opts": [
             "-n",
             "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Wait for one exact research run instead of selecting from notebook history.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "run_id",
+          "opts": [
+            "--run-id",
+            "--task-id"
           ],
           "required": false,
           "secondary_opts": [],

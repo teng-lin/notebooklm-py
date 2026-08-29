@@ -274,8 +274,8 @@ Collections are account-level, so — unlike `label` — the `collection` comman
 
 | Command | Arguments | Options | Example |
 |---------|-----------|---------|---------|
-| `status` | - | `-n/--notebook`, `--json` | `research status` |
-| `wait` | - | `-n/--notebook`, `--timeout`, `--interval`, `--import-all`, `--cited-only`, `--json` | `research wait --import-all --cited-only` |
+| `status` | - | `-n/--notebook`, `--run-id/--task-id`, `--json` | `research status --run-id <run_id>` |
+| `wait` | - | `-n/--notebook`, `--run-id/--task-id`, `--timeout`, `--interval`, `--import-all`, `--cited-only`, `--json` | `research wait --run-id <run_id> --import-all` |
 | `import` | - | `-n/--notebook`, `--run-id`, `--cited-only`, `--timeout`, `--max-sources`, `--allow-duplicate`, `--json` | `research import` |
 | `cancel` | `RUN_ID` | `-n/--notebook`, `--json` | `research cancel <run_id>` |
 
@@ -1084,6 +1084,8 @@ notebooklm research status [OPTIONS]
 
 **Options:**
 - `-n, --notebook ID` - Notebook ID (uses current if not set)
+- `--run-id ID, --task-id ID` - Poll one exact run. Omit it to preserve the unfiltered
+  notebook-level behavior; pass it whenever more than one historical run may be visible.
 - `--json` - Output as JSON
 
 **Output states:**
@@ -1095,6 +1097,9 @@ notebooklm research status [OPTIONS]
 ```bash
 # Check status
 notebooklm research status
+
+# Check one exact run (`--task-id` is an alias)
+notebooklm research status --run-id <run_id>
 
 # JSON output for scripts/agents
 notebooklm research status --json
@@ -1112,6 +1117,8 @@ notebooklm research wait [OPTIONS]
 
 **Options:**
 - `-n, --notebook ID` - Notebook ID (uses current if not set)
+- `--run-id ID, --task-id ID` - Wait for one exact run. Omit it to preserve the historical
+  notebook-level selection behavior.
 - `--timeout SECONDS` - Per-phase budget (default: 1800, matching `source add-research`). Deep runs regularly exceed the former 300s default — 374s live, 358s in the `research_deep_poll_long` cassette; fast runs settle in seconds, so the cap only ever binds on deep. With `--import-all` the poll loop and the import-retry loop each get the full budget independently, so worst-case wall time is up to 2× this value.
 - `--interval SECONDS` - Seconds between status checks (default: 5)
 - `--import-all` - Import all found sources when done
@@ -1122,6 +1129,9 @@ notebooklm research wait [OPTIONS]
 ```bash
 # Basic wait
 notebooklm research wait
+
+# Wait for one exact run (`--task-id` is an alias)
+notebooklm research wait --run-id <run_id>
 
 # Wait longer for deep research
 notebooklm research wait --timeout 600

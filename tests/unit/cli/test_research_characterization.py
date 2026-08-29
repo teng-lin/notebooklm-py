@@ -120,6 +120,44 @@ class TestWaitHappy:
         assert "cited_only" not in payload
 
 
+@pytest.mark.parametrize("option", ["--run-id", "--task-id"])
+def test_status_exact_run_aliases_pin_the_single_poll(runner_and_mocks, option: str) -> None:
+    runner, factory = runner_and_mocks
+    client = factory(HAPPY_POLL)
+
+    result = runner.invoke(
+        cli,
+        ["research", "status", "-n", "nb_123", option, "task_exact", "--json"],
+        obj=inject_client(client),
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["task_id"] == "task_abc"
+    client.research.poll.assert_awaited_once_with("nb_123", "task_exact")
+
+
+@pytest.mark.parametrize("option", ["--run-id", "--task-id"])
+def test_wait_exact_run_aliases_thread_the_wait_discriminator(
+    runner_and_mocks, option: str
+) -> None:
+    runner, factory = runner_and_mocks
+    client = factory(HAPPY_POLL)
+
+    result = runner.invoke(
+        cli,
+        ["research", "wait", "-n", "nb_123", option, "task_exact", "--json"],
+        obj=inject_client(client),
+    )
+
+    assert result.exit_code == 0
+    client.research.wait_for_completion.assert_awaited_once_with(
+        "nb_123",
+        "task_exact",
+        timeout=1800.0,
+        initial_interval=5.0,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Timeout path — research never completes
 # ---------------------------------------------------------------------------
@@ -207,6 +245,21 @@ class TestWaitCancelled:
         assert payload["code"] == "CANCELLED"
         # Resume hint surfaces the research-specific command.
         assert "notebooklm research status" in payload.get("resume_hint", "")
+
+    def test_cancelled_exact_run_resume_hint_stays_pinned(self, runner_and_mocks):
+        runner, _ = runner_and_mocks
+        mock_client = create_mock_client()
+        mock_client.research.poll = AsyncMock(side_effect=KeyboardInterrupt)
+
+        result = runner.invoke(
+            cli,
+            ["research", "wait", "-n", "nb_123", "--run-id", "task_exact", "--json"],
+            obj=inject_client(mock_client),
+        )
+
+        assert result.exit_code == 130
+        payload = json.loads(result.output)
+        assert payload["resume_hint"] == "notebooklm research status --run-id task_exact"
 
 
 # ---------------------------------------------------------------------------

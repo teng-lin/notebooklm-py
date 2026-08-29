@@ -107,9 +107,16 @@ def research():
 
 @research.command("status")
 @notebook_option
+@click.option(
+    "--run-id",
+    "--task-id",
+    "run_id",
+    default=None,
+    help="Poll one exact research run instead of the notebook's unfiltered history.",
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @with_client
-def research_status(ctx, notebook_id, json_output, client_auth):
+def research_status(ctx, notebook_id, run_id, json_output, client_auth):
     """Check research status for the current notebook.
 
     Shows whether research is in progress, completed, or not running.
@@ -117,6 +124,7 @@ def research_status(ctx, notebook_id, json_output, client_auth):
     \b
     Examples:
       notebooklm research status
+      notebooklm research status --run-id <run_id>
       notebooklm research status --json
     """
     nb_id = require_notebook(notebook_id)
@@ -124,7 +132,7 @@ def research_status(ctx, notebook_id, json_output, client_auth):
     async def _run():
         async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            result = await poll_and_classify(client, nb_id_resolved)
+            result = await poll_and_classify(client, nb_id_resolved, run_id)
 
             if json_output:
                 # The classified result carries the canonical
@@ -449,6 +457,13 @@ def research_cancel(ctx, run_id, notebook_id, json_output, client_auth):
 @research.command("wait")
 @notebook_option
 @click.option(
+    "--run-id",
+    "--task-id",
+    "run_id",
+    default=None,
+    help="Wait for one exact research run instead of selecting from notebook history.",
+)
+@click.option(
     "--timeout",
     # 1800, matching ``source add-research`` (#2142). The legacy 5-minute cap sat
     # below every observed deep run: 374 s live, 358 s in
@@ -477,7 +492,15 @@ def research_cancel(ctx, run_id, notebook_id, json_output, client_auth):
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @with_client
 def research_wait(
-    ctx, notebook_id, timeout, interval, import_all, cited_only, json_output, client_auth
+    ctx,
+    notebook_id,
+    run_id,
+    timeout,
+    interval,
+    import_all,
+    cited_only,
+    json_output,
+    client_auth,
 ):
     """Wait for research to complete.
 
@@ -487,6 +510,7 @@ def research_wait(
     \b
     Examples:
       notebooklm research wait
+      notebooklm research wait --run-id <run_id>
       notebooklm research wait --timeout 600 --import-all
       notebooklm research wait --import-all --cited-only
       notebooklm research wait --json
@@ -514,6 +538,7 @@ def research_wait(
         import_all=import_all,
         cited_only=cited_only,
         json_output=json_output,
+        task_id=run_id,
     )
 
     async def _run():
@@ -523,10 +548,13 @@ def research_wait(
             # spinner emits the canonical "Cancelled. Resume with: ..."
             # envelope per :func:`emit_cancelled_and_exit`.
             def _wait_context():
+                resume_hint = "notebooklm research status"
+                if plan.task_id is not None:
+                    resume_hint += f" --run-id {plan.task_id}"
                 return status_with_elapsed(
                     "Waiting for research to complete...",
                     json_output=plan.json_output,
-                    resume_hint="notebooklm research status",
+                    resume_hint=resume_hint,
                 )
 
             result = await execute_research_wait(

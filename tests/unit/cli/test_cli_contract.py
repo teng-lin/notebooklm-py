@@ -48,7 +48,8 @@ HELP_SNIPPETS = {
     "download audio": ("Download audio", "--latest", "--no-clobber"),
     "source add": ("--follow-symlinks", "--mime-type", "--json"),
     "share public": ("--enable", "--disable", "--json"),
-    "research wait": ("--import-all", "--cited-only", "--timeout"),
+    "research status": ("--run-id", "--task-id", "--json"),
+    "research wait": ("--run-id", "--task-id", "--import-all", "--cited-only", "--timeout"),
     "label generate": ("--scope", "all", "unlabeled", "--yes"),
 }
 

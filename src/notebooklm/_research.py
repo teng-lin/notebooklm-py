@@ -14,7 +14,12 @@ from urllib.parse import urlsplit, urlunsplit
 from . import research as _research_pub
 from ._idempotency import mark_unconfirmed
 from ._notebook_metadata import NotebookSourceLister
-from ._runtime.config import AUTO_READ_TIMEOUT, DEFAULT_TIMEOUT
+from ._runtime.config import (
+    AUTO_READ_TIMEOUT,
+    DEFAULT_TIMEOUT,
+    MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT,
+)
+from ._types.enums import GrpcStatusCode, normalize_grpc_status
 from ._types.research import (
     ResearchSource,
     ResearchSourceInput,
@@ -24,7 +29,9 @@ from ._types.research import (
 )
 from .exceptions import (
     AmbiguousResearchTaskError,
+    AuthError,
     NetworkError,
+    RateLimitError,
     ResearchTaskMismatchError,
     ResearchTimeoutError,
     RPCError,
@@ -57,6 +64,14 @@ _normalize_import_verification_url = _normalized_import_url
 
 def _source_entry(source: Source) -> dict[str, str]:
     return {"id": source.id or "", "title": source.title or source.url or ""}
+
+
+def _already_present_entry(source: Source) -> dict[str, str]:
+    return {**_source_entry(source), "url": source.url or ""}
+
+
+def _is_failed_precondition(error: RPCError) -> bool:
+    return normalize_grpc_status(error.rpc_code) is GrpcStatusCode.FAILED_PRECONDITION
 
 
 class _ImportedResearchSources(list[dict[str, str]]):
@@ -163,9 +178,10 @@ class ResearchAPI(ABC):
             result = await self.poll(notebook_id, pinned)
             if pinned is None and result.task_id:
                 pinned = result.task_id
-            if result.status in (ResearchStatus.COMPLETED, ResearchStatus.FAILED):
+            observed_status = self._wait_observed_status(result)
+            if observed_status in (ResearchStatus.COMPLETED, ResearchStatus.FAILED):
                 return result
-            if result.status == ResearchStatus.NO_RESEARCH and pinned is None:
+            if observed_status == ResearchStatus.NO_RESEARCH and pinned is None:
                 return result
             elapsed = loop.time() - started
             if elapsed >= timeout:
@@ -173,9 +189,13 @@ class ResearchAPI(ABC):
                     notebook_id,
                     pinned or "unknown",
                     timeout,
-                    last_status=result.status.value,
+                    last_status=observed_status.value,
                 )
             await asyncio.sleep(min(interval, timeout - elapsed))
+
+    def _wait_observed_status(self, result: ResearchTask) -> ResearchStatus:
+        """Return the backend's historical wait-only status projection."""
+        return result.status
 
     @abstractmethod
     async def cancel(self, notebook_id: str, run_id: str) -> None:
@@ -235,7 +255,7 @@ class ResearchAPI(ABC):
         makes attribution ambiguous.
         """
         if not sources:
-            return []
+            return _imported_result([], [])
         inputs = list(sources)
         models = _coerce_sources(inputs)
         for source in models:
@@ -251,31 +271,31 @@ class ResearchAPI(ABC):
 
         try:
             baseline = await self._source_lister.list(notebook_id, strict=False)
-        except (NetworkError, RPCError):
+        except (AuthError, RateLimitError):
+            raise
+        except (NetworkError, ServerError):
             baseline = None
         baseline_ids = None if baseline is None else {source.id for source in baseline}
         already_present: list[dict[str, str]] = []
         if baseline is not None and not allow_duplicate:
-            existing_by_url: dict[str, list[Source]] = defaultdict(list)
+            existing_by_url: dict[str, Source] = {}
             for existing_source in baseline:
                 if existing_source.url:
-                    existing_by_url[_normalized_import_url(existing_source.url)].append(
-                        existing_source
+                    existing_by_url.setdefault(
+                        _normalized_import_url(existing_source.url), existing_source
                     )
             kept_inputs: list[ResearchSourceInput] = []
             kept_models: list[ResearchSource] = []
+            already_present_ids: set[str] = set()
             for source_input, source in zip(inputs, models, strict=True):
-                matches = (
-                    existing_by_url.get(_normalized_import_url(source.url), [])
-                    if source.url
-                    else []
+                existing = (
+                    existing_by_url.get(_normalized_import_url(source.url)) if source.url else None
                 )
-                if len(matches) > 1:
-                    raise ValidationError(
-                        f"Multiple existing sources match research URL {source.url!r}."
-                    )
-                if matches:
-                    already_present.append(_source_entry(matches[0]))
+                if existing is not None:
+                    existing_id = existing.id or ""
+                    if existing_id not in already_present_ids:
+                        already_present_ids.add(existing_id)
+                        already_present.append(_already_present_entry(existing))
                 else:
                     kept_inputs.append(source_input)
                     kept_models.append(source)
@@ -287,31 +307,81 @@ class ResearchAPI(ABC):
         started = time.monotonic()
         delay = initial_delay
         verified: list[dict[str, str]] = []
+        verified_ids: set[str] = set()
+        last_error: NetworkError | RPCError | None = None
         while True:
             budget = max_elapsed - (time.monotonic() - started)
+            budget_is_viable = budget >= MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT
+            if last_error is not None and not budget_is_viable:
+                raise mark_unconfirmed(last_error) from None
+            import_error: NetworkError | RPCError | None = None
             try:
                 imported = await self.import_sources(
                     notebook_id,
                     task_id,
                     inputs,
-                    _remaining_budget=max(0.0, budget),
+                    # Preserve ``max_elapsed=0`` as a natural one-shot import.
+                    # Only a viable observation window is allowed to clamp a
+                    # stateful Finish call, and every retry must be viable.
+                    _remaining_budget=budget if budget_is_viable else None,
                 )
-            except (NetworkError, ServerError) as exc:
+            except (AuthError, RateLimitError):
+                raise
+            except NetworkError as exc:
+                import_error = exc
+            except ServerError as exc:
+                import_error = exc
+            except RPCError as exc:
+                if not _is_failed_precondition(exc):
+                    raise
+                import_error = exc
+
+            if import_error is not None:
+                failure = import_error
+                failed_precondition = isinstance(failure, RPCError) and _is_failed_precondition(
+                    failure
+                )
                 if has_report or baseline_ids is None:
-                    raise mark_unconfirmed(exc) from None
-                current = await self._probe_after_ambiguous_import(notebook_id, exc)
-                inputs, models, landed = self._reconcile_url_subset(
-                    current=current,
-                    baseline_ids=baseline_ids,
-                    inputs=inputs,
-                    models=models,
-                )
+                    if failed_precondition:
+                        raise failure
+                    raise mark_unconfirmed(failure) from None
+                probe_error: NetworkError | RPCError | None = None
+                try:
+                    current = await self._source_lister.list(notebook_id, strict=False)
+                except (AuthError, RateLimitError):
+                    raise
+                except NetworkError as error:
+                    probe_error = error
+                except ServerError as error:
+                    probe_error = error
+                except RPCError as error:
+                    probe_error = error
+                if probe_error is not None:
+                    if failed_precondition:
+                        raise failure from None
+                    raise mark_unconfirmed(failure) from None
+                try:
+                    inputs, models, landed = self._reconcile_url_subset(
+                        current=current,
+                        baseline_ids=baseline_ids,
+                        already_verified_ids=verified_ids,
+                        inputs=inputs,
+                        models=models,
+                    )
+                except RPCError:
+                    if failed_precondition:
+                        raise failure from None
+                    raise
                 verified.extend(landed)
+                verified_ids.update(entry["id"] for entry in landed)
                 if not inputs:
                     return _imported_result(verified, already_present)
+                if failed_precondition:
+                    raise failure
                 remaining = max_elapsed - (time.monotonic() - started)
-                if remaining <= 0:
-                    raise mark_unconfirmed(exc) from None
+                last_error = failure
+                if remaining < MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT:
+                    raise mark_unconfirmed(failure) from None
                 await asyncio.sleep(min(delay, max_delay, remaining))
                 delay = min(delay * backoff_factor, max_delay)
                 continue
@@ -321,11 +391,19 @@ class ResearchAPI(ABC):
             if requested and len(returned_ids) < len(requested) and baseline_ids is not None:
                 try:
                     current = await self._source_lister.list(notebook_id, strict=False)
-                except (NetworkError, RPCError):
+                except (AuthError, RateLimitError):
+                    raise
+                except (NetworkError, ServerError):
+                    current = []
+                except RPCError:
                     current = []
                 by_url: dict[str, list[Source]] = defaultdict(list)
                 for current_source in current:
-                    if current_source.id not in baseline_ids and current_source.url:
+                    if (
+                        current_source.id not in baseline_ids
+                        and current_source.id not in verified_ids
+                        and current_source.url
+                    ):
                         by_url[_normalized_import_url(current_source.url)].append(current_source)
                 for url in requested:
                     matches = by_url.get(url, [])
@@ -335,23 +413,20 @@ class ResearchAPI(ABC):
                         returned_ids.add(landed_source.id)
             return _imported_result([*verified, *imported], already_present)
 
-    async def _probe_after_ambiguous_import(
-        self, notebook_id: str, original: NetworkError | ServerError
-    ) -> list[Source]:
-        try:
-            return await self._source_lister.list(notebook_id, strict=False)
-        except (NetworkError, RPCError):
-            raise mark_unconfirmed(original) from None
-
     @staticmethod
     def _reconcile_url_subset(
         *,
         current: Sequence[Source],
         baseline_ids: set[str],
+        already_verified_ids: set[str],
         inputs: list[ResearchSourceInput],
         models: list[ResearchSource],
     ) -> tuple[list[ResearchSourceInput], list[ResearchSource], list[dict[str, str]]]:
-        new_rows = [source for source in current if source.id not in baseline_ids]
+        new_rows = [
+            source
+            for source in current
+            if source.id not in baseline_ids and source.id not in already_verified_ids
+        ]
         requested = {_normalized_import_url(source.url) for source in models if source.url}
         if any(
             not source.url or _normalized_import_url(source.url) not in requested
@@ -371,10 +446,15 @@ class ResearchAPI(ABC):
         kept_inputs: list[ResearchSourceInput] = []
         kept_models: list[ResearchSource] = []
         landed: list[dict[str, str]] = []
+        landed_ids: set[str] = set()
         for source_input, model in zip(inputs, models, strict=True):
             matches = by_url.get(_normalized_import_url(model.url), []) if model.url else []
             if matches:
-                landed.append(_source_entry(matches[0]))
+                landed_source = matches[0]
+                landed_id = landed_source.id or ""
+                if landed_id not in landed_ids:
+                    landed_ids.add(landed_id)
+                    landed.append(_source_entry(landed_source))
             else:
                 kept_inputs.append(source_input)
                 kept_models.append(model)

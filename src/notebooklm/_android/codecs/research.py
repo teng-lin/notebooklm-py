@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import timezone
 from typing import Any
 
@@ -18,6 +19,22 @@ from ..._types.research import (
 from ...exceptions import DecodingError
 
 _REPORT_CONTENT_KIND = 3
+
+
+def canonical_research_job_id(value: str, *, method_id: str) -> str:
+    """Decode one exact canonical UUID-shaped Research job identity."""
+    try:
+        parsed = uuid.UUID(value)
+    except (AttributeError, ValueError):
+        raise DecodingError(
+            "Android Research response omitted a canonical job id", method_id=method_id
+        ) from None
+    canonical = str(parsed)
+    if value != canonical:
+        raise DecodingError(
+            "Android Research response returned a non-canonical job id", method_id=method_id
+        )
+    return canonical
 
 
 def _timestamp(message: Any, field: str) -> Any:
@@ -73,13 +90,14 @@ def decode_discovered_source(
 
 def decode_research_job(row: Any, *, method_id: str) -> ResearchTask:
     """Project one historical job without guessing unresolved result rows."""
-    task_id = row.source_discovery_job_id
-    if not task_id:
-        raise DecodingError("Android Research job omitted its run id", method_id=method_id)
+    task_id = canonical_research_job_id(row.source_discovery_job_id, method_id=method_id)
     info = row.info
     source_type = info.query.source_type if info.HasField("query") else 0
     query = info.query.query if info.HasField("query") else ""
-    status_code = info.status
+    # Proto3 scalar omission decodes as zero. No captured Android evidence
+    # qualifies zero as terminal, so preserve it as an unknown/in-flight
+    # observation rather than mapping it to the public FAILED bucket.
+    status_code = info.status or None
     reason = termination_reason_from_code(status_code)
     sources: list[ResearchSource] = []
     if info.HasField("results"):
@@ -108,14 +126,23 @@ def decode_research_job(row: Any, *, method_id: str) -> ResearchTask:
 
 
 def decode_research_jobs(response: Any, *, method_id: str) -> list[ResearchTask]:
-    """Decode valid historical jobs, isolating only rows with no identity."""
+    """Decode every historical job, rejecting identity drift and collisions."""
     decoded: list[ResearchTask] = []
+    seen_ids: set[str] = set()
     for row in response.jobs:
-        try:
-            decoded.append(decode_research_job(row, method_id=method_id))
-        except DecodingError:
-            continue
+        task = decode_research_job(row, method_id=method_id)
+        if task.task_id in seen_ids:
+            raise DecodingError(
+                "Android Research response returned a duplicate job id", method_id=method_id
+            )
+        seen_ids.add(task.task_id)
+        decoded.append(task)
     return decoded
 
 
-__all__ = ["decode_discovered_source", "decode_research_job", "decode_research_jobs"]
+__all__ = [
+    "canonical_research_job_id",
+    "decode_discovered_source",
+    "decode_research_job",
+    "decode_research_jobs",
+]

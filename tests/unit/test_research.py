@@ -620,6 +620,27 @@ class TestResearch:
             assert exc_info.value.timeout == 0
 
     @pytest.mark.asyncio
+    async def test_pinned_absence_timeout_preserves_web_no_research_last_status(
+        self, auth_tokens, httpx_mock, build_rpc_response
+    ):
+        """The shared waiter must not leak poll's Web-only NOT_FOUND sentinel."""
+        response_body = build_rpc_response(RPCMethod.POLL_RESEARCH, [])
+        httpx_mock.add_response(content=response_body.encode(), method="POST")
+
+        from notebooklm.exceptions import ResearchTimeoutError
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ResearchTimeoutError) as exc_info:
+                await client.research.wait_for_completion(
+                    "nb_123",
+                    task_id="task_missing",
+                    timeout=0,
+                    initial_interval=1,
+                )
+
+        assert exc_info.value.last_status == ResearchStatus.NO_RESEARCH.value
+
+    @pytest.mark.asyncio
     async def test_wait_for_completion_rejects_invalid_budget(self, auth_tokens):
         async with NotebookLMClient(auth_tokens) as client:
             with pytest.raises(ValueError, match="timeout must be non-negative"):
