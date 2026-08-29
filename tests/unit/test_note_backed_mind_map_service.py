@@ -189,7 +189,7 @@ class TestEndToEndWithRealNoteService:
             )
         )
 
-        notes = RealNoteService(session)
+        notes = RealNoteService(session, supervisor=session)
         svc = NoteBackedMindMapService(notes)
 
         rows = await svc.list_mind_maps("nb_x")

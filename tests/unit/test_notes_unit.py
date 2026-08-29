@@ -31,7 +31,7 @@ def notes_api(mock_core):
     fixture exercises the production wiring rather than a fully-mocked
     collaborator surface.
     """
-    note_service = NoteService(mock_core)
+    note_service = NoteService(mock_core, supervisor=mock_core)
     mind_maps = NoteBackedMindMapService(note_service)
     return WebNotesAPI(
         notes=note_service,

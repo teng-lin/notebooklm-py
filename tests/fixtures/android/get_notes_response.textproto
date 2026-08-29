@@ -1,0 +1,23 @@
+notes {
+  note {
+    id: "note-1"
+    content: "Pinned body"
+    metadata {
+      type: USER_WRITTEN
+      last_edit_timestamp { seconds: 1700000000 nanos: 123000000 }
+      note_prompt_type: NOTE_PROMPT_TYPE_UNSPECIFIED
+    }
+    name: "Pinned title"
+  }
+}
+notes {
+  note {
+    id: "mind-map-1"
+    content: "{\"nodes\": []}"
+    metadata {
+      type: CUSTOM
+      note_prompt_type: MIND_MAP
+    }
+    name: "Mind map"
+  }
+}

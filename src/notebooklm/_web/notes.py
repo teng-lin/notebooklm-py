@@ -34,9 +34,11 @@ from ..exceptions import DecodingError, NoteNotFoundError, RPCError
 from ..rpc import safe_index
 from ..rpc.types import RPCMethod
 from ..types import Note
+from .note_tasks import NoteTaskRegistry
 from .rows.notes import NoteRow
 
 if TYPE_CHECKING:
+    from .._runtime.call_supervisor import CallSupervisor
     from .contracts import RpcCaller
     from .mind_maps import NoteBackedMindMapService
 
@@ -44,22 +46,6 @@ __all__ = ["NoteService", "WebNotesAPI"]  # NoteRowKind is intentionally NOT exp
 
 logger = logging.getLogger("notebooklm._note_service")
 notes_logger = logging.getLogger("notebooklm._notes")
-
-
-# Module-level strong-ref anchor for fire-and-forget cleanup tasks (RUF006).
-# ``asyncio.create_task`` returns a Task that the event loop only holds via a
-# weak reference, so an unrooted Task can be garbage-collected mid-execution —
-# losing the orphan-row cleanup the cancel-safety shield is supposed to
-# guarantee. Each created task adds itself here and removes itself in a
-# done-callback so the set stays bounded.
-#
-# Intentionally module-level (not per-instance): the cleanup tasks are
-# detached fire-and-forget work whose only purpose is to keep the loop's
-# Task storage from GC-ing them mid-flight. Sharing one set across all
-# ``NoteService`` instances is correct and simpler than per-instance
-# bookkeeping — there is no per-instance state on the tasks themselves.
-# Single-loop-per-client invariant per ADR-0004; not safe for multi-loop fan-out.
-_cleanup_tasks: set[asyncio.Task[Any]] = set()
 
 
 class NoteRowKind(Enum):
@@ -86,13 +72,16 @@ class NoteService:
     ``NotesAPI`` and by ``NoteBackedMindMapService`` (the adapter
     that powers ``ArtifactsAPI`` mind-map paths).
 
-    Takes the narrow :class:`RpcCaller` capability — note CRUD only
-    needs ``rpc_call(...)``; everything else (drain hooks, transport,
-    loop-affinity guards) is irrelevant to this service.
+    Takes the narrow :class:`RpcCaller` capability for wire dispatch and the
+    root :class:`CallSupervisor` for the create/finalize workflow, child-task
+    admission, and close-time settlement.
     """
 
-    def __init__(self, rpc: RpcCaller) -> None:
+    def __init__(self, rpc: RpcCaller, *, supervisor: CallSupervisor) -> None:
         self._rpc = rpc
+        self._supervisor = supervisor
+        self._task_registry = NoteTaskRegistry(supervisor)
+        self._supervisor.register_drain_hook("notes.background", self._task_registry.drain)
 
     # ------------------------------------------------------------------
     # Row fetch + classification
@@ -272,6 +261,23 @@ class NoteService:
         *,
         operation_variant: str = "plain",
     ) -> Note:
+        """Create and finalize one Web note under root workflow admission."""
+        async with self._supervisor.operation_scope("notes.create"):
+            return await self._create_note_admitted(
+                notebook_id,
+                title=title,
+                content=content,
+                operation_variant=operation_variant,
+            )
+
+    async def _create_note_admitted(
+        self,
+        notebook_id: str,
+        title: str = "New Note",
+        content: str = "",
+        *,
+        operation_variant: str = "plain",
+    ) -> Note:
         """Create a note row and finalize its content + title.
 
         ``CREATE_NOTE`` ignores the title param server-side, so we follow
@@ -353,18 +359,19 @@ class NoteService:
         # write to an already-soft-deleted row — observable as an
         # inconsistent row state on the server side and a swallowed
         # exception in the cleanup task.
-        update_task = asyncio.create_task(self.update_note(notebook_id, note_id, content, title))
+        update_task = await self._task_registry.spawn(
+            f"note-update-{notebook_id}-{note_id}",
+            lambda: self.update_note(notebook_id, note_id, content, title),
+        )
         try:
             await asyncio.shield(update_task)
         except asyncio.CancelledError:
             # Ordered fire-and-forget cleanup: first wait for the
             # shielded UPDATE_NOTE to finish (success OR error),
             # THEN issue the best-effort DELETE_NOTE. The re-raise
-            # MUST NOT await the wrapper task. Strong-ref via
-            # ``_cleanup_tasks`` so the loop's weak-ref Task storage
-            # cannot GC the wrapper mid-flight (RUF006); the
-            # done-callback discards on completion so the set stays
-            # bounded.
+            # MUST NOT await the wrapper task. The per-service registry
+            # strongly retains it and the root drain hook settles it before
+            # Web transport teardown.
             async def _finalize_then_cleanup() -> None:
                 try:
                     try:
@@ -379,9 +386,21 @@ class NoteService:
                 finally:
                     await self._delete_note_best_effort(notebook_id, note_id)
 
-            cleanup_task = asyncio.create_task(_finalize_then_cleanup())
-            _cleanup_tasks.add(cleanup_task)
-            cleanup_task.add_done_callback(_cleanup_tasks.discard)
+            try:
+                await self._task_registry.spawn(
+                    f"note-cleanup-{notebook_id}-{note_id}",
+                    _finalize_then_cleanup,
+                )
+            except BaseException:
+                # The caller's cancellation owns precedence. A concurrent root
+                # close may already have fenced child admission; in that case
+                # the registry/supervisor still settle the admitted update.
+                logger.debug(
+                    "Could not admit DELETE_NOTE cleanup for note %s in notebook %s",
+                    note_id,
+                    notebook_id,
+                    exc_info=True,
+                )
             raise
 
         # Wrap the bare CREATE_NOTE inner envelope into the current row
@@ -404,7 +423,7 @@ class NoteService:
     async def _delete_note_best_effort(self, notebook_id: str, note_id: str) -> None:
         """Best-effort DELETE_NOTE cleanup for a partially-finalized create.
 
-        Used as a fire-and-forget ``asyncio.create_task`` target when an
+        Used as a supervised background-child target when an
         outer cancel arrives mid-UPDATE_NOTE: we never block the
         re-raise on this call, and any failure (network, auth refresh,
         etc.) is logged and swallowed. The only desired side effect is

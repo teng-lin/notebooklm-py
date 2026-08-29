@@ -430,7 +430,10 @@ def _assemble_client(
     # raw row primitives; NoteBackedMindMapService is the mind-map-only
     # adapter the download path uses; the artifact-generation path uses
     # NoteService.create_note directly to persist a generated mind map.
-    note_service = NoteService(internals.executor)
+    note_service = NoteService(
+        internals.executor,
+        supervisor=internals.collaborators.call_supervisor,
+    )
     mind_maps = NoteBackedMindMapService(note_service)
     # The artifacts API takes RPC dispatch plus the single call supervisor.
     # That supervisor is the one authority for polling operation scopes,

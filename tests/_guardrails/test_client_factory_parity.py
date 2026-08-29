@@ -240,6 +240,10 @@ def test_shared_wiring_identities_hold_on_both_paths() -> None:
         assert getattr(client.artifacts._note_service, "_rpc", _missing) is client._rpc_executor, (
             f"{label}: NoteService must dispatch through the client's shared RpcExecutor"
         )
+        assert (
+            getattr(client.artifacts._note_service, "_supervisor", _missing)
+            is client._collaborators.call_supervisor
+        ), f"{label}: NoteService must share the client's CallSupervisor"
         assert type(client.settings) is WebSettingsAPI
         assert isinstance(client.settings, SettingsAPI)
         assert getattr(client.settings, "_rpc", _missing) is client._rpc_executor, (

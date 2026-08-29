@@ -688,7 +688,9 @@ cancellation:
   Scotty (Google's internal resumable upload service) cancel to release the
   server-side upload slot.
 - **`notes.create`** shields the `UPDATE_NOTE` finalize step and cleans up
-  the partial note on cancel.
+  the partial note on cancel. Finalize/cleanup tasks are admitted as root
+  `CallSupervisor` children and retained in a per-service drain-settled registry,
+  so client close accounts for them before web transport teardown.
 - **`wait_for_sources`** cancels sibling pollers on the first poller's
   failure rather than letting them race to emit error messages.
 - **`wait_for_completion`** uses a leader/follower polling-dedupe registry

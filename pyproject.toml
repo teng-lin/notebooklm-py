@@ -53,7 +53,7 @@ impersonate = ["curl_cffi>=0.11,<1"]
 # exchange_token; no <2 cap so the 2.0.0 ServiceDisabled fix installs.
 headless = ["gpsoauth>=1.1.0"]
 # Android bearer-gRPC runtime. Exact protobuf/grpc pins match the checked-in
-# B1 generated stubs; the backend remains private/direct-test-only until a
+# Android generated stubs; the backend remains private/direct-test-only until a
 # whole namespace qualifies for promotion.
 android = ["grpcio==1.76.0", "protobuf==6.31.1", "gpsoauth>=1.1.0"]
 # >=3.0: the remote-transport bearer auth (FastMCP(auth=...) + TokenVerifier)

@@ -47,7 +47,7 @@ def mock_artifacts_api():
     # surface stays consistent with production behavior. Tests that
     # need to override list_mind_maps continue to patch it via
     # ``patch.object(api._mind_maps, "list_mind_maps", ...)``.
-    note_service = NoteService(mock_core)
+    note_service = NoteService(mock_core, supervisor=mock_core)
     mind_maps = NoteBackedMindMapService(note_service)
     api = WebArtifactsAPI(
         rpc=mock_core,

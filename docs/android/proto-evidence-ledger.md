@@ -1,13 +1,15 @@
 # Android protobuf evidence ledger
 
-**Status:** admitted B1 read closure plus B2 notebook, B3/B3b source, B4 artifact, and B5 chat overlays
+**Status:** admitted B1 read closure plus B2 notebook, B3/B3b source, B4 artifact, B5 chat,
+and B6 notes/sharing overlays
 
 **Evidence snapshot:** 2026-08-28
 
 **Scope:** B1 project/source reads, B2 notebook operations, the B3 URL/maintenance/flat-content
 slice and B3b PDF transaction, B4 artifact list/get/create/update/delete plus its repository-local
 wire-equivalent report-suggestion overlay, and the private/direct-test B5 chat surface
-(`ListChatSessions`, `ListChatTurns`, `DeleteChatTurns`, and `GenerateFreeFormStreamed`)
+(`ListChatSessions`, `ListChatTurns`, `DeleteChatTurns`, and `GenerateFreeFormStreamed`), plus B6
+note CRUD and public-link sharing
 
 This ledger is the admission boundary for `src/notebooklm/_android/proto_src/`. The recovered
 [`schema.proto`](schema.proto) is Dart-AOT evidence, not a compile input: it flattened several
@@ -17,13 +19,16 @@ copy only the fields below. Missing fields remain protobuf unknown fields; they 
 plausible-looking flattened declarations. B5 follows the same rule: its exact-package,
 service-free overlay admits only fields retained by the named Dart protobuf libraries and checked
 against captured wire tags. The adapter carries full method paths separately; it does not extend or
-invent a protobuf service descriptor.
+invent a protobuf service descriptor. B6 sharing is the one explicit exception to an exact
+package overlay: its field bytes are proven, but imported response/empty-message FQNs are not.
+Those messages therefore live under the visibly repository-local `notebooklm.android.wire.v1`
+package and make no claim about Google's type identity.
 
 ## Evidence input identities
 
-The external exact-package snapshot was reviewed, reduced to the admitted B1/B4 fields, and then made self-contained by
-this ledger, the checked-in proto sources, descriptor set, and synthetic fixtures. Hashes prevent a
-later local checkout from silently changing what was admitted.
+The external exact-package snapshot was reviewed, reduced to the admitted fields, and then made
+self-contained by this ledger, the checked-in proto sources, descriptor set, and synthetic
+fixtures. Hashes prevent a later local checkout from silently changing what was admitted.
 
 | Evidence input | SHA-256 | Role |
 |---|---|---|
@@ -33,8 +38,8 @@ later local checkout from silently changing what was admitted.
 | [`enums.txt`](enums.txt) | `8c8137c1842d07b54ba9e52feeea7c3ce09246415c26d964d17bec68eee228bc` | exhaustive enum names and integers |
 | exact method manifest | `c2cf4bf2e6cdefd35232f01572070fbe07d11ef9bad99b556f76b5e3748f38a3` | full method paths, request/response FQNs, unary cardinality |
 | [`file-transfer-live-validation-2026-08-27.md`](file-transfer-live-validation-2026-08-27.md) | `c713a7cfe5058482aa8fc9a0201ad08487296700223f23829842795f85713107` | official-app/headless PDF upload request and live artifact representation/direct infographic PNG transfer |
-| [`web-parity-gap-live-validation-2026-08-27.md`](web-parity-gap-live-validation-2026-08-27.md) | `c0a3a16b2ff0eba18395e5a53ae2ebddb3b299d8b2cae0d6d868a3e294b08251` | live delete, rename/read-back and report-suggestion response cardinality |
-| [`endpoints.md`](endpoints.md) | `57467b424515cf0dfa4c3e08c636ab6a8d0bfddbe5701cf50675ea39338e4e62` | live request/response envelopes and route results |
+| [`web-parity-gap-live-validation-2026-08-27.md`](web-parity-gap-live-validation-2026-08-27.md) | `c0a3a16b2ff0eba18395e5a53ae2ebddb3b299d8b2cae0d6d868a3e294b08251` | live delete, rename/read-back, report-suggestion cardinality, and disposable note CRUD |
+| [`endpoints.md`](endpoints.md) | `57467b424515cf0dfa4c3e08c636ab6a8d0bfddbe5701cf50675ea39338e4e62` | live request/response envelopes, route results, and captured note/sharing bytes |
 
 The recovery method and the warning about duplicate packages are committed in
 [`README.md`](README.md#caveats-that-will-bite-you). Live request/response shapes are documented in
@@ -168,6 +173,28 @@ that WKT as the service method's evidence-gated response FQN.
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteChatTurns` | `.google.internal.labs.tailwind.orchestration.v1.DeleteChatTurnsRequest` | zero-byte wire-equivalent `google.protobuf.Empty` | unary/unary | non-replay-safe |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed` | `.google.internal.labs.tailwind.orchestration.v1.GenerateFreeFormStreamedRequest` | `.google.internal.labs.tailwind.orchestration.v1.GenerateFreeFormStreamedResponse` | unary/server-streaming | no retry; one aggregate deadline; `telemetry_method=None` |
 
+## B6 service ledger
+
+The full method paths below come from the exact method inventory and were routed live. Note CRUD
+also has valid-resource semantic proof on a disposable copied notebook: create and mutate read back
+the exact title/content, and delete was eventually visible (the first read could retain the row;
+the next excluded it). Request context fields were optional in that successful replay and remain
+omitted.
+
+| Full method | Request/response evidence | Replay policy | B6 projection |
+|---|---|---|---|
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetNotes` | exact-package `GetNotesRequest` / `GetNotesResponse` | safe read | user notes; `MIND_MAP` rows excluded |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateNote` | exact-package `CreateNoteRequest` / `CreateNoteResponse` | never replay | create, then exact read-back |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateNote` | exact-package `MutateNoteRequest` / `MutateNoteResponse` | never replay | existence preflight, edit, exact read-back |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteNotes` | exact request; zero-byte success response parsed by local `EmptyResponse` | never replay | idempotent preflight plus bounded eventual-absence reads |
+| `/labs.language.tailwind.sharing.LabsTailwindSharingService/GetProjectDetails` | exact method/message names; local wire-equivalent fields | safe read | public settings #2, cap #3, policy #4 only |
+| `/labs.language.tailwind.sharing.LabsTailwindSharingService/ShareProject` | exact method/message names; local wire-equivalent fields; zero-byte success | never replay | public readability, then `GetProjectDetails` |
+
+`GetNotes` status 5 maps to `NotebookNotFoundError`; a missing listed note maps to
+`NoteNotFoundError`. Create/share status 5 maps to the notebook miss. Mutate status 5 maps to the
+note miss after its existence preflight. A delete status 5 after a successful preflight is the
+idempotent concurrent-absence outcome.
+
 ## Import closure
 
 | Import | Exact package | Why reachable |
@@ -177,6 +204,10 @@ that WKT as the service method's evidence-gated response FQN.
 
 No common, agency, artifact, chat, mutation, context, Empty, Struct, Duration, or FieldMask proto is
 reachable from the B1 read projection.
+
+B6 adds the exact `google.protobuf.Timestamp`-typed `last_edit_timestamp` note field but deliberately
+does not project it as public `Note.created_at`: a last edit is not evidence of creation time. The
+sharing and zero-byte response types need no external imports because their overlays are local.
 
 ## Field ledger
 
@@ -311,6 +342,57 @@ are byte-checked by the deterministic regeneration command below.
   caller limit and reverses the captured newest-first rows; it does not guess pagination policy from
   the presence of `next_page_token`.
 
+## B6 field ledger
+
+The exact-package note overlay declares only these recovered fields:
+
+| Package.Message | Field | Tag | Cardinality | Type/evidence |
+|---|---|---:|---|---|
+| `orchestration.v1.NoteMetadata` | `type` | 1 | singular | `NoteType`; exhaustive enum dump |
+| `orchestration.v1.NoteMetadata` | `last_edit_timestamp` | 3 | singular | `google.protobuf.Timestamp`; recovered Dart symbol |
+| `orchestration.v1.NoteMetadata` | `note_prompt_type` | 4 | singular | `NotePromptType`; exhaustive enum dump |
+| `orchestration.v1.ProjectNote` | `id` | 1 | singular | string |
+| `orchestration.v1.ProjectNote` | `content` | 2 | singular | string |
+| `orchestration.v1.ProjectNote` | `metadata` | 3 | singular | `NoteMetadata` |
+| `orchestration.v1.ProjectNote` | `name` | 5 | singular | string |
+| `orchestration.v1.NoteOrStatus` | `note` | 2 | singular | `ProjectNote`; status arm #1 unrecovered/unknown |
+| `orchestration.v1.GetNotesRequest` | `project_id` | 1 | singular | string; context #4 omitted |
+| `orchestration.v1.GetNotesResponse` | `notes` | 1 | repeated | `NoteOrStatus` |
+| `orchestration.v1.CreateNoteRequest` | `project_id`, `content`, `metadata`, `name` | 1, 2, 3, 5 | singular | exact tags; context #7 omitted |
+| `orchestration.v1.CreateNoteResponse` | `note` | 1 | singular | `ProjectNote` |
+| `orchestration.v1.NoteMutation_EditNoteMutation` | `content`, `name` | 1, 2 | singular | exact edit payload |
+| `orchestration.v1.NoteMutation` | `edit_note_mutation` | 1 | singular | edit mutation |
+| `orchestration.v1.MutateNoteRequest` | `project_id`, `note_id`, `mutations` | 1, 2, 3 | singular, singular, repeated | context #4 omitted |
+| `orchestration.v1.MutateNoteResponse` | `note` | 1 | singular | `ProjectNote` |
+| `orchestration.v1.DeleteNotesRequest` | `project_id`, `note_ids` | 1, 3 | singular, repeated | context #4 omitted |
+
+The repository-local sharing overlay admits only these bytes:
+
+| Local wire message | Field | Tag | Cardinality | Evidence boundary |
+|---|---|---:|---|---|
+| `ProjectPublicSettings` | `is_publicly_readable`, `is_discoverable` | 1, 2 | singular | recovered common message + live response/request |
+| `GetProjectDetailsRequest` | `project_id` | 1 | singular | successful capture; context #2 omitted |
+| `GetProjectDetailsResponse` | `public_settings` | 2 | singular | recovered field; tag #1 not decoded |
+| `GetProjectDetailsResponse` | `max_individuals_share_limit` | 3 | optional | recovered field; presence preserved |
+| `GetProjectDetailsResponse` | `is_public_sharing_allowed` | 4 | optional | recovered field; false remains distinct from absent |
+| `ShareProjectRequest_ProjectToShare` | `project_id`, `public_document_settings` | 1, 3 | singular | successful public/private mutation shape |
+| `ShareProjectRequest_PublicDocumentSettings` | `is_publicly_readable`, `is_discoverable` | 1, 2 | singular | successful capture |
+| `ShareProjectRequest` | `project` | 1 | repeated | successful capture; context #4 omitted |
+
+Collaborator/owner response tag #1 is absent from the recovered mobile descriptor, so Android
+returns `shared_users=[]`. Populated but unnamed response tags #7/#8 remain protobuf unknown fields.
+No collaborator mutation, view-level mutation, or Android settings API is admitted.
+
+## Evidence-gated omissions and the B5 seam
+
+`NotePromptType.MIND_MAP` is exact evidence sufficient to exclude those rows from ordinary note
+listing. It does not independently prove the public raw mind-map return shape or kind-safe delete,
+so `list_mind_maps` and `delete_mind_map` reject before transport I/O.
+
+The exact `CreateNote` builder and sender are reusable by the B5 `AndroidChatAPI` private save-note
+hook with `note_type=SAVED_RESPONSE_NOTE_TYPE`; B6 does not duplicate or fabricate the chat
+adapter.
+
 ## Blocked Project premium field 10
 
 The flattened [`schema.proto`](schema.proto) names `Project.premiumFeatureInfo #10` and three bool
@@ -414,7 +496,8 @@ response. No generated type falsely claims the remote request package.
 | flags | both proto roots via `-I`, `--include_imports`, `--descriptor_set_out`, `--python_out`, `--grpc_python_out`; sorted input list |
 
 Run `python scripts/regenerate_android_protos.py --check` in the locked dev environment. The check
-compiles the cumulative B1-B5 closure into a temporary directory, performs the repository-local
+compiles the cumulative B1-B6 closure into a temporary directory, performs the repository-local
 Python import relocation for every exact package root, and byte-compares the canonical descriptor
 set plus the complete generated module tree. Use `--write` only when the reviewed proto sources and
-pinned toolchain intentionally change.
+pinned toolchain intentionally change. `b6_request_wires.json` independently pins every populated
+B6 request byte sequence.

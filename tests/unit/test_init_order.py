@@ -449,7 +449,7 @@ def _build_artifacts_with_real_mind_map_service(core: FakeSession) -> ArtifactsA
     from notebooklm._web.mind_maps import NoteBackedMindMapService
     from notebooklm._web.notes import NoteService
 
-    note_service = NoteService(core.rpc_executor)
+    note_service = NoteService(core.rpc_executor, supervisor=core)
     mind_maps = NoteBackedMindMapService(note_service)
     return WebArtifactsAPI(
         rpc=core.rpc_executor,

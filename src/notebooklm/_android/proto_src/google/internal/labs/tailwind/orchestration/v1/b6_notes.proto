@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package google.internal.labs.tailwind.orchestration.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Exact-package B6 note overlay. The flattened recovery preserves this Dart
+// library's package, message names, enum values, field tags, and cardinality.
+// RequestContext and ProjectNote.tailwind_doc_content #6 are deliberately
+// omitted because no B6 public projection populates or reads them.
+
+enum NotePromptType {
+  NOTE_PROMPT_TYPE_UNSPECIFIED = 0;
+  STUDY_GUIDE = 1;
+  BRIEFING_DOC = 2;
+  FAQ = 3;
+  TIMELINE = 4;
+  MIND_MAP = 5;
+}
+
+enum NoteType {
+  NOTE_TYPE_UNSPECIFIED = 0;
+  USER_WRITTEN = 1;
+  SAVED_RESPONSE = 2;
+  CUSTOM = 3;
+}
+
+message NoteMetadata {
+  NoteType type = 1;
+  google.protobuf.Timestamp last_edit_timestamp = 3;
+  NotePromptType note_prompt_type = 4;
+}
+
+message ProjectNote {
+  string id = 1;
+  string content = 2;
+  NoteMetadata metadata = 3;
+  string name = 5;
+}
+
+message NoteOrStatus {
+  // Field #1 is an unrecovered status arm and stays an unknown field.
+  ProjectNote note = 2;
+}
+
+message GetNotesRequest {
+  string project_id = 1;
+  // RequestContext #4 intentionally omitted.
+}
+
+message GetNotesResponse {
+  repeated NoteOrStatus notes = 1;
+}
+
+message CreateNoteRequest {
+  string project_id = 1;
+  string content = 2;
+  NoteMetadata metadata = 3;
+  string name = 5;
+  // RequestContext #7 intentionally omitted.
+}
+
+message CreateNoteResponse {
+  ProjectNote note = 1;
+}
+
+message NoteMutation_EditNoteMutation {
+  string content = 1;
+  string name = 2;
+}
+
+message NoteMutation {
+  NoteMutation_EditNoteMutation edit_note_mutation = 1;
+}
+
+message MutateNoteRequest {
+  string project_id = 1;
+  string note_id = 2;
+  repeated NoteMutation mutations = 3;
+  // RequestContext #4 intentionally omitted.
+}
+
+message MutateNoteResponse {
+  ProjectNote note = 1;
+}
+
+message DeleteNotesRequest {
+  string project_id = 1;
+  repeated string note_ids = 3;
+  // RequestContext #4 intentionally omitted.
+}

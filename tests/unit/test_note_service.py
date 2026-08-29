@@ -16,10 +16,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, call
 
 import pytest
 
+from notebooklm._client_metrics import ClientMetrics
+from notebooklm._runtime.call_supervisor import CallSupervisor
+from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm._web.notes import NoteRowKind, NoteService
 from notebooklm.exceptions import DecodingError, RPCError
 from notebooklm.rpc import RPCMethod
@@ -37,7 +41,7 @@ def mock_session() -> FakeSession:
 
 @pytest.fixture
 def service(mock_session: FakeSession) -> NoteService:
-    return NoteService(mock_session)
+    return NoteService(mock_session, supervisor=mock_session)
 
 
 class TestFetchNoteRows:
@@ -274,12 +278,95 @@ class TestCreateNoteCancellation:
     """
 
     @pytest.mark.asyncio
+    async def test_finalize_child_is_root_accounted_until_settled(self) -> None:
+        supervisor = CallSupervisor(
+            metrics=ClientMetrics(),
+            drain_tracker=TransportDrainTracker(),
+            max_concurrent_rpcs=None,
+        )
+        loop = asyncio.get_running_loop()
+        supervisor.set_bound_loop(loop)
+        supervisor.reset_after_open()
+        supervisor.prepare_generation(1)
+        supervisor.start_accepting(1)
+        update_started = asyncio.Event()
+        update_can_finish = asyncio.Event()
+
+        async def rpc_call(method: RPCMethod, *_args: object, **_kwargs: object) -> object:
+            if method is RPCMethod.CREATE_NOTE:
+                return [["note-root-accounted"]]
+            if method is RPCMethod.UPDATE_NOTE:
+                update_started.set()
+                await update_can_finish.wait()
+                return None
+            raise AssertionError(f"unexpected RPC: {method}")
+
+        rpc = SimpleNamespace(rpc_call=rpc_call)
+        service = NoteService(rpc, supervisor=supervisor)
+        task = asyncio.create_task(service.create_note("nb-root", "Title", "Body"))
+        await asyncio.wait_for(update_started.wait(), timeout=1)
+
+        generation = supervisor._current
+        assert generation is not None
+        assert generation.in_flight == 2  # parent workflow + admitted finalize child
+        assert service._task_registry.active_tasks()
+        assert "notes.background" in supervisor._drain_hooks
+
+        update_can_finish.set()
+        note = await asyncio.wait_for(task, timeout=1)
+        assert note.id == "note-root-accounted"
+        await supervisor.wait_for_idle(1, timeout=1)
+        assert generation.in_flight == 0
+        assert service._task_registry.active_tasks() == []
+
+    @pytest.mark.asyncio
+    async def test_root_drain_cancels_and_settles_registered_finalize_work(self) -> None:
+        supervisor = CallSupervisor(
+            metrics=ClientMetrics(),
+            drain_tracker=TransportDrainTracker(),
+            max_concurrent_rpcs=None,
+        )
+        loop = asyncio.get_running_loop()
+        supervisor.set_bound_loop(loop)
+        supervisor.reset_after_open()
+        supervisor.prepare_generation(1)
+        supervisor.start_accepting(1)
+        update_started = asyncio.Event()
+        never_finish = asyncio.Event()
+
+        async def rpc_call(method: RPCMethod, *_args: object, **_kwargs: object) -> object:
+            if method is RPCMethod.CREATE_NOTE:
+                return [["note-drained"]]
+            if method is RPCMethod.UPDATE_NOTE:
+                update_started.set()
+                await never_finish.wait()
+                return None
+            if method is RPCMethod.DELETE_NOTE:
+                return None
+            raise AssertionError(f"unexpected RPC: {method}")
+
+        service = NoteService(SimpleNamespace(rpc_call=rpc_call), supervisor=supervisor)
+        task = asyncio.create_task(service.create_note("nb-drain", "Title", "Body"))
+        await asyncio.wait_for(update_started.wait(), timeout=1)
+
+        await supervisor.stop_accepting(1)
+        await asyncio.wait_for(supervisor.run_drain_hooks(), timeout=1)
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await supervisor.wait_for_idle(1, timeout=1)
+
+        generation = supervisor._current
+        assert generation is not None
+        assert generation.in_flight == 0
+        assert service._task_registry.active_tasks() == []
+
+    @pytest.mark.asyncio
     async def test_cancellation_schedules_best_effort_cleanup(
         self,
         mock_session: FakeSession,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        service = NoteService(mock_session)
+        service = NoteService(mock_session, supervisor=mock_session)
         mock_session.rpc_executor.rpc_call.return_value = [["note_123"]]
         update_started = asyncio.Event()
         update_can_finish = asyncio.Event()
@@ -359,7 +446,7 @@ class TestCreateNoteCancellation:
         Without it, an update-side error would leave the orphan row
         the shield was supposed to protect against.
         """
-        service = NoteService(mock_session)
+        service = NoteService(mock_session, supervisor=mock_session)
         mock_session.rpc_executor.rpc_call.return_value = [["note_456"]]
         update_started = asyncio.Event()
         update_can_finish = asyncio.Event()

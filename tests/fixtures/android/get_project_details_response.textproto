@@ -1,0 +1,6 @@
+public_settings {
+  is_publicly_readable: true
+  is_discoverable: false
+}
+max_individuals_share_limit: 1000
+is_public_sharing_allowed: true

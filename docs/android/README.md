@@ -26,9 +26,8 @@ themselves.
 |---|---|---|
 | [`schema.proto`](schema.proto) | **generated** | 282 messages / 767 fields recovered from the Dart AOT `BuilderInfo`. **Parsed by CI** — see caveats. |
 | [`enums.txt`](enums.txt) | **generated** | 77 enums / ~1900 values with exact integers. **Parsed by CI.** |
-| [`proto-evidence-ledger.md`](proto-evidence-ledger.md) | admission ledger | Exact-package B1 reads and repository-local B2 wire overlays admitted to generated code. |
 | [`endpoints.md`](endpoints.md) | reference | The gRPC method surface, and the mobile ⇄ web cross-reference. Start here. |
-| [`proto-evidence-ledger.md`](proto-evidence-ledger.md) | admission ledger | Exact/local cumulative compile closure and evidence-gated omissions for implemented Android B1-B5 adapters. |
+| [`proto-evidence-ledger.md`](proto-evidence-ledger.md) | admission ledger | Exact/local cumulative compile closure, replay policy, and evidence-gated omissions for implemented Android B1-B6 adapters. |
 | [`capture.md`](capture.md) | runbook | How to intercept the app's HTTP/2 gRPC traffic (emulator, VPN, Mockttp). |
 | [`android-traffic-capture.md`](android-traffic-capture.md) | legacy runbook | Rooted-emulator Cronet/Frida capture procedure retained as dated evidence. |
 | [`auth-research.md`](auth-research.md) | live report | Exact NotebookLM Android OAuth identity, scope bundle, and bearer validation. |
@@ -41,6 +40,12 @@ themselves.
 `schema.proto` and `enums.txt` are **regenerable artifacts, not hand-written docs**.
 They are committed because CI parses them; regenerate rather than hand-edit.
 The generator is [`scripts/parse_pbschema.py`](../../scripts/parse_pbschema.py).
+
+The reduced compile inputs used by the private Android adapters live under
+`src/notebooklm/_android/proto_src/`. Regenerate their checked-in Python modules and the full
+descriptor fixture with `python scripts/regenerate_android_protos.py --write`; use `--check` in CI.
+These adapters are direct-testable migration building blocks, not a public backend selector. The
+normal `NotebookLMClient` assembly continues to construct the web notes and sharing implementations.
 
 ## Caveats that will bite you
 

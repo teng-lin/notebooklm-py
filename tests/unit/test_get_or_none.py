@@ -95,7 +95,7 @@ def notes_api():
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock())
-    note_service = NoteService(core)
+    note_service = NoteService(core, supervisor=core)
     mind_maps = NoteBackedMindMapService(note_service)
     return WebNotesAPI(notes=note_service, mind_maps=mind_maps)
 

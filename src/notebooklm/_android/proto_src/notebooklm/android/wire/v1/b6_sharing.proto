@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package notebooklm.android.wire.v1;
+
+// Repository-local byte-equivalent B6 sharing overlay. The exact service path,
+// message names, and field tags are evidenced, but the flattened recovery does
+// not prove every imported message FQN. Keeping this package local prevents an
+// invented public/exact-package claim while still pinning the admitted bytes.
+
+message EmptyResponse {}
+
+message ProjectPublicSettings {
+  bool is_publicly_readable = 1;
+  bool is_discoverable = 2;
+}
+
+message GetProjectDetailsRequest {
+  string project_id = 1;
+  // RequestContext #2 intentionally omitted.
+}
+
+message GetProjectDetailsResponse {
+  // Collaborator/owner details #1 and unknown tags #7/#8 remain unknown fields.
+  ProjectPublicSettings public_settings = 2;
+  optional int32 max_individuals_share_limit = 3;
+  optional bool is_public_sharing_allowed = 4;
+}
+
+message ShareProjectRequest_PublicDocumentSettings {
+  bool is_publicly_readable = 1;
+  bool is_discoverable = 2;
+}
+
+message ShareProjectRequest_ProjectToShare {
+  string project_id = 1;
+  ShareProjectRequest_PublicDocumentSettings public_document_settings = 3;
+}
+
+message ShareProjectRequest {
+  repeated ShareProjectRequest_ProjectToShare project = 1;
+  // RequestContext #4 intentionally omitted.
+}

@@ -118,7 +118,7 @@ def _make_notes_api() -> WebNotesAPI:
     # truthy non-list payload would now raise ``DecodingError`` as drift (#1344),
     # so it can no longer stand in for "empty".
     core = make_fake_core(rpc_call=AsyncMock(return_value=None))
-    note_service = NoteService(core)
+    note_service = NoteService(core, supervisor=core)
     mind_maps = NoteBackedMindMapService(note_service)
     return WebNotesAPI(notes=note_service, mind_maps=mind_maps)
 
