@@ -6,22 +6,44 @@ import builtins
 import logging
 from typing import Any, NoReturn, cast
 
+from google.protobuf.empty_pb2 import Empty
+
+from .._idempotency import mark_unconfirmed
 from .._notebooks import NotebooksAPI
-from ..exceptions import RPCError
+from ..exceptions import (
+    DecodingError,
+    NetworkError,
+    RateLimitError,
+    RPCError,
+    ServerError,
+    ValidationError,
+)
 from ..types import Notebook, NotebookDescription, PromptSuggestion
-from .codecs.notebooks import decode_project, map_get_project_error, message_to_known_dict
+from .codecs.notebooks import (
+    decode_notebook_guide,
+    decode_project,
+    map_get_project_error,
+    message_to_known_dict,
+)
 from .codecs.sources import decode_sources
 from .errors import unsupported_operation
 from .proto.google.internal.labs.tailwind.orchestration.v1 import b1_read_pb2
+from .proto.notebooklm.internal.android.wire.v1 import b2_notebooks_pb2
 from .session import AndroidSession
 from .sources import AndroidSourcesAPI
 
 logger = logging.getLogger(__name__)
 _PROTO = cast(Any, b1_read_pb2)
+_WIRE = cast(Any, b2_notebooks_pb2)
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 GET_PROJECT_METHOD = f"/{_SERVICE}/GetProject"
 LIST_RECENT_PROJECTS_METHOD = f"/{_SERVICE}/ListRecentlyViewedProjects"
+CREATE_PROJECT_METHOD = f"/{_SERVICE}/CreateProject"
+COPY_PROJECT_METHOD = f"/{_SERVICE}/CopyProject"
+DELETE_PROJECTS_METHOD = f"/{_SERVICE}/DeleteProjects"
+MUTATE_PROJECT_METHOD = f"/{_SERVICE}/MutateProject"
+GENERATE_NOTEBOOK_GUIDE_METHOD = f"/{_SERVICE}/GenerateNotebookGuide"
 
 
 def _reject(operation: str) -> NoReturn:
@@ -109,14 +131,55 @@ class AndroidNotebooksAPI(NotebooksAPI):
         ]
 
     async def create(self, title: str) -> Notebook:
-        """Reject B1 create before the base class can perform its list probe."""
-        _reject("notebooks.create")
+        """Create through the base transport-neutral probe workflow."""
+        return await super().create(title)
 
     async def _send_create(self, title: str) -> Notebook:
-        _reject("notebooks.create")
+        # evidence: docs/android/proto-evidence-ledger.md#b2-repository-local-wire-field-ledger
+        response = await self._transport.unary(
+            CREATE_PROJECT_METHOD,
+            _WIRE.WireCreateProjectRequest(name=title),
+            replay_safe=False,
+            response_type=_PROTO.Project,
+        )
+        return decode_project(response, method_id=CREATE_PROJECT_METHOD)
 
     async def copy(self, notebook_id: str, title: str) -> Notebook:
-        _reject("notebooks.copy")
+        """Copy once, surfacing transport loss as an ambiguous outcome."""
+        if not notebook_id:
+            raise ValidationError("notebook_id must not be empty")
+        if not title or not title.strip():
+            raise ValidationError("title must not be empty")
+
+        # evidence: docs/android/proto-evidence-ledger.md#b2-repository-local-wire-field-ledger
+        try:
+            response = await self._transport.unary(
+                COPY_PROJECT_METHOD,
+                _WIRE.WireCopyProjectRequest(
+                    source_project_id=notebook_id,
+                    title=title,
+                ),
+                replay_safe=False,
+                response_type=_PROTO.Project,
+            )
+        except (NetworkError, RateLimitError, ServerError) as exc:
+            rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
+            raise mark_unconfirmed(
+                RPCError(
+                    "UNRESOLVED — CopyProject may have committed before its response was "
+                    "lost. Do not blindly retry; list notebooks and resolve copies "
+                    "manually first.",
+                    method_id=COPY_PROJECT_METHOD,
+                    rpc_code=rpc_code,
+                )
+            ) from exc
+        notebook = decode_project(response, method_id=COPY_PROJECT_METHOD)
+        if notebook.id == notebook_id:
+            raise DecodingError(
+                "CopyProject response reused the source notebook id",
+                method_id=COPY_PROJECT_METHOD,
+            )
+        return notebook
 
     async def suggest_prompts(
         self,
@@ -129,7 +192,13 @@ class AndroidNotebooksAPI(NotebooksAPI):
         _reject("notebooks.suggest_prompts")
 
     async def delete(self, notebook_id: str) -> None:
-        _reject("notebooks.delete")
+        # evidence: docs/android/proto-evidence-ledger.md#b2-repository-local-wire-field-ledger
+        await self._transport.unary(
+            DELETE_PROJECTS_METHOD,
+            _WIRE.WireDeleteProjectsRequest(project_ids=[notebook_id]),
+            replay_safe=False,
+            response_type=Empty,
+        )
 
     async def update(
         self,
@@ -138,13 +207,39 @@ class AndroidNotebooksAPI(NotebooksAPI):
         title: str | None = None,
         emoji: str | None = None,
     ) -> Notebook:
-        _reject("notebooks.update")
+        if title is None and emoji is None:
+            raise ValidationError("At least one of title or emoji must be provided")
+        if emoji is not None:
+            _reject("notebooks.update emoji")
+        assert title is not None
+
+        # evidence: docs/android/proto-evidence-ledger.md#b2-repository-local-wire-field-ledger
+        request = _WIRE.WireMutateProjectRequest(project_id=notebook_id)
+        request.mutations.add().change_property.new_title = title
+        response = await self._transport.unary(
+            MUTATE_PROJECT_METHOD,
+            request,
+            replay_safe=False,
+            response_type=_PROTO.Project,
+        )
+        return decode_project(response, method_id=MUTATE_PROJECT_METHOD)
 
     async def get_summary(self, notebook_id: str) -> str:
-        _reject("notebooks.get_summary")
+        response = await self._generate_notebook_guide(notebook_id)
+        return decode_notebook_guide(response, method_id=GENERATE_NOTEBOOK_GUIDE_METHOD).summary
 
     async def get_description(self, notebook_id: str) -> NotebookDescription:
-        _reject("notebooks.get_description")
+        response = await self._generate_notebook_guide(notebook_id)
+        return decode_notebook_guide(response, method_id=GENERATE_NOTEBOOK_GUIDE_METHOD)
+
+    async def _generate_notebook_guide(self, notebook_id: str) -> Any:
+        # evidence: docs/android/proto-evidence-ledger.md#b2-repository-local-wire-field-ledger
+        return await self._transport.unary(
+            GENERATE_NOTEBOOK_GUIDE_METHOD,
+            _WIRE.WireGenerateNotebookGuideRequest(project_id=notebook_id),
+            replay_safe=False,
+            response_type=_WIRE.WireGenerateNotebookGuideResponse,
+        )
 
     async def remove_from_recent(self, notebook_id: str) -> None:
         _reject("notebooks.remove_from_recent")
@@ -152,6 +247,11 @@ class AndroidNotebooksAPI(NotebooksAPI):
 
 __all__ = [
     "AndroidNotebooksAPI",
+    "COPY_PROJECT_METHOD",
+    "CREATE_PROJECT_METHOD",
+    "DELETE_PROJECTS_METHOD",
+    "GENERATE_NOTEBOOK_GUIDE_METHOD",
     "GET_PROJECT_METHOD",
     "LIST_RECENT_PROJECTS_METHOD",
+    "MUTATE_PROJECT_METHOD",
 ]

@@ -591,16 +591,8 @@ SourceUnsupportedCall = Callable[[AndroidSourcesAPI], Awaitable[object]]
 @pytest.mark.parametrize(
     "invoke",
     [
-        pytest.param(lambda api: api.create("title"), id="create"),
-        pytest.param(lambda api: api._send_create("title"), id="send-create"),
-        pytest.param(lambda api: api.copy("notebook", "copy"), id="copy"),
         pytest.param(lambda api: api.suggest_prompts("notebook"), id="suggest-prompts"),
-        pytest.param(lambda api: api.delete("notebook"), id="delete"),
-        pytest.param(lambda api: api.update("notebook", title="new"), id="update"),
-        pytest.param(lambda api: api.rename("notebook", "new"), id="rename"),
         pytest.param(lambda api: api.set_emoji("notebook", "📘"), id="set-emoji"),
-        pytest.param(lambda api: api.get_summary("notebook"), id="get-summary"),
-        pytest.param(lambda api: api.get_description("notebook"), id="get-description"),
         pytest.param(lambda api: api.remove_from_recent("notebook"), id="remove-recent"),
     ],
 )

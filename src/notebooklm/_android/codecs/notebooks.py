@@ -9,7 +9,7 @@ from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import Message
 
 from ...exceptions import DecodingError, NotebookNotFoundError, RPCError
-from ...types import Notebook, SharePermission
+from ...types import Notebook, NotebookDescription, SharePermission, SuggestedTopic
 from ..proto.google.internal.labs.tailwind.orchestration.v1 import b1_read_pb2
 
 _PROTO = cast(Any, b1_read_pb2)
@@ -113,4 +113,31 @@ def message_to_known_dict(message: Message, *, method_id: str) -> dict[str, Any]
         ) from None
 
 
-__all__ = ["decode_project", "map_get_project_error", "message_to_known_dict"]
+def decode_notebook_guide(response: Any, *, method_id: str) -> NotebookDescription:
+    """Project a captured Android guide response into the public description."""
+
+    try:
+        if not response.HasField("notebook_guide"):
+            return NotebookDescription(summary="", suggested_topics=[])
+        guide = response.notebook_guide
+        summary = guide.summary.text_summary if guide.HasField("summary") else ""
+        topics = []
+        if guide.HasField("suggested_topics"):
+            topics = [
+                SuggestedTopic(question=topic.question, prompt=topic.prompt)
+                for topic in guide.suggested_topics.topics
+            ]
+        return NotebookDescription(summary=summary, suggested_topics=topics)
+    except Exception:
+        raise DecodingError(
+            "Could not decode Android notebook guide response",
+            method_id=method_id,
+        ) from None
+
+
+__all__ = [
+    "decode_notebook_guide",
+    "decode_project",
+    "map_get_project_error",
+    "message_to_known_dict",
+]
