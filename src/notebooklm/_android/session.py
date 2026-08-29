@@ -16,7 +16,7 @@ from .._deadline import RuntimeDeadline
 from .._loop_affinity import assert_bound_loop
 from .._loop_bound import LoopBoundPrimitive
 from .._runtime.call_supervisor import CallLease, CallSupervisor, OperationLease
-from ..exceptions import MissingDependencyError
+from ..exceptions import MissingDependencyError, RPCResponseTooLargeError
 from .auth import BearerCredential, BearerProvider
 from .errors import (
     GrpcStatus,
@@ -473,6 +473,7 @@ class AndroidSession(LoopBoundPrimitive):
         timeout: float | None = None,
         response_type: type[RespT],
         telemetry_method: str | None | _DefaultTelemetry = _DEFAULT_TELEMETRY,
+        max_response_bytes: int | None = None,
     ) -> AsyncIterator[RespT]:
         """Yield a stream without retaining this secret owner in failures."""
 
@@ -485,6 +486,7 @@ class AndroidSession(LoopBoundPrimitive):
                 timeout=timeout,
                 response_type=response_type,
                 telemetry_method=telemetry_method,
+                max_response_bytes=max_response_bytes,
             ),
         )
         failure: BaseException | None = None
@@ -511,6 +513,7 @@ class AndroidSession(LoopBoundPrimitive):
         timeout: float | None,
         response_type: type[RespT],
         telemetry_method: str | None | _DefaultTelemetry,
+        max_response_bytes: int | None,
     ) -> AsyncIterator[RespT]:
         """Yield a typed server stream while retaining one supervisor lease."""
 
@@ -532,6 +535,7 @@ class AndroidSession(LoopBoundPrimitive):
                 call: Any | None = None
                 iterator: Any | None = None
                 exhausted = False
+                response_bytes = 0
                 try:
                     try:
                         credential = await _await_with_deadline(
@@ -572,6 +576,16 @@ class AndroidSession(LoopBoundPrimitive):
                                 except StopAsyncIteration:
                                     exhausted = True
                                     break
+                                if max_response_bytes is not None:
+                                    response_bytes += len(_serialize_message(item))
+                                    if response_bytes > max_response_bytes:
+                                        raise RPCResponseTooLargeError(
+                                            f"RPC response exceeded {max_response_bytes} bytes "
+                                            f"(read {response_bytes} bytes before aborting)",
+                                            limit_bytes=max_response_bytes,
+                                            bytes_read=response_bytes,
+                                            method_id=method,
+                                        )
                                 yield item
                         except _DeadlineSignal:
                             failure = _AttemptFailure(
@@ -581,6 +595,8 @@ class AndroidSession(LoopBoundPrimitive):
                         except asyncio.CancelledError:
                             raise
                         except (KeyboardInterrupt, SystemExit, GeneratorExit):
+                            raise
+                        except RPCResponseTooLargeError:
                             raise
                         except Exception as error:
                             failure = _AttemptFailure(

@@ -21,6 +21,7 @@ from notebooklm.exceptions import (
     NetworkError,
     NotebookLimitError,
     NotebookNotFoundError,
+    RateLimitError,
     RPCError,
     ServerError,
     ValidationError,
@@ -765,6 +766,52 @@ class TestCopyNotebook:
 
         with pytest.raises(DecodingError, match="reused the source notebook id"):
             await api.copy("nb_source", "Copied Notebook")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("failure", "expected_rpc_code"),
+        [
+            pytest.param(NetworkError("lost response"), None, id="network-error"),
+            pytest.param(
+                ServerError(
+                    "lost response",
+                    method_id=RPCMethod.COPY_NOTEBOOK.value,
+                    rpc_code=14,
+                ),
+                14,
+                id="server-error",
+            ),
+            pytest.param(
+                RateLimitError(
+                    "ambiguous throttle response",
+                    method_id=RPCMethod.COPY_NOTEBOOK.value,
+                    rpc_code=8,
+                ),
+                8,
+                id="rate-limit-error",
+            ),
+        ],
+    )
+    async def test_copy_marks_lost_response_as_unconfirmed_without_retry(
+        self,
+        failure: NetworkError | RateLimitError | ServerError,
+        expected_rpc_code: int | None,
+    ) -> None:
+        rpc_call = AsyncMock(side_effect=failure)
+        api = _make_api(rpc_call=rpc_call)
+
+        with pytest.raises(RPCError, match="list notebooks.*manually") as caught:
+            await api.copy("nb_source", "Copied Notebook")
+
+        assert getattr(caught.value, "unconfirmed", False) is True
+        assert caught.value.method_id == RPCMethod.COPY_NOTEBOOK.value
+        assert caught.value.rpc_code == expected_rpc_code
+        assert caught.value.__cause__ is failure
+        rpc_call.assert_awaited_once_with(
+            RPCMethod.COPY_NOTEBOOK,
+            build_copy_notebook_params("nb_source", "Copied Notebook"),
+            source_path="/notebook/nb_source",
+        )
 
 
 class TestUpdateNotebook:

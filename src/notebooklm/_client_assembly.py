@@ -570,6 +570,7 @@ def _assemble_client(
             session=android_session,
             loop_guard=internals.collaborators.call_supervisor,
             chat_timeout=resolve_chat_read_timeout(chat_timeout, timeout),
+            chat_response_max_bytes=chat_response_max_bytes,
             notebooks=client.notebooks,
             created_chat_sessions=client.notebooks,
         )

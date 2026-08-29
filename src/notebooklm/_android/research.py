@@ -9,7 +9,11 @@ from typing import Any, cast
 from .._idempotency import mark_unconfirmed
 from .._notebook_metadata import NotebookSourceLister
 from .._research import _INITIAL_INTERVAL_UNSET, ResearchAPI
-from .._runtime.config import AUTO_READ_TIMEOUT, DEFAULT_TIMEOUT
+from .._runtime.config import (
+    AUTO_READ_TIMEOUT,
+    DEFAULT_TIMEOUT,
+    resolve_import_research_read_timeout,
+)
 from .._types.research import (
     RESEARCH_RESULT_TYPE_REPORT,
     RESEARCH_SOURCE_TYPE_WEB,
@@ -319,7 +323,12 @@ class AndroidResearchAPI(ResearchAPI):
                     user_content=entries,
                 ),
                 replay_safe=False,
-                timeout=_remaining_budget,
+                timeout=resolve_import_research_read_timeout(
+                    len(entries),
+                    base_timeout=self._base_timeout,
+                    override=self._import_research_timeout,
+                    remaining_budget=_remaining_budget,
+                ),
                 response_type=_proto().FinishDiscoverSourcesRunResponse,
                 expected_epoch=lease.epoch,
             )

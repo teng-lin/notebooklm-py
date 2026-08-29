@@ -10,10 +10,19 @@ from uuid import uuid4
 from .._chat import _TURN_COUNT_INITIAL_LIMIT, _TURN_COUNT_MAX_LIMIT, ChatAPI, _PostedAsk
 from .._conversation_cache import ConversationCache
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
-from .._runtime.config import DEFAULT_CHAT_TIMEOUT, validate_read_timeout_kwarg
+from .._runtime.config import (
+    DEFAULT_CHAT_RESPONSE_MAX_BYTES,
+    DEFAULT_CHAT_TIMEOUT,
+    validate_read_timeout_kwarg,
+)
 from .._runtime.contracts import LoopGuard
 from .._types.enums import ChatGoal, ChatResponseLength
-from ..exceptions import ChatError, ChatResponseParseError, UnknownRPCMethodError, ValidationError
+from ..exceptions import (
+    ChatError,
+    ChatResponseParseError,
+    UnknownRPCMethodError,
+    ValidationError,
+)
 from ..types import ChatReference, ChatSettings, ConversationTurn, NextStepSuggestion, Note
 from .codecs.chat import decode_document, decode_history, decode_references, decode_turn_key
 from .codecs.notebooks import validate_project_identity
@@ -74,12 +83,14 @@ class AndroidChatAPI(ChatAPI):
         loop_guard: LoopGuard,
         notebooks: NotebookSourceIdProvider,
         chat_timeout: float | None = DEFAULT_CHAT_TIMEOUT,
+        chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES,
         turn_id_factory: Callable[[], str] = _new_turn_id,
         conversation_cache: ConversationCache | None = None,
         created_chat_sessions: CreatedChatSessionProvider | None = None,
     ) -> None:
         self._transport = session
         self._chat_timeout = validate_read_timeout_kwarg(chat_timeout, name="chat_timeout")
+        self._chat_response_max_bytes = chat_response_max_bytes
         self._turn_id_factory = turn_id_factory
         super().__init__(
             loop_guard=loop_guard,
@@ -258,7 +269,8 @@ class AndroidChatAPI(ChatAPI):
             request,
             timeout=self._chat_timeout,
             response_type=proto.GenerateFreeFormStreamedResponse,
-            telemetry_method=None,
+            telemetry_method="chat.ask",
+            max_response_bytes=self._chat_response_max_bytes,
         ):
             if response.HasField("next_step_suggestions"):
                 decoded_next_steps = [

@@ -33,6 +33,7 @@ __all__ = [
     "compose_builtin_read_timeout",
     "normalize_max_concurrent_uploads",
     "resolve_chat_read_timeout",
+    "resolve_import_research_read_timeout",
     "validate_read_timeout_kwarg",
 ]
 
@@ -71,7 +72,7 @@ DEFAULT_CHAT_RESPONSE_MAX_BYTES = 256 * 1024 * 1024
 # source cap varies 50-600 by account tier) needs materially more time than
 # the shared 30s metadata window. Scaled per requested source rather than
 # flat-overridden so a small fast-research import still fails fast on a
-# genuinely broken call; see ``_web.research_import._import_research_read_timeout``
+# genuinely broken call; see :func:`resolve_import_research_read_timeout`
 # (#2187).
 DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT = 60.0
 DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT = 3.0
@@ -178,6 +179,42 @@ def resolve_chat_read_timeout(
     if chat_timeout is AUTO_READ_TIMEOUT:
         return compose_builtin_read_timeout(DEFAULT_CHAT_TIMEOUT, base_timeout)
     return chat_timeout
+
+
+def resolve_import_research_read_timeout(
+    source_count: int,
+    *,
+    base_timeout: float | None = DEFAULT_TIMEOUT,
+    override: float | None = AUTO_READ_TIMEOUT,
+    remaining_budget: float | None = None,
+) -> float | None:
+    """Resolve one IMPORT_RESEARCH attempt's timeout budget.
+
+    The untouched default scales with the number of importable entries, is
+    capped at :data:`DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT`, and is floored at
+    the client's base timeout. An explicit ``override`` replaces both scaling
+    and that floor; ``None`` inherits the transport's base timeout. A retry's
+    remaining aggregate budget clamps the resolved window last.
+
+    This transport-neutral resolver is shared by the web and Android
+    implementations so both backends honor ``import_research_timeout`` with
+    the same batch-scaling and retry-budget semantics.
+    """
+    window: float | None
+    if override is AUTO_READ_TIMEOUT:
+        window = compose_builtin_read_timeout(
+            min(
+                DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT,
+                DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT
+                + DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT * source_count,
+            ),
+            base_timeout,
+        )
+    else:
+        window = override
+    if remaining_budget is None:
+        return window
+    return remaining_budget if window is None else min(window, remaining_budget)
 
 
 def validate_read_timeout_kwarg(value: Any, *, name: str) -> float | None:

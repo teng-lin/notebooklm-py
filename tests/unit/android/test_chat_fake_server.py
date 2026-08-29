@@ -174,11 +174,11 @@ async def test_base_ask_over_real_android_session_and_fake_grpc_server() -> None
             origin=chat_pb2.QUERY_ORIGIN_CHAT_TEXT_BOX,
         )
     ]
-    # Only the two unary session lookups emit public RPC telemetry. chat's
-    # direct-test stream is deliberately invoked with telemetry_method=None.
+    # Both session lookups and the streamed ask emit public RPC telemetry;
+    # the stream uses the stable backend-neutral ``chat.ask`` label.
     snapshot = supervisor._metrics.snapshot()
-    assert snapshot.rpc_calls_started == 2
-    assert snapshot.rpc_calls_succeeded == 2
+    assert snapshot.rpc_calls_started == 3
+    assert snapshot.rpc_calls_succeeded == 3
 
 
 @pytest.mark.asyncio

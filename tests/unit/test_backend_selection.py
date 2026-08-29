@@ -156,6 +156,16 @@ def test_android_preference_promotes_every_namespace() -> None:
     assert client.collections._list_notebooks.__func__ is type(client.notebooks).list
 
 
+def test_android_chat_receives_configured_response_byte_cap() -> None:
+    client = NotebookLMClient(
+        _auth(),
+        backend="android",
+        chat_response_max_bytes=123456,
+    )
+
+    assert client.chat._chat_response_max_bytes == 123456
+
+
 def test_android_selected_public_callable_inventory_is_exact() -> None:
     client = NotebookLMClient(_auth(), backend="android")
     expected_names = {

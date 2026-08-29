@@ -17,14 +17,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit, urlunsplit
 
-from .._runtime.config import (
-    AUTO_READ_TIMEOUT,
-    DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT,
-    DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT,
-    DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT,
-    DEFAULT_TIMEOUT,
-    compose_builtin_read_timeout,
-)
+from .._runtime.config import resolve_import_research_read_timeout
 from .._types.enums import GrpcStatusCode, normalize_grpc_status
 from .._types.research import ResearchSource, ResearchSourceInput
 from ..exceptions import ResearchTaskMismatchError, RPCError, ValidationError
@@ -348,67 +341,7 @@ def _partition_requested_sources(
     return new_inputs, new_models, already_present
 
 
-def _import_research_read_timeout(
-    source_count: int,
-    *,
-    base_timeout: float | None = DEFAULT_TIMEOUT,
-    override: float | None = AUTO_READ_TIMEOUT,
-    remaining_budget: float | None = None,
-) -> float | None:
-    """Resolve IMPORT_RESEARCH's per-attempt read timeout.
-
-    Batch scaling (#2187): the server ingests every entry (fetch/parse/embed)
-    before responding to one RPC, so a large deep-research batch needs
-    materially more time than a 3-source fast-research one. The base term is a
-    floor so a tiny import still fails fast on a genuinely broken call; the max
-    is a ceiling so a pathologically large batch is still bounded rather than
-    open-ended.
-
-    Composition (#2205): the scaled window is a *default*, so it is floored at
-    the client's configured ``base_timeout`` — a caller who bought
-    ``timeout=600`` keeps 600 s here instead of being silently capped at 240 s.
-
-    ``override`` is the ``import_research_timeout`` constructor kwarg and reads
-    exactly like ``chat_timeout`` does, so the two knobs are one rule:
-
-    * :data:`AUTO_READ_TIMEOUT` (unset) — batch-scaled, floored at ``base_timeout``;
-    * a number — the caller's word, replacing both the scaling and the floor;
-    * ``None`` — inherit ``base_timeout`` verbatim (no per-RPC override).
-
-    Retry-budget clamp (#2205): ``remaining_budget`` is what is left of
-    ``import_sources_with_verification``'s ``max_elapsed`` when this attempt
-    starts, so a late retry cannot be *granted* a window larger than the budget
-    it has left — without it, a retry starting 50 s from the deadline still got
-    the full batch-scaled (or configured) window. It is applied last, so it
-    also bounds an ``override`` and an inherited (``None``) window. That caller
-    only passes a budget it has already found viable — see
-    ``MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT``, which is what keeps this from
-    producing a uselessly small window.
-
-    What this is *not*: a wall-clock deadline for the attempt. Every timeout in
-    this client is an ``httpx`` slot, and ``read`` is an inactivity limit
-    between socket reads — connect/pool waits sit outside it, and a server that
-    keeps dribbling bytes just inside the window keeps the request alive. So
-    the clamp bounds what an attempt is *given*, not how long it can take.
-    Enforcing the latter would mean cancelling an in-flight
-    ``NON_IDEMPOTENT_NO_RETRY`` POST, trading a bounded overshoot for an
-    unbounded duplicate-source risk (#808).
-    """
-    window: float | None
-    if override is AUTO_READ_TIMEOUT:
-        window = compose_builtin_read_timeout(
-            min(
-                DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT,
-                DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT
-                + DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT * source_count,
-            ),
-            base_timeout,
-        )
-    else:
-        window = override
-    if remaining_budget is None:
-        return window
-    return remaining_budget if window is None else min(window, remaining_budget)
+_import_research_read_timeout = resolve_import_research_read_timeout
 
 
 def _is_import_research_failed_precondition(exc: RPCError) -> bool:

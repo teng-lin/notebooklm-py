@@ -24,6 +24,7 @@ from .config import (
     compose_builtin_read_timeout,
     normalize_max_concurrent_uploads,
     resolve_chat_read_timeout,
+    resolve_import_research_read_timeout,
     validate_read_timeout_kwarg,
 )
 from .contracts import LoopGuard
@@ -55,6 +56,7 @@ __all__ = [
     "compose_builtin_read_timeout",
     "normalize_max_concurrent_uploads",
     "resolve_chat_read_timeout",
+    "resolve_import_research_read_timeout",
     "validate_read_timeout_kwarg",
     "LoopGuard",
     "AUTH_ERROR_PATTERNS",

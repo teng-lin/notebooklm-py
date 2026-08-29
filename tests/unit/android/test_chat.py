@@ -99,6 +99,7 @@ def _api(
     *,
     turn_id: str = "00000000-0000-4000-8000-000000000099",
     source_ids: list[str] | None = None,
+    chat_response_max_bytes: int | None = None,
 ) -> tuple[AndroidChatAPI, FakeLoopGuard, FakeNotebooks]:
     guard = FakeLoopGuard()
     notebooks = FakeNotebooks(source_ids)
@@ -106,6 +107,7 @@ def _api(
         session=_android_session(fake),
         loop_guard=guard,
         notebooks=notebooks,
+        chat_response_max_bytes=chat_response_max_bytes,
         turn_id_factory=lambda: turn_id,
     )
     return api, guard, notebooks
@@ -673,7 +675,8 @@ async def test_base_ask_uses_latest_cumulative_final_without_concatenating_frame
     assert kwargs == {
         "timeout": 180.0,
         "response_type": chat_pb2.GenerateFreeFormStreamedResponse,
-        "telemetry_method": None,
+        "telemetry_method": "chat.ask",
+        "max_response_bytes": None,
     }
 
 

@@ -30,7 +30,12 @@ from notebooklm._android.research import (
 from notebooklm._app.errors import ErrorCategory, classify
 from notebooklm._app.research import poll_and_classify
 from notebooklm._research import ResearchAPI
-from notebooklm._runtime.config import MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT
+from notebooklm._runtime.config import (
+    AUTO_READ_TIMEOUT,
+    DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT,
+    DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT,
+    MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT,
+)
 from notebooklm._types.enums import DiscoveryMode
 from notebooklm._types.research import ResearchSource, ResearchStatus
 from notebooklm._web.research import WebResearchAPI
@@ -102,10 +107,19 @@ class _SupervisedLister:
 
 
 def _api(
-    responses: dict[str, list[Any]], lister: _Lister | None = None
+    responses: dict[str, list[Any]],
+    lister: _Lister | None = None,
+    **api_kwargs: Any,
 ) -> tuple[AndroidResearchAPI, _Transport]:
     transport = _Transport(responses)
-    return AndroidResearchAPI(transport, lister or _Lister()), transport  # type: ignore[arg-type]
+    return (
+        AndroidResearchAPI(  # type: ignore[arg-type]
+            transport,
+            lister or _Lister(),
+            **api_kwargs,
+        ),
+        transport,
+    )
 
 
 def _job(run_id: str, *, status: int, report: bool = False) -> Any:
@@ -459,7 +473,42 @@ async def test_finish_encodes_url_and_markdown_and_never_replays() -> None:
         request.user_content[1].text_content_type == sources_pb2.UserContent.CONTENT_TYPE_MARKDOWN
     )
     assert transport.calls[0][2]["replay_safe"] is False
+    assert transport.calls[0][2]["timeout"] == (
+        DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT + 2 * DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT
+    )
     assert result == [{"id": OTHER_ID, "title": "A"}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("base_timeout", "import_timeout", "remaining_budget", "expected_timeout"),
+    [
+        pytest.param(600.0, AUTO_READ_TIMEOUT, None, 600.0, id="base-floor"),
+        pytest.param(600.0, 90.0, None, 90.0, id="explicit-override"),
+        pytest.param(600.0, None, None, None, id="inherit-base"),
+        pytest.param(30.0, 900.0, 45.0, 45.0, id="remaining-budget-clamp"),
+    ],
+)
+async def test_finish_resolves_android_import_timeout_like_web(
+    base_timeout: float,
+    import_timeout: float | None,
+    remaining_budget: float | None,
+    expected_timeout: float | None,
+) -> None:
+    api, transport = _api(
+        {FINISH_RUN_METHOD: [research_pb2.FinishDiscoverSourcesRunResponse()]},
+        base_timeout=base_timeout,
+        import_research_timeout=import_timeout,
+    )
+
+    await api.import_sources(
+        "nb",
+        RUN_ID,
+        [ResearchSource("https://example.com/a", "A")],
+        _remaining_budget=remaining_budget,
+    )
+
+    assert transport.calls[0][2]["timeout"] == expected_timeout
 
 
 @pytest.mark.asyncio
@@ -489,7 +538,9 @@ async def test_zero_elapsed_import_uses_one_natural_android_observation_window()
     assert result == [{"id": "source-a", "title": "A"}]
     finish_calls = [call for call in transport.calls if call[0] == FINISH_RUN_METHOD]
     assert len(finish_calls) == 1
-    assert finish_calls[0][2]["timeout"] is None
+    assert finish_calls[0][2]["timeout"] == (
+        DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT + DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT
+    )
 
 
 @pytest.mark.asyncio
@@ -511,7 +562,9 @@ async def test_retry_below_minimum_observation_window_never_sends_second_finish(
     assert getattr(caught.value, "unconfirmed", False) is True
     finish_calls = [call for call in transport.calls if call[0] == FINISH_RUN_METHOD]
     assert len(finish_calls) == 1
-    assert finish_calls[0][2]["timeout"] is None
+    assert finish_calls[0][2]["timeout"] == (
+        DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT + DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT
+    )
 
 
 @pytest.mark.asyncio
@@ -903,7 +956,9 @@ async def test_real_supervisor_finish_completes_in_one_epoch_during_graceful_dra
     ]
     assert transport.calls[1][2]["expected_epoch"] == 1
     assert transport.calls[1][2]["replay_safe"] is False
-    assert transport.calls[1][2]["timeout"] is None
+    assert transport.calls[1][2]["timeout"] == (
+        DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT + DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT
+    )
     await transport.supervisor.wait_for_idle(1, 0.1)
 
 

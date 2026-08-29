@@ -4,6 +4,7 @@ import logging
 import reprlib
 from typing import Any
 
+from .._idempotency import mark_unconfirmed
 from .._notebook_metadata import (
     NotebookMetadataService,
     NotebookSourceLister,
@@ -13,9 +14,12 @@ from .._types.enums import GrpcStatusCode, normalize_grpc_status
 from ..exceptions import (
     ClientError,
     DecodingError,
+    NetworkError,
     NotebookLimitError,
     NotebookNotFoundError,
+    RateLimitError,
     RPCError,
+    ServerError,
     ValidationError,
 )
 from ..rpc import RPCMethod, safe_index
@@ -557,11 +561,23 @@ class WebNotebooksAPI(NotebooksAPI):
             raise ValidationError("title must not be empty")
 
         logger.debug("Copying notebook %s", notebook_id)
-        result = await self._rpc.rpc_call(
-            RPCMethod.COPY_NOTEBOOK,
-            build_copy_notebook_params(notebook_id, title),
-            source_path=f"/notebook/{notebook_id}",
-        )
+        try:
+            result = await self._rpc.rpc_call(
+                RPCMethod.COPY_NOTEBOOK,
+                build_copy_notebook_params(notebook_id, title),
+                source_path=f"/notebook/{notebook_id}",
+            )
+        except (NetworkError, RateLimitError, ServerError) as exc:
+            rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
+            raise mark_unconfirmed(
+                RPCError(
+                    "UNRESOLVED — CopyProject may have committed before its response was "
+                    "lost. Do not blindly retry; list notebooks and resolve copies "
+                    "manually first.",
+                    method_id=RPCMethod.COPY_NOTEBOOK.value,
+                    rpc_code=rpc_code,
+                )
+            ) from exc
         notebook = Notebook.from_api_response(result)
         if not notebook.id:
             raise DecodingError(

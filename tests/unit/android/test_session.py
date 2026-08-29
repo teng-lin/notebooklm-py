@@ -25,6 +25,7 @@ from notebooklm.exceptions import (
     MissingDependencyError,
     RateLimitError,
     RPCError,
+    RPCResponseTooLargeError,
     RPCTimeoutError,
     ServerError,
 )
@@ -470,6 +471,29 @@ async def test_stream_aclose_cancels_wire_call_and_releases_scope() -> None:
 
     await stream.aclose()
 
+    assert channel.stream_calls[0].cancelled
+    assert supervisor._current is not None and supervisor._current.in_flight == 0
+
+
+@pytest.mark.asyncio
+async def test_stream_enforces_cumulative_response_byte_cap_and_cancels_wire() -> None:
+    channel = _Channel()
+    channel.stream_outcomes = [[_Message(b"one"), _Message(b"two")]]
+    session, _, _, _, supervisor = await _open(channel=channel)
+    stream = session.stream(
+        METHOD,
+        _Message(b"request"),
+        response_type=_Message,
+        max_response_bytes=3,
+    )
+
+    assert await anext(stream) == _Message(b"one")
+    with pytest.raises(RPCResponseTooLargeError) as captured:
+        await anext(stream)
+
+    assert captured.value.limit_bytes == 3
+    assert captured.value.bytes_read == 6
+    assert captured.value.method_id == METHOD
     assert channel.stream_calls[0].cancelled
     assert supervisor._current is not None and supervisor._current.in_flight == 0
 
