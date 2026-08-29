@@ -1,19 +1,23 @@
 # Android protobuf evidence ledger
 
-**Status:** admitted B1 read closure plus B2 notebook, B3 source, and B4 artifact overlays
+**Status:** admitted B1 read closure plus B2 notebook, B3 source, B4 artifact, and B5 chat overlays
 
-**Evidence snapshot:** 2026-08-27
+**Evidence snapshot:** 2026-08-28
 
 **Scope:** B1 project/source reads, B2 notebook operations, the B3 URL/maintenance/flat-content
 slice, and B4 artifact list/get/create/update/delete plus its repository-local wire-equivalent
-report-suggestion overlay
+report-suggestion overlay, plus the private/direct-test B5 chat surface (`ListChatSessions`,
+`ListChatTurns`, `DeleteChatTurns`, and `GenerateFreeFormStreamed`)
 
 This ledger is the admission boundary for `src/notebooklm/_android/proto_src/`. The recovered
 [`schema.proto`](schema.proto) is Dart-AOT evidence, not a compile input: it flattened several
 libraries and contains duplicate package-local persistence declarations. The checked-in B1 proto
 sources instead preserve the exact wire packages from the descriptor/Dart library boundary and
 copy only the fields below. Missing fields remain protobuf unknown fields; they are not filled from
-plausible-looking flattened declarations.
+plausible-looking flattened declarations. B5 follows the same rule: its exact-package,
+service-free overlay admits only fields retained by the named Dart protobuf libraries and checked
+against captured wire tags. The adapter carries full method paths separately; it does not extend or
+invent a protobuf service descriptor.
 
 ## Evidence input identities
 
@@ -148,6 +152,22 @@ from an artifact kind. `alr=yes` application redirects are defensive evidence fr
 unauthenticated control. Signed GCS bearer stripping is a fail-closed policy, not a claim that a
 signed-GCS authenticated branch was observed.
 
+### B5 direct method ledger
+
+B5 is deliberately service-free: protobuf services cannot be extended across source files, and
+widening the B1 service declaration would falsely imply that a reconstructed full service
+descriptor was checked in. The adapter uses the exact captured paths below. The three ordinary
+responses use exact-package message overlays. `DeleteChatTurns` returned zero bytes; B5 therefore
+deserializes it with the wire-equivalent `google.protobuf.Empty` implementation without claiming
+that WKT as the service method's evidence-gated response FQN.
+
+| Full method | Request overlay | Response deserializer | Cardinality | Retry/telemetry contract |
+|---|---|---|---|---|
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListChatSessions` | `.google.internal.labs.tailwind.orchestration.v1.ListChatSessionsRequest` | `.google.internal.labs.tailwind.orchestration.v1.ListChatSessionsResponse` | unary/unary | replay-safe |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListChatTurns` | `.google.internal.labs.tailwind.orchestration.v1.ListChatTurnsRequest` | `.google.internal.labs.tailwind.orchestration.v1.ListChatTurnsResponse` | unary/unary | replay-safe |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteChatTurns` | `.google.internal.labs.tailwind.orchestration.v1.DeleteChatTurnsRequest` | zero-byte wire-equivalent `google.protobuf.Empty` | unary/unary | non-replay-safe |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed` | `.google.internal.labs.tailwind.orchestration.v1.GenerateFreeFormStreamedRequest` | `.google.internal.labs.tailwind.orchestration.v1.GenerateFreeFormStreamedResponse` | unary/server-streaming | no retry; one aggregate deadline; `telemetry_method=None` |
+
 ## Import closure
 
 | Import | Exact package | Why reachable |
@@ -216,6 +236,72 @@ shows context is optional; the implementation does not fabricate one.
 | `WireNotebookGuide` | `summary` | 1 | singular | local summary message; captured response |
 | `WireNotebookGuide` | `suggested_topics` | 2 | singular | local topic envelope; captured response |
 | `WireGenerateNotebookGuideResponse` | `notebook_guide` | 1 | singular | local guide message; captured response wrapper |
+
+### B5 field ledger
+
+The compile inputs are
+[`b5_chat.proto`](../../src/notebooklm/_android/proto_src/google/internal/labs/tailwind/orchestration/v1/b5_chat.proto)
+(SHA-256 `778377137e4a9fdedb5c09765adc5dc3ba68e4b15ee09dd717680a92af6b6801`) and
+[`chat_history.proto`](../../src/notebooklm/_android/proto_src/labs/language/tailwind/common/protos/chat_history.proto)
+(SHA-256 `7e8551fe837ac30f80d3d5f5d07f33c1c1dd24970b33c558c86b4dba799d9bb8`).
+`tests/unit/android/test_chat_proto_contract.py` asserts the following list exhaustively against
+the generated descriptors; no undeclared semantic leaf is available to the adapter.
+
+| Package.Message | Admitted fields (tag; cardinality/type) |
+|---|---|
+| `common.protos.ChatSession` | `chat_session_id` (1; string) |
+| `orchestration.v1.InputSource` | `source_id` (1; `SourceId`) |
+| `orchestration.v1.ConversationEvent` | `text` (1; string), `type` (3; captured nested enum) |
+| `orchestration.v1.ConversationTurnKey` | `session_id` (1; string), `conversation_id` (2; string), `field_type` (3; opaque int32) |
+| `orchestration.v1.ListChatSessionsRequest/Response` | `project_id` (3; string); `sessions` (1; repeated `ChatSession`) |
+| `orchestration.v1.ListChatTurnsRequest/Response` | `chat_session_id` (4; string), `page_token` (6; string); `chat_turns` (1; repeated `ChatHistoryMessage`), `next_page_token` (2; string) |
+| `orchestration.v1.ChatHistoryMessage` | `message_id` (1; string), `timestamp` (2; `Timestamp`), `user_query_text` (4; string), `act_on_sources_response` (5; `ActOnSourcesResponse`) |
+| `orchestration.v1.ActOnSourcesResponse` | `response` (1; `AnswerResponse`) |
+| `orchestration.v1.DeleteChatTurnsRequest` | `chat_session_id` (2; string), `delete_all_history` (4; bool) |
+| `orchestration.v1.GenerateFreeFormStreamedRequest` | `sources` (1; repeated `InputSource`), `user_query` (2; string), `conversation_history` (3; repeated `ConversationEvent`), `chat_session_id` (5; string), `user_message_id` (6; string), `project_id` (8; string), `origin` (9; `QueryOrigin`) |
+| `orchestration.v1.GenerateFreeFormStreamedResponse` | `answer` (1; `AnswerResponse`), `is_final_response` (5; bool) |
+| `orchestration.v1.AnswerResponse` | `response` (1; string), `conversation_turn_key` (3; `ConversationTurnKey`), `response_doc` (5; `TailwindDoc`) |
+| `orchestration.v1.TailwindDoc` | `body` (1; `Body`), `objects` (4; repeated `DocumentObject`) |
+| `orchestration.v1.Body` | `content` (1; repeated `StructuralElement`), `inline_object_locations` (2; repeated `AnnotationMapEntry`) |
+| `orchestration.v1.StructuralElement` | `start_index` (1; int32), `end_index` (2; int32), `paragraph` (3; `Paragraph`) |
+| `orchestration.v1.Paragraph` / `ParagraphElement` / `TextRun` | `elements` (1; repeated); `start_index` (1), `end_index` (2), `text_run` (3); `content` (1) |
+| `orchestration.v1.AnnotationMapEntry` / `ObjectId` / `Range` | `object_id` (1), `content_range` (2); `id` (1); `start_index` (2), `end_index` (3) |
+| `orchestration.v1.DocumentObject` / `Citation` | `object_id` (1), `citation` (2); `fragment` (5), `source_attribution` (6), `object_id` (7) |
+| `orchestration.v1.TailwindDocFragment` / `CitationSource` / `SourceRevision` | `elements` (1; repeated `StructuralElement`); `ingested_source` (1); `source` (1; `SourceId`) |
+
+The request origin and conversation-event enums come from the exhaustive checked-in
+[`enums.txt`](enums.txt). Cached turns are mapped in the captured newest-first event order for each
+turn: generated response (`2`) followed by user query (`1`). Every ask supplies a caller-generated
+`user_message_id`; no server turn identifier is guessed.
+
+Stream responses are cumulative snapshots. The adapter retains the latest frame whose response
+field 5 is true, never concatenates frames, and raises `ChatResponseParseError` when EOF arrives
+without that final marker. The final answer's `responseDoc` is the only citation source: source
+identity descends
+through `DocumentObject.citation.source_attribution.ingested_source.source`, cited text comes only
+from the proven fragment paragraph fields, and answer anchors join through the proven body
+annotation/object IDs. Unrecovered citation score/range fields are not declared or projected.
+
+The synthetic wire fixture
+[`b5_chat_wire.json`](../../tests/fixtures/android/b5_chat_wire.json) (SHA-256
+`806f6052c5d0c4dddae359b420f7effcf2961ac6bcba70f7c08c10a7a60b8924`) pins a request,
+partial/final cumulative frames, history, and sessions at serialized-byte level. The generated B5
+descriptor fixture has SHA-256
+`f65fe14f5bb41140af1204fd41d51be2904269f77160f0331508703d8c9b710d`.
+
+### B5 evidence-gated omissions
+
+- `RequestContext` and `Provenance` are not populated; B5 does not invent their capture-specific
+  semantic values.
+- Chat configure/settings remain unsupported and fail before transport I/O. `set_mode` deliberately
+  reaches that same configure rejection.
+- Saved-from-chat note creation has only the neutral `_send_note` hook seam. Android note behavior
+  belongs to B6 and is not invented here.
+- Document tables, styles, non-paragraph structural variants, speculative citation score/range
+  slots, and next-step suggestions are left as protobuf unknown fields.
+- `ListChatTurns` returns its raw first response page. The public-shaped history decoder applies its
+  caller limit and reverses the captured newest-first rows; it does not guess pagination policy from
+  the presence of `next_page_token`.
 
 ## Blocked Project premium field 10
 
@@ -295,6 +381,7 @@ response. No generated type falsely claims the remote request package.
 | flags | both proto roots via `-I`, `--include_imports`, `--descriptor_set_out`, `--python_out`, `--grpc_python_out`; sorted input list |
 
 Run `python scripts/regenerate_android_protos.py --check` in the locked dev environment. The check
-compiles into a temporary directory, performs the repository-local Python import relocation, and
-byte-compares the descriptor set and complete generated module tree. Use `--write` only when the
-reviewed proto sources and pinned toolchain intentionally change.
+compiles the B1 and B5 closures independently into a temporary directory, performs the
+repository-local Python import relocation for both exact package roots, and byte-compares both
+descriptor sets plus the complete generated module tree. Use `--write` only when the reviewed proto
+sources and pinned toolchain intentionally change.

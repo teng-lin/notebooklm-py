@@ -1,0 +1,165 @@
+syntax = "proto3";
+
+package google.internal.labs.tailwind.orchestration.v1;
+
+import "google/internal/labs/tailwind/orchestration/v1/b1_read.proto";
+import "google/internal/labs/tailwind/orchestration/v1/b3_sources.proto";
+import "google/protobuf/timestamp.proto";
+import "labs/language/tailwind/common/protos/chat_history.proto";
+
+// Service-free exact-package B5 overlay. The full method paths are carried by
+// the adapter because protobuf services cannot be extended across files. Only
+// captured fields consumed by the B5 chat contract are declared here;
+// RequestContext, Provenance, unconsumed document variants, and speculative
+// citation fields remain unknown fields.
+
+enum QueryOrigin {
+  QUERY_ORIGIN_UNSPECIFIED = 0;
+  QUERY_ORIGIN_CHAT_TEXT_BOX = 1;
+  QUERY_ORIGIN_SUGGESTION_CHIP = 2;
+  QUERY_ORIGIN_APP_VIEWER_EXPLAIN_BUTTON = 3;
+  QUERY_ORIGIN_SOURCE_KEY_TOPIC_CHIP = 4;
+  QUERY_ORIGIN_MINDMAP_TOPIC_CHIP = 5;
+  QUERY_ORIGIN_GETTING_STARTED_MESSAGE = 6;
+  QUERY_ORIGIN_LINK_SERVICE = 7;
+  QUERY_ORIGIN_ARTIFACT_VIEWER = 8;
+}
+
+message ConversationEvent {
+  enum ConversationEventType {
+    EVENT_TYPE_UNKNOWN = 0;
+    USER_QUERY = 1;
+    GENERATED_RESPONSE = 2;
+  }
+
+  string text = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  ConversationEventType type = 3; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message ConversationTurnKey {
+  string session_id = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  string conversation_id = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  int32 field_type = 3; // opaque captured value; the recovered name is not interpreted
+}
+
+message ObjectId {
+  string id = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message Range {
+  int32 start_index = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  int32 end_index = 3; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message AnnotationMapEntry {
+  ObjectId object_id = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  Range content_range = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message TextRun {
+  string content = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message ParagraphElement {
+  int32 start_index = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  int32 end_index = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  TextRun text_run = 3; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message Paragraph {
+  repeated ParagraphElement elements = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message StructuralElement {
+  int32 start_index = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  int32 end_index = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  Paragraph paragraph = 3; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message Body {
+  repeated StructuralElement content = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  repeated AnnotationMapEntry inline_object_locations = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message TailwindDocFragment {
+  repeated StructuralElement elements = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message SourceRevision {
+  SourceId source = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message CitationSource {
+  SourceRevision ingested_source = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message Citation {
+  TailwindDocFragment fragment = 5; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  CitationSource source_attribution = 6; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  ObjectId object_id = 7; // retained only as a captured field; projection uses the enclosing id
+}
+
+message DocumentObject {
+  ObjectId object_id = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  Citation citation = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message TailwindDoc {
+  Body body = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  repeated DocumentObject objects = 4; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message AnswerResponse {
+  string response = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  ConversationTurnKey conversation_turn_key = 3; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  TailwindDoc response_doc = 5; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message ActOnSourcesResponse {
+  AnswerResponse response = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message ChatHistoryMessage {
+  string message_id = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  google.protobuf.Timestamp timestamp = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  string user_query_text = 4; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  ActOnSourcesResponse act_on_sources_response = 5; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message ListChatSessionsRequest {
+  string project_id = 3; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message ListChatSessionsResponse {
+  repeated .labs.language.tailwind.common.protos.ChatSession sessions = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message ListChatTurnsRequest {
+  string chat_session_id = 4; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  string page_token = 6; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message ListChatTurnsResponse {
+  repeated ChatHistoryMessage chat_turns = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  string next_page_token = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message DeleteChatTurnsRequest {
+  string chat_session_id = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  bool delete_all_history = 4; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message GenerateFreeFormStreamedRequest {
+  repeated InputSource sources = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  string user_query = 2; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  repeated ConversationEvent conversation_history = 3; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  string chat_session_id = 5; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  string user_message_id = 6; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  string project_id = 8; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  QueryOrigin origin = 9; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}
+
+message GenerateFreeFormStreamedResponse {
+  AnswerResponse answer = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+  bool is_final_response = 5; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}

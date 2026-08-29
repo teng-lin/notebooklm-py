@@ -33,7 +33,9 @@ PROTO_FILES = (
     Path("google/internal/labs/tailwind/orchestration/v1/b1_read.proto"),
     Path("google/internal/labs/tailwind/orchestration/v1/b3_sources.proto"),
     Path("google/internal/labs/tailwind/orchestration/v1/b4_artifacts.proto"),
+    Path("google/internal/labs/tailwind/orchestration/v1/b5_chat.proto"),
     Path("google/internal/labs/tailwind/v1/source_settings.proto"),
+    Path("labs/language/tailwind/common/protos/chat_history.proto"),
     Path("notebooklm/android/internal/v1/b4_report_suggestions.proto"),
     Path("notebooklm/internal/android/wire/v1/b2_notebooks.proto"),
     Path("notebooklm/internal/android/wire/source_mutation_wire.proto"),
@@ -46,8 +48,12 @@ EXPECTED_GENERATED = frozenset(
         Path("google/internal/labs/tailwind/orchestration/v1/b3_sources_pb2_grpc.py"),
         Path("google/internal/labs/tailwind/orchestration/v1/b4_artifacts_pb2.py"),
         Path("google/internal/labs/tailwind/orchestration/v1/b4_artifacts_pb2_grpc.py"),
+        Path("google/internal/labs/tailwind/orchestration/v1/b5_chat_pb2.py"),
+        Path("google/internal/labs/tailwind/orchestration/v1/b5_chat_pb2_grpc.py"),
         Path("google/internal/labs/tailwind/v1/source_settings_pb2.py"),
         Path("google/internal/labs/tailwind/v1/source_settings_pb2_grpc.py"),
+        Path("labs/language/tailwind/common/protos/chat_history_pb2.py"),
+        Path("labs/language/tailwind/common/protos/chat_history_pb2_grpc.py"),
         Path("notebooklm/android/internal/v1/b4_report_suggestions_pb2.py"),
         Path("notebooklm/android/internal/v1/b4_report_suggestions_pb2_grpc.py"),
         Path("notebooklm/internal/android/wire/v1/b2_notebooks_pb2.py"),
@@ -57,10 +63,20 @@ EXPECTED_GENERATED = frozenset(
     }
 )
 
-_GENERATED_IMPORT_PREFIX = "from google.internal.labs.tailwind"
-_REPOSITORY_IMPORT_PREFIX = "from notebooklm._android.proto.google.internal.labs.tailwind"
-_GENERATED_LOCAL_PREFIX = "from notebooklm.internal.android.wire"
-_REPOSITORY_LOCAL_PREFIX = "from notebooklm._android.proto.notebooklm.internal.android.wire"
+_IMPORT_RELOCATIONS = (
+    (
+        "from google.internal.labs.tailwind",
+        "from notebooklm._android.proto.google.internal.labs.tailwind",
+    ),
+    (
+        "from labs.language.tailwind",
+        "from notebooklm._android.proto.labs.language.tailwind",
+    ),
+    (
+        "from notebooklm.internal.android.wire",
+        "from notebooklm._android.proto.notebooklm.internal.android.wire",
+    ),
+)
 
 
 def _verify_toolchain() -> None:
@@ -99,7 +115,6 @@ def _compile(temp_root: Path) -> tuple[Path, Path]:
     descriptor_path = temp_root / "android_descriptor_set.pb"
     generated_root.mkdir(parents=True)
     bundled_well_known_types = Path(grpc_tools.__file__).resolve().parent / "_proto"
-
     args = [
         "grpc_tools.protoc",
         f"-I{SOURCE_ROOT}",
@@ -142,8 +157,9 @@ def _relocate_generated_imports(generated_root: Path) -> None:
     """
     for path in sorted(generated_root.rglob("*.py")):
         content = path.read_text(encoding="utf-8")
-        relocated = content.replace(_GENERATED_IMPORT_PREFIX, _REPOSITORY_IMPORT_PREFIX)
-        relocated = relocated.replace(_GENERATED_LOCAL_PREFIX, _REPOSITORY_LOCAL_PREFIX)
+        relocated = content
+        for generated_prefix, repository_prefix in _IMPORT_RELOCATIONS:
+            relocated = relocated.replace(generated_prefix, repository_prefix)
         path.write_text(relocated, encoding="utf-8")
 
 

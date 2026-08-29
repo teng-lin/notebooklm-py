@@ -1,0 +1,165 @@
+"""B5 chat orchestration through a real in-process gRPC server."""
+
+from __future__ import annotations
+
+import asyncio
+from types import SimpleNamespace
+from typing import Any
+
+import grpc
+import pytest
+
+from notebooklm._android.auth import BearerCredential
+from notebooklm._android.chat import AndroidChatAPI
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
+    b3_sources_pb2,
+    b5_chat_pb2,
+)
+from notebooklm._android.proto.labs.language.tailwind.common.protos import chat_history_pb2
+from notebooklm._android.session import AndroidSession
+from notebooklm._client_metrics import ClientMetrics
+from notebooklm._runtime.call_supervisor import CallSupervisor
+from notebooklm._transport_drain import TransportDrainTracker
+
+_SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
+
+
+class _Bearer:
+    async def activate(self, epoch: int) -> None:
+        self.epoch = epoch
+
+    async def get(self, expected_epoch: int) -> BearerCredential:
+        assert expected_epoch == self.epoch
+        return BearerCredential("fake-server-token", 1)
+
+    def invalidate(self, generation: int) -> None:
+        raise AssertionError(f"unexpected credential invalidation: {generation}")
+
+    async def prepare_close(self) -> None:
+        return None
+
+
+class _Notebooks:
+    async def get_source_ids(self, notebook_id: str) -> list[str]:
+        assert notebook_id == "notebook-1"
+        return ["source-1"]
+
+
+class _ChatService:
+    def __init__(self) -> None:
+        self.asked = False
+        self.list_requests: list[Any] = []
+        self.generate_requests: list[Any] = []
+
+    async def list_sessions(self, request: Any, context: Any) -> Any:
+        del context
+        self.list_requests.append(request)
+        if not self.asked:
+            return b5_chat_pb2.ListChatSessionsResponse()
+        return b5_chat_pb2.ListChatSessionsResponse(
+            sessions=[chat_history_pb2.ChatSession(chat_session_id="conversation-1")]
+        )
+
+    async def generate(self, request: Any, context: Any):
+        del context
+        self.generate_requests.append(request)
+        yield b5_chat_pb2.GenerateFreeFormStreamedResponse(
+            answer=b5_chat_pb2.AnswerResponse(response="Cumulative partial"),
+            is_final_response=False,
+        )
+        self.asked = True
+        yield b5_chat_pb2.GenerateFreeFormStreamedResponse(
+            answer=b5_chat_pb2.AnswerResponse(response="Cumulative final"),
+            is_final_response=True,
+        )
+
+
+def _handler(service: _ChatService) -> Any:
+    return grpc.method_handlers_generic_handler(
+        _SERVICE,
+        {
+            "ListChatSessions": grpc.unary_unary_rpc_method_handler(
+                service.list_sessions,
+                request_deserializer=b5_chat_pb2.ListChatSessionsRequest.FromString,
+                response_serializer=b5_chat_pb2.ListChatSessionsResponse.SerializeToString,
+            ),
+            "GenerateFreeFormStreamed": grpc.unary_stream_rpc_method_handler(
+                service.generate,
+                request_deserializer=b5_chat_pb2.GenerateFreeFormStreamedRequest.FromString,
+                response_serializer=(
+                    b5_chat_pb2.GenerateFreeFormStreamedResponse.SerializeToString
+                ),
+            ),
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_base_ask_over_real_android_session_and_fake_grpc_server() -> None:
+    server = grpc.aio.server()
+    service = _ChatService()
+    server.add_generic_rpc_handlers((_handler(service),))
+    port = server.add_insecure_port("127.0.0.1:0")
+    await server.start()
+
+    channel = grpc.aio.insecure_channel(f"127.0.0.1:{port}")
+    grpc_loader = SimpleNamespace(
+        ssl_channel_credentials=lambda: object(),
+        aio=SimpleNamespace(secure_channel=lambda _target, _credentials: channel),
+    )
+    supervisor = CallSupervisor(
+        metrics=ClientMetrics(),
+        drain_tracker=TransportDrainTracker(),
+        max_concurrent_rpcs=2,
+    )
+    loop = asyncio.get_running_loop()
+    supervisor.set_bound_loop(loop)
+    supervisor.reset_after_open()
+    supervisor.prepare_generation(1)
+    supervisor.start_accepting(1)
+    session = AndroidSession(
+        _Bearer(),  # type: ignore[arg-type]
+        supervisor,
+        timeout=1.0,
+        grpc_loader=lambda: grpc_loader,
+    )
+    session.set_bound_loop(loop)
+    session.reset_after_open()
+    await session.open(loop, 1)
+    api = AndroidChatAPI(
+        session=session,
+        loop_guard=supervisor,
+        notebooks=_Notebooks(),
+        chat_timeout=1.0,
+        turn_id_factory=lambda: "00000000-0000-4000-8000-000000000123",
+    )
+
+    try:
+        result = await api.ask("notebook-1", "Question?")
+    finally:
+        await session.prepare_close()
+        await session.close_resources()
+        await server.stop(0)
+
+    assert result.answer == "Cumulative final"
+    assert result.conversation_id == "conversation-1"
+    assert result.turn_number == 1
+    assert len(service.list_requests) == 2
+    assert service.list_requests == [
+        b5_chat_pb2.ListChatSessionsRequest(project_id="notebook-1"),
+        b5_chat_pb2.ListChatSessionsRequest(project_id="notebook-1"),
+    ]
+    assert service.generate_requests == [
+        b5_chat_pb2.GenerateFreeFormStreamedRequest(
+            sources=[b3_sources_pb2.InputSource(source_id={"id": "source-1"})],
+            user_query="Question?",
+            user_message_id="00000000-0000-4000-8000-000000000123",
+            project_id="notebook-1",
+            origin=b5_chat_pb2.QUERY_ORIGIN_CHAT_TEXT_BOX,
+        )
+    ]
+    # Only the two unary session lookups emit public RPC telemetry. B5's
+    # direct-test stream is deliberately invoked with telemetry_method=None.
+    snapshot = supervisor._metrics.snapshot()
+    assert snapshot.rpc_calls_started == 2
+    assert snapshot.rpc_calls_succeeded == 2

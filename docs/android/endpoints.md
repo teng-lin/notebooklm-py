@@ -416,25 +416,31 @@ stateful; do not replay until decoded.**
 
 ### ListChatTurns
 
-**Request:** `#1` context, `#4 str[36]` (session or project ID).
+**Request:** `#1` context, `#4 str[36]` (`chat_session_id`), optional `#6` page token.
 
-**Response** — the full chat history (~1 MB in the sample). Top-level `#1` is a
-**repeated** ChatTurn:
+**Response** — the full chat history (~1 MB in the sample). The exact-package B5 overlay admits
+top-level `#1` as repeated `ChatHistoryMessage` and `#2` as `nextPageToken`. Each message combines
+one user query with its generated response (captured newest-first):
 
 ```text
-#1 (repeated) ChatTurn {
-  #1 str[36]               # turn_id
+#1 (repeated) ChatHistoryMessage {
+  #1 str                   # message_id
   #2 Timestamp             # created
-  #3 varint ∈ {1,2}        # (inferred) role: user / model
-  #4 str                   # (inferred) prompt / short text
-  #5 { #1 { #1 str, #3 {citations…}, #5 {rich-content tree} } }   # answer body
+  #4 str                   # user query
+  #5 ActOnSourcesResponse {
+    #1 AnswerResponse {
+      #1 str               # generated answer
+      #3 ConversationTurnKey
+      #5 TailwindDoc       # rich answer document/citations
+    }
+  }
 }
+#2 str                     # next_page_token when another page exists
 ```
 
-The `#5` answer body is a deep rich-text/citation tree (paragraph spans keyed by
-start/end offsets, with source references at `#3 { #1 str[36], #2 str[36] }`). Leaf
-text is redacted. **Depth caveat:** beyond ~4 levels the decoder speculatively parses
-free text as sub-messages, so treat the deepest nodes as approximate, not schema.
+The private B5 adapter returns this protobuf response raw. Its decoded history view applies the
+caller limit and reverses the newest-first rows into the Python API's oldest-first Q&A order; it
+does not infer pagination behavior from `nextPageToken`.
 
 ---
 
@@ -717,36 +723,41 @@ recorder captures nothing useful and why the shape must be read across frames.
 
 ```text
 request:
-  #1 (repeated) { #1 { #1 str[36] } }   # source_ids to answer from
-  #2 str                                # (inferred) client turn/session token
-  #3 { #1 str, #3 varint = 1 }          # the question text (#3.#1) + a flag
+  #1 (repeated) InputSource { #1 SourceId { #1 str } }  # source_ids
+  #2 str                                # user_query
+  #3 (repeated) ConversationEvent {     # cached local turns, when present
+    #1 str                              # event text
+    #3 varint = 1|2                     # USER_QUERY | GENERATED_RESPONSE
+  }
   #4 context
-  #5 str[36]                            # project_id
-  #6 str[36]                            # (inferred) chat session_id
-  #8 str[36]                            # (inferred) turn_id
-  #9 varint = 1
+  #5 str[36]                            # chat_session_id (follow-up; absent for new)
+  #6 str[36]                            # caller-generated user_message_id
+  #8 str[36]                            # project_id
+  #9 varint = 1                         # QUERY_ORIGIN_CHAT_TEXT_BOX
 
 response (streamed, each frame a fuller snapshot):
   #1 {
     #1 str                              # answer text (grows 82 B → 2.6 KB across frames)
     #3 { #1 str[36], #2 str[36], #3 varint }   # answer/turn ids
     #5 { ...rich-text answer tree: offset-keyed spans, same grammar as ListChatTurns... }
-    #4 (repeated) {                     # inline citations
-      #1 { #1 str[36] }                 # cited source_id
-      #2 { ...char-offset span into the source... }
-    }
   }
+  #5 bool                               # is_final_response
 ```
 
 Each streamed frame re-sends the whole answer-so-far, so the **final frame is the complete
-answer**; earlier frames are partial. The rich-text/citation subtree carries the same
-depth caveat as `ListChatTurns`.
+answer**; earlier frames are partial. B5 uses one whole-stream deadline with no retry, accepts only
+a frame whose response field `#5` declares finality, and raises `ChatResponseParseError` if EOF
+arrives first. It never concatenates frames. Citations are exposed only through proven
+`AnswerResponse.responseDoc` fields: `TailwindDoc.objects → DocumentObject.citation →
+sourceAttribution.ingestedSource.source`, with cited paragraph text from `Citation.fragment` and
+answer anchors from `TailwindDoc.body.inlineObjectLocations`. Speculative flattened citation slots
+are not part of the compile closure.
 
 ### DeleteChatTurns — clear chat history
 
 ```text
 request:  #1 context
-          #2 str[36]     # (inferred) chat session_id (or project_id)
+          #2 str[36]     # chat session_id
           #4 varint = 1
 response: <empty>        # 0 bytes on success
 ```

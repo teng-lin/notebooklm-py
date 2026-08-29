@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package labs.language.tailwind.common.protos;
+
+// Exact-package B5 leaf admitted from chat_history.pb.dart. The broader
+// RequestContext/common-protos graph is intentionally not part of B5.
+message ChatSession {
+  string chat_session_id = 1; // evidence: docs/android/proto-evidence-ledger.md#b5-field-ledger
+}

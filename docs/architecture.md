@@ -981,17 +981,22 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/codecs/notebooks.py` | Android project and notebook-guide projections plus bounded notebook decode/status errors. |
 | `_android/codecs/sources.py` | Android source projection, enum-name mapping, duplicate handling, and strict/default drift behavior. |
 | `_android/codecs/artifacts.py` | Ledgered Android artifact and representation projection with bounded decode failures. |
+| `_android/codecs/chat.py` | Proven Android history, response-document, and citation projection. |
 | `_android/errors.py` | Sanitized gRPC-status projection plus the pre-I/O unsupported-operation helper; raw transport exceptions and details never cross this boundary. |
 | `_android/notebooks.py` | Private Android notebook adapter: B1 reads and evidence-admitted B2 create/delete/title-update/copy/guide operations. |
 | `_android/session.py` | Lazy Google-TLS gRPC transport participating in root loop/lifecycle supervision, aggregate deadlines, per-call bearer metadata, status mapping, safe-read replay, and full stream leases. |
 | `_android/sources.py` | Private Android source adapter: B1 reads plus evidence-admitted B3 URL, delete, rename, guide, and full-text operations; unevidenced branches reject before I/O. |
 | `_android/artifacts.py` | Private B4 partial artifact adapter: aggregate Studio/note-backed listing, Studio-only polling, quiz create, delete/rename, infographic PNG download and report suggestions; every other public family rejects before I/O. |
 | `_android/assets.py` | B4 response-aware Android asset transport. It validates every hop, attaches bearer only to the exact approved origin, strips it for signed-GCS hops, streams one open PNG response through same-directory staging and publishes atomically. |
+| `_android/chat.py` | Private B5 Android chat adapter over sessions, raw turns, history deletion, and the cumulative server stream; base `ChatAPI` retains locks/cache/follow-up orchestration and public result construction. |
 | `_android/mind_maps.py` | Private B7 Android mind-map composition over base-typed artifact/note collaborators. The raw `NotesAPI.list_mind_maps` boundary is not treated as decoded `MindMap` data: aggregate reads, note-backed rename, and hydrated interactive rename reject before dependency I/O. Explicit non-hydrating interactive rename/delete compose through artifacts; generation and tree reads remain evidence-gated. No public client factory selects it. |
 | `_android/proto/` | Checked-in generated Python protobuf package. Files are regenerated only by `scripts/regenerate_android_protos.py` with the pinned toolchain and are never generated during installation. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/b1_read_pb2.py` | Exact-package B1 messages and descriptors for `GetProject` and `ListRecentlyViewedProjects`. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/b1_read_pb2_grpc.py` | Generated `LabsTailwindOrchestrationServiceStub` limited to the two B1 read methods. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/b4_artifacts_pb2.py` | Exact-package B4 artifact request/response and projection overlay; dispatch uses ledgered generic-session method paths so the B1 service descriptor remains unchanged. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/b5_chat_pb2.py` | Service-free exact-package B5 chat overlay for sessions, turns, delete, streamed answers, and the proven citation/document closure. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/b5_chat_pb2_grpc.py` | Deterministic generated companion for the service-free B5 overlay. |
+| `_android/proto/labs/language/tailwind/common/protos/chat_history_pb2.py` | Exact-package `ChatSession.chat_session_id` leaf imported by the B5 sessions response. |
 | `_android/proto/notebooklm/android/internal/v1/b4_report_suggestions_pb2.py` | Repository-local `*Wire` overlay for the live-added, APK-absent report-suggestion method; intentionally makes no Google FQN claim. |
 | `_android/proto/google/internal/labs/tailwind/v1/source_settings_pb2.py` | Exact-package `SourceSettings`, `SourceStatus`, and `UserDriveSourceStatus` descriptors. |
 | `_android/proto/google/internal/labs/tailwind/v1/source_settings_pb2_grpc.py` | Generated companion for the service-free SourceSettings proto; retained so the generated tree exactly matches the pinned command. |
@@ -1238,6 +1243,7 @@ src/notebooklm/
 │   ├── auth.py                  # Epoch-aware short-lived bearer provider
 │   ├── codecs/                  # Android protobuf projections
 │   │   ├── __init__.py          # Codec package marker
+│   │   ├── chat.py              # B5 history/document/citation projection
 │   │   ├── notebooks.py         # Project and notebook-guide decoding
 │   │   ├── sources.py           # Source projection and enum mapping
 │   │   └── artifacts.py         # Ledgered artifact/representation projection
@@ -1247,6 +1253,7 @@ src/notebooklm/
 │   ├── sources.py               # Android source reads and B3 operations/gates
 │   ├── artifacts.py             # B4 partial artifact API and unsupported surface
 │   ├── assets.py                # B4 response-aware bearer-safe PNG transfer
+│   ├── chat.py                  # B5 Android chat reads/delete/stream and unsupported stubs
 │   ├── mind_maps.py             # B7 artifact composition + note/evidence gates
 │   ├── proto_src/               # Exact-package reads + evidence-bounded local wire overlays
 │   └── proto/                   # Checked-in generated pb2/pb2_grpc modules
@@ -1258,7 +1265,9 @@ src/notebooklm/
 │           │   ├── b3_sources_pb2.py            # B3 exact source-operation messages
 │           │   ├── b3_sources_pb2_grpc.py       # Deterministic service-free companion
 │           │   ├── b4_artifacts_pb2.py         # B4 exact artifact message overlay
-│           │   └── b4_artifacts_pb2_grpc.py    # Deterministic service-free companion
+│           │   ├── b4_artifacts_pb2_grpc.py    # Deterministic service-free companion
+│           │   ├── b5_chat_pb2.py              # Service-free B5 chat messages/descriptors
+│           │   └── b5_chat_pb2_grpc.py         # Deterministic service-free companion
 │           └── v1/
 │               ├── source_settings_pb2.py       # Source settings/status descriptors
 │               └── source_settings_pb2_grpc.py  # Deterministic service-free companion
@@ -1269,7 +1278,10 @@ src/notebooklm/
 │           ├── b2_notebooks_pb2.py       # Repository-local B2 notebook wire messages
 │           └── b2_notebooks_pb2_grpc.py  # Deterministic service-free companion
 │       ├── notebooklm/internal/android/wire/source_mutation_wire_pb2.py       # B3 source title mutation wire overlay
-│       └── notebooklm/internal/android/wire/source_mutation_wire_pb2_grpc.py  # Deterministic service-free companion
+│       ├── notebooklm/internal/android/wire/source_mutation_wire_pb2_grpc.py  # Deterministic service-free companion
+│       └── labs/language/tailwind/common/protos/
+│           ├── chat_history_pb2.py       # B5 exact-package ChatSession leaf
+│           └── chat_history_pb2_grpc.py  # Deterministic service-free companion
 ├── _web/                        # Private batchexecute web-backend implementation package
 │   ├── __init__.py              # Package boundary
 │   ├── contracts.py             # Web-only Kernel and RpcCaller Protocols
