@@ -1,0 +1,10 @@
+# Android evidence hashes pin repository bytes, so checkout must not rewrite
+# their line endings on Windows. Descriptor inputs likewise need stable source
+# bytes, and the generated/inventory fixtures are compared across platforms.
+/docs/android/** text eol=lf
+/src/notebooklm/_android/proto_src/** text eol=lf
+/tests/fixtures/android/*.csv text eol=lf
+/tests/fixtures/android/*.json text eol=lf
+/tests/fixtures/android/*.textproto text eol=lf
+/tests/fixtures/android/*.txt text eol=lf
+/tests/fixtures/android/*.pb binary

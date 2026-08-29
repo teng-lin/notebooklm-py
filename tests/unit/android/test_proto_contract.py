@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
-import tomllib
 from google.protobuf import descriptor_pb2, text_format
 from google.protobuf.descriptor import FieldDescriptor
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
 
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     notebooks_pb2 as exact_notebooks_pb2,
@@ -712,3 +717,21 @@ def test_checked_in_generated_tree_and_descriptor_regenerate_byte_for_byte() -> 
 
     assert result.returncode == 0, result.stderr
     assert "descriptors and generated tree are deterministic" in result.stdout
+
+
+def test_proto_regenerator_uses_portable_descriptor_relative_input_paths() -> None:
+    script = REPO_ROOT / "scripts" / "regenerate_android_protos.py"
+    spec = importlib.util.spec_from_file_location("regenerate_android_protos_test", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module._protoc_input_paths(
+        [
+            PureWindowsPath(r"labs\language\tailwind\sharing\sharing.proto"),
+            PureWindowsPath(r"google\internal\labs\tailwind\orchestration\v1\account.proto"),
+        ]
+    ) == [
+        "google/internal/labs/tailwind/orchestration/v1/account.proto",
+        "labs/language/tailwind/sharing/sharing.proto",
+    ]

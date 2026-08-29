@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from collections.abc import Callable
 
 import pytest
@@ -12,6 +13,17 @@ from notebooklm._deadline import RuntimeDeadline
 from notebooklm._runtime.call_supervisor import AdmissionGeneration, CallSupervisor
 from notebooklm._transport_drain import TransportDrainTracker, _TransportOperationToken
 from notebooklm.types import RpcTelemetryEvent
+
+
+def _assert_republished_cancel_message(error: asyncio.CancelledError, expected: str) -> None:
+    """Pin first-cancel precedence without overclaiming Python 3.10 metadata.
+
+    Python 3.10 republishes a cancellation that crosses multiple shield
+    boundaries as a fresh ``CancelledError`` without the optional message.
+    Python 3.11+ preserves it. Both retain the cancellation and discard later
+    cancellation messages, which is the runtime invariant under test.
+    """
+    assert error.args == ((expected,) if sys.version_info >= (3, 11) else ())
 
 
 class _SpyMetrics(ClientMetrics):
@@ -331,7 +343,7 @@ async def test_recancellation_during_partial_admission_cannot_orphan_generation(
 
     with pytest.raises(asyncio.CancelledError) as raised:
         await caller
-    assert raised.value.args == ("first",)
+    _assert_republished_cancel_message(raised.value, "first")
     assert generation.in_flight == 1
 
     release_condition.set()
@@ -380,7 +392,7 @@ async def test_recancellation_during_child_admission_retains_both_settlements() 
 
     with pytest.raises(asyncio.CancelledError) as raised:
         await caller
-    assert raised.value.args == ("first",)
+    _assert_republished_cancel_message(raised.value, "first")
     assert factory_invoked is False
     assert generation.in_flight == 2
 
@@ -410,7 +422,7 @@ async def test_parent_cancel_after_child_admission_settles_each_token_once() -> 
     with pytest.raises(asyncio.CancelledError) as raised:
         await caller
 
-    assert raised.value.args == ("after-child-admission",)
+    _assert_republished_cancel_message(raised.value, "after-child-admission")
     assert factory_invoked is True
     await asyncio.gather(*tuple(supervisor._settlement_tasks))
     await asyncio.sleep(0)
@@ -437,7 +449,7 @@ async def test_recancellation_after_normal_body_preserves_first_cancelled_error(
 
     with pytest.raises(asyncio.CancelledError) as raised:
         await caller
-    assert raised.value.args == ("first",)
+    _assert_republished_cancel_message(raised.value, "first")
 
     drain.finish_release.set()
     await asyncio.gather(*tuple(supervisor._settlement_tasks))
@@ -550,7 +562,7 @@ async def test_detached_recorder_failure_reaches_loop_handler_once(
         caller.cancel("second")
         with pytest.raises(asyncio.CancelledError) as raised:
             await caller
-        assert raised.value.args == ("first",)
+        _assert_republished_cancel_message(raised.value, "first")
 
         retained = tuple(supervisor._settlement_tasks)
         assert len(retained) == 1

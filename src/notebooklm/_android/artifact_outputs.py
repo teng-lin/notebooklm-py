@@ -78,7 +78,11 @@ async def write_text_atomic(
             dir=destination.parent,
         )
         try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            # ``content`` already owns its line-ending contract (CSV uses
+            # RFC-compatible CRLF; markdown/JSON renderers use LF). Disable
+            # platform translation so Windows does not turn an existing CRLF
+            # into CRCRLF and publish different bytes from POSIX platforms.
+            with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
                 handle.write(payload)
                 handle.flush()
                 os.fsync(handle.fileno())

@@ -16,7 +16,8 @@ import importlib.metadata
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
+from collections.abc import Iterable
+from pathlib import Path, PurePath
 
 EXPECTED_DISTRIBUTIONS = {
     "grpcio": "1.76.0",
@@ -123,6 +124,12 @@ _IMPORT_RELOCATIONS = (
 )
 
 
+def _protoc_input_paths(paths: Iterable[PurePath]) -> list[str]:
+    """Return sorted descriptor-relative paths in protoc's portable syntax."""
+
+    return sorted(path.as_posix() for path in paths)
+
+
 def _verify_toolchain() -> None:
     problems: list[str] = []
     for distribution, expected in EXPECTED_DISTRIBUTIONS.items():
@@ -168,7 +175,7 @@ def _compile(temp_root: Path) -> tuple[Path, Path, Path]:
         f"--descriptor_set_out={descriptor_path}",
         f"--python_out={generated_root}",
         f"--grpc_python_out={generated_root}",
-        *(str(path) for path in sorted(PROTO_FILES)),
+        *_protoc_input_paths(PROTO_FILES),
     ]
     result = protoc.main(args)
     if result != 0:
@@ -181,7 +188,7 @@ def _compile(temp_root: Path) -> tuple[Path, Path, Path]:
             f"-I{bundled_well_known_types}",
             "--include_imports",
             f"--descriptor_set_out={read_descriptor_path}",
-            *(str(path) for path in sorted(READ_PROTO_FILES)),
+            *_protoc_input_paths(READ_PROTO_FILES),
         ]
     )
     if read_result != 0:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from dataclasses import dataclass, field
 
 import pytest
@@ -11,6 +12,16 @@ from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._runtime.lifecycle import ClientLifecycle, _ResourceState
 from notebooklm._transport_drain import TransportDrainTracker
+
+
+def _assert_republished_cancel_message(error: asyncio.CancelledError, expected: str) -> None:
+    """Assert first-cancel precedence across supported asyncio versions.
+
+    Python 3.10 drops the optional cancellation message when cancellation is
+    caught and republished through shielded lifecycle cleanup. Python 3.11+
+    preserves it; neither version may replace it with a later message.
+    """
+    assert error.args == ((expected,) if sys.version_info >= (3, 11) else ())
 
 
 @dataclass
@@ -256,7 +267,7 @@ async def test_first_cancel_during_failed_open_waits_for_rollback_and_wins() -> 
     with pytest.raises(asyncio.CancelledError) as raised:
         await owner
 
-    assert raised.value.args == ("first cancellation",)
+    _assert_republished_cancel_message(raised.value, "first cancellation")
     assert not lifecycle.is_open()
     assert "close:web" in events
 
@@ -325,7 +336,7 @@ async def test_recancel_during_failed_open_detaches_rollback_with_first_cancel()
 
     with pytest.raises(asyncio.CancelledError) as raised:
         await owner
-    assert raised.value.args == ("first cancellation",)
+    _assert_republished_cancel_message(raised.value, "first cancellation")
 
     rollback_gate.set()
     for _ in range(100):
@@ -360,7 +371,7 @@ async def test_cancel_immediately_after_prepare_before_commit_rolls_back() -> No
     with pytest.raises(asyncio.CancelledError) as raised:
         await owner
 
-    assert raised.value.args == ("between prepare and commit",)
+    _assert_republished_cancel_message(raised.value, "between prepare and commit")
     assert "accept:1" not in events
     assert "close:web" in events
     assert not lifecycle.is_open()
@@ -430,7 +441,7 @@ async def test_open_joiner_retries_after_owner_cancellation_rollback() -> None:
     owner.cancel("owner-aborted")
     with pytest.raises(asyncio.CancelledError) as raised:
         await owner
-    assert raised.value.args == ("owner-aborted",)
+    _assert_republished_cancel_message(raised.value, "owner-aborted")
 
     # The aborted wave releases the non-owner only after rollback. It then
     # claims a fresh generation instead of inheriting the owner's cancellation.
@@ -775,7 +786,7 @@ async def test_second_close_waiter_cancellation_aborts_hung_first_graceful_preph
         await second
     await first
 
-    assert raised.value.args == ("second waiter cancelled",)
+    _assert_republished_cancel_message(raised.value, "second waiter cancelled")
     assert not idle_gate.is_set()
     assert lifecycle._state is _ResourceState.CLOSED
     assert not lifecycle.is_open()
@@ -970,7 +981,7 @@ async def test_detached_retained_process_exit_is_forwarded_to_loop_handler_once(
         closing.cancel("second cancellation")
         with pytest.raises(asyncio.CancelledError) as raised:
             await closing
-        assert raised.value.args == ("first cancellation",)
+        _assert_republished_cancel_message(raised.value, "first cancellation")
 
         prepare_gate.set()
         for _ in range(100):

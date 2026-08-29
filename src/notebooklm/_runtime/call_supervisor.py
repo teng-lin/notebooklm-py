@@ -266,10 +266,15 @@ class CallSupervisor(LoopBoundPrimitive):
         async with generation.condition:
             if generation.in_flight == 0:
                 return
-            await asyncio.wait_for(
-                generation.condition.wait_for(lambda: generation.in_flight == 0),
-                timeout=timeout,
-            )
+            try:
+                await asyncio.wait_for(
+                    generation.condition.wait_for(lambda: generation.in_flight == 0),
+                    timeout=timeout,
+                )
+            except asyncio.TimeoutError:
+                # Python 3.10's asyncio timeout is not yet an alias of the
+                # built-in type used by lifecycle timeout policy.
+                raise TimeoutError from None
 
     async def begin_closing(self, epoch: int) -> None:
         """Fence all new scopes and children before resource teardown."""
@@ -437,7 +442,12 @@ class CallSupervisor(LoopBoundPrimitive):
         if deadline is None:
             await semaphore.acquire()
         else:
-            await asyncio.wait_for(semaphore.acquire(), timeout=deadline.remaining())
+            try:
+                await asyncio.wait_for(semaphore.acquire(), timeout=deadline.remaining())
+            except asyncio.TimeoutError:
+                # Keep queue-deadline behavior interpreter-independent; on
+                # Python 3.10 asyncio.TimeoutError is a distinct class.
+                raise TimeoutError from None
         return semaphore
 
     def _retain_settlement(

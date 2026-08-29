@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import stat
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from typing import Any, cast
 import httpx
 import pytest
 
+from notebooklm._android import upload as android_upload
 from notebooklm._android.auth import BearerCredential, BearerProvider
 from notebooklm._android.session import AndroidSession
 from notebooklm._android.upload import AndroidUploadPipeline
@@ -113,8 +115,15 @@ async def test_drive_download_uses_android_bearer_resource_key_and_cleans_exact_
         assert filename == "notes.txt"
         assert content_type == "text/plain"
         assert path.read_bytes() == b"drive text"
-        assert stat.S_IMODE(path.stat().st_mode) == 0o600
-        assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
+        if sys.platform == "win32":
+            # Windows inherits NTFS ACLs from the user's temp directory;
+            # Python 3.12 stat exposes synthetic 0666/0777 POSIX bits that do
+            # not describe those ACLs.
+            assert path.is_file()
+            assert path.parent.is_dir()
+        else:
+            assert stat.S_IMODE(path.stat().st_mode) == 0o600
+            assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
     assert parent is not None and not parent.exists()
     assert bearer.calls == [session.epoch]
     assert bearer.invalidated == []
@@ -122,6 +131,20 @@ async def test_drive_download_uses_android_bearer_resource_key_and_cleans_exact_
     assert len(calls) == 2
     assert calls[0].url.params["fields"] == "id,name,mimeType,size,capabilities(canDownload)"
     assert calls[1].url.params["alt"] == "media"
+
+
+def test_drive_temp_permissions_preserve_windows_acl_inheritance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(android_upload.sys, "platform", "win32")
+    monkeypatch.setattr(
+        android_upload.os,
+        "chmod",
+        lambda *_args: pytest.fail("Windows temporary files must inherit ACLs"),
+    )
+
+    android_upload._set_private_temp_permissions(Path("unused"), 0o600)
+    android_upload._set_private_temp_permissions(Path("unused-directory"), 0o700)
 
 
 @pytest.mark.asyncio

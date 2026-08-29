@@ -148,7 +148,12 @@ async def test_cancel_during_update_note_shields_or_cleans_up(auth_tokens) -> No
         # publication-reservation race and the later shielded-await window.
         await asyncio.wait_for(transport.update_started.wait(), timeout=2.0)
         registry = client.notes._notes._task_registry
-        assert registry.active_tasks() == [create_task]
+        active_tasks = registry.active_tasks()
+        assert len(active_tasks) == 1
+        active_task = active_tasks[0]
+        assert active_task is create_task or active_task.get_name() == (
+            "note-update-nb_test-note_new_001"
+        )
 
         # Cancel mid-UPDATE_NOTE. If the child has been published, the shield
         # keeps it running; if publication is still reserved, spawn_child
@@ -213,6 +218,12 @@ async def test_cancel_during_update_note_shields_or_cleans_up(auth_tokens) -> No
                 f"cleanup should only run on cancel: rpc_ids={rpc_ids!r}"
             )
     finally:
+        # Never leave the mock UPDATE barrier closed when an assertion fails.
+        # Once ``update_started`` fires, scheduling may leave the registry in
+        # either its reservation state or its published-child state; both are
+        # valid, but a failure before the release above must not turn into a
+        # misleading global-timeout failure inside graceful client shutdown.
+        transport.release_update.set()
         await client.close()
 
 

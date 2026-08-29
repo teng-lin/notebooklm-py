@@ -1312,9 +1312,8 @@ async def test_download_data_table_decodes_tailwind_doc_as_bom_csv(tmp_path) -> 
     result = await api.download_data_table("notebook-1", str(output), "table")
 
     assert result == str(output)
-    assert output.read_bytes().startswith(b"\xef\xbb\xbf")
-    assert output.read_text(encoding="utf-8-sig") == (
-        'Name,Evidence\nAlpha,"quoted, value"\nBeta,"line\nbreak"\n'
+    assert output.read_bytes() == (
+        b'\xef\xbb\xbfName,Evidence\r\nAlpha,"quoted, value"\r\nBeta,"line\nbreak"\r\n'
     )
     assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD, GET_ARTIFACT_METHOD]
 
@@ -1334,7 +1333,7 @@ async def test_download_data_table_preserves_code_blocks(tmp_path) -> None:
 
     await api.download_data_table("notebook-1", str(output), "table")
 
-    assert output.read_text(encoding="utf-8-sig") == 'Snippet\n"x = 1\ny = 2"\n'
+    assert output.read_bytes() == b'\xef\xbb\xbfSnippet\r\n"x = 1\ny = 2"\r\n'
 
 
 @pytest.mark.asyncio

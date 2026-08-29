@@ -8,6 +8,7 @@ import math
 import mimetypes
 import os
 import shutil
+import sys
 import tempfile
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
@@ -70,6 +71,20 @@ _DRIVE_NATIVE_MIME_PREFIX = "application/vnd.google-apps."
 _MAX_DRIVE_DOWNLOAD_BYTES = 200 * 1024 * 1024
 _DRIVE_STREAM_CHUNK_BYTES = 64 * 1024
 _UPLOAD_SUPPORTED_EXTENSIONS = frozenset(_UPLOAD_FILE_EXTENSIONS)
+
+
+def _set_private_temp_permissions(path: Path, mode: int) -> None:
+    """Apply private POSIX bits while preserving inherited Windows ACLs.
+
+    Windows Python 3.12 exposes only the DOS read-only bit through
+    :func:`os.chmod`; a writable file still reports ``0o666`` and a directory
+    ``0o777`` through ``stat``. It cannot express the owner-only contract
+    represented by ``0o600``/``0o700``. The unique temporary directory and its
+    exclusively-created child therefore inherit the user's Windows temp ACLs,
+    matching the repository's credential-storage policy on that platform.
+    """
+    if sys.platform != "win32":
+        os.chmod(path, mode)
 
 
 def _resolve_upload_content_type(file_path: Path, mime_type: str | None) -> str:
@@ -377,7 +392,13 @@ async def _bounded(awaitable: Awaitable[_T], deadline: RuntimeDeadline) -> _T:
         if hasattr(awaitable, "close"):
             cast(Any, awaitable).close()
         raise TimeoutError
-    return await asyncio.wait_for(awaitable, timeout=remaining)
+    try:
+        return await asyncio.wait_for(awaitable, timeout=remaining)
+    except asyncio.TimeoutError:
+        # Python 3.10 keeps asyncio.TimeoutError separate from the built-in
+        # TimeoutError caught by the upload transaction below. Normalize at
+        # this private boundary so public SourceAddError behavior is stable.
+        raise TimeoutError from None
 
 
 class AndroidUploadPipeline(LoopBoundPrimitive):
@@ -596,7 +617,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         }
         total = 0
         with destination.open("xb") as handle:
-            os.chmod(destination, 0o600)
+            _set_private_temp_permissions(destination, 0o600)
             self._open_files.add(handle)
             try:
                 async with client.stream(
@@ -672,7 +693,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                         deadline,
                     )
                     temp_dir = Path(tempfile.mkdtemp(prefix="nlm-android-drive-"))
-                    os.chmod(temp_dir, 0o700)
+                    _set_private_temp_permissions(temp_dir, 0o700)
                     path = temp_dir / filename
                     await self._stream_drive_media(
                         client,

@@ -103,7 +103,10 @@ async def _await_with_deadline(
     timed_out = False
     try:
         return await asyncio.wait_for(awaitable, timeout=deadline.remaining())
-    except TimeoutError:
+    # Before Python 3.11 ``asyncio.TimeoutError`` is distinct from the
+    # built-in ``TimeoutError``. Catch the asyncio spelling so every supported
+    # interpreter reaches the same Android deadline translation below.
+    except asyncio.TimeoutError:
         timed_out = True
     if timed_out:  # pragma: no branch - documents the exception translation boundary
         raise _DeadlineSignal
