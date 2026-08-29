@@ -36,9 +36,7 @@ pytestmark = pytest.mark.repo_lint
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
 NEUTRAL_IDEMPOTENCY_PATH = SRC_ROOT / "_idempotency.py"
 WEB_POLICY_PATH = SRC_ROOT / "_web" / "policy.py"
-WEB_NAMESPACE_SHIMS = {
-    "_research.py": "notebooklm._web.research",
-}
+WEB_NAMESPACE_SHIMS: dict[str, str] = {}
 REMOVED_EMPTY_PACKAGE_SHELLS = (
     "_chat",
     "_collection",
@@ -65,6 +63,7 @@ BASE_MODULE_ALLOWLIST: frozenset[str] = frozenset(
         "notebooklm._labels",
         "notebooklm._mind_maps_api",
         "notebooklm._notebooks",
+        "notebooklm._research",
         "notebooklm._sources",
         "notebooklm._notes",
         "notebooklm._settings",
@@ -406,6 +405,7 @@ def test_backend_boundary_manifests_are_well_formed() -> None:
                 "notebooklm._labels",
                 "notebooklm._mind_maps_api",
                 "notebooklm._notebooks",
+                "notebooklm._research",
                 "notebooklm._notes",
                 "notebooklm._settings",
                 "notebooklm._sharing",

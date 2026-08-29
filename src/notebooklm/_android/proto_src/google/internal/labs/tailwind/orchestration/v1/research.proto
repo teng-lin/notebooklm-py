@@ -1,0 +1,146 @@
+syntax = "proto3";
+
+package google.internal.labs.tailwind.orchestration.v1;
+
+import "google/internal/labs/tailwind/orchestration/v1/read.proto";
+import "google/internal/labs/tailwind/orchestration/v1/sources.proto";
+import "google/protobuf/timestamp.proto";
+
+// Exact-package B10 Research closure. It is intentionally service-free:
+// protobuf services cannot be reopened across files, and the B1 descriptor is
+// not widened by later evidence-qualified message overlays.
+
+enum DiscoveryMode {
+  DISCOVERY_MODE_UNSPECIFIED = 0;
+  DEFAULT_LLM_SEARCH = 1;
+  RAW_SEARCH = 2;
+  CURIOUS_SEARCH = 3;
+  CURIOUS_RAW_SEARCH = 4;
+  DEEP_RESEARCH = 5;
+  LITE_LLM_SEARCH = 6;
+}
+
+enum DiscoveredSourceCorpusType {
+  DISCOVERED_SOURCE_CORPUS_TYPE_UNKNOWN = 0;
+  DISCOVERED_SOURCE_CORPUS_TYPE_WEB = 1;
+  DISCOVERED_SOURCE_CORPUS_TYPE_DOCS = 2;
+  DISCOVERED_SOURCE_CORPUS_TYPE_SLIDES = 3;
+  DISCOVERED_SOURCE_CORPUS_TYPE_GMAIL = 4;
+  DISCOVERED_SOURCE_CORPUS_TYPE_GENERATED = 5;
+  DISCOVERED_SOURCE_CORPUS_TYPE_PDF = 6;
+  DISCOVERED_SOURCE_CORPUS_TYPE_MS_WORD = 7;
+  DISCOVERED_SOURCE_CORPUS_TYPE_SHEETS = 8;
+  DISCOVERED_SOURCE_CORPUS_TYPE_CSV = 9;
+  DISCOVERED_SOURCE_CORPUS_TYPE_TEXT = 10;
+  DISCOVERED_SOURCE_CORPUS_TYPE_MS_POWERPOINT = 11;
+}
+
+message DiscoveryContext {
+  string context = 1;
+}
+
+message ResearchResultContent {
+  string text = 1;
+  int32 kind = 2;
+}
+
+message DiscoveredSource {
+  string source_url = 1;
+  string title = 2;
+  string hint = 3;
+  DiscoveredSourceCorpusType corpus_type = 4;
+  string favicon_url = 6;
+  ResearchResultContent content = 7;
+  int32 source_ordinal = 9;
+}
+
+message DiscoverSourcesFeedbackKey {
+  string discover_sources_id = 1;
+}
+
+message DiscoverSourcesRequest {
+  DiscoveryContext discovery_context = 1;
+  DiscoveryMode discovery_mode = 3;
+  string project_id = 4;
+  string client_session_id = 6;
+}
+
+message DiscoverSourcesResponse {
+  repeated DiscoveredSource discovered_sources = 1;
+  string overview = 2;
+  DiscoverSourcesFeedbackKey discover_sources_feedback_key = 3;
+  string short_description = 6;
+}
+
+message ResearchQuery {
+  string query = 1;
+  int32 source_type = 2;
+}
+
+message ResearchResults {
+  repeated DiscoveredSource sources = 1;
+  string summary = 2;
+}
+
+message ResearchJobInfo {
+  ResearchQuery query = 2;
+  DiscoveryMode discovery_mode = 3;
+  ResearchResults results = 4;
+  int32 status = 5;
+}
+
+message ResearchJob {
+  string source_discovery_job_id = 1;
+  ResearchJobInfo info = 2;
+  google.protobuf.Timestamp update_time = 3;
+  google.protobuf.Timestamp create_time = 4;
+}
+
+message DiscoverSourcesManifoldRequest {
+  ResearchQuery query = 1;
+  DiscoveryMode discovery_mode = 3;
+  string project_id = 4;
+}
+
+message DiscoverSourcesManifoldResponse {
+  string source_discovery_job_id = 1;
+}
+
+message DiscoverSourcesAsyncRequest {
+  repeated int32 fixed_flags = 2 [packed = true];
+  ResearchQuery query = 3;
+  DiscoveryMode discovery_mode = 4;
+  string project_id = 5;
+}
+
+message DiscoverSourcesAsyncResponse {
+  string start_session_id = 1;
+  string source_discovery_job_id = 2;
+}
+
+message ListDiscoverSourcesJobRequest {
+  string project_id = 3;
+}
+
+message ListDiscoverSourcesJobResponse {
+  repeated ResearchJob jobs = 1;
+}
+
+message CancelDiscoverSourcesJobRequest {
+  string source_discovery_job_id = 3;
+}
+
+message FinishDiscoverSourcesRunRequest {
+  string source_discovery_job_id = 3;
+  string project_id = 4;
+  repeated UserContent user_content = 5;
+}
+
+message ImportedSourceHeader {
+  SourceId source_id = 1;
+  string title = 2;
+}
+
+message FinishDiscoverSourcesRunResponse {
+  repeated ImportedSourceHeader sources = 1;
+}

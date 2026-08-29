@@ -27,7 +27,7 @@ from notebooklm._android.proto.labs.language.tailwind.common.protos import metad
 from notebooklm._android.proto.labs.language.tailwind.common.protos import provenance_pb2 as labs_dot_language_dot_tailwind_dot_common_dot_protos_dot_provenance__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n<google/internal/labs/tailwind/orchestration/v1/sources.proto\x12.google.internal.labs.tailwind.orchestration.v1\x1a\x39google/internal/labs/tailwind/orchestration/v1/read.proto\x1a\x33labs/language/tailwind/common/protos/metadata.proto\x1a\x35labs/language/tailwind/common/protos/provenance.proto\"Z\n\x0bInputSource\x12K\n\tsource_id\x18\x01 \x01(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.SourceId\"\x1f\n\x07Snippet\x12\x14\n\x0ctext_snippet\x18\x01 \x01(\t\"\x1f\n\tMainIdeas\x12\x12\n\ntext_ideas\x18\x01 \x03(\t\"\xf5\x01\n\rDocumentGuide\x12K\n\x06source\x18\x01 \x01(\x0b\x32;.google.internal.labs.tailwind.orchestration.v1.InputSource\x12H\n\x07snippet\x18\x02 \x01(\x0b\x32\x37.google.internal.labs.tailwind.orchestration.v1.Snippet\x12M\n\nmain_ideas\x18\x03 \x01(\x0b\x32\x39.google.internal.labs.tailwind.orchestration.v1.MainIdeas\"m\n\x1dGenerateDocumentGuidesRequest\x12L\n\x07sources\x18\x01 \x03(\x0b\x32;.google.internal.labs.tailwind.orchestration.v1.InputSource\"o\n\x1eGenerateDocumentGuidesResponse\x12M\n\x06guides\x18\x01 \x03(\x0b\x32=.google.internal.labs.tailwind.orchestration.v1.DocumentGuide\"\'\n\x17TentativeSourceMetadata\x12\x0c\n\x04name\x18\x01 \x01(\t\"\xb2\x02\n\x1a\x41\x64\x64TentativeSourcesRequest\x12k\n\x1atentative_sources_metadata\x18\x01 \x03(\x0b\x32G.google.internal.labs.tailwind.orchestration.v1.TentativeSourceMetadata\x12\x12\n\nproject_id\x18\x02 \x01(\t\x12M\n\x0frequest_context\x18\x03 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.RequestContext\x12\x44\n\nprovenance\x18\x04 \x01(\x0b\x32\x30.labs.language.tailwind.common.protos.Provenance\"p\n\x1b\x41\x64\x64TentativeSourcesResponse\x12Q\n\x11tentative_sources\x18\x01 \x03(\x0b\x32\x36.google.internal.labs.tailwind.orchestration.v1.Source\"\x19\n\nWebContent\x12\x0b\n\x03url\x18\x01 \x01(\t\"\xb5\x01\n\x0bUserContent\x12O\n\x0bweb_content\x18\x03 \x01(\x0b\x32:.google.internal.labs.tailwind.orchestration.v1.WebContent\x12U\n\x13tentative_source_id\x18\t \x01(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.SourceId\"z\n\x11\x41\x64\x64SourcesRequest\x12Q\n\x0cuser_content\x18\x01 \x03(\x0b\x32;.google.internal.labs.tailwind.orchestration.v1.UserContent\x12\x12\n\nproject_id\x18\x02 \x01(\t\"]\n\x12\x41\x64\x64SourcesResponse\x12G\n\x07sources\x18\x01 \x03(\x0b\x32\x36.google.internal.labs.tailwind.orchestration.v1.Source\"d\n\x14\x44\x65leteSourcesRequest\x12L\n\nsource_ids\x18\x01 \x03(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.SourceId\"6\n\x16PlainTextSourceContent\x12\x0e\n\x06header\x18\x01 \x01(\t\x12\x0c\n\x04\x62ody\x18\x02 \x01(\t\"`\n\x11LoadSourceRequest\x12K\n\tsource_id\x18\x01 \x01(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.SourceId\"\xd1\x01\n\x12LoadSourceResponse\x12\x46\n\x06source\x18\x01 \x01(\x0b\x32\x36.google.internal.labs.tailwind.orchestration.v1.Source\x12Z\n\nplain_text\x18\x02 \x01(\x0b\x32\x46.google.internal.labs.tailwind.orchestration.v1.PlainTextSourceContent\x12\x17\n\x0fmarkdown_string\x18\x03 \x01(\t\"\xcf\x01\n\x11UploadFileRequest\x12\x12\n\nproject_id\x18\x03 \x01(\t\x12M\n\x0frequest_context\x18\x04 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.RequestContext\x12\x11\n\tsource_id\x18\x05 \x01(\t\x12\x44\n\nprovenance\x18\x06 \x01(\x0b\x32\x30.labs.language.tailwind.common.protos.Provenanceb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n<google/internal/labs/tailwind/orchestration/v1/sources.proto\x12.google.internal.labs.tailwind.orchestration.v1\x1a\x39google/internal/labs/tailwind/orchestration/v1/read.proto\x1a\x33labs/language/tailwind/common/protos/metadata.proto\x1a\x35labs/language/tailwind/common/protos/provenance.proto\"Z\n\x0bInputSource\x12K\n\tsource_id\x18\x01 \x01(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.SourceId\"\x1f\n\x07Snippet\x12\x14\n\x0ctext_snippet\x18\x01 \x01(\t\"\x1f\n\tMainIdeas\x12\x12\n\ntext_ideas\x18\x01 \x03(\t\"\xf5\x01\n\rDocumentGuide\x12K\n\x06source\x18\x01 \x01(\x0b\x32;.google.internal.labs.tailwind.orchestration.v1.InputSource\x12H\n\x07snippet\x18\x02 \x01(\x0b\x32\x37.google.internal.labs.tailwind.orchestration.v1.Snippet\x12M\n\nmain_ideas\x18\x03 \x01(\x0b\x32\x39.google.internal.labs.tailwind.orchestration.v1.MainIdeas\"m\n\x1dGenerateDocumentGuidesRequest\x12L\n\x07sources\x18\x01 \x03(\x0b\x32;.google.internal.labs.tailwind.orchestration.v1.InputSource\"o\n\x1eGenerateDocumentGuidesResponse\x12M\n\x06guides\x18\x01 \x03(\x0b\x32=.google.internal.labs.tailwind.orchestration.v1.DocumentGuide\"\'\n\x17TentativeSourceMetadata\x12\x0c\n\x04name\x18\x01 \x01(\t\"\xb2\x02\n\x1a\x41\x64\x64TentativeSourcesRequest\x12k\n\x1atentative_sources_metadata\x18\x01 \x03(\x0b\x32G.google.internal.labs.tailwind.orchestration.v1.TentativeSourceMetadata\x12\x12\n\nproject_id\x18\x02 \x01(\t\x12M\n\x0frequest_context\x18\x03 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.RequestContext\x12\x44\n\nprovenance\x18\x04 \x01(\x0b\x32\x30.labs.language.tailwind.common.protos.Provenance\"p\n\x1b\x41\x64\x64TentativeSourcesResponse\x12Q\n\x11tentative_sources\x18\x01 \x03(\x0b\x32\x36.google.internal.labs.tailwind.orchestration.v1.Source\".\n\nWebContent\x12\x0b\n\x03url\x18\x01 \x01(\t\x12\x13\n\x0bsource_name\x18\x02 \x01(\t\"3\n\x0bTextContent\x12\x13\n\x0bsource_name\x18\x01 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x02 \x01(\t\"\xd4\x04\n\x0bUserContent\x12Q\n\x0ctext_content\x18\x02 \x01(\x0b\x32;.google.internal.labs.tailwind.orchestration.v1.TextContent\x12O\n\x0bweb_content\x18\x03 \x01(\x0b\x32:.google.internal.labs.tailwind.orchestration.v1.WebContent\x12\x66\n\x11text_content_type\x18\x04 \x01(\x0e\x32K.google.internal.labs.tailwind.orchestration.v1.UserContent.TextContentType\x12U\n\x13tentative_source_id\x18\t \x01(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.SourceId\"\xe1\x01\n\x0fTextContentType\x12\x18\n\x14\x43ONTENT_TYPE_UNKNOWN\x10\x00\x12\x14\n\x10\x43ONTENT_TYPE_PDF\x10\x01\x12\x15\n\x11\x43ONTENT_TYPE_TEXT\x10\x02\x12\x19\n\x15\x43ONTENT_TYPE_MARKDOWN\x10\x03\x12!\n\x1d\x43ONTENT_TYPE_AUDIO_TRANSCRIPT\x10\x04\x12\x15\n\x11\x43ONTENT_TYPE_EPUB\x10\x05\x12\x1c\n\x18\x43ONTENT_TYPE_GEMINI_CHAT\x10\x06\x12\x14\n\x10\x43ONTENT_TYPE_CSV\x10\x07\"z\n\x11\x41\x64\x64SourcesRequest\x12Q\n\x0cuser_content\x18\x01 \x03(\x0b\x32;.google.internal.labs.tailwind.orchestration.v1.UserContent\x12\x12\n\nproject_id\x18\x02 \x01(\t\"]\n\x12\x41\x64\x64SourcesResponse\x12G\n\x07sources\x18\x01 \x03(\x0b\x32\x36.google.internal.labs.tailwind.orchestration.v1.Source\"d\n\x14\x44\x65leteSourcesRequest\x12L\n\nsource_ids\x18\x01 \x03(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.SourceId\"6\n\x16PlainTextSourceContent\x12\x0e\n\x06header\x18\x01 \x01(\t\x12\x0c\n\x04\x62ody\x18\x02 \x01(\t\"`\n\x11LoadSourceRequest\x12K\n\tsource_id\x18\x01 \x01(\x0b\x32\x38.google.internal.labs.tailwind.orchestration.v1.SourceId\"\xd1\x01\n\x12LoadSourceResponse\x12\x46\n\x06source\x18\x01 \x01(\x0b\x32\x36.google.internal.labs.tailwind.orchestration.v1.Source\x12Z\n\nplain_text\x18\x02 \x01(\x0b\x32\x46.google.internal.labs.tailwind.orchestration.v1.PlainTextSourceContent\x12\x17\n\x0fmarkdown_string\x18\x03 \x01(\t\"\xcf\x01\n\x11UploadFileRequest\x12\x12\n\nproject_id\x18\x03 \x01(\t\x12M\n\x0frequest_context\x18\x04 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.RequestContext\x12\x11\n\tsource_id\x18\x05 \x01(\t\x12\x44\n\nprovenance\x18\x06 \x01(\x0b\x32\x30.labs.language.tailwind.common.protos.Provenanceb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -53,21 +53,25 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_ADDTENTATIVESOURCESRESPONSE']._serialized_start=1259
   _globals['_ADDTENTATIVESOURCESRESPONSE']._serialized_end=1371
   _globals['_WEBCONTENT']._serialized_start=1373
-  _globals['_WEBCONTENT']._serialized_end=1398
-  _globals['_USERCONTENT']._serialized_start=1401
-  _globals['_USERCONTENT']._serialized_end=1582
-  _globals['_ADDSOURCESREQUEST']._serialized_start=1584
-  _globals['_ADDSOURCESREQUEST']._serialized_end=1706
-  _globals['_ADDSOURCESRESPONSE']._serialized_start=1708
-  _globals['_ADDSOURCESRESPONSE']._serialized_end=1801
-  _globals['_DELETESOURCESREQUEST']._serialized_start=1803
-  _globals['_DELETESOURCESREQUEST']._serialized_end=1903
-  _globals['_PLAINTEXTSOURCECONTENT']._serialized_start=1905
-  _globals['_PLAINTEXTSOURCECONTENT']._serialized_end=1959
-  _globals['_LOADSOURCEREQUEST']._serialized_start=1961
-  _globals['_LOADSOURCEREQUEST']._serialized_end=2057
-  _globals['_LOADSOURCERESPONSE']._serialized_start=2060
-  _globals['_LOADSOURCERESPONSE']._serialized_end=2269
-  _globals['_UPLOADFILEREQUEST']._serialized_start=2272
-  _globals['_UPLOADFILEREQUEST']._serialized_end=2479
+  _globals['_WEBCONTENT']._serialized_end=1419
+  _globals['_TEXTCONTENT']._serialized_start=1421
+  _globals['_TEXTCONTENT']._serialized_end=1472
+  _globals['_USERCONTENT']._serialized_start=1475
+  _globals['_USERCONTENT']._serialized_end=2071
+  _globals['_USERCONTENT_TEXTCONTENTTYPE']._serialized_start=1846
+  _globals['_USERCONTENT_TEXTCONTENTTYPE']._serialized_end=2071
+  _globals['_ADDSOURCESREQUEST']._serialized_start=2073
+  _globals['_ADDSOURCESREQUEST']._serialized_end=2195
+  _globals['_ADDSOURCESRESPONSE']._serialized_start=2197
+  _globals['_ADDSOURCESRESPONSE']._serialized_end=2290
+  _globals['_DELETESOURCESREQUEST']._serialized_start=2292
+  _globals['_DELETESOURCESREQUEST']._serialized_end=2392
+  _globals['_PLAINTEXTSOURCECONTENT']._serialized_start=2394
+  _globals['_PLAINTEXTSOURCECONTENT']._serialized_end=2448
+  _globals['_LOADSOURCEREQUEST']._serialized_start=2450
+  _globals['_LOADSOURCEREQUEST']._serialized_end=2546
+  _globals['_LOADSOURCERESPONSE']._serialized_start=2549
+  _globals['_LOADSOURCERESPONSE']._serialized_end=2758
+  _globals['_UPLOADFILEREQUEST']._serialized_start=2761
+  _globals['_UPLOADFILEREQUEST']._serialized_end=2968
 # @@protoc_insertion_point(module_scope)

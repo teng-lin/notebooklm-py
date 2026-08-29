@@ -187,14 +187,14 @@ class TestNoInternalSelfWarn:
 
     @pytest.mark.asyncio
     async def test_poll_does_not_self_warn(self):
-        from notebooklm._research import ResearchAPI
+        from notebooklm._web.research import WebResearchAPI
 
         class _Rpc:
             async def rpc_call(self, *a, **k):
                 # Empty POLL_RESEARCH envelope -> ResearchTask.empty().
                 return []
 
-        api = ResearchAPI(_Rpc())
+        api = WebResearchAPI(_Rpc())
         with warnings.catch_warnings():
             warnings.simplefilter("error", DeprecationWarning)
             result = await api.poll("nb_1")

@@ -64,7 +64,7 @@ from ._web.labels import WebLabelsAPI
 from ._web.mind_maps import NoteBackedMindMapService, WebMindMapsAPI
 from ._web.notebooks import WebNotebooksAPI
 from ._web.notes import NoteService, WebNotesAPI
-from ._web.research import ResearchAPI
+from ._web.research import WebResearchAPI
 from ._web.settings import WebSettingsAPI
 from ._web.sharing import WebSharingAPI
 from ._web.sources import WebSourcesAPI
@@ -477,7 +477,7 @@ def _assemble_client(
     # Pure-RPC features (typed as ``rpc: RpcCaller``). Pass the
     # ``RpcExecutor`` collaborator directly, sourced from the composed
     # executor.
-    client.research = ResearchAPI(
+    client.research = WebResearchAPI(
         internals.executor,
         base_timeout=timeout,
         import_research_timeout=import_research_timeout,

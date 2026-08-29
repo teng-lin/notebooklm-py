@@ -32,7 +32,7 @@ FEATURE_API_NAMES = {
     "WebArtifactsAPI",
     "NoteBackedMindMapService",
     "WebNotesAPI",
-    "ResearchAPI",
+    "WebResearchAPI",
     "WebSettingsAPI",
     "WebSharingAPI",
     "WebSourcesAPI",
@@ -40,18 +40,18 @@ FEATURE_API_NAMES = {
     "NoteService",
 }
 
-WEB_ONLY_NAMESPACE_IMPORTS = {
-    "ResearchAPI": "_web.research",
-}
+WEB_ONLY_NAMESPACE_IMPORTS: dict[str, str] = {}
 
 NEUTRAL_NAMESPACE_IMPORTS = {
     "CollectionsAPI": "_collections",
     "LabelsAPI": "_labels",
+    "ResearchAPI": "_research",
 }
 
 WEB_NAMESPACE_IMPLEMENTATION_IMPORTS = {
     "WebCollectionsAPI": "_web.collections",
     "WebLabelsAPI": "_web.labels",
+    "WebResearchAPI": "_web.research",
 }
 
 INLINE_CLIENT_ATTRS = {
@@ -82,7 +82,7 @@ def test_web_only_namespaces_are_composed_from_their_canonical_modules(path: Pat
     assert imported_from == WEB_ONLY_NAMESPACE_IMPORTS
 
 
-def test_client_annotations_use_neutral_collection_and_label_contracts() -> None:
+def test_client_annotations_use_neutral_namespace_contracts() -> None:
     """The public client shape must not expose concrete web implementations."""
     imported_from: dict[str, str] = {}
     for node in ast.walk(_tree(CLIENT_PATH)):
@@ -95,7 +95,7 @@ def test_client_annotations_use_neutral_collection_and_label_contracts() -> None
     assert imported_from == NEUTRAL_NAMESPACE_IMPORTS
 
 
-def test_assembly_uses_concrete_collection_and_label_web_implementations() -> None:
+def test_assembly_uses_concrete_web_namespace_implementations() -> None:
     """The composition root, and only it, selects the web backend classes."""
     imported_from: dict[str, str] = {}
     for node in ast.walk(_tree(ASSEMBLY_PATH)):

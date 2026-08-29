@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from notebooklm._android import artifacts, chat, notebooks, notes, sharing, sources
+from notebooklm._android import artifacts, chat, notebooks, notes, research, sharing, sources
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     orchestration_service_pb2,
     orchestration_service_pb2_grpc,
@@ -22,7 +22,7 @@ ORCHESTRATION_PACKAGE = "google.internal.labs.tailwind.orchestration.v1"
 ORCHESTRATION_SERVICE = f"{ORCHESTRATION_PACKAGE}.LabsTailwindOrchestrationService"
 SHARING_SERVICE = "labs.language.tailwind.sharing.LabsTailwindSharingService"
 
-_ADAPTER_MODULES = (notebooks, sources, artifacts, chat, notes, sharing)
+_ADAPTER_MODULES = (notebooks, sources, artifacts, chat, notes, research, sharing)
 _EXPECTED_SIGNATURES = {
     "GetProject": (
         f"{ORCHESTRATION_PACKAGE}.GetProjectRequest",
@@ -107,6 +107,36 @@ _EXPECTED_SIGNATURES = {
     "MutateNote": (
         f"{ORCHESTRATION_PACKAGE}.MutateNoteRequest",
         f"{ORCHESTRATION_PACKAGE}.MutateNoteResponse",
+        False,
+    ),
+    "DiscoverSources": (
+        f"{ORCHESTRATION_PACKAGE}.DiscoverSourcesRequest",
+        f"{ORCHESTRATION_PACKAGE}.DiscoverSourcesResponse",
+        False,
+    ),
+    "DiscoverSourcesManifold": (
+        f"{ORCHESTRATION_PACKAGE}.DiscoverSourcesManifoldRequest",
+        f"{ORCHESTRATION_PACKAGE}.DiscoverSourcesManifoldResponse",
+        False,
+    ),
+    "DiscoverSourcesAsync": (
+        f"{ORCHESTRATION_PACKAGE}.DiscoverSourcesAsyncRequest",
+        f"{ORCHESTRATION_PACKAGE}.DiscoverSourcesAsyncResponse",
+        False,
+    ),
+    "ListDiscoverSourcesJob": (
+        f"{ORCHESTRATION_PACKAGE}.ListDiscoverSourcesJobRequest",
+        f"{ORCHESTRATION_PACKAGE}.ListDiscoverSourcesJobResponse",
+        False,
+    ),
+    "CancelDiscoverSourcesJob": (
+        f"{ORCHESTRATION_PACKAGE}.CancelDiscoverSourcesJobRequest",
+        "google.protobuf.Empty",
+        False,
+    ),
+    "FinishDiscoverSourcesRun": (
+        f"{ORCHESTRATION_PACKAGE}.FinishDiscoverSourcesRunRequest",
+        f"{ORCHESTRATION_PACKAGE}.FinishDiscoverSourcesRunResponse",
         False,
     ),
 }
@@ -220,8 +250,8 @@ def test_adapter_paths_equal_exact_descriptor_plus_machine_readable_exceptions()
     assert len(exception_paths) == len(entries)
     assert _descriptor_paths().isdisjoint(exception_paths)
     assert _adapter_paths() == _descriptor_paths() | exception_paths
-    assert len(_adapter_paths()) == 28
-    assert len(_descriptor_paths()) == 17
+    assert len(_adapter_paths()) == 34
+    assert len(_descriptor_paths()) == 23
 
     for entry in entries:
         module_name, constant_name = entry["adapter_constant"].rsplit(".", 1)

@@ -22,28 +22,13 @@ import pytest
 pytestmark = pytest.mark.repo_lint
 
 
-@pytest.mark.parametrize(
-    ("compatibility_module", "implementation_module", "class_name", "logger_name"),
-    [
-        (
-            "notebooklm._research",
-            "notebooklm._web.research",
-            "ResearchAPI",
-            "notebooklm._research",
-        ),
-    ],
-)
-def test_web_namespace_moves_preserve_class_and_logger_identity(
-    compatibility_module: str,
-    implementation_module: str,
-    class_name: str,
-    logger_name: str,
-) -> None:
-    compatibility = importlib.import_module(compatibility_module)
-    implementation = importlib.import_module(implementation_module)
+def test_research_base_web_split_preserves_logger_and_backend_alias() -> None:
+    base = importlib.import_module("notebooklm._research")
+    implementation = importlib.import_module("notebooklm._web.research")
 
-    assert getattr(compatibility, class_name) is getattr(implementation, class_name)
-    assert implementation.logger.name == logger_name
+    assert issubclass(implementation.WebResearchAPI, base.ResearchAPI)
+    assert implementation.ResearchAPI is implementation.WebResearchAPI
+    assert implementation.logger.name == "notebooklm._research"
 
 
 # ---------------------------------------------------------------------------

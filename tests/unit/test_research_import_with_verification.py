@@ -996,14 +996,14 @@ class TestImportSourcesWithVerification:
             ]
         )
         research.import_sources = AsyncMock(
-            side_effect=[
-                RPCTimeoutError("Timed out", timeout_seconds=30.0),
-                [{"id": "src_report", "title": "Research Report"}],
-            ]
+            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
         )
 
-        with patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep:
-            imported = await research.import_sources_with_verification(
+        with (
+            patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep,
+            pytest.raises(RPCTimeoutError),
+        ):
+            await research.import_sources_with_verification(
                 "nb_123",
                 "task_123",
                 [
@@ -1013,10 +1013,9 @@ class TestImportSourcesWithVerification:
                 initial_delay=5,
             )
 
-        assert imported == [{"id": "src_report", "title": "Research Report"}]
-        assert research.import_sources.await_count == 2
-        assert research.import_sources.await_args_list[1].args[2] == [report_entry]
-        mock_sleep.assert_awaited_once_with(5)
+        research.import_sources.assert_awaited_once()
+        assert research.import_sources.await_args.args[2] == [report_entry]
+        mock_sleep.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_returned_list_includes_non_url_sources_like_research_reports(self):
@@ -1234,11 +1233,10 @@ class TestImportSourcesWithVerification:
                 initial_delay=1,
             )
 
-        # Exactly 2 attempts (1 original + 1 retry) before raising. ``<= 2``
-        # would also pass if the retry disappeared entirely, which would
-        # mask a regression — assert the cap and the single backoff sleep.
-        assert research.import_sources.await_count == 2
-        mock_sleep.assert_awaited_once_with(1)
+        # LoadSource cannot recover submitted Markdown, so a lost report
+        # response is never resent.
+        research.import_sources.assert_awaited_once()
+        mock_sleep.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_falls_back_to_retry_when_post_timeout_probe_raises(self):

@@ -53,10 +53,29 @@ message AddTentativeSourcesResponse {
 
 message WebContent {
   string url = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  string source_name = 2; // evidence: docs/android/deep-research-mobile-grpc-2026-08-27.md
+}
+
+message TextContent {
+  string source_name = 1; // evidence: docs/android/deep-research-mobile-grpc-2026-08-27.md
+  string content = 2; // evidence: docs/android/deep-research-mobile-grpc-2026-08-27.md
 }
 
 message UserContent {
+  enum TextContentType {
+    CONTENT_TYPE_UNKNOWN = 0;
+    CONTENT_TYPE_PDF = 1;
+    CONTENT_TYPE_TEXT = 2;
+    CONTENT_TYPE_MARKDOWN = 3;
+    CONTENT_TYPE_AUDIO_TRANSCRIPT = 4;
+    CONTENT_TYPE_EPUB = 5;
+    CONTENT_TYPE_GEMINI_CHAT = 6;
+    CONTENT_TYPE_CSV = 7;
+  }
+
+  TextContent text_content = 2; // evidence: docs/android/deep-research-mobile-grpc-2026-08-27.md
   WebContent web_content = 3; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  TextContentType text_content_type = 4; // evidence: docs/android/deep-research-mobile-grpc-2026-08-27.md
   SourceId tentative_source_id = 9; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
 }
 

@@ -63,19 +63,37 @@ def test_b3_exact_package_overlay_is_minimal_and_has_no_service_guess() -> None:
         "PlainTextSourceContent",
         "Snippet",
         "TentativeSourceMetadata",
+        "TextContent",
         "UploadFileRequest",
         "UserContent",
         "WebContent",
     }
     assert _shape(sources_pb2.WebContent) == {
-        "url": (1, False, FieldDescriptor.TYPE_STRING, None)
+        "url": (1, False, FieldDescriptor.TYPE_STRING, None),
+        "source_name": (2, False, FieldDescriptor.TYPE_STRING, None),
+    }
+    assert _shape(sources_pb2.TextContent) == {
+        "source_name": (1, False, FieldDescriptor.TYPE_STRING, None),
+        "content": (2, False, FieldDescriptor.TYPE_STRING, None),
     }
     assert _shape(sources_pb2.UserContent) == {
+        "text_content": (
+            2,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{ORCHESTRATION_PACKAGE}.TextContent",
+        ),
         "web_content": (
             3,
             False,
             FieldDescriptor.TYPE_MESSAGE,
             f"{ORCHESTRATION_PACKAGE}.WebContent",
+        ),
+        "text_content_type": (
+            4,
+            False,
+            FieldDescriptor.TYPE_ENUM,
+            f"{ORCHESTRATION_PACKAGE}.UserContent.TextContentType",
         ),
         "tentative_source_id": (
             9,
@@ -226,9 +244,7 @@ def test_b3_request_bytes_are_pinned_without_context_or_unexercised_title() -> N
 
 def test_b3b_registration_and_upload_file_request_bytes_are_pinned() -> None:
     registration = sources_pb2.AddTentativeSourcesRequest(
-        tentative_sources_metadata=[
-            sources_pb2.TentativeSourceMetadata(name="document.pdf")
-        ],
+        tentative_sources_metadata=[sources_pb2.TentativeSourceMetadata(name="document.pdf")],
         project_id="project",
         request_context=android_request_context(),
         provenance=android_provenance(),

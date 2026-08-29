@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from .. import research as _research_pub
 from .._notebook_metadata import NotebookSourceLister
+from .._research import ResearchAPI as BaseResearchAPI
 from .._runtime.config import (
     AUTO_READ_TIMEOUT,
     DEFAULT_TIMEOUT,
@@ -72,6 +73,7 @@ __all__ = [
     "ResearchStart",
     "ResearchStatus",
     "ResearchTask",
+    "WebResearchAPI",
 ]
 
 # Preserve the historical logger key across the whole-module move.
@@ -112,7 +114,7 @@ def _is_deep_start_null_result_error(exc: RPCError) -> bool:
     )
 
 
-class ResearchAPI:
+class WebResearchAPI(BaseResearchAPI):
     """Operations for research sessions (web/drive search).
 
     Provides methods for starting research, polling for results, and
@@ -164,9 +166,11 @@ class ResearchAPI:
                 dependency.
         """
         self._rpc = rpc
-        self._source_lister = source_lister or create_default_source_lister(self._rpc)
-        self._base_timeout = base_timeout
-        self._import_research_timeout = import_research_timeout
+        super().__init__(
+            source_lister=source_lister or create_default_source_lister(self._rpc),
+            base_timeout=base_timeout,
+            import_research_timeout=import_research_timeout,
+        )
 
     async def _rpc_call(
         self,
@@ -1015,17 +1019,16 @@ class ResearchAPI:
                     _log_discarded_progress()
                     raise
 
-                # Report-only imports (no URLs to verify) can't use the success
-                # check above. Cap retries at one attempt to bound worst-case
-                # duplicate inflation for report entries when timeouts persist.
-                if not requested_urls_norm and attempt >= 2:
+                # Report-only imports cannot be reconciled: the retained live
+                # LoadSource round trip did not expose submitted Markdown.
+                # Never resend after a lost response.
+                if not requested_urls_norm:
                     logger.warning(
                         "IMPORT_RESEARCH %s for notebook %s with no URLs "
-                        "to verify; giving up after %d attempts to bound "
+                        "to verify; giving up after the first attempt to avoid "
                         "duplicate inflation",
                         reason,
                         notebook_id,
-                        attempt,
                     )
                     _log_discarded_progress()
                     raise
@@ -1043,3 +1046,8 @@ class ResearchAPI:
                 await asyncio.sleep(sleep_for)
                 delay = min(delay * backoff_factor, max_delay)
                 attempt += 1
+
+
+# Backward-compatible private-module spelling. Composition imports the explicit
+# backend class; existing direct imports keep resolving to the Web implementation.
+ResearchAPI = WebResearchAPI

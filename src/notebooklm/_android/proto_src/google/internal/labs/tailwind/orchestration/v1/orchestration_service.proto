@@ -6,6 +6,7 @@ import "google/internal/labs/tailwind/orchestration/v1/artifacts.proto";
 import "google/internal/labs/tailwind/orchestration/v1/chat.proto";
 import "google/internal/labs/tailwind/orchestration/v1/notes.proto";
 import "google/internal/labs/tailwind/orchestration/v1/read.proto";
+import "google/internal/labs/tailwind/orchestration/v1/research.proto";
 import "google/internal/labs/tailwind/orchestration/v1/sources.proto";
 import "google/protobuf/empty.proto";
 
@@ -15,8 +16,9 @@ import "google/protobuf/empty.proto";
 // protobuf FQN is unproven, stay out of this descriptor and are exhaustively
 // recorded in docs/android/grpc-service-signature-exceptions.json.
 //
-// GetArtifact and later Research/Labels/account methods are deliberately absent:
-// this service slice covers the adapter paths implemented at admission time.
+// GetArtifact, GetLabels, and account methods remain absent until their
+// corresponding adapter slices land. Research signatures below are exact and
+// independently live-validated; research.proto itself remains service-free.
 service LabsTailwindOrchestrationService {
   rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
   rpc ListRecentlyViewedProjects(ListRecentlyViewedProjectsRequest)
@@ -43,4 +45,16 @@ service LabsTailwindOrchestrationService {
   rpc GetNotes(GetNotesRequest) returns (GetNotesResponse);
   rpc CreateNote(CreateNoteRequest) returns (CreateNoteResponse);
   rpc MutateNote(MutateNoteRequest) returns (MutateNoteResponse);
+
+  rpc DiscoverSources(DiscoverSourcesRequest) returns (DiscoverSourcesResponse);
+  rpc DiscoverSourcesManifold(DiscoverSourcesManifoldRequest)
+      returns (DiscoverSourcesManifoldResponse);
+  rpc DiscoverSourcesAsync(DiscoverSourcesAsyncRequest)
+      returns (DiscoverSourcesAsyncResponse);
+  rpc ListDiscoverSourcesJob(ListDiscoverSourcesJobRequest)
+      returns (ListDiscoverSourcesJobResponse);
+  rpc CancelDiscoverSourcesJob(CancelDiscoverSourcesJobRequest)
+      returns (google.protobuf.Empty);
+  rpc FinishDiscoverSourcesRun(FinishDiscoverSourcesRunRequest)
+      returns (FinishDiscoverSourcesRunResponse);
 }

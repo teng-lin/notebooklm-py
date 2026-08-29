@@ -1,15 +1,43 @@
 # Android protobuf evidence ledger
 
 **Status:** admitted B1 read closure plus B2 notebook, B3/B3b source, B4 artifact, B5 chat,
-and B6 notes/sharing overlays
+B6 notes/sharing, and private B10 Research overlays
 
-**Evidence snapshot:** 2026-08-28
+**Evidence snapshot:** 2026-08-29
 
 **Scope:** B1 project/source reads, B2 notebook operations, the B3 URL/maintenance/flat-content
 slice and B3b PDF transaction, B4 artifact list/get/create/update/delete plus its repository-local
 wire-equivalent report-suggestion overlay, and the private/direct-test B5 chat surface
 (`ListChatSessions`, `ListChatTurns`, `DeleteChatTurns`, and `GenerateFreeFormStreamed`), plus B6
-note CRUD and public-link sharing
+note CRUD and public-link sharing, and the private B10 synchronous discovery plus async Research
+lifecycle
+
+## B10 Research method ledger
+
+The service-free `research.proto` overlay copies the exact-package message and enum declarations
+from the pinned `supported.proto`. The four async routes absent from the APK were independently
+accepted by the Android bearer endpoint; `FinishDiscoverSourcesRun` and synchronous
+`DiscoverSources` are also present in the committed mobile method manifest. The cumulative
+`orchestration_service.proto` imports these messages and declares all six exact signatures; the
+message overlay itself remains service-free because protobuf services cannot be reopened.
+
+| Full method | Request / response | Replay policy |
+| --- | --- | --- |
+| `.../DiscoverSources` | `DiscoverSourcesRequest` / `DiscoverSourcesResponse` | never; quota-bearing discovery |
+| `.../DiscoverSourcesManifold` | `DiscoverSourcesManifoldRequest` / `DiscoverSourcesManifoldResponse` | never; stateful start |
+| `.../DiscoverSourcesAsync` | `DiscoverSourcesAsyncRequest` / `DiscoverSourcesAsyncResponse` | never; stateful start |
+| `.../ListDiscoverSourcesJob` | `ListDiscoverSourcesJobRequest` / `ListDiscoverSourcesJobResponse` | replay-safe read; exact run ID selected locally |
+| `.../CancelDiscoverSourcesJob` | `CancelDiscoverSourcesJobRequest` / zero-byte `google.protobuf.Empty` | never; ambiguity resolved only by exact-ID poll |
+| `.../FinishDiscoverSourcesRun` | `FinishDiscoverSourcesRunRequest` / `FinishDiscoverSourcesRunResponse` | never; URL-only missing subset may be reconciled and resent |
+
+Fast start uses `ResearchQuery #1`, mode `#3=1`, project `#4`, and canonical run UUID response
+`#1`. Deep uses packed flags `#2=[1]`, query `#3`, mode `#4=5`, project `#5`; response `#1` is
+diagnostic and canonical run UUID `#2` owns poll/cancel/import. Poll jobs carry canonical ID `#1`,
+info `#2`, update/create timestamps `#3/#4`; info carries query `#2`, mode `#3`, results `#4`, and
+status `#5`. URL result fields are URL/title/hint/corpus/content/ordinal `#1/#2/#3/#4/#7/#9`.
+A report is URL-less with Markdown `ResearchResultContent.text #1`, kind `#2=3`. Finish encodes
+URL rows as `UserContent.web_content #3`; report rows use `text_content #2` and
+`text_content_type #4=MARKDOWN(3)`. Response headers are repeated `#1` and may be omitted.
 
 This ledger is the admission boundary for `src/notebooklm/_android/proto_src/`. The recovered
 [`schema.proto`](schema.proto) is Dart-AOT evidence, not a compile input: it flattened several
@@ -57,11 +85,11 @@ The recovery method and the warning about duplicate packages are committed in
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject` | `.google.internal.labs.tailwind.orchestration.v1.GetProjectRequest` | `.google.internal.labs.tailwind.orchestration.v1.GetProjectResponse` | unary/unary | `project_id #1`, `include_audio_overview_ids #2`; no `RequestContext` |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListRecentlyViewedProjects` | `.google.internal.labs.tailwind.orchestration.v1.ListRecentlyViewedProjectsRequest` | `.google.internal.labs.tailwind.orchestration.v1.ListRecentlyViewedProjectsResponse` | unary/unary | `include_own_projects #2`, `include_audio_overview_ids #3`; no `RequestContext` |
 
-The two B1 signatures above and fifteen later exact signatures live in the sole
+The two B1 signatures above and twenty-one later exact signatures live in the sole
 `google/internal/labs/tailwind/orchestration/v1/orchestration_service.proto` service declaration.
 The individual message overlays remain service-free so protobuf never reopens one service across
-files. Its generated stub exposes 17 implemented methods: the two reads above, five source methods,
-four artifact methods, three chat methods, and three note methods. Eleven other implemented paths
+files. Its generated stub exposes 23 implemented methods: the two reads above, five source methods,
+four artifact methods, three chat methods, three note methods, and six Research methods. Eleven other implemented paths
 remain manual full-path calls because at least one remote request/response FQN is unproven. The
 exception manifest names each adapter constant, local parser, reason code, and evidence link;
 descriptor/adapter/manifest equality is pinned by

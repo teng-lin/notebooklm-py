@@ -68,7 +68,7 @@
     "_NON_AUTHTOKENS_CANDIDATES": 30
   },
   "tests/_guardrails/test_backend_abstract_contracts.py": {
-    "BASE_ABSTRACT_CONTRACTS": 143
+    "BASE_ABSTRACT_CONTRACTS": 151
   },
   "tests/_guardrails/test_backend_boundaries.py": {
     "LAZY_WEB_IMPORT_ALLOWLIST": 34

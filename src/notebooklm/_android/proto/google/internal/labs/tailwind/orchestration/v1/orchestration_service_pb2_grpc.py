@@ -7,6 +7,7 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import chat_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_chat__pb2
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import notes_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notes__pb2
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_read__pb2
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import research_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import sources_pb2 as google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 
@@ -37,8 +38,9 @@ class LabsTailwindOrchestrationServiceStub(object):
     protobuf FQN is unproven, stay out of this descriptor and are exhaustively
     recorded in docs/android/grpc-service-signature-exceptions.json.
 
-    GetArtifact and later Research/Labels/account methods are deliberately absent:
-    this service slice covers the adapter paths implemented at admission time.
+    GetArtifact, GetLabels, and account methods remain absent until their
+    corresponding adapter slices land. Research signatures below are exact and
+    independently live-validated; research.proto itself remains service-free.
     """
 
     def __init__(self, channel):
@@ -132,6 +134,36 @@ class LabsTailwindOrchestrationServiceStub(object):
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notes__pb2.MutateNoteRequest.SerializeToString,
                 response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notes__pb2.MutateNoteResponse.FromString,
                 _registered_method=True)
+        self.DiscoverSources = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DiscoverSources',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.DiscoverSourcesRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.DiscoverSourcesResponse.FromString,
+                _registered_method=True)
+        self.DiscoverSourcesManifold = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DiscoverSourcesManifold',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.DiscoverSourcesManifoldRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.DiscoverSourcesManifoldResponse.FromString,
+                _registered_method=True)
+        self.DiscoverSourcesAsync = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DiscoverSourcesAsync',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.DiscoverSourcesAsyncRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.DiscoverSourcesAsyncResponse.FromString,
+                _registered_method=True)
+        self.ListDiscoverSourcesJob = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListDiscoverSourcesJob',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.ListDiscoverSourcesJobRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.ListDiscoverSourcesJobResponse.FromString,
+                _registered_method=True)
+        self.CancelDiscoverSourcesJob = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CancelDiscoverSourcesJob',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.CancelDiscoverSourcesJobRequest.SerializeToString,
+                response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+                _registered_method=True)
+        self.FinishDiscoverSourcesRun = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/FinishDiscoverSourcesRun',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.FinishDiscoverSourcesRunRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.FinishDiscoverSourcesRunResponse.FromString,
+                _registered_method=True)
 
 
 class LabsTailwindOrchestrationServiceServicer(object):
@@ -141,8 +173,9 @@ class LabsTailwindOrchestrationServiceServicer(object):
     protobuf FQN is unproven, stay out of this descriptor and are exhaustively
     recorded in docs/android/grpc-service-signature-exceptions.json.
 
-    GetArtifact and later Research/Labels/account methods are deliberately absent:
-    this service slice covers the adapter paths implemented at admission time.
+    GetArtifact, GetLabels, and account methods remain absent until their
+    corresponding adapter slices land. Research signatures below are exact and
+    independently live-validated; research.proto itself remains service-free.
     """
 
     def GetProject(self, request, context):
@@ -247,6 +280,42 @@ class LabsTailwindOrchestrationServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def DiscoverSources(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DiscoverSourcesManifold(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DiscoverSourcesAsync(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListDiscoverSourcesJob(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CancelDiscoverSourcesJob(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def FinishDiscoverSourcesRun(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_LabsTailwindOrchestrationServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -335,6 +404,36 @@ def add_LabsTailwindOrchestrationServiceServicer_to_server(servicer, server):
                     request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notes__pb2.MutateNoteRequest.FromString,
                     response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notes__pb2.MutateNoteResponse.SerializeToString,
             ),
+            'DiscoverSources': grpc.unary_unary_rpc_method_handler(
+                    servicer.DiscoverSources,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.DiscoverSourcesRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.DiscoverSourcesResponse.SerializeToString,
+            ),
+            'DiscoverSourcesManifold': grpc.unary_unary_rpc_method_handler(
+                    servicer.DiscoverSourcesManifold,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.DiscoverSourcesManifoldRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.DiscoverSourcesManifoldResponse.SerializeToString,
+            ),
+            'DiscoverSourcesAsync': grpc.unary_unary_rpc_method_handler(
+                    servicer.DiscoverSourcesAsync,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.DiscoverSourcesAsyncRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.DiscoverSourcesAsyncResponse.SerializeToString,
+            ),
+            'ListDiscoverSourcesJob': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListDiscoverSourcesJob,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.ListDiscoverSourcesJobRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.ListDiscoverSourcesJobResponse.SerializeToString,
+            ),
+            'CancelDiscoverSourcesJob': grpc.unary_unary_rpc_method_handler(
+                    servicer.CancelDiscoverSourcesJob,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.CancelDiscoverSourcesJobRequest.FromString,
+                    response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            ),
+            'FinishDiscoverSourcesRun': grpc.unary_unary_rpc_method_handler(
+                    servicer.FinishDiscoverSourcesRun,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.FinishDiscoverSourcesRunRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.FinishDiscoverSourcesRunResponse.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService', rpc_method_handlers)
@@ -350,8 +449,9 @@ class LabsTailwindOrchestrationService(object):
     protobuf FQN is unproven, stay out of this descriptor and are exhaustively
     recorded in docs/android/grpc-service-signature-exceptions.json.
 
-    GetArtifact and later Research/Labels/account methods are deliberately absent:
-    this service slice covers the adapter paths implemented at admission time.
+    GetArtifact, GetLabels, and account methods remain absent until their
+    corresponding adapter slices land. Research signatures below are exact and
+    independently live-validated; research.proto itself remains service-free.
     """
 
     @staticmethod
@@ -803,6 +903,168 @@ class LabsTailwindOrchestrationService(object):
             '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateNote',
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notes__pb2.MutateNoteRequest.SerializeToString,
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_notes__pb2.MutateNoteResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DiscoverSources(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DiscoverSources',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.DiscoverSourcesRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.DiscoverSourcesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DiscoverSourcesManifold(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DiscoverSourcesManifold',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.DiscoverSourcesManifoldRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.DiscoverSourcesManifoldResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DiscoverSourcesAsync(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DiscoverSourcesAsync',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.DiscoverSourcesAsyncRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.DiscoverSourcesAsyncResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListDiscoverSourcesJob(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListDiscoverSourcesJob',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.ListDiscoverSourcesJobRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.ListDiscoverSourcesJobResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CancelDiscoverSourcesJob(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CancelDiscoverSourcesJob',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.CancelDiscoverSourcesJobRequest.SerializeToString,
+            google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def FinishDiscoverSourcesRun(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/FinishDiscoverSourcesRun',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.FinishDiscoverSourcesRunRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_research__pb2.FinishDiscoverSourcesRunResponse.FromString,
             options,
             channel_credentials,
             insecure,

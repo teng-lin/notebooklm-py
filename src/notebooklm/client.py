@@ -58,6 +58,7 @@ from ._labels import LabelsAPI
 from ._mind_maps_api import MindMapsAPI
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
+from ._research import ResearchAPI
 from ._runtime.config import (
     AUTO_READ_TIMEOUT,
     DEFAULT_CHAT_RESPONSE_MAX_BYTES,
@@ -74,7 +75,6 @@ from ._sources import SourcesAPI
 from ._url_utils import is_google_auth_redirect as is_google_auth_redirect
 from ._web.mind_maps import NoteBackedMindMapService as NoteBackedMindMapService  # noqa: F401
 from ._web.notes import NoteService as NoteService  # noqa: F401
-from ._web.research import ResearchAPI
 from ._web.sources.upload import SourceUploadPipeline
 from ._web.transport.executor import RpcExecutor
 from ._web.transport.lifecycle import CookieRotator, CookieSaver
