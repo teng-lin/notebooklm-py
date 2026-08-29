@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from tests.e2e.test_android_collections_conformance import _cleanup_disposable_resources
+from tests.e2e._android_collections_cleanup import cleanup_disposable_resources
 
 from notebooklm.types import Collection, Notebook
 
@@ -49,7 +49,7 @@ async def test_cleanup_sweeps_prefix_matches_when_create_response_was_not_record
     notebook = Notebook(id="notebook-id", title=f"{prefix}-notebook")
     client = _Client(_Collections(collection), _Notebooks(notebook))
 
-    await _cleanup_disposable_resources(
+    await cleanup_disposable_resources(
         client,  # type: ignore[arg-type]
         run_prefix=prefix,
         collection_ids=set(),
@@ -72,7 +72,7 @@ async def test_cleanup_verifies_both_namespaces_when_one_delete_keeps_failing() 
     )
 
     with pytest.raises(AssertionError) as caught:
-        await _cleanup_disposable_resources(
+        await cleanup_disposable_resources(
             client,  # type: ignore[arg-type]
             run_prefix=prefix,
             collection_ids={collection.id},
