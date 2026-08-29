@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-"""Parse blutter's disassembled *.pb.dart BuilderInfo._i() methods into a .proto-like schema.
+"""Parse blutter's disassembled *.pb.dart BuilderInfo._i() methods into schema evidence.
 
 Reads the reconstructed Dart classes and, for each `static BuilderInfo _i()` body, walks the
 disassembly extracting each protobuf field registration (tag, name, type, cardinality) from the
 BuilderInfo adder calls (aOS/aOM/aE/aI/aOB/aD/pPM/pPS/pc, oneof via `oo`).
+
+The output is deliberately not assigned to one synthetic protobuf package.  When blutter exposes
+the ``PackageName`` object used by ``BuilderInfo``, its value is resolved through the dump's
+``objs.txt`` and emitted with the original Dart library URI as per-message provenance.
 """
 
+import dataclasses
 import glob
+import json
 import os
 import re
 import sys
@@ -38,6 +44,38 @@ ADDER_RE = re.compile(r"BuilderInfo::([A-Za-z0-9_]+)\b")
 CLASS_RE = re.compile(r"^class (\w+) extends GeneratedMessage")
 II_RE = re.compile(r"static BuilderInfo _i\(\) \{")
 ENDM_RE = re.compile(r"^  \}")
+LIBRARY_RE = re.compile(r"^// lib:.*?\burl:\s*(\S+)\s*$")
+PACKAGE_REF_RE = re.compile(r"Obj!PackageName@([A-Fa-f0-9]+)")
+PACKAGE_LITERAL_RE = re.compile(r"PackageName\(\s*\"([^\"]+)\"\s*\)")
+PACKAGE_OBJECT_RE = re.compile(
+    r"^Obj!PackageName@(?P<ref>[A-Fa-f0-9]+)\s*:\s*\{\s*"
+    r"^\s*off_8:\s*(?P<name>\"(?:\\.|[^\"\\])*\")",
+    re.MULTILINE,
+)
+
+
+@dataclasses.dataclass(frozen=True)
+class MessageSchema:
+    """A recovered message plus the provenance needed to form (or withhold) its FQN."""
+
+    class_name: str
+    builder_name: str | None
+    fields: list[dict]
+    protobuf_package: str | None
+    package_object: str | None
+    library_uri: str | None
+
+    @property
+    def proto_name(self):
+        """Return the message name passed to BuilderInfo, falling back to its Dart class name."""
+        return self.builder_name or self.class_name
+
+    @property
+    def fqn(self):
+        """Return the exact protobuf FQN only when BuilderInfo's package was resolved."""
+        if not self.protobuf_package:
+            return None
+        return f"{self.protobuf_package}.{self.proto_name}"
 
 
 def parse_ii_body(lines):
@@ -99,10 +137,51 @@ def parse_ii_body(lines):
     return msg_name, fields
 
 
-def parse_file(path):
+def parse_package_names(path):
+    """Return blutter PackageName object-id -> protobuf package mappings from ``objs.txt``."""
+    with open(path, errors="replace") as fh:
+        contents = fh.read()
+    return {
+        match.group("ref").lower(): json.loads(match.group("name"))
+        for match in PACKAGE_OBJECT_RE.finditer(contents)
+    }
+
+
+def find_package_names(root):
+    """Load the nearest conventional ``objs.txt`` for a blutter assembly root, if present."""
+    candidates = (
+        os.path.join(root, "objs.txt"),
+        os.path.join(os.path.dirname(os.path.abspath(root)), "objs.txt"),
+    )
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return parse_package_names(candidate)
+    return {}
+
+
+def _package_evidence(lines, package_names):
+    """Resolve the protobuf package supplied to BuilderInfo without guessing from the path."""
+    for line in lines:
+        literal = PACKAGE_LITERAL_RE.search(line)
+        if literal:
+            return literal.group(1), None
+        package_ref = PACKAGE_REF_RE.search(line)
+        if package_ref:
+            ref = package_ref.group(1).lower()
+            return package_names.get(ref), ref
+    return None, None
+
+
+def parse_file_messages(path, package_names=None):
+    """Return recovered messages, including empty ones, with package and library provenance."""
     with open(path, errors="replace") as fh:
         lines = fh.read().splitlines()
-    messages = {}  # class_name -> fields
+    package_names = package_names or {}
+    library_uri = next(
+        (match.group(1) for line in lines if (match := LIBRARY_RE.match(line))),
+        None,
+    )
+    messages = []
     i = 0
     cur_class = None
     while i < len(lines):
@@ -116,38 +195,69 @@ def parse_file(path):
             while j < len(lines) and not ENDM_RE.match(lines[j]):
                 body.append(lines[j])
                 j += 1
-            _, fields = parse_ii_body(body)
-            if fields:
-                messages[cur_class] = fields
+            builder_name, fields = parse_ii_body(body)
+            protobuf_package, package_object = _package_evidence(body, package_names)
+            messages.append(
+                MessageSchema(
+                    class_name=cur_class,
+                    builder_name=builder_name,
+                    fields=fields,
+                    protobuf_package=protobuf_package,
+                    package_object=package_object,
+                    library_uri=library_uri,
+                )
+            )
             i = j
             continue
         i += 1
     return messages
 
 
-def main():
-    root = sys.argv[1]
-    patterns = sys.argv[2:] or ["orchestration.v1", "sharing", "discovery", "api.v1"]
+def parse_file(path):
+    """Return the historical class -> fields mapping, now retaining zero-field messages."""
+    return {message.class_name: message.fields for message in parse_file_messages(path)}
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    root = argv[0]
+    patterns = argv[1:] or ["orchestration.v1", "sharing", "discovery", "api.v1"]
     files = []
     for p in patterns:
         files += glob.glob(os.path.join(root, f"*{p}*", "*.pb.dart"))
     files = sorted(set(files))
-    total_msgs = total_fields = 0
+    package_names = find_package_names(root)
+    total_msgs = total_fields = resolved_msgs = 0
+    print("// Schema evidence fragments; do not place every message in one synthetic package.")
+    print("// Protobuf FQNs below come only from BuilderInfo PackageName evidence.")
     for f in files:
-        msgs = parse_file(f)
+        msgs = parse_file_messages(f, package_names)
         if not msgs:
             continue
         print(f"\n// ===== {os.path.basename(os.path.dirname(f))}/{os.path.basename(f)} =====")
-        for cls, fields in msgs.items():
+        if msgs[0].library_uri:
+            print(f"// Dart library: {msgs[0].library_uri}")
+        for message in msgs:
             total_msgs += 1
-            print(f"message {cls} {{")
-            for fld in sorted(fields, key=lambda x: x["tag"]):
+            if message.fqn:
+                resolved_msgs += 1
+                print(f"// Protobuf FQN: {message.fqn}")
+            elif message.package_object:
+                print(
+                    "// Protobuf FQN unresolved: "
+                    f"{message.proto_name} (PackageName object {message.package_object})"
+                )
+            else:
+                print(f"// Protobuf FQN unresolved: {message.proto_name} (no package evidence)")
+            print(f"message {message.class_name} {{")
+            for fld in sorted(message.fields, key=lambda x: x["tag"]):
                 rep = "repeated " if fld["repeated"] else ""
                 print(f"  {rep}{fld['type']} {fld['name']} = {fld['tag']};")
                 total_fields += 1
             print("}")
     sys.stderr.write(
-        f"\nparsed {total_msgs} messages, {total_fields} fields from {len(files)} files\n"
+        f"\nparsed {total_msgs} messages, {total_fields} fields from {len(files)} files; "
+        f"resolved {resolved_msgs}/{total_msgs} protobuf FQNs\n"
     )
 
 
