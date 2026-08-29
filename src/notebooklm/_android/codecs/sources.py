@@ -48,6 +48,10 @@ _DRIVE_STATUS_BY_NAME: dict[str, DriveSourceStatus] = {
 }
 
 
+class _MissingSourceIdError(DecodingError):
+    """Internal discriminator for the one malformed row B1 may skip."""
+
+
 def _enum_name(enum: Any, value: int) -> str | None:
     """Return an enum symbol without trusting backend-specific integer parity."""
     try:
@@ -56,7 +60,7 @@ def _enum_name(enum: Any, value: int) -> str | None:
         return None
 
 
-def decode_source(
+def _decode_source(
     source: b1_read_pb2.Source,
     *,
     method_id: str,
@@ -66,7 +70,7 @@ def decode_source(
     source_id = source.source_id.id if source.HasField("source_id") else ""
     if not source_id:
         location = f" at index {index}" if index is not None else ""
-        raise DecodingError(
+        raise _MissingSourceIdError(
             f"Android source response did not contain a source id{location}",
             method_id=method_id,
         )
@@ -127,6 +131,25 @@ def decode_source(
     )
 
 
+def decode_source(
+    source: b1_read_pb2.Source,
+    *,
+    method_id: str,
+    index: int | None = None,
+) -> Source:
+    """Decode one source and normalize projection failures to bounded drift."""
+    try:
+        return _decode_source(source, method_id=method_id, index=index)
+    except DecodingError:
+        raise
+    except Exception:
+        location = f" at index {index}" if index is not None else ""
+        raise DecodingError(
+            f"Could not decode Android source response{location}",
+            method_id=method_id,
+        ) from None
+
+
 def decode_sources(
     sources: Iterable[b1_read_pb2.Source],
     *,
@@ -140,7 +163,7 @@ def decode_sources(
     for index, raw_source in enumerate(sources):
         try:
             source = decode_source(raw_source, method_id=method_id, index=index)
-        except DecodingError:
+        except _MissingSourceIdError:
             if strict:
                 raise
             logger.warning("Skipping Android source without an id at index %d", index)

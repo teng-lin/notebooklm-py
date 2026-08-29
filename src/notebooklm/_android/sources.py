@@ -10,8 +10,9 @@ from typing import Any, Literal, TypeVar
 
 from .._sources import SourcesAPI
 from .._types.research import SourceGuide
+from ..exceptions import RPCError
 from ..types import Source, SourceFulltext, SourceStatus, SourceType
-from .codecs.notebooks import decode_project
+from .codecs.notebooks import decode_project, map_get_project_error
 from .codecs.sources import decode_sources
 from .errors import unsupported_operation
 from .proto.google.internal.labs.tailwind.orchestration.v1 import b1_read_pb2
@@ -71,17 +72,23 @@ class AndroidSourcesAPI(SourcesAPI):
             parameter="types",
         )
 
-        # evidence: docs/mobile/endpoints.md#GetProject
+        # evidence: docs/android/proto-evidence-ledger.md#field-ledger
         request = b1_read_pb2.GetProjectRequest(
             project_id=notebook_id,
             include_audio_overview_ids=True,
         )
-        response = await self._session.unary(
-            GET_PROJECT_METHOD,
-            request,
-            replay_safe=True,
-            response_type=b1_read_pb2.GetProjectResponse,
-        )
+        try:
+            response = await self._session.unary(
+                GET_PROJECT_METHOD,
+                request,
+                replay_safe=True,
+                response_type=b1_read_pb2.GetProjectResponse,
+            )
+        except RPCError as exc:
+            mapped = map_get_project_error(notebook_id, exc, method_id=GET_PROJECT_METHOD)
+            if mapped is exc:
+                raise
+            raise mapped from exc
         # Project identity is required even when its source list happens to be
         # empty; otherwise a default/malformed response could masquerade as an
         # honestly empty notebook.

@@ -11,6 +11,7 @@ import pytest
 from google.protobuf import text_format
 from google.protobuf.timestamp_pb2 import Timestamp
 
+from notebooklm._android.codecs.sources import decode_source
 from notebooklm._android.notebooks import (
     GET_PROJECT_METHOD,
     LIST_RECENT_PROJECTS_METHOD,
@@ -277,20 +278,82 @@ async def test_notebook_required_id_is_never_invented() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_translates_only_grpc_not_found() -> None:
+@pytest.mark.parametrize(
+    "invoke",
+    [
+        pytest.param(lambda api: api.get("missing-id"), id="get"),
+        pytest.param(lambda api: api.get_raw("missing-id"), id="get-raw"),
+        pytest.param(lambda api: api.get_source_ids("missing-id"), id="get-source-ids"),
+    ],
+)
+async def test_all_notebook_get_project_reads_translate_grpc_not_found(
+    invoke: Callable[[AndroidNotebooksAPI], Awaitable[object]],
+) -> None:
     fake, _, notebooks = _graph()
-    fake.error = RPCError("sanitized status", method_id=GET_PROJECT_METHOD, rpc_code=5)
+    fake.error = RPCError(
+        "sanitized status",
+        method_id=GET_PROJECT_METHOD,
+        raw_response="bounded-response",
+        rpc_code=5,
+        found_ids=["other-id"],
+    )
     with pytest.raises(NotebookNotFoundError) as raised:
-        await notebooks.get("missing-id")
+        await invoke(notebooks)
     assert raised.value.notebook_id == "missing-id"
     assert raised.value.rpc_code == 5
     assert raised.value.method_id == GET_PROJECT_METHOD
+    assert raised.value.raw_response == "bounded-response"
+    assert raised.value.found_ids == ["other-id"]
+
+
+@pytest.mark.asyncio
+async def test_notebook_get_project_reads_preserve_non_not_found_rpc_error() -> None:
+    fake, _, notebooks = _graph()
 
     original = RPCError("permission denied", method_id=GET_PROJECT_METHOD, rpc_code=7)
     fake.error = original
     with pytest.raises(RPCError) as preserved:
         await notebooks.get("forbidden-id")
     assert preserved.value is original
+
+
+@pytest.mark.asyncio
+async def test_source_list_translates_notebook_not_found_and_preserves_other_statuses() -> None:
+    fake, sources, _ = _graph()
+    fake.error = RPCError("missing", method_id=GET_PROJECT_METHOD, rpc_code=5)
+    with pytest.raises(NotebookNotFoundError) as missing:
+        await sources.list("missing-notebook")
+    assert missing.value.notebook_id == "missing-notebook"
+    assert missing.value.rpc_code == 5
+
+    original = RPCError("permission denied", method_id=GET_PROJECT_METHOD, rpc_code=7)
+    fake.error = original
+    with pytest.raises(RPCError) as preserved:
+        await sources.list("forbidden-notebook")
+    assert preserved.value is original
+
+
+@pytest.mark.asyncio
+async def test_project_timestamp_failure_is_bounded_decoding_error() -> None:
+    project = _project(title="secret title must not escape")
+    project.metadata.create_time.seconds = 253_402_300_800
+    _, _, notebooks = _graph(project)
+
+    with pytest.raises(DecodingError, match="Could not decode Android project") as raised:
+        await notebooks.get(project.id)
+    assert raised.value.__cause__ is None
+    assert "secret title" not in str(raised.value)
+
+
+def test_source_projection_failure_is_bounded_decoding_error() -> None:
+    class ExplodingSource:
+        def HasField(self, field: str) -> bool:
+            raise ValueError("secret raw protobuf diagnostic")
+
+    with pytest.raises(DecodingError, match="Could not decode Android source") as raised:
+        decode_source(cast(Any, ExplodingSource()), method_id=GET_PROJECT_METHOD, index=7)
+    assert raised.value.__cause__ is None
+    assert "secret raw" not in str(raised.value)
 
 
 @pytest.mark.asyncio

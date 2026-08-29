@@ -8,7 +8,7 @@ from typing import Any
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import Message
 
-from ...exceptions import DecodingError
+from ...exceptions import DecodingError, NotebookNotFoundError, RPCError
 from ...types import Notebook, SharePermission
 from ..proto.google.internal.labs.tailwind.orchestration.v1 import b1_read_pb2
 
@@ -27,7 +27,26 @@ def _enum_name(enum: Any, value: int) -> str | None:
         return None
 
 
-def decode_project(
+def map_get_project_error(
+    notebook_id: str,
+    error: RPCError,
+    *,
+    method_id: str,
+) -> RPCError:
+    """Map only gRPC NOT_FOUND to the public notebook miss exception."""
+    if error.rpc_code != 5:
+        return error
+    return NotebookNotFoundError(
+        notebook_id,
+        method_id=method_id,
+        raw_response=error.raw_response,
+        rpc_code=error.rpc_code,
+        found_ids=error.found_ids,
+        detail=str(error),
+    )
+
+
+def _decode_project(
     project: b1_read_pb2.Project,
     *,
     method_id: str,
@@ -64,9 +83,32 @@ def decode_project(
     )
 
 
-def message_to_known_dict(message: Message) -> dict[str, Any]:
+def decode_project(
+    project: b1_read_pb2.Project,
+    *,
+    method_id: str,
+) -> Notebook:
+    """Decode one project and normalize projection failures to bounded drift."""
+    try:
+        return _decode_project(project, method_id=method_id)
+    except DecodingError:
+        raise
+    except Exception:
+        raise DecodingError(
+            "Could not decode Android project response",
+            method_id=method_id,
+        ) from None
+
+
+def message_to_known_dict(message: Message, *, method_id: str) -> dict[str, Any]:
     """Return backend-shaped data for fields known to the generated descriptor."""
-    return MessageToDict(message, preserving_proto_field_name=True)
+    try:
+        return MessageToDict(message, preserving_proto_field_name=True)
+    except Exception:
+        raise DecodingError(
+            "Could not render Android protobuf response",
+            method_id=method_id,
+        ) from None
 
 
-__all__ = ["decode_project", "message_to_known_dict"]
+__all__ = ["decode_project", "map_get_project_error", "message_to_known_dict"]

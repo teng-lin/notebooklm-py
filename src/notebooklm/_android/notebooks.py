@@ -6,9 +6,9 @@ import logging
 from typing import Any
 
 from .._notebooks import NotebooksAPI
-from ..exceptions import NotebookNotFoundError, RPCError
+from ..exceptions import RPCError
 from ..types import Notebook, NotebookDescription, PromptSuggestion
-from .codecs.notebooks import decode_project, message_to_known_dict
+from .codecs.notebooks import decode_project, map_get_project_error, message_to_known_dict
 from .codecs.sources import decode_sources
 from .errors import unsupported_operation
 from .proto.google.internal.labs.tailwind.orchestration.v1 import b1_read_pb2
@@ -36,21 +36,27 @@ class AndroidNotebooksAPI(NotebooksAPI):
         self,
         notebook_id: str,
     ) -> b1_read_pb2.GetProjectResponse:
-        # evidence: docs/mobile/endpoints.md#GetProject
+        # evidence: docs/android/proto-evidence-ledger.md#field-ledger
         request = b1_read_pb2.GetProjectRequest(
             project_id=notebook_id,
             include_audio_overview_ids=True,
         )
-        return await self._session.unary(
-            GET_PROJECT_METHOD,
-            request,
-            replay_safe=True,
-            response_type=b1_read_pb2.GetProjectResponse,
-        )
+        try:
+            return await self._session.unary(
+                GET_PROJECT_METHOD,
+                request,
+                replay_safe=True,
+                response_type=b1_read_pb2.GetProjectResponse,
+            )
+        except RPCError as exc:
+            mapped = map_get_project_error(notebook_id, exc, method_id=GET_PROJECT_METHOD)
+            if mapped is exc:
+                raise
+            raise mapped from exc
 
     async def list(self) -> list[Notebook]:
         """List Android projects in the server's recent-first order."""
-        # evidence: docs/mobile/endpoints.md#Method-reference
+        # evidence: docs/android/proto-evidence-ledger.md#field-ledger
         request = b1_read_pb2.ListRecentlyViewedProjectsRequest(
             include_own_projects=True,
             include_audio_overview_ids=True,
@@ -68,25 +74,16 @@ class AndroidNotebooksAPI(NotebooksAPI):
 
     async def get(self, notebook_id: str) -> Notebook:
         """Get one Android project, translating only status-5 misses."""
-        try:
-            response = await self._get_project_response(notebook_id)
-        except RPCError as exc:
-            if exc.rpc_code != 5:
-                raise
-            raise NotebookNotFoundError(
-                notebook_id,
-                method_id=GET_PROJECT_METHOD,
-                raw_response=exc.raw_response,
-                rpc_code=exc.rpc_code,
-                found_ids=exc.found_ids,
-                detail=str(exc),
-            ) from exc
+        response = await self._get_project_response(notebook_id)
         return decode_project(response.project, method_id=GET_PROJECT_METHOD)
 
     async def get_raw(self, notebook_id: str) -> dict[str, Any]:
         """Return the known-field protobuf response as a backend-shaped dict."""
         response = await self._get_project_response(notebook_id)
-        return message_to_known_dict(response)
+        # The raw contract is the full response envelope, matching the web
+        # method's transport-shaped return rather than silently unwrapping the
+        # project only for Android.
+        return message_to_known_dict(response, method_id=GET_PROJECT_METHOD)
 
     async def get_source_ids(self, notebook_id: str) -> list[str]:
         """Return ordered, first-occurrence source IDs from one project read."""
