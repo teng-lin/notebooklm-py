@@ -608,7 +608,7 @@ async def test_every_unsupported_notebook_method_fails_before_io(
     invoke: NotebookUnsupportedCall,
 ) -> None:
     fake, _, notebooks = _graph()
-    with pytest.raises(UnsupportedOperationError, match='backend="web"'):
+    with pytest.raises(UnsupportedOperationError, match="web backend"):
         await invoke(notebooks)
     assert fake.calls == []
 
@@ -647,6 +647,6 @@ async def test_every_unsupported_source_method_fails_before_io(
     invoke: SourceUnsupportedCall,
 ) -> None:
     fake, sources, _ = _graph()
-    with pytest.raises(UnsupportedOperationError, match='backend="web"'):
+    with pytest.raises(UnsupportedOperationError, match="web backend"):
         await invoke(sources)
     assert fake.calls == []
