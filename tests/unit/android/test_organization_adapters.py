@@ -42,7 +42,9 @@ from notebooklm.exceptions import (
     DecodingError,
     LabelError,
     LabelNotFoundError,
+    NetworkError,
     RPCError,
+    RPCTimeoutError,
     UnsupportedOperationError,
 )
 from notebooklm.types import Collection, Label, Notebook, Source
@@ -467,6 +469,40 @@ async def test_collection_membership_not_found_preserves_write_error_if_readback
     ambiguous = RPCError("membership not found", method_id=MUTATE_LABEL_METHOD, rpc_code=5)
     server.failures[1] = ambiguous
     server.failures[2] = RPCError("readback failed", method_id=GET_LABELS_METHOD, rpc_code=13)
+    _labels, collections = _apis(server)
+
+    with pytest.raises(RPCError) as caught:
+        await collections.add_notebooks(COLLECTION_A, [NB_B])
+
+    assert caught.value is ambiguous
+    assert type(caught.value) is RPCError
+    assert [method for method, _request, _kwargs in server.calls] == [
+        MUTATE_LABEL_METHOD,
+        GET_LABELS_METHOD,
+    ]
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in server.calls] == [7, 7]
+    assert server.operation_scopes == [("collections.add_notebooks", None)]
+
+
+@pytest.mark.parametrize(
+    "readback_failure",
+    [
+        NetworkError("readback connection failed", method_id=GET_LABELS_METHOD),
+        RPCTimeoutError(
+            "readback timed out",
+            timeout_seconds=1,
+            method_id=GET_LABELS_METHOD,
+        ),
+    ],
+    ids=["network", "timeout"],
+)
+async def test_collection_membership_not_found_preserves_write_error_if_readback_transport_fails(
+    readback_failure: NetworkError,
+) -> None:
+    server = FakeOrganizationServer()
+    ambiguous = RPCError("membership not found", method_id=MUTATE_LABEL_METHOD, rpc_code=5)
+    server.failures[1] = ambiguous
+    server.failures[2] = readback_failure
     _labels, collections = _apis(server)
 
     with pytest.raises(RPCError) as caught:

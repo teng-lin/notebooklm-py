@@ -6,7 +6,13 @@ import builtins
 from typing import NoReturn
 
 from .._collections import CollectionsAPI, ListNotebooks
-from ..exceptions import CollectionError, CollectionNotFoundError, DecodingError, RPCError
+from ..exceptions import (
+    CollectionError,
+    CollectionNotFoundError,
+    DecodingError,
+    NetworkError,
+    RPCError,
+)
 from ..types import Collection, Notebook
 from .organization import (
     DELETE_LABELS_METHOD,
@@ -211,7 +217,7 @@ class AndroidCollectionsAPI(CollectionsAPI):
                 collection_id,
                 expected_epoch=expected_epoch,
             )
-        except RPCError:
+        except (NetworkError, RPCError):
             raise error from None
         if collection is None:
             raise _collection_miss(collection_id, method_id=MUTATE_LABEL_METHOD) from error
