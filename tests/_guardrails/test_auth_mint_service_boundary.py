@@ -1050,6 +1050,7 @@ def test_public_adapters_are_exact_handler_exit_projections() -> None:
 
 def test_service_importers_callers_and_lock_boundary_are_exact() -> None:
     assert _module_importers(SERVICE_MODULE) == {
+        "_android/auth.py",
         "_auth/keepalive.py",
         "_auth/master_token.py",
         "_auth/master_token_bootstrap.py",

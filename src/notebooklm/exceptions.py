@@ -40,6 +40,7 @@ __all__ = [
     # Validation/Config
     "ValidationError",
     "ConfigurationError",
+    "UnsupportedOperationError",
     "MissingDependencyError",
     "LockUnavailableError",
     # Headless re-auth (layer-3 auth recovery)
@@ -216,6 +217,10 @@ class ValidationError(NotebookLMError):
 
 class ConfigurationError(NotebookLMError):
     """Missing or invalid configuration (auth, storage)."""
+
+
+class UnsupportedOperationError(ConfigurationError):
+    """The selected backend cannot implement an established operation safely."""
 
 
 class MissingDependencyError(ConfigurationError):

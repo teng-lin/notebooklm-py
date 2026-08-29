@@ -114,6 +114,7 @@ from .exceptions import (
     SourceProcessingError,
     SourceTimeoutError,
     UnknownRPCMethodError,
+    UnsupportedOperationError,
     ValidationError,
     # Cross-domain umbrellas (wait/poll timeouts)
     WaitTimeoutError,
@@ -278,6 +279,7 @@ __all__ = [
     "NotebookLMError",
     "ValidationError",
     "ConfigurationError",
+    "UnsupportedOperationError",
     "MissingDependencyError",
     # Cross-domain umbrellas
     "NotFoundError",

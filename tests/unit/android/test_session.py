@@ -1,0 +1,527 @@
+from __future__ import annotations
+
+import asyncio
+from dataclasses import dataclass
+from enum import Enum
+from types import SimpleNamespace
+
+import pytest
+
+from notebooklm._android.auth import BearerCredential
+from notebooklm._android.session import ANDROID_GRPC_TARGET, AndroidSession
+from notebooklm._client_metrics import ClientMetrics
+from notebooklm._runtime.call_supervisor import CallSupervisor
+from notebooklm._transport_drain import TransportDrainTracker
+from notebooklm.exceptions import (
+    AuthError,
+    ClientError,
+    MissingDependencyError,
+    RateLimitError,
+    RPCError,
+    RPCTimeoutError,
+    ServerError,
+)
+
+METHOD = "/package.Service/Method"
+BEARER = "ya29.session-secret"
+
+
+class _Status(Enum):
+    CANCELLED = (1, "cancelled")
+    UNKNOWN = (2, "unknown")
+    INVALID_ARGUMENT = (3, "invalid argument")
+    DEADLINE_EXCEEDED = (4, "deadline exceeded")
+    NOT_FOUND = (5, "not found")
+    ALREADY_EXISTS = (6, "already exists")
+    PERMISSION_DENIED = (7, "permission denied")
+    RESOURCE_EXHAUSTED = (8, "resource exhausted")
+    FAILED_PRECONDITION = (9, "failed precondition")
+    ABORTED = (10, "aborted")
+    OUT_OF_RANGE = (11, "out of range")
+    UNIMPLEMENTED = (12, "unimplemented")
+    INTERNAL = (13, "internal")
+    UNAVAILABLE = (14, "unavailable")
+    DATA_LOSS = (15, "data loss")
+    UNAUTHENTICATED = (16, "unauthenticated")
+
+
+class _RawRpcError(Exception):
+    def __init__(self, status: _Status) -> None:
+        super().__init__(f"raw-{status.name} {BEARER}")
+        self._status = status
+
+    def code(self):
+        return self._status
+
+    def details(self):
+        return f"raw details {BEARER}"
+
+
+@dataclass(frozen=True)
+class _Message:
+    payload: bytes
+
+    def SerializeToString(self) -> bytes:
+        return self.payload
+
+    @classmethod
+    def FromString(cls, payload: bytes):
+        return cls(payload)
+
+
+class _Bearer:
+    def __init__(self, tokens: list[str] | None = None) -> None:
+        self.tokens = tokens or [BEARER]
+        self.gets = 0
+        self.invalidated: list[int] = []
+        self.activations: list[int] = []
+        self.closed = 0
+        self.wait: asyncio.Event | None = None
+
+    async def activate(self, epoch: int) -> None:
+        self.activations.append(epoch)
+
+    async def get(self, expected_epoch: int) -> BearerCredential:
+        if self.wait is not None:
+            await self.wait.wait()
+        index = min(self.gets, len(self.tokens) - 1)
+        self.gets += 1
+        return BearerCredential(self.tokens[index], self.gets)
+
+    def invalidate(self, generation: int) -> None:
+        self.invalidated.append(generation)
+
+    async def prepare_close(self) -> None:
+        self.closed += 1
+
+
+class _StreamCall:
+    def __init__(self, outcomes) -> None:
+        self._outcomes = iter(outcomes)
+        self.cancelled = False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            outcome = next(self._outcomes)
+        except StopIteration:
+            raise StopAsyncIteration from None
+        if isinstance(outcome, BaseException):
+            raise outcome
+        await asyncio.sleep(0)
+        return outcome
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
+class _Channel:
+    def __init__(self) -> None:
+        self.unary_outcomes: list[bytes | BaseException | asyncio.Future[bytes]] = [b"response"]
+        self.stream_outcomes = [[_Message(b"one"), _Message(b"two")]]
+        self.invocations: list[tuple[str, bytes, tuple[tuple[str, str], ...], float | None]] = []
+        self.created_callables: list[tuple[str, str]] = []
+        self.stream_calls: list[_StreamCall] = []
+        self.closed = 0
+
+    def unary_unary(self, method, *, request_serializer, response_deserializer):
+        self.created_callables.append(("unary", method))
+
+        async def invoke(request, *, metadata, timeout):
+            payload = request_serializer(request)
+            self.invocations.append((method, payload, metadata, timeout))
+            outcome = self.unary_outcomes.pop(0)
+            if isinstance(outcome, asyncio.Future):
+                outcome = await outcome
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return response_deserializer(outcome)
+
+        return invoke
+
+    def unary_stream(self, method, *, request_serializer, response_deserializer):
+        self.created_callables.append(("stream", method))
+
+        def invoke(request, *, metadata, timeout):
+            payload = request_serializer(request)
+            self.invocations.append((method, payload, metadata, timeout))
+            outcomes = self.stream_outcomes.pop(0)
+            call = _StreamCall(outcomes)
+            self.stream_calls.append(call)
+            return call
+
+        return invoke
+
+    async def close(self) -> None:
+        self.closed += 1
+
+
+class _Grpc:
+    def __init__(self, channel: _Channel) -> None:
+        self.channel = channel
+        self.loads = 0
+        self.targets: list[tuple[str, object]] = []
+        self.aio = SimpleNamespace(secure_channel=self.secure_channel)
+
+    def ssl_channel_credentials(self):
+        return object()
+
+    def secure_channel(self, target, credentials):
+        self.loads += 1
+        self.targets.append((target, credentials))
+        return self.channel
+
+
+def _supervisor(*, limit: int | None = 2, events=None) -> CallSupervisor:
+    metrics = ClientMetrics(on_rpc_event=None if events is None else events.append)
+    return CallSupervisor(
+        metrics=metrics,
+        drain_tracker=TransportDrainTracker(),
+        max_concurrent_rpcs=limit,
+    )
+
+
+async def _open(
+    *,
+    channel: _Channel | None = None,
+    bearer: _Bearer | None = None,
+    supervisor: CallSupervisor | None = None,
+    timeout: float | None = 1.0,
+):
+    channel = channel or _Channel()
+    bearer = bearer or _Bearer()
+    grpc = _Grpc(channel)
+    supervisor = supervisor or _supervisor()
+    loop = asyncio.get_running_loop()
+    supervisor.set_bound_loop(loop)
+    supervisor.reset_after_open()
+    supervisor.prepare_generation(1)
+    supervisor.start_accepting(1)
+    session = AndroidSession(
+        bearer,  # type: ignore[arg-type]
+        supervisor,
+        timeout=timeout,
+        grpc_loader=lambda: grpc,
+    )
+    await session.open(loop, 1)
+    return session, bearer, channel, grpc, supervisor
+
+
+@pytest.mark.asyncio
+async def test_open_is_lazy_and_unary_uses_fixed_tls_channel_and_metadata() -> None:
+    events = []
+    session, bearer, channel, grpc, supervisor = await _open(
+        supervisor=_supervisor(events=events)
+    )
+
+    assert grpc.loads == 0
+    result = await session.unary(
+        METHOD,
+        _Message(b"request"),
+        replay_safe=True,
+        response_type=_Message,
+    )
+
+    assert result == _Message(b"response")
+    assert grpc.loads == 1
+    assert grpc.targets[0][0] == ANDROID_GRPC_TARGET
+    assert channel.invocations[0][1:3] == (
+        b"request",
+        (("authorization", f"Bearer {BEARER}"),),
+    )
+    snapshot = supervisor._metrics.snapshot()
+    assert snapshot.rpc_calls_started == 1
+    assert snapshot.rpc_calls_succeeded == 1
+    assert [event.method for event in events] == [METHOD]
+
+
+@pytest.mark.asyncio
+async def test_explicit_none_telemetry_still_runs_without_rpc_counters() -> None:
+    session, _, _, _, supervisor = await _open()
+    assert await session.unary(
+        METHOD,
+        _Message(b"request"),
+        replay_safe=True,
+        response_type=_Message,
+        telemetry_method=None,
+    ) == _Message(b"response")
+    snapshot = supervisor._metrics.snapshot()
+    assert snapshot.rpc_calls_started == 0
+    assert snapshot.rpc_calls_succeeded == 0
+
+
+@pytest.mark.asyncio
+async def test_close_reopen_uses_fresh_epoch_channel_and_callable_cache() -> None:
+    session, bearer, first_channel, grpc, supervisor = await _open()
+    await session.unary(
+        METHOD,
+        _Message(b"first"),
+        replay_safe=True,
+        response_type=_Message,
+    )
+    await supervisor.begin_closing(1)
+    await session.prepare_close()
+    await session.close_resources()
+    supervisor.mark_closed(1)
+
+    second_channel = _Channel()
+    grpc.channel = second_channel
+    loop = asyncio.get_running_loop()
+    supervisor.set_bound_loop(loop)
+    supervisor.reset_after_open()
+    supervisor.prepare_generation(2)
+    supervisor.start_accepting(2)
+    await session.open(loop, 2)
+    result = await session.unary(
+        METHOD,
+        _Message(b"second"),
+        replay_safe=True,
+        response_type=_Message,
+    )
+
+    assert result == _Message(b"response")
+    assert first_channel.closed == 1
+    assert first_channel.invocations[0][1] == b"first"
+    assert second_channel.invocations[0][1] == b"second"
+    assert bearer.activations == [1, 2]
+    assert grpc.loads == 2
+
+
+@pytest.mark.asyncio
+async def test_concurrent_first_calls_publish_one_channel_and_callable() -> None:
+    session, _, channel, grpc, _ = await _open()
+    channel.unary_outcomes = [b"response", b"response"]
+    results = await asyncio.gather(
+        *(
+            session.unary(
+                METHOD,
+                _Message(str(index).encode()),
+                replay_safe=True,
+                response_type=_Message,
+            )
+            for index in range(2)
+        )
+    )
+    assert results == [_Message(b"response"), _Message(b"response")]
+    assert grpc.loads == 1
+    assert channel.created_callables == [("unary", METHOD)]
+
+
+@pytest.mark.asyncio
+async def test_safe_read_replays_unauthenticated_once_and_mutation_never_replays() -> None:
+    channel = _Channel()
+    channel.unary_outcomes = [_RawRpcError(_Status.UNAUTHENTICATED), b"ok"]
+    session, bearer, _, _, _ = await _open(
+        channel=channel,
+        bearer=_Bearer(["ya29.first", "ya29.second"]),
+    )
+    assert await session.unary(
+        METHOD,
+        _Message(b"request"),
+        replay_safe=True,
+        response_type=_Message,
+    ) == _Message(b"ok")
+    assert len(channel.invocations) == 2
+    assert bearer.invalidated == [1]
+
+    mutation_channel = _Channel()
+    mutation_channel.unary_outcomes = [_RawRpcError(_Status.UNAUTHENTICATED), b"must-not-run"]
+    mutation, mutation_bearer, _, _, _ = await _open(channel=mutation_channel)
+    with pytest.raises(AuthError) as captured:
+        await mutation.unary(
+            METHOD,
+            _Message(b"mutation"),
+            replay_safe=False,
+            response_type=_Message,
+        )
+    assert len(mutation_channel.invocations) == 1
+    assert mutation_bearer.invalidated == [1]
+    assert captured.value.rpc_code == 16
+
+
+@pytest.mark.parametrize(
+    ("status", "error_type"),
+    [
+        (_Status.NOT_FOUND, RPCError),
+        (_Status.UNAUTHENTICATED, AuthError),
+        (_Status.PERMISSION_DENIED, AuthError),
+        (_Status.RESOURCE_EXHAUSTED, RateLimitError),
+        (_Status.DEADLINE_EXCEEDED, RPCTimeoutError),
+        (_Status.UNAVAILABLE, ServerError),
+        (_Status.INTERNAL, ServerError),
+        (_Status.INVALID_ARGUMENT, ClientError),
+        (_Status.FAILED_PRECONDITION, ClientError),
+        (_Status.CANCELLED, RPCError),
+        (_Status.ABORTED, RPCError),
+        (_Status.ALREADY_EXISTS, RPCError),
+        (_Status.OUT_OF_RANGE, RPCError),
+        (_Status.UNIMPLEMENTED, RPCError),
+        (_Status.UNKNOWN, RPCError),
+        (_Status.DATA_LOSS, RPCError),
+    ],
+)
+@pytest.mark.asyncio
+async def test_unary_status_mapping_is_sanitized(status, error_type) -> None:
+    channel = _Channel()
+    channel.unary_outcomes = [_RawRpcError(status)]
+    session, _, _, _, _ = await _open(channel=channel)
+
+    with pytest.raises(error_type) as captured:
+        await session.unary(
+            METHOD,
+            _Message(b"request"),
+            replay_safe=False,
+            response_type=_Message,
+        )
+
+    error = captured.value
+    assert BEARER not in str(error)
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert error.method_id == METHOD
+    traceback = error.__traceback__
+    while traceback is not None:
+        local_values = traceback.tb_frame.f_locals
+        if traceback.tb_frame.f_globals.get("__name__", "").startswith("notebooklm"):
+            assert "self" not in local_values
+            assert "session" not in local_values
+            assert not any(isinstance(value, _RawRpcError) for value in local_values.values())
+            assert BEARER not in repr(local_values)
+        traceback = traceback.tb_next
+    if isinstance(error, RPCError):
+        assert error.rpc_code == status.value[0]
+    else:
+        assert error.original_error is None
+
+
+@pytest.mark.asyncio
+async def test_stream_is_lazy_holds_scope_and_never_replays_auth_failure() -> None:
+    channel = _Channel()
+    channel.stream_outcomes = [[_Message(b"one"), _RawRpcError(_Status.UNAUTHENTICATED)]]
+    session, bearer, _, _, supervisor = await _open(channel=channel)
+    stream = session.stream(METHOD, _Message(b"request"), response_type=_Message)
+
+    assert supervisor._metrics.snapshot().rpc_calls_started == 0
+    assert channel.invocations == []
+    assert await anext(stream) == _Message(b"one")
+    assert supervisor._current is not None and supervisor._current.in_flight == 1
+    with pytest.raises(AuthError) as captured:
+        await anext(stream)
+
+    assert captured.value.rpc_code == 16
+    assert bearer.invalidated == [1]
+    assert len(channel.invocations) == 1
+    assert supervisor._current is not None and supervisor._current.in_flight == 0
+
+
+@pytest.mark.asyncio
+async def test_stream_aclose_cancels_wire_call_and_releases_scope() -> None:
+    channel = _Channel()
+    channel.stream_outcomes = [[_Message(b"one"), _Message(b"two")]]
+    session, _, _, _, supervisor = await _open(channel=channel)
+    stream = session.stream(METHOD, _Message(b"request"), response_type=_Message)
+    assert await anext(stream) == _Message(b"one")
+
+    await stream.aclose()
+
+    assert channel.stream_calls[0].cancelled
+    assert supervisor._current is not None and supervisor._current.in_flight == 0
+
+
+@pytest.mark.asyncio
+async def test_local_cancellation_is_unchanged_and_not_counted_failed() -> None:
+    channel = _Channel()
+    pending: asyncio.Future[bytes] = asyncio.Future()
+    channel.unary_outcomes = [pending]
+    session, _, _, _, supervisor = await _open(channel=channel)
+    call = asyncio.create_task(
+        session.unary(
+            METHOD,
+            _Message(b"request"),
+            replay_safe=True,
+            response_type=_Message,
+        )
+    )
+    while not channel.invocations:
+        await asyncio.sleep(0)
+    call.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await call
+
+    snapshot = supervisor._metrics.snapshot()
+    assert snapshot.rpc_calls_started == 1
+    assert snapshot.rpc_calls_failed == 0
+
+
+@pytest.mark.asyncio
+async def test_bearer_wait_consumes_aggregate_deadline_before_wire() -> None:
+    bearer = _Bearer()
+    bearer.wait = asyncio.Event()
+    session, _, channel, _, _ = await _open(bearer=bearer, timeout=0.01)
+
+    with pytest.raises(RPCTimeoutError) as captured:
+        await session.unary(
+            METHOD,
+            _Message(b"request"),
+            replay_safe=True,
+            response_type=_Message,
+        )
+    assert captured.value.timeout_seconds == 0.01
+    assert channel.invocations == []
+
+
+@pytest.mark.asyncio
+async def test_preopen_error_stream_laziness_missing_extra_and_phased_close(monkeypatch) -> None:
+    supervisor = _supervisor()
+    bearer = _Bearer()
+    session = AndroidSession(bearer, supervisor)  # type: ignore[arg-type]
+    with pytest.raises(RuntimeError, match="Client not initialized"):
+        await session.unary(
+            METHOD,
+            _Message(b"request"),
+            replay_safe=True,
+            response_type=_Message,
+        )
+    stream = session.stream(METHOD, _Message(b"request"), response_type=_Message)
+    with pytest.raises(RuntimeError, match="Client not initialized"):
+        await anext(stream)
+
+    loop = asyncio.get_running_loop()
+    supervisor.set_bound_loop(loop)
+    supervisor.reset_after_open()
+    supervisor.prepare_generation(1)
+    supervisor.start_accepting(1)
+    monkeypatch.setattr("notebooklm._android.session.importlib.import_module", lambda name: (_ for _ in ()).throw(ImportError(name)))
+    missing = AndroidSession(bearer, supervisor)  # type: ignore[arg-type]
+    await missing.open(loop, 1)
+    with pytest.raises(MissingDependencyError, match=r"notebooklm-py\[android\]"):
+        await missing.unary(
+            METHOD,
+            _Message(b"request"),
+            replay_safe=True,
+            response_type=_Message,
+        )
+
+    opened, _, channel, _, _ = await _open()
+    await opened.unary(
+        METHOD,
+        _Message(b"request"),
+        replay_safe=True,
+        response_type=_Message,
+    )
+    await opened.prepare_close()
+    assert channel.closed == 0
+    await opened.close_resources()
+    assert channel.closed == 1
+
+
+def test_private_android_package_import_does_not_load_grpc() -> None:
+    import sys
+
+    sys.modules.pop("grpc", None)
+    import notebooklm._android as android
+
+    assert android.__all__ == []
+    assert "grpc" not in sys.modules

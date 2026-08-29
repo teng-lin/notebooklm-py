@@ -1,6 +1,6 @@
 {
   "allowlisted_ceilings": {
-    "exceptions.py": 1575
+    "exceptions.py": 1580
   },
   "budget": 1500,
   "shrink_locked_ceilings": {
