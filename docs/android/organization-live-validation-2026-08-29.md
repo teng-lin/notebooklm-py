@@ -83,3 +83,6 @@ Both runs verified the mixed-backend membership expansion, deleted the exact col
 deleted the exact disposable notebook ID in `finally`. No collection or notebook created by either
 run remained. No browser was opened; the selected lifecycle loaded the profile's master token only
 during async open and kept gRPC channel construction lazy until the first collection call.
+
+The 82-test Collections SDK/application/CLI/VCR contract slice also passed twice after promotion.
+Collections has no MCP or REST route, so there is no additional frontend envelope to qualify.
