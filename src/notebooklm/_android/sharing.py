@@ -83,7 +83,7 @@ class AndroidSharingAPI(SharingAPI):
                     SHARE_PROJECT_METHOD,
                     request,
                     replay_safe=False,
-                    response_type=_WIRE.EmptyResponse,
+                    response_type=_PROTO.ShareProjectResponse,
                     expected_epoch=lease.epoch,
                 )
             except RPCError as exc:

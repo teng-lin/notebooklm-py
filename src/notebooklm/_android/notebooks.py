@@ -213,8 +213,8 @@ class AndroidNotebooksAPI(NotebooksAPI):
         _reject("notebooks.suggest_prompts")
 
     async def delete(self, notebook_id: str) -> None:
-        # The exact request FQN is independently evidenced; only the normalized
-        # empty response keeps this path out of the generated service.
+        # The official generated client proves both the exact request FQN and
+        # the google.protobuf.Empty response binding.
         try:
             await self._transport.unary(
                 DELETE_PROJECTS_METHOD,

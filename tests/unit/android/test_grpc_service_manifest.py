@@ -51,7 +51,15 @@ PARSER_OVERRIDE_MANIFEST = REPO_ROOT / "docs" / "android" / "grpc-runtime-parser
 EXTERNAL_METHOD_MANIFEST = (
     REPO_ROOT / "tests" / "fixtures" / "android" / "external_method_manifest.csv"
 )
-EXTERNAL_METHOD_MANIFEST_SHA256 = "c2cf4bf2e6cdefd35232f01572070fbe07d11ef9bad99b556f76b5e3748f38a3"
+EXTERNAL_METHOD_MANIFEST_SHA256 = "eae7d90bdadc5868ed6970b5ce3343d56e8aaf26885987e227e6947ebe0e73d1"
+LATEST_APK_GRPC_SIGNATURES = (
+    REPO_ROOT / "tests" / "fixtures" / "android" / "latest_apk_grpc_signatures.csv"
+)
+LATEST_APK_GRPC_SIGNATURES_SHA256 = (
+    "6381163929c18d51eb654bc677846061ea65e9d501b9beb9db3952b749b32b7c"
+)
+LATEST_APK_GRPC_PATHS = REPO_ROOT / "tests" / "fixtures" / "android" / "latest_apk_grpc_paths.txt"
+LATEST_APK_GRPC_PATHS_SHA256 = "b5df4996f271e71ccc14e0ae0f8eaa13e1e337b4bc726b54a487a0c4f6d31697"
 ORCHESTRATION_PACKAGE = "google.internal.labs.tailwind.orchestration.v1"
 ORCHESTRATION_SERVICE = f"{ORCHESTRATION_PACKAGE}.LabsTailwindOrchestrationService"
 SHARING_SERVICE = "labs.language.tailwind.sharing.LabsTailwindSharingService"
@@ -88,6 +96,11 @@ _EXPECTED_ORCHESTRATION_SIGNATURES = {
         f"{ORCHESTRATION_PACKAGE}.Project",
         False,
     ),
+    "DeleteProjects": (
+        f"{ORCHESTRATION_PACKAGE}.DeleteProjectsRequest",
+        "google.protobuf.Empty",
+        False,
+    ),
     "MutateProject": (
         f"{ORCHESTRATION_PACKAGE}.MutateProjectRequest",
         f"{ORCHESTRATION_PACKAGE}.Project",
@@ -106,6 +119,11 @@ _EXPECTED_ORCHESTRATION_SIGNATURES = {
     "AddSources": (
         f"{ORCHESTRATION_PACKAGE}.AddSourcesRequest",
         f"{ORCHESTRATION_PACKAGE}.AddSourcesResponse",
+        False,
+    ),
+    "DeleteSources": (
+        f"{ORCHESTRATION_PACKAGE}.DeleteSourcesRequest",
+        "google.protobuf.Empty",
         False,
     ),
     "GenerateDocumentGuides": (
@@ -133,6 +151,11 @@ _EXPECTED_ORCHESTRATION_SIGNATURES = {
         f"{ORCHESTRATION_PACKAGE}.CreateArtifactResponse",
         False,
     ),
+    "DeleteArtifact": (
+        f"{ORCHESTRATION_PACKAGE}.DeleteArtifactRequest",
+        "google.protobuf.Empty",
+        False,
+    ),
     "UpdateArtifact": (
         f"{ORCHESTRATION_PACKAGE}.UpdateArtifactRequest",
         f"{ORCHESTRATION_PACKAGE}.Artifact",
@@ -146,6 +169,11 @@ _EXPECTED_ORCHESTRATION_SIGNATURES = {
     "ListChatTurns": (
         f"{ORCHESTRATION_PACKAGE}.ListChatTurnsRequest",
         f"{ORCHESTRATION_PACKAGE}.ListChatTurnsResponse",
+        False,
+    ),
+    "DeleteChatTurns": (
+        f"{ORCHESTRATION_PACKAGE}.DeleteChatTurnsRequest",
+        "google.protobuf.Empty",
         False,
     ),
     "GenerateFreeFormStreamed": (
@@ -166,6 +194,11 @@ _EXPECTED_ORCHESTRATION_SIGNATURES = {
     "MutateNote": (
         f"{ORCHESTRATION_PACKAGE}.MutateNoteRequest",
         f"{ORCHESTRATION_PACKAGE}.MutateNoteResponse",
+        False,
+    ),
+    "DeleteNotes": (
+        f"{ORCHESTRATION_PACKAGE}.DeleteNotesRequest",
+        f"{ORCHESTRATION_PACKAGE}.DeleteNotesResponse",
         False,
     ),
     "DiscoverSources": (
@@ -204,7 +237,12 @@ _EXPECTED_SHARING_SIGNATURES = {
         "labs.language.tailwind.sharing.GetProjectDetailsRequest",
         "labs.language.tailwind.sharing.GetProjectDetailsResponse",
         False,
-    )
+    ),
+    "ShareProject": (
+        "labs.language.tailwind.sharing.ShareProjectRequest",
+        "labs.language.tailwind.sharing.ShareProjectResponse",
+        False,
+    ),
 }
 _LOCAL_PARSER_TYPES = {
     wire_notebooks_pb2.WireMutateProjectRequest.DESCRIPTOR.full_name,
@@ -342,7 +380,7 @@ def test_exact_service_descriptor_and_generated_stub_expose_all_admitted_paths()
 
 def test_adapter_paths_equal_exact_descriptor_plus_machine_readable_exceptions() -> None:
     entries = _manifest_entries()
-    assert len(entries) == 13
+    assert len(entries) == 7
     assert all(
         set(entry)
         == {
@@ -372,24 +410,16 @@ def test_adapter_paths_equal_exact_descriptor_plus_machine_readable_exceptions()
     exception_paths = {entry["path"] for entry in entries}
     assert len(exception_paths) == len(entries)
     entries_by_path = {entry["path"]: entry for entry in entries}
-    assert entries_by_path[f"/{ORCHESTRATION_SERVICE}/DeleteProjects"]["reason_code"] == (
-        "response_fqn_unproven"
+    assert (
+        entries_by_path[f"/{ORCHESTRATION_SERVICE}/CancelDiscoverSourcesJob"]["reason_code"]
+        == "response_fqn_unproven"
     )
-    for method in (
-        "DeleteSources",
-        "DeleteArtifact",
-        "DeleteChatTurns",
-        "CancelDiscoverSourcesJob",
-    ):
-        assert entries_by_path[f"/{ORCHESTRATION_SERVICE}/{method}"]["reason_code"] == (
-            "response_fqn_unproven"
-        )
     assert _descriptor_paths().isdisjoint(exception_paths)
     assert _adapter_paths() == _descriptor_paths() | exception_paths
     assert len(_adapter_paths()) == 40
-    assert len(_descriptor_paths()) == 27
-    assert sum(path.startswith(f"/{ORCHESTRATION_SERVICE}/") for path in _descriptor_paths()) == 26
-    assert sum(path.startswith(f"/{SHARING_SERVICE}/") for path in _descriptor_paths()) == 1
+    assert len(_descriptor_paths()) == 33
+    assert sum(path.startswith(f"/{ORCHESTRATION_SERVICE}/") for path in _descriptor_paths()) == 31
+    assert sum(path.startswith(f"/{SHARING_SERVICE}/") for path in _descriptor_paths()) == 2
 
     for entry in entries:
         module_name, constant_name = entry["adapter_constant"].rsplit(".", 1)
@@ -400,8 +430,7 @@ def test_adapter_paths_equal_exact_descriptor_plus_machine_readable_exceptions()
         f"/{SHARING_SERVICE}/GetProjectDetails",
         f"/{SHARING_SERVICE}/ShareProject",
     }
-    assert f"/{SHARING_SERVICE}/GetProjectDetails" in _descriptor_paths()
-    assert f"/{SHARING_SERVICE}/ShareProject" in exception_paths
+    assert sharing_paths <= _descriptor_paths()
 
 
 def test_external_manifest_and_implemented_signature_inventory_are_bidirectional() -> None:
@@ -442,14 +471,42 @@ def test_external_manifest_and_implemented_signature_inventory_are_bidirectional
         path for path, row in external.items() if row["response_type"] == "NORMALIZED_EMPTY"
     }
     assert normalized_empty_paths & _adapter_paths() == {
-        f"/{ORCHESTRATION_SERVICE}/DeleteProjects",
-        f"/{ORCHESTRATION_SERVICE}/DeleteSources",
-        f"/{ORCHESTRATION_SERVICE}/DeleteArtifact",
-        f"/{ORCHESTRATION_SERVICE}/DeleteChatTurns",
         f"/{ORCHESTRATION_SERVICE}/CancelDiscoverSourcesJob",
-        f"/{SHARING_SERVICE}/ShareProject",
     }
     assert _descriptor_paths().isdisjoint(normalized_empty_paths)
+
+
+def test_latest_signed_apk_inventory_is_complete_exact_and_version_scoped() -> None:
+    assert hashlib.sha256(LATEST_APK_GRPC_SIGNATURES.read_bytes()).hexdigest() == (
+        LATEST_APK_GRPC_SIGNATURES_SHA256
+    )
+    assert hashlib.sha256(LATEST_APK_GRPC_PATHS.read_bytes()).hexdigest() == (
+        LATEST_APK_GRPC_PATHS_SHA256
+    )
+
+    raw_paths = set(LATEST_APK_GRPC_PATHS.read_text(encoding="utf-8").splitlines())
+    with LATEST_APK_GRPC_SIGNATURES.open(newline="", encoding="utf-8") as stream:
+        exact = {row["path"]: row for row in csv.DictReader(stream)}
+
+    upsert_path = f"/{ORCHESTRATION_SERVICE}/UpsertArtifactUserState"
+    assert len(raw_paths) == 53
+    assert len(exact) == 52
+    assert raw_paths - exact.keys() == {upsert_path}
+    assert exact.keys() <= raw_paths
+    assert {entry["path"] for entry in _manifest_entries()}.isdisjoint(raw_paths)
+
+    new_paths = {
+        f"/{ORCHESTRATION_SERVICE}/CancelGeneration",
+        f"/{ORCHESTRATION_SERVICE}/ListArtifactScheduledNotificationConfigs",
+        f"/{ORCHESTRATION_SERVICE}/UpdateArtifactScheduledNotificationConfig",
+        "/google.internal.labs.tailwind.api.v1.DiscoveryService/BatchSearchNotebooks",
+        "/google.internal.labs.tailwind.api.v1.DiscoveryService/SearchNotebooks",
+    }
+    assert new_paths <= exact.keys()
+    assert (
+        "/google.internal.labs.tailwind.discovery.v1."
+        "LabsTailwindDiscoveryService/PrototypeNotebookSearch" not in raw_paths
+    )
 
 
 def test_runtime_local_parser_overrides_are_explicit_exact_path_exceptions() -> None:

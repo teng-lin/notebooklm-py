@@ -39,12 +39,6 @@ def _proto() -> Any:
     return cast(Any, notes_pb2)
 
 
-def _wire() -> Any:
-    from .proto.notebooklm.android.wire.v1 import sharing_pb2
-
-    return cast(Any, sharing_pb2)
-
-
 def _map_notebook_error(notebook_id: str, error: RPCError, *, method_id: str) -> RPCError:
     if error.rpc_code != 5:
         return error
@@ -328,7 +322,6 @@ class AndroidNotesAPI(NotesAPI):
     async def delete(self, notebook_id: str, note_id: str) -> None:
         """Delete once, then poll bounded reads until eventual absence is visible."""
         proto = _proto()
-        wire = _wire()
         async with self._transport.operation_scope("notes.delete") as lease:
             if (
                 await self._get_note_or_none(
@@ -345,7 +338,7 @@ class AndroidNotesAPI(NotesAPI):
                     DELETE_NOTES_METHOD,
                     request,
                     replay_safe=False,
-                    response_type=wire.EmptyResponse,
+                    response_type=proto.DeleteNotesResponse,
                     expected_epoch=lease.epoch,
                 )
             except RPCError as exc:
@@ -391,7 +384,6 @@ class AndroidNotesAPI(NotesAPI):
         already-absent mind map and never reaches ``DeleteNotes``.
         """
         proto = _proto()
-        wire = _wire()
         async with self._transport.operation_scope("notes.delete_mind_map") as lease:
             rows = await self._list_mind_map_rows(
                 notebook_id,
@@ -405,7 +397,7 @@ class AndroidNotesAPI(NotesAPI):
                     DELETE_NOTES_METHOD,
                     request,
                     replay_safe=False,
-                    response_type=wire.EmptyResponse,
+                    response_type=proto.DeleteNotesResponse,
                     expected_epoch=lease.epoch,
                 )
             except RPCError as exc:

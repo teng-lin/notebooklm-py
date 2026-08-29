@@ -95,3 +95,32 @@ def test_main_marks_unresolved_package_instead_of_inferring_from_library(
     assert "// Protobuf FQN: google.example.v1.EmptyReply" not in captured.out
     assert "message EmptyReply {\n}" in captured.out
     assert "resolved 0/1 protobuf FQNs" in captured.err
+
+
+def test_main_default_patterns_preserve_the_complete_historical_scope(
+    tmp_path: Path, capsys
+) -> None:
+    dump_root = tmp_path / "dump"
+    asm_root = dump_root / "asm"
+    for directory, message_name in (
+        ("google.internal.labs.tailwind.orchestration.v1", "OrchestrationEmpty"),
+        ("labs.language.tailwind.common.protos", "CommonEmpty"),
+        ("logs.proto.labs_tailwind.metadata", "LoggingEmpty"),
+    ):
+        library_dir = asm_root / directory
+        library_dir.mkdir(parents=True)
+        (library_dir / "example.pb.dart").write_text(
+            EMPTY_MESSAGE.replace("EmptyReply", message_name)
+        )
+    (dump_root / "objs.txt").write_text(
+        'Obj!PackageName@abc123 : {\n  off_8: "google.protobuf"\n}\n'
+    )
+
+    parse_pbschema.main([str(asm_root)])
+
+    captured = capsys.readouterr()
+    assert "message OrchestrationEmpty {\n}" in captured.out
+    assert "message CommonEmpty {\n}" in captured.out
+    assert "message LoggingEmpty {\n}" in captured.out
+    assert "parsed 3 messages, 0 fields from 3 files" in captured.err
+    assert "resolved 3/3 protobuf FQNs" in captured.err

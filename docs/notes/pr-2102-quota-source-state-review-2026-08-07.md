@@ -215,7 +215,7 @@ Findings:
 ## 4. Android binary cross-check — what the first-party client knows
 
 Third investigation wave: rather than probe the backend, ask Google's own mobile client what the
-backend's contract *is*. Sources: the recovered mobile schema (`docs/android/schema.proto`, 282
+backend's contract *is*. Sources: the recovered mobile schema (`docs/android/schema.proto`, 295
 messages / 767 fields, produced by the blutter port documented in `docs/android/endpoints.md`) and
 string/symbol mining of `libNotebookLM_prod_android_library_flutter_artifacts.so` from
 `notebooklm.apk/split_config.arm64_v8a.apk` (app v1.46.7). Dart AOT symbol names carry a per-library
@@ -295,7 +295,7 @@ Consequences:
 
 ### 4.3 There is no per-source failure reason anywhere in the schema
 
-Across all 282 recovered messages, `Source`, `SourceMetadata`, and `SourceSettings` carry **no error,
+Across all 295 recovered messages, `Source`, `SourceMetadata`, and `SourceSettings` carry **no error,
 reason, or failure-detail field**; `AddSourcesResponse` returns bare `Source` objects. This settles
 §3's `rpc_code` finding from the opposite direction: it isn't that the code is a coarse bucket, it's
 that the backend has **no per-source failure channel to expose**.

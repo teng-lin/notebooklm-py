@@ -11,14 +11,6 @@
       "evidence": "docs/android/proto-evidence-ledger.md#b2-notebook-method-ledger"
     },
     {
-      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteProjects",
-      "adapter_constant": "notebooklm._android.notebooks.DELETE_PROJECTS_METHOD",
-      "request_parser": "google.internal.labs.tailwind.orchestration.v1.DeleteProjectsRequest",
-      "response_parser": "google.protobuf.Empty",
-      "reason_code": "response_fqn_unproven",
-      "evidence": "docs/android/proto-evidence-ledger.md#b2-notebook-method-ledger"
-    },
-    {
       "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateSource",
       "adapter_constant": "notebooklm._android.sources.MUTATE_SOURCE_METHOD",
       "request_parser": "notebooklm.internal.android.wire.MutateSourceWireRequest",
@@ -27,44 +19,12 @@
       "evidence": "docs/android/proto-evidence-ledger.md#repository-local-mutatesource-overlay"
     },
     {
-      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteSources",
-      "adapter_constant": "notebooklm._android.sources.DELETE_SOURCES_METHOD",
-      "request_parser": "google.internal.labs.tailwind.orchestration.v1.DeleteSourcesRequest",
-      "response_parser": "google.protobuf.Empty",
-      "reason_code": "response_fqn_unproven",
-      "evidence": "docs/android/proto-evidence-ledger.md#b3-source-operation-admission"
-    },
-    {
       "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateReportSuggestions",
       "adapter_constant": "notebooklm._android.artifacts.GENERATE_REPORT_SUGGESTIONS_METHOD",
       "request_parser": "notebooklm.android.internal.v1.GenerateReportSuggestionsRequestWire",
       "response_parser": "notebooklm.android.internal.v1.GenerateReportSuggestionsResponseWire",
       "reason_code": "request_response_fqns_unproven",
       "evidence": "docs/android/proto-evidence-ledger.md#b4-live-added-report-suggestion-overlay"
-    },
-    {
-      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteArtifact",
-      "adapter_constant": "notebooklm._android.artifacts.DELETE_ARTIFACT_METHOD",
-      "request_parser": "google.internal.labs.tailwind.orchestration.v1.DeleteArtifactRequest",
-      "response_parser": "google.protobuf.Empty",
-      "reason_code": "response_fqn_unproven",
-      "evidence": "docs/android/proto-evidence-ledger.md#b4-service-ledger"
-    },
-    {
-      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteChatTurns",
-      "adapter_constant": "notebooklm._android.chat.DELETE_CHAT_TURNS_METHOD",
-      "request_parser": "google.internal.labs.tailwind.orchestration.v1.DeleteChatTurnsRequest",
-      "response_parser": "google.protobuf.Empty",
-      "reason_code": "response_fqn_unproven",
-      "evidence": "docs/android/proto-evidence-ledger.md#b5-method-ledger"
-    },
-    {
-      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteNotes",
-      "adapter_constant": "notebooklm._android.notes.DELETE_NOTES_METHOD",
-      "request_parser": "google.internal.labs.tailwind.orchestration.v1.DeleteNotesRequest",
-      "response_parser": "notebooklm.android.wire.v1.EmptyResponse",
-      "reason_code": "response_fqn_unproven",
-      "evidence": "docs/android/proto-evidence-ledger.md#b6-service-ledger"
     },
     {
       "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CancelDiscoverSourcesJob",
@@ -97,14 +57,6 @@
       "response_parser": "notebooklm.android.wire.v1.OrganizationMutationWireResponse",
       "reason_code": "request_response_fqns_unproven",
       "evidence": "docs/android/proto-evidence-ledger.md#b9-organization-admission"
-    },
-    {
-      "path": "/labs.language.tailwind.sharing.LabsTailwindSharingService/ShareProject",
-      "adapter_constant": "notebooklm._android.sharing.SHARE_PROJECT_METHOD",
-      "request_parser": "labs.language.tailwind.sharing.ShareProjectRequest",
-      "response_parser": "notebooklm.android.wire.v1.EmptyResponse",
-      "reason_code": "response_fqn_unproven",
-      "evidence": "docs/android/proto-evidence-ledger.md#b6-service-ledger"
     }
   ]
 }

@@ -3,13 +3,15 @@
 **Status:** Recovered from capture, schema-level (field numbers + wire types), not
 field-named by Google
 
-**Last verified:** 2026-08-27 (APK inventory unchanged; backend-only additions rechecked live)
+**Last verified:** 2026-08-29 (`1.46.7` capture snapshot plus `1.55.10` binary delta)
 
-**Scope:** the **full 49-method surface** (4 gRPC services) is enumerated from the app binary and
-cross-referenced to all **48 RPCs currently implemented by `notebooklm-py`**. The original traffic
-capture exercised 21 methods and decoded their wire shapes here; later direct bearer/gRPC probes
-also exercised APK-unwired methods and destructive APK-present methods on disposable copies. The
-**complete protobuf schema** — 282 messages / 767 fields with real field names, tags, types, and
+**Scope:** the original `1.46.7.940945420` **49-method surface** (4 gRPC services) is enumerated
+and cross-referenced to the 48-method Web registry used for that audit. The newer Google-signed
+`1.55.10.971450265` inventory contains 53 methods and is recorded as a version-scoped delta below.
+The original traffic capture exercised 21 methods and decoded their wire shapes here; later direct
+bearer/gRPC probes also exercised APK-unwired methods and destructive APK-present methods on
+disposable copies. The
+**complete protobuf schema** — 295 messages / 767 fields with real field names, tags, types, and
 cardinality — was recovered by decompiling the Flutter binary with a Dart-3.13-ported blutter, and
 is checked in at **[android/schema.proto](schema.proto)**. The inline shapes below keep their
 wire-capture form (field `#N` + type); the `.proto` file is authoritative for names. Read paths
@@ -43,7 +45,7 @@ carry notebook IDs, source text, and chat history.
 Most methods are unary (single request message, single response message);
 `GenerateFreeFormStreamed` and `StreamLiveSession` are server-streaming.
 
-## Complete service surface (from the app binary)
+## Complete service surface (`1.46.7` binary snapshot)
 
 The original 21 captured RPCs whose shapes are documented below are the ones the mobile UI called
 in that capture. Later sections add direct parity probes; they are labelled separately and must not
@@ -51,7 +53,7 @@ be mistaken for APK call-site evidence. The **full** client surface is larger: e
 method-path strings from the Flutter AOT
 library (`lib/arm64-v8a/libNotebookLM_prod_android_library_flutter_artifacts.so` in
 `split_config.arm64_v8a.apk`) enumerates **49 methods across 4 gRPC services** compiled into
-the app — many exist but are not wired to any mobile screen.
+that app version — many exist but are not wired to any mobile screen.
 
 ```bash
 strings -a <libNotebookLM_...flutter_artifacts.so> \
@@ -65,7 +67,23 @@ strings -a <libNotebookLM_...flutter_artifacts.so> \
 | `LabsTailwindDiscoveryService` (1) | PrototypeNotebookSearch |
 | `LiveSessionService` (1) | StreamLiveSession |
 
-Notable methods present in the binary but **not exercised by the mobile UI**: `CreateNote` /
+### Newer `1.55.10` binary delta
+
+The 2026-08-29 Google-signed build audit enumerates **53 methods across 4 services**: 47
+`LabsTailwindOrchestrationService`, 3 `LabsTailwindSharingService`, 2
+`google.internal.labs.tailwind.api.v1.DiscoveryService`, and 1 `LiveSessionService`. Blutter proves
+52 exact generic request/response bindings; only the present `UpsertArtifactUserState` path lacks
+an adjacent binding.
+
+Relative to the table above, the newer binary adds `CancelGeneration`,
+`ListArtifactScheduledNotificationConfigs`, `UpdateArtifactScheduledNotificationConfig`,
+`DiscoveryService/BatchSearchNotebooks`, and `DiscoveryService/SearchNotebooks`. It drops the old
+`LabsTailwindDiscoveryService/PrototypeNotebookSearch` call site. The complete current path and
+signature fixtures are pinned in the
+[latest APK audit](latest-apk-grpc-audit-2026-08-29.md#blutter-result); this historical capture
+section is intentionally not rewritten to pretend those methods existed in `1.46.7`.
+
+Notable methods present in the `1.46.7` binary but **not exercised by the mobile UI**: `CreateNote` /
 `MutateNote` / `DeleteNotes` (note CRUD — UI only reads via `GetNotes`), `ActOnSources` (mind
 maps on web), `DeriveArtifact` / `UpdateArtifact` / `SuggestArtifacts`, `GeneratePromptSuggestions`,
 `MutateAccount`, `SubmitFeedback`, `GetIceConfig` / `SendSdpOffer` / `StreamLiveSession` (WebRTC
@@ -86,15 +104,20 @@ transport differs:
 | Auth | OAuth bearer | cookies / SAPISID |
 | Chat | `GenerateFreeFormStreamed` (gRPC stream) | separate `QUERY_URL` endpoint |
 
-The current inventories are exact, not estimates:
+The version-scoped `1.46.7` and Web inventories used by this cross-reference are exact, not
+estimates:
 
-- Android APK: **49** compiled methods.
+- Android APK `1.46.7`: **49** compiled methods. The current audited `1.55.10` build has **53**;
+  see the version-scoped delta above.
 - `notebooklm-py` `RPCMethod`: **48** methods. A freshly downloaded web bundle confirmed all 48,
   including `te3DCe → CopyProject`; none were absent or merely text-present/unparsed. The same
   bundle contained another 123 parsed registrations not yet modelled by the library.
-- Intersection by exact server method name: **33**.
-- APK-only relative to the 48-method batchexecute registry: **16**.
-- Implemented by the web library but absent from this APK: **15**.
+- `1.46.7` intersection by exact server method name: **33**.
+- `1.46.7` APK-only relative to the 48-method batchexecute registry: **16**.
+- Implemented by the web library but absent from the `1.46.7` APK: **15**.
+
+For the separately audited `1.55.10` build, the intersection remains **33**, APK-only grows to
+**20**, and Web-only remains **15**. The five-added/one-removed binary delta is listed above.
 
 "Absent from the APK" means only that this app build does not compile a caller. It does **not**
 mean the mobile bearer/gRPC backend lacks a route. Direct probes found all 15 routes. Eleven were
@@ -826,7 +849,7 @@ Graduated options, cheapest first:
 
    **Outcome (2026-07-22): success — full schema recovered.** blutter was ported to Dart 3.13 and
    run to completion; the recovered schema is checked in at
-   [docs/android/schema.proto](schema.proto) (**282 messages, 767 fields**, field
+   [docs/android/schema.proto](schema.proto) (**295 messages, 767 fields**, field
    numbers/names/types/cardinality from the binary). The port took two kinds of change, captured as
    a patch in [docs/android/blutter-dart3.13.patch](blutter-dart3.13.patch):
 
@@ -854,9 +877,11 @@ see [docs/android/schema.proto](schema.proto).
 
 ## Recovered vs. still unknown
 
-**Full surface enumerated:** all **49 methods across 4 services** are known by name from the
-app binary (see [Complete service surface](#complete-service-surface-from-the-app-binary)), and
-cross-referenced to the web `batchexecute` `rpcid`s (see [Android ⇄ web cross-reference](#android--web-cross-reference)).
+**Full surface enumerated:** all **49 methods across 4 services** in the `1.46.7` capture binary
+are known by name (see [Complete service surface](#complete-service-surface-1467-binary-snapshot))
+and cross-referenced to the web `batchexecute` `rpcid`s (see
+[Android ⇄ web cross-reference](#android--web-cross-reference)). The separately pinned `1.55.10`
+inventory contains 53 paths and 52 exact signatures.
 
 **Shapes recovered (high confidence):** request/response top-level shapes for **21 methods** —
 the UI-reachable read/write/research/chat set plus the `LabsTailwindSharingService` pair
@@ -870,7 +895,7 @@ safe invalid-ID route probes, and `RefreshSource` remained a routed-but-rejected
 APK-present note/artifact/delete methods were also live-verified on a rich disposable copy. These
 later results supplement the 21 captured shapes; they do not change the capture count.
 
-**Field names/tags/types — recovered:** the full protobuf schema (282 messages, 767 fields) is in
+**Field names/tags/types — recovered:** the full protobuf schema (295 messages, 767 fields) is in
 [android/schema.proto](schema.proto), decompiled from the binary. This supersedes the
 `(inferred)` names in the inline shapes — including every message not reachable from the mobile UI
 (`CreateNote`/`MutateNote`/`DeleteNotes`, `ActOnSources`, artifact ops, the WebRTC Live messages,

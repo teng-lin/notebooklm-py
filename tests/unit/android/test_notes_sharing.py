@@ -143,7 +143,7 @@ class FakeB6Server(_OperationScopedSession):
                     # The first post-delete GetNotes still sees the row; the
                     # second excludes it, matching the disposable live probe.
                     self.pending_deletion_reads[note_id] = 1
-            return sharing_pb2.EmptyResponse()
+            return notes_pb2.DeleteNotesResponse()
         if method == GET_PROJECT_DETAILS_METHOD:
             return sharing_pb2.GetProjectDetailsResponse(
                 public_settings=common_pb2.ProjectPublicSettings(
@@ -155,7 +155,7 @@ class FakeB6Server(_OperationScopedSession):
             )
         if method == SHARE_PROJECT_METHOD:
             self.public = request.project[0].public_document_settings.is_publicly_readable
-            return sharing_pb2.EmptyResponse()
+            return exact_sharing_pb2.ShareProjectResponse()
         raise AssertionError(f"unexpected method: {method}")
 
 
@@ -209,7 +209,7 @@ class SupervisedSharingSession:
                 self.mutation_started.set()
                 await self.mutation_release.wait()
                 self.public = request.project[0].public_document_settings.is_publicly_readable
-                return sharing_pb2.EmptyResponse()
+                return exact_sharing_pb2.ShareProjectResponse()
             if method == GET_PROJECT_DETAILS_METHOD:
                 return sharing_pb2.GetProjectDetailsResponse(
                     public_settings=common_pb2.ProjectPublicSettings(
@@ -292,7 +292,7 @@ class SupervisedNotesSession:
             if method == DELETE_NOTES_METHOD:
                 for note_id in request.note_ids:
                     self.notes.pop(note_id, None)
-                return sharing_pb2.EmptyResponse()
+                return notes_pb2.DeleteNotesResponse()
             raise AssertionError(f"unexpected method: {method}")
 
 
@@ -412,7 +412,7 @@ async def test_fake_server_runs_complete_note_lifecycle_with_exact_orchestration
     writes = {
         CREATE_NOTE_METHOD: notes_pb2.CreateNoteResponse,
         MUTATE_NOTE_METHOD: notes_pb2.MutateNoteResponse,
-        DELETE_NOTES_METHOD: sharing_pb2.EmptyResponse,
+        DELETE_NOTES_METHOD: notes_pb2.DeleteNotesResponse,
     }
     for method, _request, kwargs in server.calls:
         if method in writes:
@@ -689,7 +689,7 @@ async def test_mind_map_delete_is_kind_safe_idempotent_and_eventually_confirmed(
     assert list(request.note_ids) == ["mind-map"]
     assert kwargs == {
         "replay_safe": False,
-        "response_type": sharing_pb2.EmptyResponse,
+        "response_type": notes_pb2.DeleteNotesResponse,
         "expected_epoch": 7,
     }
     sleep.assert_not_awaited()
@@ -740,7 +740,7 @@ async def test_mind_map_delete_bounded_confirmation_fails_loud() -> None:
     session = SequencedSession(
         {
             GET_NOTES_METHOD: [visible, visible, visible],
-            DELETE_NOTES_METHOD: [sharing_pb2.EmptyResponse()],
+            DELETE_NOTES_METHOD: [notes_pb2.DeleteNotesResponse()],
         }
     )
 
@@ -834,7 +834,7 @@ async def test_eventual_delete_is_bounded_when_row_never_disappears() -> None:
     session = SequencedSession(
         {
             GET_NOTES_METHOD: [_visible(), _visible(), _visible()],
-            DELETE_NOTES_METHOD: [sharing_pb2.EmptyResponse()],
+            DELETE_NOTES_METHOD: [notes_pb2.DeleteNotesResponse()],
         }
     )
     with pytest.raises(RPCError, match="remained visible"):
@@ -952,7 +952,7 @@ async def test_fake_server_sharing_set_public_then_reads_status() -> None:
     assert server.operation_scopes == [("sharing.set_public", None)]
     assert server.calls[1][2] == {
         "replay_safe": False,
-        "response_type": sharing_pb2.EmptyResponse,
+        "response_type": exact_sharing_pb2.ShareProjectResponse,
         "expected_epoch": 7,
     }
     assert server.calls[2][2] == {

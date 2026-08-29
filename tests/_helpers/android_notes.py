@@ -9,7 +9,6 @@ from typing import Any
 
 from notebooklm._android.notes import DELETE_NOTES_METHOD, GET_NOTES_METHOD, MUTATE_NOTE_METHOD
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import notes_pb2
-from notebooklm._android.proto.notebooklm.android.wire.v1 import sharing_pb2
 
 
 @dataclass(frozen=True)
@@ -84,7 +83,7 @@ class StatefulAndroidNotesTransport:
             assert request.project_id == self.notebook_id
             assert list(request.note_ids) == [self.note_id]
             self.note = None
-            return sharing_pb2.EmptyResponse()
+            return notes_pb2.DeleteNotesResponse()
         raise AssertionError(f"unexpected Android Notes method: {method}")
 
 

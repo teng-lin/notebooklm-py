@@ -24,12 +24,14 @@ themselves.
 
 | file | kind | notes |
 |---|---|---|
-| [`schema.proto`](schema.proto) | **generated** | 282 messages / 767 fields recovered from the Dart AOT `BuilderInfo`. **Parsed by CI** — see caveats. |
+| [`schema.proto`](schema.proto) | **generated** | 295 messages / 767 fields recovered from the Dart AOT `BuilderInfo`, including 13 zero-field messages. **Parsed by CI** — see caveats. |
 | [`enums.txt`](enums.txt) | **generated** | 77 enums / ~1900 values with exact integers. **Parsed by CI.** |
 | [`endpoints.md`](endpoints.md) | reference | The gRPC method surface, and the mobile ⇄ web cross-reference. Start here. |
 | [`proto-evidence-ledger.md`](proto-evidence-ledger.md) | admission ledger | Exact/local cumulative compile closure, replay policy, and evidence-gated omissions for implemented Android B1-B11 adapters. |
 | [`grpc-service-signature-exceptions.json`](grpc-service-signature-exceptions.json) | machine-readable admission manifest | Implemented full paths omitted from the exact generated service because a remote request or response protobuf FQN remains unproven. |
 | [`grpc-runtime-parser-overrides.json`](grpc-runtime-parser-overrides.json) | machine-readable runtime manifest | Exact generated paths whose adapters deliberately use repository-local parsers for additional live-only fields, heterogeneous wire members, or scalar-presence semantics. |
+| [`blutter-grpc-signature-evidence.md`](blutter-grpc-signature-evidence.md) | AOT evidence report | Exact generated-client bindings that close six formerly normalized/unresolved empty-response FQNs. |
+| [`latest-apk-grpc-audit-2026-08-29.md`](latest-apk-grpc-audit-2026-08-29.md) | AOT absence audit | Newer Google-signed app audit proving that the seven remaining signature-exception methods are not shipped in the client binary. |
 | [`capture.md`](capture.md) | runbook | How to intercept the app's HTTP/2 gRPC traffic (emulator, VPN, Mockttp). |
 | [`android-traffic-capture.md`](android-traffic-capture.md) | legacy runbook | Rooted-emulator Cronet/Frida capture procedure retained as dated evidence. |
 | [`auth-research.md`](auth-research.md) | live report | Exact NotebookLM Android OAuth identity, scope bundle, and bearer validation. |
@@ -45,12 +47,21 @@ themselves.
 They are committed because CI parses them; regenerate rather than hand-edit.
 The generator is [`scripts/parse_pbschema.py`](../../scripts/parse_pbschema.py).
 
+```bash
+uv run python scripts/parse_pbschema.py /path/to/blutter/out/full/asm \
+  > docs/android/schema.proto
+```
+
+The default package-directory selectors preserve the complete 54-file historical evidence scope.
+The generator reports `295 messages, 767 fields` and resolves package identity through the sibling
+`objs.txt`; an unresolved package remains explicit rather than being inferred from its directory.
+
 The reduced compile inputs used by the private Android adapters live under
 `src/notebooklm/_android/proto_src/`. Regenerate their checked-in Python modules and the full
 descriptor fixture with `python scripts/regenerate_android_protos.py --write`; use `--check` in CI.
-The cumulative `orchestration_service.proto` owns the 26-method exact orchestration service;
-`sharing.proto` owns the separately proven one-method exact sharing service, and individual
-orchestration message overlays remain service-free. Their 27 admitted methods plus the 13 explicit
+The cumulative `orchestration_service.proto` owns the 31-method exact orchestration service;
+`sharing.proto` owns the separately proven two-method exact sharing service, and individual
+orchestration message overlays remain service-free. Their 33 admitted methods plus the 7 explicit
 signature exceptions exhaustively equal the 40 implemented adapter paths. Generated descriptors,
 adapter paths, exceptions, and the hash-pinned external method manifest are checked in both
 directions, so a locally repeated claim cannot admit a normalized or unresolved response type.

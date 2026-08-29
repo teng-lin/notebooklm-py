@@ -39,12 +39,23 @@ class LabsTailwindSharingServiceStub(object):
                 request_serializer=labs_dot_language_dot_tailwind_dot_sharing_dot_sharing__pb2.GetProjectDetailsRequest.SerializeToString,
                 response_deserializer=labs_dot_language_dot_tailwind_dot_sharing_dot_sharing__pb2.GetProjectDetailsResponse.FromString,
                 _registered_method=True)
+        self.ShareProject = channel.unary_unary(
+                '/labs.language.tailwind.sharing.LabsTailwindSharingService/ShareProject',
+                request_serializer=labs_dot_language_dot_tailwind_dot_sharing_dot_sharing__pb2.ShareProjectRequest.SerializeToString,
+                response_deserializer=labs_dot_language_dot_tailwind_dot_sharing_dot_sharing__pb2.ShareProjectResponse.FromString,
+                _registered_method=True)
 
 
 class LabsTailwindSharingServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def GetProjectDetails(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ShareProject(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -57,6 +68,11 @@ def add_LabsTailwindSharingServiceServicer_to_server(servicer, server):
                     servicer.GetProjectDetails,
                     request_deserializer=labs_dot_language_dot_tailwind_dot_sharing_dot_sharing__pb2.GetProjectDetailsRequest.FromString,
                     response_serializer=labs_dot_language_dot_tailwind_dot_sharing_dot_sharing__pb2.GetProjectDetailsResponse.SerializeToString,
+            ),
+            'ShareProject': grpc.unary_unary_rpc_method_handler(
+                    servicer.ShareProject,
+                    request_deserializer=labs_dot_language_dot_tailwind_dot_sharing_dot_sharing__pb2.ShareProjectRequest.FromString,
+                    response_serializer=labs_dot_language_dot_tailwind_dot_sharing_dot_sharing__pb2.ShareProjectResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -86,6 +102,33 @@ class LabsTailwindSharingService(object):
             '/labs.language.tailwind.sharing.LabsTailwindSharingService/GetProjectDetails',
             labs_dot_language_dot_tailwind_dot_sharing_dot_sharing__pb2.GetProjectDetailsRequest.SerializeToString,
             labs_dot_language_dot_tailwind_dot_sharing_dot_sharing__pb2.GetProjectDetailsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ShareProject(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/labs.language.tailwind.sharing.LabsTailwindSharingService/ShareProject',
+            labs_dot_language_dot_tailwind_dot_sharing_dot_sharing__pb2.ShareProjectRequest.SerializeToString,
+            labs_dot_language_dot_tailwind_dot_sharing_dot_sharing__pb2.ShareProjectResponse.FromString,
             options,
             channel_credentials,
             insecure,

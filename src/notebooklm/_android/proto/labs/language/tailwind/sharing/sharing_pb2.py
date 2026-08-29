@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from notebooklm._android.proto.labs.language.tailwind.common.protos import common_pb2 as labs_dot_language_dot_tailwind_dot_common_dot_protos_dot_common__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n,labs/language/tailwind/sharing/sharing.proto\x12\x1elabs.language.tailwind.sharing\x1a\x31labs/language/tailwind/common/protos/common.proto\"\xd0\x02\n\x13ShareProjectRequest\x12S\n\x07project\x18\x01 \x03(\x0b\x32\x42.labs.language.tailwind.sharing.ShareProjectRequest.ProjectToShare\x1aO\n\x16PublicDocumentSettings\x12\x1c\n\x14is_publicly_readable\x18\x01 \x01(\x08\x12\x17\n\x0fis_discoverable\x18\x02 \x01(\x08\x1a\x92\x01\n\x0eProjectToShare\x12\x12\n\nproject_id\x18\x01 \x01(\t\x12l\n\x18public_document_settings\x18\x03 \x01(\x0b\x32J.labs.language.tailwind.sharing.ShareProjectRequest.PublicDocumentSettings\".\n\x18GetProjectDetailsRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\"\xb9\x01\n\x19GetProjectDetailsResponse\x12T\n\x0fpublic_settings\x18\x02 \x01(\x0b\x32;.labs.language.tailwind.common.protos.ProjectPublicSettings\x12#\n\x1bmax_individuals_share_limit\x18\x03 \x01(\x05\x12!\n\x19is_public_sharing_allowed\x18\x04 \x01(\x08\x32\xa7\x01\n\x1aLabsTailwindSharingService\x12\x88\x01\n\x11GetProjectDetails\x12\x38.labs.language.tailwind.sharing.GetProjectDetailsRequest\x1a\x39.labs.language.tailwind.sharing.GetProjectDetailsResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n,labs/language/tailwind/sharing/sharing.proto\x12\x1elabs.language.tailwind.sharing\x1a\x31labs/language/tailwind/common/protos/common.proto\"\xd0\x02\n\x13ShareProjectRequest\x12S\n\x07project\x18\x01 \x03(\x0b\x32\x42.labs.language.tailwind.sharing.ShareProjectRequest.ProjectToShare\x1aO\n\x16PublicDocumentSettings\x12\x1c\n\x14is_publicly_readable\x18\x01 \x01(\x08\x12\x17\n\x0fis_discoverable\x18\x02 \x01(\x08\x1a\x92\x01\n\x0eProjectToShare\x12\x12\n\nproject_id\x18\x01 \x01(\t\x12l\n\x18public_document_settings\x18\x03 \x01(\x0b\x32J.labs.language.tailwind.sharing.ShareProjectRequest.PublicDocumentSettings\".\n\x18GetProjectDetailsRequest\x12\x12\n\nproject_id\x18\x01 \x01(\t\"\xb9\x01\n\x19GetProjectDetailsResponse\x12T\n\x0fpublic_settings\x18\x02 \x01(\x0b\x32;.labs.language.tailwind.common.protos.ProjectPublicSettings\x12#\n\x1bmax_individuals_share_limit\x18\x03 \x01(\x05\x12!\n\x19is_public_sharing_allowed\x18\x04 \x01(\x08\"\x16\n\x14ShareProjectResponse2\xa2\x02\n\x1aLabsTailwindSharingService\x12\x88\x01\n\x11GetProjectDetails\x12\x38.labs.language.tailwind.sharing.GetProjectDetailsRequest\x1a\x39.labs.language.tailwind.sharing.GetProjectDetailsResponse\x12y\n\x0cShareProject\x12\x33.labs.language.tailwind.sharing.ShareProjectRequest\x1a\x34.labs.language.tailwind.sharing.ShareProjectResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -42,6 +42,8 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_GETPROJECTDETAILSREQUEST']._serialized_end=516
   _globals['_GETPROJECTDETAILSRESPONSE']._serialized_start=519
   _globals['_GETPROJECTDETAILSRESPONSE']._serialized_end=704
-  _globals['_LABSTAILWINDSHARINGSERVICE']._serialized_start=707
-  _globals['_LABSTAILWINDSHARINGSERVICE']._serialized_end=874
+  _globals['_SHAREPROJECTRESPONSE']._serialized_start=706
+  _globals['_SHAREPROJECTRESPONSE']._serialized_end=728
+  _globals['_LABSTAILWINDSHARINGSERVICE']._serialized_start=731
+  _globals['_LABSTAILWINDSHARINGSERVICE']._serialized_end=1021
 # @@protoc_insertion_point(module_scope)

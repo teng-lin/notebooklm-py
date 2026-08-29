@@ -53,6 +53,24 @@ PACKAGE_OBJECT_RE = re.compile(
     re.MULTILINE,
 )
 
+# Preserve the complete historical evidence scope.  These are package-directory
+# selectors, not claimed protobuf package names; exact package identity still
+# comes exclusively from each BuilderInfo PackageName object.
+DEFAULT_PATTERNS = (
+    "google.internal.labs.tailwind.api.v1",
+    "google.internal.labs.tailwind.discovery.v1",
+    "google.internal.labs.tailwind.orchestration.v1",
+    "google.internal.labs.tailwind.v1",
+    "googledata.experiments.mobile.tailwind",
+    "labs.language.tailwind.common.protos",
+    "labs.language.tailwind.mobile.app.models",
+    "labs.language.tailwind.mobile.app.protos.persistence",
+    "labs.language.tailwind.mobile.app.services",
+    "labs.language.tailwind.sharing",
+    "logs.proto.labs_tailwind.metadata",
+    "logs.proto.labs_tailwind",
+)
+
 
 @dataclasses.dataclass(frozen=True)
 class MessageSchema:
@@ -221,7 +239,7 @@ def parse_file(path):
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     root = argv[0]
-    patterns = argv[1:] or ["orchestration.v1", "sharing", "discovery", "api.v1"]
+    patterns = argv[1:] or DEFAULT_PATTERNS
     files = []
     for p in patterns:
         files += glob.glob(os.path.join(root, f"*{p}*", "*.pb.dart"))

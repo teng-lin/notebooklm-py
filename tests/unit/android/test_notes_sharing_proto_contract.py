@@ -99,10 +99,7 @@ def test_note_enums_are_exhaustive() -> None:
 def test_local_sharing_overlay_exposes_only_byte_proven_fields() -> None:
     assert sharing_pb2.DESCRIPTOR.package == LOCAL_WIRE_PACKAGE
     assert sharing_pb2.DESCRIPTOR.services_by_name == {}
-    assert set(sharing_pb2.DESCRIPTOR.message_types_by_name) == {
-        "EmptyResponse",
-        "GetProjectDetailsResponse",
-    }
+    assert set(sharing_pb2.DESCRIPTOR.message_types_by_name) == {"GetProjectDetailsResponse"}
     assert _field_shapes(sharing_pb2.GetProjectDetailsResponse) == {
         "public_settings": (
             2,

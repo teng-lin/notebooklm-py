@@ -89,3 +89,6 @@ message DeleteNotesRequest {
   repeated string note_ids = 3;
   // RequestContext #4 intentionally omitted.
 }
+
+// The official generated client binds DeleteNotes to this zero-field response.
+message DeleteNotesResponse {}

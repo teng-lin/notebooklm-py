@@ -9,8 +9,6 @@ import "labs/language/tailwind/common/protos/common.proto";
 // wrapper exists only so proto3 optional preserves scalar presence on fields
 // #3/#4; the exact-package response descriptor remains the remote type.
 
-message EmptyResponse {}
-
 message GetProjectDetailsResponse {
   // Collaborator/owner details #1 and unknown tags #7/#8 remain unknown fields.
   .labs.language.tailwind.common.protos.ProjectPublicSettings public_settings = 2;
