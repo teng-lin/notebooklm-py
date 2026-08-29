@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Awaitable, Callable, Collection, Iterator
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, cast, get_type_hints
 
 import pytest
 from google.protobuf import text_format
@@ -24,6 +24,7 @@ from notebooklm._android.proto.google.internal.labs.tailwind.v1 import source_se
 from notebooklm._android.session import AndroidSession
 from notebooklm._android.sources import AndroidSourcesAPI
 from notebooklm._android.upload import AndroidUploadPipeline
+from notebooklm._notebook_metadata import NotebookSourceLister
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import (
@@ -41,6 +42,26 @@ from notebooklm.types import (
 )
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "android"
+
+EXPECTED_NOTEBOOK_PUBLIC_CALLABLES = {
+    "copy",
+    "create",
+    "delete",
+    "get",
+    "get_description",
+    "get_metadata",
+    "get_or_none",
+    "get_raw",
+    "get_share_url",
+    "get_source_ids",
+    "get_summary",
+    "list",
+    "remove_from_recent",
+    "rename",
+    "set_emoji",
+    "suggest_prompts",
+    "update",
+}
 
 
 class FakeSession:
@@ -206,12 +227,21 @@ def test_exact_abstract_sets_and_android_adapters_are_concrete() -> None:
     assert "_add_urls_batch" in AndroidSourcesAPI.__dict__
 
 
-def test_direct_graph_requires_and_retains_exact_sources_collaborator() -> None:
+def test_notebook_public_callable_manifest_is_exact() -> None:
+    for adapter in (NotebooksAPI, AndroidNotebooksAPI):
+        assert {
+            name
+            for name, member in inspect.getmembers(adapter)
+            if not name.startswith("_") and callable(member)
+        } == EXPECTED_NOTEBOOK_PUBLIC_CALLABLES
+
+
+def test_direct_graph_requires_and_retains_structural_sources_collaborator() -> None:
     _, sources, notebooks = _graph()
-    assert (
-        inspect.signature(AndroidNotebooksAPI).parameters["sources_api"].default
-        is inspect.Parameter.empty
-    )
+    parameter = inspect.signature(AndroidNotebooksAPI).parameters["sources_api"]
+    assert parameter.default is inspect.Parameter.empty
+    assert parameter.annotation == "NotebookSourceLister"
+    assert get_type_hints(AndroidNotebooksAPI.__init__)["sources_api"] is NotebookSourceLister
     assert notebooks._sources is sources
 
 

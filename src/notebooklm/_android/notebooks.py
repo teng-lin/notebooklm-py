@@ -9,6 +9,7 @@ from typing import Any, NoReturn, cast
 from google.protobuf.empty_pb2 import Empty
 
 from .._idempotency import mark_unconfirmed
+from .._notebook_metadata import NotebookSourceLister
 from .._notebooks import NotebooksAPI
 from ..exceptions import (
     DecodingError,
@@ -30,7 +31,6 @@ from .errors import unsupported_operation
 from .proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
 from .proto.notebooklm.internal.android.wire.v1 import notebooks_pb2
 from .session import AndroidSession
-from .sources import AndroidSourcesAPI
 
 logger = logging.getLogger(__name__)
 _PROTO = cast(Any, read_pb2)
@@ -56,8 +56,8 @@ class AndroidNotebooksAPI(NotebooksAPI):
 
     _create_method_id = f"/{_SERVICE}/CreateProject"
 
-    def __init__(self, session: AndroidSession, sources_api: AndroidSourcesAPI) -> None:
-        """Bind the Android session and its exact non-null source collaborator."""
+    def __init__(self, session: AndroidSession, sources_api: NotebookSourceLister) -> None:
+        """Bind the Android session and required structural source-listing collaborator."""
         self._transport = session
         super().__init__(sources_api)
 

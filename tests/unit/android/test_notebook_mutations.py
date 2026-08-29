@@ -24,6 +24,7 @@ from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import notebo
 from notebooklm._android.session import AndroidSession
 from notebooklm._android.sources import AndroidSourcesAPI
 from notebooklm._android.upload import AndroidUploadPipeline
+from notebooklm._notebooks import NotebooksAPI
 from notebooklm.exceptions import (
     DecodingError,
     RPCError,
@@ -164,6 +165,32 @@ async def test_title_only_update_decodes_bare_project_without_followup_read() ->
         mutations=[
             notebooks_pb2.WireProjectMutation(
                 change_property=notebooks_pb2.WireProjectChangeProperty(new_title="Renamed")
+            )
+        ],
+    )
+    assert kwargs == {"replay_safe": False, "response_type": read_pb2.Project}
+
+
+@pytest.mark.asyncio
+async def test_inherited_rename_delegates_to_android_title_update() -> None:
+    transport = SequenceTransport(
+        {MUTATE_PROJECT_METHOD: [_project("notebook-1", "Renamed via base")]}
+    )
+    api = _api(transport)
+
+    renamed = await api.rename("notebook-1", "Renamed via base")
+
+    assert AndroidNotebooksAPI.rename is NotebooksAPI.rename
+    assert renamed.title == "Renamed via base"
+    assert len(transport.calls) == 1
+    _, request, kwargs = transport.calls[0]
+    assert request == notebooks_pb2.WireMutateProjectRequest(
+        project_id="notebook-1",
+        mutations=[
+            notebooks_pb2.WireProjectMutation(
+                change_property=notebooks_pb2.WireProjectChangeProperty(
+                    new_title="Renamed via base"
+                )
             )
         ],
     )
