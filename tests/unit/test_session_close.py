@@ -105,7 +105,7 @@ async def test_session_close_drains_artifact_poll_hook() -> None:
         note_service=MagicMock(spec=NoteService),
     )
     assert (
-        core._collaborators.drain_tracker._drain_hooks["artifacts.polls"]
+        core._collaborators.call_supervisor._drain_hooks["artifacts.polls"]
         == artifacts._polling.drain
     )
     await core.__aenter__()
@@ -145,7 +145,7 @@ async def test_session_close_absorbs_drain_hook_errors() -> None:
     async def angry_hook() -> None:
         raise RuntimeError("poll cleanup failed")
 
-    core._collaborators.drain_tracker.register_drain_hook("angry", angry_hook)
+    core._collaborators.call_supervisor.register_drain_hook("angry", angry_hook)
 
     # return_exceptions=True in close() means this should NOT propagate.
     await asyncio.wait_for(core.close(), timeout=1.0)
@@ -167,13 +167,13 @@ async def test_close_drain_cancels_inflight_poll_in_operation_scope() -> None:
     """Issue #1161: ``close(drain=True)`` cancels an in-flight poll counted in
     ``operation_scope`` instead of blocking on its in-flight counter.
 
-    Reproduces the production wiring: the artifact poll loop runs inside
-    ``TransportDrainTracker.operation_scope`` (incrementing ``_in_flight_posts``)
+    Reproduces the production wiring: the artifact poll loop runs inside a
+    supervisor ``operation_scope`` (incrementing the generation's in-flight count)
     and registers a drain hook that cancels the leader task. Before the fix,
-    ``close()`` awaited ``drain()`` BEFORE the lifecycle ran the cancel hook,
-    so ``drain()`` parked on the in-flight counter until the poll's own timeout
+    ``close()`` awaited idle BEFORE the lifecycle ran the cancel hook,
+    so shutdown parked on the in-flight counter until the poll's own timeout
     (the cancel hook ran too late). The fix fires the cancel hooks before the
-    drain wait so ``drain()`` observes a cancelled-then-settled count.
+    idle wait so the supervisor observes a cancelled-then-settled count.
 
     A real-time deadline turns a regression into a fast failure rather than a
     suite hang.
@@ -181,16 +181,18 @@ async def test_close_drain_cancels_inflight_poll_in_operation_scope() -> None:
     core = build_client_shell_for_tests(_auth())
     await core.__aenter__()
 
-    tracker = core._collaborators.drain_tracker
+    supervisor = core._collaborators.call_supervisor
+    generation = supervisor._current
+    assert generation is not None
     registry = PollRegistry()
     cancellation_seen = asyncio.Event()
     scope_entered = asyncio.Event()
 
     async def parked_poll() -> None:
         # Mirror the poll loop: hold an ``operation_scope`` open (bumping the
-        # in-flight counter ``drain()`` waits on) while parked, and unwind via
+        # in-flight counter close waits on) while parked, and unwind via
         # CancelledError when the drain hook cancels us.
-        async with tracker.operation_scope("artifact wait task_1"):
+        async with supervisor.operation_scope("artifact wait task_1"):
             scope_entered.set()
             try:
                 await asyncio.Event().wait()
@@ -200,10 +202,10 @@ async def test_close_drain_cancels_inflight_poll_in_operation_scope() -> None:
 
     future: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
     task = asyncio.create_task(parked_poll())
-    # Let the task enter ``operation_scope`` so ``_in_flight_posts`` is bumped
+    # Let the task enter ``operation_scope`` so ``in_flight`` is bumped
     # before close() drains; otherwise the drain wait would trivially pass.
     await asyncio.wait_for(scope_entered.wait(), timeout=1.0)
-    assert tracker._in_flight_posts == 1
+    assert generation.in_flight == 1
     registry.register(("nb_1", "task_1"), future, task)
 
     async def cancel_polls() -> None:
@@ -215,7 +217,7 @@ async def test_close_drain_cancels_inflight_poll_in_operation_scope() -> None:
         if poll_tasks:
             await asyncio.gather(*poll_tasks, return_exceptions=True)
 
-    tracker.register_drain_hook("artifacts.polls", cancel_polls)
+    supervisor.register_drain_hook("artifacts.polls", cancel_polls)
 
     # Default drain=True. Real-time deadline so the pre-fix block (which would
     # only end at the poll's own timeout) surfaces as a 1s failure.
@@ -223,7 +225,7 @@ async def test_close_drain_cancels_inflight_poll_in_operation_scope() -> None:
 
     assert task.done()
     assert cancellation_seen.is_set()
-    assert tracker._in_flight_posts == 0
+    assert generation.in_flight == 0
     assert core._collaborators.kernel.http_client is None
     # Resolve the registered future so it isn't GC'd un-awaited (the poll task
     # was cancelled, so mirror that on the shared future).
@@ -240,9 +242,6 @@ async def test_close_delegates_hook_and_drain_policy_to_root_lifecycle() -> None
     async def fake_run_drain_hooks() -> None:
         order.append("hooks")
 
-    async def fake_drain(timeout: float | None = None) -> None:
-        order.append("drain")
-
     close_kwargs: list[dict[str, object]] = []
 
     async def fake_close(**kwargs: object) -> None:
@@ -250,7 +249,6 @@ async def test_close_delegates_hook_and_drain_policy_to_root_lifecycle() -> None
         order.append("close")
 
     client._collaborators.call_supervisor.run_drain_hooks = fake_run_drain_hooks  # type: ignore[method-assign]
-    client._collaborators.call_supervisor.drain = fake_drain  # type: ignore[method-assign]
     client._collaborators.lifecycle.close = fake_close  # type: ignore[method-assign]
 
     await client.close()
@@ -269,20 +267,14 @@ async def test_client_close_default_drain_is_true() -> None:
     """``client.close()`` (no args) now drains by default (BREAKING)."""
     client = NotebookLMClient(_auth())
     close_kwargs: list[dict[str, object]] = []
-    drain_calls: list[float | None] = []
-
-    async def fake_drain(timeout: float | None = None) -> None:
-        drain_calls.append(timeout)
 
     async def fake_close(**kwargs: object) -> None:
         close_kwargs.append(kwargs)
 
-    client._collaborators.call_supervisor.drain = fake_drain  # type: ignore[method-assign]
     client._collaborators.lifecycle.close = fake_close  # type: ignore[method-assign]
 
     await client.close()
 
-    assert drain_calls == []
     assert close_kwargs == [{"drain": True, "drain_timeout": None}]
 
 
@@ -291,20 +283,14 @@ async def test_client_close_drain_false_skips_drain() -> None:
     """``client.close(drain=False)`` preserves the old fire-and-forget path."""
     client = NotebookLMClient(_auth())
     close_kwargs: list[dict[str, object]] = []
-    drain_calls: list[float | None] = []
-
-    async def fake_drain(timeout: float | None = None) -> None:
-        drain_calls.append(timeout)
 
     async def fake_close(**kwargs: object) -> None:
         close_kwargs.append(kwargs)
 
-    client._collaborators.call_supervisor.drain = fake_drain  # type: ignore[method-assign]
     client._collaborators.lifecycle.close = fake_close  # type: ignore[method-assign]
 
     await client.close(drain=False)
 
-    assert drain_calls == []
     assert close_kwargs == [{"drain": False, "drain_timeout": None}]
 
 
@@ -312,21 +298,15 @@ async def test_client_close_drain_false_skips_drain() -> None:
 async def test_client_aexit_uses_drain_true_default() -> None:
     """``async with`` exit now drains (BREAKING)."""
     client = NotebookLMClient(_auth())
-    drain_calls: list[float | None] = []
     close_kwargs: list[dict[str, object]] = []
-
-    async def fake_drain(timeout: float | None = None) -> None:
-        drain_calls.append(timeout)
 
     async def fake_close(**kwargs: object) -> None:
         close_kwargs.append(kwargs)
 
-    client._collaborators.call_supervisor.drain = fake_drain  # type: ignore[method-assign]
     client._collaborators.lifecycle.close = fake_close  # type: ignore[method-assign]
 
     # Drive __aexit__ directly rather than `async with` so we can use the
     # patched core without going through ``open()``.
     await client.__aexit__(None, None, None)
 
-    assert drain_calls == []
     assert close_kwargs == [{"drain": True, "drain_timeout": None}]

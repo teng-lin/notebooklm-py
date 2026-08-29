@@ -379,7 +379,10 @@ class RuntimeTransport:
         # An admission-only operation lease satisfies both constraints; the
         # nested unary scope below begins terminal accounting only after the
         # request is ready to enter the chain.
-        async with self._call_supervisor.operation_scope(log_label) as operation:
+        async with self._call_supervisor.operation_scope(
+            log_label,
+            expected_epoch=expected_epoch,
+        ) as operation:
             self._kernel.assert_epoch(operation.epoch)
             context[RPC_CONTEXT_RESOURCE_EPOCH] = operation.epoch
             if epoch_observer is not None:

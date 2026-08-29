@@ -234,6 +234,57 @@ async def test_perform_authed_post_requires_open_client():
 
 
 @pytest.mark.asyncio
+async def test_direct_transport_expected_epoch_rejects_before_kernel_or_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A retained transport caller cannot inspect the next resource generation."""
+    core = _make_core()
+    await core.__aenter__()
+    try:
+        transport = core._composed.transport
+        supervisor = core._collaborators.call_supervisor
+        generation = supervisor._current
+        assert generation is not None
+        touched: list[str] = []
+
+        async def unexpected_snapshot(_expected_epoch: int) -> AuthSnapshot:
+            touched.append("auth")
+            raise AssertionError("stale request reached auth snapshot")
+
+        def unexpected_kernel_epoch(_expected_epoch: int) -> None:
+            touched.append("kernel")
+            raise AssertionError("stale request reached Kernel")
+
+        def unexpected_build(_snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            touched.append("build")
+            raise AssertionError("stale request materialized an envelope")
+
+        async def unexpected_chain(_request: RpcRequest) -> RpcResponse:
+            touched.append("chain")
+            raise AssertionError("stale request entered middleware")
+
+        monkeypatch.setattr(transport, "_snapshot_provider", unexpected_snapshot)
+        monkeypatch.setattr(transport._kernel, "assert_epoch", unexpected_kernel_epoch)
+        core._composed.chain_host._authed_post_chain = unexpected_chain
+
+        with pytest.raises(
+            RuntimeError,
+            match=rf"expected={generation.epoch + 1}, active={generation.epoch}",
+        ):
+            await transport.perform_authed_post(
+                build_request=unexpected_build,
+                log_label="retired direct request",
+                expected_epoch=generation.epoch + 1,
+            )
+
+        assert touched == []
+        assert generation.in_flight == 0
+        assert generation.drain._in_flight_posts == 0
+    finally:
+        await core.close()
+
+
+@pytest.mark.asyncio
 async def test_pre_chain_failures_are_admitted_but_not_terminal_accounted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -77,7 +77,7 @@ def test_shell_helpers_carry_client_holders() -> None:
 
     assert isinstance(client._seams, ClientSeams)
     assert isinstance(client._composed, ClientComposed)
-    assert client._collaborators.call_supervisor.max_concurrent_rpcs == 3
+    assert client._collaborators.call_supervisor._max_concurrent_rpcs == 3
     assert client._composed.runtime_collaborators is client._collaborators
     assert client._composed.executor is client._rpc_executor
 
@@ -89,7 +89,7 @@ def test_notebooklm_client_initializes_client_holders() -> None:
     assert isinstance(client._seams, ClientSeams)
     assert isinstance(client._composed, ClientComposed)
     assert client._composed.runtime_collaborators is client._collaborators
-    assert client._collaborators.call_supervisor.max_concurrent_rpcs == 2
+    assert client._collaborators.call_supervisor._max_concurrent_rpcs == 2
     assert client._composed.executor is client._rpc_executor
     assert client._composed.transport is client._rpc_executor._transport
 
@@ -133,7 +133,7 @@ def test_prebuilt_client_composed_has_no_runtime_policy_configuration() -> None:
         max_concurrent_rpcs=10,
         composed=holder,
     )
-    assert internals.collaborators.call_supervisor.max_concurrent_rpcs == 10
+    assert internals.collaborators.call_supervisor._max_concurrent_rpcs == 10
 
 
 def test_compose_client_internals_refuses_synthetic_error_first(
@@ -355,7 +355,8 @@ def test_client_shell_reads_composition_from_client_composed() -> None:
     assert client._rpc_executor is client._composed.executor
     assert client._rpc_executor._transport is client._composed.transport
     assert client._composed.chain_host._transport is client._composed.transport
-    assert (
-        client._collaborators.call_supervisor.drain_tracker is client._collaborators.drain_tracker
-    )
+    assert not hasattr(client._collaborators, "drain_tracker")
+    assert not hasattr(client._collaborators.call_supervisor, "drain_tracker")
+    assert not hasattr(client._collaborators.call_supervisor, "max_concurrent_rpcs")
+    assert not hasattr(client._collaborators.call_supervisor, "drain")
     assert client._composed.middlewares[0]._metrics is client._collaborators.metrics

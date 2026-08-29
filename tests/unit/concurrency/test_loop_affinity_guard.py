@@ -40,6 +40,8 @@ from notebooklm._loop_affinity import assert_bound_loop
 from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm._web.transport.auth import AuthRefreshCoordinator
 from notebooklm._web.transport.reqid_counter import ReqidCounter
+from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
 
 # ---------------------------------------------------------------------------
 # Free helper — the building block.
@@ -86,6 +88,31 @@ def test_assert_bound_loop_mismatch_raises_runtime_error() -> None:
             asyncio.run(inner())
     finally:
         other_loop.close()
+
+
+def test_post_close_cross_loop_live_paths_preserve_uninitialized_error() -> None:
+    """Closed public I/O paths report lifecycle state before stale loop affinity."""
+    client = NotebookLMClient(
+        AuthTokens(
+            cookies={"SID": "x", "__Secure-1PSIDTS": "y"},
+            csrf_token="csrf",
+            session_id="session",
+        )
+    )
+
+    async def open_then_close() -> None:
+        await client.__aenter__()
+        await client.close(drain=False)
+
+    asyncio.run(open_then_close())
+
+    async def call_closed_paths_from_a_new_loop() -> None:
+        for operation in (client.refresh_auth, client.get_account_email):
+            with pytest.raises(RuntimeError) as raised:
+                await operation()
+            assert str(raised.value) == "Client not initialized. Use 'async with' context."
+
+    asyncio.run(call_closed_paths_from_a_new_loop())
 
 
 # ---------------------------------------------------------------------------

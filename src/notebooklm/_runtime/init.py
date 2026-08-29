@@ -115,7 +115,6 @@ class RuntimeCollaborators:
     """
 
     metrics: ClientMetrics
-    drain_tracker: TransportDrainTracker
     call_supervisor: CallSupervisor
     reqid: ReqidCounter
     auth_coord: AuthRefreshCoordinator
@@ -365,7 +364,6 @@ def build_collaborators(
 
     return RuntimeCollaborators(
         metrics=metrics,
-        drain_tracker=drain_tracker,
         call_supervisor=call_supervisor,
         reqid=reqid,
         auth_coord=auth_coord,

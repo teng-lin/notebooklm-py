@@ -9,6 +9,7 @@ encoding, and error mapping deliberately stay outside this module.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 import weakref
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
@@ -26,6 +27,9 @@ from .._transport_drain import TransportDrainTracker, _TransportOperationToken
 from ..types import RpcTelemetryEvent
 
 _T = TypeVar("_T")
+# Drain-hook warnings historically came from the bookkeeping module.  Keep the
+# logger stable while moving hook ownership to the supervisor.
+logger = logging.getLogger("notebooklm._transport_drain")
 
 
 class AdmissionState(str, Enum):
@@ -43,6 +47,7 @@ class AdmissionGeneration:
 
     epoch: int
     loop: asyncio.AbstractEventLoop
+    drain: TransportDrainTracker
     condition: asyncio.Condition = field(default_factory=asyncio.Condition)
     state: AdmissionState = AdmissionState.CLOSED
     in_flight: int = 0
@@ -110,7 +115,11 @@ class CallSupervisor(LoopBoundPrimitive):
         if max_concurrent_rpcs is not None and max_concurrent_rpcs < 1:
             raise ValueError(f"max_concurrent_rpcs must be >= 1, got {max_concurrent_rpcs!r}")
         self._metrics = metrics
-        self._drain = drain_tracker
+        # The injected tracker belongs exclusively to the first admission
+        # generation.  Every later generation receives a fresh tracker so a
+        # late epoch-N settlement keeps using epoch N's loop-local condition
+        # after the supervisor has reopened on another loop.
+        self._first_generation_drain: TransportDrainTracker | None = drain_tracker
         self._max_concurrent_rpcs = max_concurrent_rpcs
         self._rpc_semaphore: asyncio.Semaphore | None = None
         self._monotonic = time.perf_counter if monotonic is None else monotonic
@@ -118,11 +127,7 @@ class CallSupervisor(LoopBoundPrimitive):
         self._retired: dict[int, AdmissionGeneration] = {}
         self._last_epoch = 0
         self._settlement_tasks: set[asyncio.Task[_SettlementResult]] = set()
-
-    @property
-    def drain_tracker(self) -> TransportDrainTracker:
-        """Return the owned bookkeeping implementation for lifecycle migration."""
-        return self._drain
+        self._drain_hooks: dict[str, Callable[[], Awaitable[None]]] = {}
 
     @property
     def bound_loop(self) -> asyncio.AbstractEventLoop | None:
@@ -133,15 +138,9 @@ class CallSupervisor(LoopBoundPrimitive):
         """Return the historical loop binding through a method-shaped seam."""
         return self._bound_loop
 
-    @property
-    def max_concurrent_rpcs(self) -> int | None:
-        """Return the configured client-wide transport-call cap."""
-        return self._max_concurrent_rpcs
-
     def set_bound_loop(self, loop: asyncio.AbstractEventLoop | None) -> None:
-        """Bind both supervisor-owned primitives to ``loop``."""
+        """Bind supervisor-owned current-generation primitives to ``loop``."""
         super().set_bound_loop(loop)
-        self._drain.set_bound_loop(loop)
 
     def _on_loop_rebind(
         self,
@@ -160,10 +159,11 @@ class CallSupervisor(LoopBoundPrimitive):
         until their late settlements reclaim them.
         """
         self._rpc_semaphore = None
-        self._drain.reset_after_open()
 
     def assert_bound_loop(self) -> None:
-        """Fail before touching a primitive owned by a different event loop."""
+        """Fail on an unavailable generation before checking loop affinity."""
+        if self._current is None:
+            raise RuntimeError("Client not initialized. Use 'async with' context.")
         assert_bound_loop(self._bound_loop)
 
     def record_started(self, method: str | None) -> None:
@@ -197,7 +197,7 @@ class CallSupervisor(LoopBoundPrimitive):
         checkpoint-free open preparation/commit sequence.  No resource is
         admitted until :meth:`start_accepting` runs.
         """
-        self.assert_bound_loop()
+        assert_bound_loop(self._bound_loop)
         if self._bound_loop is None:
             loop = asyncio.get_running_loop()
             self.set_bound_loop(loop)
@@ -210,7 +210,14 @@ class CallSupervisor(LoopBoundPrimitive):
             )
         if epoch <= self._last_epoch or epoch in self._retired:
             raise RuntimeError(f"admission generation {epoch} is not newer than prior epochs")
-        generation = AdmissionGeneration(epoch=epoch, loop=loop)
+        drain = self._first_generation_drain
+        if drain is None:
+            drain = TransportDrainTracker()
+        else:
+            self._first_generation_drain = None
+        drain.set_bound_loop(loop)
+        drain.reset_after_open()
+        generation = AdmissionGeneration(epoch=epoch, loop=loop, drain=drain)
         self._current = generation
         self._last_epoch = epoch
         self._rpc_semaphore = None
@@ -323,11 +330,11 @@ class CallSupervisor(LoopBoundPrimitive):
         *,
         expected_epoch: int | None = None,
     ) -> _AdmissionToken:
-        self.assert_bound_loop()
-        task = asyncio.current_task()
         generation = self._current
         if generation is None:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
+        self.assert_bound_loop()
+        task = asyncio.current_task()
         self._assert_generation_loop(generation)
         if expected_epoch is not None and generation.epoch != expected_epoch:
             raise RuntimeError(
@@ -354,7 +361,7 @@ class CallSupervisor(LoopBoundPrimitive):
             if task is not None:
                 generation.depths[task] = depth + 1
         try:
-            drain_token = await self._drain.begin_transport_post(label)
+            drain_token = await generation.drain.begin_transport_post(label)
         except BaseException as exc:
             settlement, state = self._publish_partial_settlement(
                 generation=generation,
@@ -506,7 +513,7 @@ class CallSupervisor(LoopBoundPrimitive):
         async def _settle() -> None:
             first_error: BaseException | None = None
             try:
-                await self._drain.finish_transport_post(token.drain_token)
+                await token.generation.drain.finish_transport_post(token.drain_token)
             except BaseException as exc:
                 first_error = exc
             try:
@@ -695,9 +702,14 @@ class CallSupervisor(LoopBoundPrimitive):
             return await invoke(lease)
 
     @asynccontextmanager
-    async def operation_scope(self, label: str) -> AsyncIterator[OperationLease]:
+    async def operation_scope(
+        self,
+        label: str,
+        *,
+        expected_epoch: int | None = None,
+    ) -> AsyncIterator[OperationLease]:
         """Hold admission across a complete multi-call workflow."""
-        token = await self._admit(label)
+        token = await self._admit(label, expected_epoch=expected_epoch)
         lease = OperationLease(epoch=token.generation.epoch, _token=token)
         try:
             yield lease
@@ -801,7 +813,7 @@ class CallSupervisor(LoopBoundPrimitive):
             generation.depths[task] = generation.depths.get(task, 0) + 1
             generation.in_flight += 1
         try:
-            drain_token = await self._drain.begin_transport_task(task, label)
+            drain_token = await generation.drain.begin_transport_task(task, label)
         except BaseException as exc:
             gate.cancel()
             task.cancel()
@@ -854,26 +866,35 @@ class CallSupervisor(LoopBoundPrimitive):
             raise cancelled
         return task
 
-    async def drain(self, timeout: float | None = None) -> None:
-        """Stop accepting top-level work and wait for every admitted token."""
-        if timeout is not None and timeout < 0:
-            raise ValueError(f"timeout must be >= 0 or None, got {timeout!r}")
-        generation = self._current
-        if generation is None:
-            return
-        await self.stop_accepting(generation.epoch)
-        await asyncio.gather(
-            self.wait_for_idle(generation.epoch, timeout),
-            self._drain.drain(timeout=timeout),
-        )
-
     def register_drain_hook(self, name: str, hook: Callable[[], Awaitable[None]]) -> None:
-        """Register a feature-owned close-time hook on the owned tracker."""
-        self._drain.register_drain_hook(name, hook)
+        """Register or replace a feature-owned close-time hook."""
+        self._drain_hooks[name] = hook
 
     async def run_drain_hooks(self) -> None:
-        """Run feature hooks in registration order."""
-        await self._drain.run_drain_hooks()
+        """Run feature hooks concurrently and preserve process-exit precedence."""
+        named_hooks = list(self._drain_hooks.items())
+        if not named_hooks:
+            return
+
+        async def _run_hook(hook: Callable[[], Awaitable[None]]) -> BaseException | None:
+            try:
+                await hook()
+            except BaseException as exc:
+                return exc
+            return None
+
+        results = await asyncio.gather(*(_run_hook(hook) for _name, hook in named_hooks))
+        process_exit: KeyboardInterrupt | SystemExit | None = None
+        for (name, _hook), result in zip(named_hooks, results, strict=True):
+            if isinstance(result, (KeyboardInterrupt, SystemExit)):
+                if process_exit is None:
+                    process_exit = result
+            elif isinstance(result, BaseException):
+                logger.warning(
+                    "Drain hook %r raised during close: %s", name, result, exc_info=result
+                )
+        if process_exit is not None:
+            raise process_exit
 
 
 __all__ = ["CallLease", "CallSupervisor", "OperationLease"]
