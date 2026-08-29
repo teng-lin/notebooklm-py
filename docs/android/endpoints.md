@@ -262,12 +262,12 @@ Where the context is attached per method:
 
 ## Method reference
 
-Read RPCs (safe to replay):
+Read / response-shaped RPCs (individual rows call out stateful exceptions):
 
 | Method | Req bytes | Resp bytes | Emitted when | Notes |
 |---|---:|---:|---|---|
 | `ListRecentlyViewedProjects` | variable | variable | app home | compiled; web-equivalent list live |
-| `GetOrCreateAccount` | 91 | 41 | app launch | returns account limits/flags |
+| `GetOrCreateAccount` | 91 | 41 | app launch | stateful account bootstrap; the private adapter does not replay |
 | `GetProject` | 105 | ~21,885 | open a notebook | full notebook + sources |
 | `GenerateNotebookGuide` | 101 | 1,851 | open a notebook | **stateful — do not replay** |
 | `GenerateDocumentGuides` | 105 | 1,327 | open a source | per-source summary + suggested Qs |
@@ -315,6 +315,11 @@ disposable resources; their bodies vary and were not derived from an HTTP Toolki
 
 **Request** — context envelope only (`#1` = context, `#2` = secondary context). No
 entity ID.
+
+The pinned exact-package reference closure declares an empty `GetOrCreateAccountRequest`; the
+captured official-app context bytes are therefore outside the semantic subset compiled by the
+private adapter and are not fabricated. Because the first call may create the account, transport
+replay is disabled even though the result is read-shaped.
 
 **Response** — account configuration and quotas (all inferred):
 

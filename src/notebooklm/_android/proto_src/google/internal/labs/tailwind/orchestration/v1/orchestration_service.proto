@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package google.internal.labs.tailwind.orchestration.v1;
 
+import "google/internal/labs/tailwind/orchestration/v1/account.proto";
 import "google/internal/labs/tailwind/orchestration/v1/artifacts.proto";
 import "google/internal/labs/tailwind/orchestration/v1/chat.proto";
 import "google/internal/labs/tailwind/orchestration/v1/notes.proto";
@@ -9,7 +10,6 @@ import "google/internal/labs/tailwind/orchestration/v1/organization.proto";
 import "google/internal/labs/tailwind/orchestration/v1/read.proto";
 import "google/internal/labs/tailwind/orchestration/v1/research.proto";
 import "google/internal/labs/tailwind/orchestration/v1/sources.proto";
-import "google/protobuf/empty.proto";
 
 // Cumulative exact service closure for implemented Android calls whose request
 // and response FQNs are independently evidenced. Implemented paths backed by
@@ -17,10 +17,15 @@ import "google/protobuf/empty.proto";
 // protobuf FQN is unproven, stay out of this descriptor and are exhaustively
 // recorded in docs/android/grpc-service-signature-exceptions.json.
 //
-// Only the account method remains absent until its adapter slice lands.
-// GetArtifact, Research, and GetLabels signatures below are exact and
-// independently live-validated; their message overlays remain service-free.
+// GetArtifact, Research, GetLabels, and GetOrCreateAccount signatures below
+// are exact and independently live-validated; their message overlays remain
+// service-free. Zero-byte responses normalized by the external method manifest
+// remain explicit signature exceptions because their remote response FQN is
+// not proven.
 service LabsTailwindOrchestrationService {
+  rpc GetOrCreateAccount(GetOrCreateAccountRequest)
+      returns (GetOrCreateAccountResponse);
+
   rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
   rpc ListRecentlyViewedProjects(ListRecentlyViewedProjectsRequest)
       returns (ListRecentlyViewedProjectsResponse);
@@ -28,7 +33,6 @@ service LabsTailwindOrchestrationService {
   rpc AddTentativeSources(AddTentativeSourcesRequest)
       returns (AddTentativeSourcesResponse);
   rpc AddSources(AddSourcesRequest) returns (AddSourcesResponse);
-  rpc DeleteSources(DeleteSourcesRequest) returns (google.protobuf.Empty);
   rpc GenerateDocumentGuides(GenerateDocumentGuidesRequest)
       returns (GenerateDocumentGuidesResponse);
   rpc LoadSource(LoadSourceRequest) returns (LoadSourceResponse);
@@ -37,7 +41,6 @@ service LabsTailwindOrchestrationService {
   rpc GetArtifact(GetArtifactRequest) returns (GetArtifactResponse);
   rpc CreateArtifact(CreateArtifactRequest) returns (CreateArtifactResponse);
   rpc UpdateArtifact(UpdateArtifactRequest) returns (Artifact);
-  rpc DeleteArtifact(DeleteArtifactRequest) returns (google.protobuf.Empty);
 
   rpc ListChatSessions(ListChatSessionsRequest) returns (ListChatSessionsResponse);
   rpc ListChatTurns(ListChatTurnsRequest) returns (ListChatTurnsResponse);
@@ -55,8 +58,6 @@ service LabsTailwindOrchestrationService {
       returns (DiscoverSourcesAsyncResponse);
   rpc ListDiscoverSourcesJob(ListDiscoverSourcesJobRequest)
       returns (ListDiscoverSourcesJobResponse);
-  rpc CancelDiscoverSourcesJob(CancelDiscoverSourcesJobRequest)
-      returns (google.protobuf.Empty);
   rpc FinishDiscoverSourcesRun(FinishDiscoverSourcesRunRequest)
       returns (FinishDiscoverSourcesRunResponse);
 

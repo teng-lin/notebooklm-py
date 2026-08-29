@@ -48,8 +48,10 @@ The reduced compile inputs used by the private Android adapters live under
 `src/notebooklm/_android/proto_src/`. Regenerate their checked-in Python modules and the full
 descriptor fixture with `python scripts/regenerate_android_protos.py --write`; use `--check` in CI.
 The cumulative `orchestration_service.proto` owns the one exact generated service; individual
-message overlays remain service-free. Its 25 admitted methods plus the 14 explicit signature
-exceptions exhaustively equal the 39 implemented adapter paths.
+message overlays remain service-free. Its 23 admitted methods plus the 17 explicit signature
+exceptions exhaustively equal the 40 implemented adapter paths. Exact generated response FQNs are
+also cross-checked against the hash-pinned external method manifest fixture, so a locally repeated
+claim cannot admit a normalized or unresolved response type.
 The package, generated protos, and most adapters remain private, direct-testable migration building
 blocks. Explicit `backend="android"` selection installs Android Collections, the first complete
 substitution-qualified namespace; every other namespace remains Web, including Notes and Labels.

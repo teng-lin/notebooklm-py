@@ -37,6 +37,7 @@ READ_PROTO_FILES = (
     Path("google/internal/labs/tailwind/v1/source_settings.proto"),
 )
 PROTO_FILES = (
+    Path("google/internal/labs/tailwind/orchestration/v1/account.proto"),
     Path("google/internal/labs/tailwind/orchestration/v1/read.proto"),
     Path("google/internal/labs/tailwind/orchestration/v1/orchestration_service.proto"),
     Path("google/internal/labs/tailwind/orchestration/v1/sources.proto"),
@@ -57,6 +58,8 @@ PROTO_FILES = (
 )
 EXPECTED_GENERATED = frozenset(
     {
+        Path("google/internal/labs/tailwind/orchestration/v1/account_pb2.py"),
+        Path("google/internal/labs/tailwind/orchestration/v1/account_pb2_grpc.py"),
         Path("google/internal/labs/tailwind/orchestration/v1/read_pb2.py"),
         Path("google/internal/labs/tailwind/orchestration/v1/read_pb2_grpc.py"),
         Path("google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2.py"),

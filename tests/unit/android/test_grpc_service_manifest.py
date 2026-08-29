@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import hashlib
 import importlib
 import json
 import re
@@ -9,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from notebooklm._android import (
+    account,
     artifacts,
     chat,
     notebooks,
@@ -27,12 +30,31 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 EXCEPTION_MANIFEST = REPO_ROOT / "docs" / "android" / "grpc-service-signature-exceptions.json"
+EXTERNAL_METHOD_MANIFEST = (
+    REPO_ROOT / "tests" / "fixtures" / "android" / "external_method_manifest.csv"
+)
+EXTERNAL_METHOD_MANIFEST_SHA256 = "c2cf4bf2e6cdefd35232f01572070fbe07d11ef9bad99b556f76b5e3748f38a3"
 ORCHESTRATION_PACKAGE = "google.internal.labs.tailwind.orchestration.v1"
 ORCHESTRATION_SERVICE = f"{ORCHESTRATION_PACKAGE}.LabsTailwindOrchestrationService"
 SHARING_SERVICE = "labs.language.tailwind.sharing.LabsTailwindSharingService"
 
-_ADAPTER_MODULES = (notebooks, sources, artifacts, chat, notes, research, organization, sharing)
+_ADAPTER_MODULES = (
+    account,
+    notebooks,
+    sources,
+    artifacts,
+    chat,
+    notes,
+    research,
+    organization,
+    sharing,
+)
 _EXPECTED_SIGNATURES = {
+    "GetOrCreateAccount": (
+        f"{ORCHESTRATION_PACKAGE}.GetOrCreateAccountRequest",
+        f"{ORCHESTRATION_PACKAGE}.GetOrCreateAccountResponse",
+        False,
+    ),
     "GetProject": (
         f"{ORCHESTRATION_PACKAGE}.GetProjectRequest",
         f"{ORCHESTRATION_PACKAGE}.GetProjectResponse",
@@ -51,11 +73,6 @@ _EXPECTED_SIGNATURES = {
     "AddSources": (
         f"{ORCHESTRATION_PACKAGE}.AddSourcesRequest",
         f"{ORCHESTRATION_PACKAGE}.AddSourcesResponse",
-        False,
-    ),
-    "DeleteSources": (
-        f"{ORCHESTRATION_PACKAGE}.DeleteSourcesRequest",
-        "google.protobuf.Empty",
         False,
     ),
     "GenerateDocumentGuides": (
@@ -86,11 +103,6 @@ _EXPECTED_SIGNATURES = {
     "UpdateArtifact": (
         f"{ORCHESTRATION_PACKAGE}.UpdateArtifactRequest",
         f"{ORCHESTRATION_PACKAGE}.Artifact",
-        False,
-    ),
-    "DeleteArtifact": (
-        f"{ORCHESTRATION_PACKAGE}.DeleteArtifactRequest",
-        "google.protobuf.Empty",
         False,
     ),
     "ListChatSessions": (
@@ -143,11 +155,6 @@ _EXPECTED_SIGNATURES = {
         f"{ORCHESTRATION_PACKAGE}.ListDiscoverSourcesJobResponse",
         False,
     ),
-    "CancelDiscoverSourcesJob": (
-        f"{ORCHESTRATION_PACKAGE}.CancelDiscoverSourcesJobRequest",
-        "google.protobuf.Empty",
-        False,
-    ),
     "FinishDiscoverSourcesRun": (
         f"{ORCHESTRATION_PACKAGE}.FinishDiscoverSourcesRunRequest",
         f"{ORCHESTRATION_PACKAGE}.FinishDiscoverSourcesRunResponse",
@@ -181,6 +188,13 @@ def _manifest_entries() -> list[dict[str, Any]]:
     payload = json.loads(EXCEPTION_MANIFEST.read_text(encoding="utf-8"))
     assert payload["schema_version"] == 1
     return payload["exceptions"]
+
+
+def _external_method_entries() -> dict[str, dict[str, str]]:
+    with EXTERNAL_METHOD_MANIFEST.open(encoding="utf-8", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    assert len(rows) == 53
+    return {row["path"]: row for row in rows}
 
 
 def _markdown_anchors(path: Path) -> set[str]:
@@ -238,7 +252,7 @@ def test_exact_service_descriptor_and_generated_stub_expose_all_admitted_paths()
 
 def test_adapter_paths_equal_exact_descriptor_plus_machine_readable_exceptions() -> None:
     entries = _manifest_entries()
-    assert len(entries) == 14
+    assert len(entries) == 17
     assert all(
         set(entry)
         == {
@@ -267,10 +281,23 @@ def test_adapter_paths_equal_exact_descriptor_plus_machine_readable_exceptions()
 
     exception_paths = {entry["path"] for entry in entries}
     assert len(exception_paths) == len(entries)
+    entries_by_path = {entry["path"]: entry for entry in entries}
+    assert entries_by_path[f"/{ORCHESTRATION_SERVICE}/DeleteProjects"]["reason_code"] == (
+        "request_response_fqns_unproven"
+    )
+    for method in (
+        "DeleteSources",
+        "DeleteArtifact",
+        "DeleteChatTurns",
+        "CancelDiscoverSourcesJob",
+    ):
+        assert entries_by_path[f"/{ORCHESTRATION_SERVICE}/{method}"]["reason_code"] == (
+            "response_fqn_unproven"
+        )
     assert _descriptor_paths().isdisjoint(exception_paths)
     assert _adapter_paths() == _descriptor_paths() | exception_paths
-    assert len(_adapter_paths()) == 39
-    assert len(_descriptor_paths()) == 25
+    assert len(_adapter_paths()) == 40
+    assert len(_descriptor_paths()) == 23
 
     for entry in entries:
         module_name, constant_name = entry["adapter_constant"].rsplit(".", 1)
@@ -282,6 +309,35 @@ def test_adapter_paths_equal_exact_descriptor_plus_machine_readable_exceptions()
         f"/{SHARING_SERVICE}/ShareProject",
     }
     assert sharing_paths <= exception_paths
+
+
+def test_exact_generated_signatures_match_pinned_external_method_manifest() -> None:
+    """Reject locally plausible response FQNs that external evidence did not prove."""
+
+    assert hashlib.sha256(EXTERNAL_METHOD_MANIFEST.read_bytes()).hexdigest() == (
+        EXTERNAL_METHOD_MANIFEST_SHA256
+    )
+    external = _external_method_entries()
+    service = orchestration_service_pb2.DESCRIPTOR.services_by_name[
+        "LabsTailwindOrchestrationService"
+    ]
+    for method in service.methods:
+        path = f"/{service.full_name}/{method.name}"
+        row = external[path]
+        assert row["request_type"].removeprefix(".") == method.input_type.full_name
+        assert row["response_type"] not in {"NORMALIZED_EMPTY", "UNRESOLVED_PRIVATE"}
+        assert row["response_type"].removeprefix(".") == method.output_type.full_name
+        assert row["cardinality"] == ("unary_stream" if method.server_streaming else "unary_unary")
+
+    normalized_empty_paths = {
+        path for path, row in external.items() if row["response_type"] == "NORMALIZED_EMPTY"
+    }
+    assert {
+        f"/{ORCHESTRATION_SERVICE}/DeleteSources",
+        f"/{ORCHESTRATION_SERVICE}/DeleteArtifact",
+        f"/{ORCHESTRATION_SERVICE}/CancelDiscoverSourcesJob",
+    } <= normalized_empty_paths
+    assert _descriptor_paths().isdisjoint(normalized_empty_paths)
 
 
 def test_cumulative_descriptor_fixture_contains_the_exact_service_source() -> None:

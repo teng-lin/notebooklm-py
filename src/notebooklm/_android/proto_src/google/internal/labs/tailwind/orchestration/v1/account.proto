@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package google.internal.labs.tailwind.orchestration.v1;
+
+// Minimal exact-package account closure copied from the archived
+// gemini-notebook-mobile supported.proto identified in the evidence ledger.
+// This deliberately omits adjacent quota/settings fields whose exact-package
+// declarations are not required by the private account adapter.
+
+message UserInfo {
+  bool accepted_tos = 1;
+  bool opted_in_to_marketing_emails = 4;
+  bool is_eea_user = 9;
+}
+
+message PremiumUserInfo {
+  bool is_premium_user = 1;
+}
+
+message Account {
+  UserInfo user_info = 3;
+  PremiumUserInfo premium_user_info = 5;
+}
+
+message GetOrCreateAccountRequest {}
+
+message GetOrCreateAccountResponse {
+  Account account = 1;
+}
