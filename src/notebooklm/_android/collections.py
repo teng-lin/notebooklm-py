@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import builtins
+from typing import NoReturn
 
 from .._collections import CollectionsAPI, ListNotebooks
 from ..exceptions import CollectionError, CollectionNotFoundError, DecodingError, RPCError
@@ -169,7 +170,11 @@ class AndroidCollectionsAPI(CollectionsAPI):
                         expected_epoch=lease.epoch,
                     )
                 except RPCError as exc:
-                    _raise_collection_write_miss(collection_id, exc)
+                    await self._raise_membership_write_error(
+                        collection_id,
+                        exc,
+                        expected_epoch=lease.epoch,
+                    )
             read_back = await self._get_or_none(collection_id, expected_epoch=lease.epoch)
             if read_back is None:
                 raise _collection_miss(collection_id, method_id=MUTATE_LABEL_METHOD)
@@ -181,6 +186,36 @@ class AndroidCollectionsAPI(CollectionsAPI):
                     method_id=MUTATE_LABEL_METHOD,
                 )
             return read_back if return_object else None
+
+    async def _raise_membership_write_error(
+        self,
+        collection_id: str,
+        error: RPCError,
+        *,
+        expected_epoch: int,
+    ) -> NoReturn:
+        """Map ``NOT_FOUND`` only after proving the collection is absent.
+
+        A membership mutation names both a collection and a notebook, so the
+        transport status alone cannot identify which resource was missing. A
+        safe same-epoch collection read establishes the public target-miss
+        contract without replaying the write. If reconciliation itself fails,
+        preserve the original sanitized mutation error rather than replacing it
+        with an unrelated read failure or a guessed domain error.
+        """
+
+        if error.rpc_code != 5:
+            raise error
+        try:
+            collection = await self._get_or_none(
+                collection_id,
+                expected_epoch=expected_epoch,
+            )
+        except RPCError:
+            raise error from None
+        if collection is None:
+            raise _collection_miss(collection_id, method_id=MUTATE_LABEL_METHOD) from error
+        raise error
 
     async def add_notebooks(
         self,

@@ -427,6 +427,61 @@ async def test_collection_membership_is_one_member_per_rpc_and_non_atomic_on_fai
     assert failing.operation_scopes == [("collections.add_notebooks", None)]
 
 
+async def test_collection_membership_not_found_maps_only_after_absence_readback() -> None:
+    present = FakeOrganizationServer()
+    ambiguous = RPCError("not found", method_id=MUTATE_LABEL_METHOD, rpc_code=5)
+    present.failures[1] = ambiguous
+    _labels, collections = _apis(present)
+
+    with pytest.raises(RPCError) as caught:
+        await collections.add_notebooks(COLLECTION_A, [NB_B])
+
+    assert caught.value is ambiguous
+    assert type(caught.value) is RPCError
+    assert [method for method, _request, _kwargs in present.calls] == [
+        MUTATE_LABEL_METHOD,
+        GET_LABELS_METHOD,
+    ]
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in present.calls] == [7, 7]
+    assert present.operation_scopes == [("collections.add_notebooks", None)]
+
+    absent = FakeOrganizationServer()
+    absent.collections.pop(COLLECTION_A)
+    absent.failures[1] = RPCError("not found", method_id=MUTATE_LABEL_METHOD, rpc_code=5)
+    _labels, collections = _apis(absent)
+
+    with pytest.raises(CollectionNotFoundError) as caught_miss:
+        await collections.remove_notebooks(COLLECTION_A, [NB_A])
+
+    assert caught_miss.value.collection_id == COLLECTION_A
+    assert [method for method, _request, _kwargs in absent.calls] == [
+        MUTATE_LABEL_METHOD,
+        GET_LABELS_METHOD,
+    ]
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in absent.calls] == [7, 7]
+    assert absent.operation_scopes == [("collections.remove_notebooks", None)]
+
+
+async def test_collection_membership_not_found_preserves_write_error_if_readback_fails() -> None:
+    server = FakeOrganizationServer()
+    ambiguous = RPCError("membership not found", method_id=MUTATE_LABEL_METHOD, rpc_code=5)
+    server.failures[1] = ambiguous
+    server.failures[2] = RPCError("readback failed", method_id=GET_LABELS_METHOD, rpc_code=13)
+    _labels, collections = _apis(server)
+
+    with pytest.raises(RPCError) as caught:
+        await collections.add_notebooks(COLLECTION_A, [NB_B])
+
+    assert caught.value is ambiguous
+    assert type(caught.value) is RPCError
+    assert [method for method, _request, _kwargs in server.calls] == [
+        MUTATE_LABEL_METHOD,
+        GET_LABELS_METHOD,
+    ]
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in server.calls] == [7, 7]
+    assert server.operation_scopes == [("collections.add_notebooks", None)]
+
+
 async def test_delete_filters_absent_ids_batches_existing_and_reads_back_absence() -> None:
     server = FakeOrganizationServer()
     labels, collections = _apis(server)
