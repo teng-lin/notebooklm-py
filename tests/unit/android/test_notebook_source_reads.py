@@ -23,6 +23,7 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
 from notebooklm._android.proto.google.internal.labs.tailwind.v1 import source_settings_pb2
 from notebooklm._android.session import AndroidSession
 from notebooklm._android.sources import AndroidSourcesAPI
+from notebooklm._android.upload import AndroidUploadPipeline
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import (
@@ -159,7 +160,10 @@ def _graph(
             ),
         }
     )
-    sources = AndroidSourcesAPI(_android_session(fake))
+    sources = AndroidSourcesAPI(
+        _android_session(fake),
+        cast(AndroidUploadPipeline, object()),
+    )
     notebooks = AndroidNotebooksAPI(_android_session(fake), sources)
     return fake, sources, notebooks
 
@@ -444,7 +448,10 @@ async def test_checked_in_textproto_fixture_projects_through_both_adapters() -> 
             ),
         }
     )
-    sources = AndroidSourcesAPI(_android_session(fake))
+    sources = AndroidSourcesAPI(
+        _android_session(fake),
+        cast(AndroidUploadPipeline, object()),
+    )
     notebooks = AndroidNotebooksAPI(_android_session(fake), sources)
 
     notebook = await notebooks.get("00000000-0000-4000-8000-000000000000")
@@ -610,7 +617,6 @@ async def test_every_unsupported_notebook_method_fails_before_io(
     "invoke",
     [
         pytest.param(lambda api: api.add_text("notebook", "title", "body"), id="add-text"),
-        pytest.param(lambda api: api.add_file("notebook", "document.pdf"), id="add-file"),
         pytest.param(
             lambda api: api.add_drive("notebook", "file", "title"),
             id="add-drive",

@@ -3,6 +3,8 @@ syntax = "proto3";
 package google.internal.labs.tailwind.orchestration.v1;
 
 import "google/internal/labs/tailwind/orchestration/v1/b1_read.proto";
+import "labs/language/tailwind/common/protos/metadata.proto";
+import "labs/language/tailwind/common/protos/provenance.proto";
 
 // Exact-package source-operation closure admitted by B3. The source mutation
 // route is deliberately absent: only its wire bytes, not its request FQN, are
@@ -41,6 +43,8 @@ message TentativeSourceMetadata {
 message AddTentativeSourcesRequest {
   repeated TentativeSourceMetadata tentative_sources_metadata = 1; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
   string project_id = 2; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
+  .labs.language.tailwind.common.protos.RequestContext request_context = 3; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md
+  .labs.language.tailwind.common.protos.Provenance provenance = 4; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md
 }
 
 message AddTentativeSourcesResponse {
@@ -83,4 +87,11 @@ message LoadSourceResponse {
   PlainTextSourceContent plain_text = 2; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
   string markdown_string = 3; // evidence: docs/android/proto-evidence-ledger.md#b3-field-ledger
   // TailwindDoc #4 remains unknown to this decoder until its offset grammar is admitted.
+}
+
+message UploadFileRequest {
+  string project_id = 3; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md
+  .labs.language.tailwind.common.protos.RequestContext request_context = 4; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md
+  string source_id = 5; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md
+  .labs.language.tailwind.common.protos.Provenance provenance = 6; // evidence: docs/android/file-transfer-live-validation-2026-08-27.md
 }

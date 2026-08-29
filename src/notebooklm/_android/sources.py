@@ -15,6 +15,7 @@ from typing import Any, Literal, NoReturn, TypeVar, cast
 
 from google.protobuf import empty_pb2
 
+from .._deadline import RuntimeDeadline
 from .._idempotency import mark_unconfirmed
 from .._source.batch import SourceUrlBatchItem
 from .._sources import SourcesAPI
@@ -30,6 +31,8 @@ from ..exceptions import (
     ServerError,
     SourceAddError,
     SourceNotFoundError,
+    SourceProcessingError,
+    SourceTimeoutError,
 )
 from ..types import Source, SourceFulltext, SourceStatus, SourceType
 from .codecs.notebooks import decode_project, map_get_project_error
@@ -37,15 +40,20 @@ from .codecs.sources import decode_source, decode_sources
 from .errors import unsupported_operation
 from .proto.google.internal.labs.tailwind.orchestration.v1 import (
     b1_read_pb2,
-    b3_sources_pb2,
+    sources_pb2,
 )
 from .proto.google.internal.labs.tailwind.v1 import source_settings_pb2
 from .proto.notebooklm.internal.android.wire import source_mutation_wire_pb2
 from .session import AndroidSession
+from .upload import (
+    AndroidUploadPipeline,
+    android_provenance,
+    android_request_context,
+)
 
 logger = logging.getLogger(__name__)
 _READ_PROTO = cast(Any, b1_read_pb2)
-_WRITE_PROTO = cast(Any, b3_sources_pb2)
+_WRITE_PROTO = cast(Any, sources_pb2)
 _MUTATION_WIRE = cast(Any, source_mutation_wire_pb2)
 _SETTINGS_PROTO = cast(Any, source_settings_pb2)
 
@@ -127,6 +135,18 @@ def _unresolved_add_error(
             ),
         )
     )
+
+
+def _unresolved_file_registration_error(filename: str) -> SourceAddError:
+    error = SourceAddError(
+        filename,
+        message=(
+            "Android PDF upload tentative registration outcome is unconfirmed "
+            f"for {filename!r}."
+        ),
+    )
+    cast(Any, error).stage = "register"
+    return mark_unconfirmed(error)
 
 
 @dataclass(frozen=True)
@@ -262,8 +282,9 @@ def _merge_commit_proof(
 class AndroidSourcesAPI(SourcesAPI):
     """Direct-test Android source adapter through the B3 evidence slice."""
 
-    def __init__(self, session: AndroidSession) -> None:
+    def __init__(self, session: AndroidSession, upload_pipeline: AndroidUploadPipeline) -> None:
         self._transport = session
+        self._upload_pipeline = upload_pipeline
         super().__init__()
 
     async def list(
@@ -329,6 +350,167 @@ class AndroidSourcesAPI(SourcesAPI):
             expected_epoch=expected_epoch,
         )
         return _correlate_registrations(names, response)
+
+    async def _register_file_tentative(
+        self,
+        notebook_id: str,
+        filename: str,
+        expected_epoch: int,
+        timeout: float,
+    ) -> str:
+        request = _WRITE_PROTO.AddTentativeSourcesRequest(
+            tentative_sources_metadata=[_WRITE_PROTO.TentativeSourceMetadata(name=filename)],
+            project_id=notebook_id,
+            request_context=android_request_context(),
+            provenance=android_provenance(),
+        )
+        try:
+            response = await self._transport.unary(
+                ADD_TENTATIVE_SOURCES_METHOD,
+                request,
+                replay_safe=False,
+                response_type=_WRITE_PROTO.AddTentativeSourcesResponse,
+                expected_epoch=expected_epoch,
+                timeout=timeout,
+            )
+            (registration,) = _correlate_registrations([filename], response)
+        except asyncio.CancelledError:
+            raise
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except (RPCError, NetworkError):
+            failure = _unresolved_file_registration_error(filename)
+            raise failure from None
+        if registration.omitted:
+            raise SourceAddError(
+                filename,
+                message=(
+                    f"Failed to register file source {filename!r}: "
+                    "the backend omitted its registration."
+                ),
+            )
+        if registration.ambiguous or registration.source_id is None:
+            raise _unresolved_file_registration_error(filename)
+        return registration.source_id
+
+    async def _wait_uploaded_source(
+        self,
+        notebook_id: str,
+        source_id: str,
+        timeout: float,
+        expected_epoch: int,
+        *,
+        ready: bool,
+    ) -> Source:
+        deadline = RuntimeDeadline.start(timeout)
+        last_status: int | None = None
+        while not deadline.expired():
+            response = await self._transport.unary(
+                GET_PROJECT_METHOD,
+                _READ_PROTO.GetProjectRequest(
+                    project_id=notebook_id,
+                    include_audio_overview_ids=True,
+                ),
+                replay_safe=True,
+                response_type=_READ_PROTO.GetProjectResponse,
+                expected_epoch=expected_epoch,
+                timeout=deadline.remaining(),
+            )
+            decode_project(response.project, method_id=GET_PROJECT_METHOD)
+            matches = []
+            for row in response.project.sources:
+                try:
+                    raw_id = row.source_id.id if row.HasField("source_id") else ""
+                except Exception:
+                    continue
+                if raw_id == source_id:
+                    matches.append(row)
+            if len(matches) > 1:
+                raise DecodingError(
+                    "Android upload polling returned duplicate source ids",
+                    method_id=GET_PROJECT_METHOD,
+                )
+            if matches:
+                row = next(iter(matches))
+                last_status = row.settings.status if row.HasField("settings") else 0
+                if last_status == _SETTINGS_PROTO.SOURCE_STATUS_ERROR:
+                    raise SourceProcessingError(source_id, status=last_status)
+                accepted = (
+                    last_status == _SETTINGS_PROTO.SOURCE_STATUS_COMPLETE
+                    if ready
+                    else last_status
+                    in {
+                        _SETTINGS_PROTO.SOURCE_STATUS_PENDING,
+                        _SETTINGS_PROTO.SOURCE_STATUS_COMPLETE,
+                    }
+                )
+                if accepted:
+                    return decode_source(row, method_id=GET_PROJECT_METHOD)
+            remaining = deadline.remaining()
+            if remaining <= 0.0:
+                break
+            await asyncio.sleep(min(0.5, remaining))
+        raise SourceTimeoutError(source_id, timeout, last_status)
+
+    async def _wait_uploaded_registered(
+        self,
+        notebook_id: str,
+        source_id: str,
+        timeout: float,
+        expected_epoch: int,
+    ) -> Source:
+        return await self._wait_uploaded_source(
+            notebook_id,
+            source_id,
+            timeout,
+            expected_epoch,
+            ready=False,
+        )
+
+    async def _wait_uploaded_ready(
+        self,
+        notebook_id: str,
+        source_id: str,
+        timeout: float,
+        expected_epoch: int,
+    ) -> Source:
+        return await self._wait_uploaded_source(
+            notebook_id,
+            source_id,
+            timeout,
+            expected_epoch,
+            ready=True,
+        )
+
+    async def _rename_uploaded(
+        self,
+        notebook_id: str,
+        source_id: str,
+        new_title: str,
+        expected_epoch: int,
+    ) -> str | None:
+        del notebook_id
+        response = await self._transport.unary(
+            MUTATE_SOURCE_METHOD,
+            _MUTATION_WIRE.MutateSourceWireRequest(
+                source_id=_READ_PROTO.SourceId(id=source_id),
+                mutations=[
+                    _MUTATION_WIRE.SourceMutation(
+                        change_title=_MUTATION_WIRE.ChangeTitle(title=new_title)
+                    )
+                ],
+            ),
+            replay_safe=False,
+            response_type=_READ_PROTO.Source,
+            expected_epoch=expected_epoch,
+        )
+        echoed_id = response.source_id.id if response.HasField("source_id") else ""
+        if echoed_id and echoed_id != source_id:
+            raise DecodingError(
+                "Android source mutation returned an unexpected source id",
+                method_id=MUTATE_SOURCE_METHOD,
+            )
+        return response.title or None
 
     async def _read_commit_proofs(
         self,
@@ -602,7 +784,32 @@ class AndroidSourcesAPI(SourcesAPI):
         title: str | None = None,
         on_progress: Callable[[int, int], object] | None = None,
     ) -> Source:
-        _reject("sources.add_file")
+        adapter = self
+        result: Source | None = None
+        failure: BaseException | None = None
+        try:
+            result = await adapter._upload_pipeline.upload_pdf(
+                notebook_id,
+                file_path,
+                mime_type,
+                wait=wait,
+                wait_timeout=wait_timeout,
+                title=title,
+                on_progress=on_progress,
+                register_tentative=adapter._register_file_tentative,
+                wait_until_registered=adapter._wait_uploaded_registered,
+                wait_until_ready=adapter._wait_uploaded_ready,
+                rename_uploaded=adapter._rename_uploaded,
+            )
+        except BaseException as error:
+            from .errors import sanitize_escaping_exception
+
+            failure = sanitize_escaping_exception(error)
+        finally:
+            del self, adapter
+        if failure is not None:
+            raise failure
+        return cast(Source, result)
 
     async def add_drive(
         self,

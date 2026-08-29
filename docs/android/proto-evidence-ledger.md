@@ -1,13 +1,13 @@
 # Android protobuf evidence ledger
 
-**Status:** admitted B1 read closure plus B2 notebook, B3 source, B4 artifact, and B5 chat overlays
+**Status:** admitted B1 read closure plus B2 notebook, B3/B3b source, B4 artifact, and B5 chat overlays
 
 **Evidence snapshot:** 2026-08-28
 
 **Scope:** B1 project/source reads, B2 notebook operations, the B3 URL/maintenance/flat-content
-slice, and B4 artifact list/get/create/update/delete plus its repository-local wire-equivalent
-report-suggestion overlay, plus the private/direct-test B5 chat surface (`ListChatSessions`,
-`ListChatTurns`, `DeleteChatTurns`, and `GenerateFreeFormStreamed`)
+slice and B3b PDF transaction, B4 artifact list/get/create/update/delete plus its repository-local
+wire-equivalent report-suggestion overlay, and the private/direct-test B5 chat surface
+(`ListChatSessions`, `ListChatTurns`, `DeleteChatTurns`, and `GenerateFreeFormStreamed`)
 
 This ledger is the admission boundary for `src/notebooklm/_android/proto_src/`. The recovered
 [`schema.proto`](schema.proto) is Dart-AOT evidence, not a compile input: it flattened several
@@ -32,7 +32,7 @@ later local checkout from silently changing what was admitted.
 | [`schema.proto`](schema.proto) | `aa9f49d302ff9a64cc16d08b2f2f9031f77a348b3707dd98df37be91a67355ec` | flattened Dart recovery used to identify gaps, never as a compile input; hash includes the curated `docs/android/` path comments |
 | [`enums.txt`](enums.txt) | `8c8137c1842d07b54ba9e52feeea7c3ce09246415c26d964d17bec68eee228bc` | exhaustive enum names and integers |
 | exact method manifest | `c2cf4bf2e6cdefd35232f01572070fbe07d11ef9bad99b556f76b5e3748f38a3` | full method paths, request/response FQNs, unary cardinality |
-| [`file-transfer-live-validation-2026-08-27.md`](file-transfer-live-validation-2026-08-27.md) | `c713a7cfe5058482aa8fc9a0201ad08487296700223f23829842795f85713107` | live `ListArtifacts` representations and direct infographic PNG transfer |
+| [`file-transfer-live-validation-2026-08-27.md`](file-transfer-live-validation-2026-08-27.md) | `c713a7cfe5058482aa8fc9a0201ad08487296700223f23829842795f85713107` | official-app/headless PDF upload request and live artifact representation/direct infographic PNG transfer |
 | [`web-parity-gap-live-validation-2026-08-27.md`](web-parity-gap-live-validation-2026-08-27.md) | `c0a3a16b2ff0eba18395e5a53ae2ebddb3b299d8b2cae0d6d868a3e294b08251` | live delete, rename/read-back and report-suggestion response cardinality |
 | [`endpoints.md`](endpoints.md) | `57467b424515cf0dfa4c3e08c636ab6a8d0bfddbe5701cf50675ea39338e4e62` | live request/response envelopes and route results |
 
@@ -327,7 +327,7 @@ The exact-package `supported.proto` snapshot above also supplies the orchestrati
 field tags/cardinality, import boundary, and service method manifest for `AddTentativeSources`,
 `AddSources`, `DeleteSources`, `GenerateDocumentGuides`, and `LoadSource`. B3 copies only the fields
 its builders and codecs reach into
-`google/internal/labs/tailwind/orchestration/v1/b3_sources.proto`; it imports the B1 types rather
+`google/internal/labs/tailwind/orchestration/v1/sources.proto`; it imports the B1 types rather
 than redeclaring `Source` or `SourceId`. The overlay intentionally declares no service: the runtime
 uses the evidence-qualified full method paths through `AndroidSession`'s generic typed callable,
 so a second partial service descriptor cannot diverge from B1's checked service.
@@ -350,7 +350,7 @@ so a second partial service descriptor cannot diverge from B1's checked service.
 | `orchestration.v1.DocumentGuide` | `source #1`, `snippet #2`, `main_ideas #3` | exact closure; exact-ID guide projection |
 | `orchestration.v1.GenerateDocumentGuidesRequest/Response` | repeated `sources #1` / repeated `guides #1` | exact method closure |
 | `orchestration.v1.TentativeSourceMetadata` | `name #1` | exact closure; bijective correlation key |
-| `orchestration.v1.AddTentativeSourcesRequest` | repeated metadata `#1`, `project_id #2` | exact closure; B3 does not admit context/provenance |
+| `orchestration.v1.AddTentativeSourcesRequest` | repeated metadata `#1`, `project_id #2`, `request_context #3`, `provenance #4` | exact closure; B3 URL builders leave #3/#4 absent, B3b PDF registration populates them |
 | `orchestration.v1.AddTentativeSourcesResponse` | repeated `tentative_sources #1` | exact wrapper |
 | `orchestration.v1.WebContent` | `url #1` | exact closure; outbound URL bytes |
 | `orchestration.v1.UserContent` | `web_content #3`, `tentative_source_id #9` | exact closure; URL commit branch |
@@ -362,6 +362,31 @@ so a second partial service descriptor cannot diverge from B1's checked service.
 `WebContent.source_name #2`, the YouTube branch, text/Drive branches, freshness/refresh, and the
 deep TailwindDoc grammar are omitted because B3 neither populates nor decodes them. Their presence
 in the flattened recovery is not a reachability reason.
+
+## B3b exact-package PDF upload admission
+
+The upload closure does not infer packages from the flattened message list. The independently
+recovered Dart library boundaries in [`schema.proto`](schema.proto) name
+`google.internal.labs.tailwind.orchestration.v1/labs_tailwind_orchestration_service.pb.dart`,
+`labs.language.tailwind.common.protos/metadata.pb.dart`, and
+`labs.language.tailwind.common.protos/provenance.pb.dart`. Those package/library identities,
+together with the exhaustive nested enum inventory in [`enums.txt`](enums.txt), admit the exact
+FQNs below. The live report then proves that every declared field is reachable in the successful
+PDF request. No capability, execution-mode, app-API, or unused provenance field is copied.
+
+| Package.Message | Fields/enums admitted | Evidence/use |
+|---|---|---|
+| `common.protos.ClientInfo` | nested `ApplicationPlatform { UNSPECIFIED=0, NATIVE=2 }`; nested `Device { UNSPECIFIED=0, MOBILE_ANDROID=1 }`; `application_platform #1`, `device #2`, `application_version #3` | exact Dart library boundary + exhaustive enum dump; both registration and start JSON provenance |
+| `common.protos.Provenance` | nested `OriginProductType { UNSPECIFIED=0, GOOGLE_NOTEBOOKLM=1 }`; `origin_product_type #1`, `client_info #11` | exact Dart library boundary + successful live body |
+| `common.protos.ClientType` | `UNKNOWN=0`, `ANDROID_APP=3` | exact enum inventory; registration context |
+| `common.protos.ClientMetadata` | `client_version #1` | exact Dart library boundary; captured app version |
+| `common.protos.RequestContext` | `client_type #1`, `client_metadata #2`, `provenance #4` | exact Dart library boundary; unreachable fields #3/#5/#6 omitted |
+| `orchestration.v1.UploadFileRequest` | `project_id #3`, `request_context #4`, `source_id #5`, `provenance #6` | exact orchestration Dart library boundary + structurally matched successful start JSON |
+
+`UploadFileRequest` is used as a deterministic binary descriptor/field-number gate. Runtime JSON
+is an explicit captured-field builder, not a generic protobuf-to-dictionary layer. The only B3b
+registration route remains the already admitted `AddTentativeSources` unary method, always
+non-replayed. Scotty start/finalize are HTTP and add no guessed gRPC service declarations.
 
 ### Repository-local MutateSource overlay
 

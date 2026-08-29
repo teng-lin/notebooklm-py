@@ -11,8 +11,8 @@ from google.protobuf.descriptor import FieldDescriptor
 
 from notebooklm._android.codecs.chat import decode_document, decode_references
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
-    b3_sources_pb2,
     b5_chat_pb2,
+    sources_pb2,
 )
 from notebooklm._android.proto.labs.language.tailwind.common.protos import chat_history_pb2
 
@@ -53,7 +53,7 @@ def test_b5_packages_imports_and_service_free_overlay_are_exact() -> None:
     assert chat_history_pb2.DESCRIPTOR.package == COMMON_PACKAGE
     assert [dependency.name for dependency in b5_chat_pb2.DESCRIPTOR.dependencies] == [
         "google/internal/labs/tailwind/orchestration/v1/b1_read.proto",
-        "google/internal/labs/tailwind/orchestration/v1/b3_sources.proto",
+        "google/internal/labs/tailwind/orchestration/v1/sources.proto",
         "google/protobuf/timestamp.proto",
         "labs/language/tailwind/common/protos/chat_history.proto",
     ]
@@ -75,7 +75,7 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
     o = ORCHESTRATION_PACKAGE
 
     expected = {
-        b3_sources_pb2.InputSource: {
+        sources_pb2.InputSource: {
             "source_id": (1, singular, message, f"{o}.SourceId"),
         },
         b5_chat_pb2.ConversationEvent: {
@@ -197,7 +197,7 @@ def test_b5_request_response_fields_are_exhaustive() -> None:
     assert {
         message_type.DESCRIPTOR.name
         for message_type in expected
-        if message_type is not b3_sources_pb2.InputSource
+        if message_type is not sources_pb2.InputSource
     } == set(b5_chat_pb2.DESCRIPTOR.message_types_by_name)
     for message_type, fields in expected.items():
         assert _field_shapes(message_type) == fields

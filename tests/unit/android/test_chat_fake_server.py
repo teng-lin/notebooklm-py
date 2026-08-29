@@ -14,8 +14,8 @@ import pytest
 from notebooklm._android.auth import BearerCredential
 from notebooklm._android.chat import AndroidChatAPI
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
-    b3_sources_pb2,
     b5_chat_pb2,
+    sources_pb2,
 )
 from notebooklm._android.proto.labs.language.tailwind.common.protos import chat_history_pb2
 from notebooklm._android.session import AndroidSession
@@ -169,7 +169,7 @@ async def test_base_ask_over_real_android_session_and_fake_grpc_server() -> None
     ]
     assert service.generate_requests == [
         b5_chat_pb2.GenerateFreeFormStreamedRequest(
-            sources=[b3_sources_pb2.InputSource(source_id={"id": "source-1"})],
+            sources=[sources_pb2.InputSource(source_id={"id": "source-1"})],
             user_query="Question?",
             user_message_id="00000000-0000-4000-8000-000000000123",
             project_id="notebook-1",

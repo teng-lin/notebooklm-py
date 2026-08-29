@@ -1,0 +1,869 @@
+"""Offline Android PDF upload wire, lifecycle, and security tests."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import traceback
+from collections import deque
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, cast
+
+import httpx
+import pytest
+
+from notebooklm._android.auth import BearerCredential, BearerProvider
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
+    b1_read_pb2,
+    sources_pb2,
+)
+from notebooklm._android.proto.google.internal.labs.tailwind.v1 import source_settings_pb2
+from notebooklm._android.session import AndroidSession
+from notebooklm._android.sources import (
+    ADD_TENTATIVE_SOURCES_METHOD,
+    GET_PROJECT_METHOD,
+    MUTATE_SOURCE_METHOD,
+    AndroidSourcesAPI,
+)
+from notebooklm._android.upload import (
+    AndroidUploadPipeline,
+    build_upload_start_body,
+    validate_upload_session_url,
+)
+from notebooklm._curl_cffi_transport import CurlCffiAsyncClient
+from notebooklm.exceptions import (
+    RPCError,
+    SourceAddError,
+    SourceProcessingError,
+    SourceTimeoutError,
+    UnsupportedOperationError,
+    ValidationError,
+)
+from notebooklm.types import SourceStatus
+
+NOTEBOOK_ID = "00000000-0000-4000-8000-000000000200"
+SOURCE_ID = "00000000-0000-4000-8000-000000000201"
+SESSION_URL = (
+    f"https://notebooklm-pa.googleapis.com/upload/upload/{NOTEBOOK_ID}"
+    "?upload_id=session-capability&upload_protocol=resumable"
+)
+_READ = cast(Any, b1_read_pb2)
+_WRITE = cast(Any, sources_pb2)
+_SETTINGS = cast(Any, source_settings_pb2)
+
+
+@dataclass(frozen=True)
+class _Lease:
+    epoch: int
+
+
+class FakeSession:
+    def __init__(self) -> None:
+        self.epoch = 7
+        self.calls: list[tuple[str, Any, dict[str, Any]]] = []
+        self.handlers: dict[str, Any] = {}
+        self.scopes: list[str] = []
+
+    @asynccontextmanager
+    async def operation_scope(self, label: str, **kwargs: Any) -> AsyncIterator[_Lease]:
+        assert not kwargs
+        self.scopes.append(label)
+        yield _Lease(self.epoch)
+
+    def assert_epoch(self, expected_epoch: int) -> None:
+        if expected_epoch != self.epoch:
+            raise RuntimeError("retired fake epoch")
+
+    async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        self.calls.append((method, request, kwargs))
+        result = self.handlers[method]
+        if isinstance(result, deque):
+            result = result.popleft()
+        if callable(result):
+            result = result(request, kwargs)
+        if isinstance(result, BaseException):
+            raise result
+        return result
+
+
+class FakeBearerProvider:
+    def __init__(self) -> None:
+        self.calls: list[int] = []
+        self.invalidated: list[int] = []
+
+    async def get(self, expected_epoch: int) -> BearerCredential:
+        self.calls.append(expected_epoch)
+        generation = len(self.calls)
+        return BearerCredential(token=f"bearer-secret-{generation}", generation=generation)
+
+    def invalidate(self, generation: int) -> None:
+        self.invalidated.append(generation)
+
+
+@dataclass
+class _HTTPCall:
+    method: str
+    url: str
+    headers: dict[str, str]
+    body: bytes
+    follow_redirects: bool
+
+
+class HTTPHarness:
+    def __init__(self) -> None:
+        self.start_status = 200
+        self.start_headers: list[tuple[str, str]] = [
+            ("X-Goog-Upload-Status", "active"),
+            ("X-Goog-Upload-URL", SESSION_URL),
+        ]
+        self.final_status = 200
+        self.final_headers: list[tuple[str, str]] = [("X-Goog-Upload-Status", "final")]
+        self.calls: list[_HTTPCall] = []
+        self.factory_kwargs: list[dict[str, Any]] = []
+        self.clients: list[FakeHTTPClient] = []
+        self.post_started = asyncio.Event()
+        self.put_started = asyncio.Event()
+        self.block_post: asyncio.Event | None = None
+        self.block_put: asyncio.Event | None = None
+        self.put_error: BaseException | None = None
+
+    def factory(self, **kwargs: Any) -> FakeHTTPClient:
+        self.factory_kwargs.append(kwargs)
+        client = FakeHTTPClient(self)
+        self.clients.append(client)
+        return client
+
+
+class FakeHTTPClient:
+    def __init__(self, harness: HTTPHarness) -> None:
+        self.harness = harness
+        self.closed = False
+
+    async def __aenter__(self) -> FakeHTTPClient:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        await self.aclose()
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+    async def post(
+        self,
+        url: str,
+        *,
+        headers: Mapping[str, str],
+        content: bytes,
+        follow_redirects: bool,
+    ) -> httpx.Response:
+        self.harness.post_started.set()
+        self.harness.calls.append(
+            _HTTPCall("POST", url, dict(headers), bytes(content), follow_redirects)
+        )
+        if self.harness.block_post is not None:
+            await self.harness.block_post.wait()
+        return httpx.Response(
+            self.harness.start_status,
+            headers=self.harness.start_headers,
+            request=httpx.Request("POST", url),
+        )
+
+    async def put(
+        self,
+        url: str,
+        *,
+        headers: Mapping[str, str],
+        content: Any,
+        follow_redirects: bool,
+    ) -> httpx.Response:
+        self.harness.put_started.set()
+        if self.harness.block_put is not None:
+            await self.harness.block_put.wait()
+        if self.harness.put_error is not None:
+            raise self.harness.put_error
+        body = bytearray()
+        async for chunk in content:
+            body.extend(chunk)
+        self.harness.calls.append(
+            _HTTPCall("PUT", url, dict(headers), bytes(body), follow_redirects)
+        )
+        return httpx.Response(
+            self.harness.final_status,
+            headers=self.harness.final_headers,
+            request=httpx.Request("PUT", url),
+        )
+
+
+class FakeCurlHTTPClient(CurlCffiAsyncClient):
+    """Curl-branch request spy without importing or constructing curl_cffi."""
+
+    def __init__(self, harness: HTTPHarness) -> None:
+        self.harness = harness
+        self.closed = False
+
+    async def __aenter__(self) -> FakeCurlHTTPClient:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        await self.aclose()
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+    async def post(self, url: str, **kwargs: Any) -> httpx.Response:
+        headers = dict(kwargs["headers"])
+        self.harness.calls.append(
+            _HTTPCall(
+                "POST",
+                url,
+                headers,
+                bytes(kwargs["content"]),
+                kwargs["follow_redirects"],
+            )
+        )
+        return httpx.Response(
+            self.harness.start_status,
+            headers=self.harness.start_headers,
+            request=httpx.Request("POST", url),
+        )
+
+    async def stream_upload(
+        self,
+        url: str,
+        source: Any,
+        *,
+        total_bytes: int,
+        headers: Mapping[str, str],
+        method: str = "POST",
+        on_chunk: Callable[[int], Awaitable[None]] | None = None,
+        overall_timeout: float | None = None,
+        stop_on_cancel: bool = False,
+    ) -> httpx.Response:
+        assert overall_timeout is not None
+        assert stop_on_cancel is True
+        body = bytearray()
+        while chunk := source.read(65536):
+            body.extend(chunk)
+            if on_chunk is not None:
+                await on_chunk(len(chunk))
+        assert len(body) == total_bytes
+        self.harness.calls.append(
+            _HTTPCall(method, url, dict(headers), bytes(body), False)
+        )
+        return httpx.Response(
+            self.harness.final_status,
+            headers=self.harness.final_headers,
+            request=httpx.Request(method, url),
+        )
+
+
+def _pdf_source(
+    status: int,
+    *,
+    title: str = "document.pdf",
+) -> Any:
+    return _READ.Source(
+        source_id=_READ.SourceId(id=SOURCE_ID),
+        title=title,
+        metadata=_READ.SourceMetadata(
+            original_source_content_type=_READ.SOURCE_CONTENT_TYPE_PDF
+        ),
+        settings=_SETTINGS.SourceSettings(status=status),
+    )
+
+
+def _project(status: int, *, title: str = "document.pdf") -> Any:
+    return _READ.GetProjectResponse(
+        project=_READ.Project(
+            id=NOTEBOOK_ID,
+            title="Notebook",
+            sources=[_pdf_source(status, title=title)],
+        )
+    )
+
+
+async def _graph(
+    harness: HTTPHarness,
+    *,
+    upload_timeout: float = 2.0,
+    curl: bool = False,
+) -> tuple[FakeSession, FakeBearerProvider, AndroidUploadPipeline, AndroidSourcesAPI]:
+    session = FakeSession()
+    bearer = FakeBearerProvider()
+
+    def _registration(request: Any, kwargs: dict[str, Any]) -> Any:
+        assert kwargs["replay_safe"] is False
+        assert kwargs["expected_epoch"] == session.epoch
+        filename = request.tentative_sources_metadata[0].name
+        return _WRITE.AddTentativeSourcesResponse(
+            tentative_sources=[_pdf_source(0, title=filename)]
+        )
+
+    session.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _registration
+    session.handlers[GET_PROJECT_METHOD] = _project(
+        _SETTINGS.SOURCE_STATUS_COMPLETE
+    )
+    session.handlers[MUTATE_SOURCE_METHOD] = _READ.Source()
+
+    factory: Callable[..., Any]
+    if curl:
+        def factory(**kwargs: Any) -> FakeCurlHTTPClient:
+            harness.factory_kwargs.append(kwargs)
+            client = FakeCurlHTTPClient(harness)
+            harness.clients.append(cast(FakeHTTPClient, client))
+            return client
+    else:
+        factory = harness.factory
+
+    pipeline = AndroidUploadPipeline(
+        session=cast(AndroidSession, session),
+        bearer_provider=cast(BearerProvider, bearer),
+        upload_timeout=upload_timeout,
+        async_client_factory=factory,
+    )
+    loop = asyncio.get_running_loop()
+    pipeline.set_bound_loop(loop)
+    pipeline.reset_after_open()
+    await pipeline.open(loop, session.epoch)
+    return session, bearer, pipeline, AndroidSourcesAPI(cast(AndroidSession, session), pipeline)
+
+
+def _write_pdf(tmp_path: Path, size: int = 140_000) -> tuple[Path, bytes]:
+    content = b"%PDF-1.7\n" + b"x" * (size - 9)
+    path = tmp_path / "document.pdf"
+    path.write_bytes(content)
+    return path, content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("curl", [False, True], ids=["httpx", "curl-cffi"])
+async def test_pdf_synthetic_branch_pins_wire_headers_body_progress_and_fresh_bearers(
+    tmp_path: Path,
+    curl: bool,
+) -> None:
+    harness = HTTPHarness()
+    session, bearer, _, api = await _graph(harness, curl=curl)
+    path, content = _write_pdf(tmp_path)
+    progress: list[tuple[int, int]] = []
+
+    result = await api.add_file(
+        NOTEBOOK_ID,
+        path,
+        on_progress=lambda sent, total: progress.append((sent, total)),
+    )
+
+    assert result.id == SOURCE_ID
+    assert result.title == path.name
+    assert result.status is SourceStatus.PROCESSING
+    assert session.scopes == ["Android source upload"]
+    assert [call[0] for call in session.calls] == [ADD_TENTATIVE_SOURCES_METHOD]
+    registration = session.calls[0][1]
+    assert registration.tentative_sources_metadata[0].name == path.name
+    assert registration.request_context.client_type == 3
+    assert registration.request_context.client_metadata.client_version == "1.46.7.940945420"
+    assert registration.provenance.origin_product_type == 1
+    assert bearer.calls == [7, 7]
+    assert bearer.invalidated == []
+    assert [call.method for call in harness.calls] == ["POST", "PUT"]
+    start, final = harness.calls
+    assert start.url == f"https://notebooklm-pa.googleapis.com/upload/upload/{NOTEBOOK_ID}"
+    assert start.follow_redirects is False
+    assert json.loads(start.body) == json.loads(build_upload_start_body(NOTEBOOK_ID, SOURCE_ID))
+    assert start.headers == {
+        "Authorization": "Bearer bearer-secret-1",
+        "Content-Type": "text/plain; charset=utf-8",
+        "User-Agent": "NotebookLM/1.46.7.940945420 (Android 16; sdk_gphone64_arm64)",
+        "X-Goog-Upload-Command": "start",
+        "X-Goog-Upload-File-Name": path.name,
+        "X-Goog-Upload-Header-Content-Length": str(len(content)),
+        "X-Goog-Upload-Header-Content-Type": "application/pdf",
+        "X-Goog-Upload-Protocol": "resumable",
+    }
+    assert final.url == SESSION_URL
+    assert final.body == content
+    assert final.headers == {
+        "Authorization": "Bearer bearer-secret-2",
+        "User-Agent": "Dart/3.13 (dart:io)",
+        "Content-Length": str(len(content)),
+        "X-Goog-Upload-Command": "upload, finalize",
+        "X-Goog-Upload-Offset": "0",
+    }
+    assert progress[-1] == (len(content), len(content))
+    assert [sent for sent, _ in progress] == sorted(sent for sent, _ in progress)
+    assert all(client.closed for client in harness.clients)
+    assert all(kwargs["follow_redirects"] is False for kwargs in harness.factory_kwargs)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("wait", "custom_title", "raw_status", "expected_status", "expect_mutation"),
+    [
+        (False, "Custom", _SETTINGS.SOURCE_STATUS_PENDING, SourceStatus.PROCESSING, True),
+        (True, None, _SETTINGS.SOURCE_STATUS_COMPLETE, SourceStatus.READY, False),
+        (True, "Custom", _SETTINGS.SOURCE_STATUS_COMPLETE, SourceStatus.READY, True),
+    ],
+)
+async def test_waiting_branches_use_one_exact_read_then_optional_no_readback_title(
+    tmp_path: Path,
+    wait: bool,
+    custom_title: str | None,
+    raw_status: int,
+    expected_status: SourceStatus,
+    expect_mutation: bool,
+) -> None:
+    harness = HTTPHarness()
+    session, _, _, api = await _graph(harness)
+    path, _ = _write_pdf(tmp_path)
+    session.handlers[GET_PROJECT_METHOD] = _project(raw_status)
+
+    result = await api.add_file(
+        NOTEBOOK_ID,
+        path,
+        wait=wait,
+        wait_timeout=0.2,
+        title=custom_title,
+    )
+
+    assert result.status is expected_status
+    assert result.title == (custom_title or path.name)
+    methods = [call[0] for call in session.calls]
+    assert methods.count(GET_PROJECT_METHOD) == 1
+    assert methods.count(MUTATE_SOURCE_METHOD) == int(expect_mutation)
+    if expect_mutation:
+        assert methods[-1] == MUTATE_SOURCE_METHOD
+        assert session.calls[-1][2]["replay_safe"] is False
+        assert session.calls[-1][2]["expected_epoch"] == 7
+
+
+@pytest.mark.asyncio
+async def test_error_or_wait_timeout_never_dispatches_title_mutation(tmp_path: Path) -> None:
+    path, _ = _write_pdf(tmp_path)
+    for response, expected in [
+        (_project(_SETTINGS.SOURCE_STATUS_ERROR), SourceProcessingError),
+        (_project(_SETTINGS.SOURCE_STATUS_TENTATIVE), SourceTimeoutError),
+    ]:
+        harness = HTTPHarness()
+        session, _, _, api = await _graph(harness)
+        session.handlers[GET_PROJECT_METHOD] = response
+        with pytest.raises(expected):
+            await api.add_file(
+                NOTEBOOK_ID,
+                path,
+                wait=False,
+                wait_timeout=0.01,
+                title="Custom",
+            )
+        assert MUTATE_SOURCE_METHOD not in [call[0] for call in session.calls]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw_status",
+    [
+        0,
+        _SETTINGS.SOURCE_STATUS_TENTATIVE,
+        _SETTINGS.SOURCE_STATUS_PENDING_DELETION,
+        999,
+    ],
+)
+async def test_unaccepted_registration_statuses_time_out_without_title_mutation(
+    tmp_path: Path,
+    raw_status: int,
+) -> None:
+    harness = HTTPHarness()
+    session, _, _, api = await _graph(harness)
+    session.handlers[GET_PROJECT_METHOD] = _project(raw_status)
+    path, _ = _write_pdf(tmp_path)
+
+    with pytest.raises(SourceTimeoutError):
+        await api.add_file(
+            NOTEBOOK_ID,
+            path,
+            wait=False,
+            wait_timeout=0.01,
+            title="Custom",
+        )
+
+    assert MUTATE_SOURCE_METHOD not in [call[0] for call in session.calls]
+
+
+@pytest.mark.asyncio
+async def test_title_mutation_rpc_failure_is_best_effort_without_readback(tmp_path: Path) -> None:
+    harness = HTTPHarness()
+    session, _, _, api = await _graph(harness)
+    path, _ = _write_pdf(tmp_path)
+    session.handlers[GET_PROJECT_METHOD] = _project(_SETTINGS.SOURCE_STATUS_PENDING)
+    session.handlers[MUTATE_SOURCE_METHOD] = RPCError("safe", rpc_code=14)
+
+    result = await api.add_file(NOTEBOOK_ID, path, title="Custom")
+
+    assert result.title == path.name
+    assert [call[0] for call in session.calls].count(GET_PROJECT_METHOD) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "terminal",
+    [asyncio.CancelledError(), RuntimeError("retired epoch")],
+    ids=["cancellation", "lifecycle"],
+)
+async def test_title_cancellation_and_lifecycle_failure_propagate(
+    tmp_path: Path,
+    terminal: BaseException,
+) -> None:
+    harness = HTTPHarness()
+    session, _, _, api = await _graph(harness)
+    path, _ = _write_pdf(tmp_path)
+    session.handlers[GET_PROJECT_METHOD] = _project(_SETTINGS.SOURCE_STATUS_PENDING)
+    session.handlers[MUTATE_SOURCE_METHOD] = terminal
+
+    with pytest.raises(type(terminal)):
+        await api.add_file(NOTEBOOK_ID, path, title="Custom")
+
+    assert [call[0] for call in session.calls].count(MUTATE_SOURCE_METHOD) == 1
+
+
+@pytest.mark.asyncio
+async def test_non_pdf_and_blank_title_reject_before_filesystem_bearer_or_wire(tmp_path: Path) -> None:
+    harness = HTTPHarness()
+    session, bearer, _, api = await _graph(harness)
+    missing = tmp_path / "missing.txt"
+
+    with pytest.raises(UnsupportedOperationError) as unsupported:
+        await api.add_file(NOTEBOOK_ID, missing)
+    assert str(unsupported.value) == (
+        "sources.add_file for non-PDF files is not supported by the Android backend. "
+        "Use the web backend instead."
+    )
+    with pytest.raises(ValidationError, match="Title cannot be empty"):
+        await api.add_file(NOTEBOOK_ID, tmp_path / "missing.pdf", title="   ")
+    with pytest.raises(FileNotFoundError):
+        await api.add_file(NOTEBOOK_ID, tmp_path / "missing.pdf")
+
+    assert session.calls == []
+    assert bearer.calls == []
+    assert harness.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("registration_result", "unconfirmed"),
+    [
+        (_WRITE.AddTentativeSourcesResponse(), False),
+        (object(), True),
+        (RPCError("safe", rpc_code=14), True),
+    ],
+)
+async def test_registration_failure_never_starts_upload_replays_or_cleans_up(
+    tmp_path: Path,
+    registration_result: Any,
+    unconfirmed: bool,
+) -> None:
+    harness = HTTPHarness()
+    session, bearer, pipeline, api = await _graph(harness)
+    session.handlers[ADD_TENTATIVE_SOURCES_METHOD] = registration_result
+    path, _ = _write_pdf(tmp_path)
+
+    with pytest.raises(SourceAddError) as raised:
+        await api.add_file(NOTEBOOK_ID, path)
+
+    assert getattr(raised.value, "unconfirmed", False) is unconfirmed
+    assert raised.value.cause is None
+    if unconfirmed:
+        assert str(raised.value) == (
+            "Android PDF upload tentative registration outcome is unconfirmed "
+            "for 'document.pdf'."
+        )
+        assert cast(Any, raised.value).stage == "register"
+        assert "URL add" not in str(raised.value)
+    assert [call[0] for call in session.calls] == [ADD_TENTATIVE_SOURCES_METHOD]
+    assert bearer.calls == []
+    assert harness.calls == []
+    assert pipeline._open_files == set()
+
+
+@pytest.mark.asyncio
+async def test_registration_cancellation_propagates_and_closes_descriptor(tmp_path: Path) -> None:
+    harness = HTTPHarness()
+    session, bearer, pipeline, api = await _graph(harness)
+    session.handlers[ADD_TENTATIVE_SOURCES_METHOD] = asyncio.CancelledError()
+    path, _ = _write_pdf(tmp_path)
+
+    with pytest.raises(asyncio.CancelledError):
+        await api.add_file(NOTEBOOK_ID, path)
+
+    assert bearer.calls == []
+    assert harness.calls == []
+    assert pipeline._open_files == set()
+
+
+@pytest.mark.asyncio
+async def test_filename_title_is_not_custom_and_performs_zero_project_reads(tmp_path: Path) -> None:
+    harness = HTTPHarness()
+    session, _, _, api = await _graph(harness)
+    path, _ = _write_pdf(tmp_path)
+
+    result = await api.add_file(NOTEBOOK_ID, path, title=f"  {path.name}  ")
+
+    assert result.title == path.name
+    assert [call[0] for call in session.calls] == [ADD_TENTATIVE_SOURCES_METHOD]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        SESSION_URL.replace("https://", "http://"),
+        SESSION_URL.replace("notebooklm-pa.googleapis.com", "evil.invalid"),
+        SESSION_URL.replace("https://", "https://user:pass@"),
+        SESSION_URL + "#fragment",
+        SESSION_URL.replace("/upload/upload/", "/upload%2Fupload/"),
+        SESSION_URL.replace(NOTEBOOK_ID, SOURCE_ID),
+        SESSION_URL + "&unknown=1",
+        SESSION_URL + "&upload_id=second",
+        SESSION_URL.replace("upload_protocol=resumable", "upload_protocol=other"),
+        SESSION_URL.replace("upload_id=session-capability", "upload_id="),
+        SESSION_URL.replace("?", "?upload_id=one,") ,
+        SESSION_URL + "\r\nX-Evil: 1",
+    ],
+)
+def test_session_url_validator_rejects_noncanonical_capabilities(url: str) -> None:
+    with pytest.raises(ValidationError, match="Invalid Android upload session"):
+        validate_upload_session_url(url, NOTEBOOK_ID)
+
+
+def test_session_url_validator_preserves_the_original_valid_capability() -> None:
+    explicit_port = SESSION_URL.replace(
+        "notebooklm-pa.googleapis.com", "notebooklm-pa.googleapis.com:443"
+    )
+    assert validate_upload_session_url(explicit_port, NOTEBOOK_ID) is explicit_port
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage", ["start", "finalize"])
+@pytest.mark.parametrize("status", [302, 401, 403, 500])
+async def test_http_failure_never_replays_or_cleans_up_and_only_401_invalidates(
+    tmp_path: Path,
+    stage: str,
+    status: int,
+) -> None:
+    harness = HTTPHarness()
+    if stage == "start":
+        harness.start_status = status
+    else:
+        harness.final_status = status
+    session, bearer, _, api = await _graph(harness)
+    path, _ = _write_pdf(tmp_path)
+
+    with pytest.raises(SourceAddError) as raised:
+        await api.add_file(NOTEBOOK_ID, path)
+
+    assert cast(Any, raised.value).source_id == SOURCE_ID
+    assert cast(Any, raised.value).stage == stage
+    assert raised.value.cause is None
+    assert [call.method for call in harness.calls].count(
+        "POST" if stage == "start" else "PUT"
+    ) == 1
+    assert all("Delete" not in call[0] for call in session.calls)
+    expected_generation = 1 if stage == "start" else 2
+    assert bearer.invalidated == ([expected_generation] if status == 401 else [])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "headers",
+    [
+        [("X-Goog-Upload-Status", "active")],
+        [("X-Goog-Upload-Status", "active, final"), ("X-Goog-Upload-URL", SESSION_URL)],
+        [
+            ("X-Goog-Upload-Status", "active"),
+            ("X-Goog-Upload-URL", SESSION_URL),
+            ("X-Goog-Upload-URL", SESSION_URL),
+        ],
+        [("X-Goog-Upload-Status", "active"), ("X-Goog-Upload-URL", SESSION_URL + ",x")],
+    ],
+)
+async def test_malformed_start_headers_fail_closed_before_second_bearer(
+    tmp_path: Path,
+    headers: list[tuple[str, str]],
+) -> None:
+    harness = HTTPHarness()
+    harness.start_headers = headers
+    _, bearer, _, api = await _graph(harness)
+    path, _ = _write_pdf(tmp_path)
+
+    with pytest.raises(SourceAddError, match="start"):
+        await api.add_file(NOTEBOOK_ID, path)
+
+    assert bearer.calls == [7]
+    assert [call.method for call in harness.calls] == ["POST"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "headers",
+    [
+        [],
+        [("X-Goog-Upload-Status", "active")],
+        [
+            ("X-Goog-Upload-Status", "final"),
+            ("X-Goog-Upload-Status", "final"),
+        ],
+        [("X-Goog-Upload-Status", "final, active")],
+    ],
+)
+async def test_malformed_finalize_headers_fail_once_and_close_body(
+    tmp_path: Path,
+    headers: list[tuple[str, str]],
+) -> None:
+    harness = HTTPHarness()
+    harness.final_headers = headers
+    _, bearer, pipeline, api = await _graph(harness)
+    path, _ = _write_pdf(tmp_path)
+
+    with pytest.raises(SourceAddError) as raised:
+        await api.add_file(NOTEBOOK_ID, path)
+
+    assert cast(Any, raised.value).stage == "finalize"
+    assert bearer.calls == [7, 7]
+    assert [call.method for call in harness.calls] == ["POST", "PUT"]
+    assert pipeline._open_files == set()
+
+
+@pytest.mark.asyncio
+async def test_one_aggregate_timeout_closes_client_body_and_dispatches_no_finalize(
+    tmp_path: Path,
+) -> None:
+    harness = HTTPHarness()
+    harness.block_post = asyncio.Event()
+    _, bearer, pipeline, api = await _graph(harness, upload_timeout=0.02)
+    path, _ = _write_pdf(tmp_path)
+
+    with pytest.raises(SourceAddError, match="timed out") as raised:
+        await api.add_file(NOTEBOOK_ID, path)
+
+    assert cast(Any, raised.value).stage == "start"
+    assert bearer.calls == [7]
+    assert [call.method for call in harness.calls] == ["POST"]
+    assert all(client.closed for client in harness.clients)
+    assert pipeline._open_files == set()
+
+
+@pytest.mark.asyncio
+async def test_forced_close_cancels_old_body_and_reopen_uses_only_new_epoch(
+    tmp_path: Path,
+) -> None:
+    harness = HTTPHarness()
+    harness.block_put = asyncio.Event()
+    session, bearer, pipeline, api = await _graph(harness)
+    path, _ = _write_pdf(tmp_path)
+    old = asyncio.create_task(api.add_file(NOTEBOOK_ID, path))
+    await asyncio.wait_for(harness.put_started.wait(), timeout=1.0)
+
+    await pipeline.prepare_close()
+    with pytest.raises(RuntimeError, match="transport close"):
+        await old
+    assert pipeline._open_files == set()
+    assert all(client.closed for client in harness.clients)
+    assert [call.method for call in harness.calls] == ["POST"]
+
+    session.epoch = 8
+    harness.block_put = None
+    pipeline.reset_after_open()
+    await pipeline.open(asyncio.get_running_loop(), 8)
+    reopened = await api.add_file(NOTEBOOK_ID, path)
+    assert reopened.id == SOURCE_ID
+    assert bearer.calls[-2:] == [8, 8]
+
+
+@pytest.mark.asyncio
+async def test_caller_cancellation_closes_resources_and_sends_no_later_io(tmp_path: Path) -> None:
+    harness = HTTPHarness()
+    harness.block_put = asyncio.Event()
+    _, _, pipeline, api = await _graph(harness)
+    path, _ = _write_pdf(tmp_path)
+    task = asyncio.create_task(api.add_file(NOTEBOOK_ID, path))
+    await asyncio.wait_for(harness.put_started.wait(), timeout=1.0)
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert pipeline._open_files == set()
+    assert all(client.closed for client in harness.clients)
+    assert [call.method for call in harness.calls] == ["POST"]
+
+
+@pytest.mark.asyncio
+async def test_progress_callback_failure_propagates_its_type_and_closes_body(tmp_path: Path) -> None:
+    harness = HTTPHarness()
+    _, _, pipeline, api = await _graph(harness)
+    path, _ = _write_pdf(tmp_path)
+
+    def fail_progress(sent: int, total: int) -> None:
+        del sent, total
+        raise ValueError("callback failed")
+
+    with pytest.raises(ValueError, match="callback failed"):
+        await api.add_file(NOTEBOOK_ID, path, on_progress=fail_progress)
+
+    assert pipeline._open_files == set()
+    assert [call.method for call in harness.calls] == ["POST"]
+
+
+@pytest.mark.asyncio
+async def test_raw_http_runtime_with_session_secret_becomes_bounded_stage_failure(
+    tmp_path: Path,
+) -> None:
+    secret = "raw-http-session-secret"
+    harness = HTTPHarness()
+    harness.put_error = RuntimeError(f"failed request {SESSION_URL}-{secret}")
+    _, _, _, api = await _graph(harness)
+    path, _ = _write_pdf(tmp_path)
+
+    with pytest.raises(SourceAddError) as raised:
+        await api.add_file(NOTEBOOK_ID, path)
+
+    assert cast(Any, raised.value).stage == "finalize"
+    assert raised.value.cause is None
+    assert secret not in str(raised.value)
+    assert secret not in repr(raised.value)
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+
+
+@pytest.mark.asyncio
+async def test_hostile_session_capability_never_reaches_bearer_logs_exception_or_traceback(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret = "upload-secret-capability-DO-NOT-LEAK"
+    hostile = f"https://evil.invalid/upload/upload/{NOTEBOOK_ID}?upload_id={secret}"
+    harness = HTTPHarness()
+    harness.start_headers = [
+        ("X-Goog-Upload-Status", "active"),
+        ("X-Goog-Upload-URL", hostile),
+    ]
+    _, bearer, _, api = await _graph(harness)
+    path, _ = _write_pdf(tmp_path)
+
+    with pytest.raises(SourceAddError) as raised:
+        await api.add_file(NOTEBOOK_ID, path)
+
+    error = raised.value
+    assert bearer.calls == [7]
+    assert error.cause is None
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert secret not in str(error)
+    assert secret not in repr(error)
+    assert secret not in caplog.text
+    assert secret not in "".join(traceback.format_exception(error))
+    frame = error.__traceback__
+    while frame is not None:
+        if "/src/notebooklm/" in frame.tb_frame.f_code.co_filename:
+            assert secret not in repr(frame.tb_frame.f_locals)
+            assert "bearer-secret" not in repr(frame.tb_frame.f_locals)
+        frame = frame.tb_next

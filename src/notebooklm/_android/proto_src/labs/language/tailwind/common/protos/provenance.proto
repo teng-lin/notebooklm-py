@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package labs.language.tailwind.common.protos;
+
+// Minimal exact-package provenance closure used by the captured Android PDF
+// upload path. Package/library boundaries and nested enum ownership come from
+// the independently recovered Dart descriptor inventory cited in the ledger.
+
+message ClientInfo {
+  enum ApplicationPlatform {
+    APPLICATION_PLATFORM_UNSPECIFIED = 0;
+    NATIVE = 2;
+  }
+
+  enum Device {
+    DEVICE_UNSPECIFIED = 0;
+    MOBILE_ANDROID = 1;
+  }
+
+  ApplicationPlatform application_platform = 1;
+  Device device = 2;
+  string application_version = 3;
+}
+
+message Provenance {
+  enum OriginProductType {
+    ORIGIN_PRODUCT_TYPE_UNSPECIFIED = 0;
+    GOOGLE_NOTEBOOKLM = 1;
+  }
+
+  OriginProductType origin_product_type = 1;
+  ClientInfo client_info = 11;
+}

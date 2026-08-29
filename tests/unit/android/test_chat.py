@@ -18,8 +18,8 @@ from notebooklm._android.chat import (
 )
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     b1_read_pb2,
-    b3_sources_pb2,
     b5_chat_pb2,
+    sources_pb2,
 )
 from notebooklm._android.proto.labs.language.tailwind.common.protos import chat_history_pb2
 from notebooklm._android.session import AndroidSession
@@ -311,8 +311,8 @@ async def test_base_ask_uses_latest_cumulative_final_without_concatenating_frame
     assert method == GENERATE_FREE_FORM_STREAMED_METHOD
     assert request == b5_chat_pb2.GenerateFreeFormStreamedRequest(
         sources=[
-            b3_sources_pb2.InputSource(source_id=b1_read_pb2.SourceId(id="source-1")),
-            b3_sources_pb2.InputSource(source_id=b1_read_pb2.SourceId(id="source-2")),
+            sources_pb2.InputSource(source_id=b1_read_pb2.SourceId(id="source-1")),
+            sources_pb2.InputSource(source_id=b1_read_pb2.SourceId(id="source-2")),
         ],
         user_query="Question?",
         user_message_id="00000000-0000-4000-8000-000000000099",

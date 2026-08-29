@@ -13,7 +13,7 @@ import pytest
 
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     b1_read_pb2,
-    b3_sources_pb2,
+    sources_pb2,
 )
 from notebooklm._android.proto.google.internal.labs.tailwind.v1 import source_settings_pb2
 from notebooklm._android.session import AndroidSession
@@ -27,6 +27,7 @@ from notebooklm._android.sources import (
     MUTATE_SOURCE_METHOD,
     AndroidSourcesAPI,
 )
+from notebooklm._android.upload import AndroidUploadPipeline
 from notebooklm.exceptions import (
     AuthError,
     NetworkError,
@@ -93,7 +94,10 @@ class FakeTransport:
 
 
 def _api(transport: FakeTransport) -> AndroidSourcesAPI:
-    return AndroidSourcesAPI(cast(AndroidSession, transport))
+    return AndroidSourcesAPI(
+        cast(AndroidSession, transport),
+        cast(AndroidUploadPipeline, object()),
+    )
 
 
 def _source(
@@ -124,7 +128,7 @@ def _registration_handler(ids: list[str]) -> Handler:
     def _handle(request: Any, kwargs: dict[str, Any]) -> Any:
         assert kwargs["replay_safe"] is False
         assert kwargs["expected_epoch"] == 7
-        return b3_sources_pb2.AddTentativeSourcesResponse(
+        return sources_pb2.AddTentativeSourcesResponse(
             tentative_sources=[
                 _source(source_id, title=metadata.name, status=0)
                 for metadata, source_id in zip(
@@ -145,7 +149,7 @@ def _successful_transport(
 ) -> FakeTransport:
     transport = FakeTransport()
     transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _registration_handler([SOURCE_A])
-    transport.handlers[ADD_SOURCES_METHOD] = b3_sources_pb2.AddSourcesResponse(
+    transport.handlers[ADD_SOURCES_METHOD] = sources_pb2.AddSourcesResponse(
         sources=commit_sources or [_source(SOURCE_A)]
     )
     transport.handlers[GET_PROJECT_METHOD] = _project(
@@ -198,7 +202,7 @@ async def test_add_url_error_row_is_committed_result_when_not_waiting() -> None:
 @pytest.mark.asyncio
 async def test_clean_registration_omission_is_known_failure_not_unconfirmed() -> None:
     transport = FakeTransport()
-    transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = b3_sources_pb2.AddTentativeSourcesResponse()
+    transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = sources_pb2.AddTentativeSourcesResponse()
 
     with pytest.raises(SourceAddError) as raised:
         await _api(transport).add_url(NOTEBOOK_ID, URL_A)
@@ -216,7 +220,7 @@ async def test_noncanonical_registration_ids_are_sanitized_unconfirmed(
 
     def _malformed(request: Any, kwargs: dict[str, Any]) -> Any:
         del kwargs
-        return b3_sources_pb2.AddTentativeSourcesResponse(
+        return sources_pb2.AddTentativeSourcesResponse(
             tentative_sources=[
                 _source(malformed_id, title=request.tentative_sources_metadata[0].name)
             ]
@@ -247,7 +251,7 @@ async def test_duplicate_returned_name_is_unconfirmed_and_unexpected_row_is_isol
     def _duplicate(request: Any, kwargs: dict[str, Any]) -> Any:
         del kwargs
         first, second = request.tentative_sources_metadata
-        return b3_sources_pb2.AddTentativeSourcesResponse(
+        return sources_pb2.AddTentativeSourcesResponse(
             tentative_sources=[
                 _source(SOURCE_A, title=first.name),
                 _source("00000000-0000-4000-8000-000000000103", title=first.name),
@@ -257,7 +261,7 @@ async def test_duplicate_returned_name_is_unconfirmed_and_unexpected_row_is_isol
         )
 
     transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _duplicate
-    transport.handlers[ADD_SOURCES_METHOD] = b3_sources_pb2.AddSourcesResponse()
+    transport.handlers[ADD_SOURCES_METHOD] = sources_pb2.AddSourcesResponse()
     transport.handlers[GET_PROJECT_METHOD] = _project(_source(SOURCE_B, url=URL_B))
     results = await _api(transport)._add_urls_batch(NOTEBOOK_ID, [URL_A, URL_B])
     assert results[0].error is not None
@@ -490,12 +494,12 @@ async def test_batch_registration_truncation_and_commit_truncation_are_stage_spe
 
     def _register(request: Any, kwargs: dict[str, Any]) -> Any:
         del kwargs
-        return b3_sources_pb2.AddTentativeSourcesResponse(
+        return sources_pb2.AddTentativeSourcesResponse(
             tentative_sources=[_source(SOURCE_A, title=request.tentative_sources_metadata[0].name)]
         )
 
     transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _register
-    transport.handlers[ADD_SOURCES_METHOD] = b3_sources_pb2.AddSourcesResponse()
+    transport.handlers[ADD_SOURCES_METHOD] = sources_pb2.AddSourcesResponse()
     transport.handlers[GET_PROJECT_METHOD] = _project(
         _source(SOURCE_A, url=URL_A, status=source_settings_pb2.SOURCE_STATUS_PENDING)
     )
@@ -513,7 +517,7 @@ async def test_batch_registration_truncation_and_commit_truncation_are_stage_spe
 async def test_batch_duplicate_urls_keep_occurrence_correlation_and_order() -> None:
     transport = FakeTransport()
     transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _registration_handler([SOURCE_A, SOURCE_B])
-    transport.handlers[ADD_SOURCES_METHOD] = b3_sources_pb2.AddSourcesResponse()
+    transport.handlers[ADD_SOURCES_METHOD] = sources_pb2.AddSourcesResponse()
     transport.handlers[GET_PROJECT_METHOD] = _project(
         _source(SOURCE_A, url=URL_B),
         _source(SOURCE_B, url=URL_B),
@@ -558,7 +562,7 @@ async def test_youtube_rejection_and_empty_batch_have_zero_io() -> None:
 class _OrderedSources(AndroidSourcesAPI):
     def __init__(self, session: AndroidSession, order: list[str]) -> None:
         self.order = order
-        super().__init__(session)
+        super().__init__(session, cast(AndroidUploadPipeline, object()))
 
     async def wait_until_ready(self, notebook_id: str, source_id: str, **kwargs: Any) -> Source:
         del notebook_id, kwargs
@@ -626,7 +630,9 @@ async def test_title_cancellation_and_readiness_timeout_dispatch_no_later_mutati
 
     timed = _successful_transport()
     with pytest.raises(SourceTimeoutError):
-        await _TimeoutSources(cast(AndroidSession, timed)).add_url(
+        await _TimeoutSources(
+            cast(AndroidSession, timed), cast(AndroidUploadPipeline, object())
+        ).add_url(
             NOTEBOOK_ID,
             URL_A,
             wait=True,
@@ -690,19 +696,19 @@ async def test_not_found_delete_is_idempotent_and_rename_maps_domain_error() -> 
 async def test_guide_and_fulltext_decode_only_captured_flat_fields() -> None:
     transport = FakeTransport()
     transport.handlers[GENERATE_DOCUMENT_GUIDES_METHOD] = (
-        b3_sources_pb2.GenerateDocumentGuidesResponse(
+        sources_pb2.GenerateDocumentGuidesResponse(
             guides=[
-                b3_sources_pb2.DocumentGuide(
-                    source=b3_sources_pb2.InputSource(source_id=b1_read_pb2.SourceId(id=SOURCE_A)),
-                    snippet=b3_sources_pb2.Snippet(text_snippet="Summary"),
-                    main_ideas=b3_sources_pb2.MainIdeas(text_ideas=["one", "two"]),
+                sources_pb2.DocumentGuide(
+                    source=sources_pb2.InputSource(source_id=b1_read_pb2.SourceId(id=SOURCE_A)),
+                    snippet=sources_pb2.Snippet(text_snippet="Summary"),
+                    main_ideas=sources_pb2.MainIdeas(text_ideas=["one", "two"]),
                 )
             ]
         )
     )
-    transport.handlers[LOAD_SOURCE_METHOD] = b3_sources_pb2.LoadSourceResponse(
+    transport.handlers[LOAD_SOURCE_METHOD] = sources_pb2.LoadSourceResponse(
         source=_source(SOURCE_A, title="Document"),
-        plain_text=b3_sources_pb2.PlainTextSourceContent(header="ignored", body="plain body"),
+        plain_text=sources_pb2.PlainTextSourceContent(header="ignored", body="plain body"),
         markdown_string="# markdown",
     )
     api = _api(transport)

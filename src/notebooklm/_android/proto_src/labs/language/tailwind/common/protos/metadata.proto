@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package labs.language.tailwind.common.protos;
+
+import "labs/language/tailwind/common/protos/provenance.proto";
+
+// Minimal exact-package request-context closure used by the captured Android
+// PDF upload path. Unreachable capabilities remain undeclared.
+
+enum ClientType {
+  UNKNOWN = 0;
+  ANDROID_APP = 3;
+}
+
+message ClientMetadata {
+  string client_version = 1;
+}
+
+message RequestContext {
+  ClientType client_type = 1;
+  ClientMetadata client_metadata = 2;
+  Provenance provenance = 4;
+}

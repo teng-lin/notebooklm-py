@@ -985,7 +985,9 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/errors.py` | Sanitized gRPC-status projection plus the pre-I/O unsupported-operation helper; raw transport exceptions and details never cross this boundary. |
 | `_android/notebooks.py` | Private Android notebook adapter: B1 reads and evidence-admitted B2 create/delete/title-update/copy/guide operations. |
 | `_android/session.py` | Lazy Google-TLS gRPC transport participating in root loop/lifecycle supervision, aggregate deadlines, per-call bearer metadata, status mapping, safe-read replay, and full stream leases. |
-| `_android/sources.py` | Private Android source adapter: B1 reads plus evidence-admitted B3 URL, delete, rename, guide, and full-text operations; unevidenced branches reject before I/O. |
+| `_android/sources.py` | Private B1/B3/B3b Android source adapter: `GetProject` reads, exact two-write URL adds/reconciliation, maintenance/content methods, and PDF upload callbacks; unevidenced source families reject before I/O. |
+| `_android/upload.py` | Required private `AndroidUploadPipeline`: epoch-fenced PDF-only tentative registration plus strict bearer-authenticated Scotty start/finalize, one aggregate upload deadline, separate FD/body concurrency, three web-compatible return branches, and secret-safe local teardown. It is not wired into public backend selection. |
+| `_android/evidence.py` | One pinned Android evidence profile for the captured app version and distinct registration/finalize user agents. |
 | `_android/artifacts.py` | Private B4 partial artifact adapter: aggregate Studio/note-backed listing, Studio-only polling, quiz create, delete/rename, infographic PNG download and report suggestions; every other public family rejects before I/O. |
 | `_android/assets.py` | B4 response-aware Android asset transport. It validates every hop, attaches bearer only to the exact approved origin, strips it for signed-GCS hops, streams one open PNG response through same-directory staging and publishes atomically. |
 | `_android/chat.py` | Private B5 Android chat adapter over sessions, raw turns, history deletion, and the cumulative server stream; base `ChatAPI` retains locks/cache/follow-up orchestration and public result construction. |
@@ -993,6 +995,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/proto/` | Checked-in generated Python protobuf package. Files are regenerated only by `scripts/regenerate_android_protos.py` with the pinned toolchain and are never generated during installation. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/b1_read_pb2.py` | Exact-package B1 messages and descriptors for `GetProject` and `ListRecentlyViewedProjects`. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/b1_read_pb2_grpc.py` | Generated `LabsTailwindOrchestrationServiceStub` limited to the two B1 read methods. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/sources_pb2.py` | Exact-package B3/B3b source-operation and `UploadFileRequest` descriptors compiled from the durable `sources.proto` source name; no service guess. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/b4_artifacts_pb2.py` | Exact-package B4 artifact request/response and projection overlay; dispatch uses ledgered generic-session method paths so the B1 service descriptor remains unchanged. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/b5_chat_pb2.py` | Service-free exact-package B5 chat overlay for sessions, turns, delete, streamed answers, and the proven citation/document closure. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/b5_chat_pb2_grpc.py` | Deterministic generated companion for the service-free B5 overlay. |
@@ -1250,7 +1253,9 @@ src/notebooklm/
 │   ├── errors.py                # Sanitized gRPC status/error mapping
 │   ├── notebooks.py             # Android notebook reads and B2 mutations
 │   ├── session.py               # Supervised lazy gRPC transport
-│   ├── sources.py               # Android source reads and B3 operations/gates
+│   ├── sources.py               # B1 reads + B3 operations + B3b PDF callbacks
+│   ├── upload.py                # Epoch-fenced Android PDF/Scotty transaction
+│   ├── evidence.py              # Pinned captured app/UA evidence profile
 │   ├── artifacts.py             # B4 partial artifact API and unsupported surface
 │   ├── assets.py                # B4 response-aware bearer-safe PNG transfer
 │   ├── chat.py                  # B5 Android chat reads/delete/stream and unsupported stubs
@@ -1262,8 +1267,8 @@ src/notebooklm/
 │           ├── orchestration/v1/
 │           │   ├── b1_read_pb2.py              # B1 read messages and descriptors
 │           │   ├── b1_read_pb2_grpc.py         # Two-method orchestration service stub
-│           │   ├── b3_sources_pb2.py            # B3 exact source-operation messages
-│           │   ├── b3_sources_pb2_grpc.py       # Deterministic service-free companion
+│           │   ├── sources_pb2.py               # B3/B3b source and PDF-request descriptors
+│           │   ├── sources_pb2_grpc.py          # Deterministic service-free companion
 │           │   ├── b4_artifacts_pb2.py         # B4 exact artifact message overlay
 │           │   ├── b4_artifacts_pb2_grpc.py    # Deterministic service-free companion
 │           │   ├── b5_chat_pb2.py              # Service-free B5 chat messages/descriptors
@@ -1281,7 +1286,11 @@ src/notebooklm/
 │       ├── notebooklm/internal/android/wire/source_mutation_wire_pb2_grpc.py  # Deterministic service-free companion
 │       └── labs/language/tailwind/common/protos/
 │           ├── chat_history_pb2.py       # B5 exact-package ChatSession leaf
-│           └── chat_history_pb2_grpc.py  # Deterministic service-free companion
+│           ├── chat_history_pb2_grpc.py  # Deterministic service-free companion
+│           ├── metadata_pb2.py           # B3b exact request-context messages
+│           ├── metadata_pb2_grpc.py      # Deterministic service-free companion
+│           ├── provenance_pb2.py         # B3b exact provenance messages
+│           └── provenance_pb2_grpc.py    # Deterministic service-free companion
 ├── _web/                        # Private batchexecute web-backend implementation package
 │   ├── __init__.py              # Package boundary
 │   ├── contracts.py             # Web-only Kernel and RpcCaller Protocols

@@ -21,15 +21,15 @@ from .codecs.chat import decode_document, decode_history, decode_references, dec
 from .errors import unsupported_operation
 from .proto.google.internal.labs.tailwind.orchestration.v1 import (
     b1_read_pb2,
-    b3_sources_pb2,
     b5_chat_pb2,
+    sources_pb2,
 )
 from .session import AndroidSession
 
 logger = logging.getLogger("notebooklm._chat.api")
 _PROTO = cast(Any, b5_chat_pb2)
 _B1_PROTO = cast(Any, b1_read_pb2)
-_SOURCES_PROTO = cast(Any, b3_sources_pb2)
+_SOURCES_PROTO = cast(Any, sources_pb2)
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 LIST_CHAT_SESSIONS_METHOD = f"/{_SERVICE}/ListChatSessions"
