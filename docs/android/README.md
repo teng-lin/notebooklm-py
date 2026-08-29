@@ -28,6 +28,8 @@ themselves.
 | [`enums.txt`](enums.txt) | **generated** | 77 enums / ~1900 values with exact integers. **Parsed by CI.** |
 | [`endpoints.md`](endpoints.md) | reference | The gRPC method surface, and the mobile ⇄ web cross-reference. Start here. |
 | [`capture.md`](capture.md) | runbook | How to intercept the app's HTTP/2 gRPC traffic (emulator, VPN, Mockttp). |
+| [`android-traffic-capture.md`](android-traffic-capture.md) | legacy runbook | Rooted-emulator Cronet/Frida capture procedure retained as dated evidence. |
+| [`auth-research.md`](auth-research.md) | live report | Exact NotebookLM Android OAuth identity, scope bundle, and bearer validation. |
 | [`file-transfer-live-validation-2026-08-27.md`](file-transfer-live-validation-2026-08-27.md) | live report | Android file upload and artifact download protocol, failures, and successful replay. |
 | [`deep-research-mobile-grpc-2026-08-27.md`](deep-research-mobile-grpc-2026-08-27.md) | live report | APK-absent Deep Research methods routed by the mobile backend, wire contract, reproducer, and interception. |
 | [`labels-collections-copy-mobile-grpc-2026-08-27.md`](labels-collections-copy-mobile-grpc-2026-08-27.md) | live report | Full label/collection CRUD and memberships plus notebook copy through the mobile backend. |
