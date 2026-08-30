@@ -38,14 +38,30 @@ in only one of them:
   binds ``list`` shadows the builtin there on *every* version, future import or
   not. Those are checked everywhere.
 
-Only names actually *bound* in the class body shadow anything. A bare
-``list: list[str]`` records an annotation without binding ``list``, so it still
-resolves to the builtin and is not an offender; ``list: list[str] = []`` binds
-and is. Annotations that never resolve in the class-body scope are likewise out
-of scope: a local annotation inside a method body (``source_ids: list[str] =
-[]``) is not evaluated at all, and a nested ``def`` resolves in its enclosing
-function scope, so neither can see the class attribute. Flagging those would
-report a break that cannot happen.
+The annotation is read against the *finished* class namespace, so the question
+is which builtins are still bound when the class body ends — not which were
+ever assigned. A bare ``list: list[str]`` annotates without binding and still
+resolves to the builtin; ``list: list[str] = []`` binds and is an offender;
+``list = None`` followed by ``del list`` is not. ``except ... as list`` is not
+either, because the interpreter deletes the name at the end of the handler.
+
+Annotations that never resolve in the class-body scope are out of scope too: a
+local annotation inside a method body (``source_ids: list[str] = []``) is not
+evaluated at all, a nested ``def`` resolves in its enclosing function scope,
+and a non-simple target (``helper.value: list[str]``) is neither stored nor
+evaluated. Flagging any of those would report a break that cannot happen.
+
+Quoted forward references *are* in scope — ``get_type_hints`` parses
+``"list[str]"`` and evaluates it against the same namespace, so a quote hides
+nothing. The two string positions that are values rather than types,
+``Literal["list"]`` and the metadata arguments of ``Annotated``, are skipped.
+Nothing in ``src/`` collides today, but the tree already writes
+``Literal["set"]`` and ``Literal["all"]`` at eight sites — both builtin names —
+so this stays one ``def set(...)`` away from mattering.
+
+Every claim above was checked against a real CPython 3.14.7 interpreter rather
+than reasoned about; the regression fixtures at the bottom of this file record
+the results one shape at a time.
 """
 
 from __future__ import annotations
@@ -94,20 +110,43 @@ def _child_suites(node: ast.stmt) -> Iterator[list[ast.stmt]]:
             yield clause.body
 
 
-def _class_body_statements(cls: ast.ClassDef) -> Iterator[ast.stmt]:
-    """Yield every statement that executes in ``cls``'s body scope.
+def _walk_suite(suite: list[ast.stmt]) -> Iterator[ast.stmt]:
+    """Yield every statement in ``suite``, flattening same-scope nested suites.
 
     Class-level ``if`` / ``try`` / ``for`` / ``with`` / ``match`` suites run in
     the class scope, so what they bind and annotate lands there too. A nested
     ``def`` or ``class`` is yielded — its *name* binds here — but not descended
     into, because its body is a separate scope.
+
+    Yielded in source order, which is what lets ``del`` be read as undoing an
+    earlier binding.
     """
-    stack = list(cls.body)
-    while stack:
-        node = stack.pop()
+    for node in suite:
         yield node
         if not isinstance(node, _SCOPE_STATEMENTS):
-            stack.extend(statement for suite in _child_suites(node) for statement in suite)
+            for child in _child_suites(node):
+                yield from _walk_suite(child)
+
+
+def _class_body_statements(cls: ast.ClassDef) -> Iterator[ast.stmt]:
+    """Yield every statement that executes in ``cls``'s body scope."""
+    return _walk_suite(cls.body)
+
+
+def _scope_header_expressions(node: ast.stmt) -> Iterator[ast.expr]:
+    """Yield the parts of a ``def``/``class`` evaluated in the *enclosing* scope.
+
+    A nested scope's body runs elsewhere, but its decorators, argument defaults
+    and base classes are evaluated right where the statement sits — so
+    ``def f(self, x=(list := 1))`` binds ``list`` on the class.
+    """
+    yield from node.decorator_list  # type: ignore[attr-defined]
+    if isinstance(node, ast.ClassDef):
+        yield from node.bases
+        yield from (keyword.value for keyword in node.keywords)
+    elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        yield from node.args.defaults
+        yield from (default for default in node.args.kw_defaults if default is not None)
 
 
 def _bound_names(target: ast.expr) -> Iterator[str]:
@@ -142,22 +181,32 @@ def _pattern_names(pattern: ast.pattern) -> Iterator[str]:
 
 def _walrus_names(node: ast.AST) -> Iterator[str]:
     """Yield names ``:=`` binds in this scope, not inside a nested one."""
+    if isinstance(node, ast.NamedExpr):
+        yield from _bound_names(node.target)
     for child in ast.iter_child_nodes(node):
         if isinstance(child, (ast.Lambda, *_SCOPE_STATEMENTS)):
             continue
-        if isinstance(child, ast.NamedExpr):
-            yield from _bound_names(child.target)
         yield from _walrus_names(child)
 
 
 def _shadowed_builtins(cls: ast.ClassDef) -> set[str]:
-    """Return the builtin names this class body rebinds."""
+    """Return the builtin names still bound when this class body finishes.
+
+    "Still bound" is the operative test: the annotation is read against the
+    completed class namespace, so a name that is bound and then ``del``\\ eted
+    resolves to the builtin again and is not a shadow.
+    """
     names: set[str] = set()
     for node in _class_body_statements(cls):
         if isinstance(node, _SCOPE_STATEMENTS):
             names.add(node.name)
+            for expression in _scope_header_expressions(node):
+                names.update(_walrus_names(expression))
             continue
-        if isinstance(node, ast.Assign):
+        if isinstance(node, ast.Delete):
+            for target in node.targets:
+                names.difference_update(_bound_names(target))
+        elif isinstance(node, ast.Assign):
             for target in node.targets:
                 names.update(_bound_names(target))
         elif isinstance(node, ast.AnnAssign):
@@ -201,8 +250,50 @@ def _class_scope_annotations(cls: ast.ClassDef, *, include_signatures: bool) -> 
                     yield arg.annotation
             if node.returns is not None:
                 yield node.returns
-        elif isinstance(node, ast.AnnAssign):
+        # ``node.simple`` is false for an attribute, subscript or parenthesised
+        # target. Those annotations are never stored and never evaluated, so
+        # yielding them would report a break that cannot happen.
+        elif isinstance(node, ast.AnnAssign) and node.simple:
             yield node.annotation
+
+
+def _is_typing_name(node: ast.expr, name: str) -> bool:
+    """True for ``name``, ``typing.name`` and ``t.name`` alike."""
+    return (isinstance(node, ast.Name) and node.id == name) or (
+        isinstance(node, ast.Attribute) and node.attr == name
+    )
+
+
+def _annotation_names(node: ast.expr, *, lineno: int | None = None) -> Iterator[tuple[str, int]]:
+    """Yield ``(name, lineno)`` for every name an annotation actually resolves.
+
+    Quoted forward references count: ``get_type_hints`` parses ``"list[str]"``
+    and evaluates it against the same namespace, so a string hides exactly the
+    break this lint looks for. Two string positions are *not* types, though,
+    and parsing them would invent offenders — ``Literal["list"]``, where the
+    string is a value, and the metadata arguments of ``Annotated``.
+    """
+    if isinstance(node, ast.Name):
+        yield node.id, lineno if lineno is not None else node.lineno
+        return
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        try:
+            parsed = ast.parse(node.value, mode="eval")
+        except SyntaxError:  # not a type expression; nothing resolves
+            return
+        yield from _annotation_names(parsed.body, lineno=lineno or node.lineno)
+        return
+    if isinstance(node, ast.Subscript):
+        if _is_typing_name(node.value, "Literal"):
+            return  # the subscript holds values, not types
+        if _is_typing_name(node.value, "Annotated"):
+            arguments = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
+            if arguments:  # only the first argument is the type
+                yield from _annotation_names(arguments[0], lineno=lineno)
+            return
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.expr):
+            yield from _annotation_names(child, lineno=lineno)
 
 
 def _offences(cls: ast.ClassDef, *, include_signatures: bool) -> Iterator[tuple[str, int]]:
@@ -211,9 +302,9 @@ def _offences(cls: ast.ClassDef, *, include_signatures: bool) -> Iterator[tuple[
     if not shadowed:
         return
     for annotation in _class_scope_annotations(cls, include_signatures=include_signatures):
-        for node in ast.walk(annotation):
-            if isinstance(node, ast.Name) and node.id in shadowed:
-                yield node.id, node.lineno
+        for name, lineno in _annotation_names(annotation):
+            if name in shadowed:
+                yield name, lineno
 
 
 def test_class_body_annotations_do_not_name_a_shadowed_builtin() -> None:
@@ -384,6 +475,76 @@ def test_pep695_type_statement_shadows() -> None:
     """)
     assert shadowed == {"list"}
     assert offences == {"list"}
+
+
+def test_walrus_in_a_method_default_shadows() -> None:
+    """A default is evaluated in the class scope even though the body is not."""
+    shadowed, offences = _analyse("""
+        class Defaulted:
+            def f(self, x=(list := 1)) -> list[str]: ...
+    """)
+    assert shadowed == {"list"}  # ``f`` is not a builtin, so it is filtered out
+    assert offences == {"list"}
+
+
+def test_quoted_forward_reference_is_parsed() -> None:
+    """``get_type_hints`` parses the string, so a quote hides nothing."""
+    shadowed, offences = _analyse("""
+        class Quoted:
+            items: "list[str]" = []
+            def list(self): ...
+    """)
+    assert shadowed == {"list"}
+    assert offences == {"list"}
+
+
+def test_nested_forward_reference_is_parsed() -> None:
+    shadowed, offences = _analyse("""
+        class NestedQuote:
+            items: dict[str, "list[int]"] = {}
+            def list(self): ...
+    """)
+    assert shadowed == {"list"}
+    assert offences == {"list"}
+
+
+@pytest.mark.parametrize(
+    "annotation",
+    ['Literal["list"]', 'typing.Literal["list"]', 'Annotated[int, "list"]'],
+)
+def test_string_values_are_not_type_positions(annotation: str) -> None:
+    """A ``Literal`` member and ``Annotated`` metadata are values, not types."""
+    shadowed, offences = _analyse(f"""
+        class Valued:
+            mode: {annotation} = None
+            def list(self): ...
+    """)
+    assert shadowed == {"list"}
+    assert offences == set()
+
+
+def test_non_simple_annotation_target_is_not_evaluated() -> None:
+    """``helper.value: list[str]`` is never stored and never evaluated."""
+    shadowed, offences = _analyse("""
+        class NonSimple:
+            helper = Helper()
+            helper.value: list[str] = []
+            def list(self): ...
+    """)
+    assert shadowed == {"list"}  # ``helper`` is not a builtin, so it is filtered out
+    assert offences == set()
+
+
+def test_deleted_binding_stops_shadowing() -> None:
+    """The annotation resolves against the finished namespace, which has no ``list``."""
+    shadowed, offences = _analyse("""
+        class Deleted:
+            list = None
+            del list
+            items: list[str] = []
+    """)
+    assert shadowed == set()
+    assert offences == set()
 
 
 def test_except_as_does_not_shadow() -> None:
