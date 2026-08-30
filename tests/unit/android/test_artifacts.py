@@ -466,10 +466,11 @@ async def test_poll_rejects_wrong_get_artifact_identity() -> None:
 async def test_private_get_artifact_helper_uses_exact_request_and_epoch() -> None:
     session, _, _, _, api = _graph([_artifact("target")])
 
-    result = await api._get_studio_artifact("target", expected_epoch=42)
+    result = await api._get_studio_artifact("notebook-1", "target", expected_epoch=42)
 
     assert result is not None and result.id == "target"
-    method, request, kwargs = session.calls[0]
+    assert session.calls[0][0] == LIST_ARTIFACTS_METHOD
+    method, request, kwargs = session.calls[1]
     assert method == GET_ARTIFACT_METHOD
     assert request == _PROTO.GetArtifactRequest(artifact_id="target")
     assert kwargs == {
@@ -481,11 +482,11 @@ async def test_private_get_artifact_helper_uses_exact_request_and_epoch() -> Non
 
 @pytest.mark.asyncio
 async def test_get_artifact_missing_payload_is_bounded_decode_error() -> None:
-    session, _, _, _, api = _graph()
+    session, _, _, _, api = _graph([_artifact("target")])
     session.responses[GET_ARTIFACT_METHOD] = _PROTO.GetArtifactResponse()
 
     with pytest.raises(DecodingError, match="omitted its artifact") as raised:
-        await api._get_studio_artifact("target")
+        await api._get_studio_artifact("notebook-1", "target", expected_epoch=7)
 
     assert raised.value.method_id == GET_ARTIFACT_METHOD
     assert raised.value.__cause__ is None
@@ -496,11 +497,11 @@ async def test_get_artifact_missing_payload_is_bounded_decode_error() -> None:
 async def test_get_artifact_identity_failure_drops_capability_response_from_frames() -> None:
     secret = "https://lh3.googleusercontent.com/image.png?cap=get-secret"
     raw_response = _PROTO.GetArtifactResponse(artifact=_artifact("other", url=secret))
-    session, _, _, _, api = _graph()
+    session, _, _, _, api = _graph([_artifact("target")])
     session.responses[GET_ARTIFACT_METHOD] = raw_response
 
     with pytest.raises(DecodingError) as raised:
-        await api._get_studio_artifact("target")
+        await api._get_studio_artifact("notebook-1", "target", expected_epoch=7)
 
     error = raised.value
     assert error.__cause__ is None
@@ -1387,7 +1388,11 @@ async def test_slide_download_reads_exact_get_artifact_representation(
     )
 
     assert result == f"slides.{output_format}"
-    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD, GET_ARTIFACT_METHOD]
+    assert [call[0] for call in session.calls] == [
+        LIST_ARTIFACTS_METHOD,
+        LIST_ARTIFACTS_METHOD,
+        GET_ARTIFACT_METHOD,
+    ]
     assert assets.representation_calls == [
         (expected_url, f"slides.{output_format}", representation)
     ]
@@ -1412,7 +1417,11 @@ async def test_download_data_table_decodes_tailwind_doc_as_bom_csv(tmp_path) -> 
     assert output.read_bytes() == (
         b'\xef\xbb\xbfName,Evidence\r\nAlpha,"quoted, value"\r\nBeta,"line\nbreak"\r\n'
     )
-    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD, GET_ARTIFACT_METHOD]
+    assert [call[0] for call in session.calls] == [
+        LIST_ARTIFACTS_METHOD,
+        LIST_ARTIFACTS_METHOD,
+        GET_ARTIFACT_METHOD,
+    ]
 
 
 @pytest.mark.asyncio
@@ -1613,8 +1622,28 @@ async def test_download_report_decodes_live_apk_report_doc_and_writes_atomically
     )
     assert [call[0] for call in session.calls] == [
         LIST_ARTIFACTS_METHOD,
+        LIST_ARTIFACTS_METHOD,
         GET_ARTIFACT_METHOD,
     ]
+
+
+@pytest.mark.asyncio
+async def test_exact_download_rejects_foreign_prefetched_artifact_before_global_read(
+    tmp_path,
+) -> None:
+    owned = _artifact("owned", type_code=_PROTO.ARTIFACT_TYPE_TAILORED_REPORT)
+    foreign = _artifact("foreign", type_code=_PROTO.ARTIFACT_TYPE_TAILORED_REPORT)
+    session, _, _, _, api = _graph([owned])
+
+    with pytest.raises(ArtifactNotFoundError):
+        await api.download_report(
+            "notebook-1",
+            str(tmp_path / "foreign.md"),
+            "foreign",
+            artifacts_data=[foreign],
+        )
+
+    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD]
 
 
 @pytest.mark.asyncio
@@ -1703,7 +1732,11 @@ async def test_download_quiz_formats_exact_apk_app_html(tmp_path) -> None:
             }
         ],
     }
-    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD, GET_ARTIFACT_METHOD]
+    assert [call[0] for call in session.calls] == [
+        LIST_ARTIFACTS_METHOD,
+        LIST_ARTIFACTS_METHOD,
+        GET_ARTIFACT_METHOD,
+    ]
 
 
 @pytest.mark.asyncio

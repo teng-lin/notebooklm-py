@@ -218,18 +218,13 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         """Read one exact Studio polling target without querying note-backed rows."""
         async with self._transport.operation_scope("artifacts.poll") as lease:
             try:
-                await self._require_studio_artifact_owned(
+                artifact = await self._get_studio_artifact(
                     notebook_id,
                     task_id,
                     expected_epoch=lease.epoch,
-                    method_id=GET_ARTIFACT_METHOD,
                 )
             except ArtifactNotFoundError:
                 return []
-            artifact = await self._get_studio_artifact(
-                task_id,
-                expected_epoch=lease.epoch,
-            )
             return [] if artifact is None else [artifact]
 
     async def _require_studio_artifact_owned(
@@ -254,9 +249,10 @@ class AndroidArtifactsAPI(ArtifactsAPI):
 
     async def _get_studio_artifact(
         self,
+        notebook_id: str,
         artifact_id: str,
         *,
-        expected_epoch: int | None = None,
+        expected_epoch: int,
     ) -> Artifact | None:
         """Decode one exact ``GetArtifact`` response; ``NOT_FOUND`` is absence."""
 
@@ -266,15 +262,18 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         response: Any | None = None
         raw_artifact: Any | None = None
         try:
-            epoch_kwargs: dict[str, Any] = (
-                {} if expected_epoch is None else {"expected_epoch": expected_epoch}
+            await adapter._require_studio_artifact_owned(
+                notebook_id,
+                artifact_id,
+                expected_epoch=expected_epoch,
+                method_id=GET_ARTIFACT_METHOD,
             )
             response = await adapter._transport.unary(
                 GET_ARTIFACT_METHOD,
                 _PROTO.GetArtifactRequest(artifact_id=artifact_id),
                 replay_safe=True,
                 response_type=_PROTO.GetArtifactResponse,
-                **epoch_kwargs,
+                expected_epoch=expected_epoch,
             )
             assert response is not None
             if not response.HasField("artifact"):
@@ -306,12 +305,19 @@ class AndroidArtifactsAPI(ArtifactsAPI):
 
     async def _get_raw_studio_artifact(
         self,
+        notebook_id: str,
         artifact_id: str,
         *,
         expected_epoch: int,
     ) -> Any:
         """Return a detached exact protobuf for representation-only fields."""
 
+        await self._require_studio_artifact_owned(
+            notebook_id,
+            artifact_id,
+            expected_epoch=expected_epoch,
+            method_id=GET_ARTIFACT_METHOD,
+        )
         response = await self._transport.unary(
             GET_ARTIFACT_METHOD,
             _PROTO.GetArtifactRequest(artifact_id=artifact_id),
@@ -962,13 +968,8 @@ class AndroidArtifactsAPI(ArtifactsAPI):
                     artifact_id,
                     expected_epoch=lease.epoch,
                 )
-        await self._require_studio_artifact_owned(
-            notebook_id,
-            artifact_id,
-            expected_epoch=expected_epoch,
-            method_id=GET_ARTIFACT_METHOD,
-        )
         raw = await self._get_raw_studio_artifact(
+            notebook_id,
             artifact_id,
             expected_epoch=expected_epoch,
         )
@@ -1142,6 +1143,7 @@ class AndroidArtifactsAPI(ArtifactsAPI):
                 prefetched=artifacts_data,
             )
             raw = await self._get_raw_studio_artifact(
+                notebook_id,
                 selected.id,
                 expected_epoch=lease.epoch,
             )
@@ -1186,6 +1188,7 @@ class AndroidArtifactsAPI(ArtifactsAPI):
                 prefetched=artifacts_data,
             )
             raw = await self._get_raw_studio_artifact(
+                notebook_id,
                 selected.id,
                 expected_epoch=lease.epoch,
             )
@@ -1271,6 +1274,7 @@ class AndroidArtifactsAPI(ArtifactsAPI):
                 prefetched=artifacts_data,
             )
             raw = await self._get_raw_studio_artifact(
+                notebook_id,
                 selected.id,
                 expected_epoch=lease.epoch,
             )
@@ -1311,6 +1315,7 @@ class AndroidArtifactsAPI(ArtifactsAPI):
                 prefetched=cast(builtins.list[Any] | None, prefetched),
             )
             raw = await self._get_raw_studio_artifact(
+                notebook_id,
                 selected.id,
                 expected_epoch=lease.epoch,
             )
