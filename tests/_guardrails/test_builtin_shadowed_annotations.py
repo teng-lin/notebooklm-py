@@ -184,9 +184,24 @@ def _walrus_names(node: ast.AST) -> Iterator[str]:
     if isinstance(node, ast.NamedExpr):
         yield from _bound_names(node.target)
     for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.Lambda, *_SCOPE_STATEMENTS)):
+        if isinstance(child, _SCOPE_STATEMENTS):
+            continue
+        if isinstance(child, ast.Lambda):
+            # Same split as a ``def``: the defaults are evaluated where the
+            # lambda is written, the body is not.
+            yield from _walrus_names_in(_lambda_defaults(child))
             continue
         yield from _walrus_names(child)
+
+
+def _lambda_defaults(node: ast.Lambda) -> Iterator[ast.expr]:
+    yield from node.args.defaults
+    yield from (default for default in node.args.kw_defaults if default is not None)
+
+
+def _walrus_names_in(expressions: Iterator[ast.expr]) -> Iterator[str]:
+    for expression in expressions:
+        yield from _walrus_names(expression)
 
 
 def _shadowed_builtins(cls: ast.ClassDef) -> set[str]:
@@ -197,13 +212,18 @@ def _shadowed_builtins(cls: ast.ClassDef) -> set[str]:
     resolves to the builtin again and is not a shadow.
     """
     names: set[str] = set()
+    unconditional = {id(node) for node in cls.body}
     for node in _class_body_statements(cls):
         if isinstance(node, _SCOPE_STATEMENTS):
             names.add(node.name)
             for expression in _scope_header_expressions(node):
                 names.update(_walrus_names(expression))
             continue
-        if isinstance(node, ast.Delete):
+        # Only an *unconditional* ``del`` clears a binding. This lint reads a
+        # conditional suite as taken — a method under ``if TYPE_CHECKING:``
+        # counts as shadowing — so honouring a branch-nested ``del`` would
+        # erase a real binding on the strength of an eraser that may never run.
+        if isinstance(node, ast.Delete) and id(node) in unconditional:
             for target in node.targets:
                 names.difference_update(_bound_names(target))
         elif isinstance(node, ast.Assign):
@@ -264,19 +284,28 @@ def _is_typing_name(node: ast.expr, name: str) -> bool:
     )
 
 
-def _annotation_names(node: ast.expr, *, lineno: int | None = None) -> Iterator[tuple[str, int]]:
+def _annotation_names(
+    node: ast.expr, *, parse_strings: bool = True, lineno: int | None = None
+) -> Iterator[tuple[str, int]]:
     """Yield ``(name, lineno)`` for every name an annotation actually resolves.
 
-    Quoted forward references count: ``get_type_hints`` parses ``"list[str]"``
-    and evaluates it against the same namespace, so a string hides exactly the
-    break this lint looks for. Two string positions are *not* types, though,
-    and parsing them would invent offenders — ``Literal["list"]``, where the
-    string is a value, and the metadata arguments of ``Annotated``.
+    The whole annotation is evaluated as one expression, so *every* name in it
+    resolves — including inside ``Annotated`` metadata, where
+    ``Annotated[int, list[str]]`` raises just as the bare form does.
+
+    Strings are the exception, and they split by position. In a type position a
+    quoted forward reference is parsed and evaluated, so ``"list[str]"`` hides
+    exactly the break this lint looks for. As a ``Literal`` member or as
+    ``Annotated`` metadata a string stays a string —
+    ``Annotated[int, "list[str]"]`` resolves cleanly — so parsing it there
+    would invent offenders.
     """
     if isinstance(node, ast.Name):
         yield node.id, lineno if lineno is not None else node.lineno
         return
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        if not parse_strings:
+            return
         try:
             parsed = ast.parse(node.value, mode="eval")
         except SyntaxError:  # not a type expression; nothing resolves
@@ -284,16 +313,22 @@ def _annotation_names(node: ast.expr, *, lineno: int | None = None) -> Iterator[
         yield from _annotation_names(parsed.body, lineno=lineno or node.lineno)
         return
     if isinstance(node, ast.Subscript):
+        yield from _annotation_names(node.value, parse_strings=parse_strings, lineno=lineno)
+        arguments = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
         if _is_typing_name(node.value, "Literal"):
-            return  # the subscript holds values, not types
-        if _is_typing_name(node.value, "Annotated"):
-            arguments = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
-            if arguments:  # only the first argument is the type
-                yield from _annotation_names(arguments[0], lineno=lineno)
-            return
+            for member in arguments:
+                yield from _annotation_names(member, parse_strings=False, lineno=lineno)
+        elif _is_typing_name(node.value, "Annotated") and arguments:
+            yield from _annotation_names(arguments[0], parse_strings=parse_strings, lineno=lineno)
+            for metadata in arguments[1:]:
+                yield from _annotation_names(metadata, parse_strings=False, lineno=lineno)
+        else:
+            for argument in arguments:
+                yield from _annotation_names(argument, parse_strings=parse_strings, lineno=lineno)
+        return
     for child in ast.iter_child_nodes(node):
         if isinstance(child, ast.expr):
-            yield from _annotation_names(child, lineno=lineno)
+            yield from _annotation_names(child, parse_strings=parse_strings, lineno=lineno)
 
 
 def _offences(cls: ast.ClassDef, *, include_signatures: bool) -> Iterator[tuple[str, int]]:
@@ -533,6 +568,41 @@ def test_non_simple_annotation_target_is_not_evaluated() -> None:
     """)
     assert shadowed == {"list"}  # ``helper`` is not a builtin, so it is filtered out
     assert offences == set()
+
+
+def test_walrus_in_a_lambda_default_shadows() -> None:
+    """A lambda's defaults run in the class scope; only its body does not."""
+    shadowed, offences = _analyse("""
+        class Lambdas:
+            callback = lambda value=(list := 1): value
+            items: list[str] = []
+    """)
+    assert shadowed == {"list"}
+    assert offences == {"list"}
+
+
+def test_annotated_metadata_expression_is_evaluated() -> None:
+    """Metadata is part of the expression: ``Annotated[int, list[str]]`` raises."""
+    shadowed, offences = _analyse("""
+        class AnnotatedExpr:
+            list = 1
+            item: Annotated[int, list[str]] = 1
+    """)
+    assert shadowed == {"list"}
+    assert offences == {"list"}
+
+
+def test_conditional_del_does_not_clear_a_binding() -> None:
+    """A branch-nested ``del`` may never run, so it cannot undo a real binding."""
+    shadowed, offences = _analyse("""
+        class ConditionallyDeleted:
+            list = None
+            if False:
+                del list
+            items: list[str] = []
+    """)
+    assert shadowed == {"list"}
+    assert offences == {"list"}
 
 
 def test_deleted_binding_stops_shadowing() -> None:
