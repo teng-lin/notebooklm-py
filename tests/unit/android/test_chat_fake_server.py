@@ -52,9 +52,17 @@ class _Notebooks:
 
 
 class _ChatService:
-    def __init__(self, *, fail_auth_after_partial: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail_auth_after_partial: bool = False,
+        final_answer: str = "Cumulative final",
+        session_id: str = "conversation-1",
+    ) -> None:
         self.asked = False
         self.fail_auth_after_partial = fail_auth_after_partial
+        self.final_answer = final_answer
+        self.session_id = session_id
         self.list_requests: list[Any] = []
         self.generate_requests: list[Any] = []
 
@@ -64,7 +72,7 @@ class _ChatService:
         if not self.asked:
             return chat_pb2.ListChatSessionsResponse()
         return chat_pb2.ListChatSessionsResponse(
-            sessions=[common_pb2.ChatSession(chat_session_id="conversation-1")]
+            sessions=[common_pb2.ChatSession(chat_session_id=self.session_id)]
         )
 
     async def generate(self, request: Any, context: Any):
@@ -78,7 +86,7 @@ class _ChatService:
             return
         self.asked = True
         yield chat_pb2.GenerateFreeFormStreamedResponse(
-            answer=chat_pb2.AnswerResponse(response="Cumulative final"),
+            answer=chat_pb2.AnswerResponse(response=self.final_answer),
             is_final_response=True,
         )
 
@@ -110,10 +118,16 @@ async def _running_api(
     port = server.add_insecure_port("127.0.0.1:0")
     await server.start()
 
-    channel = grpc.aio.insecure_channel(f"127.0.0.1:{port}")
+    channel: Any | None = None
+
+    def secure_channel(_target: str, _credentials: object, *, options: Any) -> Any:
+        nonlocal channel
+        channel = grpc.aio.insecure_channel(f"127.0.0.1:{port}", options=options)
+        return channel
+
     grpc_loader = SimpleNamespace(
         ssl_channel_credentials=lambda: object(),
-        aio=SimpleNamespace(secure_channel=lambda _target, _credentials: channel),
+        aio=SimpleNamespace(secure_channel=secure_channel),
     )
     supervisor = CallSupervisor(
         metrics=ClientMetrics(),
@@ -179,6 +193,19 @@ async def test_base_ask_over_real_android_session_and_fake_grpc_server() -> None
     snapshot = supervisor._metrics.snapshot()
     assert snapshot.rpc_calls_started == 3
     assert snapshot.rpc_calls_succeeded == 3
+
+
+@pytest.mark.asyncio
+async def test_android_session_accepts_stream_and_unary_larger_than_grpcio_default() -> None:
+    answer = "x" * (5 * 1024 * 1024)
+    session_id = "c" * (5 * 1024 * 1024)
+    service = _ChatService(final_answer=answer, session_id=session_id)
+
+    async with _running_api(service) as (api, _supervisor, _bearer):
+        result = await api.ask("notebook-1", "Question?")
+
+    assert result.answer == answer
+    assert result.conversation_id == session_id
 
 
 @pytest.mark.asyncio

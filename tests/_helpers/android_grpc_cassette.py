@@ -572,8 +572,10 @@ class RecordingGrpcModule:
     def ssl_channel_credentials(self) -> Any:
         return self._live_grpc.ssl_channel_credentials()
 
-    def secure_channel(self, target: str, credentials: Any) -> _RecordingChannel:
-        channel = self._live_grpc.aio.secure_channel(target, credentials)
+    def secure_channel(
+        self, target: str, credentials: Any, *, options: Any = None
+    ) -> _RecordingChannel:
+        channel = self._live_grpc.aio.secure_channel(target, credentials, options=options)
         return _RecordingChannel(channel, self._recorder)
 
 
@@ -695,8 +697,10 @@ class ReplayGrpcModule:
     def ssl_channel_credentials(self) -> object:
         return object()
 
-    def secure_channel(self, target: str, credentials: Any) -> _ReplayChannel:
-        del credentials
+    def secure_channel(
+        self, target: str, credentials: Any, *, options: Any = None
+    ) -> _ReplayChannel:
+        del credentials, options
         if target != self._expected_target:
             raise AndroidGrpcCassetteMismatch(f"Android gRPC replay target mismatch: {target!r}")
         self.secure_channel_calls += 1

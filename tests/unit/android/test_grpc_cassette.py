@@ -121,8 +121,8 @@ class _LiveGrpc:
     def ssl_channel_credentials(self) -> object:
         return object()
 
-    def secure_channel(self, target: str, credentials: Any) -> _LiveChannel:
-        del target, credentials
+    def secure_channel(self, target: str, credentials: Any, *, options: Any = None) -> _LiveChannel:
+        del target, credentials, options
         self.secure_channel_calls += 1
         return self.channel
 

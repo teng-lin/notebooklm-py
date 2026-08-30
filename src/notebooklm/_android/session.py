@@ -17,6 +17,7 @@ from .._deadline import RuntimeDeadline
 from .._loop_affinity import assert_bound_loop
 from .._loop_bound import LoopBoundPrimitive
 from .._runtime.call_supervisor import CallLease, CallSupervisor, OperationLease
+from .._runtime.config import DEFAULT_CHAT_RESPONSE_MAX_BYTES
 from ..exceptions import MissingDependencyError, RPCResponseTooLargeError
 from .auth import BearerCredential, BearerProvider
 from .errors import (
@@ -31,6 +32,15 @@ ReqT = TypeVar("ReqT")
 RespT = TypeVar("RespT")
 
 ANDROID_GRPC_TARGET = "notebooklm-pa.googleapis.com:443"
+# grpcio otherwise enforces a 4 MiB receive ceiling before this library can
+# apply its cumulative streamed-response guard.  Use the documented 256 MiB
+# Android chat ceiling as the shared transport bound: large project/artifact
+# unary responses and valid chat frames can cross 4 MiB, while callers that
+# disable the per-chat aggregate guard still inherit a finite RPC limit.
+ANDROID_GRPC_MAX_RECEIVE_MESSAGE_BYTES = DEFAULT_CHAT_RESPONSE_MAX_BYTES
+_ANDROID_GRPC_CHANNEL_OPTIONS = (
+    ("grpc.max_receive_message_length", ANDROID_GRPC_MAX_RECEIVE_MESSAGE_BYTES),
+)
 _NOT_OPEN = "Client not initialized. Use 'async with' context."
 _ANDROID_GRPC_EXTRA = (
     "Android transport needs grpcio. Install: pip install 'notebooklm-py[android]'"
@@ -257,7 +267,11 @@ class AndroidSession(LoopBoundPrimitive):
             if channel is None:
                 grpc = self._grpc_loader()
                 credentials = grpc.ssl_channel_credentials()
-                channel = grpc.aio.secure_channel(ANDROID_GRPC_TARGET, credentials)
+                channel = grpc.aio.secure_channel(
+                    ANDROID_GRPC_TARGET,
+                    credentials,
+                    options=_ANDROID_GRPC_CHANNEL_OPTIONS,
+                )
                 self._assert_epoch(expected_epoch)
                 self._channel = channel
             return channel

@@ -401,6 +401,40 @@ async def _bounded(awaitable: Awaitable[_T], deadline: RuntimeDeadline) -> _T:
         raise TimeoutError from None
 
 
+async def _settle_context_exit(context_manager: Any) -> None:
+    """Run one async-context exit to completion despite repeated cancellation."""
+
+    exit_task = asyncio.create_task(context_manager.__aexit__(None, None, None))
+    cancelled: asyncio.CancelledError | None = None
+    exit_error: BaseException | None = None
+    while True:
+        try:
+            await asyncio.shield(exit_task)
+            break
+        except asyncio.CancelledError as error:
+            if exit_task.done():
+                try:
+                    exit_task.result()
+                except asyncio.CancelledError as exit_cancelled:
+                    exit_error = exit_cancelled
+                except BaseException as settled_error:
+                    exit_error = settled_error
+                else:
+                    cancelled = error
+                break
+            if cancelled is None:
+                cancelled = error
+        except BaseException as error:
+            exit_error = error
+            break
+    if isinstance(exit_error, (KeyboardInterrupt, SystemExit)):
+        raise exit_error
+    if cancelled is not None:
+        raise cancelled
+    if exit_error is not None:
+        raise exit_error
+
+
 class AndroidUploadPipeline(LoopBoundPrimitive):
     """Own one private Android control-plane/data-plane upload transaction."""
 
@@ -619,13 +653,21 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         with destination.open("xb") as handle:
             _set_private_temp_permissions(destination, 0o600)
             self._open_files.add(handle)
+            response_cm: Any | None = None
+            response_entered = False
             try:
-                async with client.stream(
+                response_cm = client.stream(
                     "GET",
                     self._drive_url(ref.file_id, media=True),
                     headers=headers,
                     follow_redirects=False,
-                ) as response:
+                )
+                # ``httpx.Timeout(None)`` deliberately disables HTTPX's
+                # component timers.  Keep stream entry (including the header
+                # wait) inside our independent 300s aggregate lifecycle fence.
+                try:
+                    response = await _bounded(response_cm.__aenter__(), deadline)
+                    response_entered = True
                     status = int(response.status_code)
                     if status == 401:
                         self._bearer_provider.invalidate(credential.generation)
@@ -653,6 +695,10 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                                 f"Drive download exceeded the 200 MiB cap for {filename!r}."
                             )
                         await _bounded(asyncio.to_thread(handle.write, chunk), deadline)
+                finally:
+                    if response_entered:
+                        assert response_cm is not None
+                        await _settle_context_exit(response_cm)
             finally:
                 self._open_files.discard(handle)
         if total == 0:

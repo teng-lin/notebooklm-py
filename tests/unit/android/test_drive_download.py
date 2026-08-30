@@ -80,6 +80,96 @@ async def _pipeline(
     return session, bearer, pipeline
 
 
+class _HangingDriveResponse:
+    def __init__(self, body_started: asyncio.Event | None = None) -> None:
+        self.status_code = 200
+        self.headers: dict[str, str] = {}
+        self._body_started = body_started
+
+    async def aiter_bytes(self) -> AsyncIterator[bytes]:
+        assert self._body_started is not None
+        self._body_started.set()
+        await asyncio.Event().wait()
+        yield b""  # pragma: no cover - the wait is deliberately never released
+
+
+class _HangingDriveStream:
+    def __init__(self, *, hang_entry: bool, block_exit: bool = False) -> None:
+        self.hang_entry = hang_entry
+        self.entry_started = asyncio.Event()
+        self.body_started = asyncio.Event()
+        self.exit_started = asyncio.Event()
+        self.exit_release = asyncio.Event()
+        if not block_exit:
+            self.exit_release.set()
+        self.enter_cancelled = False
+        self.exits = 0
+
+    async def __aenter__(self) -> _HangingDriveResponse:
+        self.entry_started.set()
+        if self.hang_entry:
+            try:
+                await asyncio.Event().wait()
+            finally:
+                self.enter_cancelled = True
+        return _HangingDriveResponse(self.body_started)
+
+    async def __aexit__(self, *_exc: object) -> None:
+        self.exits += 1
+        self.exit_started.set()
+        await self.exit_release.wait()
+
+
+class _HangingDriveClient:
+    def __init__(self, stream: _HangingDriveStream) -> None:
+        self._stream = stream
+        self.closed = False
+
+    async def __aenter__(self) -> _HangingDriveClient:
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        await self.aclose()
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+    async def get(self, url: str, **_kwargs: Any) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "id": "abcdefghijklmnopqrstuvwxyz123456",
+                "name": "notes.txt",
+                "mimeType": "text/plain",
+                "size": "10",
+                "capabilities": {"canDownload": True},
+            },
+            request=httpx.Request("GET", url),
+        )
+
+    def stream(self, *_args: Any, **_kwargs: Any) -> _HangingDriveStream:
+        return self._stream
+
+
+async def _hanging_pipeline(
+    stream: _HangingDriveStream,
+) -> tuple[AndroidUploadPipeline, _HangingDriveClient]:
+    session = FakeSession()
+    bearer = FakeBearerProvider()
+    client = _HangingDriveClient(stream)
+    pipeline = AndroidUploadPipeline(
+        session=cast(AndroidSession, session),
+        bearer_provider=cast(BearerProvider, bearer),
+        upload_timeout=httpx.Timeout(None),
+        async_client_factory=lambda **_kwargs: client,  # type: ignore[arg-type]
+    )
+    loop = asyncio.get_running_loop()
+    pipeline.set_bound_loop(loop)
+    pipeline.reset_after_open()
+    await pipeline.open(loop, session.epoch)
+    return pipeline, client
+
+
 @pytest.mark.asyncio
 async def test_drive_download_uses_android_bearer_resource_key_and_cleans_exact_temp() -> None:
     calls: list[httpx.Request] = []
@@ -131,6 +221,58 @@ async def test_drive_download_uses_android_bearer_resource_key_and_cleans_exact_
     assert len(calls) == 2
     assert calls[0].url.params["fields"] == "id,name,mimeType,size,capabilities(canDownload)"
     assert calls[1].url.params["alt"] == "media"
+
+
+@pytest.mark.asyncio
+async def test_unbounded_httpx_timeout_cannot_bypass_aggregate_stream_entry_deadline() -> None:
+    stream = _HangingDriveStream(hang_entry=True)
+    pipeline, client = await _hanging_pipeline(stream)
+    # Keep the production resolution assertion above the short test-only
+    # budget: httpx has no component timers, while the aggregate fence remains
+    # independently finite (300 seconds in production).
+    assert pipeline._http_timeout == httpx.Timeout(None)
+    assert pipeline._upload_timeout == 300.0
+    pipeline._upload_timeout = 0.01
+
+    with pytest.raises(NetworkError, match="TimeoutError"):
+        async with pipeline.drive_download_scope("abcdefghijklmnopqrstuvwxyz123456"):
+            pytest.fail("a stream whose header wait hangs must not yield")
+
+    assert stream.entry_started.is_set()
+    assert stream.enter_cancelled
+    # Async-context protocol does not call __aexit__ when __aenter__ fails;
+    # cancellation of the entry coroutine owns that partial cleanup.
+    assert stream.exits == 0
+    assert client.closed
+    assert pipeline._open_files == set()
+    assert pipeline._transport_clients == set()
+
+
+@pytest.mark.asyncio
+async def test_drive_stream_exit_settles_before_repeated_cancellation_escapes() -> None:
+    stream = _HangingDriveStream(hang_entry=False, block_exit=True)
+    pipeline, client = await _hanging_pipeline(stream)
+
+    async def download() -> None:
+        async with pipeline.drive_download_scope("abcdefghijklmnopqrstuvwxyz123456"):
+            pytest.fail("a cancelled media body must not yield")
+
+    task = asyncio.create_task(download())
+    await asyncio.wait_for(stream.body_started.wait(), timeout=1.0)
+    task.cancel()
+    await asyncio.wait_for(stream.exit_started.wait(), timeout=1.0)
+    task.cancel()
+    await asyncio.sleep(0)
+    assert not task.done()
+
+    stream.exit_release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert stream.exits == 1
+    assert client.closed
+    assert pipeline._open_files == set()
+    assert pipeline._transport_clients == set()
 
 
 def test_drive_temp_permissions_preserve_windows_acl_inheritance(

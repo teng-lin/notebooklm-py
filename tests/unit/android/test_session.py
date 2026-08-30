@@ -12,6 +12,7 @@ import pytest
 
 from notebooklm._android.auth import BearerCredential
 from notebooklm._android.session import (
+    ANDROID_GRPC_MAX_RECEIVE_MESSAGE_BYTES,
     ANDROID_GRPC_TARGET,
     AndroidSession,
     _default_grpc_loader,
@@ -173,15 +174,15 @@ class _Grpc:
     def __init__(self, channel: _Channel) -> None:
         self.channel = channel
         self.loads = 0
-        self.targets: list[tuple[str, object]] = []
+        self.targets: list[tuple[str, object, tuple[tuple[str, int], ...]]] = []
         self.aio = SimpleNamespace(secure_channel=self.secure_channel)
 
     def ssl_channel_credentials(self):
         return object()
 
-    def secure_channel(self, target, credentials):
+    def secure_channel(self, target, credentials, *, options):
         self.loads += 1
-        self.targets.append((target, credentials))
+        self.targets.append((target, credentials, options))
         return self.channel
 
 
@@ -240,6 +241,9 @@ async def test_open_is_lazy_and_unary_uses_fixed_tls_channel_and_metadata() -> N
     assert result == _Message(b"response")
     assert grpc.loads == 1
     assert grpc.targets[0][0] == ANDROID_GRPC_TARGET
+    assert grpc.targets[0][2] == (
+        ("grpc.max_receive_message_length", ANDROID_GRPC_MAX_RECEIVE_MESSAGE_BYTES),
+    )
     assert channel.invocations[0][1:3] == (
         b"request",
         (("authorization", f"Bearer {BEARER}"),),
