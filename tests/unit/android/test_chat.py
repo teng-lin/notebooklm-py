@@ -590,6 +590,24 @@ async def test_list_sessions_raw_turns_and_history_decode_exact_requests() -> No
 
 
 @pytest.mark.asyncio
+async def test_history_uses_response_document_when_legacy_answer_text_is_empty() -> None:
+    turn = _chat_turn("Document answer?", "", message_id="message-1", role=2)
+    turn.act_on_sources_response.response.response_doc.CopyFrom(_document())
+    fake = FakeSession()
+    fake.unary_responses = {
+        LIST_CHAT_SESSIONS_METHOD: [
+            chat_pb2.ListChatSessionsResponse(
+                sessions=[common_pb2.ChatSession(chat_session_id="conversation-1")]
+            )
+        ],
+        LIST_CHAT_TURNS_METHOD: [chat_pb2.ListChatTurnsResponse(chat_turns=[turn])],
+    }
+    api, _, _ = _api(fake)
+
+    assert await api.get_history("notebook-1", limit=1) == [("Document answer?", "Final answer")]
+
+
+@pytest.mark.asyncio
 async def test_list_turns_zero_limit_skips_transport_and_token_cycle_fails() -> None:
     fake = FakeSession()
     fake.unary_responses[LIST_CHAT_TURNS_METHOD] = [

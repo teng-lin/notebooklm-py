@@ -86,9 +86,11 @@ directions, so a locally repeated claim cannot admit a normalized or unresolved 
 The package and generated protos remain private implementation details. Explicit
 `backend="android"` selection installs Android adapters for all eleven public namespaces. The
 adapters use native Android gRPC/Scotty wherever the mobile contract is usable and isolate the
-remaining handler gaps behind narrow Web compatibility collaborators. There are exactly two:
+remaining handler gaps behind narrow Web compatibility collaborators. There are exactly three:
 
 - notebook recent-removal, whose exact mobile route consistently rejects valid owned resources;
+- CSV/DOCX file upload, whose exact mobile transaction finalizes but processing reaches
+  `UNKNOWN`/`ERROR`; and
 - sharing view-level mutation, whose separate `MutateProject` branch remains rejected.
 
 Artifact mind-map generation, source refresh and Drive download/upload, account settings,

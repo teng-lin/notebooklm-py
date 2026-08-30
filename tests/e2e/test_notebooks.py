@@ -103,8 +103,14 @@ class TestNotebookSummary:
         """Test getting raw notebook data."""
         raw_data = await client.notebooks.get_raw(read_only_notebook_id)
         assert raw_data is not None
-        # Raw data is typically a list with notebook structure
-        assert isinstance(raw_data, list)
+        if client.backends["notebooks"] == "android":
+            # Android projects the known protobuf fields to a JSON-safe dict;
+            # assert the named proto envelope rather than a web row shape.
+            assert isinstance(raw_data, dict)
+            assert raw_data["project"]["id"] == read_only_notebook_id
+            assert isinstance(raw_data["project"]["metadata"], dict)
+        else:
+            assert isinstance(raw_data, list)
 
 
 @requires_auth

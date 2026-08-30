@@ -24,6 +24,8 @@ with the deletion of ``tests/check_cassettes_clean.sh``.
 
 from __future__ import annotations
 
+import base64
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -559,6 +561,66 @@ def test_python_guard_secrets_only_ignores_placeholder_content(tmp_path: Path) -
     res = _run_guard("--secrets-only", str(cassette))
     assert res.returncode == 0, res.stdout + res.stderr
     assert "0 leaks found" in res.stdout
+
+
+def _write_android_grpc_cassette(path: Path, response_wire: bytes) -> None:
+    empty_wire = base64.b64encode(b"").decode("ascii")
+    response_b64 = base64.b64encode(response_wire).decode("ascii")
+    path.write_text(
+        json.dumps(
+            {
+                "format": "notebooklm.android.grpc-cassette",
+                "interactions": [
+                    {
+                        "method": "/example.Service/GetValue",
+                        "request": {
+                            "protobuf_b64": empty_wire,
+                            "protobuf_type": "example.GetValueRequest",
+                        },
+                        "response_protobuf_type": "example.GetValueResponse",
+                        "responses": [
+                            {
+                                "protobuf_b64": response_b64,
+                                "protobuf_type": "example.GetValueResponse",
+                            }
+                        ],
+                        "shape": "unary_unary",
+                    }
+                ],
+                "version": 1,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_python_guard_scans_grpc_payload_instead_of_base64_envelope(tmp_path: Path) -> None:
+    cassette = tmp_path / "clean_synthetic.grpc.json"
+    _write_android_grpc_cassette(cassette, b"\x0a\x14SCRUBBED_STRING_0001")
+
+    result = _run_guard("--secrets-only", str(cassette))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "0 leaks found" in result.stdout
+
+
+def test_python_guard_detects_novel_token_inside_grpc_protobuf(tmp_path: Path) -> None:
+    novel = "kJ8sLm2NpQr5" + "TvWxYz0AbCdEf" + "GhIjKlMnOpQrSt" + "UvWxYz12345678"
+    nested = tmp_path / "android"
+    nested.mkdir()
+    cassette = nested / "leaky_synthetic.grpc.json"
+    token_bytes = novel.encode("ascii")
+    _write_android_grpc_cassette(cassette, b"\x0a" + bytes([len(token_bytes)]) + token_bytes)
+
+    # This is the same default ``--strict --recursive`` discovery path used by
+    # CI, not only an explicit-file secrets-only scan.
+    result = _run_guard("--recursive", str(tmp_path))
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "high-entropy token" in result.stdout
 
 
 def test_python_guard_exits_zero_when_no_cassettes_found(tmp_path: Path) -> None:

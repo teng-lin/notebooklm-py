@@ -6,7 +6,12 @@ from typing import Any
 
 from ..._types.documents import DocumentAnnotation, StructuredDocument, utf16_len
 from ...types import ChatReference, ConversationTurnKey
-from .documents import decode_blocks, decode_document, structural_elements_plain_text
+from .documents import (
+    decode_blocks,
+    decode_document,
+    structural_elements_plain_text,
+    tailwind_doc_plain_text,
+)
 
 
 def _fragment_projection(citation: Any) -> tuple[str | None, int | None, int | None]:
@@ -118,7 +123,10 @@ def decode_history(response: Any, *, limit: int) -> list[tuple[str, str]]:
         if turn.HasField("act_on_sources_response") and turn.act_on_sources_response.HasField(
             "response"
         ):
-            answer = turn.act_on_sources_response.response.response
+            response = turn.act_on_sources_response.response
+            answer = response.response
+            if not answer and response.HasField("response_doc"):
+                answer = tailwind_doc_plain_text(response.response_doc)
         pairs.append((turn.user_query_text, answer))
     pairs.reverse()
     return pairs

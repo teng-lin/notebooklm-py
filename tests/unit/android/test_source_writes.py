@@ -701,6 +701,12 @@ async def test_check_freshness_rejects_a_different_nonempty_echoed_source_id() -
 @pytest.mark.asyncio
 async def test_refresh_uses_exact_native_request_and_public_none_contract() -> None:
     transport = FakeTransport()
+    transport.handlers[CHECK_SOURCE_FRESHNESS_METHOD] = sources_pb2.CheckSourceFreshnessResponse(
+        source_freshness=sources_pb2.SourceFreshness(
+            source_id=read_pb2.SourceId(id=SOURCE_A),
+            is_fresh=False,
+        )
+    )
     transport.handlers[REFRESH_SOURCE_METHOD] = sources_pb2.RefreshSourceResponse(
         source=read_pb2.Source(source_id=read_pb2.SourceId(id=SOURCE_A))
     )
@@ -708,7 +714,17 @@ async def test_refresh_uses_exact_native_request_and_public_none_contract() -> N
     result = await _api(transport).refresh(NOTEBOOK_ID, SOURCE_A)
 
     assert result is None
-    [(method, request, kwargs)] = transport.calls
+    [(freshness_method, freshness_request, freshness_kwargs), (method, request, kwargs)] = (
+        transport.calls
+    )
+    assert freshness_method == CHECK_SOURCE_FRESHNESS_METHOD
+    assert freshness_request.source_id.id == SOURCE_A
+    assert freshness_request.HasField("request_context")
+    assert freshness_kwargs == {
+        "replay_safe": True,
+        "response_type": sources_pb2.CheckSourceFreshnessResponse,
+        "expected_epoch": 7,
+    }
     assert method == REFRESH_SOURCE_METHOD
     assert request.source_id.id == SOURCE_A
     assert request.HasField("request_context")
@@ -722,8 +738,38 @@ async def test_refresh_uses_exact_native_request_and_public_none_contract() -> N
 
 
 @pytest.mark.asyncio
+async def test_refresh_is_a_noop_when_source_is_already_fresh() -> None:
+    transport = FakeTransport()
+    transport.handlers[CHECK_SOURCE_FRESHNESS_METHOD] = sources_pb2.CheckSourceFreshnessResponse(
+        source_freshness=sources_pb2.SourceFreshness(
+            source_id=read_pb2.SourceId(id=SOURCE_A),
+            is_fresh=True,
+        )
+    )
+
+    result = await _api(transport).refresh(NOTEBOOK_ID, SOURCE_A)
+
+    assert result is None
+    [(method, request, kwargs)] = transport.calls
+    assert method == CHECK_SOURCE_FRESHNESS_METHOD
+    assert request.source_id.id == SOURCE_A
+    assert kwargs == {
+        "replay_safe": True,
+        "response_type": sources_pb2.CheckSourceFreshnessResponse,
+        "expected_epoch": 7,
+    }
+    assert transport.scopes == ["sources.refresh"]
+
+
+@pytest.mark.asyncio
 async def test_refresh_rejects_a_different_nonempty_echoed_source_id() -> None:
     transport = FakeTransport()
+    transport.handlers[CHECK_SOURCE_FRESHNESS_METHOD] = sources_pb2.CheckSourceFreshnessResponse(
+        source_freshness=sources_pb2.SourceFreshness(
+            source_id=read_pb2.SourceId(id=SOURCE_A),
+            is_fresh=False,
+        )
+    )
     transport.handlers[REFRESH_SOURCE_METHOD] = sources_pb2.RefreshSourceResponse(
         source=read_pb2.Source(source_id=read_pb2.SourceId(id=SOURCE_B))
     )

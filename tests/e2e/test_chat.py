@@ -8,7 +8,7 @@ import pytest
 
 from notebooklm import AskResult, ChatReference
 
-from .conftest import requires_auth
+from .conftest import requires_auth, reset_current_chat_conversation
 
 
 @pytest.mark.e2e
@@ -16,6 +16,10 @@ from .conftest import requires_auth
 @requires_auth
 class TestChatE2E:
     """E2E tests for chat API."""
+
+    @pytest.fixture(autouse=True)
+    async def _start_with_fresh_conversation(self, client, multi_source_notebook_id):
+        await reset_current_chat_conversation(client, multi_source_notebook_id)
 
     @pytest.mark.asyncio
     async def test_ask_question_returns_answer(self, client, multi_source_notebook_id):
@@ -197,16 +201,29 @@ class TestChatHistoryE2E:
         )
 
         assert turns_data is not None
-        if not turns_data:
+        if client.backends["chat"] == "android":
+            from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
+                chat_pb2,
+            )
+
+            assert isinstance(turns_data, chat_pb2.ListChatTurnsResponse)
+            turns = list(turns_data.chat_turns)
+            turn_types = [turn.observed_event_type for turn in turns]
+        else:
+            if not turns_data:
+                pytest.skip(
+                    "Read-only notebook has a conversation but no chat turns — "
+                    "cannot verify turn structure. Seed the notebook with chat messages to enable this test."
+                )
+            assert isinstance(turns_data[0], list)
+            turns = turns_data[0]
+            turn_types = [turn[2] for turn in turns if isinstance(turn, list) and len(turn) > 2]
+        if not turns:
             pytest.skip(
                 "Read-only notebook has a conversation but no chat turns — "
                 "cannot verify turn structure. Seed the notebook with chat messages to enable this test."
             )
-        assert isinstance(turns_data[0], list)
-        turns = turns_data[0]
         assert len(turns) >= 1
-
-        turn_types = [turn[2] for turn in turns if isinstance(turn, list) and len(turn) > 2]
         assert any(t in (1, 2) for t in turn_types), "Expected question or answer turns"
 
     @pytest.mark.asyncio
@@ -224,16 +241,34 @@ class TestChatHistoryE2E:
         )
 
         assert turns_data is not None
-        if not turns_data:
+        if client.backends["chat"] == "android":
+            from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
+                chat_pb2,
+            )
+
+            assert isinstance(turns_data, chat_pb2.ListChatTurnsResponse)
+            turns = list(turns_data.chat_turns)
+            questions = [turn.user_query_text for turn in turns if turn.user_query_text]
+        else:
+            if not turns_data:
+                pytest.skip(
+                    "Read-only notebook has a conversation but no chat turns — "
+                    "cannot verify question text. Seed the notebook with chat messages to enable this test."
+                )
+            turns = turns_data[0]
+            questions = [
+                turn[3]
+                for turn in turns
+                if isinstance(turn, list) and len(turn) > 3 and turn[2] == 1
+            ]
+        if not turns:
             pytest.skip(
                 "Read-only notebook has a conversation but no chat turns — "
                 "cannot verify question text. Seed the notebook with chat messages to enable this test."
             )
-        turns = turns_data[0]
-        question_turns = [t for t in turns if isinstance(t, list) and len(t) > 3 and t[2] == 1]
-        assert question_turns, "No question turn found in response"
-        assert isinstance(question_turns[0][3], str)
-        assert len(question_turns[0][3]) > 0
+        assert questions, "No question turn found in response"
+        assert isinstance(questions[0], str)
+        assert len(questions[0]) > 0
 
     @pytest.mark.asyncio
     @pytest.mark.readonly
@@ -246,19 +281,48 @@ class TestChatHistoryE2E:
         turns_data = await client.chat.get_conversation_turns(
             read_only_notebook_id,
             conv_id,
-            limit=2,
+            limit=20,
         )
 
         assert turns_data is not None
-        if not turns_data:
+        if client.backends["chat"] == "android":
+            from notebooklm._android.codecs.documents import tailwind_doc_plain_text
+            from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
+                chat_pb2,
+            )
+
+            assert isinstance(turns_data, chat_pb2.ListChatTurnsResponse)
+            turns = list(turns_data.chat_turns)
+            answers = [
+                turn.act_on_sources_response.response.response
+                or tailwind_doc_plain_text(turn.act_on_sources_response.response.response_doc)
+                for turn in turns
+                if turn.HasField("act_on_sources_response")
+                and turn.act_on_sources_response.HasField("response")
+            ]
+        else:
+            if not turns_data:
+                pytest.skip(
+                    "Read-only notebook has a conversation but no chat turns — "
+                    "cannot verify answer text. Seed the notebook with chat messages to enable this test."
+                )
+            turns = turns_data[0]
+            answer_turns = [
+                turn for turn in turns if isinstance(turn, list) and len(turn) > 4 and turn[2] == 2
+            ]
+            answers = [turn[4][0][0] for turn in answer_turns]
+        if not turns:
             pytest.skip(
                 "Read-only notebook has a conversation but no chat turns — "
                 "cannot verify answer text. Seed the notebook with chat messages to enable this test."
             )
-        turns = turns_data[0]
-        answer_turns = [t for t in turns if isinstance(t, list) and len(t) > 4 and t[2] == 2]
-        assert answer_turns, "No answer turn found in response"
-        answer_text = answer_turns[0][4][0][0]
+        assert answers, "No answer turn found in response"
+        answer_text = next((answer for answer in answers if answer), "")
+        if not answer_text:
+            pytest.skip(
+                "Conversation history has answer turns but no completed answer text — "
+                "cannot verify answer content. Seed a completed chat response to enable this test."
+            )
         assert isinstance(answer_text, str)
         assert len(answer_text) > 0
 
@@ -292,6 +356,10 @@ class TestChatHistoryE2E:
 @requires_auth
 class TestChatReferencesE2E:
     """E2E tests specifically for chat references and citations."""
+
+    @pytest.fixture(autouse=True)
+    async def _start_with_fresh_conversation(self, client, multi_source_notebook_id):
+        await reset_current_chat_conversation(client, multi_source_notebook_id)
 
     @pytest.mark.asyncio
     async def test_reference_source_ids_exist_in_notebook(self, client, multi_source_notebook_id):

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Pure-Python cassette guard — replacement for ``tests/check_cassettes_clean.sh``.
 
-Walks ``tests/cassettes/*.yaml`` (or any explicit paths passed on the command
-line) and reports any cassette that contains sensitive data.  Uses the
-canonical pattern registry in ``tests/cassette_patterns.py``.
+Walks Web ``tests/cassettes/*.yaml`` plus Android ``*.grpc.json`` files (or any
+explicit paths passed on the command line) and reports any cassette that
+contains sensitive data. Uses the canonical pattern registry in
+``tests/cassette_patterns.py``.
 
 Key differences vs. the legacy bash script:
 
@@ -26,17 +27,24 @@ Exit codes:
     0 — every scanned cassette is clean
     1 — one or more leaks detected (printed to stdout)
 
-Implementation note:  the tool reads each cassette line-by-line (no PyYAML
-parse) so that:
+Implementation note: Web YAML cassettes are read line-by-line (no PyYAML parse)
+while Android JSON cassettes are schema-validated and their protobuf frames are
+decoded before scanning. This means:
 
-* It runs in O(stream) memory even on multi-megabyte cassettes.
+* Web scanning runs in O(stream) memory even on multi-megabyte cassettes.
 * Reported line numbers map directly to the file on disk.
 * It can also scan partial / malformed YAML that a real recorder might emit.
+* Protobuf base64 envelopes are not mistaken for opaque credentials, while
+  credential-shaped scalars inside those envelopes remain visible to the guard.
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
+import json
+import re
 import sys
 from pathlib import Path
 
@@ -61,6 +69,8 @@ DEFAULT_CASSETTE_DIR = _REPO_ROOT / "tests" / "cassettes"
 # directories scanned.
 _SECRETS_ONLY_EXTENSIONS: tuple[str, ...] = (".yaml", ".yml", ".json", ".html", ".txt")
 DEFAULT_ALLOWLIST = _REPO_ROOT / "tests" / "scripts" / "cassette_repair_allowlist.txt"
+_ANDROID_GRPC_FORMAT = "notebooklm.android.grpc-cassette"
+_PROTOBUF_ASCII_TOKEN = re.compile(rb"[A-Za-z0-9_+\-/=]{40,}")
 
 
 def _load_allowlist(path: Path) -> set[str]:
@@ -101,10 +111,10 @@ def _iter_cassettes(
 ) -> list[Path]:
     """Resolve CLI arguments into a concrete list of cassette files.
 
-    * If no paths are given, scan ``tests/cassettes/*.yaml`` (non-recursive)
-      OR ``tests/cassettes/**/*.yaml`` when ``recursive=True``.
-    * If a directory is given, scan ``*.yaml`` inside it (recursively when
-      ``recursive=True``).
+    * If no paths are given, scan the configured cassette suffixes directly
+      under ``tests/cassettes/`` (or all descendants when ``recursive=True``).
+    * If a directory is given, scan the configured cassette suffixes inside it
+      (recursively when ``recursive=True``).
     * If a file is given, scan it directly.
     * Non-existent paths are silently skipped — matches the bash original's
       "scan what exists" behaviour and keeps the tool friendly to pre-commit
@@ -223,6 +233,70 @@ def _scan_cookie_headers_yaml(path: Path) -> list[tuple[int, str]]:
     return leaks
 
 
+def _scan_android_grpc_cassette(path: Path) -> list[tuple[int, str]]:
+    """Scan protobuf payloads without flagging their base64 JSON envelope.
+
+    A ``protobuf_b64`` value is necessarily one long, high-entropy JSON scalar,
+    so applying the generic JSON entropy rule to the envelope is a guaranteed
+    false positive. Validate the closed cassette schema, decode each payload,
+    then run the credential registry over the wire bytes and every long ASCII
+    token embedded in them. Protobuf length prefixes break JSON quoting but do
+    not break an opaque credential's own alphabetic run.
+    """
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return [(1, "Leak (invalid Android gRPC cassette): unreadable JSON")]
+
+    if not isinstance(data, dict) or set(data) != {"format", "interactions", "version"}:
+        return [(1, "Leak (invalid Android gRPC cassette): unexpected root schema")]
+    if data["format"] != _ANDROID_GRPC_FORMAT or data["version"] != 1:
+        return [(1, "Leak (invalid Android gRPC cassette): unsupported format/version")]
+    if not isinstance(data["interactions"], list):
+        return [(1, "Leak (invalid Android gRPC cassette): interactions must be a list")]
+
+    payloads: list[str] = []
+    for interaction in data["interactions"]:
+        expected = {"method", "request", "response_protobuf_type", "responses", "shape"}
+        if not isinstance(interaction, dict) or set(interaction) != expected:
+            return [(1, "Leak (invalid Android gRPC cassette): unexpected interaction schema")]
+        request = interaction["request"]
+        responses = interaction["responses"]
+        if not isinstance(request, dict) or set(request) != {"protobuf_b64", "protobuf_type"}:
+            return [(1, "Leak (invalid Android gRPC cassette): unexpected request schema")]
+        if not isinstance(responses, list):
+            return [(1, "Leak (invalid Android gRPC cassette): responses must be a list")]
+        frames = [request, *responses]
+        if any(
+            not isinstance(frame, dict)
+            or set(frame) != {"protobuf_b64", "protobuf_type"}
+            or not isinstance(frame["protobuf_b64"], str)
+            for frame in frames
+        ):
+            return [(1, "Leak (invalid Android gRPC cassette): unexpected payload schema")]
+        payloads.extend(frame["protobuf_b64"] for frame in frames)
+
+    leaks: list[tuple[int, str]] = []
+    for encoded in payloads:
+        try:
+            decoded = base64.b64decode(encoded, validate=True)
+        except (ValueError, binascii.Error):
+            leaks.append((1, "Leak (invalid Android gRPC cassette): non-canonical protobuf base64"))
+            continue
+        if base64.b64encode(decoded).decode("ascii") != encoded:
+            leaks.append((1, "Leak (invalid Android gRPC cassette): non-canonical protobuf base64"))
+            continue
+        decoded_text = decoded.decode("latin1")
+        for description in find_credential_leaks(decoded_text):
+            leaks.append((1, description))
+        for match in _PROTOBUF_ASCII_TOKEN.finditer(decoded):
+            quoted_token = json.dumps(match.group().decode("ascii"))
+            for description in find_credential_leaks(quoted_token):
+                leaks.append((1, description))
+    return leaks
+
+
 def _scan_file(path: Path, secrets_only: bool = False) -> list[tuple[int, str]]:
     """Return ``(line_number, leak_description)`` for each leak.
 
@@ -247,6 +321,9 @@ def _scan_file(path: Path, secrets_only: bool = False) -> list[tuple[int, str]]:
     values — catching off-allowlist cookies (``_ga`` …) that a folded YAML
     scalar split across lines the streaming pass cannot stitch back together.
     """
+    if path.name.endswith(".grpc.json"):
+        return _scan_android_grpc_cassette(path)
+
     leaks: list[tuple[int, str]] = []
     try:
         # ``errors="replace"`` guarantees a corrupted cassette never crashes
@@ -288,7 +365,7 @@ def main(argv: list[str] | None = None) -> int:
         nargs="*",
         help=(
             "Cassette file(s) or directory. If omitted, scans "
-            "tests/cassettes/*.yaml from the repo root."
+            "tests/cassettes/*.yaml and *.grpc.json from the repo root."
         ),
     )
     parser.add_argument(
@@ -306,8 +383,8 @@ def main(argv: list[str] | None = None) -> int:
         "--recursive",
         action="store_true",
         help=(
-            "Scan ``tests/cassettes/**/*.yaml`` (recurse into subdirectories) "
-            "instead of the default top-level-only ``tests/cassettes/*.yaml``. "
+            "Recurse through cassette subdirectories instead of scanning only "
+            "the top level. "
             "Required in CI so a recorder cannot smuggle a leak into a nested "
             "folder like ``tests/cassettes/gzip_coverage/``."
         ),
@@ -336,7 +413,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    extensions = _SECRETS_ONLY_EXTENSIONS if args.secrets_only else (".yaml",)
+    extensions = _SECRETS_ONLY_EXTENSIONS if args.secrets_only else (".yaml", ".grpc.json")
     # ``--secrets-only`` matches only credential shapes (no false positives on
     # placeholder content), so it must NOT skip ``examples/`` — doing so would
     # be a blind spot for credential hunting over fixture dirs (#1266). Default

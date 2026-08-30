@@ -182,6 +182,7 @@ markers = [
     "readonly: read-only tests against user's test notebook",
     "impersonate_smoke: minimal live smoke run under NOTEBOOKLM_TRANSPORT=curl_cffi in the nightly (read/ask/upload/download — one per transport-critical op)",
     "vcr: tests using VCR.py recorded cassettes (run with NOTEBOOKLM_VCR_RECORD=1 to record)",
+    "grpc_cassette: tests replaying sanitized Android protobuf cassettes through the test-only gRPC channel seam",
     "no_keepalive_disable: opt a VCR test out of the global NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1 autouse fixture in tests/integration/conftest.py",
     "allow_no_vcr: opt a tests/integration/ test out of the integration-tree enforcement hook; use for mock-only tests that legitimately live under tests/integration/",
     "characterization: behavior-pinning unit tests that lock in current observable contracts and would be too synthetic to cassette-back",

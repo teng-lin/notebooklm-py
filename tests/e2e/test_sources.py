@@ -136,14 +136,16 @@ class TestSourceMutations:
         assert source.id not in source_ids
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(180)
     async def test_refresh_source(self, client, temp_notebook):
         """Test refreshing a URL source."""
         # Add a URL source
-        source = await client.sources.add_url(temp_notebook.id, "https://example.com")
+        source = await client.sources.add_url(
+            temp_notebook.id,
+            "https://example.com",
+            wait=True,
+        )
         assert source.id is not None
-
-        # Refresh it
-        await asyncio.sleep(2)  # Wait for initial processing
 
         result = await client.sources.refresh(temp_notebook.id, source.id)
         # v0.8.0 (#1290): refresh() returns None on success

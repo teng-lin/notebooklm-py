@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -41,7 +42,7 @@ from notebooklm.exceptions import (
     SourceTimeoutError,
     ValidationError,
 )
-from notebooklm.types import SourceStatus
+from notebooklm.types import Source, SourceStatus
 
 NOTEBOOK_ID = "00000000-0000-4000-8000-000000000200"
 SOURCE_ID = "00000000-0000-4000-8000-000000000201"
@@ -370,7 +371,9 @@ async def test_pdf_synthetic_branch_pins_wire_headers_body_progress_and_fresh_be
         "Authorization": "Bearer bearer-secret-1",
         "Content-Type": "text/plain; charset=utf-8",
         "User-Agent": "NotebookLM/1.46.7.940945420 (Android 16; sdk_gphone64_arm64)",
+        "X-Goog-AuthUser": "0",
         "X-Goog-Upload-Command": "start",
+        "X-Goog-Upload-Content-Length": str(len(content)),
         "X-Goog-Upload-File-Name": path.name,
         "X-Goog-Upload-Header-Content-Length": str(len(content)),
         "X-Goog-Upload-Header-Content-Type": "application/pdf",
@@ -382,6 +385,7 @@ async def test_pdf_synthetic_branch_pins_wire_headers_body_progress_and_fresh_be
         "Authorization": "Bearer bearer-secret-2",
         "User-Agent": "Dart/3.13 (dart:io)",
         "Content-Length": str(len(content)),
+        "X-Goog-AuthUser": "0",
         "X-Goog-Upload-Command": "upload, finalize",
         "X-Goog-Upload-Offset": "0",
     }
@@ -539,20 +543,145 @@ async def test_missing_file_and_blank_title_reject_before_bearer_or_wire(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_non_pdf_upload_preserves_inferred_content_type_on_android_wire(
+@pytest.mark.parametrize(
+    ("filename", "mime_type", "content"),
+    [
+        ("notes.txt", None, b"hello"),
+        ("records.csv", "text/csv", b"name,value\none,1\n"),
+        (
+            "document.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            b"PK\x03\x04test-docx",
+        ),
+    ],
+)
+async def test_non_pdf_upload_preserves_type_and_length_on_android_wire(
     tmp_path: Path,
+    filename: str,
+    mime_type: str | None,
+    content: bytes,
 ) -> None:
     harness = HTTPHarness()
     _, _, _, api = await _graph(harness)
-    path = tmp_path / "notes.txt"
-    path.write_text("hello", encoding="utf-8")
+    path = tmp_path / filename
+    path.write_bytes(content)
+
+    result = await api.add_file(NOTEBOOK_ID, path, mime_type=mime_type)
+
+    assert result.id == SOURCE_ID
+    start = next(call for call in harness.calls if call.method == "POST")
+    expected_type = mime_type or "text/plain"
+    assert start.headers["X-Goog-Upload-Content-Length"] == str(len(content))
+    assert start.headers["X-Goog-Upload-Header-Content-Length"] == str(len(content))
+    assert start.headers["X-Goog-AuthUser"] == "0"
+    assert start.headers["X-Goog-Upload-Header-Content-Type"] == expected_type
+    final = next(call for call in harness.calls if call.method == "PUT")
+    assert final.headers["X-Goog-AuthUser"] == "0"
+    assert final.body == content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("filename", ["records.csv", "document.docx", "RECORDS.CSV"])
+async def test_public_compat_routes_only_csv_and_docx_to_web(
+    tmp_path: Path,
+    filename: str,
+) -> None:
+    harness = HTTPHarness()
+    session, _, pipeline, _ = await _graph(harness)
+    path = tmp_path / filename
+    path.write_bytes(b"compatibility payload")
+    expected = Source(id=SOURCE_ID, title=filename, status=SourceStatus.READY)
+    compat = AsyncMock(return_value=expected)
+    progress = AsyncMock()
+    api = AndroidSourcesAPI(
+        cast(AndroidSession, session),
+        pipeline,
+        add_file_compat=compat,
+    )
+
+    result = await api.add_file(
+        NOTEBOOK_ID,
+        path,
+        "application/custom",
+        wait=True,
+        wait_timeout=17.0,
+        title="Requested title",
+        on_progress=progress,
+    )
+
+    assert result is expected
+    compat.assert_awaited_once_with(
+        NOTEBOOK_ID,
+        path,
+        "application/custom",
+        wait=True,
+        wait_timeout=17.0,
+        title="Requested title",
+        on_progress=progress,
+    )
+    assert session.calls == []
+    assert harness.calls == []
+
+
+@pytest.mark.asyncio
+async def test_public_compat_routes_from_canonical_symlink_target(tmp_path: Path) -> None:
+    harness = HTTPHarness()
+    session, _, pipeline, _ = await _graph(harness)
+    target = tmp_path / "actual.csv"
+    target.write_text("name,value\none,1\n", encoding="utf-8")
+    alias = tmp_path / "misleading.pdf"
+    try:
+        alias.symlink_to(target)
+    except OSError as error:
+        pytest.skip(f"symlinks unavailable: {error}")
+
+    expected = Source(id=SOURCE_ID, title=target.name, status=SourceStatus.READY)
+    compat = AsyncMock(return_value=expected)
+    api = AndroidSourcesAPI(
+        cast(AndroidSession, session),
+        pipeline,
+        add_file_compat=compat,
+    )
+
+    result = await api.add_file(NOTEBOOK_ID, alias)
+
+    assert result is expected
+    compat.assert_awaited_once_with(
+        NOTEBOOK_ID,
+        target.resolve(),
+        None,
+        wait=False,
+        wait_timeout=120.0,
+        title=None,
+        on_progress=None,
+    )
+    assert session.calls == []
+    assert harness.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("filename", ["document.pdf", "notes.md", "audio.mp3", "book.epub"])
+async def test_public_compat_keeps_every_other_extension_on_android(
+    tmp_path: Path,
+    filename: str,
+) -> None:
+    harness = HTTPHarness()
+    session, _, pipeline, _ = await _graph(harness)
+    path = tmp_path / filename
+    path.write_bytes(b"native payload")
+    compat = AsyncMock()
+    api = AndroidSourcesAPI(
+        cast(AndroidSession, session),
+        pipeline,
+        add_file_compat=compat,
+    )
 
     result = await api.add_file(NOTEBOOK_ID, path)
 
     assert result.id == SOURCE_ID
-    start = next(call for call in harness.calls if call.method == "POST")
-    assert start.headers["X-Goog-Upload-Header-Content-Type"] == "text/plain"
-    assert next(call for call in harness.calls if call.method == "PUT").body == b"hello"
+    compat.assert_not_awaited()
+    assert [call[0] for call in session.calls] == [ADD_TENTATIVE_SOURCES_METHOD]
+    assert [call.method for call in harness.calls] == ["POST", "PUT"]
 
 
 @pytest.mark.asyncio

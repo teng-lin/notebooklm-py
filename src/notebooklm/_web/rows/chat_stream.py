@@ -119,6 +119,10 @@ class _ChunkExtraction:
     #: Read before the answer-text gate, so a text-less chunk still reports it.
     turn_key: ConversationTurnKey | None = None
     next_steps: list[NextStepSuggestion] = field(default_factory=list)
+    #: Sequence metadata from a terminal ``["e", n, ...]`` bookkeeping
+    #: frame. It is deliberately not called a status: successful streams also
+    #: carry this frame and ``n`` is not an RPC/gRPC error code.
+    terminal_sequence: int | None = None
 
 
 def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResult:
@@ -174,6 +178,7 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
     next_steps: list[NextStepSuggestion] = []
     saw_final_chunk = False
     parseable_chunk_count = 0
+    terminal_sequence: int | None = None
 
     def process_chunk(json_str: str) -> None:
         """Process a JSON chunk, updating best answer candidates and their refs."""
@@ -181,7 +186,7 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
         nonlocal best_marked_answer, best_marked_refs, best_marked_document
         nonlocal best_unmarked_answer, best_unmarked_refs, best_unmarked_document
         nonlocal saw_drift_signal, server_conv_id, turn_key, next_steps, parseable_chunk_count
-        nonlocal saw_final_chunk
+        nonlocal saw_final_chunk, terminal_sequence
         chunk = _extract_chunk_with_parseable(json_str)
         if chunk.parseable:
             parseable_chunk_count += 1
@@ -214,6 +219,8 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
             turn_key = chunk.turn_key
         if chunk.next_steps:
             next_steps = chunk.next_steps
+        if chunk.terminal_sequence is not None:
+            terminal_sequence = chunk.terminal_sequence
 
     i = 0
     while i < len(lines):
@@ -233,6 +240,13 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
             i += 1
 
     if parseable_chunk_count == 0:
+        if terminal_sequence is not None:
+            raise ChatError(
+                "Chat request ended before the server returned an RPC payload "
+                f"(terminal stream sequence {terminal_sequence}). The response "
+                "contained only stream bookkeeping and no server status or reason; "
+                "retry later, and investigate the request/backend if it persists."
+            )
         # No ``wrb.fr`` envelopes recognized — distinguishable from a
         # legitimate empty answer (which still produces at least one
         # parseable chunk). Raise so callers can distinguish wire-drift
@@ -373,6 +387,7 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
     saw_final_envelope = False
     turn_key: ConversationTurnKey | None = None
     next_steps: list[NextStepSuggestion] = []
+    terminal_sequence: int | None = None
     for item in data:
         if not isinstance(item, list) or len(item) < 2:
             continue
@@ -390,6 +405,10 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
         tag = frame.tag
         if tag == "er":
             _raise_chat_error_frame(item)
+
+        if tag == "e":
+            terminal_sequence = frame.terminal_sequence
+            continue
 
         if tag != "wrb.fr" or len(item) < 3:
             continue
@@ -530,6 +549,7 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
         is_final_response=saw_final_envelope,
         turn_key=turn_key,
         next_steps=next_steps,
+        terminal_sequence=terminal_sequence,
     )
 
 

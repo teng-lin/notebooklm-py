@@ -1,13 +1,15 @@
-# `tests/integration/` — VCR-tier rule
+# `tests/integration/` — recorded-seam rule
 
 This directory holds the **integration tier** of the test pyramid. Anything
-collected here exercises real (or recorded-real) HTTP traffic against the
-NotebookLM `batchexecute` endpoints via [VCR.py](https://github.com/kevin1024/vcrpy)
-cassettes in `tests/cassettes/`.
+collected here exercises real or recorded-real NotebookLM traffic. Web
+`batchexecute` calls use [VCR.py](https://github.com/kevin1024/vcrpy) HTTP
+cassettes. Android calls use the test-only protobuf-aware gRPC channel seam in
+`tests/_helpers/android_grpc_cassette.py`, because `grpc.aio` performs its I/O
+in gRPC C-core and is not intercepted by vcrpy.
 
 To keep the tier honest — i.e. to keep "integration" from quietly slipping
 back into "unit with extra ceremony" — every test collected under
-`tests/integration/` MUST satisfy one of these three rules. The
+`tests/integration/` MUST satisfy one of these four rules. The
 `pytest_collection_modifyitems` hook in `conftest.py` raises
 `pytest.UsageError` at collection time if none of them holds, so a violation
 fails CI immediately rather than degrading the tier silently.
@@ -22,10 +24,48 @@ A `tests/integration/` test is accepted if **any** of the following is true:
    hook detects the VCR-wrapped function by walking the function's
    `wrapt.FunctionWrapper` chain and matching `CassetteContextDecorator` on
    the bound `_self_wrapper`.
-3. **`@pytest.mark.allow_no_vcr`** is applied as an explicit opt-out.
+3. **`@pytest.mark.grpc_cassette`** is applied to a test replaying an Android
+   `.grpc.json` cassette through the custom channel adapter.
+4. **`@pytest.mark.allow_no_vcr`** is applied as an explicit opt-out.
 
-If none of the three is present, collection fails with a message naming the
+If none of the four is present, collection fails with a message naming the
 violating node IDs.
+
+## Android gRPC cassettes
+
+Android cassettes live in `tests/cassettes/android/` and intentionally use the
+`.grpc.json` suffix rather than vcrpy's YAML format. Each interaction pins the
+full method path, unary-unary versus unary-stream shape, deterministic request
+protobuf FQN/bytes, and deterministic response protobuf FQN/bytes. Metadata is
+not part of the model, so bearer credentials cannot be serialized. Recording
+requires an explicit application-level sanitizer and then unconditionally runs
+the generalized protobuf redactor as its final security boundary. The redactor
+discards unknown fields, replaces every string and byte string, and maps
+integers/floats to safe non-zero placeholders while preserving scalar presence,
+message structure, booleans, and schema-defined enum values. Replay injects an
+in-memory channel and a non-secret bearer provider; it must never construct a
+live gRPC channel or mint OAuth credentials.
+
+Set `NOTEBOOKLM_ANDROID_GRPC_RECORD=1` only for an explicitly reviewed,
+read-only recording test. In that mode, `@pytest.mark.grpc_cassette` keeps the
+real profile home available. Replay remains isolated from the developer's
+profile. Hand-built fixtures must be named `*_synthetic.grpc.json`; do not call
+them recorded traffic.
+
+The initial representative recorded case is a sanitized read of a temporary,
+empty scratch notebook through public `notebooks.get` over `GetProject`; the
+scratch notebook was deleted immediately after capture. The staged decoder
+matrix should add recordings, one bounded family at a time, for:
+
+1. settings via unary `GetOrCreateAccount`;
+2. a rich `GetProject` project/source response;
+3. `LoadSource` structured content;
+4. `ListArtifacts` plus `GetNotes`;
+5. both `GetLabels` label/collection response arms;
+6. `ListDiscoverSourcesJob` research state;
+7. sharing `GetProjectDetails`;
+8. chat `ListChatSessions` plus `ListChatTurns`; and
+9. server-streaming `GenerateFreeFormStreamed`.
 
 ## When to use `allow_no_vcr`
 

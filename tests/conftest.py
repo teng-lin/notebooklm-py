@@ -35,6 +35,7 @@ _REALITY_REPORTS: dict[str, list[tuple[str, str]]] = {}
 # value and split the config into a half-recording state; ``test_home_isolation``
 # pins the parity. (#1263)
 _VCR_RECORD_ENV = "NOTEBOOKLM_VCR_RECORD"
+_ANDROID_GRPC_RECORD_ENV = "NOTEBOOKLM_ANDROID_GRPC_RECORD"
 
 
 def _vcr_recording() -> bool:
@@ -42,7 +43,20 @@ def _vcr_recording() -> bool:
     return os.environ.get(_VCR_RECORD_ENV, "").casefold() in ("1", "true", "yes")
 
 
-def _should_use_real_home(*, e2e: bool, vcr: bool, recording: bool) -> bool:
+def _android_grpc_recording() -> bool:
+    """Whether the test-only Android gRPC seam is recording live traffic."""
+
+    return os.environ.get(_ANDROID_GRPC_RECORD_ENV, "").casefold() in ("1", "true", "yes")
+
+
+def _should_use_real_home(
+    *,
+    e2e: bool,
+    vcr: bool,
+    recording: bool,
+    grpc_cassette: bool = False,
+    grpc_recording: bool = False,
+) -> bool:
     """Whether a test should see the developer's real ``~/.notebooklm`` profile
     rather than an isolated tmp ``NOTEBOOKLM_HOME``.
 
@@ -53,8 +67,10 @@ def _should_use_real_home(*, e2e: bool, vcr: bool, recording: bool) -> bool:
       path read out of ``NOTEBOOKLM_HOME``. Replay runs and non-VCR tests stay
       isolated, so the suite is reproducible and a stray ``NOTEBOOKLM_VCR_RECORD``
       on a normal run never lets a test touch the real profile (issue #1263).
+    - **Android gRPC cassette** tests follow the same rule under the separate
+      ``NOTEBOOKLM_ANDROID_GRPC_RECORD=1`` opt-in.
     """
-    return e2e or (vcr and recording)
+    return e2e or (vcr and recording) or (grpc_cassette and grpc_recording)
 
 
 def _isolation_home(request, tmp_path):
@@ -77,6 +93,8 @@ def _isolation_home(request, tmp_path):
         e2e=request.node.get_closest_marker("e2e") is not None,
         vcr=request.node.get_closest_marker("vcr") is not None,
         recording=_vcr_recording(),
+        grpc_cassette=request.node.get_closest_marker("grpc_cassette") is not None,
+        grpc_recording=_android_grpc_recording(),
     ):
         return None
     return str(tmp_path / "notebooklm-home")
@@ -94,11 +112,12 @@ def _isolate_notebooklm_home(request, tmp_path, monkeypatch):
     ``NOTEBOOKLM_HOME`` at a tmp dir gives every test the same empty-storage
     view CI sees, so the suite is reproducible across machines.
 
-    Two opt-outs use the real ``~/.notebooklm/`` profile instead (see
+    Three opt-outs use the real ``~/.notebooklm/`` profile instead (see
     :func:`_should_use_real_home` / :func:`_isolation_home`): ``@pytest.mark.e2e``
     tests (mint live tokens) and ``@pytest.mark.vcr`` tests while recording
-    (``NOTEBOOKLM_VCR_RECORD=1``) — the latter lets a cassette be recorded
-    through pytest rather than a standalone script (issue #1263).
+    (``NOTEBOOKLM_VCR_RECORD=1``), plus ``@pytest.mark.grpc_cassette`` tests
+    while ``NOTEBOOKLM_ANDROID_GRPC_RECORD=1``. The recording opt-ins let each
+    cassette kind resolve real auth through pytest; replay remains isolated.
     """
     home = _isolation_home(request, tmp_path)
     if home is not None:
@@ -106,9 +125,17 @@ def _isolate_notebooklm_home(request, tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _isolate_backend_preference(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep an ambient backend preference from changing constructor tests."""
-    monkeypatch.delenv("NOTEBOOKLM_BACKEND", raising=False)
+def _isolate_backend_preference(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep ambient backend preferences out of non-live constructor tests.
+
+    E2E runs deliberately use ``NOTEBOOKLM_BACKEND`` to select the backend
+    under test, so preserve the caller's explicit choice for those tests.
+    """
+    if request.node.get_closest_marker("e2e") is None:
+        monkeypatch.delenv("NOTEBOOKLM_BACKEND", raising=False)
 
 
 @pytest.fixture(autouse=True)

@@ -96,22 +96,35 @@ _GENERATION_SKIP_TARGETS = {
 
 
 def _install_chat_rate_limit_skip(client: NotebookLMClient) -> None:
-    """Wrap ``client.chat.ask`` so rate-limit ``ChatError``s become skips.
+    """Wrap ``client.chat.ask`` so typed or web rate-limit errors become skips.
 
-    Non-rate-limit ``ChatError``s (HTTP, auth, parse) still raise so real
-    defects stay visible.
+    Android surfaces gRPC ``RESOURCE_EXHAUSTED`` as ``RateLimitError`` while
+    web chat currently surfaces its quota response as a ``ChatError``. Other
+    ``ChatError``s (HTTP, auth, parse) still raise so real defects stay visible.
     """
     original_ask = client.chat.ask
 
     async def _ask_with_skip(*args, **kwargs):
         try:
             return await original_ask(*args, **kwargs)
-        except ChatError as e:
+        except (ChatError, RateLimitError) as e:
+            if isinstance(e, RateLimitError):
+                pytest.skip(f"Rate limit: {e}")
             if any(phrase in str(e).lower() for phrase in _RATE_LIMIT_PHRASES):
                 pytest.skip(str(e))
             raise
 
     client.chat.ask = _ask_with_skip
+
+
+async def reset_current_chat_conversation(
+    client: NotebookLMClient,
+    notebook_id: str,
+) -> None:
+    """Start a live chat test from an empty server-side conversation."""
+    conversation_id = await client.chat.get_conversation_id(notebook_id)
+    if conversation_id is not None:
+        await client.chat.delete_conversation(notebook_id, conversation_id)
 
 
 def _install_generation_rate_limit_skip(client: NotebookLMClient) -> None:
@@ -130,15 +143,34 @@ def _install_generation_rate_limit_skip(client: NotebookLMClient) -> None:
     interactive mind map, #1819) skip on quota exhaustion instead of hard-failing.
     """
 
+    def _rate_limit_cause(error: BaseException) -> RateLimitError | None:
+        """Find a typed quota cause through unconfirmed-write wrappers."""
+        pending: list[BaseException] = [error]
+        seen: set[int] = set()
+        while pending:
+            current = pending.pop()
+            if id(current) in seen:
+                continue
+            seen.add(id(current))
+            if isinstance(current, RateLimitError):
+                return current
+            for linked in (current.__cause__, current.__context__):
+                if linked is not None:
+                    pending.append(linked)
+        return None
+
     def _wrap(original):
         async def _with_skip(*args, **kwargs):
             try:
                 return await original(*args, **kwargs)
-            except RateLimitError as e:
+            except Exception as error:
+                rate_limit = _rate_limit_cause(error)
+                if rate_limit is None:
+                    raise
                 # The "Rate limit:" prefix guarantees a _RATE_LIMIT_PHRASES
                 # match regardless of the exception message wording, so the
                 # skip always lands in pytest_terminal_summary's section.
-                pytest.skip(f"Rate limit: {e}")
+                pytest.skip(f"Rate limit: {rate_limit}")
 
         return _with_skip
 
@@ -320,9 +352,40 @@ async def read_back_option_pair(
     Raises:
         AssertionError: If the row never appears or carries no option pair.
     """
-    from notebooklm._web.rows.artifacts import ArtifactRow
+    from notebooklm._web.rows.artifacts import ArtifactRow, QuizOptionPair
+    from notebooklm.exceptions import RPCError
 
     assert family in ("quiz", "flashcards"), family
+    if client.backends["artifacts"] == "android":
+        for attempt in range(attempts):
+            try:
+                async with client.artifacts._transport.operation_scope(
+                    f"e2e read-back {family} options"
+                ) as lease:
+                    raw = await client.artifacts._get_raw_studio_artifact(
+                        task_id,
+                        expected_epoch=lease.epoch,
+                    )
+            except RPCError as error:
+                if error.rpc_code != 5 or attempt >= attempts - 1:
+                    raise
+                await asyncio.sleep(POLL_INTERVAL)
+                continue
+
+            assert raw.HasField("app"), f"Android {family} artifact has no app payload"
+            options = raw.app.generation_options
+            field = f"{family}_generation_options"
+            assert options.HasField(field), (
+                f"Android {family} artifact carries no stored protobuf option pair"
+            )
+            stored = getattr(options, field)
+            quantity = stored.question_quantity if family == "quiz" else stored.card_quantity
+            difficulty = (
+                stored.quiz_difficulty if family == "quiz" else stored.flashcards_difficulty
+            )
+            return QuizOptionPair(quantity=int(quantity), difficulty=int(difficulty))
+        raise AssertionError(f"artifact {task_id} never appeared in Android GetArtifact")
+
     for attempt in range(attempts):
         # ``_list_for_download`` is the sanctioned internal seam for the raw
         # rows (#1488); no public API exposes the stored options today.
@@ -654,7 +717,7 @@ def pytest_runtest_teardown(item, nextitem):
 
     This hook runs after each test. Adds delays for:
     - test_generation.py: 15s between generation tests (artifact quotas)
-    - test_chat.py: 5s between chat tests (ask() rate limits)
+    - live_chat_ask-marked tests: 5s between chat tests (ask() rate limits)
     """
     import time
 
@@ -670,7 +733,7 @@ def pytest_runtest_teardown(item, nextitem):
         time.sleep(GENERATION_TEST_DELAY)
         return
 
-    if item.path.name == "test_chat.py":
+    if item.get_closest_marker(_LIVE_CHAT_ASK_MARKER) is not None:
         if "multi_source_notebook_id" not in item.fixturenames:
             return
         logging.info("Delaying %ss between chat tests to avoid rate limiting", CHAT_TEST_DELAY)

@@ -1,10 +1,9 @@
 """Tests for the ``NOTEBOOKLM_HOME`` isolation opt-outs (issue #1263).
 
 The autouse ``_isolate_notebooklm_home`` fixture pins ``NOTEBOOKLM_HOME`` at a
-per-test tmp dir for reproducibility. Two opt-outs use the developer's real
-``~/.notebooklm`` profile instead: ``@pytest.mark.e2e`` tests (always) and
-``@pytest.mark.vcr`` tests *while recording* (``NOTEBOOKLM_VCR_RECORD=1``), so a
-contributor can record a cassette through pytest instead of a standalone script.
+per-test tmp dir for reproducibility. The developer's real ``~/.notebooklm``
+profile is visible only to ``@pytest.mark.e2e`` tests and explicitly recording
+Web VCR or Android gRPC cassette tests; every replay remains isolated.
 """
 
 from __future__ import annotations
@@ -27,6 +26,7 @@ _root_conftest = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_root_conftest)
 _should_use_real_home = _root_conftest._should_use_real_home
 _vcr_recording = _root_conftest._vcr_recording
+_android_grpc_recording = _root_conftest._android_grpc_recording
 
 # The canonical record-mode check the root conftest mirrors — loaded the same way
 # so the parity test below can assert the two never disagree.
@@ -64,6 +64,14 @@ def _resolved_home(markers, *, recording, tmp_path, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_VCR_RECORD", "1")
     else:
         monkeypatch.delenv("NOTEBOOKLM_VCR_RECORD", raising=False)
+    return _isolation_home(_FakeRequest(markers), tmp_path)
+
+
+def _resolved_grpc_home(markers, *, recording, tmp_path, monkeypatch):
+    if recording:
+        monkeypatch.setenv("NOTEBOOKLM_ANDROID_GRPC_RECORD", "1")
+    else:
+        monkeypatch.delenv("NOTEBOOKLM_ANDROID_GRPC_RECORD", raising=False)
     return _isolation_home(_FakeRequest(markers), tmp_path)
 
 
@@ -144,3 +152,36 @@ def test_isolation_home_isolates_vcr_test_in_replay_mode(
     """A vcr test in REPLAY mode (the CI default) is still isolated."""
     home = _resolved_home({"vcr"}, recording=False, tmp_path=tmp_path, monkeypatch=monkeypatch)
     assert home is not None and home.endswith("notebooklm-home")
+
+
+def test_isolation_home_defers_for_android_grpc_cassette_only_while_recording(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert (
+        _resolved_grpc_home(
+            {"grpc_cassette"},
+            recording=True,
+            tmp_path=tmp_path,
+            monkeypatch=monkeypatch,
+        )
+        is None
+    )
+    home = _resolved_grpc_home(
+        {"grpc_cassette"},
+        recording=False,
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+    )
+    assert home is not None and home.endswith("notebooklm-home")
+
+
+@pytest.mark.parametrize(
+    "value", ["1", "true", "TRUE", "Yes", "yes", "0", "false", "", "1 ", " 1", "nope"]
+)
+def test_android_grpc_recording_uses_strict_truthy_values(
+    value: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NOTEBOOKLM_ANDROID_GRPC_RECORD", value)
+    assert _android_grpc_recording() is (value.casefold() in {"1", "true", "yes"})

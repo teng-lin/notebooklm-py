@@ -980,6 +980,28 @@ def test_e_terminator_frame_does_not_break_successful_answer() -> None:
     assert result.answer == "Real answer."
 
 
+def test_error_only_e_terminator_surfaces_bounded_chat_diagnostic() -> None:
+    """A payload-free terminal frame is not misreported as wire drift.
+
+    The sequence value is diagnostic bookkeeping, not a status code: the live
+    failure used 3, while successful streams carry values such as 15.
+    """
+    body = _length_prefixed(
+        json.dumps([["di", 651], ["af.httprm", 651, "redacted-request", 15]]),
+        json.dumps([["e", 3, None, None, 91]]),
+    )
+
+    with pytest.raises(ChatError) as raised:
+        parse_streaming_chat_response(body)
+
+    message = str(raised.value)
+    assert "before the server returned an RPC payload" in message
+    assert "terminal stream sequence 3" in message
+    assert "no server status or reason" in message
+    assert "redacted-request" not in message
+    assert "rate limit" not in message.lower()
+
+
 def test_chat_wire_static_import_guard() -> None:
     forbidden = {
         "notebooklm",

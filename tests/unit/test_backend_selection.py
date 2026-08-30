@@ -31,6 +31,7 @@ from notebooklm._android.sources import AndroidSourcesAPI
 from notebooklm._auth.master_token_types import MasterToken
 from notebooklm._auth.profile_store import ProfileStore
 from notebooklm._client_assembly import BackendPreference, resolve_backend_preference
+from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.exceptions import ConfigurationError, MissingDependencyError
@@ -149,6 +150,7 @@ def test_android_preference_promotes_every_namespace() -> None:
                 web_bindings.append((namespace, attribute))
     assert web_bindings == [
         ("notebooks", "_remove_from_recent_compat"),
+        ("sources", "_add_file_compat"),
         ("sharing", "_set_view_level_compat"),
     ]
 
@@ -164,6 +166,15 @@ def test_android_chat_receives_configured_response_byte_cap() -> None:
     )
 
     assert client.chat._chat_response_max_bytes == 123456
+
+
+def test_android_assembly_wires_only_the_existing_web_file_upload_capability() -> None:
+    client = NotebookLMClient(_auth(), backend="android")
+
+    compatibility = client.sources._add_file_compat
+    assert compatibility is not None
+    assert compatibility.__func__ is WebSourcesAPI.add_file
+    assert compatibility.__self__._uploader is client._source_uploader
 
 
 def test_android_selected_public_callable_inventory_is_exact() -> None:

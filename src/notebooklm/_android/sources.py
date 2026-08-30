@@ -105,6 +105,25 @@ class DriveDownload(Protocol):
     ) -> AbstractAsyncContextManager[tuple[Path, str, str | None]]: ...
 
 
+class AddFileCompat(Protocol):
+    """Narrow Web upload capability for formats rejected by the mobile plane."""
+
+    async def __call__(
+        self,
+        notebook_id: str,
+        file_path: str | Path,
+        mime_type: str | None = None,
+        *,
+        wait: bool = False,
+        wait_timeout: float = 120.0,
+        title: str | None = None,
+        on_progress: Callable[[int, int], object] | None = None,
+    ) -> Source: ...
+
+
+_WEB_FILE_UPLOAD_COMPAT_EXTENSIONS = frozenset({".csv", ".docx"})
+
+
 def _snapshot_enum_filter(
     values: Collection[_FilterValue] | None,
     *,
@@ -335,9 +354,21 @@ class AndroidSourcesAPI(SourcesAPI):
         upload_pipeline: AndroidUploadPipeline,
         *,
         drive_download: DriveDownload | None = None,
+        add_file_compat: AddFileCompat | None = None,
     ) -> None:
+        """Bind native sources plus the two qualified Web file-upload seams.
+
+        Live native PDF and Markdown controls reach ``SOURCE_STATUS_COMPLETE``,
+        while CSV and DOCX finish in ``SOURCE_STATUS_ERROR`` even with the exact
+        APK Scotty transaction. Public client assembly therefore supplies the
+        already-authenticated Web uploader for only those two extensions. Direct
+        adapter callers may omit the collaborator to exercise the native
+        transaction for evidence work. Other extensions remain native unless
+        separately qualified by evidence.
+        """
         self._transport = session
         self._upload_pipeline = upload_pipeline
+        self._add_file_compat = add_file_compat
         native_drive_download = getattr(upload_pipeline, "drive_download_scope", None)
         self._drive_download = drive_download or (
             native_drive_download if callable(native_drive_download) else None
@@ -967,13 +998,34 @@ class AndroidSourcesAPI(SourcesAPI):
         title: str | None = None,
         on_progress: Callable[[int, int], object] | None = None,
     ) -> Source:
+        # Choose the qualified compatibility path from the same canonical
+        # target whose filename drives MIME inference in either uploader. This
+        # prevents a misleading symlink suffix from routing CSV/DOCX through
+        # the native transaction that live evidence has shown will fail. Both
+        # uploaders still resolve/check the supplied canonical path inside
+        # their own admitted operation before opening it.
+        canonical_path = await asyncio.to_thread(Path(file_path).resolve)
+        if (
+            canonical_path.suffix.lower() in _WEB_FILE_UPLOAD_COMPAT_EXTENSIONS
+            and self._add_file_compat is not None
+        ):
+            return await self._add_file_compat(
+                notebook_id,
+                canonical_path,
+                mime_type,
+                wait=wait,
+                wait_timeout=wait_timeout,
+                title=title,
+                on_progress=on_progress,
+            )
+
         adapter = self
         result: Source | None = None
         failure: BaseException | None = None
         try:
             result = await adapter._upload_pipeline.upload_file(
                 notebook_id,
-                file_path,
+                canonical_path,
                 mime_type,
                 wait=wait,
                 wait_timeout=wait_timeout,
@@ -1136,6 +1188,16 @@ class AndroidSourcesAPI(SourcesAPI):
     async def refresh(self, notebook_id: str, source_id: str) -> None:
         del notebook_id
         async with self._transport.operation_scope("sources.refresh") as lease:
+            # Live evidence bounds the native mutation to content that is
+            # actually stale: a stale native Drive source succeeds, while the
+            # freshly-added URL exercised by the shared E2E is rejected.  An
+            # already-fresh source needs no mutation, so preserve refresh's
+            # public ``None`` success contract without sending a no-effect call
+            # the native handler rejects. Keep both calls in one operation epoch
+            # so closing/reopening the client cannot split the decision from the
+            # write.
+            if await self._check_freshness(source_id, expected_epoch=lease.epoch):
+                return
             response = await self._transport.unary(
                 REFRESH_SOURCE_METHOD,
                 _write_proto().RefreshSourceRequest(
@@ -1159,14 +1221,27 @@ class AndroidSourcesAPI(SourcesAPI):
 
     async def check_freshness(self, notebook_id: str, source_id: str) -> bool:
         del notebook_id
+        return await self._check_freshness(source_id)
+
+    async def _check_freshness(
+        self,
+        source_id: str,
+        *,
+        expected_epoch: int | None = None,
+    ) -> bool:
+        unary_options: dict[str, Any] = {
+            "replay_safe": True,
+            "response_type": _write_proto().CheckSourceFreshnessResponse,
+        }
+        if expected_epoch is not None:
+            unary_options["expected_epoch"] = expected_epoch
         response = await self._transport.unary(
             CHECK_SOURCE_FRESHNESS_METHOD,
             _write_proto().CheckSourceFreshnessRequest(
                 source_id=_read_proto().SourceId(id=source_id),
                 request_context=android_request_context(),
             ),
-            replay_safe=True,
-            response_type=_write_proto().CheckSourceFreshnessResponse,
+            **unary_options,
         )
         if not response.HasField("source_freshness"):
             return True

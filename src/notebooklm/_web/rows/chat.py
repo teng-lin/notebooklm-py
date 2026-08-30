@@ -567,6 +567,7 @@ class StreamFrameRow:
     _raw: list[Any] = field(repr=False)
 
     _TAG_POS: ClassVar[int] = 0
+    _TERMINAL_SEQUENCE_POS: ClassVar[int] = 1
     _INNER_JSON_POS: ClassVar[int] = 2
     _ERROR_CODE_POS: ClassVar[int] = 2
     _ERROR_PAYLOAD_POS: ClassVar[int] = 5
@@ -589,6 +590,19 @@ class StreamFrameRow:
         if len(self._raw) <= self._INNER_JSON_POS:
             return None
         return self._raw[self._INNER_JSON_POS]
+
+    @property
+    def terminal_sequence(self) -> int | None:
+        """Bookkeeping sequence at ``item[1]`` of an ``"e"`` frame.
+
+        This value is not an RPC or gRPC status code: successful streams carry
+        values such as 15 here. It is useful only to identify the bounded
+        error-only terminator shape when no ``wrb.fr`` payload arrived.
+        """
+        if len(self._raw) <= self._TERMINAL_SEQUENCE_POS:
+            return None
+        value = self._raw[self._TERMINAL_SEQUENCE_POS]
+        return value if isinstance(value, int) and not isinstance(value, bool) else None
 
     @property
     def error_code(self) -> Any:

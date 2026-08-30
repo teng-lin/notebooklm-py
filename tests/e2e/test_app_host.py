@@ -126,6 +126,14 @@ def request_log(monkeypatch: pytest.MonkeyPatch) -> _RequestLog:
     return log
 
 
+@pytest.fixture
+def web_client(client):
+    """Keep this HTTP-host assertion scoped to the web data plane."""
+    if client.backends["notebooks"] != "web":
+        pytest.skip("app-host routing applies only to the web backend")
+    return client
+
+
 @requires_auth
 @pytest.mark.readonly
 class TestAppHost:
@@ -137,7 +145,7 @@ class TestAppHost:
     """
 
     @pytest.mark.asyncio
-    async def test_rpc_traffic_reaches_the_configured_host(self, client, request_log):
+    async def test_rpc_traffic_reaches_the_configured_host(self, web_client, request_log):
         """A real RPC lands on the configured app host, with no redirect hop.
 
         The redirect assertion carries as much weight as the host one. Being
@@ -146,7 +154,7 @@ class TestAppHost:
         covering for it, which is precisely the condition that would rot
         unnoticed until the bounce stops.
         """
-        await client.notebooks.list()
+        await web_client.notebooks.list()
 
         expected = httpx.URL(get_base_url()).host
         data_plane = request_log.data_plane_entries()
@@ -169,7 +177,7 @@ class TestAppHost:
         )
 
     @pytest.mark.asyncio
-    async def test_unconfigured_runs_reach_the_rebrand_host(self, client, request_log):
+    async def test_unconfigured_runs_reach_the_rebrand_host(self, web_client, request_log):
         """With no override set, every app request reaches the rebrand host.
 
         This is the CI case, and it makes the unconditional claim over *all* app
@@ -185,7 +193,7 @@ class TestAppHost:
         if os.environ.get("NOTEBOOKLM_BASE_URL", "").strip():
             pytest.skip("NOTEBOOKLM_BASE_URL is set — this asserts the *unconfigured* default")
 
-        await client.notebooks.list()
+        await web_client.notebooks.list()
 
         assert httpx.URL(get_base_url()).host == PERSONAL_BASE_HOST
         assert request_log.hosts() - {_ACCOUNTS_HOST} == {PERSONAL_BASE_HOST}

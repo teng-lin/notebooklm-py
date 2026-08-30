@@ -150,9 +150,11 @@ def _has_use_cassette_decorator(item) -> bool:
 def pytest_collection_modifyitems(config, items):
     """Enforce the integration tier-VCR rule.
 
-    Every collected test under ``tests/integration/`` MUST be VCR-tier: it must carry
-    ``@pytest.mark.vcr``, be decorated with ``@notebooklm_vcr.use_cassette``,
-    or explicitly opt out with ``@pytest.mark.allow_no_vcr`` (for mock-only
+    Every collected test under ``tests/integration/`` MUST use a recorded seam: it must carry
+    ``@pytest.mark.vcr`` for Web HTTP, ``@pytest.mark.grpc_cassette`` for the
+    test-only Android gRPC channel adapter, be decorated with
+    ``@notebooklm_vcr.use_cassette``, or explicitly opt out with
+    ``@pytest.mark.allow_no_vcr`` (for mock-only
     or no-network tests that legitimately live under ``tests/integration/`` —
     e.g. ``test_auto_refresh.py``, ``test_sources_integration.py``,
     ``concurrency/test_*``). Violations
@@ -166,6 +168,8 @@ def pytest_collection_modifyitems(config, items):
             continue
         if item.get_closest_marker("vcr") is not None:
             continue
+        if item.get_closest_marker("grpc_cassette") is not None:
+            continue
         if item.get_closest_marker("allow_no_vcr") is not None:
             continue
         if _has_use_cassette_decorator(item):
@@ -174,8 +178,9 @@ def pytest_collection_modifyitems(config, items):
     if violations:
         joined = "\n  ".join(violations)
         raise pytest.UsageError(
-            "tests/integration/ tests must be VCR-tier. Add "
-            "@pytest.mark.vcr, @notebooklm_vcr.use_cassette, or — for "
+            "tests/integration/ tests must use a recorded seam. Add "
+            "@pytest.mark.vcr, @pytest.mark.grpc_cassette, "
+            "@notebooklm_vcr.use_cassette, or — for "
             "mock-only tests — @pytest.mark.allow_no_vcr. Violations:\n  "
             f"{joined}"
         )
@@ -312,12 +317,13 @@ def _block_unbound_network_in_replay(request, monkeypatch):
         return  # Mock-only test legitimately doesn't use VCR.
 
     is_vcr_marked = request.node.get_closest_marker("vcr") is not None
+    is_grpc_cassette = request.node.get_closest_marker("grpc_cassette") is not None
     has_decorator = _has_use_cassette_decorator(request.node)
     # ``vcr`` pytest fixture (pytest-vcr) binds a cassette via fixture
     # resolution rather than a marker; detect by name in ``fixturenames``.
     uses_vcr_fixture = "vcr" in getattr(request.node, "fixturenames", ())
 
-    if not (is_vcr_marked or has_decorator or uses_vcr_fixture):
+    if not (is_vcr_marked or is_grpc_cassette or has_decorator or uses_vcr_fixture):
         # Not a VCR-tier test (and not allow_no_vcr — that's already
         # filtered above). The collection hook should have rejected this
         # at collect time, so reaching here is a defensive no-op.

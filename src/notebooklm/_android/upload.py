@@ -1044,7 +1044,9 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                 "Authorization": f"Bearer {credential.token}",
                 "Content-Type": "text/plain; charset=utf-8",
                 "User-Agent": ANDROID_EVIDENCE_PROFILE.app_user_agent,
+                "X-Goog-AuthUser": "0",
                 "X-Goog-Upload-Command": "start",
+                "X-Goog-Upload-Content-Length": str(file_size),
                 "X-Goog-Upload-File-Name": filename,
                 "X-Goog-Upload-Header-Content-Length": str(file_size),
                 "X-Goog-Upload-Header-Content-Type": content_type,
@@ -1112,6 +1114,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                 "Authorization": f"Bearer {credential.token}",
                 "User-Agent": ANDROID_EVIDENCE_PROFILE.finalize_user_agent,
                 "Content-Length": str(file_size),
+                "X-Goog-AuthUser": "0",
                 "X-Goog-Upload-Command": "upload, finalize",
                 "X-Goog-Upload-Offset": "0",
             }

@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import importlib.util
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
-from notebooklm.exceptions import RateLimitError
+from notebooklm.exceptions import ChatError, RateLimitError
 
 CONFTEST_PATH = Path(__file__).resolve().parents[1] / "e2e" / "conftest.py"
 pytest_plugins = ["pytester"]
@@ -114,6 +116,37 @@ class TestProfileOptionLifecycle:
         conftest.pytest_configure(config)
         conftest.pytest_unconfigure(config)
         assert "NOTEBOOKLM_PROFILE" not in os.environ
+
+
+class TestResetCurrentChatConversation:
+    async def test_deletes_the_current_server_conversation(self) -> None:
+        conftest = _load_e2e_conftest()
+        chat = SimpleNamespace(
+            get_conversation_id=AsyncMock(return_value="conversation-1"),
+            delete_conversation=AsyncMock(),
+        )
+
+        await conftest.reset_current_chat_conversation(
+            SimpleNamespace(chat=chat),
+            "notebook-1",
+        )
+
+        chat.get_conversation_id.assert_awaited_once_with("notebook-1")
+        chat.delete_conversation.assert_awaited_once_with("notebook-1", "conversation-1")
+
+    async def test_does_not_delete_when_no_conversation_exists(self) -> None:
+        conftest = _load_e2e_conftest()
+        chat = SimpleNamespace(
+            get_conversation_id=AsyncMock(return_value=None),
+            delete_conversation=AsyncMock(),
+        )
+
+        await conftest.reset_current_chat_conversation(
+            SimpleNamespace(chat=chat),
+            "notebook-1",
+        )
+
+        chat.delete_conversation.assert_not_awaited()
 
 
 class TestArgvProfile:
@@ -568,6 +601,62 @@ class TestRateLimitSkipSummary:
         result.stdout.fnmatch_lines(["*live chat coverage floor failed*"])
 
 
+class TestAndroidArtifactOptionReadBack:
+    """Live helper reads the server-stored pair from the Android protobuf."""
+
+    @pytest.mark.parametrize(
+        ("family", "quantity", "difficulty"),
+        [
+            ("quiz", 4, 2),
+            ("flashcards", 6, 3),
+        ],
+    )
+    async def test_reads_named_generation_option_fields(
+        self,
+        family: str,
+        quantity: int,
+        difficulty: int,
+    ) -> None:
+        from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
+            artifacts_pb2,
+        )
+
+        artifact = artifacts_pb2.Artifact(artifact_id="artifact-1")
+        options = artifact.app.generation_options
+        if family == "quiz":
+            options.quiz_generation_options.question_quantity = quantity
+            options.quiz_generation_options.quiz_difficulty = difficulty
+        else:
+            options.flashcards_generation_options.card_quantity = quantity
+            options.flashcards_generation_options.flashcards_difficulty = difficulty
+
+        @asynccontextmanager
+        async def operation_scope(_operation: str):
+            yield SimpleNamespace(epoch=7)
+
+        class FakeArtifacts:
+            _transport = SimpleNamespace(operation_scope=operation_scope)
+
+            async def _get_raw_studio_artifact(self, artifact_id: str, *, expected_epoch: int):
+                assert artifact_id == "artifact-1"
+                assert expected_epoch == 7
+                return artifact
+
+        client = SimpleNamespace(
+            backends={"artifacts": "android"},
+            artifacts=FakeArtifacts(),
+        )
+
+        stored = await _load_e2e_conftest().read_back_option_pair(
+            client,
+            "notebook-1",
+            "artifact-1",
+            family=family,
+        )
+
+        assert (stored.quantity, stored.difficulty) == (quantity, difficulty)
+
+
 class TestGenerationRateLimitSkip:
     """_install_generation_rate_limit_skip turns typed RateLimitError into skips.
 
@@ -627,6 +716,23 @@ class TestGenerationRateLimitSkip:
         with pytest.raises(ValueError, match="not a rate limit"):
             await client.artifacts.revise_slide("nb-1")
 
+    async def test_wrapped_rate_limit_error_becomes_skip(self):
+        conftest = _load_e2e_conftest()
+        client = self._make_client()
+
+        async def wrapped_quota(notebook_id):
+            del notebook_id
+            try:
+                raise RateLimitError("Resource exhausted", rpc_code=8)
+            except RateLimitError as cause:
+                raise RuntimeError("unconfirmed write") from cause
+
+        client.artifacts.generate_audio = wrapped_quota
+        conftest._install_generation_rate_limit_skip(client)
+
+        with pytest.raises(pytest.skip.Exception, match="Rate limit"):
+            await client.artifacts.generate_audio("nb-1")
+
     async def test_successful_calls_pass_through_per_method(self):
         # Closure safety: each wrapped name must bind its own original.
         conftest = _load_e2e_conftest()
@@ -671,6 +777,44 @@ class TestGenerationRateLimitSkip:
 
         with pytest.raises(pytest.skip.Exception):
             await client.artifacts.retry_failed("nb-1", "art-1")
+
+
+class TestChatRateLimitSkip:
+    """The live chat wrapper recognizes each backend's quota exception."""
+
+    @staticmethod
+    def _make_client(error: Exception):
+        class FakeChat:
+            async def ask(self, notebook_id):
+                raise error
+
+        return SimpleNamespace(chat=FakeChat())
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            ChatError("chat.ask rate-limited (HTTP 429)"),
+            RateLimitError("Resource exhausted", rpc_code=8),
+        ],
+    )
+    async def test_backend_rate_limit_becomes_skip(self, error):
+        conftest = _load_e2e_conftest()
+        client = self._make_client(error)
+        conftest._install_chat_rate_limit_skip(client)
+
+        with pytest.raises(pytest.skip.Exception) as excinfo:
+            await client.chat.ask("nb-1")
+
+        assert any(phrase in str(excinfo.value).lower() for phrase in conftest._RATE_LIMIT_PHRASES)
+
+    async def test_non_quota_chat_error_propagates(self):
+        conftest = _load_e2e_conftest()
+        error = ChatError("wire format changed")
+        client = self._make_client(error)
+        conftest._install_chat_rate_limit_skip(client)
+
+        with pytest.raises(ChatError, match="wire format changed"):
+            await client.chat.ask("nb-1")
 
 
 class TestGenerationSkipRegistryCoverage:

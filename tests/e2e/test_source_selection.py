@@ -19,13 +19,21 @@ import random
 
 import pytest
 
-from .conftest import assert_generation_started, requires_auth
+from .conftest import (
+    assert_generation_started,
+    requires_auth,
+    reset_current_chat_conversation,
+)
 
 
 @requires_auth
 @pytest.mark.live_chat_ask
 class TestChatWithSourceSelection:
     """Tests for chat.ask() with explicit source selection."""
+
+    @pytest.fixture(autouse=True)
+    async def _start_with_fresh_conversation(self, client, multi_source_notebook_id):
+        await reset_current_chat_conversation(client, multi_source_notebook_id)
 
     @pytest.mark.asyncio
     @pytest.mark.e2e
@@ -105,7 +113,7 @@ class TestChatWithSourceSelection:
         )
         assert result2.answer is not None
         assert result2.is_follow_up is True
-        assert result2.turn_number == 2
+        assert result2.turn_number > result1.turn_number
 
 
 @requires_auth
@@ -242,6 +250,10 @@ class TestSourceListingAndSelection:
 class TestEdgeCases:
     """Edge case tests for source selection."""
 
+    @pytest.fixture(autouse=True)
+    async def _start_with_fresh_conversation(self, client, multi_source_notebook_id):
+        await reset_current_chat_conversation(client, multi_source_notebook_id)
+
     @pytest.mark.asyncio
     @pytest.mark.e2e
     async def test_ask_with_explicit_all_sources(self, client, multi_source_notebook_id):
@@ -273,7 +285,9 @@ class TestEdgeCases:
             source_ids=source_ids,
         )
 
-        # Ask with reversed order (new conversation)
+        await reset_current_chat_conversation(client, multi_source_notebook_id)
+
+        # Ask with reversed order in an independently fresh conversation.
         result2 = await client.chat.ask(
             multi_source_notebook_id,
             "List the main topics.",

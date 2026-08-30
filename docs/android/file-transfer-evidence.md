@@ -29,6 +29,24 @@ persists either credential.
 
 The disposable notebook created for the test was deleted after validation.
 
+## File-format qualification
+
+The public Sources namespace remains the Android adapter. Its `add_file` implementation uses native
+Android tentative registration plus Scotty except for two extension-qualified compatibility calls:
+
+| extension | native Android live result | public Android selection |
+|---|---|---|
+| `.pdf` | `READY` with PDF type | native Android upload |
+| `.md` | `READY` with Markdown type | native Android upload |
+| `.csv` | Scotty returned `final`; `GetProject` then returned type `UNKNOWN`, status `ERROR`, and no populated error-detail metadata | existing authenticated Web `add_file` collaborator |
+| `.docx` | Scotty returned `final`; both OOXML and `application/msword` MIME probes then returned type `UNKNOWN`, status `ERROR`, and no populated error-detail metadata | existing authenticated Web `add_file` collaborator |
+
+The CSV and DOCX outcomes reproduced with substantive content, including an OS-generated DOCX, so
+they are not minimum-fixture validation failures. The same fixtures reached `READY` through the Web
+uploader. Native `AddSources` with `CONTENT_TYPE_CSV` was also tested, but the backend stored it as
+`TEXT`/pasted text rather than a CSV file source; the public adapter therefore does not coerce CSV
+through that route. No compatibility routing is inferred for other extensions.
+
 ## The upload detail that caused the 404s
 
 The Scotty start endpoint is:
@@ -81,7 +99,9 @@ POST /upload/upload/{project_id} HTTP/1.1
 Authorization: Bearer [REDACTED]
 Content-Type: text/plain; charset=utf-8
 User-Agent: NotebookLM/1.46.7.940945420 (Android 16; sdk_gphone64_arm64)
+X-Goog-AuthUser: 0
 X-Goog-Upload-Command: start
+X-Goog-Upload-Content-Length: 13362
 X-Goog-Upload-File-Name: android-upload-smoke.pdf
 X-Goog-Upload-Header-Content-Length: 13362
 X-Goog-Upload-Header-Content-Type: application/pdf
@@ -134,6 +154,7 @@ The app performs an HTTP/1.1 `PUT` to the returned session URL:
 PUT /upload/upload/{project_id}?upload_id=[REDACTED]&upload_protocol=resumable HTTP/1.1
 Authorization: Bearer [REDACTED]
 User-Agent: Dart/3.13 (dart:io)
+X-Goog-AuthUser: 0
 X-Goog-Upload-Command: upload, finalize
 X-Goog-Upload-Offset: 0
 

@@ -1,9 +1,11 @@
 """pytester regression test for the integration tier-enforcement hook.
 
 ``tests/integration/conftest.py`` registers a ``pytest_collection_modifyitems``
-hook that REFUSES to collect a test under ``tests/integration/`` unless it is
-VCR-tier (``@pytest.mark.vcr``, ``@notebooklm_vcr.use_cassette``, or the
-explicit ``@pytest.mark.allow_no_vcr`` opt-out).
+hook that REFUSES to collect a test under ``tests/integration/`` unless it uses
+a recorded seam (``@pytest.mark.vcr`` for Web HTTP,
+``@pytest.mark.grpc_cassette`` for Android gRPC,
+``@notebooklm_vcr.use_cassette``, or the explicit
+``@pytest.mark.allow_no_vcr`` opt-out).
 
 This module is the **durable, committed** regression test for that hook —
 spelled out via ``pytester`` so the assertion lives in a real test file rather
@@ -77,6 +79,8 @@ HOOK_SOURCE = textwrap.dedent(
                 continue
             if item.get_closest_marker("vcr") is not None:
                 continue
+            if item.get_closest_marker("grpc_cassette") is not None:
+                continue
             if item.get_closest_marker("allow_no_vcr") is not None:
                 continue
             if _has_use_cassette_decorator(item):
@@ -85,8 +89,9 @@ HOOK_SOURCE = textwrap.dedent(
         if violations:
             joined = "\\n  ".join(violations)
             raise pytest.UsageError(
-                "tests/integration/ tests must be VCR-tier. Add "
-                "@pytest.mark.vcr, @notebooklm_vcr.use_cassette, or - for "
+                "tests/integration/ tests must use a recorded seam. Add "
+                "@pytest.mark.vcr, @pytest.mark.grpc_cassette, "
+                "@notebooklm_vcr.use_cassette, or - for "
                 "mock-only tests - @pytest.mark.allow_no_vcr. Violations:\\n  "
                 + joined
             )
@@ -100,6 +105,7 @@ MARKER_REGISTRATION = textwrap.dedent(
     asyncio_default_fixture_loop_scope = function
     markers =
         vcr: vcr-tier
+        grpc_cassette: android grpc cassette tier
         allow_no_vcr: opt out
     """
 ).strip()
@@ -132,7 +138,9 @@ def test_violation_rejected(pytester: pytest.Pytester) -> None:
     # and the message printed to stderr.
     assert result.ret != 0
     combined = result.stderr.str() + result.stdout.str()
-    assert "UsageError" in combined or "tests/integration/ tests must be VCR-tier" in combined
+    assert (
+        "UsageError" in combined or "tests/integration/ tests must use a recorded seam" in combined
+    )
     assert "test_under_test.py::test_no_marker_no_cassette_no_optout" in combined
 
 
@@ -169,6 +177,27 @@ def test_vcr_marker_honored(pytester: pytest.Pytester) -> None:
 
 
             def test_vcr_tier():
+                assert True
+            """
+        ).strip(),
+    )
+    result = pytester.runpytest_subprocess("tests/integration/")
+    assert result.ret == 0
+    result.assert_outcomes(passed=1)
+
+
+def test_grpc_cassette_marker_honored(pytester: pytest.Pytester) -> None:
+    """``@pytest.mark.grpc_cassette`` admits the Android recorded seam."""
+    _scaffold(
+        pytester,
+        textwrap.dedent(
+            """
+            import pytest
+
+            pytestmark = pytest.mark.grpc_cassette
+
+
+            def test_android_grpc_cassette_tier():
                 assert True
             """
         ).strip(),

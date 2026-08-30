@@ -618,6 +618,7 @@ class TestFileUpload:
             os.unlink(temp_path)
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(180)
     async def test_add_csv_file(self, client, temp_notebook, tmp_path):
         """Test uploading a CSV file."""
         test_csv = tmp_path / "test_data.csv"
@@ -662,6 +663,7 @@ class TestFileUpload:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(180)
     async def test_add_docx_file(self, client, temp_notebook, tmp_path):
         """Test uploading a DOCX file."""
         test_docx = tmp_path / "test_document.docx"
