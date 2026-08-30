@@ -7,7 +7,7 @@
     "ENUM_GAPS": 34,
     "MAPPINGS": 669,
     "PINNED": 114,
-    "UNMAPPED": 294
+    "UNMAPPED": 298
   },
   "tests/_guardrails/test_asyncio_loop_affinity_guard.py": {
     "ALLOWLIST": 21

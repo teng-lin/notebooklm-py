@@ -132,6 +132,7 @@ def test_pr_matrix_runs_once_without_coverage_and_canonical_owns_reality() -> No
     assert "test_no_cli_module_imports_minting_primitives" in critical_command
     assert "test_no_bare_master_token_derivation_outside_paths_module" in critical_command
     assert "test_raw_sync_playwright_is_confined_to_policy_gateway" in critical_command
+    assert "test_wire_contract.py::test_every_adapter_constant_is_declared" in critical_command
     assert "tests/unit/test_ci_test_matrix.py" in critical_command
 
     smoke = _step(test_job, "Run Windows Playwright compatibility smoke serially")

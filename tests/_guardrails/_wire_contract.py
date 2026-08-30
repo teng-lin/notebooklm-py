@@ -982,6 +982,12 @@ UNMAPPED: tuple[Unmapped, ...] = (
     Unmapped("chat", "StreamFrameRow", "_ERROR_PAYLOAD_POS", "streamed frame envelope"),
     Unmapped(
         "chat",
+        "StreamFrameRow",
+        "_TERMINAL_SEQUENCE_POS",
+        "streamed frame envelope terminal-sequence slot",
+    ),
+    Unmapped(
+        "chat",
         "ErrorPayloadRow",
         "_STATUS_POS",
         "google.rpc.Status envelope, not a Tailwind message",
