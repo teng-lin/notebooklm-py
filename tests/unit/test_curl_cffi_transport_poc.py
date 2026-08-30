@@ -13,6 +13,7 @@ contract the transport kernel relies on, end-to-end, without Google auth:
 
 from __future__ import annotations
 
+import asyncio
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -34,6 +35,9 @@ from notebooklm._web.transport.streaming_post import stream_post_with_size_cap  
 
 
 class _Handler(BaseHTTPRequestHandler):
+    stall_started = threading.Event()
+    stall_release = threading.Event()
+
     def log_message(self, *_a):  # silence test server
         pass
 
@@ -41,6 +45,19 @@ class _Handler(BaseHTTPRequestHandler):
         return self.headers.get("Cookie", "")
 
     def do_GET(self):  # noqa: N802
+        if self.path == "/stall":
+            self.send_response(200)
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"a")
+            self.wfile.flush()
+            self.stall_started.set()
+            self.stall_release.wait(timeout=5)
+            try:
+                self.wfile.write(b"b")
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
         if self.path == "/boom":
             self.send_response(500)
             self.end_headers()
@@ -86,6 +103,8 @@ class _Handler(BaseHTTPRequestHandler):
 
 @pytest.fixture
 def server():
+    _Handler.stall_started.clear()
+    _Handler.stall_release.clear()
     httpd = HTTPServer(("127.0.0.1", 0), _Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -93,6 +112,7 @@ def server():
     try:
         yield f"http://{host}:{port}"
     finally:
+        _Handler.stall_release.set()
         # Fully tear down: stop the loop, join the thread, close the socket —
         # otherwise handles/threads leak across the per-test servers (flaky on Windows).
         httpd.shutdown()
@@ -127,6 +147,41 @@ async def test_stream_post_with_size_cap_works_over_adapter(server):
         assert resp.status_code == 200
         assert resp.content == b"echo:payload"
     finally:
+        await client.aclose()
+
+
+async def test_stream_abort_detaches_stalled_curl_body_before_context_exit(server):
+    """A peer that stops after headers cannot strand curl_cffi's ``__aexit__``."""
+
+    client = CurlCffiAsyncClient(cookies=httpx.Cookies(), timeout=httpx.Timeout(None))
+    response_cm = client.stream("GET", f"{server}/stall", follow_redirects=False)
+    entered = False
+    try:
+        response = await asyncio.wait_for(response_cm.__aenter__(), timeout=1.0)
+        entered = True
+        iterator = response.aiter_bytes()
+        assert await asyncio.wait_for(anext(iterator), timeout=1.0) == b"a"
+        assert await asyncio.to_thread(_Handler.stall_started.wait, 1.0)
+
+        blocked_body = asyncio.create_task(anext(iterator))
+        await asyncio.sleep(0)
+        assert not blocked_body.done()
+
+        timeout = TimeoutError("aggregate deadline")
+        await asyncio.wait_for(response.aclose(), timeout=1.0)
+        await asyncio.wait_for(
+            response_cm.__aexit__(type(timeout), timeout, timeout.__traceback__),
+            timeout=1.0,
+        )
+        entered = False
+        outcome = (await asyncio.gather(blocked_body, return_exceptions=True))[0]
+        assert isinstance(outcome, (asyncio.CancelledError, StopAsyncIteration))
+        assert response._r.quit_now.is_set()
+        assert response._r.astream_task.done()
+    finally:
+        if entered:
+            response.abort()
+            await response_cm.__aexit__(None, None, None)
         await client.aclose()
 
 

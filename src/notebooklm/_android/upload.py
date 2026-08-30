@@ -401,10 +401,15 @@ async def _bounded(awaitable: Awaitable[_T], deadline: RuntimeDeadline) -> _T:
         raise TimeoutError from None
 
 
-async def _settle_context_exit(context_manager: Any) -> None:
+async def _settle_context_exit(
+    context_manager: Any,
+    exc_type: type[BaseException] | None,
+    exc: BaseException | None,
+    traceback: Any | None,
+) -> None:
     """Run one async-context exit to completion despite repeated cancellation."""
 
-    exit_task = asyncio.create_task(context_manager.__aexit__(None, None, None))
+    exit_task = asyncio.create_task(context_manager.__aexit__(exc_type, exc, traceback))
     cancelled: asyncio.CancelledError | None = None
     exit_error: BaseException | None = None
     while True:
@@ -654,7 +659,13 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
             _set_private_temp_permissions(destination, 0o600)
             self._open_files.add(handle)
             response_cm: Any | None = None
+            response: Any | None = None
             response_entered = False
+            exit_args: tuple[type[BaseException] | None, BaseException | None, Any | None] = (
+                None,
+                None,
+                None,
+            )
             try:
                 response_cm = client.stream(
                     "GET",
@@ -667,6 +678,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                 # wait) inside our independent 300s aggregate lifecycle fence.
                 try:
                     response = await _bounded(response_cm.__aenter__(), deadline)
+                    assert response is not None
                     response_entered = True
                     status = int(response.status_code)
                     if status == 401:
@@ -695,10 +707,17 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                                 f"Drive download exceeded the 200 MiB cap for {filename!r}."
                             )
                         await _bounded(asyncio.to_thread(handle.write, chunk), deadline)
+                except BaseException as error:
+                    exit_args = (type(error), error, error.__traceback__)
+                    if response is not None:
+                        abort = getattr(response, "abort", None)
+                        if callable(abort):
+                            abort()
+                    raise
                 finally:
                     if response_entered:
                         assert response_cm is not None
-                        await _settle_context_exit(response_cm)
+                        await _settle_context_exit(response_cm, *exit_args)
             finally:
                 self._open_files.discard(handle)
         if total == 0:

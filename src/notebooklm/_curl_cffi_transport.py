@@ -117,8 +117,10 @@ async def _materialize(content: Any) -> bytes | None:
 class _StreamedResponse:
     """Wraps a live curl_cffi streamed response in the shape ``stream_post_with_size_cap`` needs."""
 
-    def __init__(self, curl_resp: Any, url: str) -> None:
+    def __init__(self, curl_resp: Any, url: str, abort_callback: Callable[[], None]) -> None:
         self._r = curl_resp
+        self._abort_callback = abort_callback
+        self._aborted = False
         self.status_code: int = curl_resp.status_code
         self.headers = curl_resp.headers
         # Downstream rebuilds httpx.Response(request=...); give it a real one.
@@ -141,6 +143,25 @@ class _StreamedResponse:
         async for chunk in self._r.aiter_content():
             yield chunk
 
+    def abort(self) -> None:
+        """Interrupt the live curl handle before response-context teardown."""
+
+        if self._aborted:
+            return
+        self._aborted = True
+        self._abort_callback()
+
+    async def aclose(self) -> None:
+        """Abort a partial body, then settle curl_cffi's stream task."""
+
+        self.abort()
+        stream_task = self._r.astream_task
+        try:
+            await self._r.aclose()
+        except asyncio.CancelledError:
+            if stream_task is None or not stream_task.cancelled():
+                raise
+
 
 class _StreamCtx:
     """Async context manager mirroring ``httpx.AsyncClient.stream(...)``."""
@@ -151,6 +172,28 @@ class _StreamCtx:
         self._url = url
         self._kwargs = kwargs
         self._cm: Any = None
+        self._response: Any = None
+        self._aborted = False
+
+    def _abort_response(self) -> None:
+        """Remove an active response from curl's multi handle without waiting for I/O."""
+
+        response = self._response
+        if response is None:
+            return
+        self._aborted = True
+        quit_now = response.quit_now
+        if quit_now is not None:
+            quit_now.set()
+        stream_task = response.astream_task
+        if stream_task is None or stream_task.done():
+            return
+        curl = response.curl
+        if curl is not None:
+            # ``remove_handle`` synchronously detaches the socket and cancels
+            # the future awaited by ``astream_task``.  Merely setting
+            # ``quit_now`` is insufficient while a peer sends no more bytes.
+            self._client._curl.acurl.remove_handle(curl)
 
     async def __aenter__(self) -> _StreamedResponse:
         from curl_cffi.requests import RequestsError
@@ -168,12 +211,18 @@ class _StreamCtx:
             raise httpx.RequestError(
                 str(exc), request=httpx.Request(self._method, self._url)
             ) from exc
-        return _StreamedResponse(curl_resp, self._url)
+        self._response = curl_resp
+        return _StreamedResponse(curl_resp, self._url, self._abort_response)
 
     async def __aexit__(self, *exc: object) -> None:
         try:
             if self._cm is not None:
-                await self._cm.__aexit__(*exc)
+                try:
+                    await self._cm.__aexit__(*exc)
+                except asyncio.CancelledError:
+                    stream_task = getattr(self._response, "astream_task", None)
+                    if not (self._aborted and stream_task is not None and stream_task.cancelled()):
+                        raise
         finally:
             self._client._sync_cookies_back()
 

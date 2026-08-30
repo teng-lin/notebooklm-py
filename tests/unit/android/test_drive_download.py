@@ -85,6 +85,10 @@ class _HangingDriveResponse:
         self.status_code = 200
         self.headers: dict[str, str] = {}
         self._body_started = body_started
+        self.aborts = 0
+
+    def abort(self) -> None:
+        self.aborts += 1
 
     async def aiter_bytes(self) -> AsyncIterator[bytes]:
         assert self._body_started is not None
@@ -104,6 +108,8 @@ class _HangingDriveStream:
             self.exit_release.set()
         self.enter_cancelled = False
         self.exits = 0
+        self.exit_args: tuple[object, ...] | None = None
+        self.response = _HangingDriveResponse(self.body_started)
 
     async def __aenter__(self) -> _HangingDriveResponse:
         self.entry_started.set()
@@ -112,10 +118,11 @@ class _HangingDriveStream:
                 await asyncio.Event().wait()
             finally:
                 self.enter_cancelled = True
-        return _HangingDriveResponse(self.body_started)
+        return self.response
 
-    async def __aexit__(self, *_exc: object) -> None:
+    async def __aexit__(self, *exc: object) -> None:
         self.exits += 1
+        self.exit_args = exc
         self.exit_started.set()
         await self.exit_release.wait()
 
@@ -270,6 +277,10 @@ async def test_drive_stream_exit_settles_before_repeated_cancellation_escapes() 
         await task
 
     assert stream.exits == 1
+    assert stream.response.aborts == 1
+    assert stream.exit_args is not None
+    assert stream.exit_args[0] is asyncio.CancelledError
+    assert isinstance(stream.exit_args[1], asyncio.CancelledError)
     assert client.closed
     assert pipeline._open_files == set()
     assert pipeline._transport_clients == set()
