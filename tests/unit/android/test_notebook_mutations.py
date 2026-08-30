@@ -148,6 +148,25 @@ async def test_create_projects_and_volunteers_exact_chat_session_once() -> None:
     assert api._take_created_chat_session_id(created.id) is None
 
 
+@pytest.mark.asyncio
+async def test_create_malformed_success_is_unconfirmed_and_never_replayed() -> None:
+    transport = SequenceTransport(
+        {
+            LIST_RECENT_PROJECTS_METHOD: [read_pb2.ListRecentlyViewedProjectsResponse()],
+            CREATE_PROJECT_METHOD: [_project("", "Created")],
+        }
+    )
+
+    with pytest.raises(DecodingError) as raised:
+        await _api(transport).create("Created")
+
+    assert getattr(raised.value, "unconfirmed", False) is True
+    assert [method for method, _request, _kwargs in transport.calls] == [
+        LIST_RECENT_PROJECTS_METHOD,
+        CREATE_PROJECT_METHOD,
+    ]
+
+
 def test_created_chat_session_hints_are_bounded_and_refresh_recency() -> None:
     api = _api(SequenceTransport())
     for index in range(260):
@@ -448,18 +467,21 @@ async def test_copy_rejects_missing_or_reused_response_identity() -> None:
     )
     api = _api(transport)
 
-    with pytest.raises(DecodingError, match="did not contain"):
+    with pytest.raises(DecodingError, match="did not contain") as missing:
         await api.copy("source-1", "Copy")
-    with pytest.raises(DecodingError, match="reused"):
+    with pytest.raises(DecodingError, match="reused") as reused:
         await api.copy("source-1", "Copy")
+    assert getattr(missing.value, "unconfirmed", False) is True
+    assert getattr(reused.value, "unconfirmed", False) is True
 
 
 @pytest.mark.asyncio
 async def test_copy_rejects_a_new_project_with_the_wrong_title() -> None:
     transport = SequenceTransport({COPY_PROJECT_METHOD: [_project("copy-1", "Unrelated")]})
 
-    with pytest.raises(DecodingError, match="unexpected notebook title"):
+    with pytest.raises(DecodingError, match="unexpected notebook title") as raised:
         await _api(transport).copy("source-1", "Copy")
+    assert getattr(raised.value, "unconfirmed", False) is True
 
 
 @pytest.mark.asyncio

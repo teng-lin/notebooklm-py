@@ -241,7 +241,10 @@ class AndroidNotebooksAPI(NotebooksAPI):
             response_type=read_proto.Project,
             **self._epoch_kwargs(),
         )
-        notebook = _notebook_codec().decode_project(response, method_id=CREATE_PROJECT_METHOD)
+        try:
+            notebook = _notebook_codec().decode_project(response, method_id=CREATE_PROJECT_METHOD)
+        except DecodingError as error:
+            raise mark_unconfirmed(error) from None
         self._remember_created_chat_session(notebook)
         return notebook
 
@@ -277,17 +280,20 @@ class AndroidNotebooksAPI(NotebooksAPI):
                     rpc_code=rpc_code,
                 )
             ) from exc
-        notebook = _notebook_codec().decode_project(response, method_id=COPY_PROJECT_METHOD)
-        if notebook.id == notebook_id:
-            raise DecodingError(
-                "CopyProject response reused the source notebook id",
-                method_id=COPY_PROJECT_METHOD,
-            )
-        if notebook.title != title:
-            raise DecodingError(
-                "CopyProject response returned an unexpected notebook title",
-                method_id=COPY_PROJECT_METHOD,
-            )
+        try:
+            notebook = _notebook_codec().decode_project(response, method_id=COPY_PROJECT_METHOD)
+            if notebook.id == notebook_id:
+                raise DecodingError(
+                    "CopyProject response reused the source notebook id",
+                    method_id=COPY_PROJECT_METHOD,
+                )
+            if notebook.title != title:
+                raise DecodingError(
+                    "CopyProject response returned an unexpected notebook title",
+                    method_id=COPY_PROJECT_METHOD,
+                )
+        except DecodingError as error:
+            raise mark_unconfirmed(error) from None
         self._remember_created_chat_session(notebook)
         return notebook
 

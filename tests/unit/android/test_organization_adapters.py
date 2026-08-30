@@ -37,14 +37,18 @@ from notebooklm._labels import LabelsAPI
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.exceptions import (
+    AuthError,
     CollectionError,
     CollectionNotFoundError,
     DecodingError,
     LabelError,
     LabelNotFoundError,
     NetworkError,
+    NotebookNotFoundError,
+    RateLimitError,
     RPCError,
     RPCTimeoutError,
+    ServerError,
 )
 from notebooklm.types import Collection, Label, Notebook, Source
 
@@ -411,6 +415,30 @@ async def test_label_and_collection_create_use_exact_response_rows() -> None:
     assert not collection_create.manual_create.properties.HasField("emoji")
 
 
+@pytest.mark.parametrize("kind", ["label", "collection"])
+@pytest.mark.parametrize(
+    "error",
+    [NetworkError("response lost"), RateLimitError("throttled"), ServerError("unavailable")],
+)
+async def test_manual_create_transport_loss_is_unconfirmed_and_sent_once(
+    kind: str,
+    error: RPCError,
+) -> None:
+    server = FakeOrganizationServer()
+    server.failures[1] = error
+    labels, collections = _apis(server)
+
+    with pytest.raises(type(error)) as raised:
+        if kind == "label":
+            await labels.create(NB, "Requested")
+        else:
+            await collections.create("Requested")
+
+    assert raised.value is error
+    assert getattr(raised.value, "unconfirmed", False) is True
+    assert [method for method, _request, _kwargs in server.calls] == [CREATE_LABEL_METHOD]
+
+
 async def test_label_create_ignores_unrelated_concurrent_post_state() -> None:
     server = FakeOrganizationServer()
     server.concurrent_label_ids = [LABEL_MISSING]
@@ -445,11 +473,12 @@ async def test_create_response_rejects_zero_or_multiple_rows(kind: str, new_coun
     server.next_collection_ids = [COLLECTION_B, COLLECTION_MISSING][:new_count]
     labels, collections = _apis(server)
     if kind == "label":
-        with pytest.raises(LabelError):
+        with pytest.raises(LabelError) as raised:
             await labels.create(NB, "ambiguous")
     else:
-        with pytest.raises(CollectionError):
+        with pytest.raises(CollectionError) as raised:
             await collections.create("ambiguous")
+    assert getattr(raised.value, "unconfirmed", False) is True
 
 
 @pytest.mark.parametrize(
@@ -479,6 +508,7 @@ async def test_label_create_rejects_uncorrelated_direct_response(row: Any) -> No
         await labels.create(NB, "Requested", "🧪")
 
     assert caught.value.method_id == CREATE_LABEL_METHOD
+    assert getattr(caught.value, "unconfirmed", False) is True
     assert [method for method, _request, _kwargs in server.calls] == [CREATE_LABEL_METHOD]
 
 
@@ -510,6 +540,7 @@ async def test_collection_create_rejects_uncorrelated_direct_response(row: Any) 
         await collections.create("Requested")
 
     assert caught.value.method_id == CREATE_LABEL_METHOD
+    assert getattr(caught.value, "unconfirmed", False) is True
     assert [method for method, _request, _kwargs in server.calls] == [CREATE_LABEL_METHOD]
 
 
@@ -786,6 +817,38 @@ async def test_generate_uses_native_presence_sensitive_scope_and_returns_readbac
     ]
     assert server.operation_scopes == [("labels.generate", None), ("labels.generate", None)]
     assert [kwargs["expected_epoch"] for _method, _request, kwargs in server.calls] == [7, 7, 7, 7]
+
+
+@pytest.mark.parametrize(
+    "read_error",
+    [
+        NetworkError("readback lost"),
+        AuthError("readback auth rejected", rpc_code=16),
+        RPCError("readback project missing", rpc_code=5),
+        DecodingError("readback malformed"),
+        ValueError("unexpected projection failure"),
+    ],
+    ids=["network", "auth", "not-found", "decoding", "unexpected"],
+)
+async def test_generate_failed_post_write_readback_is_unconfirmed_without_resend(
+    read_error: Exception,
+) -> None:
+    server = FakeOrganizationServer()
+    server.failures[2] = read_error
+    labels, _collections = _apis(server)
+
+    with pytest.raises(type(read_error)) as raised:
+        await labels.generate(NB)
+
+    if isinstance(read_error, RPCError) and read_error.rpc_code == 5:
+        assert isinstance(raised.value, NotebookNotFoundError)
+    else:
+        assert raised.value is read_error
+    assert getattr(raised.value, "unconfirmed", False) is True
+    assert [method for method, _request, _kwargs in server.calls] == [
+        CREATE_LABEL_METHOD,
+        GET_LABELS_METHOD,
+    ]
 
 
 async def test_generate_validation_and_empty_operations_avoid_android_transport() -> None:

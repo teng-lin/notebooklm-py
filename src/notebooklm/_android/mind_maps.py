@@ -227,7 +227,7 @@ class AndroidMindMapsAPI(MindMapsAPI):
             if read_interactive is None or not callable(read_interactive):
                 raise TypeError("artifacts must provide the Android interactive tree seam")
             if kind is MindMapKind.INTERACTIVE:
-                return await read_interactive(mind_map_id)
+                return await read_interactive(notebook_id, mind_map_id)
 
             for mind_map in await self.list_note_backed(notebook_id):
                 if mind_map.id == mind_map_id:
@@ -236,7 +236,7 @@ class AndroidMindMapsAPI(MindMapsAPI):
                 return None
 
             if await self._find_interactive(notebook_id, mind_map_id) is not None:
-                return await read_interactive(mind_map_id)
+                return await read_interactive(notebook_id, mind_map_id)
             return None
 
 

@@ -37,6 +37,7 @@ from notebooklm._android.upload import (
 from notebooklm._curl_cffi_transport import CurlCffiAsyncClient
 from notebooklm.exceptions import (
     RPCError,
+    ServerError,
     SourceAddError,
     SourceProcessingError,
     SourceTimeoutError,
@@ -690,7 +691,7 @@ async def test_public_compat_keeps_every_other_extension_on_android(
     [
         (_WRITE.AddTentativeSourcesResponse(), False),
         (object(), True),
-        (RPCError("safe", rpc_code=14), True),
+        (ServerError("safe", rpc_code=14), True),
     ],
 )
 async def test_registration_failure_never_starts_upload_replays_or_cleans_up(

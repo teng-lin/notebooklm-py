@@ -71,6 +71,7 @@ from notebooklm.exceptions import (
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
+    AuthError,
     DecodingError,
     NetworkError,
     RateLimitError,
@@ -394,6 +395,7 @@ async def test_public_get_stays_aggregate_while_poll_uses_exact_get_artifact() -
     assert [call[0] for call in session.calls] == [
         LIST_ARTIFACTS_METHOD,
         LIST_ARTIFACTS_METHOD,
+        LIST_ARTIFACTS_METHOD,
         GET_ARTIFACT_METHOD,
     ]
 
@@ -414,7 +416,10 @@ async def test_wait_ready_tick_is_one_get_artifact_and_zero_note_reads() -> None
     )
 
     assert result.is_complete
-    assert [call[0] for call in session.calls] == [GET_ARTIFACT_METHOD]
+    assert [call[0] for call in session.calls] == [
+        LIST_ARTIFACTS_METHOD,
+        GET_ARTIFACT_METHOD,
+    ]
     assert mind_maps.calls == []
 
 
@@ -431,13 +436,16 @@ async def test_poll_get_artifact_does_not_decode_unrelated_list_rows() -> None:
     result = await api.poll_status("notebook-1", "target")
 
     assert result.is_complete
-    assert [call[0] for call in session.calls] == [GET_ARTIFACT_METHOD]
+    assert [call[0] for call in session.calls] == [
+        LIST_ARTIFACTS_METHOD,
+        GET_ARTIFACT_METHOD,
+    ]
     assert mind_maps.calls == []
 
 
 @pytest.mark.asyncio
 async def test_poll_rejects_wrong_get_artifact_identity() -> None:
-    session, _, mind_maps, _, api = _graph()
+    session, _, mind_maps, _, api = _graph([_artifact("target")])
     session.responses[GET_ARTIFACT_METHOD] = _PROTO.GetArtifactResponse(
         artifact=_artifact("other", type_code=_PROTO.ARTIFACT_TYPE_APP, variant=2)
     )
@@ -447,7 +455,10 @@ async def test_poll_rejects_wrong_get_artifact_identity() -> None:
         await api.poll_status("notebook-1", "target")
 
     assert raised.value.method_id == GET_ARTIFACT_METHOD
-    assert [call[0] for call in session.calls] == [GET_ARTIFACT_METHOD]
+    assert [call[0] for call in session.calls] == [
+        LIST_ARTIFACTS_METHOD,
+        GET_ARTIFACT_METHOD,
+    ]
     assert mind_maps.calls == []
 
 
@@ -505,13 +516,12 @@ async def test_get_artifact_identity_failure_drops_capability_response_from_fram
 @pytest.mark.asyncio
 async def test_poll_maps_get_artifact_not_found_to_not_found_status() -> None:
     session, _, mind_maps, _, api = _graph()
-    session.errors[GET_ARTIFACT_METHOD] = RPCError("missing", rpc_code=5)
     await _activate(api._supervisor)
 
     status = await api.poll_status("notebook-1", "missing")
 
     assert status.is_not_found
-    assert [call[0] for call in session.calls] == [GET_ARTIFACT_METHOD]
+    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD]
     assert mind_maps.calls == []
 
 
@@ -568,7 +578,7 @@ async def test_generate_quiz_uses_exact_request_and_never_replays_mutation() -> 
 
 @pytest.mark.asyncio
 async def test_generate_quiz_uses_public_standard_medium_defaults() -> None:
-    session, _, _, _, api = _graph()
+    session, _, _, _, api = _graph([_artifact("failed-1")])
     session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
         artifact=_artifact(
             "quiz-defaults",
@@ -747,7 +757,7 @@ async def test_generate_audio_rejects_empty_resolved_sources_without_mutation() 
 
 @pytest.mark.asyncio
 async def test_generate_audio_rejects_mismatched_response_family() -> None:
-    session, _, _, _, api = _graph()
+    session, _, _, _, api = _graph([_artifact("failed-1")])
     session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
         artifact=_artifact("wrong", type_code=_PROTO.ARTIFACT_TYPE_APP, variant=2)
     )
@@ -761,7 +771,7 @@ async def test_generate_audio_rejects_mismatched_response_family() -> None:
 
 @pytest.mark.asyncio
 async def test_generate_audio_rejects_mismatched_nonempty_response_sources() -> None:
-    session, _, _, _, api = _graph()
+    session, _, _, _, api = _graph([_artifact("failed-1")])
     session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
         artifact=_artifact(
             "wrong-sources",
@@ -770,8 +780,9 @@ async def test_generate_audio_rejects_mismatched_nonempty_response_sources() -> 
         )
     )
 
-    with pytest.raises(DecodingError, match="different source ids"):
+    with pytest.raises(DecodingError, match="different source ids") as raised:
         await api.generate_audio("notebook-1", source_ids=["source-1"])
+    assert getattr(raised.value, "unconfirmed", False) is True
 
 
 @pytest.mark.asyncio
@@ -1146,7 +1157,7 @@ async def test_failed_quiz_mutation_is_not_replayed() -> None:
 
 @pytest.mark.asyncio
 async def test_retry_failed_uses_web_derived_mobile_generate_artifact_shape() -> None:
-    session, _, _, _, api = _graph()
+    session, _, _, _, api = _graph([_artifact("failed-1")])
     session.responses[GENERATE_ARTIFACT_METHOD] = _PROTO.GenerateArtifactResponse(
         artifact=_artifact(
             "failed-1",
@@ -1159,7 +1170,7 @@ async def test_retry_failed_uses_web_derived_mobile_generate_artifact_shape() ->
 
     assert status.task_id == "failed-1"
     assert status.status == "pending"
-    method, request, kwargs = session.calls[0]
+    method, request, kwargs = session.calls[1]
     assert method == GENERATE_ARTIFACT_METHOD
     assert request.artifact_id == "failed-1"
     assert request.request_context.client_type != 0
@@ -1172,7 +1183,7 @@ async def test_retry_failed_uses_web_derived_mobile_generate_artifact_shape() ->
 
 @pytest.mark.asyncio
 async def test_retry_failed_rejects_changed_artifact_identity() -> None:
-    session, _, _, _, api = _graph()
+    session, _, _, _, api = _graph([_artifact("failed-1")])
     session.responses[GENERATE_ARTIFACT_METHOD] = _PROTO.GenerateArtifactResponse(
         artifact=_artifact("different", type_code=_PROTO.ARTIFACT_TYPE_SLIDES)
     )
@@ -1183,18 +1194,32 @@ async def test_retry_failed_rejects_changed_artifact_identity() -> None:
 
 @pytest.mark.asyncio
 async def test_retry_failed_empty_result_is_feature_unavailable() -> None:
-    session, _, _, _, api = _graph()
+    session, _, _, _, api = _graph([_artifact("failed-1")])
 
     with pytest.raises(ArtifactFeatureUnavailableError) as raised:
         await api.retry_failed("notebook-1", "failed-1")
 
     assert raised.value.method_id == GENERATE_ARTIFACT_METHOD
-    assert [call[0] for call in session.calls] == [GENERATE_ARTIFACT_METHOD]
+    assert [call[0] for call in session.calls] == [
+        LIST_ARTIFACTS_METHOD,
+        GENERATE_ARTIFACT_METHOD,
+    ]
+    assert getattr(raised.value, "unconfirmed", False) is True
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_rejects_artifact_outside_notebook_before_mutation() -> None:
+    session, _, _, _, api = _graph([_artifact("owned-by-notebook")])
+
+    with pytest.raises(ArtifactNotFoundError):
+        await api.retry_failed("notebook-1", "foreign-artifact")
+
+    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD]
 
 
 @pytest.mark.asyncio
 async def test_revise_slide_uses_apk_exact_derive_request_without_replay() -> None:
-    session, _, _, _, api = _graph()
+    session, _, _, _, api = _graph([_artifact("original-slides")])
     session.responses[DERIVE_ARTIFACT_METHOD] = _PROTO.DeriveArtifactResponse(
         artifact=_artifact(
             "derived-slides",
@@ -1208,7 +1233,8 @@ async def test_revise_slide_uses_apk_exact_derive_request_without_replay() -> No
     assert result.task_id == "derived-slides"
     assert result.status == "pending"
     assert session.scopes == ["artifacts.revise_slide"]
-    method, request, kwargs = session.calls[0]
+    assert session.calls[0][0] == LIST_ARTIFACTS_METHOD
+    method, request, kwargs = session.calls[1]
     assert method == DERIVE_ARTIFACT_METHOD
     assert request.original_artifact_id == "original-slides"
     assert request.request_context.client_type != 0
@@ -1234,7 +1260,7 @@ async def test_revise_slide_negative_index_rejects_before_io() -> None:
 
 @pytest.mark.asyncio
 async def test_revise_slide_requires_a_slides_artifact_response() -> None:
-    session, _, _, _, api = _graph()
+    session, _, _, _, api = _graph([_artifact("slides")])
     session.responses[DERIVE_ARTIFACT_METHOD] = _PROTO.DeriveArtifactResponse(
         artifact=_artifact("wrong-family", type_code=_PROTO.ARTIFACT_TYPE_INFOGRAPHIC)
     )
@@ -1243,27 +1269,47 @@ async def test_revise_slide_requires_a_slides_artifact_response() -> None:
         await api.revise_slide("notebook-1", "slides", 0, "prompt")
 
     assert raised.value.method_id == DERIVE_ARTIFACT_METHOD
+    assert getattr(raised.value, "unconfirmed", False) is True
 
 
 @pytest.mark.asyncio
 async def test_revise_slide_requires_artifact_payload() -> None:
-    session, _, _, _, api = _graph()
+    session, _, _, _, api = _graph([_artifact("slides")])
 
     with pytest.raises(DecodingError, match="omitted its artifact") as raised:
         await api.revise_slide("notebook-1", "slides", 0, "prompt")
 
     assert raised.value.method_id == DERIVE_ARTIFACT_METHOD
+    assert getattr(raised.value, "unconfirmed", False) is True
 
 
 @pytest.mark.asyncio
 async def test_revise_slide_requires_a_new_artifact_identity() -> None:
-    session, _, _, _, api = _graph()
+    session, _, _, _, api = _graph([_artifact("slides")])
     session.responses[DERIVE_ARTIFACT_METHOD] = _PROTO.DeriveArtifactResponse(
         artifact=_artifact("slides", type_code=_PROTO.ARTIFACT_TYPE_SLIDES)
     )
 
     with pytest.raises(DecodingError, match="reused the original artifact id") as raised:
         await api.revise_slide("notebook-1", "slides", 0, "prompt")
+    assert getattr(raised.value, "unconfirmed", False) is True
+
+
+@pytest.mark.asyncio
+async def test_revise_slide_lost_response_is_unconfirmed_and_never_replayed() -> None:
+    session, _, _, _, api = _graph([_artifact("slides")])
+    error = NetworkError("derive response lost", method_id=DERIVE_ARTIFACT_METHOD)
+    session.errors[DERIVE_ARTIFACT_METHOD] = error
+
+    with pytest.raises(NetworkError) as raised:
+        await api.revise_slide("notebook-1", "slides", 0, "prompt")
+
+    assert raised.value is error
+    assert getattr(raised.value, "unconfirmed", False) is True
+    assert [call[0] for call in session.calls] == [
+        LIST_ARTIFACTS_METHOD,
+        DERIVE_ARTIFACT_METHOD,
+    ]
 
     assert raised.value.method_id == DERIVE_ARTIFACT_METHOD
 
@@ -1436,7 +1482,7 @@ async def test_download_data_table_rejects_missing_document_without_output(tmp_p
 
 @pytest.mark.asyncio
 async def test_export_to_drive_supports_artifact_and_literal_content_targets() -> None:
-    session, _, _, _, api = _graph()
+    session, _, _, _, api = _graph([_artifact("report-1")])
     session.responses[EXPORT_TO_DRIVE_METHOD] = [
         _PROTO.ExportToDriveResponse(url="https://docs.google.com/document/d/one"),
         _PROTO.ExportToDriveResponse(url="https://docs.google.com/spreadsheets/d/two"),
@@ -1457,28 +1503,29 @@ async def test_export_to_drive_supports_artifact_and_literal_content_targets() -
 
     assert report_url.endswith("/one")
     assert content_url.endswith("/two")
-    first = session.calls[0]
+    first = session.calls[1]
     assert first[0] == EXPORT_TO_DRIVE_METHOD
     assert first[1].WhichOneof("target") == "artifact_id"
     assert first[1].artifact_id == "report-1"
     assert first[1].title == "Report title"
     assert first[1].destination == ExportType.DOCS.value
-    second = session.calls[1]
+    second = session.calls[2]
     assert second[1].WhichOneof("target") == "content"
     assert second[1].content == "A,B\n1,2\n"
     assert second[1].destination == ExportType.SHEETS.value
-    assert all(call[2]["replay_safe"] is False for call in session.calls)
+    assert session.calls[0][2]["replay_safe"] is True
+    assert all(call[2]["replay_safe"] is False for call in session.calls[1:])
 
 
 @pytest.mark.asyncio
 async def test_export_data_table_forces_sheets_and_validates_target_before_io() -> None:
-    session, _, _, _, api = _graph()
+    session, _, _, _, api = _graph([_artifact("table-1")])
     session.responses[EXPORT_TO_DRIVE_METHOD] = _PROTO.ExportToDriveResponse(
         url="https://docs.google.com/spreadsheets/d/sheet"
     )
 
     assert (await api.export_data_table("notebook-1", "table-1")).endswith("/sheet")
-    assert session.calls[0][1].destination == ExportType.SHEETS.value
+    assert session.calls[1][1].destination == ExportType.SHEETS.value
     session.calls.clear()
 
     with pytest.raises(ValidationError, match="exactly one"):
@@ -1490,11 +1537,51 @@ async def test_export_data_table_forces_sheets_and_validates_target_before_io() 
 
 @pytest.mark.asyncio
 async def test_export_to_drive_rejects_missing_or_non_https_response_url() -> None:
-    session, _, _, _, api = _graph()
+    session, _, _, _, api = _graph([_artifact("report-1")])
     session.responses[EXPORT_TO_DRIVE_METHOD] = _PROTO.ExportToDriveResponse(url="javascript:x")
 
-    with pytest.raises(DecodingError, match="valid HTTPS URL"):
+    with pytest.raises(DecodingError, match="valid HTTPS URL") as raised:
         await api.export_report("notebook-1", "report-1")
+    assert getattr(raised.value, "unconfirmed", False) is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [
+        NetworkError("export response lost"),
+        RateLimitError("export throttled"),
+        ServerError("export unavailable"),
+    ],
+)
+async def test_export_to_drive_transport_loss_is_unconfirmed_and_sent_once(
+    error: RPCError,
+) -> None:
+    session, _, _, _, api = _graph([_artifact("report-1")])
+    session.errors[EXPORT_TO_DRIVE_METHOD] = error
+
+    with pytest.raises(type(error)) as raised:
+        await api.export_report("notebook-1", "report-1")
+
+    assert raised.value is error
+    assert getattr(raised.value, "unconfirmed", False) is True
+    assert [call[0] for call in session.calls] == [
+        LIST_ARTIFACTS_METHOD,
+        EXPORT_TO_DRIVE_METHOD,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_export_to_drive_auth_rejection_is_not_marked_unconfirmed() -> None:
+    session, _, _, _, api = _graph([_artifact("report-1")])
+    error = AuthError("auth rejected", rpc_code=16)
+    session.errors[EXPORT_TO_DRIVE_METHOD] = error
+
+    with pytest.raises(AuthError) as raised:
+        await api.export_report("notebook-1", "report-1")
+
+    assert raised.value is error
+    assert getattr(raised.value, "unconfirmed", False) is False
 
 
 @pytest.mark.asyncio
@@ -1524,7 +1611,10 @@ async def test_download_report_decodes_live_apk_report_doc_and_writes_atomically
     assert output.read_text(encoding="utf-8") == (
         "# Hello report\n\n  - Key point\n\n---\n\n| A | B |\n| --- | --- |\n| 1 | 2 |"
     )
-    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD, GET_ARTIFACT_METHOD]
+    assert [call[0] for call in session.calls] == [
+        LIST_ARTIFACTS_METHOD,
+        GET_ARTIFACT_METHOD,
+    ]
 
 
 @pytest.mark.asyncio
@@ -1725,10 +1815,23 @@ async def test_interactive_mind_map_tree_decodes_live_direct_json_field() -> Non
     raw.app.mind_map_json = json.dumps({"name": "Root", "children": [{"name": "Leaf"}]})
     session, _, _, _, api = _graph([raw])
 
-    tree = await api._get_interactive_mind_map_tree("interactive")
+    tree = await api._get_interactive_mind_map_tree("notebook-1", "interactive")
 
     assert tree == {"name": "Root", "children": [{"name": "Leaf"}]}
-    assert [call[0] for call in session.calls] == [GET_ARTIFACT_METHOD]
+    assert [call[0] for call in session.calls] == [
+        LIST_ARTIFACTS_METHOD,
+        GET_ARTIFACT_METHOD,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_exact_interactive_tree_rejects_artifact_outside_notebook() -> None:
+    session, _, _, _, api = _graph([_artifact("owned-by-notebook")])
+
+    with pytest.raises(ArtifactNotFoundError):
+        await api._get_interactive_mind_map_tree("notebook-1", "foreign-artifact")
+
+    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD]
 
 
 @pytest.mark.asyncio
@@ -1749,7 +1852,11 @@ async def test_download_interactive_mind_map_writes_validated_json(tmp_path) -> 
         "name": "Root",
         "children": [{"name": "Leaf"}],
     }
-    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD, GET_ARTIFACT_METHOD]
+    assert [call[0] for call in session.calls] == [
+        LIST_ARTIFACTS_METHOD,
+        LIST_ARTIFACTS_METHOD,
+        GET_ARTIFACT_METHOD,
+    ]
 
 
 @pytest.mark.asyncio
@@ -1853,7 +1960,7 @@ async def test_interactive_mind_map_rejects_malformed_node_tree() -> None:
     _, _, _, _, api = _graph([raw])
 
     with pytest.raises(ArtifactParseError, match="invalid node"):
-        await api._get_interactive_mind_map_tree("interactive")
+        await api._get_interactive_mind_map_tree("notebook-1", "interactive")
 
 
 @pytest.mark.asyncio

@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 from typing import Literal, NoReturn
 
+from .._idempotency import mark_unconfirmed
 from .._labels import LabelsAPI, ListSources
 from ..exceptions import DecodingError, LabelError, LabelNotFoundError, NetworkError, RPCError
 from ..types import Label, Source
@@ -131,21 +132,28 @@ class AndroidLabelsAPI(LabelsAPI):
                 notebook_id=notebook_id,
                 expected_epoch=lease.epoch,
             )
-            created = decode_created_labels(
-                response,
-                notebook_id,
-                method_id=CREATE_LABEL_METHOD,
-            )
+            try:
+                created = decode_created_labels(
+                    response,
+                    notebook_id,
+                    method_id=CREATE_LABEL_METHOD,
+                )
+            except DecodingError as error:
+                raise mark_unconfirmed(error) from None
             if len(created) != 1:
-                raise LabelError(
-                    f"create(name={name!r}) expected exactly 1 created label in the Android "
-                    f"response, found {len(created)}"
+                raise mark_unconfirmed(
+                    LabelError(
+                        f"create(name={name!r}) expected exactly 1 created label in the Android "
+                        f"response, found {len(created)}"
+                    )
                 )
             (label,) = created
             if label.name != name or (label.emoji or "") != emoji or bool(label.source_ids):
-                raise DecodingError(
-                    "Android label create response did not echo the requested empty label",
-                    method_id=CREATE_LABEL_METHOD,
+                raise mark_unconfirmed(
+                    DecodingError(
+                        "Android label create response did not echo the requested empty label",
+                        method_id=CREATE_LABEL_METHOD,
+                    )
                 )
             return label
 

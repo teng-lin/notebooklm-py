@@ -906,9 +906,44 @@ async def test_note_write_read_back_drift_fails_loud() -> None:
             CREATE_NOTE_METHOD: [notes_pb2.CreateNoteResponse(note=wrong)],
         }
     )
-    with pytest.raises(DecodingError, match="read back"):
+    with pytest.raises(DecodingError, match="read back") as raised:
         await AndroidNotesAPI(_session(session)).create("project-1", "title", "body")
+    assert getattr(raised.value, "unconfirmed", False) is True
     assert len(session.calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [
+        NetworkError("create response lost"),
+        RateLimitError("create throttled"),
+        ServerError("create unavailable"),
+    ],
+)
+async def test_note_create_transport_loss_is_unconfirmed_and_never_replayed(
+    error: RPCError,
+) -> None:
+    session = SequencedSession({CREATE_NOTE_METHOD: [error]})
+
+    with pytest.raises(type(error)) as raised:
+        await AndroidNotesAPI(_session(session)).create("project-1", "title", "body")
+
+    assert raised.value is error
+    assert getattr(raised.value, "unconfirmed", False) is True
+    assert [method for method, _request, _kwargs in session.calls] == [CREATE_NOTE_METHOD]
+
+
+@pytest.mark.asyncio
+async def test_note_create_auth_rejection_is_not_marked_unconfirmed() -> None:
+    error = AuthError("auth rejected", rpc_code=16)
+    session = SequencedSession({CREATE_NOTE_METHOD: [error]})
+
+    with pytest.raises(AuthError) as raised:
+        await AndroidNotesAPI(_session(session)).create("project-1", "title", "body")
+
+    assert raised.value is error
+    assert getattr(raised.value, "unconfirmed", False) is False
 
 
 @pytest.mark.asyncio
@@ -918,6 +953,9 @@ async def test_note_write_read_back_drift_fails_loud() -> None:
         pytest.param(NetworkError("read connection lost"), id="network"),
         pytest.param(RateLimitError("read throttled"), id="rate-limit"),
         pytest.param(ServerError("read unavailable"), id="server"),
+        pytest.param(AuthError("read auth rejected", rpc_code=16), id="auth"),
+        pytest.param(DecodingError("read malformed"), id="decoding"),
+        pytest.param(ValueError("unexpected projection failure"), id="unexpected"),
     ],
 )
 async def test_note_create_returns_validated_response_when_readback_is_unavailable(
@@ -1229,6 +1267,61 @@ async def test_collaborator_mutations_and_intent_wrappers_are_native() -> None:
     ]
     compatibility.set_users.assert_not_awaited()
     compatibility.remove_user.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_notifying_share_lost_response_is_unconfirmed_and_sent_once() -> None:
+    error = NetworkError("share response lost")
+    session = SequencedSession({SHARE_PROJECT_METHOD: [error]})
+
+    with pytest.raises(NetworkError) as raised:
+        await _sharing(session)[0].set_users(
+            "project-1",
+            [("person@example.test", SharePermission.VIEWER)],
+            notify=True,
+        )
+
+    assert raised.value is error
+    assert getattr(raised.value, "unconfirmed", False) is True
+    assert [method for method, _request, _kwargs in session.calls] == [SHARE_PROJECT_METHOD]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "read_error",
+    [
+        ServerError("status unavailable"),
+        AuthError("status auth rejected", rpc_code=16),
+        RPCError("status project missing", rpc_code=5),
+        DecodingError("status malformed"),
+    ],
+)
+async def test_notifying_share_failed_status_read_is_unconfirmed_without_resend(
+    read_error: RPCError,
+) -> None:
+    session = SequencedSession(
+        {
+            SHARE_PROJECT_METHOD: [exact_sharing_pb2.ShareProjectResponse()],
+            GET_PROJECT_DETAILS_METHOD: [read_error],
+        }
+    )
+
+    with pytest.raises(type(read_error)) as raised:
+        await _sharing(session)[0].set_users(
+            "project-1",
+            [("person@example.test", SharePermission.VIEWER)],
+            notify=True,
+        )
+
+    if read_error.rpc_code == 5:
+        assert isinstance(raised.value, NotebookNotFoundError)
+    else:
+        assert raised.value is read_error
+    assert getattr(raised.value, "unconfirmed", False) is True
+    assert [method for method, _request, _kwargs in session.calls] == [
+        SHARE_PROJECT_METHOD,
+        GET_PROJECT_DETAILS_METHOD,
+    ]
 
 
 @pytest.mark.parametrize(

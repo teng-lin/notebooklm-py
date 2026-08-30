@@ -487,7 +487,7 @@ class AndroidSourcesAPI(SourcesAPI):
             raise
         except (KeyboardInterrupt, SystemExit):
             raise
-        except (RPCError, NetworkError):
+        except (NetworkError, RateLimitError, ServerError, DecodingError):
             failure = _unresolved_file_registration_error(filename)
             raise failure from None
         if registration.omitted:
@@ -690,7 +690,7 @@ class AndroidSourcesAPI(SourcesAPI):
             raise
         except (KeyboardInterrupt, SystemExit):
             raise
-        except (RPCError, NetworkError):
+        except (NetworkError, RateLimitError, ServerError):
             pass
         else:
             try:
@@ -777,9 +777,9 @@ class AndroidSourcesAPI(SourcesAPI):
                 raise
             except (KeyboardInterrupt, SystemExit):
                 raise
-            except (AuthError, RateLimitError, ServerError, NetworkError):
+            except AuthError:
                 raise
-            except RPCError as exc:
+            except (RateLimitError, ServerError, NetworkError, DecodingError) as exc:
                 raise _unresolved_add_error(
                     subject,
                     stage="tentative registration",
@@ -843,7 +843,7 @@ class AndroidSourcesAPI(SourcesAPI):
                 raise
             except (KeyboardInterrupt, SystemExit):
                 raise
-            except (RPCError, NetworkError) as exc:
+            except (RateLimitError, ServerError, NetworkError, DecodingError) as exc:
                 failure = _unresolved_add_error(
                     url,
                     stage="tentative registration",
@@ -892,7 +892,7 @@ class AndroidSourcesAPI(SourcesAPI):
                 raise
             except (KeyboardInterrupt, SystemExit):
                 raise
-            except (RPCError, NetworkError) as exc:
+            except (RateLimitError, ServerError, NetworkError, DecodingError) as exc:
                 return [
                     SourceUrlBatchItem(
                         url=url,
@@ -1103,23 +1103,56 @@ class AndroidSourcesAPI(SourcesAPI):
                 wait_timeout=wait_timeout,
             )
 
+    async def _require_owned_source(
+        self,
+        notebook_id: str,
+        source_id: str,
+        *,
+        expected_epoch: int,
+        method_id: str,
+    ) -> Source:
+        source = next(
+            (
+                item
+                for item in await self._list_project_sources(
+                    notebook_id,
+                    strict=False,
+                    status_filter=None,
+                    type_filter=None,
+                    expected_epoch=expected_epoch,
+                )
+                if item.id == source_id
+            ),
+            None,
+        )
+        if source is None:
+            raise SourceNotFoundError(source_id, method_id=method_id)
+        return source
+
     async def delete(self, notebook_id: str, source_id: str) -> None:
-        del notebook_id
         request = _write_proto().DeleteSourcesRequest(
             source_ids=[_read_proto().SourceId(id=source_id)]
         )
-        try:
-            await self._transport.unary(
-                DELETE_SOURCES_METHOD,
-                request,
-                replay_safe=False,
-                response_type=_empty_type(),
+        async with self._transport.operation_scope("sources.delete") as lease:
+            await self._require_owned_source(
+                notebook_id,
+                source_id,
+                expected_epoch=lease.epoch,
+                method_id=DELETE_SOURCES_METHOD,
             )
-        except (AuthError, RateLimitError, ServerError, NetworkError):
-            raise
-        except RPCError as exc:
-            if exc.rpc_code != 5:
+            try:
+                await self._transport.unary(
+                    DELETE_SOURCES_METHOD,
+                    request,
+                    replay_safe=False,
+                    response_type=_empty_type(),
+                    expected_epoch=lease.epoch,
+                )
+            except (AuthError, RateLimitError, ServerError, NetworkError):
                 raise
+            except RPCError as exc:
+                if exc.rpc_code != 5:
+                    raise
 
     async def rename(
         self,
@@ -1139,6 +1172,12 @@ class AndroidSourcesAPI(SourcesAPI):
             request_context=android_request_context(),
         )
         async with self._transport.operation_scope("source.rename") as lease:
+            await self._require_owned_source(
+                notebook_id,
+                source_id,
+                expected_epoch=lease.epoch,
+                method_id=MUTATE_SOURCE_METHOD,
+            )
             try:
                 response = await self._transport.unary(
                     MUTATE_SOURCE_METHOD,
@@ -1186,8 +1225,13 @@ class AndroidSourcesAPI(SourcesAPI):
             return source if return_object else None
 
     async def refresh(self, notebook_id: str, source_id: str) -> None:
-        del notebook_id
         async with self._transport.operation_scope("sources.refresh") as lease:
+            await self._require_owned_source(
+                notebook_id,
+                source_id,
+                expected_epoch=lease.epoch,
+                method_id=REFRESH_SOURCE_METHOD,
+            )
             # Live evidence bounds the native mutation to content that is
             # actually stale: a stale native Drive source succeeds, while the
             # freshly-added URL exercised by the shared E2E is rejected.  An
@@ -1220,8 +1264,14 @@ class AndroidSourcesAPI(SourcesAPI):
                 )
 
     async def check_freshness(self, notebook_id: str, source_id: str) -> bool:
-        del notebook_id
-        return await self._check_freshness(source_id)
+        async with self._transport.operation_scope("sources.check_freshness") as lease:
+            await self._require_owned_source(
+                notebook_id,
+                source_id,
+                expected_epoch=lease.epoch,
+                method_id=CHECK_SOURCE_FRESHNESS_METHOD,
+            )
+            return await self._check_freshness(source_id, expected_epoch=lease.epoch)
 
     async def _check_freshness(
         self,
@@ -1257,25 +1307,32 @@ class AndroidSourcesAPI(SourcesAPI):
         return bool(freshness.is_fresh)
 
     async def get_guide(self, notebook_id: str, source_id: str) -> SourceGuide:
-        del notebook_id
         request = _write_proto().GenerateDocumentGuidesRequest(
             sources=[_write_proto().InputSource(source_id=_read_proto().SourceId(id=source_id))]
         )
-        try:
-            response = await self._transport.unary(
-                GENERATE_DOCUMENT_GUIDES_METHOD,
-                request,
-                replay_safe=True,
-                response_type=_write_proto().GenerateDocumentGuidesResponse,
+        async with self._transport.operation_scope("sources.get_guide") as lease:
+            await self._require_owned_source(
+                notebook_id,
+                source_id,
+                expected_epoch=lease.epoch,
+                method_id=GENERATE_DOCUMENT_GUIDES_METHOD,
             )
-        except (AuthError, RateLimitError, ServerError, NetworkError):
-            raise
-        except RPCError as exc:
-            if exc.rpc_code != 5:
+            try:
+                response = await self._transport.unary(
+                    GENERATE_DOCUMENT_GUIDES_METHOD,
+                    request,
+                    replay_safe=True,
+                    response_type=_write_proto().GenerateDocumentGuidesResponse,
+                    expected_epoch=lease.epoch,
+                )
+            except (AuthError, RateLimitError, ServerError, NetworkError):
                 raise
-            raise SourceNotFoundError(
-                source_id, method_id=GENERATE_DOCUMENT_GUIDES_METHOD
-            ) from None
+            except RPCError as exc:
+                if exc.rpc_code != 5:
+                    raise
+                raise SourceNotFoundError(
+                    source_id, method_id=GENERATE_DOCUMENT_GUIDES_METHOD
+                ) from None
 
         matches = [
             guide
@@ -1308,7 +1365,6 @@ class AndroidSourcesAPI(SourcesAPI):
         *,
         output_format: Literal["text", "markdown"] = "text",
     ) -> SourceFulltext:
-        del notebook_id
         if output_format not in ("text", "markdown"):
             raise ValueError(f"Invalid format: {output_format!r}. Must be 'text' or 'markdown'.")
         if output_format == "markdown":
@@ -1321,19 +1377,27 @@ class AndroidSourcesAPI(SourcesAPI):
                 ) from None
 
         request = _write_proto().LoadSourceRequest(source_id=_read_proto().SourceId(id=source_id))
-        try:
-            response = await self._transport.unary(
-                LOAD_SOURCE_METHOD,
-                request,
-                replay_safe=True,
-                response_type=_source_content_proto().WireLoadSourceResponse,
+        async with self._transport.operation_scope("sources.get_fulltext") as lease:
+            await self._require_owned_source(
+                notebook_id,
+                source_id,
+                expected_epoch=lease.epoch,
+                method_id=LOAD_SOURCE_METHOD,
             )
-        except (AuthError, RateLimitError, ServerError, NetworkError):
-            raise
-        except RPCError as exc:
-            if exc.rpc_code != 5:
+            try:
+                response = await self._transport.unary(
+                    LOAD_SOURCE_METHOD,
+                    request,
+                    replay_safe=True,
+                    response_type=_source_content_proto().WireLoadSourceResponse,
+                    expected_epoch=lease.epoch,
+                )
+            except (AuthError, RateLimitError, ServerError, NetworkError):
                 raise
-            raise SourceNotFoundError(source_id, method_id=LOAD_SOURCE_METHOD) from None
+            except RPCError as exc:
+                if exc.rpc_code != 5:
+                    raise
+                raise SourceNotFoundError(source_id, method_id=LOAD_SOURCE_METHOD) from None
 
         if not response.HasField("source"):
             raise SourceNotFoundError(source_id, method_id=LOAD_SOURCE_METHOD)

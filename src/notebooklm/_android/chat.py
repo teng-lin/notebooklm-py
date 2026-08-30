@@ -112,6 +112,26 @@ class AndroidChatAPI(ChatAPI):
             return None
         return response.sessions[0].chat_session_id or None
 
+    async def _require_owned_conversation(
+        self,
+        notebook_id: str,
+        conversation_id: str,
+        *,
+        expected_epoch: int,
+    ) -> None:
+        proto = _proto()
+        response = await self._transport.unary(
+            LIST_CHAT_SESSIONS_METHOD,
+            proto.ListChatSessionsRequest(project_id=notebook_id),
+            replay_safe=True,
+            response_type=proto.ListChatSessionsResponse,
+            expected_epoch=expected_epoch,
+        )
+        if not any(session.chat_session_id == conversation_id for session in response.sessions):
+            raise ChatError(
+                f"Conversation {conversation_id!r} was not found in notebook {notebook_id!r}."
+            )
+
     async def get_conversation_turns(
         self,
         notebook_id: str,
@@ -119,40 +139,46 @@ class AndroidChatAPI(ChatAPI):
         limit: int = 2,
     ) -> Any:
         """Return at most ``limit`` newest turns across exact token pages."""
-        del notebook_id
         proto = _proto()
         bounded_limit = max(0, limit)
         if bounded_limit == 0:
             return proto.ListChatTurnsResponse()
 
-        turns: list[Any] = []
-        page_token = ""
-        seen_tokens: set[str] = set()
-        next_page_token = ""
-        while len(turns) < bounded_limit:
-            response = await self._transport.unary(
-                LIST_CHAT_TURNS_METHOD,
-                proto.ListChatTurnsRequest(
-                    chat_session_id=conversation_id,
-                    page_token=page_token,
-                ),
-                replay_safe=True,
-                response_type=proto.ListChatTurnsResponse,
+        async with self._transport.operation_scope("chat.get_conversation_turns") as lease:
+            await self._require_owned_conversation(
+                notebook_id,
+                conversation_id,
+                expected_epoch=lease.epoch,
             )
-            remaining = bounded_limit - len(turns)
-            turns.extend(response.chat_turns[:remaining])
-            next_page_token = response.next_page_token
-            if len(turns) >= bounded_limit or not next_page_token:
-                break
-            if next_page_token in seen_tokens:
-                raise UnknownRPCMethodError(
-                    "Android ListChatTurns repeated a pagination token.",
-                    method_id=LIST_CHAT_TURNS_METHOD,
-                    path=(1,),
-                    source="AndroidChatAPI.get_conversation_turns",
+            turns: list[Any] = []
+            page_token = ""
+            seen_tokens: set[str] = set()
+            next_page_token = ""
+            while len(turns) < bounded_limit:
+                response = await self._transport.unary(
+                    LIST_CHAT_TURNS_METHOD,
+                    proto.ListChatTurnsRequest(
+                        chat_session_id=conversation_id,
+                        page_token=page_token,
+                    ),
+                    replay_safe=True,
+                    response_type=proto.ListChatTurnsResponse,
+                    expected_epoch=lease.epoch,
                 )
-            seen_tokens.add(next_page_token)
-            page_token = next_page_token
+                remaining = bounded_limit - len(turns)
+                turns.extend(response.chat_turns[:remaining])
+                next_page_token = response.next_page_token
+                if len(turns) >= bounded_limit or not next_page_token:
+                    break
+                if next_page_token in seen_tokens:
+                    raise UnknownRPCMethodError(
+                        "Android ListChatTurns repeated a pagination token.",
+                        method_id=LIST_CHAT_TURNS_METHOD,
+                        path=(1,),
+                        source="AndroidChatAPI.get_conversation_turns",
+                    )
+                seen_tokens.add(next_page_token)
+                page_token = next_page_token
 
         return proto.ListChatTurnsResponse(
             chat_turns=turns,
@@ -317,17 +343,23 @@ class AndroidChatAPI(ChatAPI):
         notebook_id: str,
         conversation_id: str,
     ) -> None:
-        del notebook_id
         proto = _proto()
-        await self._transport.unary(
-            DELETE_CHAT_TURNS_METHOD,
-            proto.DeleteChatTurnsRequest(
-                chat_session_id=conversation_id,
-                delete_all_history=True,
-            ),
-            replay_safe=False,
-            response_type=_empty_type(),
-        )
+        async with self._transport.operation_scope("chat.delete_conversation") as lease:
+            await self._require_owned_conversation(
+                notebook_id,
+                conversation_id,
+                expected_epoch=lease.epoch,
+            )
+            await self._transport.unary(
+                DELETE_CHAT_TURNS_METHOD,
+                proto.DeleteChatTurnsRequest(
+                    chat_session_id=conversation_id,
+                    delete_all_history=True,
+                ),
+                replay_safe=False,
+                response_type=_empty_type(),
+                expected_epoch=lease.epoch,
+            )
 
     async def configure(
         self,

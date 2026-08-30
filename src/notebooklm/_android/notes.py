@@ -8,6 +8,7 @@ import logging
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, cast
 
+from .._idempotency import mark_unconfirmed
 from .._notes import NotesAPI
 from ..exceptions import (
     AuthError,
@@ -21,6 +22,7 @@ from ..exceptions import (
 )
 from ..types import MindMap, Note
 from .session import AndroidSession
+from .write_safety import call_unconfirmed_on_transport_loss
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 GET_NOTES_METHOD = f"/{_SERVICE}/GetNotes"
@@ -95,19 +97,26 @@ async def create_note(
         {} if expected_epoch is None else {"expected_epoch": expected_epoch}
     )
     try:
-        response = await session.unary(
-            CREATE_NOTE_METHOD,
-            request,
-            replay_safe=False,
-            response_type=proto.CreateNoteResponse,
-            **epoch_kwargs,
+        response = await call_unconfirmed_on_transport_loss(
+            lambda: session.unary(
+                CREATE_NOTE_METHOD,
+                request,
+                replay_safe=False,
+                response_type=proto.CreateNoteResponse,
+                **epoch_kwargs,
+            )
         )
     except RPCError as exc:
         mapped = _map_notebook_error(notebook_id, exc, method_id=CREATE_NOTE_METHOD)
         if mapped is exc:
             raise
         raise mapped from exc
-    return decode_note(response.note, notebook_id, method_id=CREATE_NOTE_METHOD)
+    try:
+        return decode_note(response.note, notebook_id, method_id=CREATE_NOTE_METHOD)
+    except DecodingError as error:
+        # A successful CreateNote envelope proves dispatch, but an unusable
+        # result cannot tell the caller which row (if any) was committed.
+        raise mark_unconfirmed(error) from None
 
 
 class AndroidNotesAPI(NotesAPI):
@@ -234,37 +243,48 @@ class AndroidNotesAPI(NotesAPI):
                 content=content,
                 expected_epoch=lease.epoch,
             )
-            _validate_read_back(
-                created,
-                title=title,
-                content=content,
-                method_id=CREATE_NOTE_METHOD,
-            )
+            try:
+                _validate_read_back(
+                    created,
+                    title=title,
+                    content=content,
+                    method_id=CREATE_NOTE_METHOD,
+                )
+            except DecodingError as error:
+                raise mark_unconfirmed(error) from None
             try:
                 read_back = await self._get_note_or_none(
                     notebook_id,
                     created.id,
                     expected_epoch=lease.epoch,
                 )
-            except (NetworkError, RateLimitError, ServerError):
+            except Exception:
                 # CreateNote returned a concrete, fully decoded note whose
-                # title/content already match the request. A transient failure
+                # title/content already match the request. Any ordinary failure
                 # in the optional GetNotes verification cannot make that
-                # confirmed mutation ambiguous; propagating the read error
-                # would invite a caller to retry CreateNote and duplicate it.
+                # confirmed mutation ambiguous; propagating it would invite a
+                # caller to retry CreateNote and duplicate it. Cancellation and
+                # process-control exceptions remain BaseException and propagate.
                 logger.debug(
                     "Android CreateNote succeeded but GetNotes verification was unavailable; "
                     "returning the validated create response"
                 )
                 return created
             if read_back is None:
-                raise NoteNotFoundError(created.id, method_id=GET_NOTES_METHOD)
-            _validate_read_back(
-                read_back,
-                title=title,
-                content=content,
-                method_id=CREATE_NOTE_METHOD,
-            )
+                logger.debug(
+                    "Android CreateNote succeeded but its row was not yet visible; "
+                    "returning the validated create response"
+                )
+                return created
+            try:
+                _validate_read_back(
+                    read_back,
+                    title=title,
+                    content=content,
+                    method_id=CREATE_NOTE_METHOD,
+                )
+            except DecodingError as error:
+                raise mark_unconfirmed(error) from None
             return read_back
 
     async def update(

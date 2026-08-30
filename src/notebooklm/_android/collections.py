@@ -6,6 +6,7 @@ import builtins
 from typing import NoReturn
 
 from .._collections import CollectionsAPI, ListNotebooks
+from .._idempotency import mark_unconfirmed
 from ..exceptions import (
     CollectionError,
     CollectionNotFoundError,
@@ -102,11 +103,16 @@ class AndroidCollectionsAPI(CollectionsAPI):
                 notebook_id=None,
                 expected_epoch=lease.epoch,
             )
-            created = decode_created_collections(response, method_id=CREATE_LABEL_METHOD)
+            try:
+                created = decode_created_collections(response, method_id=CREATE_LABEL_METHOD)
+            except DecodingError as error:
+                raise mark_unconfirmed(error) from None
             if len(created) != 1:
-                raise CollectionError(
-                    f"create(name={name!r}) expected exactly 1 created collection in the "
-                    f"Android response, found {len(created)}"
+                raise mark_unconfirmed(
+                    CollectionError(
+                        f"create(name={name!r}) expected exactly 1 created collection in the "
+                        f"Android response, found {len(created)}"
+                    )
                 )
             (collection,) = created
             if (
@@ -114,10 +120,12 @@ class AndroidCollectionsAPI(CollectionsAPI):
                 or (collection.emoji or "") != ""
                 or bool(collection.notebook_ids)
             ):
-                raise DecodingError(
-                    "Android collection create response did not echo the requested empty "
-                    "collection",
-                    method_id=CREATE_LABEL_METHOD,
+                raise mark_unconfirmed(
+                    DecodingError(
+                        "Android collection create response did not echo the requested empty "
+                        "collection",
+                        method_id=CREATE_LABEL_METHOD,
+                    )
                 )
             return collection
 

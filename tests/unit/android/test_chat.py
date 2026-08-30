@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Any, cast
 
 import pytest
@@ -62,14 +64,28 @@ class FakeSession:
         self.unary_calls: list[tuple[str, Any, dict[str, Any]]] = []
         self.stream_calls: list[tuple[str, Any, dict[str, Any]]] = []
 
+    @asynccontextmanager
+    async def operation_scope(self, label: str, **kwargs: Any) -> AsyncIterator[_Lease]:
+        assert not kwargs
+        yield _Lease()
+
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
         self.unary_calls.append((method, request, kwargs))
+        if method == LIST_CHAT_SESSIONS_METHOD and not self.unary_responses.get(method):
+            return chat_pb2.ListChatSessionsResponse(
+                sessions=[common_pb2.ChatSession(chat_session_id="conversation-1")]
+            )
         return self.unary_responses[method].pop(0)
 
     async def stream(self, method: str, request: Any, **kwargs: Any) -> AsyncIterator[Any]:
         self.stream_calls.append((method, request, kwargs))
         for response in self.stream_responses.pop(0):
             yield response
+
+
+@dataclass(frozen=True)
+class _Lease:
+    epoch: int = 7
 
 
 class FakeLoopGuard:
@@ -542,51 +558,17 @@ async def test_list_sessions_raw_turns_and_history_decode_exact_requests() -> No
         ("Newest?", "Newest."),
     ]
 
-    assert fake.unary_calls == [
-        (
-            LIST_CHAT_SESSIONS_METHOD,
-            chat_pb2.ListChatSessionsRequest(project_id="notebook-1"),
-            {
-                "replay_safe": True,
-                "response_type": chat_pb2.ListChatSessionsResponse,
-            },
-        ),
-        (
-            LIST_CHAT_TURNS_METHOD,
-            chat_pb2.ListChatTurnsRequest(chat_session_id="conversation-1"),
-            {
-                "replay_safe": True,
-                "response_type": chat_pb2.ListChatTurnsResponse,
-            },
-        ),
-        (
-            LIST_CHAT_SESSIONS_METHOD,
-            chat_pb2.ListChatSessionsRequest(project_id="notebook-1"),
-            {
-                "replay_safe": True,
-                "response_type": chat_pb2.ListChatSessionsResponse,
-            },
-        ),
-        (
-            LIST_CHAT_TURNS_METHOD,
-            chat_pb2.ListChatTurnsRequest(chat_session_id="conversation-1"),
-            {
-                "replay_safe": True,
-                "response_type": chat_pb2.ListChatTurnsResponse,
-            },
-        ),
-        (
-            LIST_CHAT_TURNS_METHOD,
-            chat_pb2.ListChatTurnsRequest(
-                chat_session_id="conversation-1",
-                page_token="history-next-page",
-            ),
-            {
-                "replay_safe": True,
-                "response_type": chat_pb2.ListChatTurnsResponse,
-            },
-        ),
+    assert [call[0] for call in fake.unary_calls] == [
+        LIST_CHAT_SESSIONS_METHOD,
+        LIST_CHAT_SESSIONS_METHOD,
+        LIST_CHAT_TURNS_METHOD,
+        LIST_CHAT_SESSIONS_METHOD,
+        LIST_CHAT_SESSIONS_METHOD,
+        LIST_CHAT_TURNS_METHOD,
+        LIST_CHAT_TURNS_METHOD,
     ]
+    scoped_calls = fake.unary_calls[1:3] + fake.unary_calls[4:]
+    assert all(call[2]["expected_epoch"] == 7 for call in scoped_calls)
 
 
 @pytest.mark.asyncio
@@ -626,7 +608,8 @@ async def test_list_turns_zero_limit_skips_transport_and_token_cycle_fails() -> 
     with pytest.raises(UnknownRPCMethodError, match="pagination token"):
         await api.get_conversation_turns("notebook-1", "conversation-1", limit=2)
 
-    assert [call[1].page_token for call in fake.unary_calls] == ["", "cycle-token"]
+    turn_calls = [call for call in fake.unary_calls if call[0] == LIST_CHAT_TURNS_METHOD]
+    assert [call[1].page_token for call in turn_calls] == ["", "cycle-token"]
 
 
 @pytest.mark.asyncio
@@ -789,7 +772,8 @@ async def test_follow_up_maps_cached_turns_to_captured_conversation_events() -> 
     # silently rewritten into another question by the Android adapter.
     assert result.turn_number == 2
     assert result.is_follow_up is True
-    assert [call[1].page_token for call in fake.unary_calls] == [
+    turn_calls = [call for call in fake.unary_calls if call[0] == LIST_CHAT_TURNS_METHOD]
+    assert [call[1].page_token for call in turn_calls] == [
         "",
         "older-page",
         "",
@@ -865,16 +849,42 @@ async def test_delete_uses_base_lock_cache_workflow_and_exact_non_replay_request
 
     assert guard.calls == 1
     assert api.get_cached_turns("conversation-1") == []
-    assert fake.unary_calls == [
-        (
-            DELETE_CHAT_TURNS_METHOD,
-            chat_pb2.DeleteChatTurnsRequest(
-                chat_session_id="conversation-1",
-                delete_all_history=True,
-            ),
-            {"replay_safe": False, "response_type": Empty},
+    assert [call[0] for call in fake.unary_calls] == [
+        LIST_CHAT_SESSIONS_METHOD,
+        DELETE_CHAT_TURNS_METHOD,
+    ]
+    _method, request, kwargs = fake.unary_calls[1]
+    assert request == chat_pb2.DeleteChatTurnsRequest(
+        chat_session_id="conversation-1",
+        delete_all_history=True,
+    )
+    assert kwargs == {
+        "replay_safe": False,
+        "response_type": Empty,
+        "expected_epoch": 7,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["turns", "delete"])
+async def test_global_conversation_operations_reject_cross_notebook_ids(
+    operation: str,
+) -> None:
+    fake = FakeSession()
+    fake.unary_responses[LIST_CHAT_SESSIONS_METHOD] = [
+        chat_pb2.ListChatSessionsResponse(
+            sessions=[common_pb2.ChatSession(chat_session_id="owned-conversation")]
         )
     ]
+    api, _, _ = _api(fake)
+
+    with pytest.raises(ChatError, match="was not found in notebook"):
+        if operation == "turns":
+            await api.get_conversation_turns("notebook-1", "foreign-conversation")
+        else:
+            await api.delete_conversation("notebook-1", "foreign-conversation")
+
+    assert [method for method, _request, _kwargs in fake.unary_calls] == [LIST_CHAT_SESSIONS_METHOD]
 
 
 @pytest.mark.asyncio

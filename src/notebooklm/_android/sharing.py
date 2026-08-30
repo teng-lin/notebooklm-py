@@ -5,12 +5,17 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
+from .._idempotency import mark_unconfirmed
 from .._sharing import SharingAPI
 from .._types.enums import SharePermission, ShareViewLevel
-from ..exceptions import NotebookNotFoundError, RPCError
+from ..exceptions import (
+    NotebookNotFoundError,
+    RPCError,
+)
 from ..types import ShareStatus
 from .codecs.sharing import decode_share_status
 from .session import AndroidSession
+from .write_safety import call_unconfirmed_on_transport_loss
 
 _SERVICE = "labs.language.tailwind.sharing.LabsTailwindSharingService"
 GET_PROJECT_DETAILS_METHOD = f"/{_SERVICE}/GetProjectDetails"
@@ -114,19 +119,24 @@ class AndroidSharingAPI(SharingAPI):
         )
         async with self._transport.operation_scope("sharing.set_public") as lease:
             try:
-                await self._transport.unary(
-                    SHARE_PROJECT_METHOD,
-                    request,
-                    replay_safe=False,
-                    response_type=proto.ShareProjectResponse,
-                    expected_epoch=lease.epoch,
+                await call_unconfirmed_on_transport_loss(
+                    lambda: self._transport.unary(
+                        SHARE_PROJECT_METHOD,
+                        request,
+                        replay_safe=False,
+                        response_type=proto.ShareProjectResponse,
+                        expected_epoch=lease.epoch,
+                    )
                 )
             except RPCError as exc:
                 mapped = _map_notebook_error(notebook_id, exc, method_id=SHARE_PROJECT_METHOD)
                 if mapped is exc:
                     raise
                 raise mapped from exc
-            return await self._get_status(notebook_id, expected_epoch=lease.epoch)
+            try:
+                return await self._get_status(notebook_id, expected_epoch=lease.epoch)
+            except Exception as error:
+                raise mark_unconfirmed(error) from None
 
     async def set_view_level(
         self,
@@ -210,19 +220,27 @@ class AndroidSharingAPI(SharingAPI):
         )
         async with self._transport.operation_scope(operation) as lease:
             try:
-                await self._transport.unary(
-                    SHARE_PROJECT_METHOD,
-                    request,
-                    replay_safe=False,
-                    response_type=proto.ShareProjectResponse,
-                    expected_epoch=lease.epoch,
+                await call_unconfirmed_on_transport_loss(
+                    lambda: self._transport.unary(
+                        SHARE_PROJECT_METHOD,
+                        request,
+                        replay_safe=False,
+                        response_type=proto.ShareProjectResponse,
+                        expected_epoch=lease.epoch,
+                    )
                 )
             except RPCError as exc:
                 mapped = _map_notebook_error(notebook_id, exc, method_id=SHARE_PROJECT_METHOD)
                 if mapped is exc:
                     raise
                 raise mapped from exc
-            return await self._get_status(notebook_id, expected_epoch=lease.epoch)
+            try:
+                return await self._get_status(notebook_id, expected_epoch=lease.epoch)
+            except Exception as error:
+                # Even a confirmed ShareProject response followed by a failed
+                # status read must not look safe to retry: notify=True may
+                # already have delivered invitation email.
+                raise mark_unconfirmed(error) from None
 
 
 __all__ = [

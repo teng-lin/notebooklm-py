@@ -62,7 +62,6 @@ URL_B = "https://example.invalid/second"
 
 def _uncertain_transport_errors() -> list[Exception]:
     return [
-        AuthError("auth", method_id=ADD_TENTATIVE_SOURCES_METHOD, rpc_code=16),
         RateLimitError("rate", method_id=ADD_TENTATIVE_SOURCES_METHOD, rpc_code=8),
         ServerError("server", method_id=ADD_TENTATIVE_SOURCES_METHOD, rpc_code=14),
         NetworkError("network", method_id=ADD_TENTATIVE_SOURCES_METHOD),
@@ -94,6 +93,8 @@ class FakeTransport:
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
         self.calls.append((method, request, kwargs))
+        if method == GET_PROJECT_METHOD and method not in self.handlers:
+            return _project(_source(SOURCE_A), _source(SOURCE_B))
         result = self.handlers[method]
         if isinstance(result, deque):
             result = result.popleft()
@@ -285,7 +286,7 @@ async def test_duplicate_returned_name_is_unconfirmed_and_unexpected_row_is_isol
 @pytest.mark.asyncio
 async def test_uncertain_registration_is_marked_and_never_replayed_or_probed() -> None:
     transport = FakeTransport()
-    transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = RPCError(
+    transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = ServerError(
         "sanitized",
         rpc_code=14,
     )
@@ -326,7 +327,7 @@ async def test_typed_uncertain_registration_is_wrapped_for_single_and_batch(
 async def test_uncertain_commit_uses_one_exact_id_read_and_never_replays_write() -> None:
     transport = FakeTransport()
     transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _registration_handler([SOURCE_A])
-    transport.handlers[ADD_SOURCES_METHOD] = RPCError("sanitized", rpc_code=14)
+    transport.handlers[ADD_SOURCES_METHOD] = ServerError("sanitized", rpc_code=14)
     transport.handlers[GET_PROJECT_METHOD] = _project(
         _source(SOURCE_A, status=source_settings_pb2.SOURCE_STATUS_PENDING)
     )
@@ -339,19 +340,19 @@ async def test_uncertain_commit_uses_one_exact_id_read_and_never_replays_write()
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("rpc_code", [4, 14, 16])
-async def test_each_write_is_dispatched_once_after_auth_timeout_or_disconnect(
-    rpc_code: int,
+@pytest.mark.parametrize("transport_error", _uncertain_transport_errors())
+async def test_each_write_is_dispatched_once_after_transport_loss(
+    transport_error: Exception,
 ) -> None:
     registration = FakeTransport()
-    registration.handlers[ADD_TENTATIVE_SOURCES_METHOD] = RPCError("safe", rpc_code=rpc_code)
+    registration.handlers[ADD_TENTATIVE_SOURCES_METHOD] = transport_error
     with pytest.raises(SourceAddError):
         await _api(registration).add_url(NOTEBOOK_ID, URL_A)
     assert [call[0] for call in registration.calls] == [ADD_TENTATIVE_SOURCES_METHOD]
 
     commit = FakeTransport()
     commit.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _registration_handler([SOURCE_A])
-    commit.handlers[ADD_SOURCES_METHOD] = RPCError("safe", rpc_code=rpc_code)
+    commit.handlers[ADD_SOURCES_METHOD] = transport_error
     commit.handlers[GET_PROJECT_METHOD] = _project()
     with pytest.raises(SourceAddError):
         await _api(commit).add_url(NOTEBOOK_ID, URL_A)
@@ -359,6 +360,53 @@ async def test_each_write_is_dispatched_once_after_auth_timeout_or_disconnect(
     assert methods.count(ADD_TENTATIVE_SOURCES_METHOD) == 1
     assert methods.count(ADD_SOURCES_METHOD) == 1
     assert methods.count(GET_PROJECT_METHOD) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [
+        AuthError("auth", method_id=ADD_TENTATIVE_SOURCES_METHOD, rpc_code=16),
+        RPCError("invalid", method_id=ADD_TENTATIVE_SOURCES_METHOD, rpc_code=3),
+    ],
+)
+async def test_confirmed_registration_rejections_are_not_marked_unconfirmed(
+    error: RPCError,
+) -> None:
+    transport = FakeTransport()
+    transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = error
+
+    with pytest.raises(type(error)) as raised:
+        await _api(transport).add_text(NOTEBOOK_ID, "Title", "Body")
+
+    assert raised.value is error
+    assert getattr(raised.value, "unconfirmed", False) is False
+    assert [call[0] for call in transport.calls] == [ADD_TENTATIVE_SOURCES_METHOD]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["text", "drive"])
+async def test_text_and_drive_tentative_registration_loss_is_unconfirmed(kind: str) -> None:
+    transport = FakeTransport()
+    error = RPCTimeoutError(
+        "registration timed out",
+        timeout_seconds=1.0,
+        method_id=ADD_TENTATIVE_SOURCES_METHOD,
+    )
+    transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = error
+    api = _api(transport)
+
+    with pytest.raises(SourceAddError) as raised:
+        if kind == "text":
+            await api.add_text(NOTEBOOK_ID, "Title", "Body")
+        else:
+            await api.add_drive(NOTEBOOK_ID, "drive-id", "Drive title")
+
+    assert getattr(raised.value, "unconfirmed", False) is True
+    assert raised.value.cause is error
+    assert [method for method, _request, _kwargs in transport.calls] == [
+        ADD_TENTATIVE_SOURCES_METHOD
+    ]
 
 
 @pytest.mark.asyncio
@@ -675,12 +723,15 @@ async def test_check_freshness_maps_empty_success_to_true_and_explicit_false() -
 
     assert await api.check_freshness(NOTEBOOK_ID, SOURCE_A) is True
     assert await api.check_freshness(NOTEBOOK_ID, SOURCE_A) is False
-    for _, request, kwargs in transport.calls:
+    freshness_calls = [call for call in transport.calls if call[0] == CHECK_SOURCE_FRESHNESS_METHOD]
+    assert len(freshness_calls) == 2
+    for _, request, kwargs in freshness_calls:
         assert request.source_id.id == SOURCE_A
         assert request.HasField("request_context")
         assert kwargs == {
             "replay_safe": True,
             "response_type": sources_pb2.CheckSourceFreshnessResponse,
+            "expected_epoch": 7,
         }
 
 
@@ -715,7 +766,7 @@ async def test_refresh_uses_exact_native_request_and_public_none_contract() -> N
 
     assert result is None
     [(freshness_method, freshness_request, freshness_kwargs), (method, request, kwargs)] = (
-        transport.calls
+        transport.calls[1:]
     )
     assert freshness_method == CHECK_SOURCE_FRESHNESS_METHOD
     assert freshness_request.source_id.id == SOURCE_A
@@ -750,7 +801,7 @@ async def test_refresh_is_a_noop_when_source_is_already_fresh() -> None:
     result = await _api(transport).refresh(NOTEBOOK_ID, SOURCE_A)
 
     assert result is None
-    [(method, request, kwargs)] = transport.calls
+    [(method, request, kwargs)] = transport.calls[1:]
     assert method == CHECK_SOURCE_FRESHNESS_METHOD
     assert request.source_id.id == SOURCE_A
     assert kwargs == {
@@ -876,14 +927,59 @@ async def test_delete_and_rename_use_non_replayed_exact_wire_shapes() -> None:
     await api.delete(NOTEBOOK_ID, SOURCE_A)
     renamed = await api.rename(NOTEBOOK_ID, SOURCE_A, "Renamed")
 
-    delete_request = transport.calls[0][1]
-    mutate_request = transport.calls[1][1]
+    delete_request = next(
+        request for method, request, _ in transport.calls if method == DELETE_SOURCES_METHOD
+    )
+    mutate_request = next(
+        request for method, request, _ in transport.calls if method == MUTATE_SOURCE_METHOD
+    )
     assert [item.id for item in delete_request.source_ids] == [SOURCE_A]
     assert mutate_request.source_id.id == SOURCE_A
     assert mutate_request.mutations[0].change_title.title == "Renamed"
     assert mutate_request.HasField("request_context")
-    assert all(call[2]["replay_safe"] is False for call in transport.calls)
+    mutation_calls = [
+        call for call in transport.calls if call[0] in {DELETE_SOURCES_METHOD, MUTATE_SOURCE_METHOD}
+    ]
+    assert all(call[2]["replay_safe"] is False for call in mutation_calls)
     assert renamed is not None and renamed.title == "Renamed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "global_method"),
+    [
+        ("delete", DELETE_SOURCES_METHOD),
+        ("rename", MUTATE_SOURCE_METHOD),
+        ("refresh", REFRESH_SOURCE_METHOD),
+        ("check_freshness", CHECK_SOURCE_FRESHNESS_METHOD),
+        ("get_guide", GENERATE_DOCUMENT_GUIDES_METHOD),
+        ("get_fulltext", LOAD_SOURCE_METHOD),
+    ],
+)
+async def test_global_source_operations_reject_cross_notebook_ids_before_io(
+    operation: str,
+    global_method: str,
+) -> None:
+    transport = FakeTransport()
+    transport.handlers[GET_PROJECT_METHOD] = _project(_source(SOURCE_B))
+    api = _api(transport)
+
+    with pytest.raises(SourceNotFoundError):
+        if operation == "delete":
+            await api.delete(NOTEBOOK_ID, SOURCE_A)
+        elif operation == "rename":
+            await api.rename(NOTEBOOK_ID, SOURCE_A, "Renamed")
+        elif operation == "refresh":
+            await api.refresh(NOTEBOOK_ID, SOURCE_A)
+        elif operation == "check_freshness":
+            await api.check_freshness(NOTEBOOK_ID, SOURCE_A)
+        elif operation == "get_guide":
+            await api.get_guide(NOTEBOOK_ID, SOURCE_A)
+        else:
+            await api.get_fulltext(NOTEBOOK_ID, SOURCE_A)
+
+    assert [method for method, _request, _kwargs in transport.calls] == [GET_PROJECT_METHOD]
+    assert global_method not in [method for method, _request, _kwargs in transport.calls]
 
 
 @pytest.mark.asyncio
@@ -922,7 +1018,11 @@ async def test_rename_readback_finishes_during_graceful_drain_in_one_epoch() -> 
 
     result = await task
     assert result is not None and result.title == "Hydrated"
-    assert [kwargs["expected_epoch"] for _method, _request, kwargs in transport.calls] == [1, 1]
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in transport.calls] == [
+        1,
+        1,
+        1,
+    ]
     await transport.supervisor.wait_for_idle(1, 0.1)
 
 
@@ -947,7 +1047,10 @@ async def test_rename_readback_cannot_cross_forced_close_and_reopen() -> None:
 
     with pytest.raises(RuntimeError, match="retired resource generation"):
         await task
-    assert [method for method, _request, _kwargs in transport.calls] == [MUTATE_SOURCE_METHOD]
+    assert [method for method, _request, _kwargs in transport.calls] == [
+        GET_PROJECT_METHOD,
+        MUTATE_SOURCE_METHOD,
+    ]
     assert old_generation.in_flight == 0
     assert transport.supervisor._current is not None
     assert transport.supervisor._current.epoch == 2
@@ -997,10 +1100,14 @@ async def test_guide_and_fulltext_decode_only_captured_flat_fields() -> None:
     assert fulltext.char_count == 10
     assert fulltext.document.blocks == ()
     assert markdown.content == "# markdown"
-    assert transport.calls[0][2]["replay_safe"] is True
-    assert transport.calls[1][2]["replay_safe"] is True
+    guide_call = next(
+        call for call in transport.calls if call[0] == GENERATE_DOCUMENT_GUIDES_METHOD
+    )
+    fulltext_call = next(call for call in transport.calls if call[0] == LOAD_SOURCE_METHOD)
+    assert guide_call[2]["replay_safe"] is True
+    assert fulltext_call[2]["replay_safe"] is True
     assert (
-        transport.calls[1][2]["response_type"].DESCRIPTOR.full_name
+        fulltext_call[2]["response_type"].DESCRIPTOR.full_name
         == "notebooklm.internal.android.wire.v1.WireLoadSourceResponse"
     )
 

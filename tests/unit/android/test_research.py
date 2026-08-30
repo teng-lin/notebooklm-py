@@ -29,7 +29,7 @@ from notebooklm._android.research import (
 )
 from notebooklm._app.errors import ErrorCategory, classify
 from notebooklm._app.research import poll_and_classify
-from notebooklm._research import ResearchAPI
+from notebooklm._research import BaseResearchAPI, ResearchAPI
 from notebooklm._runtime.config import (
     AUTO_READ_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT,
@@ -43,6 +43,7 @@ from notebooklm.exceptions import (
     AmbiguousResearchTaskError,
     AuthError,
     DecodingError,
+    NetworkError,
     RateLimitError,
     ResearchTaskMismatchError,
     RPCError,
@@ -157,8 +158,8 @@ def _job(run_id: str, *, status: int, report: bool = False) -> Any:
 def test_exact_public_manifest_and_abstract_set() -> None:
     manifest = {
         name
-        for name in ResearchAPI.__dict__
-        if not name.startswith("_") and callable(getattr(ResearchAPI, name))
+        for name in BaseResearchAPI.__dict__
+        if not name.startswith("_") and callable(getattr(BaseResearchAPI, name))
     }
     assert manifest == {
         "start",
@@ -170,9 +171,10 @@ def test_exact_public_manifest_and_abstract_set() -> None:
         "extract_report_urls",
         "select_cited_sources",
     }
-    assert ResearchAPI.__abstractmethods__ == frozenset(
+    assert BaseResearchAPI.__abstractmethods__ == frozenset(
         {"start", "poll", "cancel", "import_sources"}
     )
+    assert ResearchAPI is WebResearchAPI
     assert AndroidResearchAPI.__abstractmethods__ == frozenset()
     for name in (
         "wait_for_completion",
@@ -181,10 +183,10 @@ def test_exact_public_manifest_and_abstract_set() -> None:
         "select_cited_sources",
     ):
         assert inspect.getattr_static(WebResearchAPI, name) is inspect.getattr_static(
-            ResearchAPI, name
+            BaseResearchAPI, name
         )
         assert inspect.getattr_static(AndroidResearchAPI, name) is inspect.getattr_static(
-            ResearchAPI, name
+            BaseResearchAPI, name
         )
 
 
@@ -232,6 +234,56 @@ async def test_fast_and_deep_start_use_distinct_evidence_fields_without_replay()
     assert fast_call[2]["replay_safe"] is False
     assert deep_call[2]["replay_safe"] is False
     assert fast_call[2]["expected_epoch"] == deep_call[2]["expected_epoch"] == 17
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", [START_FAST_METHOD, START_DEEP_METHOD])
+@pytest.mark.parametrize(
+    "error",
+    [NetworkError("response lost"), RateLimitError("throttled"), ServerError("unavailable")],
+)
+async def test_research_start_transport_loss_is_unconfirmed_and_never_replayed(
+    method: str,
+    error: RPCError,
+) -> None:
+    api, transport = _api({method: [error]})
+
+    with pytest.raises(type(error)) as raised:
+        await api.start("nb", "q", mode="deep" if method == START_DEEP_METHOD else "fast")
+
+    assert raised.value is error
+    assert getattr(raised.value, "unconfirmed", False) is True
+    assert [call[0] for call in transport.calls] == [method]
+
+
+@pytest.mark.asyncio
+async def test_research_start_auth_rejection_is_not_marked_unconfirmed() -> None:
+    error = AuthError("auth rejected", rpc_code=16)
+    api, transport = _api({START_FAST_METHOD: [error]})
+
+    with pytest.raises(AuthError) as raised:
+        await api.start("nb", "q")
+
+    assert raised.value is error
+    assert getattr(raised.value, "unconfirmed", False) is False
+    assert len(transport.calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", [START_FAST_METHOD, START_DEEP_METHOD])
+async def test_research_start_malformed_success_is_unconfirmed(method: str) -> None:
+    response = (
+        research_pb2.DiscoverSourcesAsyncResponse(start_session_id="diagnostic")
+        if method == START_DEEP_METHOD
+        else research_pb2.DiscoverSourcesManifoldResponse()
+    )
+    api, transport = _api({method: [response]})
+
+    with pytest.raises(DecodingError) as raised:
+        await api.start("nb", "q", mode="deep" if method == START_DEEP_METHOD else "fast")
+
+    assert getattr(raised.value, "unconfirmed", False) is True
+    assert len(transport.calls) == 1
 
 
 @pytest.mark.asyncio

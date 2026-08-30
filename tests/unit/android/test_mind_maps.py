@@ -262,7 +262,7 @@ async def test_interactive_generate_uses_live_create_wait_list_and_tree_seams() 
     )
     artifacts.wait_for_completion.assert_awaited_once_with("notebook-1", "interactive")
     artifacts.list.assert_awaited_once()
-    artifacts._get_interactive_mind_map_tree.assert_awaited_once_with("interactive")
+    artifacts._get_interactive_mind_map_tree.assert_awaited_once_with("notebook-1", "interactive")
     notes._list_note_backed_mind_maps.assert_not_awaited()
 
 
@@ -318,7 +318,7 @@ async def test_interactive_generate_holds_outer_scope_through_nested_tree_read()
     tree_started = asyncio.Event()
     tree_release = asyncio.Event()
 
-    async def _read_tree(_artifact_id: str) -> dict[str, Any]:
+    async def _read_tree(_notebook_id: str, _artifact_id: str) -> dict[str, Any]:
         tree_started.set()
         await tree_release.wait()
         return {"name": "Interactive", "children": []}
@@ -350,7 +350,7 @@ async def test_interactive_generate_holds_outer_scope_through_nested_tree_read()
 
 
 @pytest.mark.asyncio
-async def test_explicit_interactive_tree_reads_exact_app_field_without_listing() -> None:
+async def test_explicit_interactive_tree_passes_notebook_for_ownership_preflight() -> None:
     api, artifacts, notes = _graph()
 
     tree = await api.get_tree(
@@ -360,7 +360,7 @@ async def test_explicit_interactive_tree_reads_exact_app_field_without_listing()
     )
 
     assert tree == {"name": "Interactive", "children": []}
-    artifacts._get_interactive_mind_map_tree.assert_awaited_once_with("interactive")
+    artifacts._get_interactive_mind_map_tree.assert_awaited_once_with("notebook-1", "interactive")
     artifacts.list.assert_not_awaited()
     notes._list_note_backed_mind_maps.assert_not_awaited()
 
@@ -372,7 +372,7 @@ async def test_get_tree_holds_outer_scope_until_interactive_read_finishes() -> N
     tree_started = asyncio.Event()
     tree_release = asyncio.Event()
 
-    async def _read_tree(_artifact_id: str) -> dict[str, Any]:
+    async def _read_tree(_notebook_id: str, _artifact_id: str) -> dict[str, Any]:
         tree_started.set()
         await tree_release.wait()
         return {"name": "Interactive", "children": []}
@@ -528,7 +528,7 @@ async def test_get_tree_auto_detected_interactive_reads_exact_app_tree_after_det
 
     notes._list_note_backed_mind_maps.assert_awaited_once_with("notebook-1")
     artifacts.list.assert_awaited_once_with("notebook-1")
-    artifacts._get_interactive_mind_map_tree.assert_awaited_once_with("interactive")
+    artifacts._get_interactive_mind_map_tree.assert_awaited_once_with("notebook-1", "interactive")
 
 
 @pytest.mark.asyncio

@@ -5,10 +5,12 @@ from __future__ import annotations
 import builtins
 from typing import Any, Literal, cast
 
+from .._idempotency import mark_unconfirmed
 from ..exceptions import NotebookNotFoundError, RPCError
 from ..types import Collection, Label
 from .codecs.organization import decode_collections, decode_labels
 from .session import AndroidSession
+from .write_safety import call_unconfirmed_on_transport_loss
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 GET_LABELS_METHOD = f"/{_SERVICE}/GetLabels"
@@ -118,12 +120,14 @@ async def create_manual(
         request.project_id = notebook_id
     else:
         request.label_type = COLLECTION_TYPE
-    return await transport.unary(
-        CREATE_LABEL_METHOD,
-        request,
-        replay_safe=False,
-        response_type=exact.CreateLabelResponse,
-        expected_epoch=expected_epoch,
+    return await call_unconfirmed_on_transport_loss(
+        lambda: transport.unary(
+            CREATE_LABEL_METHOD,
+            request,
+            replay_safe=False,
+            response_type=exact.CreateLabelResponse,
+            expected_epoch=expected_epoch,
+        )
     )
 
 
@@ -141,16 +145,26 @@ async def generate_labels(
         project_id=notebook_id,
         auto_create=exact.AutoCreateLabel(regenerate_all=regenerate_all),
     )
-    await transport.unary(
-        CREATE_LABEL_METHOD,
-        request,
-        replay_safe=False,
-        response_type=exact.CreateLabelResponse,
-        expected_epoch=expected_epoch,
+    await call_unconfirmed_on_transport_loss(
+        lambda: transport.unary(
+            CREATE_LABEL_METHOD,
+            request,
+            replay_safe=False,
+            response_type=exact.CreateLabelResponse,
+            expected_epoch=expected_epoch,
+        )
     )
     # Return the complete post-write set through the canonical heterogeneous
     # label decoder; CreateLabelResponse may contain only created rows.
-    return await list_labels(transport, notebook_id, expected_epoch=expected_epoch)
+    try:
+        return await list_labels(transport, notebook_id, expected_epoch=expected_epoch)
+    except Exception as error:
+        # CreateLabel already returned successfully. Any ordinary failure in
+        # the required GetLabels projection leaves the generated set unknown,
+        # so a retry could repeat the mutation even when the read failed for a
+        # non-transport reason. Cancellation and process-control exceptions
+        # remain BaseException and therefore propagate untouched.
+        raise mark_unconfirmed(error) from None
 
 
 async def mutate_properties(

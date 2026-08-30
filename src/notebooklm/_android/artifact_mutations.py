@@ -7,14 +7,21 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .._artifact import validation as _artifact_validation
+from .._idempotency import mark_unconfirmed
 from .._types.artifacts import _status_from_code
 from .._types.enums import ExportType
-from ..exceptions import ArtifactFeatureUnavailableError, DecodingError, RPCError, ValidationError
+from ..exceptions import (
+    ArtifactFeatureUnavailableError,
+    DecodingError,
+    RPCError,
+    ValidationError,
+)
 from ..types import Artifact, GenerationStatus
 from .artifact_proto import ARTIFACTS_PROTO as _PROTO
 from .artifact_proto import empty_response_type
 from .codecs.artifacts import decode_artifact
 from .session import AndroidSession
+from .write_safety import call_unconfirmed_on_transport_loss
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 GENERATE_ARTIFACT_METHOD = f"/{_SERVICE}/GenerateArtifact"
@@ -29,29 +36,40 @@ def android_request_context() -> Any:
 
 async def retry_failed_artifact(
     session: AndroidSession,
+    require_owned: Callable[..., Awaitable[None]],
     notebook_id: str,
     artifact_id: str,
 ) -> GenerationStatus:
-    del notebook_id
     async with session.operation_scope("artifacts.retry_failed") as lease:
-        response = await session.unary(
-            GENERATE_ARTIFACT_METHOD,
-            _PROTO.GenerateArtifactRequest(
-                request_context=android_request_context(),
-                artifact_id=artifact_id,
-            ),
-            replay_safe=False,
-            response_type=_PROTO.GenerateArtifactResponse,
+        await require_owned(
+            notebook_id,
+            artifact_id,
             expected_epoch=lease.epoch,
-        )
-    if not response.HasField("artifact") or not response.artifact.artifact_id:
-        raise ArtifactFeatureUnavailableError("artifact", method_id=GENERATE_ARTIFACT_METHOD)
-    artifact = decode_artifact(response.artifact, method_id=GENERATE_ARTIFACT_METHOD)
-    if artifact.id != artifact_id:
-        raise DecodingError(
-            "Android artifact retry returned a different artifact id.",
             method_id=GENERATE_ARTIFACT_METHOD,
         )
+        response = await call_unconfirmed_on_transport_loss(
+            lambda: session.unary(
+                GENERATE_ARTIFACT_METHOD,
+                _PROTO.GenerateArtifactRequest(
+                    request_context=android_request_context(),
+                    artifact_id=artifact_id,
+                ),
+                replay_safe=False,
+                response_type=_PROTO.GenerateArtifactResponse,
+                expected_epoch=lease.epoch,
+            )
+        )
+    try:
+        if not response.HasField("artifact") or not response.artifact.artifact_id:
+            raise ArtifactFeatureUnavailableError("artifact", method_id=GENERATE_ARTIFACT_METHOD)
+        artifact = decode_artifact(response.artifact, method_id=GENERATE_ARTIFACT_METHOD)
+        if artifact.id != artifact_id:
+            raise DecodingError(
+                "Android artifact retry returned a different artifact id.",
+                method_id=GENERATE_ARTIFACT_METHOD,
+            )
+    except (ArtifactFeatureUnavailableError, DecodingError) as error:
+        raise mark_unconfirmed(error) from None
     return GenerationStatus(
         task_id=artifact.id,
         status=_status_from_code(artifact.status),
@@ -88,6 +106,7 @@ async def delete_artifact(
 
 async def export_to_drive(
     session: AndroidSession,
+    require_owned: Callable[..., Awaitable[None]],
     notebook_id: str,
     *,
     artifact_id: str | None,
@@ -95,7 +114,6 @@ async def export_to_drive(
     title: str,
     export_type: ExportType,
 ) -> Any:
-    del notebook_id
     _artifact_validation.check_exactly_one_export_target(artifact_id, content)
     if not isinstance(title, str):
         raise ValidationError("title must be a string")
@@ -111,18 +129,29 @@ async def export_to_drive(
     else:
         request.content = content
     async with session.operation_scope("artifacts.export") as lease:
-        response = await session.unary(
-            EXPORT_TO_DRIVE_METHOD,
-            request,
-            replay_safe=False,
-            response_type=_PROTO.ExportToDriveResponse,
-            expected_epoch=lease.epoch,
+        if artifact_id is not None:
+            await require_owned(
+                notebook_id,
+                artifact_id,
+                expected_epoch=lease.epoch,
+                method_id=EXPORT_TO_DRIVE_METHOD,
+            )
+        response = await call_unconfirmed_on_transport_loss(
+            lambda: session.unary(
+                EXPORT_TO_DRIVE_METHOD,
+                request,
+                replay_safe=False,
+                response_type=_PROTO.ExportToDriveResponse,
+                expected_epoch=lease.epoch,
+            )
         )
     parsed = urlsplit(response.url)
     if parsed.scheme != "https" or not parsed.hostname:
-        raise DecodingError(
-            "Android ExportToDrive response omitted a valid HTTPS URL.",
-            method_id=EXPORT_TO_DRIVE_METHOD,
+        raise mark_unconfirmed(
+            DecodingError(
+                "Android ExportToDrive response omitted a valid HTTPS URL.",
+                method_id=EXPORT_TO_DRIVE_METHOD,
+            )
         )
     return response.url
 

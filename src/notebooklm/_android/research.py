@@ -8,7 +8,7 @@ from typing import Any, cast
 
 from .._idempotency import mark_unconfirmed
 from .._notebook_metadata import NotebookSourceLister
-from .._research import _INITIAL_INTERVAL_UNSET, ResearchAPI
+from .._research import _INITIAL_INTERVAL_UNSET, BaseResearchAPI
 from .._runtime.config import (
     AUTO_READ_TIMEOUT,
     DEFAULT_TIMEOUT,
@@ -38,6 +38,7 @@ from .codecs.research import (
 )
 from .session import AndroidSession
 from .upload import android_request_context
+from .write_safety import call_unconfirmed_on_transport_loss
 
 
 def _proto() -> Any:
@@ -97,7 +98,7 @@ def _validate_start(source: str, mode: str, query: str) -> tuple[str, str]:
     return source_lower, mode_lower
 
 
-class AndroidResearchAPI(ResearchAPI):
+class AndroidResearchAPI(BaseResearchAPI):
     """Android bearer-gRPC adapter for the complete public Research contract."""
 
     def __init__(
@@ -120,31 +121,36 @@ class AndroidResearchAPI(ResearchAPI):
         if not query or not query.strip():
             raise ValidationError("query must not be empty")
         async with self._transport.operation_scope("research.discover_sources") as lease:
-            response = await self._transport.unary(
-                DISCOVER_SOURCES_METHOD,
-                _proto().DiscoverSourcesRequest(
-                    discovery_context=_proto().DiscoveryContext(context=query),
-                    discovery_mode=_proto().DEFAULT_LLM_SEARCH,
-                    project_id=notebook_id,
-                ),
-                replay_safe=False,
-                response_type=_proto().DiscoverSourcesResponse,
-                expected_epoch=lease.epoch,
-            )
-            task_id = response.discover_sources_feedback_key.discover_sources_id
-            task_id = _canonical_uuid(task_id, method_id=DISCOVER_SOURCES_METHOD)
-            sources = tuple(
-                source
-                for row in response.discovered_sources
-                if (
-                    source := decode_discovered_source(
-                        row,
-                        task_id=task_id,
-                        source_type=RESEARCH_SOURCE_TYPE_WEB,
-                    )
+            response = await call_unconfirmed_on_transport_loss(
+                lambda: self._transport.unary(
+                    DISCOVER_SOURCES_METHOD,
+                    _proto().DiscoverSourcesRequest(
+                        discovery_context=_proto().DiscoveryContext(context=query),
+                        discovery_mode=_proto().DEFAULT_LLM_SEARCH,
+                        project_id=notebook_id,
+                    ),
+                    replay_safe=False,
+                    response_type=_proto().DiscoverSourcesResponse,
+                    expected_epoch=lease.epoch,
                 )
-                is not None
             )
+            try:
+                task_id = response.discover_sources_feedback_key.discover_sources_id
+                task_id = _canonical_uuid(task_id, method_id=DISCOVER_SOURCES_METHOD)
+                sources = tuple(
+                    source
+                    for row in response.discovered_sources
+                    if (
+                        source := decode_discovered_source(
+                            row,
+                            task_id=task_id,
+                            source_type=RESEARCH_SOURCE_TYPE_WEB,
+                        )
+                    )
+                    is not None
+                )
+            except DecodingError as error:
+                raise mark_unconfirmed(error) from None
             return ResearchTask(
                 task_id=task_id,
                 status=ResearchStatus.COMPLETED,
@@ -167,38 +173,52 @@ class AndroidResearchAPI(ResearchAPI):
         query_message = _proto().ResearchQuery(query=query, source_type=source_type)
         async with self._transport.operation_scope("research.start") as lease:
             if mode_lower == "fast":
-                response = await self._transport.unary(
-                    START_FAST_METHOD,
-                    _proto().DiscoverSourcesManifoldRequest(
+                response = await call_unconfirmed_on_transport_loss(
+                    lambda: self._transport.unary(
+                        START_FAST_METHOD,
+                        _proto().DiscoverSourcesManifoldRequest(
+                            query=query_message,
+                            discovery_mode=_proto().DEFAULT_LLM_SEARCH,
+                            project_id=notebook_id,
+                        ),
+                        replay_safe=False,
+                        response_type=_proto().DiscoverSourcesManifoldResponse,
+                        expected_epoch=lease.epoch,
+                    )
+                )
+                try:
+                    run_id = _canonical_uuid(
+                        response.source_discovery_job_id, method_id=START_FAST_METHOD
+                    )
+                except DecodingError as error:
+                    raise mark_unconfirmed(error) from None
+                return ResearchStart(run_id, None, notebook_id, query, mode_lower)
+            response = await call_unconfirmed_on_transport_loss(
+                lambda: self._transport.unary(
+                    START_DEEP_METHOD,
+                    _proto().DiscoverSourcesAsyncRequest(
+                        fixed_flags=[1],
                         query=query_message,
-                        discovery_mode=_proto().DEFAULT_LLM_SEARCH,
+                        discovery_mode=_proto().DEEP_RESEARCH,
                         project_id=notebook_id,
                     ),
                     replay_safe=False,
-                    response_type=_proto().DiscoverSourcesManifoldResponse,
+                    response_type=_proto().DiscoverSourcesAsyncResponse,
                     expected_epoch=lease.epoch,
                 )
-                run_id = _canonical_uuid(
-                    response.source_discovery_job_id, method_id=START_FAST_METHOD
-                )
-                return ResearchStart(run_id, None, notebook_id, query, mode_lower)
-            response = await self._transport.unary(
-                START_DEEP_METHOD,
-                _proto().DiscoverSourcesAsyncRequest(
-                    fixed_flags=[1],
-                    query=query_message,
-                    discovery_mode=_proto().DEEP_RESEARCH,
-                    project_id=notebook_id,
-                ),
-                replay_safe=False,
-                response_type=_proto().DiscoverSourcesAsyncResponse,
-                expected_epoch=lease.epoch,
             )
-            run_id = _canonical_uuid(response.source_discovery_job_id, method_id=START_DEEP_METHOD)
+            try:
+                run_id = _canonical_uuid(
+                    response.source_discovery_job_id, method_id=START_DEEP_METHOD
+                )
+            except DecodingError as error:
+                raise mark_unconfirmed(error) from None
             if not response.start_session_id:
-                raise DecodingError(
-                    "Android deep Research response omitted its diagnostic session id",
-                    method_id=START_DEEP_METHOD,
+                raise mark_unconfirmed(
+                    DecodingError(
+                        "Android deep Research response omitted its diagnostic session id",
+                        method_id=START_DEEP_METHOD,
+                    )
                 )
             return ResearchStart(
                 response.start_session_id,

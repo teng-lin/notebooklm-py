@@ -10,6 +10,7 @@ from typing import Any, cast
 import httpx
 
 from .._artifacts import ArtifactsAPI
+from .._idempotency import mark_unconfirmed
 from .._notebook_metadata import NotebookSourceIdProvider
 from .._runtime.call_supervisor import CallSupervisor
 from .._types.artifacts import _status_from_code
@@ -78,6 +79,7 @@ from .assets import AndroidAssetDownloadService, RepresentationKind
 from .codecs.artifacts import decode_artifact, decode_artifacts, decode_report_suggestions
 from .errors import sanitize_escaping_exception
 from .session import AndroidSession
+from .write_safety import call_unconfirmed_on_transport_loss
 
 logger = logging.getLogger(__name__)
 
@@ -214,9 +216,41 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         task_id: str,
     ) -> builtins.list[Artifact]:
         """Read one exact Studio polling target without querying note-backed rows."""
-        del notebook_id
-        artifact = await self._get_studio_artifact(task_id)
-        return [] if artifact is None else [artifact]
+        async with self._transport.operation_scope("artifacts.poll") as lease:
+            try:
+                await self._require_studio_artifact_owned(
+                    notebook_id,
+                    task_id,
+                    expected_epoch=lease.epoch,
+                    method_id=GET_ARTIFACT_METHOD,
+                )
+            except ArtifactNotFoundError:
+                return []
+            artifact = await self._get_studio_artifact(
+                task_id,
+                expected_epoch=lease.epoch,
+            )
+            return [] if artifact is None else [artifact]
+
+    async def _require_studio_artifact_owned(
+        self,
+        notebook_id: str,
+        artifact_id: str,
+        *,
+        expected_epoch: int,
+        method_id: str,
+    ) -> None:
+        """Prove ownership without decoding unrelated artifact payloads."""
+
+        response = await self._transport.unary(
+            LIST_ARTIFACTS_METHOD,
+            _PROTO.ListArtifactsRequest(project_id=notebook_id),
+            replay_safe=True,
+            response_type=_PROTO.ListArtifactsResponse,
+            expected_epoch=expected_epoch,
+        )
+        if not any(row.artifact_id == artifact_id for row in response.artifacts):
+            raise ArtifactNotFoundError(artifact_id, method_id=method_id)
 
     async def _get_studio_artifact(
         self,
@@ -435,18 +469,22 @@ class AndroidArtifactsAPI(ArtifactsAPI):
                 method=CREATE_ARTIFACT_METHOD,
                 expected_epoch=expected_epoch,
             )
-            artifact = decode_artifact(response.artifact, method_id=CREATE_ARTIFACT_METHOD)
-            if artifact._artifact_type != plan.expected_type or (
-                plan.expected_variant is not None
-                and artifact._variant not in (None, plan.expected_variant)
-            ):
-                raise DecodingError(
-                    f"Android {plan.family_label} creation returned a different artifact family.",
-                    method_id=CREATE_ARTIFACT_METHOD,
+            try:
+                artifact = decode_artifact(response.artifact, method_id=CREATE_ARTIFACT_METHOD)
+                if artifact._artifact_type != plan.expected_type or (
+                    plan.expected_variant is not None
+                    and artifact._variant not in (None, plan.expected_variant)
+                ):
+                    raise DecodingError(
+                        f"Android {plan.family_label} creation returned a different artifact "
+                        "family.",
+                        method_id=CREATE_ARTIFACT_METHOD,
+                    )
+                validate_echoed_source_ids(
+                    artifact, source_ids, plan.family_label, CREATE_ARTIFACT_METHOD
                 )
-            validate_echoed_source_ids(
-                artifact, source_ids, plan.family_label, CREATE_ARTIFACT_METHOD
-            )
+            except DecodingError as error:
+                raise mark_unconfirmed(error) from None
             return GenerationStatus(
                 task_id=artifact.id,
                 status=_status_from_code(artifact.status),
@@ -502,13 +540,16 @@ class AndroidArtifactsAPI(ArtifactsAPI):
             method=CREATE_ARTIFACT_METHOD,
             expected_epoch=expected_epoch,
         )
-        artifact = decode_artifact(response.artifact, method_id=CREATE_ARTIFACT_METHOD)
-        if artifact._artifact_type != ArtifactTypeCode.AUDIO.value:
-            raise DecodingError(
-                "Android audio creation returned a different artifact family.",
-                method_id=CREATE_ARTIFACT_METHOD,
-            )
-        validate_echoed_source_ids(artifact, source_ids, "audio", CREATE_ARTIFACT_METHOD)
+        try:
+            artifact = decode_artifact(response.artifact, method_id=CREATE_ARTIFACT_METHOD)
+            if artifact._artifact_type != ArtifactTypeCode.AUDIO.value:
+                raise DecodingError(
+                    "Android audio creation returned a different artifact family.",
+                    method_id=CREATE_ARTIFACT_METHOD,
+                )
+            validate_echoed_source_ids(artifact, source_ids, "audio", CREATE_ARTIFACT_METHOD)
+        except DecodingError as error:
+            raise mark_unconfirmed(error) from None
         return GenerationStatus(
             task_id=artifact.id,
             status=_status_from_code(artifact.status),
@@ -803,40 +844,51 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         # this exact request closure and invokes the generated DeriveArtifact
         # client method. A derivation is a mutation and must never be replayed.
         async with self._transport.operation_scope("artifacts.revise_slide") as lease:
-            response = await self._transport.unary(
-                DERIVE_ARTIFACT_METHOD,
-                _PROTO.DeriveArtifactRequest(
-                    request_context=android_request_context(),
-                    original_artifact_id=artifact_id,
-                    slides_derivation_options=_PROTO.SlidesDerivationOptions(
-                        slide_edit_instructions=[
-                            _PROTO.SlideEditInstruction(
-                                slide_index=slide_index,
-                                edit_instruction=prompt,
-                            )
-                        ]
-                    ),
-                ),
-                replay_safe=False,
-                response_type=_PROTO.DeriveArtifactResponse,
+            await self._require_studio_artifact_owned(
+                notebook_id,
+                artifact_id,
                 expected_epoch=lease.epoch,
-            )
-        if not response.HasField("artifact"):
-            raise DecodingError(
-                "Android DeriveArtifact response omitted its artifact.",
                 method_id=DERIVE_ARTIFACT_METHOD,
             )
-        artifact = decode_artifact(response.artifact, method_id=DERIVE_ARTIFACT_METHOD)
-        if artifact._artifact_type != ArtifactTypeCode.SLIDE_DECK.value:
-            raise DecodingError(
-                "Android slide revision returned a different artifact family.",
-                method_id=DERIVE_ARTIFACT_METHOD,
+            response = await call_unconfirmed_on_transport_loss(
+                lambda: self._transport.unary(
+                    DERIVE_ARTIFACT_METHOD,
+                    _PROTO.DeriveArtifactRequest(
+                        request_context=android_request_context(),
+                        original_artifact_id=artifact_id,
+                        slides_derivation_options=_PROTO.SlidesDerivationOptions(
+                            slide_edit_instructions=[
+                                _PROTO.SlideEditInstruction(
+                                    slide_index=slide_index,
+                                    edit_instruction=prompt,
+                                )
+                            ]
+                        ),
+                    ),
+                    replay_safe=False,
+                    response_type=_PROTO.DeriveArtifactResponse,
+                    expected_epoch=lease.epoch,
+                )
             )
-        if artifact.id == artifact_id:
-            raise DecodingError(
-                "Android slide revision reused the original artifact id.",
-                method_id=DERIVE_ARTIFACT_METHOD,
-            )
+        try:
+            if not response.HasField("artifact"):
+                raise DecodingError(
+                    "Android DeriveArtifact response omitted its artifact.",
+                    method_id=DERIVE_ARTIFACT_METHOD,
+                )
+            artifact = decode_artifact(response.artifact, method_id=DERIVE_ARTIFACT_METHOD)
+            if artifact._artifact_type != ArtifactTypeCode.SLIDE_DECK.value:
+                raise DecodingError(
+                    "Android slide revision returned a different artifact family.",
+                    method_id=DERIVE_ARTIFACT_METHOD,
+                )
+            if artifact.id == artifact_id:
+                raise DecodingError(
+                    "Android slide revision reused the original artifact id.",
+                    method_id=DERIVE_ARTIFACT_METHOD,
+                )
+        except DecodingError as error:
+            raise mark_unconfirmed(error) from None
         return GenerationStatus(
             task_id=artifact.id,
             status=_status_from_code(artifact.status),
@@ -844,7 +896,12 @@ class AndroidArtifactsAPI(ArtifactsAPI):
         )
 
     async def retry_failed(self, notebook_id: str, artifact_id: str) -> GenerationStatus:
-        return await retry_failed_artifact(self._transport, notebook_id, artifact_id)
+        return await retry_failed_artifact(
+            self._transport,
+            self._require_studio_artifact_owned,
+            notebook_id,
+            artifact_id,
+        )
 
     async def generate_mind_map(
         self,
@@ -891,6 +948,7 @@ class AndroidArtifactsAPI(ArtifactsAPI):
 
     async def _get_interactive_mind_map_tree(
         self,
+        notebook_id: str,
         artifact_id: str,
         *,
         expected_epoch: int | None = None,
@@ -900,9 +958,16 @@ class AndroidArtifactsAPI(ArtifactsAPI):
                 "artifacts.get_interactive_mind_map_tree"
             ) as lease:
                 return await self._get_interactive_mind_map_tree(
+                    notebook_id,
                     artifact_id,
                     expected_epoch=lease.epoch,
                 )
+        await self._require_studio_artifact_owned(
+            notebook_id,
+            artifact_id,
+            expected_epoch=expected_epoch,
+            method_id=GET_ARTIFACT_METHOD,
+        )
         raw = await self._get_raw_studio_artifact(
             artifact_id,
             expected_epoch=expected_epoch,
@@ -1173,6 +1238,7 @@ class AndroidArtifactsAPI(ArtifactsAPI):
                 prefetched=artifacts_data,
             )
             tree = await self._get_interactive_mind_map_tree(
+                notebook_id,
                 selected.id,
                 expected_epoch=lease.epoch,
             )
@@ -1455,6 +1521,7 @@ class AndroidArtifactsAPI(ArtifactsAPI):
     ) -> Any:
         return await export_to_drive(
             self._transport,
+            self._require_studio_artifact_owned,
             notebook_id,
             artifact_id=artifact_id,
             content=content,
