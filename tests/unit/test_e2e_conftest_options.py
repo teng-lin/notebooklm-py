@@ -637,7 +637,14 @@ class TestAndroidArtifactOptionReadBack:
         class FakeArtifacts:
             _transport = SimpleNamespace(operation_scope=operation_scope)
 
-            async def _get_raw_studio_artifact(self, artifact_id: str, *, expected_epoch: int):
+            async def _get_raw_studio_artifact(
+                self,
+                notebook_id: str,
+                artifact_id: str,
+                *,
+                expected_epoch: int,
+            ):
+                assert notebook_id == "notebook-1"
                 assert artifact_id == "artifact-1"
                 assert expected_epoch == 7
                 return artifact
