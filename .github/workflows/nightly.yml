@@ -232,10 +232,13 @@ jobs:
         include:
         - os: ubuntu-latest
           backend: web
+          generation_notebook: shared
         - os: windows-latest
           backend: web
+          generation_notebook: unused
         - os: ubuntu-latest
           backend: android
+          generation_notebook: scratch
     env:
       # Each authenticated lane selects its namespace graph explicitly. Keeping
       # Web in the matrix preserves the historical default while the separate
@@ -440,6 +443,71 @@ jobs:
         asyncio.run(main())
         PY
 
+    - name: Bind shared Web generation notebook
+      # Only the full Web/Ubuntu lane may clean the long-lived generation
+      # notebook. Android intentionally receives no generation-notebook env
+      # value, so the E2E fixture creates and deletes its own disposable copy.
+      # Windows runs the read-only marker subset and needs neither form.
+      if: matrix.generation_notebook == 'shared'
+      env:
+        NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
+      shell: bash
+      run: |
+        if [ -z "${NOTEBOOKLM_GENERATION_NOTEBOOK_ID:-}" ]; then
+          echo "::error::NOTEBOOKLM_GENERATION_NOTEBOOK_ID resolved to empty."
+          exit 1
+        fi
+        echo "NOTEBOOKLM_GENERATION_NOTEBOOK_ID=$NOTEBOOKLM_GENERATION_NOTEBOOK_ID" >> "$GITHUB_ENV"
+
+    - name: Create isolated Android generation notebook
+      if: matrix.generation_notebook == 'scratch'
+      shell: bash
+      run: |
+        uv run python - <<'PY'
+        import asyncio
+        import os
+        from pathlib import Path
+        from uuid import uuid4
+
+        from notebooklm import NotebookLMClient
+
+        async def main() -> None:
+            id_path = Path(os.environ["RUNNER_TEMP"]) / "android-generation-notebook-id"
+            async with NotebookLMClient.from_storage(backend="android") as client:
+                notebook = await client.notebooks.create(
+                    f"E2E-Android-Generation-{uuid4().hex[:8]}"
+                )
+                id_path.write_text(notebook.id, encoding="utf-8")
+                try:
+                    await client.sources.add_text(
+                        notebook.id,
+                        title="Machine Learning Fundamentals",
+                        content=(
+                            "Machine learning systems learn patterns from labeled and unlabeled "
+                            "data. Supervised learning covers regression and classification; "
+                            "unsupervised learning covers clustering and dimensionality reduction; "
+                            "reinforcement learning optimizes actions through rewards. Evaluation "
+                            "uses accuracy, precision, recall, F1, calibration, and held-out test "
+                            "sets. Practical deployments monitor drift, fairness, reliability, "
+                            "security, and human oversight across healthcare, finance, transport, "
+                            "science, education, and software engineering. "
+                        )
+                        * 6,
+                        wait=True,
+                        wait_timeout=180,
+                    )
+                except BaseException:
+                    try:
+                        await client.notebooks.delete(notebook.id)
+                    finally:
+                        id_path.unlink(missing_ok=True)
+                    raise
+            with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as env_file:
+                env_file.write(f"NOTEBOOKLM_GENERATION_NOTEBOOK_ID={notebook.id}\n")
+
+        asyncio.run(main())
+        PY
+
     - name: Run E2E tests
       id: e2e
       # Hard gate: only standard branches (main/release/*, or scheduled cron
@@ -456,7 +524,6 @@ jobs:
       continue-on-error: true
       env:
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
-        NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
         # Enforce the live coverage floors on the nightly only (fresh quota): if a
         # monitored surface (live chat / live generation) produced zero real coverage
         # because every marked test was rate-limited, record it to the sentinel that
@@ -511,7 +578,7 @@ jobs:
         && steps.e2e.outcome == 'failure'
       env:
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
-        NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
+        TEST_FILTER: ${{ inputs.test_filter }}
         # Enforce here too: a marked test that failed on the main run and turns into
         # a rate-limit skip after the cool-down would otherwise leave no PASS event
         # for its surface. Appends PASS/SKIP events to the same job-level sentinel
@@ -529,6 +596,12 @@ jobs:
         fi
         echo "Initial E2E run failed. Sleeping 600s before retrying failed tests."
         sleep 600
+        # A filtered dispatch cannot establish a whole-surface coverage floor.
+        # Keep the primary step's opt-out on retry so a quota skip does not
+        # turn a targeted rerun red.
+        if [ -n "$TEST_FILTER" ]; then
+          unset E2E_ENFORCE_COVERAGE_FLOOR
+        fi
         # Pin ``tests/e2e`` so pyproject's ``addopts = --ignore=tests/e2e``
         # doesn't drop every lastfailed entry; otherwise pytest's default
         # ``--last-failed-no-failures=all`` would expand to the full non-e2e
@@ -550,7 +623,6 @@ jobs:
         && matrix.backend == 'web'
       env:
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
-        NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
         NOTEBOOKLM_TRANSPORT: curl_cffi
       shell: bash
       run: uv run pytest tests/e2e -m impersonate_smoke -s -v --tb=short --reruns 1 --reruns-delay 30
@@ -583,3 +655,33 @@ jobs:
           exit 1
         fi
         echo "Coverage floors satisfied (every skipped surface also had a passing test)."
+
+    - name: Delete isolated Android generation notebook
+      if: ${{ always() && matrix.generation_notebook == 'scratch' }}
+      shell: bash
+      run: |
+        id_file="$RUNNER_TEMP/android-generation-notebook-id"
+        if [ ! -s "$id_file" ]; then
+          echo "No Android generation scratch notebook was created."
+          exit 0
+        fi
+        uv run python - <<'PY'
+        import asyncio
+        import os
+        from pathlib import Path
+
+        from notebooklm import NotebookLMClient
+        from notebooklm.exceptions import NotebookNotFoundError
+
+        async def main() -> None:
+            id_path = Path(os.environ["RUNNER_TEMP"]) / "android-generation-notebook-id"
+            notebook_id = id_path.read_text(encoding="utf-8").strip()
+            async with NotebookLMClient.from_storage(backend="android") as client:
+                try:
+                    await client.notebooks.delete(notebook_id)
+                except NotebookNotFoundError:
+                    pass
+            id_path.unlink(missing_ok=True)
+
+        asyncio.run(main())
+        PY

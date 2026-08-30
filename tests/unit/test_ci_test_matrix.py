@@ -11,6 +11,9 @@ pytestmark = pytest.mark.repo_lint
 
 WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "test.yml"
 NIGHTLY_WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "nightly.yml"
+VERIFY_PACKAGE_WORKFLOW = (
+    Path(__file__).resolve().parents[2] / ".github" / "workflows" / "verify-package.yml"
+)
 
 
 def _step(job: dict[str, object], name: str) -> dict[str, object]:
@@ -242,9 +245,9 @@ def test_nightly_e2e_runs_explicit_web_and_android_backends() -> None:
 
     assert "${{ matrix.backend }}" in job["name"]
     assert job["strategy"]["matrix"]["include"] == [
-        {"os": "ubuntu-latest", "backend": "web"},
-        {"os": "windows-latest", "backend": "web"},
-        {"os": "ubuntu-latest", "backend": "android"},
+        {"os": "ubuntu-latest", "backend": "web", "generation_notebook": "shared"},
+        {"os": "windows-latest", "backend": "web", "generation_notebook": "unused"},
+        {"os": "ubuntu-latest", "backend": "android", "generation_notebook": "scratch"},
     ]
     assert job["env"]["NOTEBOOKLM_BACKEND"] == "${{ matrix.backend }}"
     assert "${{ matrix.backend }}" in job["concurrency"]["group"]
@@ -261,8 +264,74 @@ def test_nightly_e2e_runs_explicit_web_and_android_backends() -> None:
     assert 'backend="android"' in preflight_command
     assert "client.notebooks.get(notebook_id)" in preflight_command
 
+    bind_generation = _step(job, "Bind shared Web generation notebook")
+    assert bind_generation["if"] == "matrix.generation_notebook == 'shared'"
+    assert bind_generation["env"] == {
+        "NOTEBOOKLM_GENERATION_NOTEBOOK_ID": ("${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}")
+    }
+    assert "GITHUB_ENV" in str(bind_generation["run"])
+
+    create_scratch = _step(job, "Create isolated Android generation notebook")
+    assert create_scratch["if"] == "matrix.generation_notebook == 'scratch'"
+    create_command = str(create_scratch["run"])
+    assert "NOTEBOOKLM_GENERATION_NOTEBOOK_ID" in create_command
+    assert "GITHUB_ENV" in create_command
+    assert 'NotebookLMClient.from_storage(backend="android")' in create_command
+    assert "client.notebooks.create" in create_command
+    assert "client.sources.add_text" in create_command
+    assert "client.notebooks.delete" in create_command
+
+    cleanup_scratch = _step(job, "Delete isolated Android generation notebook")
+    assert cleanup_scratch["if"] == "${{ always() && matrix.generation_notebook == 'scratch' }}"
+    cleanup_command = str(cleanup_scratch["run"])
+    assert 'NotebookLMClient.from_storage(backend="android")' in cleanup_command
+    assert "client.notebooks.delete" in cleanup_command
+    assert job["steps"].index(cleanup_scratch) > job["steps"].index(
+        _step(job, "Enforce coverage floors")
+    )
+
+    primary = _step(job, "Run E2E tests")
+    retry = _step(job, "Retry failed E2E tests after 10-min cool-down")
+    for step in (primary, retry):
+        assert "NOTEBOOKLM_GENERATION_NOTEBOOK_ID" not in step["env"]
+    assert retry["env"]["TEST_FILTER"] == "${{ inputs.test_filter }}"
+    retry_command = str(retry["run"])
+    assert 'if [ -n "$TEST_FILTER" ]' in retry_command
+    assert "unset E2E_ENFORCE_COVERAGE_FLOOR" in retry_command
+    assert "tests/e2e --last-failed --last-failed-no-failures=none" in retry_command
+
     curl_smoke = _step(job, "curl_cffi transport smoke (live, minimal)")
     assert "matrix.backend == 'web'" in str(curl_smoke["if"])
+    assert "NOTEBOOKLM_GENERATION_NOTEBOOK_ID" not in curl_smoke["env"]
+
+
+def test_verify_package_live_checks_published_wheel_android_and_keeps_web_e2e() -> None:
+    """Package verification proves Android deps/protos/live GetProject without replacing Web."""
+    workflow = yaml.safe_load(VERIFY_PACKAGE_WORKFLOW.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["verify"]
+
+    install = str(_step(job, "Sync locked deps + non-cookies extras")["run"])
+    assert "--extra android" in install
+
+    android = _step(job, "Validate published wheel Android backend")
+    assert android["if"] == "github.repository == 'teng-lin/notebooklm-py'"
+    command = str(android["run"])
+    assert "import grpc" in command
+    assert "import gpsoauth" in command
+    assert "read_pb2.GetProjectRequest.DESCRIPTOR.full_name" in command
+    assert 'NotebookLMClient.from_storage(backend="android")' in command
+    assert "client.notebooks.get(notebook_id)" in command
+
+    steps = job["steps"]
+    assert steps.index(android) > steps.index(_step(job, "Materialize auth profile"))
+    assert steps.index(android) > steps.index(
+        _step(job, "Install published wheel from TestPyPI (--no-deps)")
+    )
+
+    web_e2e = _step(job, "Run E2E tests")
+    assert "NOTEBOOKLM_BACKEND" not in job.get("env", {})
+    assert "NOTEBOOKLM_BACKEND" not in web_e2e["env"]
+    assert 'pytest tests/e2e -m "not variants"' in str(web_e2e["run"])
 
 
 def test_repository_lint_is_a_bounded_manual_only_job() -> None:

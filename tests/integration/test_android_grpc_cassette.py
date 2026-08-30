@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import grpc
+import httpx
 import pytest
 
 from notebooklm import AuthTokens, NotebookLMClient
@@ -26,6 +27,17 @@ def test_grpc_cassette_replay_marker_blocks_unbound_aio_channels() -> None:
         grpc.aio.secure_channel("localhost:443", grpc.ssl_channel_credentials())
     with pytest.raises(RuntimeError, match="refusing an unbound grpc.aio channel"):
         grpc.aio.insecure_channel("localhost:443")
+
+
+@pytest.mark.asyncio
+async def test_grpc_cassette_replay_marker_blocks_unbound_http_fallbacks() -> None:
+    async with httpx.AsyncClient() as http_client:
+        with pytest.raises(RuntimeError, match="refusing unbound httpx request"):
+            await http_client.get(
+                "https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute"
+            )
+        with pytest.raises(RuntimeError, match="refusing unbound httpx stream"):
+            http_client.stream("POST", "https://notebooklm.google.com/_/LabsTailwindUi/data/stream")
 
 
 @pytest.mark.asyncio

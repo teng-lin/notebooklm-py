@@ -330,10 +330,7 @@ def _block_unbound_network_in_replay(request, monkeypatch):
     is_vcr_marked = request.node.get_closest_marker("vcr") is not None
     is_grpc_cassette = request.node.get_closest_marker("grpc_cassette") is not None
 
-    if is_grpc_cassette:
-        if _is_android_grpc_record_mode():
-            return  # Explicit recording: real gRPC channels are intentional.
-
+    if is_grpc_cassette and not _is_android_grpc_record_mode():
         import grpc
 
         def _refuse_grpc_channel(*args: Any, **kwargs: Any) -> Any:
@@ -346,9 +343,8 @@ def _block_unbound_network_in_replay(request, monkeypatch):
 
         monkeypatch.setattr(grpc.aio, "secure_channel", _refuse_grpc_channel)
         monkeypatch.setattr(grpc.aio, "insecure_channel", _refuse_grpc_channel)
-        return
 
-    if request.node.get_closest_marker("allow_no_vcr") is not None:
+    if request.node.get_closest_marker("allow_no_vcr") is not None and not is_grpc_cassette:
         return  # Mock-only test legitimately doesn't use Web VCR.
 
     if _vcr_record_mode:

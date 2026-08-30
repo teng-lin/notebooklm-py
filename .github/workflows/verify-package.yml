@@ -57,6 +57,8 @@ jobs:
       # The published wheel itself is force-reinstalled in the next step.
       # `headless` = gpsoauth, required for the layer-4 master-token re-mint
       # that the materialized auth profile below relies on.
+      # `android` = grpcio/protobuf plus the generated-message runtime used by
+      # the authenticated published-wheel Android preflight below.
       run: >
         uv sync --frozen
         --extra browser
@@ -65,6 +67,7 @@ jobs:
         --extra mcp
         --extra server
         --extra headless
+        --extra android
 
     - name: Install published wheel from TestPyPI (--no-deps)
       if: inputs.source == 'testpypi'
@@ -206,6 +209,46 @@ jobs:
           exit 1
         fi
         echo "Auth profile materialized (master token; fresh cookies minted)."
+
+    - name: Validate published wheel Android backend
+      if: github.repository == 'teng-lin/notebooklm-py'
+      shell: bash
+      env:
+        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
+      run: |
+        source .venv/bin/activate
+        if [ -z "${NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID:-}" ]; then
+          echo "::error::NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID secret is not configured"
+          exit 1
+        fi
+        python - <<'PY'
+        import asyncio
+        import os
+
+        import gpsoauth  # noqa: F401 -- published-wheel dependency preflight
+        import grpc  # noqa: F401 -- published-wheel dependency preflight
+        from google.protobuf import __version__ as protobuf_version
+
+        from notebooklm import NotebookLMClient
+        from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
+            read_pb2,
+        )
+
+        async def main() -> None:
+            notebook_id = os.environ["NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID"]
+            expected_fqn = "google.internal.labs.tailwind.orchestration.v1.GetProjectRequest"
+            if read_pb2.GetProjectRequest.DESCRIPTOR.full_name != expected_fqn:
+                raise RuntimeError("Published wheel has an invalid generated GetProject proto")
+            async with NotebookLMClient.from_storage(backend="android") as client:
+                if set(client.backends.values()) != {"android"}:
+                    raise RuntimeError(f"Android backend was not fully selected: {client.backends}")
+                notebook = await client.notebooks.get(notebook_id)
+                if notebook.id != notebook_id:
+                    raise RuntimeError("Published-wheel Android GetProject returned the wrong notebook")
+            print(f"Published-wheel Android preflight passed (protobuf {protobuf_version}).")
+
+        asyncio.run(main())
+        PY
 
     - name: Run E2E tests
       id: e2e
