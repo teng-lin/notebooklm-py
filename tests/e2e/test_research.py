@@ -9,6 +9,8 @@ import warnings
 
 import pytest
 
+from notebooklm.exceptions import RateLimitError
+
 from .conftest import POLL_INTERVAL, POLL_TIMEOUT, requires_auth
 
 
@@ -32,16 +34,18 @@ class TestResearchStart:
         assert result.query == "artificial intelligence basics"
         assert result.mode == "fast"
 
-    @pytest.mark.xfail(reason="Deep research frequently hits rate limits in CI")
     @pytest.mark.asyncio
     async def test_start_deep_web_research(self, client, temp_notebook):
         """Test starting deep web research."""
-        result = await client.research.start(
-            temp_notebook.id,
-            query="machine learning algorithms",
-            source="web",
-            mode="deep",
-        )
+        try:
+            result = await client.research.start(
+                temp_notebook.id,
+                query="machine learning algorithms",
+                source="web",
+                mode="deep",
+            )
+        except RateLimitError as error:
+            pytest.skip(f"Deep research rate-limited: {error}")
 
         assert result is not None, "Deep research start should return a result"
         assert result.task_id is not None, "task_id should not be None"
