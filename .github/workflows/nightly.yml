@@ -466,10 +466,30 @@ jobs:
         uv run python - <<'PY'
         import asyncio
         import os
+        import sys
         from pathlib import Path
         from uuid import uuid4
 
         from notebooklm import NotebookLMClient
+
+        def persist_notebook_id(path: Path, notebook_id: str) -> None:
+            """Atomically publish the cleanup handle before any later mutation."""
+            temporary = path.with_name(f".{path.name}-{uuid4().hex}.tmp")
+            try:
+                with temporary.open("w", encoding="utf-8") as handle:
+                    handle.write(notebook_id)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temporary, path)
+            finally:
+                try:
+                    temporary.unlink()
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    # Never replace the persistence/create error with best-effort
+                    # temporary-file cleanup.
+                    pass
 
         async def main() -> None:
             id_path = Path(os.environ["RUNNER_TEMP"]) / "android-generation-notebook-id"
@@ -477,7 +497,18 @@ jobs:
                 notebook = await client.notebooks.create(
                     f"E2E-Android-Generation-{uuid4().hex[:8]}"
                 )
-                id_path.write_text(notebook.id, encoding="utf-8")
+                try:
+                    persist_notebook_id(id_path, notebook.id)
+                except BaseException:
+                    try:
+                        await client.notebooks.delete(notebook.id)
+                    except BaseException:
+                        print(
+                            "Could not persist or delete the Android generation scratch; "
+                            "preserving the original persistence failure.",
+                            file=sys.stderr,
+                        )
+                    raise
                 try:
                     await client.sources.add_text(
                         notebook.id,
@@ -499,8 +530,21 @@ jobs:
                 except BaseException:
                     try:
                         await client.notebooks.delete(notebook.id)
-                    finally:
-                        id_path.unlink(missing_ok=True)
+                    except BaseException:
+                        # Keep the durable id: the unconditional finalizer below
+                        # must retry after an ambiguous cleanup outcome.
+                        print(
+                            "Android generation scratch setup failed and inline deletion "
+                            "was unconfirmed; the finalizer will retry.",
+                            file=sys.stderr,
+                        )
+                    else:
+                        try:
+                            id_path.unlink(missing_ok=True)
+                        except OSError:
+                            # A retained id is harmless: the finalizer treats an
+                            # already-deleted notebook as successful cleanup.
+                            pass
                     raise
             with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as env_file:
                 env_file.write(f"NOTEBOOKLM_GENERATION_NOTEBOOK_ID={notebook.id}\n")

@@ -280,6 +280,15 @@ def test_nightly_e2e_runs_explicit_web_and_android_backends() -> None:
     assert "client.notebooks.create" in create_command
     assert "client.sources.add_text" in create_command
     assert "client.notebooks.delete" in create_command
+    assert "os.fsync" in create_command
+    assert "os.replace" in create_command
+    assert create_command.index("persist_notebook_id(id_path, notebook.id)") < create_command.index(
+        "client.sources.add_text"
+    )
+    assert "preserving the original persistence failure" in create_command
+    assert "inline deletion " in create_command
+    assert "was unconfirmed; the finalizer will retry" in create_command
+    assert create_command.count("id_path.unlink(missing_ok=True)") == 1
 
     cleanup_scratch = _step(job, "Delete isolated Android generation notebook")
     assert cleanup_scratch["if"] == "${{ always() && matrix.generation_notebook == 'scratch' }}"
