@@ -239,11 +239,25 @@ async def test_unbounded_httpx_timeout_cannot_bypass_aggregate_stream_entry_dead
     # independently finite (300 seconds in production).
     assert pipeline._http_timeout == httpx.Timeout(None)
     assert pipeline._upload_timeout == 300.0
-    pipeline._upload_timeout = 0.01
+    # Give the metadata and temporary-file stages enough time to reach stream
+    # entry on a loaded Windows xdist worker.  The old 10 ms budget could expire
+    # before ``__aenter__`` was scheduled, so it tested the aggregate pre-entry
+    # fence instead of the deliberately stalled header wait below.
+    pipeline._upload_timeout = 1.0
 
-    with pytest.raises(NetworkError, match="TimeoutError"):
+    async def download() -> None:
         async with pipeline.drive_download_scope("abcdefghijklmnopqrstuvwxyz123456"):
             pytest.fail("a stream whose header wait hangs must not yield")
+
+    task = asyncio.create_task(download())
+    try:
+        await asyncio.wait_for(stream.entry_started.wait(), timeout=2.0)
+        with pytest.raises(NetworkError, match="TimeoutError"):
+            await task
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
     assert stream.entry_started.is_set()
     assert stream.enter_cancelled
