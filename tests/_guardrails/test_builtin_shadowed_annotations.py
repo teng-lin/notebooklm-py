@@ -67,6 +67,11 @@ SRC_ROOT = PROJECT_ROOT / "src" / "notebooklm"
 #: one. The name counts as a shadow; the body belongs to a different scope.
 _SCOPE_STATEMENTS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
+#: PEP 695 ``type X = ...`` binds ``X``, but the node only exists on 3.12+.
+#: ``isinstance(node, ())`` is always false, which is the right answer where
+#: the syntax cannot be parsed in the first place.
+_TYPE_ALIAS: type | tuple[()] = getattr(ast, "TypeAlias", ())
+
 
 def _has_future_annotations(tree: ast.Module) -> bool:
     return any(
@@ -120,6 +125,21 @@ def _bound_names(target: ast.expr) -> Iterator[str]:
         yield from _bound_names(target.value)
 
 
+def _pattern_names(pattern: ast.pattern) -> Iterator[str]:
+    """Yield the names a ``case`` pattern captures.
+
+    A capture binds durably in the enclosing scope — ``case [list]:`` leaves
+    ``list`` in the class namespace — unlike ``except ... as name``, which the
+    interpreter deletes at the end of the handler. Patterns cannot contain a
+    nested scope, so a plain walk stays correct here.
+    """
+    for node in ast.walk(pattern):
+        if isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name is not None:
+            yield node.name
+        elif isinstance(node, ast.MatchMapping) and node.rest is not None:
+            yield node.rest
+
+
 def _walrus_names(node: ast.AST) -> Iterator[str]:
     """Yield names ``:=`` binds in this scope, not inside a nested one."""
     for child in ast.iter_child_nodes(node):
@@ -153,6 +173,11 @@ def _shadowed_builtins(cls: ast.ClassDef) -> set[str]:
                     names.update(_bound_names(item.optional_vars))
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
             names.update((alias.asname or alias.name).split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.Match):
+            for case in node.cases:
+                names.update(_pattern_names(case.pattern))
+        elif isinstance(node, _TYPE_ALIAS):
+            names.update(_bound_names(node.name))
         names.update(_walrus_names(node))
     return {name for name in names if hasattr(builtins, name)}
 
@@ -331,6 +356,48 @@ def test_import_and_walrus_bindings_shadow() -> None:
                 pass
     """)
     assert shadowed == {"list", "type"}
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    ["case list:", "case [x, *list]:", 'case {"k": _, **list}:', "case Point(x=list):"],
+)
+def test_match_capture_pattern_shadows(pattern: str) -> None:
+    """A capture binds durably: ``vars(cls)`` keeps the name after the match."""
+    shadowed, offences = _analyse(f"""
+        class Captured:
+            match subject:
+                {pattern}
+                    pass
+            def get(self) -> list[str]: ...
+    """)
+    assert shadowed == {"list"}
+    assert offences == {"list"}
+
+
+@pytest.mark.skipif(not _TYPE_ALIAS, reason="PEP 695 type statements need Python 3.12+")
+def test_pep695_type_statement_shadows() -> None:
+    shadowed, offences = _analyse("""
+        class Aliased:
+            type list = int
+            def get(self) -> list[str]: ...
+    """)
+    assert shadowed == {"list"}
+    assert offences == {"list"}
+
+
+def test_except_as_does_not_shadow() -> None:
+    """``except ... as name`` is deleted at the end of the handler, so it never binds."""
+    shadowed, offences = _analyse("""
+        class Handled:
+            try:
+                pass
+            except ValueError as list:
+                pass
+            def get(self) -> list[str]: ...
+    """)
+    assert shadowed == set()
+    assert offences == set()
 
 
 def test_annotation_without_a_value_does_not_shadow() -> None:
