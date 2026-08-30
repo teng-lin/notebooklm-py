@@ -537,15 +537,15 @@ async def test_reusable_create_seam_encodes_saved_response_for_parallel_chat_hoo
 
 
 @pytest.mark.asyncio
-async def test_note_partial_updates_preserve_the_omitted_field_inside_one_scope() -> None:
+async def test_note_updates_send_required_full_replacements_inside_one_scope() -> None:
     server = FakeNotesSharingServer()
     notes = AndroidNotesAPI(_session(server))
 
-    await notes.update("project-1", "note-existing", None, "Renamed title")
+    await notes.update("project-1", "note-existing", "Existing body", "Renamed title")
     renamed = await notes.get("project-1", "note-existing")
     assert (renamed.title, renamed.content) == ("Renamed title", "Existing body")
 
-    await notes.update("project-1", "note-existing", "Replaced body", None)
+    await notes.update("project-1", "note-existing", "Replaced body", "Renamed title")
     replaced = await notes.get("project-1", "note-existing")
     assert (replaced.title, replaced.content) == ("Renamed title", "Replaced body")
 

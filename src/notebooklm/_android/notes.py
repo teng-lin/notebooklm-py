@@ -306,13 +306,11 @@ class AndroidNotesAPI(NotesAPI):
             )
             if current is None:
                 raise NoteNotFoundError(note_id, method_id=GET_NOTES_METHOD)
-            resolved_content = current.content if content is None else content
-            resolved_title = current.title if title is None else title
             request = build_mutate_note_request(
                 notebook_id,
                 note_id,
-                title=resolved_title,
-                content=resolved_content,
+                title=title,
+                content=content,
             )
             try:
                 response = await self._transport.unary(
@@ -340,8 +338,8 @@ class AndroidNotesAPI(NotesAPI):
                 )
             _validate_read_back(
                 mutated,
-                title=resolved_title,
-                content=resolved_content,
+                title=title,
+                content=content,
                 method_id=MUTATE_NOTE_METHOD,
             )
             read_back = await self._get_note_or_none(
@@ -353,8 +351,8 @@ class AndroidNotesAPI(NotesAPI):
                 raise NoteNotFoundError(note_id, method_id=GET_NOTES_METHOD)
             _validate_read_back(
                 read_back,
-                title=resolved_title,
-                content=resolved_content,
+                title=title,
+                content=content,
                 method_id=MUTATE_NOTE_METHOD,
             )
 

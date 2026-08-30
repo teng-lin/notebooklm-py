@@ -142,7 +142,7 @@ async def test_empty_language_is_a_noop_and_missing_account_is_drift() -> None:
         await _api(_FakeSession(omit_account=True)).get_user_settings()
 
 
-def test_explicit_zero_limits_remain_raw_but_do_not_become_known_positive_quotas() -> None:
+def test_explicit_zero_limits_remain_distinct_from_absent_limits() -> None:
     absent = _decode_account(account_pb2.Account(tier_limits=account_pb2.TierLimits()))
     account = account_pb2.Account(
         tier_limits=account_pb2.TierLimits(
@@ -160,8 +160,8 @@ def test_explicit_zero_limits_remain_raw_but_do_not_become_known_positive_quotas
 
     assert absent.limits == AccountLimits(raw_limits=())
     assert decoded.limits == AccountLimits(
-        notebook_limit=None,
-        source_limit=None,
+        notebook_limit=0,
+        source_limit=0,
         raw_limits=(0, 0, 0, 0, 0),
         tier=None,
     )

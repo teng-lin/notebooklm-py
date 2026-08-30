@@ -7,10 +7,11 @@ from urllib.parse import quote
 
 from ..._env import get_base_url
 from ..._types.enums import ShareAccess, SharePermission, ShareViewLevel
+from ...exceptions import DecodingError
 from ...types import SharedUser, ShareStatus
 
 
-def decode_share_status(response: Any, notebook_id: str) -> ShareStatus:
+def decode_share_status(response: Any, notebook_id: str, *, method_id: str) -> ShareStatus:
     """Decode the bundle-evidenced collaborator and public-setting projection."""
     # The generated wire overlay supplies HasField and the named properties.
     has_field = response.HasField
@@ -26,10 +27,16 @@ def decode_share_status(response: Any, notebook_id: str) -> ShareStatus:
     )
     shared_users = []
     for row in response.shared_users:
+        wire_permission = int(row.permission)
+        if wire_permission == SharePermission._REMOVE.value:
+            continue
         try:
-            permission = SharePermission(row.permission)
+            permission = SharePermission(wire_permission)
         except ValueError:
-            permission = SharePermission.VIEWER
+            raise DecodingError(
+                "Android GetProjectDetails returned an unknown collaborator permission",
+                method_id=method_id,
+            ) from None
         shared_users.append(
             SharedUser(
                 email=row.email,

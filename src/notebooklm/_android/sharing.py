@@ -98,7 +98,11 @@ class AndroidSharingAPI(SharingAPI):
             if mapped is exc:
                 raise
             raise mapped from exc
-        return decode_share_status(response, notebook_id)
+        return decode_share_status(
+            response,
+            notebook_id,
+            method_id=GET_PROJECT_DETAILS_METHOD,
+        )
 
     async def set_public(self, notebook_id: str, public: bool) -> ShareStatus:
         """Set public readability once and return a fresh status read."""

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from google.protobuf import descriptor_pb2, text_format
 from google.protobuf.descriptor import FieldDescriptor
 
@@ -22,6 +23,7 @@ from notebooklm._android.proto.labs.language.tailwind.sharing import (
     sharing_pb2 as exact_sharing_pb2,
 )
 from notebooklm._android.proto.notebooklm.android.wire.v1 import sharing_pb2
+from notebooklm.exceptions import DecodingError
 from notebooklm.types import ShareAccess, ShareViewLevel
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -386,13 +388,40 @@ def test_response_textprotos_exercise_projection_and_presence() -> None:
         (FIXTURES / "get_project_details_response.textproto").read_text(encoding="utf-8"),
         sharing_pb2.GetProjectDetailsResponse(),
     )
-    status = decode_share_status(sharing_response, "project-1")
+    status = decode_share_status(sharing_response, "project-1", method_id="fixture")
     assert status.is_public is True
     assert status.access is ShareAccess.ANYONE_WITH_LINK
     assert status.view_level is ShareViewLevel.FULL_NOTEBOOK
     assert status.shared_users == []
     assert status.max_individuals_share_limit == 1000
     assert status.is_public_sharing_allowed is True
+
+
+def test_sharing_projection_excludes_not_shared_and_rejects_unknown_permissions() -> None:
+    not_shared = sharing_pb2.GetProjectDetailsResponse(
+        shared_users=[
+            exact_sharing_pb2.SharedUser(
+                email="removed@example.test",
+                permission=exact_sharing_pb2.NOT_SHARED,
+            )
+        ]
+    )
+
+    status = decode_share_status(not_shared, "project-1", method_id="fixture")
+
+    assert status.shared_users == []
+
+    unknown = sharing_pb2.GetProjectDetailsResponse(
+        shared_users=[
+            exact_sharing_pb2.SharedUser(
+                email="future@example.test",
+                permission=99,
+            )
+        ]
+    )
+    with pytest.raises(DecodingError, match="unknown collaborator permission") as raised:
+        decode_share_status(unknown, "project-1", method_id="fixture")
+    assert raised.value.method_id == "fixture"
 
 
 def test_cumulative_descriptor_contains_read_notes_and_sharing_without_replacing_read_fixture() -> (

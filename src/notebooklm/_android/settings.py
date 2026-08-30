@@ -30,6 +30,10 @@ def _positive_int(value: Any) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
 
 
+def _non_negative_int(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
 def _decode_account(account: Any) -> UserSettings:
     language = None
     if account.HasField("user_info") and account.user_info.HasField("output_language"):
@@ -53,10 +57,10 @@ def _decode_account(account: Any) -> UserSettings:
                 break
         limits = AccountLimits(
             notebook_limit=(
-                _positive_int(wire.max_projects) if wire.HasField("max_projects") else None
+                _non_negative_int(wire.max_projects) if wire.HasField("max_projects") else None
             ),
             source_limit=(
-                _positive_int(wire.max_sources_per_project)
+                _non_negative_int(wire.max_sources_per_project)
                 if wire.HasField("max_sources_per_project")
                 else None
             ),
