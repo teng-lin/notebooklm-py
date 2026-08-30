@@ -526,20 +526,23 @@ async def test_list_sessions_raw_turns_and_history_decode_exact_requests() -> No
         LIST_CHAT_TURNS_METHOD: [
             chat_pb2.ListChatTurnsResponse(
                 chat_turns=[
-                    _chat_turn("Newest?", "Newest.", message_id="message-2", role=2),
+                    _chat_turn("", "Newest.", message_id="answer-2", role=2),
                 ],
                 next_page_token="raw-next-page",
             ),
             chat_pb2.ListChatTurnsResponse(
                 chat_turns=[
-                    _chat_turn("Newest?", "Newest.", message_id="message-2", role=2),
-                    _chat_turn("Middle?", "Middle.", message_id="message-1", role=1),
+                    _chat_turn("", "Newest.", message_id="answer-2", role=2),
+                    _chat_turn("Newest?", "", message_id="question-2", role=1),
+                    _chat_turn("", "Middle.", message_id="answer-1", role=2),
+                    _chat_turn("Middle?", "", message_id="question-1", role=1),
                 ],
                 next_page_token="history-next-page",
             ),
             chat_pb2.ListChatTurnsResponse(
                 chat_turns=[
-                    _chat_turn("Oldest?", "Oldest.", message_id="message-0", role=1),
+                    _chat_turn("", "Oldest.", message_id="answer-0", role=2),
+                    _chat_turn("Oldest?", "", message_id="question-0", role=1),
                 ]
             ),
         ],
@@ -573,8 +576,9 @@ async def test_list_sessions_raw_turns_and_history_decode_exact_requests() -> No
 
 @pytest.mark.asyncio
 async def test_history_uses_response_document_when_legacy_answer_text_is_empty() -> None:
-    turn = _chat_turn("Document answer?", "", message_id="message-1", role=2)
-    turn.act_on_sources_response.response.response_doc.CopyFrom(_document())
+    answer_turn = _chat_turn("", "", message_id="answer-1", role=2)
+    answer_turn.act_on_sources_response.response.response_doc.CopyFrom(_document())
+    question_turn = _chat_turn("Document answer?", "", message_id="question-1", role=1)
     fake = FakeSession()
     fake.unary_responses = {
         LIST_CHAT_SESSIONS_METHOD: [
@@ -582,7 +586,9 @@ async def test_history_uses_response_document_when_legacy_answer_text_is_empty()
                 sessions=[common_pb2.ChatSession(chat_session_id="conversation-1")]
             )
         ],
-        LIST_CHAT_TURNS_METHOD: [chat_pb2.ListChatTurnsResponse(chat_turns=[turn])],
+        LIST_CHAT_TURNS_METHOD: [
+            chat_pb2.ListChatTurnsResponse(chat_turns=[answer_turn, question_turn])
+        ],
     }
     api, _, _ = _api(fake)
 

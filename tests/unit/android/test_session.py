@@ -360,6 +360,34 @@ async def test_safe_read_replays_unauthenticated_once_and_mutation_never_replays
     assert captured.value.rpc_code == 16
 
 
+@pytest.mark.asyncio
+async def test_safe_read_replays_unavailable_once_and_mutation_never_replays() -> None:
+    channel = _Channel()
+    channel.unary_outcomes = [_RawRpcError(_Status.UNAVAILABLE), b"ok"]
+    session, _, _, _, _ = await _open(channel=channel)
+
+    assert await session.unary(
+        METHOD,
+        _Message(b"request"),
+        replay_safe=True,
+        response_type=_Message,
+    ) == _Message(b"ok")
+    assert len(channel.invocations) == 2
+
+    mutation_channel = _Channel()
+    mutation_channel.unary_outcomes = [_RawRpcError(_Status.UNAVAILABLE), b"must-not-run"]
+    mutation, _, _, _, _ = await _open(channel=mutation_channel)
+    with pytest.raises(ServerError) as captured:
+        await mutation.unary(
+            METHOD,
+            _Message(b"mutation"),
+            replay_safe=False,
+            response_type=_Message,
+        )
+    assert len(mutation_channel.invocations) == 1
+    assert captured.value.rpc_code == 14
+
+
 @pytest.mark.parametrize(
     ("status", "error_type"),
     [

@@ -114,20 +114,46 @@ def decode_turn_key(answer: Any) -> ConversationTurnKey | None:
 
 
 def decode_history(response: Any, *, limit: int) -> list[tuple[str, str]]:
-    """Decode newest-first Android history into oldest-first Q&A pairs."""
+    """Pair newest-first Android question/answer event rows, oldest first."""
+
+    bounded_limit = max(0, limit)
+    if bounded_limit == 0:
+        return []
+
     pairs: list[tuple[str, str]] = []
-    for turn in response.chat_turns[: max(0, limit)]:
-        if not turn.user_query_text:
-            continue
-        answer = ""
-        if turn.HasField("act_on_sources_response") and turn.act_on_sources_response.HasField(
-            "response"
-        ):
-            response = turn.act_on_sources_response.response
-            answer = response.response
-            if not answer and response.HasField("response_doc"):
-                answer = tailwind_doc_plain_text(response.response_doc)
-        pairs.append((turn.user_query_text, answer))
+    pending_answer = ""
+    answer_seen = False
+    for turn in response.chat_turns:
+        role = turn.observed_event_type
+        if role == 2:
+            answer = ""
+            if turn.HasField("act_on_sources_response") and turn.act_on_sources_response.HasField(
+                "response"
+            ):
+                answer_response = turn.act_on_sources_response.response
+                answer = answer_response.response
+                if not answer and answer_response.HasField("response_doc"):
+                    answer = tailwind_doc_plain_text(answer_response.response_doc)
+
+            # Captured rows carry generated response (2) immediately before
+            # their user query (1) in the newest-first feed. Retain the newest
+            # response until its question arrives. A combined legacy-shaped
+            # row remains decodable without inventing a second question.
+            if turn.user_query_text:
+                pairs.append((turn.user_query_text, answer))
+                pending_answer = ""
+                answer_seen = False
+            elif not answer_seen:
+                pending_answer = answer
+                answer_seen = True
+        elif role == 1 and turn.user_query_text:
+            pairs.append((turn.user_query_text, pending_answer if answer_seen else ""))
+            pending_answer = ""
+            answer_seen = False
+
+        if len(pairs) >= bounded_limit:
+            break
+
     pairs.reverse()
     return pairs
 

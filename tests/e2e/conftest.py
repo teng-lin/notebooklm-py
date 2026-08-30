@@ -369,6 +369,7 @@ async def read_back_option_pair(
                     f"e2e read-back {family} options"
                 ) as lease:
                     raw = await client.artifacts._get_raw_studio_artifact(
+                        notebook_id,
                         task_id,
                         expected_epoch=lease.epoch,
                     )

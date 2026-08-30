@@ -399,6 +399,7 @@ async def test_label_and_collection_create_use_exact_response_rows() -> None:
     assert created_collection.id == COLLECTION_B
     assert [method for method, _request, _kwargs in server.calls] == [
         CREATE_LABEL_METHOD,
+        GET_LABELS_METHOD,
         CREATE_LABEL_METHOD,
     ]
     assert server.operation_scopes == [("labels.create", None), ("collections.create", None)]
@@ -408,7 +409,7 @@ async def test_label_and_collection_create_use_exact_response_rows() -> None:
     assert label_create.label_type == 0
     assert label_create.manual_create.properties.name == "Duplicate-safe"
     assert label_create.manual_create.properties.emoji == "🧪"
-    collection_create = server.calls[1][1]
+    collection_create = server.calls[2][1]
     assert collection_create.project_id == ""
     assert collection_create.label_type == COLLECTION_TYPE
     assert collection_create.manual_create.properties.name == "Duplicate-safe"
@@ -425,7 +426,7 @@ async def test_manual_create_transport_loss_is_unconfirmed_and_sent_once(
     error: RPCError,
 ) -> None:
     server = FakeOrganizationServer()
-    server.failures[1] = error
+    server.failures[2 if kind == "collection" else 1] = error
     labels, collections = _apis(server)
 
     with pytest.raises(type(error)) as raised:
@@ -436,7 +437,10 @@ async def test_manual_create_transport_loss_is_unconfirmed_and_sent_once(
 
     assert raised.value is error
     assert getattr(raised.value, "unconfirmed", False) is True
-    assert [method for method, _request, _kwargs in server.calls] == [CREATE_LABEL_METHOD]
+    expected_methods = (
+        [GET_LABELS_METHOD, CREATE_LABEL_METHOD] if kind == "collection" else [CREATE_LABEL_METHOD]
+    )
+    assert [method for method, _request, _kwargs in server.calls] == expected_methods
 
 
 async def test_label_create_ignores_unrelated_concurrent_post_state() -> None:
@@ -452,6 +456,28 @@ async def test_label_create_ignores_unrelated_concurrent_post_state() -> None:
     assert [method for method, _request, _kwargs in server.calls] == [CREATE_LABEL_METHOD]
 
 
+async def test_collection_create_selects_new_row_from_cumulative_response() -> None:
+    server = FakeOrganizationServer()
+    server.create_response_override = organization_pb2.CreateLabelResponse(
+        notebook_collections=[
+            server._created_collection_row(server.collections[COLLECTION_A]),
+            organization_pb2.NotebookCollection(
+                name="Requested",
+                id=COLLECTION_B,
+            ),
+        ]
+    )
+    _labels, collections = _apis(server)
+
+    created = await collections.create("Requested")
+
+    assert created.id == COLLECTION_B
+    assert [method for method, _request, _kwargs in server.calls] == [
+        GET_LABELS_METHOD,
+        CREATE_LABEL_METHOD,
+    ]
+
+
 async def test_collection_create_ignores_unrelated_concurrent_post_state() -> None:
     server = FakeOrganizationServer()
     server.concurrent_collection_ids = [COLLECTION_MISSING]
@@ -462,7 +488,10 @@ async def test_collection_create_ignores_unrelated_concurrent_post_state() -> No
     assert created.id == COLLECTION_B
     assert created.name == "Requested"
     assert set(server.collections) == {COLLECTION_A, COLLECTION_B, COLLECTION_MISSING}
-    assert [method for method, _request, _kwargs in server.calls] == [CREATE_LABEL_METHOD]
+    assert [method for method, _request, _kwargs in server.calls] == [
+        GET_LABELS_METHOD,
+        CREATE_LABEL_METHOD,
+    ]
 
 
 @pytest.mark.parametrize("kind", ["label", "collection"])
@@ -541,7 +570,10 @@ async def test_collection_create_rejects_uncorrelated_direct_response(row: Any) 
 
     assert caught.value.method_id == CREATE_LABEL_METHOD
     assert getattr(caught.value, "unconfirmed", False) is True
-    assert [method for method, _request, _kwargs in server.calls] == [CREATE_LABEL_METHOD]
+    assert [method for method, _request, _kwargs in server.calls] == [
+        GET_LABELS_METHOD,
+        CREATE_LABEL_METHOD,
+    ]
 
 
 async def test_property_mutations_preserve_other_field_and_verify_readback() -> None:
@@ -931,8 +963,11 @@ async def test_real_supervisor_outer_lease_keeps_create_alive_during_graceful_dr
     created = await create_task
     await idle_task
     assert created.id == COLLECTION_B
-    assert [method for method, _request, _kwargs in server.calls] == [CREATE_LABEL_METHOD]
-    assert [kwargs["expected_epoch"] for _method, _request, kwargs in server.calls] == [1]
+    assert [method for method, _request, _kwargs in server.calls] == [
+        GET_LABELS_METHOD,
+        CREATE_LABEL_METHOD,
+    ]
+    assert [kwargs["expected_epoch"] for _method, _request, kwargs in server.calls] == [1, 1]
 
 
 async def test_readback_mismatch_is_decode_failure_for_properties_and_membership() -> None:

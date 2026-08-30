@@ -452,7 +452,7 @@ class AndroidSession(LoopBoundPrimitive):
         telemetry_method: str | None | _DefaultTelemetry,
         expected_epoch: int | None,
     ) -> RespT:
-        """Invoke one typed unary RPC, optionally replaying one safe read."""
+        """Invoke one typed unary RPC with bounded replay of safe reads."""
 
         active_epoch = self._require_active()
         if expected_epoch is not None and expected_epoch != active_epoch:
@@ -469,15 +469,25 @@ class AndroidSession(LoopBoundPrimitive):
                 deadline,
                 expected_epoch=expected_epoch,
             ) as lease:
-                for attempt in range(2):
+                auth_replayed = False
+                unavailable_replayed = False
+                for _attempt in range(3):
                     outcome = await self._unary_attempt(lease, method, request, response_type)
                     if isinstance(outcome, _AttemptSuccess):
                         return outcome.value
                     if outcome.status.name == "UNAUTHENTICATED":
                         if outcome.bearer_generation is not None:
                             self._bearer_provider.invalidate(outcome.bearer_generation)
-                        if replay_safe and attempt == 0:
+                        if replay_safe and not auth_replayed:
+                            auth_replayed = True
                             continue
+                    if (
+                        outcome.status.name == "UNAVAILABLE"
+                        and replay_safe
+                        and not unavailable_replayed
+                    ):
+                        unavailable_replayed = True
+                        continue
                     raise_grpc_status(
                         outcome.status,
                         method=method,

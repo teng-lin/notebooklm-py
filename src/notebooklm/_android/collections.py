@@ -95,6 +95,9 @@ class AndroidCollectionsAPI(CollectionsAPI):
 
     async def create(self, name: str) -> Collection:
         async with self._transport.operation_scope("collections.create") as lease:
+            existing_ids = {
+                collection.id for collection in await self._list(expected_epoch=lease.epoch)
+            }
             response = await create_manual(
                 self._transport,
                 kind="collection",
@@ -107,19 +110,15 @@ class AndroidCollectionsAPI(CollectionsAPI):
                 created = decode_created_collections(response, method_id=CREATE_LABEL_METHOD)
             except DecodingError as error:
                 raise mark_unconfirmed(error) from None
-            if len(created) != 1:
-                raise mark_unconfirmed(
-                    CollectionError(
-                        f"create(name={name!r}) expected exactly 1 created collection in the "
-                        f"Android response, found {len(created)}"
-                    )
-                )
-            (collection,) = created
-            if (
-                collection.name != name
-                or (collection.emoji or "") != ""
-                or bool(collection.notebook_ids)
-            ):
+            candidates = [collection for collection in created if collection.id not in existing_ids]
+            matching = [
+                collection
+                for collection in candidates
+                if collection.name == name
+                and (collection.emoji or "") == ""
+                and not collection.notebook_ids
+            ]
+            if len(candidates) == 1 and not matching:
                 raise mark_unconfirmed(
                     DecodingError(
                         "Android collection create response did not echo the requested empty "
@@ -127,6 +126,14 @@ class AndroidCollectionsAPI(CollectionsAPI):
                         method_id=CREATE_LABEL_METHOD,
                     )
                 )
+            if len(matching) != 1:
+                raise mark_unconfirmed(
+                    CollectionError(
+                        f"create(name={name!r}) expected exactly 1 new matching collection in "
+                        f"the Android response, found {len(matching)}"
+                    )
+                )
+            (collection,) = matching
             return collection
 
     async def rename(
