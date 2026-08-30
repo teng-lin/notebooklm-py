@@ -129,7 +129,7 @@ class WebArtifactsAPI(ArtifactsAPI):
 
     async def list(
         self, notebook_id: str, artifact_type: ArtifactType | None = None
-    ) -> list[Artifact]:
+    ) -> builtins.list[Artifact]:
         """List all artifacts in a notebook, including mind maps.
 
         Returns all AI-generated content. Note-backed mind maps live in the

@@ -1,5 +1,6 @@
 """Backend-neutral notebook operations API."""
 
+import builtins
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -94,7 +95,7 @@ class NotebooksAPI(ABC):
         return None
 
     @abstractmethod
-    async def get_source_ids(self, notebook_id: str) -> list[str]:
+    async def get_source_ids(self, notebook_id: str) -> builtins.list[str]:
         """Return all source IDs in a notebook."""
 
     @abstractmethod
@@ -102,14 +103,14 @@ class NotebooksAPI(ABC):
         self,
         notebook_id: str,
         *,
-        source_ids: list[str] | None = None,
+        source_ids: builtins.list[str] | None = None,
         mode: int = 4,
         query: str | None = None,
-    ) -> list[PromptSuggestion]:
+    ) -> builtins.list[PromptSuggestion]:
         """Return AI-suggested prompts for a notebook."""
 
     @abstractmethod
-    async def list(self) -> list[Notebook]:
+    async def list(self) -> builtins.list[Notebook]:
         """List notebooks in backend-defined recent-first order."""
 
     async def create(self, title: str) -> Notebook:

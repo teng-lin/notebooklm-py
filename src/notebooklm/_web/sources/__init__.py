@@ -125,7 +125,7 @@ class WebSourcesAPI(SourcesAPI):
     async def _rpc_call(
         self,
         method: RPCMethod,
-        params: list[Any],
+        params: builtins.list[Any],
         source_path: str = "/",
         allow_null: bool = False,
         _is_retry: bool = False,
@@ -151,7 +151,7 @@ class WebSourcesAPI(SourcesAPI):
         strict: bool = False,
         statuses: Collection[SourceStatus] | None = None,
         types: Collection[SourceType] | None = None,
-    ) -> list[Source]:
+    ) -> builtins.list[Source]:
         """List all sources in a notebook.
 
         Args:
