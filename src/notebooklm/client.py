@@ -58,7 +58,7 @@ from ._labels import LabelsAPI
 from ._mind_maps_api import MindMapsAPI
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
-from ._research import ResearchAPI
+from ._research import BaseResearchAPI
 from ._runtime.config import (
     AUTO_READ_TIMEOUT,
     DEFAULT_CHAT_RESPONSE_MAX_BYTES,
@@ -152,7 +152,7 @@ class NotebookLMClient:
     chat: ChatAPI
     notes: NotesAPI
     mind_maps: MindMapsAPI
-    research: ResearchAPI
+    research: BaseResearchAPI
     settings: SettingsAPI
     sharing: SharingAPI
     labels: LabelsAPI

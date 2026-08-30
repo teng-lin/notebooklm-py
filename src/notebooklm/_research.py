@@ -102,7 +102,7 @@ def _imported_result(
     return _ImportedResearchSources(imported, already_present)
 
 
-class ResearchAPI(ABC):
+class BaseResearchAPI(ABC):
     """Backend-neutral eight-callable Research namespace."""
 
     def __init__(
@@ -496,6 +496,7 @@ class ResearchAPI(ABC):
 
 
 __all__ = [
+    "BaseResearchAPI",
     "CitedSourceSelection",
     "ResearchAPI",
     "ResearchSource",
@@ -503,3 +504,10 @@ __all__ = [
     "ResearchStatus",
     "ResearchTask",
 ]
+
+# ``ResearchAPI`` historically named the directly constructible Web adapter in
+# this private module.  The Web module replaces this provisional spelling with
+# ``WebResearchAPI`` once its class body has finished loading; keeping the
+# assignment here makes the circular import safe while giving backend-neutral
+# implementations an explicit base to inherit from.
+ResearchAPI = BaseResearchAPI

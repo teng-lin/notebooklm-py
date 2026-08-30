@@ -26,9 +26,17 @@ def test_research_base_web_split_preserves_logger_and_backend_alias() -> None:
     base = importlib.import_module("notebooklm._research")
     implementation = importlib.import_module("notebooklm._web.research")
 
-    assert issubclass(implementation.WebResearchAPI, base.ResearchAPI)
+    assert issubclass(implementation.WebResearchAPI, base.BaseResearchAPI)
+    assert base.ResearchAPI is implementation.WebResearchAPI
     assert implementation.ResearchAPI is implementation.WebResearchAPI
     assert implementation.logger.name == "notebooklm._research"
+
+    class _Rpc:
+        async def rpc_call(self, *_args, **_kwargs):
+            raise AssertionError("constructor compatibility must not dispatch")
+
+    direct = base.ResearchAPI(_Rpc())
+    assert isinstance(direct, implementation.WebResearchAPI)
 
 
 # ---------------------------------------------------------------------------

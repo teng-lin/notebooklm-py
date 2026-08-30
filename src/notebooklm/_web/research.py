@@ -13,9 +13,10 @@ from collections.abc import Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
+from .. import _research as _research_base
 from .. import research as _research_pub
 from .._notebook_metadata import NotebookSourceLister
-from .._research import ResearchAPI as BaseResearchAPI
+from .._research import BaseResearchAPI
 from .._runtime.config import (
     AUTO_READ_TIMEOUT,
     DEFAULT_TIMEOUT,
@@ -1057,3 +1058,7 @@ class WebResearchAPI(BaseResearchAPI):
 # Backward-compatible private-module spelling. Composition imports the explicit
 # backend class; existing direct imports keep resolving to the Web implementation.
 ResearchAPI = WebResearchAPI
+
+# Restore the historical ``notebooklm._research.ResearchAPI`` identity after
+# this module has completed the circular-safe definition of the Web adapter.
+_research_base.ResearchAPI = ResearchAPI  # type: ignore[assignment]

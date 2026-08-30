@@ -45,7 +45,7 @@ WEB_ONLY_NAMESPACE_IMPORTS: dict[str, str] = {}
 NEUTRAL_NAMESPACE_IMPORTS = {
     "CollectionsAPI": "_collections",
     "LabelsAPI": "_labels",
-    "ResearchAPI": "_research",
+    "BaseResearchAPI": "_research",
 }
 
 WEB_NAMESPACE_IMPLEMENTATION_IMPORTS = {

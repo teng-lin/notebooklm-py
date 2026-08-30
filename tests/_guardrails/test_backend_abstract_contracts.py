@@ -33,7 +33,7 @@ class _AbstractContract:
 BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
     _AbstractContract(
         module="notebooklm._research",
-        class_name="ResearchAPI",
+        class_name="BaseResearchAPI",
         implementation_module="notebooklm._web.research",
         implementation_class_name="WebResearchAPI",
         abstract_methods=frozenset({"start", "poll", "cancel", "import_sources"}),
