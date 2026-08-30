@@ -258,13 +258,13 @@ class AndroidNotesAPI(NotesAPI):
                     created.id,
                     expected_epoch=lease.epoch,
                 )
-            except Exception:
+            except (NetworkError, RPCError):
                 # CreateNote returned a concrete, fully decoded note whose
-                # title/content already match the request. Any ordinary failure
+                # title/content already match the request. An expected read failure
                 # in the optional GetNotes verification cannot make that
                 # confirmed mutation ambiguous; propagating it would invite a
-                # caller to retry CreateNote and duplicate it. Cancellation and
-                # process-control exceptions remain BaseException and propagate.
+                # caller to retry CreateNote and duplicate it. Programming defects
+                # remain visible rather than being mistaken for read unavailability.
                 logger.debug(
                     "Android CreateNote succeeded but GetNotes verification was unavailable; "
                     "returning the validated create response"

@@ -948,7 +948,6 @@ async def test_delete_and_rename_use_non_replayed_exact_wire_shapes() -> None:
 @pytest.mark.parametrize(
     ("operation", "global_method"),
     [
-        ("delete", DELETE_SOURCES_METHOD),
         ("rename", MUTATE_SOURCE_METHOD),
         ("refresh", REFRESH_SOURCE_METHOD),
         ("check_freshness", CHECK_SOURCE_FRESHNESS_METHOD),
@@ -965,9 +964,7 @@ async def test_global_source_operations_reject_cross_notebook_ids_before_io(
     api = _api(transport)
 
     with pytest.raises(SourceNotFoundError):
-        if operation == "delete":
-            await api.delete(NOTEBOOK_ID, SOURCE_A)
-        elif operation == "rename":
+        if operation == "rename":
             await api.rename(NOTEBOOK_ID, SOURCE_A, "Renamed")
         elif operation == "refresh":
             await api.refresh(NOTEBOOK_ID, SOURCE_A)
@@ -980,6 +977,17 @@ async def test_global_source_operations_reject_cross_notebook_ids_before_io(
 
     assert [method for method, _request, _kwargs in transport.calls] == [GET_PROJECT_METHOD]
     assert global_method not in [method for method, _request, _kwargs in transport.calls]
+
+
+@pytest.mark.asyncio
+async def test_delete_absent_or_cross_notebook_source_is_idempotent_without_global_io() -> None:
+    transport = FakeTransport()
+    transport.handlers[GET_PROJECT_METHOD] = _project(_source(SOURCE_B))
+
+    assert await _api(transport).delete(NOTEBOOK_ID, SOURCE_A) is None
+
+    assert [method for method, _request, _kwargs in transport.calls] == [GET_PROJECT_METHOD]
+    assert DELETE_SOURCES_METHOD not in [method for method, _request, _kwargs in transport.calls]
 
 
 @pytest.mark.asyncio

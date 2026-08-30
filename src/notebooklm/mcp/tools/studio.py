@@ -870,6 +870,12 @@ def register(mcp: Any) -> None:
                 # with no status at all (``ArtifactFeatureUnavailableError``), or
                 # one the server tagged INVALID_ARGUMENT / FAILED_PRECONDITION.
                 # Anything else keeps its own error.
+                # A malformed success from a non-idempotent retry carries this
+                # marker. It is not a synchronous wrong-state refusal and must
+                # reach MCP unchanged; probing here could replace it with an
+                # unmarked read failure and encourage a duplicate retry.
+                if getattr(exc, "unconfirmed", False):
+                    raise
                 if not isinstance(exc, ArtifactFeatureUnavailableError) and exc.rpc_code not in (
                     GrpcStatusCode.INVALID_ARGUMENT,
                     GrpcStatusCode.FAILED_PRECONDITION,

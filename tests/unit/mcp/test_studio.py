@@ -21,6 +21,7 @@ pytest.importorskip("fastmcp")
 
 from fastmcp.exceptions import ToolError  # noqa: E402 - after importorskip guard
 
+from notebooklm._idempotency import mark_unconfirmed  # noqa: E402
 from notebooklm._types.artifacts import (  # noqa: E402
     QUIZ_VARIANT,
     ArtifactStatus,
@@ -32,6 +33,7 @@ from notebooklm.exceptions import (  # noqa: E402 - after importorskip guard
     ArtifactFeatureUnavailableError,
     ArtifactNotFoundError,
     ClientError,
+    NetworkError,
     NotebookNotFoundError,
     RateLimitError,
     RPCError,
@@ -1996,6 +1998,22 @@ async def test_artifact_retry_refusal_on_failed_reraises_generic(mcp_call, mock_
     with pytest.raises(ToolError) as excinfo:
         await mcp_call("studio_retry", {"notebook": NB_ID, "artifact": _ART_FULL})
     assert "Retry generation is unavailable" in str(excinfo.value)
+
+
+async def test_artifact_retry_unconfirmed_error_bypasses_state_enrichment(
+    mcp_call, mock_client
+) -> None:
+    error = mark_unconfirmed(ArtifactFeatureUnavailableError("retry"))
+    mock_client.artifacts.retry_failed = AsyncMock(side_effect=error)
+    mock_client.artifacts.get_or_none = AsyncMock(side_effect=NetworkError("readback lost"))
+
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call("studio_retry", {"notebook": NB_ID, "artifact": _ART_FULL})
+
+    message = str(excinfo.value)
+    assert "unconfirmed=true" in message
+    assert "retriable=false" in message
+    mock_client.artifacts.get_or_none.assert_not_called()
 
 
 async def test_artifact_retry_happy_path_skips_state_check(mcp_call, mock_client) -> None:

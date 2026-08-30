@@ -374,6 +374,17 @@ class AndroidArtifactsAPI(ArtifactsAPI):
             )
         if selected is None:
             raise ArtifactNotReadyError(artifact_type, artifact_id=artifact_id)
+        if prefetched is not None:
+            # ``artifacts_data`` is a caller-supplied optimization hint, not an
+            # ownership capability.  Prove the selected global artifact id is
+            # still visible through this notebook before consuming metadata
+            # URLs or issuing an exact-id read.
+            await self._require_studio_artifact_owned(
+                notebook_id,
+                selected.id,
+                expected_epoch=expected_epoch,
+                method_id=LIST_ARTIFACTS_METHOD,
+            )
         return selected
 
     async def _transfer_representation(

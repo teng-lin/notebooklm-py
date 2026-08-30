@@ -1134,12 +1134,18 @@ class AndroidSourcesAPI(SourcesAPI):
             source_ids=[_read_proto().SourceId(id=source_id)]
         )
         async with self._transport.operation_scope("sources.delete") as lease:
-            await self._require_owned_source(
-                notebook_id,
-                source_id,
-                expected_epoch=lease.epoch,
-                method_id=DELETE_SOURCES_METHOD,
-            )
+            try:
+                await self._require_owned_source(
+                    notebook_id,
+                    source_id,
+                    expected_epoch=lease.epoch,
+                    method_id=DELETE_SOURCES_METHOD,
+                )
+            except SourceNotFoundError:
+                # Delete is idempotent. Absence from this notebook is already
+                # the requested final state and must also prevent a global-id
+                # delete from reaching a resource owned by another notebook.
+                return
             try:
                 await self._transport.unary(
                     DELETE_SOURCES_METHOD,

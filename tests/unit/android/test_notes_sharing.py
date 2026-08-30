@@ -955,7 +955,6 @@ async def test_note_create_auth_rejection_is_not_marked_unconfirmed() -> None:
         pytest.param(ServerError("read unavailable"), id="server"),
         pytest.param(AuthError("read auth rejected", rpc_code=16), id="auth"),
         pytest.param(DecodingError("read malformed"), id="decoding"),
-        pytest.param(ValueError("unexpected projection failure"), id="unexpected"),
     ],
 )
 async def test_note_create_returns_validated_response_when_readback_is_unavailable(
@@ -982,6 +981,28 @@ async def test_note_create_returns_validated_response_when_readback_is_unavailab
         title="title",
         content="body",
     )
+
+
+@pytest.mark.asyncio
+async def test_note_create_does_not_suppress_programming_error_from_readback() -> None:
+    created = notes_pb2.ProjectNote(
+        id="note-created",
+        content="body",
+        name="title",
+        metadata=notes_pb2.NoteMetadata(type=notes_pb2.USER_WRITTEN),
+    )
+    error = ValueError("unexpected projection failure")
+    session = SequencedSession(
+        {
+            CREATE_NOTE_METHOD: [notes_pb2.CreateNoteResponse(note=created)],
+            GET_NOTES_METHOD: [error],
+        }
+    )
+
+    with pytest.raises(ValueError) as raised:
+        await AndroidNotesAPI(_session(session)).create("project-1", "title", "body")
+
+    assert raised.value is error
     assert [method for method, _request, _kwargs in session.calls] == [
         CREATE_NOTE_METHOD,
         GET_NOTES_METHOD,

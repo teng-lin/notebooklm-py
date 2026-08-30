@@ -1785,13 +1785,13 @@ async def test_download_flashcards_formats_exact_templatized_app_data(tmp_path) 
 
 
 @pytest.mark.asyncio
-async def test_media_download_accepts_android_protobuf_prefetch_without_list_io() -> None:
+async def test_media_download_accepts_owned_android_protobuf_prefetch() -> None:
     raw = _artifact("audio", type_code=_PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW)
     raw.audio_overview.media_urls.add(
         url="https://lh3.googleusercontent.com/download",
         type=_PROTO.MEDIA_STREAMING_TYPE_DOWNLOAD,
     )
-    session, _, _, assets, api = _graph()
+    session, _, _, assets, api = _graph([raw])
 
     await api.download_audio(
         "notebook-1",
@@ -1800,7 +1800,7 @@ async def test_media_download_accepts_android_protobuf_prefetch_without_list_io(
         artifacts_data=[raw],
     )
 
-    assert session.calls == []
+    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD]
     assert assets.representation_calls == [
         ("https://lh3.googleusercontent.com/download", "audio.mp4", "audio")
     ]
@@ -2172,9 +2172,9 @@ async def test_generate_note_backed_mind_map_note_failure_does_not_repeat_genera
 
 
 @pytest.mark.asyncio
-async def test_infographic_prefetch_avoids_list_io() -> None:
-    session, _, _, assets, api = _graph()
+async def test_infographic_prefetch_requires_notebook_ownership_proof() -> None:
     raw = _artifact("image", url="https://lh3.googleusercontent.com/image?cap=1")
+    session, _, _, assets, api = _graph([raw])
 
     result = await api.download_infographic(
         "notebook-1",
@@ -2184,8 +2184,56 @@ async def test_infographic_prefetch_avoids_list_io() -> None:
     )
 
     assert result == "out.png"
-    assert session.calls == []
+    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD]
     assert assets.calls == [(raw.infographic.infographics[0].image.url, "out.png")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method_name", "type_code"),
+    [
+        ("download_audio", _PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW),
+        ("download_video", _PROTO.ARTIFACT_TYPE_EXPLAINER_VIDEO),
+        ("download_infographic", _PROTO.ARTIFACT_TYPE_INFOGRAPHIC),
+    ],
+)
+async def test_media_prefetch_rejects_artifact_outside_notebook_before_asset_io(
+    method_name: str,
+    type_code: int,
+) -> None:
+    owned = _artifact("owned", type_code=type_code)
+    foreign = _artifact(
+        "foreign",
+        type_code=type_code,
+        url=(
+            "https://lh3.googleusercontent.com/foreign?cap=1"
+            if type_code == _PROTO.ARTIFACT_TYPE_INFOGRAPHIC
+            else None
+        ),
+    )
+    if type_code == _PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW:
+        foreign.audio_overview.media_urls.add(
+            url="https://lh3.googleusercontent.com/foreign-audio",
+            type=_PROTO.MEDIA_STREAMING_TYPE_DOWNLOAD,
+        )
+    elif type_code == _PROTO.ARTIFACT_TYPE_EXPLAINER_VIDEO:
+        foreign.explainer_video.media_urls.add(
+            url="https://lh3.googleusercontent.com/foreign-video",
+            type=_PROTO.MEDIA_STREAMING_TYPE_DOWNLOAD,
+        )
+    session, _, _, assets, api = _graph([owned])
+
+    with pytest.raises(ArtifactNotFoundError):
+        await getattr(api, method_name)(
+            "notebook-1",
+            "out.bin",
+            "foreign",
+            artifacts_data=[foreign],
+        )
+
+    assert [call[0] for call in session.calls] == [LIST_ARTIFACTS_METHOD]
+    assert assets.calls == []
+    assert assets.representation_calls == []
 
 
 @pytest.mark.asyncio
