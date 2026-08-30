@@ -1,6 +1,7 @@
 """Shared fixtures for integration tests."""
 
 import importlib.util
+import os
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -24,6 +25,14 @@ assert _vcr_config_spec is not None and _vcr_config_spec.loader is not None, (
 _vcr_config = importlib.util.module_from_spec(_vcr_config_spec)
 _vcr_config_spec.loader.exec_module(_vcr_config)
 _is_vcr_record_mode = _vcr_config._is_vcr_record_mode
+
+_ANDROID_GRPC_RECORD_ENV = "NOTEBOOKLM_ANDROID_GRPC_RECORD"
+
+
+def _is_android_grpc_record_mode() -> bool:
+    """Return whether live Android gRPC cassette recording is explicit."""
+    return os.environ.get(_ANDROID_GRPC_RECORD_ENV, "").casefold() in ("1", "true", "yes")
+
 
 # =============================================================================
 # VCR Cassette Availability Check
@@ -283,7 +292,7 @@ def _has_active_vcr_cassette() -> bool:
 
 @pytest.fixture(autouse=True)
 def _block_unbound_network_in_replay(request, monkeypatch):
-    """Refuse unbound httpx network requests when in VCR replay mode (P1-4).
+    """Refuse unbound HTTP or gRPC network access in cassette replay mode.
 
     Companion to the ``pytest_collection_modifyitems`` enforcement hook
     above: that hook gates **collection** by requiring every
@@ -299,7 +308,15 @@ def _block_unbound_network_in_replay(request, monkeypatch):
     existing ``_disable_keepalive_poke_for_vcr`` autouse. It only takes
     effect when:
 
-    1. VCR record mode is OFF (replay mode), and
+    Android gRPC cassette tests are stricter: unless
+    ``NOTEBOOKLM_ANDROID_GRPC_RECORD`` explicitly enables recording, both
+    ``grpc.aio.secure_channel`` and ``grpc.aio.insecure_channel`` fail closed.
+    A replay test therefore cannot reach C-core networking merely because it
+    forgot to inject :class:`ReplayGrpcModule`.
+
+    The HTTP guard takes effect when:
+
+    1. Web VCR record mode is OFF (replay mode), and
     2. The test is NOT marked ``allow_no_vcr``, and
     3. The test IS marked ``vcr`` OR carries a
        ``@notebooklm_vcr.use_cassette`` decorator OR uses the ``vcr``
@@ -310,14 +327,33 @@ def _block_unbound_network_in_replay(request, monkeypatch):
     raises ``RuntimeError`` with a clear message instead of leaking
     traffic to the real backend.
     """
-    if _vcr_record_mode:
-        return  # Recording: real network calls are intentional.
-
-    if request.node.get_closest_marker("allow_no_vcr") is not None:
-        return  # Mock-only test legitimately doesn't use VCR.
-
     is_vcr_marked = request.node.get_closest_marker("vcr") is not None
     is_grpc_cassette = request.node.get_closest_marker("grpc_cassette") is not None
+
+    if is_grpc_cassette:
+        if _is_android_grpc_record_mode():
+            return  # Explicit recording: real gRPC channels are intentional.
+
+        import grpc
+
+        def _refuse_grpc_channel(*args: Any, **kwargs: Any) -> Any:
+            del args, kwargs
+            raise RuntimeError(
+                "Android gRPC cassette replay mode: refusing an unbound grpc.aio channel. "
+                "Inject ReplayGrpcModule, or set NOTEBOOKLM_ANDROID_GRPC_RECORD=1 "
+                "only while explicitly recording a sanitized cassette."
+            )
+
+        monkeypatch.setattr(grpc.aio, "secure_channel", _refuse_grpc_channel)
+        monkeypatch.setattr(grpc.aio, "insecure_channel", _refuse_grpc_channel)
+        return
+
+    if request.node.get_closest_marker("allow_no_vcr") is not None:
+        return  # Mock-only test legitimately doesn't use Web VCR.
+
+    if _vcr_record_mode:
+        return  # Web recording: real HTTP calls are intentional.
+
     has_decorator = _has_use_cassette_decorator(request.node)
     # ``vcr`` pytest fixture (pytest-vcr) binds a cassette via fixture
     # resolution rather than a marker; detect by name in ``fixturenames``.

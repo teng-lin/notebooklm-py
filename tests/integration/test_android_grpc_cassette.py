@@ -21,6 +21,13 @@ CASSETTE = (
 PROJECT_ID = "00000000-0000-4000-8000-000000000001"
 
 
+def test_grpc_cassette_replay_marker_blocks_unbound_aio_channels() -> None:
+    with pytest.raises(RuntimeError, match="refusing an unbound grpc.aio channel"):
+        grpc.aio.secure_channel("localhost:443", grpc.ssl_channel_credentials())
+    with pytest.raises(RuntimeError, match="refusing an unbound grpc.aio channel"):
+        grpc.aio.insecure_channel("localhost:443")
+
+
 @pytest.mark.asyncio
 async def test_public_android_client_replays_get_project_without_live_grpc_or_bearer_mint(
     monkeypatch: pytest.MonkeyPatch,
@@ -50,12 +57,6 @@ async def test_public_android_client_replays_get_project_without_live_grpc_or_be
         )
 
     monkeypatch.setattr(android_session, "AndroidSession", replay_session)
-    monkeypatch.setattr(
-        grpc.aio,
-        "secure_channel",
-        lambda *_args, **_kwargs: pytest.fail("cassette replay opened a live gRPC channel"),
-    )
-
     auth = AuthTokens(
         cookies={"SID": "synthetic-cookie"},
         csrf_token="synthetic-csrf",

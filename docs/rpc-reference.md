@@ -308,7 +308,8 @@ params = [
 
 **Server method:** `CopyProject`
 
-**Source:** `_notebooks.py::copy()` / `_notebook_payloads.py::build_copy_notebook_params()`
+**Source:** `_web/notebooks.py::WebNotebooksAPI.copy()` /
+`_web/params/notebooks.py::build_copy_notebook_params()`
 
 ```python
 params = [

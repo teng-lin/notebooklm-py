@@ -3387,9 +3387,9 @@ class ReportFormat(str, Enum):
     CUSTOM = "custom"
 ```
 
-`CONCEPT_EXPLANATION` is currently read-only: it can be returned by artifact
-listings, but generation rejects it until NotebookLM's creation directive is
-known.
+`CONCEPT_EXPLANATION` is backend-qualified. Web generation still rejects it,
+but Android generation uses the live-validated flexible report preset and can
+return the same format from artifact listings.
 
 ### Infographics
 

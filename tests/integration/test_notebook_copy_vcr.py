@@ -7,21 +7,27 @@ import os
 import pytest
 
 from tests.integration.conftest import skip_no_cassettes
-from tests.vcr_config import notebooklm_vcr
+from tests.vcr_config import ResourceIdCassetteScrubber, notebooklm_vcr
 
 from ._vcr_helpers import vcr_client
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
-# The fallback is the scrubbed recording's source. Contributors can point live
-# recording at any readable notebook; CopyProject does not mutate the source.
+# The fallback is the deterministic placeholder in the scrubbed recording.
+# Contributors can point live recording at any readable notebook; CopyProject
+# does not mutate the source and the cassette hook removes its real UUID.
 SOURCE_NOTEBOOK_ID = os.environ.get(
     "NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID",
-    "5afa7b59-1551-43b4-89ab-3bc0c045fca2",
+    "00000000-0000-4000-8000-000000000005",
 )
+_RESOURCE_IDS = ResourceIdCassetteScrubber()
 
 
-@notebooklm_vcr.use_cassette("notebooks_copy.yaml")
+@notebooklm_vcr.use_cassette(
+    "notebooks_copy.yaml",
+    before_record_request=_RESOURCE_IDS.scrub_request,
+    before_record_response=_RESOURCE_IDS.scrub_response,
+)
 @pytest.mark.asyncio
 async def test_live_copy_notebook_returns_distinct_project_and_cleans_up() -> None:
     """Copy an existing notebook, validate the result, and delete the scratch copy.

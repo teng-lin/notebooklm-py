@@ -144,7 +144,14 @@ def _install_generation_rate_limit_skip(client: NotebookLMClient) -> None:
     """
 
     def _rate_limit_cause(error: BaseException) -> RateLimitError | None:
-        """Find a typed quota cause through unconfirmed-write wrappers."""
+        """Find a typed quota cause through explicit unconfirmed-write wrappers.
+
+        Only ``raise wrapper from quota`` establishes that the wrapper means
+        the generation write itself was quota-rejected. Python's implicit
+        ``__context__`` merely records whatever exception happened to be under
+        handling; following it can turn a later unrelated decoder/cleanup bug
+        into a false quota skip.
+        """
         pending: list[BaseException] = [error]
         seen: set[int] = set()
         while pending:
@@ -154,9 +161,8 @@ def _install_generation_rate_limit_skip(client: NotebookLMClient) -> None:
             seen.add(id(current))
             if isinstance(current, RateLimitError):
                 return current
-            for linked in (current.__cause__, current.__context__):
-                if linked is not None:
-                    pending.append(linked)
+            if current.__cause__ is not None:
+                pending.append(current.__cause__)
         return None
 
     def _wrap(original):

@@ -235,6 +235,36 @@ def test_nightly_coverage_is_sha_pinned_secret_free_and_enforces_floors() -> Non
     assert job["steps"].index(playwright_step) < job["steps"].index(floor_step)
 
 
+def test_nightly_e2e_runs_explicit_web_and_android_backends() -> None:
+    """Authenticated nightly coverage cannot silently remain Web-only."""
+    workflow = yaml.safe_load(NIGHTLY_WORKFLOW.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["e2e"]
+
+    assert "${{ matrix.backend }}" in job["name"]
+    assert job["strategy"]["matrix"]["include"] == [
+        {"os": "ubuntu-latest", "backend": "web"},
+        {"os": "windows-latest", "backend": "web"},
+        {"os": "ubuntu-latest", "backend": "android"},
+    ]
+    assert job["env"]["NOTEBOOKLM_BACKEND"] == "${{ matrix.backend }}"
+    assert "${{ matrix.backend }}" in job["concurrency"]["group"]
+
+    install = str(_step(job, "Install dependencies")["run"])
+    assert "uv sync --frozen" in install
+    assert "--extra android" in install
+
+    preflight = _step(job, "Assert Android dependencies and live auth")
+    assert preflight["if"] == "matrix.backend == 'android'"
+    preflight_command = str(preflight["run"])
+    assert "import grpc" in preflight_command
+    assert "import gpsoauth" in preflight_command
+    assert 'backend="android"' in preflight_command
+    assert "client.notebooks.get(notebook_id)" in preflight_command
+
+    curl_smoke = _step(job, "curl_cffi transport smoke (live, minimal)")
+    assert "matrix.backend == 'web'" in str(curl_smoke["if"])
+
+
 def test_repository_lint_is_a_bounded_manual_only_job() -> None:
     """Deep repo audits have one manual lane, not one per compatibility cell."""
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))

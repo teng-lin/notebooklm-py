@@ -24,6 +24,7 @@ from tests.cassette_patterns import _CREDENTIAL_DETECTORS
 
 from notebooklm._android.auth import BearerCredential
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
+from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import notebooks_pb2
 from notebooklm._android.session import ANDROID_GRPC_TARGET, AndroidSession
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
@@ -39,6 +40,10 @@ SENSITIVE_TITLE = "private-project-title-must-not-persist"
 SENSITIVE_URL = "https://private.example.test/account/document"
 SENSITIVE_BEARER = "bearer-sensitive-value-must-not-persist"
 ANDROID_CASSETTES = Path(__file__).resolve().parents[2] / "cassettes" / "android"
+KNOWN_CASSETTE_PAYLOAD_TYPES = {
+    read_pb2.GetProjectRequest.DESCRIPTOR.full_name: read_pb2.GetProjectRequest,
+    notebooks_pb2.WireGetProjectResponse.DESCRIPTOR.full_name: notebooks_pb2.WireGetProjectResponse,
+}
 
 
 @dataclass(frozen=True)
@@ -426,3 +431,28 @@ def test_committed_android_grpc_cassettes_are_canonical_and_credential_free(
         assert pattern.search(decoded_payloads) is None, (
             f"{cassette_path.name} protobuf contains {name}"
         )
+
+    # A credential/high-entropy scan cannot prove ordinary scalar fields were
+    # redacted. Decode every committed payload through its known FQN and demand
+    # that the mandatory scalar redactor is already an idempotent no-op. New
+    # cassette message types must be registered here rather than escaping as
+    # opaque base64.
+    for interaction in cassette.interactions:
+        directed_payloads = (
+            ("request", interaction.request),
+            *(("response", response) for response in interaction.responses),
+        )
+        for direction, payload in directed_payloads:
+            assert payload.type_name in KNOWN_CASSETTE_PAYLOAD_TYPES, (
+                f"{cassette_path.name} uses unregistered protobuf FQN {payload.type_name}"
+            )
+            message_type = KNOWN_CASSETTE_PAYLOAD_TYPES[payload.type_name]
+            decoded = message_type.FromString(payload.wire_bytes)
+            sanitized = ProtoRedactor(trust_placeholders=True)(
+                interaction.method,
+                direction,
+                decoded,
+            )
+            assert sanitized.SerializeToString(deterministic=True) == payload.wire_bytes, (
+                f"{cassette_path.name} {direction} {payload.type_name} is not fully redacted"
+            )

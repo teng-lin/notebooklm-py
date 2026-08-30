@@ -733,6 +733,25 @@ class TestGenerationRateLimitSkip:
         with pytest.raises(pytest.skip.Exception, match="Rate limit"):
             await client.artifacts.generate_audio("nb-1")
 
+    async def test_implicit_rate_limit_context_does_not_hide_unrelated_failure(self):
+        conftest = _load_e2e_conftest()
+        client = self._make_client()
+
+        async def unrelated_failure(notebook_id):
+            del notebook_id
+            try:
+                raise RateLimitError("earlier quota response", rpc_code=8)
+            except RateLimitError:
+                # No ``from``: this is implicit ambient context, not evidence
+                # that the decoder failure represents a quota rejection.
+                raise ValueError("generation response decoder broke")  # noqa: B904
+
+        client.artifacts.generate_audio = unrelated_failure
+        conftest._install_generation_rate_limit_skip(client)
+
+        with pytest.raises(ValueError, match="decoder broke"):
+            await client.artifacts.generate_audio("nb-1")
+
     async def test_successful_calls_pass_through_per_method(self):
         # Closure safety: each wrapped name must bind its own original.
         conftest = _load_e2e_conftest()

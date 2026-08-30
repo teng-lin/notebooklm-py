@@ -382,6 +382,66 @@ _UUID_RE = re.compile(
 )
 
 
+class ResourceIdCassetteScrubber:
+    """Deterministically redact account-linkable UUID resource identifiers.
+
+    Most historical Web cassettes preserve UUIDs because functional replay
+    often returns one identifier and feeds it into a later request. Sensitive
+    mutation recordings may opt into this stronger stateful scrubber: distinct
+    UUIDs receive distinct reserved v4-shaped placeholders in first-seen order,
+    and later occurrences retain the same replacement. The placeholders remain
+    valid inputs to public UUID validators and the existing VCR matcher already
+    treats UUID leaves as volatile.
+    """
+
+    _PLACEHOLDER_PREFIX = "00000000-0000-4000-8000-"
+
+    def __init__(self) -> None:
+        self._replacements: dict[str, str] = {}
+
+    def scrub_text(self, value: str) -> str:
+        def replace(match: re.Match[str]) -> str:
+            resource_id = match.group(0)
+            if resource_id.startswith(self._PLACEHOLDER_PREFIX):
+                return resource_id
+            replacement = self._replacements.get(resource_id)
+            if replacement is None:
+                replacement = f"{self._PLACEHOLDER_PREFIX}{len(self._replacements) + 1:012d}"
+                self._replacements[resource_id] = replacement
+            return replacement
+
+        return _UUID_RE.sub(replace, value)
+
+    def scrub_request(self, request: Any) -> Any:
+        request = scrub_request(request)
+        if request.uri:
+            request.uri = self.scrub_text(request.uri)
+        if request.body:
+            if isinstance(request.body, bytes):
+                try:
+                    request.body = self.scrub_text(request.body.decode("utf-8")).encode("utf-8")
+                except UnicodeDecodeError:
+                    pass
+            else:
+                request.body = self.scrub_text(request.body)
+        return request
+
+    def scrub_response(self, response: dict[str, Any]) -> dict[str, Any]:
+        response = scrub_response(response)
+        body = response.get("body", {})
+        if "string" not in body:
+            return response
+        content = body["string"]
+        if isinstance(content, bytes):
+            try:
+                body["string"] = self.scrub_text(content.decode("utf-8")).encode("utf-8")
+            except UnicodeDecodeError:
+                pass
+        else:
+            body["string"] = self.scrub_text(content)
+        return response
+
+
 def _normalize_uuids(value: str) -> str:
     """Replace every UUID v4 substring in ``value`` with :data:`_UUID_PLACEHOLDER`.
 

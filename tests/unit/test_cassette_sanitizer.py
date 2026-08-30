@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -39,7 +40,7 @@ from tests.cassette_patterns import (
     scrub_cookie_header,
     scrub_set_cookie,
 )
-from tests.vcr_config import scrub_string
+from tests.vcr_config import ResourceIdCassetteScrubber, scrub_string
 
 pytestmark = pytest.mark.repo_lint
 
@@ -48,6 +49,36 @@ TESTS_DIR = REPO_ROOT / "tests"
 
 GUARD_SCRIPT = TESTS_DIR / "scripts" / "check_cassettes_clean.py"
 REGRESSION_FIXTURE = TESTS_DIR / "fixtures" / "bad_cassettes" / "bad_sid_starting_with_s.yaml"
+
+
+def test_resource_id_cassette_scrubber_is_stable_distinct_and_idempotent() -> None:
+    scrubber = ResourceIdCassetteScrubber()
+    first = "11111111-1111-4111-8111-111111111111"
+    second = "22222222-2222-4222-8222-222222222222"
+
+    scrubbed = scrubber.scrub_text(f"{first}/{second}/{first}")
+
+    assert first not in scrubbed
+    assert second not in scrubbed
+    first_placeholder, second_placeholder, repeated_placeholder = scrubbed.split("/")
+    assert first_placeholder == repeated_placeholder
+    assert first_placeholder != second_placeholder
+    assert first_placeholder == "00000000-0000-4000-8000-000000000001"
+    assert second_placeholder == "00000000-0000-4000-8000-000000000002"
+    assert scrubber.scrub_text(scrubbed) == scrubbed
+
+
+def test_notebook_copy_cassette_commits_only_reserved_resource_uuids() -> None:
+    cassette = TESTS_DIR / "cassettes" / "notebooks_copy.yaml"
+    resource_ids = set(
+        re.findall(
+            r"\b[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\b",
+            cassette.read_text(encoding="utf-8"),
+        )
+    )
+
+    assert len(resource_ids) >= 2, "copy replay must preserve distinct source and copy IDs"
+    assert all(value.startswith("00000000-0000-4000-8000-") for value in resource_ids)
 
 
 # ---------------------------------------------------------------------------

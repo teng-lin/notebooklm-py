@@ -1,8 +1,8 @@
 # Blutter gRPC signature evidence
 
-**Evidence date:** 2026-08-29  
-**Official app:** NotebookLM Android `1.46.7.940945420` (`versionCode=138238`)  
-**Package:** `com.google.android.apps.labs.language.tailwind`  
+**Evidence date:** 2026-08-29
+**Official app:** NotebookLM Android `1.46.7.940945420` (`versionCode=138238`)
+**Package:** `com.google.android.apps.labs.language.tailwind`
 **AOT library SHA-256:** `082d75e36eb03aea7ea5a8c252029c48b964177311ca4ebac6392814b8e6f81f`
 
 This report closes six response-FQN gaps using the official app's decompiled generated-client

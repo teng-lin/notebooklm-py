@@ -39,6 +39,15 @@ _vcr_config = importlib.util.module_from_spec(_vcr_spec)
 _vcr_spec.loader.exec_module(_vcr_config)
 _is_vcr_record_mode = _vcr_config._is_vcr_record_mode
 
+_integration_spec = importlib.util.spec_from_file_location(
+    "tests_integration_conftest_for_grpc_record_parity",
+    Path(__file__).resolve().parents[1] / "integration" / "conftest.py",
+)
+if _integration_spec is None or _integration_spec.loader is None:  # pragma: no cover
+    raise ImportError("Could not load tests/integration/conftest.py via importlib")
+_integration_conftest = importlib.util.module_from_spec(_integration_spec)
+_integration_spec.loader.exec_module(_integration_conftest)
+
 # The fixture delegates its decision to this plain function (path to pin, or
 # ``None`` to keep the real profile) — directly callable with a fake request.
 _isolation_home = _root_conftest._isolation_home
@@ -185,3 +194,4 @@ def test_android_grpc_recording_uses_strict_truthy_values(
 ) -> None:
     monkeypatch.setenv("NOTEBOOKLM_ANDROID_GRPC_RECORD", value)
     assert _android_grpc_recording() is (value.casefold() in {"1", "true", "yes"})
+    assert _integration_conftest._is_android_grpc_record_mode() is _android_grpc_recording()

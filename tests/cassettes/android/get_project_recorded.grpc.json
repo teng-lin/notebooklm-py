@@ -10,7 +10,7 @@
       "response_protobuf_type": "notebooklm.internal.android.wire.v1.WireGetProjectResponse",
       "responses": [
         {
-          "protobuf_b64": "ClYKFFNDUlVCQkVEX1NUUklOR18wMDAxGiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEyBAgBSgBSBggBEAEYAFoKCAAQABgAIAAoAA==",
+          "protobuf_b64": "ClYKFFNDUlVCQkVEX1NUUklOR18wMDAxGiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEyBAgBSgBSBggBEAEYAFoKCAEQARgBIAEoAQ==",
           "protobuf_type": "notebooklm.internal.android.wire.v1.WireGetProjectResponse"
         }
       ],

@@ -83,6 +83,10 @@ coverage also scans recursively while excluding `examples/`.
   Verify sensitive data is scrubbed
   (`uv run python tests/scripts/check_cassettes_clean.py --strict --recursive`)
   before committing.
+  Mutation cassettes that return resource UUIDs and feed them into later
+  requests should additionally use `ResourceIdCassetteScrubber` from
+  `tests/vcr_config.py`; it preserves equality with deterministic reserved
+  UUID placeholders without committing account-linkable notebook/source IDs.
 - **New illustrative example**: hand-author the YAML under `examples/`
   with the `example_` prefix. Reference it from the test via the
   `examples/example_<description>.yaml` subpath.

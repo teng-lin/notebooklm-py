@@ -10,14 +10,14 @@ Run it twice with an isolated profile to validate the private adapter::
     NOTEBOOKLM_ANDROID_NOTES_CONFORMANCE=1 \
       uv run pytest tests/e2e/test_android_notes_conformance.py -m e2e -vv
 
-The eight-method manifest covered here is ``list``, ``get``, ``get_or_none``,
+The eight-method direct Notes manifest covered here is ``list``, ``get``, ``get_or_none``,
 ``create``, ``update``, ``delete``, ``list_mind_maps``, and
-``delete_mind_map``.  The Web backend creates the note-backed mind map because
-Android map generation is outside the Notes namespace.  Android only reads
-and deletes the exact persisted id/content pair already admitted by evidence.
-This probe does not waive the documented creation-time, raw-row, and
-soft-delete tombstone parity blockers, so passing it is not sufficient to
-promote Notes publicly.
+``delete_mind_map``. The Web backend seeds the cross-backend note-backed map
+because generation belongs to the separate ``MindMapsAPI`` namespace; the
+selected Android ``client.mind_maps`` surface also supports native generation.
+This focused probe validates the direct Notes adapter's persisted id/content
+projection and retained cross-backend tombstone differences; it is not the
+only coverage supporting the already-public Android Notes namespace.
 """
 
 from __future__ import annotations

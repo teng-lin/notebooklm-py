@@ -201,7 +201,7 @@ jobs:
 
   # Run E2E tests on the resolved branch
   e2e:
-    name: E2E Tests (${{ needs.resolve-branch.outputs.branch }}@${{ needs.resolve-branch.outputs.short_sha }}/${{ matrix.os }})
+    name: E2E Tests (${{ needs.resolve-branch.outputs.branch }}@${{ needs.resolve-branch.outputs.short_sha }}/${{ matrix.backend }}/${{ matrix.os }})
     needs: resolve-branch
     if: needs.resolve-branch.outputs.is_standard == 'true'
     runs-on: ${{ matrix.os }}
@@ -229,8 +229,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+        - os: ubuntu-latest
+          backend: web
+        - os: windows-latest
+          backend: web
+        - os: ubuntu-latest
+          backend: android
     env:
+      # Each authenticated lane selects its namespace graph explicitly. Keeping
+      # Web in the matrix preserves the historical default while the separate
+      # Android lane proves the optional package/auth path against live gRPC.
+      NOTEBOOKLM_BACKEND: ${{ matrix.backend }}
       # Pin Playwright's browser install dir to a single workspace-relative
       # path on every OS — see test.yml for the rationale (sidesteps the
       # actions/cache@v6 Windows dual-path restore flake).
@@ -241,7 +251,7 @@ jobs:
       E2E_COVERAGE_FLOOR_SENTINEL: ${{ github.workspace }}/.e2e-coverage-floor-failed
 
     concurrency:
-      group: nightly-${{ needs.resolve-branch.outputs.branch }}-${{ matrix.os }}
+      group: nightly-${{ needs.resolve-branch.outputs.branch }}-${{ matrix.backend }}-${{ matrix.os }}
       cancel-in-progress: true
 
     steps:
@@ -256,6 +266,7 @@ jobs:
         EXPECTED_SHA: ${{ needs.resolve-branch.outputs.sha }}
         TARGET_BRANCH: ${{ needs.resolve-branch.outputs.branch }}
         MATRIX_OS: ${{ matrix.os }}
+        MATRIX_BACKEND: ${{ matrix.backend }}
       shell: bash
       run: |
         ACTUAL_SHA=$(git rev-parse HEAD)
@@ -268,6 +279,7 @@ jobs:
           echo "- Branch: \`$TARGET_BRANCH\`"
           echo "- Commit: \`$ACTUAL_SHA\`"
           echo "- OS: \`$MATRIX_OS\`"
+          echo "- Backend: \`$MATRIX_BACKEND\`"
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Set up Python
@@ -296,8 +308,11 @@ jobs:
         # RUNS instead of importorskip-ping fastapi.
         # --extra headless = gpsoauth, required for the layer-4 master-token
         # re-mint that the materialized auth profile below relies on.
+        # --extra android pins grpcio/protobuf and is mandatory even though
+        # gpsoauth overlaps with headless: the Android E2E lane must fail at
+        # installation rather than silently skip for a missing runtime.
         attempt=1; max=3
-        until uv sync --frozen --extra browser --extra dev --extra markdown --extra impersonate --extra mcp --extra server --extra headless; do
+        until uv sync --frozen --extra browser --extra dev --extra markdown --extra impersonate --extra mcp --extra server --extra headless --extra android; do
           if [ "$attempt" -ge "$max" ]; then
             echo "::error::uv sync failed after $max attempts" >&2
             exit 1
@@ -396,6 +411,35 @@ jobs:
         fi
         echo "Auth profile materialized (master token; fresh cookies minted)."
 
+    - name: Assert Android dependencies and live auth
+      if: matrix.backend == 'android'
+      env:
+        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
+      shell: bash
+      run: |
+        uv run python - <<'PY'
+        import asyncio
+        import os
+
+        import gpsoauth  # noqa: F401 -- hard dependency preflight
+        import grpc  # noqa: F401 -- hard dependency preflight
+        from google.protobuf import __version__ as protobuf_version
+
+        from notebooklm import NotebookLMClient
+
+        async def main() -> None:
+            notebook_id = os.environ["NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID"]
+            async with NotebookLMClient.from_storage(backend="android") as client:
+                if set(client.backends.values()) != {"android"}:
+                    raise RuntimeError(f"Android backend was not fully selected: {client.backends}")
+                notebook = await client.notebooks.get(notebook_id)
+                if notebook.id != notebook_id:
+                    raise RuntimeError("Android auth preflight returned the wrong notebook")
+            print(f"Android gRPC auth preflight passed (protobuf {protobuf_version}).")
+
+        asyncio.run(main())
+        PY
+
     - name: Run E2E tests
       id: e2e
       # Hard gate: only standard branches (main/release/*, or scheduled cron
@@ -429,9 +473,10 @@ jobs:
         TEST_FILTER: ${{ inputs.test_filter }}
         TARGET_BRANCH: ${{ needs.resolve-branch.outputs.branch }}
         MATRIX_OS: ${{ matrix.os }}
+        MATRIX_BACKEND: ${{ matrix.backend }}
       shell: bash
       run: |
-        echo "Testing branch: $TARGET_BRANCH"
+        echo "Testing branch: $TARGET_BRANCH (backend: $MATRIX_BACKEND)"
         # Start from a clean coverage-floor sentinel so a stale file from a prior
         # run on a reused/self-hosted runner can't false-red the enforcement step.
         rm -f "$E2E_COVERAGE_FLOOR_SENTINEL"
@@ -502,6 +547,7 @@ jobs:
       if: |
         needs.resolve-branch.outputs.is_standard == 'true'
         && matrix.os == 'ubuntu-latest'
+        && matrix.backend == 'web'
       env:
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}

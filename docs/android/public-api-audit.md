@@ -16,8 +16,8 @@ The exact backend-neutral namespace contract contains 145 consumer callables. Un
 
 | Selected public path | Callables | Meaning |
 |---|---:|---|
-| Android-selected or local over Android | 143 | remains within the installed Android namespace graph, including validation, filtering, polling, aliases, cache operations, and composition over Android collaborators |
-| narrow Web compatibility | 2 | only `notebooks.remove_from_recent` and `sharing.set_view_level` |
+| Android-selected or local over Android | 142 | remains within the installed Android namespace graph, including validation, filtering, polling, aliases, cache operations, and composition over Android collaborators |
+| narrow Web compatibility | 3 | `notebooks.remove_from_recent`, CSV/DOCX `sources.add_file`, and `sharing.set_view_level` |
 | unsupported | 0 | no public consumer callable terminates in `_reject`, `unsupported_operation`, or `UnsupportedOperationError` |
 
 The audit deliberately does not subdivide the first row into “native” and “local” totals. An
@@ -174,10 +174,10 @@ verified both modes and cleanup. Account output language and limits are native t
 `GetOrCreateAccount` and `MutateAccount`; a live temporary language mutation/readback succeeded and
 the original language was restored and verified in `finally`.
 
-Only two Web compatibility operations remain: `notebooks.remove_from_recent` and
-`sharing.set_view_level`. Android artifact, chat, mind-map, notes, research, settings, labels,
-collections, source, and all other notebook/sharing operations are native or local composition over
-native Android transports.
+Only three Web compatibility operations remain: `notebooks.remove_from_recent`, CSV/DOCX
+`sources.add_file`, and `sharing.set_view_level`. Android artifact, chat, mind-map, notes, research,
+settings, labels, collections, all other source operations, and all other notebook/sharing
+operations are native or local composition over native Android transports.
 
 Explicit `backend="android"` now installs Android adapters for all eleven public namespaces plus the
 Android session, asset transport, and upload pipeline. `client.backends` reports the installed

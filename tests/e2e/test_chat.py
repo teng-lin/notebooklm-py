@@ -218,6 +218,8 @@ class TestChatHistoryE2E:
             assert isinstance(turns_data[0], list)
             turns = turns_data[0]
             turn_types = [turn[2] for turn in turns if isinstance(turn, list) and len(turn) > 2]
+        if not turns and client.backends["chat"] == "android":
+            pytest.fail("Seeded conversation exists but Android ListChatTurns decoded no turns")
         if not turns:
             pytest.skip(
                 "Read-only notebook has a conversation but no chat turns — "
@@ -261,6 +263,8 @@ class TestChatHistoryE2E:
                 for turn in turns
                 if isinstance(turn, list) and len(turn) > 3 and turn[2] == 1
             ]
+        if not turns and client.backends["chat"] == "android":
+            pytest.fail("Seeded conversation exists but Android ListChatTurns decoded no turns")
         if not turns:
             pytest.skip(
                 "Read-only notebook has a conversation but no chat turns — "
@@ -311,6 +315,8 @@ class TestChatHistoryE2E:
                 turn for turn in turns if isinstance(turn, list) and len(turn) > 4 and turn[2] == 2
             ]
             answers = [turn[4][0][0] for turn in answer_turns]
+        if not turns and client.backends["chat"] == "android":
+            pytest.fail("Seeded conversation exists but Android ListChatTurns decoded no turns")
         if not turns:
             pytest.skip(
                 "Read-only notebook has a conversation but no chat turns — "
@@ -318,6 +324,8 @@ class TestChatHistoryE2E:
             )
         assert answers, "No answer turn found in response"
         answer_text = next((answer for answer in answers if answer), "")
+        if not answer_text and client.backends["chat"] == "android":
+            pytest.fail("Seeded Android answer turns decoded without completed answer text")
         if not answer_text:
             pytest.skip(
                 "Conversation history has answer turns but no completed answer text — "
@@ -342,6 +350,8 @@ class TestChatHistoryE2E:
     async def test_get_history_returns_qa_pairs(self, client, read_only_notebook_id):
         """get_history returns Q&A pairs from existing conversation history."""
         qa_pairs = await client.chat.get_history(read_only_notebook_id)
+        if not qa_pairs and client.backends["chat"] == "android":
+            pytest.fail("Seeded Android conversation decoded no Q&A pairs")
         if not qa_pairs:
             pytest.skip("No conversation history available in read-only notebook")
 
