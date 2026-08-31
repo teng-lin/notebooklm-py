@@ -3,7 +3,7 @@
 **Status:** admitted read, notebook, source/upload, artifact, chat, notes/sharing,
 organization, Research, and public account-settings contracts
 
-**Evidence snapshot:** 2026-08-29
+**Evidence snapshot:** 2026-08-31 (`GenerateDocumentGuides` source echo re-probed live)
 
 **Scope:** project/source reads; notebook operations; URL, maintenance, content, and generic file
 source operations; artifact list/get/create/derive/update/delete, native note-backed mind-map
@@ -111,7 +111,7 @@ fixtures. Hashes prevent a later local checkout from silently changing what was 
 | [`artifact-contracts-and-live-validation.md`](artifact-contracts-and-live-validation.md) | `58af0bbeebdfa6a6a7366577d90a5479bdf971a1ed76fe3d6d7d0b8420f8454d` | consolidated artifact generation, representation, data-table, retry/export, mind-map, and transfer evidence; preserves all four source-report hashes and cleanup qualifications |
 | [`file-transfer-evidence.md`](file-transfer-evidence.md) | `f09a518c398f7355f7ab55c69d6e990037c806a9cc3e3f1291de5efd4971a6a5` | official-app/headless PDF upload request, qualified CSV/DOCX compatibility boundary, and live artifact representation/direct infographic/slide transfer |
 | [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md) | `7e21ddb46ff851b9ae27c38c7ce6d18cfc6e4589f3730fe30160ef8f7dfcf585` | consolidated notebook copy/metadata, note/mind-map, label/collection, membership, cleanup, and public-qualification evidence; preserves all four source-report hashes |
-| [`endpoints.md`](endpoints.md) | `3d8879eff8427c3c0aac373308f695f8d220b6e4c98f51bfc2b419d367f4fd27` | live request/response envelopes, route results, version-scoped APK inventories, captured note/sharing bytes, and the account-bootstrap replay boundary |
+| [`endpoints.md`](endpoints.md) | `c4ed059c6812c5e7714366649592c41a1301cb83507770c37dc80df94600c8dd` | live request/response envelopes, route results, version-scoped APK inventories, captured note/sharing bytes, and the account-bootstrap replay boundary |
 
 The recovery method and the warning about duplicate packages are committed in
 [`README.md`](README.md#caveats-that-will-bite-you). Live request/response shapes are documented in
@@ -714,7 +714,7 @@ Blutter's generated-client binding proves `DeleteSources` returns
 | `orchestration.v1.InputSource` | `source_id #1` | exact closure; guide request/correlation |
 | `orchestration.v1.Snippet` | `text_snippet #1` | exact closure; guide summary |
 | `orchestration.v1.MainIdeas` | repeated `text_ideas #1` | exact closure; guide keywords |
-| `orchestration.v1.DocumentGuide` | `source #1`, `snippet #2`, `main_ideas #3` | exact closure; exact-ID guide projection |
+| `orchestration.v1.DocumentGuide` | `source #1` (optional on the wire), `snippet #2`, `main_ideas #3` | exact closure; guide projection keyed on an echo the server may omit — see [Document-guide source echo](#document-guide-source-echo) |
 | `orchestration.v1.GenerateDocumentGuidesRequest/Response` | repeated `sources #1` / repeated `guides #1` | exact method closure |
 | `orchestration.v1.TentativeSourceMetadata` | `name #1` | exact closure; bijective correlation key |
 | `orchestration.v1.AddTentativeSourcesRequest` | repeated metadata `#1`, `project_id #2`, `request_context #3`, `provenance #4` | exact closure; URL builders leave #3/#4 absent, file-upload registration populates them |
@@ -727,6 +727,41 @@ Blutter's generated-client binding proves `DeleteSources` returns
 | `orchestration.v1.RefreshSourceRequest/Response` | request `source_id #2`, `request_context #3`; response `source #1` | current-bundle constructor/accessor plus valid stale-Google-Doc Android refresh |
 | `orchestration.v1.PlainTextSourceContent` | `header #1`, `body #2` | exact response closure; flat text uses body |
 | `orchestration.v1.LoadSourceRequest/Response` | `source_id #1` / `source #1`, `plain_text #2`, `markdown_string #3`, `TailwindDoc #4` | exact method closure; current live responses used only `source #1` plus `TailwindDoc #4`, decoded through the local response overlay |
+
+### Document-guide source echo
+
+`DocumentGuide.source #1` is **optional in practice**, so requested-vs-echoed identity on
+`GenerateDocumentGuides` is a *leak* check, not a *presence* check. A current authenticated probe
+(2026-08-31, issue #2276) requested one guide at a time for three URL sources and three
+pasted-text sources:
+
+| Source kind | `DocumentGuide` fields on the wire | Echo |
+|---|---|---|
+| pasted text / markdown | `#1`, `#2`, `#3`, empty `#4` | `#1.source_id.id` equals the requested id |
+| URL / web page | `#2`, `#3`, empty `#4` — **no `#1`** | absent |
+
+The URL responses omit field `#1` from the serialized message entirely; the only other field
+present is a zero-length `#4`, which carries no identifier. That rules out the competing reading
+in which the server labels URL guides through an unmodelled `InputSource` branch (a crawled-document
+or web-content id) that our parser would report as `HasField("source_id") == False` — there is no
+such branch on the wire to miss. The same probe found that a two-source request is rejected with
+`INVALID_ARGUMENT`, so the endpoint is single-source and a lone unlabelled guide can only describe
+the source that was asked about.
+
+`sources.get_guide` therefore accepts a sole unlabelled guide, keeps the hard failure for a
+*populated and different* echo, and still requires an exact match once more than one guide is
+returned — the same `if echoed_id and echoed_id != source_id` convention already used by
+`refresh` and `check_freshness`. The rejection paths now carry the requested id, every observed
+echo, the guide count, and the raw response bytes, because the original error carried none of
+them and could not be diagnosed from CI logs.
+
+The probe also corroborates the `main_ideas #3` projection against the alternative reading of the
+captured app traffic (which annotates response `#3` as "(inferred) suggested questions"): all six
+sources returned five short noun phrases — `"Model Context Protocol"`, `"Centralised
+Authentication"`, `"Python Programming"` — none of them interrogative. `LoadSource` echoed the
+requested id on every probed source including the URL ones, so its sibling check is not affected;
+its unlabelled branch nonetheless now defers to `decode_source`, which reports missing-identifier
+drift instead of claiming the source does not exist.
 
 The admitted source overlay also carries the public text, YouTube, and Drive-reference branches used
 by `add_text`, YouTube `add_url`, and `add_drive`; their exact fields are exercised by focused

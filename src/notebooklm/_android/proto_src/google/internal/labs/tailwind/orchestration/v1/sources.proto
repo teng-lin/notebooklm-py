@@ -24,7 +24,8 @@ message MainIdeas {
 }
 
 message DocumentGuide {
-  InputSource source = 1; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
+  // Optional on the wire: populated for text sources, omitted for URL sources.
+  InputSource source = 1; // evidence: docs/android/proto-evidence-ledger.md#document-guide-source-echo
   Snippet snippet = 2; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
   MainIdeas main_ideas = 3; // evidence: docs/android/proto-evidence-ledger.md#source-field-ledger
 }

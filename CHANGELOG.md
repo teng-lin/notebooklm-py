@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `sources.get_guide()` on the Android backend no longer raises `DecodingError`
+  for URL sources. `GenerateDocumentGuides` labels a returned guide with the
+  requested source id for text sources but omits the label entirely for URL
+  sources, and the strict echo check rejected guides the server really had
+  returned. A populated-but-different echo is still a hard failure, and the
+  rejection paths now report the requested id, every observed echo, the guide
+  count, and the raw response bytes.
+
 ## [0.8.1] - 2026-08-14
 
 ### Added

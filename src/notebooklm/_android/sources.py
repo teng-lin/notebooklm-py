@@ -39,7 +39,7 @@ from ..exceptions import (
 from ..types import Source, SourceFulltext, SourceStatus, SourceType
 from .codecs.documents import decode_document, tailwind_doc_markdown, tailwind_doc_plain_text
 from .codecs.notebooks import decode_project, map_get_project_error, validate_project_identity
-from .codecs.sources import decode_source, decode_sources
+from .codecs.sources import decode_source, decode_sources, select_document_guide
 from .session import AndroidSession
 from .upload import (
     AndroidUploadPipeline,
@@ -1340,26 +1340,13 @@ class AndroidSourcesAPI(SourcesAPI):
                     source_id, method_id=GENERATE_DOCUMENT_GUIDES_METHOD
                 ) from None
 
-        matches = [
-            guide
-            for guide in response.guides
-            if guide.HasField("source")
-            and guide.source.HasField("source_id")
-            and guide.source.source_id.id == source_id
-        ]
-        if not matches:
-            if not response.guides:
-                raise SourceNotFoundError(source_id, method_id=GENERATE_DOCUMENT_GUIDES_METHOD)
-            raise DecodingError(
-                "Android source guide response did not match the requested source id",
-                method_id=GENERATE_DOCUMENT_GUIDES_METHOD,
-            )
-        if len(matches) != 1:
-            raise DecodingError(
-                "Android source guide response contained duplicate source ids",
-                method_id=GENERATE_DOCUMENT_GUIDES_METHOD,
-            )
-        guide = next(iter(matches))
+        if not response.guides:
+            raise SourceNotFoundError(source_id, method_id=GENERATE_DOCUMENT_GUIDES_METHOD)
+        guide = select_document_guide(
+            response,
+            source_id=source_id,
+            method_id=GENERATE_DOCUMENT_GUIDES_METHOD,
+        )
         summary = guide.snippet.text_snippet if guide.HasField("snippet") else ""
         keywords = tuple(guide.main_ideas.text_ideas) if guide.HasField("main_ideas") else ()
         return SourceGuide(summary=summary, keywords=keywords)
@@ -1408,12 +1395,18 @@ class AndroidSourcesAPI(SourcesAPI):
         if not response.HasField("source"):
             raise SourceNotFoundError(source_id, method_id=LOAD_SOURCE_METHOD)
         raw_id = response.source.source_id.id if response.source.HasField("source_id") else ""
-        if not raw_id:
-            raise SourceNotFoundError(source_id, method_id=LOAD_SOURCE_METHOD)
-        if raw_id != source_id:
+        # An absent echo is not an absent source: ``LoadSource`` was observed
+        # echoing every probed source type (issue #2276), but turning a
+        # hypothetically unlabelled response into ``SourceNotFoundError`` would
+        # misreport a source the server did return. Only a populated and
+        # different id is a decoding failure, as in ``get_guide`` and
+        # ``refresh``.
+        if raw_id and raw_id != source_id:
             raise DecodingError(
-                "Android full-text response did not match the requested source id",
+                "Android full-text response did not match the requested source id "
+                f"(requested={source_id}, observed={raw_id})",
                 method_id=LOAD_SOURCE_METHOD,
+                found_ids=[raw_id],
             )
         source = decode_source(response.source, method_id=LOAD_SOURCE_METHOD)
         document = (

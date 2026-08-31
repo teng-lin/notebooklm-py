@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import Any, cast
 
 from ...exceptions import DecodingError
@@ -213,4 +213,109 @@ def decode_sources(
     return decoded
 
 
-__all__ = ["decode_source", "decode_sources"]
+# Structural prefix only: enough to see which field leads the first guide
+# without carrying the summary text that follows it.
+_WIRE_PREFIX_BYTES = 24
+
+
+def _document_guide_echo(guide: Any) -> str:
+    """Return the source id a ``DocumentGuide`` labels itself with, or ``""``.
+
+    The label is optional on the wire, so an empty return means *unlabelled*,
+    never *mismatched*.
+    """
+
+    if not guide.HasField("source") or not guide.source.HasField("source_id"):
+        return ""
+    return str(guide.source.source_id.id)
+
+
+def _guide_echo_diagnostic(echoes: Iterable[str]) -> list[str]:
+    """Render observed guide echoes for ``RPCError.found_ids``."""
+
+    return [echo or "<unlabelled>" for echo in echoes]
+
+
+def _guide_failure(
+    reason: str,
+    *,
+    source_id: str,
+    method_id: str,
+    response: Any,
+    echoes: Sequence[str],
+) -> DecodingError:
+    """Build a rejected-guide error that can be diagnosed from a CI log alone.
+
+    The original strict-echo branches reported neither the observed ids nor the
+    guide count, which is why issue #2276 could not be closed from the nightly
+    output. The counts and ids go in the *message*, which is what a pytest
+    traceback prints in full.
+
+    ``raw_response`` carries only a short structural prefix of the wire bytes --
+    enough to read which field leads the first guide, which is the question
+    these branches exist to answer. It is capped *here* rather than left to
+    ``_truncate_response_preview``: hex-encoding makes the credential shapes
+    that ``scrub_secrets`` looks for unmatchable, and ``NOTEBOOKLM_DEBUG=1``
+    otherwise opts out of truncation entirely, which would splice a whole
+    model-written summary of the user's source into the exception string.
+    """
+
+    observed = ", ".join(_guide_echo_diagnostic(echoes)) or "<none>"
+    wire = response.SerializeToString()
+    return DecodingError(
+        f"{reason} (requested={source_id}, guides={len(response.guides)}, "
+        f"observed=[{observed}], bytes={len(wire)})",
+        method_id=method_id,
+        found_ids=_guide_echo_diagnostic(echoes),
+        raw_response=wire[:_WIRE_PREFIX_BYTES].hex(),
+    )
+
+
+def select_document_guide(response: Any, *, source_id: str, method_id: str) -> Any:
+    """Pick the ``DocumentGuide`` describing ``source_id`` from a non-empty response.
+
+    ``DocumentGuide.source #1`` is optional in practice: a live probe on
+    2026-08-31 (issue #2276) found text sources echo the requested id while URL
+    sources omit field #1 from the wire entirely, with no substitute identifier
+    elsewhere in the message. The same probe found the endpoint rejects a
+    two-source request with ``INVALID_ARGUMENT``, so a lone unlabelled guide can
+    only describe the source that was asked about. Treating the missing echo as
+    a mismatch therefore rejected guides the server really had returned.
+
+    The rule matches ``refresh``/``check_freshness``: only a *populated* and
+    *different* echo is a decoding failure. Past one guide the response is
+    ambiguous, so an exact match becomes mandatory again. See
+    ``docs/android/proto-evidence-ledger.md#document-guide-source-echo``.
+    """
+
+    if not response.guides:
+        raise ValueError("select_document_guide requires a non-empty guides list")
+    echoes = [_document_guide_echo(guide) for guide in response.guides]
+    matches = [
+        guide for guide, echo in zip(response.guides, echoes, strict=True) if echo == source_id
+    ]
+    if len(matches) > 1:
+        raise _guide_failure(
+            "Android source guide response contained duplicate source ids",
+            source_id=source_id,
+            method_id=method_id,
+            response=response,
+            echoes=echoes,
+        )
+    if matches:
+        return next(iter(matches))
+    sole_unlabelled = len(response.guides) == 1 and not any(echoes)
+    if not sole_unlabelled:
+        raise _guide_failure(
+            "Android source guide response did not match the requested source id",
+            source_id=source_id,
+            method_id=method_id,
+            response=response,
+            echoes=echoes,
+        )
+    # The sole unlabelled guide: the normal shape for a URL source, not an
+    # anomaly, so this is deliberately not logged.
+    return next(iter(response.guides))
+
+
+__all__ = ["decode_source", "decode_sources", "select_document_guide"]
