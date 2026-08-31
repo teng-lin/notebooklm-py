@@ -7,25 +7,45 @@ setup (scrubbing, matchers, record modes).
 
 ## Layout
 
+Cassettes are split by **client tier** — the wire protocol they were recorded
+against. Each tier owns a top-level subdirectory; nothing lives loose in
+`tests/cassettes/` itself.
+
 ```text
 tests/cassettes/
-├── README.md                           (this file)
-├── <object>_<operation>.yaml           (recorded interactions or synthetic error cassettes)
-├── <object>_<operation>_<context>.yaml (recorded interactions with extra context)
-├── gzip_coverage/
-│   └── *.yaml                          (derived replay fixtures for gzip coverage)
-└── examples/
-    └── example_<description>.yaml      (illustrative fixtures, not recordings)
+├── README.md                               (this file)
+├── web/                                    Web batchexecute RPC (YAML, vcrpy)
+│   ├── <object>_<operation>.yaml           (recorded interactions or synthetic error cassettes)
+│   ├── <object>_<operation>_<context>.yaml (recorded interactions with extra context)
+│   ├── gzip_coverage/
+│   │   └── *.yaml                          (derived replay fixtures for gzip coverage)
+│   └── examples/
+│       └── example_<description>.yaml      (illustrative fixtures, not recordings)
+└── android/                                Android gRPC (sanitized protobuf JSON)
+    └── *.grpc.json
 ```
+
+`web/` is the VCR `cassette_library_dir` (`tests/vcr_config.py`), so cassette
+names in test code are **relative to `web/`** and carry no tier prefix:
+
+```python
+@notebooklm_vcr.use_cassette("notebooks_list.yaml")          # web/notebooks_list.yaml
+@notebooklm_vcr.use_cassette("examples/example_scrubbed_cookies.yaml")
+```
+
+`android/` is not a vcrpy corpus at all — it replays through a consumer-owned
+gRPC channel seam (`tests/unit/android/test_grpc_cassette.py`,
+`tests/integration/test_android_grpc_cassette.py`), which resolves those paths
+itself.
 
 ## Naming convention
 
-### Real cassettes — `<object>_<operation>[_<context>].yaml`
+### Web cassettes — `web/<object>_<operation>[_<context>].yaml`
 
-Recorded against the live NotebookLM API. Most live in the top level of
-`tests/cassettes/`. A few top-level `error_synthetic_*.yaml` files are
-synthetic error recordings used by error-replay tests, and
-`gzip_coverage/` holds a derived replay cassette for gzip decoding coverage.
+Recorded against the live NotebookLM API. Most live directly in `web/`. A few
+`web/error_synthetic_*.yaml` files are synthetic error recordings used by
+error-replay tests, and `web/gzip_coverage/` holds a derived replay cassette
+for gzip decoding coverage.
 
 `<object>` is the API surface — typically the `client.<area>` namespace name:
 
@@ -53,51 +73,64 @@ operation. Use it when one operation has several recordings:
 Keep the slug **lowercase, words separated by `_`** to match the basename
 literals in the repair allowlist and shape-lint xfail lists.
 
-### Example cassettes — `examples/example_<description>.yaml`
+### Example cassettes — `web/examples/example_<description>.yaml`
 
 Illustrative fixtures used by `tests/integration/test_vcr_example.py` to
 demonstrate the cassette format, scrubbing pipeline, and `use_cassette`
 decorator. They are **hand-crafted, not real recordings**, and target
 `httpbin.org` rather than the live NotebookLM API.
 
-Always live under the `examples/` subdirectory, always prefixed `example_`.
-Tests that reference them must use the subpath:
+Always live under `web/examples/`, always prefixed `example_`. Tests that
+reference them use the `examples/`-relative subpath (the `web/` prefix is
+implied by `cassette_library_dir`):
 
 ```python
 @notebooklm_vcr.use_cassette("examples/example_scrubbed_cookies.yaml")
 ```
 
 The subdirectory placement keeps illustrative fixtures out of the replay-time
-real-cassette discovery in `tests/integration/conftest.py` (`_real_cassettes`).
-Cleanliness and shape guards are broader: CI runs
-`tests/scripts/check_cassettes_clean.py --strict --recursive`, and golden decode
-coverage also scans recursively while excluding `examples/`.
+real-cassette discovery in `tests/integration/conftest.py` (`_real_cassettes`),
+which globs `web/*.yaml` non-recursively. Cleanliness and shape guards are
+broader: CI runs `tests/scripts/check_cassettes_clean.py --strict --recursive`
+over the whole tree, and golden decode coverage also scans recursively while
+excluding `examples/`.
+
+### Android cassettes — `android/*.grpc.json`
+
+Sanitized protobuf captures replayed through the test-only gRPC channel seam
+(`@pytest.mark.grpc_cassette`). They are JSON, not YAML, and are never loaded
+by vcrpy. See [docs/development.md](../../docs/development.md) for the Android
+recording workflow.
 
 ## When to add a cassette
 
-- **New real cassette**: record against the live API with
+- **New web cassette**: record against the live API with
   `NOTEBOOKLM_VCR_RECORD=1`. This uses VCR `new_episodes` mode: existing
   matching interactions replay, and only missing ones append. To fully
-  re-record an existing cassette, delete or move it first. The slug is
-  `<object>_<operation>` plus an optional `_<context>` if the test parametrizes.
+  re-record an existing cassette, delete or move it first. VCR writes it into
+  `tests/cassettes/web/` automatically. The slug is `<object>_<operation>`
+  plus an optional `_<context>` if the test parametrizes.
   Verify sensitive data is scrubbed
-  (`uv run python tests/scripts/check_cassettes_clean.py --strict --recursive`)
+  (`uv run python tests/scripts/check_cassettes_clean.py --strict`)
   before committing.
   Mutation cassettes that return resource UUIDs and feed them into later
   requests should additionally use `ResourceIdCassetteScrubber` from
   `tests/vcr_config.py`; it preserves equality with deterministic reserved
   UUID placeholders without committing account-linkable notebook/source IDs.
-- **New illustrative example**: hand-author the YAML under `examples/`
+- **New illustrative example**: hand-author the YAML under `web/examples/`
   with the `example_` prefix. Reference it from the test via the
   `examples/example_<description>.yaml` subpath.
 
 ## Related
 
 - [tests/vcr_config.py](../vcr_config.py) — VCR configuration, scrubbers,
-  matchers (`rpcids`, `freq`).
+  matchers (`rpcids`, `freq`), and the `cassette_library_dir` that pins web
+  cassette lookups to `web/`.
 - [tests/cassette_patterns.py](../cassette_patterns.py) — canonical scrub
   pattern registry.
 - [tests/scripts/check_cassettes_clean.py](../scripts/check_cassettes_clean.py)
   — CI/repo-lint guard that asserts no sensitive data slips into cassettes.
+  Its no-argument scan of `tests/cassettes/` always recurses, so it covers
+  every tier.
 - [docs/development.md](../../docs/development.md) — recording workflow,
   test notebook IDs, scrubbing details.

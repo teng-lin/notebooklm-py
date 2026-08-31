@@ -3049,11 +3049,11 @@ Observed codes:
 | Payload | RPC | Where |
 |---------|-----|-------|
 | `[3]` INVALID_ARGUMENT | `CREATE_ARTIFACT` (`R7cb6c`) | Live 2026-08-13: audio overview on a source-less notebook |
-| `[3]` INVALID_ARGUMENT | streamed chat | `tests/cassettes/chat_ask_oversized_rejection.yaml` (#1472) |
-| `[3]` INVALID_ARGUMENT | `SHARE_NOTEBOOK` (`QDyure`) | `tests/cassettes/cli_share_add.yaml`, `cli_share_remove.yaml` — swallowed; the flow reports success |
-| `[3]` INVALID_ARGUMENT | `SHARE_ARTIFACT` (`RGP97b`) | `tests/cassettes/notebooks_share.yaml` — swallowed; the flow reports success |
+| `[3]` INVALID_ARGUMENT | streamed chat | `tests/cassettes/web/chat_ask_oversized_rejection.yaml` (#1472) |
+| `[3]` INVALID_ARGUMENT | `SHARE_NOTEBOOK` (`QDyure`) | `tests/cassettes/web/cli_share_add.yaml`, `cli_share_remove.yaml` — swallowed; the flow reports success |
+| `[3]` INVALID_ARGUMENT | `SHARE_ARTIFACT` (`RGP97b`) | `tests/cassettes/web/notebooks_share.yaml` — swallowed; the flow reports success |
 | `[5]` NOT_FOUND | `CREATE_ARTIFACT`, `RETRY_ARTIFACT`, `REVISE_SLIDE`, `GET_NOTEBOOK` | Live 2026-08-13 (unknown notebook / artifact id); #114 / #294 |
-| `[13]` INTERNAL | `REMOVE_RECENTLY_VIEWED` (`fejl7e`) | `tests/cassettes/notebooks_remove_from_recent.yaml` — treated as a **successful** no-op |
+| `[13]` INTERNAL | `REMOVE_RECENTLY_VIEWED` (`fejl7e`) | `tests/cassettes/web/notebooks_remove_from_recent.yaml` — treated as a **successful** no-op |
 | `[8, null, [[…UserDisplayableError…]]]` | any | The rate-limit / quota shape |
 
 A sweep of all 141 cassettes found 397 `wrb.fr` frames, only 5 of them

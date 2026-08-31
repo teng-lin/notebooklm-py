@@ -106,7 +106,7 @@ The test suite is split into three tiers by network/auth dependency. Place new t
 | Tier | Location | What lives here | Network | Auth |
 |------|----------|-----------------|---------|------|
 | Unit | `tests/unit/` | Pure-Python tests + `pytest_httpx` (`httpx_mock`) request-level mocks. Encoder/decoder, dataclasses, helpers, CLI boundary, and httpx_mock-driven API tests. | None (mocked) | None |
-| Integration | `tests/integration/` | VCR cassette replay only — `@pytest.mark.vcr` / `notebooklm_vcr.use_cassette(...)` against recorded fixtures in `tests/cassettes/`. | None (replayed) | None |
+| Integration | `tests/integration/` | VCR cassette replay only — `@pytest.mark.vcr` / `notebooklm_vcr.use_cassette(...)` against recorded fixtures in `tests/cassettes/web/`. | None (replayed) | None |
 | E2E | `tests/e2e/` | Real NotebookLM API. Marked `@pytest.mark.e2e`; excluded from the default `pytest` run via `addopts = --ignore=tests/e2e`. | Real | Required (`notebooklm login`) |
 
 Run a tier explicitly:

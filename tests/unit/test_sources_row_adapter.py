@@ -616,7 +616,7 @@ def test_source_row_rejects_boolean_timestamps() -> None:
 # --- #2113: SourceRow.drive_document_id (the add_drive idempotency key) ------
 
 #: A Drive file id as it appears on the wire (44-char Base64URL), taken from the
-#: live ADD_SOURCE capture in ``tests/cassettes/sources_add_drive.yaml``.
+#: live ADD_SOURCE capture in ``tests/cassettes/web/sources_add_drive.yaml``.
 _DRIVE_FILE_ID = "1oAk_INJHbIPsIh49jgNqj3FESSGHZrzxFY7t05Lvvl0"
 
 
@@ -624,7 +624,7 @@ def _live_google_docs_row(document_id: str = _DRIVE_FILE_ID) -> SourceRow:
     """The live-captured Google-native Drive row (``metadata[0]`` block).
 
     Copied verbatim (ids aside) from the ADD_SOURCE response in
-    ``tests/cassettes/sources_add_drive.yaml`` — note that NO url slot is
+    ``tests/cassettes/web/sources_add_drive.yaml`` — note that NO url slot is
     populated, which is the whole reason #2113 existed.
     """
     return SourceRow.from_entry(
@@ -684,7 +684,7 @@ def test_drive_document_id_is_none_for_web_page_row() -> None:
     """A live-shaped web-page row (``metadata[0]`` null, URL at ``[7]``) yields None.
 
     Shape from the GET_NOTEBOOK capture in
-    ``tests/cassettes/sources_check_freshness_drive.yaml``.
+    ``tests/cassettes/web/sources_check_freshness_drive.yaml``.
     """
     row = SourceRow.from_entry(
         [

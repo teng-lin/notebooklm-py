@@ -123,7 +123,7 @@ class TestVCRWithNotebookLMPatterns:
 #     NOTEBOOKLM_VCR_RECORD=1 pytest tests/integration/test_vcr_example.py::test_list_notebooks_vcr -v
 #
 # 3. Verify the cassette is properly scrubbed:
-#     cat tests/cassettes/list_notebooks_real.yaml | grep -E "SID|HSID|SNlM0e"
+#     cat tests/cassettes/web/list_notebooks_real.yaml | grep -E "SID|HSID|SNlM0e"
 #     # Should show SCRUBBED values, not real tokens
 #
 # 4. Future runs will replay from cassette (no auth needed):

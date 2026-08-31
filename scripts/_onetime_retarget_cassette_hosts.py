@@ -58,7 +58,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # ``gzip_coverage/artifacts_revise_slide_gzipped.yaml``, whose test hardcodes
 # the legacy URL and matches on host -- cassette and test are a coupled,
 # self-consistent pair. Rewriting one without the other breaks it.
-CASSETTE_GLOB = "tests/cassettes/*.yaml"
+CASSETTE_GLOB = "tests/cassettes/web/*.yaml"
 
 LEGACY_HOST = "notebooklm.google.com"
 REBRAND_HOST = "notebook.google.com"

@@ -411,7 +411,7 @@ never triggered it.
 
 ### 4.7 Confirmed on the web wire: `GET_NOTEBOOK` carries the same `TierLimits`
 
-Checked against the committed VCR cassettes (`tests/cassettes/*.yaml`, 35 contain `rLM1Ne`), decoding
+Checked against the committed VCR cassettes (`tests/cassettes/web/*.yaml`, 35 contain `rLM1Ne`), decoding
 the batchexecute envelope directly. **Answer: yes.**
 
 `GET_NOTEBOOK` (`rLM1Ne` → `GetProject`) returns the tier block at **top-level index 10 = proto tag 11**

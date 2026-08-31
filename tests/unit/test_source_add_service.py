@@ -1158,7 +1158,7 @@ def _drive_source(source_id: str, file_id: str, title: str = "Drive Doc") -> Sou
     """A Drive-backed row, built from the captured wire shape.
 
     Copied from the live ``GET_NOTEBOOK`` capture in
-    ``tests/cassettes/sources_check_freshness_drive.yaml`` (the same shape
+    ``tests/cassettes/web/sources_check_freshness_drive.yaml`` (the same shape
     ``tests/integration/test_sources_idempotency.py::_google_docs_source_row``
     uses): the Drive block sits at ``metadata[0]`` and **no** URL slot is
     populated — which is exactly why the pre-#2113 URL-based probe could never

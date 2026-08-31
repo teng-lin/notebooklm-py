@@ -106,7 +106,7 @@ def _build_batchexecute_body(rpc_id: str, args: list[Any]) -> str:
     is ``[[[rpc_id, "<args_json>", null, "generic"]]]`` and ``<args_json>``
     is itself the JSON encoding of the positional arguments. This is the
     shape captured by real cassettes (see e.g. the ``gArtLc`` / ``rLM1Ne``
-    entries in ``tests/cassettes/artifacts_list.yaml``).
+    entries in ``tests/cassettes/web/artifacts_list.yaml``).
     """
     args_json = json.dumps(args, separators=(",", ":"))
     envelope = json.dumps([[[rpc_id, args_json, None, "generic"]]], separators=(",", ":"))

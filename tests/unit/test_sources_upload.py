@@ -333,7 +333,7 @@ class TestExtractYoutubeVideoId:
 # A decoded GET_NOTEBOOK payload for a notebook with no sources, in the shape
 # the server actually sends: the title in slot 0, and slot 1 **elided to None**
 # rather than an empty list. Verified against the recorded zero-source frame in
-# ``tests/cassettes/notebook_zero_sources.yaml``. ``SourceLister._extract_sources_list``
+# ``tests/cassettes/web/notebook_zero_sources.yaml``. ``SourceLister._extract_sources_list``
 # has a dedicated branch for that ``None`` (its comment names this very cassette),
 # so a ``[]`` here would decode to the same ``[]`` while exercising the *other*
 # branch — the one a notebook that once had sources returns.

@@ -50,7 +50,7 @@ pytestmark = [
     ),
 ]
 
-_CASSETTE_DIR = Path(__file__).resolve().parent.parent / "cassettes"
+_CASSETTE_DIR = Path(__file__).resolve().parent.parent / "cassettes" / "web"
 
 
 def _real_recorded_bodies(limit: int = 4) -> list[tuple[str, bytes]]:

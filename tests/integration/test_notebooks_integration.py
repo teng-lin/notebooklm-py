@@ -194,7 +194,7 @@ class TestGetNotebook:
     ):
         """Regression: ``Notebook.sources_count`` is derived from ``data[1]``.
 
-        Pinned to the shape captured in ``tests/cassettes/notebooks_get.yaml``
+        Pinned to the shape captured in ``tests/cassettes/web/notebooks_get.yaml``
         (a real GET_NOTEBOOK response) — two PDF source entries at index 1.
         If Google ever moves the source list, this test fails before any
         downstream code that depends on ``sources_count`` (notably the

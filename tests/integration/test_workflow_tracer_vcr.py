@@ -75,7 +75,7 @@ from tests.vcr_config import _is_vcr_record_mode, notebooklm_vcr
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
 CASSETTE_NAME = "workflow_tracer_bullet.yaml"
-CASSETTE_PATH = Path(__file__).parent.parent / "cassettes" / CASSETTE_NAME
+CASSETTE_PATH = Path(__file__).parent.parent / "cassettes" / "web" / CASSETTE_NAME
 
 # Wikipedia is stable, fast to process, and produces a short-but-non-trivial
 # source. Picked because the page is text-only (no PDFs/embeds) and the title

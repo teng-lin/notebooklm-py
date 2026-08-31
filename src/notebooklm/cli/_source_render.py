@@ -136,7 +136,7 @@ def _print_drive_lines(src: Source) -> None:
     The two lines are gated **independently**, and that is load-bearing rather
     than defensive: the id and the status decode from structurally unrelated
     wire slots, and the only Drive row this project has captured
-    (``tests/cassettes/sources_add_drive.yaml``) carries an id with **no**
+    (``tests/cassettes/web/sources_add_drive.yaml``) carries an id with **no**
     health slot at all. Gating the id on the status would blank #2113's whole
     reason for existing on the most common real shape.
     """

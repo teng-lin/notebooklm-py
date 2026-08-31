@@ -187,7 +187,7 @@ allowlist manifests updated in the same PR. Real cassettes live in
 `tests/cassettes/`, not under `tests/integration/`.
 
 `test_gzip_cassette_replay.py` is VCR-tier, not `allow_no_vcr`: it uses a scoped
-VCR instance over a derived cassette in `tests/cassettes/gzip_coverage/`.
+VCR instance over a derived cassette in `tests/cassettes/web/gzip_coverage/`.
 
 ## When to use `@pytest.mark.vcr` vs `@notebooklm_vcr.use_cassette`
 

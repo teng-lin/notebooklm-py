@@ -33,7 +33,7 @@ from .conftest import (
 
 #: Ids/titles copied from the live-captured Drive ``ADD_SOURCE`` response used by
 #: ``tests/unit/test_sources_row_adapter.py::_live_google_docs_row`` (itself taken
-#: verbatim from ``tests/cassettes/sources_add_drive.yaml``). Note the absent
+#: verbatim from ``tests/cassettes/web/sources_add_drive.yaml``). Note the absent
 #: ``url``: a Drive source populates no URL slot, which is why
 #: ``drive_document_id`` is the only handle on it (#2113).
 _DRIVE_FILE_ID = "1oAk_INJHbIPsIh49jgNqj3FESSGHZrzxFY7t05Lvvl0"
@@ -308,7 +308,7 @@ class TestSourceList:
         """A Drive row with an id but NO health claim keeps its id (#2113).
 
         This is the only Drive shape this project has actually captured: the
-        row in ``tests/cassettes/sources_add_drive.yaml`` carries a
+        row in ``tests/cassettes/web/sources_add_drive.yaml`` carries a
         ``documentId`` while its settings block is ``[None, 2]`` — no Drive
         status slot at all. The two fields decode from structurally unrelated
         slots, so gating the id on the status would blank #2113's entire reason

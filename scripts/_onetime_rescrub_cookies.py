@@ -4,7 +4,7 @@
 Re-scrubs the committed corpus for the name-agnostic cookie leak: cookies that
 were NOT on the name-anchored allowlist (``_ga`` / ``_ga_<id>`` / ``_gcl_au`` /
 ``AEC`` / ``SEARCH_SAMESITE`` …) kept their REAL values in committed cassettes.
-This walks every ``tests/cassettes/*.yaml``, parses it with PyYAML to recover
+This walks every ``tests/cassettes/web/*.yaml``, parses it with PyYAML to recover
 each request ``Cookie:`` and response ``Set-Cookie:`` header's LOGICAL value,
 computes the name-agnostic scrub via ``cassette_patterns.scrub_cookie_header`` /
 ``scrub_set_cookie``, and splices the cleared ``name=value`` pairs back into the
@@ -36,7 +36,7 @@ except ImportError:  # pragma: no cover
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _TESTS_DIR = _REPO_ROOT / "tests"
-_CASSETTE_DIR = _TESTS_DIR / "cassettes"
+_CASSETTE_DIR = _TESTS_DIR / "cassettes" / "web"
 sys.path.insert(0, str(_TESTS_DIR))
 
 from cassette_patterns import (  # noqa: E402

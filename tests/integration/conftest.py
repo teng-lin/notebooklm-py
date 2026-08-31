@@ -91,7 +91,7 @@ def android_grpc_cassette(
     recorded: list[tuple[Path, Path]] = []
 
     def bind(name: str) -> Any:
-        path = CASSETTES_DIR / "android" / f"{name}_recorded.grpc.json"
+        path = ANDROID_CASSETTES_DIR / f"{name}_recorded.grpc.json"
         return android_cassette_client(
             path,
             monkeypatch=monkeypatch,
@@ -115,11 +115,18 @@ def android_grpc_cassette(
 # VCR Cassette Availability Check
 # =============================================================================
 
-CASSETTES_DIR = Path(__file__).parent.parent / "cassettes"
+# Cassettes are split by client tier (see ``tests/cassettes/README.md``).
+# Both tier constants are spelled out rather than derived at each use site: an
+# untiered ``CASSETTES_DIR`` that silently meant "web" is exactly what let the
+# Android fixture below resolve under ``web/`` when the tiers were introduced.
+CASSETTES_ROOT = Path(__file__).parent.parent / "cassettes"
+WEB_CASSETTES_DIR = CASSETTES_ROOT / "web"
+ANDROID_CASSETTES_DIR = CASSETTES_ROOT / "android"
 
-# Real cassettes live at the top level of ``tests/cassettes/``; illustrative
-# fixtures (``example_*.yaml``) live in ``tests/cassettes/examples/`` per the
-# naming convention documented in ``tests/cassettes/README.md``.
+# Real Web cassettes live at the top level of ``tests/cassettes/web/``;
+# illustrative fixtures (``example_*.yaml``) live in
+# ``tests/cassettes/web/examples/`` per the naming convention documented in
+# ``tests/cassettes/README.md``.
 #
 # This filter decides whether the VCR integration tier has anything to replay:
 # - Globbing ``*.yaml`` (non-recursive) naturally skips the ``examples/``
@@ -129,8 +136,8 @@ CASSETTES_DIR = Path(__file__).parent.parent / "cassettes"
 #   filter — if a future contributor lands an ``example_*.yaml`` file at the
 #   top level by mistake, it still won't count as a real recording.
 _real_cassettes = (
-    [f for f in CASSETTES_DIR.glob("*.yaml") if not f.name.startswith("example_")]
-    if CASSETTES_DIR.exists()
+    [f for f in WEB_CASSETTES_DIR.glob("*.yaml") if not f.name.startswith("example_")]
+    if WEB_CASSETTES_DIR.exists()
     else []
 )
 

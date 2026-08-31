@@ -24,8 +24,8 @@ buffer we hand to vcrpy on replay).
 Run from the repo root::
 
     uv run python tests/scripts/inject_gzip_into_cassette.py \\
-        tests/cassettes/artifacts_revise_slide.yaml \\
-        tests/cassettes/gzip_coverage/artifacts_revise_slide_gzipped.yaml
+        tests/cassettes/web/artifacts_revise_slide.yaml \\
+        tests/cassettes/web/gzip_coverage/artifacts_revise_slide_gzipped.yaml
 
 Idempotent: re-running on a cassette that already advertises
 ``Content-Encoding: gzip`` rewrites it from scratch using the gzipped

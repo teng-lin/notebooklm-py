@@ -124,7 +124,7 @@ from tests.vcr_config import notebooklm_vcr
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
 CASSETTE_NAME = "research_deep_poll_long.yaml"
-CASSETTE_PATH = Path(__file__).parent.parent / "cassettes" / CASSETTE_NAME
+CASSETTE_PATH = Path(__file__).parent.parent / "cassettes" / "web" / CASSETTE_NAME
 
 # Minimum POLL_RESEARCH interactions the cassette must contain to be
 # meaningful. A full-lifecycle recording reaches ``completed`` after several

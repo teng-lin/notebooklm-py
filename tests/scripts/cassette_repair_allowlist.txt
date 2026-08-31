@@ -31,12 +31,14 @@
 
 # --- illustrative documentation fixtures (not real recordings) -------------
 # ``example_batchexecute_pattern.yaml`` + ``example_scrubbed_cookies.yaml``
-# were relocated to ``tests/cassettes/examples/`` in T8.E2 per the cassette
-# naming convention in ``tests/cassettes/README.md``. The default guard scan
-# (``tests/scripts/check_cassettes_clean.py``) globs ``tests/cassettes/*.yaml``
-# non-recursively, so files under ``examples/`` are no longer scanned — and
-# the allowlist entries that previously suppressed their (false-positive)
-# trailing-quote line-boundary "leak" became dead code. Removed in T8.E2.
+# were relocated to ``tests/cassettes/web/examples/`` in T8.E2 per the cassette
+# naming convention in ``tests/cassettes/README.md``. The guard
+# (``tests/scripts/check_cassettes_clean.py``) skips any file under an
+# ``examples/`` directory during directory scans, so those fixtures are not
+# scanned — and the allowlist entries that previously suppressed their
+# (false-positive) trailing-quote line-boundary "leak" became dead code.
+# Removed in T8.E2. (The ``examples/`` skip is what excludes them today; the
+# scan itself now recurses, so directory depth is no longer what saves them.)
 
 # --- spec-explicit entries (none remaining) -------------------------------
 # All spec-explicit phase-2 cassettes have been repaired or removed:

@@ -18,7 +18,7 @@ Usage:
 Recording new cassettes:
     1. Set NOTEBOOKLM_VCR_RECORD=1 (or =true, =yes)
     2. Run the test with valid authentication
-    3. Cassette is saved to tests/cassettes/
+    3. Cassette is saved to tests/cassettes/web/
     4. Verify sensitive data is scrubbed before committing
 
 CI Strategy:
@@ -829,7 +829,7 @@ _record_mode = "new_episodes" if _is_vcr_record_mode() else "none"
 # Main VCR instance for notebooklm-py tests
 notebooklm_vcr = vcr.VCR(
     # Cassette storage location
-    cassette_library_dir="tests/cassettes",
+    cassette_library_dir="tests/cassettes/web",
     # Record mode: 'none' = only replay (CI), 'new_episodes' = record if missing
     record_mode=_record_mode,
     # Match requests by method and path, plus body-level disambiguators:

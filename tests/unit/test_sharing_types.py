@@ -12,7 +12,7 @@ from notebooklm.rpc.types import ShareAccess, SharePermission, ShareViewLevel
 from notebooklm.types import SharedUser, ShareStatus
 
 #: The full ``GET_SHARE_STATUS`` payload as CAPTURED, copied verbatim from the
-#: response body recorded in ``tests/cassettes/cli_share_status.yaml`` and
+#: response body recorded in ``tests/cassettes/web/cli_share_status.yaml`` and
 #: re-confirmed byte-identical in shape on 10/10 notebooks in a 2026-08 live
 #: sweep. Not hand-authored: the older fixtures in this module stop at three
 #: elements, which is exactly why slots 2-3 went unread until #2130.

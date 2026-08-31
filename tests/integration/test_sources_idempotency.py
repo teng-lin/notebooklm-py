@@ -106,7 +106,7 @@ def _url_source_row(src_id: str, title: str, url: str | None) -> list:
 
     Mirrors the live-captured web-page shape
     ``[[id], title, [null, 28940, [ts, ns], [uuid, [ts, ns]], 5, null, 1, [url]], [null, 2]]``
-    from ``tests/cassettes/sources_check_freshness_drive.yaml``, trimmed to the
+    from ``tests/cassettes/web/sources_check_freshness_drive.yaml``, trimmed to the
     slots the probe paths read.
     """
     metadata: list = [None] * 8
@@ -120,8 +120,8 @@ def _google_docs_source_row(src_id: str, title: str, document_id: str) -> list:
     """One Drive row whose id lands in ``metadata[0]`` (googleDocsMetadata).
 
     Shape copied verbatim (ids aside) from the live GET_NOTEBOOK capture in
-    ``tests/cassettes/sources_check_freshness_drive.yaml`` and the live
-    ADD_SOURCE capture in ``tests/cassettes/sources_add_drive.yaml``: the Drive
+    ``tests/cassettes/web/sources_check_freshness_drive.yaml`` and the live
+    ADD_SOURCE capture in ``tests/cassettes/web/sources_add_drive.yaml``: the Drive
     metadata block sits at ``metadata[0]`` and **no** URL slot is populated —
     which is exactly why the old URL-based probe could never match (#2113).
     """
@@ -678,7 +678,7 @@ _DRIVE_ROW_BUILDERS = {
 }
 
 #: A Drive file id as it appears on the wire (44-char Base64URL), from the live
-#: ADD_SOURCE capture in ``tests/cassettes/sources_add_drive.yaml``.
+#: ADD_SOURCE capture in ``tests/cassettes/web/sources_add_drive.yaml``.
 _DRIVE_FILE_ID = "1oAk_INJHbIPsIh49jgNqj3FESSGHZrzxFY7t05Lvvl0"
 
 
@@ -772,7 +772,7 @@ async def test_add_drive_probe_ignores_a_pre_existing_copy_of_the_same_file(
 
     ``documentId`` is NOT unique within a notebook — the backend lets the same
     Drive file be added twice, and the live capture in
-    ``tests/cassettes/sources_check_freshness_drive.yaml`` contains exactly that
+    ``tests/cassettes/web/sources_check_freshness_drive.yaml`` contains exactly that
     (two source ids sharing one documentId). Without the baseline filter the
     probe would return the pre-existing copy and report success even though the
     create never landed, hiding the failure instead of surfacing it.

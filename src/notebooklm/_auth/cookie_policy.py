@@ -432,7 +432,7 @@ def missing_cookies_hint(
 # Cookie domains we extract / accept by default.
 #
 # Empirical justification: traced cassettes
-# (``tests/cassettes/*.yaml``) and the live auth-refresh path. Only the
+# (``tests/cassettes/web/*.yaml``) and the live auth-refresh path. Only the
 # following domains are actually exercised during login + token refresh +
 # source-add + chat-ask flows:
 #   - ``notebook.google.com`` (the default app host since #2067 — CLI RPCs

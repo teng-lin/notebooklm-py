@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pure-Python cassette guard — replacement for ``tests/check_cassettes_clean.sh``.
 
-Walks Web ``tests/cassettes/*.yaml`` plus Android ``*.grpc.json`` files (or any
+Walks Web ``tests/cassettes/web/*.yaml`` plus Android ``*.grpc.json`` files (or any
 explicit paths passed on the command line) and reports any cassette that
 contains sensitive data. Uses the canonical pattern registry in
 ``tests/cassette_patterns.py``.
@@ -94,7 +94,7 @@ def _load_allowlist(path: Path) -> set[str]:
 # files use placeholder cookie / token values with intentional formatting
 # quirks (truncated YAML strings, hand-edited content) that would trip the
 # leak detector even though they contain no actual secrets — see the
-# README in ``tests/cassettes/examples/`` for the design intent.
+# README in ``tests/cassettes/web/examples/`` for the design intent.
 #
 # The ``tests/integration/conftest.py`` cassette-availability check already
 # excludes ``example_*`` cassettes from the "real recordings present"
@@ -111,8 +111,10 @@ def _iter_cassettes(
 ) -> list[Path]:
     """Resolve CLI arguments into a concrete list of cassette files.
 
-    * If no paths are given, scan the configured cassette suffixes directly
-      under ``tests/cassettes/`` (or all descendants when ``recursive=True``).
+    * If no paths are given, scan the configured cassette suffixes across ALL
+      descendants of ``tests/cassettes/`` — always recursive, regardless of
+      ``recursive``, because the tier split (``web/``, ``android/``) leaves no
+      cassettes at the top level for a shallow scan to find.
     * If a directory is given, scan the configured cassette suffixes inside it
       (recursively when ``recursive=True``).
     * If a file is given, scan it directly.
@@ -133,11 +135,12 @@ def _iter_cassettes(
     hunting over a directory like ``tests/fixtures/`` (coderabbit review on
     #1266). Explicitly-named file paths are always scanned regardless.
 
-    The ``recursive`` flag is what P1-5 adds: CI now scans subdirectories of
-    ``tests/cassettes/`` (e.g. ``gzip_coverage/``) so a recorder cannot
-    smuggle a leak into a nested folder. The default stays non-recursive so
-    existing developer workflows (running the guard on a single file or the
-    top-level directory) are unchanged.
+    The ``recursive`` flag is what P1-5 adds: CI scans subdirectories of
+    ``tests/cassettes/`` (e.g. ``web/gzip_coverage/``) so a recorder cannot
+    smuggle a leak into a nested folder. It now governs only EXPLICITLY-named
+    directories — ``check_cassettes_clean.py tests/fixtures`` still means
+    "scan just that folder" — while the no-argument default recurses
+    unconditionally (see above).
     """
     glob_patterns = [(f"**/*{ext}" if recursive else f"*{ext}") for ext in extensions]
 
@@ -145,6 +148,12 @@ def _iter_cassettes(
         found: list[Path] = []
         for pat in glob_patterns:
             found.extend(d.glob(pat))
+        return sorted(set(found))
+
+    def _globdir_recursive(d: Path) -> list[Path]:
+        found: list[Path] = []
+        for ext in extensions:
+            found.extend(d.glob(f"**/*{ext}"))
         return sorted(set(found))
 
     def _is_example_path(p: Path) -> bool:
@@ -161,7 +170,14 @@ def _iter_cassettes(
     if not paths:
         if not DEFAULT_CASSETTE_DIR.exists():
             return []
-        return [p for p in _globdir(DEFAULT_CASSETTE_DIR) if _keep(p)]
+        # The default scan is ALWAYS recursive. Since the per-tier split
+        # (``web/``, ``android/``) landed, ``tests/cassettes/`` holds no
+        # cassette files of its own — a non-recursive default would scan zero
+        # files and report "OK: no cassettes to scan", turning a bare
+        # ``check_cassettes_clean.py`` invocation into a silent pass. The
+        # ``recursive`` flag still governs EXPLICITLY-named directories, where
+        # "scan just this folder" remains a meaningful request.
+        return [p for p in _globdir_recursive(DEFAULT_CASSETTE_DIR) if _keep(p)]
 
     resolved: list[Path] = []
     for raw in paths:
@@ -365,7 +381,7 @@ def main(argv: list[str] | None = None) -> int:
         nargs="*",
         help=(
             "Cassette file(s) or directory. If omitted, scans "
-            "tests/cassettes/*.yaml and *.grpc.json from the repo root."
+            "tests/cassettes/web/*.yaml and *.grpc.json from the repo root."
         ),
     )
     parser.add_argument(
@@ -383,10 +399,11 @@ def main(argv: list[str] | None = None) -> int:
         "--recursive",
         action="store_true",
         help=(
-            "Recurse through cassette subdirectories instead of scanning only "
-            "the top level. "
-            "Required in CI so a recorder cannot smuggle a leak into a nested "
-            "folder like ``tests/cassettes/gzip_coverage/``."
+            "Recurse into subdirectories of an EXPLICITLY-named directory "
+            "instead of scanning only its top level. The no-argument default "
+            "scan of ``tests/cassettes/`` always recurses, so this flag only "
+            "matters for directories passed on the command line (e.g. "
+            "``--secrets-only --recursive tests/fixtures``)."
         ),
     )
     parser.add_argument(

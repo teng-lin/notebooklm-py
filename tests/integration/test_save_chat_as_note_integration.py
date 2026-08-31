@@ -7,7 +7,7 @@ assert (a) the wire body matches our captured request byte-for-byte and
 (b) the returned ``Note`` is parsed correctly from the captured response.
 
 A VCR cassette would be the canonical fixture for this (per
-``tests/cassettes/notes_create*.yaml``), but recording a fresh cassette
+``tests/cassettes/web/notes_create*.yaml``), but recording a fresh cassette
 requires a live auth session against the real service. The captured
 request/response pair under ``tests/unit/fixtures/`` is the next-best
 thing — it carries the exact wire payload Google's web UI sends when

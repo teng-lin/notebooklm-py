@@ -123,7 +123,7 @@ except ImportError:  # pragma: no cover — libyaml is a hard dep on dev machine
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _TESTS_DIR = _REPO_ROOT / "tests"
-_CASSETTE_DIR = _TESTS_DIR / "cassettes"
+_CASSETTE_DIR = _TESTS_DIR / "cassettes" / "web"
 
 # Import the cassette helper through the historical tests-dir path used by this
 # script; keeping the path narrow avoids adding the repo root to ``sys.path``.
@@ -257,7 +257,7 @@ def main(argv: list[str] | None = None) -> int:
         nargs="*",
         help=(
             "Cassette file(s) to re-scrub. If omitted, walks "
-            "tests/cassettes/*.yaml from the repo root."
+            "tests/cassettes/web/*.yaml from the repo root."
         ),
     )
     args = parser.parse_args(argv)

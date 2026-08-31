@@ -40,7 +40,7 @@ from urllib.parse import parse_qs, urlparse
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CASSETTE_PATH = REPO_ROOT / "tests" / "cassettes" / "artifacts_poll_rename_wait.yaml"
+CASSETTE_PATH = REPO_ROOT / "tests" / "cassettes" / "web" / "artifacts_poll_rename_wait.yaml"
 
 # RPC IDs (mirror src/notebooklm/rpc/types.py — duplicated here so this script
 # can run without importing the notebooklm package).

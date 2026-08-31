@@ -141,7 +141,7 @@ async def test_get_user_settings_preserves_getter_contracts():
 # ---------------------------------------------------------------------------
 # Language extraction: optional-slot (None) vs envelope drift (raise).
 #
-# Wire shapes recorded against the live API (tests/cassettes/settings_*):
+# Wire shapes recorded against the live API (tests/cassettes/web/settings_*):
 #   GET_USER_SETTINGS inner: [[null,[..limits..],[true,null,null,true,["fr"]],
 #                             [[1]],[true,1,3,2]]]   -> language at [0][2][4][0]
 #   SET_USER_SETTINGS inner: [null,[..limits..],[true,null,null,true,["en"]],

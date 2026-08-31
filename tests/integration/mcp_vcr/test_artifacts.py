@@ -50,7 +50,7 @@ import urllib.parse
 
 import pytest
 
-from tests.integration.conftest import CASSETTES_DIR, skip_no_cassettes
+from tests.integration.conftest import WEB_CASSETTES_DIR, skip_no_cassettes
 from tests.vcr_config import notebooklm_vcr
 
 from .conftest import build_mcp_client
@@ -80,7 +80,7 @@ def _recorded_generate_source_ids(cassette: str) -> list[str]:
     UUIDs) keeps the test resilient to a future re-record while still producing a
     structurally-matching ``CREATE_ARTIFACT`` body.
     """
-    text = (CASSETTES_DIR / cassette).read_text(encoding="utf-8")
+    text = (WEB_CASSETTES_DIR / cassette).read_text(encoding="utf-8")
     for body in re.findall(r"body: (f\.req=[^\n]+)", text):
         f_req = urllib.parse.parse_qs(body).get("f.req", [])
         if not f_req:

@@ -6,7 +6,7 @@ existing VCR suite because every cassette dropped ``Content-Encoding``
 on record (``decode_compressed_response=True`` in
 :mod:`tests.vcr_config`). This module is the cassette half of the
 follow-up regression coverage for issue #773: a derived cassette under
-``tests/cassettes/gzip_coverage/`` carries a gzipped response body
+``tests/cassettes/web/gzip_coverage/`` carries a gzipped response body
 plus ``Content-Encoding: gzip``, replayed through the production
 streaming transport. Reverting the
 ``_STRIP_HEADERS_ON_REBUFFER`` filter in #771 makes this test fail with
@@ -41,7 +41,7 @@ pytestmark = pytest.mark.vcr
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-GZIP_COVERAGE_DIR = REPO_ROOT / "tests" / "cassettes" / "gzip_coverage"
+GZIP_COVERAGE_DIR = REPO_ROOT / "tests" / "cassettes" / "web" / "gzip_coverage"
 
 # Pin a no-decode VCR instance: vcrpy applies ``decode_response`` filter at
 # load time when ``decode_compressed_response`` is True, which would gunzip
@@ -64,7 +64,7 @@ _gzip_replay_vcr = vcr.VCR(
 
 
 # Replayed POST coordinates pulled from the source recording
-# ``tests/cassettes/artifacts_revise_slide.yaml``. We do not match on
+# ``tests/cassettes/web/artifacts_revise_slide.yaml``. We do not match on
 # ``f.req`` or rpcids here because the cassette has a single batchexecute
 # interaction — the default ``method/scheme/host/port/path`` matchers
 # already pin it uniquely.

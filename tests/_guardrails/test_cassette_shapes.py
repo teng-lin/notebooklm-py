@@ -69,7 +69,7 @@ except ImportError:  # pragma: no cover - libyaml ships with PyYAML wheels
 # ---------------------------------------------------------------------------
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CASSETTE_DIR = REPO_ROOT / "tests" / "cassettes"
+CASSETTE_DIR = REPO_ROOT / "tests" / "cassettes" / "web"
 BAD_FIXTURE_DIR = REPO_ROOT / "tests" / "fixtures" / "bad_cassettes"
 
 
@@ -573,7 +573,7 @@ def test_at_least_one_cassette_advertises_content_encoding_gzip() -> None:
     response header.
 
     Closes the test-coverage gap that hid #769. The fix lives in
-    ``tests/cassettes/gzip_coverage/`` plus the helper in
+    ``tests/cassettes/web/gzip_coverage/`` plus the helper in
     ``tests/scripts/inject_gzip_into_cassette.py`` that re-derives those
     cassettes from canonical recordings. If this assertion ever fails
     again, regenerate the gzip-coverage cassettes — do not silence the
@@ -588,14 +588,14 @@ def test_at_least_one_cassette_advertises_content_encoding_gzip() -> None:
         if _CONTENT_ENCODING_GZIP_RE.search(c.read_text(encoding="utf-8"))
     ]
     assert matches, (
-        "No cassette under tests/cassettes/ advertises Content-Encoding: gzip "
+        "No cassette under tests/cassettes/web/ advertises Content-Encoding: gzip "
         "on any response. The streaming rebuild path in "
         "notebooklm._web.transport.streaming_post.stream_post_with_size_cap is invisible to "
         "VCR replay without it (see #769/#771). Regenerate the gzip-coverage "
         "cassette(s) via:\n"
         "    uv run python tests/scripts/inject_gzip_into_cassette.py "
-        "tests/cassettes/<source>.yaml "
-        "tests/cassettes/gzip_coverage/<source>_gzipped.yaml"
+        "tests/cassettes/web/<source>.yaml "
+        "tests/cassettes/web/gzip_coverage/<source>_gzipped.yaml"
     )
 
 
@@ -638,7 +638,7 @@ def test_gzip_coverage_cassettes_round_trip_through_helper() -> None:
     coverage_dir = CASSETTE_DIR / "gzip_coverage"
     cassettes = sorted(coverage_dir.glob("*.yaml")) if coverage_dir.is_dir() else []
     assert cassettes, (
-        "No gzip-coverage cassettes found under tests/cassettes/gzip_coverage/. "
+        "No gzip-coverage cassettes found under tests/cassettes/web/gzip_coverage/. "
         "test_at_least_one_cassette_advertises_content_encoding_gzip should "
         "have failed first — investigate that failure before this one."
     )

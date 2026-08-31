@@ -3,7 +3,7 @@
 Why a *flat* placeholder set (and not a recorded-vs-replay registry)
 --------------------------------------------------------------------
 These tests run the real CLI -> Client -> RPC path, but VCR replays HTTP from
-``tests/cassettes/*.yaml``. The matcher (``tests/vcr_config.py`` —
+``tests/cassettes/web/*.yaml``. The matcher (``tests/vcr_config.py`` —
 ``_rpcids_matcher`` + ``_freq_body_matcher``) selects a cassette by the RPC
 method id (``rpcids=``) **plus the decoded body *shape***, and **never** by the
 notebook/source id in the request. The 105 cassettes were recorded against 15

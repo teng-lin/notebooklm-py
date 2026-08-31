@@ -143,7 +143,7 @@ _GRPC_STATUS_MESSAGES: dict[int, str] = {
 #   0     ``code`` (tag 1)   Live: ``[3]`` INVALID_ARGUMENT from CREATE_ARTIFACT
 #                            on a source-less notebook and ``[5]`` NOT_FOUND for
 #                            an unknown notebook id (2026-08-13); ``[13]`` in
-#                            tests/cassettes/notebooks_remove_from_recent.yaml;
+#                            tests/cassettes/web/notebooks_remove_from_recent.yaml;
 #                            ``8`` (RESOURCE_EXHAUSTED) leading the recorded
 #                            ``UserDisplayableError`` shape.
 #   1     ``message`` (tag 2) NEVER OBSERVED POPULATED. Null in the recorded
@@ -525,7 +525,7 @@ def _extract_status_code(error_info: Any) -> tuple[int, str] | None:
 
     Note: we do not claim these codes are unambiguously gRPC — REMOVE_RECENTLY_VIEWED
     returns ``[13]`` on what the client treats as a successful no-op (see
-    tests/cassettes/notebooks_remove_from_recent.yaml). Callers must respect
+    tests/cassettes/web/notebooks_remove_from_recent.yaml). Callers must respect
     ``allow_null`` semantics before treating the code as an error.
 
     Args:

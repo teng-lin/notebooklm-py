@@ -502,7 +502,7 @@ class ResearchResultRow:
         In the captures this is a 1-based bijection onto ``1..N`` over the
         discovered (kind-1) rows of one research task. It is **not** established
         to be the report's own citation numbering: #2141's evidence is a
-        range/count coincidence, and ``tests/cassettes/research_deep_poll_long.yaml``
+        range/count coincidence, and ``tests/cassettes/web/research_deep_poll_long.yaml``
         carries 24 such ordinals against a report with no ``[cite: N]`` markers at
         all. Do not resolve report markers through this without new evidence.
 

@@ -68,7 +68,7 @@ MUTABLE_NOTEBOOK_ID = os.environ.get(
 _WIKIPEDIA_SOURCE_ID = "466b9ee3-c1ce-45ef-861c-1d4bfcd939ad"
 
 CASSETTE_NAME = "generate_mind_map_chain.yaml"
-CASSETTE_PATH = Path(__file__).parent.parent / "cassettes" / CASSETTE_NAME
+CASSETTE_PATH = Path(__file__).parent.parent / "cassettes" / "web" / CASSETTE_NAME
 
 
 class TestMindMapChain:

@@ -745,7 +745,7 @@ def test_source_row_payload_keeps_the_file_id_without_a_health_slot() -> None:
     """Id and health decode from unrelated slots, so neither gates the other.
 
     This is the only Drive shape captured on the wire in this repo
-    (``tests/cassettes/sources_add_drive.yaml``): a ``documentId`` with no Drive
+    (``tests/cassettes/web/sources_add_drive.yaml``): a ``documentId`` with no Drive
     status slot at all.
     """
     row = _row(drive_document_id="1AbC", drive_status=None)

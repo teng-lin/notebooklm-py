@@ -513,7 +513,7 @@ class TestExtractRPCResult:
 
         REMOVE_RECENTLY_VIEWED legitimately returns `[13]` at index 5 as part
         of a successful no-op response the caller opts into with
-        allow_null=True (see tests/cassettes/notebooks_remove_from_recent.yaml).
+        allow_null=True (see tests/cassettes/web/notebooks_remove_from_recent.yaml).
         Don't raise in that case.
         """
         chunk = json.dumps(
@@ -1770,7 +1770,7 @@ class TestRaiseOnNullStatus:
         """Unchanged for every caller that did not opt in.
 
         ``REMOVE_RECENTLY_VIEWED`` answers ``[13]`` on what the client treats as
-        a successful no-op (tests/cassettes/notebooks_remove_from_recent.yaml),
+        a successful no-op (tests/cassettes/web/notebooks_remove_from_recent.yaml),
         so blanket strictness would have broken a recorded interaction.
         """
         for code in (3, 5, 7, 13, 16):

@@ -40,7 +40,7 @@ NOTEBOOK_ID = os.environ.get(
 )
 
 CASSETTE_NAME = "mind_maps_interactive.yaml"
-CASSETTE_PATH = Path(__file__).parent.parent / "cassettes" / CASSETTE_NAME
+CASSETTE_PATH = Path(__file__).parent.parent / "cassettes" / "web" / CASSETTE_NAME
 
 
 class TestMindMapsInteractive:

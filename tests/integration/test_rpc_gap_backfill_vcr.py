@@ -45,7 +45,7 @@ MUTABLE_NOTEBOOK_ID = os.environ.get(
 RESEARCH_TASK_ID = "task_backfill_001"
 RESEARCH_SOURCE_TITLE = "research backfill source"
 
-_CASSETTE_DIR = Path(__file__).resolve().parent.parent / "cassettes"
+_CASSETTE_DIR = Path(__file__).resolve().parent.parent / "cassettes" / "web"
 
 
 def _cassette_request_rpcids(cassette_name: str) -> set[str]:

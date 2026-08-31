@@ -330,7 +330,7 @@ def _notebook_meta(*, user_role=1, has_sharing=False):
     """Build a ``data[5]`` metadata block in the live 16-slot shape.
 
     Copied from a real ``LIST_NOTEBOOKS`` response (see
-    ``tests/cassettes/notebooks_list.yaml``): slot 0 is ``userRole``, slot 1 is
+    ``tests/cassettes/web/notebooks_list.yaml``): slot 0 is ``userRole``, slot 1 is
     the "has any sharing" flag, slot 5 is the last-modified instant, slot 8 the
     creation instant and slot 12 ``isPublic``.
     """
@@ -576,7 +576,7 @@ class TestNotebook:
             # Collaborator with edit rights (proto WRITER).
             (2, True, SharePermission.EDITOR, False),
             # Collaborator with read-only rights (proto READER). Observed live
-            # in tests/cassettes/notebooks_list.yaml ("Jane Austen").
+            # in tests/cassettes/web/notebooks_list.yaml ("Jane Austen").
             (3, True, SharePermission.VIEWER, False),
         ],
     )

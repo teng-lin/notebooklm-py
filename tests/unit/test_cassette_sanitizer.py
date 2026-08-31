@@ -69,7 +69,7 @@ def test_resource_id_cassette_scrubber_is_stable_distinct_and_idempotent() -> No
 
 
 def test_notebook_copy_cassette_commits_only_reserved_resource_uuids() -> None:
-    cassette = TESTS_DIR / "cassettes" / "notebooks_copy.yaml"
+    cassette = TESTS_DIR / "cassettes" / "web" / "notebooks_copy.yaml"
     resource_ids = set(
         re.findall(
             r"\b[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\b",

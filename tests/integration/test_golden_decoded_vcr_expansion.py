@@ -942,7 +942,7 @@ def test_golden_values_visible_in_cassette_bytes() -> None:
     appear in its cassette's recorded response, so the pins above are provably
     recording-derived (not synthesized by the client).
     """
-    cassette_dir = Path(__file__).resolve().parent.parent / "cassettes"
+    cassette_dir = Path(__file__).resolve().parent.parent / "cassettes" / "web"
     # ``(cassette, value)`` pairs — a list (not a dict) so a cassette can be
     # sampled more than once (e.g. an id AND a created_at epoch).
     samples = [

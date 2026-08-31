@@ -62,7 +62,7 @@ Two things follow, and they are easy to conflate:
 > migrated (the legacy host is a 302), so a session's CSRF/session pair is
 > *already* minted by `notebook.google.com` today and accepted by legacy
 > `batchexecute` — visible in twelve recorded interactions in
-> `tests/cassettes/collection_*.yaml`. Flipping makes the origin coherent; it
+> `tests/cassettes/web/collection_*.yaml`. Flipping makes the origin coherent; it
 > does not introduce a new dependency. Pre-cutover profiles were measured
 > against both hosts (#2067) and reached the rebrand host successfully
 > *without* their legacy-scoped `OSID`, because the accounts-scoped `LSID`

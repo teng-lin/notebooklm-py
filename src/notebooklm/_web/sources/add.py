@@ -657,7 +657,7 @@ class SourceAddService:
         # Capture baseline source ids before the first create attempt so the
         # probe can tell "this Drive add landed" from "the same Drive file was
         # already in the notebook". A ``documentId`` is NOT unique within a
-        # notebook — live capture (``tests/cassettes/sources_check_freshness_
+        # notebook — live capture (``tests/cassettes/web/sources_check_freshness_
         # drive.yaml``) holds two source ids sharing one documentId — so an
         # unfiltered match could hand back a pre-existing copy as if it were the
         # one just created, silently masking a failed create. ``None`` is the

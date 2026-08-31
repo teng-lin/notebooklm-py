@@ -101,7 +101,7 @@ MUTABLE_NOTEBOOK_ID = os.environ.get(
 _WIKIPEDIA_SOURCE_ID = "466b9ee3-c1ce-45ef-861c-1d4bfcd939ad"
 
 CASSETTE_NAME = "artifacts_poll_rename_wait.yaml"
-CASSETTE_PATH = Path(__file__).parent.parent / "cassettes" / CASSETTE_NAME
+CASSETTE_PATH = Path(__file__).parent.parent / "cassettes" / "web" / CASSETTE_NAME
 
 # Minimum number of LIST_ARTIFACTS (oUz7Ic) interactions the cassette must
 # carry. The whole point of this task is to capture a *real*

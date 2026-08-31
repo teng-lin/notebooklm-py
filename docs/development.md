@@ -1068,6 +1068,14 @@ The script is a manual maintainer helper — CI never runs it.
 NOTEBOOKLM_VCR_RECORD=1 uv run pytest tests/integration/test_vcr_*.py -v
 ```
 
+Cassettes are stored per client tier. VCR's `cassette_library_dir` is
+`tests/cassettes/web/`, so recordings land there automatically and cassette
+names in test code stay tier-free (`use_cassette("notebooks_list.yaml")`).
+Android gRPC captures live alongside in `tests/cassettes/android/` and are
+replayed through a different seam. See
+[tests/cassettes/README.md](../tests/cassettes/README.md) for the full layout
+and naming convention.
+
 > **Recording reads your real `~/.notebooklm` profile.** Normally the suite
 > pins `NOTEBOOKLM_HOME` at a throwaway tmp dir (autouse `_isolate_notebooklm_home`
 > in `tests/conftest.py`) so runs are reproducible and never touch your real
@@ -1188,7 +1196,7 @@ member of `RPCMethod` has **both**:
    (`RPCMethod.LIST_NOTEBOOKS`) OR by its raw RPC id string value
    (`"wXbhsf"`).
 2. **A cassette covering the RPC id** — at least one cassette YAML under
-   `tests/cassettes/` contains the RPC id string in its body.
+   `tests/cassettes/web/` contains the RPC id string in its body.
 
 The gate is a pure-text static check (no pytest, no network) and runs in the
 `quality` job of `test.yml`.

@@ -163,7 +163,7 @@ async def test_null_sources_slot_is_empty_notebook_not_malformed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # A genuinely empty notebook elides the sources slot as ``None`` (see
-    # tests/cassettes/notebook_zero_sources.yaml). Per issue #1159 this is a
+    # tests/cassettes/web/notebook_zero_sources.yaml). Per issue #1159 this is a
     # valid empty state and must return ``[]`` regardless of strict mode,
     # never raising or warning.
     monkeypatch.delenv("NOTEBOOKLM_STRICT_DECODE", raising=False)

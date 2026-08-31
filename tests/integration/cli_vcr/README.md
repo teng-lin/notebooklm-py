@@ -1,7 +1,7 @@
 # cli_vcr — CLI integration tests over VCR cassettes
 
 These tests run the **real** `CLI → Client → RPC` path, but VCR replays the HTTP
-traffic from `tests/cassettes/*.yaml` instead of hitting the live NotebookLM
+traffic from `tests/cassettes/web/*.yaml` instead of hitting the live NotebookLM
 service. They are the integration tier between pure unit tests (no network) and
 e2e tests (real API, real auth).
 

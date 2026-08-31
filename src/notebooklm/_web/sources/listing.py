@@ -196,7 +196,7 @@ class SourceLister:
             # instead of an empty list). This is a valid empty state, NOT a
             # malformed response, so return ``[]`` without raising even under
             # strict-decode — issue #1159 reserves the empty list for the
-            # genuinely-empty case (see tests/cassettes/notebook_zero_sources.yaml).
+            # genuinely-empty case (see tests/cassettes/web/notebook_zero_sources.yaml).
             return []
         if not isinstance(sources_list, builtins.list):
             return self._handle_malformed_list_response(

@@ -10,7 +10,7 @@ each one has **both**:
    name (e.g. ``RPCMethod.LIST_NOTEBOOKS``) OR by its raw RPC id string value
    (e.g. ``"wXbhsf"``).
 2. **A cassette covering the RPC id** — at least one cassette YAML under
-   ``tests/cassettes/`` contains the raw RPC id string in its body. This is a
+   ``tests/cassettes/web/`` contains the raw RPC id string in its body. This is a
    pure-text grep — the cassette format is YAML but we never parse it; any
    occurrence of the id within the file counts, because ``batchexecute`` URLs
    and request bodies include the id verbatim.
@@ -69,7 +69,14 @@ for _path in (_SRC, _REPO_ROOT):
 from notebooklm.rpc.types import RPCMethod  # noqa: E402
 
 TESTS_DIR = _REPO_ROOT / "tests"
-CASSETTES_DIR = TESTS_DIR / "cassettes"
+# Root of the per-tier cassette tree. Used ONLY to exclude recordings from the
+# test-reference grep — every tier counts, so this must stay the root and not
+# narrow to ``web/``, or Android ``*.grpc.json`` captures would leak into
+# ``_iter_test_files()`` and spuriously satisfy the reference check.
+CASSETTES_ROOT = TESTS_DIR / "cassettes"
+# The Web batchexecute corpus — what the cassette-presence check greps for
+# recorded RPC ids.
+CASSETTES_DIR = CASSETTES_ROOT / "web"
 
 # This script's own path — exclude it from the "test reference" search so the
 # enum-walk loop doesn't trivially satisfy the test-reference check.
@@ -103,15 +110,16 @@ def _iter_test_files() -> list[Path]:
 
     We walk the directory tree once and snapshot it as a sorted list so
     repeated callers (and the per-method test-reference check) see a
-    deterministic set. Cassettes live under ``tests/cassettes/`` but we
-    intentionally exclude them — the cassette presence check covers those.
+    deterministic set. Cassettes live under ``tests/cassettes/`` (every tier)
+    but we intentionally exclude them — the cassette presence check covers
+    those.
     """
     files: list[Path] = []
     for path in TESTS_DIR.rglob("*"):
         if not path.is_file():
             continue
         # Skip cassettes — they're covered by the separate cassette check.
-        if CASSETTES_DIR in path.parents or path == CASSETTES_DIR:
+        if CASSETTES_ROOT in path.parents or path == CASSETTES_ROOT:
             continue
         # Skip compiled bytecode under ``__pycache__``: ``.pyc`` files inline
         # source-level string constants like ``"wXbhsf"`` as raw UTF-8 bytes,
@@ -128,7 +136,7 @@ def _iter_test_files() -> list[Path]:
 
 
 def _iter_cassette_files() -> list[Path]:
-    """Return every ``*.yaml`` cassette under ``tests/cassettes/`` (sorted).
+    """Return every ``*.yaml`` cassette under ``tests/cassettes/web/`` (sorted).
 
     Sorted output keeps the gate deterministic when reporting failures and
     matches the style of the sister script ``check_cassettes_clean.py``.
@@ -212,7 +220,7 @@ def main() -> int:
         if not has_cassette:
             problems.append(
                 "missing cassette coverage (record a cassette under "
-                f"tests/cassettes/ whose body contains the RPC id '{method.value}')"
+                f"tests/cassettes/web/ whose body contains the RPC id '{method.value}')"
             )
         misses.append(
             f"MISSING: RPCMethod.{method.name} (id={method.value}): {'; '.join(problems)}"

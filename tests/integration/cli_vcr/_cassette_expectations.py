@@ -40,7 +40,7 @@ import yaml
 
 # Cassettes live at ``tests/cassettes`` — three parents up from this file
 # (``tests/integration/cli_vcr/_cassette_expectations.py``).
-_CASSETTE_DIR = Path(__file__).resolve().parents[2] / "cassettes"
+_CASSETTE_DIR = Path(__file__).resolve().parents[2] / "cassettes" / "web"
 
 # Google's anti-XSSI guard prefixes every batchexecute response body. Copied
 # (not imported) from ``tests/_guardrails/test_cassette_shapes.py``.
