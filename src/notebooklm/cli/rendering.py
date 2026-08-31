@@ -299,6 +299,7 @@ def get_source_type_display(source_type: str) -> str:
         "google_docs": "📄 Google Docs",
         "google_slides": "📊 Google Slides",
         "google_spreadsheet": "📊 Google Sheets",
+        "google_drive": "📁 Drive file",
         "pdf": "📄 PDF",
         "pasted_text": "📝 Pasted Text",
         "docx": "📝 DOCX",

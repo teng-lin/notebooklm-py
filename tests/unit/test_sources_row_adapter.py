@@ -404,20 +404,24 @@ def test_native_sheet_type_code_14_stays_spreadsheet() -> None:
     assert src.kind == SourceType.GOOGLE_SPREADSHEET
 
 
-def test_type_code_14_no_mime_stays_spreadsheet() -> None:
-    """type_code 14 with no MIME signal stays GOOGLE_SPREADSHEET (conservative)."""
+def test_type_code_14_no_mime_stays_drive() -> None:
+    """type_code 14 with no MIME signal decodes as GOOGLE_DRIVE.
+
+    14 is the backend's catch-all for a Drive file it gave no format-specific
+    code; with nothing to disambiguate on, reporting that is the honest answer.
+    """
     from notebooklm._types.sources import Source, SourceType
 
     src = Source.from_row(_row(_meta_with(type_code=14)))
-    assert src.kind == SourceType.GOOGLE_SPREADSHEET
+    assert src.kind == SourceType.GOOGLE_DRIVE
 
 
-def test_type_code_14_unknown_binary_mime_stays_spreadsheet() -> None:
-    """An unrecognized MIME under 14 is left as GOOGLE_SPREADSHEET, not relabeled/UNKNOWN."""
+def test_type_code_14_unknown_binary_mime_stays_drive() -> None:
+    """An unrecognized MIME under 14 is left as GOOGLE_DRIVE, not relabeled/UNKNOWN."""
     from notebooklm._types.sources import Source, SourceType
 
     src = Source.from_row(_row(_meta_with(type_code=14, mime="application/x-mystery")))
-    assert src.kind == SourceType.GOOGLE_SPREADSHEET
+    assert src.kind == SourceType.GOOGLE_DRIVE
 
 
 def test_non_14_type_code_with_pdf_mime_is_untouched() -> None:

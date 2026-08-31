@@ -22,6 +22,13 @@ def _settings_proto() -> Any:
     return cast(Any, source_settings_pb2)
 
 
+#: Mobile ``SourceContentType`` name -> the public ``Source._type_code``.
+#:
+#: Name-based rather than a straight integer copy so a renumbering on either
+#: side is caught instead of silently mistranslated. The two enums do in fact
+#: agree on every value both define, including 7 (GOOGLE_SHEET) and 14 (DRIVE);
+#: the map is kept explicit rather than collapsed to identity so that stays a
+#: checked fact.
 _SOURCE_TYPE_CODE_BY_NAME: dict[str, int] = {
     "SOURCE_CONTENT_TYPE_UNKNOWN": 0,
     "SOURCE_CONTENT_TYPE_GOOGLE_DOC": 1,
@@ -30,13 +37,14 @@ _SOURCE_TYPE_CODE_BY_NAME: dict[str, int] = {
     "SOURCE_CONTENT_TYPE_TEXT": 4,
     "SOURCE_CONTENT_TYPE_URL": 5,
     "SOURCE_CONTENT_TYPE_POWERPOINT": 6,
-    # Android uses 7 for Sheets; the established public/web code is 14.
-    "SOURCE_CONTENT_TYPE_GOOGLE_SHEET": 14,
+    "SOURCE_CONTENT_TYPE_GOOGLE_SHEET": 7,
     "SOURCE_CONTENT_TYPE_MARKDOWN": 8,
     "SOURCE_CONTENT_TYPE_YOUTUBE_VIDEO": 9,
     "SOURCE_CONTENT_TYPE_AUDIO": 10,
     "SOURCE_CONTENT_TYPE_WORD": 11,
     "SOURCE_CONTENT_TYPE_IMAGE": 13,
+    # The backend's catch-all for a Drive file it gives no format-specific code.
+    "SOURCE_CONTENT_TYPE_DRIVE": 14,
     "SOURCE_CONTENT_TYPE_CSV": 16,
     "SOURCE_CONTENT_TYPE_EPUB": 17,
 }

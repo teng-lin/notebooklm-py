@@ -546,7 +546,9 @@ async def test_source_codec_fixture_projects_status_kind_drive_and_order() -> No
         SourceType.WEB_PAGE,
         SourceType.PDF,
         SourceType.MARKDOWN,
-        SourceType.UNKNOWN,
+        # SOURCE_CONTENT_TYPE_DRIVE was absent from the name map and decoded as
+        # UNKNOWN (with a warning). It is code 14, the Drive catch-all.
+        SourceType.GOOGLE_DRIVE,
     ]
     assert [source.status for source in decoded] == [
         SourceStatus.READY,
@@ -651,7 +653,10 @@ async def test_source_enum_mapping_is_name_based_not_android_integer_copy() -> N
     decoded = (await sources.list("notebook-1"))[0]
     assert read_pb2.SOURCE_CONTENT_TYPE_GOOGLE_SHEET == 7
     assert decoded.kind is SourceType.GOOGLE_SPREADSHEET
-    assert decoded._type_code == 14
+    # 7 straight through. This used to be remapped to 14 because the public map
+    # called 14 GOOGLE_SPREADSHEET; 14 is the Drive catch-all, and both enums
+    # agree that 7 is the Sheet.
+    assert decoded._type_code == 7
     assert decoded.status is SourceStatus.UNKNOWN
     assert decoded.drive_status is DriveSourceStatus.UNKNOWN
 
@@ -755,5 +760,5 @@ async def test_notebook_metadata_composes_exact_android_source_collaborator() ->
         (SourceType.WEB_PAGE, "Website", "https://example.test/article"),
         (SourceType.PDF, "Paper", None),
         (SourceType.MARKDOWN, "Draft", None),
-        (SourceType.UNKNOWN, "Drive file", None),
+        (SourceType.GOOGLE_DRIVE, "Drive file", None),
     ]

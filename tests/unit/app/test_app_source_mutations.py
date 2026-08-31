@@ -466,17 +466,17 @@ def test_source_type_to_code_matches_decoder_map() -> None:
 
 @pytest.mark.asyncio
 async def test_add_drive_pdf_not_mislabeled_as_spreadsheet() -> None:
-    """A Drive PDF add must not surface as ``kind='google_spreadsheet'`` (#1828).
+    """A Drive PDF add must not surface as the Drive catch-all type (#1828).
 
-    The NotebookLM backend returns an ambiguous type code for Drive-hosted PDFs —
-    code ``14``, which the client otherwise maps to GOOGLE_SPREADSHEET. The declared
-    ``mime_type='pdf'`` is authoritative, so ``execute_source_add_drive`` re-stamps
-    the returned source's type code to PDF.
+    The NotebookLM backend returns code ``14`` for a Drive file it gives no
+    format-specific code, which maps to GOOGLE_DRIVE. The declared
+    ``mime_type='pdf'`` is authoritative, so ``execute_source_add_drive``
+    re-stamps the returned source's type code to PDF.
     """
     client = _client()
-    # Simulate the backend's ambiguous code (14 → GOOGLE_SPREADSHEET) on the raw add.
+    # Simulate the backend's catch-all code (14 → GOOGLE_DRIVE) on the raw add.
     added = Source(id="src_pdf", title="Report.pdf", _type_code=14)
-    assert added.kind is SourceType.GOOGLE_SPREADSHEET  # the bug, pre-stamp
+    assert added.kind is SourceType.GOOGLE_DRIVE  # the bug, pre-stamp
     client.sources.add_drive = AsyncMock(return_value=added)
     plan = SourceAddDrivePlan(
         notebook_id="nb_1",

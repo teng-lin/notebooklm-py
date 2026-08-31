@@ -300,7 +300,11 @@ async def test_pdf_url_title_fallback_applies_to_fulltext() -> None:
 
 @pytest.mark.asyncio
 async def test_native_sheet_type_code_14_fulltext_stays_spreadsheet() -> None:
-    """A native Sheet read via GET_SOURCE stays GOOGLE_SPREADSHEET (no regression, #1832)."""
+    """A native Sheet read via GET_SOURCE stays GOOGLE_SPREADSHEET (no regression, #1832).
+
+    The code it carries is now 7 — the Sheet's own code — rather than the Drive
+    catch-all 14 it used to be left at.
+    """
     from notebooklm.types import SourceType
 
     meta = [None] * 20
@@ -313,7 +317,7 @@ async def test_native_sheet_type_code_14_fulltext_stays_spreadsheet() -> None:
 
     fulltext = await renderer.get_fulltext("nb_1", "src_sheet")
 
-    assert fulltext._type_code == 14
+    assert fulltext._type_code == 7
     assert fulltext.kind == SourceType.GOOGLE_SPREADSHEET
 
 

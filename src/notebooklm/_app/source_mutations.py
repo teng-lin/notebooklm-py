@@ -549,10 +549,10 @@ _DRIVE_MIME_MAP: dict[DriveMimeChoice, str] = {
 #: The declared Drive MIME choice → the :class:`~notebooklm.types.SourceType` that
 #: labels the imported file.
 #:
-#: The NotebookLM backend returns an ambiguous type code for Drive imports: a
-#: Drive-hosted PDF comes back as code ``14``, which the client otherwise maps to
-#: :attr:`~notebooklm.types.SourceType.GOOGLE_SPREADSHEET`, mislabeling PDFs as
-#: spreadsheets (#1828). On the Drive add path the caller's declared ``mime_type``
+#: The NotebookLM backend returns a catch-all type code for most Drive imports:
+#: everything but a Doc or a PDF comes back as code ``14``
+#: (:attr:`~notebooklm.types.SourceType.GOOGLE_DRIVE`), so a Drive-hosted PDF or
+#: Sheet would lose its format (#1828). On the Drive add path the caller's declared ``mime_type``
 #: is authoritative for the imported file, so we stamp the corresponding type code
 #: onto the returned source rather than exposing the raw (ambiguous) backend code.
 _DRIVE_MIME_SOURCE_TYPE: dict[DriveMimeChoice, SourceType] = {
@@ -571,7 +571,7 @@ _SOURCE_TYPE_TO_CODE: dict[SourceType, int] = {
     SourceType.GOOGLE_DOCS: 1,
     SourceType.GOOGLE_SLIDES: 2,
     SourceType.PDF: 3,
-    SourceType.GOOGLE_SPREADSHEET: 14,
+    SourceType.GOOGLE_SPREADSHEET: 7,
 }
 
 
