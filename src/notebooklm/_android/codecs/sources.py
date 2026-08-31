@@ -330,13 +330,16 @@ def _skip_value(payload: bytes, offset: int, wire_type: int) -> int:
 def select_document_guide(response: Any, *, source_id: str, method_id: str) -> Any:
     """Pick the ``DocumentGuide`` describing ``source_id`` from a non-empty response.
 
-    ``DocumentGuide.source #1`` is optional in practice: a live probe on
-    2026-08-31 (issue #2276) found text sources echo the requested id while URL
-    sources omit field #1 from the wire entirely, with no substitute identifier
-    elsewhere in the message. The same probe found the endpoint rejects a
-    two-source request with ``INVALID_ARGUMENT``, so a lone unlabelled guide can
-    only describe the source that was asked about. Treating the missing echo as
-    a mismatch therefore rejected guides the server really had returned.
+    ``DocumentGuide.source #1`` is optional in practice. A live probe on
+    2026-08-31 (issue #2276) found the backend labels a guide with the
+    requested id on the **first** response for a source and omits field #1
+    from the wire on every repeat call -- same summary bytes, no substitute
+    identifier anywhere in the message. Source type does not predict it; the
+    unlabelled form is simply the steady state, so requiring the echo rejected
+    guides the server really had returned for all but each source's first
+    read. The same probe found the endpoint rejects a two-source request with
+    ``INVALID_ARGUMENT``, so a lone unlabelled guide can only describe the
+    source that was asked about.
 
     The rule matches ``refresh``/``check_freshness``: only a *populated* and
     *different* echo is a decoding failure. Past one guide the response is

@@ -3,7 +3,7 @@
 **Status:** admitted read, notebook, source/upload, artifact, chat, notes/sharing,
 organization, Research, and public account-settings contracts
 
-**Evidence snapshot:** 2026-08-31 (`GenerateDocumentGuides` source echo re-probed live)
+**Evidence snapshot:** 2026-08-31 (`GenerateDocumentGuides` echo and derived-read existence policing re-probed live)
 
 **Scope:** project/source reads; notebook operations; URL, maintenance, content, and generic file
 source operations; artifact list/get/create/derive/update/delete, native note-backed mind-map
@@ -111,7 +111,7 @@ fixtures. Hashes prevent a later local checkout from silently changing what was 
 | [`artifact-contracts-and-live-validation.md`](artifact-contracts-and-live-validation.md) | `58af0bbeebdfa6a6a7366577d90a5479bdf971a1ed76fe3d6d7d0b8420f8454d` | consolidated artifact generation, representation, data-table, retry/export, mind-map, and transfer evidence; preserves all four source-report hashes and cleanup qualifications |
 | [`file-transfer-evidence.md`](file-transfer-evidence.md) | `f09a518c398f7355f7ab55c69d6e990037c806a9cc3e3f1291de5efd4971a6a5` | official-app/headless PDF upload request, qualified CSV/DOCX compatibility boundary, and live artifact representation/direct infographic/slide transfer |
 | [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md) | `7e21ddb46ff851b9ae27c38c7ce6d18cfc6e4589f3730fe30160ef8f7dfcf585` | consolidated notebook copy/metadata, note/mind-map, label/collection, membership, cleanup, and public-qualification evidence; preserves all four source-report hashes |
-| [`endpoints.md`](endpoints.md) | `c4ed059c6812c5e7714366649592c41a1301cb83507770c37dc80df94600c8dd` | live request/response envelopes, route results, version-scoped APK inventories, captured note/sharing bytes, and the account-bootstrap replay boundary |
+| [`endpoints.md`](endpoints.md) | `e1dbbd0b98f6a65bb7a76ce3597282b15d4c884987f806b0744cf17ecbfb4248` | live request/response envelopes, route results, version-scoped APK inventories, captured note/sharing bytes, and the account-bootstrap replay boundary |
 
 The recovery method and the warning about duplicate packages are committed in
 [`README.md`](README.md#caveats-that-will-bite-you). Live request/response shapes are documented in
@@ -731,27 +731,38 @@ Blutter's generated-client binding proves `DeleteSources` returns
 ### Document-guide source echo
 
 `DocumentGuide.source #1` is **optional in practice**, so requested-vs-echoed identity on
-`GenerateDocumentGuides` is a *leak* check, not a *presence* check. A current authenticated probe
-(2026-08-31, issue #2276) requested one guide at a time for three URL sources and three
-pasted-text sources:
+`GenerateDocumentGuides` is a *leak* check, not a *presence* check. Two current authenticated probes
+(2026-08-31, issue #2276 then #2278) establish what governs it:
 
-| Source kind | `DocumentGuide` fields on the wire | Echo |
+| Call | `DocumentGuide` fields on the wire | Echo |
 |---|---|---|
-| pasted text / markdown | `#1`, `#2`, `#3`, empty `#4` | `#1.source_id.id` equals the requested id |
-| URL / web page | `#2`, `#3`, empty `#4` — **no `#1`** | absent |
+| first response for a source | `#1`, `#2`, `#3`, empty `#4` | `#1.source_id.id` equals the requested id |
+| every repeat call | `#2`, `#3`, empty `#4` — **no `#1`** | absent |
 
-The URL responses omit field `#1` from the serialized message entirely; the only other field
-present is a zero-length `#4`, which carries no identifier. That rules out the competing reading
-in which the server labels URL guides through an unmodelled `InputSource` branch (a crawled-document
-or web-content id) that our parser would report as `HasField("source_id") == False` — there is no
-such branch on the wire to miss. The same probe found that a two-source request is rejected with
-`INVALID_ARGUMENT`, so the endpoint is single-source and a lone unlabelled guide can only describe
-the source that was asked about.
+The second probe called `GenerateDocumentGuides` three times in a row for each of three
+never-before-read sources: every one returned the label on call 1 and omitted it on calls 2 and 3,
+with byte-identical summary lengths (930 / 1062 / 798 chars). The unlabelled form is therefore the
+steady state, and the labelled form is the exception.
+
+**Source type does not predict it**, contrary to the first reading recorded here. The initial probe
+compared three URL sources in a long-read notebook against three pasted-text sources in a fresh one
+and attributed the split to type; re-probing the same text sources hours later returned them
+*unlabelled*, and a URL source read for the first time returned *labelled*. Type, age and notebook
+were all confounded with call ordinal. Both shapes are now pinned against recorded bytes in
+`tests/cassettes/android/source_lifecycle_recorded.grpc.json` (interactions 10 and 11: the same
+source, read twice).
+
+The repeat responses omit field `#1` from the serialized message entirely; the only other field
+present is a zero-length `#4`, which carries no identifier. That rules out the competing reading in
+which the server relocates the label into an unmodelled `InputSource` branch that our parser would
+report as `HasField("source_id") == False` — there is no such branch on the wire to miss. The same
+probe found that a two-source request is rejected with `INVALID_ARGUMENT`, so the endpoint is
+single-source and a lone unlabelled guide can only describe the source that was asked about.
 
 `sources.get_guide` therefore accepts a sole unlabelled guide, keeps the hard failure for a
 *populated and different* echo, and still requires an exact match once more than one guide is
 returned — the same `if echoed_id and echoed_id != source_id` convention already used by
-`refresh` and `check_freshness`. The rejection paths now carry the requested id, every observed
+`refresh` and `check_freshness`. The rejection paths carry the requested id, every observed
 echo, the guide count, and each guide's field tags, because the original error carried none of
 them and could not be diagnosed from CI logs. The tags are reported instead of a wire-byte preview:
 an unlabelled guide's payload begins with `#2 snippet`, so any prefix would carry the start of a
@@ -759,12 +770,34 @@ model-written summary of the user's source into an error string that `NOTEBOOKLM
 untruncated.
 
 The probe also corroborates the `main_ideas #3` projection against the alternative reading of the
-captured app traffic (which annotates response `#3` as "(inferred) suggested questions"): all six
-sources returned five short noun phrases — `"Model Context Protocol"`, `"Centralised
-Authentication"`, `"Python Programming"` — none of them interrogative. `LoadSource` echoed the
-requested id on every probed source including the URL ones, so its sibling check is not affected;
-its unlabelled branch nonetheless now defers to `decode_source`, which reports missing-identifier
-drift instead of claiming the source does not exist.
+captured app traffic (which annotates response `#3` as "(inferred) suggested questions"): every
+probed source returned five short noun phrases — `"Model Context Protocol"`, `"Centralised
+Authentication"`, `"Python Programming"` — none of them interrogative.
+
+`LoadSource` echoed the requested id on every probed source and call, so its sibling check is not
+affected; its unlabelled branch nonetheless defers to `decode_source`, which reports
+missing-identifier drift instead of claiming the source does not exist.
+
+### Derived-read existence policing
+
+`get_guide` and `check_freshness` are **derived reads** under
+[ADR-0019](../adr/0019-error-and-return-contract.md): they do not police parent existence. Both
+Android RPCs are notebook-agnostic — they carry a source id and no project id — and a live probe
+(2026-08-31, issue #2278) confirmed the web backend is too: asked for a source of notebook B while
+naming notebook A, both backends returned B's guide. The adapter previously ran a `GetProject`
+pre-flight that raised `SourceNotFoundError`, which made the `notebook_id` argument meaningful on
+Android alone while diverging from web and costing a round-trip per call.
+
+The same probe pinned the target behaviour for a nonexistent source id:
+
+| | web | Android raw RPC | Android adapter (now) |
+|---|---|---|---|
+| `get_guide` | `SourceGuide("", ())` | `GenerateDocumentGuides` → `NOT_FOUND` | `SourceGuide("", ())` |
+| `check_freshness` | `True` | `CheckSourceFreshness` → **empty response** | `True` |
+
+`check_freshness` needed no mapping: the backend answers a bogus id with an empty
+`CheckSourceFreshness` response, which the existing decode already reads as fresh. `refresh` keeps
+its ownership check — mutating a missing source must still raise.
 
 The admitted source overlay also carries the public text, YouTube, and Drive-reference branches used
 by `add_text`, YouTube `add_url`, and `add_drive`; their exact fields are exercised by focused

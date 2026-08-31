@@ -38,6 +38,7 @@ from notebooklm._android.sources import (
     AndroidSourcesAPI,
 )
 from notebooklm._android.upload import AndroidUploadPipeline
+from notebooklm._types.research import SourceGuide
 from notebooklm.exceptions import (
     AuthError,
     DecodingError,
@@ -951,8 +952,6 @@ async def test_delete_and_rename_use_non_replayed_exact_wire_shapes() -> None:
     [
         ("rename", MUTATE_SOURCE_METHOD),
         ("refresh", REFRESH_SOURCE_METHOD),
-        ("check_freshness", CHECK_SOURCE_FRESHNESS_METHOD),
-        ("get_guide", GENERATE_DOCUMENT_GUIDES_METHOD),
         ("get_fulltext", LOAD_SOURCE_METHOD),
     ],
 )
@@ -969,10 +968,6 @@ async def test_global_source_operations_reject_cross_notebook_ids_before_io(
             await api.rename(NOTEBOOK_ID, SOURCE_A, "Renamed")
         elif operation == "refresh":
             await api.refresh(NOTEBOOK_ID, SOURCE_A)
-        elif operation == "check_freshness":
-            await api.check_freshness(NOTEBOOK_ID, SOURCE_A)
-        elif operation == "get_guide":
-            await api.get_guide(NOTEBOOK_ID, SOURCE_A)
         else:
             await api.get_fulltext(NOTEBOOK_ID, SOURCE_A)
 
@@ -1148,7 +1143,7 @@ def _guides_transport(*guides: sources_pb2.DocumentGuide) -> FakeTransport:
 
 @pytest.mark.asyncio
 async def test_guide_accepts_the_sole_unlabelled_guide() -> None:
-    """A URL source's guide omits ``DocumentGuide`` #1 entirely (issue #2276)."""
+    """Repeat guide reads omit ``DocumentGuide`` #1 entirely (issue #2276)."""
     transport = _guides_transport(_guide(source_id=None, summary="URL summary"))
 
     guide = await _api(transport).get_guide(NOTEBOOK_ID, SOURCE_A)
@@ -1287,21 +1282,59 @@ async def test_guide_field_tags_report_fields_the_schema_does_not_model() -> Non
 
 
 @pytest.mark.asyncio
-async def test_guide_maps_an_empty_response_to_source_not_found() -> None:
-    """Pins current Android behaviour, which diverges from ADR-0019.
+async def test_guide_maps_an_empty_response_to_an_empty_guide() -> None:
+    """ADR-0019 derived read: absence is data, not an error (issue #2278).
 
-    ADR-0019 lists ``get_guide`` as a derived read that must not police parent
-    existence, and the web backend returns an empty ``SourceGuide`` for an
-    absent envelope. Android raises instead. That predates issue #2276 and is
-    unchanged by it, so it is recorded here rather than altered in a fix whose
-    subject is the echo check.
+    Live-verified parity: the web backend returns ``SourceGuide("", ())`` for a
+    nonexistent source id, and Android now does the same instead of raising
+    ``SourceNotFoundError``.
     """
     transport = _guides_transport()
 
-    with pytest.raises(SourceNotFoundError) as raised:
-        await _api(transport).get_guide(NOTEBOOK_ID, SOURCE_A)
+    guide = await _api(transport).get_guide(NOTEBOOK_ID, SOURCE_A)
 
-    assert raised.value.source_id == SOURCE_A
+    assert guide == SourceGuide(summary="", keywords=())
+
+
+@pytest.mark.asyncio
+async def test_guide_maps_backend_not_found_to_an_empty_guide() -> None:
+    """rpc code 5 is "no guide for this id", not "the source is gone".
+
+    A live probe of a nonexistent id returns NOT_FOUND from
+    ``GenerateDocumentGuides`` while web returns an empty guide for the same
+    input, so this is the branch that carries the parity.
+    """
+    transport = FakeTransport()
+    transport.handlers[GENERATE_DOCUMENT_GUIDES_METHOD] = RPCError("gone", rpc_code=5)
+
+    guide = await _api(transport).get_guide(NOTEBOOK_ID, SOURCE_A)
+
+    assert guide == SourceGuide(summary="", keywords=())
+
+
+@pytest.mark.asyncio
+async def test_derived_source_reads_do_not_pre_flight_ownership() -> None:
+    """The two ADR-0019 derived reads issue exactly one RPC and no GetProject.
+
+    Dropping the pre-flight is what makes absence return data rather than
+    raise; it also removes a ``GetProject`` round-trip from every call. Both
+    Android RPCs are notebook-agnostic, and so is web -- a live probe of both
+    backends returned a source's guide when asked under an unrelated notebook
+    id -- so the guard was a client-side-only divergence, not a boundary the
+    protocol enforces.
+    """
+    guide_transport = _guides_transport(_guide(source_id=SOURCE_A))
+    guide_transport.handlers[GET_PROJECT_METHOD] = _project(_source(SOURCE_B))
+    await _api(guide_transport).get_guide(NOTEBOOK_ID, SOURCE_A)
+    assert [method for method, _r, _k in guide_transport.calls] == [GENERATE_DOCUMENT_GUIDES_METHOD]
+
+    fresh_transport = FakeTransport()
+    fresh_transport.handlers[GET_PROJECT_METHOD] = _project(_source(SOURCE_B))
+    fresh_transport.handlers[CHECK_SOURCE_FRESHNESS_METHOD] = (
+        sources_pb2.CheckSourceFreshnessResponse()
+    )
+    assert await _api(fresh_transport).check_freshness(NOTEBOOK_ID, SOURCE_A) is True
+    assert [method for method, _r, _k in fresh_transport.calls] == [CHECK_SOURCE_FRESHNESS_METHOD]
 
 
 @pytest.mark.asyncio

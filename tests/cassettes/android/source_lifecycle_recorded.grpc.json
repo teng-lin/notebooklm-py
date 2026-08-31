@@ -152,16 +152,16 @@
       "shape": "unary_unary"
     },
     {
-      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject",
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateDocumentGuides",
       "request": {
-        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEQAQ==",
-        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetProjectRequest"
+        "protobuf_b64": "CigKJgokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAy",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GenerateDocumentGuidesRequest"
       },
-      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetProjectResponse",
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GenerateDocumentGuidesResponse",
       "responses": [
         {
-          "protobuf_b64": "CvoCChRTQ1JVQkJFRF9TVFJJTkdfMDAyNRJGCiYKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMxIUU0NSVUJCRURfU1RSSU5HXzAwMjYaAigEIgIQAhJGCiYKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMhIUU0NSVUJCRURfU1RSSU5HXzAwMTEaAigEIgIQAhJ4CiYKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwNBIUU0NSVUJCRURfU1RSSU5HXzAwMjgaNCgFQjAKLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDEiAhACGiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiFFNDUlVCQkVEX1NUUklOR18wMDI3MggIAUoECAEQAVIGCAEQARgBWgoIARABGAEgASgB",
-          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetProjectResponse"
+          "protobuf_b64": "CrIBCigKJgokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyEhYKFFNDUlVCQkVEX1NUUklOR18wMDI5Gm4KFFNDUlVCQkVEX1NUUklOR18wMDMwChRTQ1JVQkJFRF9TVFJJTkdfMDAzMQoUU0NSVUJCRURfU1RSSU5HXzAwMzIKFFNDUlVCQkVEX1NUUklOR18wMDMzChRTQ1JVQkJFRF9TVFJJTkdfMDAzNA==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GenerateDocumentGuidesResponse"
         }
       ],
       "shape": "unary_unary"
@@ -175,23 +175,8 @@
       "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GenerateDocumentGuidesResponse",
       "responses": [
         {
-          "protobuf_b64": "CrIBCigKJgokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyEhYKFFNDUlVCQkVEX1NUUklOR18wMDI5Gm4KFFNDUlVCQkVEX1NUUklOR18wMDExChRTQ1JVQkJFRF9TVFJJTkdfMDAxMAoUU0NSVUJCRURfU1RSSU5HXzAwMzAKFFNDUlVCQkVEX1NUUklOR18wMDMxChRTQ1JVQkJFRF9TVFJJTkdfMDAzMg==",
+          "protobuf_b64": "CogBEhYKFFNDUlVCQkVEX1NUUklOR18wMDI5Gm4KFFNDUlVCQkVEX1NUUklOR18wMDMwChRTQ1JVQkJFRF9TVFJJTkdfMDAzMQoUU0NSVUJCRURfU1RSSU5HXzAwMzIKFFNDUlVCQkVEX1NUUklOR18wMDMzChRTQ1JVQkJFRF9TVFJJTkdfMDAzNA==",
           "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GenerateDocumentGuidesResponse"
-        }
-      ],
-      "shape": "unary_unary"
-    },
-    {
-      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject",
-      "request": {
-        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEQAQ==",
-        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetProjectRequest"
-      },
-      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetProjectResponse",
-      "responses": [
-        {
-          "protobuf_b64": "CvoCChRTQ1JVQkJFRF9TVFJJTkdfMDAyNRJGCiYKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMxIUU0NSVUJCRURfU1RSSU5HXzAwMjYaAigEIgIQAhJGCiYKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMhIUU0NSVUJCRURfU1RSSU5HXzAwMTEaAigEIgIQAhJ4CiYKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwNBIUU0NSVUJCRURfU1RSSU5HXzAwMjgaNCgFQjAKLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDEiAhACGiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiFFNDUlVCQkVEX1NUUklOR18wMDI3MggIAUoECAEQAVIGCAEQARgBWgoIARABGAEgASgB",
-          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetProjectResponse"
         }
       ],
       "shape": "unary_unary"

@@ -1270,13 +1270,17 @@ class AndroidSourcesAPI(SourcesAPI):
                 )
 
     async def check_freshness(self, notebook_id: str, source_id: str) -> bool:
+        """Report whether a source is fresh, without policing its existence.
+
+        The other ADR-0019 derived read on this adapter (see ``get_guide``).
+        No pre-flight is needed to stay web-compatible: a live probe of a
+        nonexistent id returned an *empty* ``CheckSourceFreshness`` response
+        rather than an error, which ``_check_freshness`` already reads as
+        fresh -- the same ``True`` the web backend returns for that input
+        (issue #2278). ``refresh`` keeps its ownership check, because mutating
+        a missing source must still raise.
+        """
         async with self._transport.operation_scope("sources.check_freshness") as lease:
-            await self._require_owned_source(
-                notebook_id,
-                source_id,
-                expected_epoch=lease.epoch,
-                method_id=CHECK_SOURCE_FRESHNESS_METHOD,
-            )
             return await self._check_freshness(source_id, expected_epoch=lease.epoch)
 
     async def _check_freshness(
@@ -1313,16 +1317,23 @@ class AndroidSourcesAPI(SourcesAPI):
         return bool(freshness.is_fresh)
 
     async def get_guide(self, notebook_id: str, source_id: str) -> SourceGuide:
+        """Return the AI summary and keywords for a source, or an empty guide.
+
+        A derived read under ADR-0019: it does not police parent existence.
+        A source that is absent, or present but not yet summarised, yields
+        ``SourceGuide("", ())`` rather than an error -- identical to the web
+        backend, which was live-verified returning exactly that for a
+        nonexistent source id (issue #2278). Existence is ``get()``'s job, and
+        every surface that needs a 404 already asks for one: the MCP tool and
+        the REST route both run ``execute_source_get`` first, and the CLI
+        resolves the id against ``sources.list()``.
+
+        Shape drift still raises ``DecodingError`` via ``select_document_guide``.
+        """
         request = _write_proto().GenerateDocumentGuidesRequest(
             sources=[_write_proto().InputSource(source_id=_read_proto().SourceId(id=source_id))]
         )
         async with self._transport.operation_scope("sources.get_guide") as lease:
-            await self._require_owned_source(
-                notebook_id,
-                source_id,
-                expected_epoch=lease.epoch,
-                method_id=GENERATE_DOCUMENT_GUIDES_METHOD,
-            )
             try:
                 response = await self._transport.unary(
                     GENERATE_DOCUMENT_GUIDES_METHOD,
@@ -1336,12 +1347,14 @@ class AndroidSourcesAPI(SourcesAPI):
             except RPCError as exc:
                 if exc.rpc_code != 5:
                     raise
-                raise SourceNotFoundError(
-                    source_id, method_id=GENERATE_DOCUMENT_GUIDES_METHOD
-                ) from None
+                # NOT_FOUND is how the backend reports "no guide for this id",
+                # whether the source is gone or was never summarised; a live
+                # probe confirmed a nonexistent id lands here. Web returns an
+                # empty guide for the same input.
+                return SourceGuide(summary="", keywords=())
 
         if not response.guides:
-            raise SourceNotFoundError(source_id, method_id=GENERATE_DOCUMENT_GUIDES_METHOD)
+            return SourceGuide(summary="", keywords=())
         guide = select_document_guide(
             response,
             source_id=source_id,

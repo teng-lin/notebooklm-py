@@ -283,7 +283,13 @@ async def test_source_lifecycle_over_source_mutations(
             values.notebook_id, url_source.id, timeout=120, initial_interval=0.1
         )
         renamed = await client.sources.rename(values.notebook_id, text_source.id, values.texts[2])
+        # Both echo shapes from issue #2276, in order. The backend labels a
+        # guide with the requested source id on the FIRST response for that
+        # source and omits the label on every repeat call, so calling twice is
+        # what pins the relaxed echo rule against recorded bytes -- the second
+        # call is the one that used to raise ``DecodingError``.
         guide = await client.sources.get_guide(values.notebook_id, text_source.id)
+        guide_again = await client.sources.get_guide(values.notebook_id, text_source.id)
         fresh = await client.sources.check_freshness(values.notebook_id, url_source.id)
         await client.sources.refresh(values.notebook_id, url_source.id)
         await client.sources.delete(values.notebook_id, url_source.id)
@@ -292,6 +298,10 @@ async def test_source_lifecycle_over_source_mutations(
     assert text_ready.id == text_source.id and url_ready.id == url_source.id
     assert renamed is not None and renamed.id == text_source.id
     assert isinstance(guide.summary, str)
+    # Same guide either way: only the source-id echo differs between the two
+    # responses, which is exactly what the relaxed rule has to tolerate.
+    assert guide_again.summary == guide.summary
+    assert guide_again.keywords == guide.keywords
     assert fresh is True  # an empty CheckSourceFreshness response means "fresh"
 
 

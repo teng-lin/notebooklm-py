@@ -9,13 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `sources.get_guide()` on the Android backend no longer raises `DecodingError`
-  for URL sources. `GenerateDocumentGuides` labels a returned guide with the
-  requested source id for text sources but omits the label entirely for URL
-  sources, and the strict echo check rejected guides the server really had
-  returned. A populated-but-different echo is still a hard failure, and the
-  rejection paths now report the requested id, every observed echo, the guide
-  count, and each guide's protobuf field tags.
+- **Behaviour change (Android backend):** `sources.get_guide()` and
+  `sources.check_freshness()` no longer raise `SourceNotFoundError` for a
+  source that is absent or not yet summarised. Per ADR-0019 these are *derived
+  reads* that must not police parent existence, and the web backend already
+  returned `SourceGuide("", ())` / `True` for the same inputs — Android now
+  matches it. Existence remains `get()`'s job: the MCP tool and REST route
+  already run their own guard, and the CLI resolves ids against
+  `sources.list()`. Dropping the pre-flight also removes a `GetProject`
+  round-trip from every call. Note both backends' underlying RPCs are
+  notebook-agnostic, so neither validates that the source belongs to the
+  notebook you name.
+- `sources.get_guide()` on the Android backend no longer raises `DecodingError`.
+  `GenerateDocumentGuides` labels a returned guide with the requested source id
+  on the *first* response for a source and omits the label on every repeat
+  call, so the strict echo check rejected guides the server really had returned
+  for all but each source's first read. A
+  populated-but-different echo is still a hard failure, and the rejection paths
+  now report the requested id, every observed echo, the guide count, and each
+  guide's protobuf field tags.
 
 ## [0.8.1] - 2026-08-14
 

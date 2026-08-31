@@ -3,7 +3,7 @@
 **Status:** Recovered from capture, schema-level (field numbers + wire types), not
 field-named by Google
 
-**Last verified:** 2026-08-31 (`1.46.7` capture snapshot plus `1.55.10` binary delta; `GenerateDocumentGuides` response re-probed live)
+**Last verified:** 2026-08-31 (`1.46.7` capture snapshot plus `1.55.10` binary delta; `GenerateDocumentGuides` echo re-probed live across repeat calls)
 
 **Scope:** the original `1.46.7.940945420` **49-method surface** (4 gRPC services) is enumerated
 and cross-referenced to the 48-method Web registry used for that audit. The newer Google-signed
@@ -540,25 +540,26 @@ questions):
 ```text
 request:  #1 { #1 str[36] }   # source_id, wrapped   + #2 context
 response: #1 {
-  #1 { #1 { #1 str[36] } }    # source_id — omitted entirely for URL sources
+  #1 { #1 { #1 str[36] } }    # source_id — present on a source's FIRST response only
   #2 { #1 str }               # summary text
   #3 { #1 (repeated) str }    # main ideas / keywords (this capture guessed "suggested questions")
   #4 { }                      # always zero-length in probed responses
 }
 ```
 
-Two readings in this capture were settled by a live probe on 2026-08-31 (issue #2276), which
-requested guides one source at a time for three URL and three pasted-text sources:
+Two readings in this capture were settled by live probes on 2026-08-31 (issues #2276, #2278):
 
-- Response `#1` is **optional**. Text sources echo the requested id; URL sources omit `#1` from
-  the wire altogether, with no substitute identifier anywhere in the message. `sources.get_guide`
-  accordingly treats an absent echo as unlabelled rather than as a mismatch.
+- Response `#1` is **optional, by call ordinal**. Reading the same source three times in a row
+  returns the id on call 1 and omits `#1` from the wire on calls 2 and 3, with identical summary
+  bytes and no substitute identifier anywhere in the message. Source type does *not* predict it —
+  an earlier reading here that credited the split to URL-vs-text was confounded by call ordinal.
+  `sources.get_guide` accordingly treats an absent echo as unlabelled rather than as a mismatch.
 - Response `#3` carries **keywords / main ideas**, not suggested questions: every probed source
   returned five short noun phrases, none interrogative. The proto's own `main_ideas` name agrees.
 
 The client sends no `#2 context` and the probe succeeded without it, so the modelled-vs-captured
 gap on the request side is not load-bearing for this method. The endpoint is single-source: a
-two-source request is rejected with `INVALID_ARGUMENT`. Full table in
+two-source request is rejected with `INVALID_ARGUMENT`. Full tables in
 [proto-evidence-ledger.md](proto-evidence-ledger.md#document-guide-source-echo).
 
 ## Write / mutation RPCs
