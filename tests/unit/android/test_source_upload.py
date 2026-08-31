@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import traceback
 from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
@@ -1347,3 +1348,27 @@ async def test_a_refused_cleanup_delete_is_warned_not_silently_accepted(
 def test_curl_transport_implements_delete_for_staging_cleanup() -> None:
     """Without it the cleanup AttributeErrors and silently leaks the staged file."""
     assert callable(CurlCffiAsyncClient.delete)
+
+
+@pytest.mark.asyncio
+async def test_a_non_regular_file_is_rejected_before_the_staged_read(
+    tmp_path: Path,
+) -> None:
+    """A FIFO reports size zero, then blocks ``read_bytes`` in a worker thread.
+
+    Nothing bounds that read and cancellation cannot stop it, so it has to be
+    refused up front — the same guard the native uploader applies.
+    """
+    harness = HTTPHarness()
+    _, _, pipeline, api = await _graph(harness)
+    fifo = tmp_path / "report.docx"
+    try:
+        os.mkfifo(fifo)
+    except (AttributeError, NotImplementedError, OSError) as error:
+        pytest.skip(f"FIFOs unavailable: {error}")
+
+    with pytest.raises(ValidationError, match="Not a regular file"):
+        await api.add_file(NOTEBOOK_ID, fifo, wait=True, wait_timeout=30.0)
+
+    assert harness.calls == []
+    del pipeline

@@ -190,7 +190,17 @@ class DriveStagingTransfer:
         """Upload one local file to the caller's Drive; return the new file id."""
 
         deadline = self._deadline()
-        size = await asyncio.to_thread(lambda: file_path.stat().st_size)
+
+        def _stat_regular_file() -> int:
+            # Mirrors the native uploader's guard. A FIFO reports size zero and
+            # then blocks ``read_bytes`` in a worker thread that no deadline
+            # bounds and cancellation cannot stop, so repeated calls would
+            # exhaust the thread pool.
+            if not file_path.is_file():
+                raise ValidationError(f"Not a regular file: {file_path}")
+            return file_path.stat().st_size
+
+        size = await asyncio.to_thread(_stat_regular_file)
         if size > _MAX_DRIVE_STAGING_BYTES:
             raise ValidationError(
                 f"{filename} is {size} bytes; Drive staging is capped at "
