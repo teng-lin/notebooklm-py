@@ -88,7 +88,7 @@ _SOURCE_TYPE_CODE_MAP: dict[int, SourceType] = {
 #: Every member has been live-probed to READY on the Web upload endpoint. An
 #: extension only earns a place here with such a probe: see
 #: :data:`_FILE_SHAPED_ONLY_EXTENSIONS` for the four that were removed on
-#: 2026-09-01 after the endpoint was found to reject them outright.
+#: 2026-08-31 after the endpoint was found to reject them outright.
 _UPLOAD_FILE_EXTENSIONS: frozenset[str] = frozenset(
     {
         ".csv",
@@ -123,7 +123,7 @@ _UPLOAD_FILE_EXTENSIONS: frozenset[str] = frozenset(
 #: refuses it up front, which is the behavior with evidence behind it.
 #:
 #: ``.doc``, ``.odt``, ``.rtf`` and ``.tsv`` were moved down out of the upload
-#: set on 2026-09-01. Each had been asserted as uploadable without ever being
+#: set on 2026-08-31. Each had been asserted as uploadable without ever being
 #: put on the wire; a real file of each type is refused at the Web resumable
 #: ``start`` with **HTTP 400**, and identically so when the content type is
 #: forced to ``text/plain`` — so the endpoint refuses them by extension, not by

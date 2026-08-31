@@ -467,6 +467,41 @@ class CurlCffiAsyncClient:
             request=httpx.Request("POST", r.url),
         )
 
+    async def delete(
+        self,
+        url: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """DELETE, for the Drive staging cleanup in ``_android.drive_staging``.
+
+        Without it that cleanup raises ``AttributeError`` under
+        ``NOTEBOOKLM_TRANSPORT=curl_cffi`` and, because cleanup failures are
+        best-effort, silently leaves the staged file in the user's Drive.
+        """
+        from curl_cffi.requests import RequestsError
+
+        allow_redirects = self._redirects(kwargs)
+        timeout = self._timeout_for(kwargs)
+        try:
+            r = await self._curl.delete(
+                url,
+                headers=dict(headers) if headers else None,
+                allow_redirects=allow_redirects,
+                timeout=timeout,
+                **kwargs,
+            )
+        except RequestsError as exc:
+            raise httpx.RequestError(str(exc), request=httpx.Request("DELETE", url)) from exc
+        self._sync_cookies_back()
+        return httpx.Response(
+            status_code=r.status_code,
+            headers=_strip(r.headers),
+            content=r.content,
+            request=httpx.Request("DELETE", r.url),
+        )
+
     def stream(self, method: str, url: str, **kwargs: Any) -> _StreamCtx:
         stream_kwargs: dict[str, Any] = {
             "allow_redirects": self._redirects(kwargs),

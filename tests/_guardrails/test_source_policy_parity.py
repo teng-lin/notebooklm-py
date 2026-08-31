@@ -244,7 +244,7 @@ def test_accepted_extension_sets_are_pinned_by_content() -> None:
     )
 
     # Every member has been live-probed to READY on the Web upload endpoint.
-    # ``.doc``/``.odt``/``.rtf``/``.tsv`` were removed on 2026-09-01: a real
+    # ``.doc``/``.odt``/``.rtf``/``.tsv`` were removed on 2026-08-31: a real
     # file of each is refused at the resumable ``start`` with HTTP 400, and
     # identically so with the content type forced to ``text/plain``, so the
     # endpoint refuses them by extension rather than by MIME. Adding one back

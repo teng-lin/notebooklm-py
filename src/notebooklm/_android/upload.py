@@ -66,9 +66,24 @@ UPLOAD_PATH_PREFIX = "/upload/upload/"
 _SAFE_BEARER_HOSTS = frozenset({"notebooklm-pa.googleapis.com", "lh3.googleusercontent.com"})
 _CHUNK_SIZE = 64 * 1024
 _HTML_UPLOAD_CONTENT_TYPES = frozenset({"text/html", "application/xhtml+xml"})
+#: Extension -> content type for every extension in the public upload set.
+#:
+#: ``mimetypes.guess_type`` is consulted first but is **platform-dependent**: on
+#: Windows it reads the registry and returns nothing for ``.docx``/``.pptx``, so
+#: the resolver fell through to ``application/octet-stream`` there. That matters
+#: beyond cosmetics on the Drive-staged path, where the resolved type becomes
+#: the staged Drive file's declared ``mimeType`` and therefore decides how the
+#: backend parses it. Pinning the whole supported set makes the upload wire
+#: identical on every platform.
 _EXTENSION_CONTENT_TYPES = {
-    ".md": "text/markdown",
+    ".csv": "text/csv",
+    ".docx": ("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+    ".epub": "application/epub+zip",
     ".markdown": "text/markdown",
+    ".md": "text/markdown",
+    ".pdf": "application/pdf",
+    ".pptx": ("application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+    ".txt": "text/plain",
 }
 _DRIVE_API_ORIGIN = "https://www.googleapis.com"
 _DRIVE_NATIVE_MIME_PREFIX = "application/vnd.google-apps."
@@ -92,20 +107,25 @@ def _set_private_temp_permissions(path: Path, mode: int) -> None:
 
 
 def _resolve_upload_content_type(file_path: Path, mime_type: str | None) -> str:
-    """Mirror the backend-neutral public upload MIME policy."""
+    """Mirror the backend-neutral public upload MIME policy.
+
+    The pinned table wins over :func:`mimetypes.guess_type` for the supported
+    extensions so the resolved type does not vary by platform; see
+    ``_EXTENSION_CONTENT_TYPES``.
+    """
 
     if mime_type is not None:
         content_type = mime_type.strip()
         if not content_type:
             raise ValidationError("mime_type cannot be empty or whitespace-only")
         return content_type
+    pinned = _EXTENSION_CONTENT_TYPES.get(file_path.suffix.lower())
+    if pinned is not None:
+        return pinned
     guessed, _encoding = mimetypes.guess_type(file_path.name)
     if guessed:
         return guessed
-    return _EXTENSION_CONTENT_TYPES.get(
-        file_path.suffix.lower(),
-        "application/octet-stream",
-    )
+    return "application/octet-stream"
 
 
 def _validate_upload_file_supported(file_path: Path, content_type: str) -> None:
@@ -821,7 +841,10 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         * ``on_progress`` is not reported -- staging is a single multipart
           request, not a chunked transfer.
         """
+        if title is not None and not title.strip():
+            raise ValidationError("Title cannot be empty or whitespace-only")
         content_type = _resolve_upload_content_type(canonical_path, mime_type)
+        _validate_upload_file_supported(canonical_path, content_type)
         async with self._drive_staging().scope(
             canonical_path,
             canonical_path.name,

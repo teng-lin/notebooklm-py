@@ -2,7 +2,7 @@
 
 **Status:** live-validated
 
-**Last verified:** 2026-09-01
+**Last verified:** 2026-08-31
 
 **Scope:** the four operations an Android-selected `NotebookLMClient` still
 routed through the Web namespace after [#2269], why three of them were not

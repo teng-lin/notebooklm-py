@@ -22,11 +22,15 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import quote
 
+import httpx
+
 from .._deadline import RuntimeDeadline
 from ..exceptions import (
     AuthError,
+    NetworkError,
     RateLimitError,
     ServerError,
+    SourceTimeoutError,
     ValidationError,
 )
 from ..types import Source
@@ -135,6 +139,14 @@ def map_staging_status(status: int, filename: str) -> None:
         raise ValidationError(f"Drive returned HTTP {status} while staging {filename}.")
 
 
+class _StagingCleanupFailed(Exception):
+    """Drive refused the cleanup DELETE. Never escapes ``unstage``."""
+
+    def __init__(self, status: int) -> None:
+        super().__init__(f"Drive returned HTTP {status} deleting the staged file")
+        self.status = status
+
+
 class DriveStagingTransfer:
     """Stage a local file in Drive and remove it again.
 
@@ -185,6 +197,16 @@ class DriveStagingTransfer:
                 f"{_MAX_DRIVE_STAGING_BYTES} bytes."
             )
         payload = await asyncio.to_thread(file_path.read_bytes)
+        # Re-check against what was actually read: the file can grow or be
+        # replaced between the stat() above and this read, and the cap exists to
+        # bound the multipart body we are about to build in memory.
+        if len(payload) > _MAX_DRIVE_STAGING_BYTES:
+            read_bytes = len(payload)
+            del payload
+            raise ValidationError(
+                f"{filename} is {read_bytes} bytes; Drive staging is capped at "
+                f"{_MAX_DRIVE_STAGING_BYTES} bytes."
+            )
         body = build_multipart_body(payload, filename, content_type)
         del payload
 
@@ -251,7 +273,7 @@ class DriveStagingTransfer:
                 )
                 self._track_client(client)
                 async with client:
-                    await self._bounded(
+                    response = await self._bounded(
                         client.delete(
                             f"{DRIVE_API_ORIGIN}/drive/v3/files/"
                             f"{quote(file_id, safe='')}?supportsAllDrives=true",
@@ -260,13 +282,26 @@ class DriveStagingTransfer:
                         ),
                         deadline,
                     )
-        except Exception:
+                    status = int(response.status_code)
+                    # 404 means it is already gone, which is the desired end
+                    # state. Anything else non-2xx left the file in place.
+                    if status >= 300 and status != 404:
+                        raise _StagingCleanupFailed(status)
+        except Exception as error:
             # An orphaned staging file is untidy, not incorrect. Surfacing this
             # would replace a successful add -- or the real failure -- with a
-            # cleanup error the caller cannot act on.
+            # cleanup error the caller cannot act on. It is logged at WARNING
+            # with the id so it can be found and removed.
+            detail = (
+                f"HTTP {error.status}"
+                if isinstance(error, _StagingCleanupFailed)
+                else type(error).__name__
+            )
             logger.warning(
-                "Could not delete the staged Drive file %s; remove it manually if it persists.",
+                "Could not delete the staged Drive file %s (%s); "
+                "remove it manually if it persists.",
                 file_id,
+                detail,
             )
         finally:
             if client is not None:
@@ -293,16 +328,44 @@ class DriveStagingTransfer:
         try:
             file_id = await transfer.stage(file_path, filename, content_type)
         except BaseException as error:
-            failure = sanitize_escaping_exception(error)
+            # Match ``drive_download_scope``: a transport-level failure reaches
+            # callers as NetworkError, so retry-by-public-exception-type works
+            # the same on this path as on every other Android transfer.
+            if isinstance(error, (httpx.HTTPError, OSError, TimeoutError)):
+                failure = NetworkError(
+                    f"Network error staging {filename} in Drive ({error.__class__.__name__})",
+                    original_error=None,
+                )
+            else:
+                failure = error
+            sanitize_escaping_exception(error)
         finally:
             del self
 
         if failure is not None:
-            raise failure
+            raise sanitize_escaping_exception(failure) from None
         assert file_id is not None
+
         try:
             yield file_id
-        finally:
+        except (asyncio.CancelledError, TimeoutError, SourceTimeoutError):
+            # Ambiguous: the import may still be running server-side. Deleting
+            # the only copy now can turn a slow-but-successful import into a
+            # permanently errored source, so the file is kept and named instead.
+            # A leaked file is recoverable; a broken source is not.
+            logger.warning(
+                "Left the staged Drive file %s in place: the import did not settle "
+                "and may still be reading it. Remove it once the source is READY "
+                "or has failed.",
+                file_id,
+            )
+            raise
+        except BaseException:
+            # A settled failure -- the import will not complete, so the staged
+            # copy is dead weight.
+            await transfer.unstage(file_id)
+            raise
+        else:
             await transfer.unstage(file_id)
 
 
