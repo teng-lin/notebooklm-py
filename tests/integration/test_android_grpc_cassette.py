@@ -519,3 +519,81 @@ async def test_research_fast_import_over_finish_discover_sources_run(
     assert task.status == ResearchStatus.COMPLETED, f"research not complete after {polls} polls"
     assert len(task.sources) >= 1
     assert len(imported) == 1
+
+
+# =============================================================================
+# Artifact generation families — CreateArtifact, ListArtifacts/GetArtifact polls,
+# DeleteArtifact. Generation runs live for minutes; replay is instant because
+# ``_settle`` is a no-op and each poll is one recorded interaction.
+# =============================================================================
+
+
+async def _generate_poll_and_delete(
+    client: Any,
+    notebook_id: str,
+    started: Any,
+    *,
+    settle_seconds: float,
+    max_polls: int,
+) -> tuple[Any, Any, Any]:
+    """Poll ``started`` to completion, fetch it, delete it, and return the trail."""
+
+    polls = 0
+    while True:
+        status = await client.artifacts.poll_status(notebook_id, started.task_id)
+        polls += 1
+        if status.is_complete or status.is_failed or polls >= max_polls:
+            break
+        await _settle(settle_seconds)
+    artifact = await client.artifacts.get(notebook_id, started.task_id)
+    await client.artifacts.delete(notebook_id, started.task_id)
+    after = await client.artifacts.get_or_none(notebook_id, started.task_id)
+    return status, artifact, after
+
+
+@pytest.mark.timeout(400)
+@pytest.mark.asyncio
+async def test_report_generation_over_create_artifact(
+    android_grpc_cassette: CassetteBinder,
+) -> None:
+    async with android_grpc_cassette("generate_report") as (client, values):
+        started = await client.artifacts.generate_report(values.notebook_id)
+        status, artifact, after = await _generate_poll_and_delete(
+            client, values.notebook_id, started, settle_seconds=15, max_polls=16
+        )
+    assert started.task_id
+    assert status.is_complete, f"report generation ended as {status.status}"
+    assert artifact.id == started.task_id
+    assert after is None
+
+
+@pytest.mark.timeout(400)
+@pytest.mark.asyncio
+async def test_flashcard_generation_over_create_artifact(
+    android_grpc_cassette: CassetteBinder,
+) -> None:
+    async with android_grpc_cassette("generate_flashcards") as (client, values):
+        started = await client.artifacts.generate_flashcards(values.notebook_id)
+        status, artifact, after = await _generate_poll_and_delete(
+            client, values.notebook_id, started, settle_seconds=15, max_polls=16
+        )
+    assert started.task_id
+    assert status.is_complete, f"flashcard generation ended as {status.status}"
+    assert artifact.id == started.task_id
+    assert after is None
+
+
+@pytest.mark.timeout(900)
+@pytest.mark.asyncio
+async def test_audio_overview_generation_over_create_artifact(
+    android_grpc_cassette: CassetteBinder,
+) -> None:
+    async with android_grpc_cassette("generate_audio") as (client, values):
+        started = await client.artifacts.generate_audio(values.notebook_id)
+        status, artifact, after = await _generate_poll_and_delete(
+            client, values.notebook_id, started, settle_seconds=20, max_polls=30
+        )
+    assert started.task_id
+    assert status.is_complete, f"audio generation ended as {status.status}"
+    assert artifact.id == started.task_id
+    assert after is None

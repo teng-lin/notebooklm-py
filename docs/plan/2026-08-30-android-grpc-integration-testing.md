@@ -11,7 +11,7 @@ touch Google minimally from a scheduled canary.
 
 | Layer | Purpose | Runs | State on `main` (d5df15e7) | This branch |
 |---|---|---|---|---|
-| 1. Semantic cassette seam | Deterministic replay of sanitized protobuf through the `AndroidSession` `grpc_loader` seam | every PR | **Exists** — `tests/_helpers/android_grpc_cassette.py`, one cassette (`GetProject`), `@pytest.mark.grpc_cassette` guards in `tests/integration/conftest.py` | Record-or-replay fixture; reserved placeholders + request-local numbering; per-RPC request normalizers; 23 recorded families (every `supported` RPC except artifact generation/export and deep research) listed in `tests/integration/README.md` |
+| 1. Semantic cassette seam | Deterministic replay of sanitized protobuf through the `AndroidSession` `grpc_loader` seam | every PR | **Exists** — `tests/_helpers/android_grpc_cassette.py`, one cassette (`GetProject`), `@pytest.mark.grpc_cassette` guards in `tests/integration/conftest.py` | Record-or-replay fixture; reserved placeholders + request-local numbering; per-RPC request normalizers; 26 recorded families (every `supported` RPC except `GenerateArtifact` retry, `DeriveArtifact`, `ExportToDrive` and deep research; artifact generation is covered by quiz, report, flashcards and audio overview) listed in `tests/integration/README.md` |
 | 2. Local `grpc.aio` contract suite | Real stubs, wire encoding, metadata, status, streaming, error mapping — no Google | every PR | **Partial** — `tests/unit/android/test_chat_fake_server.py` covers chat only | `tests/unit/android/test_session_fake_server.py` covering the reviewer's checklist against `AndroidSession` directly |
 | 3. Live canary | Auth, method existence, field-number and shape drift that recordings cannot see | nightly / manual | **Buried** — a `GetProject` preflight step inside the full Android E2E lane of `nightly.yml` | `scripts/android_grpc_canary.py` + a light `android-grpc-health` job mirroring `rpc-health.yml`; read-only; strict decode; diagnostic hashes; never updates fixtures |
 
@@ -57,6 +57,9 @@ Scope decision (2026-08-30): record all 43 `supported` RPCs except `CreateArtifa
 audio/video, `GenerateArtifact` retry, `DeriveArtifact` slides, `ExportToDrive` and
 `DiscoverSourcesAsync` (deep research) — generation quota and 30–60 min of live time
 for no additional transport coverage. Quizzes (`CreateArtifact`) are included.
+Follow-up (same day): `CreateArtifact` report, flashcards and audio overview
+families were added on request — the audio one records 23 poll rounds over ~6.5 min
+live and replays instantly.
 
 Deferred on purpose: a `descriptor_sha256` pin. Every proto regeneration would
 invalidate every cassette even when wire-compatible; the pinned protobuf FQNs

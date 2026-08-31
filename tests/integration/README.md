@@ -84,8 +84,11 @@ records and replays (`tests/_helpers/android_grpc_harness.py`):
 | `generate_report_suggestions` | `artifacts.suggest_reports()` | `GenerateReportSuggestions` |
 | `research_fast_cancel` | `research.start(mode="fast")`, `research.cancel()`, `research.poll()` | `DiscoverSourcesManifold`, `CancelDiscoverSourcesJob`, `ListDiscoverSourcesJob` |
 | `research_fast_import` | `research.start(mode="fast")`, `research.poll()`, `research.import_sources()` | `DiscoverSourcesManifold`, `ListDiscoverSourcesJob`, `FinishDiscoverSourcesRun` |
+| `generate_report` | `artifacts.generate_report/poll_status/get/delete/get_or_none()` | `GetProject`, `CreateArtifact`, `ListArtifacts` ×5, `GetArtifact` ×2, `GetNotes` ×2, `DeleteArtifact` |
+| `generate_flashcards` | `artifacts.generate_flashcards/poll_status/get/delete/get_or_none()` | `GetProject`, `CreateArtifact`, `ListArtifacts` ×6, `GetArtifact` ×3, `GetNotes` ×2, `DeleteArtifact` |
+| `generate_audio` | `artifacts.generate_audio/poll_status/get/delete/get_or_none()` | `GetProject`, `CreateArtifact`, `ListArtifacts` ×23, `GetArtifact` ×20, `GetNotes` ×2, `DeleteArtifact` |
 
-23 families, 143 interactions. Re-record everything (creates one disposable scratch notebook with a text
+26 families, 218 interactions. Re-record everything (creates one disposable scratch notebook with a text
 source and a note through an *unrecorded* client, records, then deletes it):
 
 ```bash
