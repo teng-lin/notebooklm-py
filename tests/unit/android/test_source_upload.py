@@ -1098,8 +1098,8 @@ async def test_docx_stages_through_drive_and_removes_the_staged_copy(tmp_path: P
 
 
 @pytest.mark.asyncio
-async def test_drive_staged_copy_is_removed_when_the_import_fails(tmp_path: Path) -> None:
-    """A failed import must not leave a file behind in the caller's Drive."""
+async def test_drive_staged_copy_is_removed_when_registration_fails(tmp_path: Path) -> None:
+    """Staging happens before registration, so its failure must still clean up."""
     harness = HTTPHarness()
     session, _, pipeline, api = await _graph(harness)
     session.handlers[ADD_TENTATIVE_SOURCES_METHOD] = ServerError("rejected", rpc_code=13)
@@ -1409,4 +1409,30 @@ async def test_drive_staged_title_is_trimmed_like_the_native_path(tmp_path: Path
         if call[0] == ADD_SOURCES_METHOD
     )
     assert drive_content.source_name == "Quarterly report"
+    del pipeline
+
+
+@pytest.mark.asyncio
+async def test_drive_staged_copy_is_removed_when_the_import_itself_fails(
+    tmp_path: Path,
+) -> None:
+    """A settled *import* failure also cleans up.
+
+    Distinct from the registration case above: here the source is registered
+    and committed, and the backend then reports it errored. That is a settled
+    outcome — unlike a timeout — so the staged copy is dead weight and goes.
+    """
+    harness = HTTPHarness()
+    session, _, pipeline, api = await _graph(harness)
+    session.handlers[GET_PROJECT_METHOD] = _project(_SETTINGS.SOURCE_STATUS_ERROR)
+    path = tmp_path / "report.docx"
+    path.write_bytes(b"PK\x03\x04 docx payload")
+
+    with pytest.raises(SourceProcessingError):
+        await api.add_file(NOTEBOOK_ID, path, wait=True, wait_timeout=30.0)
+
+    assert any(c.url.startswith(DRIVE_STAGING_UPLOAD_URL) for c in harness.calls)
+    deletes = [c for c in harness.calls if c.method == "DELETE"]
+    assert len(deletes) == 1
+    assert DRIVE_STAGED_ID in deletes[0].url
     del pipeline
