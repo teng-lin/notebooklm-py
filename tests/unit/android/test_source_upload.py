@@ -18,6 +18,11 @@ import pytest
 
 from notebooklm._android import drive_staging as drive_staging_module
 from notebooklm._android.auth import BearerCredential, BearerProvider
+from notebooklm._android.drive_staging import (
+    _DRIVE_STAGED_UPLOAD_EXTENSIONS,
+    _NATIVE_UPLOAD_EXTENSIONS,
+    _UPLOAD_REJECTED_BY_BOTH_BACKENDS,
+)
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     read_pb2,
     sources_pb2,
@@ -39,6 +44,7 @@ from notebooklm._android.upload import (
     validate_upload_session_url,
 )
 from notebooklm._curl_cffi_transport import CurlCffiAsyncClient
+from notebooklm._types.sources import _UPLOAD_FILE_EXTENSIONS
 from notebooklm.exceptions import (
     RPCError,
     ServerError,
@@ -1169,4 +1175,67 @@ async def test_drive_staging_rejects_a_file_over_the_cap(
 
     # Nothing was staged, so nothing needs deleting.
     assert not any(c.method == "DELETE" for c in harness.calls)
+    del pipeline
+
+
+def test_every_supported_extension_is_classified_exactly_once() -> None:
+    """A new upload extension must be classified, not silently defaulted.
+
+    ``add_file`` picks its transport from ``_DRIVE_STAGED_UPLOAD_EXTENSIONS``
+    and falls through to the native Scotty transaction otherwise. Without this
+    gate, adding a file type to the public set quietly routes it at the mobile
+    frontend, which parses only a narrow allowlist -- exactly how ``.pptx``
+    was missed when the Drive set was first written with ``.docx`` alone.
+    """
+    arms = (
+        _NATIVE_UPLOAD_EXTENSIONS,
+        _DRIVE_STAGED_UPLOAD_EXTENSIONS,
+        _UPLOAD_REJECTED_BY_BOTH_BACKENDS,
+    )
+
+    union: set[str] = set()
+    for arm in arms:
+        assert not (union & arm), f"extension classified twice: {sorted(union & arm)}"
+        union |= arm
+
+    assert union == set(_UPLOAD_FILE_EXTENSIONS), (
+        "unclassified upload extension(s): "
+        f"{sorted(set(_UPLOAD_FILE_EXTENSIONS) ^ union)}. Live-probe the file on "
+        "both backends, then add it to exactly one arm."
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("extension", sorted(_DRIVE_STAGED_UPLOAD_EXTENSIONS))
+async def test_every_drive_staged_extension_routes_through_drive(
+    tmp_path: Path,
+    extension: str,
+) -> None:
+    harness = HTTPHarness()
+    _, _, pipeline, api = await _graph(harness)
+    path = tmp_path / f"deck{extension}"
+    path.write_bytes(b"PK\x03\x04 ooxml payload")
+
+    result = await api.add_file(NOTEBOOK_ID, path, wait=True, wait_timeout=30.0)
+
+    assert result.id == SOURCE_ID
+    assert any(c.url.startswith(DRIVE_STAGING_UPLOAD_URL) for c in harness.calls)
+    assert not any(c.url.startswith(UPLOAD_ORIGIN) for c in harness.calls)
+    assert [c for c in harness.calls if c.method == "DELETE"]
+    del pipeline
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("extension", sorted(_NATIVE_UPLOAD_EXTENSIONS))
+async def test_every_native_extension_skips_drive(tmp_path: Path, extension: str) -> None:
+    harness = HTTPHarness()
+    _, _, pipeline, api = await _graph(harness)
+    path = tmp_path / f"sample{extension}"
+    path.write_bytes(b"native payload")
+
+    result = await api.add_file(NOTEBOOK_ID, path, wait=True, wait_timeout=30.0)
+
+    assert result.id == SOURCE_ID
+    assert not any(c.url.startswith(DRIVE_STAGING_UPLOAD_URL) for c in harness.calls)
+    assert any(c.url.startswith(UPLOAD_ORIGIN) for c in harness.calls)
     del pipeline

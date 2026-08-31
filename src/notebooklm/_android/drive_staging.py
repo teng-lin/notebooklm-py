@@ -33,6 +33,40 @@ from ..types import Source
 
 logger = logging.getLogger(__name__)
 
+#: Extensions the mobile upload frontend will not parse, which therefore reach
+#: the backend by way of Drive instead (``add_file_via_drive_staging``).
+#:
+#: These are the OOXML office containers. The mobile frontend's allowlist
+#: mirrors the app's own picker -- audio and PDF -- plus plain text and
+#: markdown; the mobile *backend* parses everything Drive hands it. Both
+#: members were live-probed on the raw native transaction (Web READY, Android
+#: SOURCE_STATUS_ERROR) and then through the Drive route (READY, correct text).
+#: Full evidence: docs/android/web-compat-seam-closure.md.
+#:
+#: This set is one arm of an exhaustive partition of
+#: :data:`~notebooklm._types.sources._UPLOAD_FILE_EXTENSIONS`; see
+#: :data:`_NATIVE_UPLOAD_EXTENSIONS` below. ``tests/unit/android`` fails if a
+#: newly supported extension is not classified into exactly one arm, so a new
+#: file type cannot silently inherit the wrong upload path.
+_DRIVE_STAGED_UPLOAD_EXTENSIONS = frozenset({".docx", ".pptx"})
+
+#: Extensions the mobile Scotty frontend ingests directly.
+#:
+#: ``.csv`` is here rather than above because only its *content type* was the
+#: problem -- ``_adapt_csv_content_type`` sends it as ``text/plain`` and it
+#: completes. The bytes still go over the native transaction.
+_NATIVE_UPLOAD_EXTENSIONS = frozenset({".csv", ".epub", ".markdown", ".md", ".pdf", ".txt"})
+
+#: Extensions in the public set that NEITHER backend's upload endpoint accepts.
+#:
+#: Each is refused at the Scotty ``start`` with HTTP 400 on Web -- including
+#: when the content type is forced to ``text/plain``, so the refusal is by
+#: extension, not by MIME -- and errors on the Android frontend too. They are
+#: listed here to keep the partition exhaustive, not to claim support; routing
+#: them through Drive would paper over a Web-side gap this backend did not
+#: create. See docs/android/web-compat-seam-closure.md.
+_UPLOAD_REJECTED_BY_BOTH_BACKENDS = frozenset({".doc", ".odt", ".rtf", ".tsv"})
+
 DRIVE_API_ORIGIN = "https://www.googleapis.com"
 # Staging reads the whole file into memory to build one multipart body, so the
 # cap is deliberately lower than the streaming Drive *download* cap.
@@ -271,6 +305,9 @@ class DriveStagingTransfer:
 
 __all__ = [
     "DRIVE_API_ORIGIN",
+    "_DRIVE_STAGED_UPLOAD_EXTENSIONS",
+    "_NATIVE_UPLOAD_EXTENSIONS",
+    "_UPLOAD_REJECTED_BY_BOTH_BACKENDS",
     "DriveStagingTransfer",
     "ImportDriveFile",
     "build_multipart_body",

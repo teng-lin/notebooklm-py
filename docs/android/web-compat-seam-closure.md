@@ -15,7 +15,7 @@ actually gaps, and what remains.
 | `sharing.set_view_level` | Web seam | **native** | Probed the wrong RPC |
 | `notebooks.remove_from_recent` | Web seam | **native** | Probed an owned notebook |
 | `sources.add_file` (`.csv`) | Web seam | **native** | Content type outside the mobile frontend's allowlist |
-| `sources.add_file` (`.docx`) | Web seam | **native (via Drive)** | Mobile upload frontend parses no Word; the backend does |
+| `sources.add_file` (`.docx`, `.pptx`) | Web seam | **native (via Drive)** | Mobile upload frontend parses no OOXML office container; the backend does |
 
 `tests/unit/test_backend_selection.py::test_android_preference_promotes_every_namespace`
 asserts the complete inventory of remaining Web bindings. It is now **empty**:
@@ -119,7 +119,41 @@ android  city,population,country\n\nOsaka,2750000,Japan\n\nLyon,522000,France\n
 Both are the whole file. The Android rendering keeps more of the table's
 structure.
 
-### `.docx` — native by way of Drive
+### The mobile frontend's allowlist, measured
+
+Every extension in the public `_UPLOAD_FILE_EXTENSIONS` set was live-probed on
+both backends, with Web as the control for each row:
+
+| Extension | Web | Android, raw native transaction | Route |
+|---|---|---|---|
+| `.csv` | READY | READY (as `text/plain`) | native |
+| `.epub` | READY | READY | native |
+| `.md` / `.markdown` | READY | READY | native |
+| `.pdf` | READY | READY | native |
+| `.txt` | READY | READY | native |
+| `.docx` | READY | `SOURCE_STATUS_ERROR` | **Drive** |
+| `.pptx` | READY | `SOURCE_STATUS_ERROR` | **Drive** |
+| `.doc` | HTTP 400 | `SOURCE_STATUS_ERROR` | neither |
+| `.odt` | HTTP 400 | `SOURCE_STATUS_ERROR` | neither |
+| `.rtf` | HTTP 400 | `SOURCE_STATUS_ERROR` | neither |
+| `.tsv` | HTTP 400 | `SOURCE_STATUS_ERROR` | neither |
+
+Two findings beyond the original seam list:
+
+* **`.pptx` needs the Drive route as much as `.docx` does.** The OOXML office
+  containers are the gap, not Word specifically. `_UPLOAD_FILE_EXTENSIONS` is
+  now partitioned across three named sets in `_android/sources.py`, and a unit
+  test fails if a newly supported extension is not classified into exactly one
+  of them — the omission that made `.pptx` a latent bug cannot recur silently.
+* **`.doc`, `.odt`, `.rtf`, and `.tsv` are refused by the Web upload endpoint
+  too**, with HTTP 400 at the Scotty `start` and identically so when the content
+  type is forced to `text/plain` — so the refusal is by extension, not MIME.
+  They are listed in `_UPLOAD_FILE_EXTENSIONS` as supported, which looks like a
+  pre-existing defect in that set rather than anything this backend introduced.
+  Routing them through Drive would paper over a Web-side gap; they are recorded
+  as rejected instead.
+
+### `.docx` / `.pptx` — native by way of Drive
 
 Four findings, none of which yields a direct upload:
 
@@ -150,7 +184,7 @@ Four findings, none of which yields a direct upload:
    credential-class boundary, not a header that can be added.
 
 Finding 3 is the route. `DriveStagingTransfer` (`_android/drive_staging.py`)
-stages the file in the caller's own Drive with the `auth/drive` scope the
+stages such files in the caller's own Drive with the `auth/drive` scope the
 Android identity already holds, imports it with `GoogleDriveContent`, and
 deletes the staged copy. Deleting it is safe: the import materializes the
 content, and a live probe confirmed the source stays `READY` with its text

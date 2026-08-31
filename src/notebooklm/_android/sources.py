@@ -40,6 +40,7 @@ from ..types import Source, SourceFulltext, SourceStatus, SourceType
 from .codecs.documents import decode_document, tailwind_doc_markdown, tailwind_doc_plain_text
 from .codecs.notebooks import decode_project, map_get_project_error, validate_project_identity
 from .codecs.sources import decode_source, decode_sources, select_document_guide
+from .drive_staging import _DRIVE_STAGED_UPLOAD_EXTENSIONS
 from .session import AndroidSession
 from .upload import (
     AndroidUploadPipeline,
@@ -119,15 +120,6 @@ class AddFileCompat(Protocol):
         title: str | None = None,
         on_progress: Callable[[int, int], object] | None = None,
     ) -> Source: ...
-
-
-# Extensions the mobile upload frontend will not parse, which therefore reach
-# the backend by way of Drive instead (``_add_file_via_drive_staging``). The
-# frontend's allowlist mirrors the app's own picker -- audio and PDF -- while
-# the backend parses everything Drive hands it. Full evidence, including why
-# the Web frontend cannot be borrowed with an Android bearer, is in
-# docs/android/web-compat-seam-closure.md.
-_DRIVE_STAGED_UPLOAD_EXTENSIONS = frozenset({".docx"})
 
 
 def _snapshot_enum_filter(
