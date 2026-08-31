@@ -80,21 +80,22 @@ _SOURCE_TYPE_CODE_MAP: dict[int, SourceType] = {
 #:
 #: A *mapping* to :class:`SourceType` is deliberately NOT asserted here: only some
 #: of these extensions have a live-captured decode code (pdf→3, md→8, docx→11,
-#: pptx→6, csv→16, epub→17), and inventing codes for the rest (txt/rtf/odt/tsv)
-#: would put unverified wire facts in a constant.
+#: pptx→6, csv→16, epub→17), and inventing one for ``.txt`` would put an
+#: unverified wire fact in a constant.
+#:
+#: Every member has been live-probed to READY on the Web upload endpoint. An
+#: extension only earns a place here with such a probe: see
+#: :data:`_FILE_SHAPED_ONLY_EXTENSIONS` for the four that were removed on
+#: 2026-09-01 after the endpoint was found to reject them outright.
 _UPLOAD_FILE_EXTENSIONS: frozenset[str] = frozenset(
     {
         ".csv",
-        ".doc",
         ".docx",
         ".epub",
         ".md",
         ".markdown",
-        ".odt",
         ".pdf",
         ".pptx",
-        ".rtf",
-        ".tsv",
         ".txt",
     }
 )
@@ -118,7 +119,17 @@ _UPLOAD_FILE_EXTENSIONS: frozenset[str] = frozenset(
 #: nothing. Move it up once a real legacy ``.ppt`` is probed; until then a
 #: mistyped ``deck.ppt`` still earns its warning and the Drive router still
 #: refuses it up front, which is the behavior with evidence behind it.
-_FILE_SHAPED_ONLY_EXTENSIONS: frozenset[str] = frozenset({".ppt"})
+#:
+#: ``.doc``, ``.odt``, ``.rtf`` and ``.tsv`` were moved down out of the upload
+#: set on 2026-09-01. Each had been asserted as uploadable without ever being
+#: put on the wire; a real file of each type is refused at the Web resumable
+#: ``start`` with **HTTP 400**, and identically so when the content type is
+#: forced to ``text/plain`` — so the endpoint refuses them by extension, not by
+#: MIME. (Android's upload frontend errors on all four as well.) Leaving them in
+#: the upload set was the exact failure its own docstring warns about: the Drive
+#: router treated them as a green light and downloaded whole files before the
+#: server rejected them. Move one back up only with a live READY probe.
+_FILE_SHAPED_ONLY_EXTENSIONS: frozenset[str] = frozenset({".doc", ".odt", ".ppt", ".rtf", ".tsv"})
 
 #: HTML-family extensions NotebookLM's upload endpoint **rejects**. Tracked next to
 #: the accepted set (rather than folded into it) because the two callers want them

@@ -243,22 +243,24 @@ def test_accepted_extension_sets_are_pinned_by_content() -> None:
         _UPLOAD_FILE_EXTENSIONS,
     )
 
+    # Every member has been live-probed to READY on the Web upload endpoint.
+    # ``.doc``/``.odt``/``.rtf``/``.tsv`` were removed on 2026-09-01: a real
+    # file of each is refused at the resumable ``start`` with HTTP 400, and
+    # identically so with the content type forced to ``text/plain``, so the
+    # endpoint refuses them by extension rather than by MIME. Adding one back
+    # needs a probe, not a hunch.
     assert {
         ".csv",
-        ".doc",
         ".docx",
         ".epub",
         ".markdown",
         ".md",
-        ".odt",
         ".pdf",
         ".pptx",
-        ".rtf",
-        ".tsv",
         ".txt",
     } == _UPLOAD_FILE_EXTENSIONS
     assert {".htm", ".html", ".xht", ".xhtml"} == _HTML_FILE_EXTENSIONS
-    assert {".ppt"} == _FILE_SHAPED_ONLY_EXTENSIONS
+    assert {".doc", ".odt", ".ppt", ".rtf", ".tsv"} == _FILE_SHAPED_ONLY_EXTENSIONS
 
 
 def test_powerpoint_is_spelled_on_both_the_decode_and_input_sides() -> None:

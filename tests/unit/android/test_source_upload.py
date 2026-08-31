@@ -21,7 +21,6 @@ from notebooklm._android.auth import BearerCredential, BearerProvider
 from notebooklm._android.drive_staging import (
     _DRIVE_STAGED_UPLOAD_EXTENSIONS,
     _NATIVE_UPLOAD_EXTENSIONS,
-    _UPLOAD_REJECTED_BY_BOTH_BACKENDS,
 )
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     read_pb2,
@@ -1187,11 +1186,7 @@ def test_every_supported_extension_is_classified_exactly_once() -> None:
     frontend, which parses only a narrow allowlist -- exactly how ``.pptx``
     was missed when the Drive set was first written with ``.docx`` alone.
     """
-    arms = (
-        _NATIVE_UPLOAD_EXTENSIONS,
-        _DRIVE_STAGED_UPLOAD_EXTENSIONS,
-        _UPLOAD_REJECTED_BY_BOTH_BACKENDS,
-    )
+    arms = (_NATIVE_UPLOAD_EXTENSIONS, _DRIVE_STAGED_UPLOAD_EXTENSIONS)
 
     union: set[str] = set()
     for arm in arms:

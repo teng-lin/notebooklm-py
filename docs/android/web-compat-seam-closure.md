@@ -148,10 +148,12 @@ Two findings beyond the original seam list:
 * **`.doc`, `.odt`, `.rtf`, and `.tsv` are refused by the Web upload endpoint
   too**, with HTTP 400 at the Scotty `start` and identically so when the content
   type is forced to `text/plain` — so the refusal is by extension, not MIME.
-  They are listed in `_UPLOAD_FILE_EXTENSIONS` as supported, which looks like a
-  pre-existing defect in that set rather than anything this backend introduced.
-  Routing them through Drive would paper over a Web-side gap; they are recorded
-  as rejected instead.
+  They had been asserted as uploadable in `_UPLOAD_FILE_EXTENSIONS` without ever
+  being put on the wire, which is the exact failure that set's own docstring
+  warns about: the Drive router uses it as a network gate, so it downloaded whole
+  files before the server rejected them. They now sit in
+  `_FILE_SHAPED_ONLY_EXTENSIONS`, which keeps their typo warnings while restoring
+  the fast client-side refusal.
 
 ### `.docx` / `.pptx` — native by way of Drive
 
@@ -182,6 +184,21 @@ Four findings, none of which yields a direct upload:
    `AddSourcesAsync` is internal to the Web frontend — it appears in no mobile
    binary string and in no recovered mobile service. This is a server-side
    credential-class boundary, not a header that can be added.
+
+**No content type makes the native transaction work.** The declared type was
+swept across the OOXML types, `application/zip`, `application/x-zip-compressed`,
+`application/epub+zip`, `application/vnd.google-apps.document`,
+`application/vnd.ms-word.document.macroEnabled.12` and
+`application/vnd.oasis.opendocument.text` — all error. The one that does not,
+`text/plain`, reports **READY while ingesting the raw ZIP container as text**:
+3,325 characters beginning `PK\x03\x04...`, with none of the document's words
+present. Renaming the file changes nothing, so the ingester dispatches on the
+declared content type, not the extension. A `READY` status is not evidence of a
+correct ingest, and CSV's `text/plain` rewrite does not generalise.
+
+`application/epub+zip` ingesting `.epub` correctly is the useful contrast: the
+frontend's allowlist is **not** the app's picker set (the app has no EPUB picker
+entry), and it does handle a ZIP container — just not an OOXML one.
 
 Finding 3 is the route. `DriveStagingTransfer` (`_android/drive_staging.py`)
 stages such files in the caller's own Drive with the `auth/drive` scope the

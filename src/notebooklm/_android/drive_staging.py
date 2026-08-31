@@ -43,6 +43,16 @@ logger = logging.getLogger(__name__)
 #: SOURCE_STATUS_ERROR) and then through the Drive route (READY, correct text).
 #: Full evidence: docs/android/web-compat-seam-closure.md.
 #:
+#: Sending them over the native transaction cannot be made to work: every
+#: plausible declared content type -- the OOXML types, ``application/zip``,
+#: ``application/epub+zip`` (a ZIP type the frontend demonstrably accepts for
+#: ``.epub``), ``application/vnd.google-apps.document`` -- errors, and the one
+#: type that does not, ``text/plain``, reports READY while ingesting the raw
+#: ZIP container as text (``PK\x03\x04...``, none of the document's words
+#: present). The Scotty ingester dispatches on the declared type and has no
+#: OOXML parser behind it; the Drive import reaches a different backend entry
+#: point that does.
+#:
 #: This set is one arm of an exhaustive partition of
 #: :data:`~notebooklm._types.sources._UPLOAD_FILE_EXTENSIONS`; see
 #: :data:`_NATIVE_UPLOAD_EXTENSIONS` below. ``tests/unit/android`` fails if a
@@ -53,19 +63,12 @@ _DRIVE_STAGED_UPLOAD_EXTENSIONS = frozenset({".docx", ".pptx"})
 #: Extensions the mobile Scotty frontend ingests directly.
 #:
 #: ``.csv`` is here rather than above because only its *content type* was the
-#: problem -- ``_adapt_csv_content_type`` sends it as ``text/plain`` and it
-#: completes. The bytes still go over the native transaction.
+#: problem -- ``_adapt_csv_content_type`` sends it as ``text/plain`` and the
+#: text ingests correctly. The bytes still go over the native transaction.
+#: ``.epub`` shows the frontend's allowlist is not the app's picker set: the
+#: app has no EPUB picker entry, yet ``application/epub+zip`` ingests natively.
 _NATIVE_UPLOAD_EXTENSIONS = frozenset({".csv", ".epub", ".markdown", ".md", ".pdf", ".txt"})
 
-#: Extensions in the public set that NEITHER backend's upload endpoint accepts.
-#:
-#: Each is refused at the Scotty ``start`` with HTTP 400 on Web -- including
-#: when the content type is forced to ``text/plain``, so the refusal is by
-#: extension, not by MIME -- and errors on the Android frontend too. They are
-#: listed here to keep the partition exhaustive, not to claim support; routing
-#: them through Drive would paper over a Web-side gap this backend did not
-#: create. See docs/android/web-compat-seam-closure.md.
-_UPLOAD_REJECTED_BY_BOTH_BACKENDS = frozenset({".doc", ".odt", ".rtf", ".tsv"})
 
 DRIVE_API_ORIGIN = "https://www.googleapis.com"
 # Staging reads the whole file into memory to build one multipart body, so the
@@ -307,7 +310,6 @@ __all__ = [
     "DRIVE_API_ORIGIN",
     "_DRIVE_STAGED_UPLOAD_EXTENSIONS",
     "_NATIVE_UPLOAD_EXTENSIONS",
-    "_UPLOAD_REJECTED_BY_BOTH_BACKENDS",
     "DriveStagingTransfer",
     "ImportDriveFile",
     "build_multipart_body",
