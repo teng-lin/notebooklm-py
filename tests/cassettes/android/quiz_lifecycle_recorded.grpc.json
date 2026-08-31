@@ -1,0 +1,261 @@
+{
+  "format": "notebooklm.android.grpc-cassette",
+  "interactions": [
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEQAQ==",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetProjectRequest"
+      },
+      "response_protobuf_type": "notebooklm.internal.android.wire.v1.WireGetProjectResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CrgBChRTQ1JVQkJFRF9TVFJJTkdfMDAyNRJGCiYKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMhIUU0NSVUJCRURfU1RSSU5HXzAwMjYaAigEIgIQAhokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxIhRTQ1JVQkJFRF9TVFJJTkdfMDAyNzIICAFKBAgBEAFSBggBEAEYAVoKCAEQARgBIAEoAQ==",
+          "protobuf_type": "notebooklm.internal.android.wire.v1.WireGetProjectResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateArtifact",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEaOBgEIigKJgokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyUgoSCAgCQgQIAhAC",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.CreateArtifactRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.CreateArtifactResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CowBCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMSFFNDUlVCQkVEX1NUUklOR18wMDI1GAQiKAomCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDIoAlIgEh4IAiIUU0NSVUJCRURfU1RSSU5HXzAwMjhCBAgCEAI=",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.CreateArtifactResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListArtifacts",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CqwBCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMSFFNDUlVCQkVEX1NUUklOR18wMDI1GAQiKAomCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDIoAlIgEh4IAiIUU0NSVUJCRURfU1RSSU5HXzAwMjhCBAgCEAJaBAgBEAGSAQCyARRTQ1JVQkJFRF9TVFJJTkdfMDAyOQ==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetArtifact",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDM=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetArtifactRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetArtifactResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CqwBCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMSFFNDUlVCQkVEX1NUUklOR18wMDI1GAQiKAomCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDIoAlIgEh4IAiIUU0NSVUJCRURfU1RSSU5HXzAwMjhCBAgCEAJaBAgBEAGSAQCyARRTQ1JVQkJFRF9TVFJJTkdfMDAyOQ==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetArtifactResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListArtifacts",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CqwBCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMSFFNDUlVCQkVEX1NUUklOR18wMDI1GAQiKAomCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDIoAlIgEh4IAiIUU0NSVUJCRURfU1RSSU5HXzAwMjhCBAgCEAJaBAgBEAGSAQCyARRTQ1JVQkJFRF9TVFJJTkdfMDAyOQ==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetArtifact",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDM=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetArtifactRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetArtifactResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CqwBCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMSFFNDUlVCQkVEX1NUUklOR18wMDI1GAQiKAomCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDIoAlIgEh4IAiIUU0NSVUJCRURfU1RSSU5HXzAwMjhCBAgCEAJaBAgBEAGSAQCyARRTQ1JVQkJFRF9TVFJJTkdfMDAyOQ==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetArtifactResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListArtifacts",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CqwBCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMSFFNDUlVCQkVEX1NUUklOR18wMDMwGAQiKAomCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDIoA1IgEh4IAiIUU0NSVUJCRURfU1RSSU5HXzAwMjhCBAgCEAJaBAgBEAGSAQCyARRTQ1JVQkJFRF9TVFJJTkdfMDAzMQ==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetArtifact",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDM=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetArtifactRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetArtifactResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CtgBCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMSFFNDUlVCQkVEX1NUUklOR18wMDMwGAQiKAomCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDIoA1JMChRTQ1JVQkJFRF9TVFJJTkdfMDAzMhIeCAIiFFNDUlVCQkVEX1NUUklOR18wMDI4QgQIAhACIhRTQ1JVQkJFRF9TVFJJTkdfMDAzM1oECAEQAZIBALIBFFNDUlVCQkVEX1NUUklOR18wMDMx",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetArtifactResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListArtifacts",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CqwBCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMSFFNDUlVCQkVEX1NUUklOR18wMDMwGAQiKAomCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDIoA1IgEh4IAiIUU0NSVUJCRURfU1RSSU5HXzAwMjhCBAgCEAJaBAgBEAGSAQCyARRTQ1JVQkJFRF9TVFJJTkdfMDAzMQ==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetNotes",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesResponse",
+      "responses": [
+        {
+          "protobuf_b64": "Cl4SXAokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA0EhRTQ1JVQkJFRF9TVFJJTkdfMDAzNBoICAEaBAgBEAEqFFNDUlVCQkVEX1NUUklOR18wMDM1CgAKAA==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListArtifacts",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CqwBCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMSFFNDUlVCQkVEX1NUUklOR18wMDMwGAQiKAomCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDIoA1IgEh4IAiIUU0NSVUJCRURfU1RSSU5HXzAwMjhCBAgCEAJaBAgBEAGSAQCyARRTQ1JVQkJFRF9TVFJJTkdfMDAzMQ==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/UpdateArtifact",
+      "request": {
+        "protobuf_b64": "CjwKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMxIUU0NSVUJCRURfU1RSSU5HXzAwMDkSFwoVU0NSVUJCRURfUkVRVUVTVF8wMDAxGhRTQ1JVQkJFRF9TVFJJTkdfMDAzMQ==",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.UpdateArtifactRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.Artifact",
+      "responses": [
+        {
+          "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMSFFNDUlVCQkVEX1NUUklOR18wMDA5GAQiKAomCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDIoA1JMChRTQ1JVQkJFRF9TVFJJTkdfMDAzNhIeCAIiFFNDUlVCQkVEX1NUUklOR18wMDI4QgQIAhACIhRTQ1JVQkJFRF9TVFJJTkdfMDAzM1oECAEQAZIBALIBFFNDUlVCQkVEX1NUUklOR18wMDM3",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.Artifact"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListArtifacts",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CqwBCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMSFFNDUlVCQkVEX1NUUklOR18wMDA5GAQiKAomCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDIoA1IgEh4IAiIUU0NSVUJCRURfU1RSSU5HXzAwMjhCBAgCEAJaBAgBEAGSAQCyARRTQ1JVQkJFRF9TVFJJTkdfMDAzNw==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListArtifacts",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CqwBCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMSFFNDUlVCQkVEX1NUUklOR18wMDA5GAQiKAomCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDIoA1IgEh4IAiIUU0NSVUJCRURfU1RSSU5HXzAwMjhCBAgCEAJaBAgBEAGSAQCyARRTQ1JVQkJFRF9TVFJJTkdfMDAzNw==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteArtifact",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDM=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.DeleteArtifactRequest"
+      },
+      "response_protobuf_type": "google.protobuf.Empty",
+      "responses": [
+        {
+          "protobuf_b64": "",
+          "protobuf_type": "google.protobuf.Empty"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListArtifacts",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse",
+      "responses": [
+        {
+          "protobuf_b64": "",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListArtifactsResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetNotes",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesResponse",
+      "responses": [
+        {
+          "protobuf_b64": "Cl4SXAokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA0EhRTQ1JVQkJFRF9TVFJJTkdfMDAzNBoICAEaBAgBEAEqFFNDUlVCQkVEX1NUUklOR18wMDM1CgAKAA==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    }
+  ],
+  "version": 1
+}

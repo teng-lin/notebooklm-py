@@ -1,0 +1,36 @@
+{
+  "format": "notebooklm.android.grpc-cassette",
+  "interactions": [
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetOrCreateAccount",
+      "request": {
+        "protobuf_b64": "CjwIAxIXChVTQ1JVQkJFRF9SRVFVRVNUXzAwMDEiHwgBWhsIAhABGhVTQ1JVQkJFRF9SRVFVRVNUXzAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetOrCreateAccountRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetOrCreateAccountResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CiwSCggBEAEYASABKAEaGggBKhYKFFNDUlVCQkVEX1NUUklOR18wMDI1KgIIAQ==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetOrCreateAccountResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateAccount",
+      "request": {
+        "protobuf_b64": "ChwSGgoYKhYKFFNDUlVCQkVEX1NUUklOR18wMDI1EjwIAxIXChVTQ1JVQkJFRF9SRVFVRVNUXzAwMDEiHwgBWhsIAhABGhVTQ1JVQkJFRF9SRVFVRVNUXzAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.MutateAccountRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.Account",
+      "responses": [
+        {
+          "protobuf_b64": "EgoIARABGAEgASgBGhoIASoWChRTQ1JVQkJFRF9TVFJJTkdfMDAyNSoCCAE=",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.Account"
+        }
+      ],
+      "shape": "unary_unary"
+    }
+  ],
+  "version": 1
+}

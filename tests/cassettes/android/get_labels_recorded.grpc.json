@@ -1,0 +1,36 @@
+{
+  "format": "notebooklm.android.grpc-cassette",
+  "interactions": [
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetLabelsRequest"
+      },
+      "response_protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse",
+      "responses": [
+        {
+          "protobuf_b64": "",
+          "protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",
+      "request": {
+        "protobuf_b64": "GAE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetLabelsRequest"
+      },
+      "response_protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse",
+      "responses": [
+        {
+          "protobuf_b64": "Eq4BChRTQ1JVQkJFRF9TVFJJTkdfMDAyNRIkMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyEiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMSJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwNBokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA1",
+          "protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    }
+  ],
+  "version": 1
+}

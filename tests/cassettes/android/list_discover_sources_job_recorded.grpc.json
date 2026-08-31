@@ -1,0 +1,21 @@
+{
+  "format": "notebooklm.android.grpc-cassette",
+  "interactions": [
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListDiscoverSourcesJob",
+      "request": {
+        "protobuf_b64": "GiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListDiscoverSourcesJobRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListDiscoverSourcesJobResponse",
+      "responses": [
+        {
+          "protobuf_b64": "",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListDiscoverSourcesJobResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    }
+  ],
+  "version": 1
+}

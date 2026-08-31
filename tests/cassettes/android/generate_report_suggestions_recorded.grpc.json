@@ -1,0 +1,21 @@
+{
+  "format": "notebooklm.android.grpc-cassette",
+  "interactions": [
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateReportSuggestions",
+      "request": {
+        "protobuf_b64": "CjwIAxIXChVTQ1JVQkJFRF9SRVFVRVNUXzAwMDEiHwgBWhsIAhABGhVTQ1JVQkJFRF9SRVFVRVNUXzAwMDESJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMQ==",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GenerateReportSuggestionsRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GenerateReportSuggestionsResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CkQKFFNDUlVCQkVEX1NUUklOR18wMDI1EhRTQ1JVQkJFRF9TVFJJTkdfMDAyNioUU0NSVUJCRURfU1RSSU5HXzAwMjcwAQpEChRTQ1JVQkJFRF9TVFJJTkdfMDAyOBIUU0NSVUJCRURfU1RSSU5HXzAwMjkqFFNDUlVCQkVEX1NUUklOR18wMDMwMAEKRAoUU0NSVUJCRURfU1RSSU5HXzAwMzESFFNDUlVCQkVEX1NUUklOR18wMDMyKhRTQ1JVQkJFRF9TVFJJTkdfMDAzMzABCkQKFFNDUlVCQkVEX1NUUklOR18wMDM0EhRTQ1JVQkJFRF9TVFJJTkdfMDAzNSoUU0NSVUJCRURfU1RSSU5HXzAwMzYwAQ==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GenerateReportSuggestionsResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    }
+  ],
+  "version": 1
+}

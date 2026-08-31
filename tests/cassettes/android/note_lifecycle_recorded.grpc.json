@@ -1,0 +1,141 @@
+{
+  "format": "notebooklm.android.grpc-cassette",
+  "interactions": [
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateNote",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDESFFNDUlVCQkVEX1NUUklOR18wMDEwGgIIASoUU0NSVUJCRURfU1RSSU5HXzAwMDk=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.CreateNoteRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.CreateNoteResponse",
+      "responses": [
+        {
+          "protobuf_b64": "ClwKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMhIUU0NSVUJCRURfU1RSSU5HXzAwMTAaCAgBGgQIARABKhRTQ1JVQkJFRF9TVFJJTkdfMDAwOQ==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.CreateNoteResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetNotes",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesResponse",
+      "responses": [
+        {
+          "protobuf_b64": "Cl4SXAokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyEhRTQ1JVQkJFRF9TVFJJTkdfMDAxMBoICAEaBAgBEAEqFFNDUlVCQkVEX1NUUklOR18wMDA5Cl4SXAokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAzEhRTQ1JVQkJFRF9TVFJJTkdfMDAyNRoICAEaBAgBEAEqFFNDUlVCQkVEX1NUUklOR18wMDI2",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetNotes",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesResponse",
+      "responses": [
+        {
+          "protobuf_b64": "Cl4SXAokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyEhRTQ1JVQkJFRF9TVFJJTkdfMDAxMBoICAEaBAgBEAEqFFNDUlVCQkVEX1NUUklOR18wMDA5Cl4SXAokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAzEhRTQ1JVQkJFRF9TVFJJTkdfMDAyNRoICAEaBAgBEAEqFFNDUlVCQkVEX1NUUklOR18wMDI2",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateNote",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDESJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMhouCiwKFFNDUlVCQkVEX1NUUklOR18wMDEyEhRTQ1JVQkJFRF9TVFJJTkdfMDAxMQ==",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.MutateNoteRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.MutateNoteResponse",
+      "responses": [
+        {
+          "protobuf_b64": "ClwKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMhIUU0NSVUJCRURfU1RSSU5HXzAwMTIaCAgBGgQIARABKhRTQ1JVQkJFRF9TVFJJTkdfMDAxMQ==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.MutateNoteResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetNotes",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesResponse",
+      "responses": [
+        {
+          "protobuf_b64": "Cl4SXAokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyEhRTQ1JVQkJFRF9TVFJJTkdfMDAxMhoICAEaBAgBEAEqFFNDUlVCQkVEX1NUUklOR18wMDExCl4SXAokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAzEhRTQ1JVQkJFRF9TVFJJTkdfMDAyNRoICAEaBAgBEAEqFFNDUlVCQkVEX1NUUklOR18wMDI2",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetNotes",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesResponse",
+      "responses": [
+        {
+          "protobuf_b64": "Cl4SXAokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyEhRTQ1JVQkJFRF9TVFJJTkdfMDAxMhoICAEaBAgBEAEqFFNDUlVCQkVEX1NUUklOR18wMDExCl4SXAokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAzEhRTQ1JVQkJFRF9TVFJJTkdfMDAyNRoICAEaBAgBEAEqFFNDUlVCQkVEX1NUUklOR18wMDI2",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetNotes",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesResponse",
+      "responses": [
+        {
+          "protobuf_b64": "Cl4SXAokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyEhRTQ1JVQkJFRF9TVFJJTkdfMDAxMhoICAEaBAgBEAEqFFNDUlVCQkVEX1NUUklOR18wMDExCl4SXAokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAzEhRTQ1JVQkJFRF9TVFJJTkdfMDAyNRoICAEaBAgBEAEqFFNDUlVCQkVEX1NUUklOR18wMDI2",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteNotes",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEaJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMg==",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.DeleteNotesRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.DeleteNotesResponse",
+      "responses": [
+        {
+          "protobuf_b64": "",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.DeleteNotesResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetNotes",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesResponse",
+      "responses": [
+        {
+          "protobuf_b64": "Cl4SXAokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAzEhRTQ1JVQkJFRF9TVFJJTkdfMDAyNRoICAEaBAgBEAEqFFNDUlVCQkVEX1NUUklOR18wMDI2CgA=",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetNotesResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    }
+  ],
+  "version": 1
+}

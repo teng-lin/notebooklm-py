@@ -1331,10 +1331,51 @@ The `RedactingFilter` preserves `record.exc_info` (the live exception object) so
 |----------|---------|---------|
 | `test.yml` | Push/PR | Unit tests, linting, type checking |
 | `nightly.yml` | Daily 6 AM UTC (`main`), manual dispatch for `release/*` | E2E tests with real API |
-| `rpc-health.yml` | Daily 7 AM UTC (`main`), manual dispatch for `release/*` | RPC method ID monitoring (see [stability.md](stability.md#automated-rpc-health-check)) |
+| `rpc-health.yml` | Daily 7 AM UTC (`main`), manual dispatch for `release/*` | RPC method ID monitoring (see [stability.md](stability.md#automated-rpc-health-check)) plus the [Android gRPC canary](#android-grpc-canary) |
 | `testpypi-publish.yml` | Manual dispatch | Publish to TestPyPI |
 | `verify-package.yml` | Manual dispatch | Verify TestPyPI or PyPI install + E2E |
 | `publish.yml` | Tag push | Publish to PyPI |
+
+#### Android gRPC canary
+
+`rpc-health.yml` also runs a second, lightweight job, `android-grpc-health`, on
+the same schedule and `workflow_dispatch`. It runs `scripts/android_grpc_canary.py`,
+a read-only probe of the private Android gRPC backend kept deliberately separate
+from the heavy Android E2E lane in `nightly.yml`. The script opens
+`NotebookLMClient.from_storage(backend="android")`, mints a bearer and forces one
+refresh (the generation must advance; the re-mint is retried once after 5 s
+because the Web `health-check` job mints from the same master token at the same
+minute, and a re-mint that still fails is the distinct `FAIL bearer refresh-mint …`
+verdict), calls unary `GetProject` and
+`ListChatSessions` through the public API, then re-issues both raw — `GetProject`
+decoded with the full recovered `GetProjectResponse`, as `sources.list` does —
+and prints per RPC a `SHAPE <rpc> <sha256>` fingerprint of the populated
+`(field_path, wire_type)` set (no values, ids, or text, so it is comparable
+across runs) and an `UNKNOWN <rpc> <n>` count of fields the recovered schema does
+not declare. A non-zero count is the steady state (the app protos are a subset of
+what the server sends; `GetProject` carries dozens), so drift is judged against a
+hand-authored baseline, not zero: the job passes
+`--baseline tests/fixtures/android/canary_baseline.json`
+(`{"<rpc>": {"shape": "<hex>", "unknown_fields": <n>}}`), and any RPC whose live
+shape or count differs prints `FAIL schema <rpc> … live=… baseline=…`. Until that
+file exists the job prints `WARN baseline missing …`, runs in diagnostic mode
+(green), and raises a `::warning::` annotation on the run so the inert drift
+check stays visible; author the file by hand from a reviewed run's
+`SHAPE`/`UNKNOWN` lines in the step summary. Transport or auth failures always
+`FAIL`. Every emitted line has the probed notebook id replaced with
+`<notebook-id>` and exception text scrubbed, so the summary carries no ids.
+`GenerateFreeFormStreamed` is the backend's only unary-stream RPC and it writes a
+chat turn, so the canary never calls it. Run it locally against your own profile:
+
+```bash
+NOTEBOOKLM_PROFILE=<profile> NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID=<id> \
+  uv run python scripts/android_grpc_canary.py \
+    --baseline tests/fixtures/android/canary_baseline.json
+```
+
+It never writes the baseline, fixtures, cassettes, or the evidence ledger; a
+changed `SHAPE`/`UNKNOWN` value is a prompt to re-capture, review, and update the
+baseline by hand, not something the canary fixes.
 
 ### Setting Up Nightly E2E Tests
 

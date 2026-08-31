@@ -1,0 +1,66 @@
+{
+  "format": "notebooklm.android.grpc-cassette",
+  "interactions": [
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListChatSessions",
+      "request": {
+        "protobuf_b64": "GiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListChatSessionsRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListChatSessionsResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CiYKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMg==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListChatSessionsResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListChatSessions",
+      "request": {
+        "protobuf_b64": "GiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListChatSessionsRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListChatSessionsResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CiYKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMg==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListChatSessionsResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListChatSessions",
+      "request": {
+        "protobuf_b64": "GiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListChatSessionsRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListChatSessionsResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CiYKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMg==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListChatSessionsResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListChatTurns",
+      "request": {
+        "protobuf_b64": "IiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDI=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListChatTurnsRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListChatTurnsResponse",
+      "responses": [
+        {
+          "protobuf_b64": "Ct0ECiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMSBAgBEAEYASqsBAqpBAoUU0NSVUJCRURfU1RSSU5HXzAwMjUaTgokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyEiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDIYASrAAwqSAgpgEAEaXAoaEAEaFgoUU0NSVUJCRURfU1RSSU5HXzAwMjYKIAgBEAEaGgoUU0NSVUJCRURfU1RSSU5HXzAwMjcSAggBChwIARABGhYKFFNDUlVCQkVEX1NUUklOR18wMDI4CjRSMgoUU0NSVUJCRURfU1RSSU5HXzAwMjkSGgoYChRTQ1JVQkJFRF9TVFJJTkdfMDAzMBIAChhaFgoUU0NSVUJCRURfU1RSSU5HXzAwMjkSLgomCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDQSBBABGAESLgomCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDQSBBABGAEipgEKJgokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA0EnwiAhgBKiIKIBABGhwKGhABGhYKFFNDUlVCQkVEX1NUUklOR18wMDMxMioKKAomCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDU6JgokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA0KAEKRAokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA2EgQIARABGAEiFFNDUlVCQkVEX1NUUklOR18wMDAx",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListChatTurnsResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    }
+  ],
+  "version": 1
+}

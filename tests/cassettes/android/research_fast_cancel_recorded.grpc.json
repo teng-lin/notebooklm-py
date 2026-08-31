@@ -1,0 +1,66 @@
+{
+  "format": "notebooklm.android.grpc-cassette",
+  "interactions": [
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DiscoverSourcesManifold",
+      "request": {
+        "protobuf_b64": "ChgKFFNDUlVCQkVEX1NUUklOR18wMDA5EAEYASIkMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAx",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.DiscoverSourcesManifoldRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.DiscoverSourcesManifoldResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDI=",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.DiscoverSourcesManifoldResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListDiscoverSourcesJob",
+      "request": {
+        "protobuf_b64": "GiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListDiscoverSourcesJobRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListDiscoverSourcesJobResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CqwICiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDIS9wcSGAoUU0NSVUJCRURfU1RSSU5HXzAwMDkQARgBItYHCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDISFFNDUlVCQkVEX1NUUklOR18wMDI1GhRTQ1JVQkJFRF9TVFJJTkdfMDAyNiABCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDMSFFNDUlVCQkVEX1NUUklOR18wMDI3GhRTQ1JVQkJFRF9TVFJJTkdfMDAyOCABCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDQSFFNDUlVCQkVEX1NUUklOR18wMDI5GhRTQ1JVQkJFRF9TVFJJTkdfMDAzMCABCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDUSFFNDUlVCQkVEX1NUUklOR18wMDMxGhRTQ1JVQkJFRF9TVFJJTkdfMDAzMiABCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDYSFFNDUlVCQkVEX1NUUklOR18wMDMzGhRTQ1JVQkJFRF9TVFJJTkdfMDAzNCABCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDcSFFNDUlVCQkVEX1NUUklOR18wMDM1GhRTQ1JVQkJFRF9TVFJJTkdfMDAzNiABCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDgSFFNDUlVCQkVEX1NUUklOR18wMDM3GhRTQ1JVQkJFRF9TVFJJTkdfMDAzOCABCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDkSFFNDUlVCQkVEX1NUUklOR18wMDM5GhRTQ1JVQkJFRF9TVFJJTkdfMDA0MCABCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMTASFFNDUlVCQkVEX1NUUklOR18wMDQxGhRTQ1JVQkJFRF9TVFJJTkdfMDA0MiABCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMTESFFNDUlVCQkVEX1NUUklOR18wMDQzGhRTQ1JVQkJFRF9TVFJJTkdfMDA0NCABEhRTQ1JVQkJFRF9TVFJJTkdfMDA0NSgCGgQIARABIgQIARAB",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListDiscoverSourcesJobResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CancelDiscoverSourcesJob",
+      "request": {
+        "protobuf_b64": "CjwIAxIXChVTQ1JVQkJFRF9SRVFVRVNUXzAwMDEiHwgBWhsIAhABGhVTQ1JVQkJFRF9SRVFVRVNUXzAwMDEaJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMg==",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.CancelDiscoverSourcesJobRequest"
+      },
+      "response_protobuf_type": "google.protobuf.Empty",
+      "responses": [
+        {
+          "protobuf_b64": "",
+          "protobuf_type": "google.protobuf.Empty"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListDiscoverSourcesJob",
+      "request": {
+        "protobuf_b64": "GiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListDiscoverSourcesJobRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListDiscoverSourcesJobResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CqwICiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDIS9wcSGAoUU0NSVUJCRURfU1RSSU5HXzAwMDkQARgBItYHCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDISFFNDUlVCQkVEX1NUUklOR18wMDI1GhRTQ1JVQkJFRF9TVFJJTkdfMDAyNiABCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDMSFFNDUlVCQkVEX1NUUklOR18wMDI3GhRTQ1JVQkJFRF9TVFJJTkdfMDAyOCABCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDQSFFNDUlVCQkVEX1NUUklOR18wMDI5GhRTQ1JVQkJFRF9TVFJJTkdfMDAzMCABCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDUSFFNDUlVCQkVEX1NUUklOR18wMDMxGhRTQ1JVQkJFRF9TVFJJTkdfMDAzMiABCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDYSFFNDUlVCQkVEX1NUUklOR18wMDMzGhRTQ1JVQkJFRF9TVFJJTkdfMDAzNCABCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDcSFFNDUlVCQkVEX1NUUklOR18wMDM1GhRTQ1JVQkJFRF9TVFJJTkdfMDAzNiABCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDgSFFNDUlVCQkVEX1NUUklOR18wMDM3GhRTQ1JVQkJFRF9TVFJJTkdfMDAzOCABCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDkSFFNDUlVCQkVEX1NUUklOR18wMDM5GhRTQ1JVQkJFRF9TVFJJTkdfMDA0MCABCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMTASFFNDUlVCQkVEX1NUUklOR18wMDQxGhRTQ1JVQkJFRF9TVFJJTkdfMDA0MiABCl4KLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMTESFFNDUlVCQkVEX1NUUklOR18wMDQzGhRTQ1JVQkJFRF9TVFJJTkdfMDA0NCABEhRTQ1JVQkJFRF9TVFJJTkdfMDA0NSgCGgQIARABIgQIARAB",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.ListDiscoverSourcesJobResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    }
+  ],
+  "version": 1
+}

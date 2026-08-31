@@ -2,7 +2,7 @@
 
 import importlib.util
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -32,6 +32,52 @@ _ANDROID_GRPC_RECORD_ENV = "NOTEBOOKLM_ANDROID_GRPC_RECORD"
 def _is_android_grpc_record_mode() -> bool:
     """Return whether live Android gRPC cassette recording is explicit."""
     return os.environ.get(_ANDROID_GRPC_RECORD_ENV, "").casefold() in ("1", "true", "yes")
+
+
+@pytest.fixture(scope="session")
+def android_record_scratch() -> Iterator[Any]:
+    """Disposable live notebook for Android cassette *recording*; ``None`` on replay.
+
+    Created and deleted through a plain (unrecorded) client in their own event
+    loops, so scratch setup traffic never lands in a cassette. Session-scoped so
+    every recorded family sees the same notebook, source, and note.
+    """
+    if not _is_android_grpc_record_mode():
+        yield None
+        return
+    import asyncio
+
+    from tests._helpers.android_grpc_harness import (
+        create_scratch_notebook,
+        delete_scratch_notebook,
+    )
+
+    scratch = asyncio.run(create_scratch_notebook())
+    try:
+        yield scratch
+    finally:
+        asyncio.run(delete_scratch_notebook(scratch))
+
+
+@pytest.fixture
+def android_grpc_cassette(
+    monkeypatch: pytest.MonkeyPatch,
+    android_record_scratch: Any,
+) -> Callable[[str], Any]:
+    """Bind a ``@pytest.mark.grpc_cassette`` test to ``tests/cassettes/android/<name>_recorded.grpc.json``.
+
+    Returns an async context manager yielding ``(client, values)``; see
+    ``tests/_helpers/android_grpc_harness.py`` for the record/replay contract.
+    """
+    from tests._helpers.android_grpc_harness import android_cassette_client
+
+    def bind(name: str) -> Any:
+        path = CASSETTES_DIR / "android" / f"{name}_recorded.grpc.json"
+        return android_cassette_client(
+            path, monkeypatch=monkeypatch, scratch=android_record_scratch
+        )
+
+    return bind
 
 
 # =============================================================================
@@ -320,9 +366,13 @@ def _block_unbound_network_in_replay(request, monkeypatch):
     2. The test is NOT marked ``allow_no_vcr``, and
     3. The test IS marked ``vcr`` OR carries a
        ``@notebooklm_vcr.use_cassette`` decorator OR uses the ``vcr``
-       pytest fixture (any of the three known cassette-binding paths).
+       pytest fixture (any of the three known cassette-binding paths)
+       OR is marked ``grpc_cassette``, and
+    4. For ``grpc_cassette`` tests, Android record mode
+       (``NOTEBOOKLM_ANDROID_GRPC_RECORD=1``) is OFF — recording loads and
+       refreshes real auth over HTTP, which is never part of a cassette.
 
-    When all three conditions hold, we wrap ``httpx.AsyncClient.send`` so
+    When these conditions hold, we wrap ``httpx.AsyncClient.send`` so
     that any request reaching it without an active vcrpy cassette context
     raises ``RuntimeError`` with a clear message instead of leaking
     traffic to the real backend.
@@ -349,6 +399,11 @@ def _block_unbound_network_in_replay(request, monkeypatch):
 
     if _vcr_record_mode:
         return  # Web recording: real HTTP calls are intentional.
+
+    if is_grpc_cassette and _is_android_grpc_record_mode():
+        # Android recording: the live client loads and refreshes real auth over
+        # HTTP before any gRPC call, and that traffic is never part of a cassette.
+        return
 
     has_decorator = _has_use_cassette_decorator(request.node)
     # ``vcr`` pytest fixture (pytest-vcr) binds a cassette via fixture

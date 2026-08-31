@@ -1,0 +1,306 @@
+{
+  "format": "notebooklm.android.grpc-cassette",
+  "interactions": [
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEQAQ==",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetProjectRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetProjectResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CrgBChRTQ1JVQkJFRF9TVFJJTkdfMDAyNRJGCiYKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMhIUU0NSVUJCRURfU1RSSU5HXzAwMjYaAigEIgIQAhokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxIhRTQ1JVQkJFRF9TVFJJTkdfMDAyNzIICAFKBAgBEAFSBggBEAEYAVoKCAEQARgBIAEoAQ==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetProjectResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateLabel",
+      "request": {
+        "protobuf_b64": "CjwIAxIXChVTQ1JVQkJFRF9SRVFVRVNUXzAwMDEiHwgBWhsIAhABGhVTQ1JVQkJFRF9SRVFVRVNUXzAwMDESJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMTIuCiwKFFNDUlVCQkVEX1NUUklOR18wMDA5EhRTQ1JVQkJFRF9TVFJJTkdfMDAxMA==",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.CreateLabelRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.CreateLabelResponse",
+      "responses": [
+        {
+          "protobuf_b64": "ElIKFFNDUlVCQkVEX1NUUklOR18wMDA5GiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMiFFNDUlVCQkVEX1NUUklOR18wMDEw",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.CreateLabelResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetLabelsRequest"
+      },
+      "response_protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse",
+      "responses": [
+        {
+          "protobuf_b64": "ClIKFFNDUlVCQkVEX1NUUklOR18wMDA5GiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMiFFNDUlVCQkVEX1NUUklOR18wMDEw",
+          "protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateLabel",
+      "request": {
+        "protobuf_b64": "CjwIAxIXChVTQ1JVQkJFRF9SRVFVRVNUXzAwMDEiHwgBWhsIAhABGhVTQ1JVQkJFRF9SRVFVRVNUXzAwMDESJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMRokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAzIi4KLAoUU0NSVUJCRURfU1RSSU5HXzAwMTESFFNDUlVCQkVEX1NUUklOR18wMDEw",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.MutateLabelRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.MutateLabelResponse",
+      "responses": [
+        {
+          "protobuf_b64": "",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.MutateLabelResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetLabelsRequest"
+      },
+      "response_protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse",
+      "responses": [
+        {
+          "protobuf_b64": "ClIKFFNDUlVCQkVEX1NUUklOR18wMDExGiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMiFFNDUlVCQkVEX1NUUklOR18wMDEw",
+          "protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetLabelsRequest"
+      },
+      "response_protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse",
+      "responses": [
+        {
+          "protobuf_b64": "ClIKFFNDUlVCQkVEX1NUUklOR18wMDExGiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMiFFNDUlVCQkVEX1NUUklOR18wMDEw",
+          "protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateLabel",
+      "request": {
+        "protobuf_b64": "CjwIAxIXChVTQ1JVQkJFRF9SRVFVRVNUXzAwMDEiHwgBWhsIAhABGhVTQ1JVQkJFRF9SRVFVRVNUXzAwMDESJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMRokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAzIi4KLAoUU0NSVUJCRURfU1RSSU5HXzAwMTESFFNDUlVCQkVEX1NUUklOR18wMDEy",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.MutateLabelRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.MutateLabelResponse",
+      "responses": [
+        {
+          "protobuf_b64": "",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.MutateLabelResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetLabelsRequest"
+      },
+      "response_protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse",
+      "responses": [
+        {
+          "protobuf_b64": "ClIKFFNDUlVCQkVEX1NUUklOR18wMDExGiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMiFFNDUlVCQkVEX1NUUklOR18wMDEy",
+          "protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateLabel",
+      "request": {
+        "protobuf_b64": "CjwIAxIXChVTQ1JVQkJFRF9SRVFVRVNUXzAwMDEiHwgBWhsIAhABGhVTQ1JVQkJFRF9SRVFVRVNUXzAwMDESJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMRokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAzIigSJgokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAy",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.MutateLabelRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.MutateLabelResponse",
+      "responses": [
+        {
+          "protobuf_b64": "",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.MutateLabelResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetLabelsRequest"
+      },
+      "response_protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CnoKFFNDUlVCQkVEX1NUUklOR18wMDExEiYKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMhokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAzIhRTQ1JVQkJFRF9TVFJJTkdfMDAxMg==",
+          "protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetLabelsRequest"
+      },
+      "response_protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CnoKFFNDUlVCQkVEX1NUUklOR18wMDExEiYKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMhokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAzIhRTQ1JVQkJFRF9TVFJJTkdfMDAxMg==",
+          "protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEQAQ==",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetProjectRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetProjectResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CrgBChRTQ1JVQkJFRF9TVFJJTkdfMDAyNRJGCiYKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMhIUU0NSVUJCRURfU1RSSU5HXzAwMjYaAigEIgIQAhokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxIhRTQ1JVQkJFRF9TVFJJTkdfMDAyNzIICAFKBAgBEAFSBggBEAEYAVoKCAEQARgBIAEoAQ==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetProjectResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateLabel",
+      "request": {
+        "protobuf_b64": "CjwIAxIXChVTQ1JVQkJFRF9SRVFVRVNUXzAwMDEiHwgBWhsIAhABGhVTQ1JVQkJFRF9SRVFVRVNUXzAwMDESJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMRokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAzIigaJgokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAy",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.MutateLabelRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.MutateLabelResponse",
+      "responses": [
+        {
+          "protobuf_b64": "",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.MutateLabelResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetLabelsRequest"
+      },
+      "response_protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse",
+      "responses": [
+        {
+          "protobuf_b64": "ClIKFFNDUlVCQkVEX1NUUklOR18wMDExGiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMiFFNDUlVCQkVEX1NUUklOR18wMDEy",
+          "protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateLabel",
+      "request": {
+        "protobuf_b64": "CjwIAxIXChVTQ1JVQkJFRF9SRVFVRVNUXzAwMDEiHwgBWhsIAhABGhVTQ1JVQkJFRF9SRVFVRVNUXzAwMDESJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSoCCAE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.CreateLabelRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.CreateLabelResponse",
+      "responses": [
+        {
+          "protobuf_b64": "EmQKFFNDUlVCQkVEX1NUUklOR18wMDI4EiYKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMhokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA0",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.CreateLabelResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetLabelsRequest"
+      },
+      "response_protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CmQKFFNDUlVCQkVEX1NUUklOR18wMDI4EiYKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMhokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA0",
+          "protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetLabelsRequest"
+      },
+      "response_protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CmQKFFNDUlVCQkVEX1NUUklOR18wMDI4EiYKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMhokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA0",
+          "protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteLabels",
+      "request": {
+        "protobuf_b64": "CjwIAxIXChVTQ1JVQkJFRF9SRVFVRVNUXzAwMDEiHwgBWhsIAhABGhVTQ1JVQkJFRF9SRVFVRVNUXzAwMDESJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMRokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA0",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.DeleteLabelsRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.DeleteLabelsResponse",
+      "responses": [
+        {
+          "protobuf_b64": "",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.DeleteLabelsResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetLabelsRequest"
+      },
+      "response_protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse",
+      "responses": [
+        {
+          "protobuf_b64": "",
+          "protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetLabelsRequest"
+      },
+      "response_protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse",
+      "responses": [
+        {
+          "protobuf_b64": "",
+          "protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    }
+  ],
+  "version": 1
+}

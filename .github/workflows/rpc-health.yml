@@ -769,3 +769,193 @@ jobs:
       run: |
         echo "RPC Health Check failed (exit code: ${{ steps.health.outputs.exit_code }}). See report above."
         exit 1
+
+  # ------------------------------------------------------------------
+  # Android gRPC canary — Layer 3 of
+  # docs/plan/2026-08-30-android-grpc-integration-testing.md. A light,
+  # READ-ONLY probe of the private Android gRPC backend: bearer mint plus
+  # one forced refresh, unary GetProject, unary ListChatSessions, and a
+  # strict protobuf decode that fingerprints each response's shape and
+  # fails on any unknown field (``scripts/android_grpc_canary.py``). It is
+  # deliberately separate from the heavy Android E2E lane in nightly.yml,
+  # never writes to the notebook, and never rewrites a cassette or fixture.
+  #
+  # Independent of ``health-check`` above: its own concurrency group, its
+  # own report file, and no shared step outputs, so a Web-lane failure and
+  # an Android-lane failure are always two distinct red jobs. A FAIL line
+  # is the whole signal — the job goes red; nothing files an issue yet.
+  # The step summary carries the OK/FAIL/SHAPE lines for triage.
+  # ------------------------------------------------------------------
+  android-grpc-health:
+    name: Android gRPC Canary (${{ needs.resolve-branch.outputs.branch }})
+    needs: resolve-branch
+    if: needs.resolve-branch.outputs.is_standard == 'true'
+    runs-on: ubuntu-latest
+    # A hung gpsoauth mint or gRPC connect must not burn the 6 h default.
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    concurrency:
+      group: android-grpc-health-${{ needs.resolve-branch.outputs.branch }}
+      cancel-in-progress: true
+    # Explicit: a red canary must surface as a red job, never be absorbed.
+    continue-on-error: false
+    # Same unconditional environment binding as ``health-check`` (#1009);
+    # a feature-branch workflow_dispatch never reaches this job because of
+    # the ``is_standard`` gate above. See docs/development.md → "Workflow
+    # secret gates".
+    environment: protected-readonly
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.resolve-branch.outputs.branch }}
+        persist-credentials: false
+
+    - name: Set up Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.12"
+        cache: 'pip'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # @ v7.0.0
+
+    - name: Install dependencies
+      # The SAME extras line as the nightly Android E2E lane, so the canary
+      # resolves the identical lockfile-pinned dependency tree that lane
+      # tests against (grpcio/protobuf/gpsoauth come from `--extra android`;
+      # `--extra headless` backs the master-token mint below). Retried to
+      # ride out transient registry/network blips only: a real lockfile
+      # problem fails all 3 attempts identically.
+      shell: bash
+      run: |
+        attempt=1; max=3
+        until uv sync --frozen --extra browser --extra dev --extra markdown --extra impersonate --extra mcp --extra server --extra headless --extra android; do
+          if [ "$attempt" -ge "$max" ]; then
+            echo "::error::uv sync failed after $max attempts" >&2
+            exit 1
+          fi
+          echo "::warning::uv sync attempt $attempt failed; retrying in $((attempt * 15))s" >&2
+          sleep $((attempt * 15))
+          attempt=$((attempt + 1))
+        done
+
+    # Identical to the nightly Android lane's profile materialization: the
+    # master token is the only credential shipped, and the Android bearer
+    # is minted from it (src/notebooklm/_android/auth.py) via gpsoauth.
+    # The ``login --master-token-refresh`` mint also bootstraps
+    # storage_state.json, which ``from_storage`` requires to exist even
+    # though the Android backend never sends those cookies.
+    - name: Materialize auth profile
+      env:
+        NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets.NOTEBOOKLM_MASTER_TOKEN_JSON }}
+        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
+      shell: bash
+      run: |
+        if [ -z "${NOTEBOOKLM_MASTER_TOKEN_JSON:-}" ]; then
+          echo "::error::NOTEBOOKLM_MASTER_TOKEN_JSON resolved to empty. Env binding or secret config is broken — see docs/development.md → Workflow secret gates."
+          exit 1
+        fi
+        if [ -z "${NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID:-}" ]; then
+          echo "::error::NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID resolved to empty."
+          exit 1
+        fi
+        umask 077
+        mkdir -p ~/.notebooklm/profiles/default
+        printf '%s' "$NOTEBOOKLM_MASTER_TOKEN_JSON" > ~/.notebooklm/profiles/default/master_token.json
+        chmod 600 ~/.notebooklm/profiles/default/master_token.json
+        # `unset` is load-bearing: `login` refuses to run while inline env
+        # auth is set, and the secret is already on disk.
+        unset NOTEBOOKLM_MASTER_TOKEN_JSON
+        minted=""
+        for attempt in 1 2 3; do
+          if uv run notebooklm login --master-token-refresh; then
+            minted=1
+            break
+          fi
+          echo "::warning::master-token mint attempt ${attempt} failed."
+          if [ "$attempt" -lt 3 ]; then
+            # Jitter: the Web health-check job mints concurrently from the
+            # same token, so a fixed backoff would retry in lockstep.
+            sleep $((attempt * 15 + RANDOM % 20))
+          fi
+        done
+        if [ -z "$minted" ]; then
+          echo "::error::master-token mint failed after 3 attempts — no auth available."
+          exit 1
+        fi
+        echo "Auth profile materialized (master token; fresh cookies minted)."
+
+    - name: Run Android gRPC canary
+      # Auth comes from the profile materialized above. The script prints
+      # one ``OK``/``FAIL`` line per step plus ``SHAPE <rpc> <sha256>``
+      # fingerprints (populated field paths + wire types only — no values,
+      # ids, or text) and ``UNKNOWN <rpc> <n>`` counts, and exits non-zero
+      # on any failure or on a mismatch against the reviewed baseline.
+      #
+      # The recovered app protos do not declare every field the server
+      # sends (GetProject carries dozens of unknown fields in steady state),
+      # so drift is judged against ``tests/fixtures/android/canary_baseline.json``
+      # rather than against zero. That file is authored BY HAND from a
+      # reviewed run's SHAPE/UNKNOWN lines — the canary never writes it.
+      # Until it exists the step prints ``WARN baseline missing`` and runs
+      # in diagnostic mode (green), which is what the first run is for.
+      shell: bash
+      env:
+        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
+        TARGET_BRANCH: ${{ needs.resolve-branch.outputs.branch }}
+      run: |
+        echo "Testing branch: $TARGET_BRANCH"
+        set +e
+        uv run python scripts/android_grpc_canary.py \
+          --baseline tests/fixtures/android/canary_baseline.json 2>&1 | tee android-canary-report.txt
+        exit_code=${PIPESTATUS[0]}
+        # Diagnostic mode is green by design, so without this annotation an
+        # inert drift check would never be visible from the run list. It does
+        # not touch the exit code.
+        if grep -q '^WARN baseline missing' android-canary-report.txt; then
+          echo "::warning::Android canary running in diagnostic mode: tests/fixtures/android/canary_baseline.json is missing — author it from this run's SHAPE/UNKNOWN lines"
+        fi
+        exit "$exit_code"
+
+    - name: Scrub secrets from android-canary-report.txt
+      # Defence-in-depth, same posture as the Web report scrub above: the
+      # script prints only sanitized class names and hashes, but the report
+      # is re-scrubbed before the summary step reads it. Idempotent.
+      if: always()
+      shell: bash
+      run: |
+        if [ ! -f android-canary-report.txt ]; then
+          echo "::warning::android-canary-report.txt not produced; skipping scrub."
+          exit 0
+        fi
+        uv run python - <<'PY'
+        from pathlib import Path
+        from notebooklm._logging import scrub_secrets
+
+        report = Path("android-canary-report.txt")
+        original = report.read_text(encoding="utf-8", errors="replace")
+        scrubbed = scrub_secrets(original)
+        if scrubbed != original:
+            report.write_text(scrubbed, encoding="utf-8")
+            print(f"Scrubbed android-canary-report.txt (delta {abs(len(original) - len(scrubbed))} chars).")
+        else:
+            print("No secret-shaped substrings detected in android-canary-report.txt.")
+        PY
+
+    # Summary only — no artifact upload. The OK/FAIL/WARN/SHAPE/UNKNOWN
+    # grammar is the entire useful output and it lives in the run's step
+    # summary; the SHAPE/UNKNOWN lines are what a reviewer copies into the
+    # baseline file.
+    - name: Add Summary
+      if: always()
+      shell: bash
+      run: |
+        {
+          echo "## Android gRPC canary"
+          echo ""
+          echo '```'
+          grep -E '^(OK|FAIL|WARN|SHAPE|UNKNOWN) ' android-canary-report.txt 2>/dev/null || echo "(no canary output)"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"

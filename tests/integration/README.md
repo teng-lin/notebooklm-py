@@ -52,20 +52,106 @@ real profile home available. Replay remains isolated from the developer's
 profile. Hand-built fixtures must be named `*_synthetic.grpc.json`; do not call
 them recorded traffic.
 
-The initial representative recorded case is a sanitized read of a temporary,
-empty scratch notebook through public `notebooks.get` over `GetProject`; the
-scratch notebook was deleted immediately after capture. The staged decoder
-matrix should add recordings, one bounded family at a time, for:
+### Recorded families
 
-1. settings via unary `GetOrCreateAccount`;
-2. a rich `GetProject` project/source response;
-3. `LoadSource` structured content;
-4. `ListArtifacts` plus `GetNotes`;
-5. both `GetLabels` label/collection response arms;
-6. `ListDiscoverSourcesJob` research state;
-7. sharing `GetProjectDetails`;
-8. chat `ListChatSessions` plus `ListChatTurns`; and
-9. server-streaming `GenerateFreeFormStreamed`.
+Every `@pytest.mark.grpc_cassette` test in `test_android_grpc_cassette.py`
+binds one family through the `android_grpc_cassette` fixture and drives the
+**public** `NotebookLMClient(..., backend="android")`. The same test body
+records and replays (`tests/_helpers/android_grpc_harness.py`):
+
+| Cassette | Public calls | Wire RPCs |
+|---|---|---|
+| `get_or_create_account` | `settings.get_user_settings()` | `GetOrCreateAccount` |
+| `get_project_rich` | `notebooks.get()`, `sources.list()` | `GetProject` ×2 |
+| `load_source` | `sources.get_fulltext()` | `GetProject` ×2, `LoadSource` |
+| `list_artifacts_get_notes` | `artifacts.list()`, `notes.list()` | `ListArtifacts`, `GetNotes` ×2 |
+| `get_labels` | `labels.list()`, `collections.list()` | `GetLabels` ×2 |
+| `list_discover_sources_job` | `research.poll()` | `ListDiscoverSourcesJob` |
+| `get_project_details` | `sharing.get_status()` | `GetProjectDetails` |
+| `generate_free_form_streamed` | `chat.ask()` | `GetProject`, `ListChatSessions` ×2, `ListChatTurns`, `GenerateFreeFormStreamed (stream)` |
+| `list_chat_sessions_turns` | `chat.get_conversation_id()`, `chat.get_history()` | `ListChatSessions` ×3, `ListChatTurns` |
+| `notebook_lifecycle` | `notebooks.create/rename/set_emoji/list/copy/delete()` | `ListRecentlyViewedProjects` ×2, `CreateProject`, `MutateProject` ×2, `CopyProject`, `DeleteProjects` ×2 |
+| `generate_notebook_guide` | `notebooks.get_description()`, `notebooks.get_summary()` | `GenerateNotebookGuide` ×2 |
+| `source_lifecycle` | `sources.add_text/add_url/wait_until_ready/rename/get_guide/check_freshness/refresh/delete()` | `AddTentativeSources` ×2, `AddSources` ×2, `GetProject` ×10, `MutateSource`, `GenerateDocumentGuides`, `CheckSourceFreshness` ×2, `DeleteSources` ×2 |
+| `note_lifecycle` | `notes.create/update/get/delete()` | `CreateNote`, `GetNotes` ×6, `MutateNote`, `DeleteNotes` |
+| `label_lifecycle` | `labels.create/rename/set_emoji/add_sources/sources/remove_sources/generate/delete/list()` | `GetProject` ×2, `CreateLabel` ×2, `GetLabels` ×11, `MutateLabel` ×4, `DeleteLabels` |
+| `collection_lifecycle` | `collections.create/rename/add_notebooks/notebooks/remove_notebooks/delete/get_or_none()` | `GetLabels` ×9, `CreateLabel`, `MutateLabel` ×3, `ListRecentlyViewedProjects`, `DeleteLabels` |
+| `share_project` | `sharing.set_public()`, `sharing.get_status()` | `ShareProject` ×2, `GetProjectDetails` ×3 |
+| `delete_chat_turns` | `chat.ask()`, `chat.delete_conversation()`, `chat.get_history()` | `GetProject`, `ListChatSessions` ×5, `ListChatTurns` ×2, `GenerateFreeFormStreamed (stream)`, `DeleteChatTurns` |
+| `mutate_account` | `settings.get_output_language()`, `settings.set_output_language()` | `GetOrCreateAccount`, `MutateAccount` |
+| `act_on_sources_mind_map` | `artifacts.generate_mind_map()`, `notes.delete()` | `GetProject`, `ActOnSources`, `CreateNote`, `GetNotes` ×2, `DeleteNotes` |
+| `quiz_lifecycle` | `artifacts.generate_quiz/poll_status/get/rename/delete/get_or_none()` | `GetProject`, `CreateArtifact`, `ListArtifacts` ×8, `GetArtifact` ×3, `GetNotes` ×2, `UpdateArtifact`, `DeleteArtifact` |
+| `generate_report_suggestions` | `artifacts.suggest_reports()` | `GenerateReportSuggestions` |
+| `research_fast_cancel` | `research.start(mode="fast")`, `research.cancel()`, `research.poll()` | `DiscoverSourcesManifold`, `CancelDiscoverSourcesJob`, `ListDiscoverSourcesJob` |
+| `research_fast_import` | `research.start(mode="fast")`, `research.poll()`, `research.import_sources()` | `DiscoverSourcesManifold`, `ListDiscoverSourcesJob`, `FinishDiscoverSourcesRun` |
+
+23 families, 143 interactions. Re-record everything (creates one disposable scratch notebook with a text
+source and a note through an *unrecorded* client, records, then deletes it):
+
+```bash
+NOTEBOOKLM_ANDROID_GRPC_RECORD=1 NOTEBOOKLM_PROFILE=<profile> \
+    uv run pytest tests/integration/test_android_grpc_cassette.py -p no:randomly
+```
+
+Some families are *account*-scoped rather than scratch-scoped:
+`get_or_create_account` and `mutate_account` keep the recorder's real account
+booleans (for example `accepted_tos`, `is_premium_user`); `get_labels` and
+`collection_lifecycle` record the shape of the recorder's real collections
+(count and member count); `notebook_lifecycle` and `collection_lifecycle`
+record the recorder's whole `ListRecentlyViewedProjects` inventory — the
+notebook *count* plus per-project role and premium-feature booleans. Every id
+and title is a placeholder and nothing identifying survives, but re-recording
+binds those attributes of a real account into git — record from an account
+you are comfortable describing.
+
+Add `-k <family>` to re-record one cassette. Every protobuf type a cassette
+carries must be registered in `KNOWN_CASSETTE_PAYLOAD_TYPES`
+(`tests/unit/android/test_grpc_cassette.py`) so the canonicality guard can
+decode it and prove the redactor is a no-op on the committed bytes.
+
+Two rules make byte-exact request matching survive the record→replay gap:
+
+- **Reserved placeholders.** `ProtoRedactor.reserve()` assigns placeholders to
+  the test inputs (notebook id, question) *before* any traffic, in the same
+  order in both modes, so replay knows the exact placeholder each input became
+  (`00000000-0000-4000-8000-000000000001`, `SCRUBBED_STRING_0001`). The
+  fixture hands the test real values while recording and these placeholders on
+  replay.
+  The reservation sequence (notebook id, question, URL, research query, the
+  correlation names the harness feeds `sources.py` in place of its random
+  `nblm-…` nonces, then the free-text pool `values.texts`) is
+  part of the cassette contract: changing it renumbers every later placeholder,
+  so re-record all families after touching it.
+- **Request-local placeholders.** Requests are sanitized in a per-request
+  scope: values the redactor already knows (reservations, ids echoed by
+  earlier responses) keep their global placeholder, while unknown request
+  scalars — client constants such as action names, language codes, the
+  pinned app version — become `SCRUBBED_REQUEST_NNNN` numbered from one
+  within that request. Request bytes therefore never depend on how much
+  response traffic preceded them, which is what makes byte-exact matching
+  stable between recording and replay.
+  The flip side: a value the client mints itself and later matches against a
+  response echo (the `sources.py` correlation names) is request-local on the
+  request side but global on the response side, so the echo match fails on
+  replay unless the value is reserved. That is why the harness injects reserved
+  correlation names into `sources.py`; any new echo-match in `_android/` needs
+  the same treatment (the mismatch diff will show `SCRUBBED_REQUEST_…` against
+  `SCRUBBED_STRING_…`).
+- **Request normalizers.** `tests/_helpers/android_grpc_normalizers.py` clears
+  the few client-minted nonce fields (chat `user_message_id`) on both sides. It
+  is a per-method table, not a field-policy engine, and never touches responses.
+
+One integer field is exempt from numeric redaction:
+`ResearchJobInfo.status`, an enum-coded status the recovered proto declares as
+`int32` (see `_PRESERVED_CODE_FIELDS` in the seam). Everything else numeric
+still collapses to `1`.
+
+Known limitation: values rendered from *index ranges* over scrubbed text (the
+chat answer sliced out of `response_doc`) are not replayable, because numeric
+redaction collapses the ranges and string redaction changes lengths. Cassettes
+prove pairing, ordering, ids, and enum/boolean semantics; render assertions
+belong to the fake-server suite (`tests/unit/android/test_session_fake_server.py`)
+or E2E.
 
 ## When to use `allow_no_vcr`
 

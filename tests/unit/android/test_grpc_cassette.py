@@ -11,6 +11,7 @@ from typing import Any, cast
 
 import pytest
 from google.protobuf.any_pb2 import Any as AnyMessage
+from google.protobuf.empty_pb2 import Empty
 from google.protobuf.timestamp_pb2 import Timestamp
 from tests._helpers.android_grpc_cassette import (
     AndroidGrpcCassette,
@@ -23,8 +24,30 @@ from tests._helpers.android_grpc_cassette import (
 from tests.cassette_patterns import _CREDENTIAL_DETECTORS
 
 from notebooklm._android.auth import BearerCredential
-from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
-from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import notebooks_pb2
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
+    account_pb2,
+    artifacts_pb2,
+    chat_pb2,
+    notes_pb2,
+    organization_pb2,
+    read_pb2,
+    research_pb2,
+    sources_pb2,
+)
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
+    notebooks_pb2 as orchestration_notebooks_pb2,
+)
+from notebooklm._android.proto.labs.language.tailwind.sharing import sharing_pb2
+from notebooklm._android.proto.notebooklm.android.wire.v1 import (
+    organization_mutations_pb2,
+)
+from notebooklm._android.proto.notebooklm.android.wire.v1 import (
+    sharing_pb2 as wire_sharing_pb2,
+)
+from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import (
+    notebooks_pb2,
+    source_content_pb2,
+)
 from notebooklm._android.session import ANDROID_GRPC_TARGET, AndroidSession
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
@@ -40,9 +63,113 @@ SENSITIVE_TITLE = "private-project-title-must-not-persist"
 SENSITIVE_URL = "https://private.example.test/account/document"
 SENSITIVE_BEARER = "bearer-sensitive-value-must-not-persist"
 ANDROID_CASSETTES = Path(__file__).resolve().parents[2] / "cassettes" / "android"
+# Every protobuf type a committed cassette may carry. Registering a type here
+# is a review step: the canonicality test decodes each payload through it and
+# proves the mandatory redactor is already a no-op, so nothing escapes as
+# opaque base64.
+_CASSETTE_MESSAGE_TYPES = (
+    # 1. settings via unary GetOrCreateAccount
+    account_pb2.GetOrCreateAccountRequest,
+    account_pb2.GetOrCreateAccountResponse,
+    # 2. GetProject (notebooks.get decodes the wire projection; sources.list the raw response)
+    read_pb2.GetProjectRequest,
+    read_pb2.GetProjectResponse,
+    notebooks_pb2.WireGetProjectResponse,
+    # 3. LoadSource structured content
+    sources_pb2.LoadSourceRequest,
+    source_content_pb2.WireLoadSourceResponse,
+    # 4. ListArtifacts plus GetNotes
+    artifacts_pb2.ListArtifactsRequest,
+    artifacts_pb2.ListArtifactsResponse,
+    notes_pb2.GetNotesRequest,
+    notes_pb2.GetNotesResponse,
+    # 5. GetLabels (notebook labels and account collections)
+    organization_pb2.GetLabelsRequest,
+    organization_mutations_pb2.GetLabelsWireResponse,
+    # 6. ListDiscoverSourcesJob research state
+    research_pb2.ListDiscoverSourcesJobRequest,
+    research_pb2.ListDiscoverSourcesJobResponse,
+    # 7. sharing GetProjectDetails
+    sharing_pb2.GetProjectDetailsRequest,
+    wire_sharing_pb2.GetProjectDetailsResponse,
+    # 8. ListChatSessions plus ListChatTurns
+    chat_pb2.ListChatSessionsRequest,
+    chat_pb2.ListChatSessionsResponse,
+    chat_pb2.ListChatTurnsRequest,
+    chat_pb2.ListChatTurnsResponse,
+    # 9. server-streaming GenerateFreeFormStreamed
+    chat_pb2.GenerateFreeFormStreamedRequest,
+    chat_pb2.GenerateFreeFormStreamedResponse,
+    # --- mutation families ---
+    Empty,
+    # notebooks: CreateProject, MutateProject, ListRecentlyViewedProjects, CopyProject,
+    # DeleteProjects, GenerateNotebookGuide
+    orchestration_notebooks_pb2.CreateProjectRequest,
+    orchestration_notebooks_pb2.CopyProjectRequest,
+    orchestration_notebooks_pb2.DeleteProjectsRequest,
+    orchestration_notebooks_pb2.GenerateNotebookGuideRequest,
+    notebooks_pb2.WireMutateProjectRequest,
+    notebooks_pb2.WireGenerateNotebookGuideResponse,
+    read_pb2.Project,
+    read_pb2.ListRecentlyViewedProjectsRequest,
+    read_pb2.ListRecentlyViewedProjectsResponse,
+    # sources: AddTentativeSources, AddSources, MutateSource, GenerateDocumentGuides,
+    # CheckSourceFreshness, DeleteSources
+    sources_pb2.AddTentativeSourcesRequest,
+    sources_pb2.AddTentativeSourcesResponse,
+    sources_pb2.AddSourcesRequest,
+    sources_pb2.AddSourcesResponse,
+    sources_pb2.MutateSourceRequest,
+    sources_pb2.MutateSourceResponse,
+    sources_pb2.GenerateDocumentGuidesRequest,
+    sources_pb2.GenerateDocumentGuidesResponse,
+    sources_pb2.CheckSourceFreshnessRequest,
+    sources_pb2.CheckSourceFreshnessResponse,
+    sources_pb2.DeleteSourcesRequest,
+    # notes: CreateNote, MutateNote, DeleteNotes
+    notes_pb2.CreateNoteRequest,
+    notes_pb2.CreateNoteResponse,
+    notes_pb2.MutateNoteRequest,
+    notes_pb2.MutateNoteResponse,
+    notes_pb2.DeleteNotesRequest,
+    notes_pb2.DeleteNotesResponse,
+    # labels and collections: CreateLabel, MutateLabel, DeleteLabels
+    organization_pb2.CreateLabelRequest,
+    organization_pb2.CreateLabelResponse,
+    organization_pb2.MutateLabelRequest,
+    organization_pb2.MutateLabelResponse,
+    organization_pb2.DeleteLabelsRequest,
+    organization_pb2.DeleteLabelsResponse,
+    # sharing: ShareProject
+    sharing_pb2.ShareProjectRequest,
+    sharing_pb2.ShareProjectResponse,
+    # chat: DeleteChatTurns, ActOnSources (mind map)
+    chat_pb2.DeleteChatTurnsRequest,
+    chat_pb2.ActOnSourcesRequest,
+    chat_pb2.ActOnSourcesResponse,
+    # settings: MutateAccount
+    account_pb2.MutateAccountRequest,
+    account_pb2.Account,
+    # artifacts: CreateArtifact, GetArtifact, UpdateArtifact, DeleteArtifact,
+    # GenerateReportSuggestions
+    artifacts_pb2.Artifact,
+    artifacts_pb2.CreateArtifactRequest,
+    artifacts_pb2.CreateArtifactResponse,
+    artifacts_pb2.GetArtifactRequest,
+    artifacts_pb2.GetArtifactResponse,
+    artifacts_pb2.UpdateArtifactRequest,
+    artifacts_pb2.DeleteArtifactRequest,
+    artifacts_pb2.GenerateReportSuggestionsRequest,
+    artifacts_pb2.GenerateReportSuggestionsResponse,
+    # research: DiscoverSourcesManifold, CancelDiscoverSourcesJob, FinishDiscoverSourcesRun
+    research_pb2.DiscoverSourcesManifoldRequest,
+    research_pb2.DiscoverSourcesManifoldResponse,
+    research_pb2.CancelDiscoverSourcesJobRequest,
+    research_pb2.FinishDiscoverSourcesRunRequest,
+    research_pb2.FinishDiscoverSourcesRunResponse,
+)
 KNOWN_CASSETTE_PAYLOAD_TYPES = {
-    read_pb2.GetProjectRequest.DESCRIPTOR.full_name: read_pb2.GetProjectRequest,
-    notebooks_pb2.WireGetProjectResponse.DESCRIPTOR.full_name: notebooks_pb2.WireGetProjectResponse,
+    message_type.DESCRIPTOR.full_name: message_type for message_type in _CASSETTE_MESSAGE_TYPES
 }
 
 
@@ -280,8 +407,10 @@ async def test_recording_always_redacts_after_an_identity_custom_sanitizer(
     clean_request = AnyMessage.FromString(interaction.request.wire_bytes)
     clean_response = AnyMessage.FromString(interaction.responses[0].wire_bytes)
     assert clean_request.type_url.startswith("https://example.invalid/")
-    assert clean_request.value.startswith(b"SCRUBBED_BYTES_")
-    assert clean_response == clean_request
+    # Opaque request bytes are numbered per request; response bytes globally.
+    assert clean_request.value.startswith(b"SCRUBBED_REQUEST_BYTES_")
+    assert clean_response.type_url == clean_request.type_url
+    assert clean_response.value.startswith(b"SCRUBBED_BYTES_")
     assert private_bytes not in interaction.request.wire_bytes
     assert SENSITIVE_URL.encode() not in interaction.request.wire_bytes
 

@@ -1,0 +1,21 @@
+{
+  "format": "notebooklm.android.grpc-cassette",
+  "interactions": [
+    {
+      "method": "/labs.language.tailwind.sharing.LabsTailwindSharingService/GetProjectDetails",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDESPAgDEhcKFVNDUlVCQkVEX1JFUVVFU1RfMDAwMSIfCAFaGwgCEAEaFVNDUlVCQkVEX1JFUVVFU1RfMDAwMQ==",
+        "protobuf_type": "labs.language.tailwind.sharing.GetProjectDetailsRequest"
+      },
+      "response_protobuf_type": "notebooklm.android.wire.v1.GetProjectDetailsResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CmAKFFNDUlVCQkVEX1NUUklOR18wMDI1EAEiRgoUU0NSVUJCRURfU1RSSU5HXzAwMjYSLmh0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2dycGMtY2Fzc2V0dGUvdXJsLTAwMDIYASAB",
+          "protobuf_type": "notebooklm.android.wire.v1.GetProjectDetailsResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    }
+  ],
+  "version": 1
+}
