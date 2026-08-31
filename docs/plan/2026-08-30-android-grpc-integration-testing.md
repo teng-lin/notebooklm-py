@@ -53,13 +53,15 @@ so cassette tests exercise the same assembly path as users.
 
 Cassette files: one per family, `tests/cassettes/android/<family>_recorded.grpc.json`.
 
-Scope decision (2026-08-30): record all 43 `supported` RPCs except `CreateArtifact`
-audio/video, `GenerateArtifact` retry, `DeriveArtifact` slides, `ExportToDrive` and
-`DiscoverSourcesAsync` (deep research) — generation quota and 30–60 min of live time
-for no additional transport coverage. Quizzes (`CreateArtifact`) are included.
-Follow-up (same day): `CreateArtifact` report, flashcards and audio overview
-families were added on request — the audio one records 23 poll rounds over ~6.5 min
-live and replays instantly.
+Scope decision (2026-08-30, final): record all 43 `supported` RPCs except
+`GenerateArtifact` retry, `DeriveArtifact` slides, `ExportToDrive` and
+`DiscoverSourcesAsync` (deep research) — each needs state or access the scratch
+notebook cannot provide (a failed artifact, a slide deck, Drive, 10+ min runs)
+for no additional transport coverage. `CreateArtifact` is covered by four
+families: quiz, report, flashcards and one full **audio overview** run (the
+initial cut had excluded audio/video for quota reasons; audio was added on
+request the same day — 23 poll rounds over ~6.5 min live, instant on replay).
+Video overviews remain excluded.
 
 Deferred on purpose: a `descriptor_sha256` pin. Every proto regeneration would
 invalidate every cassette even when wire-compatible; the pinned protobuf FQNs

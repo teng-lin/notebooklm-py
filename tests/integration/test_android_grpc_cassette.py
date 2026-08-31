@@ -547,14 +547,25 @@ async def _generate_poll_and_delete(
     """Poll ``started`` to completion, fetch it, delete it, and return the trail."""
 
     polls = 0
-    while True:
-        status = await client.artifacts.poll_status(notebook_id, started.task_id)
-        polls += 1
-        if status.is_complete or status.is_failed or polls >= max_polls:
-            break
-        await _settle(settle_seconds)
-    artifact = await client.artifacts.get(notebook_id, started.task_id)
-    await client.artifacts.delete(notebook_id, started.task_id)
+    try:
+        while True:
+            status = await client.artifacts.poll_status(notebook_id, started.task_id)
+            polls += 1
+            if status.is_complete or status.is_failed or polls >= max_polls:
+                break
+            await _settle(settle_seconds)
+        artifact = await client.artifacts.get(notebook_id, started.task_id)
+    finally:
+        # Delete even when polling or retrieval failed so a live recording never
+        # leaves a generated artifact behind; a cleanup error must not mask the
+        # original failure.
+        try:
+            await client.artifacts.delete(notebook_id, started.task_id)
+        except Exception as cleanup_error:  # noqa: BLE001 - reported, not hidden
+            print(
+                f"WARNING: artifact {started.task_id} was not deleted: "
+                f"{type(cleanup_error).__name__}"
+            )
     after = await client.artifacts.get_or_none(notebook_id, started.task_id)
     return status, artifact, after
 

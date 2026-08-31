@@ -235,6 +235,7 @@ class ProtoRedactor:
             parsed = urlsplit(value)
             if parsed.scheme in {"http", "https"} and parsed.netloc:
                 self._url_count += 1
+                _check_placeholder_budget(self._url_count)
                 replacement = f"{_SAFE_URL_PREFIX}{self._url_count:04d}"
             else:
                 self._string_count += 1
@@ -290,6 +291,7 @@ class ProtoRedactor:
         if existing is not None:
             return existing
         self._bytes_count += 1
+        _check_placeholder_budget(self._bytes_count)
         replacement = f"SCRUBBED_BYTES_{self._bytes_count:04d}".encode()
         self._bytes[value] = replacement
         return replacement
@@ -386,6 +388,7 @@ class _RequestScope(ProtoRedactor):
         if existing is not None:
             return existing
         self._string_count += 1
+        _check_placeholder_budget(self._string_count)
         replacement = f"SCRUBBED_REQUEST_{self._string_count:04d}"
         self._strings[value] = replacement
         return replacement
@@ -409,6 +412,7 @@ class _RequestScope(ProtoRedactor):
         if existing is not None:
             return existing
         self._bytes_count += 1
+        _check_placeholder_budget(self._bytes_count)
         replacement = f"SCRUBBED_REQUEST_BYTES_{self._bytes_count:04d}".encode()
         self._bytes[value] = replacement
         return replacement

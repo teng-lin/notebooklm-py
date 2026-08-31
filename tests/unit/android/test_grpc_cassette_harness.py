@@ -332,3 +332,22 @@ def test_request_map_fields_and_opaque_bytes_are_scoped_per_request() -> None:
     # A forged "placeholder" URL with a non-numeric suffix is not trusted.
     forged = AnyMessage(type_url="https://example.invalid/grpc-cassette/url-real-path")
     assert redactor("/svc/X", "request", forged).type_url.endswith("url-0003")
+
+
+def test_every_four_digit_placeholder_counter_is_budget_guarded() -> None:
+    from tests._helpers import android_grpc_cassette as seam
+
+    cases: list[tuple[object, str, object]] = [
+        (ProtoRedactor(), "_string_count", "s"),
+        (ProtoRedactor(), "_bytes_count", b"b"),
+        (ProtoRedactor(), "_url_count", "https://example.com/x"),
+        (seam._RequestScope(ProtoRedactor()), "_string_count", "s"),
+        (seam._RequestScope(ProtoRedactor()), "_bytes_count", b"b"),
+    ]
+    for redactor, attribute, value in cases:
+        setattr(redactor, attribute, seam._PLACEHOLDER_BUDGET)
+        with pytest.raises(AndroidGrpcCassetteError, match="split the family"):
+            if isinstance(value, bytes):
+                redactor._sanitize_bytes(value)  # type: ignore[attr-defined]
+            else:
+                redactor._sanitize_string(value)  # type: ignore[attr-defined]
