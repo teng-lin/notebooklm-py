@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 #: Extensions the mobile upload frontend will not parse, which therefore reach
 #: the backend by way of Drive instead (``add_file_via_drive_staging``).
 #:
-#: These are the OOXML office containers. The mobile frontend's allowlist
+#: The mobile frontend's allowlist
 #: mirrors the app's own picker -- audio and PDF -- plus plain text and
 #: markdown; the mobile *backend* parses everything Drive hands it. Both
 #: members were live-probed on the raw native transaction (Web READY, Android
@@ -58,16 +58,16 @@ logger = logging.getLogger(__name__)
 #: :data:`_NATIVE_UPLOAD_EXTENSIONS` below. ``tests/unit/android`` fails if a
 #: newly supported extension is not classified into exactly one arm, so a new
 #: file type cannot silently inherit the wrong upload path.
-_DRIVE_STAGED_UPLOAD_EXTENSIONS = frozenset({".docx", ".pptx"})
+_DRIVE_STAGED_UPLOAD_EXTENSIONS = frozenset({".csv", ".docx", ".pptx"})
 
 #: Extensions the mobile Scotty frontend ingests directly.
 #:
-#: ``.csv`` is here rather than above because only its *content type* was the
-#: problem -- ``_adapt_csv_content_type`` sends it as ``text/plain`` and the
-#: text ingests correctly. The bytes still go over the native transaction.
-#: ``.epub`` shows the frontend's allowlist is not the app's picker set: the
-#: app has no EPUB picker entry, yet ``application/epub+zip`` ingests natively.
-_NATIVE_UPLOAD_EXTENSIONS = frozenset({".csv", ".epub", ".markdown", ".md", ".pdf", ".txt"})
+#: ``.epub`` shows the frontend's allowlist is not the app's picker set: the app
+#: uploads only ``{pdfFile, imageFile, audioFile}`` (``UserFileUploadContentType``),
+#: yet ``application/epub+zip``, ``text/plain`` and ``text/markdown`` all ingest
+#: natively. The allowlist can only be established by probing, never read off
+#: the APK.
+_NATIVE_UPLOAD_EXTENSIONS = frozenset({".epub", ".markdown", ".md", ".pdf", ".txt"})
 
 
 DRIVE_API_ORIGIN = "https://www.googleapis.com"

@@ -14,7 +14,7 @@ actually gaps, and what remains.
 |---|---|---|---|
 | `sharing.set_view_level` | Web seam | **native** | Probed the wrong RPC |
 | `notebooks.remove_from_recent` | Web seam | **native** | Probed an owned notebook |
-| `sources.add_file` (`.csv`) | Web seam | **native** | Content type outside the mobile frontend's allowlist |
+| `sources.add_file` (`.csv`) | Web seam | **native (via Drive)** | Mobile upload frontend has no CSV parser |
 | `sources.add_file` (`.docx`, `.pptx`) | Web seam | **native (via Drive)** | Mobile upload frontend parses no OOXML office container; the backend does |
 
 `tests/unit/test_backend_selection.py::test_android_preference_promotes_every_namespace`
@@ -100,60 +100,47 @@ then `pollForSourceUploadComplete` and `getProject`, with no `AddSources` hop.
 
 The difference is which content types the frontend's ingester parses.
 
-### `.csv` — closed
+### Source type does not survive any Android upload route
 
-`text/csv` transfers fine and the source then settles in `SOURCE_STATUS_ERROR`.
-The identical bytes sent as `text/plain` reach `SOURCE_STATUS_COMPLETE`, so
-`_adapt_csv_content_type` rewrites the content type — and only the content type
-— for CSV, including when the caller passes `text/csv` explicitly.
+Comparing on **both** the ingested text and the decoded `SourceType`:
 
-The ingested text is **not** byte-identical to Web's. Web's frontend runs a cell
-splitter that emits one cell per line and drops the row grouping; this path
-preserves the delimited rows:
+| Route | `kind` | text vs Web |
+|---|---|---|
+| Web `add_file` (`.csv`) | `CSV` (16) | — |
+| Android Scotty as `text/plain` | `PASTED_TEXT` (4) | different |
+| Android `AddSources` + `CONTENT_TYPE_CSV` | `PASTED_TEXT` (4) | different |
+| Android Drive-staged | code 14 | **identical** |
+| Web `add_file` (`.docx` / `.pptx`) | `DOCX` (11) / `POWERPOINT` (6) | — |
+| Android Drive-staged (`.docx` / `.pptx`) | code 14 | **identical** |
+| Web *and* Android, `.pdf` | `PDF` (3) | identical |
 
-```text
-web      city\npopulation\ncountry\nOsaka\n2750000\nJapan\nLyon\n522000\nFrance
-android  city,population,country\n\nOsaka,2750000,Japan\n\nLyon,522000,France\n
-```
+Two things this settles.
 
-Both are the whole file. The Android rendering keeps more of the table's
-structure.
+**Sending CSV as `text/plain` is not "native CSV".** It reaches READY, but the
+source is `PASTED_TEXT` carrying the raw delimited rows, not a CSV source. Any
+caller branching on `source.kind` sees a different object. That rewrite has been
+removed; `.csv` now takes the Drive route with the other two, where the ingested
+text matches Web byte for byte.
 
-### The mobile frontend's allowlist, measured
+**No Android route reproduces `CSV`, `DOCX`, or `POWERPOINT`.** The Drive import
+types a non-Google-native file as **14**, which the recovered mobile enum names
+`SOURCE_CONTENT_TYPE_DRIVE`. A genuine Google Doc imported the same way does keep
+its type (`GOOGLE_DOCS`, code 1), so Drive is not flattening everything — it
+records "a Drive file" for formats it does not convert. The type is assigned by
+the ingestion entry point, and the mobile upload entry point has no parser for
+these three formats to reach.
 
-Every extension in the public `_UPLOAD_FILE_EXTENSIONS` set was live-probed on
-both backends, with Web as the control for each row:
+So Android `add_file` delivers **content parity** for every supported extension
+and **type parity** for all but `.csv`, `.docx` and `.pptx`, which report the
+Drive type instead. That is a real, bounded divergence, recorded here rather
+than hidden.
 
-| Extension | Web | Android, raw native transaction | Route |
-|---|---|---|---|
-| `.csv` | READY | READY (as `text/plain`) | native |
-| `.epub` | READY | READY | native |
-| `.md` / `.markdown` | READY | READY | native |
-| `.pdf` | READY | READY | native |
-| `.txt` | READY | READY | native |
-| `.docx` | READY | `SOURCE_STATUS_ERROR` | **Drive** |
-| `.pptx` | READY | `SOURCE_STATUS_ERROR` | **Drive** |
-| `.doc` | HTTP 400 | `SOURCE_STATUS_ERROR` | neither |
-| `.odt` | HTTP 400 | `SOURCE_STATUS_ERROR` | neither |
-| `.rtf` | HTTP 400 | `SOURCE_STATUS_ERROR` | neither |
-| `.tsv` | HTTP 400 | `SOURCE_STATUS_ERROR` | neither |
-
-Two findings beyond the original seam list:
-
-* **`.pptx` needs the Drive route as much as `.docx` does.** The OOXML office
-  containers are the gap, not Word specifically. `_UPLOAD_FILE_EXTENSIONS` is
-  now partitioned across three named sets in `_android/sources.py`, and a unit
-  test fails if a newly supported extension is not classified into exactly one
-  of them — the omission that made `.pptx` a latent bug cannot recur silently.
-* **`.doc`, `.odt`, `.rtf`, and `.tsv` are refused by the Web upload endpoint
-  too**, with HTTP 400 at the Scotty `start` and identically so when the content
-  type is forced to `text/plain` — so the refusal is by extension, not MIME.
-  They had been asserted as uploadable in `_UPLOAD_FILE_EXTENSIONS` without ever
-  being put on the wire, which is the exact failure that set's own docstring
-  warns about: the Drive router uses it as a network gate, so it downloaded whole
-  files before the server rejected them. They now sit in
-  `_FILE_SHAPED_ONLY_EXTENSIONS`, which keeps their typo warnings while restoring
-  the fast client-side refusal.
+> **Separate pre-existing defect.** `_SOURCE_TYPE_CODE_MAP` maps `14` to
+> `GOOGLE_SPREADSHEET` and has no entry for `7`, while the recovered mobile enum
+> says `7 = GOOGLE_SHEET` and `14 = DRIVE`. Any Drive-imported non-native file
+> therefore displays as "GOOGLE_SPREADSHEET" — on the Web backend too, via
+> `add_drive_file`. Not fixed here: it is a Web-side decode bug this branch only
+> made visible.
 
 ### `.docx` / `.pptx` — native by way of Drive
 
