@@ -20,14 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   round-trip from every call. Note both backends' underlying RPCs are
   notebook-agnostic, so neither validates that the source belongs to the
   notebook you name.
-- `sources.get_guide()` on the Android backend no longer raises `DecodingError`.
-  `GenerateDocumentGuides` labels a returned guide with the requested source id
-  on the *first* response for a source and omits the label on every repeat
-  call, so the strict echo check rejected guides the server really had returned
-  for all but each source's first read. A
-  populated-but-different echo is still a hard failure, and the rejection paths
-  now report the requested id, every observed echo, the guide count, and each
-  guide's protobuf field tags.
+- `sources.get_guide()` on the Android backend no longer raises `DecodingError`
+  for a sole guide that carries no source-id echo. `GenerateDocumentGuides`
+  labels a returned guide with the requested source id on the *first* response
+  for a source and omits the label on every repeat call, so the strict echo
+  check rejected guides the server really had returned for all but each
+  source's first read. A populated-but-different echo, and an ambiguous
+  multi-guide response, are both still `DecodingError`; those paths now report
+  the requested id, every observed echo, the guide count, and each guide's
+  protobuf field tags.
 
 ## [0.8.1] - 2026-08-14
 
