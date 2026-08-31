@@ -1292,10 +1292,29 @@ async def test_cap_is_enforced_on_the_bytes_actually_read(
     path = tmp_path / "report.docx"
     path.write_bytes(b"PK\x03\x04 docx payload")
 
+    real_fstat = drive_staging_module.os.fstat
+
+    class _UndersizedStat:
+        """fstat reports a compliant size; the descriptor holds more."""
+
+        def __init__(self, real: Any) -> None:
+            self._real = real
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(self._real, name)
+
+        @property
+        def st_size(self) -> int:
+            return 1
+
+    path.write_bytes(b"x" * 4096)
     with monkeypatch.context() as patched:
-        # stat() reports a compliant size; the read returns more.
         patched.setattr(drive_staging_module, "_MAX_DRIVE_STAGING_BYTES", 8)
-        patched.setattr(Path, "read_bytes", lambda _self: b"x" * 4096)
+        patched.setattr(
+            drive_staging_module.os,
+            "fstat",
+            lambda fd: _UndersizedStat(real_fstat(fd)),
+        )
         with pytest.raises(ValidationError, match="Drive staging is capped"):
             await api.add_file(NOTEBOOK_ID, path, wait=True, wait_timeout=30.0)
 
@@ -1371,4 +1390,23 @@ async def test_a_non_regular_file_is_rejected_before_the_staged_read(
         await api.add_file(NOTEBOOK_ID, fifo, wait=True, wait_timeout=30.0)
 
     assert harness.calls == []
+    del pipeline
+
+
+@pytest.mark.asyncio
+async def test_drive_staged_title_is_trimmed_like_the_native_path(tmp_path: Path) -> None:
+    """`" report "` must not title differently depending on the upload route."""
+    harness = HTTPHarness()
+    session, _, pipeline, api = await _graph(harness)
+    path = tmp_path / "report.docx"
+    path.write_bytes(b"PK\x03\x04 docx payload")
+
+    await api.add_file(NOTEBOOK_ID, path, title="  Quarterly report  ", wait=True)
+
+    drive_content = next(
+        call[1].user_content[0].google_drive_content
+        for call in session.calls
+        if call[0] == ADD_SOURCES_METHOD
+    )
+    assert drive_content.source_name == "Quarterly report"
     del pipeline

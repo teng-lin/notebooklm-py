@@ -841,8 +841,14 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         * ``on_progress`` is not reported -- staging is a single multipart
           request, not a chunked transfer.
         """
-        if title is not None and not title.strip():
-            raise ValidationError("Title cannot be empty or whitespace-only")
+        # Trim exactly as the native path does, and pass the trimmed value on:
+        # validating ``title.strip()`` but importing the raw string would give
+        # " report " a different source title on this route than on that one.
+        requested_title = None
+        if title is not None:
+            requested_title = title.strip()
+            if not requested_title:
+                raise ValidationError("Title cannot be empty or whitespace-only")
         content_type = _resolve_upload_content_type(canonical_path, mime_type)
         _validate_upload_file_supported(canonical_path, content_type)
         async with self._drive_staging().scope(
@@ -853,7 +859,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
             return await import_drive_file(
                 notebook_id,
                 staged_file_id,
-                title or canonical_path.name,
+                requested_title or canonical_path.name,
                 mime_type=content_type,
                 wait=True,
                 wait_timeout=wait_timeout,

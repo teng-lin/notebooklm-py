@@ -16,6 +16,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import stat
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -191,32 +193,46 @@ class DriveStagingTransfer:
 
         deadline = self._deadline()
 
-        def _stat_regular_file() -> int:
-            # Mirrors the native uploader's guard. A FIFO reports size zero and
-            # then blocks ``read_bytes`` in a worker thread that no deadline
-            # bounds and cancellation cannot stop, so repeated calls would
-            # exhaust the thread pool.
-            if not file_path.is_file():
-                raise ValidationError(f"Not a regular file: {file_path}")
-            return file_path.stat().st_size
+        def _read_regular_file_bounded() -> bytes:
+            """Validate and read through ONE descriptor.
 
-        size = await asyncio.to_thread(_stat_regular_file)
-        if size > _MAX_DRIVE_STAGING_BYTES:
-            raise ValidationError(
-                f"{filename} is {size} bytes; Drive staging is capped at "
-                f"{_MAX_DRIVE_STAGING_BYTES} bytes."
-            )
-        payload = await asyncio.to_thread(file_path.read_bytes)
-        # Re-check against what was actually read: the file can grow or be
-        # replaced between the stat() above and this read, and the cap exists to
-        # bound the multipart body we are about to build in memory.
-        if len(payload) > _MAX_DRIVE_STAGING_BYTES:
-            read_bytes = len(payload)
-            del payload
-            raise ValidationError(
-                f"{filename} is {read_bytes} bytes; Drive staging is capped at "
-                f"{_MAX_DRIVE_STAGING_BYTES} bytes."
-            )
+            Checking the path and then re-resolving it by name leaves a window
+            in which the file can be swapped for a FIFO -- whose ``open`` blocks
+            a worker thread no deadline bounds and cancellation cannot stop --
+            or grown past the cap before the whole of it is allocated. Opening
+            once with ``O_NONBLOCK`` (a no-op for regular files, and what keeps
+            the FIFO open from hanging), then ``fstat``-ing that descriptor,
+            closes both.
+            """
+            flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+            descriptor = os.open(file_path, flags)
+            try:
+                info = os.fstat(descriptor)
+                if not stat.S_ISREG(info.st_mode):
+                    raise ValidationError(f"Not a regular file: {file_path}")
+                if info.st_size > _MAX_DRIVE_STAGING_BYTES:
+                    raise ValidationError(
+                        f"{filename} is {info.st_size} bytes; Drive staging is capped "
+                        f"at {_MAX_DRIVE_STAGING_BYTES} bytes."
+                    )
+                handle = os.fdopen(descriptor, "rb", closefd=True)
+            except BaseException:
+                os.close(descriptor)
+                raise
+            # One byte past the cap so a file that grew after the fstat is
+            # detected without allocating all of it.
+            with handle:
+                content = handle.read(_MAX_DRIVE_STAGING_BYTES + 1)
+            if len(content) > _MAX_DRIVE_STAGING_BYTES:
+                read_bytes = len(content)
+                del content
+                raise ValidationError(
+                    f"{filename} is at least {read_bytes} bytes; Drive staging is "
+                    f"capped at {_MAX_DRIVE_STAGING_BYTES} bytes."
+                )
+            return content
+
+        payload = await asyncio.to_thread(_read_regular_file_bounded)
         body = build_multipart_body(payload, filename, content_type)
         del payload
 
