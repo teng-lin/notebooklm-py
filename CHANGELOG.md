@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sources, and the strict echo check rejected guides the server really had
   returned. A populated-but-different echo is still a hard failure, and the
   rejection paths now report the requested id, every observed echo, the guide
-  count, and the raw response bytes.
+  count, and each guide's protobuf field tags.
 
 ## [0.8.1] - 2026-08-14
 

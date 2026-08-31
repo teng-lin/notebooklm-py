@@ -752,8 +752,11 @@ the source that was asked about.
 *populated and different* echo, and still requires an exact match once more than one guide is
 returned — the same `if echoed_id and echoed_id != source_id` convention already used by
 `refresh` and `check_freshness`. The rejection paths now carry the requested id, every observed
-echo, the guide count, and the raw response bytes, because the original error carried none of
-them and could not be diagnosed from CI logs.
+echo, the guide count, and each guide's field tags, because the original error carried none of
+them and could not be diagnosed from CI logs. The tags are reported instead of a wire-byte preview:
+an unlabelled guide's payload begins with `#2 snippet`, so any prefix would carry the start of a
+model-written summary of the user's source into an error string that `NOTEBOOKLM_DEBUG=1` prints
+untruncated.
 
 The probe also corroborates the `main_ideas #3` projection against the alternative reading of the
 captured app traffic (which annotates response `#3` as "(inferred) suggested questions"): all six

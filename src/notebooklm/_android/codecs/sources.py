@@ -213,11 +213,6 @@ def decode_sources(
     return decoded
 
 
-# Structural prefix only: enough to see which field leads the first guide
-# without carrying the summary text that follows it.
-_WIRE_PREFIX_BYTES = 24
-
-
 def _document_guide_echo(guide: Any) -> str:
     """Return the source id a ``DocumentGuide`` labels itself with, or ``""``.
 
@@ -251,24 +246,85 @@ def _guide_failure(
     output. The counts and ids go in the *message*, which is what a pytest
     traceback prints in full.
 
-    ``raw_response`` carries only a short structural prefix of the wire bytes --
-    enough to read which field leads the first guide, which is the question
-    these branches exist to answer. It is capped *here* rather than left to
-    ``_truncate_response_preview``: hex-encoding makes the credential shapes
-    that ``scrub_secrets`` looks for unmatchable, and ``NOTEBOOKLM_DEBUG=1``
-    otherwise opts out of truncation entirely, which would splice a whole
-    model-written summary of the user's source into the exception string.
+    ``raw_response`` carries the per-guide **field tags** rather than any wire
+    bytes. Tags answer the question these branches exist to ask -- whether the
+    server labelled the guide at all, and whether it used a field we do not
+    model -- and they carry no content. A byte preview cannot: a guide's
+    payload begins with ``#2 snippet`` exactly when the label is missing, so
+    even a short prefix would capture the start of a model-written summary of
+    the user's source. Hex is reversible and merely hides that text from
+    ``scrub_secrets``, and ``NOTEBOOKLM_DEBUG=1`` opts out of truncation
+    entirely, so there is no safe prefix length.
     """
 
     observed = ", ".join(_guide_echo_diagnostic(echoes)) or "<none>"
-    wire = response.SerializeToString()
     return DecodingError(
-        f"{reason} (requested={source_id}, guides={len(response.guides)}, "
-        f"observed=[{observed}], bytes={len(wire)})",
+        f"{reason} (requested={source_id}, guides={len(response.guides)}, observed=[{observed}])",
         method_id=method_id,
         found_ids=_guide_echo_diagnostic(echoes),
-        raw_response=wire[:_WIRE_PREFIX_BYTES].hex(),
+        raw_response=_guide_field_tags(response),
     )
+
+
+def _guide_field_tags(response: Any) -> str:
+    """Render the field tags present on each guide, e.g. ``"[2,3,4 | 1,2,3]"``.
+
+    Read off the wire rather than from ``ListFields()`` so tags we do not model
+    are reported too -- an unmodelled tag is the shape that would indicate the
+    label had moved rather than been dropped. Only tag numbers are kept; no
+    payload is read.
+    """
+
+    return (
+        "["
+        + " | ".join(
+            ",".join(str(tag) for tag in _top_level_tags(guide.SerializeToString()))
+            for guide in response.guides
+        )
+        + "]"
+    )
+
+
+def _top_level_tags(payload: bytes) -> list[int]:
+    """List the top-level protobuf field numbers in ``payload``, skipping values."""
+
+    tags: list[int] = []
+    offset = 0
+    try:
+        while offset < len(payload):
+            key, offset = _read_varint(payload, offset)
+            tags.append(key >> 3)
+            offset = _skip_value(payload, offset, key & 7)
+    except (IndexError, ValueError):
+        tags.append(-1)  # truncated or unparsable past this point
+    return tags
+
+
+def _read_varint(payload: bytes, offset: int) -> tuple[int, int]:
+    value = shift = 0
+    while True:
+        byte = payload[offset]
+        offset += 1
+        value |= (byte & 0x7F) << shift
+        if not byte & 0x80:
+            return value, offset
+        shift += 7
+
+
+def _skip_value(payload: bytes, offset: int, wire_type: int) -> int:
+    if wire_type == 0:
+        _, offset = _read_varint(payload, offset)
+        return offset
+    if wire_type == 2:
+        length, offset = _read_varint(payload, offset)
+        if offset + length > len(payload):
+            raise IndexError("length-delimited field runs past the payload")
+        return offset + length
+    if wire_type == 5:
+        return offset + 4
+    if wire_type == 1:
+        return offset + 8
+    raise ValueError(f"unsupported wire type {wire_type}")
 
 
 def select_document_guide(response: Any, *, source_id: str, method_id: str) -> Any:

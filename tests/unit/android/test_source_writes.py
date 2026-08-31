@@ -1138,12 +1138,6 @@ def _guide(
     return guide
 
 
-def transport_response(transport: FakeTransport) -> Any:
-    """The canned ``GenerateDocumentGuides`` response a fake transport returns."""
-
-    return transport.handlers[GENERATE_DOCUMENT_GUIDES_METHOD]
-
-
 def _guides_transport(*guides: sources_pb2.DocumentGuide) -> FakeTransport:
     transport = FakeTransport()
     transport.handlers[GENERATE_DOCUMENT_GUIDES_METHOD] = (
@@ -1189,11 +1183,8 @@ async def test_guide_rejects_a_populated_mismatched_echo_with_diagnostics() -> N
     assert f"requested={SOURCE_A}" in str(raised.value)
     assert "guides=1" in str(raised.value)
     assert f"observed=[{SOURCE_B}]" in str(raised.value)
-    # The wire preview is capped at the source (24 bytes -> 48 hex chars) so
-    # NOTEBOOKLM_DEBUG=1 cannot splice a whole source summary into str(exc).
-    assert raised.value.raw_response is not None
-    assert len(raised.value.raw_response) == 48
-    assert f"bytes={len(transport_response(transport).SerializeToString())}" in str(raised.value)
+    # Field tags, never wire bytes: guide #1 present, #2 snippet present.
+    assert raised.value.raw_response == "[1,2,3]"
 
 
 @pytest.mark.asyncio
@@ -1207,6 +1198,8 @@ async def test_guide_rejects_multiple_guides_without_an_exact_match() -> None:
     assert raised.value.found_ids == ["<unlabelled>", SOURCE_B]
     assert "guides=2" in str(raised.value)
     assert f"observed=[<unlabelled>, {SOURCE_B}]" in str(raised.value)
+    # The unlabelled guide is reported as missing tag 1, not as bytes.
+    assert raised.value.raw_response == "[2,3 | 1,2,3]"
 
 
 @pytest.mark.asyncio
@@ -1252,6 +1245,45 @@ async def test_guide_rejects_duplicate_matching_echoes() -> None:
 
     assert "duplicate source ids" in str(raised.value)
     assert raised.value.found_ids == [SOURCE_A, SOURCE_A]
+
+
+@pytest.mark.asyncio
+async def test_guide_failure_diagnostics_never_carry_guide_content() -> None:
+    """A rejected guide must not splice source-derived text into the error.
+
+    ``raw_response`` is spliced into ``str()``/``repr()`` of RPC errors and
+    ``NOTEBOOKLM_DEBUG=1`` opts out of its truncation, so a wire-byte preview
+    of any length could disclose a model-written summary of the user's source
+    -- an unlabelled guide's payload starts with ``#2 snippet``. Only field
+    tags are reported.
+    """
+    secret_summary = "PRIVATE SUMMARY OF THE USER SOURCE " * 5
+    transport = _guides_transport(
+        _guide(source_id=None, summary=secret_summary, ideas=("private idea",)),
+        _guide(source_id=SOURCE_B, summary="other"),
+    )
+
+    with pytest.raises(DecodingError) as raised:
+        await _api(transport).get_guide(NOTEBOOK_ID, SOURCE_A)
+
+    rendered = f"{raised.value!s} {raised.value!r} {raised.value.raw_response}"
+    assert "PRIVATE" not in rendered
+    assert "private idea" not in rendered
+    assert raised.value.raw_response == "[2,3 | 1,2,3]"
+
+
+@pytest.mark.asyncio
+async def test_guide_field_tags_report_fields_the_schema_does_not_model() -> None:
+    """An unmodelled tag is how a *moved* label would look, so it must show."""
+    guide = _guide(source_id=None)
+    # Tag 7 is absent from ``DocumentGuide``; protobuf keeps it as unknown.
+    guide.MergeFromString(guide.SerializeToString() + b"\x3a\x00")
+    transport = _guides_transport(guide, _guide(source_id=SOURCE_B))
+
+    with pytest.raises(DecodingError) as raised:
+        await _api(transport).get_guide(NOTEBOOK_ID, SOURCE_A)
+
+    assert raised.value.raw_response == "[2,3,7 | 1,2,3]"
 
 
 @pytest.mark.asyncio
