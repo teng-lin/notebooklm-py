@@ -23,6 +23,7 @@ from notebooklm._android.notes import (
 )
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     notes_pb2,
+    read_pb2,
 )
 from notebooklm._android.proto.labs.language.tailwind.common.protos import common_pb2
 from notebooklm._android.proto.labs.language.tailwind.sharing import (
@@ -32,6 +33,7 @@ from notebooklm._android.proto.notebooklm.android.wire.v1 import sharing_pb2
 from notebooklm._android.session import AndroidSession
 from notebooklm._android.sharing import (
     GET_PROJECT_DETAILS_METHOD,
+    MUTATE_PROJECT_METHOD,
     SHARE_PROJECT_METHOD,
     AndroidSharingAPI,
 )
@@ -114,6 +116,7 @@ class FakeNotesSharingServer(_OperationScopedSession):
         }
         self.pending_deletion_reads: dict[str, int] = {}
         self.public = False
+        self.view_level: int | None = None
         self.shared_users: dict[str, SharePermission] = {
             "owner@example.test": SharePermission.OWNER
         }
@@ -189,6 +192,13 @@ class FakeNotesSharingServer(_OperationScopedSession):
                 else:
                     self.shared_users[grant.email] = SharePermission(grant.permission)
             return exact_sharing_pb2.ShareProjectResponse()
+        if method == MUTATE_PROJECT_METHOD:
+            mutation = request.mutations[0]
+            assert mutation.HasField("change_view_level")
+            # Presence, not truthiness: FULL_NOTEBOOK is wire value 0.
+            assert mutation.change_view_level.view_level.HasField("level")
+            self.view_level = mutation.change_view_level.view_level.level
+            return read_pb2.Project(id=request.project_id)
         raise AssertionError(f"unexpected method: {method}")
 
 
@@ -368,18 +378,9 @@ def _sharing(fake: Any) -> tuple[AndroidSharingAPI, AsyncMock]:
         return await get_status(notebook_id)
 
     compatibility.get_status.side_effect = get_status
-    compatibility.set_view_level.side_effect = lambda notebook_id, level: ShareStatus(
-        notebook_id=notebook_id,
-        is_public=False,
-        access=ShareAccess.RESTRICTED,
-        view_level=level,
-    )
     compatibility.set_users.side_effect = set_users
     compatibility.remove_user.side_effect = remove_user
-    return (
-        AndroidSharingAPI(_session(fake), set_view_level=compatibility.set_view_level),
-        compatibility,
-    )
+    return AndroidSharingAPI(_session(fake)), compatibility
 
 
 def _visible(note_id: str = "note-1") -> notes_pb2.GetNotesResponse:
@@ -1228,13 +1229,23 @@ async def test_sharing_set_public_old_workflow_cannot_read_back_after_close_reop
 
 
 @pytest.mark.asyncio
-async def test_view_level_remains_the_only_sharing_compatibility_seam() -> None:
-    server = FakeNotesSharingServer()
-    sharing, compatibility = _sharing(server)
-    status = await sharing.set_view_level("project-1", ShareViewLevel.CHAT_ONLY)
-    assert isinstance(status, ShareStatus)
-    assert server.calls == []
-    compatibility.set_view_level.assert_awaited_once_with("project-1", ShareViewLevel.CHAT_ONLY)
+async def test_view_level_is_native_through_mutate_project() -> None:
+    """No Web collaborator: the level rides ``MutateProject`` tag #9.
+
+    Both levels are exercised because FULL_NOTEBOOK is wire value 0 -- a plain
+    proto3 scalar would drop it from the request entirely.
+    """
+    for level in (ShareViewLevel.CHAT_ONLY, ShareViewLevel.FULL_NOTEBOOK):
+        server = FakeNotesSharingServer()
+        sharing, _compatibility = _sharing(server)
+        status = await sharing.set_view_level("project-1", level)
+        assert isinstance(status, ShareStatus)
+        assert status.view_level is level
+        assert server.view_level == level.value
+        assert [method for method, _r, _k in server.calls] == [
+            MUTATE_PROJECT_METHOD,
+            GET_PROJECT_DETAILS_METHOD,
+        ]
 
 
 @pytest.mark.asyncio

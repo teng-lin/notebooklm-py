@@ -148,11 +148,12 @@ def test_android_preference_promotes_every_namespace() -> None:
             module = type(owner).__module__ if owner is not None else type(value).__module__
             if module.startswith("notebooklm._web."):
                 web_bindings.append((namespace, attribute))
-    assert web_bindings == [
-        ("notebooks", "_remove_from_recent_compat"),
-        ("sources", "_add_file_compat"),
-        ("sharing", "_set_view_level_compat"),
-    ]
+    # The complete inventory of Web collaborators an Android-selected client
+    # still holds. Every entry is a live-evidenced gap, not a convenience --
+    # shrink this list, never grow it. ``notebooks._remove_from_recent_compat``
+    # and ``sharing._set_view_level_compat`` were retired once live probing
+    # showed both routes work natively.
+    assert web_bindings == [("sources", "_add_file_compat")]
 
     assert client.collections._list_notebooks.__self__ is client.notebooks
     assert client.collections._list_notebooks.__func__ is type(client.notebooks).list

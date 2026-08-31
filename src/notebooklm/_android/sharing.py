@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from typing import Any, cast
 
 from .._idempotency import mark_unconfirmed
@@ -21,6 +21,15 @@ _SERVICE = "labs.language.tailwind.sharing.LabsTailwindSharingService"
 GET_PROJECT_DETAILS_METHOD = f"/{_SERVICE}/GetProjectDetails"
 SHARE_PROJECT_METHOD = f"/{_SERVICE}/ShareProject"
 
+# The view level is NOT a sharing-service mutation. Both front doors drive it
+# through the orchestration service's generic project mutator -- see
+# ``_web/sharing.py``, which posts ``RPCMethod.RENAME_NOTEBOOK`` (the live
+# ``MutateProject``) with ``[notebook_id, [[_ x8, [[level]]]]]``.
+_ORCHESTRATION_SERVICE = (
+    "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
+)
+MUTATE_PROJECT_METHOD = f"/{_ORCHESTRATION_SERVICE}/MutateProject"
+
 
 def _proto() -> Any:
     from .proto.labs.language.tailwind.sharing import sharing_pb2
@@ -32,6 +41,18 @@ def _wire_proto() -> Any:
     from .proto.notebooklm.android.wire.v1 import sharing_pb2
 
     return cast(Any, sharing_pb2)
+
+
+def _notebooks_wire_proto() -> Any:
+    from .proto.notebooklm.internal.android.wire.v1 import notebooks_pb2
+
+    return cast(Any, notebooks_pb2)
+
+
+def _read_proto() -> Any:
+    from .proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
+
+    return cast(Any, read_pb2)
 
 
 def _map_notebook_error(notebook_id: str, error: RPCError, *, method_id: str) -> RPCError:
@@ -47,20 +68,11 @@ def _map_notebook_error(notebook_id: str, error: RPCError, *, method_id: str) ->
     )
 
 
-SetViewLevel = Callable[[str, ShareViewLevel], Awaitable[ShareStatus]]
-
-
 class AndroidSharingAPI(SharingAPI):
-    """Native sharing except for the unrecovered view-level mutation."""
+    """Fully native sharing surface."""
 
-    def __init__(
-        self,
-        session: AndroidSession,
-        *,
-        set_view_level: SetViewLevel,
-    ) -> None:
+    def __init__(self, session: AndroidSession) -> None:
         self._transport = session
-        self._set_view_level_compat = set_view_level
 
     async def get_status(self, notebook_id: str) -> ShareStatus:
         """Read the complete public status, including collaborators."""
@@ -147,7 +159,50 @@ class AndroidSharingAPI(SharingAPI):
         notebook_id: str,
         level: ShareViewLevel,
     ) -> ShareStatus:
-        return await self._set_view_level_compat(notebook_id, level)
+        """Set what viewers can access, through ``MutateProject`` tag #9.
+
+        ``GetProjectDetails`` does not report the view level, so -- exactly as
+        the Web implementation does -- the returned status is a fresh read with
+        the level we just wrote folded back in.
+        """
+        wire = _notebooks_wire_proto()
+        from .upload import android_request_context
+
+        request = wire.WireMutateProjectRequest(
+            project_id=notebook_id,
+            mutations=[
+                wire.WireProjectMutation(
+                    change_view_level=wire.WireProjectChangeViewLevel(
+                        # ``level=`` is always set, never left to the proto3
+                        # default: FULL_NOTEBOOK is wire value 0 and the server
+                        # distinguishes an absent tag from an explicit zero.
+                        view_level=wire.WireProjectViewLevel(level=level.value)
+                    )
+                )
+            ],
+            request_context=android_request_context(),
+        )
+        async with self._transport.operation_scope("sharing.set_view_level") as lease:
+            try:
+                await call_unconfirmed_on_transport_loss(
+                    lambda: self._transport.unary(
+                        MUTATE_PROJECT_METHOD,
+                        request,
+                        replay_safe=False,
+                        response_type=_read_proto().Project,
+                        expected_epoch=lease.epoch,
+                    )
+                )
+            except RPCError as exc:
+                mapped = _map_notebook_error(notebook_id, exc, method_id=MUTATE_PROJECT_METHOD)
+                if mapped is exc:
+                    raise
+                raise mapped from exc
+            try:
+                status = await self._get_status(notebook_id, expected_epoch=lease.epoch)
+            except Exception as error:
+                raise mark_unconfirmed(error) from None
+            return replace(status, view_level=level)
 
     async def set_users(
         self,
@@ -250,6 +305,6 @@ class AndroidSharingAPI(SharingAPI):
 __all__ = [
     "AndroidSharingAPI",
     "GET_PROJECT_DETAILS_METHOD",
+    "MUTATE_PROJECT_METHOD",
     "SHARE_PROJECT_METHOD",
-    "SetViewLevel",
 ]

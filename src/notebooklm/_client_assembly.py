@@ -538,20 +538,14 @@ def _assemble_client(
             max_concurrent_uploads=max_concurrent_uploads,
             record_upload_queue_wait=internals.collaborators.metrics.record_upload_queue_wait,
         )
-        web_notebooks = client.notebooks
         web_sources = client.sources
-        web_sharing = client.sharing
         client.sources = AndroidSourcesAPI(
             android_session,
             android_upload_pipeline,
             drive_download=android_upload_pipeline.drive_download_scope,
             add_file_compat=web_sources.add_file,
         )
-        client.notebooks = AndroidNotebooksAPI(
-            android_session,
-            client.sources,
-            remove_from_recent=web_notebooks.remove_from_recent,
-        )
+        client.notebooks = AndroidNotebooksAPI(android_session, client.sources)
         client.notes = AndroidNotesAPI(android_session)
         note_backed_artifacts = NoteBackedMindMapArtifactAdapter(
             client.notes._list_note_backed_mind_maps,
@@ -583,10 +577,7 @@ def _assemble_client(
             import_research_timeout=import_research_timeout,
         )
         client.settings = AndroidSettingsAPI(android_session)
-        client.sharing = AndroidSharingAPI(
-            android_session,
-            set_view_level=web_sharing.set_view_level,
-        )
+        client.sharing = AndroidSharingAPI(android_session)
         client.labels = AndroidLabelsAPI(
             android_session,
             list_sources=client.sources.list,

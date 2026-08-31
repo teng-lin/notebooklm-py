@@ -5,7 +5,6 @@ from __future__ import annotations
 import builtins
 import logging
 import re
-from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from typing import Any, cast
 
@@ -38,7 +37,9 @@ REMOVE_RECENTLY_VIEWED_PROJECT_METHOD = f"/{_SERVICE}/RemoveRecentlyViewedProjec
 
 _LEADING_LIST_MARKER = re.compile(r"[-*+]\s+")
 _MAX_CREATED_CHAT_SESSION_HINTS = 256
-RemoveFromRecent = Callable[[str], Awaitable[None]]
+# gRPC INTERNAL. The route refuses a project the caller owns; see
+# ``remove_from_recent``.
+_INTERNAL_RPC_CODE = 13
 
 
 def _read_proto() -> Any:
@@ -95,20 +96,8 @@ class AndroidNotebooksAPI(NotebooksAPI):
         self,
         session: AndroidSession,
         sources_api: NotebookSourceLister,
-        *,
-        remove_from_recent: RemoveFromRecent | None = None,
     ) -> None:
-        """Bind Android transport plus the one qualified Web compatibility seam.
-
-        The official Android ``RemoveRecentlyViewedProject`` binding is exact,
-        but the production route consistently returns status 13 without
-        changing the recent-project list. Public client assembly supplies the
-        already-authenticated Web implementation for that single operation.
-        Direct adapter users may omit the collaborator to exercise the exact
-        Android route for evidence/conformance work.
-        """
         self._transport = session
-        self._remove_from_recent_compat = remove_from_recent
         self._workflow_epoch: ContextVar[int | None] = ContextVar(
             "android_notebook_workflow_epoch",
             default=None,
@@ -427,26 +416,40 @@ class AndroidNotebooksAPI(NotebooksAPI):
         )
 
     async def remove_from_recent(self, notebook_id: str) -> None:
-        """Remove one project through the qualified compatibility seam.
+        """Drop one project from the recently-viewed list.
 
-        When the public graph supplies the Web collaborator, no known-broken
-        Android mutation is attempted first. The exact APK route remains
-        available only to explicit direct-adapter conformance callers.
+        The list this mutates holds projects *shared with* the caller;
+        ``ListRecentlyViewedProjects`` only surfaces owned projects under the
+        separate ``include_own_projects`` flag. Live probing showed the route
+        succeeding on a genuinely shared project and returning ``INTERNAL`` for
+        an owned one -- the earlier "known-broken route" reading came from
+        exercising it against an owned notebook, which it legitimately refuses.
+
+        Web returns success for an owned notebook while leaving it in place, so
+        ``INTERNAL`` here is folded into the same no-op rather than surfaced as
+        a backend-visible parity break: the postcondition ("not in the
+        recently-viewed list") already holds in exactly that case.
         """
-        if self._remove_from_recent_compat is not None:
-            await self._remove_from_recent_compat(notebook_id)
-            return
         empty_type = _empty_message_type()
         notebook_proto = _notebook_proto()
-        await self._transport.unary(
-            REMOVE_RECENTLY_VIEWED_PROJECT_METHOD,
-            notebook_proto.RemoveRecentlyViewedProjectRequest(
-                project_id=notebook_id,
-                request_context=_android_request_context(),
-            ),
-            replay_safe=False,
-            response_type=empty_type,
-        )
+        try:
+            await self._transport.unary(
+                REMOVE_RECENTLY_VIEWED_PROJECT_METHOD,
+                notebook_proto.RemoveRecentlyViewedProjectRequest(
+                    project_id=notebook_id,
+                    request_context=_android_request_context(),
+                ),
+                replay_safe=False,
+                response_type=empty_type,
+            )
+        except RPCError as exc:
+            if exc.rpc_code != _INTERNAL_RPC_CODE:
+                raise
+            logger.debug(
+                "RemoveRecentlyViewedProject returned INTERNAL for %s; "
+                "treating as the Web no-op for a non-shared project",
+                notebook_id,
+            )
 
 
 __all__ = [

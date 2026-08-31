@@ -254,10 +254,6 @@ def test_direct_graph_requires_and_retains_structural_sources_collaborator() -> 
     assert get_type_hints(AndroidNotebooksAPI.__init__)["sources_api"] is NotebookSourceLister
     assert notebooks._sources is sources
 
-    compatibility = inspect.signature(AndroidNotebooksAPI).parameters["remove_from_recent"]
-    assert compatibility.default is None
-    assert compatibility.kind is inspect.Parameter.KEYWORD_ONLY
-
 
 @pytest.mark.asyncio
 async def test_notebook_requests_and_projection_are_exact() -> None:

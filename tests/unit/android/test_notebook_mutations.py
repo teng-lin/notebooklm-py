@@ -649,29 +649,31 @@ async def test_remove_from_recent_uses_exact_apk_signature_and_android_context()
 
 
 @pytest.mark.asyncio
-async def test_remove_from_recent_uses_compatibility_seam_without_broken_android_call() -> None:
-    transport = SequenceTransport()
-    compat = AsyncMock(return_value=None)
+async def test_remove_from_recent_calls_the_native_route() -> None:
+    transport = SequenceTransport({REMOVE_RECENTLY_VIEWED_PROJECT_METHOD: [Empty()]})
     session = cast(AndroidSession, transport)
 
     class EmptySources:
         async def list(self, _notebook_id: str) -> list[Any]:
             return []
 
-    api = AndroidNotebooksAPI(
-        session,
-        EmptySources(),
-        remove_from_recent=compat,
-    )
+    api = AndroidNotebooksAPI(session, EmptySources())
 
     assert await api.remove_from_recent("notebook-1") is None
 
-    compat.assert_awaited_once_with("notebook-1")
-    assert transport.calls == []
+    (method, request, kwargs) = transport.calls[0]
+    assert method == REMOVE_RECENTLY_VIEWED_PROJECT_METHOD
+    assert request.project_id == "notebook-1"
+    assert kwargs["replay_safe"] is False
 
 
 @pytest.mark.asyncio
-async def test_remove_from_recent_failure_propagates_without_replay() -> None:
+async def test_remove_from_recent_treats_internal_as_the_web_no_op() -> None:
+    """INTERNAL means the project is owned, i.e. never in the shared-recents list.
+
+    Web returns success and leaves such a project in place, so the postcondition
+    already holds; raising here would be a backend-visible parity break.
+    """
     error = ServerError(
         "server rejected remove-recent",
         method_id=REMOVE_RECENTLY_VIEWED_PROJECT_METHOD,
@@ -679,9 +681,22 @@ async def test_remove_from_recent_failure_propagates_without_replay() -> None:
     )
     transport = SequenceTransport({REMOVE_RECENTLY_VIEWED_PROJECT_METHOD: [error]})
 
+    assert await _api(transport).remove_from_recent("notebook-1") is None
+
+    assert len(transport.calls) == 1
+    assert transport.calls[0][2]["replay_safe"] is False
+
+
+@pytest.mark.asyncio
+async def test_remove_from_recent_propagates_every_other_status() -> None:
+    error = ServerError(
+        "backend unavailable",
+        method_id=REMOVE_RECENTLY_VIEWED_PROJECT_METHOD,
+        rpc_code=14,  # UNAVAILABLE
+    )
+    transport = SequenceTransport({REMOVE_RECENTLY_VIEWED_PROJECT_METHOD: [error]})
+
     with pytest.raises(ServerError) as raised:
         await _api(transport).remove_from_recent("notebook-1")
 
     assert raised.value is error
-    assert len(transport.calls) == 1
-    assert transport.calls[0][2]["replay_safe"] is False

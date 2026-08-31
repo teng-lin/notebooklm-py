@@ -66,6 +66,20 @@ _EXTENSION_CONTENT_TYPES = {
     ".md": "text/markdown",
     ".markdown": "text/markdown",
 }
+# The mobile Scotty frontend accepts a narrow content-type set -- the same one
+# the app's own picker offers (``ContentMimeType``: m4a/mp3/wav/wma/pdf) plus
+# plain text and markdown. ``text/csv`` is outside it: the transfer succeeds and
+# the source then settles in SOURCE_STATUS_ERROR. The identical bytes sent as
+# ``text/plain`` reach SOURCE_STATUS_COMPLETE, so the mapping below is a
+# transport-level content-type substitution, not a change of file or parser.
+#
+# The ingested text is NOT byte-identical to Web's. Web's frontend runs a CSV
+# cell splitter that emits one cell per line and drops the row grouping
+# ("city\npopulation\ncountry\nOsaka\n..."), while this path preserves the
+# delimited rows ("city,population,country\n\nOsaka,..."). Both are the whole
+# file; the Android rendering keeps more of the table's structure.
+_CSV_CONTENT_TYPES = frozenset({"text/csv", "application/csv", "text/comma-separated-values"})
+_CSV_UPLOAD_CONTENT_TYPE = "text/plain"
 _DRIVE_API_ORIGIN = "https://www.googleapis.com"
 _DRIVE_NATIVE_MIME_PREFIX = "application/vnd.google-apps."
 _MAX_DRIVE_DOWNLOAD_BYTES = 200 * 1024 * 1024
@@ -88,8 +102,18 @@ def _set_private_temp_permissions(path: Path, mode: int) -> None:
 
 
 def _resolve_upload_content_type(file_path: Path, mime_type: str | None) -> str:
-    """Mirror the backend-neutral public upload MIME policy."""
+    """Mirror the backend-neutral public upload MIME policy, then adapt CSV.
 
+    The CSV substitution is applied to a caller-supplied ``mime_type`` too:
+    passing ``text/csv`` explicitly is a statement about the file, and honoring
+    it literally would only produce the SOURCE_STATUS_ERROR this exists to
+    avoid. See ``_CSV_CONTENT_TYPES``.
+    """
+
+    return _adapt_csv_content_type(_resolve_public_upload_content_type(file_path, mime_type))
+
+
+def _resolve_public_upload_content_type(file_path: Path, mime_type: str | None) -> str:
     if mime_type is not None:
         content_type = mime_type.strip()
         if not content_type:
@@ -102,6 +126,15 @@ def _resolve_upload_content_type(file_path: Path, mime_type: str | None) -> str:
         file_path.suffix.lower(),
         "application/octet-stream",
     )
+
+
+def _adapt_csv_content_type(content_type: str) -> str:
+    """Send CSV as plain text: the mobile upload frontend rejects ``text/csv``."""
+
+    base, separator, parameters = content_type.partition(";")
+    if base.strip().lower() not in _CSV_CONTENT_TYPES:
+        return content_type
+    return _CSV_UPLOAD_CONTENT_TYPE + separator + parameters
 
 
 def _validate_upload_file_supported(file_path: Path, content_type: str) -> None:

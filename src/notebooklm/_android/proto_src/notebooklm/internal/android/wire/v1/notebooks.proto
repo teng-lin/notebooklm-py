@@ -22,6 +22,26 @@ message WireProjectChangeProperty {
 message WireProjectMutation {
   WireProjectChangeProperty change_property = 4; // evidence: docs/android/endpoints.md#mutateproject--rename--edit-notebook-fields
   WireProjectAdvancedSettings advanced_settings = 8; // evidence: live Android-bearer write/read-back, 2026-08-29
+  WireProjectChangeViewLevel change_view_level = 9; // evidence: live Android-bearer write/read-back, 2026-09-01
+}
+
+// Repository-local names for the share view-level branch of MutateProject.
+// The Web client drives the same RPC positionally (``_web/sharing.py``
+// ``[notebook_id, [[_ x8, [[level]]]]]``); index 8 is tag #9 under the mapping
+// already proven for ``change_property`` (#4) and ``advanced_settings`` (#8).
+// A live Web write followed by an Android-bearer ``GetProject`` read-back
+// showed ``Project`` tag #9 holding ``{level:#1}`` -- ``0800`` for
+// FULL_NOTEBOOK and ``0801`` for CHAT_ONLY.
+message WireProjectViewLevel {
+  // ``optional`` for the same reason as ``new_emoji`` above: FULL_NOTEBOOK is
+  // wire value 0, and a plain proto3 scalar would drop it from the mutation
+  // entirely. The read-back proves the server itself always emits the tag
+  // (``0800``), so presence -- not the default -- is the contract.
+  optional int32 level = 1; // ShareViewLevel wire enum: 0=full notebook, 1=chat only
+}
+
+message WireProjectChangeViewLevel {
+  WireProjectViewLevel view_level = 1;
 }
 
 message WireProjectGoalSettings {
@@ -55,6 +75,7 @@ message WireProjectWithAdvancedSettings {
   string emoji = 4;
   .google.internal.labs.tailwind.orchestration.v1.ProjectMetadata metadata = 6;
   WireProjectAdvancedSettings advanced_settings = 8;
+  WireProjectViewLevel view_level = 9; // evidence: live Android-bearer read-back, 2026-09-01
   .google.internal.labs.tailwind.orchestration.v1.PremiumFeatureInfo premium_feature_info = 10;
   .google.internal.labs.tailwind.orchestration.v1.TierLimits project_tier_limits = 11;
   repeated .labs.language.tailwind.common.protos.ChatSession chat_sessions = 12;

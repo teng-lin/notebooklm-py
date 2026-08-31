@@ -31,6 +31,7 @@ from notebooklm._android.sources import (
 )
 from notebooklm._android.upload import (
     AndroidUploadPipeline,
+    _resolve_upload_content_type,
     build_upload_start_body,
     validate_upload_session_url,
 )
@@ -545,15 +546,13 @@ async def test_missing_file_and_blank_title_reject_before_bearer_or_wire(tmp_pat
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("filename", "mime_type", "content"),
+    ("filename", "mime_type", "content", "expected_type"),
     [
-        ("notes.txt", None, b"hello"),
-        ("records.csv", "text/csv", b"name,value\none,1\n"),
-        (
-            "document.docx",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            b"PK\x03\x04test-docx",
-        ),
+        ("notes.txt", None, b"hello", "text/plain"),
+        ("notes.md", None, b"# hi", "text/markdown"),
+        # CSV is the one rewrite: the wire carries text/plain (see
+        # ``_adapt_csv_content_type``), the bytes and length are untouched.
+        ("records.csv", "text/csv", b"name,value\none,1\n", "text/plain"),
     ],
 )
 async def test_non_pdf_upload_preserves_type_and_length_on_android_wire(
@@ -561,6 +560,7 @@ async def test_non_pdf_upload_preserves_type_and_length_on_android_wire(
     filename: str,
     mime_type: str | None,
     content: bytes,
+    expected_type: str,
 ) -> None:
     harness = HTTPHarness()
     _, _, _, api = await _graph(harness)
@@ -571,7 +571,6 @@ async def test_non_pdf_upload_preserves_type_and_length_on_android_wire(
 
     assert result.id == SOURCE_ID
     start = next(call for call in harness.calls if call.method == "POST")
-    expected_type = mime_type or "text/plain"
     assert start.headers["X-Goog-Upload-Content-Length"] == str(len(content))
     assert start.headers["X-Goog-Upload-Header-Content-Length"] == str(len(content))
     assert start.headers["X-Goog-AuthUser"] == "0"
@@ -582,8 +581,8 @@ async def test_non_pdf_upload_preserves_type_and_length_on_android_wire(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("filename", ["records.csv", "document.docx", "RECORDS.CSV"])
-async def test_public_compat_routes_only_csv_and_docx_to_web(
+@pytest.mark.parametrize("filename", ["document.docx", "DOCUMENT.DOCX"])
+async def test_public_compat_routes_only_docx_to_web(
     tmp_path: Path,
     filename: str,
 ) -> None:
@@ -628,8 +627,8 @@ async def test_public_compat_routes_only_csv_and_docx_to_web(
 async def test_public_compat_routes_from_canonical_symlink_target(tmp_path: Path) -> None:
     harness = HTTPHarness()
     session, _, pipeline, _ = await _graph(harness)
-    target = tmp_path / "actual.csv"
-    target.write_text("name,value\none,1\n", encoding="utf-8")
+    target = tmp_path / "actual.docx"
+    target.write_bytes(b"PK\x03\x04 docx payload")
     alias = tmp_path / "misleading.pdf"
     try:
         alias.symlink_to(target)
@@ -661,7 +660,9 @@ async def test_public_compat_routes_from_canonical_symlink_target(tmp_path: Path
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("filename", ["document.pdf", "notes.md", "audio.mp3", "book.epub"])
+@pytest.mark.parametrize(
+    "filename", ["document.pdf", "notes.md", "audio.mp3", "book.epub", "records.csv"]
+)
 async def test_public_compat_keeps_every_other_extension_on_android(
     tmp_path: Path,
     filename: str,
@@ -1015,3 +1016,32 @@ async def test_hostile_session_capability_never_reaches_bearer_logs_exception_or
             assert secret not in repr(frame.tb_frame.f_locals)
             assert "bearer-secret" not in repr(frame.tb_frame.f_locals)
         frame = frame.tb_next
+
+
+@pytest.mark.parametrize(
+    ("supplied", "expected"),
+    [
+        # Guessed from the suffix, and supplied explicitly by the caller.
+        (None, "text/plain"),
+        ("text/csv", "text/plain"),
+        ("text/csv; charset=utf-8", "text/plain; charset=utf-8"),
+        ("application/csv", "text/plain"),
+        ("TEXT/CSV", "text/plain"),
+        # Everything else is passed through untouched.
+        ("text/plain", "text/plain"),
+        ("application/pdf", "application/pdf"),
+        ("text/markdown", "text/markdown"),
+    ],
+)
+def test_csv_uploads_are_sent_as_plain_text(supplied: str | None, expected: str) -> None:
+    """``text/csv`` settles in SOURCE_STATUS_ERROR on the mobile upload frontend.
+
+    The same bytes as ``text/plain`` complete, so the content type -- and only
+    the content type -- is rewritten. See ``_adapt_csv_content_type``.
+    """
+    assert _resolve_upload_content_type(Path("records.csv"), supplied) == expected
+
+
+def test_non_csv_suffix_is_never_rewritten() -> None:
+    assert _resolve_upload_content_type(Path("report.pdf"), None) == "application/pdf"
+    assert _resolve_upload_content_type(Path("notes.md"), None) == "text/markdown"

@@ -15,6 +15,7 @@ See also:
 import asyncio
 from notebooklm import NotebookLMClient
 
+
 async def main():
     # Create client from saved authentication
     async with NotebookLMClient.from_storage() as client:
@@ -38,6 +39,7 @@ async def main():
         await client.artifacts.wait_for_completion(nb.id, status.task_id)
         output_path = await client.artifacts.download_audio(nb.id, "podcast.m4a")
         print(f"Audio saved to: {output_path}")
+
 
 asyncio.run(main())
 ```
@@ -112,7 +114,7 @@ async with NotebookLMClient.from_storage(profile="work", allow_headless=True) as
 from notebooklm.auth import master_token_remint
 from notebooklm.paths import get_storage_path
 
-await master_token_remint(get_storage_path())               # read -> mint -> persist -> reload
+await master_token_remint(get_storage_path())  # read -> mint -> persist -> reload
 async with NotebookLMClient.from_storage() as client:
     ...
 # ⚠️ The master token is a full-account, durable credential — dedicated account only.
@@ -127,13 +129,13 @@ async with NotebookLMClient.from_storage() as client:
 
 # From AuthTokens directly
 from notebooklm import AuthTokens
+
 auth = AuthTokens(
     cookies={"SID": "...", "HSID": "..."},  # (other cookies elided for brevity)
     csrf_token="...",
     session_id="...",
 )
 client = NotebookLMClient(auth)
-
 ```
 
 `AuthTokens.from_storage(...)` remains available as a v0.x compatibility loader,
@@ -531,7 +533,7 @@ except Exception as exc:
     # since the snapshot and matching the URL is attributable to this call.
     new = [s for s in await client.sources.list(nb_id) if s.id not in before and s.url == url]
     if len(new) == 1:
-        source = new[0]                       # attributable to this call
+        source = new[0]  # attributable to this call
     elif not new:
         # NOT proof the create failed — the source list lags the write, so a
         # committed source can be missing here and appear moments later. Re-read
@@ -741,6 +743,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, Request
 from notebooklm import NotebookLMClient
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with NotebookLMClient.from_storage() as client:
@@ -748,10 +751,13 @@ async def lifespan(app: FastAPI):
         yield
     # client.close() happens via __aexit__
 
+
 def get_client(request: Request) -> NotebookLMClient:
     return request.app.state.notebooklm
 
+
 app = FastAPI(lifespan=lifespan)
+
 
 @app.get("/notebooks")
 async def list_notebooks(client: NotebookLMClient = Depends(get_client)):
@@ -776,7 +782,7 @@ from notebooklm import NotebookLMClient
 from notebooklm.types import ConnectionLimits
 
 limits = ConnectionLimits(
-    max_connections=200,         # widen the pool for a heavy worker
+    max_connections=200,  # widen the pool for a heavy worker
     max_keepalive_connections=100,
     keepalive_expiry=60.0,
 )
@@ -1549,18 +1555,13 @@ from notebooklm import ExportType
 
 # Export a report to Google Docs
 result = await client.artifacts.export_report(
-    nb_id,
-    artifact_id="report_123",
-    title="My Briefing Doc",
-    export_type=ExportType.DOCS
+    nb_id, artifact_id="report_123", title="My Briefing Doc", export_type=ExportType.DOCS
 )
 # result contains the Google Docs URL
 
 # Export a data table to Google Sheets
 result = await client.artifacts.export_data_table(
-    nb_id,
-    artifact_id="table_456",
-    title="Research Data"
+    nb_id, artifact_id="table_456", title="Research Data"
 )
 # result contains the Google Sheets URL
 
@@ -1572,10 +1573,7 @@ result = await client.artifacts.export_data_table(
 # up with `export_report` / `export_data_table` (`title` in slot 3); supply
 # `content=...` to export inline text without a pre-existing artifact.
 result = await client.artifacts.export(
-    nb_id,
-    artifact_id="artifact_789",
-    title="Exported Content",
-    export_type=ExportType.SHEETS
+    nb_id, artifact_id="artifact_789", title="Exported Content", export_type=ExportType.SHEETS
 )
 ```
 
@@ -1601,11 +1599,11 @@ from notebooklm import (
 # Audio (podcast)
 status = await client.artifacts.generate_audio(
     notebook_id,
-    source_ids=None,           # List of source IDs (None = all)
-    instructions="...",        # Custom instructions
+    source_ids=None,  # List of source IDs (None = all)
+    instructions="...",  # Custom instructions
     audio_format=AudioFormat.DEEP_DIVE,  # DEEP_DIVE, BRIEF, CRITIQUE, DEBATE
-    audio_length=AudioLength.DEFAULT,    # SHORT, DEFAULT, LONG
-    language="en"
+    audio_length=AudioLength.DEFAULT,  # SHORT, DEFAULT, LONG
+    language="en",
 )
 
 # Video
@@ -1615,7 +1613,7 @@ status = await client.artifacts.generate_video(
     instructions="...",
     video_format=VideoFormat.EXPLAINER,  # EXPLAINER, BRIEF, CINEMATIC, SHORT
     video_style=VideoStyle.AUTO_SELECT,  # AUTO_SELECT, CLASSIC, WHITEBOARD, KAWAII, ANIME, etc.
-    language="en"
+    language="en",
 )
 
 # Report
@@ -1624,8 +1622,8 @@ status = await client.artifacts.generate_report(
     report_format=ReportFormat.STUDY_GUIDE,  # BRIEFING_DOC, STUDY_GUIDE, BLOG_POST, CUSTOM
     source_ids=None,
     language="en",
-    custom_prompt=None,          # Used with ReportFormat.CUSTOM
-    extra_instructions="..."     # Optional append for built-in formats
+    custom_prompt=None,  # Used with ReportFormat.CUSTOM
+    extra_instructions="...",  # Optional append for built-in formats
 )
 
 # Quiz
@@ -1633,7 +1631,7 @@ status = await client.artifacts.generate_quiz(
     notebook_id,
     source_ids=None,
     instructions="...",
-    quantity=QuizQuantity.MORE,        # FEWER, STANDARD, MORE
+    quantity=QuizQuantity.MORE,  # FEWER, STANDARD, MORE
     difficulty=QuizDifficulty.MEDIUM,  # EASY, MEDIUM, HARD
 )
 ```
@@ -1678,8 +1676,8 @@ try:
     final = await client.artifacts.wait_for_completion(
         nb_id,
         status.task_id,
-        timeout=1200,     # Max wait time in seconds
-        initial_interval=5  # Initial seconds between polls
+        timeout=1200,  # Max wait time in seconds
+        initial_interval=5,  # Initial seconds between polls
     )
 except ArtifactTimeoutError as exc:
     print(exc.stalled_phase, exc.last_status, exc.status_history)
@@ -1753,18 +1751,12 @@ for ref in result.references:
     print(f"Citation {ref.citation_number}: Source {ref.source_id}")
 
 # Ask using only specific sources
-result = await client.chat.ask(
-    nb_id,
-    "Summarize the key points",
-    source_ids=["src_001", "src_002"]
-)
+result = await client.chat.ask(nb_id, "Summarize the key points", source_ids=["src_001", "src_002"])
 
 # Continue conversation explicitly (or omit conversation_id — same effect
 # while the most-recent conversation on the notebook stays unchanged).
 result = await client.chat.ask(
-    nb_id,
-    "Can you elaborate on the first point?",
-    conversation_id=result.conversation_id
+    nb_id, "Can you elaborate on the first point?", conversation_id=result.conversation_id
 )
 
 # Force a fresh conversation (destructive — turns are not recoverable).
@@ -1780,7 +1772,7 @@ await client.chat.configure(
     nb_id,
     goal=ChatGoal.LEARNING_GUIDE,
     response_length=ChatResponseLength.LONGER,
-    custom_prompt="Focus on practical applications"
+    custom_prompt="Focus on practical applications",
 )
 
 # Save a chat answer as a citation-rich note (preserves [N] hover links).
@@ -1789,9 +1781,7 @@ await client.chat.configure(
 # adjacent to the call that produced them.
 result = await client.chat.ask(nb_id, "What fruits are mentioned?")
 if result.references:
-    note = await client.chat.save_answer_as_note(
-        nb_id, result, title="Fruit Citations"
-    )
+    note = await client.chat.save_answer_as_note(nb_id, result, title="Fruit Citations")
     # The NotebookLM server may auto-generate a "smart" title for
     # citation-rich notes; note.title reflects what the server stored.
 ```
@@ -1833,8 +1823,8 @@ a synchronous web request cannot block on a multi-minute reconcile loop. They ar
 async def start(
     notebook_id: str,
     query: str,
-    source: str = "web",   # "web" or "drive"
-    mode: str = "fast",    # "fast" or "deep" (deep only for web)
+    source: str = "web",  # "web" or "drive"
+    mode: str = "fast",  # "fast" or "deep" (deep only for web)
 ) -> ResearchStart:
     """
     Returns: a ResearchStart with .task_id / .report_id / .notebook_id /
@@ -1842,6 +1832,7 @@ async def start(
     Raises: ValidationError if source/mode combination is invalid;
         DecodingError if NotebookLM does not create a task.
     """
+
 
 async def poll(notebook_id: str, task_id: str | None = None) -> ResearchTask:
     """
@@ -1920,12 +1911,13 @@ async def poll(notebook_id: str, task_id: str | None = None) -> ResearchTask:
                             (the deep-research report row does not carry one).
     """
 
+
 async def wait_for_completion(
     notebook_id: str,
     task_id: str | None = None,
     *,
     timeout: float = 1800,
-    initial_interval: float = 5,   # canonical poll-cadence keyword
+    initial_interval: float = 5,  # canonical poll-cadence keyword
 ) -> ResearchTask:
     """
     Loops on poll() until research returns "completed" / "failed" or the
@@ -1944,6 +1936,7 @@ async def wait_for_completion(
       - AmbiguousResearchTaskError if multiple tasks are visible and `task_id`
         was omitted.
     """
+
 
 async def import_sources(
     notebook_id: str,
@@ -1969,6 +1962,7 @@ async def import_sources(
       - Entries without a `url` and without a complete report (`title` +
         `report_markdown` + `result_type == 5`) are skipped with a warning.
     """
+
 
 async def cancel(notebook_id: str, run_id: str) -> None:
     """
@@ -2212,7 +2206,7 @@ status = await client.sharing.add_user(
     "colleague@example.com",
     SharePermission.VIEWER,
     notify=True,
-    welcome_message="Check out my research!"
+    welcome_message="Check out my research!",
 )
 
 # Set several users' permissions in one RPC. Notifications and the welcome
@@ -2230,9 +2224,7 @@ status = await client.sharing.set_users(
 
 # Update user permission
 status = await client.sharing.update_user(
-    notebook_id,
-    "colleague@example.com",
-    SharePermission.EDITOR
+    notebook_id, "colleague@example.com", SharePermission.EDITOR
 )
 
 # Remove user access
@@ -2306,7 +2298,7 @@ for src in members:
     print(f"{src.id}: {src.title}")
 
 # Read with raise-on-miss vs None-on-miss
-label = await client.labels.get(nb_id, papers.id)          # raises LabelNotFoundError
+label = await client.labels.get(nb_id, papers.id)  # raises LabelNotFoundError
 maybe = await client.labels.get_or_none(nb_id, "missing")  # -> None
 
 # Rename (emoji preserved) and re-emoji
@@ -2386,22 +2378,24 @@ await client.collections.delete(research.id)  # notebooks survive
 class Notebook:
     id: str
     title: str
-    created_at: Optional[datetime]   # creation time (tz-aware UTC)
+    created_at: Optional[datetime]  # creation time (tz-aware UTC)
     sources_count: int
-    is_owner: bool                     # role is SharePermission.OWNER
-    modified_at: Optional[datetime]    # DEPRECATED alias for last_viewed_at
-    role: Optional[SharePermission]    # your own level: OWNER / EDITOR / VIEWER
-    last_viewed_at: Optional[datetime] # when YOU last opened it (tz-aware UTC)
-    emoji: Optional[str]               # Project.emoji; None when unstated
+    is_owner: bool  # role is SharePermission.OWNER
+    modified_at: Optional[datetime]  # DEPRECATED alias for last_viewed_at
+    role: Optional[SharePermission]  # your own level: OWNER / EDITOR / VIEWER
+    last_viewed_at: Optional[datetime]  # when YOU last opened it (tz-aware UTC)
+    emoji: Optional[str]  # Project.emoji; None when unstated
     premium_features: Optional[PremiumFeatureInfo]
-    chat_sessions: list[ChatSession]   # populated by CREATE; GET omits it
-    chat_settings: Optional[ChatSettings] # current goal/length/persona on get()
+    chat_sessions: list[ChatSession]  # populated by CREATE; GET omits it
+    chat_settings: Optional[ChatSettings]  # current goal/length/persona on get()
+
 
 @dataclass(frozen=True)
 class PremiumFeatureInfo:
     can_edit_advanced_settings: bool | None
     can_edit_guidebook_config: bool | None
     can_view_analytics: bool | None
+
 
 @dataclass(frozen=True)
 class ChatSession:
@@ -2495,16 +2489,16 @@ class Source:
     title: Optional[str]
     url: Optional[str]
     created_at: Optional[datetime]
-    status: SourceStatus                 # UNKNOWN when the wire status is missing or unmapped
-    drive_document_id: Optional[str]     # Drive file id for Drive-backed sources; None otherwise
+    status: SourceStatus  # UNKNOWN when the wire status is missing or unmapped
+    drive_document_id: Optional[str]  # Drive file id for Drive-backed sources; None otherwise
     drive_status: Optional[DriveSourceStatus]  # Drive-side health; None when the row makes no claim
-    download_url: Optional[str]          # Original uploaded file; None when unavailable
-    viewer_url: Optional[str]            # Drive viewer for the uploaded file; None when unavailable
-    content_mime: Optional[str]          # True MIME from the original-content blob descriptor
-    word_count: Optional[int]            # Inferred source word count
-    revision_id: Optional[str]           # Opaque source revision identifier
+    download_url: Optional[str]  # Original uploaded file; None when unavailable
+    viewer_url: Optional[str]  # Drive viewer for the uploaded file; None when unavailable
+    content_mime: Optional[str]  # True MIME from the original-content blob descriptor
+    word_count: Optional[int]  # Inferred source word count
+    revision_id: Optional[str]  # Opaque source revision identifier
     revision_timestamp: Optional[datetime]  # Timestamp paired with revision_id (tz-aware UTC)
-    last_modified_at: Optional[datetime] # Last source content update/refresh (tz-aware UTC)
+    last_modified_at: Optional[datetime]  # Last source content update/refresh (tz-aware UTC)
 
     @property
     def kind(self) -> SourceType:
@@ -2633,12 +2627,16 @@ Importable as `from notebooklm import Label`. See
 class Artifact:
     id: str
     title: str
-    _artifact_type: int             # Internal type code; field order matters. Access via .kind.
-    status: int                     # See the ArtifactStatus table below. Access via .status_str / .is_* .
+    _artifact_type: int  # Internal type code; field order matters. Access via .kind.
+    status: int  # See the ArtifactStatus table below. Access via .status_str / .is_* .
     created_at: Optional[datetime]
     url: Optional[str]
-    _variant: int | None = None     # Internal variant for type-4 artifacts (1=flashcards, 2=quiz, 4=interactive mind map).
-    generation_prompt: str | None = None  # Free-text prompt this artifact was generated from, if any (see get_prompt()).
+    _variant: int | None = (
+        None  # Internal variant for type-4 artifacts (1=flashcards, 2=quiz, 4=interactive mind map).
+    )
+    generation_prompt: str | None = (
+        None  # Free-text prompt this artifact was generated from, if any (see get_prompt()).
+    )
     media_urls: tuple[ArtifactMedia, ...] = ()
     duration_seconds: float | None = None
     slides: tuple[ArtifactSlide, ...] = ()
@@ -2762,11 +2760,11 @@ Returned by `poll_status`, `wait_for_completion`, and most artifact generation m
 ```python
 @dataclass
 class GenerationStatus:
-    task_id: str                          # Same value as Artifact.id once complete
-    status: GenerationState               # str-Enum; see the member table below for all nine values
-    url: str | None = None                # Populated for media artifacts when status == "completed"
+    task_id: str  # Same value as Artifact.id once complete
+    status: GenerationState  # str-Enum; see the member table below for all nine values
+    url: str | None = None  # Populated for media artifacts when status == "completed"
     error: str | None = None
-    error_code: str | None = None         # e.g. "USER_DISPLAYABLE_ERROR" for rate limits
+    error_code: str | None = None  # e.g. "USER_DISPLAYABLE_ERROR" for rate limits
     metadata: dict[str, Any] | None = None
 
     @property
@@ -2882,21 +2880,23 @@ if final.is_complete and final.url:
 ```python
 @dataclass
 class AskResult:
-    answer: str                        # The answer text with inline citations [1], [2], etc.
-    conversation_id: str               # ID for follow-up questions
-    turn_number: int                   # Server-derived turn number in conversation
-    is_follow_up: bool                 # Explicit ID => True; implicit => prior server turns exist
-    references: list[ChatReference]    # Source references cited in the answer
-    raw_response: str                  # First 1000 chars of raw API response
+    answer: str  # The answer text with inline citations [1], [2], etc.
+    conversation_id: str  # ID for follow-up questions
+    turn_number: int  # Server-derived turn number in conversation
+    is_follow_up: bool  # Explicit ID => True; implicit => prior server turns exist
+    references: list[ChatReference]  # Source references cited in the answer
+    raw_response: str  # First 1000 chars of raw API response
     answer_document: StructuredDocument  # The answer's own parsed document (#2120)
     turn_key: ConversationTurnKey | None  # Backend key for THIS turn (#2122)
     next_steps: list[NextStepSuggestion]  # Backend-suggested follow-ups (#2119)
 
+
 @dataclass(frozen=True)
 class NextStepSuggestion:
     question: str
-    type_code: int                     # raw MagicArtifactType code, preserved
-    kind: MagicArtifactType | None     # typed property; None for a new code
+    type_code: int  # raw MagicArtifactType code, preserved
+    kind: MagicArtifactType | None  # typed property; None for a new code
+
 
 @dataclass(frozen=True)
 class ConversationTurnKey:
@@ -2908,26 +2908,28 @@ class ConversationTurnKey:
     that call no longer needs a separate round trip. ``None`` on an
     ``AskResult`` whose stream carried no usable key.
     """
-    session_id: str                  # wire slot 0 — required; NOT a conversation id
-    turn_id: str | None              # wire slot 1 — changes per turn
-    turn_code: int | None            # wire slot 2 — carried verbatim, not interpreted
+
+    session_id: str  # wire slot 0 — required; NOT a conversation id
+    turn_id: str | None  # wire slot 1 — changes per turn
+    turn_code: int | None  # wire slot 2 — carried verbatim, not interpreted
+
 
 @dataclass
 class ChatReference:
-    source_id: str                     # UUID of the source
-    citation_number: int | None        # Citation number in answer (1, 2, etc.)
-    cited_text: str | None             # The cited source passage, verbatim
-    start_char: int | None             # Start offset in the SOURCE document
-    end_char: int | None               # End offset in the SOURCE document
-    chunk_id: str | None               # The citation's DocumentObject.objectId
-    passage_id: str | None             # ID of the passage
-    answer_start_char: int | None      # DEPRECATED alias for fragment_start_char
-    answer_end_char: int | None        # DEPRECATED alias for fragment_end_char
-    score: float | None                # Citation score or relevance
-    fragment_start_char: int | None    # Server-declared source-side range, start
-    fragment_end_char: int | None      # ...and end
+    source_id: str  # UUID of the source
+    citation_number: int | None  # Citation number in answer (1, 2, etc.)
+    cited_text: str | None  # The cited source passage, verbatim
+    start_char: int | None  # Start offset in the SOURCE document
+    end_char: int | None  # End offset in the SOURCE document
+    chunk_id: str | None  # The citation's DocumentObject.objectId
+    passage_id: str | None  # ID of the passage
+    answer_start_char: int | None  # DEPRECATED alias for fragment_start_char
+    answer_end_char: int | None  # DEPRECATED alias for fragment_end_char
+    score: float | None  # Citation score or relevance
+    fragment_start_char: int | None  # Server-declared source-side range, start
+    fragment_end_char: int | None  # ...and end
     answer_anchor_start: int | None  # Range OF THE ANSWER this citation backs
-    answer_anchor_end: int | None    # ...and end
+    answer_anchor_end: int | None  # ...and end
 ```
 
 `next_steps` decodes the `NextStepSuggestions` block the backend includes with
@@ -2974,9 +2976,7 @@ result = await client.chat.ask(notebook_id, question)
 for ref in result.references:
     # Which part of the answer does this citation back? (None when the answer
     # carried no anchor for it — slice() absorbs that and returns "".)
-    supported = result.answer_document.slice(
-        ref.answer_anchor_start, ref.answer_anchor_end
-    )
+    supported = result.answer_document.slice(ref.answer_anchor_start, ref.answer_anchor_end)
     # ...and what does it quote from the source?
     fulltext = await client.sources.get_fulltext(notebook_id, ref.source_id)
     quoted = fulltext.document.slice(ref.start_char, ref.end_char)
@@ -3050,14 +3050,14 @@ range, so resolving it takes the fetch and then raises.
 ```python
 @dataclass
 class ShareStatus:
-    notebook_id: str                   # The notebook ID
-    is_public: bool                    # Whether publicly accessible
-    access: ShareAccess                # RESTRICTED or ANYONE_WITH_LINK
-    view_level: ShareViewLevel         # FULL_NOTEBOOK or CHAT_ONLY
-    shared_users: list[SharedUser]     # List of users with access
-    share_url: str | None              # Public URL if is_public=True
-    max_individuals_share_limit: int | None   # Collaborator cap; None = no claim
-    is_public_sharing_allowed: bool | None    # Policy gate; None = no claim
+    notebook_id: str  # The notebook ID
+    is_public: bool  # Whether publicly accessible
+    access: ShareAccess  # RESTRICTED or ANYONE_WITH_LINK
+    view_level: ShareViewLevel  # FULL_NOTEBOOK or CHAT_ONLY
+    shared_users: list[SharedUser]  # List of users with access
+    share_url: str | None  # Public URL if is_public=True
+    max_individuals_share_limit: int | None  # Collaborator cap; None = no claim
+    is_public_sharing_allowed: bool | None  # Policy gate; None = no claim
 ```
 
 **Collaborator cap and public-sharing policy.**
@@ -3130,10 +3130,10 @@ fields under the same names.
 ```python
 @dataclass
 class SharedUser:
-    email: str                         # User's email address
-    permission: SharePermission        # OWNER, EDITOR, or VIEWER
-    display_name: str | None           # User's display name
-    avatar_url: str | None             # URL to user's avatar image
+    email: str  # User's email address
+    permission: SharePermission  # OWNER, EDITOR, or VIEWER
+    display_name: str | None  # User's display name
+    avatar_url: str | None  # URL to user's avatar image
 ```
 
 ### AccountLimits
@@ -3146,9 +3146,9 @@ enforces.
 @dataclass(frozen=True)
 class AccountLimits:
     notebook_limit: int | None = None  # Max notebooks the account can hold
-    source_limit: int | None = None    # Max sources per notebook
-    raw_limits: tuple[Any, ...] = ()   # Untouched RPC payload for forensic use
-    tier: int | None = None            # Subscription tier enum (opaque; see below)
+    source_limit: int | None = None  # Max sources per notebook
+    raw_limits: tuple[Any, ...] = ()  # Untouched RPC payload for forensic use
+    tier: int | None = None  # Subscription tier enum (opaque; see below)
 ```
 
 `tier` is the subscription tier read from the same authoritative `GET_USER_SETTINGS`
@@ -3175,7 +3175,7 @@ one-call path when you need both (`get_account_limits()` and
 @dataclass(frozen=True)
 class UserSettings:
     limits: AccountLimits = AccountLimits()  # Account-level quota limits
-    output_language: str | None = None       # Global output language, or None
+    output_language: str | None = None  # Global output language, or None
 ```
 
 ### SourceFulltext
@@ -3183,12 +3183,12 @@ class UserSettings:
 ```python
 @dataclass
 class SourceFulltext:
-    source_id: str                     # UUID of the source
-    title: str                         # Source title
-    content: str                       # Flat text (legacy rendering; see below)
-    url: str | None                    # Original URL (if applicable)
-    char_count: int                    # len(content)
-    document: StructuredDocument       # Parsed document tree (#2128)
+    source_id: str  # UUID of the source
+    title: str  # Source title
+    content: str  # Flat text (legacy rendering; see below)
+    url: str | None  # Original URL (if applicable)
+    char_count: int  # len(content)
+    document: StructuredDocument  # Parsed document tree (#2128)
 
     @property
     def kind(self) -> SourceType:
@@ -3265,9 +3265,9 @@ is then built from the response's HTML rendition while `document` — and so
 `rendered_content` — is still parsed from its text blocks.
 
 ```python
-fulltext.content            # 17 lines: "…light energy into\n \nchemical energy."
-fulltext.rendered_content   # 13 lines: "…light energy into chemical energy."
-fulltext.document.text      # 532 units, no separators at all — the offset space
+fulltext.content  # 17 lines: "…light energy into\n \nchemical energy."
+fulltext.rendered_content  # 13 lines: "…light energy into chemical energy."
+fulltext.document.text  # 532 units, no separators at all — the offset space
 ```
 
 `document` and `rendered_content` are Python-API surfaces: the CLI `--json`,
@@ -3329,10 +3329,11 @@ print(f"Content type: {fulltext.kind}")  # "pdf", "web_page", etc.
 
 ```python
 class AudioFormat(Enum):
-    DEEP_DIVE = 1   # In-depth discussion
-    BRIEF = 2       # Quick summary
-    CRITIQUE = 3    # Critical analysis
-    DEBATE = 4      # Two-sided debate
+    DEEP_DIVE = 1  # In-depth discussion
+    BRIEF = 2  # Quick summary
+    CRITIQUE = 3  # Critical analysis
+    DEBATE = 4  # Two-sided debate
+
 
 class AudioLength(Enum):
     SHORT = 1
@@ -3348,6 +3349,7 @@ class VideoFormat(Enum):
     BRIEF = 2
     CINEMATIC = 3
     SHORT = 4  # vertical short-form video (fixed style; video_style rejected)
+
 
 class VideoStyle(Enum):
     AUTO_SELECT = 1
@@ -3369,6 +3371,7 @@ class QuizQuantity(Enum):
     FEWER = 1
     STANDARD = 2
     MORE = 3
+
 
 class QuizDifficulty(Enum):
     EASY = 1
@@ -3399,6 +3402,7 @@ class InfographicOrientation(Enum):
     PORTRAIT = 2
     SQUARE = 3
 
+
 class InfographicDetail(Enum):
     CONCISE = 1
     STANDARD = 2
@@ -3412,6 +3416,7 @@ class SlideDeckFormat(Enum):
     DETAILED_DECK = 1
     PRESENTER_SLIDES = 2
 
+
 class SlideDeckLength(Enum):
     DEFAULT = 1
     SHORT = 2
@@ -3421,7 +3426,7 @@ class SlideDeckLength(Enum):
 
 ```python
 class ExportType(Enum):
-    DOCS = 1    # Export to Google Docs
+    DOCS = 1  # Export to Google Docs
     SHEETS = 2  # Export to Google Sheets
 ```
 
@@ -3429,17 +3434,19 @@ class ExportType(Enum):
 
 ```python
 class ShareAccess(Enum):
-    RESTRICTED = 0        # Only explicitly shared users
+    RESTRICTED = 0  # Only explicitly shared users
     ANYONE_WITH_LINK = 1  # Public link access
 
+
 class ShareViewLevel(Enum):
-    FULL_NOTEBOOK = 0     # Chat + sources + notes
-    CHAT_ONLY = 1         # Chat interface only
+    FULL_NOTEBOOK = 0  # Chat + sources + notes
+    CHAT_ONLY = 1  # Chat interface only
+
 
 class SharePermission(Enum):
-    OWNER = 1             # Full control (read-only, cannot assign)
-    EDITOR = 2            # Can edit notebook
-    VIEWER = 3            # Read-only access
+    OWNER = 1  # Full control (read-only, cannot assign)
+    EDITOR = 2  # Can edit notebook
+    VIEWER = 3  # Read-only access
 ```
 
 ### Source and Artifact Types
@@ -3452,6 +3459,7 @@ class SourceType(str, Enum):
         source.kind == SourceType.PDF   # True
         source.kind == "pdf"            # Also True
     """
+
     GOOGLE_DOCS = "google_docs"
     GOOGLE_SLIDES = "google_slides"
     GOOGLE_SPREADSHEET = "google_spreadsheet"
@@ -3470,12 +3478,14 @@ class SourceType(str, Enum):
     MEDIA = "media"
     UNKNOWN = "unknown"
 
+
 class ArtifactType(str, Enum):
     """Artifact types - use with artifact.kind property.
 
     This is a str enum that hides internal variant complexity.
     Quizzes and flashcards are distinguished automatically.
     """
+
     AUDIO = "audio"
     VIDEO = "video"
     REPORT = "report"
@@ -3489,21 +3499,25 @@ class ArtifactType(str, Enum):
     FILE = "file"
     UNKNOWN = "unknown"
 
+
 class SourceStatus(Enum):
-    UNKNOWN = -1     # Status is absent, malformed, or not yet mapped
+    UNKNOWN = -1  # Status is absent, malformed, or not yet mapped
     PROCESSING = 1  # Source is being processed (indexing content)
-    READY = 2       # Source is ready for use
-    ERROR = 3       # Source processing failed
-    PREPARING = 5   # Source is being prepared/uploaded (pre-processing stage)
+    READY = 2  # Source is ready for use
+    ERROR = 3  # Source processing failed
+    PREPARING = 5  # Source is being prepared/uploaded (pre-processing stage)
+
 
 class DriveSourceStatus(Enum):
     """Drive-side health of a Drive-backed source — NOT ingestion status."""
-    UNKNOWN = -1              # Client sentinel: slot populated with a code we cannot map
-    INACCESSIBLE = 1          # The account can no longer read the Drive file
-    SYNCING = 2               # The Drive file is being (re-)synced (transient)
-    ACTIVE = 3                # In sync — the only value observed live
-    DELETED = 4               # The Drive file has been deleted
+
+    UNKNOWN = -1  # Client sentinel: slot populated with a code we cannot map
+    INACCESSIBLE = 1  # The account can no longer read the Drive file
+    SYNCING = 2  # The Drive file is being (re-)synced (transient)
+    ACTIVE = 3  # In sync — the only value observed live
+    DELETED = 4  # The Drive file has been deleted
     GEN_AI_ACCESS_DENIED = 5  # AI access to the file is denied (e.g. Workspace policy)
+
 
 # The backend's DRIVE_SOURCE_STATUS_UNSPECIFIED (0) is deliberately not modelled:
 # it means "no claim", which is what `drive_status is None` already means, so an
@@ -3513,13 +3527,13 @@ class DriveSourceStatus(Enum):
 class DiscoveryMode(Enum):
     """How a research run searched for sources — `ResearchTask.discovery_mode`."""
 
-    UNKNOWN = -1             # Client sentinel: slot populated with a code we cannot map
-    DEFAULT_LLM_SEARCH = 1   # Sent + observed for mode="fast"
-    RAW_SEARCH = 2           # Never sent by this client
-    CURIOUS_SEARCH = 3       # Never sent by this client
-    CURIOUS_RAW_SEARCH = 4   # Never sent by this client
-    DEEP_RESEARCH = 5        # Sent + observed for mode="deep"
-    LITE_LLM_SEARCH = 6      # Never sent by this client
+    UNKNOWN = -1  # Client sentinel: slot populated with a code we cannot map
+    DEFAULT_LLM_SEARCH = 1  # Sent + observed for mode="fast"
+    RAW_SEARCH = 2  # Never sent by this client
+    CURIOUS_SEARCH = 3  # Never sent by this client
+    CURIOUS_RAW_SEARCH = 4  # Never sent by this client
+    DEEP_RESEARCH = 5  # Sent + observed for mode="deep"
+    LITE_LLM_SEARCH = 6  # Never sent by this client
 
 
 # Same UNSPECIFIED(0) treatment as DriveSourceStatus above. Only 1 and 5 have been
@@ -3563,21 +3577,24 @@ for art in artifacts:
 
 ```python
 class ChatGoal(Enum):
-    DEFAULT = 1        # General purpose
-    CUSTOM = 2         # Uses custom_prompt
-    LEARNING_GUIDE = 3 # Educational focus
+    DEFAULT = 1  # General purpose
+    CUSTOM = 2  # Uses custom_prompt
+    LEARNING_GUIDE = 3  # Educational focus
+
 
 class ChatResponseLength(Enum):
     DEFAULT = 1
     LONGER = 4
     SHORTER = 5
 
+
 class ChatMode(Enum):
     """Predefined chat modes for common use cases (service-level enum)."""
-    DEFAULT = "default"          # General purpose
+
+    DEFAULT = "default"  # General purpose
     LEARNING_GUIDE = "learning_guide"  # Educational focus
-    CONCISE = "concise"          # Brief responses
-    DETAILED = "detailed"        # Verbose responses
+    CONCISE = "concise"  # Brief responses
+    DETAILED = "detailed"  # Verbose responses
 ```
 
 **ChatGoal vs ChatMode:**
@@ -3600,7 +3617,12 @@ async with NotebookLMClient.from_storage() as client:
     # source_path; mirror the higher-level APIs when in doubt.
     result = await client.rpc_call(
         RPCMethod.CREATE_NOTEBOOK,
-        params=["My Notebook", None, None, [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]]],
+        params=[
+            "My Notebook",
+            None,
+            None,
+            [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+        ],
     )
 ```
 
@@ -3663,9 +3685,7 @@ from notebooklm import resolve_chat_reference_passage
 ask_result = await client.chat.ask(notebook_id, "Explain quantum computing")
 first_ref = ask_result.references[0]
 
-passage = await resolve_chat_reference_passage(
-    client, notebook_id, first_ref, context_chars=150
-)
+passage = await resolve_chat_reference_passage(client, notebook_id, first_ref, context_chars=150)
 print(f"Context: {passage}")
 ```
 
@@ -3763,8 +3783,10 @@ def configure_logging() -> None:
 def get_request_id() -> str | None:
     """Return the current correlation id, or None if unset."""
 
+
 def set_request_id(req_id: str | None = None) -> Token[str | None]:
     """Set the correlation id for this Task/context, returning a ContextVar Token."""
+
 
 def reset_request_id(token: Token[str | None]) -> None:
     """Restore the correlation id to its previous value."""
@@ -3794,8 +3816,10 @@ Decomposed Protocols introduced in ADR-0013 to decouple service facades from tar
 ```python
 from typing import Protocol
 
+
 class NotebookSourceLister(Protocol):
     """Structural source-listing dependency shared across feature APIs."""
+
     async def list(self, notebook_id: str, *, strict: bool = False) -> list[Source]:
         """List sources for a notebook."""
 ```
@@ -3805,8 +3829,10 @@ class NotebookSourceLister(Protocol):
 ```python
 from typing import Protocol
 
+
 class NotebookSourceIdProvider(Protocol):
     """Structural source-id dependency needed by chat and artifact generation."""
+
     async def get_source_ids(self, notebook_id: str) -> list[str]:
         """Return source IDs for a notebook."""
 ```

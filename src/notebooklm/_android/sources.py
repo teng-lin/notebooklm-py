@@ -121,7 +121,25 @@ class AddFileCompat(Protocol):
     ) -> Source: ...
 
 
-_WEB_FILE_UPLOAD_COMPAT_EXTENSIONS = frozenset({".csv", ".docx"})
+# ``.docx`` is the one file type with no Android-native route. Evidence:
+# * the mobile Scotty frontend refuses it under every candidate content type
+#   (openxml, application/msword, application/octet-stream) -- the transfer
+#   succeeds and the source settles in SOURCE_STATUS_ERROR;
+# * the app itself never uploads one. Its complete picker set is the
+#   ``ContentMimeType`` enum -- m4a, mp3, wav, wma, pdf -- so the mobile
+#   frontend was never built to parse Word;
+# * the mobile *backend* can parse Word. The same file imported through
+#   ``AddSources``/``GoogleDriveContent`` reaches SOURCE_STATUS_COMPLETE with
+#   correct extracted text, and ``SourceContentType`` reserves WORD (11). The
+#   gap is the upload frontend's allowlist, not a missing parser;
+# * the Web frontend cannot be borrowed with an Android bearer. It accepts the
+#   bearer for the upload ``start``, then its finalize hop fails closed with
+#   ``CredsPermissionException: Rejected by impersonation policy for
+#   /LabsTailwindOrchestrationService.AddSourcesAsync`` -- a server-side
+#   credential-class boundary, not a header we can add.
+#
+# ``.csv`` used to be here too; it is now native (see ``_adapt_csv_content_type``).
+_WEB_FILE_UPLOAD_COMPAT_EXTENSIONS = frozenset({".docx"})
 
 
 def _snapshot_enum_filter(

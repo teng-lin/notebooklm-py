@@ -253,6 +253,23 @@ def test_notebook_repository_local_wire_fields_are_exhaustive() -> None:
                 message,
                 f"{local}.WireProjectAdvancedSettings",
             ),
+            "change_view_level": (
+                9,
+                singular,
+                message,
+                f"{local}.WireProjectChangeViewLevel",
+            ),
+        },
+        notebooks_pb2.WireProjectViewLevel: {
+            "level": (1, singular, int32, None),
+        },
+        notebooks_pb2.WireProjectChangeViewLevel: {
+            "view_level": (
+                1,
+                singular,
+                message,
+                f"{local}.WireProjectViewLevel",
+            ),
         },
         notebooks_pb2.WireProjectGoalSettings: {
             "goal": (1, singular, int32, None),
@@ -306,6 +323,12 @@ def test_notebook_repository_local_wire_fields_are_exhaustive() -> None:
                 singular,
                 message,
                 f"{local}.WireProjectAdvancedSettings",
+            ),
+            "view_level": (
+                9,
+                singular,
+                message,
+                f"{local}.WireProjectViewLevel",
             ),
             "premium_feature_info": (
                 10,
