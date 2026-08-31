@@ -20,7 +20,7 @@ placeholder each input received (see ``ProtoRedactor.reserve``).
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -215,6 +215,21 @@ def _inject_grpc_loader(monkeypatch: pytest.MonkeyPatch, grpc_module: Any) -> No
     monkeypatch.setattr(android_session, "AndroidSession", seamed_session)
 
 
+RecordedCallback = Callable[[Path, Path], None]
+
+
+def promote_recording(staging_path: Path, cassette_path: Path) -> None:
+    """Move a finished staging file over the committed cassette."""
+
+    if not staging_path.exists():
+        raise RuntimeError(f"Recording {cassette_path.name} captured no interactions")
+    os.replace(staging_path, cassette_path)
+
+
+def discard_recording(staging_path: Path) -> None:
+    staging_path.unlink(missing_ok=True)
+
+
 @asynccontextmanager
 async def android_cassette_client(
     cassette_path: Path,
@@ -222,8 +237,16 @@ async def android_cassette_client(
     monkeypatch: pytest.MonkeyPatch,
     scratch: ScratchNotebook | None,
     question: str = QUESTION,
+    on_recorded: RecordedCallback | None = None,
 ) -> AsyncIterator[tuple[NotebookLMClient, CassetteValues]]:
-    """Open the public Android client bound to ``cassette_path`` in the current mode."""
+    """Open the public Android client bound to ``cassette_path`` in the current mode.
+
+    While recording, the cassette is written to a sibling staging file. When
+    ``on_recorded`` is given it receives ``(staging_path, cassette_path)`` once
+    the recorded traffic completed without error and the caller decides when to
+    promote (the fixture promotes only if the whole test passed); otherwise the
+    staging file is promoted immediately.
+    """
 
     redactor = ProtoRedactor(trust_placeholders=True)
     if is_record_mode():
@@ -240,13 +263,13 @@ async def android_cassette_client(
         _inject_correlation_names(monkeypatch, values.correlations)
         import grpc
 
-        # Record next to the target and promote only once the recorded traffic
-        # completed without error (the ``async with`` body; a family's post-block
-        # assertions run after promotion), so an auth failure or a mid-family
-        # RPC error can never replace a good committed cassette with a
-        # truncated one.
+        # Record next to the target; promotion happens only after the recorded
+        # traffic completed without error -- and, through ``on_recorded``, only
+        # after the test's own assertions passed -- so neither an auth failure,
+        # a mid-family RPC error, nor a failing assertion can replace a good
+        # committed cassette.
         staging_path = cassette_path.with_name(cassette_path.name + ".recording")
-        staging_path.unlink(missing_ok=True)
+        discard_recording(staging_path)
         recorder = RecordingGrpcModule(
             grpc,
             staging_path,
@@ -259,11 +282,12 @@ async def android_cassette_client(
                 assert set(client.backends.values()) == {"android"}
                 yield client, values
         except BaseException:
-            staging_path.unlink(missing_ok=True)
+            discard_recording(staging_path)
             raise
-        if not staging_path.exists():
-            raise RuntimeError(f"Recording {cassette_path.name} captured no interactions")
-        os.replace(staging_path, cassette_path)
+        if on_recorded is None:
+            promote_recording(staging_path, cassette_path)
+        else:
+            on_recorded(staging_path, cassette_path)
         return
 
     values = bind_values(
@@ -308,5 +332,7 @@ __all__ = [
     "bind_values",
     "create_scratch_notebook",
     "delete_scratch_notebook",
+    "discard_recording",
     "is_record_mode",
+    "promote_recording",
 ]

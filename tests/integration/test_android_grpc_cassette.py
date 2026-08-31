@@ -61,9 +61,10 @@ async def test_settings_get_user_settings_over_get_or_create_account(
     async with android_grpc_cassette("get_or_create_account") as (client, _values):
         settings = await client.settings.get_user_settings()
     assert isinstance(settings, UserSettings)
-    # Scalars are scrubbed on replay, but presence and typing survive the redactor.
-    assert settings.output_language is None or isinstance(settings.output_language, str)
-    assert settings.limits is not None
+    # The recording account has an output language; its value is scrubbed on
+    # replay but its presence must survive decoding.
+    assert settings.output_language
+    assert settings.limits.notebook_limit is not None and settings.limits.notebook_limit >= 1
 
 
 # --- 2. rich GetProject project/source response ------------------------------
@@ -124,12 +125,17 @@ async def test_label_and_collection_listing_over_get_labels(
 ) -> None:
     async with android_grpc_cassette("get_labels") as (client, values):
         labels = await client.labels.list(values.notebook_id)
-        collections = await client.collections.list()
+        # Establish one known collection so the account arm is non-empty on
+        # any recording account, then remove it again.
+        created = await client.collections.create(values.texts[0])
+        try:
+            collections = await client.collections.list()
+        finally:
+            await client.collections.delete(created.id)
     assert labels == []
-    # The recording account owned exactly one collection; the second GetLabels
-    # arm must decode it (a regression returning [] would otherwise pass).
-    assert len(collections) == 1
-    assert collections[0].id and collections[0].name
+    # A regression returning [] from the second GetLabels arm would fail here.
+    assert any(item.id == created.id for item in collections)
+    assert all(item.id and item.name for item in collections)
 
 
 # --- 6. ListDiscoverSourcesJob research state --------------------------------
@@ -183,9 +189,11 @@ async def test_chat_history_over_list_chat_sessions_and_turns(
     android_grpc_cassette: CassetteBinder,
 ) -> None:
     async with android_grpc_cassette("list_chat_sessions_turns") as (client, values):
+        # Create the conversation inside the family so it re-records on its own.
+        answer = await client.chat.ask(values.notebook_id, values.question)
         conversation_id = await client.chat.get_conversation_id(values.notebook_id)
         history = await client.chat.get_history(values.notebook_id)
-    assert conversation_id
+    assert conversation_id == answer.conversation_id
     # The reserved question placeholder round-trips through ListChatTurns, which
     # pins turn pairing and ordering. Answer *rendering* is not replayable: it is
     # sliced out of ``response_doc`` by index ranges that numeric redaction

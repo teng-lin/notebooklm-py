@@ -30,6 +30,81 @@
         }
       ],
       "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateLabel",
+      "request": {
+        "protobuf_b64": "CjwIAxIXChVTQ1JVQkJFRF9SRVFVRVNUXzAwMDEiHwgBWhsIAhABGhVTQ1JVQkJFRF9SRVFVRVNUXzAwMDEyGAoWChRTQ1JVQkJFRF9TVFJJTkdfMDAwOTgB",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.CreateLabelRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.CreateLabelResponse",
+      "responses": [
+        {
+          "protobuf_b64": "GjwKFFNDUlVCQkVEX1NUUklOR18wMDA5GiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDYargEKFFNDUlVCQkVEX1NUUklOR18wMDI1EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDISJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMxIkMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA0GiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDU=",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.CreateLabelResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",
+      "request": {
+        "protobuf_b64": "GAE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetLabelsRequest"
+      },
+      "response_protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse",
+      "responses": [
+        {
+          "protobuf_b64": "EjwKFFNDUlVCQkVEX1NUUklOR18wMDA5GiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDYSrgEKFFNDUlVCQkVEX1NUUklOR18wMDI1EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDISJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMxIkMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA0GiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDU=",
+          "protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",
+      "request": {
+        "protobuf_b64": "GAE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetLabelsRequest"
+      },
+      "response_protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse",
+      "responses": [
+        {
+          "protobuf_b64": "EjwKFFNDUlVCQkVEX1NUUklOR18wMDA5GiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDYSrgEKFFNDUlVCQkVEX1NUUklOR18wMDI1EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDISJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMxIkMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA0GiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDU=",
+          "protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteLabels",
+      "request": {
+        "protobuf_b64": "CjwIAxIXChVTQ1JVQkJFRF9SRVFVRVNUXzAwMDEiHwgBWhsIAhABGhVTQ1JVQkJFRF9SRVFVRVNUXzAwMDEaJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwNiAB",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.DeleteLabelsRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.DeleteLabelsResponse",
+      "responses": [
+        {
+          "protobuf_b64": "",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.DeleteLabelsResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetLabels",
+      "request": {
+        "protobuf_b64": "GAE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetLabelsRequest"
+      },
+      "response_protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse",
+      "responses": [
+        {
+          "protobuf_b64": "Eq4BChRTQ1JVQkJFRF9TVFJJTkdfMDAyNRIkMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyEiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMSJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwNBokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA1",
+          "protobuf_type": "notebooklm.android.wire.v1.GetLabelsWireResponse"
+        }
+      ],
+      "shape": "unary_unary"
     }
   ],
   "version": 1

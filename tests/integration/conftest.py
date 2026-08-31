@@ -59,25 +59,56 @@ def android_record_scratch() -> Iterator[Any]:
         asyncio.run(delete_scratch_notebook(scratch))
 
 
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) -> Any:
+    """Expose the call-phase outcome to fixtures (``item.rep_call``)."""
+    outcome = yield
+    report = outcome.get_result()
+    if report.when == "call":
+        item.rep_call = report  # type: ignore[attr-defined]
+
+
 @pytest.fixture
 def android_grpc_cassette(
+    request: pytest.FixtureRequest,
     monkeypatch: pytest.MonkeyPatch,
     android_record_scratch: Any,
-) -> Callable[[str], Any]:
+) -> Iterator[Callable[[str], Any]]:
     """Bind a ``@pytest.mark.grpc_cassette`` test to ``tests/cassettes/android/<name>_recorded.grpc.json``.
 
     Returns an async context manager yielding ``(client, values)``; see
     ``tests/_helpers/android_grpc_harness.py`` for the record/replay contract.
+    While recording, a finished staging file replaces the committed cassette
+    only if the test itself passed, so a failing post-hoc assertion never
+    commits an invalid re-recording.
     """
-    from tests._helpers.android_grpc_harness import android_cassette_client
+    from tests._helpers.android_grpc_harness import (
+        android_cassette_client,
+        discard_recording,
+        promote_recording,
+    )
+
+    recorded: list[tuple[Path, Path]] = []
 
     def bind(name: str) -> Any:
         path = CASSETTES_DIR / "android" / f"{name}_recorded.grpc.json"
         return android_cassette_client(
-            path, monkeypatch=monkeypatch, scratch=android_record_scratch
+            path,
+            monkeypatch=monkeypatch,
+            scratch=android_record_scratch,
+            on_recorded=lambda staging, target: recorded.append((staging, target)),
         )
 
-    return bind
+    yield bind
+
+    report = getattr(request.node, "rep_call", None)
+    passed = report is not None and report.passed
+    for staging, target in recorded:
+        if passed:
+            promote_recording(staging, target)
+        else:
+            discard_recording(staging)
+            print(f"Discarded recording for {target.name}: the test did not pass.")
 
 
 # =============================================================================

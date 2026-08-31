@@ -83,6 +83,7 @@ import sys
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any, cast
 
@@ -424,7 +425,7 @@ def parse_baseline(document: object) -> Baseline:
             raise ValueError(f"baseline entry for {rpc!r} must be an object")
         shape = record.get("shape")
         unknown = record.get("unknown_fields")
-        if not isinstance(shape, str) or len(shape) != 64:
+        if not isinstance(shape, str) or len(shape) != 64 or not _is_hex(shape):
             raise ValueError(f"baseline entry for {rpc!r} needs a 64-hex 'shape'")
         if isinstance(unknown, bool) or not isinstance(unknown, int) or unknown < 0:
             raise ValueError(f"baseline entry for {rpc!r} needs a non-negative 'unknown_fields'")
@@ -432,16 +433,35 @@ def parse_baseline(document: object) -> Baseline:
     return entries
 
 
-def load_baseline(path: Path | None, report: CanaryReport) -> Baseline | None:
+def _is_hex(value: str) -> bool:
+    return all(character in "0123456789abcdefABCDEF" for character in value)
+
+
+def load_baseline(
+    path: Path | None,
+    report: CanaryReport,
+    *,
+    missing_grace_until: date | None = None,
+    today: date | None = None,
+) -> Baseline | None:
     """Return the baseline to compare against, or ``None`` for diagnostic mode.
 
     A missing file is a ``WARN`` (the first run's ``SHAPE``/``UNKNOWN`` lines are
-    what a reviewer authors the file from); an unreadable file is a ``FAIL``.
+    what a reviewer authors the file from) until ``missing_grace_until`` has
+    passed, after which it is a ``FAIL`` so the drift check cannot stay inert
+    indefinitely; an unreadable file is always a ``FAIL``.
     """
     if path is None:
         return None
     if not path.is_file():
-        report.warn(f"baseline missing {path}")
+        current = today or date.today()
+        if missing_grace_until is not None and current > missing_grace_until:
+            report.fail(
+                "baseline",
+                f"missing {path} and the bootstrap grace period ended {missing_grace_until}",
+            )
+        else:
+            report.warn(f"baseline missing {path}")
         return None
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
@@ -513,11 +533,14 @@ async def run_canary(
     notebook_id: str,
     *,
     baseline_path: Path | None = None,
+    missing_baseline_grace_until: date | None = None,
     out: Emit = print,
 ) -> int:
     """Drive every step against one client; return the process exit code."""
     report = CanaryReport(out, redact=notebook_id)
-    baseline = load_baseline(baseline_path, report)
+    baseline = load_baseline(
+        baseline_path, report, missing_grace_until=missing_baseline_grace_until
+    )
     try:
         context = client_factory()
     except Exception as error:  # noqa: BLE001 - assembly failure is a verdict
@@ -590,6 +613,16 @@ def build_parser() -> argparse.ArgumentParser:
             "Never written by this script."
         ),
     )
+    parser.add_argument(
+        "--missing-baseline-grace-until",
+        type=date.fromisoformat,
+        default=None,
+        metavar="YYYY-MM-DD",
+        help=(
+            "Last day a missing --baseline file is only a WARN; after it the run "
+            "FAILs, so the drift check cannot stay inert once bootstrap is over."
+        ),
+    )
     return parser
 
 
@@ -608,7 +641,15 @@ def main(
         return 2
     factory = client_factory or _default_client_factory(args.timeout)
     emit = functools.partial(print, flush=True)
-    return asyncio.run(run_canary(factory, notebook_id, baseline_path=args.baseline, out=emit))
+    return asyncio.run(
+        run_canary(
+            factory,
+            notebook_id,
+            baseline_path=args.baseline,
+            missing_baseline_grace_until=args.missing_baseline_grace_until,
+            out=emit,
+        )
+    )
 
 
 if __name__ == "__main__":

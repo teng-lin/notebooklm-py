@@ -1361,7 +1361,9 @@ shape or count differs prints `FAIL schema <rpc> … live=… baseline=…`. Unt
 file exists the job prints `WARN baseline missing …`, runs in diagnostic mode
 (green), and raises a `::warning::` annotation on the run so the inert drift
 check stays visible; author the file by hand from a reviewed run's
-`SHAPE`/`UNKNOWN` lines in the step summary. Transport or auth failures always
+`SHAPE`/`UNKNOWN` lines in the step summary. The bootstrap is bounded: the job
+passes `--missing-baseline-grace-until 2026-09-14`, after which a missing
+baseline is a `FAIL`, so the drift check cannot stay inert indefinitely. Transport or auth failures always
 `FAIL`. Every emitted line has the probed notebook id replaced with
 `<notebook-id>` and exception text scrubbed, so the summary carries no ids.
 `GenerateFreeFormStreamed` is the backend's only unary-stream RPC and it writes a

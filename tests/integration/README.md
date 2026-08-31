@@ -65,11 +65,11 @@ records and replays (`tests/_helpers/android_grpc_harness.py`):
 | `get_project_rich` | `notebooks.get()`, `sources.list()` | `GetProject` ×2 |
 | `load_source` | `sources.get_fulltext()` | `GetProject` ×2, `LoadSource` |
 | `list_artifacts_get_notes` | `artifacts.list()`, `notes.list()` | `ListArtifacts`, `GetNotes` ×2 |
-| `get_labels` | `labels.list()`, `collections.list()` | `GetLabels` ×2 |
+| `get_labels` | `labels.list()`, `collections.create()`, `collections.list()`, `collections.delete()` | `GetLabels` ×5, `CreateLabel`, `DeleteLabels` |
 | `list_discover_sources_job` | `research.poll()` | `ListDiscoverSourcesJob` |
 | `get_project_details` | `sharing.get_status()` | `GetProjectDetails` |
 | `generate_free_form_streamed` | `chat.ask()` | `GetProject`, `ListChatSessions` ×2, `ListChatTurns`, `GenerateFreeFormStreamed (stream)` |
-| `list_chat_sessions_turns` | `chat.get_conversation_id()`, `chat.get_history()` | `ListChatSessions` ×3, `ListChatTurns` |
+| `list_chat_sessions_turns` | `chat.ask()`, `chat.get_conversation_id()`, `chat.get_history()` | `GetProject`, `ListChatSessions` ×5, `ListChatTurns` ×2, `GenerateFreeFormStreamed (stream)` |
 | `notebook_lifecycle` | `notebooks.create/rename/set_emoji/list/copy/delete()` | `ListRecentlyViewedProjects` ×2, `CreateProject`, `MutateProject` ×2, `CopyProject`, `DeleteProjects` ×2 |
 | `generate_notebook_guide` | `notebooks.get_description()`, `notebooks.get_summary()` | `GenerateNotebookGuide` ×2 |
 | `source_lifecycle` | `sources.add_text/add_url/wait_until_ready/rename/get_guide/check_freshness/refresh/delete()` | `AddTentativeSources` ×2, `AddSources` ×2, `GetProject` ×10, `MutateSource`, `GenerateDocumentGuides`, `CheckSourceFreshness` ×2, `DeleteSources` ×2 |
@@ -82,13 +82,13 @@ records and replays (`tests/_helpers/android_grpc_harness.py`):
 | `act_on_sources_mind_map` | `artifacts.generate_mind_map()`, `notes.delete()` | `GetProject`, `ActOnSources`, `CreateNote`, `GetNotes` ×2, `DeleteNotes` |
 | `quiz_lifecycle` | `artifacts.generate_quiz/poll_status/get/rename/delete/get_or_none()` | `GetProject`, `CreateArtifact`, `ListArtifacts` ×8, `GetArtifact` ×3, `GetNotes` ×2, `UpdateArtifact`, `DeleteArtifact` |
 | `generate_report_suggestions` | `artifacts.suggest_reports()` | `GenerateReportSuggestions` |
-| `research_fast_cancel` | `research.start(mode="fast")`, `research.cancel()`, `research.poll()` | `DiscoverSourcesManifold`, `CancelDiscoverSourcesJob`, `ListDiscoverSourcesJob` |
+| `research_fast_cancel` | `research.start(mode="fast")`, `research.cancel()`, `research.poll()` | `DiscoverSourcesManifold`, `ListDiscoverSourcesJob` ×2, `CancelDiscoverSourcesJob` |
 | `research_fast_import` | `research.start(mode="fast")`, `research.poll()`, `research.import_sources()` | `DiscoverSourcesManifold`, `ListDiscoverSourcesJob`, `FinishDiscoverSourcesRun` |
 | `generate_report` | `artifacts.generate_report/poll_status/get/delete/get_or_none()` | `GetProject`, `CreateArtifact`, `ListArtifacts` ×5, `GetArtifact` ×2, `GetNotes` ×2, `DeleteArtifact` |
 | `generate_flashcards` | `artifacts.generate_flashcards/poll_status/get/delete/get_or_none()` | `GetProject`, `CreateArtifact`, `ListArtifacts` ×6, `GetArtifact` ×3, `GetNotes` ×2, `DeleteArtifact` |
 | `generate_audio` | `artifacts.generate_audio/poll_status/get/delete/get_or_none()` | `GetProject`, `CreateArtifact`, `ListArtifacts` ×23, `GetArtifact` ×20, `GetNotes` ×2, `DeleteArtifact` |
 
-26 families, 218 interactions. Re-record everything (creates one disposable scratch notebook with a text
+26 families, 228 interactions. Re-record everything (creates one disposable scratch notebook with a text
 source and a note through an *unrecorded* client, records, then deletes it):
 
 ```bash

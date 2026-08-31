@@ -993,9 +993,22 @@ def test_main_prefers_the_flag_over_env_and_forwards_the_baseline(
 
     original = canary.run_canary
 
-    async def spy(factory: Any, notebook_id: str, *, baseline_path: Any, out: Any) -> int:
+    async def spy(
+        factory: Any,
+        notebook_id: str,
+        *,
+        baseline_path: Any,
+        missing_baseline_grace_until: Any = None,
+        out: Any,
+    ) -> int:
         captured.append((notebook_id, baseline_path))
-        return await original(factory, notebook_id, baseline_path=baseline_path, out=out)
+        return await original(
+            factory,
+            notebook_id,
+            baseline_path=baseline_path,
+            missing_baseline_grace_until=missing_baseline_grace_until,
+            out=out,
+        )
 
     monkeypatch.setattr(canary, "run_canary", spy)
     assert canary.main(["--notebook-id", "flag-notebook"], client_factory=_Capture) == 1
@@ -1023,3 +1036,48 @@ def test_main_missing_baseline_warns_on_stdout(
     out = capsys.readouterr().out.splitlines()
     assert out[0] == f"WARN baseline missing {missing}"
     assert not missing.exists()
+
+
+def test_missing_baseline_is_a_warn_within_grace_and_a_fail_after(tmp_path: Path) -> None:
+    from datetime import date
+
+    lines: list[str] = []
+    report = canary.CanaryReport(lines.append)
+    missing = tmp_path / "absent" / "canary_baseline.json"
+
+    assert (
+        canary.load_baseline(
+            missing, report, missing_grace_until=date(2026, 9, 14), today=date(2026, 9, 14)
+        )
+        is None
+    )
+    assert lines == [f"WARN baseline missing {missing}"]
+    assert report.all_ok
+
+    lines.clear()
+    report = canary.CanaryReport(lines.append)
+    assert (
+        canary.load_baseline(
+            missing, report, missing_grace_until=date(2026, 9, 14), today=date(2026, 9, 15)
+        )
+        is None
+    )
+    assert lines == [
+        f"FAIL baseline missing {missing} and the bootstrap grace period ended 2026-09-14"
+    ]
+    assert not report.all_ok
+    assert not missing.exists() and not missing.parent.exists()
+
+
+def test_parser_accepts_iso_grace_date_and_rejects_garbage() -> None:
+    from datetime import date
+
+    args = canary.build_parser().parse_args(["--missing-baseline-grace-until", "2026-09-14"])
+    assert args.missing_baseline_grace_until == date(2026, 9, 14)
+    with pytest.raises(SystemExit):
+        canary.build_parser().parse_args(["--missing-baseline-grace-until", "soon"])
+
+
+def test_parse_baseline_rejects_non_hex_shape() -> None:
+    with pytest.raises(ValueError, match="64-hex"):
+        canary.parse_baseline({"GetProject": {"shape": "g" * 64, "unknown_fields": 0}})

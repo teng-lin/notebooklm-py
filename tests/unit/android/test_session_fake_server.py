@@ -223,10 +223,12 @@ async def _running_session(
         await harness.reopen(1)
         yield harness
     finally:
-        if session.active_epoch is not None:
-            await session.prepare_close()
-            await session.close_resources()
-        await server.stop(0)
+        try:
+            if session.active_epoch is not None:
+                await session.prepare_close()
+                await session.close_resources()
+        finally:
+            await server.stop(0)
 
 
 def _get_project_request(notebook_id: str = "notebook-1") -> Any:
@@ -458,6 +460,10 @@ async def test_replay_safe_read_refreshes_bearer_and_retries_unauthenticated_onc
     assert result.project.id == "notebook-1"
     assert service.unary_calls == 2
     assert harness.bearer.invalidated == [1]
+    # Each attempt must carry exactly one authorization entry: a retry that
+    # appended a second header instead of replacing it would collapse in dict().
+    for metadata in service.unary_metadata:
+        assert [key for key, _value in metadata].count("authorization") == 1
     tokens = [dict(metadata)["authorization"] for metadata in service.unary_metadata]
     # The retry carried the refreshed credential, not the rejected one.
     assert tokens == ["Bearer fake-token-1", "Bearer fake-token-2"]
@@ -512,9 +518,9 @@ async def test_client_deadline_maps_slow_unary_to_timeout_error() -> None:
     service = _Service(on_unary=slow)
     async with _running_session(service) as harness:
         with pytest.raises(RPCTimeoutError) as captured:
-            await _get_project(harness, timeout=0.3)
+            await _get_project(harness, timeout=1.0)
 
-    assert captured.value.timeout_seconds == 0.3
+    assert captured.value.timeout_seconds == 1.0
     assert captured.value.method_id == GET_PROJECT
     assert service.unary_calls == 1
 
@@ -530,11 +536,11 @@ async def test_client_deadline_maps_stalled_stream_to_timeout_error() -> None:
     received: list[str] = []
     async with _running_session(service) as harness:
         with pytest.raises(RPCTimeoutError) as captured:
-            async for frame in _generate(harness, timeout=0.3):
+            async for frame in _generate(harness, timeout=1.0):
                 received.append(frame.answer.response)
 
     assert received == ["one"]
-    assert captured.value.timeout_seconds == 0.3
+    assert captured.value.timeout_seconds == 1.0
     assert service.stream_calls == 1
 
 

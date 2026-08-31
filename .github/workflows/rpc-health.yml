@@ -900,7 +900,9 @@ jobs:
       # rather than against zero. That file is authored BY HAND from a
       # reviewed run's SHAPE/UNKNOWN lines — the canary never writes it.
       # Until it exists the step prints ``WARN baseline missing`` and runs
-      # in diagnostic mode (green), which is what the first run is for.
+      # in diagnostic mode (green), which is what the first run is for. The
+      # grace date below bounds that bootstrap: after it, a missing baseline
+      # FAILs the job so the drift check cannot stay inert indefinitely.
       shell: bash
       env:
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
@@ -909,7 +911,8 @@ jobs:
         echo "Testing branch: $TARGET_BRANCH"
         set +e
         uv run python scripts/android_grpc_canary.py \
-          --baseline tests/fixtures/android/canary_baseline.json 2>&1 | tee android-canary-report.txt
+          --baseline tests/fixtures/android/canary_baseline.json \
+          --missing-baseline-grace-until 2026-09-14 2>&1 | tee android-canary-report.txt
         exit_code=${PIPESTATUS[0]}
         # Diagnostic mode is green by design, so without this annotation an
         # inert drift check would never be visible from the run list. It does

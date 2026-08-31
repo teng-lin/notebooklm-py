@@ -87,7 +87,7 @@ In-process `grpc.aio.server` with generic handlers built from the generated
 
 1. bearer acquisition + one forced refresh;
 2. one unary `GetProject` on `NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID`;
-3. one unary-stream call;
+3. one more read-only unary call (`ListChatSessions`; the backend's only unary-stream RPC writes a chat turn, so the canary never streams);
 4. strict decode: unknown-field count and response-shape fingerprint per RPC,
    printed as diagnostic hashes; non-zero exit on drift or transport error.
 

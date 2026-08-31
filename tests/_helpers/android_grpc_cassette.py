@@ -130,6 +130,19 @@ def _deserializer_type(deserializer: Callable[[bytes], Message]) -> str:
     return type_name
 
 
+_PLACEHOLDER_BUDGET = 9999
+
+
+def _check_placeholder_budget(count: int) -> None:
+    """The trusted-placeholder patterns admit exactly four digits."""
+
+    if count > _PLACEHOLDER_BUDGET:
+        raise AndroidGrpcCassetteError(
+            f"More than {_PLACEHOLDER_BUDGET} distinct scalars in one cassette; "
+            "split the family before placeholders stop matching the trusted pattern"
+        )
+
+
 def _clone(message: Message) -> Message:
     clone = cast(Message, type(message)())
     clone.CopyFrom(message)
@@ -225,6 +238,7 @@ class ProtoRedactor:
                 replacement = f"{_SAFE_URL_PREFIX}{self._url_count:04d}"
             else:
                 self._string_count += 1
+                _check_placeholder_budget(self._string_count)
                 replacement = f"SCRUBBED_STRING_{self._string_count:04d}"
         self._strings[value] = replacement
         return replacement
@@ -305,7 +319,9 @@ class ProtoRedactor:
             ):
                 key_field = field.message_type.fields_by_name["key"]
                 value_field = field.message_type.fields_by_name["value"]
-                entries = list(value.items())
+                # Sort so placeholder numbering never depends on map iteration
+                # order, which protobuf does not guarantee across processes.
+                entries = sorted(value.items(), key=lambda item: repr(item[0]))
                 value.clear()
                 for key, map_value in entries:
                     clean_key = self._sanitize_scalar(key_field, key)
