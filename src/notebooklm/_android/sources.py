@@ -121,25 +121,13 @@ class AddFileCompat(Protocol):
     ) -> Source: ...
 
 
-# ``.docx`` is the one file type with no Android-native route. Evidence:
-# * the mobile Scotty frontend refuses it under every candidate content type
-#   (openxml, application/msword, application/octet-stream) -- the transfer
-#   succeeds and the source settles in SOURCE_STATUS_ERROR;
-# * the app itself never uploads one. Its complete picker set is the
-#   ``ContentMimeType`` enum -- m4a, mp3, wav, wma, pdf -- so the mobile
-#   frontend was never built to parse Word;
-# * the mobile *backend* can parse Word. The same file imported through
-#   ``AddSources``/``GoogleDriveContent`` reaches SOURCE_STATUS_COMPLETE with
-#   correct extracted text, and ``SourceContentType`` reserves WORD (11). The
-#   gap is the upload frontend's allowlist, not a missing parser;
-# * the Web frontend cannot be borrowed with an Android bearer. It accepts the
-#   bearer for the upload ``start``, then its finalize hop fails closed with
-#   ``CredsPermissionException: Rejected by impersonation policy for
-#   /LabsTailwindOrchestrationService.AddSourcesAsync`` -- a server-side
-#   credential-class boundary, not a header we can add.
-#
-# ``.csv`` used to be here too; it is now native (see ``_adapt_csv_content_type``).
-_WEB_FILE_UPLOAD_COMPAT_EXTENSIONS = frozenset({".docx"})
+# Extensions the mobile upload frontend will not parse, which therefore reach
+# the backend by way of Drive instead (``_add_file_via_drive_staging``). The
+# frontend's allowlist mirrors the app's own picker -- audio and PDF -- while
+# the backend parses everything Drive hands it. Full evidence, including why
+# the Web frontend cannot be borrowed with an Android bearer, is in
+# docs/android/web-compat-seam-closure.md.
+_DRIVE_STAGED_UPLOAD_EXTENSIONS = frozenset({".docx"})
 
 
 def _snapshot_enum_filter(
@@ -374,15 +362,13 @@ class AndroidSourcesAPI(SourcesAPI):
         drive_download: DriveDownload | None = None,
         add_file_compat: AddFileCompat | None = None,
     ) -> None:
-        """Bind native sources plus the two qualified Web file-upload seams.
+        """Bind the fully native source surface.
 
-        Live native PDF and Markdown controls reach ``SOURCE_STATUS_COMPLETE``,
-        while CSV and DOCX finish in ``SOURCE_STATUS_ERROR`` even with the exact
-        APK Scotty transaction. Public client assembly therefore supplies the
-        already-authenticated Web uploader for only those two extensions. Direct
-        adapter callers may omit the collaborator to exercise the native
-        transaction for evidence work. Other extensions remain native unless
-        separately qualified by evidence.
+        ``add_file_compat`` is an optional override for the Drive-staged upload
+        path (see ``_DRIVE_STAGED_UPLOAD_EXTENSIONS``). Public client assembly
+        supplies nothing: the adapter holds no Web collaborator. Direct adapter
+        callers may inject one to exercise a different uploader, or omit it and
+        get the native staging round-trip.
         """
         self._transport = session
         self._upload_pipeline = upload_pipeline
@@ -1016,25 +1002,30 @@ class AndroidSourcesAPI(SourcesAPI):
         title: str | None = None,
         on_progress: Callable[[int, int], object] | None = None,
     ) -> Source:
-        # Choose the qualified compatibility path from the same canonical
-        # target whose filename drives MIME inference in either uploader. This
-        # prevents a misleading symlink suffix from routing CSV/DOCX through
-        # the native transaction that live evidence has shown will fail. Both
-        # uploaders still resolve/check the supplied canonical path inside
+        # Choose the upload path from the same canonical target whose filename
+        # drives MIME inference in either uploader, so a misleading symlink
+        # suffix cannot route a file into the transaction that will reject it.
+        # Both uploaders still resolve/check the supplied canonical path inside
         # their own admitted operation before opening it.
         canonical_path = await asyncio.to_thread(Path(file_path).resolve)
-        if (
-            canonical_path.suffix.lower() in _WEB_FILE_UPLOAD_COMPAT_EXTENSIONS
-            and self._add_file_compat is not None
-        ):
-            return await self._add_file_compat(
+        if canonical_path.suffix.lower() in _DRIVE_STAGED_UPLOAD_EXTENSIONS:
+            if self._add_file_compat is not None:
+                return await self._add_file_compat(
+                    notebook_id,
+                    canonical_path,
+                    mime_type,
+                    wait=wait,
+                    wait_timeout=wait_timeout,
+                    title=title,
+                    on_progress=on_progress,
+                )
+            return await self._upload_pipeline.add_file_via_drive_staging(
                 notebook_id,
                 canonical_path,
                 mime_type,
-                wait=wait,
                 wait_timeout=wait_timeout,
                 title=title,
-                on_progress=on_progress,
+                import_drive_file=self.add_drive,
             )
 
         adapter = self

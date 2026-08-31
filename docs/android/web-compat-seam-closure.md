@@ -15,10 +15,11 @@ actually gaps, and what remains.
 | `sharing.set_view_level` | Web seam | **native** | Probed the wrong RPC |
 | `notebooks.remove_from_recent` | Web seam | **native** | Probed an owned notebook |
 | `sources.add_file` (`.csv`) | Web seam | **native** | Content type outside the mobile frontend's allowlist |
-| `sources.add_file` (`.docx`) | Web seam | Web seam | Genuine mobile upload-frontend gap |
+| `sources.add_file` (`.docx`) | Web seam | **native (via Drive)** | Mobile upload frontend parses no Word; the backend does |
 
 `tests/unit/test_backend_selection.py::test_android_preference_promotes_every_namespace`
-asserts the complete inventory of remaining Web bindings. It is now one entry.
+asserts the complete inventory of remaining Web bindings. It is now **empty**:
+an Android-selected client holds no Web collaborator and needs no cookies.
 
 ## `sharing.set_view_level` — wrong service
 
@@ -118,9 +119,9 @@ android  city,population,country\n\nOsaka,2750000,Japan\n\nLyon,522000,France\n
 Both are the whole file. The Android rendering keeps more of the table's
 structure.
 
-### `.docx` — the one remaining seam
+### `.docx` — native by way of Drive
 
-Four independent findings, none of which yields a native `add_file` route:
+Four findings, none of which yields a direct upload:
 
 1. **The mobile frontend refuses it** under every candidate content type —
    `application/vnd.openxmlformats-…wordprocessingml.document`,
@@ -148,13 +149,24 @@ Four independent findings, none of which yields a native `add_file` route:
    binary string and in no recovered mobile service. This is a server-side
    credential-class boundary, not a header that can be added.
 
-**A native route does exist, at a cost.** Staging the file in the caller's Drive,
-importing it with `GoogleDriveContent`, and deleting the staged file leaves the
-source `READY` with its text intact — the content is materialized at import.
-That uses the `auth/drive` scope the Android identity already holds. It is not
-shipped: it writes to the user's Drive, can orphan a file if the process dies
-mid-flight, and produces a Drive-typed source whose `drive_status` reports
-`ACTIVE` against a file that no longer exists — a different object from the
-uploaded source Web produces.
+Finding 3 is the route. `DriveStagingTransfer` (`_android/drive_staging.py`)
+stages the file in the caller's own Drive with the `auth/drive` scope the
+Android identity already holds, imports it with `GoogleDriveContent`, and
+deletes the staged copy. Deleting it is safe: the import materializes the
+content, and a live probe confirmed the source stays `READY` with its text
+intact and `drive_status: ACTIVE` afterwards.
+
+Three consequences are documented on `add_file_via_drive_staging` and worth
+repeating here:
+
+* the path always waits for readiness, whatever `wait` asked for — the staged
+  copy cannot be removed until the import has materialized the content;
+* the resulting source is Drive-backed, so `drive_status` describes a staged
+  copy that no longer exists rather than a live document;
+* `on_progress` is not reported — staging is one multipart request, not a
+  chunked transfer.
+
+Cleanup runs on the failure path too, and a failed cleanup is logged rather than
+raised: an orphaned staging file is untidy, not a failed add.
 
 [#2269]: https://github.com/teng-lin/notebooklm-py/pull/2269

@@ -31,7 +31,6 @@ from notebooklm._android.sources import AndroidSourcesAPI
 from notebooklm._auth.master_token_types import MasterToken
 from notebooklm._auth.profile_store import ProfileStore
 from notebooklm._client_assembly import BackendPreference, resolve_backend_preference
-from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.exceptions import ConfigurationError, MissingDependencyError
@@ -148,12 +147,14 @@ def test_android_preference_promotes_every_namespace() -> None:
             module = type(owner).__module__ if owner is not None else type(value).__module__
             if module.startswith("notebooklm._web."):
                 web_bindings.append((namespace, attribute))
-    # The complete inventory of Web collaborators an Android-selected client
-    # still holds. Every entry is a live-evidenced gap, not a convenience --
-    # shrink this list, never grow it. ``notebooks._remove_from_recent_compat``
-    # and ``sharing._set_view_level_compat`` were retired once live probing
-    # showed both routes work natively.
-    assert web_bindings == [("sources", "_add_file_compat")]
+    # An Android-selected client holds NO Web collaborator. Keep this empty:
+    # a new entry means an Android namespace has quietly taken a dependency on
+    # the Web graph, which drags the whole cookie/CSRF machinery back in.
+    # History: ``notebooks._remove_from_recent_compat`` and
+    # ``sharing._set_view_level_compat`` were retired once live probing showed
+    # both routes work natively; ``sources._add_file_compat`` became the
+    # Drive-staged upload path.
+    assert web_bindings == []
 
     assert client.collections._list_notebooks.__self__ is client.notebooks
     assert client.collections._list_notebooks.__func__ is type(client.notebooks).list
@@ -169,13 +170,16 @@ def test_android_chat_receives_configured_response_byte_cap() -> None:
     assert client.chat._chat_response_max_bytes == 123456
 
 
-def test_android_assembly_wires_only_the_existing_web_file_upload_capability() -> None:
+def test_android_assembly_wires_no_web_file_upload_collaborator() -> None:
+    """Files outside the mobile upload allowlist round-trip through Drive.
+
+    ``_add_file_compat`` stays as an injection seam for direct adapter callers,
+    but public assembly leaves it unset so nothing reaches back into the Web
+    graph.
+    """
     client = NotebookLMClient(_auth(), backend="android")
 
-    compatibility = client.sources._add_file_compat
-    assert compatibility is not None
-    assert compatibility.__func__ is WebSourcesAPI.add_file
-    assert compatibility.__self__._uploader is client._source_uploader
+    assert client.sources._add_file_compat is None
 
 
 def test_android_selected_public_callable_inventory_is_exact() -> None:

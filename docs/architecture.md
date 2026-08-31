@@ -994,6 +994,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/session.py` | Lazy Google-TLS gRPC transport participating in root loop/lifecycle supervision, aggregate deadlines, per-call bearer metadata, status mapping, safe-read replay, and full stream leases. |
 | `_android/write_safety.py` | Shared non-idempotent write helper that marks only transport-ambiguous Android outcomes as unconfirmed while preserving confirmed authentication, validation, and backend rejections. |
 | `_android/sources.py` | Selected Android source adapter: `GetProject` reads, exact URL/text/YouTube/Drive adds, freshness checks, native stale-Drive-source refresh, maintenance/content methods, generic file uploads, and Android-bearer Drive-file download followed by Android registration/upload. |
+| `_android/drive_staging.py` | `DriveStagingTransfer`: stages a local file in the caller's own Drive, imports it, and deletes the staged copy. Used for the file types the mobile upload frontend will not parse (`.docx`), so an Android-selected client needs no Web collaborator. Built over the upload pipeline's transport, so it shares its epoch/deadline/client-tracking discipline. |
 | `_android/upload.py` | Selected `AndroidUploadPipeline`: epoch-fenced generic tentative registration, strict bearer-authenticated Scotty start/finalize, and a bounded exact-origin Drive v3 metadata/media downloader for `add_drive_file`; it uses one aggregate operation deadline, independent download/upload admission, restricted temporary files, and secret-safe teardown. |
 | `_android/evidence.py` | One pinned Android evidence profile for the captured app version and distinct registration/finalize user agents. |
 | `_android/artifacts.py` | Publicly selected artifact adapter: aggregate listing/polling, all public generation families, live `DeriveArtifact` slide revision, retry, interactive and note-backed mind maps, strict media/slide transfers, local report/quiz/flashcard/mind-map/data-table saves, delete/rename, infographic download, report suggestions, and Drive export. |
@@ -1305,11 +1306,12 @@ src/notebooklm/
 │   │   ├── organization.py      # Heterogeneous organization member decoding
 │   │   └── research.py          # Strict Research job/result projection
 │   ├── errors.py                # Sanitized gRPC status/error mapping
-│   ├── notebooks.py             # Selected Android notebook reads/mutations + recent-removal seam
+│   ├── notebooks.py             # Selected Android notebook reads/mutations, incl. native recent-removal
 │   ├── session.py               # Supervised lazy gRPC transport
 │   ├── write_safety.py          # Shared ambiguous-write outcome marker
-│   ├── sources.py               # Selected source surface + bounded compatibility seams
+│   ├── sources.py               # Selected source surface (fully native)
 │   ├── upload.py                # Epoch-fenced generic Android Scotty transaction
+│   ├── drive_staging.py         # Drive round-trip for types the mobile upload frontend rejects
 │   ├── evidence.py              # Pinned captured app/UA evidence profile
 │   ├── artifacts.py             # Publicly selected complete Artifact API
 │   ├── artifact_creation.py      # Exact CreateArtifact option/request builders

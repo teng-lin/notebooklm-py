@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
+from notebooklm._android import drive_staging as drive_staging_module
 from notebooklm._android.auth import BearerCredential, BearerProvider
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     read_pb2,
@@ -24,12 +25,14 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
 from notebooklm._android.proto.google.internal.labs.tailwind.v1 import source_settings_pb2
 from notebooklm._android.session import AndroidSession
 from notebooklm._android.sources import (
+    ADD_SOURCES_METHOD,
     ADD_TENTATIVE_SOURCES_METHOD,
     GET_PROJECT_METHOD,
     MUTATE_SOURCE_METHOD,
     AndroidSourcesAPI,
 )
 from notebooklm._android.upload import (
+    UPLOAD_ORIGIN,
     AndroidUploadPipeline,
     _resolve_upload_content_type,
     build_upload_start_body,
@@ -47,6 +50,8 @@ from notebooklm.exceptions import (
 from notebooklm.types import Source, SourceStatus
 
 NOTEBOOK_ID = "00000000-0000-4000-8000-000000000200"
+DRIVE_STAGED_ID = "drive-staged-file-id"
+DRIVE_STAGING_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files"
 SOURCE_ID = "00000000-0000-4000-8000-000000000201"
 SESSION_URL = (
     f"https://notebooklm-pa.googleapis.com/upload/upload/{NOTEBOOK_ID}"
@@ -131,6 +136,11 @@ class HTTPHarness:
         self.block_post: asyncio.Event | None = None
         self.block_put: asyncio.Event | None = None
         self.put_error: BaseException | None = None
+        # Drive staging round-trip (``.docx``).
+        self.drive_stage_status = 200
+        self.drive_stage_body: dict[str, Any] | None = {"id": DRIVE_STAGED_ID}
+        self.drive_delete_status = 204
+        self.drive_delete_error: BaseException | None = None
 
     def factory(self, **kwargs: Any) -> FakeHTTPClient:
         self.factory_kwargs.append(kwargs)
@@ -165,12 +175,33 @@ class FakeHTTPClient:
         self.harness.calls.append(
             _HTTPCall("POST", url, dict(headers), bytes(content), follow_redirects)
         )
+        if url.startswith(DRIVE_STAGING_UPLOAD_URL):
+            return httpx.Response(
+                self.harness.drive_stage_status,
+                json=self.harness.drive_stage_body,
+                request=httpx.Request("POST", url),
+            )
         if self.harness.block_post is not None:
             await self.harness.block_post.wait()
         return httpx.Response(
             self.harness.start_status,
             headers=self.harness.start_headers,
             request=httpx.Request("POST", url),
+        )
+
+    async def delete(
+        self,
+        url: str,
+        *,
+        headers: Mapping[str, str],
+        follow_redirects: bool,
+    ) -> httpx.Response:
+        self.harness.calls.append(_HTTPCall("DELETE", url, dict(headers), b"", follow_redirects))
+        if self.harness.drive_delete_error is not None:
+            raise self.harness.drive_delete_error
+        return httpx.Response(
+            self.harness.drive_delete_status,
+            request=httpx.Request("DELETE", url),
         )
 
     async def put(
@@ -303,6 +334,9 @@ async def _graph(
     session.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _registration
     session.handlers[GET_PROJECT_METHOD] = _project(_SETTINGS.SOURCE_STATUS_COMPLETE)
     session.handlers[MUTATE_SOURCE_METHOD] = _WRITE.MutateSourceResponse()
+    session.handlers[ADD_SOURCES_METHOD] = lambda request, _kwargs: _WRITE.AddSourcesResponse(
+        sources=[_pdf_source(0)]
+    )
 
     factory: Callable[..., Any]
     if curl:
@@ -1045,3 +1079,94 @@ def test_csv_uploads_are_sent_as_plain_text(supplied: str | None, expected: str)
 def test_non_csv_suffix_is_never_rewritten() -> None:
     assert _resolve_upload_content_type(Path("report.pdf"), None) == "application/pdf"
     assert _resolve_upload_content_type(Path("notes.md"), None) == "text/markdown"
+
+
+@pytest.mark.asyncio
+async def test_docx_stages_through_drive_and_removes_the_staged_copy(tmp_path: Path) -> None:
+    """No Web collaborator: ``.docx`` round-trips through the caller's Drive.
+
+    The mobile upload frontend parses no Word, but the mobile backend does, so
+    the file is staged in Drive, imported, and the staged copy deleted.
+    """
+    harness = HTTPHarness()
+    session, _, pipeline, api = await _graph(harness)
+    path = tmp_path / "report.docx"
+    path.write_bytes(b"PK\x03\x04 docx payload")
+
+    result = await api.add_file(NOTEBOOK_ID, path, wait=True, wait_timeout=30.0)
+
+    assert result.id == SOURCE_ID
+
+    stage = next(c for c in harness.calls if c.url.startswith(DRIVE_STAGING_UPLOAD_URL))
+    assert "uploadType=multipart" in stage.url
+    assert stage.headers["Authorization"].startswith("Bearer ")
+    assert b"wordprocessingml.document" in stage.body
+    assert b"PK\x03\x04 docx payload" in stage.body
+
+    # Imported by reference; the bytes never touch the mobile Scotty frontend.
+    assert not any(c.url.startswith(UPLOAD_ORIGIN) for c in harness.calls)
+    assert ADD_SOURCES_METHOD in [call[0] for call in session.calls]
+    drive_content = next(
+        call[1].user_content[0].google_drive_content
+        for call in session.calls
+        if call[0] == ADD_SOURCES_METHOD
+    )
+    assert drive_content.document_id == DRIVE_STAGED_ID
+
+    deletes = [c for c in harness.calls if c.method == "DELETE"]
+    assert len(deletes) == 1
+    assert DRIVE_STAGED_ID in deletes[0].url
+    del pipeline
+
+
+@pytest.mark.asyncio
+async def test_drive_staged_copy_is_removed_when_the_import_fails(tmp_path: Path) -> None:
+    """A failed import must not leave a file behind in the caller's Drive."""
+    harness = HTTPHarness()
+    session, _, pipeline, api = await _graph(harness)
+    session.handlers[ADD_TENTATIVE_SOURCES_METHOD] = ServerError("rejected", rpc_code=13)
+    path = tmp_path / "report.docx"
+    path.write_bytes(b"PK\x03\x04 docx payload")
+
+    with pytest.raises(SourceAddError):
+        await api.add_file(NOTEBOOK_ID, path, wait=True, wait_timeout=30.0)
+
+    deletes = [c for c in harness.calls if c.method == "DELETE"]
+    assert len(deletes) == 1
+    assert DRIVE_STAGED_ID in deletes[0].url
+    del pipeline
+
+
+@pytest.mark.asyncio
+async def test_drive_unstage_failure_does_not_mask_a_successful_add(tmp_path: Path) -> None:
+    """An orphaned staging file is untidy, not a failed add."""
+    harness = HTTPHarness()
+    harness.drive_delete_error = httpx.ConnectError("drive unreachable")
+    _, _, pipeline, api = await _graph(harness)
+    path = tmp_path / "report.docx"
+    path.write_bytes(b"PK\x03\x04 docx payload")
+
+    result = await api.add_file(NOTEBOOK_ID, path, wait=True, wait_timeout=30.0)
+
+    assert result.id == SOURCE_ID
+    del pipeline
+
+
+@pytest.mark.asyncio
+async def test_drive_staging_rejects_a_file_over_the_cap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = HTTPHarness()
+    _, _, pipeline, api = await _graph(harness)
+    path = tmp_path / "huge.docx"
+    path.write_bytes(b"x")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(drive_staging_module, "_MAX_DRIVE_STAGING_BYTES", 0)
+        with pytest.raises(ValidationError, match="Drive staging is capped"):
+            await api.add_file(NOTEBOOK_ID, path, wait=True, wait_timeout=30.0)
+
+    # Nothing was staged, so nothing needs deleting.
+    assert not any(c.method == "DELETE" for c in harness.calls)
+    del pipeline
