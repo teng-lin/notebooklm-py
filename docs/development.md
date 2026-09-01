@@ -555,7 +555,9 @@ uv run pytest
 uv run pytest -n auto --dist loadgroup
 
 # Fast local loop — skip repo-wide audit / release-gate checks (~40s saved).
-# CI still runs these; the marker just lets you iterate quickly.
+# PR CI skips these too (only node ids named in the critical-guard step run);
+# the manual repo-lint job and nightly run the full marker. Run `make gates`
+# before pushing a change that could trip one.
 uv run pytest tests/unit tests/integration -m "not repo_lint"
 
 # E2E tests (requires auth + test notebook)
