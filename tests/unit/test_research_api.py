@@ -869,6 +869,42 @@ class TestResearchDiscover:
                 await client.research.discover("nb_123", "q")
 
     @pytest.mark.asyncio
+    async def test_discover_without_a_job_id_is_an_unconfirmed_write(
+        self, auth_tokens, httpx_mock: HTTPXMock, build_rpc_response
+    ):
+        httpx_mock.add_response(content=build_rpc_response("Es3dTe", [[], "o"]).encode())
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(DecodingError) as raised:
+                await client.research.discover("nb_123", "q")
+        assert getattr(raised.value, "unconfirmed", False) is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("error_code", [1, 2, 3, 4, 5])
+    async def test_discover_in_band_error_slot_is_a_no_results_failure(
+        self, auth_tokens, httpx_mock: HTTPXMock, build_rpc_response, error_code
+    ):
+        # Live shape for the Drive corpus: ``[null, null, null, null, 1]`` plus
+        # the job id the server still records for the failed call.
+        payload = [None, None, ["job_err"], None, error_code]
+        httpx_mock.add_response(content=build_rpc_response("Es3dTe", payload).encode())
+        async with NotebookLMClient(auth_tokens) as client:
+            task = await client.research.discover("nb_123", "q")
+        assert task.status is ResearchStatus.FAILED
+        assert task.status_code == 3
+        assert task.task_id == "job_err" and task.sources == () and task.summary == ""
+        assert task.termination_reason is not None
+
+    @pytest.mark.asyncio
+    async def test_discover_explicit_zero_error_slot_stays_completed(
+        self, auth_tokens, httpx_mock: HTTPXMock, build_rpc_response
+    ):
+        payload = [[], "overview", ["job_ok"], None, 0]
+        httpx_mock.add_response(content=build_rpc_response("Es3dTe", payload).encode())
+        async with NotebookLMClient(auth_tokens) as client:
+            task = await client.research.discover("nb_123", "q")
+        assert task.status is ResearchStatus.COMPLETED and task.status_code == 2
+
+    @pytest.mark.asyncio
     async def test_discover_skips_malformed_rows_and_keeps_the_rest(
         self, auth_tokens, httpx_mock: HTTPXMock, build_rpc_response
     ):

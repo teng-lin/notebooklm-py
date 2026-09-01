@@ -18,6 +18,7 @@ from ..._types.research import (
     RESEARCH_RESULT_TYPE_WEB,
     RESEARCH_SOURCE_TYPE_WEB,
     RESEARCH_STATUS_CODE_COMPLETED,
+    RESEARCH_STATUS_CODE_NO_RESULTS,
     ResearchResultType,
     ResearchSource,
     ResearchStatus,
@@ -401,13 +402,20 @@ def parse_discover_task(
         if parsed_source is not None:
             sources.append(parsed_source)
     raw_overview = result[1] if len(result) > 1 else None
+    # Slot 4 is the web-only in-band error enum (1 "trouble fetching",
+    # 2 unsupported file type, 3 few results, 4 notebook already holds every
+    # result, 5 query too long). Live: the Drive corpus answers
+    # ``[null, null, null, null, 1]`` and the recorded job lands at status 3,
+    # so a non-zero code is the poll path's NO_RESULTS failure, not a success.
+    error_code = result[4] if len(result) > 4 else None
+    failed = isinstance(error_code, int) and error_code != 0
     return ResearchTask(
         task_id=task_id,
-        status=ResearchStatus.COMPLETED,
+        status=ResearchStatus.FAILED if failed else ResearchStatus.COMPLETED,
         query=query,
         sources=tuple(sources),
         summary=raw_overview if isinstance(raw_overview, str) else "",
-        status_code=RESEARCH_STATUS_CODE_COMPLETED,
+        status_code=RESEARCH_STATUS_CODE_NO_RESULTS if failed else RESEARCH_STATUS_CODE_COMPLETED,
         source_type=RESEARCH_SOURCE_TYPE_WEB,
         discovery_mode=discovery_mode,
     )

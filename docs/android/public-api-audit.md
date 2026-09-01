@@ -11,12 +11,12 @@ audit began. They were not all missing gRPC methods: many were local composition
 omitted fields on RPCs that were already admitted. Every callsite has now been removed. The complete
 Android namespace graph contains no `_reject` or `unsupported_operation` branch.
 
-The exact backend-neutral namespace contract contains 145 consumer callables. Under explicit
+The exact backend-neutral namespace contract contains 146 consumer callables. Under explicit
 `backend="android"`, their selected public paths classify reproducibly as follows:
 
 | Selected public path | Callables | Meaning |
 |---|---:|---|
-| Android-selected or local over Android | 142 | remains within the installed Android namespace graph, including validation, filtering, polling, aliases, cache operations, and composition over Android collaborators |
+| Android-selected or local over Android | 143 | remains within the installed Android namespace graph, including validation, filtering, polling, aliases, cache operations, and composition over Android collaborators |
 | narrow Web compatibility | 3 | `notebooks.remove_from_recent`, CSV/DOCX `sources.add_file`, and `sharing.set_view_level` |
 | unsupported | 0 | no public consumer callable terminates in `_reject`, `unsupported_operation`, or `UnsupportedOperationError` |
 
@@ -186,7 +186,7 @@ adapter graph; the operation-level seams above remain explicit and tested.
 ## Known boundaries outside the public parity count
 
 The current `1.55.10` APK contains 53 gRPC paths. Eighteen have no typed public API owner in this
-library and therefore are not missing implementations of the 145-callable contract:
+library and therefore are not missing implementations of the 146-callable contract:
 
 - notebook discovery: `BatchSearchNotebooks`, `SearchNotebooks`;
 - synchronous research discovery: `DiscoverSources` is now the public `research.discover()`

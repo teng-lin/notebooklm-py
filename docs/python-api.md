@@ -3535,17 +3535,18 @@ class DiscoveryMode(Enum):
     """How a research run searched for sources — `ResearchTask.discovery_mode`."""
 
     UNKNOWN = -1  # Client sentinel: slot populated with a code we cannot map
-    DEFAULT_LLM_SEARCH = 1  # Sent + observed for mode="fast"
-    RAW_SEARCH = 2  # Never sent by this client
-    CURIOUS_SEARCH = 3  # Never sent by this client
-    CURIOUS_RAW_SEARCH = 4  # Never sent by this client
-    DEEP_RESEARCH = 5  # Sent + observed for mode="deep"
-    LITE_LLM_SEARCH = 6  # Never sent by this client
+    DEFAULT_LLM_SEARCH = 1  # start(mode="fast") and discover(mode="default")
+    RAW_SEARCH = 2  # discover(mode="raw")
+    CURIOUS_SEARCH = 3  # discover(mode="curious")
+    CURIOUS_RAW_SEARCH = 4  # discover(mode="curious_raw")
+    DEEP_RESEARCH = 5  # start(mode="deep")
+    LITE_LLM_SEARCH = 6  # Never sent by this client (faults server-side)
 
 
-# Same UNSPECIFIED(0) treatment as DriveSourceStatus above. Only 1 and 5 have been
-# observed — they are the two this client sends, and the poll echoes them back, so
-# the mode a run is executing under is confirmable rather than merely remembered.
+# Same UNSPECIFIED(0) treatment as DriveSourceStatus above. `research.start` sends
+# 1 and 5 and the poll echoes them back, so the mode a run is executing under is
+# confirmable rather than merely remembered; `research.discover` sends 1–4 and
+# echoes the same value on its returned task.
 # `notebooklm.types.discovery_mode_to_str` maps a member to its lower-snake label.
 ```
 

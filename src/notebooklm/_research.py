@@ -123,12 +123,14 @@ def validate_discover(query: str, mode: str) -> tuple[str, DiscoveryMode]:
 
     Returns the lower-cased mode label and the ``DiscoveryMode`` to send.
     """
+    if not isinstance(query, str):
+        raise ValidationError("query must be a string")
     mode_lower = mode.lower()
     if mode_lower not in DISCOVER_MODES:
         raise ValidationError(
             f"Invalid mode '{mode}'. Use one of: " + ", ".join(sorted(DISCOVER_MODES)) + "."
         )
-    if mode_lower not in _CURIOUS_DISCOVER_MODES and not (query or "").strip():
+    if mode_lower not in _CURIOUS_DISCOVER_MODES and not query.strip():
         raise ValidationError(
             "query must not be empty (only the 'curious' and 'curious_raw' modes accept one)"
         )

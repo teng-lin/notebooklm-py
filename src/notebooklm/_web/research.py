@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from .. import _research as _research_base
 from .. import research as _research_pub
+from .._idempotency import mark_unconfirmed
 from .._notebook_metadata import NotebookSourceLister
 from .._research import BaseResearchAPI, validate_discover
 from .._runtime.config import (
@@ -438,7 +439,12 @@ class WebResearchAPI(BaseResearchAPI):
             params,
             source_path=f"/notebook/{notebook_id}",
         )
-        return parse_discover_task(result, query=query, discovery_mode=discovery_mode)
+        try:
+            return parse_discover_task(result, query=query, discovery_mode=discovery_mode)
+        except DecodingError as error:
+            # The call already ran (and recorded a job) — a payload we cannot
+            # read is an unconfirmed write, same as the Android adapter.
+            raise mark_unconfirmed(error) from None
 
     async def poll(
         self,
