@@ -536,6 +536,8 @@ class WebSourcesAPI(SourcesAPI):
             params,
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
+            # #2290: a status-tagged null is a server rejection, not an empty success.
+            raise_on_null_status=True,
         )
         if result and return_object:
             return Source.from_api_response(result, method_id=RPCMethod.UPDATE_SOURCE.value)
@@ -558,16 +560,34 @@ class WebSourcesAPI(SourcesAPI):
         Returns:
             ``None`` on success; any failure raises first.
 
+        Raises:
+            RPCError: when the server rejects the call. ``REFRESH_SOURCE``
+                answers a rejection as a null payload tagged with a gRPC
+                status (live: ``[3]`` INVALID_ARGUMENT), and ``None`` is also
+                the success value, so the status must raise or the two are
+                indistinguishable (#2290).
+
         .. versionchanged:: 0.8.0
             **Breaking change:** returns ``None`` (not always-``True``); the
             ``-> bool`` annotation is dropped (#1290).
+
+        .. versionchanged:: 0.9.0
+            A server rejection raises :class:`RPCError` instead of returning
+            ``None`` (#2290).
         """
         params = [None, [source_id], [2]]
         await self._rpc.rpc_call(
             RPCMethod.REFRESH_SOURCE,
             params,
             source_path=f"/notebook/{notebook_id}",
+            # The recorded success frame is a null payload with nothing at
+            # index 5 (tests/cassettes/web/sources_refresh_direct.yaml), so
+            # ``allow_null`` stays. ``raise_on_null_status`` is what separates
+            # that from the ``[3]`` the server tags a rejection with (#2290) —
+            # without it both decoded to ``None`` and this method reported
+            # success for a live INVALID_ARGUMENT.
             allow_null=True,
+            raise_on_null_status=True,
         )
         return None
 

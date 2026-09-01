@@ -153,6 +153,8 @@ class WebLabelsAPI(LabelsAPI):
             build_generate_labels_params(notebook_id, scope=scope),
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
+            # #2290: a status-tagged null is a server rejection, not an empty success.
+            raise_on_null_status=True,
         )
         return self._labels_from_envelope(
             result, notebook_id=notebook_id, method_id=RPCMethod.CREATE_LABEL.value, index=1
@@ -173,6 +175,8 @@ class WebLabelsAPI(LabelsAPI):
             build_create_label_params(notebook_id, name, emoji),
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
+            # #2290: a status-tagged null is a server rejection, not an empty success.
+            raise_on_null_status=True,
         )
         after = self._labels_from_envelope(
             result, notebook_id=notebook_id, method_id=RPCMethod.CREATE_LABEL.value, index=1
@@ -224,6 +228,8 @@ class WebLabelsAPI(LabelsAPI):
             build_update_label_params(notebook_id, label_id, name=name, emoji=effective_emoji),
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
+            # #2290: a status-tagged null is a server rejection, not an empty success.
+            raise_on_null_status=True,
             operation_variant=None,  # default IDEMPOTENT_SET_OP (not "add_sources")
         )
         if not return_object:
@@ -283,6 +289,8 @@ class WebLabelsAPI(LabelsAPI):
                 build_update_label_params(notebook_id, label_id, add_source_id=source_id),
                 source_path=f"/notebook/{notebook_id}",
                 allow_null=True,
+                # #2290: a status-tagged null is a server rejection, not an empty success.
+                raise_on_null_status=True,
                 operation_variant="add_sources",  # → NON_IDEMPOTENT_NO_RETRY (§4)
             )
         label = await self.get_or_none(notebook_id, label_id)
@@ -333,6 +341,8 @@ class WebLabelsAPI(LabelsAPI):
                 build_update_label_params(notebook_id, label_id, remove_source_id=source_id),
                 source_path=f"/notebook/{notebook_id}",
                 allow_null=True,
+                # #2290: a status-tagged null is a server rejection, not an empty success.
+                raise_on_null_status=True,
                 operation_variant="remove_sources",  # → IDEMPOTENT_SET_OP (§4)
             )
         label = await self.get_or_none(notebook_id, label_id)

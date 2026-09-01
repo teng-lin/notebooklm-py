@@ -856,6 +856,8 @@ class WebNotebooksAPI(NotebooksAPI):
             params,
             source_path="/",  # Home page context, not notebook page
             allow_null=True,
+            # #2290: a status-tagged null is a server rejection, not an empty success.
+            raise_on_null_status=True,
         )
         # Fetch and return the updated notebook
         return await self.get(notebook_id)

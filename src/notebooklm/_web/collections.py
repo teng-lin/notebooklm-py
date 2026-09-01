@@ -172,6 +172,8 @@ class WebCollectionsAPI(CollectionsAPI):
             build_create_collection_params(name),
             source_path=_ACCOUNT_PATH,
             allow_null=True,
+            # #2290: a status-tagged null is a server rejection, not an empty success.
+            raise_on_null_status=True,
         )
         after = await self.list()
         new = [collection for collection in after if collection.id not in before_ids]
@@ -205,6 +207,8 @@ class WebCollectionsAPI(CollectionsAPI):
             build_rename_collection_params(collection_id, name, current.emoji or ""),
             source_path=_ACCOUNT_PATH,
             allow_null=True,
+            # #2290: a status-tagged null is a server rejection, not an empty success.
+            raise_on_null_status=True,
             operation_variant=None,  # default IDEMPOTENT_SET_OP (rename/set)
         )
         if not return_object:
@@ -247,6 +251,8 @@ class WebCollectionsAPI(CollectionsAPI):
                 ),
                 source_path=_ACCOUNT_PATH,
                 allow_null=True,
+                # #2290: a status-tagged null is a server rejection, not an empty success.
+                raise_on_null_status=True,
                 operation_variant="add_notebooks",  # → NON_IDEMPOTENT_NO_RETRY
             )
         collection = await self.get_or_none(collection_id)
@@ -294,6 +300,8 @@ class WebCollectionsAPI(CollectionsAPI):
                 ),
                 source_path=_ACCOUNT_PATH,
                 allow_null=True,
+                # #2290: a status-tagged null is a server rejection, not an empty success.
+                raise_on_null_status=True,
                 operation_variant="remove_notebooks",  # → IDEMPOTENT_SET_OP
             )
         collection = await self.get_or_none(collection_id)

@@ -48,6 +48,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`sources.refresh()` no longer reports success while the server rejects the
+  call** (#2290). `REFRESH_SOURCE` answers a rejection as a null payload tagged
+  with a gRPC status (live: `[3]` INVALID_ARGUMENT); the call site's
+  `allow_null=True` decoded that to `None`, which is also the documented success
+  value, so Python callers, `notebooklm source refresh` and the e2e test could
+  not tell the two apart. The call now passes `raise_on_null_status=True`, so a
+  rejection raises `RPCError` while a genuinely empty success reply still
+  returns `None`. The same swallow was closed on every other write RPC whose
+  result the client reports as "done" without a verifying re-read:
+  `sources.rename()` and the post-upload retitle (`UPDATE_SOURCE`),
+  `notebooks.update()` / `chat.configure()` / `sharing.set_view_level()`
+  (`RENAME_NOTEBOOK`), `notes.update()` (`UPDATE_NOTE`), every label and
+  collection `UPDATE_LABEL` / `CREATE_LABEL` mutation, `artifacts.rename()`
+  (`RENAME_ARTIFACT`), the three `artifacts.export*()` methods
+  (`EXPORT_ARTIFACT`) and `artifacts.generate_mind_map()`
+  (`GENERATE_MIND_MAP`). Deletes (idempotent by contract), `SHARE_NOTEBOOK` /
+  `SHARE_ARTIFACT` / `REMOVE_RECENTLY_VIEWED` (recorded returning a tagged null
+  on successful flows) and the derived reads are unchanged. No recorded
+  success frame for any changed RPC carries a status, so replayed traffic is
+  unaffected; a guardrail test now keeps `allow_null=True` on these write RPCs
+  from landing without the strictness flag.
 - **Behaviour change:** type code `14` now decodes as
   `SourceType.GOOGLE_DRIVE`, not `GOOGLE_SPREADSHEET`, and code `7` decodes as
   `GOOGLE_SPREADSHEET`. `14` is the backend's catch-all for a Drive-hosted file

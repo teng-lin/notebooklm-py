@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 import pytest
 
@@ -137,8 +138,16 @@ class TestSourceMutations:
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(180)
-    async def test_refresh_source(self, client, temp_notebook):
-        """Test refreshing a URL source."""
+    async def test_refresh_source(self, client, temp_notebook, caplog):
+        """Test refreshing a URL source.
+
+        ``assert result is None`` alone cannot catch a swallowed rejection:
+        before #2290 a live ``[3]`` INVALID_ARGUMENT decoded to exactly that
+        ``None`` (the documented success value). A rejection now raises
+        ``RPCError`` — so merely reaching the assertion means the server
+        accepted the call — and the executor's failure line is checked too, so
+        a future swallow at any layer still fails this test.
+        """
         # Add a URL source
         source = await client.sources.add_url(
             temp_notebook.id,
@@ -147,9 +156,16 @@ class TestSourceMutations:
         )
         assert source.id is not None
 
-        result = await client.sources.refresh(temp_notebook.id, source.id)
+        with caplog.at_level(logging.ERROR, logger="notebooklm._rpc_executor"):
+            result = await client.sources.refresh(temp_notebook.id, source.id)
         # v0.8.0 (#1290): refresh() returns None on success
         assert result is None
+        failures = [
+            record.getMessage()
+            for record in caplog.records
+            if "RPC REFRESH_SOURCE failed" in record.getMessage()
+        ]
+        assert not failures, f"refresh() returned None while the RPC failed: {failures}"
 
     @pytest.mark.asyncio
     async def test_check_freshness(self, client, temp_notebook):

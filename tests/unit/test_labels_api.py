@@ -43,6 +43,7 @@ class FakeRpc:
         *,
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
+        raise_on_null_status: bool = False,
     ) -> Any:
         self.calls.append(
             SimpleNamespace(
@@ -51,6 +52,7 @@ class FakeRpc:
                 source_path=source_path,
                 allow_null=allow_null,
                 operation_variant=operation_variant,
+                raise_on_null_status=raise_on_null_status,
             )
         )
         return self.responses.get(method)
@@ -361,6 +363,7 @@ async def test_add_sources_is_not_atomic_partial_failure_propagates() -> None:
             *,
             disable_internal_retries: bool = False,
             operation_variant: str | None = None,
+            raise_on_null_status: bool = False,
         ) -> Any:
             await super().rpc_call(
                 method,
@@ -370,6 +373,7 @@ async def test_add_sources_is_not_atomic_partial_failure_propagates() -> None:
                 _is_retry,
                 disable_internal_retries=disable_internal_retries,
                 operation_variant=operation_variant,
+                raise_on_null_status=raise_on_null_status,
             )
             if sum(c.method == RPCMethod.UPDATE_LABEL for c in self.calls) == 2:
                 raise RuntimeError("wire blip on the 2nd add")

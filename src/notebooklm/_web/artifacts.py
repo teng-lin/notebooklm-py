@@ -448,6 +448,8 @@ class WebArtifactsAPI(ArtifactsAPI):
             params,
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
+            # #2290: a status-tagged null is a server rejection, not an empty success.
+            raise_on_null_status=True,
         )
         # Resolve via studio artifacts only — never public ``get()`` (#1247) nor
         # the merged listing (a note-backed mind-map id no-ops on RENAME_ARTIFACT
@@ -479,6 +481,8 @@ class WebArtifactsAPI(ArtifactsAPI):
             params,
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
+            # #2290: a status-tagged null is a server rejection, not an empty success.
+            raise_on_null_status=True,
         )
 
     async def export_data_table(
@@ -494,6 +498,8 @@ class WebArtifactsAPI(ArtifactsAPI):
             params,
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
+            # #2290: a status-tagged null is a server rejection, not an empty success.
+            raise_on_null_status=True,
         )
 
     async def export(
@@ -513,6 +519,8 @@ class WebArtifactsAPI(ArtifactsAPI):
             params,
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
+            # #2290: a status-tagged null is a server rejection, not an empty success.
+            raise_on_null_status=True,
         )
 
     # =========================================================================

@@ -169,7 +169,7 @@ Supported source types: URLs, YouTube videos, files (PDF, text, Markdown, Word, 
 | `wait <id>` | Source ID | `--timeout`, `--interval`, `--json` | `source wait src123 --timeout 300 --interval 5` |
 | `clean` | - | `--dry-run`, `-y/--yes`, `--json` | `source clean --dry-run` |
 | `rename <id> <title>` | Source ID, new title | `--json` | `source rename src123 "New Name"` |
-| `refresh <id>` | Source ID | `--json` | `source refresh src123` |
+| `refresh <id>` | Source ID | `--json` | `source refresh src123` (exit `1` with the server's reason when the refresh is rejected — v0.9.0, #2290) |
 | `delete <id>` | Source ID | `-y/--yes`, `--json` | `source delete src123 -y` |
 | `delete-by-title <title>` | Exact source title | `-y/--yes`, `--json` | `source delete-by-title "My Source"` |
 | `add-async <url>...` | One or more URLs | `--allow-internal`, `--json` | `source add-async https://a.example https://b.example` — one non-blocking `AddSourcesAsync` call; URLs pass the same scheme/SSRF gate as `source add`; prints the queued ids immediately (`--json` → `{notebook_id, sources, count, requested}`; use `source wait` / `source list` for readiness) |

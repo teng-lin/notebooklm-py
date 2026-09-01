@@ -2341,8 +2341,16 @@ await rpc_call(
     RPCMethod.REFRESH_SOURCE,
     params,
     source_path=f"/notebook/{notebook_id}",
+    allow_null=True,  # success is a null payload with nothing at index 5
+    raise_on_null_status=True,  # a status-tagged null ([3] live) raises (#2290)
 )
 ```
+
+Success is an empty reply; a rejection arrives as the same null payload tagged
+with a gRPC status at index 5 (live 2026-09-01: `[3]` INVALID_ARGUMENT for every
+shape tried, on an account where the plural `dtT1F BatchRefreshSources` accepts
+the same source id — see #2290 / #2283). `raise_on_null_status=True` keeps the
+two apart; without it both decoded to `None`.
 
 ### RPC: CHECK_SOURCE_FRESHNESS (yR9Yof)
 
