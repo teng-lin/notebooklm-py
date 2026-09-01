@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import builtins
 import logging
+import time
 import uuid
 from collections import Counter, defaultdict
 from collections.abc import Callable, Collection, Sequence
@@ -101,6 +102,9 @@ REFRESH_SOURCE_METHOD = f"/{_SERVICE}/RefreshSource"
 _FilterValue = TypeVar("_FilterValue")
 _CORRELATION_PREFIX = "nblm-"
 _CANONICAL_ID_LENGTH = 36
+# Readiness polling: sleep between looks; floor on one look's wire budget.
+_POLL_INTERVAL = 0.5
+_POLL_WIRE_FLOOR = 1.0
 
 
 class DriveDownload(Protocol):
@@ -359,6 +363,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         *,
         drive_download: DriveDownload | None = None,
         add_file_compat: AddFileCompat | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         """Bind the fully native source surface.
 
@@ -367,10 +372,13 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         supplies nothing: the adapter holds no Web collaborator. Direct adapter
         callers may inject one to exercise a different uploader, or omit it and
         get the native staging round-trip.
+
+        ``monotonic`` is the injectable readiness-deadline clock.
         """
         self._transport = session
         self._upload_pipeline = upload_pipeline
         self._add_file_compat = add_file_compat
+        self._monotonic = monotonic
         native_drive_download = getattr(upload_pipeline, "drive_download_scope", None)
         self._drive_download = drive_download or (
             native_drive_download if callable(native_drive_download) else None
@@ -513,9 +521,16 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         *,
         ready: bool,
     ) -> Source:
-        deadline = RuntimeDeadline.start(timeout)
+        deadline = RuntimeDeadline.start(timeout, monotonic=self._monotonic)
         last_status: int | None = None
-        while not deadline.expired():
+        if deadline.timeout <= 0.0:
+            # An explicit zero budget means "do not wait", not "look once".
+            raise SourceTimeoutError(source_id, timeout, last_status)
+        while True:
+            # Poll *before* consulting the deadline: a positive budget buys one
+            # look even when the clock crossed it right after ``start()`` (one
+            # coarse Windows-<3.13 tick, or an OS stall); the wire budget is
+            # floored likewise, since that tick reads ``remaining() == 0.0``.
             response = await self._transport.unary(
                 GET_PROJECT_METHOD,
                 _read_proto().GetProjectRequest(
@@ -525,7 +540,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                 replay_safe=True,
                 response_type=_read_proto().GetProjectResponse,
                 expected_epoch=expected_epoch,
-                timeout=deadline.remaining(),
+                timeout=max(deadline.remaining(), min(deadline.timeout, _POLL_WIRE_FLOOR)),
             )
             validate_project_identity(response.project, notebook_id, method_id=GET_PROJECT_METHOD)
             decode_project(response.project, method_id=GET_PROJECT_METHOD)
@@ -558,10 +573,9 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                 )
                 if accepted:
                     return decode_source(row, method_id=GET_PROJECT_METHOD)
-            remaining = deadline.remaining()
-            if remaining <= 0.0:
+            if deadline.expired():
                 break
-            await asyncio.sleep(min(0.5, remaining))
+            await asyncio.sleep(deadline.clamp_sleep(_POLL_INTERVAL))
         raise SourceTimeoutError(source_id, timeout, last_status)
 
     async def _wait_uploaded_registered(
