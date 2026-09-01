@@ -511,7 +511,81 @@ class TestResearchCancel:
 # =============================================================================
 
 
+class TestResearchDiscover:
+    def _client(self, task):
+        mock_client = create_mock_client()
+        mock_client.research.discover = AsyncMock(return_value=task)
+        return mock_client
+
+    def test_discover_renders_sources_overview_and_run_id(
+        self, runner, mock_auth, mock_fetch_tokens
+    ):
+        mock_client = self._client(
+            research_task(
+                {
+                    "status": "completed",
+                    "query": "history of the transistor",
+                    "sources": [{"title": "Source 1", "url": "http://example.com/1"}],
+                    "summary": "An overview.",
+                },
+                task_id="job_001",
+            )
+        )
+        result = runner.invoke(
+            cli,
+            ["research", "discover", "history of the transistor", "-n", "nb_123"],
+            obj=inject_client(mock_client),
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.research.discover.assert_awaited_once_with(
+            "nb_123", "history of the transistor", mode="default"
+        )
+        assert "Research completed" in result.output
+        assert "Source 1" in result.output
+        assert "An overview." in result.output
+        assert "Run id: job_001" in result.output
+
+    def test_discover_json_emits_the_public_task_dict(self, runner, mock_auth, mock_fetch_tokens):
+        task = research_task(
+            {"status": "completed", "query": "q", "sources": [], "summary": "o"}, task_id="job_002"
+        )
+        mock_client = self._client(task)
+        result = runner.invoke(
+            cli,
+            ["research", "discover", "q", "-n", "nb_123", "--json"],
+            obj=inject_client(mock_client),
+        )
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output) == task.to_public_dict()
+
+    def test_discover_forwards_the_mode_and_allows_an_empty_curious_query(
+        self, runner, mock_auth, mock_fetch_tokens
+    ):
+        mock_client = self._client(
+            research_task({"status": "completed", "query": "", "sources": []}, task_id="job_003")
+        )
+        result = runner.invoke(
+            cli,
+            ["research", "discover", "-n", "nb_123", "--mode", "curious"],
+            obj=inject_client(mock_client),
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.research.discover.assert_awaited_once_with("nb_123", "", mode="curious")
+
+    def test_discover_rejects_an_unknown_mode_at_the_option(
+        self, runner, mock_auth, mock_fetch_tokens
+    ):
+        result = runner.invoke(cli, ["research", "discover", "q", "-n", "nb_123", "--mode", "deep"])
+        assert result.exit_code != 0
+        assert "Invalid value for '--mode'" in result.output
+
+
 class TestResearchCommandsExist:
+    def test_research_discover_command_exists(self, runner):
+        result = runner.invoke(cli, ["research", "discover", "--help"])
+        assert result.exit_code == 0
+        assert "Discover web sources for QUERY" in result.output
+
     def test_research_group_exists(self, runner):
         result = runner.invoke(cli, ["research", "--help"])
         assert result.exit_code == 0

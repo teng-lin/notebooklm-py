@@ -290,6 +290,7 @@ def test_android_selected_public_callable_inventory_is_exact() -> None:
         },
         "research": {
             "cancel",
+            "discover",
             "extract_report_urls",
             "import_sources",
             "import_sources_with_verification",
@@ -372,7 +373,7 @@ def test_android_selected_public_callable_inventory_is_exact() -> None:
     }
 
     assert observed_names == expected_names
-    assert sum(map(len, observed_names.values())) == 151
+    assert sum(map(len, observed_names.values())) == 152
 
 
 @pytest.mark.parametrize("backend", [None, "web"])

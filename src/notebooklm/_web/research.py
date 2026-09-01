@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 from .. import _research as _research_base
 from .. import research as _research_pub
 from .._notebook_metadata import NotebookSourceLister
-from .._research import BaseResearchAPI
+from .._research import BaseResearchAPI, validate_discover
 from .._runtime.config import (
     AUTO_READ_TIMEOUT,
     DEFAULT_TIMEOUT,
@@ -62,7 +62,7 @@ from .research_import import (
     _validate_research_task_provenance,
 )
 from .rows.research import ImportedSourceRow, ResearchStartRow, unwrap_import_rows
-from .rows.research_task import parse_research_task_models
+from .rows.research_task import parse_discover_task, parse_research_task_models
 
 if TYPE_CHECKING:
     from ..types import Source
@@ -389,6 +389,56 @@ class WebResearchAPI(BaseResearchAPI):
         raise DecodingError(
             "research.start returned an empty / non-list payload", method_id=rpc_id.value
         )
+
+    async def discover(
+        self,
+        notebook_id: str,
+        query: str,
+        *,
+        mode: str = "default",
+    ) -> ResearchTask:
+        """Discover web sources synchronously (the "Discover sources" dialog call).
+
+        One blocking ``DISCOVER_SOURCES`` round trip (about 8 s live) that
+        returns the ranked sources and an overview, instead of the
+        :meth:`start` → :meth:`poll` cycle. The backend also records the call
+        as a completed job, so the returned ``task_id`` works with
+        :meth:`import_sources` and :meth:`cancel` exactly like a polled run.
+
+        Args:
+            notebook_id: The notebook ID.
+            query: What to look for. May be empty only for the curious modes.
+            mode: ``"default"`` (LLM-ranked search), ``"raw"`` (plain search),
+                ``"curious"`` / ``"curious_raw"`` (the backend picks a topic;
+                ``query`` is ignored and may be empty). Web sources only —
+                the Drive corpus fails server-side on this route.
+
+        Returns:
+            A completed :class:`~notebooklm._types.research.ResearchTask`
+            (``status`` ``COMPLETED``, ``sources``, ``summary`` = the overview,
+            ``discovery_mode`` = the mode sent).
+
+        Raises:
+            ValidationError: On an unknown ``mode`` or an empty ``query``
+                outside the curious modes.
+            DecodingError: If the response carries no job id.
+        """
+        _mode_label, discovery_mode = validate_discover(query, mode)
+        logger.debug(
+            "Discovering sources (%s) in notebook %s: %s",
+            _mode_label,
+            notebook_id,
+            query[:50] if query else "",
+        )
+        # Same request message as START_FAST_RESEARCH (``DiscoverSourcesRequest``):
+        # [DiscoveryContext{context, corpus}, RequestContext, DiscoveryMode, project_id].
+        params = [[query, RESEARCH_SOURCE_TYPE_WEB], None, int(discovery_mode), notebook_id]
+        result = await self._rpc_call(
+            RPCMethod.DISCOVER_SOURCES,
+            params,
+            source_path=f"/notebook/{notebook_id}",
+        )
+        return parse_discover_task(result, query=query, discovery_mode=discovery_mode)
 
     async def poll(
         self,

@@ -1,0 +1,182 @@
+{
+  "method_name": "DISCOVER_SOURCES",
+  "method_id": "Es3dTe",
+  "description": "Synchronously discover web sources for a query; the response also names the completed job the backend recorded.",
+  "request": {
+    "params": [
+      [
+        "Scrubbed research prompt.",
+        1
+      ],
+      null,
+      1,
+      "SCRUBBED_NB_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "Es3dTe",
+          "[[\"Scrubbed research prompt.\",1],null,1,\"SCRUBBED_NB_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "Es3dTe",
+          "[[[\"https://example.com/a\",\"Title A\",\"Hint A\",1]],\"Scrubbed overview.\",[\"SCRUBBED_RESEARCH_001\"]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      [
+        [
+          "https://example.com/a",
+          "Title A",
+          "Hint A",
+          1
+        ]
+      ],
+      "Scrubbed overview.",
+      [
+        "SCRUBBED_RESEARCH_001"
+      ]
+    ]
+  },
+  "mapper": "notebooklm._web.rows.research_task:parse_discover_task",
+  "mapper_expected": {
+    "task_id": "SCRUBBED_RESEARCH_001",
+    "status": "completed",
+    "query": "",
+    "sources": [
+      {
+        "url": "https://example.com/a",
+        "title": "Title A",
+        "result_type": 1,
+        "research_task_id": "SCRUBBED_RESEARCH_001",
+        "hint": "Hint A"
+      }
+    ],
+    "summary": "Scrubbed overview.",
+    "report": "",
+    "tasks": []
+  },
+  "drift_cases": [
+    {
+      "name": "error_frame_numeric_code",
+      "description": "An 'er' frame with a numeric code raises RPCError.",
+      "chunks": [
+        [
+          [
+            "er",
+            "Es3dTe",
+            429,
+            null,
+            null
+          ]
+        ]
+      ],
+      "expected_exception": "RPCError",
+      "expected_message_substring": "rate limit"
+    },
+    {
+      "name": "user_displayable_rate_limit",
+      "description": "Embedded UserDisplayableError at index 5 raises RateLimitError.",
+      "chunks": [
+        [
+          [
+            "wrb.fr",
+            "Es3dTe",
+            null,
+            null,
+            null,
+            [
+              8,
+              null,
+              [
+                [
+                  "UserDisplayableError",
+                  []
+                ]
+              ]
+            ],
+            "generic"
+          ]
+        ]
+      ],
+      "expected_exception": "RateLimitError",
+      "expected_message_substring": "rate limit"
+    },
+    {
+      "name": "method_id_drift",
+      "description": "Response names a different id, signalling a wire-id change.",
+      "chunks": [
+        [
+          [
+            "wrb.fr",
+            "ZZdrift",
+            "[[[\"https://example.com/a\",\"Title A\",\"Hint A\",1]],\"Scrubbed overview.\",[\"SCRUBBED_RESEARCH_001\"]]",
+            null,
+            null,
+            null,
+            "generic"
+          ]
+        ]
+      ],
+      "expected_exception": "UnknownRPCMethodError",
+      "expected_message_substring": "may have changed"
+    },
+    {
+      "name": "multi_frame_placeholder_then_final",
+      "description": "rt=c streamed null placeholder followed by the populated frame; the final frame wins.",
+      "chunks": [
+        [
+          [
+            "wrb.fr",
+            "Es3dTe",
+            null,
+            null,
+            null,
+            null,
+            "generic"
+          ]
+        ],
+        [
+          [
+            "wrb.fr",
+            "Es3dTe",
+            "[[[\"https://example.com/a\",\"Title A\",\"Hint A\",1]],\"Scrubbed overview.\",[\"SCRUBBED_RESEARCH_001\"]]",
+            null,
+            null,
+            null,
+            "generic"
+          ]
+        ]
+      ],
+      "expected_decoded": [
+        [
+          [
+            "https://example.com/a",
+            "Title A",
+            "Hint A",
+            1
+          ]
+        ],
+        "Scrubbed overview.",
+        [
+          "SCRUBBED_RESEARCH_001"
+        ]
+      ]
+    }
+  ]
+}

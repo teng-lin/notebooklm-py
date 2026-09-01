@@ -36,7 +36,7 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
         class_name="BaseResearchAPI",
         implementation_module="notebooklm._web.research",
         implementation_class_name="WebResearchAPI",
-        abstract_methods=frozenset({"start", "poll", "cancel", "import_sources"}),
+        abstract_methods=frozenset({"start", "discover", "poll", "cancel", "import_sources"}),
         wire_hooks=frozenset(),
     ),
     _AbstractContract(

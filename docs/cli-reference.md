@@ -278,6 +278,7 @@ Collections are account-level, so — unlike `label` — the `collection` comman
 
 | Command | Arguments | Options | Example |
 |---------|-----------|---------|---------|
+| `discover` | `[QUERY]` | `-n/--notebook`, `--mode {default,raw,curious,curious_raw}`, `--json` | `research discover "history of the transistor"` |
 | `status` | - | `-n/--notebook`, `--run-id/--task-id`, `--json` | `research status --run-id <run_id>` |
 | `wait` | - | `-n/--notebook`, `--run-id/--task-id`, `--timeout`, `--interval`, `--import-all`, `--cited-only`, `--json` | `research wait --run-id <run_id> --import-all` |
 | `import` | - | `-n/--notebook`, `--run-id`, `--cited-only`, `--timeout`, `--max-sources`, `--allow-duplicate`, `--json` | `research import` |

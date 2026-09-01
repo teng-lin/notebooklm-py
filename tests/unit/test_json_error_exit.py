@@ -289,6 +289,11 @@ def _research_import_in_progress(client: MagicMock) -> None:
     )
 
 
+def _fail_research_discover(client: MagicMock) -> None:
+    # `research discover` surfaces a transport failure as a JSON error envelope.
+    client.research.discover = AsyncMock(side_effect=RuntimeError("net down"))
+
+
 def _fail_research_cancel(client: MagicMock) -> None:
     # `research cancel` is fire-and-forget and never raises on an unknown id,
     # but a genuine transport failure from the cancel RPC must still surface as
@@ -520,6 +525,11 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         "research_wait_no_research",
         ["research", "wait", "-n", "abc123def456ghi789jkl", "--json"],
         _research_no_research,
+    ),
+    (
+        "research_discover_failed",
+        ["research", "discover", "q", "-n", "abc123def456ghi789jkl", "--json"],
+        _fail_research_discover,
     ),
     # research import against a run that is still in flight: the whole point of
     # the command is that this FAILS FAST (VALIDATION_ERROR) instead of waiting.

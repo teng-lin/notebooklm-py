@@ -270,6 +270,7 @@ FULL_MODE_ONLY_METHODS = {
     RPCMethod.CREATE_NOTE,
     RPCMethod.CREATE_ARTIFACT,  # Main RPC for all artifacts - test with flashcards (fast)
     RPCMethod.START_FAST_RESEARCH,  # Starts research (verify RPC ID, don't wait)
+    RPCMethod.DISCOVER_SOURCES,  # Synchronous discovery (~8 s; also records a job)
     # Delete operations (tested after creates)
     RPCMethod.DELETE_NOTE,
     RPCMethod.DELETE_SOURCE,
@@ -1945,6 +1946,21 @@ async def setup_temp_resources(
     )
     results.append(result)
     print(format_check_with_success(result, "research started"))
+
+    # Test DISCOVER_SOURCES - one synchronous discovery round trip (~8 s live).
+    # Same request message as START_FAST_RESEARCH; the response is
+    # [sources, overview, [job_id]] and the job it records is deleted with the
+    # temp notebook.
+    await asyncio.sleep(CALL_DELAY)
+    result = await test_rpc_method(
+        client,
+        auth,
+        RPCMethod.DISCOVER_SOURCES,
+        [["test query", 1], None, 1, temp.notebook_id],  # 1 = Web search, mode 1 = default
+        source_path=f"/notebook/{temp.notebook_id}",
+    )
+    results.append(result)
+    print(format_check_with_success(result, "sources discovered"))
 
     # Test CREATE_NOTE - extract note_id from response[0]
     # Params format: [notebook_id, "", [1], None, title]

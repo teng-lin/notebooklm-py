@@ -93,6 +93,9 @@ MUTATING_SKIP_LIST: frozenset[str] = frozenset(
         # delete and is exercised via the e2e suite, not the canary.
         "DELETE_CONVERSATION",
         # Kicks off a fast-research task on the server — long-running write
+        # Synchronous discovery: quota-bearing and records a completed job on the
+        # notebook; probed in full mode only, right after START_FAST_RESEARCH.
+        "DISCOVER_SOURCES",
         # op. Tested via --full setup to verify the RPC ID still echoes.
         "START_FAST_RESEARCH",
         # Kicks off a deep-research task — takes minutes to hours. Never

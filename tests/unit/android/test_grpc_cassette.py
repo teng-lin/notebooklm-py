@@ -174,7 +174,9 @@ _CASSETTE_MESSAGE_TYPES = (
     # notebooks (#2283): NextStepSuggestions
     chat_pb2.NextStepSuggestionsRequest,
     orchestration_notebooks_pb2.NextStepSuggestions,
-    # research: DiscoverSourcesManifold, CancelDiscoverSourcesJob, FinishDiscoverSourcesRun
+    # research: DiscoverSources, DiscoverSourcesManifold, CancelDiscoverSourcesJob, FinishDiscoverSourcesRun
+    research_pb2.DiscoverSourcesRequest,
+    research_pb2.DiscoverSourcesResponse,
     research_pb2.DiscoverSourcesManifoldRequest,
     research_pb2.DiscoverSourcesManifoldResponse,
     research_pb2.CancelDiscoverSourcesJobRequest,

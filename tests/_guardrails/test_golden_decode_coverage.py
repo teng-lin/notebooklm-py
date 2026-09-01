@@ -92,10 +92,16 @@ _GAP_BACKFILL = "tests/integration/test_rpc_gap_backfill_vcr.py"
 _SUGGEST_PROMPTS_VCR = "tests/integration/test_notebooks_suggest_prompts_vcr.py"
 _COPY_NOTEBOOK_VCR = "tests/integration/test_notebook_copy_vcr.py"
 _TRANSFER_VCR = "tests/integration/test_transfer_rpcs_vcr.py"
+_DISCOVER_VCR = "tests/integration/test_research_discover_vcr.py"
 
 GoldenPointer = tuple[str, str]
 
 GOLDEN_COVERAGE: dict[RPCMethod, tuple[GoldenPointer, ...]] = {
+    # Synchronous discovery (#2283): pinned where its only decoded contract
+    # already reads every expected value back out of the recorded payload.
+    RPCMethod.DISCOVER_SOURCES: (
+        (_DISCOVER_VCR, "TestResearchDiscoverVCR::test_discover_decoded_golden"),
+    ),
     # --- original high-risk four (issue #1494) ---
     RPCMethod.GET_LAST_CONVERSATION_ID: (
         (_GOLDEN_VCR, "TestChatGoldenDecoded::test_ask_decoded_golden"),

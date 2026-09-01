@@ -19,7 +19,7 @@ from ._runtime.config import (
     DEFAULT_TIMEOUT,
     MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT,
 )
-from ._types.enums import GrpcStatusCode, normalize_grpc_status
+from ._types.enums import DiscoveryMode, GrpcStatusCode, normalize_grpc_status
 from ._types.research import (
     ResearchSource,
     ResearchSourceInput,
@@ -102,8 +102,41 @@ def _imported_result(
     return _ImportedResearchSources(imported, already_present)
 
 
+#: ``research.discover()`` mode labels → the backend ``DiscoveryMode`` each one
+#: sends. These are the four modes the web "Discover sources" dialog can emit
+#: (live-verified on both transports, #2283): ``deep`` (5) is rejected by the
+#: synchronous route and ``lite`` (6) faults server-side, so neither is offered.
+DISCOVER_MODES: dict[str, DiscoveryMode] = {
+    "default": DiscoveryMode.DEFAULT_LLM_SEARCH,
+    "raw": DiscoveryMode.RAW_SEARCH,
+    "curious": DiscoveryMode.CURIOUS_SEARCH,
+    "curious_raw": DiscoveryMode.CURIOUS_RAW_SEARCH,
+}
+
+#: The "I'm feeling curious" modes: the dialog sends an empty query and the
+#: backend picks the topic itself, so an empty ``query`` is valid only here.
+_CURIOUS_DISCOVER_MODES = frozenset({"curious", "curious_raw"})
+
+
+def validate_discover(query: str, mode: str) -> tuple[str, DiscoveryMode]:
+    """Validate ``research.discover()`` inputs shared by every backend.
+
+    Returns the lower-cased mode label and the ``DiscoveryMode`` to send.
+    """
+    mode_lower = mode.lower()
+    if mode_lower not in DISCOVER_MODES:
+        raise ValidationError(
+            f"Invalid mode '{mode}'. Use one of: " + ", ".join(sorted(DISCOVER_MODES)) + "."
+        )
+    if mode_lower not in _CURIOUS_DISCOVER_MODES and not (query or "").strip():
+        raise ValidationError(
+            "query must not be empty (only the 'curious' and 'curious_raw' modes accept one)"
+        )
+    return mode_lower, DISCOVER_MODES[mode_lower]
+
+
 class BaseResearchAPI(ABC):
-    """Backend-neutral eight-callable Research namespace."""
+    """Backend-neutral nine-callable Research namespace."""
 
     def __init__(
         self,
@@ -139,6 +172,16 @@ class BaseResearchAPI(ABC):
         mode: str = "fast",
     ) -> ResearchStart:
         """Start one backend research run."""
+
+    @abstractmethod
+    async def discover(
+        self,
+        notebook_id: str,
+        query: str,
+        *,
+        mode: str = "default",
+    ) -> ResearchTask:
+        """Run one synchronous web discovery and return its completed task."""
 
     @abstractmethod
     async def poll(self, notebook_id: str, task_id: str | None = None) -> ResearchTask:

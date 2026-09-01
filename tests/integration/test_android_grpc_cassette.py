@@ -506,6 +506,30 @@ async def test_research_fast_cancel_over_discover_sources_manifold(
     }
 
 
+# --- research: DiscoverSources (synchronous; #2283) --------------------------
+
+
+@pytest.mark.asyncio
+async def test_research_discover_over_discover_sources(
+    android_grpc_cassette: CassetteBinder,
+) -> None:
+    from notebooklm.types import DiscoveryMode, ResearchStatus
+
+    async with android_grpc_cassette("research_discover") as (client, values):
+        task = await client.research.discover(values.notebook_id, values.research_query)
+    # One unary round trip answers with the ranked sources, the overview and
+    # the id of the completed job the backend also recorded.
+    assert task.status is ResearchStatus.COMPLETED and task.status_code == 2
+    assert task.task_id
+    assert task.query == values.research_query
+    assert task.discovery_mode is DiscoveryMode.DEFAULT_LLM_SEARCH
+    assert task.summary
+    assert task.sources
+    assert all(src.url and src.title for src in task.sources)
+    assert all(src.research_task_id == task.task_id for src in task.sources)
+    assert task.tasks == () and task.report == ""
+
+
 # --- research: DiscoverSourcesManifold, ListDiscoverSourcesJob, FinishDiscoverSourcesRun
 #     (recorded last: importing adds sources to the scratch notebook)
 

@@ -425,6 +425,20 @@ def _customize_source_add_research(client: MagicMock) -> None:
     )
 
 
+def _customize_research_discover(client: MagicMock) -> None:
+    client.research.discover = AsyncMock(
+        return_value=_research_task(
+            {
+                "status": "completed",
+                "query": "q",
+                "sources": [{"title": "Source 1", "url": "http://example.com/1"}],
+                "summary": "overview",
+                "task_id": "job_001",
+            }
+        )
+    )
+
+
 def _customize_research_wait(client: MagicMock) -> None:
     # research wait polls until status == "completed". Return a completed
     # payload immediately so the loop exits on the first iteration.
@@ -606,6 +620,11 @@ JSON_COMMANDS: list[tuple[str, list[str], object]] = [
     ),
     # research group
     ("research_status", ["research", "status", "-n", "abc123def456ghi789jkl", "--json"], None),
+    (
+        "research_discover",
+        ["research", "discover", "q", "-n", "abc123def456ghi789jkl", "--json"],
+        _customize_research_discover,
+    ),
     (
         "research_wait",
         ["research", "wait", "-n", "abc123def456ghi789jkl", "--json"],

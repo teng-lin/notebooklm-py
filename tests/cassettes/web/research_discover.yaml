@@ -1,0 +1,126 @@
+interactions:
+- request:
+    body: f.req=%5B%5B%5B%22Es3dTe%22%2C%22%5B%5B%5C%22history%20of%20the%20transistor%5C%22%2C1%5D%2Cnull%2C1%2C%5C%22085c83a0-03b8-4351-b13e-567fab545c80%5C%22%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1788292668794&
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '238'
+      content-type:
+      - application/x-www-form-urlencoded;charset=UTF-8
+      cookie:
+      - SID=SCRUBBED; __Secure-1PSID=SCRUBBED; __Secure-3PSID=SCRUBBED; HSID=SCRUBBED;
+        SSID=SCRUBBED; APISID=SCRUBBED; SAPISID=SCRUBBED; __Secure-1PAPISID=SCRUBBED;
+        __Secure-3PAPISID=SCRUBBED; NID=SCRUBBED; SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED;
+        __Secure-3PSIDCC=SCRUBBED; AEC=SCRUBBED; __Secure-1PSIDTS=SCRUBBED; __Secure-3PSIDTS=SCRUBBED;
+        OSID=SCRUBBED; __Secure-OSID=SCRUBBED
+      host:
+      - notebook.google.com
+      user-agent:
+      - python-httpx/0.28.1
+    method: POST
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=Es3dTe&source-path=%2Fnotebook%2F085c83a0-03b8-4351-b13e-567fab545c80&f.sid=SCRUBBED&hl=en&rt=c&authuser=SCRUBBED_EMAIL%40example.com
+  response:
+    body:
+      string: ')]}''
+
+
+        2402
+
+        [["wrb.fr","Es3dTe","[[[\"https://en.wikipedia.org/wiki/Crystal_Fire:_The_Birth_of_the_Information_Age\",\"Crystal
+        Fire: The Birth of the Information Age - Wikipedia\",\"You can follow the
+        definitive narrative of the transistor''s early discovery.\",1],[\"https://en.wikipedia.org/wiki/History_of_the_transistor\",\"History
+        of the transistor - Wikipedia\",\"You get a factual summary of the initial
+        Bell Labs experiments.\",1],[\"https://www.computerhistory.org/siliconengine/invention-of-the-point-contact-transistor/\",\"1947:
+        Invention of the Point-Contact Transistor | The Silicon Engine\",\"You find
+        a technical breakdown of the 1947 point-contact prototype.\",1],[\"https://repository.law.uic.edu/cgi/viewcontent.cgi?article\\u003d1175\\u0026context\\u003dripl\",\"What
+        the Story of the Invention of the Transistor Teaches Us About 21st Century
+        Patent Practice, 8 J. Marshall Rev. Intell. Prop\",\"You can study the strategic
+        patenting and licensing of the invention.\",1],[\"https://memorial.bellsystem.com/belllabs_transistor.html\",\"Bell
+        Labs History of The Transistor (the Crystal Triode)\",\"You see primary artifacts
+        including original lab notebook entries.\",1],[\"https://neomano.com/en/vacuum-tube-vs-transistor/\",\"Vacuum
+        Tube vs Transistor: The Battle for Electronics - Neomano\",\"You compare the
+        transistor''s efficiency against its predecessor, the vacuum tube.\",1],[\"https://en.wikipedia.org/wiki/Traitorous_eight\",\"Traitorous
+        eight - Wikipedia\",\"You learn how the ''traitorous eight'' sparked the Silicon
+        Valley era.\",1],[\"https://en.wikipedia.org/wiki/Moore%27s_law\",\"Moore''s
+        law - Wikipedia\",\"You observe the exponential growth of computing power
+        through Moore''s Law.\",1],[\"https://zenkaeurope.com/blog/electronics/the-transistor-revolution-from-1947-to-todays-pocket-sized-devices\",\"The
+        Transistor Revolution: From 1947 To Today''s Pocket-Sized Devices - Zenka
+        Europe\",\"You track the journey from vacuum tubes to modern microprocessors.\",1],[\"https://www.popsci.com/science/transistors-changed-the-world/\",\"The
+        small, mighty, world-changing transistor turns 75 - Popular Science\",\"You
+        examine the societal impact and digitization of the modern world.\",1]],\"These
+        selections trace the evolution of the transistor from its laboratory origins
+        to its role as a global industry pillar.\",[\"5a4a2c43-da7b-49e3-abbc-51f00f7d0f0e\"]]",null,null,null,"generic"]]
+
+        58
+
+        [["di",9066],["af.httprm",9066,"-5659852850382609806",14]]
+
+        24
+
+        [["e",4,null,null,2504]]
+
+        '
+    headers:
+      accept-ch:
+      - Sec-CH-UA-Arch, Sec-CH-UA-Bitness, Sec-CH-UA-Full-Version, Sec-CH-UA-Full-Version-List,
+        Sec-CH-UA-Model, Sec-CH-UA-WoW64, Sec-CH-UA-Form-Factors, Sec-CH-UA-Platform,
+        Sec-CH-UA-Platform-Version
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      cache-control:
+      - no-cache, no-store, max-age=0, must-revalidate
+      content-disposition:
+      - attachment; filename="response.bin"; filename*=UTF-8''response.bin
+      content-length:
+      - '2504'
+      content-security-policy:
+      - require-trusted-types-for 'script';report-uri /_/LabsTailwindUi/cspreport
+      content-type:
+      - application/json; charset=utf-8
+      cross-origin-opener-policy:
+      - same-origin-allow-popups
+      cross-origin-resource-policy:
+      - same-site
+      date:
+      - Tue, 01 Sep 2026 19:57:49 GMT
+      expires:
+      - Mon, 01 Jan 1990 00:00:00 GMT
+      permissions-policy:
+      - ch-ua-arch=*, ch-ua-bitness=*, ch-ua-full-version=*, ch-ua-full-version-list=*,
+        ch-ua-model=*, ch-ua-wow64=*, ch-ua-form-factors=*, ch-ua-platform=*, ch-ua-platform-version=*
+      pragma:
+      - no-cache
+      server:
+      - ESF
+      set-cookie:
+      - SIDCC=SCRUBBED; expires=Wed, 01-Sep-2027 19:57:58 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Wed, 01-Sep-2027 19:57:58 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Wed, 01-Sep-2027 19:57:58 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high; SameSite=none
+      - SIDCC=SCRUBBED; expires=Wed, 01-Sep-2027 19:57:58 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Wed, 01-Sep-2027 19:57:58 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Wed, 01-Sep-2027 19:57:58 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high; SameSite=none
+      transfer-encoding:
+      - chunked
+      vary:
+      - Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+version: 1

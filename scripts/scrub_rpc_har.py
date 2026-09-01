@@ -53,6 +53,7 @@ _NAMES = {
     "CYK0Xb": "DELETE_NOTEBOOK",
     "cZsgsb": "CREATE_NOTE",
     "izh1Gb": "GENERATE",
+    "Es3dTe": "DISCOVER_SOURCES",
     "Ljjv0c": "START_FAST_RESEARCH",
 }
 

@@ -57,6 +57,7 @@
 | `VfAZjd` | SUMMARIZE | Get notebook summary | `_web/notebooks.py` |
 | `FLmJqe` | REFRESH_SOURCE | Refresh URL/Drive source | `_web/sources/__init__.py` |
 | `yR9Yof` | CHECK_SOURCE_FRESHNESS | Check if source needs refresh | `_web/sources/__init__.py` |
+| `Es3dTe` | DISCOVER_SOURCES | Synchronous source discovery | `_web/research.py` |
 | `Ljjv0c` | START_FAST_RESEARCH | Start fast research | `_web/research.py` |
 | `QA9ei` | START_DEEP_RESEARCH | Start deep research | `_web/research.py` |
 | `e3bVqc` | POLL_RESEARCH | Poll research status | `_web/research.py` |
@@ -2383,6 +2384,45 @@ Research allows searching the web or Google Drive for sources to add to notebook
 |------|--------|
 | 1 | Web |
 | 2 | Google Drive |
+
+### RPC: DISCOVER_SOURCES (Es3dTe)
+
+**Source:** `_web/research.py::discover()`
+
+Discover web sources for a query in one synchronous round trip (the web UI's
+"Discover sources" dialog). Same request message as `START_FAST_RESEARCH`
+(`DiscoverSourcesRequest`), a different verb: the call blocks (~8 s live) and
+answers with the results directly, and the backend also records it as a
+completed job that `POLL_RESEARCH` lists (live-verified on both transports,
+#2283).
+
+```python
+params = [
+    [query, 1],  # 0: DiscoveryContext — query text, corpus 1 = Web (Drive fails on this route)
+    None,  # 1: RequestContext (optional)
+    mode,  # 2: DiscoveryMode — 1 DEFAULT_LLM_SEARCH, 2 RAW_SEARCH, 3 CURIOUS_SEARCH,
+    #             4 CURIOUS_RAW_SEARCH (3/4 take an empty query). 5 DEEP_RESEARCH is
+    #             rejected (INVALID_ARGUMENT) and 6 LITE_LLM_SEARCH faults (INTERNAL).
+    notebook_id,  # 3: Notebook ID (required; unknown id → NOT_FOUND)
+]
+
+await rpc_call(
+    RPCMethod.DISCOVER_SOURCES,
+    params,
+    source_path=f"/notebook/{notebook_id}",
+)
+
+# Response: [sources, overview, [job_id]]
+#
+#   sources  — [[url, title, hint, corpus_type], ...]; ten rows on every live
+#              call, corpus_type always 1 (150/150 rows), no favicon or deep
+#              payload slots. Identical to the [sources, summary] bundle a
+#              POLL_RESEARCH task row carries at task_info[3].
+#   overview — one sentence summarising the set.
+#   job_id   — DiscoverSourcesFeedbackKey[0]: the id of the completed job the
+#              call recorded; `discover()` returns it as ``task_id`` so the
+#              result imports through IMPORT_RESEARCH like any run.
+```
 
 ### RPC: START_FAST_RESEARCH (Ljjv0c)
 

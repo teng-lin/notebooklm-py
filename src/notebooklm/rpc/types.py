@@ -193,6 +193,9 @@ class RPCMethod(str, Enum):
     GET_CUSTOMIZATION_CHOICES = "sqTeoe"
 
     # Research — the whole family is backed by Google's "DiscoverSources" pipeline
+    # -> DiscoverSources. The synchronous "Discover sources" dialog call: answers
+    # in one round trip and also records a completed job the poll RPC lists (#2283).
+    DISCOVER_SOURCES = "Es3dTe"
     START_FAST_RESEARCH = "Ljjv0c"  # -> DiscoverSourcesManifold
     START_DEEP_RESEARCH = "QA9ei"  # -> DiscoverSourcesAsync
     POLL_RESEARCH = "e3bVqc"  # -> ListDiscoverSourcesJob

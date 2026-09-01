@@ -169,6 +169,7 @@ Status vocabulary below:
 | GetArtifact | `v9rmvd` (GET_INTERACTIVE_HTML) | ✅ | captured; generic artifact getter |
 | DeriveArtifact | `KmcKPe` (REVISE_SLIDE) | ✅ | compiled; generic derive operation |
 | **GenerateArtifact** | `Rytqqe` (RETRY_ARTIFACT) | ❌ | **live backend overlay**: wire pinned; valid READY artifact rejected as non-retryable; accepted failed-row replay not yet captured |
+| **DiscoverSources** | `Es3dTe` (DISCOVER_SOURCES) | ✅ | **live** synchronous discovery (`research.discover()`; ten rows, overview, job id) |
 | **DiscoverSourcesManifold** | `Ljjv0c` (START_FAST_RESEARCH) | ❌ | **live** fast research start |
 | **DiscoverSourcesAsync** | `QA9ei` (START_DEEP_RESEARCH) | ❌ | **live** deep research start |
 | **ListDiscoverSourcesJob** | `e3bVqc` (POLL_RESEARCH) | ❌ | **live** poll |
@@ -192,7 +193,7 @@ Status vocabulary below:
 
 | APK method | `notebooklm-py` coverage / closest web equivalent |
 |---|---|
-| DiscoverSources | no exact sync caller; web API exposes the async Research family |
+| DiscoverSources | `research.discover()` (both backends, since #2283); the async Research family stays on `start`/`poll` |
 | GenerateAccessToken | no public API |
 | GenerateFreeFormStreamed | implemented through the separate streamed query endpoint, not `RPCMethod` |
 | GetArtifactCustomizationChoices | `sqTeoe` (GET_CUSTOMIZATION_CHOICES) — `artifacts.get_customization_choices()` on both backends; see [copy-append-suggestion-evidence.md](copy-append-suggestion-evidence.md#getartifactcustomizationchoices) |

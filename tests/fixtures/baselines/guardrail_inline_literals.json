@@ -68,7 +68,7 @@
     "_NON_AUTHTOKENS_CANDIDATES": 30
   },
   "tests/_guardrails/test_backend_abstract_contracts.py": {
-    "BASE_ABSTRACT_CONTRACTS": 157
+    "BASE_ABSTRACT_CONTRACTS": 158
   },
   "tests/_guardrails/test_backend_boundaries.py": {
     "LAZY_WEB_IMPORT_ALLOWLIST": 34
@@ -92,7 +92,7 @@
     "_EXECUTOR_RAW_ARGS": 32
   },
   "tests/_guardrails/test_golden_decode_coverage.py": {
-    "GOLDEN_COVERAGE": 46
+    "GOLDEN_COVERAGE": 47
   },
   "tests/_guardrails/test_login_package_dag.py": {
     "ALLOWED_EDGES": 43

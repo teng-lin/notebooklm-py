@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `research.discover(notebook_id, query, *, mode="default")` on **both** the
+  Web and Android backends (`DiscoverSources`, web id `Es3dTe`): the
+  synchronous "Discover sources" call the web dialog makes — one blocking
+  round trip that returns a completed `ResearchTask` (ranked `sources`,
+  `summary` = overview) instead of the start → poll cycle. Modes `default`,
+  `raw`, `curious` and `curious_raw` (the curious modes pick a topic and take
+  an empty query). The backend also records the call as a completed run, so the
+  returned `task_id` works with `import_sources()` / `cancel()`. CLI:
+  `notebooklm research discover [QUERY] [--mode …] [--json]`. Live-verified on
+  150 result rows across both transports (#2283).
 - Six previously unmapped RPCs from the #2283 registry inventory, on **both**
   the Web and Android backends: `sources.add_urls_async()` (`AddSourcesAsync` —
   one non-blocking batch add that returns the queued stub rows),

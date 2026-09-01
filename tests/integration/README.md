@@ -67,6 +67,7 @@ records and replays (`tests/_helpers/android_grpc_harness.py`):
 | `list_artifacts_get_notes` | `artifacts.list()`, `notes.list()` | `ListArtifacts`, `GetNotes` ×2 |
 | `get_labels` | `labels.list()`, `collections.create()`, `collections.list()`, `collections.delete()` | `GetLabels` ×5, `CreateLabel`, `DeleteLabels` |
 | `list_discover_sources_job` | `research.poll()` | `ListDiscoverSourcesJob` |
+| `research_discover` | `research.discover()` | `DiscoverSources` |
 | `get_project_details` | `sharing.get_status()` | `GetProjectDetails` |
 | `generate_free_form_streamed` | `chat.ask()` | `GetProject`, `ListChatSessions` ×2, `ListChatTurns`, `GenerateFreeFormStreamed (stream)` |
 | `list_chat_sessions_turns` | `chat.ask()`, `chat.get_conversation_id()`, `chat.get_history()` | `GetProject`, `ListChatSessions` ×5, `ListChatTurns` ×2, `GenerateFreeFormStreamed (stream)` |

@@ -189,9 +189,9 @@ The current `1.55.10` APK contains 53 gRPC paths. Eighteen have no typed public 
 library and therefore are not missing implementations of the 145-callable contract:
 
 - notebook discovery: `BatchSearchNotebooks`, `SearchNotebooks`;
-- synchronous research discovery: `DiscoverSources`; this path is generated and retained as the
-  private `_discover_sources` conformance helper, while public `research.start` uses
-  `DiscoverSourcesManifold` or `DiscoverSourcesAsync`;
+- synchronous research discovery: `DiscoverSources` is now the public `research.discover()`
+  (live-verified 2026-09-01; it also records a completed job), while `research.start` keeps
+  using `DiscoverSourcesManifold` or `DiscoverSourcesAsync`;
 - live audio/WebRTC: `GetIceConfig`, `SendSdpOffer`, `StreamLiveSession`;
 - artifact controls and state: `CancelGeneration`, `GetArtifactUserState`,
   `UpsertArtifactUserState`, `SuggestArtifacts`,

@@ -345,6 +345,15 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     )
 
     registry.register(
+        RPCMethod.DISCOVER_SOURCES,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        notes=(
+            "synchronous discovery also records a completed job server-side "
+            "(#2283); a blind retry after a lost commit would run a second, "
+            "quota-bearing search and leave two jobs. Caller decides"
+        ),
+    )
+    registry.register(
         RPCMethod.START_FAST_RESEARCH,
         IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         notes=_START_RESEARCH_NOT_IDEMPOTENT_NOTE,
