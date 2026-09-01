@@ -133,11 +133,14 @@ uv run pytest tests/unit tests/integration -m "repo_lint"
 ```
 
 Run the full suite (including `repo_lint`) before pushing. PR CI does **not**
-run `repo_lint` in bulk: every matrix cell passes `-m "not repo_lint"`, and only
-the guards named by node id in the `Run critical contract guards` step of
-`.github/workflows/test.yml` block merge. The rest of the marker runs in the
-manual `repo-lint` job (`workflow_dispatch`) and nightly, so a `repo_lint`
-failure you skip locally can reach `main` unnoticed until the next nightly. The
+run `repo_lint` in bulk: every matrix cell passes `-m "not repo_lint"`, so of
+the marker itself only the guards named by node id in the `Run critical
+contract guards` step of `.github/workflows/test.yml` are merge-blocking (the
+ordinary non-`repo_lint` suite blocks merge as always, and the Code Quality job
+independently runs some of the same scripts several `repo_lint` tests wrap).
+The rest of the marker runs in the manual `repo-lint` job (`workflow_dispatch`)
+and nightly, so a `repo_lint` failure with no promoted node id and no
+Code-Quality mirror can reach `main` unnoticed until the next nightly. The
 default `uv run pytest` invocation does not filter the marker out; `make gates`
 runs the marker with CI's shape.
 
