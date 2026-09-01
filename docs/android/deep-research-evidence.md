@@ -234,7 +234,7 @@ printing account metadata.
 ### Synchronous `DiscoverSources` and `UpdateDiscoverSourcesStatus` on 2026-09-01
 
 Both methods were probed live on the web `batchexecute` transport and on the Android bearer gRPC
-transport against disposable notebooks (all deleted afterwards). The two transports agree on every
+transport against disposable notebooks (all deleted afterward). The two transports agree on every
 shape and status code below.
 
 **`DiscoverSources` (`Es3dTe`)** is the request the web "Discover sources" cold-start dialog sends.

@@ -408,11 +408,13 @@ class WebResearchAPI(BaseResearchAPI):
 
         Args:
             notebook_id: The notebook ID.
-            query: What to look for. May be empty only for the curious modes.
+            query: What to look for. Required for ``default`` / ``raw``;
+                ignored (sent empty) for the curious modes.
             mode: ``"default"`` (LLM-ranked search), ``"raw"`` (plain search),
                 ``"curious"`` / ``"curious_raw"`` (the backend picks a topic;
-                ``query`` is ignored and may be empty). Web sources only —
-                the Drive corpus fails server-side on this route.
+                ``query`` is dropped and the returned task's ``query`` is
+                ``""``). Web sources only — the Drive corpus fails
+                server-side on this route.
 
         Returns:
             A completed :class:`~notebooklm._types.research.ResearchTask`
@@ -424,7 +426,7 @@ class WebResearchAPI(BaseResearchAPI):
                 outside the curious modes.
             DecodingError: If the response carries no job id.
         """
-        _mode_label, discovery_mode = validate_discover(query, mode)
+        query, _mode_label, discovery_mode = validate_discover(query, mode)
         logger.debug(
             "Discovering sources (%s) in notebook %s: %s",
             _mode_label,
@@ -434,11 +436,19 @@ class WebResearchAPI(BaseResearchAPI):
         # Same request message as START_FAST_RESEARCH (``DiscoverSourcesRequest``):
         # [DiscoveryContext{context, corpus}, RequestContext, DiscoveryMode, project_id].
         params = [[query, RESEARCH_SOURCE_TYPE_WEB], None, int(discovery_mode), notebook_id]
-        result = await self._rpc_call(
-            RPCMethod.DISCOVER_SOURCES,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-        )
+        try:
+            result = await self._rpc_call(
+                RPCMethod.DISCOVER_SOURCES,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+            )
+        except (NetworkError, ServerError) as exc:
+            # The request may have reached the server and recorded a job
+            # before its response was lost; internal retries are already off
+            # (NON_IDEMPOTENT_NO_RETRY), and the marker stops callers from
+            # blindly re-running a quota-bearing search. Same outcome the
+            # Android adapter's ``call_unconfirmed_on_transport_loss`` gives.
+            raise mark_unconfirmed(exc) from None
         try:
             return parse_discover_task(result, query=query, discovery_mode=discovery_mode)
         except DecodingError as error:

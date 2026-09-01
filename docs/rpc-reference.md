@@ -2393,8 +2393,8 @@ Discover web sources for a query in one synchronous round trip (the web UI's
 "Discover sources" dialog). Same request message as `START_FAST_RESEARCH`
 (`DiscoverSourcesRequest`), a different verb: the call blocks (~8 s live) and
 answers with the results directly, and the backend also records it as a
-completed job that `POLL_RESEARCH` lists (live-verified on both transports,
-#2283).
+completed job that `POLL_RESEARCH` lists (live-verified on both transports
+in issue #2283).
 
 ```python
 params = [

@@ -817,11 +817,26 @@ class TestResearchDiscover:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        ("mode", "query", "expected_code"),
-        [("raw", "q", 2), ("curious", "", 3), ("Curious_Raw", "", 4)],
+        ("mode", "query", "expected_code", "sent_query"),
+        [
+            ("raw", "q", 2, "q"),
+            ("curious", "", 3, ""),
+            ("Curious_Raw", "", 4, ""),
+            # The curious modes send an empty context whatever the caller passed:
+            # a non-empty query would turn the call into a query search.
+            ("curious", "ignored text", 3, ""),
+            ("curious_raw", "ignored text", 4, ""),
+        ],
     )
     async def test_discover_modes_map_to_discovery_mode_codes(
-        self, auth_tokens, httpx_mock: HTTPXMock, build_rpc_response, mode, query, expected_code
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+        mode,
+        query,
+        expected_code,
+        sent_query,
     ):
         httpx_mock.add_response(
             content=build_rpc_response("Es3dTe", [[], "", ["job_002"]]).encode()
@@ -829,13 +844,28 @@ class TestResearchDiscover:
         async with NotebookLMClient(auth_tokens) as client:
             task = await client.research.discover("nb_123", query, mode=mode)
         assert _decoded_f_req(httpx_mock.get_request()) == [
-            [query, 1],
+            [sent_query, 1],
             None,
             expected_code,
             "nb_123",
         ]
         assert task.discovery_mode is DiscoveryMode(expected_code)
+        assert task.query == sent_query
         assert task.sources == () and task.summary == ""
+
+    @pytest.mark.asyncio
+    async def test_discover_transport_loss_is_an_unconfirmed_write(
+        self, auth_tokens, httpx_mock: HTTPXMock
+    ):
+        import httpx
+
+        from notebooklm.exceptions import NetworkError
+
+        httpx_mock.add_exception(httpx.ReadTimeout("lost after send"))
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(NetworkError) as raised:
+                await client.research.discover("nb_123", "q")
+        assert getattr(raised.value, "unconfirmed", False) is True
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

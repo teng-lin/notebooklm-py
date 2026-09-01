@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   synchronous "Discover sources" call the web dialog makes — one blocking
   round trip that returns a completed `ResearchTask` (ranked `sources`,
   `summary` = overview) instead of the start → poll cycle. Modes `default`,
-  `raw`, `curious` and `curious_raw` (the curious modes pick a topic and take
+  `raw`, `curious` and `curious_raw` (the curious modes pick a topic and send
   an empty query). The backend also records the call as a completed run, so the
   returned `task_id` works with `import_sources()` / `cancel()`. CLI:
   `notebooklm research discover [QUERY] [--mode …] [--json]`. Live-verified on

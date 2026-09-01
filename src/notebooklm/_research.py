@@ -118,10 +118,13 @@ DISCOVER_MODES: dict[str, DiscoveryMode] = {
 _CURIOUS_DISCOVER_MODES = frozenset({"curious", "curious_raw"})
 
 
-def validate_discover(query: str, mode: str) -> tuple[str, DiscoveryMode]:
+def validate_discover(query: str, mode: str) -> tuple[str, str, DiscoveryMode]:
     """Validate ``research.discover()`` inputs shared by every backend.
 
-    Returns the lower-cased mode label and the ``DiscoveryMode`` to send.
+    Returns ``(query_to_send, mode_label, discovery_mode)``. The curious modes
+    always send an empty query — that is the wire shape the dialog's "curious"
+    buttons emit and what makes the backend pick the topic — so a caller's
+    text is dropped there rather than turning the call into a query search.
     """
     if not isinstance(query, str):
         raise ValidationError("query must be a string")
@@ -130,11 +133,13 @@ def validate_discover(query: str, mode: str) -> tuple[str, DiscoveryMode]:
         raise ValidationError(
             f"Invalid mode '{mode}'. Use one of: " + ", ".join(sorted(DISCOVER_MODES)) + "."
         )
-    if mode_lower not in _CURIOUS_DISCOVER_MODES and not query.strip():
+    if mode_lower in _CURIOUS_DISCOVER_MODES:
+        return "", mode_lower, DISCOVER_MODES[mode_lower]
+    if not query.strip():
         raise ValidationError(
             "query must not be empty (only the 'curious' and 'curious_raw' modes accept one)"
         )
-    return mode_lower, DISCOVER_MODES[mode_lower]
+    return query, mode_lower, DISCOVER_MODES[mode_lower]
 
 
 class BaseResearchAPI(ABC):

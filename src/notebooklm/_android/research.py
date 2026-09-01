@@ -130,7 +130,7 @@ class AndroidResearchAPI(BaseResearchAPI):
         a completed :class:`ResearchTask` whose ``task_id`` is the job the
         backend also recorded (live-verified over bearer gRPC, #2283).
         """
-        _mode_label, discovery_mode = validate_discover(query, mode)
+        query, _mode_label, discovery_mode = validate_discover(query, mode)
         async with self._transport.operation_scope("research.discover") as lease:
             response = await call_unconfirmed_on_transport_loss(
                 lambda: self._transport.unary(

@@ -323,15 +323,17 @@ async def test_synchronous_discover_sources_uses_committed_mobile_binding_once()
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("mode", "query", "expected_mode"),
+    ("mode", "query", "expected_mode", "sent_query"),
     [
-        ("raw", "q", research_pb2.RAW_SEARCH),
-        ("curious", "", research_pb2.CURIOUS_SEARCH),
-        ("CURIOUS_RAW", "", research_pb2.CURIOUS_RAW_SEARCH),
+        ("raw", "q", research_pb2.RAW_SEARCH, "q"),
+        ("curious", "", research_pb2.CURIOUS_SEARCH, ""),
+        ("CURIOUS_RAW", "", research_pb2.CURIOUS_RAW_SEARCH, ""),
+        # Curious modes always send an empty context, whatever the caller passed.
+        ("curious", "ignored text", research_pb2.CURIOUS_SEARCH, ""),
     ],
 )
 async def test_discover_sends_the_selected_mode_and_allows_an_empty_curious_query(
-    mode: str, query: str, expected_mode: int
+    mode: str, query: str, expected_mode: int, sent_query: str
 ) -> None:
     api, transport = _api(
         {
@@ -347,8 +349,9 @@ async def test_discover_sends_the_selected_mode_and_allows_an_empty_curious_quer
     result = await api.discover("nb", query, mode=mode)
     _method, request, _kwargs = transport.calls[0]
     assert request.discovery_mode == expected_mode
-    assert request.discovery_context.context == query
+    assert request.discovery_context.context == sent_query
     assert result.discovery_mode is DiscoveryMode(expected_mode)
+    assert result.query == sent_query
     assert result.sources == ()
 
 
