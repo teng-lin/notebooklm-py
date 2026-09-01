@@ -650,6 +650,60 @@ def test_extract_registry_falls_back_to_path_anchor_without_new_form() -> None:
     assert parsed.unclaimed == ()
 
 
+def test_extract_registry_nested_new_inside_ctor_body_is_not_a_boundary() -> None:
+    """A ``new _.X("…")`` call *inside* an inline ctor body belongs to the outer
+    registration: it must neither end the outer span nor claim the path itself."""
+    bundle = (
+        'new _.dC("outerId",class extends _.n{constructor(a){super(a);'
+        'this.x=new _.BD("innerX",[1,2]);this.y=_.q("(",")")}},Q,'
+        '[_.ne,!0,_.me,"/Svc.Outer"]);'
+        'new _.dC("nextId",A,B,[_.ne,!1,_.me,"/Svc.Next"]);'
+    )
+    assert extract_registry(bundle) == {"outerId": "/Svc.Outer", "nextId": "/Svc.Next"}
+    parsed = parse_registry(bundle)
+    assert parsed.sites == 2
+    assert parsed.fallback == 0
+    assert parsed.unclaimed == ()
+
+
+def test_fallback_never_overwrites_an_id_it_already_attributed() -> None:
+    """Two orphan paths whose nearest token is the same id: the second must not
+    silently replace the first's mapping — it is reported as unclaimed."""
+    bundle = '_.fD("legacy",A,B,[_.Ue,!1,_.Se,"/Svc.First"]);x="/Svc.Second";'
+    parsed = parse_registry(bundle)
+    assert parsed.registry == {"legacy": "/Svc.First"}
+    assert parsed.fallback == 1
+    assert parsed.unclaimed == ("/Svc.Second",)
+
+
+def test_same_path_registered_under_two_ids_keeps_both() -> None:
+    """A forward-form and a legacy-form registration of the same method under
+    different ids are both kept: claiming is per path *occurrence*, not value."""
+    bundle = (
+        'new _.dC("newId",A,B,[_.ne,!0,_.me,"/Svc.Same"]);'
+        '_.fD("oldId",A,B,[_.Ue,!1,_.Se,"/Svc.Same"]);'
+    )
+    parsed = parse_registry(bundle)
+    assert parsed.registry == {"newId": "/Svc.Same", "oldId": "/Svc.Same"}
+    assert parsed.sites == 1
+    assert parsed.fallback == 1
+    assert parsed.unclaimed == ()
+
+
+def test_repeated_occurrence_of_a_known_registration_is_not_unclaimed() -> None:
+    """The bundle registers some RPCs twice (once per chunk). A second occurrence
+    whose nearest token is already mapped to the same path is a repeat, not a gap."""
+    bundle = (
+        _NAMED_CTOR + 'r("wXbhsf","/LabsTailwindOrchestrationService.ListRecentlyViewedProjects");'
+    )
+    parsed = parse_registry(bundle)
+    assert parsed.registry == {
+        "wXbhsf": "/LabsTailwindOrchestrationService.ListRecentlyViewedProjects",
+    }
+    assert parsed.fallback == 0
+    assert parsed.unclaimed == ()
+
+
 def test_parse_registry_reports_unclaimed_paths() -> None:
     """A path with no attributable id is surfaced as a count, not silently dropped."""
     bundle = _NAMED_CTOR + 'x="/Svc.Orphan";' + "y" * 500 + 'z="/Svc.Orphan2";'

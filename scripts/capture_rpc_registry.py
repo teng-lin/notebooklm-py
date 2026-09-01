@@ -94,15 +94,20 @@ _BUNDLE_URL_RE = re.compile(rf'https://www\.gstatic\.com/_/mss/{_APP}/_/js/[^"\\
 _METHOD_PATH_RE = re.compile(r"""["'](/[A-Za-z][\w]*\.[A-Za-z][\w]*)["']""")
 _ID_TOKEN_RE = re.compile(r"""["']([A-Za-z0-9]{5,8})["']""")
 # Primary parse: a registration *site* is a ``new _.<helper>("<id>"`` call whose
-# first argument is a quoted short token. Parsing forward from the site to the
-# next ``new _.<helper>(`` call bounds the registration, so the first path in
-# that span belongs to that id by construction — independent of how long the
-# ctor arguments are (named ctors are ~60 chars; inline anonymous classes run
-# 160–370 chars on the 2026-08-31 bundle, #2289) and immune to stray quoted
-# tokens inside a ctor body. ``new _.BD("…")``-style non-RPC calls also match as
-# sites; they simply carry no path and are not counted.
+# first argument is a quoted short token. The registration is that call's
+# bracket-balanced argument list, so the first path inside it belongs to that
+# id by construction — independent of how long the ctor arguments are (named
+# ctors are ~60 chars; inline anonymous classes run 160–370 chars on the
+# 2026-08-31 bundle, #2289), immune to stray quoted tokens inside a ctor body,
+# and a ``new _.X("…")`` call nested *inside* a ctor body is part of the outer
+# span, not a site of its own. ``new _.BD("…")``-style non-RPC calls also match
+# as sites; they simply carry no path and are not counted. If the argument
+# list does not balance within ``_SPAN_SCAN_LIMIT`` chars (a string/regex
+# literal the scanner misreads), the span falls back to the next ``new _.``
+# call so a single odd registration cannot swallow the rest of the bundle.
 _REGISTRATION_SITE_RE = re.compile(r"""new\s+_\.\w+\(\s*(["'])([A-Za-z0-9]{5,8})\1""")
 _REGISTRATION_BOUNDARY_RE = re.compile(r"new\s+_\.\w+\(")
+_SPAN_SCAN_LIMIT = 10_000
 # Fallback for a path the forward parse did not claim (a change of the ``new
 # _.`` call form): scan *backward* from the path for the nearest quoted short
 # token. 400 chars covers the widest inline-anonymous-ctor registration seen
@@ -211,55 +216,87 @@ class RegistryParse(NamedTuple):
     """Distinct method paths no id could be attributed to — a parser gap to widen."""
 
 
+def _call_span_end(bundle: str, start: int) -> int:
+    """Return the index just past the ``)`` that closes the call open at ``start``.
+
+    ``start`` is inside the argument list (depth 1). Quoted strings are skipped
+    so brackets inside literals do not count. If the list does not balance
+    within :data:`_SPAN_SCAN_LIMIT` chars, the span ends at the next
+    ``new _.<helper>(`` call instead (or the end of the bundle).
+    """
+    depth = 1
+    i = start
+    limit = min(len(bundle), start + _SPAN_SCAN_LIMIT)
+    while i < limit:
+        char = bundle[i]
+        if char in "\"'`":
+            i += 1
+            while i < limit and bundle[i] != char:
+                i += 2 if bundle[i] == "\\" else 1
+        elif char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    boundary = _REGISTRATION_BOUNDARY_RE.search(bundle, start)
+    return boundary.start() if boundary else len(bundle)
+
+
 def parse_registry(bundle: str) -> RegistryParse:
     """Parse every ``id -> /Service.Method`` registration in the bundle.
 
-    Primary pass — *forward* from each registration site: the span from a
-    ``new _.<helper>("<id>"`` call to the next ``new _.<helper>(`` call is one
-    registration, and the first ``"/Service.Method"`` inside it is that id's
-    path. Id and path therefore come from the same call regardless of how long
-    the ctor arguments between them are (the #2289 inline-anonymous-ctor form
-    that a fixed backward window silently dropped).
+    Primary pass — *forward* from each registration site: the bracket-balanced
+    argument list of a ``new _.<helper>("<id>"`` call is one registration, and
+    the first ``"/Service.Method"`` inside it is that id's path. Id and path
+    therefore come from the same call regardless of how long the ctor arguments
+    between them are (the #2289 inline-anonymous-ctor form that a fixed
+    backward window silently dropped). A ``new _.X(…)`` call nested inside a
+    ctor body lies within the outer span and is not a site of its own.
 
-    Fallback pass — for any path the forward parse did not claim (e.g. the
-    helper is no longer invoked with ``new``): the nearest preceding quoted
-    short token within :data:`_ID_LOOKBACK` chars, provided that token is not
-    already an id the forward pass attributed (so a stray path never re-maps a
-    known registration). Paths still unattributed after both passes are
-    returned as ``unclaimed`` rather than dropped.
+    Fallback pass — over every path *occurrence* the forward parse did not
+    claim (e.g. the helper is no longer invoked with ``new``): the nearest
+    preceding quoted short token within :data:`_ID_LOOKBACK` chars, provided
+    that token is not already an attributed id (by either pass), so a stray
+    path never re-maps a known registration. An occurrence whose nearest token
+    is already mapped to that same path is a repeat of a known registration
+    and is ignored. Paths still unattributed after both passes are returned as
+    ``unclaimed`` rather than dropped.
     """
     registry: dict[str, str] = {}
-    claimed_paths: set[str] = set()
+    claimed_occurrences: set[int] = set()
     sites = 0
+    span_end = 0
     for site in _REGISTRATION_SITE_RE.finditer(bundle):
-        boundary = _REGISTRATION_BOUNDARY_RE.search(bundle, site.end())
-        end = boundary.start() if boundary else len(bundle)
-        path = _METHOD_PATH_RE.search(bundle, site.end(), end)
+        if site.start() < span_end:
+            continue  # nested inside the registration being parsed
+        span_end = _call_span_end(bundle, site.end())
+        path = _METHOD_PATH_RE.search(bundle, site.end(), span_end)
         if path is None:
             continue
         sites += 1
         registry[site.group(2)] = path.group(1)
-        claimed_paths.add(path.group(1))
+        claimed_occurrences.add(path.start())
 
-    forward_ids = set(registry)
     fallback = 0
     seen_paths: set[str] = set()
     unclaimed: list[str] = []
     for match in _METHOD_PATH_RE.finditer(bundle):
         path_str = match.group(1)
         seen_paths.add(path_str)
-        if path_str in claimed_paths:
+        if match.start() in claimed_occurrences:
             continue
         window = bundle[max(0, match.start() - _ID_LOOKBACK) : match.start()]
         ids = _ID_TOKEN_RE.findall(window)
-        if ids and ids[-1] not in forward_ids:
+        if ids and ids[-1] not in registry:
             registry[ids[-1]] = path_str
-            claimed_paths.add(path_str)
             fallback += 1
-        elif path_str not in unclaimed:
+        elif not (ids and registry[ids[-1]] == path_str) and path_str not in unclaimed:
             unclaimed.append(path_str)
     # A path the fallback claimed at a later occurrence is no longer unclaimed.
-    unclaimed = [p for p in unclaimed if p not in claimed_paths]
+    attributed = set(registry.values())
+    unclaimed = [p for p in unclaimed if p not in attributed]
     return RegistryParse(registry, sites, len(seen_paths), fallback, tuple(unclaimed))
 
 
