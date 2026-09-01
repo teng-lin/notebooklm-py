@@ -908,8 +908,8 @@ into `docs/`:
 
 | file | what it pins |
 |---|---|
-| `android/schema.proto` | 295 messages / 767 fields with real names and tag numbers |
-| `android/enums.txt` | 77 enums / ~1900 values with exact integers |
+| `android/schema.proto` | 323 messages / 868 fields with real names and tag numbers |
+| `android/enums.txt` | 94 enums / ~2100 values with exact integers |
 
 Both come from the official Android app, which speaks the *same backend messages*
 over gRPC — where fields are tag-addressed rather than positional. The two line up

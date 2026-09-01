@@ -568,7 +568,7 @@ Flutter AOT snapshot with [blutter](https://github.com/worawit/blutter) ported t
 app's `3.13.0-256.0.dev` build). The port is saved as
 [docs/android/blutter-dart3.13.patch](blutter-dart3.13.patch); [scripts/parse_pbschema.py](../../scripts/parse_pbschema.py)
 turns blutter's disassembled `BuilderInfo._i()` methods into
-[docs/android/schema.proto](schema.proto) (295 messages, 767 fields). See
+[docs/android/schema.proto](schema.proto) (323 messages, 868 fields). See
 [docs/android/endpoints.md](endpoints.md#recovering-the-remaining-field-names-reversing-the-binary)
 for the exact Dart-3.13 changes and build steps.
 
