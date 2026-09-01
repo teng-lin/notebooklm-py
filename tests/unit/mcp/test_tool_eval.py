@@ -31,8 +31,15 @@ pytest.importorskip("fastmcp")
 #: to ~36.0k). Move these DOWN as the surface gets leaner; a rise means
 #: description/param bloat that must be justified, not rubber-stamped.
 SCHEMA_CHAR_BUDGET = (
-    39_400  # total serialized inputSchema + description chars (current 39_377; +23 slack)
+    41_660  # total serialized inputSchema + description chars (current 41_639; +21 slack)
 )
+# chat_start/chat_status (the watchdog-safe detached-ask pair) add two tools whose
+# descriptions carry the re-invoke protocol an agent must follow (the status
+# vocabulary, the poll cadence, the idempotent-retry semantics) — the same class of
+# genuinely agent-actionable text as await_upload's pending/re-invoke contract, and
+# useless if abbreviated to the point the model doesn't poll. Net 39_377 -> 41_639
+# (+2_262, ~1.1k/tool — at the surface average) after a first-draft trim of ~700
+# chars; ratcheted to 41_660 with the ~20-char slack convention.
 # #2129 added the genuine listable FANTASY_MAP and FILE artifact types to the
 # `studio_list.kind` enum. Their two required enum strings move the surface from
 # 39_349 to 39_377 (+28); ratcheted to 39_400 with the existing ~20-char slack.

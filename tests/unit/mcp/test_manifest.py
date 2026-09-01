@@ -5,7 +5,7 @@ in-memory FastMCP ``Client``, then pins:
 
 * the EXACT set of tool names — so a tool can't be silently added, removed, or
   renamed without updating this gate;
-* a tool-count ceiling (40): the current surface is 33 tools; the next tool
+* a tool-count ceiling (40): the current surface is 35 tools; the next tool
   stays under the ceiling, but an accidental explosion still trips the gate;
 * the ``destructiveHint`` annotation + a ``confirm`` parameter on every
   destructive (delete) tool; and
@@ -27,7 +27,7 @@ from notebooklm._app.download_specs import DOWNLOAD_FORMAT_NAMES, DOWNLOAD_SPECS
 pytest.importorskip("fastmcp")
 
 
-#: The complete, pinned tool surface. 33 tools across 8 domains. Adding or
+#: The complete, pinned tool surface. 35 tools across 8 domains. Adding or
 #: removing a tool MUST update this set (and the ceiling below if it grows).
 EXPECTED_TOOLS: frozenset[str] = frozenset(
     {
@@ -46,8 +46,10 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
         "source_add",
         "source_add_drive_file",
         "await_upload",
-        # Chat (3)
+        # Chat (5)
         "chat_ask",
+        "chat_start",
+        "chat_status",
         "chat_configure",
         "suggest_prompts",
         # Notes (1)
@@ -83,8 +85,9 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
 #: source-add composites (source_add_and_wait, source_upload_bytes) later re-grew it,
 #: then #1890 folded them BACK into source_add (wait= / bytes_base64=) for 34, and
 #: #1896 folded studio_get_prompt into studio_list (each artifact's generation_prompt
-#: rides the summary listing / the item= fetch) for 33. The ceiling has headroom, but
-#: an accidental explosion still trips the gate.
+#: rides the summary listing / the item= fetch) for 33; the detached-ask pair
+#: (chat_start/chat_status — the watchdog-safe long-generation path) took it to 35.
+#: The ceiling has headroom, but an accidental explosion still trips the gate.
 TOOL_CEILING = 40
 
 #: The destructive tools — each carries ``destructiveHint`` AND a ``confirm``
@@ -114,6 +117,7 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "research_status",
         "share_status",
         "suggest_prompts",
+        "chat_status",
         "server_info",
     }
 )

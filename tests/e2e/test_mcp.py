@@ -215,6 +215,8 @@ TOOL_COVERAGE: dict[str, str] = {
     "await_upload": "tests/unit/mcp/test_await_upload.py (completion-map poll) + test_fileroutes.py (POST records result; unit — remote signed-URL side-channel, no live browser upload)",
     # chat
     "chat_ask": "TestMcpChat.test_configure_then_ask",
+    "chat_start": "tests/unit/mcp/test_chat_start.py (detached-ask registry + tool cycle)",
+    "chat_status": "tests/unit/mcp/test_chat_start.py (detached-ask registry + tool cycle)",
     "chat_configure": "TestMcpChat.test_configure_then_ask",
     # notes
     "note_save": "TestMcpNotes.test_note_crud",

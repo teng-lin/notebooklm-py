@@ -160,7 +160,14 @@ def create_server(
         set_active_profile(resolve_profile(profile))
         try:
             async with factory() as client:
-                yield AppState(client=client, file_transfer=file_transfer)
+                state = AppState(client=client, file_transfer=file_transfer)
+                try:
+                    yield state
+                finally:
+                    # Cancel any detached chat asks BEFORE the factory context
+                    # closes the client, so no server-owned task ever touches a
+                    # closing client (see ChatTaskRegistry.aclose).
+                    await state.chat_tasks.aclose()
         finally:
             set_active_profile(previous_profile)
 

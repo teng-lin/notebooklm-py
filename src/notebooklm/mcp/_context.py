@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, cast
 
 from fastmcp import Context
 
+from ._chattasks import ChatTaskRegistry
+
 if TYPE_CHECKING:
     from starlette.requests import Request
 
@@ -27,6 +29,7 @@ __all__ = [
     "AppState",
     "CancelledResearchTracker",
     "get_cancelled_research",
+    "get_chat_tasks",
     "get_client",
     "get_client_from_app",
     "get_file_transfer",
@@ -88,11 +91,18 @@ class AppState:
     ``cancelled_research`` is the bounded cancel-intent tracker for issue #1922
     (F9) — see :class:`CancelledResearchTracker`. Process-scoped in-memory state
     (no persistence, consistent with the loop-bound lifespan client).
+
+    ``chat_tasks`` is the bounded registry of detached chat asks backing
+    ``chat_start`` / ``chat_status`` — see
+    :class:`~notebooklm.mcp._chattasks.ChatTaskRegistry`. Same process-scoped
+    in-memory contract; the lifespan cancels its running tasks (``aclose``)
+    before the client closes.
     """
 
     client: NotebookLMClient
     file_transfer: FileTransferConfig | None = None
     cancelled_research: CancelledResearchTracker = field(default_factory=CancelledResearchTracker)
+    chat_tasks: ChatTaskRegistry = field(default_factory=ChatTaskRegistry)
 
 
 def _app_state(ctx: Context) -> AppState:
@@ -129,6 +139,17 @@ def get_cancelled_research(ctx: Context) -> CancelledResearchTracker:
     :func:`get_client`.
     """
     return _app_state(ctx).cancelled_research
+
+
+def get_chat_tasks(ctx: Context) -> ChatTaskRegistry:
+    """Return the detached-chat-task registry for the current tool call.
+
+    The live :class:`~notebooklm.mcp._chattasks.ChatTaskRegistry` backing
+    ``chat_start`` / ``chat_status``: the start tool claims a slot and spawns the
+    server-owned ask here; the status tool polls it. Returns the live registry so
+    callers mutate it in place. Mirrors :func:`get_client`.
+    """
+    return _app_state(ctx).chat_tasks
 
 
 def get_file_transfer(ctx: Context) -> FileTransferConfig | None:

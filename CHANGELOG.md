@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `chat_start` / `chat_status` MCP tools — a detached, watchdog-safe path for
+  long chat generations. Remote MCP transports (claude.ai custom connectors in
+  particular) cut a tool call at ~60s of time-to-first-response-byte, and the
+  cancellation propagates into the handler, killing a blocking `chat_ask`
+  mid-generation while the same question succeeds in the NotebookLM web UI.
+  `chat_start` resolves the ask, spawns it as a server-owned task
+  (`mcp/_chattasks.ChatTaskRegistry` — bounded, TTL-swept, ADR-0024-shaped
+  in-process state) and returns a `task_id` immediately; `chat_status` polls it
+  and returns the finished `chat_ask`-shaped payload inline. Identical asks
+  dedupe: a repeat attaches to the in-flight task or answers instantly from the
+  ~30-minute completion cache, so a host that dropped the response recovers it
+  with one cheap retry. Same re-invoke contract as `await_upload` and the
+  `studio_generate`/`studio_status`, `research_start`/`research_status` pairs —
+  chat was the last long-running surface without it.
 - `SourceType.GEMINI_CHAT`, `EXCEL`, `GMAIL`, `AI_MODE_CHAT` and
   `EXPERT_INTELLIGENCE` for backend type codes `18`, `12`, `15`, `19` and `20`.
   The decode map now covers `0`-`20` contiguously and matches every value of

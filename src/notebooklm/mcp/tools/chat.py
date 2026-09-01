@@ -9,6 +9,15 @@ Thin adapters over the chat surface:
   same default the ``ask`` RPC has).
 * ``chat_configure`` drives ``_app.chat.execute_configure``. ``goal`` maps to the
   core's ``persona`` argument (a non-empty value selects the ``CUSTOM`` chat goal).
+* ``chat_start`` / ``chat_status`` are the watchdog-safe pair for slow
+  generations: ``chat_start`` detaches the ask into a server-owned task
+  (:mod:`notebooklm.mcp._chattasks`) and returns a ``task_id`` immediately;
+  ``chat_status`` polls it and returns the finished answer inline. Remote MCP
+  transports cut a call at ~60s to the first response byte (the watchdog
+  ``tools/_fileupload.py`` documents for uploads), which kills a blocking
+  ``chat_ask`` mid-generation — the re-invoke poll, not any keepalive, is the
+  load-bearing completion mechanism (same ADR-0024 shape as ``await_upload``,
+  same contract ``studio_generate``/``studio_status`` ship for studio work).
 
 Neither the ``ask`` RPC nor ``execute_configure`` emits progress events, so this
 module wires no :class:`~notebooklm._app.events.ProgressSink` — there is nothing
@@ -33,10 +42,11 @@ from ..._app.notebooks import SUGGEST_SURFACE_MAP, SuggestSurface
 from ..._app.serialize import to_jsonable
 from ..._app.views import ask_result_view
 from ...exceptions import ValidationError
+from .._chattasks import ChatTaskCapacityError, compute_chat_task_key
 from .._coerce import coerce_list
 from .._confirm import READ_ONLY
-from .._context import get_client
-from .._errors import mcp_errors
+from .._context import get_chat_tasks, get_client
+from .._errors import mcp_errors, tool_error_payload
 from .._resolve import resolve_notebook, resolve_sources
 
 #: Reference fields kept in the default ("lite") ``chat_ask`` projection. The full
@@ -44,6 +54,24 @@ from .._resolve import resolve_notebook, resolve_sources
 #: ``passage_id`` / ``score`` — useful for deep citation tooling but pure context
 #: bloat for a typical agent, so they are dropped unless ``references="full"``.
 _LITE_REFERENCE_FIELDS = ("source_id", "citation_number", "cited_text")
+
+
+def _ask_result_payload(ask_result: Any, references: str) -> dict[str, Any]:
+    """Serialize an ask result for the wire — shared by ``chat_ask`` and the
+    detached ``chat_start`` task so the two paths cannot drift.
+
+    The shared :func:`ask_result_view` projection (which already drops the
+    debug-only ``raw_response`` blob), minus the chunk-level reference detail
+    unless ``references="full"``. ``or []`` (not a get-default) so a null
+    ``references`` value is tolerated, not iterated.
+    """
+    payload = ask_result_view(ask_result)
+    if references == "lite":
+        payload["references"] = [
+            {k: ref[k] for k in _LITE_REFERENCE_FIELDS if ref.get(k) is not None}
+            for ref in (payload.get("references") or [])
+        ]
+    return payload
 
 
 def register(mcp: Any) -> None:
@@ -201,17 +229,9 @@ def register(mcp: Any) -> None:
                 ask_result, suggestions = None, None
 
             if ask_result is not None:
-                # Shared view: serialize + drop the debug-only ``raw_response`` blob
-                # (it just burns agent context) — identical on the REST chat route.
-                ask_payload = ask_result_view(ask_result)
-                if references == "lite":
-                    # ``or []`` (not a get-default) so a null ``references`` value is
-                    # tolerated, not iterated.
-                    ask_payload["references"] = [
-                        {k: ref[k] for k in _LITE_REFERENCE_FIELDS if ref.get(k) is not None}
-                        for ref in (ask_payload.get("references") or [])
-                    ]
-                payload.update(ask_payload)
+                # Shared view + reference projection (:func:`_ask_result_payload`) —
+                # identical on the REST chat route and the detached ``chat_start`` task.
+                payload.update(_ask_result_payload(ask_result, references))
             elif conversation_id is not None:
                 # Recall-only: echo the conversation we read so the caller can
                 # target it explicitly on a later turn (the ask path echoes its own).
@@ -226,6 +246,132 @@ def register(mcp: Any) -> None:
             if resolved_source_ids is not None:
                 payload["source_ids"] = resolved_source_ids
             return payload
+
+    @mcp.tool
+    async def chat_start(
+        ctx: Context,
+        notebook: str,
+        question: str,
+        conversation_id: str | None = None,
+        references: Literal["lite", "full"] = "lite",
+        source_ids: list[str] | str | None = None,
+    ) -> dict[str, Any]:
+        """Start a chat ask as a detached background task and return immediately.
+
+        The watchdog-safe way to ask when generation may run long (large/shared
+        notebooks routinely take 1–3 minutes, and remote MCP transports cut a
+        call at ~60s of silence — which kills a blocking ``chat_ask``
+        mid-generation). The ask runs server-side regardless of what happens to
+        this call; ``chat_status`` collects the answer. For questions expected
+        to answer quickly, ``chat_ask`` stays the one-call path.
+
+        Parameters mirror ``chat_ask``'s ask path (``history`` /
+        ``suggest_followups`` are ``chat_ask``-only). Returns one of:
+
+        * ``{"status": "started", "task_id": ...}`` — **call ``chat_status``
+          with this ``task_id`` in ~20–30s**; re-invoke while ``pending``.
+        * ``{"status": "already_running", "task_id": ...}`` — an identical ask
+          is already in flight; poll that ``task_id`` (no double generation).
+        * ``{"status": "completed", "answer": ..., ...}`` — an identical ask
+          finished recently; the cached answer, instantly.
+
+        Results expire ~30 minutes after completion (``chat_status`` then
+        reports ``unknown``; start again).
+        """
+        client = get_client(ctx)
+        with mcp_errors():
+            question = question.strip()
+            if not question:
+                raise ValidationError("chat_start needs a non-empty question.")
+            nb_id = await resolve_notebook(client, notebook)
+            # Same source-scoping contract as chat_ask: tolerant input shapes,
+            # resolved ONCE up front; omitted/empty stays None (=> all sources).
+            refs = coerce_list(source_ids)
+            resolved_source_ids = await resolve_sources(client, nb_id, refs) if refs else None
+            # Key on the RESOLVED inputs so retries dedupe however the caller
+            # spelled the notebook/source refs (see compute_chat_task_key).
+            key = compute_chat_task_key(
+                nb_id, question, resolved_source_ids, conversation_id, references
+            )
+
+            async def _run_ask() -> dict[str, Any]:
+                # Runs as a server-owned task (not a child of this request), so a
+                # transport cutting the start call cannot kill the generation.
+                ask_result = await client.chat.ask(
+                    nb_id,
+                    question,
+                    source_ids=resolved_source_ids,
+                    conversation_id=conversation_id,
+                )
+                payload: dict[str, Any] = {"notebook_id": nb_id}
+                payload.update(_ask_result_payload(ask_result, references))
+                if resolved_source_ids is not None:
+                    payload["source_ids"] = resolved_source_ids
+                return payload
+
+            try:
+                entry, how = get_chat_tasks(ctx).start(key, _run_ask)
+            except ChatTaskCapacityError as exc:
+                raise ValidationError(str(exc)) from exc
+            if how == "completed":
+                return {"status": "completed", "task_id": entry.task_id, **(entry.result or {})}
+            return {
+                "status": "started" if how == "created" else "already_running",
+                "task_id": entry.task_id,
+                "notebook_id": nb_id,
+                "hint": (
+                    "the answer usually lands within 1-3 minutes — call chat_status "
+                    "with this task_id in ~20-30s, and re-invoke it while it reports "
+                    "pending"
+                ),
+            }
+
+    @mcp.tool(annotations=READ_ONLY)
+    async def chat_status(ctx: Context, task_id: str) -> dict[str, Any]:
+        """Poll a detached ask started by ``chat_start``; returns the answer inline.
+
+        Returns one of:
+
+        * ``{"status": "pending"}`` — still generating; **re-invoke with the
+          same ``task_id`` in ~15–30s** (polling never restarts the generation).
+        * ``{"status": "completed", "answer": ..., ...}`` — the finished
+          ``chat_ask``-shaped payload.
+        * ``{"status": "failed", "error": {code, message, retriable, ...}}`` — a
+          retriable code is worth one ``chat_start`` retry (which re-runs the
+          generation).
+        * ``{"status": "unknown"}`` — no such task, or its result expired; call
+          ``chat_start`` again.
+        """
+        with mcp_errors():
+            entry = get_chat_tasks(ctx).status(task_id)
+            if entry is None:
+                return {
+                    "status": "unknown",
+                    "hint": (
+                        "no such task (or its result expired) — call chat_start "
+                        "again with the original question"
+                    ),
+                }
+            if entry.done_at is None:
+                return {
+                    "status": "pending",
+                    "hint": (
+                        "the answer is still generating — re-invoke chat_status "
+                        "with the same task_id in ~15-30s"
+                    ),
+                }
+            if entry.error is not None:
+                return {
+                    "status": "failed",
+                    "task_id": entry.task_id,
+                    "error": tool_error_payload(entry.error),
+                    "hint": (
+                        "the ask failed — a retriable error is worth one "
+                        "chat_start retry with the same question (a retry "
+                        "re-runs the generation)"
+                    ),
+                }
+            return {"status": "completed", "task_id": entry.task_id, **(entry.result or {})}
 
     @mcp.tool
     async def chat_configure(
