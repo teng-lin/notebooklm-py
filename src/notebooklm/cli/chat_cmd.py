@@ -542,6 +542,64 @@ def register_chat_commands(cli):
 
         return _run()
 
+    @cli.command("suggest-next-steps")
+    @notebook_option
+    @click.option(
+        "--source",
+        "-s",
+        "source_ids",
+        multiple=True,
+        help="Limit to specific source IDs (can be repeated). Defaults to all sources.",
+        shell_complete=_complete_sources,
+    )
+    @json_option
+    @with_client
+    def suggest_next_steps_cmd(ctx, notebook_id, source_ids, json_output, client_auth):
+        """Get grounded follow-up questions for a notebook.
+
+        Returns the ready-to-ask questions NotebookLM shows beneath a chat
+        answer, without needing a prior conversation (``NextStepSuggestions``).
+        Unlike ``suggest-prompts`` these are questions grounded in the sources,
+        not steering prompts for a studio surface. Pass them straight to ``ask``.
+
+        \b
+        Example:
+          notebooklm suggest-next-steps
+          notebooklm suggest-next-steps -s src_001
+          notebooklm suggest-next-steps --json
+        """
+        nb_id = require_notebook(notebook_id)
+
+        async def _run():
+            async with resolve_client_factory(ctx)(client_auth) as client:
+                nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+                sources = await resolve_source_ids(
+                    client, nb_id_resolved, source_ids, json_output=json_output
+                )
+                suggestions = await client.notebooks.suggest_next_steps(
+                    nb_id_resolved, source_ids=sources
+                )
+                if json_output:
+                    json_output_response(
+                        {
+                            "notebook_id": nb_id_resolved,
+                            "suggestions": [
+                                {"question": s.question, "type_code": s.type_code}
+                                for s in suggestions
+                            ],
+                            "count": len(suggestions),
+                        }
+                    )
+                    return
+                if not suggestions:
+                    console.print("[yellow]No follow-up suggestions returned[/yellow]")
+                    return
+                console.print("[bold cyan]Suggested follow-up questions:[/bold cyan]")
+                for i, suggestion in enumerate(suggestions, 1):
+                    console.print(f"{i}. {suggestion.question}")
+
+        return _run()
+
     @cli.command("configure")
     @notebook_option
     @click.option(

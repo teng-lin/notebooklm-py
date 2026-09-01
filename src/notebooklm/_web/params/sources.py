@@ -94,3 +94,36 @@ def build_resumable_upload_start_request(
             }
         ),
     )
+
+
+def build_append_source_params(source_id: str, *, header: str, body: str) -> list[Any]:
+    """Build ``APPEND_SOURCE`` (``QsNTEd`` / ``AppendSource``) params.
+
+    Mobile proto (live-pinned, #2283): ``AppendSourceRequest { SourceId
+    source_id = 2; SourceContent content = 4 }`` with ``SourceContent {
+    PlainTextSourceContent plain_text = 2 }`` and ``PlainTextSourceContent {
+    string header = 1; string body = 2 }``. Positionally that is a leading
+    ``None`` (unused field 1), the ``[source_id]`` wrapper, another ``None``
+    (field 3) and the doubly nested content block. The ``body`` lands in the
+    source fulltext; the ``header`` does not appear in it.
+    """
+    return [None, [source_id], None, [None, [header, body]]]
+
+
+def build_copy_sources_params(source_ids: list[str], target_notebook_id: str) -> list[Any]:
+    """Build ``COPY_SOURCES`` (``R27wvc`` / ``CopySourcesAsync``) params.
+
+    Mobile proto (live-pinned, #2283): ``{ repeated SourceId source_ids = 3;
+    string target_project_id = 4 }`` — fields 1 and 2 are unused, so the
+    positional request leads with two ``None`` slots.
+    """
+    return [None, None, [[source_id] for source_id in source_ids], target_notebook_id]
+
+
+def build_add_sources_async_params(url_specs: list[list[Any]], notebook_id: str) -> list[Any]:
+    """Build ``ADD_SOURCES_ASYNC`` (``X1snv`` / ``AddSourcesAsync``) params.
+
+    Identical to the batch ``ADD_SOURCE`` request: the repeated ``UserContent``
+    specs, the notebook id, then the request context (#2283).
+    """
+    return [url_specs, notebook_id, build_template_block()]

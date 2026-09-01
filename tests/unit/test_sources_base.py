@@ -50,6 +50,9 @@ class _ConcreteSources(SourcesAPI):
     check_freshness = _unsupported
     get_guide = _unsupported
     get_fulltext = _unsupported
+    add_urls_async = _unsupported
+    append_text = _unsupported
+    copy = _unsupported
 
 
 @pytest.mark.asyncio

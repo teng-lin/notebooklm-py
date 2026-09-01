@@ -37,13 +37,26 @@ from __future__ import annotations
 
 from typing import Any
 
-from notebooklm._types.artifacts import Artifact, ReportSuggestion
+from notebooklm._types.artifacts import (
+    Artifact,
+    ArtifactCustomizationChoices,
+    CustomizationChoice,
+    ReportPreset,
+    ReportSuggestion,
+)
+from notebooklm._types.chat import NextStepSuggestion
 from notebooklm._types.labels import Label
 from notebooklm._types.notebooks import Notebook, PromptSuggestion
 from notebooklm._types.sharing import ShareStatus
 from notebooklm._types.sources import Source
 from notebooklm._web.rows.artifacts import ReportSuggestionRow, unwrap_artifact_rows
-from notebooklm._web.rows.notebooks import PromptSuggestionRow, unwrap_prompt_suggestions
+from notebooklm._web.rows.chat import NextStepSuggestionRow
+from notebooklm._web.rows.customization import unwrap_customization_choices
+from notebooklm._web.rows.notebooks import (
+    PromptSuggestionRow,
+    unwrap_next_step_suggestions,
+    unwrap_prompt_suggestions,
+)
 from notebooklm.rpc.types import RPCMethod
 
 # Fixed notebook id used by the share-status / label mappers below. The
@@ -171,3 +184,49 @@ def suggest_prompts(decoded: Any) -> list[PromptSuggestion]:
         for row in map(PromptSuggestionRow, rows)
         if row.is_well_formed
     ]
+
+
+def suggest_next_steps(decoded: Any) -> list[NextStepSuggestion]:
+    """``SUGGEST_NEXT_STEPS`` -> one :class:`NextStepSuggestion` per row.
+
+    Mirrors ``WebNotebooksAPI.suggest_next_steps``: the decoded payload is the
+    ``NextStepSuggestions`` message (``[[ [question, type_code], ... ]]``) routed
+    through the production ``unwrap_next_step_suggestions`` (``result[0]``), then
+    each well-formed row is wrapped in the chat ``NextStepSuggestionRow`` adapter.
+    """
+    rows = unwrap_next_step_suggestions(decoded, source="golden.suggest_next_steps")
+    return [
+        NextStepSuggestion(question=row.question, type_code=row.type_code)
+        for row in map(NextStepSuggestionRow, rows)
+        if row.is_well_formed and row.question is not None and row.type_code is not None
+    ]
+
+
+def get_customization_choices(decoded: Any) -> ArtifactCustomizationChoices:
+    """``GET_CUSTOMIZATION_CHOICES`` -> :class:`ArtifactCustomizationChoices`.
+
+    Mirrors ``WebArtifactsAPI.get_customization_choices``: the single-element
+    envelope wraps one ``ArtifactCustomizationChoices`` message whose four
+    family slots each hold ``[[row, ...]]``.
+    """
+    view = unwrap_customization_choices(decoded)
+
+    def _choices(rows: Any) -> list[CustomizationChoice]:
+        return [
+            CustomizationChoice(code=row.code, title=row.title, description=row.description)
+            for row in rows
+            if row.is_well_formed and row.code is not None
+        ]
+
+    return ArtifactCustomizationChoices(
+        audio=_choices(view.audio_rows),
+        video=_choices(view.video_rows),
+        slide_deck=_choices(view.slide_deck_rows),
+        reports=[
+            ReportPreset(
+                report_type=row.report_type, description=row.description, directive=row.directive
+            )
+            for row in view.report_rows
+            if row.is_well_formed
+        ],
+    )

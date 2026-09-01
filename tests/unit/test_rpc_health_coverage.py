@@ -110,6 +110,13 @@ MUTATING_SKIP_LIST: frozenset[str] = frozenset(
         "UPDATE_LABEL",
         # Batch-deletes labels — write op, --full only.
         "DELETE_LABEL",
+        # #2283 transfer family — every one creates or extends rows (queues
+        # new sources, appends text in place, copies sources / artifacts into a
+        # target notebook); write ops with no read-only probe shape.
+        "ADD_SOURCES_ASYNC",
+        "APPEND_SOURCE",
+        "COPY_SOURCES",
+        "COPY_ARTIFACTS",
     }
 )
 

@@ -7,6 +7,7 @@ Quizzes, Flashcards, Infographics, Slide Decks, Data Tables, and Mind Maps.
 
 import builtins
 import logging
+import reprlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -14,18 +15,31 @@ from .._artifact import polling as _artifact_polling
 from .._artifact import validation as _artifact_validation
 from .._artifact.downloads import AssetDownloadService
 from .._artifacts import ArtifactsAPI
+from .._idempotency import mark_unconfirmed
 from .._notebook_metadata import NotebookSourceIdProvider
 from .._types.enums import (
     ArtifactTypeCode,
     ExportType,
 )
 from .._types.research import MindMapResult
-from ..exceptions import ArtifactNotFoundError
+from ..exceptions import (
+    ArtifactNotFoundError,
+    DecodingError,
+    NetworkError,
+    RateLimitError,
+    RPCError,
+    ServerError,
+    ValidationError,
+)
 from ..rpc import RPCMethod
 from ..types import (
     Artifact,
+    ArtifactCustomizationChoices,
     ArtifactType,
+    CopiedArtifact,
+    CustomizationChoice,
     GenerationStatus,
+    ReportPreset,
     ReportSuggestion,
 )
 from .artifact.downloads import ArtifactDownloadService
@@ -34,8 +48,14 @@ from .artifact.listing import ArtifactListingService
 from .contracts import RpcCaller
 from .mind_maps import NoteBackedMindMapService
 from .notes import NoteService
-from .params.artifacts import build_suggest_reports_params
+from .params.artifacts import (
+    build_copy_artifacts_params,
+    build_customization_choices_params,
+    build_suggest_reports_params,
+)
 from .rows import artifacts as _artifact_rows
+from .rows.customization import unwrap_customization_choices
+from .rows.transfers import CopiedArtifactRow, unwrap_mapping_rows
 
 if TYPE_CHECKING:
     from .._runtime.call_supervisor import CallSupervisor
@@ -532,6 +552,143 @@ class WebArtifactsAPI(ArtifactsAPI):
             for row in map(_artifact_rows.ReportSuggestionRow, items)
             if row.is_well_formed
         ]
+
+    async def copy(
+        self,
+        notebook_id: str,
+        artifact_ids: builtins.list[str],
+        target_notebook_id: str,
+    ) -> builtins.list[CopiedArtifact]:
+        """Copy Studio artifacts into another notebook (``CopyArtifactsAsync``).
+
+        Returns one :class:`~notebooklm.types.CopiedArtifact` per copied
+        artifact, pairing the original id with the full new row (verified live
+        twice by re-listing the target: 3 → 4 → 5 artifacts). Raises
+        ``ArtifactNotFoundError`` when none of the requested ids were copied —
+        the server answers unknown ids with an empty mapping rather than
+        ``NOT_FOUND``. A partial result is returned with a warning because the
+        copies it names have already committed.
+
+        The sync twin ``CopyArtifacts`` (``zVGIdd``) accepts any ids, copies
+        nothing and reports success; it is deliberately not modelled (#2283).
+
+        .. versionadded:: 0.9.0
+        """
+        if not artifact_ids:
+            raise ValidationError("artifact_ids must not be empty")
+        if any(not artifact_id for artifact_id in artifact_ids):
+            raise ValidationError("artifact_ids must not contain empty entries")
+        if not target_notebook_id:
+            raise ValidationError("target_notebook_id must not be empty")
+
+        try:
+            result = await self._rpc.rpc_call(
+                RPCMethod.COPY_ARTIFACTS,
+                build_copy_artifacts_params(list(artifact_ids), target_notebook_id),
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                raise_on_null_status=True,
+                disable_internal_retries=True,
+            )
+        except (NetworkError, RateLimitError, ServerError) as exc:
+            rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
+            raise mark_unconfirmed(
+                RPCError(
+                    "UNRESOLVED — CopyArtifactsAsync may have committed before its "
+                    "response was lost. Do not blindly retry; list the target notebook's "
+                    "artifacts and reconcile first.",
+                    method_id=RPCMethod.COPY_ARTIFACTS.value,
+                    rpc_code=rpc_code,
+                )
+            ) from exc
+
+        rows = unwrap_mapping_rows(
+            result, method_id=RPCMethod.COPY_ARTIFACTS.value, source="CopyArtifactsAsync"
+        )
+        copied: builtins.list[CopiedArtifact] = []
+        for raw in rows:
+            row = CopiedArtifactRow(raw)
+            if not row.is_well_formed:
+                raise DecodingError(
+                    "CopyArtifactsAsync returned a malformed mapping entry",
+                    raw_response=reprlib.repr(raw),
+                    method_id=RPCMethod.COPY_ARTIFACTS.value,
+                )
+            assert row.original_id is not None and row.artifact_row is not None
+            artifact = Artifact.from_api_response(row.artifact_row)
+            if not artifact.id:
+                raise DecodingError(
+                    "CopyArtifactsAsync returned a copied artifact without an id",
+                    raw_response=reprlib.repr(raw),
+                    method_id=RPCMethod.COPY_ARTIFACTS.value,
+                )
+            copied.append(CopiedArtifact(original_id=row.original_id, artifact=artifact))
+
+        if not copied:
+            raise ArtifactNotFoundError(
+                ", ".join(artifact_ids), method_id=RPCMethod.COPY_ARTIFACTS.value
+            )
+        missing = set(artifact_ids) - {item.original_id for item in copied}
+        if missing:
+            logger.warning(
+                "CopyArtifactsAsync copied %d of %d artifact(s) into %s; not copied: %s",
+                len(copied),
+                len(artifact_ids),
+                target_notebook_id,
+                ", ".join(sorted(missing)),
+            )
+        return copied
+
+    async def get_customization_choices(
+        self, notebook_id: str | None = None
+    ) -> ArtifactCustomizationChoices:
+        """Return the Studio "Customize" option tables (``GetArtifactCustomizationChoices``).
+
+        Account-level: the server returns the same ~3.3 KB table for an empty
+        request, a bogus notebook id and every artifact type (live, both front
+        doors, 2026-09-01), so ``notebook_id`` is optional and only mirrors what
+        the web UI sends. Audio / video / slide-deck rows carry the wire codes
+        of :class:`~notebooklm.types.AudioFormat`,
+        :class:`~notebooklm.types.VideoFormat` and
+        :class:`~notebooklm.types.SlideDeckFormat`; report presets carry the
+        full generation directive each preset expands to.
+
+        .. versionadded:: 0.9.0
+        """
+        result = await self._rpc.rpc_call(
+            RPCMethod.GET_CUSTOMIZATION_CHOICES,
+            build_customization_choices_params(notebook_id),
+            source_path=f"/notebook/{notebook_id}" if notebook_id else "/",
+            allow_null=True,
+            raise_on_null_status=True,
+        )
+        view = unwrap_customization_choices(result)
+        return ArtifactCustomizationChoices(
+            audio=[
+                CustomizationChoice(code=row.code, title=row.title, description=row.description)
+                for row in view.audio_rows
+                if row.is_well_formed and row.code is not None
+            ],
+            video=[
+                CustomizationChoice(code=row.code, title=row.title, description=row.description)
+                for row in view.video_rows
+                if row.is_well_formed and row.code is not None
+            ],
+            slide_deck=[
+                CustomizationChoice(code=row.code, title=row.title, description=row.description)
+                for row in view.slide_deck_rows
+                if row.is_well_formed and row.code is not None
+            ],
+            reports=[
+                ReportPreset(
+                    report_type=row.report_type,
+                    description=row.description,
+                    directive=row.directive,
+                )
+                for row in view.report_rows
+                if row.is_well_formed
+            ],
+        )
 
     # =========================================================================
     # Private Helpers

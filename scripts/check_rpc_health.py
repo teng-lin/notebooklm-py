@@ -10,11 +10,9 @@ Exit codes:
     2 - Authentication or infrastructure failure (not an RPC problem)
     3 - One or more RPC methods returned a non-transient ERROR
         (timeouts, parse failures, unexpected HTTP errors)
-    4 - Studio-customization cohort flip: the ``sqTeoe`` tripwire
-        (GetArtifactCustomizationChoices) returned non-null, meaning our
-        account migrated to the new customization surface and the VideoStyle /
-        format codes must be re-captured. GATED-null is the expected steady
-        state and is NOT a failure.
+    4 - Studio option-table drift: ``GetArtifactCustomizationChoices`` served
+        format codes/labels that disagree with the client's AudioFormat /
+        VideoFormat / SlideDeckFormat enums (re-capture them; #1597 class)
     5 - Stale frontend build label: the ``bl`` value pinned in
         ``_env.DEFAULT_BL`` trails the label the app shell actually serves by
         more than ``_env.BUILD_LABEL_STALE_AFTER_DAYS``. Ordinary week-to-week
@@ -22,7 +20,7 @@ Exit codes:
         clears as soon as it is bumped (#2073).
 
 Priority order when multiple statuses are present:
-    MISMATCH (1) > AUTH (2) > non-transient ERROR (3) > cohort MIGRATED (4)
+    MISMATCH (1) > AUTH (2) > non-transient ERROR (3) > customization DRIFT (4)
     > build label STALE (5) > OK (0)
 
 Transient errors that still exit 0 are limited to rate-limit signals
@@ -73,6 +71,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 from collections import Counter
 from dataclasses import dataclass
@@ -97,10 +96,14 @@ from notebooklm._env import (
     get_default_language,
 )
 from notebooklm._logging import scrub_secrets
+from notebooklm._web.params.artifacts import (
+    build_customization_choices_params as _build_customization_choices_params,
+)
 from notebooklm._web.params.artifacts import build_retry_artifact_params
 from notebooklm._web.params.chat_stream import build_streaming_chat_request
 from notebooklm._web.params.notebooks import build_create_notebook_params
 from notebooklm._web.rows.chat_stream import parse_streaming_chat_response
+from notebooklm._web.rows.customization import unwrap_customization_choices
 from notebooklm._web.wire.decoder import (
     collect_rpc_ids,
     decode_response,
@@ -118,6 +121,7 @@ from notebooklm.rpc import (
     get_batchexecute_url,
 )
 from notebooklm.rpc.types import _QUERY_ENDPOINT_PATH
+from notebooklm.types import AudioFormat, SlideDeckFormat, VideoFormat
 
 
 class CheckStatus(str, Enum):
@@ -129,20 +133,27 @@ class CheckStatus(str, Enum):
     SKIPPED = "SKIPPED"
 
 
-class CohortStatus(str, Enum):
-    """Result of the ``sqTeoe`` studio-customization cohort tripwire.
+class CustomizationStatus(str, Enum):
+    """Result of the ``GET_CUSTOMIZATION_CHOICES`` studio option-table cross-check.
 
-    ``GetArtifactCustomizationChoices`` (rpc id ``sqTeoe``) is gated off for our
-    consumer cohort and returns ``null`` unconditionally today (``GATED`` — the
-    expected steady state, NOT a failure). The day it starts returning a
-    non-null payload our account has been migrated to the new studio-customization
-    surface (``MIGRATED`` — a loud signal: the VideoStyle/format codes must be
-    re-captured). ``UNKNOWN`` covers a transient/transport failure on the probe
-    itself (no cohort conclusion drawn — never an alarm).
+    ``GetArtifactCustomizationChoices`` serves the Studio "Customize" tables —
+    the audio / video / slide-deck format rows whose integer codes the client
+    hardcodes as ``AudioFormat`` / ``VideoFormat`` / ``SlideDeckFormat``. The
+    probe compares the served ``(code, label)`` pairs against those enums:
+    ``MATCH`` is the steady state; ``DRIFT`` means a served family disagrees
+    with the client (a new code, a renamed label, a dropped member) and the
+    enums in ``_types/enums.py`` must be re-captured (#1597 was exactly this
+    failure class); ``UNKNOWN`` covers a transport / parse failure on the probe
+    itself (no conclusion drawn — never an alarm).
+
+    Replaces the earlier ``sqTeoe`` "cohort tripwire", which sent a shape the
+    server rejects (``[nbctx, None, 3]`` draws ``INVALID_ARGUMENT``) and then
+    read its own rejection as the expected gated steady state, so it could
+    never fire (#2284).
     """
 
-    GATED = "GATED"
-    MIGRATED = "MIGRATED"
+    MATCH = "MATCH"
+    DRIFT = "DRIFT"
     UNKNOWN = "UNKNOWN"
 
 
@@ -180,9 +191,14 @@ RECORDED_REBRAND_STATUSES: frozenset[RebrandProbeStatus] = frozenset(
 )
 
 
-# Studio-customization cohort tripwire RPC. NOT in ``RPCMethod`` (it is gated off
-# for our consumer cohort, so there is no typed/public path), called by raw id.
-_CUSTOMIZATION_CHOICES_RPC_ID = "sqTeoe"
+# The Studio option-table cross-check compares these served families against the
+# client enums (``compare_customization_choices``). Report presets are free text
+# and only checked for presence.
+_CUSTOMIZATION_FAMILIES: tuple[tuple[str, type[Enum]], ...] = (
+    ("audio", AudioFormat),
+    ("video", VideoFormat),
+    ("slide_deck", SlideDeckFormat),
+)
 
 
 class BuildLabelStatus(str, Enum):
@@ -712,6 +728,26 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
             None,
         ]
 
+    # SUGGEST_NEXT_STEPS (NextStepSuggestions): like SUGGEST_PROMPTS the
+    # follow-up questions only exist once a notebook has indexed sources, so
+    # route to a stable read-only notebook when one is configured. Field 1 is
+    # unused (leading None); omitting field 3 scopes to every source. A bogus
+    # notebook draws NOT_FOUND, which still echoes the RPC id.
+    if method == RPCMethod.SUGGEST_NEXT_STEPS:
+        stable_id = (
+            os.environ.get("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID")
+            or os.environ.get("NOTEBOOKLM_GENERATION_NOTEBOOK_ID")
+            or notebook_id
+        )
+        return [None, stable_id]
+
+    # GET_CUSTOMIZATION_CHOICES (GetArtifactCustomizationChoices) is account-
+    # level: the server ignores the notebook id (an empty request returns the
+    # same 3.3 KB table), so only the request context is sent. This is the
+    # shape the former ``sqTeoe`` probe should have used (#2284).
+    if method == RPCMethod.GET_CUSTOMIZATION_CHOICES:
+        return [[2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]]]
+
     # LIST_ARTIFACTS has special params
     if method == RPCMethod.LIST_ARTIFACTS:
         return [[2], notebook_id, 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"']
@@ -1020,24 +1056,62 @@ async def check_chat_query(
     )
 
 
-def build_customization_choices_params(notebook_id: str) -> list[Any]:
-    """Build ``sqTeoe`` (GetArtifactCustomizationChoices) params for ``notebook_id``.
+def build_customization_choices_params(notebook_id: str | None) -> list[Any]:
+    """Params for ``GET_CUSTOMIZATION_CHOICES``: the request context, plus the
+    notebook id when one is known.
 
-    Reverse-engineered (live-verified) request shape: ``[nbctx, None, artifact_type]``
-    where ``nbctx`` is the standard notebook-context options wrapper and
-    ``artifact_type`` is ``3`` (video) — the surface whose VideoStyle/format codes
-    we most want an early migration signal for. Extracted as a helper so the wire
-    shape is testable without a live call.
+    Delegates to the production builder so the canary probes exactly the shape
+    the client sends. The earlier hand-rolled ``[nbctx, None, 3]`` drew
+    ``INVALID_ARGUMENT`` on every account, which the old tripwire then read as
+    its expected null steady state (#2284).
     """
-    nbctx = [
-        2,
-        None,
-        None,
-        [1, None, None, None, None, None, None, None, None, None, [1]],
-        [notebook_id],
-    ]
-    artifact_type = 3  # video
-    return [nbctx, None, artifact_type]
+    return _build_customization_choices_params(notebook_id)
+
+
+def _normalize_choice_label(title: str) -> str:
+    """``"Deep Dive"`` -> ``"DEEP_DIVE"`` (the enum member-name convention)."""
+    return re.sub(r"[^A-Z0-9]+", "_", title.upper()).strip("_")
+
+
+def compare_customization_choices(data: Any) -> tuple[CustomizationStatus, str]:
+    """Compare a decoded ``GET_CUSTOMIZATION_CHOICES`` payload with the client enums.
+
+    Each served format row is reduced to ``(code, NORMALIZED_LABEL)`` and set-
+    compared against ``{(member.value, member.name)}`` of the matching enum, so
+    a new code, a renamed label or a dropped member all surface as ``DRIFT``
+    with the exact difference in the detail string.
+    """
+    view = unwrap_customization_choices(data)
+    rows_by_family = {
+        "audio": view.audio_rows,
+        "video": view.video_rows,
+        "slide_deck": view.slide_deck_rows,
+    }
+    problems: list[str] = []
+    for family, enum_type in _CUSTOMIZATION_FAMILIES:
+        served = {
+            (row.code, _normalize_choice_label(row.title))
+            for row in rows_by_family[family]
+            if row.is_well_formed
+        }
+        expected = {(member.value, member.name) for member in enum_type}
+        if not served:
+            problems.append(f"{family}: no rows served")
+            continue
+        extra = sorted(served - expected)
+        missing = sorted(expected - served)
+        if extra:
+            problems.append(f"{family}: served but not modelled {extra}")
+        if missing:
+            problems.append(f"{family}: modelled but not served {missing}")
+    if not view.report_rows:
+        problems.append("reports: no presets served")
+    if problems:
+        return CustomizationStatus.DRIFT, "; ".join(problems)
+    return (
+        CustomizationStatus.MATCH,
+        "served audio / video / slide-deck codes and labels match the client enums",
+    )
 
 
 async def make_raw_rpc_request(
@@ -1049,12 +1123,9 @@ async def make_raw_rpc_request(
 ) -> tuple[str | None, str | None]:
     """Issue a batchexecute call by *raw* rpc id (for methods not in ``RPCMethod``).
 
-    The cohort tripwire probes ``sqTeoe``, which has no ``RPCMethod`` member (it
-    is gated for our cohort), so it cannot go through ``make_rpc_request``. This
-    mirrors that function's wire assembly but threads the id straight into both
-    the ``rpcids=`` query param and ``encode_rpc_request``'s ``rpc_id_override``
-    (the two MUST stay in sync). It calls the executor directly — there is no
-    idempotency registry in this script, so no retries to disable.
+    Used by the rebrand-host lane and by ad-hoc probes of ids that have no
+    ``RPCMethod`` member yet (see #2283); ``make_rpc_request`` covers the
+    modelled methods.
     """
     query_params = {
         "rpcids": rpc_id,
@@ -1083,54 +1154,42 @@ async def make_raw_rpc_request(
         return None, scrub_secrets(str(e) or type(e).__name__)
 
 
-async def check_customization_cohort(
+async def check_customization_table(
     client: httpx.AsyncClient,
     auth: AuthTokens,
     notebook_id: str | None,
-) -> tuple[CohortStatus, str]:
-    """Probe ``sqTeoe`` to detect a studio-customization cohort flip.
+) -> tuple[CustomizationStatus, str]:
+    """Probe ``GET_CUSTOMIZATION_CHOICES`` and cross-check the served enums.
 
-    ``GetArtifactCustomizationChoices`` returns ``null`` for our gated consumer
-    cohort. We decode with ``allow_null=True`` so a genuine null payload is
-    ``GATED`` (the steady state, not a failure) — but the *absent-id* drift guard
-    inside ``decode_response`` still fires if the id stopped being echoed (that
-    surfaces as a parse error here and is reported as ``UNKNOWN``, not silently
-    swallowed). A non-null payload means our account was migrated to the new
-    customization surface (``MIGRATED`` — re-capture VideoStyle codes).
+    The table is account-level (the server ignores the notebook id), so the
+    probe runs with or without a notebook. ``UNKNOWN`` is drawn for any
+    transport / parse failure so a transient flake never alarms; a decoded
+    table is compared by :func:`compare_customization_choices`.
 
-    Returns ``(status, detail)``. ``UNKNOWN`` is drawn for any transport/parse
-    failure so the tripwire never alarms on a transient flake; only a clean,
-    decoded non-null result is ``MIGRATED``.
+    ``RPCError`` (including ``UnknownRPCMethodError`` from the absent-id drift
+    guard) must propagate so an id rotation / protocol break surfaces LOUDLY
+    rather than degrading to a quiet ``UNKNOWN``; ``allow_null=False`` likewise
+    turns a status-bearing null into that error instead of an empty table.
     """
-    if not notebook_id:
-        return CohortStatus.UNKNOWN, "No notebook ID provided (cohort tripwire needs one)"
-
-    response_text, error = await make_raw_rpc_request(
+    response_text, error = await make_rpc_request(
         client,
         auth,
-        _CUSTOMIZATION_CHOICES_RPC_ID,
+        RPCMethod.GET_CUSTOMIZATION_CHOICES,
         build_customization_choices_params(notebook_id),
-        source_path=f"/notebook/{notebook_id}",
+        source_path=f"/notebook/{notebook_id}" if notebook_id else "/",
     )
     if error is not None:
-        return CohortStatus.UNKNOWN, error
+        return CustomizationStatus.UNKNOWN, error
     if response_text is None:
-        return CohortStatus.UNKNOWN, "Empty response from server"
+        return CustomizationStatus.UNKNOWN, "Empty response from server"
 
-    # RPCError (incl. UnknownRPCMethodError from the absent-id drift guard) must
-    # propagate so the tripwire LOUDLY surfaces an id rotation / protocol break
-    # rather than degrading it to a quiet UNKNOWN. Bare ValueError likewise
-    # propagates — it signals a code bug (e.g. an invalid int() conversion), not
-    # API shape drift. Only a genuinely unreadable/malformed JSON root is caught
-    # and reported as UNKNOWN here.
     try:
-        data = decode_response(response_text, _CUSTOMIZATION_CHOICES_RPC_ID, allow_null=True)
+        data = decode_response(
+            response_text, RPCMethod.GET_CUSTOMIZATION_CHOICES.value, allow_null=False
+        )
     except (json.JSONDecodeError, TypeError) as e:
-        return CohortStatus.UNKNOWN, f"Parse error: {scrub_secrets(e)}"
-
-    if data is None:
-        return CohortStatus.GATED, "null (gated — expected steady state)"
-    return CohortStatus.MIGRATED, "non-null payload (cohort migrated)"
+        return CustomizationStatus.UNKNOWN, f"Parse error: {scrub_secrets(e)}"
+    return compare_customization_choices(data)
 
 
 # ---------------------------------------------------------------------------
@@ -2038,13 +2097,13 @@ async def run_health_check(
     rebrand_state_path: Path | None = None,
     rebrand_previous_state_path: Path | None = None,
     rebrand_run_id: str | None = None,
-) -> tuple[list[CheckResult], CohortStatus, dict[str, Any], BuildLabelProbe]:
+) -> tuple[list[CheckResult], CustomizationStatus, dict[str, Any], BuildLabelProbe]:
     """Run health check on all RPC methods.
 
-    Returns ``(results, cohort_status, rebrand_state, build_label)``: the
-    per-method ``CheckResult`` list, the ``sqTeoe`` studio-customization cohort
+    Returns ``(results, customization_status, rebrand_state, build_label)``: the
+    per-method ``CheckResult`` list, the ``sqTeoe`` studio option-table cross-check
     tripwire verdict (reported and exit-coded separately from RPC drift; see
-    :class:`CohortStatus`), the rebrand-host lane's state document (reported
+    :class:`CustomizationStatus`), the rebrand-host lane's state document (reported
     separately and NEVER exit-coded; see :func:`probe_rebrand_host`), and the
     pinned-vs-served build-label verdict (its own exit code; see
     :func:`check_build_label`).
@@ -2069,7 +2128,7 @@ async def run_health_check(
 
     results: list[CheckResult] = []
     temp_resources = TempResources()
-    cohort_status = CohortStatus.UNKNOWN
+    customization_status = CustomizationStatus.UNKNOWN
     # A no-observation verdict, so an early failure yields a well-formed lane that
     # alarms about nothing rather than a missing attribute in the summary.
     build_label = classify_build_label(None, "lane did not run")
@@ -2136,16 +2195,16 @@ async def run_health_check(
                 chat_line += f" - {scrub_secrets(chat_result.error)}"
             print(chat_line)
 
-            # Studio-customization cohort tripwire. Distinct from the RPC-drift
-            # probes: GATED-null is the expected steady state (NOT a failure),
-            # MIGRATED is a loud signal that the customization surface flipped and
-            # the VideoStyle/format codes must be re-captured.
-            cohort_status, cohort_detail = await check_customization_cohort(
+            # Studio option-table cross-check. Distinct from the RPC-drift probes
+            # (the id echo is already covered by the regular GET_CUSTOMIZATION_CHOICES
+            # row): MATCH is the steady state, DRIFT is the loud signal that the
+            # served format codes / labels no longer agree with the client enums.
+            customization_status, customization_detail = await check_customization_table(
                 client, auth, notebook_id
             )
             print(
-                "COHORT   sqTeoe customization choices: "
-                f"{cohort_status.value} - {scrub_secrets(cohort_detail)}"
+                "CUSTOMIZATION sqTeoe option tables: "
+                f"{customization_status.value} - {scrub_secrets(customization_detail)}"
             )
 
             # Build-label lane. One plain GET of the app shell, scored against
@@ -2178,7 +2237,7 @@ async def run_health_check(
                 print("Testing DELETE operations during cleanup...")
                 await cleanup_temp_resources(client, auth, temp_resources, results)
 
-    return results, cohort_status, rebrand_state, build_label
+    return results, customization_status, rebrand_state, build_label
 
 
 # Substrings that mark an ERROR as a transient signal. Keep this list
@@ -2248,7 +2307,7 @@ def partition_errors(
 def compute_exit_code(
     counts: Counter[CheckStatus],
     non_transient_errors: list[CheckResult],
-    cohort_status: CohortStatus = CohortStatus.UNKNOWN,
+    customization_status: CustomizationStatus = CustomizationStatus.UNKNOWN,
     build_label_status: BuildLabelStatus = BuildLabelStatus.UNKNOWN,
 ) -> int:
     """Compute the script exit code from result counts.
@@ -2257,12 +2316,12 @@ def compute_exit_code(
         1. MISMATCH  -> 1
         2. AUTH      -> 2 (signaled by the caller via sys.exit, never reached here)
         3. non-transient ERROR -> 3
-        4. cohort MIGRATED -> 4 (sqTeoe tripwire flipped; loud but not RPC drift)
+        4. customization DRIFT -> 4 (served studio option codes disagree with the client enums)
         5. build label STALE -> 5 (DEFAULT_BL left unattended; hygiene, not an outage)
         6. OK        -> 0
 
-    The cohort flip sits *below* the RPC-drift codes so a run that has both real
-    drift AND a cohort flip still surfaces the higher-severity drift exit; the
+    The option-table drift sits *below* the RPC-drift codes so a run that has both
+    real drift AND an enum drift still surfaces the higher-severity drift exit; the
     flip is reported in the summary either way. A stale build label sits lower
     still: it is a maintenance signal about a constant the server does not even
     validate today (#2073), so it must never mask a live breakage.
@@ -2277,7 +2336,7 @@ def compute_exit_code(
         return 1
     if non_transient_errors:
         return 3
-    if cohort_status == CohortStatus.MIGRATED:
+    if customization_status == CustomizationStatus.DRIFT:
         return 4
     if build_label_status == BuildLabelStatus.STALE:
         return 5
@@ -2286,7 +2345,7 @@ def compute_exit_code(
 
 def print_summary(
     results: list[CheckResult],
-    cohort_status: CohortStatus = CohortStatus.UNKNOWN,
+    customization_status: CustomizationStatus = CustomizationStatus.UNKNOWN,
     rebrand_state: dict[str, Any] | None = None,
     build_label: BuildLabelProbe | None = None,
 ) -> int:
@@ -2347,9 +2406,9 @@ def print_summary(
             print(f"  [transient]     {r.method.name} ({r.expected_id}): {scrub_secrets(r.error)}")
         print()
 
-    # Cohort tripwire line. GATED-null is the expected steady state (a PASS, not
-    # a failure); MIGRATED is the loud flip the canary exists to surface.
-    print(f"COHORT:   sqTeoe customization choices = {cohort_status.value}")
+    # Option-table cross-check line. MATCH is the steady state (a PASS); DRIFT is
+    # the loud enum-recapture signal the canary exists to surface.
+    print(f"CUSTOMIZATION: sqTeoe option tables = {customization_status.value}")
 
     # Rebrand-host lane summary. Informational only — it is printed after the
     # exit-coded buckets and read by none of them. ``upload`` is always
@@ -2374,10 +2433,12 @@ def print_summary(
         )
 
     # Return exit code.
-    # Priority: MISMATCH (1) > non-transient ERROR (3) > cohort MIGRATED (4)
+    # Priority: MISMATCH (1) > non-transient ERROR (3) > customization DRIFT (4)
     # > build label STALE (5) > OK (0).
     # AUTH (2) is signaled earlier via sys.exit(2) and never reaches here.
-    exit_code = compute_exit_code(counts, non_transient_errors, cohort_status, build_label_status)
+    exit_code = compute_exit_code(
+        counts, non_transient_errors, customization_status, build_label_status
+    )
 
     if exit_code == 1:
         print("RESULT: FAIL - RPC ID mismatches detected")
@@ -2388,8 +2449,12 @@ def print_summary(
         print("       These are real failures (not rate-limit transients).")
         return 3
     if exit_code == 4:
-        print("RESULT: COHORT FLIP - sqTeoe returned non-null (studio customization migrated)")
-        print("       Re-capture VideoStyle / format codes in src/notebooklm/rpc/types.py.")
+        print(
+            "RESULT: CUSTOMIZATION DRIFT - served studio format codes/labels differ from the client"
+        )
+        print(
+            "       Re-capture AudioFormat / VideoFormat / SlideDeckFormat in src/notebooklm/_types/enums.py."
+        )
         return 4
     if exit_code == 5:
         detail = build_label.detail if build_label else ""
@@ -2517,7 +2582,7 @@ def main() -> int:
     print("=" * 60)
     print()
 
-    results, cohort_status, rebrand_state, build_label = asyncio.run(
+    results, customization_status, rebrand_state, build_label = asyncio.run(
         run_health_check(
             full_mode=args.full,
             base_url_source=source,
@@ -2526,7 +2591,7 @@ def main() -> int:
             rebrand_run_id=args.rebrand_run_id,
         )
     )
-    return print_summary(results, cohort_status, rebrand_state, build_label)
+    return print_summary(results, customization_status, rebrand_state, build_label)
 
 
 if __name__ == "__main__":

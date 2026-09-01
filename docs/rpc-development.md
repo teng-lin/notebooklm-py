@@ -553,7 +553,7 @@ serves, and scores the pin against it:
 - **The verdict compares label dates, never the wall clock**, so it depends only
   on what was served — a delayed or replayed run cannot age into an alarm.
 - **Exit 5 sits below every live-breakage code** (mismatch, auth, non-transient
-  error, cohort flip). A stale pin is maintenance, and it must never mask an
+  error, customization-table drift). A stale pin is maintenance, and it must never mask an
   outage.
 - **Redirects are followed by hand**, at most two hops, and only to an `https`
   personal app host at the site root — the lane never carries the session jar

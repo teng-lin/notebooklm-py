@@ -195,7 +195,7 @@ Status vocabulary below:
 | DiscoverSources | no exact sync caller; web API exposes the async Research family |
 | GenerateAccessToken | no public API |
 | GenerateFreeFormStreamed | implemented through the separate streamed query endpoint, not `RPCMethod` |
-| GetArtifactCustomizationChoices | no public API |
+| GetArtifactCustomizationChoices | `sqTeoe` (GET_CUSTOMIZATION_CHOICES) — `artifacts.get_customization_choices()` on both backends; see [copy-append-suggestion-evidence.md](copy-append-suggestion-evidence.md#getartifactcustomizationchoices) |
 | GetArtifactUserState | no standalone public API |
 | UpsertArtifactUserState | no standalone public API |
 | GetDriveSourceStatus | no exact caller; source freshness uses `CheckSourceFreshness` |

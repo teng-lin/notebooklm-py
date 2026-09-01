@@ -736,3 +736,21 @@ class SourceFulltext:
             if block.text and cited_text.startswith(block.text):
                 return len(block.text)
         return len(cited_text)
+
+
+@dataclass(frozen=True)
+class CopiedSource:
+    """One ``CopySourcesAsync`` outcome: an original source id and its new copy.
+
+    Returned by :meth:`SourcesAPI.copy`. The backend answers with a mapping
+    from each requested source id to the freshly created :class:`Source` row in
+    the target notebook, so callers can correlate copies with their originals
+    without a follow-up listing.
+
+    Attributes:
+        original_id: The id of the source that was copied.
+        source: The new source row in the target notebook.
+    """
+
+    original_id: str
+    source: Source

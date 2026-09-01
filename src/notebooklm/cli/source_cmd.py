@@ -70,6 +70,7 @@ from .auth_runtime import resolve_client_factory, with_client
 from .error_handler import _output_error, exit_with_code, output_error
 from .input import read_stdin_text, resolve_prompt
 from .options import (
+    _complete_sources,
     json_option,
     list_options,
     notebook_option,
@@ -133,6 +134,9 @@ def source():
       delete-by-title  Delete a source by exact title
       rename           Rename a source
       refresh          Refresh a URL/Drive source
+      add-async        Queue URL sources without waiting for ingest (AddSourcesAsync)
+      append           Append a text block to an existing source in place
+      copy             Copy sources into another notebook
 
     Partial ID Support: SOURCE_ID arguments support partial-prefix matching
     (e.g. 'abc' matches 'abc123def456...').
@@ -1023,3 +1027,167 @@ def _dispatch_source_clean_result(
         f"[green]Successfully cleaned {result.deleted_count} source(s).[/green]",
         ctx=ctx,
     )
+
+
+# ---------------------------------------------------------------------------
+# #2283 transfer family: AddSourcesAsync / AppendSource / CopySourcesAsync
+# ---------------------------------------------------------------------------
+
+
+def _source_summary(source: Source) -> dict[str, Any]:
+    return {
+        "id": source.id,
+        "title": source.title,
+        "type": source.kind.value,
+        "status": source.status.value,
+    }
+
+
+@source.command("add-async")
+@click.argument("urls", nargs=-1, required=True)
+@notebook_option
+@json_option
+@with_client
+def source_add_async(ctx, urls, notebook_id, json_output, client_auth):
+    """Queue one or more URL sources without waiting for ingest.
+
+    Sends a single non-blocking ``AddSourcesAsync`` call and prints the queued
+    source ids immediately (status is still processing). Use ``source wait``
+    or ``source list`` to see them become ready. YouTube URLs are detected
+    automatically. Unlike ``source add`` this never retries a lost response —
+    reconcile against ``source list`` if the command reports an unconfirmed
+    write.
+
+    \b
+    Example:
+      notebooklm source add-async https://example.com https://youtu.be/abc
+      notebooklm source add-async https://example.com --json
+    """
+    nb_id = require_notebook(notebook_id)
+
+    async def _run():
+        async with resolve_client_factory(ctx)(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            sources = await client.sources.add_urls_async(nb_id_resolved, list(urls))
+            if json_output:
+                json_output_response(
+                    {
+                        "notebook_id": nb_id_resolved,
+                        "sources": [_source_summary(s) for s in sources],
+                        "count": len(sources),
+                    }
+                )
+                return
+            cli_print(f"[green]Queued {len(sources)} source(s):[/green]", ctx=ctx)
+            for src in sources:
+                cli_print(f"  {src.id}  {src.title}", ctx=ctx)
+
+    return _run()
+
+
+@source.command("append")
+@click.argument("source_id", shell_complete=_complete_sources)
+@click.argument("text")
+@click.option(
+    "--header",
+    default="",
+    help="Optional block header (accepted by the backend; not shown in fulltext)",
+)
+@notebook_option
+@json_option
+@with_client
+def source_append(ctx, source_id, text, header, notebook_id, json_output, client_auth):
+    """Append a plain-text block to an existing source in place.
+
+    TEXT is appended at the very end of the source's fulltext (``AppendSource``).
+    Pass ``-`` as TEXT to read it from stdin. SOURCE_ID can be a full id or a
+    unique prefix.
+
+    \b
+    Example:
+      notebooklm source append src123 "Addendum: see section 4."
+      cat notes.txt | notebooklm source append src123 -
+    """
+    nb_id = require_notebook(notebook_id)
+    body = read_stdin_text(source_label="text") if text == "-" else text
+    if not body:
+        raise ValidationError("text must not be empty")
+
+    async def _run():
+        async with resolve_client_factory(ctx)(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            resolved_id = await resolve_source_id(
+                client, nb_id_resolved, source_id, json_output=json_output
+            )
+            await client.sources.append_text(nb_id_resolved, resolved_id, body, header=header)
+            if json_output:
+                json_output_response(
+                    {
+                        "notebook_id": nb_id_resolved,
+                        "source_id": resolved_id,
+                        "appended": True,
+                        "characters": len(body),
+                    }
+                )
+                return
+            cli_print(
+                f"[green]Appended {len(body)} characters to source:[/green] {resolved_id}", ctx=ctx
+            )
+
+    return _run()
+
+
+@source.command("copy")
+@click.argument("source_ids", nargs=-1, required=True, shell_complete=_complete_sources)
+@click.option("--to", "target", required=True, help="Target notebook id (or unique prefix)")
+@notebook_option
+@json_option
+@with_client
+def source_copy(ctx, source_ids, target, notebook_id, json_output, client_auth):
+    """Copy sources into another notebook (``CopySourcesAsync``).
+
+    Prints each original id alongside its new copy in the target notebook.
+    SOURCE_IDS may be full ids or unique prefixes within the current notebook.
+
+    \b
+    Example:
+      notebooklm source copy src1 src2 --to 1a2b3c4d
+      notebooklm source copy src1 --to 1a2b3c4d --json
+    """
+    nb_id = require_notebook(notebook_id)
+
+    async def _run():
+        async with resolve_client_factory(ctx)(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            target_resolved = await resolve_notebook_id(client, target, json_output=json_output)
+            resolved_ids = [
+                await resolve_source_id(client, nb_id_resolved, sid, json_output=json_output)
+                for sid in source_ids
+            ]
+            copied = await client.sources.copy(nb_id_resolved, resolved_ids, target_resolved)
+            if json_output:
+                json_output_response(
+                    {
+                        "notebook_id": nb_id_resolved,
+                        "target_notebook_id": target_resolved,
+                        "copied": [
+                            {
+                                "original_id": item.original_id,
+                                "source": _source_summary(item.source),
+                            }
+                            for item in copied
+                        ],
+                        "count": len(copied),
+                        "requested": len(resolved_ids),
+                    }
+                )
+                return
+            cli_print(
+                f"[green]Copied {len(copied)} of {len(resolved_ids)} source(s) to[/green] "
+                f"{target_resolved}",
+                ctx=ctx,
+            )
+            for item in copied:
+                cli_print(f"  {item.original_id} -> {item.source.id}  {item.source.title}", ctx=ctx)
+
+    return _run()

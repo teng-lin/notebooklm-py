@@ -202,6 +202,7 @@ def test_android_selected_public_callable_inventory_is_exact() -> None:
             "rename",
             "set_emoji",
             "suggest_prompts",
+            "suggest_next_steps",
             "update",
         },
         "sources": {
@@ -210,6 +211,9 @@ def test_android_selected_public_callable_inventory_is_exact() -> None:
             "add_file",
             "add_text",
             "add_url",
+            "add_urls_async",
+            "append_text",
+            "copy",
             "check_freshness",
             "delete",
             "get",
@@ -266,6 +270,8 @@ def test_android_selected_public_callable_inventory_is_exact() -> None:
             "retry_failed",
             "revise_slide",
             "suggest_reports",
+            "copy",
+            "get_customization_choices",
             "wait_for_completion",
         },
         "chat": {
@@ -366,7 +372,7 @@ def test_android_selected_public_callable_inventory_is_exact() -> None:
     }
 
     assert observed_names == expected_names
-    assert sum(map(len, observed_names.values())) == 145
+    assert sum(map(len, observed_names.values())) == 151
 
 
 @pytest.mark.parametrize("backend", [None, "web"])

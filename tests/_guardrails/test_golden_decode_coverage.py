@@ -91,6 +91,7 @@ _COMPREHENSIVE = "tests/integration/test_vcr_comprehensive.py"
 _GAP_BACKFILL = "tests/integration/test_rpc_gap_backfill_vcr.py"
 _SUGGEST_PROMPTS_VCR = "tests/integration/test_notebooks_suggest_prompts_vcr.py"
 _COPY_NOTEBOOK_VCR = "tests/integration/test_notebook_copy_vcr.py"
+_TRANSFER_VCR = "tests/integration/test_transfer_rpcs_vcr.py"
 
 GoldenPointer = tuple[str, str]
 
@@ -211,6 +212,22 @@ GOLDEN_COVERAGE: dict[RPCMethod, tuple[GoldenPointer, ...]] = {
     RPCMethod.SUGGEST_PROMPTS: (
         (_SUGGEST_PROMPTS_VCR, "TestSuggestPromptsVCR::test_suggest_prompts_decoded_golden"),
     ),
+    # --- #2283 transfer / suggestion family (live-recorded) ---
+    RPCMethod.SUGGEST_NEXT_STEPS: (
+        (_TRANSFER_VCR, "test_live_suggest_next_steps_returns_grounded_questions"),
+    ),
+    RPCMethod.GET_CUSTOMIZATION_CHOICES: (
+        (_TRANSFER_VCR, "test_live_customization_choices_decode_all_four_families"),
+    ),
+    RPCMethod.ADD_SOURCES_ASYNC: (
+        (_TRANSFER_VCR, "test_live_transfer_lifecycle_on_a_scratch_notebook"),
+    ),
+    RPCMethod.COPY_SOURCES: (
+        (_TRANSFER_VCR, "test_live_transfer_lifecycle_on_a_scratch_notebook"),
+    ),
+    RPCMethod.COPY_ARTIFACTS: (
+        (_TRANSFER_VCR, "test_live_transfer_lifecycle_on_a_scratch_notebook"),
+    ),
     RPCMethod.EXPORT_ARTIFACT: (
         (_GOLDEN_EXPANSION, "TestArtifactsWriteGoldenDecoded::test_export_report_decoded_golden"),
     ),
@@ -254,6 +271,8 @@ GOLDEN_EXEMPT: dict[RPCMethod, str] = {
     RPCMethod.CANCEL_RESEARCH: _REASON_NONE_CONTRACT,
     # ``sources.refresh`` returns None on success (v0.8.0, #1290).
     RPCMethod.REFRESH_SOURCE: _REASON_NONE_CONTRACT,
+    # ``sources.append_text`` returns None: AppendSource answers with an empty body (#2283).
+    RPCMethod.APPEND_SOURCE: _REASON_NONE_CONTRACT,
     # ``notes.update`` returns None (the UPDATE_NOTE echo is not decoded).
     RPCMethod.UPDATE_NOTE: _REASON_NONE_CONTRACT,
     # Rename/share/update writes whose returned object is re-fetched through a

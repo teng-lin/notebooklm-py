@@ -93,4 +93,15 @@ service LabsTailwindOrchestrationService {
   rpc CreateLabel(CreateLabelRequest) returns (CreateLabelResponse);
   rpc MutateLabel(MutateLabelRequest) returns (MutateLabelResponse);
   rpc DeleteLabels(DeleteLabelsRequest) returns (DeleteLabelsResponse);
+
+  // #2283 transfer / suggestion family (live-validated over Android gRPC,
+  // 2026-09-01; see docs/android/copy-append-suggestion-evidence.md).
+  rpc AddSourcesAsync(AddSourcesRequest) returns (AddSourcesAsyncResponse);
+  rpc AppendSource(AppendSourceRequest) returns (google.protobuf.Empty);
+  rpc CopySourcesAsync(CopySourcesAsyncRequest) returns (CopySourcesAsyncResponse);
+  rpc CopyArtifactsAsync(CopyArtifactsAsyncRequest) returns (CopyArtifactsAsyncResponse);
+  rpc NextStepSuggestions(NextStepSuggestionsRequest)
+      returns (.google.internal.labs.tailwind.orchestration.v1.NextStepSuggestions);
+  rpc GetArtifactCustomizationChoices(GetArtifactCustomizationChoicesRequest)
+      returns (GetArtifactCustomizationChoicesResponse);
 }

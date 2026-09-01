@@ -1,0 +1,167 @@
+{
+  "method_name": "GET_CUSTOMIZATION_CHOICES",
+  "method_id": "sqTeoe",
+  "description": "The Studio Customize option tables (GetArtifactCustomizationChoices): audio / video / slide-deck format rows [code, title, description] and report presets [type, description, directive]. Account-level - the server ignores the notebook id on both front doors (#2283).",
+  "request": {
+    "params": [
+      [
+        2,
+        null,
+        null,
+        [
+          1,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          [
+            1
+          ]
+        ]
+      ],
+      "SCRUBBED_NB_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "sqTeoe",
+          "[[2,null,null,[1,null,null,null,null,null,null,null,null,null,[1]]],\"SCRUBBED_NB_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "sqTeoe",
+          "[[[[[1,\"Deep Dive\",\"A lively conversation between two hosts\"],[2,\"Brief\",\"A bite-sized overview\"]]],[[[1,\"Explainer\",\"A structured, comprehensive overview\"],[4,\"Short\",\"A bite-sized overview\"]]],[[[1,\"Detailed Deck\",\"A comprehensive deck with full text\"],[2,\"Presenter Slides\",\"Clean, visual slides\"]]],[[[\"Briefing Doc\",\"Key insights and important quotes\",\"Create a comprehensive briefing document.\"],[\"Study Guide\",\"Quiz with answer key plus glossary\",\"Create a detailed study guide.\"]]]]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": [
+      [
+        [
+          [
+            [
+              1,
+              "Deep Dive",
+              "A lively conversation between two hosts"
+            ],
+            [
+              2,
+              "Brief",
+              "A bite-sized overview"
+            ]
+          ]
+        ],
+        [
+          [
+            [
+              1,
+              "Explainer",
+              "A structured, comprehensive overview"
+            ],
+            [
+              4,
+              "Short",
+              "A bite-sized overview"
+            ]
+          ]
+        ],
+        [
+          [
+            [
+              1,
+              "Detailed Deck",
+              "A comprehensive deck with full text"
+            ],
+            [
+              2,
+              "Presenter Slides",
+              "Clean, visual slides"
+            ]
+          ]
+        ],
+        [
+          [
+            [
+              "Briefing Doc",
+              "Key insights and important quotes",
+              "Create a comprehensive briefing document."
+            ],
+            [
+              "Study Guide",
+              "Quiz with answer key plus glossary",
+              "Create a detailed study guide."
+            ]
+          ]
+        ]
+      ]
+    ]
+  },
+  "mapper": "tests.unit._golden_mappers:get_customization_choices",
+  "mapper_expected": {
+    "audio": [
+      {
+        "code": 1,
+        "title": "Deep Dive",
+        "description": "A lively conversation between two hosts"
+      },
+      {
+        "code": 2,
+        "title": "Brief",
+        "description": "A bite-sized overview"
+      }
+    ],
+    "video": [
+      {
+        "code": 1,
+        "title": "Explainer",
+        "description": "A structured, comprehensive overview"
+      },
+      {
+        "code": 4,
+        "title": "Short",
+        "description": "A bite-sized overview"
+      }
+    ],
+    "slide_deck": [
+      {
+        "code": 1,
+        "title": "Detailed Deck",
+        "description": "A comprehensive deck with full text"
+      },
+      {
+        "code": 2,
+        "title": "Presenter Slides",
+        "description": "Clean, visual slides"
+      }
+    ],
+    "reports": [
+      {
+        "report_type": "Briefing Doc",
+        "description": "Key insights and important quotes",
+        "directive": "Create a comprehensive briefing document."
+      },
+      {
+        "report_type": "Study Guide",
+        "description": "Quiz with answer key plus glossary",
+        "directive": "Create a detailed study guide."
+      }
+    ]
+  }
+}

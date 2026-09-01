@@ -48,6 +48,7 @@ consolidated document rather than encoded in filenames.
 | [`public-api-audit.md`](public-api-audit.md) | current implementation/rejection decisions across Android adapters |
 | [`file-transfer-evidence.md`](file-transfer-evidence.md) | Scotty upload and artifact-download protocol with interception details |
 | [`deep-research-evidence.md`](deep-research-evidence.md) | Deep Research wire contract, lifecycle, reproducer, and interception |
+| [`copy-append-suggestion-evidence.md`](copy-append-suggestion-evidence.md) | live Android gRPC evidence for the #2283 family: `AddSourcesAsync`, `AppendSource`, `CopySourcesAsync`, `CopyArtifactsAsync`, `NextStepSuggestions`, `GetArtifactCustomizationChoices` |
 | [`auth-research.md`](auth-research.md) | Android OAuth identity, scopes, and bearer validation |
 | [`blutter-grpc-signature-evidence.md`](blutter-grpc-signature-evidence.md) | exact generated-client bindings for formerly unresolved response FQNs |
 

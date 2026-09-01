@@ -106,12 +106,12 @@ fixtures. Hashes prevent a later local checkout from silently changing what was 
 | [`grpc-capability-and-signature-evidence.md`](grpc-capability-and-signature-evidence.md) | `cd43b24f84e77000787306797d4dab26fbf11b68c51d0111d478c5bc9594a271` | consolidated signed-APK inventory, current authenticated Web-bundle signature inference, and mobile-backend route/semantic evidence; preserves the original report hashes and their distinct evidence boundaries |
 | [`latest_apk_grpc_paths.txt`](../../tests/fixtures/android/latest_apk_grpc_paths.txt) | `b5df4996f271e71ccc14e0ae0f8eaa13e1e337b4bc726b54a487a0c4f6d31697` | complete 53-path `1.55.10` generated-client inventory, including the path-only unresolved `UpsertArtifactUserState` entry |
 | [`latest_apk_grpc_signatures.csv`](../../tests/fixtures/android/latest_apk_grpc_signatures.csv) | `6381163929c18d51eb654bc677846061ea65e9d501b9beb9db3952b749b32b7c` | 52 exact `1.55.10` generated-client bindings with request/response FQNs and object-pool offsets |
-| [`external_method_manifest.csv`](../../tests/fixtures/android/external_method_manifest.csv) | `364dd70ac0e4e101047e570133a44cc007b384aa9a5063187abfd5d04ade1f57` | version-scoped `1.46.7` binary inventory plus independently live/web-proven signatures used by the implemented-adapter admission gate |
-| [`public-api-audit.md`](public-api-audit.md) | `77d68255eb6cf98d6d9d118dca37a350673def13801df3befe79fc0227b7159e` | complete public-adapter rejection inventory, current web/APK mapping, and disposable-copy Android-bearer validation for the newly admitted operations |
+| [`external_method_manifest.csv`](../../tests/fixtures/android/external_method_manifest.csv) | `46d15ebbae2567a66a88cd9785bcfe944ab6de077ec1c0ab53294c28e768526d` | version-scoped `1.46.7` binary inventory plus independently live/web-proven signatures used by the implemented-adapter admission gate |
+| [`public-api-audit.md`](public-api-audit.md) | `53325b48e7b0b112b0ac9c01119041e66a2f4b3139ec259ef1f4785592fe1f2f` | complete public-adapter rejection inventory, current web/APK mapping, and disposable-copy Android-bearer validation for the newly admitted operations |
 | [`artifact-contracts-and-live-validation.md`](artifact-contracts-and-live-validation.md) | `58af0bbeebdfa6a6a7366577d90a5479bdf971a1ed76fe3d6d7d0b8420f8454d` | consolidated artifact generation, representation, data-table, retry/export, mind-map, and transfer evidence; preserves all four source-report hashes and cleanup qualifications |
 | [`file-transfer-evidence.md`](file-transfer-evidence.md) | `f09a518c398f7355f7ab55c69d6e990037c806a9cc3e3f1291de5efd4971a6a5` | official-app/headless PDF upload request, qualified CSV/DOCX compatibility boundary, and live artifact representation/direct infographic/slide transfer |
-| [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md) | `7e21ddb46ff851b9ae27c38c7ce6d18cfc6e4589f3730fe30160ef8f7dfcf585` | consolidated notebook copy/metadata, note/mind-map, label/collection, membership, cleanup, and public-qualification evidence; preserves all four source-report hashes |
-| [`endpoints.md`](endpoints.md) | `e1dbbd0b98f6a65bb7a76ce3597282b15d4c884987f806b0744cf17ecbfb4248` | live request/response envelopes, route results, version-scoped APK inventories, captured note/sharing bytes, and the account-bootstrap replay boundary |
+| [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md) | `f505fed8baa5e5976748fddb0a464a125235c18e199ee35f5ae85d30c9eb648c` | consolidated notebook copy/metadata, note/mind-map, label/collection, membership, cleanup, and public-qualification evidence; preserves all four source-report hashes |
+| [`endpoints.md`](endpoints.md) | `1fb974a59cf29a530d35a56231b5d5b497b56399c1f695735828f051b6efb0b2` | live request/response envelopes, route results, version-scoped APK inventories, captured note/sharing bytes, and the account-bootstrap replay boundary |
 
 The recovery method and the warning about duplicate packages are committed in
 [`README.md`](README.md#caveats-that-will-bite-you). Live request/response shapes are documented in
@@ -463,7 +463,7 @@ retain their established builders.
 
 The compile inputs are
 [`chat.proto`](../../src/notebooklm/_android/proto_src/google/internal/labs/tailwind/orchestration/v1/chat.proto)
-(SHA-256 `f232bf0d5fdc7dcf770147e8f819435a0bc743046973ed83277a7cd37dff79ac`) and
+(SHA-256 `fa5f7cd9a72d04aceea0aab2d3282a63762bb5a1324fac3756175062ecb7e07d`) and
 [`common.proto`](../../src/notebooklm/_android/proto_src/labs/language/tailwind/common/protos/common.proto)
 (SHA-256 `7d064bf11e3f01465e485004e6dbba078ae9b92f02be53ac2a8a4ac6a420af75`).
 The exact agency value closure is imported from

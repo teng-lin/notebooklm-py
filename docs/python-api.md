@@ -1210,6 +1210,7 @@ async with NotebookLMClient.from_storage(rate_limit_max_retries=0) as client:
 | `get_metadata(notebook_id)` | `notebook_id: str` | `NotebookMetadata` | Get notebook metadata and sources |
 | `get_summary(notebook_id)` | `notebook_id: str` | `str` | Get raw summary text |
 | `get_share_url(notebook_id, artifact_id=None)` | `notebook_id: str, str \| None` | `str` | Get a share URL |
+| `suggest_next_steps(notebook_id, *, source_ids=None)` | `str, list[str] \| None` | `list[NextStepSuggestion]` | Grounded follow-up **questions** for the notebook (`NextStepSuggestions`) — the block a chat answer carries as `AskResult.next_steps`, without needing a prior conversation. `source_ids=None` lets the server use all sources (no `GET_NOTEBOOK` round-trip). Distinct from `suggest_prompts`, which returns `(title, prompt)` steering pairs. |
 | `remove_from_recent(notebook_id)` | `notebook_id: str` | `None` | Remove from recently viewed |
 | `get_raw(notebook_id)` | `notebook_id: str` | `Any` | Get raw API response data |
 
@@ -1273,6 +1274,9 @@ print(url)
 | `check_freshness(notebook_id, source_id)` | `str, str` | `bool` | Check if source needs refresh |
 | `delete(notebook_id, source_id)` | `str, str` | `None` | Delete source (idempotent; returns `None` whether or not it existed) |
 | `wait_until_ready(notebook_id, source_id, timeout=120.0, ...)` | `str, str, float, ...` | `Source` | Poll until `status == READY` (fully processed). Raises `SourceTimeoutError`/`SourceProcessingError`/`SourceNotFoundError` — see [Processing failures vs. timeouts](#processing-failures-vs-timeouts). |
+| `add_urls_async(notebook_id, urls)` | `str, list[str]` | `list[Source]` | Queue URL sources with one non-blocking `AddSourcesAsync` call and return the queued stub rows (id, url, type; status still processing). Never replayed on a transport failure — the error is marked unconfirmed for the caller to reconcile against `list()`. |
+| `append_text(notebook_id, source_id, text, *, header="")` | `str, str, str, *, str` | `None` | Append a plain-text block to an existing source in place (`AppendSource`). `text` lands at the very end of the fulltext; `header` is accepted but not shown in the fulltext. |
+| `copy(notebook_id, source_ids, target_notebook_id)` | `str, list[str], str` | `list[CopiedSource]` | Copy sources into another notebook (`CopySourcesAsync`); each result pairs `original_id` with the new `source` row. Raises `SourceNotFoundError` when nothing was copied; a partial result is returned with a warning. |
 | `wait_until_registered(notebook_id, source_id, timeout=30.0, ...)` | `str, str, float, ...` | `Source` | Poll until the source is visible server-side (any non-ERROR status). Completes quickly (seconds for typical sources); intended for narrow follow-up RPCs (e.g. `UPDATE_SOURCE`) that only require registration, not full processing. |
 | `wait_for_sources(notebook_id, source_ids, timeout=120.0, **kwargs)` | `str, list[str], float, ...` | `list[Source]` | Wait for multiple sources to become ready **in parallel**. Per-source timeout; `**kwargs` are forwarded to `wait_until_ready`. |
 | `wait_all_until_ready(notebook_id, source_ids, timeout=120.0, initial_interval=1.0, max_interval=10.0, backoff_factor=1.5, transient_error_types=None)` | `str, list[str], float, ...` | `list[SourceWaitResult]` | Wait for many sources with **one notebook snapshot per poll tick** (cheaper than `wait_for_sources`'s per-source polling for large batches). Terminal per-source failures (`SourceNotFoundError` / `SourceProcessingError` / `SourceTimeoutError`) are **returned**, not raised — one result per id, in input order. |
@@ -1390,6 +1394,8 @@ exist.
 | `poll_status(notebook_id, task_id)` | `str, str` | `GenerationStatus` | Check generation status |
 | `wait_for_completion(notebook_id, task_id, ...)` | `str, str, ...` | `GenerationStatus` | Wait for generation. Pass `on_status_change(status)` for sync or async progress callbacks. |
 | `retry_failed(notebook_id, artifact_id)` | `str, str` | `GenerationStatus` | Retry a failed Studio artifact in place (the UI "Retry"). Same `artifact_id` preserved; accepted → `status="pending"` (re-queued; advances to `in_progress` on a later poll); a synchronous refusal (rate limit / quota / not-retryable) **raises** `RateLimitError`/`RPCError`. See below. |
+| `copy(notebook_id, artifact_ids, target_notebook_id)` | `str, list[str], str` | `list[CopiedArtifact]` | Copy Studio artifacts into another notebook (`CopyArtifactsAsync`); each result pairs `original_id` with the full new `artifact` row. Raises `ArtifactNotFoundError` when nothing was copied; a partial result is returned with a warning. |
+| `get_customization_choices(notebook_id=None)` | `str \| None` | `ArtifactCustomizationChoices` | The Studio "Customize" option tables (`GetArtifactCustomizationChoices`): `audio` / `video` / `slide_deck` format choices (codes match `AudioFormat` / `VideoFormat` / `SlideDeckFormat`) and `reports` presets with their full generation `directive`. Account-level — the server ignores the notebook id. |
 
 #### Type-Specific List Methods
 

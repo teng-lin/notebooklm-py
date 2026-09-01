@@ -16,7 +16,7 @@ from ._source.batch import SourceUrlBatchItem
 from ._source.polling import SourcePoller, SourceWaitResult
 from ._types.research import SourceGuide
 from .exceptions import SourceNotFoundError
-from .types import Source, SourceFulltext, SourceStatus, SourceType
+from .types import CopiedSource, Source, SourceFulltext, SourceStatus, SourceType
 
 logger = logging.getLogger(__name__)
 
@@ -391,6 +391,52 @@ class SourcesAPI(ABC):
         output_format: Literal["text", "markdown"] = "text",
     ) -> SourceFulltext:
         """Get the source content in text or Markdown form."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def add_urls_async(
+        self,
+        notebook_id: str,
+        urls: builtins.list[str],
+    ) -> builtins.list[Source]:
+        """Queue URL sources without waiting for ingest (``AddSourcesAsync``).
+
+        Returns the queued stub rows (id, url, type; status still processing)
+        in request order. Unlike :meth:`add_url` this never probes-then-retries:
+        a transport failure after the write may have committed an unknown
+        subset, so it is surfaced as an unconfirmed error for the caller to
+        reconcile against :meth:`list`.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def append_text(
+        self,
+        notebook_id: str,
+        source_id: str,
+        text: str,
+        *,
+        header: str = "",
+    ) -> None:
+        """Append a plain-text block to an existing source in place (``AppendSource``).
+
+        ``text`` lands at the very end of the source's fulltext; ``header`` is
+        accepted by the backend but does not appear in the fulltext.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def copy(
+        self,
+        notebook_id: str,
+        source_ids: builtins.list[str],
+        target_notebook_id: str,
+    ) -> builtins.list[CopiedSource]:
+        """Copy sources from ``notebook_id`` into ``target_notebook_id`` (``CopySourcesAsync``).
+
+        Returns one :class:`CopiedSource` per copied source, pairing the
+        original id with the new row in the target notebook.
+        """
         raise NotImplementedError
 
 

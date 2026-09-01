@@ -19,7 +19,13 @@ from .exceptions import (
     RPCError,
     ServerError,
 )
-from .types import Notebook, NotebookDescription, NotebookMetadata, PromptSuggestion
+from .types import (
+    NextStepSuggestion,
+    Notebook,
+    NotebookDescription,
+    NotebookMetadata,
+    PromptSuggestion,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +114,19 @@ class NotebooksAPI(ABC):
         query: str | None = None,
     ) -> builtins.list[PromptSuggestion]:
         """Return AI-suggested prompts for a notebook."""
+
+    @abstractmethod
+    async def suggest_next_steps(
+        self,
+        notebook_id: str,
+        *,
+        source_ids: builtins.list[str] | None = None,
+    ) -> builtins.list[NextStepSuggestion]:
+        """Return grounded follow-up questions for a notebook (``NextStepSuggestions``).
+
+        The standalone form of the ``next_steps`` block a chat answer carries.
+        ``source_ids=None`` scopes to every source in the notebook.
+        """
 
     @abstractmethod
     async def list(self) -> builtins.list[Notebook]:

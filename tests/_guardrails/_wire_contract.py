@@ -838,6 +838,66 @@ MAPPINGS: tuple[Mapping, ...] = (
             "ShareStatus.is_public_sharing_allowed."
         ),
     ),
+    # ---- GetArtifactCustomizationChoices (sqTeoe) --------------------------
+    # The recovered ``ArtifactCustomizationChoices`` declares the slide-deck
+    # (tag 3) and tailored-report (tag 4) families; the audio / video families
+    # at tags 1 / 2 are live-only (see UNMAPPED). Every family is a one-field
+    # message whose repeated rows sit at ``family[0]``.
+    Mapping(
+        "customization",
+        "CustomizationChoicesRow",
+        "_SLIDE_DECK_POS",
+        "ArtifactCustomizationChoices",
+        "slidesCustomizationChoices",
+    ),
+    Mapping(
+        "customization",
+        "CustomizationChoicesRow",
+        "_REPORTS_POS",
+        "ArtifactCustomizationChoices",
+        "tailoredReportCustomizationChoices",
+    ),
+    Mapping(
+        "customization",
+        "CustomizationChoicesRow",
+        "_FAMILY_ROWS_POS",
+        "SlidesCustomizationChoices",
+        "types",
+        note=(
+            "every family container is a one-field message: SlidesCustomizationChoices.types, "
+            "TailoredReportCustomizationChoices.reportTypeOptions and the live-only audio / "
+            "video containers all carry their rows at tag 1"
+        ),
+    ),
+    # Format rows: the recovered ``SlidesType`` layout. The audio and video
+    # families reuse it verbatim with their own format enums (AudioFormat /
+    # VideoFormat) in the code slot — live-verified against the served labels.
+    Mapping("customization", "CustomizationChoiceRow", "_CODE_POS", "SlidesType", "deckType"),
+    Mapping("customization", "CustomizationChoiceRow", "_TITLE_POS", "SlidesType", "title"),
+    Mapping(
+        "customization", "CustomizationChoiceRow", "_DESCRIPTION_POS", "SlidesType", "description"
+    ),
+    Mapping(
+        "customization",
+        "ReportPresetRow",
+        "_REPORT_TYPE_POS",
+        "TailoredReportTypeOption",
+        "reportType",
+    ),
+    Mapping(
+        "customization",
+        "ReportPresetRow",
+        "_DESCRIPTION_POS",
+        "TailoredReportTypeOption",
+        "reportDescription",
+    ),
+    Mapping(
+        "customization",
+        "ReportPresetRow",
+        "_DIRECTIVE_POS",
+        "TailoredReportTypeOption",
+        "reportDirective",
+    ),
 )
 
 
@@ -1084,6 +1144,42 @@ UNMAPPED: tuple[Unmapped, ...] = (
     Unmapped("sharing", "SharedUserRow", "_USER_INFO_POS", _SHAPE_UNKNOWN),
     Unmapped("sharing", "SharedUserRow", "_DISPLAY_NAME_POS", _NESTED_LOCAL),
     Unmapped("sharing", "SharedUserRow", "_AVATAR_URL_POS", _NESTED_LOCAL),
+    # customization.py — GetArtifactCustomizationChoices (sqTeoe). The APK
+    # schema declares only the slide-deck / report families; the audio and
+    # video families are live-observed at tags 1 / 2 on both front doors
+    # (2026-09-01, #2283) and carry the AudioFormat / VideoFormat codes.
+    Unmapped("customization", MODULE_LEVEL, "_CHOICES_ENVELOPE_POS", _ENVELOPE),
+    Unmapped(
+        "customization",
+        "CustomizationChoicesRow",
+        "_AUDIO_POS",
+        "live-only ArtifactCustomizationChoices tag 1 (audio formats); the APK schema "
+        "declares only tags 3 and 4",
+    ),
+    Unmapped(
+        "customization",
+        "CustomizationChoicesRow",
+        "_VIDEO_POS",
+        "live-only ArtifactCustomizationChoices tag 2 (video formats); the APK schema "
+        "declares only tags 3 and 4",
+    ),
+    # transfers.py — the #2283 mapping replies (CopySourcesAsync,
+    # CopyArtifactsAsync, AddSourcesAsync). None of these response messages
+    # exist in the recovered APK schema (the app never calls them); the
+    # positions are web-derived and cross-checked tag-for-tag against the live
+    # Android gRPC replies (docs/android/copy-append-suggestion-evidence.md).
+    Unmapped("transfers", MODULE_LEVEL, "_MAPPING_ROWS_POS", _ENVELOPE),
+    Unmapped("transfers", "CopiedSourceRow", "_ORIGINAL_POS", _SHAPE_UNKNOWN),
+    Unmapped("transfers", "CopiedSourceRow", "_SOURCE_POS", _SHAPE_UNKNOWN),
+    Unmapped("transfers", "CopiedArtifactRow", "_ORIGINAL_POS", _SHAPE_UNKNOWN),
+    Unmapped("transfers", "CopiedArtifactRow", "_ARTIFACT_POS", _SHAPE_UNKNOWN),
+    Unmapped("transfers", "SourceAckRow", "_SOURCE_POS", _SHAPE_UNKNOWN),
+    Unmapped("transfers", "SourceAckRow", "_STATUS_POS", _SHAPE_UNKNOWN),
+    Unmapped("transfers", "AddSourcesAsyncResponseRow", "_SOURCES_POS", _SHAPE_UNKNOWN),
+    Unmapped("transfers", "AddSourcesAsyncResponseRow", "_ACKS_POS", _SHAPE_UNKNOWN),
+    # notebooks.py — NextStepSuggestions (OcvKNc): the reply IS one
+    # NextStepSuggestions message, so its rows are the first element.
+    Unmapped("notebooks", MODULE_LEVEL, "_SUGGEST_NEXT_STEPS_ROWS_POS", _ENVELOPE),
 )
 
 #: ``GET_SHARE_STATUS`` slots that are POPULATED on every live response and

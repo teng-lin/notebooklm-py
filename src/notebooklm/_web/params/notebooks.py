@@ -159,3 +159,20 @@ def build_prompt_suggestions_params(
         None,
         resolved_query,
     ]
+
+
+def build_next_step_suggestions_params(
+    notebook_id: str, source_ids: list[str] | None = None
+) -> list[Any]:
+    """Build ``SUGGEST_NEXT_STEPS`` (``OcvKNc`` / ``NextStepSuggestions``) params.
+
+    Mobile proto (live-pinned, #2283): ``{ string project_id = 2; repeated
+    InputSource sources = 3 }`` with ``InputSource { SourceId source_id = 1 }``
+    — so field 1 is unused (leading ``None``) and each scoping source id is
+    wrapped twice (``[[id]]``, :func:`nest_source_ids` depth 2). Omitting field
+    3 scopes the suggestions to every source in the notebook.
+    """
+    params: list[Any] = [None, notebook_id]
+    if source_ids:
+        params.append(nest_source_ids(list(source_ids), 2))
+    return params

@@ -126,6 +126,11 @@ _CASSETTE_MESSAGE_TYPES = (
     sources_pb2.CheckSourceFreshnessRequest,
     sources_pb2.CheckSourceFreshnessResponse,
     sources_pb2.DeleteSourcesRequest,
+    # sources (#2283): AddSourcesAsync, AppendSource, CopySourcesAsync
+    sources_pb2.AddSourcesAsyncResponse,
+    sources_pb2.AppendSourceRequest,
+    sources_pb2.CopySourcesAsyncRequest,
+    sources_pb2.CopySourcesAsyncResponse,
     # notes: CreateNote, MutateNote, DeleteNotes
     notes_pb2.CreateNoteRequest,
     notes_pb2.CreateNoteResponse,
@@ -161,6 +166,14 @@ _CASSETTE_MESSAGE_TYPES = (
     artifacts_pb2.DeleteArtifactRequest,
     artifacts_pb2.GenerateReportSuggestionsRequest,
     artifacts_pb2.GenerateReportSuggestionsResponse,
+    # artifacts (#2283): CopyArtifactsAsync, GetArtifactCustomizationChoices
+    artifacts_pb2.CopyArtifactsAsyncRequest,
+    artifacts_pb2.CopyArtifactsAsyncResponse,
+    artifacts_pb2.GetArtifactCustomizationChoicesRequest,
+    artifacts_pb2.GetArtifactCustomizationChoicesResponse,
+    # notebooks (#2283): NextStepSuggestions
+    chat_pb2.NextStepSuggestionsRequest,
+    orchestration_notebooks_pb2.NextStepSuggestions,
     # research: DiscoverSourcesManifold, CancelDiscoverSourcesJob, FinishDiscoverSourcesRun
     research_pb2.DiscoverSourcesManifoldRequest,
     research_pb2.DiscoverSourcesManifoldResponse,

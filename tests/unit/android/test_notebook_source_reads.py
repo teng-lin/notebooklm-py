@@ -64,6 +64,7 @@ EXPECTED_NOTEBOOK_PUBLIC_CALLABLES = {
     "remove_from_recent",
     "rename",
     "set_emoji",
+    "suggest_next_steps",
     "suggest_prompts",
     "update",
 }
@@ -212,6 +213,7 @@ def test_exact_abstract_sets_and_android_adapters_are_concrete() -> None:
             "get_summary",
             "list",
             "remove_from_recent",
+            "suggest_next_steps",
             "suggest_prompts",
             "update",
         }
@@ -223,7 +225,10 @@ def test_exact_abstract_sets_and_android_adapters_are_concrete() -> None:
             "add_file",
             "add_text",
             "add_url",
+            "add_urls_async",
+            "append_text",
             "check_freshness",
+            "copy",
             "delete",
             "get_fulltext",
             "get_guide",

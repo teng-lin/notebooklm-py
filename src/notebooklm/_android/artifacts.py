@@ -79,6 +79,11 @@ from .artifact_reads import (
     LIST_ARTIFACTS_METHOD,
     AndroidArtifactReadMixin,
 )
+from .artifact_transfers import (
+    COPY_ARTIFACTS_ASYNC_METHOD,
+    GET_ARTIFACT_CUSTOMIZATION_CHOICES_METHOD,
+    AndroidArtifactTransferMixin,
+)
 from .assets import AndroidAssetDownloadService, RepresentationKind
 from .codecs.artifacts import decode_artifact, decode_artifacts, decode_report_suggestions
 from .errors import sanitize_escaping_exception
@@ -118,7 +123,7 @@ def _audio_length_code(value: Any) -> int:
     return int(value.value)
 
 
-class AndroidArtifactsAPI(AndroidArtifactReadMixin, ArtifactsAPI):
+class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin, ArtifactsAPI):
     """Evidence-qualified Android implementation of the public artifact API."""
 
     def __init__(
@@ -1402,12 +1407,14 @@ class AndroidArtifactsAPI(AndroidArtifactReadMixin, ArtifactsAPI):
 
 __all__ = [
     "AndroidArtifactsAPI",
+    "COPY_ARTIFACTS_ASYNC_METHOD",
     "CREATE_ARTIFACT_METHOD",
     "DERIVE_ARTIFACT_METHOD",
     "DELETE_ARTIFACT_METHOD",
     "EXPORT_TO_DRIVE_METHOD",
     "GENERATE_ARTIFACT_METHOD",
     "GENERATE_REPORT_SUGGESTIONS_METHOD",
+    "GET_ARTIFACT_CUSTOMIZATION_CHOICES_METHOD",
     "GET_ARTIFACT_METHOD",
     "LIST_ARTIFACTS_METHOD",
     "UPDATE_ARTIFACT_METHOD",

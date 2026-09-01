@@ -72,6 +72,41 @@
       "response_type": "google.internal.labs.tailwind.orchestration.v1.ExportToDriveResponse",
       "confidence": "type_names_inferred_wire_shape_and_valid_export_live_pinned",
       "evidence": "docs/android/artifact-contracts-and-live-validation.md#exporttodrive-live-validation-and-safety-conclusion"
+    },
+    {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/AddSourcesAsync",
+      "request_type": "google.internal.labs.tailwind.orchestration.v1.AddSourcesRequest",
+      "response_type": "google.internal.labs.tailwind.orchestration.v1.AddSourcesAsyncResponse",
+      "confidence": "type_names_inferred_wire_shape_and_valid_add_live_pinned",
+      "evidence": "docs/android/copy-append-suggestion-evidence.md#addsourcesasync"
+    },
+    {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/AppendSource",
+      "request_type": "google.internal.labs.tailwind.orchestration.v1.AppendSourceRequest",
+      "response_type": "google.protobuf.Empty",
+      "confidence": "type_names_inferred_wire_shape_and_valid_append_live_pinned",
+      "evidence": "docs/android/copy-append-suggestion-evidence.md#appendsource"
+    },
+    {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CopySourcesAsync",
+      "request_type": "google.internal.labs.tailwind.orchestration.v1.CopySourcesAsyncRequest",
+      "response_type": "google.internal.labs.tailwind.orchestration.v1.CopySourcesAsyncResponse",
+      "confidence": "type_names_inferred_wire_shape_and_valid_copy_live_pinned",
+      "evidence": "docs/android/copy-append-suggestion-evidence.md#copysourcesasync"
+    },
+    {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CopyArtifactsAsync",
+      "request_type": "google.internal.labs.tailwind.orchestration.v1.CopyArtifactsAsyncRequest",
+      "response_type": "google.internal.labs.tailwind.orchestration.v1.CopyArtifactsAsyncResponse",
+      "confidence": "type_names_inferred_wire_shape_and_valid_copy_live_pinned",
+      "evidence": "docs/android/copy-append-suggestion-evidence.md#copyartifactsasync"
+    },
+    {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/NextStepSuggestions",
+      "request_type": "google.internal.labs.tailwind.orchestration.v1.NextStepSuggestionsRequest",
+      "response_type": "google.internal.labs.tailwind.orchestration.v1.NextStepSuggestions",
+      "confidence": "response_ctor_exact_request_name_inferred",
+      "evidence": "docs/android/copy-append-suggestion-evidence.md#nextstepsuggestions"
     }
   ]
 }

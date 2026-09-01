@@ -19,7 +19,7 @@ from ..exceptions import (
     ServerError,
     ValidationError,
 )
-from ..types import Notebook, NotebookDescription, PromptSuggestion
+from ..types import NextStepSuggestion, Notebook, NotebookDescription, PromptSuggestion
 from .session import AndroidSession
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,7 @@ MUTATE_PROJECT_METHOD = f"/{_SERVICE}/MutateProject"
 GENERATE_NOTEBOOK_GUIDE_METHOD = f"/{_SERVICE}/GenerateNotebookGuide"
 GENERATE_PROMPT_SUGGESTIONS_METHOD = f"/{_SERVICE}/GeneratePromptSuggestions"
 REMOVE_RECENTLY_VIEWED_PROJECT_METHOD = f"/{_SERVICE}/RemoveRecentlyViewedProject"
+NEXT_STEP_SUGGESTIONS_METHOD = f"/{_SERVICE}/NextStepSuggestions"
 
 _LEADING_LIST_MARKER = re.compile(r"[-*+]\s+")
 _MAX_CREATED_CHAT_SESSION_HINTS = 256
@@ -52,6 +53,18 @@ def _notebook_proto() -> Any:
     from .proto.google.internal.labs.tailwind.orchestration.v1 import notebooks_pb2
 
     return cast(Any, notebooks_pb2)
+
+
+def _write_proto_sources() -> Any:
+    from .proto.google.internal.labs.tailwind.orchestration.v1 import sources_pb2
+
+    return cast(Any, sources_pb2)
+
+
+def _chat_proto() -> Any:
+    from .proto.google.internal.labs.tailwind.orchestration.v1 import chat_pb2
+
+    return cast(Any, chat_pb2)
 
 
 def _wire_proto() -> Any:
@@ -319,6 +332,41 @@ class AndroidNotebooksAPI(NotebooksAPI):
                 prompt=_strip_leading_list_marker(item.prompt),
             )
             for item in response.suggestions
+        ]
+
+    async def suggest_next_steps(
+        self,
+        notebook_id: str,
+        *,
+        source_ids: builtins.list[str] | None = None,
+    ) -> builtins.list[NextStepSuggestion]:
+        """Grounded follow-up questions over ``NextStepSuggestions`` (#2283).
+
+        Request: ``project_id`` #2 plus optional ``repeated InputSource`` #3 (a
+        bare ``SourceId`` at #3 draws ``INVALID_ARGUMENT``); the reply is the
+        exact ``NextStepSuggestions`` message. A bogus notebook draws
+        ``NOT_FOUND`` (mapped to ``NotebookNotFoundError`` by the session).
+        """
+        if not notebook_id:
+            raise ValidationError("notebook_id must not be empty")
+        chat_proto = _chat_proto()
+        read_proto = _read_proto()
+        request = chat_proto.NextStepSuggestionsRequest(project_id=notebook_id)
+        if source_ids:
+            request.sources.extend(
+                _write_proto_sources().InputSource(source_id=read_proto.SourceId(id=source_id))
+                for source_id in source_ids
+            )
+        response = await self._transport.unary(
+            NEXT_STEP_SUGGESTIONS_METHOD,
+            request,
+            replay_safe=True,
+            response_type=_notebook_proto().NextStepSuggestions,
+        )
+        return [
+            NextStepSuggestion(question=step.suggestion, type_code=int(step.suggestion_type))
+            for step in response.next_steps
+            if step.suggestion
         ]
 
     async def delete(self, notebook_id: str) -> None:

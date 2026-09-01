@@ -223,6 +223,32 @@ def _fail_suggest_prompts(client: MagicMock) -> None:
     client.notebooks.suggest_prompts = AsyncMock(side_effect=RuntimeError("network unreachable"))
 
 
+def _fail_suggest_next_steps(client: MagicMock) -> None:
+    client.notebooks.suggest_next_steps = AsyncMock(side_effect=RuntimeError("network unreachable"))
+
+
+def _fail_source_add_async(client: MagicMock) -> None:
+    client.sources.add_urls_async = AsyncMock(side_effect=RuntimeError("network unreachable"))
+
+
+def _fail_source_append(client: MagicMock) -> None:
+    client.sources.append_text = AsyncMock(side_effect=RuntimeError("network unreachable"))
+
+
+def _fail_source_copy(client: MagicMock) -> None:
+    client.sources.copy = AsyncMock(side_effect=RuntimeError("network unreachable"))
+
+
+def _fail_artifact_copy(client: MagicMock) -> None:
+    client.artifacts.copy = AsyncMock(side_effect=RuntimeError("network unreachable"))
+
+
+def _fail_artifact_choices(client: MagicMock) -> None:
+    client.artifacts.get_customization_choices = AsyncMock(
+        side_effect=RuntimeError("network unreachable")
+    )
+
+
 def _fail_artifact_list(client: MagicMock) -> None:
     client.artifacts.list = AsyncMock(side_effect=RuntimeError("auth: 401 Unauthorized"))
 
@@ -621,6 +647,37 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         "suggest_prompts_failure",
         ["suggest-prompts", "-n", "abc", "--json"],
         _fail_suggest_prompts,
+    ),
+    (
+        "suggest_next_steps_failure",
+        ["suggest-next-steps", "-n", "abc", "--json"],
+        _fail_suggest_next_steps,
+    ),
+    # #2283 transfer family
+    (
+        "source_add_async_failure",
+        ["source", "add-async", "https://example.com/", "-n", "abc", "--json"],
+        _fail_source_add_async,
+    ),
+    (
+        "source_append_failure",
+        ["source", "append", "src123def456ghi789jkl", "text", "-n", "abc", "--json"],
+        _fail_source_append,
+    ),
+    (
+        "source_copy_failure",
+        ["source", "copy", "src123def456ghi789jkl", "--to", "abc", "-n", "abc", "--json"],
+        _fail_source_copy,
+    ),
+    (
+        "artifact_copy_failure",
+        ["artifact", "copy", "art123def456ghi789jkl", "--to", "abc", "-n", "abc", "--json"],
+        _fail_artifact_copy,
+    ),
+    (
+        "artifact_choices_failure",
+        ["artifact", "choices", "-n", "abc", "--json"],
+        _fail_artifact_choices,
     ),
     # notebook create: with_client + RuntimeError -> UNEXPECTED_ERROR envelope.
     (

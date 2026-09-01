@@ -626,3 +626,90 @@ async def test_audio_overview_generation_over_create_artifact(
     assert status.is_complete, f"audio generation ended as {status.status}"
     assert artifact.id == started.task_id
     assert after is None
+
+
+# --- #2283 transfer / suggestion family ---------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_next_step_suggestions_and_customization_choices(
+    android_grpc_cassette: CassetteBinder,
+) -> None:
+    async with android_grpc_cassette("next_step_suggestions") as (client, values):
+        (source,) = await client.sources.list(values.notebook_id)
+        suggestions = await client.notebooks.suggest_next_steps(values.notebook_id)
+        scoped = await client.notebooks.suggest_next_steps(
+            values.notebook_id, source_ids=[source.id]
+        )
+        choices = await client.artifacts.get_customization_choices(values.notebook_id)
+    for rows in (suggestions, scoped):
+        assert rows
+        assert all(step.question and type(step.type_code) is int for step in rows)
+    for family in (choices.audio, choices.video, choices.slide_deck):
+        assert family
+        # Replay redaction collapses ints and rewrites text, so pin pairing/shape only.
+        assert all(type(item.code) is int and item.code > 0 and item.title for item in family)
+    assert choices.reports
+    assert all(preset.report_type and preset.directive for preset in choices.reports)
+
+
+@pytest.mark.timeout(300)
+@pytest.mark.asyncio
+async def test_source_transfers_over_add_async_append_and_copy(
+    android_grpc_cassette: CassetteBinder,
+) -> None:
+    async with android_grpc_cassette("source_transfers") as (client, values):
+        target = await client.notebooks.create(values.texts[0])
+        try:
+            queued = await client.sources.add_urls_async(values.notebook_id, [values.url])
+            await _settle(10)
+            ready = await client.sources.wait_until_ready(
+                values.notebook_id, queued[0].id, timeout=120, initial_interval=0.1
+            )
+            (seed,) = [
+                source
+                for source in await client.sources.list(values.notebook_id)
+                if source.id != queued[0].id
+            ]
+            before = await client.sources.get_fulltext(values.notebook_id, seed.id)
+            await client.sources.append_text(
+                values.notebook_id, seed.id, values.texts[1], header=values.texts[2]
+            )
+            await _settle(3)
+            after = await client.sources.get_fulltext(values.notebook_id, seed.id)
+            copied = await client.sources.copy(values.notebook_id, [seed.id], target.id)
+            await client.sources.delete(values.notebook_id, queued[0].id)
+        finally:
+            await client.notebooks.delete(target.id)
+    assert len(queued) == 1 and queued[0].id
+    assert ready.id == queued[0].id
+    assert len(after.content) > len(before.content)
+    assert len(copied) == 1
+    assert copied[0].original_id == seed.id
+    assert copied[0].source.id and copied[0].source.id != seed.id
+
+
+@pytest.mark.timeout(600)
+@pytest.mark.asyncio
+async def test_artifact_copy_over_copy_artifacts_async(
+    android_grpc_cassette: CassetteBinder,
+) -> None:
+    async with android_grpc_cassette("artifact_copy") as (client, values):
+        started = await client.artifacts.generate_flashcards(values.notebook_id)
+        polls = 0
+        while True:
+            status = await client.artifacts.poll_status(values.notebook_id, started.task_id)
+            polls += 1
+            if status.is_complete or status.is_failed or polls >= 16:
+                break
+            await _settle(15)
+        target = await client.notebooks.create(values.texts[0])
+        try:
+            copied = await client.artifacts.copy(values.notebook_id, [started.task_id], target.id)
+        finally:
+            await client.notebooks.delete(target.id)
+            await client.artifacts.delete(values.notebook_id, started.task_id)
+    assert status.is_complete, f"flashcard generation ended as {status.status}"
+    assert len(copied) == 1
+    assert copied[0].original_id == started.task_id
+    assert copied[0].artifact.id and copied[0].artifact.id != started.task_id

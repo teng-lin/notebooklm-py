@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Six previously unmapped RPCs from the #2283 registry inventory, on **both**
+  the Web and Android backends: `sources.add_urls_async()` (`AddSourcesAsync` —
+  one non-blocking batch add that returns the queued stub rows),
+  `sources.append_text()` (`AppendSource` — append a text block to a source in
+  place), `sources.copy()` (`CopySourcesAsync`), `artifacts.copy()`
+  (`CopyArtifactsAsync` — both copies return an original → new-row mapping),
+  `notebooks.suggest_next_steps()` (`NextStepSuggestions` — the grounded
+  follow-up questions a chat answer carries, without a conversation) and
+  `artifacts.get_customization_choices()` (`GetArtifactCustomizationChoices` —
+  the Studio "Customize" option tables; account-level). New public types
+  `CopiedSource`, `CopiedArtifact`, `ArtifactCustomizationChoices`,
+  `CustomizationChoice`, `ReportPreset`. CLI: `source add-async` / `append` /
+  `copy`, `artifact copy` / `choices`, `suggest-next-steps`. The request shapes
+  were recovered with the mobile tag oracle and every route was live-validated
+  over native Android gRPC (`docs/android/copy-append-suggestion-evidence.md`);
+  this also corrects the earlier note that `AddSourcesAsync` is blocked for the
+  mobile bearer — the impersonation refusal was the Web upload-finalize path.
 - `SourceType.GEMINI_CHAT`, `EXCEL`, `GMAIL`, `AI_MODE_CHAT` and
   `EXPERT_INTELLIGENCE` for backend type codes `18`, `12`, `15`, `19` and `20`.
   The decode map now covers `0`-`20` contiguously and matches every value of

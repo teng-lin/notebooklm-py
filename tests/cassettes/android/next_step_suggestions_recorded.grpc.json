@@ -1,0 +1,66 @@
+{
+  "format": "notebooklm.android.grpc-cassette",
+  "interactions": [
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject",
+      "request": {
+        "protobuf_b64": "CiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEQAQ==",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetProjectRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetProjectResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CrgBChRTQ1JVQkJFRF9TVFJJTkdfMDAyNRJGCiYKJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMhIUU0NSVUJCRURfU1RSSU5HXzAwMjYaAigEIgIQAhokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxIhRTQ1JVQkJFRF9TVFJJTkdfMDAyNzIICAFKBAgBEAFSBggBEAEYAVoKCAEQARgBIAEoAQ==",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetProjectResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/NextStepSuggestions",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDE=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.NextStepSuggestionsRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.NextStepSuggestions",
+      "responses": [
+        {
+          "protobuf_b64": "ChgKFFNDUlVCQkVEX1NUUklOR18wMDI4EAkKGAoUU0NSVUJCRURfU1RSSU5HXzAwMjkQCQoYChRTQ1JVQkJFRF9TVFJJTkdfMDAzMBAJ",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.NextStepSuggestions"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/NextStepSuggestions",
+      "request": {
+        "protobuf_b64": "EiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEaKAomCiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDI=",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.NextStepSuggestionsRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.NextStepSuggestions",
+      "responses": [
+        {
+          "protobuf_b64": "ChgKFFNDUlVCQkVEX1NUUklOR18wMDI4EAkKGAoUU0NSVUJCRURfU1RSSU5HXzAwMzEQCQoYChRTQ1JVQkJFRF9TVFJJTkdfMDAzMhAJ",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.NextStepSuggestions"
+        }
+      ],
+      "shape": "unary_unary"
+    },
+    {
+      "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetArtifactCustomizationChoices",
+      "request": {
+        "protobuf_b64": "CjwIAxIXChVTQ1JVQkJFRF9SRVFVRVNUXzAwMDEiHwgBWhsIAhABGhVTQ1JVQkJFRF9SRVFVRVNUXzAwMDESJDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMQ==",
+        "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetArtifactCustomizationChoicesRequest"
+      },
+      "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetArtifactCustomizationChoicesResponse",
+      "responses": [
+        {
+          "protobuf_b64": "CrcFCsABCi4IARIUU0NSVUJCRURfU1RSSU5HXzAwMzMaFFNDUlVCQkVEX1NUUklOR18wMDM0Ci4IARIUU0NSVUJCRURfU1RSSU5HXzAwMzUaFFNDUlVCQkVEX1NUUklOR18wMDM2Ci4IARIUU0NSVUJCRURfU1RSSU5HXzAwMzcaFFNDUlVCQkVEX1NUUklOR18wMDM4Ci4IARIUU0NSVUJCRURfU1RSSU5HXzAwMzkaFFNDUlVCQkVEX1NUUklOR18wMDQwEsABCi4IARIUU0NSVUJCRURfU1RSSU5HXzAwNDEaFFNDUlVCQkVEX1NUUklOR18wMDQyCi4IARIUU0NSVUJCRURfU1RSSU5HXzAwMzUaFFNDUlVCQkVEX1NUUklOR18wMDQzCi4IARIUU0NSVUJCRURfU1RSSU5HXzAwNDQaFFNDUlVCQkVEX1NUUklOR18wMDQ1Ci4IARIUU0NSVUJCRURfU1RSSU5HXzAwNDYaFFNDUlVCQkVEX1NUUklOR18wMDQzGmAKLggBEhRTQ1JVQkJFRF9TVFJJTkdfMDA0NxoUU0NSVUJCRURfU1RSSU5HXzAwNDgKLggCEhRTQ1JVQkJFRF9TVFJJTkdfMDA0ORoUU0NSVUJCRURfU1RSSU5HXzAwNTAizAEKQgoUU0NSVUJCRURfU1RSSU5HXzAwNTESFFNDUlVCQkVEX1NUUklOR18wMDUyGhRTQ1JVQkJFRF9TVFJJTkdfMDA1MwpCChRTQ1JVQkJFRF9TVFJJTkdfMDA1NBIUU0NSVUJCRURfU1RSSU5HXzAwNTUaFFNDUlVCQkVEX1NUUklOR18wMDU2CkIKFFNDUlVCQkVEX1NUUklOR18wMDU3EhRTQ1JVQkJFRF9TVFJJTkdfMDA1OBoUU0NSVUJCRURfU1RSSU5HXzAwNTk=",
+          "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GetArtifactCustomizationChoicesResponse"
+        }
+      ],
+      "shape": "unary_unary"
+    }
+  ],
+  "version": 1
+}

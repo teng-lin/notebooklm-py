@@ -82,6 +82,9 @@ records and replays (`tests/_helpers/android_grpc_harness.py`):
 | `act_on_sources_mind_map` | `artifacts.generate_mind_map()`, `notes.delete()` | `GetProject`, `ActOnSources`, `CreateNote`, `GetNotes` ×2, `DeleteNotes` |
 | `quiz_lifecycle` | `artifacts.generate_quiz/poll_status/get/rename/delete/get_or_none()` | `GetProject`, `CreateArtifact`, `ListArtifacts` ×8, `GetArtifact` ×3, `GetNotes` ×2, `UpdateArtifact`, `DeleteArtifact` |
 | `generate_report_suggestions` | `artifacts.suggest_reports()` | `GenerateReportSuggestions` |
+| `next_step_suggestions` | `notebooks.suggest_next_steps()`, `artifacts.get_customization_choices()` | `NextStepSuggestions` ×2, `GetArtifactCustomizationChoices` |
+| `source_transfers` | `notebooks.create()`, `sources.add_urls_async/wait_until_ready/append_text/get_fulltext/copy()`, `notebooks.delete()` | `CreateProject`, `AddSourcesAsync`, `GetProject` ×N, `AppendSource`, `LoadSource` ×2, `CopySourcesAsync`, `DeleteProjects` |
+| `artifact_copy` | `artifacts.generate_flashcards/poll_status()`, `notebooks.create()`, `artifacts.copy()`, `artifacts.delete()`, `notebooks.delete()` | `GetProject`, `CreateArtifact`, `ListArtifacts` ×N, `CreateProject`, `CopyArtifactsAsync`, `DeleteArtifact`, `DeleteProjects` |
 | `research_fast_cancel` | `research.start(mode="fast")`, `research.cancel()`, `research.poll()` | `DiscoverSourcesManifold`, `ListDiscoverSourcesJob` ×2, `CancelDiscoverSourcesJob` |
 | `research_fast_import` | `research.start(mode="fast")`, `research.poll()`, `research.import_sources()` | `DiscoverSourcesManifold`, `ListDiscoverSourcesJob`, `FinishDiscoverSourcesRun` |
 | `generate_report` | `artifacts.generate_report/poll_status/get/delete/get_or_none()` | `GetProject`, `CreateArtifact`, `ListArtifacts` ×5, `GetArtifact` ×2, `GetNotes` ×2, `DeleteArtifact` |

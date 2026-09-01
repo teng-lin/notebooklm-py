@@ -17,6 +17,7 @@ from ..._url_utils import is_youtube_url
 from ...exceptions import SourceNotFoundError
 from ...rpc import RPCMethod
 from ...types import (
+    CopiedSource,
     Source,
     SourceFulltext,
     SourceStatus,
@@ -36,6 +37,7 @@ from .add import (
 from .batch import SourceBatchAddService, SourceUrlBatchItem
 from .content import SourceContentRenderer
 from .listing import SourceLister
+from .transfers import SourceTransferService
 from .upload import SourceUploadPipeline
 
 # Preserve the historical facade channel across the physical move.
@@ -105,6 +107,7 @@ class WebSourcesAPI(SourcesAPI):
         self._rpc = rpc
         self._adder = SourceAddService()
         self._batch_adder = SourceBatchAddService()
+        self._transfers = SourceTransferService()
         self._content = SourceContentRenderer(self._rpc, logger=logger)
         self._lister = SourceLister(self._rpc)
         super().__init__()
@@ -842,6 +845,86 @@ class WebSourcesAPI(SourcesAPI):
                 auth_route,
                 logger=logger,
                 _expected_epoch=epoch,
+            )
+
+    # =========================================================================
+    # Transfers (#2283): AddSourcesAsync / AppendSource / CopySourcesAsync
+    # =========================================================================
+
+    async def add_urls_async(
+        self,
+        notebook_id: str,
+        urls: builtins.list[str],
+    ) -> builtins.list[Source]:
+        """Queue URL sources with one non-blocking ``AddSourcesAsync`` call.
+
+        Same request as the batch ``ADD_SOURCE`` path, but the server answers
+        as soon as the sources are queued (~0.6 s live for two URLs versus ~2 s
+        per synchronous add) with stub rows — id, url and type only, status
+        still processing. Poll :meth:`wait_until_ready` / :meth:`list` for the
+        ingested rows.
+
+        Never replayed on a transport failure: an unknown subset may have
+        committed, so the error is marked unconfirmed for the caller to
+        reconcile against :meth:`list`.
+
+        .. versionadded:: 0.9.0
+        """
+        async with self._supervisor.operation_scope("source.add_urls_async"):
+            return await self._transfers.add_urls_async(
+                notebook_id,
+                urls,
+                rpc=self._rpc,
+                extract_youtube_video_id=self._extract_youtube_video_id,
+                logger=logger,
+            )
+
+    async def append_text(
+        self,
+        notebook_id: str,
+        source_id: str,
+        text: str,
+        *,
+        header: str = "",
+    ) -> None:
+        """Append a plain-text block to an existing source (``AppendSource``).
+
+        ``text`` is appended at the very end of the source's fulltext (verified
+        live: a 61-character pasted-text source grew to 86 characters ending in
+        the appended block). ``header`` is accepted by the backend but does not
+        appear in the fulltext. Success is an empty reply; a rejected call raises
+        ``RPCError`` with the server status.
+
+        .. versionadded:: 0.9.0
+        """
+        async with self._supervisor.operation_scope("source.append_text"):
+            await self._transfers.append_text(
+                notebook_id, source_id, text, header=header, rpc=self._rpc
+            )
+
+    async def copy(
+        self,
+        notebook_id: str,
+        source_ids: builtins.list[str],
+        target_notebook_id: str,
+    ) -> builtins.list[CopiedSource]:
+        """Copy sources into another notebook (``CopySourcesAsync``).
+
+        Returns one :class:`~notebooklm.types.CopiedSource` per copied source,
+        pairing the original id with the new row in ``target_notebook_id``
+        (verified live by re-listing the target). Raises ``SourceNotFoundError``
+        when none of the requested ids were copied; a partial result is returned
+        with a warning because those copies have already committed.
+
+        .. versionadded:: 0.9.0
+        """
+        async with self._supervisor.operation_scope("source.copy"):
+            return await self._transfers.copy(
+                notebook_id,
+                source_ids,
+                target_notebook_id,
+                rpc=self._rpc,
+                logger=logger,
             )
 
 

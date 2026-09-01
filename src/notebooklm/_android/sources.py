@@ -42,6 +42,12 @@ from .codecs.notebooks import decode_project, map_get_project_error, validate_pr
 from .codecs.sources import decode_source, decode_sources, select_document_guide
 from .drive_staging import _DRIVE_STAGED_UPLOAD_EXTENSIONS
 from .session import AndroidSession
+from .source_transfers import (
+    ADD_SOURCES_ASYNC_METHOD,
+    APPEND_SOURCE_METHOD,
+    COPY_SOURCES_ASYNC_METHOD,
+    AndroidSourceTransferMixin,
+)
 from .upload import (
     AndroidUploadPipeline,
     android_provenance,
@@ -343,7 +349,7 @@ def _merge_commit_proof(
     return None
 
 
-class AndroidSourcesAPI(SourcesAPI):
+class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
     """Android source adapter installed by public Android backend selection."""
 
     def __init__(
@@ -1465,7 +1471,10 @@ class AndroidSourcesAPI(SourcesAPI):
 
 
 __all__ = [
+    "ADD_SOURCES_ASYNC_METHOD",
     "ADD_SOURCES_METHOD",
+    "APPEND_SOURCE_METHOD",
+    "COPY_SOURCES_ASYNC_METHOD",
     "ADD_TENTATIVE_SOURCES_METHOD",
     "CHECK_SOURCE_FRESHNESS_METHOD",
     "DELETE_SOURCES_METHOD",

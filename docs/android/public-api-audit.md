@@ -185,7 +185,7 @@ adapter graph; the operation-level seams above remain explicit and tested.
 
 ## Known boundaries outside the public parity count
 
-The current `1.55.10` APK contains 53 gRPC paths. Nineteen have no typed public API owner in this
+The current `1.55.10` APK contains 53 gRPC paths. Eighteen have no typed public API owner in this
 library and therefore are not missing implementations of the 145-callable contract:
 
 - notebook discovery: `BatchSearchNotebooks`, `SearchNotebooks`;
@@ -193,8 +193,8 @@ library and therefore are not missing implementations of the 145-callable contra
   private `_discover_sources` conformance helper, while public `research.start` uses
   `DiscoverSourcesManifold` or `DiscoverSourcesAsync`;
 - live audio/WebRTC: `GetIceConfig`, `SendSdpOffer`, `StreamLiveSession`;
-- artifact controls and state: `CancelGeneration`, `GetArtifactCustomizationChoices`,
-  `GetArtifactUserState`, `UpsertArtifactUserState`, `SuggestArtifacts`,
+- artifact controls and state: `CancelGeneration`, `GetArtifactUserState`,
+  `UpsertArtifactUserState`, `SuggestArtifacts`,
   `ListArtifactScheduledNotificationConfigs`, `UpdateArtifactScheduledNotificationConfig`;
 - internal/source pickers: `GenerateAccessToken`, `GetDriveSourceStatus`,
   `ListExpertIntelligenceContent`;
@@ -202,7 +202,8 @@ library and therefore are not missing implementations of the 145-callable contra
 - access-request workflow: `CreateAccessRequest`.
 
 This list is a product-surface inventory, not a proposal to expose internal telemetry, token,
-WebRTC, or experimental endpoints. Separately, the private
+WebRTC, or experimental endpoints. `GetArtifactCustomizationChoices` left it on 2026-09-01: it is
+now `artifacts.get_customization_choices()` (#2283). Separately, the private
 `AndroidAssetDownloadService.download_urls_batch` method still raises
 `UnsupportedOperationError`; no public operation calls it because every Android artifact download
 uses the typed one-representation transfer path.

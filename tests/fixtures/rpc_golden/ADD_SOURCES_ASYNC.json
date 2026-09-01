@@ -1,0 +1,109 @@
+{
+  "method_name": "ADD_SOURCES_ASYNC",
+  "method_id": "X1snv",
+  "description": "Queue URL sources without waiting for ingest (AddSourcesAsync; same request as the batch ADD_SOURCE). The reply carries stub Source rows at [0] and per-source [Source, ack] pairs at [2]; live-verified 2026-09-01 (#2283).",
+  "request": {
+    "params": [
+      [
+        [
+          null,
+          null,
+          [
+            "https://example.com/"
+          ],
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          1
+        ]
+      ],
+      "SCRUBBED_NB_001",
+      [
+        2,
+        null,
+        null,
+        [
+          1,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          [
+            1
+          ]
+        ]
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "X1snv",
+          "[[[null,null,[\"https://example.com/\"],null,null,null,null,null,null,null,1]],\"SCRUBBED_NB_001\",[2,null,null,[1,null,null,null,null,null,null,null,null,null,[1]]]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "X1snv",
+          "[[[[\"SCRUBBED_SRC_001\"],\"https://example.com/\",[null,null,null,null,5]]],null,[[[[\"SCRUBBED_SRC_001\"],\"https://example.com/\",[null,null,null,null,5]],0]]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      [
+        [
+          [
+            "SCRUBBED_SRC_001"
+          ],
+          "https://example.com/",
+          [
+            null,
+            null,
+            null,
+            null,
+            5
+          ]
+        ]
+      ],
+      null,
+      [
+        [
+          [
+            [
+              "SCRUBBED_SRC_001"
+            ],
+            "https://example.com/",
+            [
+              null,
+              null,
+              null,
+              null,
+              5
+            ]
+          ],
+          0
+        ]
+      ]
+    ]
+  }
+}

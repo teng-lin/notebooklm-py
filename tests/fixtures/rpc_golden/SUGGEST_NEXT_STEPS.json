@@ -1,0 +1,67 @@
+{
+  "method_name": "SUGGEST_NEXT_STEPS",
+  "method_id": "OcvKNc",
+  "description": "Grounded follow-up questions for a notebook (NextStepSuggestions): the standalone form of the block chat answers carry at index 5. Rows are [question, MagicArtifactType]; live type code 9 = CONVERSATIONAL_TEXT_CHIP (#2283).",
+  "request": {
+    "params": [
+      null,
+      "SCRUBBED_NB_001",
+      [
+        [
+          [
+            "SCRUBBED_SRC_001"
+          ]
+        ]
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "OcvKNc",
+          "[null,\"SCRUBBED_NB_001\",[[[\"SCRUBBED_SRC_001\"]]]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "OcvKNc",
+          "[[[\"How do the different types of machine learning solve problems?\",9],[\"What are the essential building blocks for modern web applications?\",9]]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": [
+      [
+        [
+          "How do the different types of machine learning solve problems?",
+          9
+        ],
+        [
+          "What are the essential building blocks for modern web applications?",
+          9
+        ]
+      ]
+    ]
+  },
+  "mapper": "tests.unit._golden_mappers:suggest_next_steps",
+  "mapper_expected": [
+    {
+      "question": "How do the different types of machine learning solve problems?",
+      "type_code": 9
+    },
+    {
+      "question": "What are the essential building blocks for modern web applications?",
+      "type_code": 9
+    }
+  ]
+}

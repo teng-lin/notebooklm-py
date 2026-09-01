@@ -37,12 +37,18 @@ from notebooklm.notebooklm_cli import cli
 from notebooklm.rpc.types import ShareAccess, ShareViewLevel
 from notebooklm.types import (
     Artifact,
+    ArtifactCustomizationChoices,
     AskResult,
     Collection,
+    CopiedArtifact,
+    CopiedSource,
+    CustomizationChoice,
     Label,
+    NextStepSuggestion,
     Note,
     Notebook,
     PromptSuggestion,
+    ReportPreset,
     ResearchSource,
     ResearchStart,
     ResearchStatus,
@@ -330,6 +336,49 @@ def _customize_suggest_prompts(client: MagicMock) -> None:
             PromptSuggestion(title="Risks", prompt="What are the key risks?"),
         ]
     )
+
+
+def _customize_suggest_next_steps(client: MagicMock) -> None:
+    client.notebooks.suggest_next_steps = AsyncMock(
+        return_value=[NextStepSuggestion(question="What is X?", type_code=9)]
+    )
+
+
+def _customize_artifact_choices(client: MagicMock) -> None:
+    client.artifacts.get_customization_choices = AsyncMock(
+        return_value=ArtifactCustomizationChoices(
+            audio=[CustomizationChoice(1, "Deep Dive", "Two hosts")],
+            reports=[ReportPreset("Briefing Doc", "Key insights", "Create a briefing.")],
+        )
+    )
+
+
+def _customize_artifact_copy(client: MagicMock) -> None:
+    client.artifacts.copy = AsyncMock(
+        return_value=[
+            CopiedArtifact(
+                original_id="art_a",
+                artifact=MagicMock(
+                    id="art_new",
+                    title="Copy",
+                    kind=MagicMock(value="quiz"),
+                    status_str="completed",
+                ),
+            )
+        ]
+    )
+
+
+def _customize_source_transfers(client: MagicMock) -> None:
+    source = MagicMock(
+        id="src_new",
+        title="Copy",
+        kind=MagicMock(value="url"),
+        status=MagicMock(value="ready"),
+    )
+    client.sources.add_urls_async = AsyncMock(return_value=[source])
+    client.sources.append_text = AsyncMock(return_value=None)
+    client.sources.copy = AsyncMock(return_value=[CopiedSource(original_id="src_a", source=source)])
 
 
 def _customize_share_public(client: MagicMock) -> None:
@@ -713,6 +762,63 @@ JSON_COMMANDS: list[tuple[str, list[str], object]] = [
         "suggest_prompts_cmd",
         ["suggest-prompts", "-n", "abc123def456ghi789jkl", "--json"],
         _customize_suggest_prompts,
+    ),
+    (
+        "suggest_next_steps_cmd",
+        ["suggest-next-steps", "-n", "abc123def456ghi789jkl", "--json"],
+        _customize_suggest_next_steps,
+    ),
+    # #2283 transfer family
+    (
+        "source_add_async",
+        ["source", "add-async", "https://example.com/", "-n", "abc123def456ghi789jkl", "--json"],
+        _customize_source_transfers,
+    ),
+    (
+        "source_append",
+        [
+            "source",
+            "append",
+            "src123def456ghi789jkl",
+            "more text",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--json",
+        ],
+        _customize_source_transfers,
+    ),
+    (
+        "source_copy",
+        [
+            "source",
+            "copy",
+            "src123def456ghi789jkl",
+            "--to",
+            "abc123def456ghi789jkl",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--json",
+        ],
+        _customize_source_transfers,
+    ),
+    (
+        "artifact_copy",
+        [
+            "artifact",
+            "copy",
+            "art123def456ghi789jkl",
+            "--to",
+            "abc123def456ghi789jkl",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--json",
+        ],
+        _customize_artifact_copy,
+    ),
+    (
+        "artifact_choices",
+        ["artifact", "choices", "-n", "abc123def456ghi789jkl", "--json"],
+        _customize_artifact_choices,
     ),
     # doctor / profile / notebook-create coverage (meta-audit G9 + I7 + I9):
     # `doctor` and `profile list` read NOTEBOOKLM_HOME directly and don't

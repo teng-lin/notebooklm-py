@@ -4,6 +4,7 @@ from . import (
     artifacts,
     chat,
     collections,
+    customization,
     documents,
     labels,
     notebooks,
@@ -12,6 +13,7 @@ from . import (
     research_task,
     sharing,
     sources,
+    transfers,
 )
 from .artifacts import ArtifactRow, ReportSuggestionRow
 from .chat import (
@@ -25,6 +27,12 @@ from .chat import (
     unwrap_conversation_turns,
 )
 from .collections import CollectionRow
+from .customization import (
+    CustomizationChoiceRow,
+    CustomizationChoicesRow,
+    ReportPresetRow,
+    unwrap_customization_choices,
+)
 from .documents import (
     AnnotationEntryRow,
     DocumentBodyRow,
@@ -48,11 +56,19 @@ from .research import (
 )
 from .sharing import SharedUserRow, ShareStatusRow
 from .sources import SourceRow, SourceRowShape
+from .transfers import (
+    AddSourcesAsyncResponseRow,
+    CopiedArtifactRow,
+    CopiedSourceRow,
+    SourceAckRow,
+    unwrap_mapping_rows,
+)
 
 __all__ = [
     "artifacts",
     "chat",
     "collections",
+    "customization",
     "documents",
     "labels",
     "notebooks",
@@ -61,6 +77,8 @@ __all__ = [
     "research_task",
     "sharing",
     "sources",
+    "transfers",
+    "AddSourcesAsyncResponseRow",
     "AnnotationEntryRow",
     "AnswerRow",
     "ArtifactRow",
@@ -68,6 +86,10 @@ __all__ = [
     "CitationRow",
     "CollectionRow",
     "ConversationTurnRow",
+    "CopiedArtifactRow",
+    "CopiedSourceRow",
+    "CustomizationChoiceRow",
+    "CustomizationChoicesRow",
     "DocumentBodyRow",
     "ErrorPayloadRow",
     "ImportedSourceRow",
@@ -75,6 +97,7 @@ __all__ = [
     "NoteRow",
     "ParagraphElementRow",
     "ParagraphRow",
+    "ReportPresetRow",
     "ReportSuggestionRow",
     "ResearchResultRow",
     "ResearchStartRow",
@@ -82,6 +105,7 @@ __all__ = [
     "ResearchTaskRow",
     "SharedUserRow",
     "ShareStatusRow",
+    "SourceAckRow",
     "SourceRow",
     "SourceRowShape",
     "StreamFrameRow",
@@ -91,6 +115,8 @@ __all__ = [
     "build_document",
     "count_question_turn_rows",
     "unwrap_conversation_turns",
+    "unwrap_customization_choices",
     "unwrap_import_rows",
+    "unwrap_mapping_rows",
     "unwrap_poll_tasks",
 ]

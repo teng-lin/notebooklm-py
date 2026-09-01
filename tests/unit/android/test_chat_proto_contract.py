@@ -337,6 +337,10 @@ def test_chat_request_response_fields_are_exhaustive() -> None:
             "chat_turns": (1, repeated, message, f"{o}.ChatHistoryMessage"),
             "next_page_token": (2, singular, string, None),
         },
+        chat_pb2.NextStepSuggestionsRequest: {
+            "project_id": (2, singular, string, None),
+            "sources": (3, repeated, message, f"{o}.InputSource"),
+        },
         chat_pb2.DeleteChatTurnsRequest: {
             "chat_session_id": (2, singular, string, None),
             "delete_all_history": (4, singular, boolean, None),

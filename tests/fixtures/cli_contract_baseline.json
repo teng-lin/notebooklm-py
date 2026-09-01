@@ -16,6 +16,8 @@
       "show"
     ],
     "artifact": [
+      "choices",
+      "copy",
       "delete",
       "export",
       "get",
@@ -115,10 +117,13 @@
     ],
     "source": [
       "add",
+      "add-async",
       "add-drive",
       "add-drive-file",
       "add-research",
+      "append",
       "clean",
+      "copy",
       "delete",
       "delete-by-title",
       "fulltext",
@@ -163,6 +168,8 @@
     "artifact": {
       "class": "Group",
       "commands": [
+        "choices",
+        "copy",
         "delete",
         "export",
         "get",
@@ -176,6 +183,119 @@
       ],
       "params": [],
       "short_help": "Artifact management commands."
+    },
+    "artifact choices": {
+      "class": "Command",
+      "params": [
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Show the Studio \"Customize\" option tables..."
+    },
+    "artifact copy": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "artifact_ids",
+          "nargs": -1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "Sentinel.UNSET",
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Target notebook id (or unique prefix)",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "target",
+          "opts": [
+            "--to"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Copy Studio artifacts into another..."
     },
     "artifact delete": {
       "class": "Command",
@@ -8398,6 +8518,7 @@
         "skill",
         "source",
         "status",
+        "suggest-next-steps",
         "suggest-prompts",
         "summary",
         "use"
@@ -10001,10 +10122,13 @@
       "class": "Group",
       "commands": [
         "add",
+        "add-async",
         "add-drive",
         "add-drive-file",
         "add-research",
+        "append",
         "clean",
+        "copy",
         "delete",
         "delete-by-title",
         "fulltext",
@@ -10186,6 +10310,58 @@
         }
       ],
       "short_help": "Add a source to a notebook."
+    },
+    "source add-async": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "urls",
+          "nargs": -1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Queue one or more URL sources without..."
     },
     "source add-drive": {
       "class": "Command",
@@ -10549,6 +10725,85 @@
       ],
       "short_help": "Search web or drive and add sources from..."
     },
+    "source append": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "source_id",
+          "nargs": 1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "kind": "argument",
+          "name": "text",
+          "nargs": 1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "",
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Optional block header (accepted by the backend; not shown in fulltext)",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "header",
+          "opts": [
+            "--header"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Append a plain-text block to an existing..."
+    },
     "source clean": {
       "class": "Command",
       "params": [
@@ -10628,6 +10883,76 @@
         }
       ],
       "short_help": "Automatically remove duplicate, error, and..."
+    },
+    "source copy": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "source_ids",
+          "nargs": -1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "Sentinel.UNSET",
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Target notebook id (or unique prefix)",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "target",
+          "opts": [
+            "--to"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Copy sources into another notebook..."
     },
     "source delete": {
       "class": "Command",
@@ -11700,6 +12025,7 @@
     "skill",
     "source",
     "status",
+    "suggest-next-steps",
     "suggest-prompts",
     "summary",
     "use"

@@ -72,6 +72,12 @@
 | `fejl7e` | REMOVE_RECENTLY_VIEWED | Remove notebook from recent list | `_web/notebooks.py` |
 | `ZwVcOc` | GET_USER_SETTINGS | Get user settings including output language | `_web/settings.py` |
 | `hT54vc` | SET_USER_SETTINGS | Set user settings (e.g., output language) | `_web/settings.py` |
+| `X1snv` | ADD_SOURCES_ASYNC | Queue URL sources without waiting for ingest (batch; per-source acks) | `_web/sources/transfers.py` |
+| `QsNTEd` | APPEND_SOURCE | Append a plain-text block to an existing source in place | `_web/sources/transfers.py` |
+| `R27wvc` | COPY_SOURCES | Copy sources into another notebook (original → copy mapping) | `_web/sources/transfers.py` |
+| `mKDdke` | COPY_ARTIFACTS | Copy Studio artifacts into another notebook (full new rows inline) | `_web/artifacts.py` |
+| `OcvKNc` | SUGGEST_NEXT_STEPS | Grounded follow-up questions (the chat `next_steps` block, standalone) | `_web/notebooks.py` |
+| `sqTeoe` | GET_CUSTOMIZATION_CHOICES | Studio "Customize" option tables (account-level) | `_web/artifacts.py` |
 
 ### Content Type Codes (ArtifactTypeCode)
 
@@ -3224,3 +3230,135 @@ These RPC method IDs exist in `rpc/types.py` but are either legacy (superseded b
 3. They become useful for specific edge cases
 
 **Note:** The unified `CREATE_ARTIFACT` (R7cb6c) method handles all artifact generation (audio, video, reports, quizzes, etc.).
+
+## Transfer & Suggestion RPCs (#2283)
+
+Six RPCs the web bundle registers but the web UI never calls from a visible
+control. Their request shapes were recovered with the mobile tag oracle
+(`docs/android/copy-append-suggestion-evidence.md`): the same
+`LabsTailwindOrchestrationService` serves both front doors, so web index `i` is
+proto tag `i+1`. All six are also served natively to the Android backend.
+
+### RPC: ADD_SOURCES_ASYNC (X1snv)
+
+**Source:** `_web/sources/transfers.py::SourceTransferService.add_urls_async()` (`WebSourcesAPI.add_urls_async`)
+
+Same request as the batch `ADD_SOURCE` (`AddSources`), but the server answers as
+soon as the sources are queued (~0.65 s for two URLs vs ~2 s per synchronous
+add, live) with stub rows.
+
+```python
+params = [
+    [<source spec>, ...],   # 0: repeated UserContent — the same URL / YouTube specs ADD_SOURCE sends
+    notebook_id,            # 1
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],  # 2: RequestContext
+]
+# source_path = f"/notebook/{notebook_id}"
+```
+
+**Response:** `[[Source, ...], null, [[Source, ack], ...]]` — stub `Source`
+rows at `[0]` (`[[id], url, [null, null, null, null, type]]`; no word count or
+ingest timestamps), and a per-source acknowledgement list at `[2]` pairing each
+row with an `int` status (`0` on every live observation). Decoded via
+`AddSourcesAsyncResponseRow`; never replayed on a transport failure.
+
+### RPC: APPEND_SOURCE (QsNTEd)
+
+**Source:** `_web/sources/transfers.py::SourceTransferService.append_text()` (`WebSourcesAPI.append_text`)
+
+```python
+# AppendSourceRequest { SourceId source_id = 2; SourceContent content = 4 }
+# SourceContent { PlainTextSourceContent plain_text = 2 }  ->  { header = 1; body = 2 }
+params = [
+    None,  # 0: unused
+    [source_id],  # 1: SourceId
+    None,  # 2: unused
+    [
+        None,
+        [header, body],
+    ],  # 3: SourceContent.plain_text — doubly nested (a flat text draws INTERNAL)
+]
+```
+
+**Response:** empty on success (`body` lands at the very end of the fulltext;
+`header` does not appear in it). Called with `allow_null=True,
+raise_on_null_status=True` so a rejected call is not read as that empty success.
+
+### RPC: COPY_SOURCES (R27wvc)
+
+**Source:** `_web/sources/transfers.py::SourceTransferService.copy()` (`WebSourcesAPI.copy`)
+
+Live method `CopySourcesAsync`. The synchronous twin `CopySources` (`Z8UXi`) is
+dead on both front doors and is not modelled.
+
+```python
+# CopySourcesAsyncRequest { repeated SourceId source_ids = 3; string target_project_id = 4 }
+params = [None, None, [[source_id], ...], target_notebook_id]
+```
+
+**Response:** `[[ [[original_id], <source entry>], ... ]]` — one mapping entry
+per copied source; the entry row is the standard `[[id], title, metadata,
+settings]` shape (`CopiedSourceRow`). An empty mapping means nothing was copied
+(unknown ids do not draw `NOT_FOUND`) and raises `SourceNotFoundError`.
+
+### RPC: COPY_ARTIFACTS (mKDdke)
+
+**Source:** `_web/artifacts.py::WebArtifactsAPI.copy()`
+
+Live method `CopyArtifactsAsync`. The synchronous twin `CopyArtifacts`
+(`zVGIdd`) validates arity, ignores the ids and copies nothing while reporting
+success — never model it.
+
+```python
+# CopyArtifactsAsyncRequest { RequestContext = 1; repeated string artifact_ids = 2; string target_project_id = 3 }
+params = [
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+    [artifact_id, ...],  # bare strings, not [id] wrappers
+    target_notebook_id,
+]
+```
+
+**Response:** `[[ [original_id, <artifact row>], ... ]]` — the full new artifact
+row inline (`CopiedArtifactRow` → `Artifact.from_api_response`). Verified twice
+live by re-listing the target (3 → 4 → 5 artifacts).
+
+### RPC: SUGGEST_NEXT_STEPS (OcvKNc)
+
+**Source:** `_web/notebooks.py::WebNotebooksAPI.suggest_next_steps()`
+
+Live method `NextStepSuggestions` — the standalone form of the block every chat
+answer carries at `inner[5]`, so no prior conversation is needed.
+
+```python
+# NextStepSuggestionsRequest { string project_id = 2; repeated InputSource sources = 3 }
+params = [None, notebook_id]  # all sources
+params = [None, notebook_id, [[[source_id]], ...]]  # scoped (nest_source_ids depth 2)
+```
+
+**Response:** `[[ [question, MagicArtifactType], ... ]]` — three questions per
+call live, each with type `9` (`CONVERSATIONAL_TEXT_CHIP`). Decoded through the
+chat `NextStepSuggestionRow`. A bogus notebook draws `NOT_FOUND`; a bare
+`[id]` at index 2 draws `INVALID_ARGUMENT`.
+
+### RPC: GET_CUSTOMIZATION_CHOICES (sqTeoe)
+
+**Source:** `_web/artifacts.py::WebArtifactsAPI.get_customization_choices()`
+
+Live method `GetArtifactCustomizationChoices`. **Account-level:** `[]`, a bogus
+notebook id and every artifact type return the same ~3.3 KB table on both front
+doors, so only the request context is sent (the notebook id is appended when
+the caller has one, mirroring the web UI).
+
+```python
+params = [[2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]]]
+params = [<context>, notebook_id]   # when a notebook id is supplied
+```
+
+**Response:** `[[ <audio>, <video>, <slide-deck>, <report presets> ]]` — one
+`ArtifactCustomizationChoices` message whose four one-field families each hold
+`[[row, ...]]`. Format rows are `[code, title, description]` (codes match
+`AudioFormat` / `VideoFormat` / `SlideDeckFormat`); report rows are
+`[report_type, description, directive]`. The audio and video families (tags 1–2)
+are live-only — the APK schema declares only slides (3) and reports (4).
+Decoded via `_web/rows/customization.py`.
+

@@ -5,9 +5,9 @@
   "tests/_guardrails/_wire_contract.py": {
     "ENUM_BINDINGS": 156,
     "ENUM_GAPS": 34,
-    "MAPPINGS": 669,
+    "MAPPINGS": 715,
     "PINNED": 114,
-    "UNMAPPED": 298
+    "UNMAPPED": 336
   },
   "tests/_guardrails/test_asyncio_loop_affinity_guard.py": {
     "ALLOWLIST": 21
@@ -68,7 +68,7 @@
     "_NON_AUTHTOKENS_CANDIDATES": 30
   },
   "tests/_guardrails/test_backend_abstract_contracts.py": {
-    "BASE_ABSTRACT_CONTRACTS": 151
+    "BASE_ABSTRACT_CONTRACTS": 157
   },
   "tests/_guardrails/test_backend_boundaries.py": {
     "LAZY_WEB_IMPORT_ALLOWLIST": 34
@@ -92,7 +92,7 @@
     "_EXECUTOR_RAW_ARGS": 32
   },
   "tests/_guardrails/test_golden_decode_coverage.py": {
-    "GOLDEN_COVERAGE": 41
+    "GOLDEN_COVERAGE": 46
   },
   "tests/_guardrails/test_login_package_dag.py": {
     "ALLOWED_EDGES": 43
