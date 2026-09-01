@@ -52,6 +52,31 @@ class SourceType(str, Enum):
     UNKNOWN = "unknown"
 
 
+class PlayBookExportReason(str, Enum):
+    """Why a Google Play Books title cannot be added as a source.
+
+    Decoded from the ``reason`` field of a ``ListExpertIntelligenceContent``
+    row (backend enum ``Y6a`` in the web bundle). ``None`` — not a member here
+    — means the title is exportable. Only :attr:`OPTED_OUT` has been observed
+    live; the other three are read off the backend enum and mapped by code.
+    """
+
+    OPTED_OUT = "opted_out"  # 1: "Publisher has opted out of content export"
+    UNSUPPORTED_CONTENT = "unsupported_content"  # 2: "Unsupported content type"
+    NOT_OWNED = "not_owned"  # 3: "Book is not owned"
+    LICENSE_RESTRICTION = "license_restriction"  # 4: "License restriction"
+
+
+#: ``ListExpertIntelligenceContent`` reason code -> :class:`PlayBookExportReason`.
+#: Codes are 1-based; ``0``/absent means the title is exportable (``None``).
+_PLAY_BOOK_EXPORT_REASON_MAP: dict[int, PlayBookExportReason] = {
+    1: PlayBookExportReason.OPTED_OUT,
+    2: PlayBookExportReason.UNSUPPORTED_CONTENT,
+    3: PlayBookExportReason.NOT_OWNED,
+    4: PlayBookExportReason.LICENSE_RESTRICTION,
+}
+
+
 _warned_source_types: set[int] = set()
 
 
@@ -63,16 +88,17 @@ _warned_source_types: set[int] = set()
 #: levels, marked inline on the entries themselves:
 #:
 #: * **live-observed** — a source of that type was created and read back. This
-#:   is every code except the four below, and includes ``18``: an Android
+#:   is every code except the three below, and includes ``18``: an Android
 #:   ``AddSources`` carrying ``CONTENT_TYPE_GEMINI_CHAT`` reproducibly returns a
-#:   source with it.
-#: * **schema-only** — ``12``, ``15``, ``19`` and ``20``. Each is defined by the
+#:   source with it, and ``20``: adding a Google Play Book via
+#:   ``sources.add_play_book`` reads back as ``EXPERT_INTELLIGENCE`` (#2292).
+#: * **schema-only** — ``12``, ``15`` and ``19``. Each is defined by the
 #:   recovered enum, and no route this client can reach produces one: ``.xlsx``
 #:   is refused at the Web upload ``start`` with HTTP 400, a spreadsheet
-#:   imported from Drive comes back as ``14``, and Gmail, AI Mode chat and
-#:   Expert Intelligence imports are not exposed on either front door.
+#:   imported from Drive comes back as ``14``, and Gmail and AI Mode chat
+#:   imports are not exposed on either front door.
 #:
-#: The schema-only four are mapped anyway so a server that does emit one reads
+#: The schema-only three are mapped anyway so a server that does emit one reads
 #: as itself instead of ``UNKNOWN``: a label on a code nothing sends costs
 #: nothing, while leaving one unmapped raises ``UnknownTypeWarning`` and sends
 #: the next reader hunting — which is exactly how ``18`` was found. Promote an
@@ -98,7 +124,7 @@ _SOURCE_TYPE_CODE_MAP: dict[int, SourceType] = {
     17: SourceType.EPUB,
     18: SourceType.GEMINI_CHAT,  # live: Android AddSources CONTENT_TYPE_GEMINI_CHAT
     19: SourceType.AI_MODE_CHAT,  # schema-only; no reachable producer
-    20: SourceType.EXPERT_INTELLIGENCE,  # schema-only; no reachable producer
+    20: SourceType.EXPERT_INTELLIGENCE,  # live: Play Books add via ExpertIntelligenceContent (#2292)
 }
 
 
@@ -357,6 +383,55 @@ def _pdf_url_title_fallback(
     return title
 
 
+@dataclass(frozen=True)
+class PlayBook:
+    """A Google Play Books title eligible to be added as a source.
+
+    One row of :meth:`~notebooklm.NotebookLMClient.sources.list_play_books`,
+    decoded from ``ListExpertIntelligenceContent`` ("Expert Intelligence" —
+    the Discover-page offer to add purchased ebooks; US only, 18+).
+
+    A title with :attr:`export_disabled` cannot be added; :attr:`reason` says
+    why (``None`` when exportable). :attr:`field_type` is an opaque backend
+    double (not a price) that the picker sorts on; it is passed back verbatim
+    when the book is added.
+    """
+
+    content_id: str
+    title: str | None
+    authors: tuple[str, ...]
+    description_html: str | None
+    cover_url: str | None
+    export_disabled: bool
+    reason: PlayBookExportReason | None
+    field_type: float | None
+    updated_at: datetime | None
+
+    @property
+    def store_url(self) -> str:
+        """Play Store detail page for this title."""
+        return f"https://play.google.com/store/books/details?id={self.content_id}&pcampaignid=nblm"
+
+
+@dataclass(frozen=True)
+class ExpertIntelligenceSourceMetadata:
+    """Play Books provenance carried on an ingested Expert-Intelligence source.
+
+    Decoded from ``SourceMetadata`` field 19
+    (``expertIntelligenceSourceMetadata``) and exposed on
+    :attr:`Source.expert_intelligence`. Present only on sources of kind
+    :attr:`SourceType.EXPERT_INTELLIGENCE`; ``None`` on every other source.
+    """
+
+    content_id: str | None
+    provider: int | None
+    title: str | None
+    authors: tuple[str, ...]
+    thumbnail_image_url: str | None
+    description: str | None
+    field_type: float | None
+
+
 @dataclass
 class Source:
     """Represents a NotebookLM source."""
@@ -407,6 +482,10 @@ class Source:
     #: Last time the backend reports the source content was modified/refreshed,
     #: decoded as timezone-aware UTC.
     last_modified_at: datetime | None = None
+    #: Play Books provenance for an Expert-Intelligence source (kind
+    #: :attr:`SourceType.EXPERT_INTELLIGENCE`), decoded from ``SourceMetadata``
+    #: field 19; ``None`` for every other source (#2292).
+    expert_intelligence: ExpertIntelligenceSourceMetadata | None = None
 
     @property
     def kind(self) -> SourceType:
@@ -526,6 +605,7 @@ class Source:
             revision_id=row.revision_id,
             revision_timestamp=row.revision_timestamp,
             last_modified_at=row.last_modified_at,
+            expert_intelligence=row.expert_intelligence,
         )
 
     @classmethod

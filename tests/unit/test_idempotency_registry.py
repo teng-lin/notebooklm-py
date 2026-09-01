@@ -179,6 +179,7 @@ def test_retry_disabled_entries_are_intentional_and_documented() -> None:
         # #2283 transfer family: row-creating / in-place-appending writes with no
         # client token and no post-failure probe (see _web/policy.py notes).
         (RPCMethod.ADD_SOURCES_ASYNC, None): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        (RPCMethod.ADD_SOURCES_ASYNC, "play_book"): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         (RPCMethod.APPEND_SOURCE, None): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         (RPCMethod.COPY_SOURCES, None): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         (RPCMethod.COPY_ARTIFACTS, None): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,

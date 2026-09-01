@@ -132,7 +132,15 @@ MUTATING_SKIP_LIST: frozenset[str] = frozenset(
 PATH_NOT_METHOD_SKIP: frozenset[str] = frozenset()
 
 
-UNAVAILABLE_SKIP_LIST: frozenset[str] = frozenset()
+UNAVAILABLE_SKIP_LIST: frozenset[str] = frozenset(
+    {
+        # Read-only, but account-scoped: ListExpertIntelligenceContent returns a
+        # non-empty payload only for an account that has redeemed Google Play
+        # Books, and is empty (indistinguishable from a transport miss) on the
+        # canary account — so it is not a usable drift probe (#2292).
+        "LIST_EXPERT_INTELLIGENCE_CONTENT",
+    }
+)
 """Reserved for ``RPCMethod`` members that exist but aren't currently
 exercisable by the canary (e.g. unreleased / rolled-back Google features).
 Empty for now; the scaffolding is preserved so a future "exists but cannot

@@ -28,9 +28,11 @@ tests/integration/test_curl_cffi_transport_integration.py # deliberate, permanen
 tests/integration/test_notebooks_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notes_idempotency.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notes_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_play_books_integration.py # #2292 Play Books facade→wire tests; mock-backed (build_rpc_response), no live traffic
 tests/integration/test_research_deep_poll_vcr.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_research_idempotency.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_research_import_verification_vcr.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_rpc_seam_matrix.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_save_chat_as_note_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_session_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_settings_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -38,4 +40,3 @@ tests/integration/test_sharing_integration.py # existing mock-only integration e
 tests/integration/test_side_effects_idempotency.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_idempotency.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_rpc_seam_matrix.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup

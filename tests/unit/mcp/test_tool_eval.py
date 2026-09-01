@@ -31,8 +31,14 @@ pytest.importorskip("fastmcp")
 #: to ~36.0k). Move these DOWN as the surface gets leaner; a rise means
 #: description/param bloat that must be justified, not rubber-stamped.
 SCHEMA_CHAR_BUDGET = (
-    39_400  # total serialized inputSchema + description chars (current 39_377; +23 slack)
+    40_580  # total serialized inputSchema + description chars (current 40_556; +24 slack)
 )
+# #2292 (Google Play Books sources) added two discrete-verb tools —
+# `source_list_play_books` and `source_add_play_book` — each with the
+# agent-facing description an LLM needs to use it (what Expert Intelligence is,
+# the `content_id`/`export_disabled` contract, and the web-backend-only caveat).
+# Two genuinely new source verbs, per ADR-0025's discrete-verb rationale. Net
+# 39_377 -> 40_556 (+1_179); ratcheted to 40_580 keeping the ~20-char slack.
 # #2129 added the genuine listable FANTASY_MAP and FILE artifact types to the
 # `studio_list.kind` enum. Their two required enum strings move the surface from
 # 39_349 to 39_377 (+28); ratcheted to 39_400 with the existing ~20-char slack.

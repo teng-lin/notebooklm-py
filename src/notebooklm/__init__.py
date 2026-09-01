@@ -98,6 +98,8 @@ from .exceptions import (
     NoteNotFoundError,
     # Cross-domain umbrellas
     NotFoundError,
+    # Domain: Sources
+    PlayBookNotExportableError,
     RateLimitError,
     ResearchError,
     ResearchStartUnavailableError,
@@ -107,7 +109,6 @@ from .exceptions import (
     RPCResponseTooLargeError,
     RPCTimeoutError,
     ServerError,
-    # Domain: Sources
     SourceAddError,
     SourceError,
     SourceNotFoundError,
@@ -156,6 +157,7 @@ from .types import (
     DocumentBlock,
     DriveMimeType,
     DriveSourceStatus,
+    ExpertIntelligenceSourceMetadata,
     ExportType,
     FlashcardArtifactUserState,
     GenerationState,
@@ -175,6 +177,8 @@ from .types import (
     Notebook,
     NotebookDescription,
     NotebookMetadata,
+    PlayBook,
+    PlayBookExportReason,
     PremiumFeatureInfo,
     PromptSuggestion,
     QuizDifficulty,
@@ -269,6 +273,9 @@ __all__ = [
     "ArtifactCustomizationChoices",
     "CopiedArtifact",
     "CopiedSource",
+    "PlayBook",
+    "PlayBookExportReason",
+    "ExpertIntelligenceSourceMetadata",
     "CustomizationChoice",
     "NextStepSuggestion",
     "ChatReference",
@@ -316,6 +323,7 @@ __all__ = [
     "ChatResponseParseError",
     # Domain Exceptions: Sources
     "SourceError",
+    "PlayBookNotExportableError",
     "SourceAddError",
     "SourceProcessingError",
     "SourceTimeoutError",

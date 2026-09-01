@@ -127,3 +127,58 @@ def build_add_sources_async_params(url_specs: list[list[Any]], notebook_id: str)
     specs, the notebook id, then the request context (#2283).
     """
     return [url_specs, notebook_id, build_template_block()]
+
+
+def build_list_play_books_params() -> list[Any]:
+    """Build ``LIST_EXPERT_INTELLIGENCE_CONTENT`` (``mVtEUb``) params.
+
+    ``[RequestContext, ContentProvider]``. ``1`` is ``GOOGLE_PLAY_BOOKS`` — the
+    only provider the app sends and the only one the backend serves; the
+    request context is unused for the list, so a bare ``None`` is sent for it
+    (both ``[None, 1]`` and a populated context return the same rows, verified
+    live 2026-09-01, #2292).
+    """
+    return [None, 1]
+
+
+#: The ``UserContent`` (web spec ``vv``) index that holds the
+#: ``ExpertIntelligenceContent`` oneof (proto tag 16). The server parses the
+#: payload only at index 15 — 14 and 16 both decode as ``status 3`` (#2292).
+_EXPERT_INTELLIGENCE_SPEC_INDEX = 15
+#: The ``vv.f11 = 1`` marker every source spec carries, at index 10.
+_SPEC_F11_INDEX = 10
+#: ``ContentProvider.GOOGLE_PLAY_BOOKS``.
+_GOOGLE_PLAY_BOOKS_PROVIDER = 1
+
+
+def build_play_book_source_spec(
+    content_id: str,
+    title: str | None,
+    description_html: str | None,
+    cover_url: str | None,
+    field_type: float | None,
+    authors: list[str],
+) -> list[Any]:
+    """Build one ``UserContent`` spec adding a Play Book (#2292).
+
+    Lays the ``ExpertIntelligenceContent`` message —
+    ``[provider, content_id, title, description, cover_url, field_type,
+    [authors]]`` — at index 15, with the shared ``f11 = 1`` marker at index 10
+    and ``None`` everywhere else. Wrapped as ``[[spec], notebook_id, ctx]`` by
+    :func:`build_add_sources_async_params` and dispatched through
+    ``ADD_SOURCES_ASYNC``; the created source ingests to ``EXPERT_INTELLIGENCE``
+    (verified live end to end on the web tier).
+    """
+    ei_content = [
+        _GOOGLE_PLAY_BOOKS_PROVIDER,
+        content_id,
+        title,
+        description_html,
+        cover_url,
+        field_type,
+        list(authors),
+    ]
+    spec: list[Any] = [None] * 16
+    spec[_SPEC_F11_INDEX] = 1
+    spec[_EXPERT_INTELLIGENCE_SPEC_INDEX] = ei_content
+    return spec

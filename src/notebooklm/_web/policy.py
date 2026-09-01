@@ -431,6 +431,17 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
         ),
     )
     registry.register(
+        RPCMethod.ADD_SOURCES_ASYNC,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        variant="play_book",
+        notes=(
+            "the Play Books add (sources.add_play_book) enqueues a new "
+            "ExpertIntelligenceContent source row with no client-token slot and "
+            "no post-failure probe, so a blind retry after a lost response would "
+            "add the book a second time (#2292)"
+        ),
+    )
+    registry.register(
         RPCMethod.APPEND_SOURCE,
         IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         notes=(
@@ -814,6 +825,9 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
             "set user settings to caller-supplied values; replay leaves the same state"
         ),
         RPCMethod.LIST_LABELS: "read-only label list; replay does not mutate label state",
+        RPCMethod.LIST_EXPERT_INTELLIGENCE_CONTENT: (
+            "read-only Play Books library list; replay does not mutate any state (#2292)"
+        ),
         RPCMethod.UPDATE_LABEL: (
             "default (rename / set-emoji) sets label fields to caller-supplied values; "
             "replay leaves the same state. The add_sources variant is classified "

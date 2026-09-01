@@ -16,7 +16,7 @@ from ._source.batch import SourceUrlBatchItem
 from ._source.polling import SourcePoller, SourceWaitResult
 from ._types.research import SourceGuide
 from .exceptions import SourceNotFoundError
-from .types import CopiedSource, Source, SourceFulltext, SourceStatus, SourceType
+from .types import CopiedSource, PlayBook, Source, SourceFulltext, SourceStatus, SourceType
 
 logger = logging.getLogger(__name__)
 
@@ -335,6 +335,23 @@ class SourcesAPI(ABC):
         wait_timeout: float = 120.0,
     ) -> Source:
         """Add a Google Drive document by reference."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def list_play_books(self) -> builtins.list[PlayBook]:
+        """List Google Play Books eligible to be added as sources (#2292)."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def add_play_book(
+        self,
+        notebook_id: str,
+        content_id: str,
+        *,
+        wait: bool = False,
+        wait_timeout: float = 120.0,
+    ) -> Source:
+        """Add a Google Play Book as a source by its volume id (#2292)."""
         raise NotImplementedError
 
     @abstractmethod

@@ -1291,6 +1291,7 @@ src/notebooklm/
 │   ├── source_content.py        # Click-free read-only source-content fetchers for get/fulltext/guide/stale (typed plan/result pairs)
 │   ├── source_listing.py        # Click-free `source list` fetch core: fetch_sources (label_filter resolution; label_resolver injected)
 │   ├── source_mutations.py      # Click-free source delete/delete-by-title/rename/refresh/add-drive core: resolvers + SourceMutationError + typed results (validate_id/resolve_source_id injected; confirmer injected)
+│   ├── source_play_books.py     # Click-free Google Play Books core (#2292): fetch_play_books + execute_source_add_play_book over client.sources.list_play_books/add_play_book (SourceAddPlayBookPlan/Result); web-only capability, inherits UnsupportedOperationError on Android
 │   ├── source_research.py       # Click-free `source add-research` start/wait/import workflow + validate_add_research_flags (importer injected; SourceAddResearchPlan/Result)
 │   ├── source_wait.py           # Click-free `source wait` readiness-poll core: execute_source_wait + typed SourceWaitOutcome (wait_context injected) + wait_all_sources (single-snapshot loop via client.sources.wait_all_until_ready — one notebook poll per tick, order-preserving; #1870) shared by the MCP tool + REST route (#1871) + the MAX_WAIT_TIMEOUT / MAX_WAIT_SOURCE_IDS caps
 │   └── views.py                 # Transport-neutral output-projection views: share_status_view (access/permission/view_level enum→label), source_view (kind/status_label/drive_status_label + is_drive_degraded added), notebook_view (role_label added), notebook_viewed_keys (last_viewed_at + its deprecated modified_at alias, for hand-built CLI JSON envelopes), ask_result_view (raw_response debug blob stripped); shared by the MCP tools + REST routes so both emit the identical enriched shape (Option B)
@@ -1474,6 +1475,7 @@ src/notebooklm/
 │   ├── research_task.py         # Deep-research task parser
 │   ├── sharing.py               # Shared-user and share-status row decoders behind public lazy shims
 │   ├── sources.py               # Source row adapter
+│   ├── play_books.py            # ListExpertIntelligenceContent row adapter (#2292): decode_play_books_response → PlayBook list
 │   └── transfers.py             # CopySourcesAsync / CopyArtifactsAsync / AddSourcesAsync mapping-row adapters (#2283)
 ├── _chat.py                     # Abstract ChatAPI + shared locks/cache/ask/delete/save-note orchestration and lazy private turn-helper shim
 ├── _auth/                       # Auth subpackage (forwarded through auth.py facade)
@@ -1549,6 +1551,7 @@ src/notebooklm/
 │   │   ├── content.py           # Source content fetcher
 │   │   ├── drive_import.py      # Cookie-authenticated Drive download + upload route
 │   │   ├── listing.py           # GET_NOTEBOOK source listing decoder
+│   │   ├── play_books.py        # PlayBooksService (#2292): mVtEUb list + X1snv Play Books add (ExpertIntelligenceContent spec); web-only add path
 │   │   ├── transfers.py         # AddSourcesAsync / AppendSource / CopySourcesAsync service (#2283)
 │   │   ├── upload.py            # Gated resumable source upload pipeline
 │   │   └── _upload_decode.py    # Upload URL/source-id/content-type validation
@@ -1618,6 +1621,7 @@ src/notebooklm/
 │       ├── notebooks.py         # notebook_list/create/describe/rename/delete over _app.notebooks
 │       ├── sources.py           # source_list/read/rename/delete/wait/add over _app.source_* (add: url/text/file/youtube via source_add, drive via source_mutations); source_add folds in wait=True (single-mode add + wait composed via _waitagg) and bytes_base64/filename (in-channel small-file byte upload via _fileupload) — #1890
 │       ├── sources_drive.py     # source_add_drive_file tool (#1884): discrete verb over _app.source_mutations.execute_source_add_drive_file — downloads + uploads the upload-only Drive types (kept out of the ceiling'd sources.py; own register())
+│       ├── sources_playbooks.py # source_list_play_books + source_add_play_book tools (#2292): discrete verbs over _app.source_play_books — Google Play Books (Expert Intelligence), web backend only (own register())
 │       ├── chat.py              # chat_ask (client.chat.ask + get_history recall + suggest_followups) + chat_configure (_app.chat.execute_configure) + suggest_prompts (client.notebooks.suggest_prompts surface selector)
 │       ├── notes.py             # note_save (create-or-update upsert) over _app.notes; note reading/renaming/deleting fold into the cross-type Studio tools
 │       ├── studio.py            # hosts the Studio tools: studio_list (merges notes+artifacts via _studio_items.studio_items; surfaces each artifact's generation_prompt in the summary listing / the item= single-fetch — folded studio_get_prompt in #1896) / generate / status / download (via _studio_download) / rename / retry / studio_delete — both rename and delete are cross-type via _studio_items.resolve_studio_item (note→_app.notes.execute_note_rename/execute_note_delete, artifact→_app.artifacts kind-aware core); enum dispatch over _app.generate + _app.download; stateless poll via _app.artifacts.poll_artifact

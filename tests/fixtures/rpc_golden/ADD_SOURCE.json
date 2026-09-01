@@ -157,6 +157,7 @@
     "word_count": null,
     "revision_id": null,
     "revision_timestamp": null,
-    "last_modified_at": null
+    "last_modified_at": null,
+    "expert_intelligence": null
   }
 }

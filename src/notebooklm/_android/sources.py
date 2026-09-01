@@ -35,9 +35,10 @@ from ..exceptions import (
     SourceNotFoundError,
     SourceProcessingError,
     SourceTimeoutError,
+    UnsupportedOperationError,
     ValidationError,
 )
-from ..types import Source, SourceFulltext, SourceStatus, SourceType
+from ..types import PlayBook, Source, SourceFulltext, SourceStatus, SourceType
 from .codecs.documents import decode_document, tailwind_doc_markdown, tailwind_doc_plain_text
 from .codecs.notebooks import decode_project, map_get_project_error, validate_project_identity
 from .codecs.sources import decode_source, decode_sources, select_document_guide
@@ -1113,6 +1114,41 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         if requested_title is not None and source.title != requested_title:
             source = await self._best_effort_title(notebook_id, source, requested_title)
         return source
+
+    async def list_play_books(self) -> builtins.list[PlayBook]:
+        """Google Play Books are a web-tier capability (#2292).
+
+        The Android gRPC ``ListExpertIntelligenceContent`` serves the same
+        library, but the write path this listing feeds
+        (:meth:`add_play_book`) requires a per-account Phenotype experiment
+        header the client cannot synthesize, so the whole capability is exposed
+        on the web backend only. Use a web-backed client
+        (``NotebookLMClient.from_storage()`` without ``backend="android"``).
+        """
+        raise UnsupportedOperationError(
+            "Google Play Books sources are supported on the web backend only; "
+            "the Android backend cannot add them. Use a web-backed client (#2292)."
+        )
+
+    async def add_play_book(
+        self,
+        notebook_id: str,
+        content_id: str,
+        *,
+        wait: bool = False,
+        wait_timeout: float = 120.0,
+    ) -> Source:
+        """Adding a Play Book is web-only (#2292).
+
+        The Android ``AddSources`` for an ``ExpertIntelligenceContent`` returns
+        ``INTERNAL`` unless the request carries a per-account Phenotype
+        experiment header the client cannot reproduce, so this is refused
+        rather than sent. Use a web-backed client.
+        """
+        raise UnsupportedOperationError(
+            "Google Play Books sources are supported on the web backend only; "
+            "the Android backend cannot add them. Use a web-backed client (#2292)."
+        )
 
     async def add_drive_file(
         self,

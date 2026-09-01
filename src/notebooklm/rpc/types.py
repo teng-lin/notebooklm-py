@@ -148,6 +148,15 @@ class RPCMethod(str, Enum):
     # maps each original id to its new Source row. The sync twin CopySources
     # (Z8UXi) is dead on both front doors — never model it (#2283).
     COPY_SOURCES = "R27wvc"
+    # -> ListExpertIntelligenceContent. Lists the account's Google Play Books
+    # library eligible to be added as sources ("Expert Intelligence", US/18+).
+    # Web-verified live 2026-09-01; the Android tier serves the same method over
+    # gRPC. Adding a listed book rides ADD_SOURCE / ADD_SOURCES_ASYNC with an
+    # ExpertIntelligenceContent spec (see _web.params.sources) — no add method
+    # of its own. The Android write path additionally requires a per-account
+    # Phenotype experiment header the client cannot synthesize, so add is
+    # web-only (#2292).
+    LIST_EXPERT_INTELLIGENCE_CONTENT = "mVtEUb"
 
     # Source label operations (AI topic grouping).
     # NOTE: account-level *collections* (notebook grouping) reuse these four

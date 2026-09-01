@@ -119,10 +119,12 @@
     "source": [
       "add",
       "add-async",
+      "add-book",
       "add-drive",
       "add-drive-file",
       "add-research",
       "append",
+      "books",
       "clean",
       "copy",
       "delete",
@@ -10202,10 +10204,12 @@
       "commands": [
         "add",
         "add-async",
+        "add-book",
         "add-drive",
         "add-drive-file",
         "add-research",
         "append",
+        "books",
         "clean",
         "copy",
         "delete",
@@ -10459,6 +10463,76 @@
         }
       ],
       "short_help": "Queue one or more URL sources without..."
+    },
+    "source add-book": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "content_id",
+          "nargs": 1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Wait for processing to finish",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "wait",
+          "opts": [
+            "--wait"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Add a Google Play Book as a source by its..."
     },
     "source add-drive": {
       "class": "Command",
@@ -10900,6 +10974,30 @@
         }
       ],
       "short_help": "Append a plain-text block to an existing..."
+    },
+    "source books": {
+      "class": "Command",
+      "params": [
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "List Google Play Books eligible to be..."
     },
     "source clean": {
       "class": "Command",

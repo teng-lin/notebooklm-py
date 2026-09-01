@@ -108,6 +108,7 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
                 "add_drive",
                 "add_drive_file",
                 "add_file",
+                "add_play_book",
                 "add_text",
                 "add_url",
                 "add_urls_async",
@@ -118,6 +119,7 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
                 "get_fulltext",
                 "get_guide",
                 "list",
+                "list_play_books",
                 "refresh",
                 "rename",
             }

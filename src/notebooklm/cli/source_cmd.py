@@ -30,6 +30,11 @@ from .._app.source_content import (
     execute_source_guide,
     execute_source_stale,
 )
+from .._app.source_play_books import (
+    SourceAddPlayBookPlan,
+    execute_source_add_play_book,
+    fetch_play_books,
+)
 from .._app.source_wait import (
     SourceWaitPlan,
     execute_source_wait,
@@ -52,8 +57,10 @@ from ._source_render import (  # noqa: F401
     _print_add_research_task_ids,
     _print_clean_candidates,
     _render_add_research_result,
+    _render_play_books_result,
     _render_source_add_drive_file_result,
     _render_source_add_drive_result,
+    _render_source_add_play_book_result,
     _render_source_delete_result,
     _render_source_fulltext_result,
     _render_source_get_result,
@@ -129,6 +136,8 @@ def source():
       add              Add a source (url, text, file, youtube)
       add-drive        Add a Google Drive document (native Docs/Slides/Sheets + PDF)
       add-drive-file   Add an upload-only Drive file (epub/docx/txt/...) via download
+      books            List Google Play Books eligible to add as sources
+      add-book         Add a Google Play Book by its content id
       add-research     Search web/drive and add sources from results
       get              Get source details
       fulltext         Get full indexed text content
@@ -579,6 +588,58 @@ def source_add_drive_file(ctx, document_id, notebook_id, title, wait, json_outpu
                 with cli_status("Downloading + adding Drive file...", ctx=ctx):
                     result = await execute_source_add_drive_file(client, plan)
             _render_source_add_drive_file_result(result, json_output=json_output, ctx=ctx)
+
+    return _run()
+
+
+@source.command("books")
+@json_option
+@with_client
+def source_books(ctx, json_output, client_auth):
+    """List Google Play Books eligible to be added as sources (#2292).
+
+    Shows the account's "Expert Intelligence" library — purchased ebooks
+    NotebookLM can ingest (US only, 18+). Titles marked no cannot be added.
+    Add one with `source add-book <content-id>`. Web backend only.
+    """
+
+    async def _run():
+        async with resolve_client_factory(ctx)(client_auth) as client:
+            books = await fetch_play_books(client)
+            _render_play_books_result(books, json_output=json_output, ctx=ctx)
+
+    return _run()
+
+
+@source.command("add-book")
+@click.argument("content_id")
+@notebook_option
+@click.option("--wait", is_flag=True, default=False, help="Wait for processing to finish")
+@json_option
+@with_client
+def source_add_book(ctx, content_id, notebook_id, wait, json_output, client_auth):
+    """Add a Google Play Book as a source by its content id (#2292).
+
+    CONTENT_ID is a Play Books volume id from `source books`. The title must be
+    exportable (publisher-permitting); a blocked one is refused up front. Web
+    backend only. Reads back as an `expert_intelligence` source.
+    """
+    nb_id = require_notebook(notebook_id)
+
+    async def _run():
+        async with resolve_client_factory(ctx)(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            plan = SourceAddPlayBookPlan(
+                notebook_id=nb_id_resolved,
+                content_id=content_id,
+                wait=wait,
+            )
+            if json_output:
+                result = await execute_source_add_play_book(client, plan)
+            else:
+                with cli_status("Adding Play Book source...", ctx=ctx):
+                    result = await execute_source_add_play_book(client, plan)
+            _render_source_add_play_book_result(result, json_output=json_output, ctx=ctx)
 
     return _run()
 

@@ -1269,6 +1269,8 @@ print(url)
 | `add_text(notebook_id, title, content, *, wait=False, wait_timeout=120.0, idempotent=False)` | `str, str, str, *, bool, float, bool` | `Source` | Add text content. `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
 | `add_file(notebook_id, file_path, mime_type=None, *, wait=False, wait_timeout=120.0, title=None, on_progress=None)` | `str, str \| Path, str \| None, *, bool, float, str \| None, Callable \| None` | `Source` | Upload file. `mime_type` is a **supported** parameter — it overrides filename-extension inference to set the resumable-upload content-type header (omit it to infer from the extension). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). `title` sets the display name via a post-upload `UPDATE_SOURCE` and forces a brief registration wait even when `wait=False`. `on_progress(bytes_sent, total_bytes)` may be sync or async. |
 | `add_drive(notebook_id, file_id, title, mime_type="application/vnd.google-apps.document", *, wait=False, wait_timeout=120.0)` | `str, str, str, str, *, bool, float` | `Source` | Add Google Drive doc. `mime_type` defaults to Google Docs; override for Slides/Sheets/PDF via `DriveMimeType` (see `notebooklm.types`). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). NotebookLM's backend re-derives the display title from live Drive metadata for native Drive imports, discarding the requested `title`; the method now issues an automatic best-effort follow-up `rename()` so an explicit `title` still wins (non-fatal — a rename failure logs a warning and keeps the added source under its upstream title; issue #1960). |
+| `list_play_books()` | - | `list[PlayBook]` | List the account's Google Play Books eligible to add as sources ("Expert Intelligence"; US only, 18+). Empty for an account with no Play Books library. **Web backend only** — the Android backend raises `UnsupportedOperationError`. See [Google Play Books sources](#google-play-books-sources). |
+| `add_play_book(notebook_id, content_id, *, wait=False, wait_timeout=120.0)` | `str, str, *, bool, float` | `Source` | Add a Play Book by its `content_id` (from `list_play_books()`). Refuses a non-exportable title with `PlayBookNotExportableError`; the created source ingests as `SourceType.EXPERT_INTELLIGENCE` with `Source.expert_intelligence` provenance. **Web backend only.** |
 | `rename(notebook_id, source_id, new_title, *, return_object=True)` | `str, str, str` | `Source \| None` | Rename source (prefers the `UPDATE_SOURCE` echo, else re-fetched; raises `SourceNotFoundError` if missing). `return_object=False` returns `None` without hydrating. |
 | `refresh(notebook_id, source_id)` | `str, str` | `None` | Refresh URL/Drive source. `None` means the server accepted the call; a rejection raises `RPCError` (v0.9.0, #2290 — previously a server-side `INVALID_ARGUMENT` also returned `None`). |
 | `check_freshness(notebook_id, source_id)` | `str, str` | `bool` | Check if source needs refresh |
@@ -1374,6 +1376,38 @@ filtered subset. There is intentionally no separate `sources.count()` or
 inventory object: the backend already returns the source rows needed to count,
 so another public surface would imply authority or efficiency that does not
 exist.
+
+#### Google Play Books sources
+
+NotebookLM can add ebooks from an account's **Google Play Books** library as
+sources ("Expert Intelligence"; US only, 18+). `list_play_books()` returns the
+library as `PlayBook` objects; `add_play_book(notebook_id, content_id)` adds one
+by its volume id. A title whose publisher opted out of content export has
+`export_disabled=True` and a `reason` (`PlayBookExportReason`); `add_play_book`
+refuses those client-side with `PlayBookNotExportableError`.
+
+```python
+books = await client.sources.list_play_books()
+for book in books:
+    print(
+        book.content_id, book.title, "" if not book.export_disabled else f"(blocked: {book.reason})"
+    )
+
+exportable = next(b for b in books if not b.export_disabled)
+source = await client.sources.add_play_book(nb_id, exportable.content_id, wait=True)
+assert source.kind is SourceType.EXPERT_INTELLIGENCE
+print(source.expert_intelligence.authors)  # ExpertIntelligenceSourceMetadata
+```
+
+**Web backend only.** Adding a Play Book on the Android backend requires a
+per-account Phenotype experiment header the client cannot synthesize (the
+server returns `INTERNAL` without it), so both methods raise
+`UnsupportedOperationError` on an Android-backed client. Listing works on the
+web tier; use a web-backed client (`NotebookLMClient.from_storage()` without
+`backend="android"`). Added sources read back with type
+`SourceType.EXPERT_INTELLIGENCE` and carry `Source.expert_intelligence`
+(`ExpertIntelligenceSourceMetadata`) provenance decoded from `SourceMetadata`
+field 19.
 
 ---
 

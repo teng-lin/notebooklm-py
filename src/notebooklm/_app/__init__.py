@@ -269,6 +269,12 @@ from .source_mutations import (
     resolve_source_by_exact_title,
     resolve_source_for_delete,
 )
+from .source_play_books import (
+    SourceAddPlayBookPlan,
+    SourceAddPlayBookResult,
+    execute_source_add_play_book,
+    fetch_play_books,
+)
 from .source_wait import (
     SourceWaitNotFound,
     SourceWaitOutcome,
@@ -490,6 +496,11 @@ __all__ = [
     "execute_source_stale",
     # source_listing
     "fetch_sources",
+    # source_play_books
+    "SourceAddPlayBookPlan",
+    "SourceAddPlayBookResult",
+    "execute_source_add_play_book",
+    "fetch_play_books",
     # source_mutations
     "DriveMimeChoice",
     "SourceAddDrivePlan",

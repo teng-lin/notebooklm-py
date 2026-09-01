@@ -408,6 +408,7 @@ _TOP_LEVEL_EXCEPTION_EXPORTS = [
     "RPCResponseTooLargeError",
     "RPCTimeoutError",
     "ServerError",
+    "PlayBookNotExportableError",
     "SourceAddError",
     "SourceError",
     "SourceNotFoundError",

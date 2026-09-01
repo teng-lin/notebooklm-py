@@ -72,6 +72,7 @@ def register_all(mcp: FastMCP) -> None:
         sharing,
         sources,
         sources_drive,
+        sources_playbooks,
         studio,
     )
 
@@ -79,6 +80,7 @@ def register_all(mcp: FastMCP) -> None:
         notebooks,
         sources,
         sources_drive,
+        sources_playbooks,
         chat,
         notes,
         studio,

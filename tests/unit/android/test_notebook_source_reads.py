@@ -223,6 +223,8 @@ def test_exact_abstract_sets_and_android_adapters_are_concrete() -> None:
             "add_drive",
             "add_drive_file",
             "add_file",
+            "add_play_book",
+            "list_play_books",
             "add_text",
             "add_url",
             "add_urls_async",

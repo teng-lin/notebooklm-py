@@ -161,6 +161,8 @@ Supported source types: URLs, YouTube videos, files (PDF, text, Markdown, Word, 
 | `add <content>` | URL/file/text (use `-` for stdin) | `--title`, `--type`, `--timeout`, `--follow-symlinks`, `--allow-internal` (URL sources only), `--json` (file-source `--mime-type` overrides extension inference — see [detailed section](#source-add-mime-type-file-sources)) | `source add "https://..." --timeout 90` |
 | `add-drive <id> <title>` | Drive file ID, title | `--mime-type [google-doc\|google-slides\|google-sheets\|pdf]`, `--json` | `source add-drive abc123 "Doc" --mime-type google-slides` |
 | `add-drive-file <id>` | Drive file ID or share URL | `--title`, `--wait`, `--json` | `source add-drive-file abc123 --title "Notes" --wait` |
+| `books` | - | `--json` | `source books` |
+| `add-book <content-id>` | Play Books volume id (from `books`) | `--wait`, `--json` | `source add-book QhsZEAAAQBAJ -n nb123 --wait` |
 | `add-research [query]` | Search query (or `--prompt-file -` for stdin) | `--mode [fast\|deep]`, `--from [web\|drive]`, `--import-all`, `--cited-only`, `--no-wait`, `--timeout`, `--prompt-file PATH` | `source add-research "AI" --mode deep --no-wait` |
 | `get <id>` | Source ID | `--json` | `source get src123` |
 | `fulltext <id>` | Source ID | `--json`, `-o FILE`, `--force`, `--no-clobber`, `-f [text\|markdown]` | `source fulltext src123 -f markdown -o out.md` (`-f markdown` requires the `markdown` extra: `pip install "notebooklm-py[markdown]"` — full extras matrix: [docs/installation.md#optional-extras-matrix](installation.md#optional-extras-matrix)) |
@@ -1771,6 +1773,31 @@ notebooklm source add-drive-file 1AbcD...XyZ
 
 # Custom title, wait for processing to complete
 notebooklm source add-drive-file 1AbcD...XyZ --title "Meeting Notes" --wait
+```
+
+### Source: `books`, `add-book` (Google Play Books)
+
+Add ebooks from your **Google Play Books** library as sources ("Expert Intelligence"; US only, 18+). `source books` lists the library — each row shows the volume `content id`, title, authors, and whether it can be added (a publisher can opt a title out of content export). `source add-book <content-id>` adds one; a non-exportable title is refused up front, and the source ingests as an `expert_intelligence` source you can chat over like any other.
+
+> **Web backend only.** Adding a Play Book on the Android backend requires a per-account experiment token the client cannot reproduce, so both commands run on the web tier; on an Android-backed client they report the operation as unsupported.
+
+```bash
+notebooklm source books [--json]
+notebooklm source add-book [OPTIONS] CONTENT_ID
+```
+
+**`add-book` options:**
+- `-n, --notebook ID` - Notebook ID (uses current if not set; supports partial IDs)
+- `--wait` - Wait for processing to finish
+- `--json` - Output as JSON
+
+**Examples:**
+```bash
+# List the Play Books library
+notebooklm source books
+
+# Add "The Art of War" and wait for it to finish ingesting
+notebooklm source add-book QhsZEAAAQBAJ -n nb_123 --wait
 ```
 
 ### Source: `stale`, `clean`

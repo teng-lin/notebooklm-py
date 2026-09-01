@@ -47,6 +47,7 @@ from notebooklm.types import (
     NextStepSuggestion,
     Note,
     Notebook,
+    PlayBook,
     PromptSuggestion,
     ReportPreset,
     ResearchSource,
@@ -413,6 +414,30 @@ def _customize_source_guide(client: MagicMock) -> None:
     )
 
 
+def _customize_source_books(client: MagicMock) -> None:
+    client.sources.list_play_books = AsyncMock(
+        return_value=[
+            PlayBook(
+                content_id="QhsZEAAAQBAJ",
+                title="The Art of War",
+                authors=("Sun Tzu",),
+                description_html="<p>…</p>",
+                cover_url="https://cover",
+                export_disabled=False,
+                reason=None,
+                field_type=4.6,
+                updated_at=None,
+            )
+        ]
+    )
+
+
+def _customize_source_add_book(client: MagicMock) -> None:
+    client.sources.add_play_book = AsyncMock(
+        return_value=Source(id="src_book", title="The Art of War", _type_code=20)
+    )
+
+
 def _customize_source_add_research(client: MagicMock) -> None:
     client.research.start = AsyncMock(
         return_value=ResearchStart(
@@ -610,6 +635,19 @@ JSON_COMMANDS: list[tuple[str, list[str], object]] = [
             "--json",
         ],
         _customize_source_add_research,
+    ),
+    ("source_books", ["source", "books", "--json"], _customize_source_books),
+    (
+        "source_add_book",
+        [
+            "source",
+            "add-book",
+            "QhsZEAAAQBAJ",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--json",
+        ],
+        _customize_source_add_book,
     ),
     # artifact group
     ("artifact_list", ["artifact", "list", "-n", "abc123def456ghi789jkl", "--json"], None),
@@ -1178,6 +1216,8 @@ JSON_ERROR_WAIVED: dict[tuple[str, ...], str] = {
     ("source", "add"): _MUTATION_RATIONALE_ERROR,
     ("source", "add-drive"): _MUTATION_RATIONALE_ERROR,
     ("source", "add-drive-file"): _MUTATION_RATIONALE_ERROR,
+    ("source", "add-book"): _MUTATION_RATIONALE_ERROR,
+    ("source", "books"): _INTROSPECTION_RATIONALE,
     ("source", "clean"): _MUTATION_RATIONALE_ERROR,
     ("source", "delete"): _MUTATION_RATIONALE_ERROR,
     ("source", "delete-by-title"): _MUTATION_RATIONALE_ERROR,
