@@ -408,7 +408,8 @@ def parse_discover_task(
     # ``[null, null, null, null, 1]`` and the recorded job lands at status 3,
     # so a non-zero code is the poll path's NO_RESULTS failure, not a success.
     error_code = result[4] if len(result) > 4 else None
-    failed = isinstance(error_code, int) and error_code != 0
+    # ``type(...) is int`` so a stray boolean is not read as a code.
+    failed = type(error_code) is int and error_code != 0
     return ResearchTask(
         task_id=task_id,
         status=ResearchStatus.FAILED if failed else ResearchStatus.COMPLETED,

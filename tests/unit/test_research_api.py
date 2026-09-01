@@ -875,6 +875,9 @@ class TestResearchDiscover:
             ("lite", "q", "Invalid mode 'lite'"),
             ("default", "", "query must not be empty"),
             ("raw", "  ", "query must not be empty"),
+            (None, "q", "mode must be a string"),
+            (3, "q", "mode must be a string"),
+            ("default", None, "query must be a string"),
         ],
     )
     async def test_discover_validates_before_the_wire(
@@ -923,6 +926,17 @@ class TestResearchDiscover:
         assert task.status_code == 3
         assert task.task_id == "job_err" and task.sources == () and task.summary == ""
         assert task.termination_reason is not None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("slot", [True, "1", 1.0, [1]])
+    async def test_discover_non_integer_error_slot_is_not_a_failure(
+        self, auth_tokens, httpx_mock: HTTPXMock, build_rpc_response, slot
+    ):
+        payload = [[], "overview", ["job_ok"], None, slot]
+        httpx_mock.add_response(content=build_rpc_response("Es3dTe", payload).encode())
+        async with NotebookLMClient(auth_tokens) as client:
+            task = await client.research.discover("nb_123", "q")
+        assert task.status is ResearchStatus.COMPLETED and task.status_code == 2
 
     @pytest.mark.asyncio
     async def test_discover_explicit_zero_error_slot_stays_completed(

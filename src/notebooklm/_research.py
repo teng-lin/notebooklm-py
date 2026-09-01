@@ -128,6 +128,8 @@ def validate_discover(query: str, mode: str) -> tuple[str, str, DiscoveryMode]:
     """
     if not isinstance(query, str):
         raise ValidationError("query must be a string")
+    if not isinstance(mode, str):
+        raise ValidationError("mode must be a string")
     mode_lower = mode.lower()
     if mode_lower not in DISCOVER_MODES:
         raise ValidationError(
