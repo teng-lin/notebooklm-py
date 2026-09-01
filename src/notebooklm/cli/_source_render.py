@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 import click
+from rich.markup import escape as escape_markup
 from rich.markup import render as render_markup
 from rich.table import Table
 
@@ -609,14 +610,16 @@ def _render_play_books_result(
         add_cell = (
             "[green]yes[/green]"
             if not book.export_disabled
-            else f"[red]no[/red] ({book.reason.value})"
+            else f"[red]no[/red] ({escape_markup(book.reason.value)})"
             if book.reason is not None
             else "[red]no[/red]"
         )
+        # Escape library-supplied strings so a title/author containing
+        # ``[...]`` is not parsed as Rich console markup.
         table.add_row(
-            book.content_id,
-            book.title or "-",
-            ", ".join(book.authors) or "-",
+            escape_markup(book.content_id),
+            escape_markup(book.title or "-"),
+            escape_markup(", ".join(book.authors) or "-"),
             add_cell,
         )
     console.print(table)

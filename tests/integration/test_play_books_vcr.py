@@ -35,7 +35,7 @@ CASSETTE_PATH = Path(__file__).parent.parent / "cassettes" / "web" / CASSETTE_NA
 class TestListPlayBooksCassette:
     @pytest.mark.vcr
     @pytest.mark.asyncio
-    @notebooklm_vcr.use_cassette(CASSETTE_NAME)
+    @notebooklm_vcr.use_cassette("sources_play_books.yaml")
     async def test_list_play_books_decodes_library(self) -> None:
         auth = await get_vcr_auth()
         async with NotebookLMClient(auth) as client:

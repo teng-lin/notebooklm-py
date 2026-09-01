@@ -144,6 +144,11 @@ class TestRowDecode:
         with pytest.raises(DecodingError):
             decode_play_books_response(["not-a-row-list"])
 
+    def test_malformed_row_raises_rather_than_dropping(self) -> None:
+        # A non-list row is shape drift, not a droppable value — surface it.
+        with pytest.raises(DecodingError, match="Malformed"):
+            decode_play_books_response([[_ART_OF_WAR, "not-a-row"]])
+
 
 class TestSourceRowExpertIntelligence:
     def _row_with_metadata(self, metadata: list) -> SourceRow:

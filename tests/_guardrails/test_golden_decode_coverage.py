@@ -93,6 +93,7 @@ _SUGGEST_PROMPTS_VCR = "tests/integration/test_notebooks_suggest_prompts_vcr.py"
 _COPY_NOTEBOOK_VCR = "tests/integration/test_notebook_copy_vcr.py"
 _TRANSFER_VCR = "tests/integration/test_transfer_rpcs_vcr.py"
 _DISCOVER_VCR = "tests/integration/test_research_discover_vcr.py"
+_PLAY_BOOKS_VCR = "tests/integration/test_play_books_vcr.py"
 
 GoldenPointer = tuple[str, str]
 
@@ -227,6 +228,11 @@ GOLDEN_COVERAGE: dict[RPCMethod, tuple[GoldenPointer, ...]] = {
     ),
     RPCMethod.ADD_SOURCES_ASYNC: (
         (_TRANSFER_VCR, "test_live_transfer_lifecycle_on_a_scratch_notebook"),
+    ),
+    # Play Books library list (#2292): the cassette test reads content ids and
+    # export-eligibility verdicts back out of the recorded rows.
+    RPCMethod.LIST_EXPERT_INTELLIGENCE_CONTENT: (
+        (_PLAY_BOOKS_VCR, "TestListPlayBooksCassette::test_list_play_books_decodes_library"),
     ),
     RPCMethod.COPY_SOURCES: (
         (_TRANSFER_VCR, "test_live_transfer_lifecycle_on_a_scratch_notebook"),

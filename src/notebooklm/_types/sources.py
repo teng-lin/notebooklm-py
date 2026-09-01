@@ -124,7 +124,7 @@ _SOURCE_TYPE_CODE_MAP: dict[int, SourceType] = {
     17: SourceType.EPUB,
     18: SourceType.GEMINI_CHAT,  # live: Android AddSources CONTENT_TYPE_GEMINI_CHAT
     19: SourceType.AI_MODE_CHAT,  # schema-only; no reachable producer
-    20: SourceType.EXPERT_INTELLIGENCE,  # live: Play Books add via ExpertIntelligenceContent (#2292)
+    20: SourceType.EXPERT_INTELLIGENCE,  # live: Play Books add (#2292)
 }
 
 

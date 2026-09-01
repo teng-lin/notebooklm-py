@@ -111,4 +111,13 @@ def decode_play_books_response(payload: Any) -> list[PlayBook]:
             "Unexpected ListExpertIntelligenceContent rows shape",
             method_id=RPCMethod.LIST_EXPERT_INTELLIGENCE_CONTENT.value,
         )
-    return [decode_play_book_row(row) for row in rows if isinstance(row, list)]
+    # A non-list row is a shape break, not a droppable value: raise so a wire
+    # change surfaces loudly rather than silently shrinking the library.
+    for row in rows:
+        if not isinstance(row, list):
+            raise DecodingError(
+                "Malformed ListExpertIntelligenceContent row (expected a list, "
+                f"got {type(row).__name__})",
+                method_id=RPCMethod.LIST_EXPERT_INTELLIGENCE_CONTENT.value,
+            )
+    return [decode_play_book_row(row) for row in rows]

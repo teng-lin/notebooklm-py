@@ -116,6 +116,7 @@ Internal integer codes returned by `GET_NOTEBOOK` / `LIST_SOURCES` and consumed 
 | 14 | `GOOGLE_SPREADSHEET` | Google Sheets source **and** Drive-hosted binaries (see overload note) |
 | 16 | `CSV` | CSV upload |
 | 17 | `EPUB` | EPUB upload (added in v0.4.0) |
+| 20 | `EXPERT_INTELLIGENCE` | Google Play Books source added via `sources.add_play_book` (#2292); carries `ExpertIntelligenceSourceMetadata` at `metadata[18]` |
 
 > Codes outside this map are surfaced as `SourceType.UNKNOWN` and emit `UnknownTypeWarning` on first occurrence so unmapped types don't crash callers.
 

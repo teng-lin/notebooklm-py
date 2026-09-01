@@ -15,8 +15,16 @@ from __future__ import annotations
 
 import logging
 
+from ..._idempotency import mark_unconfirmed
 from ..._types.sources import PlayBook
-from ...exceptions import PlayBookNotExportableError, SourceNotFoundError
+from ...exceptions import (
+    NetworkError,
+    PlayBookNotExportableError,
+    RateLimitError,
+    RPCError,
+    ServerError,
+    SourceNotFoundError,
+)
 from ...rpc import RPCMethod
 from ..contracts import RpcCaller
 from ..params.sources import (
@@ -64,13 +72,28 @@ class PlayBooksService:
             list(book.authors),
         )
         params = build_add_sources_async_params([spec], notebook_id)
-        result = await self._rpc.rpc_call(
-            RPCMethod.ADD_SOURCES_ASYNC,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            disable_internal_retries=True,
-            operation_variant="play_book",
-        )
+        try:
+            result = await self._rpc.rpc_call(
+                RPCMethod.ADD_SOURCES_ASYNC,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                disable_internal_retries=True,
+                operation_variant="play_book",
+            )
+        except (RateLimitError, ServerError, NetworkError) as exc:
+            # The add is non-idempotent with no client token: a transport loss
+            # after a possible commit is UNRESOLVED, not a clean failure. Mark
+            # it so callers reconcile rather than blindly retry (mirrors the
+            # sibling AddSourcesAsync path in _web/sources/transfers.py).
+            raise mark_unconfirmed(
+                RPCError(
+                    "UNRESOLVED — the Play Book add may have committed before its "
+                    "response was lost. Do not blindly retry; list the notebook's "
+                    f"sources and reconcile first. No automatic retry was attempted. {exc}",
+                    method_id=RPCMethod.ADD_SOURCES_ASYNC.value,
+                    rpc_code=exc.rpc_code if isinstance(exc, RPCError) else None,
+                )
+            ) from exc
         source_id = first_added_source_id(result, method_id=RPCMethod.ADD_SOURCES_ASYNC.value)
         if source_id is None:
             raise SourceNotFoundError(

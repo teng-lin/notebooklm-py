@@ -7,7 +7,12 @@ from collections.abc import Iterable, Sequence
 from typing import Any, cast
 
 from ...exceptions import DecodingError
-from ...types import DriveSourceStatus, Source, SourceStatus
+from ...types import (
+    DriveSourceStatus,
+    ExpertIntelligenceSourceMetadata,
+    Source,
+    SourceStatus,
+)
 
 
 def _read_proto() -> Any:
@@ -88,6 +93,24 @@ def _enum_name(enum: Any, value: int) -> str | None:
         return None
 
 
+def _decode_expert_intelligence(meta: Any) -> ExpertIntelligenceSourceMetadata:
+    """Decode an Android ``ExpertIntelligenceSourceMetadata`` proto (#2292).
+
+    The web tier carries a ``provider`` (ContentProvider) the recovered mobile
+    schema does not declare, so it is left ``None`` on Android reads; every
+    other field maps one-to-one.
+    """
+    return ExpertIntelligenceSourceMetadata(
+        content_id=meta.content_id or None,
+        provider=None,
+        title=meta.title or None,
+        authors=tuple(meta.authors),
+        thumbnail_image_url=meta.thumbnail_image_url or None,
+        description=meta.description or None,
+        field_type=meta.field_type or None,
+    )
+
+
 def _decode_source(
     source: Any,
     *,
@@ -107,6 +130,7 @@ def _decode_source(
     drive_document_id = None
     content_mime = None
     type_code = 0
+    expert_intelligence = None
     if source.HasField("metadata"):
         metadata = source.metadata
         type_name = _enum_name(
@@ -125,6 +149,10 @@ def _decode_source(
             if drive_document_id is None:
                 drive_document_id = drive_metadata.document_id or None
             content_mime = drive_metadata.mime_type or None
+        if metadata.HasField("expert_intelligence_source_metadata"):
+            expert_intelligence = _decode_expert_intelligence(
+                metadata.expert_intelligence_source_metadata
+            )
 
     status = SourceStatus.UNKNOWN
     drive_status = None
@@ -160,6 +188,7 @@ def _decode_source(
         revision_id=None,
         revision_timestamp=None,
         last_modified_at=None,
+        expert_intelligence=expert_intelligence,
     )
 
 
