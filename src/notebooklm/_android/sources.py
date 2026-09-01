@@ -102,7 +102,10 @@ REFRESH_SOURCE_METHOD = f"/{_SERVICE}/RefreshSource"
 _FilterValue = TypeVar("_FilterValue")
 _CORRELATION_PREFIX = "nblm-"
 _CANONICAL_ID_LENGTH = 36
-# Readiness polling: sleep between looks; floor on one look's wire budget.
+# Post-upload readiness polling: sleep between GetProject looks, and the
+# smallest wire budget a single look may be handed (capped by the caller's
+# own ``wait_timeout``) so a deadline that reads as spent on the very tick it
+# was started still gets a real request out.
 _POLL_INTERVAL = 0.5
 _POLL_WIRE_FLOOR = 1.0
 
@@ -373,7 +376,9 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         callers may inject one to exercise a different uploader, or omit it and
         get the native staging round-trip.
 
-        ``monotonic`` is the injectable readiness-deadline clock.
+        ``monotonic`` is the clock behind the post-upload readiness deadline,
+        injectable like every other Android deadline so tests can drive the
+        wait with a stepping clock instead of racing ``time.monotonic()``.
         """
         self._transport = session
         self._upload_pipeline = upload_pipeline
@@ -527,10 +532,15 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
             # An explicit zero budget means "do not wait", not "look once".
             raise SourceTimeoutError(source_id, timeout, last_status)
         while True:
-            # Poll *before* consulting the deadline: a positive budget buys one
-            # look even when the clock crossed it right after ``start()`` (one
-            # coarse Windows-<3.13 tick, or an OS stall); the wire budget is
-            # floored likewise, since that tick reads ``remaining() == 0.0``.
+            # Poll *before* consulting the deadline. A positive budget always
+            # buys one look at the server, even when the clock has already
+            # crossed it between ``RuntimeDeadline.start()`` and here — one
+            # coarse tick on Windows before 3.13, or an OS stall. Without this
+            # a source the server had already marked ERROR was reported as a
+            # timeout with ``last_status=None``.
+            # The wire budget is floored for the same reason: ``remaining()``
+            # can read ``0.0`` on that same tick, and the session turns that
+            # into an ``RPCTimeoutError`` before any bytes are sent.
             response = await self._transport.unary(
                 GET_PROJECT_METHOD,
                 _read_proto().GetProjectRequest(
