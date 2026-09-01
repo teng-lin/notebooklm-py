@@ -90,7 +90,12 @@ class CopiedSourceRow:
 
     @property
     def original_id(self) -> str | None:
-        """The copied source's id, or ``None`` when the slot is malformed."""
+        """The id of the *original* source (the one that was copied), or ``None``.
+
+        Live the slot is the ``[id]`` ``SourceId`` wrapper; a bare string is
+        tolerated as the same value un-wrapped (a defensive reading of the
+        one-field message, not an observed variant).
+        """
         if not isinstance(self._raw, list) or len(self._raw) <= self._ORIGINAL_POS:
             return None
         wrapper = self._raw[self._ORIGINAL_POS]
@@ -161,8 +166,8 @@ class CopiedArtifactRow:
 class SourceAckRow:
     """One ``AddSourcesAsync`` acknowledgement: ``[<source entry>, status]``.
 
-    The status int was ``0`` on every live acknowledgement observed (two URLs
-    on the web front door, one over Android gRPC); its non-zero meanings are
+    The status int was ``0`` on every live acknowledgement observed (the #2283
+    web probe with two URLs, the Android probe and cassettes with one); its non-zero meanings are
     unrecovered, so it is surfaced verbatim rather than interpreted.
     """
 
@@ -170,6 +175,8 @@ class SourceAckRow:
 
     _SOURCE_POS: ClassVar[int] = 0
     _STATUS_POS: ClassVar[int] = 1
+    #: The only acknowledgement status observed live (both front doors).
+    KNOWN_OK: ClassVar[int] = 0
 
     @property
     def source_entry(self) -> list[Any] | None:
@@ -185,6 +192,11 @@ class SourceAckRow:
         value = self._raw[self._STATUS_POS]
         return value if type(value) is int else None
 
+    @property
+    def is_ok(self) -> bool:
+        """``True`` for the observed ``0`` status (an absent slot is not ok)."""
+        return self.status == self.KNOWN_OK
+
 
 @dataclass(frozen=True)
 class AddSourcesAsyncResponseRow:
@@ -199,6 +211,7 @@ class AddSourcesAsyncResponseRow:
     _raw: Any = field(repr=False)
 
     _SOURCES_POS: ClassVar[int] = 0
+    # Index 1 (proto tag 2) was ``null`` on every observation and is not read.
     _ACKS_POS: ClassVar[int] = 2
 
     @property

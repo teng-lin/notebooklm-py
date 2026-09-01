@@ -42,12 +42,12 @@ def _request_context() -> Any:
     return android_request_context()
 
 
-def _format_choices(message: Any) -> builtins.list[CustomizationChoice]:
-    return [
+def _format_choices(message: Any) -> tuple[CustomizationChoice, ...]:
+    return tuple(
         CustomizationChoice(code=int(row.format), title=row.title, description=row.description)
         for row in message.choices
         if row.title
-    ]
+    )
 
 
 class AndroidArtifactTransferMixin:
@@ -91,21 +91,27 @@ class AndroidArtifactTransferMixin:
                     expected_epoch=lease.epoch,
                 )
             )
+        # Malformed entries are skipped, not fatal: the well-formed ones are the
+        # only proof of copies that have already committed.
         copied: builtins.list[CopiedArtifact] = []
+        malformed = 0
         for entry in response.copied_artifacts:
-            if not entry.source_artifact_id or not entry.HasField("artifact"):
-                raise DecodingError(
-                    "CopyArtifactsAsync returned a malformed mapping entry",
-                    method_id=COPY_ARTIFACTS_ASYNC_METHOD,
-                )
-            artifact = decode_artifact(entry.artifact, method_id=COPY_ARTIFACTS_ASYNC_METHOD)
-            if not artifact.id:
-                raise DecodingError(
-                    "CopyArtifactsAsync returned a copied artifact without an id",
-                    method_id=COPY_ARTIFACTS_ASYNC_METHOD,
-                )
+            artifact = (
+                decode_artifact(entry.artifact, method_id=COPY_ARTIFACTS_ASYNC_METHOD)
+                if entry.HasField("artifact")
+                else None
+            )
+            if not entry.source_artifact_id or artifact is None or not artifact.id:
+                malformed += 1
+                logger.warning("CopyArtifactsAsync returned a malformed mapping entry")
+                continue
             copied.append(CopiedArtifact(original_id=entry.source_artifact_id, artifact=artifact))
         if not copied:
+            if malformed:
+                raise DecodingError(
+                    "CopyArtifactsAsync returned only malformed mapping entries",
+                    method_id=COPY_ARTIFACTS_ASYNC_METHOD,
+                )
             raise ArtifactNotFoundError(
                 ", ".join(artifact_ids), method_id=COPY_ARTIFACTS_ASYNC_METHOD
             )
@@ -143,14 +149,14 @@ class AndroidArtifactTransferMixin:
         return ArtifactCustomizationChoices(
             audio=_format_choices(choices.audio_overview_choices),
             video=_format_choices(choices.video_overview_choices),
-            slide_deck=[
+            slide_deck=tuple(
                 CustomizationChoice(
                     code=int(row.deck_type), title=row.title, description=row.description
                 )
                 for row in choices.slides_customization_choices.types
                 if row.title
-            ],
-            reports=[
+            ),
+            reports=tuple(
                 ReportPreset(
                     report_type=row.report_type,
                     description=row.report_description,
@@ -158,7 +164,7 @@ class AndroidArtifactTransferMixin:
                 )
                 for row in choices.tailored_report_customization_choices.report_type_options
                 if row.report_type and row.report_directive
-            ],
+            ),
         )
 
 

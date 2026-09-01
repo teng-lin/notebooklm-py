@@ -172,9 +172,9 @@ Supported source types: URLs, YouTube videos, files (PDF, text, Markdown, Word, 
 | `refresh <id>` | Source ID | `--json` | `source refresh src123` |
 | `delete <id>` | Source ID | `-y/--yes`, `--json` | `source delete src123 -y` |
 | `delete-by-title <title>` | Exact source title | `-y/--yes`, `--json` | `source delete-by-title "My Source"` |
-| `add-async <url>...` | One or more URLs | `--json` | `source add-async https://a.example https://b.example` — one non-blocking `AddSourcesAsync` call; prints the queued ids immediately (use `source wait` / `source list` for readiness) |
+| `add-async <url>...` | One or more URLs | `--allow-internal`, `--json` | `source add-async https://a.example https://b.example` — one non-blocking `AddSourcesAsync` call; URLs pass the same scheme/SSRF gate as `source add`; prints the queued ids immediately (`--json` → `{notebook_id, sources, count, requested}`; use `source wait` / `source list` for readiness) |
 | `append <id> <text>` | Source ID (or prefix), text (`-` for stdin) | `--header`, `--json` | `source append src123 "Addendum…"` — appends the text at the end of the source in place |
-| `copy <id>... --to <notebook>` | Source IDs (or prefixes), target notebook id/prefix | `--to` (required), `--json` | `source copy src1 src2 --to 1a2b3c` — copies into another notebook; prints original → copy pairs |
+| `copy <id>... --to <notebook>` | Source IDs (or prefixes), target notebook id/prefix | `--to` (required), `--json` | `source copy src1 src2 --to 1a2b3c` — copies into another notebook; prints original → copy pairs. A partial copy lists the ids left behind (`not_copied` under `--json`) and exits 1 |
 
 All `source` subcommands also accept `-n/--notebook ID` (resolves via flag > `NOTEBOOKLM_NOTEBOOK` env > active context).
 
@@ -330,8 +330,8 @@ Language-aware generate commands (`audio`, `video`, `cinematic-video`, `report`,
 | `wait <id>` | Artifact ID (from `artifact list`) | `--timeout` (default: 300), `--interval` (default: 2), `--json` | `artifact wait art123 --timeout 600` |
 | `retry <id>` | Artifact ID (from `artifact list`) | `--wait`, `--timeout` (default: 300), `--interval` (default: 2), `--json` | `artifact retry art123 --wait` |
 | `suggestions` | - | `--json` | `artifact suggestions` |
-| `copy <id>... --to <notebook>` | Artifact IDs (or prefixes), target notebook id/prefix | `--to` (required), `--json` | `artifact copy art1 --to 1a2b3c` — copies Studio artifacts into another notebook; prints original → copy pairs |
-| `choices` | - | `--json` | `artifact choices` — the Studio "Customize" option tables (audio/video/slide-deck format codes + report presets with their full directives under `--json`); account-level, `-n` optional |
+| `copy <id>... --to <notebook>` | Artifact IDs (or prefixes), target notebook id/prefix | `--to` (required), `--json` | `artifact copy art1 --to 1a2b3c` — copies Studio artifacts into another notebook; prints original → copy pairs. A partial copy lists the ids left behind (`not_copied` under `--json`) and exits 1 |
+| `choices` | - | `--json` | `artifact choices` — the Studio "Customize" option tables (audio/video/slide-deck format codes + report presets with their full directives under `--json`); account-level; `-n` is optional and only fills the request's project_id slot |
 
 All `artifact` subcommands also accept `-n/--notebook ID`.
 

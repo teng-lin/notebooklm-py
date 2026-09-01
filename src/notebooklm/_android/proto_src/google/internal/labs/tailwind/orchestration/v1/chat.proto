@@ -351,9 +351,9 @@ message GenerateFreeFormStreamedResponse {
 }
 
 // #2283: the standalone NextStepSuggestions RPC. Web-derived (not compiled into
-// the app); the reply is the exact NextStepSuggestions message. Declared here
-// because it reuses chat's InputSource import and notebooks.proto cannot import
-// sources.proto without a cycle.
+// the app); the reply is the exact NextStepSuggestions message. Declared here to
+// keep notebooks.proto (the exact APK-recovered file) free of web-derived
+// messages; chat.proto already imports sources.proto for InputSource.
 message NextStepSuggestionsRequest {
   string project_id = 2; // evidence: docs/android/copy-append-suggestion-evidence.md#nextstepsuggestions
   repeated InputSource sources = 3; // evidence: docs/android/copy-append-suggestion-evidence.md#nextstepsuggestions

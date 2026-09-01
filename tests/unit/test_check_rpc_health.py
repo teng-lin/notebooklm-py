@@ -937,16 +937,34 @@ def test_compare_customization_choices_drifts_on_a_new_code() -> None:
     table[0][0][0].append([5, "Lecture", "d"])
     status, detail = compare_customization_choices(table)
     assert status is CustomizationStatus.DRIFT
-    assert "audio: served but not modelled [(5, 'LECTURE')]" in detail
+    assert "audio: served codes not modelled [(5, 'Lecture')]" in detail
 
 
-def test_compare_customization_choices_drifts_on_a_dropped_or_renamed_member() -> None:
+def test_compare_customization_choices_drifts_on_a_dropped_member_only() -> None:
+    """Codes decide DRIFT; a label rename is reported but is not drift on its own."""
     table = json.loads(json.dumps(_LIVE_TABLE))
-    table[0][1][0][3] = [4, "Panel", "d"]  # Debate renamed
+    del table[0][1][0][3]  # video: Short (4) no longer served
     status, detail = compare_customization_choices(table)
     assert status is CustomizationStatus.DRIFT
-    assert "video: served but not modelled [(4, 'PANEL')]" in detail
-    assert "video: modelled but not served [(4, 'SHORT')]" in detail
+    assert "video: modelled codes not served [(4, 'SHORT')]" in detail
+    assert "served codes not modelled" not in detail
+
+
+def test_compare_customization_choices_reports_a_label_rename_without_drift() -> None:
+    """Labels follow ``hl`` and Google's copy; only the codes are load-bearing (#1597)."""
+    table = json.loads(json.dumps(_LIVE_TABLE))
+    table[0][1][0][3] = [4, "Panel", "d"]  # video: Short renamed, code unchanged
+    status, detail = compare_customization_choices(table)
+    assert status is CustomizationStatus.MATCH
+    assert "video: label differs from member name [(4, 'Panel', 'SHORT')]" in detail
+
+
+def test_compare_customization_choices_drifts_on_an_unmodelled_family() -> None:
+    table = json.loads(json.dumps(_LIVE_TABLE))
+    table[0].append([[[1, "Infographic style", "d"]]])
+    status, detail = compare_customization_choices(table)
+    assert status is CustomizationStatus.DRIFT
+    assert "1 unmodelled family slot(s) served" in detail
 
 
 def test_compare_customization_choices_drifts_on_an_empty_family_or_no_presets() -> None:
@@ -956,10 +974,11 @@ def test_compare_customization_choices_drifts_on_an_empty_family_or_no_presets()
     status, detail = compare_customization_choices(table)
     assert status is CustomizationStatus.DRIFT
     assert "slide_deck: no rows served" in detail
-    assert "reports: no presets served" in detail
-    # A degenerate payload has no families at all -> every family drifts.
-    status, _ = compare_customization_choices(None)
-    assert status is CustomizationStatus.DRIFT
+    assert "reports: no well-formed presets served" in detail
+    # Presets that are present but all malformed count as none.
+    table[0][3] = [[["no directive", "d", ""]]]
+    _, detail = compare_customization_choices(table)
+    assert "reports: no well-formed presets served" in detail
 
 
 @pytest.mark.asyncio
@@ -978,11 +997,9 @@ async def test_check_customization_table_matches_on_the_live_shape() -> None:
     assert status is CustomizationStatus.MATCH
     assert parse_qs(urlparse(captured["url"]).query)["rpcids"] == [_CHOICES_ID]
     # The probe sends the production request shape, not the old ``[nbctx, None, 3]``.
-    assert (
-        json.dumps(_OPTS, separators=(",", ":"))
-        in captured["content"].replace("%22", '"').replace("%2C", ",")
-        or "nb_1" in captured["content"]
-    )
+    sent = json.loads(parse_qs(captured["content"])["f.req"][0])[0][0]
+    assert sent[0] == _CHOICES_ID
+    assert json.loads(sent[1]) == [_OPTS, "nb_1"]
 
 
 @pytest.mark.asyncio
@@ -998,7 +1015,7 @@ async def test_check_customization_table_drifts_on_a_served_difference() -> None
 
     status, detail = await check_customization_table(DriftClient(), _probe_auth(), None)
     assert status is CustomizationStatus.DRIFT
-    assert "LECTURE" in detail
+    assert "Lecture" in detail
 
 
 @pytest.mark.asyncio
@@ -1015,16 +1032,43 @@ async def test_check_customization_table_unknown_on_transport_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_check_customization_table_status_bearing_null_propagates() -> None:
-    """A rejected call (null + gRPC status) must raise, not read as an empty table (#2284)."""
+async def test_check_customization_table_rejection_is_unknown_not_a_crash() -> None:
+    """A status-bearing null is a probe failure (UNKNOWN), never an empty table or a crash."""
 
     class RejectedClient:
         async def post(self, url: str, *, content: str, headers: dict[str, str]) -> httpx.Response:
             body = ")]}'\n\n" + f'[["wrb.fr","{_CHOICES_ID}",null,null,null,[3],"generic"]]'
             return httpx.Response(200, text=body, request=httpx.Request("POST", url))
 
-    with pytest.raises(check_rpc_health.RPCError):
-        await check_customization_table(RejectedClient(), _probe_auth(), "nb_1")
+    status, detail = await check_customization_table(RejectedClient(), _probe_auth(), "nb_1")
+    assert status is CustomizationStatus.UNKNOWN
+    assert detail.startswith("RPC error")
+
+
+@pytest.mark.asyncio
+async def test_check_customization_table_absent_id_still_propagates() -> None:
+    """The absent-id drift guard (UnknownRPCMethodError) must stay loud."""
+
+    class RotatedClient:
+        async def post(self, url: str, *, content: str, headers: dict[str, str]) -> httpx.Response:
+            body = ")]}'\n\n" + '[["wrb.fr","zzzzzz","[[]]",null,null,null,"generic"]]'
+            return httpx.Response(200, text=body, request=httpx.Request("POST", url))
+
+    with pytest.raises(check_rpc_health.UnknownRPCMethodError):
+        await check_customization_table(RotatedClient(), _probe_auth(), "nb_1")
+
+
+@pytest.mark.asyncio
+async def test_check_customization_table_bad_envelope_is_drift() -> None:
+    class ReshapedClient:
+        async def post(self, url: str, *, content: str, headers: dict[str, str]) -> httpx.Response:
+            return httpx.Response(
+                200, text=_choices_frame([42]), request=httpx.Request("POST", url)
+            )
+
+    status, detail = await check_customization_table(ReshapedClient(), _probe_auth(), None)
+    assert status is CustomizationStatus.DRIFT
+    assert detail.startswith("unrecognized envelope")
 
 
 def test_compute_exit_code_customization_drift_is_four() -> None:

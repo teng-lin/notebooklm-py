@@ -12,6 +12,7 @@ from .._idempotency import mark_unconfirmed
 from .._notebook_metadata import NotebookSourceLister
 from .._notebooks import NotebooksAPI
 from ..exceptions import (
+    AuthError,
     DecodingError,
     NetworkError,
     RateLimitError,
@@ -345,7 +346,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
         Request: ``project_id`` #2 plus optional ``repeated InputSource`` #3 (a
         bare ``SourceId`` at #3 draws ``INVALID_ARGUMENT``); the reply is the
         exact ``NextStepSuggestions`` message. A bogus notebook draws
-        ``NOT_FOUND`` (mapped to ``NotebookNotFoundError`` by the session).
+        ``NOT_FOUND``, mapped to ``NotebookNotFoundError`` here like ``get``.
         """
         if not notebook_id:
             raise ValidationError("notebook_id must not be empty")
@@ -357,12 +358,22 @@ class AndroidNotebooksAPI(NotebooksAPI):
                 _write_proto_sources().InputSource(source_id=read_proto.SourceId(id=source_id))
                 for source_id in source_ids
             )
-        response = await self._transport.unary(
-            NEXT_STEP_SUGGESTIONS_METHOD,
-            request,
-            replay_safe=True,
-            response_type=_notebook_proto().NextStepSuggestions,
-        )
+        try:
+            response = await self._transport.unary(
+                NEXT_STEP_SUGGESTIONS_METHOD,
+                request,
+                replay_safe=True,
+                response_type=_notebook_proto().NextStepSuggestions,
+            )
+        except (AuthError, RateLimitError, ServerError, NetworkError):
+            # ADR-0019: typed transport signals propagate unwrapped.
+            raise
+        except RPCError as error:
+            # The route answers NOT_FOUND for an unknown notebook (live-verified);
+            # surface it as the public miss exception like ``get`` does.
+            raise _notebook_codec().map_get_project_error(
+                notebook_id, error, method_id=NEXT_STEP_SUGGESTIONS_METHOD
+            ) from None
         return [
             NextStepSuggestion(question=step.suggestion, type_code=int(step.suggestion_type))
             for step in response.next_steps

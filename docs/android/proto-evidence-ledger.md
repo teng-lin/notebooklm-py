@@ -463,7 +463,7 @@ retain their established builders.
 
 The compile inputs are
 [`chat.proto`](../../src/notebooklm/_android/proto_src/google/internal/labs/tailwind/orchestration/v1/chat.proto)
-(SHA-256 `fa5f7cd9a72d04aceea0aab2d3282a63762bb5a1324fac3756175062ecb7e07d`) and
+(SHA-256 `75105fc8ffced63f37ba20b4dcd643a30960ae78be4e9a2d3bce42b2f678f576`) and
 [`common.proto`](../../src/notebooklm/_android/proto_src/labs/language/tailwind/common/protos/common.proto)
 (SHA-256 `7d064bf11e3f01465e485004e6dbba078ae9b92f02be53ac2a8a4ac6a420af75`).
 The exact agency value closure is imported from

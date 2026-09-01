@@ -111,7 +111,12 @@ from notebooklm._web.wire.decoder import (
     strip_anti_xssi,
 )
 from notebooklm.auth import AuthTokens
-from notebooklm.exceptions import ChatError, ChatResponseParseError, DecodingError
+from notebooklm.exceptions import (
+    ChatError,
+    ChatResponseParseError,
+    DecodingError,
+    UnknownRPCMethodError,
+)
 from notebooklm.paths import get_storage_path
 from notebooklm.rpc import (
     RPCError,
@@ -193,7 +198,8 @@ RECORDED_REBRAND_STATUSES: frozenset[RebrandProbeStatus] = frozenset(
 
 # The Studio option-table cross-check compares these served families against the
 # client enums (``compare_customization_choices``). Report presets are free text
-# and only checked for presence.
+# and only checked for presence. NOTE: the served table has no VideoStyle family,
+# so the ``VideoStyle`` codes (#1597) are still not watched by any lane.
 _CUSTOMIZATION_FAMILIES: tuple[tuple[str, type[Enum]], ...] = (
     ("audio", AudioFormat),
     ("video", VideoFormat),
@@ -746,7 +752,7 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
     # same 3.3 KB table), so only the request context is sent. This is the
     # shape the former ``sqTeoe`` probe should have used (#2284).
     if method == RPCMethod.GET_CUSTOMIZATION_CHOICES:
-        return [[2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]]]
+        return build_customization_choices_params(None)
 
     # LIST_ARTIFACTS has special params
     if method == RPCMethod.LIST_ARTIFACTS:
@@ -1076,42 +1082,60 @@ def _normalize_choice_label(title: str) -> str:
 def compare_customization_choices(data: Any) -> tuple[CustomizationStatus, str]:
     """Compare a decoded ``GET_CUSTOMIZATION_CHOICES`` payload with the client enums.
 
-    Each served format row is reduced to ``(code, NORMALIZED_LABEL)`` and set-
-    compared against ``{(member.value, member.name)}`` of the matching enum, so
-    a new code, a renamed label or a dropped member all surface as ``DRIFT``
-    with the exact difference in the detail string.
+    ``DRIFT`` is drawn on the **wire codes** only: a served code the enum lacks,
+    an enum member the server no longer offers, an empty family, an unmodelled
+    fifth family, or no well-formed report preset. Labels are compared too but
+    only *reported* in the detail string — the probe sends ``hl`` from
+    ``NOTEBOOKLM_HL`` and Google renames copy freely, so a label delta must not
+    file a breakage issue on its own (#1597 was a code move, not a rename).
     """
-    view = unwrap_customization_choices(data)
+    view = unwrap_customization_choices(
+        data, method_id=RPCMethod.GET_CUSTOMIZATION_CHOICES.value, source="rpc-health"
+    )
     rows_by_family = {
         "audio": view.audio_rows,
         "video": view.video_rows,
         "slide_deck": view.slide_deck_rows,
     }
     problems: list[str] = []
+    notes: list[str] = []
     for family, enum_type in _CUSTOMIZATION_FAMILIES:
-        served = {
-            (row.code, _normalize_choice_label(row.title))
-            for row in rows_by_family[family]
-            if row.is_well_formed
-        }
-        expected = {(member.value, member.name) for member in enum_type}
+        served = {row.code: row.title for row in rows_by_family[family] if row.is_well_formed}
+        expected = {member.value: member.name for member in enum_type}
         if not served:
             problems.append(f"{family}: no rows served")
             continue
-        extra = sorted(served - expected)
-        missing = sorted(expected - served)
+        extra = sorted(set(served) - set(expected))
+        missing = sorted(set(expected) - set(served))
         if extra:
-            problems.append(f"{family}: served but not modelled {extra}")
+            problems.append(
+                f"{family}: served codes not modelled {[(code, served[code]) for code in extra]}"
+            )
         if missing:
-            problems.append(f"{family}: modelled but not served {missing}")
-    if not view.report_rows:
-        problems.append("reports: no presets served")
+            problems.append(
+                f"{family}: modelled codes not served "
+                f"{[(code, expected[code]) for code in missing]}"
+            )
+        renamed = [
+            (code, served[code], expected[code])
+            for code in sorted(set(served) & set(expected))
+            if _normalize_choice_label(served[code]) != expected[code]
+        ]
+        if renamed:
+            notes.append(f"{family}: label differs from member name {renamed}")
+    families_raw = data[0] if isinstance(data, list) and data and isinstance(data[0], list) else []
+    if len(families_raw) > len(_CUSTOMIZATION_FAMILIES) + 1:
+        problems.append(
+            f"{len(families_raw) - len(_CUSTOMIZATION_FAMILIES) - 1} unmodelled family slot(s) served"
+        )
+    if not any(row.is_well_formed for row in view.report_rows):
+        problems.append("reports: no well-formed presets served")
     if problems:
-        return CustomizationStatus.DRIFT, "; ".join(problems)
-    return (
-        CustomizationStatus.MATCH,
-        "served audio / video / slide-deck codes and labels match the client enums",
-    )
+        return CustomizationStatus.DRIFT, "; ".join(problems + notes)
+    detail = "served audio / video / slide-deck codes match the client enums"
+    if notes:
+        detail += " (" + "; ".join(notes) + ")"
+    return CustomizationStatus.MATCH, detail
 
 
 async def make_raw_rpc_request(
@@ -1123,9 +1147,10 @@ async def make_raw_rpc_request(
 ) -> tuple[str | None, str | None]:
     """Issue a batchexecute call by *raw* rpc id (for methods not in ``RPCMethod``).
 
-    Used by the rebrand-host lane and by ad-hoc probes of ids that have no
-    ``RPCMethod`` member yet (see #2283); ``make_rpc_request`` covers the
-    modelled methods.
+    Not called by the health lanes themselves any more (the former ``sqTeoe``
+    probe was its last caller); kept for the tests and for ad-hoc probes of ids
+    that have no ``RPCMethod`` member yet (see #2283). ``make_rpc_request``
+    covers the modelled methods.
     """
     query_params = {
         "rpcids": rpc_id,
@@ -1168,8 +1193,8 @@ async def check_customization_table(
 
     ``RPCError`` (including ``UnknownRPCMethodError`` from the absent-id drift
     guard) must propagate so an id rotation / protocol break surfaces LOUDLY
-    rather than degrading to a quiet ``UNKNOWN``; ``allow_null=False`` likewise
-    turns a status-bearing null into that error instead of an empty table.
+    rather than degrading to a quiet ``UNKNOWN``; any other ``RPCError`` is a
+    probe failure and draws ``UNKNOWN`` rather than crashing the canary.
     """
     response_text, error = await make_rpc_request(
         client,
@@ -1183,13 +1208,26 @@ async def check_customization_table(
     if response_text is None:
         return CustomizationStatus.UNKNOWN, "Empty response from server"
 
+    # ``UnknownRPCMethodError`` (the absent-id drift guard) must propagate so an
+    # id rotation surfaces LOUDLY; every other RPCError — a status-bearing null,
+    # a server rejection — is a probe failure, not an enum conclusion, and must
+    # not take the whole canary down (the regular GET_CUSTOMIZATION_CHOICES row
+    # already reports the id echo). ``allow_null=False`` keeps a null from being
+    # read as an empty table.
     try:
         data = decode_response(
             response_text, RPCMethod.GET_CUSTOMIZATION_CHOICES.value, allow_null=False
         )
+    except UnknownRPCMethodError:
+        raise
+    except RPCError as e:
+        return CustomizationStatus.UNKNOWN, f"RPC error: {scrub_secrets(e)}"
     except (json.JSONDecodeError, TypeError) as e:
         return CustomizationStatus.UNKNOWN, f"Parse error: {scrub_secrets(e)}"
-    return compare_customization_choices(data)
+    try:
+        return compare_customization_choices(data)
+    except DecodingError as e:
+        return CustomizationStatus.DRIFT, f"unrecognized envelope: {scrub_secrets(e)}"
 
 
 # ---------------------------------------------------------------------------
@@ -2102,7 +2140,7 @@ async def run_health_check(
 
     Returns ``(results, customization_status, rebrand_state, build_label)``: the
     per-method ``CheckResult`` list, the ``sqTeoe`` studio option-table cross-check
-    tripwire verdict (reported and exit-coded separately from RPC drift; see
+    verdict (reported and exit-coded separately from RPC drift; see
     :class:`CustomizationStatus`), the rebrand-host lane's state document (reported
     separately and NEVER exit-coded; see :func:`probe_rebrand_host`), and the
     pinned-vs-served build-label verdict (its own exit code; see

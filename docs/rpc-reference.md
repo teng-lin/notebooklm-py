@@ -3245,7 +3245,7 @@ proto tag `i+1`. All six are also served natively to the Android backend.
 
 Same request as the batch `ADD_SOURCE` (`AddSources`), but the server answers as
 soon as the sources are queued (~0.65 s for two URLs vs ~2 s per synchronous
-add, live) with stub rows.
+add in the #2283 web probe) with stub rows.
 
 ```python
 params = [
@@ -3276,7 +3276,8 @@ params = [
     [
         None,
         [header, body],
-    ],  # 3: SourceContent.plain_text — doubly nested (a flat text draws INTERNAL)
+    ],  # 3: SourceContent.plain_text — doubly nested: a bare string here draws
+    #    INVALID_ARGUMENT, a string in the plain_text slot draws INTERNAL
 ]
 ```
 
@@ -3298,8 +3299,9 @@ params = [None, None, [[source_id], ...], target_notebook_id]
 
 **Response:** `[[ [[original_id], <source entry>], ... ]]` — one mapping entry
 per copied source; the entry row is the standard `[[id], title, metadata,
-settings]` shape (`CopiedSourceRow`). An empty mapping means nothing was copied
-(unknown ids do not draw `NOT_FOUND`) and raises `SourceNotFoundError`.
+settings]` shape (`CopiedSourceRow`). An unknown source id or target notebook
+draws `NOT_FOUND` (live-verified); an empty mapping on success is treated as
+`SourceNotFoundError` so a silent no-op never reads as a copy.
 
 ### RPC: COPY_ARTIFACTS (mKDdke)
 
@@ -3319,8 +3321,8 @@ params = [
 ```
 
 **Response:** `[[ [original_id, <artifact row>], ... ]]` — the full new artifact
-row inline (`CopiedArtifactRow` → `Artifact.from_api_response`). Verified twice
-live by re-listing the target (3 → 4 → 5 artifacts).
+row inline (`CopiedArtifactRow` → `Artifact.from_api_response`). Verified live by
+re-listing the target.
 
 ### RPC: SUGGEST_NEXT_STEPS (OcvKNc)
 
@@ -3347,7 +3349,9 @@ chat `NextStepSuggestionRow`. A bogus notebook draws `NOT_FOUND`; a bare
 Live method `GetArtifactCustomizationChoices`. **Account-level:** `[]`, a bogus
 notebook id and every artifact type return the same ~3.3 KB table on both front
 doors, so only the request context is sent (the notebook id is appended when
-the caller has one, mirroring the web UI).
+the caller has one; it only fills the ``project_id`` slot). Called with `allow_null=False`: the
+server always serves the table, so a null or re-shaped envelope is drift
+(`DecodingError`), never "no choices".
 
 ```python
 params = [[2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]]]

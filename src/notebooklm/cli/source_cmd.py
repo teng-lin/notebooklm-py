@@ -86,7 +86,12 @@ from .rendering import (
     json_output_response,
     render_list,
 )
-from .resolve import require_notebook, resolve_notebook_id, resolve_source_id
+from .resolve import (
+    require_notebook,
+    resolve_notebook_id,
+    resolve_source_id,
+    resolve_source_ids,
+)
 from .runtime import is_quiet
 from .services.label_listing import LabelResolutionError
 from .services.source_listing import SourceListPlan, execute_source_list
@@ -111,6 +116,7 @@ from .services.source_research import (
     execute_source_add_research,
     validate_add_research_flags,
 )
+from .services.source_serializers import source_row_payload
 
 
 @click.group()
@@ -1034,21 +1040,17 @@ def _dispatch_source_clean_result(
 # ---------------------------------------------------------------------------
 
 
-def _source_summary(source: Source) -> dict[str, Any]:
-    return {
-        "id": source.id,
-        "title": source.title,
-        "type": source.kind.value,
-        "status": source.status.value,
-    }
-
-
 @source.command("add-async")
 @click.argument("urls", nargs=-1, required=True)
+@click.option(
+    "--allow-internal",
+    is_flag=True,
+    help="Allow private/loopback/link-local hosts (same gate as `source add`).",
+)
 @notebook_option
 @json_option
 @with_client
-def source_add_async(ctx, urls, notebook_id, json_output, client_auth):
+def source_add_async(ctx, urls, allow_internal, notebook_id, json_output, client_auth):
     """Queue one or more URL sources without waiting for ingest.
 
     Sends a single non-blocking ``AddSourcesAsync`` call and prints the queued
@@ -1064,6 +1066,10 @@ def source_add_async(ctx, urls, notebook_id, json_output, client_auth):
       notebooklm source add-async https://example.com --json
     """
     nb_id = require_notebook(notebook_id)
+    # Same scheme / SSRF gate as ``source add`` — the async route must not be a
+    # way around it. Raises SourceAddValidationError before any RPC.
+    for url in urls:
+        source_add_service.validate_url(url, allow_internal=allow_internal)
 
     async def _run():
         async with resolve_client_factory(ctx)(client_auth) as client:
@@ -1073,12 +1079,13 @@ def source_add_async(ctx, urls, notebook_id, json_output, client_auth):
                 json_output_response(
                     {
                         "notebook_id": nb_id_resolved,
-                        "sources": [_source_summary(s) for s in sources],
+                        "sources": [source_row_payload(s) for s in sources],
                         "count": len(sources),
+                        "requested": len(urls),
                     }
                 )
                 return
-            cli_print(f"[green]Queued {len(sources)} source(s):[/green]", ctx=ctx)
+            cli_print(f"[green]Queued {len(sources)} of {len(urls)} source(s):[/green]", ctx=ctx)
             for src in sources:
                 cli_print(f"  {src.id}  {src.title}", ctx=ctx)
 
@@ -1160,11 +1167,15 @@ def source_copy(ctx, source_ids, target, notebook_id, json_output, client_auth):
         async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             target_resolved = await resolve_notebook_id(client, target, json_output=json_output)
-            resolved_ids = [
-                await resolve_source_id(client, nb_id_resolved, sid, json_output=json_output)
-                for sid in source_ids
-            ]
+            # One listing for every prefix (resolve_source_ids), not one per id.
+            resolved_ids = (
+                await resolve_source_ids(
+                    client, nb_id_resolved, tuple(source_ids), json_output=json_output
+                )
+                or []
+            )
             copied = await client.sources.copy(nb_id_resolved, resolved_ids, target_resolved)
+            not_copied = [sid for sid in resolved_ids if sid not in {c.original_id for c in copied}]
             if json_output:
                 json_output_response(
                     {
@@ -1173,21 +1184,35 @@ def source_copy(ctx, source_ids, target, notebook_id, json_output, client_auth):
                         "copied": [
                             {
                                 "original_id": item.original_id,
-                                "source": _source_summary(item.source),
+                                "source": source_row_payload(item.source),
                             }
                             for item in copied
                         ],
+                        "not_copied": not_copied,
                         "count": len(copied),
                         "requested": len(resolved_ids),
                     }
                 )
-                return
-            cli_print(
-                f"[green]Copied {len(copied)} of {len(resolved_ids)} source(s) to[/green] "
-                f"{target_resolved}",
-                ctx=ctx,
-            )
-            for item in copied:
-                cli_print(f"  {item.original_id} -> {item.source.id}  {item.source.title}", ctx=ctx)
+            else:
+                cli_print(
+                    f"[green]Copied {len(copied)} of {len(resolved_ids)} source(s) to[/green] "
+                    f"{target_resolved}",
+                    ctx=ctx,
+                )
+                for item in copied:
+                    cli_print(
+                        f"  {item.original_id} -> {item.source.id}  {item.source.title}", ctx=ctx
+                    )
+            if not_copied:
+                # A partial copy is a partial failure: the JSON payload already
+                # names the ids that stayed behind (``not_copied``); text mode says
+                # so explicitly. Either way exit non-zero so scripts cannot mistake
+                # a partial copy for success.
+                if not json_output:
+                    cli_print(
+                        f"[yellow]Not copied ({len(not_copied)}):[/yellow] {', '.join(not_copied)}",
+                        ctx=ctx,
+                    )
+                exit_with_code(1)
 
     return _run()

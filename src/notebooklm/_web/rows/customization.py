@@ -16,19 +16,25 @@ container is ``[[row, row, ...]]`` and its rows live at ``family[0]``:
   (recovered ``TailoredReportTypeOption { reportType = 1; reportDescription = 2;
   reportDirective = 3 }``).
 
+The envelope itself is load-bearing (the server always serves the table, so a
+missing / non-list envelope is drift and :func:`unwrap_customization_choices`
+raises); individual rows stay best-effort.
+
 The Android APK schema declares only the slide-deck (tag 3) and report (tag 4)
 families; the audio (tag 1) and video (tag 2) families are live-observed on
 both front doors (2026-09-01) and registered as ``UNMAPPED`` in
-``tests/_guardrails/_wire_contract.py``. Choice tables are best-effort UI
-metadata, so a short / malformed row degrades to defaults rather than raising —
-the same permissive contract as
-:class:`~notebooklm._web.rows.artifacts.ReportSuggestionRow`.
+``tests/_guardrails/_wire_contract.py``. Within a recognised envelope a short /
+malformed *row* degrades to defaults rather than raising — the same permissive
+contract as :class:`~notebooklm._web.rows.artifacts.ReportSuggestionRow`.
 """
 
 from __future__ import annotations
 
+import reprlib
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
+
+from ...exceptions import DecodingError
 
 __all__ = [
     "CustomizationChoiceRow",
@@ -42,14 +48,28 @@ __all__ = [
 _CHOICES_ENVELOPE_POS = 0
 
 
-def unwrap_customization_choices(result: Any) -> CustomizationChoicesRow:
+def unwrap_customization_choices(
+    result: Any, *, method_id: str, source: str
+) -> CustomizationChoicesRow:
     """Wrap the ``ArtifactCustomizationChoices`` message inside ``result``.
 
-    A falsy / non-list reply yields an empty view (every family ``[]``) — the
-    tables are advisory, so an absent payload is "no choices served", not drift.
+    The server always serves the table (live: ``[]``, a bogus notebook id and
+    every artifact type return the same ~3.3 KB payload), so an absent or
+    non-list envelope is schema drift and raises :class:`DecodingError` rather
+    than degrading to four empty families — an empty ``artifact choices`` that
+    exits 0 would hide exactly the re-shape this decode exists to notice.
+    Per-row leniency lives on the row views, inside a recognised envelope.
     """
-    if not isinstance(result, list) or len(result) <= _CHOICES_ENVELOPE_POS:
-        return CustomizationChoicesRow(None)
+    if (
+        not isinstance(result, list)
+        or len(result) <= _CHOICES_ENVELOPE_POS
+        or not isinstance(result[_CHOICES_ENVELOPE_POS], list)
+    ):
+        raise DecodingError(
+            f"Unrecognized {source} response envelope",
+            raw_response=reprlib.repr(result),
+            method_id=method_id,
+        )
     return CustomizationChoicesRow(result[_CHOICES_ENVELOPE_POS])
 
 

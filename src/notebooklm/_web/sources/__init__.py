@@ -859,8 +859,8 @@ class WebSourcesAPI(SourcesAPI):
         """Queue URL sources with one non-blocking ``AddSourcesAsync`` call.
 
         Same request as the batch ``ADD_SOURCE`` path, but the server answers
-        as soon as the sources are queued (~0.6 s live for two URLs versus ~2 s
-        per synchronous add) with stub rows — id, url and type only, status
+        as soon as the sources are queued (~0.65 s for two URLs versus ~2 s per
+        synchronous add in the #2283 web probe) with stub rows — id, url and type only, status
         still processing. Poll :meth:`wait_until_ready` / :meth:`list` for the
         ingested rows.
 
@@ -912,9 +912,11 @@ class WebSourcesAPI(SourcesAPI):
 
         Returns one :class:`~notebooklm.types.CopiedSource` per copied source,
         pairing the original id with the new row in ``target_notebook_id``
-        (verified live by re-listing the target). Raises ``SourceNotFoundError``
-        when none of the requested ids were copied; a partial result is returned
-        with a warning because those copies have already committed.
+        (verified live by re-listing the target). An unknown source id or target
+        notebook draws ``NOT_FOUND`` (``RPCError``); an empty mapping on success
+        raises ``SourceNotFoundError`` so a no-op never reads as a copy. A partial
+        result is returned with a warning because those copies have already
+        committed.
 
         .. versionadded:: 0.9.0
         """

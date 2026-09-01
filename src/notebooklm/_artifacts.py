@@ -776,7 +776,7 @@ class ArtifactsAPI(ABC):
 
         Returns one :class:`~notebooklm.types.CopiedArtifact` per copied
         artifact, pairing the original id with the full new row (verified live
-        twice by re-listing the target: 3 → 4 → 5 artifacts). Raises
+        by re-listing the target). Raises
         ``ArtifactNotFoundError`` when none of the requested ids were copied —
         the server answers unknown ids with an empty mapping rather than
         ``NOT_FOUND``. A partial result is returned with a warning because the
@@ -796,8 +796,8 @@ class ArtifactsAPI(ABC):
 
         Account-level: the server returns the same ~3.3 KB table for an empty
         request, a bogus notebook id and every artifact type (live, both front
-        doors, 2026-09-01), so ``notebook_id`` is optional and only mirrors what
-        the web UI sends. Audio / video / slide-deck rows carry the wire codes
+        doors, 2026-09-01), so ``notebook_id`` is optional and only fills the
+        request's ``project_id`` slot. Audio / video / slide-deck rows carry the wire codes
         of :class:`~notebooklm.types.AudioFormat`,
         :class:`~notebooklm.types.VideoFormat` and
         :class:`~notebooklm.types.SlideDeckFormat`; report presets carry the

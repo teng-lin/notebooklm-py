@@ -10324,6 +10324,24 @@
           }
         },
         {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Allow private/loopback/link-local hosts (same gate as `source add`).",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "allow_internal",
+          "opts": [
+            "--allow-internal"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
           "default": null,
           "envvar": "NOTEBOOKLM_NOTEBOOK",
           "has_custom_shell_complete": true,

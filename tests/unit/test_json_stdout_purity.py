@@ -357,7 +357,7 @@ def _customize_artifact_copy(client: MagicMock) -> None:
     client.artifacts.copy = AsyncMock(
         return_value=[
             CopiedArtifact(
-                original_id="art_a",
+                original_id="art123def456ghi789jkl",
                 artifact=MagicMock(
                     id="art_new",
                     title="Copy",
@@ -378,7 +378,9 @@ def _customize_source_transfers(client: MagicMock) -> None:
     )
     client.sources.add_urls_async = AsyncMock(return_value=[source])
     client.sources.append_text = AsyncMock(return_value=None)
-    client.sources.copy = AsyncMock(return_value=[CopiedSource(original_id="src_a", source=source)])
+    client.sources.copy = AsyncMock(
+        return_value=[CopiedSource(original_id="src123def456ghi789jkl", source=source)]
+    )
 
 
 def _customize_share_public(client: MagicMock) -> None:

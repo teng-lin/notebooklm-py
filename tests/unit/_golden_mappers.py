@@ -209,24 +209,26 @@ def get_customization_choices(decoded: Any) -> ArtifactCustomizationChoices:
     envelope wraps one ``ArtifactCustomizationChoices`` message whose four
     family slots each hold ``[[row, ...]]``.
     """
-    view = unwrap_customization_choices(decoded)
+    view = unwrap_customization_choices(
+        decoded, method_id=RPCMethod.GET_CUSTOMIZATION_CHOICES.value, source="golden"
+    )
 
-    def _choices(rows: Any) -> list[CustomizationChoice]:
-        return [
+    def _choices(rows: Any) -> tuple[CustomizationChoice, ...]:
+        return tuple(
             CustomizationChoice(code=row.code, title=row.title, description=row.description)
             for row in rows
             if row.is_well_formed and row.code is not None
-        ]
+        )
 
     return ArtifactCustomizationChoices(
         audio=_choices(view.audio_rows),
         video=_choices(view.video_rows),
         slide_deck=_choices(view.slide_deck_rows),
-        reports=[
+        reports=tuple(
             ReportPreset(
                 report_type=row.report_type, description=row.description, directive=row.directive
             )
             for row in view.report_rows
             if row.is_well_formed
-        ],
+        ),
     )

@@ -13,6 +13,7 @@ from .._notebook_metadata import (
 from .._notebooks import NotebooksAPI
 from .._types.enums import GrpcStatusCode, normalize_grpc_status
 from ..exceptions import (
+    AuthError,
     ClientError,
     DecodingError,
     NetworkError,
@@ -520,13 +521,28 @@ class WebNotebooksAPI(NotebooksAPI):
         """
         if not notebook_id:
             raise ValidationError("notebook_id must not be empty")
-        result = await self._rpc.rpc_call(
-            RPCMethod.SUGGEST_NEXT_STEPS,
-            build_next_step_suggestions_params(notebook_id, source_ids),
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-            raise_on_null_status=True,
-        )
+        try:
+            result = await self._rpc.rpc_call(
+                RPCMethod.SUGGEST_NEXT_STEPS,
+                build_next_step_suggestions_params(notebook_id, source_ids),
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                raise_on_null_status=True,
+            )
+        except (AuthError, RateLimitError, ServerError, NetworkError):
+            # ADR-0019: typed transport signals propagate unwrapped.
+            raise
+        except RPCError as exc:
+            # The route answers NOT_FOUND for an unknown notebook (live-verified);
+            # surface it as the public miss exception like ``get`` does.
+            if normalize_grpc_status(exc.rpc_code) == GrpcStatusCode.NOT_FOUND:
+                raise NotebookNotFoundError(
+                    notebook_id,
+                    method_id=RPCMethod.SUGGEST_NEXT_STEPS.value,
+                    raw_response=exc.raw_response,
+                    rpc_code=exc.rpc_code,
+                ) from exc
+            raise
         rows = unwrap_next_step_suggestions(result, source="suggest_next_steps")
         return [
             NextStepSuggestion(question=row.question, type_code=row.type_code)

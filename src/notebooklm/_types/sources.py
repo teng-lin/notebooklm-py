@@ -754,3 +754,9 @@ class CopiedSource:
 
     original_id: str
     source: Source
+
+    def __post_init__(self) -> None:
+        if not self.original_id:
+            raise ValueError("CopiedSource.original_id must not be empty")
+        if not self.source.id:
+            raise ValueError("CopiedSource.source must carry the new source id")

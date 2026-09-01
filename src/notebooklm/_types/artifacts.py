@@ -766,6 +766,12 @@ class CopiedArtifact:
     original_id: str
     artifact: Artifact
 
+    def __post_init__(self) -> None:
+        if not self.original_id:
+            raise ValueError("CopiedArtifact.original_id must not be empty")
+        if not self.artifact.id:
+            raise ValueError("CopiedArtifact.artifact must carry the new artifact id")
+
 
 @dataclass(frozen=True)
 class CustomizationChoice:
@@ -785,6 +791,12 @@ class CustomizationChoice:
 @dataclass(frozen=True)
 class ReportPreset:
     """One preset report format offered by the Studio report dialog.
+
+    Field names follow the recovered ``TailoredReportTypeOption`` message
+    (``reportType`` / ``reportDescription`` / ``reportDirective``) rather than
+    :class:`ReportSuggestion`'s ``title`` / ``prompt``: a preset is a fixed
+    server-side template, not a per-notebook AI suggestion, and keeping the wire
+    vocabulary lines the type up one-to-one with the proto and evidence docs.
 
     Attributes:
         report_type: The preset's display name (e.g. ``"Briefing Doc"``).
@@ -814,7 +826,7 @@ class ArtifactCustomizationChoices:
         reports: Report presets with their full generation directives.
     """
 
-    audio: list[CustomizationChoice] = field(default_factory=list)
-    video: list[CustomizationChoice] = field(default_factory=list)
-    slide_deck: list[CustomizationChoice] = field(default_factory=list)
-    reports: list[ReportPreset] = field(default_factory=list)
+    audio: tuple[CustomizationChoice, ...] = ()
+    video: tuple[CustomizationChoice, ...] = ()
+    slide_deck: tuple[CustomizationChoice, ...] = ()
+    reports: tuple[ReportPreset, ...] = ()

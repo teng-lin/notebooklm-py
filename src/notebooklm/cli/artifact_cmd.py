@@ -843,6 +843,7 @@ def artifact_copy(ctx, artifact_ids, target, notebook_id, json_output, client_au
                 for aid in artifact_ids
             ]
             copied = await client.artifacts.copy(nb_id_resolved, resolved_ids, target_resolved)
+            not_copied = [aid for aid in resolved_ids if aid not in {c.original_id for c in copied}]
             if json_output:
                 json_output_response(
                     {
@@ -860,20 +861,33 @@ def artifact_copy(ctx, artifact_ids, target, notebook_id, json_output, client_au
                             }
                             for item in copied
                         ],
+                        "not_copied": not_copied,
                         "count": len(copied),
                         "requested": len(resolved_ids),
                     }
                 )
-                return
-            cli_print(
-                f"[green]Copied {len(copied)} of {len(resolved_ids)} artifact(s) to[/green] "
-                f"{target_resolved}",
-                ctx=ctx,
-            )
-            for item in copied:
+            else:
                 cli_print(
-                    f"  {item.original_id} -> {item.artifact.id}  {item.artifact.title}", ctx=ctx
+                    f"[green]Copied {len(copied)} of {len(resolved_ids)} artifact(s) to[/green] "
+                    f"{target_resolved}",
+                    ctx=ctx,
                 )
+                for item in copied:
+                    cli_print(
+                        f"  {item.original_id} -> {item.artifact.id}  {item.artifact.title}",
+                        ctx=ctx,
+                    )
+            if not_copied:
+                # A partial copy is a partial failure: the JSON payload already
+                # names the ids that stayed behind (``not_copied``); text mode says
+                # so explicitly. Either way exit non-zero so scripts cannot mistake
+                # a partial copy for success.
+                if not json_output:
+                    cli_print(
+                        f"[yellow]Not copied ({len(not_copied)}):[/yellow] {', '.join(not_copied)}",
+                        ctx=ctx,
+                    )
+                exit_with_code(1)
 
     return _run()
 
@@ -885,10 +899,10 @@ def artifact_copy(ctx, artifact_ids, target, notebook_id, json_output, client_au
 def artifact_choices(ctx, notebook_id, json_output, client_auth):
     """Show the Studio "Customize" option tables served to this account.
 
-    Lists the audio / video / slide-deck formats (with the wire codes the
-    ``generate`` commands accept) and the report presets with their full
+    Lists the audio / video / slide-deck formats (with the wire codes behind
+    the ``generate --format`` names) and the report presets with their full
     generation directives (``GetArtifactCustomizationChoices``). The table is
-    account-level, so ``-n`` is optional and only mirrors what the web UI sends.
+    account-level, so ``-n`` is optional and only fills the request's project_id slot.
 
     \b
     Example:

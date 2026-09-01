@@ -563,7 +563,7 @@ class WebArtifactsAPI(ArtifactsAPI):
 
         Returns one :class:`~notebooklm.types.CopiedArtifact` per copied
         artifact, pairing the original id with the full new row (verified live
-        twice by re-listing the target: 3 → 4 → 5 artifacts). Raises
+        by re-listing the target). Raises
         ``ArtifactNotFoundError`` when none of the requested ids were copied —
         the server answers unknown ids with an empty mapping rather than
         ``NOT_FOUND``. A partial result is returned with a warning because the
@@ -605,26 +605,34 @@ class WebArtifactsAPI(ArtifactsAPI):
         rows = unwrap_mapping_rows(
             result, method_id=RPCMethod.COPY_ARTIFACTS.value, source="CopyArtifactsAsync"
         )
+        # A malformed entry is logged and skipped rather than aborting the
+        # decode: the well-formed entries are the only proof of copies that have
+        # already committed, and dropping them would hide committed writes.
         copied: builtins.list[CopiedArtifact] = []
+        malformed = 0
         for raw in rows:
             row = CopiedArtifactRow(raw)
-            if not row.is_well_formed:
-                raise DecodingError(
-                    "CopyArtifactsAsync returned a malformed mapping entry",
-                    raw_response=reprlib.repr(raw),
-                    method_id=RPCMethod.COPY_ARTIFACTS.value,
+            artifact = (
+                Artifact.from_api_response(row.artifact_row)
+                if row.is_well_formed and row.artifact_row is not None
+                else None
+            )
+            if row.original_id is None or artifact is None or not artifact.id:
+                malformed += 1
+                logger.warning(
+                    "CopyArtifactsAsync returned a malformed mapping entry: %s",
+                    reprlib.repr(raw),
                 )
-            assert row.original_id is not None and row.artifact_row is not None
-            artifact = Artifact.from_api_response(row.artifact_row)
-            if not artifact.id:
-                raise DecodingError(
-                    "CopyArtifactsAsync returned a copied artifact without an id",
-                    raw_response=reprlib.repr(raw),
-                    method_id=RPCMethod.COPY_ARTIFACTS.value,
-                )
+                continue
             copied.append(CopiedArtifact(original_id=row.original_id, artifact=artifact))
 
         if not copied:
+            if malformed:
+                raise DecodingError(
+                    "CopyArtifactsAsync returned only malformed mapping entries",
+                    raw_response=reprlib.repr(rows),
+                    method_id=RPCMethod.COPY_ARTIFACTS.value,
+                )
             raise ArtifactNotFoundError(
                 ", ".join(artifact_ids), method_id=RPCMethod.COPY_ARTIFACTS.value
             )
@@ -646,8 +654,8 @@ class WebArtifactsAPI(ArtifactsAPI):
 
         Account-level: the server returns the same ~3.3 KB table for an empty
         request, a bogus notebook id and every artifact type (live, both front
-        doors, 2026-09-01), so ``notebook_id`` is optional and only mirrors what
-        the web UI sends. Audio / video / slide-deck rows carry the wire codes
+        doors, 2026-09-01), so ``notebook_id`` is optional and only fills the
+        request's ``project_id`` slot. Audio / video / slide-deck rows carry the wire codes
         of :class:`~notebooklm.types.AudioFormat`,
         :class:`~notebooklm.types.VideoFormat` and
         :class:`~notebooklm.types.SlideDeckFormat`; report presets carry the
@@ -655,31 +663,32 @@ class WebArtifactsAPI(ArtifactsAPI):
 
         .. versionadded:: 0.9.0
         """
+        # ``allow_null=False``: the server always serves the table, so a null
+        # (status-bearing or not) is drift / rejection, never "no choices".
         result = await self._rpc.rpc_call(
             RPCMethod.GET_CUSTOMIZATION_CHOICES,
             build_customization_choices_params(notebook_id),
             source_path=f"/notebook/{notebook_id}" if notebook_id else "/",
-            allow_null=True,
-            raise_on_null_status=True,
+            allow_null=False,
         )
-        view = unwrap_customization_choices(result)
+        view = unwrap_customization_choices(
+            result,
+            method_id=RPCMethod.GET_CUSTOMIZATION_CHOICES.value,
+            source="get_customization_choices",
+        )
+
+        def _choices(rows: Any) -> tuple[CustomizationChoice, ...]:
+            return tuple(
+                CustomizationChoice(code=row.code, title=row.title, description=row.description)
+                for row in rows
+                if row.is_well_formed and row.code is not None
+            )
+
         return ArtifactCustomizationChoices(
-            audio=[
-                CustomizationChoice(code=row.code, title=row.title, description=row.description)
-                for row in view.audio_rows
-                if row.is_well_formed and row.code is not None
-            ],
-            video=[
-                CustomizationChoice(code=row.code, title=row.title, description=row.description)
-                for row in view.video_rows
-                if row.is_well_formed and row.code is not None
-            ],
-            slide_deck=[
-                CustomizationChoice(code=row.code, title=row.title, description=row.description)
-                for row in view.slide_deck_rows
-                if row.is_well_formed and row.code is not None
-            ],
-            reports=[
+            audio=_choices(view.audio_rows),
+            video=_choices(view.video_rows),
+            slide_deck=_choices(view.slide_deck_rows),
+            reports=tuple(
                 ReportPreset(
                     report_type=row.report_type,
                     description=row.description,
@@ -687,7 +696,7 @@ class WebArtifactsAPI(ArtifactsAPI):
                 )
                 for row in view.report_rows
                 if row.is_well_formed
-            ],
+            ),
         )
 
     # =========================================================================

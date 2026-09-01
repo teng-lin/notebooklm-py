@@ -672,8 +672,8 @@ def build_customization_choices_params(notebook_id: str | None = None) -> list[A
     project_id = 2; ArtifactType artifact_type = 3 }``. Live (both front doors,
     2026-09-01) the server ignores fields 2 and 3 entirely — an empty request,
     a bogus notebook id and every artifact type return the same account-level
-    table — so only the context is required. ``notebook_id`` is sent when the
-    caller has one purely to mirror what the web UI emits.
+    table — so only the context is required. ``notebook_id`` is appended when the
+    caller has one purely to fill the request's ``project_id`` (#2) slot.
     """
     params: list[Any] = [_build_template_block()]
     if notebook_id is not None:

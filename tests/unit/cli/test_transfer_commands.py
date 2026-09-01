@@ -74,7 +74,7 @@ class TestSourceAddAsync:
         client.sources.add_urls_async = AsyncMock(return_value=[_source("src_a", "Example")])
         result = _invoke(runner, client, ["source", "add-async", "https://example.com/", "-n", NB])
         assert result.exit_code == 0, result.output
-        assert "Queued 1 source(s)" in result.output
+        assert "Queued 1 of 1 source(s)" in result.output
         assert "src_a" in result.output
         client.sources.add_urls_async.assert_awaited_once_with(NB, ["https://example.com/"])
 
@@ -92,8 +92,11 @@ class TestSourceAddAsync:
         data = json.loads(result.output)
         assert data["notebook_id"] == NB
         assert data["count"] == 2
+        assert data["requested"] == 2
         assert [s["id"] for s in data["sources"]] == ["src_a", "src_b"]
-        assert data["sources"][0] == {"id": "src_a", "title": "A", "type": "url", "status": "ready"}
+        # The shared ``source list`` / ``source get`` row shape, not a hand-rolled dict.
+        assert data["sources"][0]["title"] == "A"
+        assert {"id", "title", "type", "status"} <= set(data["sources"][0])
 
     def test_requires_at_least_one_url(self, runner):
         result = _invoke(runner, create_mock_client(), ["source", "add-async", "-n", NB])
@@ -319,3 +322,57 @@ class TestSuggestNextSteps:
         result = _invoke(runner, client, ["suggest-next-steps", "-n", NB])
         assert result.exit_code == 0, result.output
         assert "No follow-up suggestions returned" in result.output
+
+
+class TestPartialCopiesAndValidation:
+    def test_partial_source_copy_lists_missing_ids_and_exits_one(self, runner):
+        client = create_mock_client()
+        client.sources.copy = AsyncMock(
+            return_value=[CopiedSource(original_id="src_1", source=_source("src_new", "Copy"))]
+        )
+        result = _invoke(
+            runner, client, ["source", "copy", "src_1", "src_2", "--to", NB, "-n", NB, "--json"]
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.output)
+        assert data["count"] == 1 and data["requested"] == 2
+        assert data["not_copied"] == ["src_2"]
+        client.sources.copy.assert_awaited_once_with(NB, ["src_1", "src_2"], NB)
+        text = _invoke(runner, client, ["source", "copy", "src_1", "src_2", "--to", NB, "-n", NB])
+        assert text.exit_code == 1
+        assert "Copied 1 of 2" in text.output and "Not copied (1): src_2" in text.output
+
+    def test_partial_artifact_copy_exits_one(self, runner):
+        client = create_mock_client()
+        client.artifacts.copy = AsyncMock(
+            return_value=[CopiedArtifact(original_id="art_1", artifact=_artifact())]
+        )
+        result = _invoke(
+            runner, client, ["artifact", "copy", "art_1", "art_2", "--to", NB, "-n", NB, "--json"]
+        )
+        assert result.exit_code == 1
+        assert json.loads(result.output)["not_copied"] == ["art_2"]
+
+    def test_add_async_rejects_non_http_and_internal_urls(self, runner):
+        client = create_mock_client()
+        client.sources.add_urls_async = AsyncMock(return_value=[])
+        for bad in ("file:///etc/passwd", "http://localhost:9000/admin", "hello world"):
+            result = _invoke(runner, client, ["source", "add-async", bad, "-n", NB, "--json"])
+            assert result.exit_code != 0, bad
+            assert json.loads(result.output)["error"] is True
+        client.sources.add_urls_async.assert_not_awaited()
+        ok = _invoke(
+            runner,
+            client,
+            [
+                "source",
+                "add-async",
+                "http://localhost:9000/x",
+                "--allow-internal",
+                "-n",
+                NB,
+                "--json",
+            ],
+        )
+        assert ok.exit_code == 0, ok.output
+        client.sources.add_urls_async.assert_awaited_once()

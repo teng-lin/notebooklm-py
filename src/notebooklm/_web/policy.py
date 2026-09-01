@@ -444,7 +444,7 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
         IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         notes=(
             "CopyArtifactsAsync creates new artifact rows in the target notebook "
-            "(live-verified twice: 3 -> 4 -> 5 rows); a retry after a lost "
+            "(live-verified by re-listing the target); a retry after a lost "
             "response creates a second set of copies"
         ),
     )

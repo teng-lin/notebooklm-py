@@ -12,6 +12,7 @@ recording fake transport — no network.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -48,6 +49,10 @@ from notebooklm.exceptions import (
     ArtifactNotFoundError,
     DecodingError,
     NetworkError,
+    NotebookNotFoundError,
+    RateLimitError,
+    RPCError,
+    ServerError,
     SourceNotFoundError,
     ValidationError,
 )
@@ -58,6 +63,7 @@ from notebooklm.types import (
     CustomizationChoice,
     NextStepSuggestion,
     ReportPreset,
+    SourceStatus,
 )
 
 NB, TARGET = "nb-source", "nb-target"
@@ -166,6 +172,7 @@ async def test_add_urls_async_sends_add_sources_request_and_decodes_stub_rows() 
     transport = FakeTransport({ADD_SOURCES_ASYNC_METHOD: [reply]})
     sources = await _sources_api(transport).add_urls_async(NB, [URL, "https://youtu.be/abc"])
     assert [s.id for s in sources] == [SRC_A, SRC_B]
+    assert all(s.status is SourceStatus.PROCESSING for s in sources)
     method, request, kwargs = transport.calls[0]
     assert method == ADD_SOURCES_ASYNC_METHOD
     assert isinstance(request, sources_pb2.AddSourcesRequest)
@@ -398,10 +405,10 @@ async def test_customization_choices_decodes_all_four_families() -> None:
     transport = FakeTransport({GET_ARTIFACT_CUSTOMIZATION_CHOICES_METHOD: [reply]})
     result = await _artifacts_api(transport).get_customization_choices(NB)
     assert result == ArtifactCustomizationChoices(
-        audio=[CustomizationChoice(1, "Deep Dive", "Two hosts")],
-        video=[CustomizationChoice(3, "Cinematic", "Rich")],
-        slide_deck=[CustomizationChoice(2, "Presenter Slides", "Clean")],
-        reports=[ReportPreset("Briefing Doc", "Key insights", "Create a briefing.")],
+        audio=(CustomizationChoice(1, "Deep Dive", "Two hosts"),),
+        video=(CustomizationChoice(3, "Cinematic", "Rich"),),
+        slide_deck=(CustomizationChoice(2, "Presenter Slides", "Clean"),),
+        reports=(ReportPreset("Briefing Doc", "Key insights", "Create a briefing."),),
     )
     method, request, kwargs = transport.calls[0]
     assert method == GET_ARTIFACT_CUSTOMIZATION_CHOICES_METHOD
@@ -465,3 +472,106 @@ async def test_suggest_next_steps_without_scope_and_validation() -> None:
     assert len(request.sources) == 0
     with pytest.raises(ValidationError):
         await _notebooks_api(FakeTransport()).suggest_next_steps("")
+
+
+# ---------------------------------------------------------------------------
+# Unconfirmed marking across every ambiguous transport error (Android)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("error", [NetworkError("x"), RateLimitError("x"), ServerError("x")])
+@pytest.mark.asyncio
+async def test_every_android_write_marks_transport_loss_unconfirmed(error: Exception) -> None:
+    for method, call in (
+        (ADD_SOURCES_ASYNC_METHOD, lambda api: api.add_urls_async(NB, [URL])),
+        (APPEND_SOURCE_METHOD, lambda api: api.append_text(NB, SRC_A, "x")),
+        (COPY_SOURCES_ASYNC_METHOD, lambda api: api.copy(NB, [SRC_A], TARGET)),
+    ):
+        with pytest.raises(type(error)) as excinfo:
+            await call(_sources_api(FakeTransport({method: [type(error)("gone")]})))
+        assert is_unconfirmed(excinfo.value)
+    with pytest.raises(type(error)) as excinfo:
+        await _artifacts_api(
+            FakeTransport({COPY_ARTIFACTS_ASYNC_METHOD: [type(error)("gone")]})
+        ).copy(NB, [ART_A], TARGET)
+    assert is_unconfirmed(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_confirmed_rejections_are_not_marked_unconfirmed() -> None:
+    rejected = RPCError("rejected", method_id=COPY_SOURCES_ASYNC_METHOD, rpc_code=5)
+    with pytest.raises(RPCError) as excinfo:
+        await _sources_api(FakeTransport({COPY_SOURCES_ASYNC_METHOD: [rejected]})).copy(
+            NB, [SRC_A], TARGET
+        )
+    assert excinfo.value is rejected
+    assert not is_unconfirmed(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_partial_copies_warn_and_malformed_rows_are_skipped(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    reply = sources_pb2.CopySourcesAsyncResponse(
+        copied_sources=[
+            sources_pb2.CopiedSource(
+                source_id=read_pb2.SourceId(id=SRC_A), source=_source(SRC_NEW, "Copy")
+            ),
+            sources_pb2.CopiedSource(source_id=read_pb2.SourceId(id=SRC_B)),  # malformed
+        ]
+    )
+    with caplog.at_level(logging.WARNING, logger="notebooklm._android.source_transfers"):
+        copied = await _sources_api(FakeTransport({COPY_SOURCES_ASYNC_METHOD: [reply]})).copy(
+            NB, [SRC_A, SRC_B], TARGET
+        )
+    assert [c.original_id for c in copied] == [SRC_A]
+    assert "malformed mapping entry" in caplog.text
+    assert "not copied: src-b" in caplog.text
+    art_reply = artifacts_pb2.CopyArtifactsAsyncResponse(
+        copied_artifacts=[
+            artifacts_pb2.CopiedArtifact(source_artifact_id=ART_A, artifact=_artifact(ART_NEW))
+        ]
+    )
+    with caplog.at_level(logging.WARNING, logger="notebooklm._android.artifact_transfers"):
+        copied_artifacts = await _artifacts_api(
+            FakeTransport({COPY_ARTIFACTS_ASYNC_METHOD: [art_reply]})
+        ).copy(NB, [ART_A, "art-b"], TARGET)
+    assert [c.original_id for c in copied_artifacts] == [ART_A]
+    assert "not copied: art-b" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_add_urls_async_warns_on_count_mismatch_and_non_zero_ack(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    reply = sources_pb2.AddSourcesAsyncResponse(
+        sources=[_source(SRC_A, url=URL)],
+        acknowledgements=[sources_pb2.SourceAcknowledgement(source=_source(SRC_A), status=3)],
+    )
+    with caplog.at_level(logging.WARNING, logger="notebooklm._android.source_transfers"):
+        sources = await _sources_api(
+            FakeTransport({ADD_SOURCES_ASYNC_METHOD: [reply]})
+        ).add_urls_async(NB, [URL, "https://b.example/"])
+    assert [s.id for s in sources] == [SRC_A]
+    assert "queued 1 source(s) for 2 URL(s)" in caplog.text
+    assert "status 3" in caplog.text
+    idless = sources_pb2.AddSourcesAsyncResponse(sources=[_source("", url=URL)])
+    with pytest.raises(DecodingError):
+        await _sources_api(FakeTransport({ADD_SOURCES_ASYNC_METHOD: [idless]})).add_urls_async(
+            NB, [URL]
+        )
+
+
+@pytest.mark.asyncio
+async def test_suggest_next_steps_unknown_notebook_maps_to_notebook_not_found() -> None:
+    missing = RPCError("nope", method_id=NEXT_STEP_SUGGESTIONS_METHOD, rpc_code=5)
+    with pytest.raises(NotebookNotFoundError):
+        await _notebooks_api(
+            FakeTransport({NEXT_STEP_SUGGESTIONS_METHOD: [missing]})
+        ).suggest_next_steps(NB)
+    other = RPCError("bad", method_id=NEXT_STEP_SUGGESTIONS_METHOD, rpc_code=3)
+    with pytest.raises(RPCError) as excinfo:
+        await _notebooks_api(
+            FakeTransport({NEXT_STEP_SUGGESTIONS_METHOD: [other]})
+        ).suggest_next_steps(NB)
+    assert not isinstance(excinfo.value, NotebookNotFoundError)

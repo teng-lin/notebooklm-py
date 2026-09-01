@@ -107,9 +107,13 @@ reply
 target_project_id = 4 }` (fields 1–2 unused); `CopySourcesAsyncResponse {
 repeated CopiedSource copied_sources = 1 }` with `CopiedSource { SourceId
 source_id = 1; Source source = 2 }`. The copy (`eb0e0cca-…`) was present and
-`READY` in the target's source list. Positionally this is the Web
+`READY` in the target's source list. Unknown ids are answered with a status, not
+an empty mapping (follow-up probe, same day): a bogus **source id** and a bogus
+**target project** both draw `NOT_FOUND` (`{3: [SourceId{1: <uuid4>}], 4: <real
+target>}` and `{3: [<real source>], 4: <uuid4>}`), so an empty mapping on a
+successful reply is a defensive not-found case, not the documented one. Positionally this is the Web
 `[null, null, [[id]], target]` request and `[[[[orig], [[new], title, …]]]]`
-reply. The synchronous twin `CopySources` is dead on both front doors
+reply. The synchronous twin `CopySources` (`Z8UXi`) is dead on both front doors
 (`INTERNAL` on mobile for every input once its required #3 string is supplied)
 and is not modelled.
 
@@ -136,7 +140,10 @@ copy (`af713f69-…`, "ML Quiz", `completed`) appeared in the target's artifact
 list. Bogus ids do **not** draw `NOT_FOUND`: `{1: ctx, 2: ["<uuid4>"], 3:
 target}` answered `OK` with the id echoed under a separate tag-2 entry
 (`{1: "<uuid4>", 3: {1: ""}}`) and no new row, so the adapter treats an empty
-`copied_artifacts` mapping as not-found rather than trusting the status. The
+`copied_artifacts` mapping as not-found rather than trusting the status. A bogus
+**target project**, by contrast, draws `NOT_FOUND` (`{1: ctx, 2: [<real
+artifact>], 3: <uuid4>}`), so the two failure modes are distinguishable: an
+unknown target is a status, unknown artifact ids are an empty mapping. The
 synchronous twin `CopyArtifacts` (`zVGIdd`) validates arity, ignores the ids
 and copies nothing while reporting success; it is deliberately not modelled.
 

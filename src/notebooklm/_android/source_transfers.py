@@ -14,11 +14,12 @@ from __future__ import annotations
 
 import builtins
 import logging
+from dataclasses import replace
 from typing import Any, cast
 
 from .._url_utils import is_youtube_url
 from ..exceptions import DecodingError, SourceNotFoundError, ValidationError
-from ..types import CopiedSource, Source
+from ..types import CopiedSource, Source, SourceStatus
 from .codecs.sources import decode_source
 from .session import AndroidSession
 from .write_safety import call_unconfirmed_on_transport_loss
@@ -61,6 +62,12 @@ def _url_user_content(url: str) -> Any:
     if is_youtube_url(url):
         return proto.UserContent(video_content=proto.VideoContent(youtube_url=url))
     return proto.UserContent(web_content=proto.WebContent(url=url))
+
+
+def _as_processing(source: Source) -> Source:
+    if source.status is SourceStatus.UNKNOWN:
+        return replace(source, status=SourceStatus.PROCESSING)
+    return source
 
 
 class AndroidSourceTransferMixin:
@@ -106,7 +113,11 @@ class AndroidSourceTransferMixin:
                 "AddSourcesAsync returned no queued source rows",
                 method_id=ADD_SOURCES_ASYNC_METHOD,
             )
-        sources = [decode_source(row, method_id=ADD_SOURCES_ASYNC_METHOD) for row in rows]
+        # Queued stub rows carry no settings/status block (read as UNKNOWN by the
+        # generic codec); by contract they are still processing.
+        sources = [
+            _as_processing(decode_source(row, method_id=ADD_SOURCES_ASYNC_METHOD)) for row in rows
+        ]
         if any(not source.id for source in sources):
             raise DecodingError(
                 "AddSourcesAsync returned a queued source row without an id",
@@ -169,9 +180,11 @@ class AndroidSourceTransferMixin:
         """Copy ``source_ids`` into ``target_notebook_id`` (``CopySourcesAsync``).
 
         The reply maps each original ``SourceId`` (#1) to the new ``Source`` row
-        (#2). Raises :class:`SourceNotFoundError` when nothing was copied; a
-        partial mapping is returned with a warning because those copies have
-        already committed.
+        (#2). An unknown source id or target project draws ``NOT_FOUND``
+        (live-verified); an empty mapping on success is treated as
+        :class:`SourceNotFoundError` so a no-op never reads as a copy. A partial
+        mapping is returned with a warning because those copies have already
+        committed.
         """
         del notebook_id  # The route is addressed by source ids + target alone.
         if not source_ids:
@@ -196,22 +209,28 @@ class AndroidSourceTransferMixin:
                     expected_epoch=lease.epoch,
                 )
             )
+        # Malformed entries are skipped, not fatal: the well-formed ones are the
+        # only proof of copies that have already committed.
         copied: builtins.list[CopiedSource] = []
+        malformed = 0
         for entry in response.copied_sources:
             original_id = entry.source_id.id
-            if not original_id or not entry.HasField("source"):
-                raise DecodingError(
-                    "CopySourcesAsync returned a malformed mapping entry",
-                    method_id=COPY_SOURCES_ASYNC_METHOD,
-                )
-            source = decode_source(entry.source, method_id=COPY_SOURCES_ASYNC_METHOD)
-            if not source.id:
-                raise DecodingError(
-                    "CopySourcesAsync returned a copied source without an id",
-                    method_id=COPY_SOURCES_ASYNC_METHOD,
-                )
+            source = (
+                decode_source(entry.source, method_id=COPY_SOURCES_ASYNC_METHOD)
+                if entry.HasField("source")
+                else None
+            )
+            if not original_id or source is None or not source.id:
+                malformed += 1
+                logger.warning("CopySourcesAsync returned a malformed mapping entry")
+                continue
             copied.append(CopiedSource(original_id=original_id, source=source))
         if not copied:
+            if malformed:
+                raise DecodingError(
+                    "CopySourcesAsync returned only malformed mapping entries",
+                    method_id=COPY_SOURCES_ASYNC_METHOD,
+                )
             raise SourceNotFoundError(", ".join(source_ids), method_id=COPY_SOURCES_ASYNC_METHOD)
         missing = set(source_ids) - {item.original_id for item in copied}
         if missing:

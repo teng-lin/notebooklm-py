@@ -42,6 +42,7 @@ from notebooklm._web.rows.transfers import (
     AddSourcesAsyncResponseRow,
     CopiedArtifactRow,
     CopiedSourceRow,
+    SourceAckRow,
     unwrap_mapping_rows,
 )
 from notebooklm._web.sources.transfers import SourceTransferService
@@ -49,6 +50,8 @@ from notebooklm.exceptions import (
     ArtifactNotFoundError,
     DecodingError,
     NetworkError,
+    NotebookNotFoundError,
+    RateLimitError,
     RPCError,
     ServerError,
     SourceNotFoundError,
@@ -62,6 +65,7 @@ from notebooklm.types import (
     CustomizationChoice,
     NextStepSuggestion,
     ReportPreset,
+    SourceStatus,
 )
 from tests._fixtures.fake_core import make_fake_core
 
@@ -213,7 +217,7 @@ class TestCustomizationRows:
     ]
 
     def test_families_and_rows(self) -> None:
-        view = unwrap_customization_choices(self.CHOICES)
+        view = unwrap_customization_choices(self.CHOICES, method_id="m", source="s")
         assert [(r.code, r.title) for r in view.audio_rows] == [(1, "Deep Dive"), (2, "Brief")]
         assert [(r.code, r.title, r.description) for r in view.video_rows] == [
             (3, "Cinematic", "Rich")
@@ -225,9 +229,14 @@ class TestCustomizationRows:
         assert reports[0].report_type == "Briefing Doc"
         assert reports[0].directive == "Create a briefing."
 
-    def test_degenerate_payloads_yield_empty_views(self) -> None:
-        for payload in (None, [], [None], [[None, None, None, None]], [["x", 1, 2, 3]]):
-            view = unwrap_customization_choices(payload)
+    def test_envelope_is_load_bearing_but_families_are_lenient(self) -> None:
+        # The server always serves the table: a missing / non-list envelope is drift.
+        for payload in (None, [], [None], "junk", [42]):
+            with pytest.raises(DecodingError):
+                unwrap_customization_choices(payload, method_id="m", source="s")
+        # Inside a recognised envelope, absent / malformed families are just empty.
+        for payload in ([[None, None, None, None]], [["x", 1, 2, 3]], [[]]):
+            view = unwrap_customization_choices(payload, method_id="m", source="s")
             assert view.audio_rows == []
             assert view.video_rows == []
             assert view.slide_deck_rows == []
@@ -268,6 +277,8 @@ class TestAddUrlsAsync:
             logger=_LOGGER,
         )
         assert [s.id for s in sources] == [SRC_A, SRC_B]
+        # Stub rows carry no status block; the contract is "still processing".
+        assert all(s.status is SourceStatus.PROCESSING for s in sources)
         method, params = rpc.rpc_call.await_args.args[:2]
         assert method is RPCMethod.ADD_SOURCES_ASYNC
         assert params == [
@@ -483,26 +494,34 @@ class TestCustomizationChoices:
         rpc_call = AsyncMock(return_value=TestCustomizationRows.CHOICES)
         choices = await _artifacts(rpc_call).get_customization_choices()
         assert choices == ArtifactCustomizationChoices(
-            audio=[
+            audio=(
                 CustomizationChoice(1, "Deep Dive", "Two hosts"),
                 CustomizationChoice(2, "Brief", "Short"),
-            ],
-            video=[CustomizationChoice(3, "Cinematic", "Rich")],
-            slide_deck=[CustomizationChoice(1, "Detailed Deck", "Full text")],
-            reports=[ReportPreset("Briefing Doc", "Key insights", "Create a briefing.")],
+            ),
+            video=(CustomizationChoice(3, "Cinematic", "Rich"),),
+            slide_deck=(CustomizationChoice(1, "Detailed Deck", "Full text"),),
+            reports=(ReportPreset("Briefing Doc", "Key insights", "Create a briefing."),),
         )
         method, params = rpc_call.await_args.args[:2]
         assert method is RPCMethod.GET_CUSTOMIZATION_CHOICES
         assert params == [OPTS]
         assert rpc_call.await_args.kwargs["source_path"] == "/"
+        # A null reply is drift / rejection, never "no choices" (#2284 class).
+        assert rpc_call.await_args.kwargs["allow_null"] is False
 
     @pytest.mark.asyncio
     async def test_notebook_id_is_forwarded_when_given(self) -> None:
-        rpc_call = AsyncMock(return_value=None)
+        rpc_call = AsyncMock(return_value=[[[[]], [[]], [[]], [[]]]])
         choices = await _artifacts(rpc_call).get_customization_choices(NB)
         assert choices == ArtifactCustomizationChoices()
         assert rpc_call.await_args.args[1] == [OPTS, NB]
         assert rpc_call.await_args.kwargs["source_path"] == f"/notebook/{NB}"
+
+    @pytest.mark.asyncio
+    async def test_missing_or_non_list_envelope_is_drift(self) -> None:
+        for payload in (None, [], "junk"):
+            with pytest.raises(DecodingError):
+                await _artifacts(AsyncMock(return_value=payload)).get_customization_choices()
 
 
 # ---------------------------------------------------------------------------
@@ -537,3 +556,111 @@ class TestSuggestNextSteps:
         assert rpc.rpc_call.await_args.args[1] == [None, NB, [[[SRC_A]]]]
         with pytest.raises(ValidationError):
             await WebNotebooksAPI(rpc).suggest_next_steps("")
+
+
+# ---------------------------------------------------------------------------
+# Unconfirmed-write marking across every ambiguous transport error (web)
+# ---------------------------------------------------------------------------
+
+
+class TestUnconfirmedMarking:
+    @pytest.mark.parametrize("error", [NetworkError("x"), RateLimitError("x"), ServerError("x")])
+    @pytest.mark.asyncio
+    async def test_every_write_marks_transport_loss_unconfirmed(self, error: Exception) -> None:
+        service = SourceTransferService()
+        rpc = _rpc(side_effect=error)
+        calls = (
+            lambda: service.add_urls_async(
+                NB, [URL], rpc=rpc, extract_youtube_video_id=lambda _u: None, logger=_LOGGER
+            ),
+            lambda: service.append_text(NB, SRC_A, "x", header="", rpc=rpc),
+            lambda: service.copy(NB, [SRC_A], TARGET, **_service_kwargs(rpc)),
+            lambda: _artifacts(AsyncMock(side_effect=error)).copy(NB, [ART_A], TARGET),
+        )
+        for call in calls:
+            with pytest.raises(RPCError) as excinfo:
+                await call()
+            assert getattr(excinfo.value, "unconfirmed", False) is True
+            assert excinfo.value.__cause__ is not None
+
+    @pytest.mark.asyncio
+    async def test_confirmed_rejections_are_not_marked(self) -> None:
+        rejected = RPCError("rejected", method_id="x", rpc_code=3)
+        rpc = _rpc(side_effect=rejected)
+        with pytest.raises(RPCError) as excinfo:
+            await SourceTransferService().copy(NB, [SRC_A], TARGET, **_service_kwargs(rpc))
+        assert excinfo.value is rejected
+        assert not getattr(excinfo.value, "unconfirmed", False)
+
+
+class TestMalformedRowsAndGuards:
+    @pytest.mark.asyncio
+    async def test_malformed_copy_rows_are_skipped_not_fatal(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        rows = [[[SRC_A], _source_entry(SRC_NEW, "Copy")], [[SRC_B]], [["x"], [[""], "no id"]]]
+        with caplog.at_level(logging.WARNING, logger=_LOGGER.name):
+            copied = await SourceTransferService().copy(
+                NB, [SRC_A, SRC_B], TARGET, **_service_kwargs(_rpc([rows]))
+            )
+        assert [c.original_id for c in copied] == [SRC_A]
+        assert caplog.text.count("malformed mapping entry") == 2
+        with pytest.raises(DecodingError):
+            await SourceTransferService().copy(
+                NB, [SRC_A], TARGET, **_service_kwargs(_rpc([[[[SRC_A]]]]))
+            )
+        api = _artifacts(AsyncMock(return_value=[[[ART_A, _artifact_row(ART_NEW)], [ART_A]]]))
+        assert [c.original_id for c in await api.copy(NB, [ART_A], TARGET)] == [ART_A]
+        with pytest.raises(DecodingError):
+            await _artifacts(AsyncMock(return_value=[[[ART_A]]])).copy(NB, [ART_A], TARGET)
+
+    @pytest.mark.asyncio
+    async def test_add_urls_async_count_mismatch_and_idless_stub(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        kwargs = {"extract_youtube_video_id": lambda _u: None, "logger": _LOGGER}
+        with caplog.at_level(logging.WARNING, logger=_LOGGER.name):
+            sources = await SourceTransferService().add_urls_async(
+                NB,
+                [URL, "https://b.example/"],
+                rpc=_rpc([[_stub_source(SRC_A)], None, []]),
+                **kwargs,
+            )
+        assert len(sources) == 1
+        assert "queued 1 source(s) for 2 URL(s)" in caplog.text
+        with pytest.raises(DecodingError):
+            await SourceTransferService().add_urls_async(
+                NB,
+                [URL],
+                rpc=_rpc([[[[""], URL, [None, None, None, None, 5]]], None, []]),
+                **kwargs,
+            )
+
+    def test_row_guards_on_non_list_and_bool_slots(self) -> None:
+        assert CopiedSourceRow(None).original_id is None
+        assert CopiedSourceRow([42, []]).original_id is None
+        assert CopiedSourceRow([[SRC_A], "row"]).source_entry is None
+        assert CopiedArtifactRow("x").artifact_row is None
+        assert CopiedArtifactRow([ART_A, 7]).artifact_row is None
+        ack = SourceAckRow(None)
+        assert ack.status is None and ack.source_entry is None and not ack.is_ok
+        assert SourceAckRow([[], True]).status is None
+        assert SourceAckRow([[], 0]).is_ok
+        assert AddSourcesAsyncResponseRow([None, None, [None, 5]]).ack_rows[1].status is None
+
+    @pytest.mark.asyncio
+    async def test_next_step_rows_with_non_int_codes_are_dropped(self) -> None:
+        rpc = _rpc([[["q", "9"], ["q2", True], ["ok", 9]]])
+        result = await WebNotebooksAPI(rpc).suggest_next_steps(NB)
+        assert result == [NextStepSuggestion(question="ok", type_code=9)]
+        assert await WebNotebooksAPI(_rpc([None])).suggest_next_steps(NB) == []
+
+    @pytest.mark.asyncio
+    async def test_unknown_notebook_maps_to_notebook_not_found(self) -> None:
+        rpc = _rpc(side_effect=RPCError("nope", method_id="OcvKNc", rpc_code=5))
+        with pytest.raises(NotebookNotFoundError):
+            await WebNotebooksAPI(rpc).suggest_next_steps(NB)
+        rpc = _rpc(side_effect=RPCError("other", method_id="OcvKNc", rpc_code=3))
+        with pytest.raises(RPCError) as excinfo:
+            await WebNotebooksAPI(rpc).suggest_next_steps(NB)
+        assert not isinstance(excinfo.value, NotebookNotFoundError)

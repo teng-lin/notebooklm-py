@@ -24,6 +24,7 @@ from __future__ import annotations
 import builtins
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 
 from ..._idempotency import mark_unconfirmed
 from ...exceptions import (
@@ -36,7 +37,7 @@ from ...exceptions import (
     ValidationError,
 )
 from ...rpc import RPCMethod
-from ...types import CopiedSource, Source
+from ...types import CopiedSource, Source, SourceStatus
 from ..contracts import RpcCaller
 from ..params.sources import (
     build_add_sources_async_params,
@@ -68,6 +69,13 @@ def _unconfirmed(method: RPCMethod, what: str, exc: Exception) -> RPCError:
             rpc_code=rpc_code,
         )
     )
+
+
+def _as_processing(source: Source) -> Source:
+    """Queued stub rows have no status block; they are, by contract, processing."""
+    if source.status is SourceStatus.UNKNOWN:
+        return replace(source, status=SourceStatus.PROCESSING)
+    return source
 
 
 class SourceTransferService:
@@ -117,8 +125,13 @@ class SourceTransferService:
                 raw_response=repr(payload),
                 method_id=RPCMethod.ADD_SOURCES_ASYNC.value,
             )
+        # The stub rows carry no settings/status block (the sources are queued,
+        # not ingested), which the generic decoder reads as UNKNOWN. Project the
+        # documented contract — the returned rows are still processing.
         sources = [
-            Source.from_api_response(entry, method_id=RPCMethod.ADD_SOURCES_ASYNC.value)
+            _as_processing(
+                Source.from_api_response(entry, method_id=RPCMethod.ADD_SOURCES_ASYNC.value)
+            )
             for entry in entries
         ]
         if any(not source.id for source in sources):
@@ -135,7 +148,7 @@ class SourceTransferService:
                 notebook_id,
             )
         for ack in view.ack_rows:
-            if ack.status not in (None, 0):
+            if ack.status is not None and not ack.is_ok:
                 logger.warning(
                     "AddSourcesAsync acknowledgement carried status %r for notebook %s",
                     ack.status,
@@ -185,10 +198,12 @@ class SourceTransferService:
     ) -> builtins.list[CopiedSource]:
         """Copy ``source_ids`` into ``target_notebook_id`` with ``CopySourcesAsync``.
 
-        Raises :class:`SourceNotFoundError` when ids were requested but the
-        server copied none of them (an empty mapping is how it answers unknown
-        ids). A partial mapping is returned as-is with a warning, because the
-        copies it names have already committed.
+        An unknown source id or target notebook is answered with ``NOT_FOUND``
+        (live-verified) and surfaces as ``RPCError``. An *empty* mapping on a
+        successful reply is not a documented server behaviour; it is treated as
+        :class:`SourceNotFoundError` so a silent no-op can never read as a copy.
+        A partial mapping is returned as-is with a warning, because the copies
+        it names have already committed.
         """
         if not source_ids:
             raise ValidationError("source_ids must not be empty")
@@ -212,28 +227,33 @@ class SourceTransferService:
         rows = unwrap_mapping_rows(
             result, method_id=RPCMethod.COPY_SOURCES.value, source="CopySourcesAsync"
         )
+        # A malformed entry is logged and skipped rather than aborting the
+        # decode: the well-formed entries are the only proof of copies that have
+        # already committed, and dropping them would hide committed writes.
         copied: builtins.list[CopiedSource] = []
+        malformed = 0
         for raw in rows:
             row = CopiedSourceRow(raw)
-            if not row.is_well_formed:
-                raise DecodingError(
-                    "CopySourcesAsync returned a malformed mapping entry",
-                    raw_response=repr(raw),
-                    method_id=RPCMethod.COPY_SOURCES.value,
-                )
-            assert row.original_id is not None and row.source_entry is not None
-            source = Source.from_api_response(
-                row.source_entry, method_id=RPCMethod.COPY_SOURCES.value
+            source = (
+                Source.from_api_response(row.source_entry, method_id=RPCMethod.COPY_SOURCES.value)
+                if row.is_well_formed and row.source_entry is not None
+                else None
             )
-            if not source.id:
-                raise DecodingError(
-                    "CopySourcesAsync returned a copied source without an id",
-                    raw_response=repr(raw),
-                    method_id=RPCMethod.COPY_SOURCES.value,
+            if row.original_id is None or source is None or not source.id:
+                malformed += 1
+                logger.warning(
+                    "CopySourcesAsync returned a malformed mapping entry: %s", repr(raw)[:200]
                 )
+                continue
             copied.append(CopiedSource(original_id=row.original_id, source=source))
 
         if not copied:
+            if malformed:
+                raise DecodingError(
+                    "CopySourcesAsync returned only malformed mapping entries",
+                    raw_response=repr(rows)[:400],
+                    method_id=RPCMethod.COPY_SOURCES.value,
+                )
             raise SourceNotFoundError(", ".join(source_ids), method_id=RPCMethod.COPY_SOURCES.value)
         missing = set(source_ids) - {item.original_id for item in copied}
         if missing:
