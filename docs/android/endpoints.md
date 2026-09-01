@@ -922,8 +922,11 @@ shapes; they do not change the capture count.
 **Field names/tags/types — recovered:** the full protobuf schema (323 messages, 868 fields) is in
 [android/schema.proto](schema.proto), decompiled from the binary. This supersedes the
 `(inferred)` names in the inline shapes — including every message not reachable from the mobile UI
-(`CreateNote`/`MutateNote`/`DeleteNotes`, `ActOnSources`, artifact ops, the WebRTC Live messages,
-`PrototypeNotebookSearch`). Enum *value* names are in [Enums](#enums-recovered-from-the-binary).
+(`CreateNote`/`MutateNote`/`DeleteNotes`, `ActOnSources`, artifact ops, the WebRTC Live messages).
+The one exception is `PrototypeNotebookSearch`: the `1.55.10` build dropped that RPC and its four
+`Prototype*` discovery messages, so the current file no longer carries them; their recovered names
+and tags remain in the `1.46.7` schema at commit `d5df15e77`. Enum *value* names are in
+[Enums](#enums-recovered-from-the-binary).
 
 **Still approximate:** a few scalar int widths (`int32` vs `int64`) from the adder heuristic; the
 deep rich-text/citation grammar inside `ListChatTurns`/`ListArtifacts`/`LoadSource`/

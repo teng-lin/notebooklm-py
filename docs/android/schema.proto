@@ -177,7 +177,7 @@ message TailwindValue {
 message TailwindStruct {
   repeated TailwindStruct_TailwindStructEntry fields = 1;
 }
-// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.TailwindStruct_TailwindStructEntry
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.TailwindStruct.TailwindStructEntry
 message TailwindStruct_TailwindStructEntry {
   string key = 1;
   TailwindValue value = 2;
@@ -411,7 +411,7 @@ message ViewStudioArtifactEvent {
 message ListExpertIntelligenceContentResponse {
   repeated ListExpertIntelligenceContentResponse_ContentMetadata contents = 1;
 }
-// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ListExpertIntelligenceContentResponse_ContentMetadata
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ListExpertIntelligenceContentResponse.ContentMetadata
 message ListExpertIntelligenceContentResponse_ContentMetadata {
   string contentId = 1;
   string title = 3;
@@ -431,7 +431,7 @@ message ListExpertIntelligenceContentRequest {
 message GetDriveSourceStatusResponse {
   repeated GetDriveSourceStatusResponse_SourceStatus sourceStatuses = 1;
 }
-// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.GetDriveSourceStatusResponse_SourceStatus
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.GetDriveSourceStatusResponse.SourceStatus
 message GetDriveSourceStatusResponse_SourceStatus {
   string sourceId = 1;
   SourceSettings settings = 2;
@@ -576,7 +576,7 @@ message DeleteNotesRequest {
 message NoteMutation {
   NoteMutation_EditNoteMutation editNoteMutation = 1;
 }
-// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.NoteMutation_EditNoteMutation
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.NoteMutation.EditNoteMutation
 message NoteMutation_EditNoteMutation {
   string content = 1;
   string name = 2;
@@ -859,7 +859,7 @@ message MutateAccountRequest {
 message AccountMutation {
   AccountMutation_ChangePropertyMutation changeProperty = 2;
 }
-// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.AccountMutation_ChangePropertyMutation
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.AccountMutation.ChangePropertyMutation
 message AccountMutation_ChangePropertyMutation {
   UserInfo newUserInfo = 1;
 }
@@ -916,7 +916,7 @@ message MutateProjectRequest {
 message ProjectMutation {
   ProjectMutation_ChangePropertyMutation changeProperty = 4;
 }
-// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ProjectMutation_ChangePropertyMutation
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ProjectMutation.ChangePropertyMutation
 message ProjectMutation_ChangePropertyMutation {
   string newTitle = 2;
 }
@@ -1899,12 +1899,12 @@ message ShareProjectRequest {
   repeated ShareProjectRequest_ProjectToShare project = 1;
   RequestContext requestContext = 4;
 }
-// Protobuf FQN: labs.language.tailwind.sharing.ShareProjectRequest_PublicDocumentSettings
+// Protobuf FQN: labs.language.tailwind.sharing.ShareProjectRequest.PublicDocumentSettings
 message ShareProjectRequest_PublicDocumentSettings {
   bool isPubliclyReadable = 1;
   bool isDiscoverable = 2;
 }
-// Protobuf FQN: labs.language.tailwind.sharing.ShareProjectRequest_ProjectToShare
+// Protobuf FQN: labs.language.tailwind.sharing.ShareProjectRequest.ProjectToShare
 message ShareProjectRequest_ProjectToShare {
   string projectId = 1;
   ShareProjectRequest_PublicDocumentSettings publicDocumentSettings = 3;

@@ -33,6 +33,22 @@ class ExampleRequest extends GeneratedMessage {
 }
 """
 
+NESTED_MESSAGE = """\
+// lib: , url: package:google.example.v1/example_service.pb.dart
+
+class Outer_Entry extends GeneratedMessage {
+  static BuilderInfo _i() {
+    // 0x1: add x16, PP, #0x1 ; Obj!PackageName@abc123
+    // 0x2: r2 = "Outer.Entry"
+    // 0x3: r0 = BuilderInfo()
+    //     0x3: bl #0x4 ; BuilderInfo::BuilderInfo
+    // 0x4: r2 = 1
+    // 0x5: r3 = "key"
+    // 0x6: bl #0x7 ; BuilderInfo::aOS
+  }
+}
+"""
+
 
 def _write_dump(tmp_path: Path, source: str, *, with_objects: bool = True) -> tuple[Path, Path]:
     dump_root = tmp_path / "dump"
@@ -124,3 +140,16 @@ def test_main_default_patterns_preserve_the_complete_historical_scope(
     assert "message LoggingEmpty {\n}" in captured.out
     assert "parsed 3 messages, 0 fields from 3 files" in captured.err
     assert "resolved 3/3 protobuf FQNs" in captured.err
+
+
+def test_nested_message_keeps_its_dotted_builder_name_as_the_fqn(tmp_path: Path) -> None:
+    """A nested message is registered as ``Outer.Entry``; the Dart class name is not the FQN."""
+    asm_root, source_path = _write_dump(tmp_path, NESTED_MESSAGE)
+    package_names = parse_pbschema.find_package_names(asm_root)
+
+    (message,) = parse_pbschema.parse_file_messages(source_path, package_names)
+
+    assert message.class_name == "Outer_Entry"
+    assert message.builder_name == "Outer.Entry"
+    assert message.fqn == "google.protobuf.Outer.Entry"
+    assert [field["name"] for field in message.fields] == ["key"]

@@ -33,7 +33,7 @@ consolidated document rather than encoded in filenames.
 | [`endpoints.md`](endpoints.md) | gRPC method surface and mobile ⇄ Web cross-reference |
 | [`proto-evidence-ledger.md`](proto-evidence-ledger.md) | exact/local compile closure, replay policy, hashes, and admission decisions |
 | [`schema.proto`](schema.proto) | generated 323-message / 868-field Dart-AOT recovery parsed by CI |
-| [`enums.txt`](enums.txt) | generated 94-enum integer inventory parsed by CI |
+| [`enums.txt`](enums.txt) | generated 104-block (94 enum names) integer inventory parsed by CI |
 | [`grpc-service-signature-inferences.json`](grpc-service-signature-inferences.json) | ten Web-derived signatures with conventional request/response type names |
 | [`grpc-service-signature-exceptions.json`](grpc-service-signature-exceptions.json) | empty implemented-path exception manifest |
 | [`grpc-runtime-parser-overrides.json`](grpc-runtime-parser-overrides.json) | exact paths intentionally decoded through local live-field overlays |
@@ -77,9 +77,18 @@ identity through the sibling `objs.txt`; an unresolved package remains explicit 
 inferred from its directory. In particular `FunctionCall`, `FunctionResponse`, `TailwindStruct`,
 and `TailwindValue` sit in Dart libraries under an `orchestration.v1.agency` directory but are
 registered with the `google.internal.labs.tailwind.orchestration.v1` `PackageName` object, and no
-`…agency` package object exists in either dump; the schema records the registered package. The
-enum generator merges the object pool with the object store; `[objs adds …]` lists the integers
-that only the object store proved, and `[objs-ONLY]` marks an enum with no pool object at all.
+`…agency` package object exists in either dump; the schema records the registered package. Nested
+messages keep the dotted name handed to `BuilderInfo` in their `// Protobuf FQN:` line
+(`…TailwindStruct.TailwindStructEntry`) while the `message` identifier stays the Dart class name.
+
+The enum generator merges the object pool with the object store and emits **one block per
+(Dart library, enum class)**: ten class names (`ArtifactType`, `DiscoveryMode`,
+`OriginalSourceContentType`, `UserAction`, …) are declared by two libraries with different
+integers, and a class-name-only merge would let one silently shadow the other. Each header names
+its `[library …]`; `[objs adds …]` lists the integers that only the object store proved,
+`[objs-ONLY]` marks an enum with no pool object at all, and `[aliases …]` would flag an integer
+carrying two names inside one enum (none today). The guardrail loader keeps only the wire-library
+blocks for a shared name and raises if two of those disagree.
 
 ### Current regeneration identity
 
@@ -177,7 +186,8 @@ persistence schema (`…mobile.app.protos.persistence`). Always scope a lookup t
 the right package; the guardrail refuses ambiguous matches rather than guessing.
 
 **Use the merged enum dump, not the object pool alone.** The snapshot object pool
-yields 92 enums; merging it with the object store yields 94 / ~2100 values.
+inlines objects for 102 of the 104 (library, class) blocks and only a fraction of their members;
+merging it with the object store yields the full 104 blocks / 94 class names / 2180 values.
 Auditing against the pool alone manufactures false "we invented this value"
 findings and hides real members — `ARTIFACT_PENDING_REVIEW` was missed exactly
 that way.
