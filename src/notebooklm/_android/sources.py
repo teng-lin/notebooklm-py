@@ -586,6 +586,10 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
             if deadline.expired():
                 break
             await asyncio.sleep(deadline.clamp_sleep(_POLL_INTERVAL))
+            if deadline.expired():
+                # Re-check after sleeping: the clamp can spend the whole budget,
+                # and only the *first* look may bypass the deadline.
+                break
         raise SourceTimeoutError(source_id, timeout, last_status)
 
     async def _wait_uploaded_registered(

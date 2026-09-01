@@ -584,14 +584,40 @@ async def test_upload_wait_zero_budget_never_polls(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_upload_wait_wire_budget_tracks_remaining_and_floors_at_one_second(
+async def test_upload_wait_never_polls_past_the_deadline_after_sleeping(
     tmp_path: Path,
 ) -> None:
-    """Each look is handed ``remaining()``, floored so a spent tick still sends."""
+    """Only the first look may bypass the deadline; a spent sleep ends the wait.
+
+    start=0.0 against a 30 s budget; the first look reads 10.0 elapsed and gets
+    ``remaining()`` as its wire budget, then the post-sleep check reads 40.0 —
+    the loop must raise without issuing a second, post-deadline GetProject.
+    """
     harness = HTTPHarness()
-    # start=0.0; first look reads 10.0 elapsed of a 30 s budget; the loop then
-    # sleeps and looks again with the clock already past the budget.
     clock = _stepping_clock(0.0, 10.0, 10.0, 10.0, 40.0)
+    session, _, _, api = await _graph(harness, monotonic=clock)
+    session.handlers[GET_PROJECT_METHOD] = _project(_SETTINGS.SOURCE_STATUS_TENTATIVE)
+    path, _ = _write_pdf(tmp_path)
+
+    with pytest.raises(SourceTimeoutError):
+        await api.add_file(NOTEBOOK_ID, path, wait=False, wait_timeout=30.0, title="Custom")
+
+    budgets = [call[2]["timeout"] for call in session.calls if call[0] == GET_PROJECT_METHOD]
+    assert budgets == [pytest.approx(20.0)]
+
+
+@pytest.mark.asyncio
+async def test_upload_wait_wire_budget_tracks_remaining_and_floors_near_expiry(
+    tmp_path: Path,
+) -> None:
+    """A look that starts inside the budget is floored, never handed ~0.0.
+
+    The second look begins with 0.2 s remaining of a 30 s budget; its wire
+    budget is floored to ``_POLL_WIRE_FLOOR`` so the request actually goes out
+    instead of being rejected pre-wire as an ``RPCTimeoutError``.
+    """
+    harness = HTTPHarness()
+    clock = _stepping_clock(0.0, 10.0, 29.6, 29.6, 29.8, 29.8, 40.0)
     session, _, _, api = await _graph(harness, monotonic=clock)
     session.handlers[GET_PROJECT_METHOD] = _project(_SETTINGS.SOURCE_STATUS_TENTATIVE)
     path, _ = _write_pdf(tmp_path)
