@@ -57,23 +57,26 @@ _warned_source_types: set[int] = set()
 
 #: Backend type code -> public :class:`SourceType`.
 #:
-#: Aligned against the ``SourceContentType`` enum recovered from the Android
-#: binary (``docs/android/enums.txt``), which agrees with every code both
-#: define. Codes carry different evidence, marked inline:
+#: Aligned against the ``OriginalSourceContentType`` enum recovered from the
+#: Android binary (``docs/android/enums.txt``, and the checked-in
+#: ``read.proto``), which agrees with this map on every code. Two evidence
+#: levels, marked inline on the entries themselves:
 #:
-#: * most are **live-observed** — a source of that type was created and read back;
-#: * ``18`` is live-observed (an Android ``AddSources`` with
-#:   ``CONTENT_TYPE_GEMINI_CHAT`` returns a source carrying it, reproducibly);
-#: * ``12``, ``15``, ``19`` and ``20`` are **schema-only**. No reachable route
-#:   produces one:
-#:   ``.xlsx`` is refused at the Web upload ``start`` with HTTP 400, a
-#:   spreadsheet imported from Drive comes back as ``14``, and Gmail import is
-#:   not exposed on either front door, and neither chat variant nor Expert
-#:   Intelligence is reachable from this client. They are mapped from the enum
-#:   so a server that does emit one reads as itself instead of ``UNKNOWN`` --
-#:   a wrong *label* on a code nothing sends costs nothing, whereas the
-#:   ``UNKNOWN`` warning would send the next reader hunting. Promote the note
-#:   to live-observed once one is seen.
+#: * **live-observed** — a source of that type was created and read back. This
+#:   is every code except the four below, and includes ``18``: an Android
+#:   ``AddSources`` carrying ``CONTENT_TYPE_GEMINI_CHAT`` reproducibly returns a
+#:   source with it.
+#: * **schema-only** — ``12``, ``15``, ``19`` and ``20``. Each is defined by the
+#:   recovered enum, and no route this client can reach produces one: ``.xlsx``
+#:   is refused at the Web upload ``start`` with HTTP 400, a spreadsheet
+#:   imported from Drive comes back as ``14``, and Gmail, AI Mode chat and
+#:   Expert Intelligence imports are not exposed on either front door.
+#:
+#: The schema-only four are mapped anyway so a server that does emit one reads
+#: as itself instead of ``UNKNOWN``: a label on a code nothing sends costs
+#: nothing, while leaving one unmapped raises ``UnknownTypeWarning`` and sends
+#: the next reader hunting — which is exactly how ``18`` was found. Promote an
+#: entry's marker once one is observed.
 _SOURCE_TYPE_CODE_MAP: dict[int, SourceType] = {
     0: SourceType.UNKNOWN,
     1: SourceType.GOOGLE_DOCS,
