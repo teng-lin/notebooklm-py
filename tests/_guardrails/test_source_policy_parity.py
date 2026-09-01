@@ -283,42 +283,28 @@ def test_powerpoint_is_spelled_on_both_the_decode_and_input_sides() -> None:
 
 
 def test_source_type_codes_match_the_recovered_android_enum() -> None:
-    """Pin the decode map against ``SourceContentType`` from the app binary.
+    """Pin the decode map against ``OriginalSourceContentType`` from the app binary.
 
     The two are the same server-side numbering. Checking them against each
     other is what exposed code ``14`` being labelled ``GOOGLE_SPREADSHEET``
-    when the enum calls it ``DRIVE`` — a mislabel that had already forced two
+    when the enum calls it ``DRIVE`` -- a mislabel that had already forced two
     workarounds (a Drive-PDF MIME override, and an Android-side 7->14 remap).
 
-    Names differ by client vocabulary, so the pairing is spelled out rather
-    than derived. A code present on one side and absent from the other is the
-    failure this catches.
+    The code set is read from the **protobuf descriptor**, never transcribed. A
+    hand-copied fixture silently stopped at 18 on the first attempt and would
+    have certified parity while omitting 19 and 20. Only the name pairing is
+    written out, because the two vocabularies genuinely differ
+    (``SOURCE_CONTENT_TYPE_WORD`` <-> ``DOCX``); a value with no pairing fails
+    here rather than defaulting to anything.
     """
+    from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
+        read_pb2,
+    )
     from notebooklm._types.sources import _SOURCE_TYPE_CODE_MAP, SourceType
 
-    # docs/android/enums.txt :: SourceContentType
     recovered = {
-        0: "SOURCE_CONTENT_TYPE_UNKNOWN",
-        1: "SOURCE_CONTENT_TYPE_GOOGLE_DOC",
-        2: "SOURCE_CONTENT_TYPE_GOOGLE_SLIDES",
-        3: "SOURCE_CONTENT_TYPE_PDF",
-        4: "SOURCE_CONTENT_TYPE_TEXT",
-        5: "SOURCE_CONTENT_TYPE_URL",
-        6: "SOURCE_CONTENT_TYPE_POWERPOINT",
-        7: "SOURCE_CONTENT_TYPE_GOOGLE_SHEET",
-        8: "SOURCE_CONTENT_TYPE_MARKDOWN",
-        9: "SOURCE_CONTENT_TYPE_YOUTUBE_VIDEO",
-        10: "SOURCE_CONTENT_TYPE_AUDIO",
-        11: "SOURCE_CONTENT_TYPE_WORD",
-        12: "SOURCE_CONTENT_TYPE_EXCEL",
-        13: "SOURCE_CONTENT_TYPE_IMAGE",
-        14: "SOURCE_CONTENT_TYPE_DRIVE",
-        15: "SOURCE_CONTENT_TYPE_GMAIL",
-        16: "SOURCE_CONTENT_TYPE_CSV",
-        17: "SOURCE_CONTENT_TYPE_EPUB",
-        18: "SOURCE_CONTENT_TYPE_GEMINI_CHAT",
+        value.number: value.name for value in read_pb2.OriginalSourceContentType.DESCRIPTOR.values
     }
-    #: Recovered name -> the public member that spells the same thing.
     equivalent = {
         "SOURCE_CONTENT_TYPE_UNKNOWN": SourceType.UNKNOWN,
         "SOURCE_CONTENT_TYPE_GOOGLE_DOC": SourceType.GOOGLE_DOCS,
@@ -339,15 +325,32 @@ def test_source_type_codes_match_the_recovered_android_enum() -> None:
         "SOURCE_CONTENT_TYPE_CSV": SourceType.CSV,
         "SOURCE_CONTENT_TYPE_EPUB": SourceType.EPUB,
         "SOURCE_CONTENT_TYPE_GEMINI_CHAT": SourceType.GEMINI_CHAT,
+        "SOURCE_CONTENT_TYPE_AI_MODE_CHAT": SourceType.AI_MODE_CHAT,
+        "SOURCE_CONTENT_TYPE_EXPERT_INTELLIGENCE": SourceType.EXPERT_INTELLIGENCE,
     }
 
+    assert set(recovered.values()) <= set(equivalent), (
+        "recovered enum value(s) with no public member: "
+        f"{sorted(set(recovered.values()) - set(equivalent))}. Add the member and "
+        "map the code, or record why it stays unmapped."
+    )
     assert set(_SOURCE_TYPE_CODE_MAP) == set(recovered), (
         "decode map and recovered enum disagree on which codes exist: "
         f"{sorted(set(_SOURCE_TYPE_CODE_MAP) ^ set(recovered))}"
     )
-    assert {code: _SOURCE_TYPE_CODE_MAP[code] for code in recovered} == {
-        code: equivalent[name] for code, name in recovered.items()
-    }
+    assert {code: equivalent[name] for code, name in recovered.items()} == _SOURCE_TYPE_CODE_MAP
+
+
+def test_source_type_code_map_is_written_in_numeric_order() -> None:
+    """Keeps the contiguity of the map auditable by reading it."""
+    from notebooklm._types.sources import _SOURCE_TYPE_CODE_MAP
+
+    codes = list(_SOURCE_TYPE_CODE_MAP)
+    assert codes == sorted(codes)
+    assert codes == list(range(len(codes))), (
+        f"expected contiguous codes from 0; got gaps at "
+        f"{sorted(set(range(max(codes) + 1)) - set(codes))}"
+    )
 
 
 def test_android_name_map_agrees_with_the_public_decode_map() -> None:

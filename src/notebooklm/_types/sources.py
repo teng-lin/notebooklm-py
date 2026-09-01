@@ -45,6 +45,8 @@ class SourceType(str, Enum):
     EXCEL = "excel"
     GEMINI_CHAT = "gemini_chat"
     GMAIL = "gmail"
+    AI_MODE_CHAT = "ai_mode_chat"
+    EXPERT_INTELLIGENCE = "expert_intelligence"
     IMAGE = "image"
     MEDIA = "media"
     UNKNOWN = "unknown"
@@ -62,10 +64,12 @@ _warned_source_types: set[int] = set()
 #: * most are **live-observed** — a source of that type was created and read back;
 #: * ``18`` is live-observed (an Android ``AddSources`` with
 #:   ``CONTENT_TYPE_GEMINI_CHAT`` returns a source carrying it, reproducibly);
-#: * ``12`` and ``15`` are **schema-only**. No reachable route produces one:
+#: * ``12``, ``15``, ``19`` and ``20`` are **schema-only**. No reachable route
+#:   produces one:
 #:   ``.xlsx`` is refused at the Web upload ``start`` with HTTP 400, a
 #:   spreadsheet imported from Drive comes back as ``14``, and Gmail import is
-#:   not exposed on either front door. They are mapped from the recovered enum
+#:   not exposed on either front door, and neither chat variant nor Expert
+#:   Intelligence is reachable from this client. They are mapped from the enum
 #:   so a server that does emit one reads as itself instead of ``UNKNOWN`` --
 #:   a wrong *label* on a code nothing sends costs nothing, whereas the
 #:   ``UNKNOWN`` warning would send the next reader hunting. Promote the note
@@ -83,13 +87,15 @@ _SOURCE_TYPE_CODE_MAP: dict[int, SourceType] = {
     9: SourceType.YOUTUBE,
     10: SourceType.MEDIA,
     11: SourceType.DOCX,
+    12: SourceType.EXCEL,  # schema-only; no reachable producer
     13: SourceType.IMAGE,
     14: SourceType.GOOGLE_DRIVE,
-    16: SourceType.CSV,
-    12: SourceType.EXCEL,  # schema-only; no reachable producer
     15: SourceType.GMAIL,  # schema-only; no reachable producer
+    16: SourceType.CSV,
     17: SourceType.EPUB,
     18: SourceType.GEMINI_CHAT,  # live: Android AddSources CONTENT_TYPE_GEMINI_CHAT
+    19: SourceType.AI_MODE_CHAT,  # schema-only; no reachable producer
+    20: SourceType.EXPERT_INTELLIGENCE,  # schema-only; no reachable producer
 }
 
 
@@ -198,6 +204,8 @@ _SOURCE_TYPE_COMPAT_MAP: dict[SourceType, str] = {
     SourceType.EXCEL: "text_file",
     SourceType.GEMINI_CHAT: "text",
     SourceType.GMAIL: "text",
+    SourceType.AI_MODE_CHAT: "text",
+    SourceType.EXPERT_INTELLIGENCE: "text",
     SourceType.IMAGE: "text",
     SourceType.MEDIA: "text",
     SourceType.UNKNOWN: "text",

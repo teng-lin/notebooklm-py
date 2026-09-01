@@ -9,19 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `SourceType.GEMINI_CHAT`, `SourceType.EXCEL` and `SourceType.GMAIL` for
-  backend type codes `18`, `12` and `15`. The decode map now covers `0`-`18`
-  contiguously and matches the `SourceContentType` enum recovered from the
-  Android binary on every code. Code `18` is live-observed: an Android
-  `AddSources` carrying `CONTENT_TYPE_GEMINI_CHAT` returns a source with it,
-  and it previously decoded as `UNKNOWN` with an `UnknownTypeWarning`. `12` and
-  `15` are mapped from the recovered enum only — no reachable route produces
-  one (`.xlsx` is refused at the Web upload `start` with HTTP 400, a Drive
-  spreadsheet comes back as `14`, and Gmail import is not exposed) — so they
-  are there to keep a server that does emit one from reading as `UNKNOWN`.
-
-### Added
-
+- `SourceType.GEMINI_CHAT`, `EXCEL`, `GMAIL`, `AI_MODE_CHAT` and
+  `EXPERT_INTELLIGENCE` for backend type codes `18`, `12`, `15`, `19` and `20`.
+  The decode map now covers `0`-`20` contiguously and matches every value of
+  the `OriginalSourceContentType` enum recovered from the Android binary.
+  Code `18` is live-observed: an Android `AddSources` carrying
+  `CONTENT_TYPE_GEMINI_CHAT` returns a source with it, and it previously
+  decoded as `UNKNOWN` with an `UnknownTypeWarning`. The other four are mapped
+  from the enum only — no reachable route produces one (`.xlsx` is refused at
+  the Web upload `start` with HTTP 400, a Drive spreadsheet comes back as `14`,
+  and Gmail, AI Mode chat and Expert Intelligence imports are not exposed) — so
+  they are there to keep a server that does emit one from reading as `UNKNOWN`.
 - The Android backend needs **no Web collaborator**. `sharing.set_view_level`
   and `notebooks.remove_from_recent` are now native (the earlier probes had used
   the wrong RPC and an owned rather than shared notebook), and `add_file` covers

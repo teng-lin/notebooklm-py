@@ -303,6 +303,8 @@ def get_source_type_display(source_type: str) -> str:
         "excel": "📊 Excel",
         "gemini_chat": "💬 Gemini chat",
         "gmail": "✉️ Gmail",
+        "ai_mode_chat": "💬 AI Mode chat",
+        "expert_intelligence": "🎓 Expert Intelligence",
         "pdf": "📄 PDF",
         "pasted_text": "📝 Pasted Text",
         "docx": "📝 DOCX",
