@@ -42,11 +42,14 @@ _SOURCE_TYPE_CODE_BY_NAME: dict[str, int] = {
     "SOURCE_CONTENT_TYPE_YOUTUBE_VIDEO": 9,
     "SOURCE_CONTENT_TYPE_AUDIO": 10,
     "SOURCE_CONTENT_TYPE_WORD": 11,
+    "SOURCE_CONTENT_TYPE_EXCEL": 12,
     "SOURCE_CONTENT_TYPE_IMAGE": 13,
     # The backend's catch-all for a Drive file it gives no format-specific code.
     "SOURCE_CONTENT_TYPE_DRIVE": 14,
+    "SOURCE_CONTENT_TYPE_GMAIL": 15,
     "SOURCE_CONTENT_TYPE_CSV": 16,
     "SOURCE_CONTENT_TYPE_EPUB": 17,
+    "SOURCE_CONTENT_TYPE_GEMINI_CHAT": 18,
 }
 
 _SOURCE_STATUS_BY_NAME: dict[str, SourceStatus] = {

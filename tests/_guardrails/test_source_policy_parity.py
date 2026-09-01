@@ -280,3 +280,88 @@ def test_powerpoint_is_spelled_on_both_the_decode_and_input_sides() -> None:
     assert ".pptx" in _UPLOAD_FILE_EXTENSIONS
     assert ".ppt" in _FILE_SHAPED_ONLY_EXTENSIONS
     assert {".ppt", ".pptx"} <= _PATH_SHAPED_FILE_EXTENSIONS
+
+
+def test_source_type_codes_match_the_recovered_android_enum() -> None:
+    """Pin the decode map against ``SourceContentType`` from the app binary.
+
+    The two are the same server-side numbering. Checking them against each
+    other is what exposed code ``14`` being labelled ``GOOGLE_SPREADSHEET``
+    when the enum calls it ``DRIVE`` — a mislabel that had already forced two
+    workarounds (a Drive-PDF MIME override, and an Android-side 7->14 remap).
+
+    Names differ by client vocabulary, so the pairing is spelled out rather
+    than derived. A code present on one side and absent from the other is the
+    failure this catches.
+    """
+    from notebooklm._types.sources import _SOURCE_TYPE_CODE_MAP, SourceType
+
+    # docs/android/enums.txt :: SourceContentType
+    recovered = {
+        0: "SOURCE_CONTENT_TYPE_UNKNOWN",
+        1: "SOURCE_CONTENT_TYPE_GOOGLE_DOC",
+        2: "SOURCE_CONTENT_TYPE_GOOGLE_SLIDES",
+        3: "SOURCE_CONTENT_TYPE_PDF",
+        4: "SOURCE_CONTENT_TYPE_TEXT",
+        5: "SOURCE_CONTENT_TYPE_URL",
+        6: "SOURCE_CONTENT_TYPE_POWERPOINT",
+        7: "SOURCE_CONTENT_TYPE_GOOGLE_SHEET",
+        8: "SOURCE_CONTENT_TYPE_MARKDOWN",
+        9: "SOURCE_CONTENT_TYPE_YOUTUBE_VIDEO",
+        10: "SOURCE_CONTENT_TYPE_AUDIO",
+        11: "SOURCE_CONTENT_TYPE_WORD",
+        12: "SOURCE_CONTENT_TYPE_EXCEL",
+        13: "SOURCE_CONTENT_TYPE_IMAGE",
+        14: "SOURCE_CONTENT_TYPE_DRIVE",
+        15: "SOURCE_CONTENT_TYPE_GMAIL",
+        16: "SOURCE_CONTENT_TYPE_CSV",
+        17: "SOURCE_CONTENT_TYPE_EPUB",
+        18: "SOURCE_CONTENT_TYPE_GEMINI_CHAT",
+    }
+    #: Recovered name -> the public member that spells the same thing.
+    equivalent = {
+        "SOURCE_CONTENT_TYPE_UNKNOWN": SourceType.UNKNOWN,
+        "SOURCE_CONTENT_TYPE_GOOGLE_DOC": SourceType.GOOGLE_DOCS,
+        "SOURCE_CONTENT_TYPE_GOOGLE_SLIDES": SourceType.GOOGLE_SLIDES,
+        "SOURCE_CONTENT_TYPE_PDF": SourceType.PDF,
+        "SOURCE_CONTENT_TYPE_TEXT": SourceType.PASTED_TEXT,
+        "SOURCE_CONTENT_TYPE_URL": SourceType.WEB_PAGE,
+        "SOURCE_CONTENT_TYPE_POWERPOINT": SourceType.POWERPOINT,
+        "SOURCE_CONTENT_TYPE_GOOGLE_SHEET": SourceType.GOOGLE_SPREADSHEET,
+        "SOURCE_CONTENT_TYPE_MARKDOWN": SourceType.MARKDOWN,
+        "SOURCE_CONTENT_TYPE_YOUTUBE_VIDEO": SourceType.YOUTUBE,
+        "SOURCE_CONTENT_TYPE_AUDIO": SourceType.MEDIA,
+        "SOURCE_CONTENT_TYPE_WORD": SourceType.DOCX,
+        "SOURCE_CONTENT_TYPE_EXCEL": SourceType.EXCEL,
+        "SOURCE_CONTENT_TYPE_IMAGE": SourceType.IMAGE,
+        "SOURCE_CONTENT_TYPE_DRIVE": SourceType.GOOGLE_DRIVE,
+        "SOURCE_CONTENT_TYPE_GMAIL": SourceType.GMAIL,
+        "SOURCE_CONTENT_TYPE_CSV": SourceType.CSV,
+        "SOURCE_CONTENT_TYPE_EPUB": SourceType.EPUB,
+        "SOURCE_CONTENT_TYPE_GEMINI_CHAT": SourceType.GEMINI_CHAT,
+    }
+
+    assert set(_SOURCE_TYPE_CODE_MAP) == set(recovered), (
+        "decode map and recovered enum disagree on which codes exist: "
+        f"{sorted(set(_SOURCE_TYPE_CODE_MAP) ^ set(recovered))}"
+    )
+    assert {code: _SOURCE_TYPE_CODE_MAP[code] for code in recovered} == {
+        code: equivalent[name] for code, name in recovered.items()
+    }
+
+
+def test_android_name_map_agrees_with_the_public_decode_map() -> None:
+    """The Android codec translates by name; the codes must still line up.
+
+    It used to remap ``GOOGLE_SHEET`` 7 -> 14 to compensate for the mislabel
+    above. With that gone the translation is the identity, and this keeps it so.
+    """
+    from notebooklm._android.codecs.sources import _SOURCE_TYPE_CODE_BY_NAME
+    from notebooklm._types.sources import _SOURCE_TYPE_CODE_MAP
+
+    codes = sorted(_SOURCE_TYPE_CODE_BY_NAME.values())
+    assert len(codes) == len(set(codes)), "two Android names share one code"
+    assert set(codes) <= set(_SOURCE_TYPE_CODE_MAP), (
+        "Android emits codes the public map cannot decode: "
+        f"{sorted(set(codes) - set(_SOURCE_TYPE_CODE_MAP))}"
+    )

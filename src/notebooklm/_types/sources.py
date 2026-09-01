@@ -42,6 +42,9 @@ class SourceType(str, Enum):
     POWERPOINT = "powerpoint"
     CSV = "csv"
     EPUB = "epub"
+    EXCEL = "excel"
+    GEMINI_CHAT = "gemini_chat"
+    GMAIL = "gmail"
     IMAGE = "image"
     MEDIA = "media"
     UNKNOWN = "unknown"
@@ -50,6 +53,23 @@ class SourceType(str, Enum):
 _warned_source_types: set[int] = set()
 
 
+#: Backend type code -> public :class:`SourceType`.
+#:
+#: Aligned against the ``SourceContentType`` enum recovered from the Android
+#: binary (``docs/android/enums.txt``), which agrees with every code both
+#: define. Codes carry different evidence, marked inline:
+#:
+#: * most are **live-observed** — a source of that type was created and read back;
+#: * ``18`` is live-observed (an Android ``AddSources`` with
+#:   ``CONTENT_TYPE_GEMINI_CHAT`` returns a source carrying it, reproducibly);
+#: * ``12`` and ``15`` are **schema-only**. No reachable route produces one:
+#:   ``.xlsx`` is refused at the Web upload ``start`` with HTTP 400, a
+#:   spreadsheet imported from Drive comes back as ``14``, and Gmail import is
+#:   not exposed on either front door. They are mapped from the recovered enum
+#:   so a server that does emit one reads as itself instead of ``UNKNOWN`` --
+#:   a wrong *label* on a code nothing sends costs nothing, whereas the
+#:   ``UNKNOWN`` warning would send the next reader hunting. Promote the note
+#:   to live-observed once one is seen.
 _SOURCE_TYPE_CODE_MAP: dict[int, SourceType] = {
     0: SourceType.UNKNOWN,
     1: SourceType.GOOGLE_DOCS,
@@ -66,7 +86,10 @@ _SOURCE_TYPE_CODE_MAP: dict[int, SourceType] = {
     13: SourceType.IMAGE,
     14: SourceType.GOOGLE_DRIVE,
     16: SourceType.CSV,
+    12: SourceType.EXCEL,  # schema-only; no reachable producer
+    15: SourceType.GMAIL,  # schema-only; no reachable producer
     17: SourceType.EPUB,
+    18: SourceType.GEMINI_CHAT,  # live: Android AddSources CONTENT_TYPE_GEMINI_CHAT
 }
 
 
@@ -172,6 +195,9 @@ _SOURCE_TYPE_COMPAT_MAP: dict[SourceType, str] = {
     SourceType.POWERPOINT: "text_file",
     SourceType.CSV: "text",
     SourceType.EPUB: "text_file",
+    SourceType.EXCEL: "text_file",
+    SourceType.GEMINI_CHAT: "text",
+    SourceType.GMAIL: "text",
     SourceType.IMAGE: "text",
     SourceType.MEDIA: "text",
     SourceType.UNKNOWN: "text",
