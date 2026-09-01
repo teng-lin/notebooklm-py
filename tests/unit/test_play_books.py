@@ -149,6 +149,15 @@ class TestRowDecode:
         with pytest.raises(DecodingError, match="Malformed"):
             decode_play_books_response([[_ART_OF_WAR, "not-a-row"]])
 
+    @pytest.mark.parametrize("bad_id", [None, "", 123])
+    def test_missing_content_id_raises(self, bad_id: object) -> None:
+        # The content id is the book's identity; a row without one is a wire
+        # break, not a hollow-but-valid PlayBook(content_id="").
+        row = list(_ART_OF_WAR)
+        row[0] = bad_id
+        with pytest.raises(DecodingError, match="content id"):
+            decode_play_book_row(row)
+
 
 class TestSourceRowExpertIntelligence:
     def _row_with_metadata(self, metadata: list) -> SourceRow:

@@ -643,8 +643,10 @@ def _render_source_add_play_book_result(
         )
         return
 
+    # Escape the library-supplied title so a value containing ``[...]`` is not
+    # parsed as Rich console markup.
     cli_print(f"[green]Added Play Book source:[/green] {result.source.id}", ctx=ctx)
-    cli_print(f"[bold]Title:[/bold] {result.source.title}", ctx=ctx)
+    cli_print(f"[bold]Title:[/bold] {escape_markup(result.source.title or '-')}", ctx=ctx)
 
 
 def _render_source_add_drive_result(

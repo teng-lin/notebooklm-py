@@ -18,7 +18,6 @@ from notebooklm.exceptions import (
     PlayBookNotExportableError,
     RPCError,
     ServerError,
-    SourceNotFoundError,
 )
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import PlayBook
@@ -99,10 +98,22 @@ class TestAdd:
         rpc.rpc_call.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_missing_id_in_response_raises(self) -> None:
+    async def test_empty_id_in_response_is_unconfirmed(self) -> None:
+        # An id-less stub means the add may still have committed — surface it as
+        # UNRESOLVED, not a clean SourceNotFoundError a caller could retry.
         rpc = _rpc([[[[""], "New Source", [None]]], None, []])
-        with pytest.raises(SourceNotFoundError):
+        with pytest.raises(RPCError) as caught:
             await PlayBooksService(rpc).add_play_book_spec("nb_1", _book())
+        assert getattr(caught.value, "unconfirmed", False) is True
+
+    @pytest.mark.asyncio
+    async def test_undecodable_response_is_unconfirmed(self) -> None:
+        # A response-shape break after dispatch is also UNRESOLVED, not a failed
+        # add: first_added_source_id's safe_index raises, which we re-wrap.
+        rpc = _rpc([])  # empty envelope → safe_index drift
+        with pytest.raises(RPCError) as caught:
+            await PlayBooksService(rpc).add_play_book_spec("nb_1", _book())
+        assert getattr(caught.value, "unconfirmed", False) is True
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("exc", [ServerError("500"), NetworkError("down")])

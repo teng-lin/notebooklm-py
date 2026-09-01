@@ -127,6 +127,15 @@ _SOURCE_TYPE_CODE_MAP: dict[int, SourceType] = {
     20: SourceType.EXPERT_INTELLIGENCE,  # live: Play Books add (#2292)
 }
 
+#: Backend type code for a Play Books (Expert Intelligence) source, derived from
+#: :data:`_SOURCE_TYPE_CODE_MAP` so the ``add_play_book`` PROCESSING stub cannot
+#: drift from the decode map if the code is ever renumbered (#2292).
+_EXPERT_INTELLIGENCE_TYPE_CODE: int = next(
+    code
+    for code, source_type in _SOURCE_TYPE_CODE_MAP.items()
+    if source_type is SourceType.EXPERT_INTELLIGENCE
+)
+
 
 #: Local-file extensions NotebookLM's resumable upload accepts, spelled with the
 #: leading dot and lowercased (the form :attr:`pathlib.PurePath.suffix` returns).
@@ -385,11 +394,13 @@ def _pdf_url_title_fallback(
 
 @dataclass(frozen=True)
 class PlayBook:
-    """A Google Play Books title eligible to be added as a source.
+    """One title from a Google Play Books library.
 
-    One row of :meth:`~notebooklm.NotebookLMClient.sources.list_play_books`,
+    A row of :meth:`~notebooklm.NotebookLMClient.sources.list_play_books`,
     decoded from ``ListExpertIntelligenceContent`` ("Expert Intelligence" —
-    the Discover-page offer to add purchased ebooks; US only, 18+).
+    the Discover-page offer to add purchased ebooks; US only, 18+). The listing
+    returns **every** library title, not only the addable ones — inspect
+    :attr:`export_disabled` before adding.
 
     A title with :attr:`export_disabled` cannot be added; :attr:`reason` says
     why (``None`` when exportable). :attr:`field_type` is an opaque backend

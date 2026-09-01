@@ -18,6 +18,7 @@ import logging
 from ..._idempotency import mark_unconfirmed
 from ..._types.sources import PlayBook
 from ...exceptions import (
+    DecodingError,
     NetworkError,
     PlayBookNotExportableError,
     RateLimitError,
@@ -36,6 +37,27 @@ from ..rows.play_books import decode_play_books_response
 from ..rows.sources import first_added_source_id
 
 logger = logging.getLogger("notebooklm._sources")
+
+
+def _unconfirmed_add(exc: Exception) -> RPCError:
+    """Wrap a post-dispatch failure as an UNRESOLVED (unconfirmed) add.
+
+    Used for every way the ``AddSourcesAsync`` add can fail *after* it may have
+    committed — a transport loss, an undecodable reply, or an id-less stub. The
+    Play Book add carries no client token and is never auto-retried, so a caller
+    must reconcile (list the notebook's sources) rather than treat the failure
+    as "not added" and retry, which would duplicate the source (#2292).
+    """
+    rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
+    return mark_unconfirmed(
+        RPCError(
+            "UNRESOLVED — the Play Book add may have committed before its response "
+            "could be confirmed. Do not blindly retry; list the notebook's sources "
+            f"and reconcile first. No automatic retry was attempted. {exc}",
+            method_id=RPCMethod.ADD_SOURCES_ASYNC.value,
+            rpc_code=rpc_code,
+        )
+    )
 
 
 class PlayBooksService:
@@ -85,19 +107,20 @@ class PlayBooksService:
             # after a possible commit is UNRESOLVED, not a clean failure. Mark
             # it so callers reconcile rather than blindly retry (mirrors the
             # sibling AddSourcesAsync path in _web/sources/transfers.py).
-            raise mark_unconfirmed(
-                RPCError(
-                    "UNRESOLVED — the Play Book add may have committed before its "
-                    "response was lost. Do not blindly retry; list the notebook's "
-                    f"sources and reconcile first. No automatic retry was attempted. {exc}",
-                    method_id=RPCMethod.ADD_SOURCES_ASYNC.value,
-                    rpc_code=exc.rpc_code if isinstance(exc, RPCError) else None,
-                )
-            ) from exc
-        source_id = first_added_source_id(result, method_id=RPCMethod.ADD_SOURCES_ASYNC.value)
+            raise _unconfirmed_add(exc) from exc
+
+        # The RPC returned, but the reply may be a shape we cannot read: a decode
+        # failure (or an id-less stub) still leaves the write possibly committed,
+        # so it is UNRESOLVED, not a clean "source not found" the caller may retry.
+        try:
+            source_id = first_added_source_id(result, method_id=RPCMethod.ADD_SOURCES_ASYNC.value)
+        except DecodingError as exc:
+            raise _unconfirmed_add(exc) from exc
         if source_id is None:
-            raise SourceNotFoundError(
-                book.content_id,
-                method_id=RPCMethod.ADD_SOURCES_ASYNC.value,
+            raise _unconfirmed_add(
+                SourceNotFoundError(
+                    book.content_id,
+                    method_id=RPCMethod.ADD_SOURCES_ASYNC.value,
+                )
             )
         return source_id

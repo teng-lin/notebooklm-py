@@ -23,6 +23,7 @@ import pytest
 
 from notebooklm import NotebookLMClient
 from notebooklm.rpc.types import RPCMethod
+from notebooklm.types import PlayBookExportReason
 from tests.integration.conftest import get_vcr_auth, skip_no_cassettes
 from tests.vcr_config import notebooklm_vcr
 
@@ -41,13 +42,18 @@ class TestListPlayBooksCassette:
         async with NotebookLMClient(auth) as client:
             books = await client.sources.list_play_books()
 
-        assert books, "expected a non-empty Play Books library in the cassette"
-        # Every row decodes to a content id + an export-eligibility verdict.
-        for book in books:
-            assert book.content_id
-            assert isinstance(book.export_disabled, bool)
-        # At least one exportable title (the ones add_play_book can ingest).
-        assert any(not book.export_disabled for book in books)
+        # Pin the exact decoded rows so a wrong field position or a flipped
+        # export verdict is caught, not just "some non-empty list". The recorded
+        # library is scrubbed to synthetic placeholders (two exportable, one
+        # blocked); the third row's reason (code 1) decodes to OPTED_OUT.
+        assert [(b.content_id, b.export_disabled) for b in books] == [
+            ("EIBOOK00000001", False),
+            ("EIBOOK00000002", False),
+            ("EIBOOK00000003", True),
+        ]
+        assert books[0].authors == ("author 001",)
+        assert books[0].field_type == pytest.approx(4.5)
+        assert books[2].reason is PlayBookExportReason.OPTED_OUT
 
     def test_cassette_records_the_list_rpc(self) -> None:
         """The cassette must contain the LIST_EXPERT_INTELLIGENCE_CONTENT RPC id."""

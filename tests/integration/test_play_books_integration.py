@@ -79,7 +79,9 @@ class TestAddPlayBook:
     async def test_add_exportable(
         self, auth_tokens, httpx_mock: HTTPXMock, build_rpc_response
     ) -> None:
-        # 1) library lookup, 2) X1snv add, 3) GET_NOTEBOOK (get_or_none).
+        # 1) library lookup, 2) X1snv add. wait=False returns a PROCESSING stub
+        # straight from the confirmed source id — no follow-up GET_NOTEBOOK read
+        # (which could raise on a transient fault after the committed write).
         httpx_mock.add_response(
             content=build_rpc_response(
                 RPCMethod.LIST_EXPERT_INTELLIGENCE_CONTENT, [[_EXPORTABLE_ROW]]
@@ -95,9 +97,6 @@ class TestAddPlayBook:
                 ],
             ).encode()
         )
-        httpx_mock.add_response(
-            content=build_rpc_response(RPCMethod.GET_NOTEBOOK, [["Notebook", []]]).encode()
-        )
 
         async with NotebookLMClient(auth_tokens) as client:
             source = await client.sources.add_play_book("nb_1", "QhsZEAAAQBAJ")
@@ -105,9 +104,13 @@ class TestAddPlayBook:
         assert source.id == "src_book"
         assert source.kind is SourceType.EXPERT_INTELLIGENCE
         assert source.status == SourceStatus.PROCESSING
+        # The title comes from the resolved library row, not a follow-up read.
+        assert source.title == "The Art of War"
         urls = [str(r.url) for r in httpx_mock.get_requests()]
         assert any(RPCMethod.LIST_EXPERT_INTELLIGENCE_CONTENT in url for url in urls)
         assert any(RPCMethod.ADD_SOURCES_ASYNC in url for url in urls)
+        # No GET_NOTEBOOK read on the wait=False path.
+        assert not any(RPCMethod.GET_NOTEBOOK in url for url in urls)
 
     @pytest.mark.asyncio
     async def test_refuses_blocked_title_before_adding(

@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Google Play Books ("Expert Intelligence") sources** (#2292), **web backend
+  only**: `sources.list_play_books()` lists the account's Play Books library as
+  `PlayBook` rows (content id, title, authors, `export_disabled` + `reason`),
+  and `sources.add_play_book(notebook_id, content_id, *, wait=…)` adds a title
+  (refusing a non-exportable one with `PlayBookNotExportableError`). The created
+  source ingests as `SourceType.EXPERT_INTELLIGENCE` and carries
+  `Source.expert_intelligence` (`ExpertIntelligenceSourceMetadata`) provenance.
+  CLI: `notebooklm source books` / `source add-book <content-id>`; MCP:
+  `source_list_play_books` / `source_add_play_book`. New RPC
+  `LIST_EXPERT_INTELLIGENCE_CONTENT` (web id `mVtEUb`). The Android backend
+  raises `UnsupportedOperationError` — its write path needs a per-account
+  Phenotype experiment header the client cannot synthesize. Verified live end
+  to end on the web tier.
 - `research.discover(notebook_id, query, *, mode="default")` on **both** the
   Web and Android backends (`DiscoverSources`, web id `Es3dTe`): the
   synchronous "Discover sources" call the web dialog makes — one blocking

@@ -76,8 +76,17 @@ def _row_export_disabled(row: list[Any]) -> bool:
 
 def decode_play_book_row(row: list[Any]) -> PlayBook:
     """Decode one ``ListExpertIntelligenceContent`` row into a :class:`PlayBook`."""
+    content_id = _row_str(row, _ROW_CONTENT_ID)
+    if content_id is None:
+        # The content id is the book's identity — the only field add_play_book
+        # can act on. A row without one is a wire-shape break, not a usable
+        # entry, so raise rather than emit a hollow PlayBook(content_id="").
+        raise DecodingError(
+            "ListExpertIntelligenceContent row is missing its content id",
+            method_id=RPCMethod.LIST_EXPERT_INTELLIGENCE_CONTENT.value,
+        )
     return PlayBook(
-        content_id=_row_str(row, _ROW_CONTENT_ID) or "",
+        content_id=content_id,
         title=_row_str(row, _ROW_TITLE),
         authors=_row_authors(row),
         description_html=_row_str(row, _ROW_DESCRIPTION),

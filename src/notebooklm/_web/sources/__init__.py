@@ -13,6 +13,7 @@ from ..._runtime.call_supervisor import CallSupervisor
 from ..._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
 from ..._sources import SourcesAPI
 from ..._types.research import SourceGuide
+from ..._types.sources import _EXPERT_INTELLIGENCE_TYPE_CODE
 from ..._url_utils import is_youtube_url
 from ...exceptions import SourceNotFoundError
 from ...rpc import RPCMethod
@@ -232,11 +233,17 @@ class WebSourcesAPI(SourcesAPI):
             source_id = await self._play_books.add_play_book_spec(notebook_id, book)
             if wait:
                 return await self.wait_until_ready(notebook_id, source_id, timeout=wait_timeout)
-            source = await self.get_or_none(notebook_id, source_id)
-            return source or Source(
+            # The add is confirmed (we hold ``source_id``). Return a PROCESSING
+            # stub directly rather than an extra ``get_or_none`` read: that read
+            # can raise on a transient transport/auth/decode fault (its contract
+            # only returns ``None`` on a genuine miss), which would turn a
+            # confirmed, non-idempotent add into an exception a caller might
+            # retry — duplicating the source. A caller who wants the richer row
+            # can poll ``get``/``list`` itself.
+            return Source(
                 id=source_id,
                 title=book.title,
-                _type_code=20,
+                _type_code=_EXPERT_INTELLIGENCE_TYPE_CODE,
                 status=SourceStatus.PROCESSING,
             )
 
