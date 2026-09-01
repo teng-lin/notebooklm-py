@@ -409,16 +409,23 @@ def test_write_rpcs_do_not_swallow_a_status() -> None:
     """
     strict_names = {method.name for method in STRICT_WRITE_RPCS}
     offenders: list[str] = []
-    seen = 0
+    scanned = 0
     for path in sorted(_WEB_ROOT.rglob("*.py")):
         for lineno, name, keywords in _rpc_call_sites(path):
+            scanned += 1
             if name not in strict_names or not _is_true(keywords.get("allow_null")):
                 continue
-            seen += 1
             if not _is_true(keywords.get("raise_on_null_status")):
                 offenders.append(f"{path.relative_to(_WEB_ROOT.parents[2])}:{lineno} {name}")
 
-    assert seen, "guard found no allow_null=True write sites — did the call shape change?"
+    # Sanity-check the scan itself, not the number of ``allow_null=True`` sites:
+    # a refactor that drops ``allow_null`` from every write RPC satisfies the
+    # invariant vacuously and must not fail here. What would make the guard
+    # blind is the ``rpc_call(RPCMethod.X, ...)`` call shape changing so that
+    # ``_rpc_call_sites`` stops recognising any call at all.
+    assert scanned, (
+        "guard recognised no rpc_call(RPCMethod.X, ...) sites — did the call shape change?"
+    )
     assert not offenders, (
         "allow_null=True on a write RPC without raise_on_null_status=True lets a "
         "server rejection decode to the success value (#2290):\n  " + "\n  ".join(offenders)
