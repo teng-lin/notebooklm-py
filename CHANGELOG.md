@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   task_ids (one poll call per batch round), reports `queued` vs `generating`,
   and carries `queued_s`/`generation_s` timings; `server_info` gains a live
   `chat_tasks` load gauge (`{generating, queued, concurrency, cached_results}`).
+  Completion TTL runs on the wall clock, not `time.monotonic()` — observed
+  live on a gVisor-sandboxed host (bunny Magic Containers) whose monotonic
+  clock effectively freezes while the container idles, which let cached
+  results outlive their 30-minute window by wall-hours; the gauges also sweep
+  expired entries before counting.
 - `SourceType.GEMINI_CHAT`, `EXCEL`, `GMAIL`, `AI_MODE_CHAT` and
   `EXPERT_INTELLIGENCE` for backend type codes `18`, `12`, `15`, `19` and `20`.
   The decode map now covers `0`-`20` contiguously and matches every value of

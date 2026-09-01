@@ -199,7 +199,10 @@ async def test_registry_ttl_expires_completed_entries() -> None:
     await entry.task
     assert registry.status(entry.task_id) is entry
     # Age the completion past the TTL deterministically (no clock patching).
-    entry.done_at = time.monotonic() - registry._result_ttl_s - 1
+    # Expiry runs on the WALL clock (done_wall), not monotonic — see the field's
+    # docstring (gVisor monotonic freeze observed in production).
+    entry.done_wall = time.time() - registry._result_ttl_s - 1
+    assert registry.counts()["cached_results"] == 0  # gauges sweep expired cache
     assert registry.status(entry.task_id) is None  # expired == never existed
     _, how = registry.start("k1", _work)  # and the key is claimable again
     assert how == "created"
@@ -215,7 +218,7 @@ async def test_registry_evicts_oldest_done_at_cap() -> None:
     second, _ = registry.start("k2", _work)
     assert first.task is not None and second.task is not None
     await asyncio.gather(first.task, second.task)
-    first.done_at = time.monotonic() - 60  # make k1 unambiguously the oldest
+    first.done_wall = time.time() - 60  # make k1 unambiguously the oldest
     registry.start("k3", _work)
     assert registry.status(first.task_id) is None  # evicted
     assert registry.status(second.task_id) is second  # kept

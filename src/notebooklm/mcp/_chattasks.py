@@ -145,6 +145,13 @@ class ChatTaskEntry:
     result: dict[str, Any] | None = None
     error: BaseException | None = None
     done_at: float | None = None  # time.monotonic(); None while running
+    #: time.time() at completion — the TTL clock. Monotonic time is deliberately
+    #: NOT used for expiry: observed live on a gVisor-sandboxed host (bunny
+    #: Magic Containers, 2026-09-02), the sandbox's monotonic clock effectively
+    #: freezes while the container idles, so monotonic-based TTLs let results
+    #: outlive their window by wall-hours. Durations (``queued_s`` /
+    #: ``generation_s``) stay monotonic — they span actively-running code.
+    done_wall: float | None = None
 
 
 class ChatTaskRegistry(LoopBoundPrimitive):
@@ -200,11 +207,11 @@ class ChatTaskRegistry(LoopBoundPrimitive):
         if self._by_key.get(entry.key) == entry.task_id:
             del self._by_key[entry.key]
 
-    def _expired(self, entry: ChatTaskEntry, now: float) -> bool:
-        return entry.done_at is not None and (now - entry.done_at) > self._result_ttl_s
+    def _expired(self, entry: ChatTaskEntry, now_wall: float) -> bool:
+        return entry.done_wall is not None and (now_wall - entry.done_wall) > self._result_ttl_s
 
-    def _sweep(self, now: float) -> None:
-        for entry in [e for e in self._tasks.values() if self._expired(e, now)]:
+    def _sweep(self, now_wall: float) -> None:
+        for entry in [e for e in self._tasks.values() if self._expired(e, now_wall)]:
             self._drop(entry)
 
     def _running_count(self) -> int:
@@ -214,6 +221,7 @@ class ChatTaskRegistry(LoopBoundPrimitive):
         """Live registry gauges for observability (``server_info``): how many
         asks are ``generating`` (slot held) vs ``queued`` (waiting for one),
         plus ``cached_results`` and the pacing ``concurrency`` ceiling."""
+        self._sweep(time.time())
         generating = sum(
             1 for e in self._tasks.values() if e.done_at is None and e.started_at is not None
         )
@@ -251,6 +259,7 @@ class ChatTaskRegistry(LoopBoundPrimitive):
             entry.error = exc
         finally:
             entry.done_at = time.monotonic()
+            entry.done_wall = time.time()
 
     # -- API ---------------------------------------------------------------
 
@@ -281,7 +290,7 @@ class ChatTaskRegistry(LoopBoundPrimitive):
                 (the fuse; the queue absorbs normal bursts long before this).
         """
         now = time.monotonic()
-        self._sweep(now)
+        self._sweep(time.time())
         existing_id = self._by_key.get(key)
         if existing_id is not None:
             entry = self._tasks.get(existing_id)
@@ -296,7 +305,7 @@ class ChatTaskRegistry(LoopBoundPrimitive):
             # evicted (their work is paid for).
             done = sorted(
                 (e for e in self._tasks.values() if e.done_at is not None),
-                key=lambda e: e.done_at or 0.0,
+                key=lambda e: e.done_wall or 0.0,
             )
             for entry in done[: max(1, len(self._tasks) - self._max_tasks + 1)]:
                 self._drop(entry)
@@ -326,7 +335,7 @@ class ChatTaskRegistry(LoopBoundPrimitive):
         entry = self._tasks.get(task_id)
         if entry is None:
             return None
-        if self._expired(entry, time.monotonic()):
+        if self._expired(entry, time.time()):
             self._drop(entry)
             return None
         return entry
