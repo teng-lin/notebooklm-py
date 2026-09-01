@@ -112,9 +112,11 @@ def attribute_runs(runs, pool_lists, offset_libraries, class_libraries):
     """Return ``[(class, library or None, objects)]`` by tying each run to its library.
 
     A run whose objects appear in a ``values`` list takes the library that references that
-    list.  When a class has exactly one declaring library, or exactly one library is left
-    unclaimed after the list evidence, the remaining run takes it; otherwise it stays
-    unattributed rather than being guessed.
+    list — but only when every such list points at the same single library; conflicting
+    list evidence leaves the run unattributed instead of letting ``pp.txt`` order decide.
+    When a class has exactly one declaring library, or exactly one library is left unclaimed
+    after the list evidence, the remaining run takes it; otherwise it stays unattributed
+    rather than being guessed.
     """
     attributed = []
     by_class = {}
@@ -124,9 +126,12 @@ def attribute_runs(runs, pool_lists, offset_libraries, class_libraries):
         libraries = dict.fromkeys(indexes)
         for index in indexes:
             refs = set(runs[index][1])
+            candidates = set()
             for offset, list_refs in pool_lists.get(cls, ()):
-                if refs & list_refs and len(offset_libraries.get(offset, ())) == 1:
-                    libraries[index] = next(iter(offset_libraries[offset]))
+                if refs & list_refs:
+                    candidates |= offset_libraries.get(offset, set())
+            if len(candidates) == 1:
+                libraries[index] = candidates.pop()
         unclaimed = set(class_libraries.get(cls, ())) - set(filter(None, libraries.values()))
         pending = [index for index, library in libraries.items() if library is None]
         if len(pending) == 1 and len(unclaimed) == 1:

@@ -187,3 +187,26 @@ def test_main_rejects_missing_argument(capsys) -> None:
     """The CLI needs exactly one dump directory."""
     assert parse_pbenums.main([]) == 2
     assert "usage:" in capsys.readouterr().err
+
+
+def test_conflicting_list_evidence_leaves_the_run_unattributed(tmp_path: Path) -> None:
+    """Two libraries referencing lists that contain the same run must not race on pool order."""
+    root = _write_dump(tmp_path)
+    (root / "pp.txt").write_text(
+        "[pp+0x20] List<Color>(3) [Obj!Color@a1, Obj!Color@a2, Obj!Color@a3]\n"
+        "[pp+0x28] List<Color>(1) [Obj!Color@a1]\n"
+    )
+    runs = parse_pbenums.parse_enum_runs(root / "objs.txt")
+    classes = {cls for cls, _ in runs}
+    _, pool_lists = parse_pbenums.parse_pool(root / "pp.txt", classes)
+    offset_libraries, class_libraries = parse_pbenums.parse_libraries(root / "asm", classes)
+
+    attributed = parse_pbenums.attribute_runs(runs, pool_lists, offset_libraries, class_libraries)
+
+    # The first Color run is referenced from both libraries' lists (conflict → unattributed);
+    # the second run has no list evidence and two candidate libraries remain, so it stays
+    # unattributed too rather than being assigned by elimination.
+    assert [(cls, library) for cls, library, _ in attributed if cls == "Color"] == [
+        ("Color", None),
+        ("Color", None),
+    ]

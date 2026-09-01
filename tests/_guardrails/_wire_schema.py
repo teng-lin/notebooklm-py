@@ -215,7 +215,7 @@ def load_enums() -> dict[str, dict[int, str]]:
         chosen = [
             (library, values)
             for library, values in declared
-            if library is None or library.startswith(_WIRE_LIBRARY_PREFIXES)
+            if library is not None and library.startswith(_WIRE_LIBRARY_PREFIXES)
         ]
         if not chosen:
             chosen = declared
