@@ -40,11 +40,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import secrets
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal
+
+from .._loop_bound import LoopBoundPrimitive
 
 __all__ = [
     "ChatTaskCapacityError",
@@ -58,11 +61,26 @@ __all__ = [
 #: the cap only guards a pathological long-lived server. Oldest *done* entries
 #: are evicted first; running tasks are never evicted (see ``start``).
 _MAX_TASKS = 256
-#: Ceiling on concurrently RUNNING asks. Each one holds a live generation
-#: round-trip against the shared Google account; past this the server refuses
-#: new starts (:class:`ChatTaskCapacityError`) rather than queueing unbounded
-#: work it cannot bound in time.
-_MAX_RUNNING = 16
+#: Default ceiling on generations IN FLIGHT against Google. Accepted asks past
+#: this queue (FIFO by submission) and auto-start as slots free up, so callers
+#: can submit a whole batch of questions at once and just poll — the server owns
+#: the pacing. Kept deliberately small: bursts of concurrent generations on one
+#: shared Google account have empirically triggered account-level throttling.
+#: Override with the ``NOTEBOOKLM_MCP_CHAT_CONCURRENCY`` env var (clamped 1-16).
+_DEFAULT_CONCURRENCY = 3
+_CONCURRENCY_ENV = "NOTEBOOKLM_MCP_CHAT_CONCURRENCY"
+
+
+def _resolve_concurrency() -> int:
+    """Return the generation-concurrency ceiling (env-overridable, clamped 1-16)."""
+    raw = os.environ.get(_CONCURRENCY_ENV, "")
+    try:
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_CONCURRENCY
+    return max(1, min(16, value))
+
+
 #: How long a finished entry (result or error) stays claimable after completion.
 #: Long enough for a model to come back across several re-invoke cycles (and for
 #: a user to retry a question whose response the transport dropped); short
@@ -71,8 +89,9 @@ _RESULT_TTL_S = 30.0 * 60.0
 
 
 class ChatTaskCapacityError(RuntimeError):
-    """Raised by :meth:`ChatTaskRegistry.start` when the running-task ceiling is
-    reached. The tool layer maps this onto its validation vocabulary."""
+    """Raised by :meth:`ChatTaskRegistry.start` when the registry is full of
+    UNFINISHED work (the retained-entry fuse; queueing normally absorbs bursts).
+    The tool layer maps this onto its validation vocabulary."""
 
 
 def compute_chat_task_key(
@@ -114,30 +133,63 @@ class ChatTaskEntry:
 
     task_id: str
     key: str
-    created_at: float  # time.monotonic()
+    created_at: float  # time.monotonic(); submission time
     #: The server-owned task. Assigned immediately after construction (the entry
     #: must exist first so ``_guard`` can stamp it); ``None`` only in that gap.
     task: asyncio.Task[None] | None = None
+    #: time.monotonic() when the generation actually began (concurrency slot
+    #: acquired); ``None`` while queued. ``started_at - created_at`` is the queue
+    #: wait, ``done_at - started_at`` the generation time — surfaced by
+    #: ``chat_status`` so real-world concurrency can be calibrated from timings.
+    started_at: float | None = None
     result: dict[str, Any] | None = None
     error: BaseException | None = None
     done_at: float | None = None  # time.monotonic(); None while running
 
 
-class ChatTaskRegistry:
-    """Bounded, TTL-swept map of detached chat asks (see module docstring)."""
+class ChatTaskRegistry(LoopBoundPrimitive):
+    """Bounded, TTL-swept map of detached chat asks (see module docstring).
+
+    Carries the #1196 loop-affinity protocol (via :class:`LoopBoundPrimitive` +
+    :meth:`reset_after_open`): the semaphore binds lazily to the loop it first
+    gates on, so a loop rebind rebuilds it and drops unfinished entries (their
+    tasks died with the old loop; completed results are plain dicts and
+    survive). Under the MCP lifespan the registry lives and dies with one loop,
+    so the hook never fires there — it exists to keep the affinity ratchet
+    honest for any other embedding.
+    """
 
     def __init__(
         self,
         *,
         max_tasks: int = _MAX_TASKS,
-        max_running: int = _MAX_RUNNING,
+        concurrency: int | None = None,
         result_ttl_s: float = _RESULT_TTL_S,
     ) -> None:
         self._max_tasks = max_tasks
-        self._max_running = max_running
+        self._concurrency = concurrency if concurrency is not None else _resolve_concurrency()
+        #: Gates generations against Google: accepted asks past the ceiling wait
+        #: here (FIFO) and auto-start as slots free — the server owns the pacing.
+        self._gate = asyncio.Semaphore(self._concurrency)
         self._result_ttl_s = result_ttl_s
         self._tasks: dict[str, ChatTaskEntry] = {}
         self._by_key: dict[str, str] = {}
+
+    @property
+    def concurrency(self) -> int:
+        """The generation-concurrency ceiling this registry paces to."""
+        return self._concurrency
+
+    def _on_loop_rebind(self, old: Any, new: Any) -> None:
+        # Loop-bound state cannot cross loops: rebuild the gate and drop
+        # unfinished entries (their tasks belong to the old loop).
+        self._gate = asyncio.Semaphore(self._concurrency)
+        for entry in [e for e in self._tasks.values() if e.done_at is None]:
+            self._drop(entry)
+
+    def reset_after_open(self) -> None:
+        """Per-open reset (the #1196 affinity protocol). The registry keeps no
+        per-open counters; the rebind hook owns the state discard."""
 
     # -- internals ---------------------------------------------------------
 
@@ -158,15 +210,40 @@ class ChatTaskRegistry:
     def _running_count(self) -> int:
         return sum(1 for e in self._tasks.values() if e.done_at is None)
 
-    async def _guard(self, entry: ChatTaskEntry, coro: Awaitable[dict[str, Any]]) -> None:
+    def counts(self) -> dict[str, int]:
+        """Live registry gauges for observability (``server_info``): how many
+        asks are ``generating`` (slot held) vs ``queued`` (waiting for one),
+        plus ``cached_results`` and the pacing ``concurrency`` ceiling."""
+        generating = sum(
+            1 for e in self._tasks.values() if e.done_at is None and e.started_at is not None
+        )
+        queued = sum(1 for e in self._tasks.values() if e.done_at is None and e.started_at is None)
+        cached = sum(
+            1 for e in self._tasks.values() if e.done_at is not None and e.result is not None
+        )
+        return {
+            "generating": generating,
+            "queued": queued,
+            "concurrency": self._concurrency,
+            "cached_results": cached,
+        }
+
+    async def _guard(
+        self, entry: ChatTaskEntry, coro_factory: Callable[[], Awaitable[dict[str, Any]]]
+    ) -> None:
         """Drive one ask to its terminal state, recording the outcome.
 
+        The generation waits for a concurrency slot first (the queue), and the
+        coroutine is only CREATED once the slot is held — a task cancelled while
+        queued never instantiates (and so never leaks) the underlying ask.
         ``CancelledError`` (server shutdown via :meth:`aclose` — nothing else
         cancels these tasks) is recorded then re-raised, per asyncio's
         cancellation contract.
         """
         try:
-            entry.result = await coro
+            async with self._gate:
+                entry.started_at = time.monotonic()
+                entry.result = await coro_factory()
         except asyncio.CancelledError:
             entry.error = asyncio.CancelledError("chat task cancelled at server shutdown")
             raise
@@ -188,16 +265,20 @@ class ChatTaskRegistry:
           (no double generation).
         * ``"completed"`` — an identical ask finished successfully within the
           TTL; the cached payload answers instantly.
-        * ``"created"`` — a fresh server-owned task was spawned. A previous
-          FAILED entry for the key is replaced (a retry after an error must
-          re-ask, mirroring "failures are not cached" idempotency semantics).
+        * ``"created"`` — a fresh server-owned task was accepted. It generates
+          immediately if a concurrency slot is free, else queues (FIFO) and
+          auto-starts as slots free up — callers submit whole batches and just
+          poll; the server owns the pacing. A previous FAILED entry for the key
+          is replaced (a retry after an error must re-ask, mirroring "failures
+          are not cached" idempotency semantics).
 
         No ``await`` between the existence check and the spawn — on the single
         server loop the claim is atomic, so concurrent duplicate calls cannot
         both spawn.
 
         Raises:
-            ChatTaskCapacityError: the running-task ceiling is reached.
+            ChatTaskCapacityError: every retained slot holds UNFINISHED work
+                (the fuse; the queue absorbs normal bursts long before this).
         """
         now = time.monotonic()
         self._sweep(now)
@@ -210,26 +291,27 @@ class ChatTaskRegistry:
                 if entry.result is not None:
                     return entry, "completed"
                 # Failed within TTL: fall through and replace with a fresh ask.
-        if self._running_count() >= self._max_running:
-            raise ChatTaskCapacityError(
-                f"{self._max_running} chat tasks are already running; "
-                "poll chat_status for existing tasks before starting more"
-            )
         if len(self._tasks) >= self._max_tasks:
-            # Evict oldest DONE entries to make room; running tasks are never
-            # evicted (their work is paid for — refusing new starts is the
-            # pressure valve, via the running ceiling above).
+            # Evict oldest DONE entries to make room; unfinished tasks are never
+            # evicted (their work is paid for).
             done = sorted(
                 (e for e in self._tasks.values() if e.done_at is not None),
                 key=lambda e: e.done_at or 0.0,
             )
             for entry in done[: max(1, len(self._tasks) - self._max_tasks + 1)]:
                 self._drop(entry)
+            if len(self._tasks) >= self._max_tasks:
+                raise ChatTaskCapacityError(
+                    f"all {self._max_tasks} task slots hold unfinished asks; "
+                    "poll chat_status and let the queue drain before starting more"
+                )
         task_id = secrets.token_urlsafe(8)
         entry = ChatTaskEntry(task_id=task_id, key=key, created_at=now)
         # Spawn AFTER the entry exists so ``_guard`` can stamp it; a plain loop
         # task (not a child of the request scope) is the detachment guarantee.
-        entry.task = asyncio.create_task(self._guard(entry, coro_factory()))
+        # The factory is handed over uncalled — the ask coroutine is created
+        # only once a concurrency slot is held (see ``_guard``).
+        entry.task = asyncio.create_task(self._guard(entry, coro_factory))
         self._tasks[task_id] = entry
         self._by_key[key] = task_id
         return entry, "created"

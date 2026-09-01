@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with one cheap retry. Same re-invoke contract as `await_upload` and the
   `studio_generate`/`studio_status`, `research_start`/`research_status` pairs —
   chat was the last long-running surface without it.
+  Batch-friendly by design: submissions past the generation-concurrency
+  ceiling (`NOTEBOOKLM_MCP_CHAT_CONCURRENCY`, default 3 — deliberately small,
+  bursts on one shared Google account have empirically triggered account-level
+  throttling) queue FIFO and auto-start as slots free, so a caller submits a
+  whole batch of questions and just polls; `chat_status` accepts a list of
+  task_ids (one poll call per batch round), reports `queued` vs `generating`,
+  and carries `queued_s`/`generation_s` timings; `server_info` gains a live
+  `chat_tasks` load gauge (`{generating, queued, concurrency, cached_results}`).
 - `SourceType.GEMINI_CHAT`, `EXCEL`, `GMAIL`, `AI_MODE_CHAT` and
   `EXPERT_INTELLIGENCE` for backend type codes `18`, `12`, `15`, `19` and `20`.
   The decode map now covers `0`-`20` contiguously and matches every value of

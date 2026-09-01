@@ -32,6 +32,7 @@ Both bodies wrap in :func:`mcp_errors`. This module imports NO ``click`` /
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any, Literal
 
 from fastmcp import Context
@@ -54,6 +55,46 @@ from .._resolve import resolve_notebook, resolve_sources
 #: ``passage_id`` / ``score`` — useful for deep citation tooling but pure context
 #: bloat for a typical agent, so they are dropped unless ``references="full"``.
 _LITE_REFERENCE_FIELDS = ("source_id", "citation_number", "cited_text")
+
+
+def _entry_status_payload(entry: Any) -> dict[str, Any]:
+    """Project one :class:`~notebooklm.mcp._chattasks.ChatTaskEntry` onto the
+    ``chat_status`` wire vocabulary (shared by the single and batch shapes).
+
+    Timings ride the terminal states (``queued_s`` — submission → generation
+    start; ``generation_s`` — start → finish) so real-world concurrency can be
+    calibrated from ordinary usage.
+    """
+    if entry.done_at is None:
+        waiting = entry.started_at is None
+        return {
+            "status": "pending",
+            "task_id": entry.task_id,
+            "state": "queued" if waiting else "generating",
+            "waited_s": round(time.monotonic() - entry.created_at, 1),
+            "hint": (
+                "waiting for a generation slot — re-invoke chat_status in ~15-30s"
+                if waiting
+                else "the answer is still generating — re-invoke chat_status "
+                "with the same task_id in ~15-30s"
+            ),
+        }
+    timings = {
+        "queued_s": round((entry.started_at or entry.created_at) - entry.created_at, 1),
+        "generation_s": round(entry.done_at - (entry.started_at or entry.created_at), 1),
+    }
+    if entry.error is not None:
+        return {
+            "status": "failed",
+            "task_id": entry.task_id,
+            "error": tool_error_payload(entry.error),
+            **timings,
+            "hint": (
+                "the ask failed — a retriable error is worth one chat_start "
+                "retry with the same question (a retry re-runs the generation)"
+            ),
+        }
+    return {"status": "completed", "task_id": entry.task_id, **timings, **(entry.result or {})}
 
 
 def _ask_result_payload(ask_result: Any, references: str) -> dict[str, Any]:
@@ -314,7 +355,9 @@ def register(mcp: Any) -> None:
             except ChatTaskCapacityError as exc:
                 raise ValidationError(str(exc)) from exc
             if how == "completed":
-                return {"status": "completed", "task_id": entry.task_id, **(entry.result or {})}
+                # The cache hit reuses the status projection so it carries the
+                # same timings a chat_status poll would.
+                return _entry_status_payload(entry)
             return {
                 "status": "started" if how == "created" else "already_running",
                 "task_id": entry.task_id,
@@ -327,51 +370,50 @@ def register(mcp: Any) -> None:
             }
 
     @mcp.tool(annotations=READ_ONLY)
-    async def chat_status(ctx: Context, task_id: str) -> dict[str, Any]:
-        """Poll a detached ask started by ``chat_start``; returns the answer inline.
+    async def chat_status(ctx: Context, task_id: str | list[str]) -> dict[str, Any]:
+        """Poll detached ask(s) started by ``chat_start``; answers return inline.
 
-        Returns one of:
+        ``task_id`` accepts one id, a list, or a comma-separated string — **poll
+        a whole batch in ONE call** and re-invoke every ~20–30s while anything
+        is pending. Per-task statuses:
 
-        * ``{"status": "pending"}`` — still generating; **re-invoke with the
-          same ``task_id`` in ~15–30s** (polling never restarts the generation).
-        * ``{"status": "completed", "answer": ..., ...}`` — the finished
-          ``chat_ask``-shaped payload.
-        * ``{"status": "failed", "error": {code, message, retriable, ...}}`` — a
-          retriable code is worth one ``chat_start`` retry (which re-runs the
-          generation).
-        * ``{"status": "unknown"}`` — no such task, or its result expired; call
-          ``chat_start`` again.
+        * ``pending`` (``state``: ``queued`` waiting for a generation slot, or
+          ``generating``) — re-invoke; polling never restarts a generation.
+        * ``completed`` — the full ``chat_ask``-shaped payload, plus
+          ``queued_s`` / ``generation_s`` timings.
+        * ``failed`` — ``error: {code, message, retriable, ...}``; a retriable
+          code is worth one ``chat_start`` retry (which re-runs the generation).
+        * ``unknown`` — no such task, or its result expired; ``chat_start``
+          again.
+
+        A single string id returns that task's status dict; a list (even of
+        one) returns ``{"tasks": [...]}`` in input order.
         """
         with mcp_errors():
-            entry = get_chat_tasks(ctx).status(task_id)
-            if entry is None:
-                return {
-                    "status": "unknown",
-                    "hint": (
-                        "no such task (or its result expired) — call chat_start "
-                        "again with the original question"
-                    ),
-                }
-            if entry.done_at is None:
-                return {
-                    "status": "pending",
-                    "hint": (
-                        "the answer is still generating — re-invoke chat_status "
-                        "with the same task_id in ~15-30s"
-                    ),
-                }
-            if entry.error is not None:
-                return {
-                    "status": "failed",
-                    "task_id": entry.task_id,
-                    "error": tool_error_payload(entry.error),
-                    "hint": (
-                        "the ask failed — a retriable error is worth one "
-                        "chat_start retry with the same question (a retry "
-                        "re-runs the generation)"
-                    ),
-                }
-            return {"status": "completed", "task_id": entry.task_id, **(entry.result or {})}
+            registry = get_chat_tasks(ctx)
+            ids = coerce_list(task_id)
+            if not ids:
+                raise ValidationError("chat_status needs at least one task_id.")
+
+            def _one(tid: str) -> dict[str, Any]:
+                entry = registry.status(tid)
+                if entry is None:
+                    return {
+                        "status": "unknown",
+                        "task_id": tid,
+                        "hint": (
+                            "no such task (or its result expired) — call chat_start "
+                            "again with the original question"
+                        ),
+                    }
+                return _entry_status_payload(entry)
+
+            if isinstance(task_id, str) and len(ids) == 1:
+                # Tuple-unpack instead of ids[0]: the positional-indexing ratchet
+                # (ADR-0011 / #1491) flags single-level subscripts wholesale.
+                (only_id,) = ids
+                return _one(only_id)
+            return {"tasks": [_one(tid) for tid in ids]}
 
     @mcp.tool
     async def chat_configure(

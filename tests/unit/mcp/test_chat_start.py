@@ -143,8 +143,34 @@ async def test_registry_task_survives_cancelled_caller() -> None:
     assert entry.result == {"answer": "survived"}
 
 
-async def test_registry_running_ceiling() -> None:
-    registry = ChatTaskRegistry(max_running=1)
+async def test_registry_queues_past_concurrency_and_autostarts() -> None:
+    """Past the concurrency ceiling new asks QUEUE (started_at None) and
+    auto-start as slots free — the server owns the pacing, no caller errors."""
+    registry = ChatTaskRegistry(concurrency=1)
+    gate = asyncio.Event()
+
+    async def _work() -> dict[str, Any]:
+        await gate.wait()
+        return {"answer": "ok"}
+
+    first, how1 = registry.start("k1", _work)
+    second, how2 = registry.start("k2", _work)
+    assert (how1, how2) == ("created", "created")  # both ACCEPTED
+    await asyncio.sleep(0)  # let the first guard acquire the slot
+    assert first.started_at is not None  # generating
+    assert second.started_at is None  # queued behind the slot
+    assert registry.counts()["generating"] == 1
+    assert registry.counts()["queued"] == 1
+    gate.set()
+    assert first.task is not None and second.task is not None
+    await asyncio.gather(first.task, second.task)
+    assert first.result == {"answer": "ok"}
+    assert second.result == {"answer": "ok"}  # auto-started after k1 freed the slot
+    assert second.started_at is not None and second.started_at >= first.created_at
+
+
+async def test_registry_capacity_fuse_when_all_slots_unfinished() -> None:
+    registry = ChatTaskRegistry(max_tasks=1, concurrency=1)
     gate = asyncio.Event()
 
     async def _work() -> dict[str, Any]:
@@ -153,11 +179,11 @@ async def test_registry_running_ceiling() -> None:
 
     entry, _ = registry.start("k1", _work)
     with pytest.raises(ChatTaskCapacityError):
-        registry.start("k2", _work)
+        registry.start("k2", _work)  # the single retained slot is unfinished
     gate.set()
     assert entry.task is not None
     await entry.task
-    # Capacity frees up once the running task completes.
+    # A finished entry is evictable, so capacity frees up.
     _, how = registry.start("k2", _work)
     assert how == "created"
 
@@ -321,6 +347,58 @@ async def test_chat_start_failure_surfaces_via_status(server_factory, mock_clien
         # vocabulary: {code, message, retriable} — agents branch on these.
         assert set(status["error"]) >= {"code", "message", "retriable"}
         assert "retry" in status["hint"]
+
+
+async def test_chat_status_batch_shape_and_timings(server_factory, mock_client) -> None:
+    """A LIST of task_ids polls the whole batch in one call: ``{"tasks": [...]}``
+    in input order, unknown ids reported per-task, completed entries carrying
+    the ``queued_s`` / ``generation_s`` timings."""
+    mock_client.chat.ask = AsyncMock(
+        return_value=FakeAskResult(answer="batched", conversation_id=CONV_ID)
+    )
+    async with Client(server_factory()) as session:
+        started = (
+            await session.call_tool("chat_start", {"notebook": NB_ID, "question": "batch q"})
+        ).structured_content
+        task_id = started["task_id"]
+        for _ in range(50):
+            single = (
+                await session.call_tool("chat_status", {"task_id": task_id})
+            ).structured_content
+            if single["status"] != "pending":
+                break
+            await asyncio.sleep(0.01)
+        assert single["status"] == "completed"
+        assert single["queued_s"] >= 0.0 and single["generation_s"] >= 0.0
+
+        batch = (
+            await session.call_tool("chat_status", {"task_id": [task_id, "bogus"]})
+        ).structured_content
+        assert [t["task_id"] for t in batch["tasks"]] == [task_id, "bogus"]
+        assert batch["tasks"][0]["status"] == "completed"
+        assert batch["tasks"][0]["answer"] == "batched"
+        assert batch["tasks"][1]["status"] == "unknown"
+
+
+async def test_chat_status_pending_reports_queue_state(server_factory, mock_client) -> None:
+    gate = asyncio.Event()
+
+    async def _slow_ask(*args: Any, **kwargs: Any) -> FakeAskResult:
+        await gate.wait()
+        return FakeAskResult(answer="x", conversation_id=CONV_ID)
+
+    mock_client.chat.ask = AsyncMock(side_effect=_slow_ask)
+    async with Client(server_factory()) as session:
+        started = (
+            await session.call_tool("chat_start", {"notebook": NB_ID, "question": "state q"})
+        ).structured_content
+        pending = (
+            await session.call_tool("chat_status", {"task_id": started["task_id"]})
+        ).structured_content
+        assert pending["status"] == "pending"
+        assert pending["state"] in ("queued", "generating")
+        assert pending["waited_s"] >= 0.0
+        gate.set()
 
 
 async def test_chat_start_rejects_blank_question(mcp_call) -> None:

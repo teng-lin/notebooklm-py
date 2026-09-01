@@ -29,7 +29,7 @@ from ..._version_info import version_string
 from ...exceptions import NotebookLMError
 from ...paths import get_storage_path, resolve_profile
 from .._confirm import READ_ONLY
-from .._context import get_client
+from .._context import get_chat_tasks, get_client
 from .._errors import mcp_errors, redact
 from ..server import SERVER_NAME
 
@@ -112,7 +112,9 @@ def register(mcp: Any) -> None:
     async def server_info(ctx: Context, include_account: bool = False) -> dict[str, Any]:
         """Report the server version and local authentication health.
 
-        Returns the package ``version`` and an ``auth`` block (``authenticated`` /
+        Returns the package ``version``, live ``chat_tasks`` gauges
+        (``{generating, queued, concurrency, cached_results}`` — check load
+        before submitting a chat_start batch), and an ``auth`` block (``authenticated`` /
         ``storage_exists`` / ``json_valid`` / ``cookies_present`` / ``sid_cookie`` /
         ``profile``). Use it to confirm the server is logged in before driving
         notebook tools; if ``authenticated`` is false, run ``notebooklm login`` on
@@ -163,6 +165,10 @@ def register(mcp: Any) -> None:
                     "sid_cookie": bool(result.checks.get("sid_cookie")),
                     "profile": profile,
                 },
+                # Live detached-ask gauges (chat_start/chat_status): lets an agent
+                # see current load before submitting a batch — {generating, queued,
+                # concurrency, cached_results}.
+                "chat_tasks": get_chat_tasks(ctx).counts(),
             }
             if include_account:
                 info["account"] = await _account_block(ctx, authenticated=result.all_passed)

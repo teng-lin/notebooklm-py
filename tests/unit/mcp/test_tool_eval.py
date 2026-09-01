@@ -31,8 +31,13 @@ pytest.importorskip("fastmcp")
 #: to ~36.0k). Move these DOWN as the surface gets leaner; a rise means
 #: description/param bloat that must be justified, not rubber-stamped.
 SCHEMA_CHAR_BUDGET = (
-    41_660  # total serialized inputSchema + description chars (current 41_639; +21 slack)
+    42_100  # total serialized inputSchema + description chars (current 42_082; +18 slack)
 )
+# The batch/queue follow-up grew chat_status (list-of-ids polling, the
+# queued/generating state vocabulary, the queued_s/generation_s timings) and
+# server_info (the chat_tasks load gauges) by a further +443 — again protocol
+# text an agent acts on (poll a whole batch in ONE call; check load before
+# submitting). 41_639 -> 42_082, ratcheted to 42_100.
 # chat_start/chat_status (the watchdog-safe detached-ask pair) add two tools whose
 # descriptions carry the re-invoke protocol an agent must follow (the status
 # vocabulary, the poll cadence, the idempotent-retry semantics) — the same class of
