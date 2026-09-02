@@ -15,10 +15,12 @@ from notebooklm._android.session import (
     ANDROID_GRPC_MAX_RECEIVE_MESSAGE_BYTES,
     ANDROID_GRPC_TARGET,
     AndroidSession,
+    _await_with_deadline,
     _default_grpc_loader,
     _default_protobuf_loader,
 )
 from notebooklm._client_metrics import ClientMetrics
+from notebooklm._deadline import RuntimeDeadline
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.exceptions import (
@@ -767,3 +769,463 @@ def test_default_protobuf_loader_maps_generated_runtime_version_mismatch() -> No
         "google.protobuf.runtime_version",
         "notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1.notes_pb2",
     ]
+
+
+# ===========================================================================
+# Lifecycle, deadline, and epoch-fencing branches
+#
+# The cases above cover the wire path and its status mapping. These target the
+# surrounding transport contract: the unbounded-timeout path, the loop/epoch
+# assertions that fence a retired resource generation, ``prepare_metadata``'s
+# sanitization, and the queue-admission timeout that must surface as
+# DEADLINE_EXCEEDED rather than a bare ``TimeoutError``.
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# _await_with_deadline
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_an_absent_deadline_awaits_without_a_timeout_wrapper() -> None:
+    """No deadline means no ``wait_for`` — the awaitable is returned directly."""
+
+    async def _work() -> str:
+        return "done"
+
+    assert await _await_with_deadline(_work(), None) == "done"
+
+
+# ---------------------------------------------------------------------------
+# Timeout resolution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "timeout",
+    [
+        pytest.param(None, id="unset"),
+        pytest.param(float("inf"), id="infinite"),
+        pytest.param(float("nan"), id="nan"),
+    ],
+)
+async def test_a_non_finite_timeout_dispatches_without_a_deadline(timeout: float | None) -> None:
+    session, _bearer, channel, _grpc, _sup = await _open(timeout=timeout)
+
+    await session.unary(METHOD, _Message(b"request"), replay_safe=True, response_type=_Message)
+
+    # The wire call carries no timeout rather than a synthesized one.
+    assert channel.invocations[0][3] is None
+
+
+@pytest.mark.asyncio
+async def test_a_per_call_timeout_overrides_the_session_default() -> None:
+    session, _bearer, channel, _grpc, _sup = await _open(timeout=None)
+
+    await session.unary(
+        METHOD, _Message(b"request"), replay_safe=True, response_type=_Message, timeout=30.0
+    )
+
+    assert channel.invocations[0][3] is not None
+
+
+# ---------------------------------------------------------------------------
+# Loop and epoch fencing
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_open_refuses_a_loop_the_lifecycle_did_not_bind() -> None:
+    session = AndroidSession(
+        _Bearer(),  # type: ignore[arg-type]
+        _supervisor(),
+        timeout=1.0,
+        grpc_loader=lambda: _Grpc(_Channel()),
+    )
+    session.set_bound_loop(asyncio.get_running_loop())
+
+    other_loop = asyncio.new_event_loop()
+    try:
+        with pytest.raises(RuntimeError, match="not bound by the client lifecycle"):
+            await session.open(other_loop, 1)
+    finally:
+        other_loop.close()
+
+
+@pytest.mark.asyncio
+async def test_assert_epoch_accepts_the_active_generation() -> None:
+    session, _bearer, _channel, _grpc, _sup = await _open()
+
+    session.assert_epoch(1)
+
+
+@pytest.mark.asyncio
+async def test_assert_epoch_rejects_a_retired_generation() -> None:
+    session, _bearer, _channel, _grpc, _sup = await _open()
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        session.assert_epoch(2)
+
+
+@pytest.mark.asyncio
+async def test_assert_epoch_rejects_every_generation_once_closing() -> None:
+    session, _bearer, _channel, _grpc, _sup = await _open()
+    await session.prepare_close()
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        session.assert_epoch(1)
+
+
+@pytest.mark.asyncio
+async def test_a_unary_call_naming_a_retired_generation_is_refused() -> None:
+    session, _bearer, channel, _grpc, _sup = await _open()
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await session.unary(
+            METHOD,
+            _Message(b"request"),
+            replay_safe=True,
+            response_type=_Message,
+            expected_epoch=99,
+        )
+
+    assert channel.invocations == []
+
+
+@pytest.mark.asyncio
+async def test_active_epoch_tracks_open_and_close() -> None:
+    session, _bearer, _channel, _grpc, _sup = await _open()
+
+    assert session.active_epoch == 1
+    await session.prepare_close()
+    assert session.active_epoch is None
+
+
+# ---------------------------------------------------------------------------
+# prepare_metadata
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_prepare_metadata_resolves_credential_derived_headers() -> None:
+    session, _bearer, _channel, _grpc, _sup = await _open()
+
+    async def augment(bearer: str) -> tuple[tuple[str, bytes], ...]:
+        assert bearer == BEARER
+        return (("x-extra-bin", b"extra"),)
+
+    metadata = await session.prepare_metadata(augment, expected_epoch=1)
+
+    assert metadata == (("x-extra-bin", b"extra"),)
+
+
+@pytest.mark.asyncio
+async def test_prepare_metadata_refuses_a_retired_generation() -> None:
+    session, _bearer, _channel, _grpc, _sup = await _open()
+
+    async def augment(_bearer: str) -> tuple[tuple[str, bytes], ...]:
+        raise AssertionError("augmentor must not run for a retired generation")
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await session.prepare_metadata(augment, expected_epoch=99)
+
+
+def _traceback_function_names(error: BaseException) -> list[str]:
+    names = []
+    tb = error.__traceback__
+    while tb is not None:
+        names.append(tb.tb_frame.f_code.co_name)
+        tb = tb.tb_next
+    return names
+
+
+@pytest.mark.asyncio
+async def test_prepare_metadata_detaches_the_frames_of_an_escaping_failure() -> None:
+    """The credential lives in the frames this path unwinds through.
+
+    ``sanitize_escaping_exception`` does not rewrite the message — it drops the
+    traceback and chain so those frames (and the bearer in their locals) are
+    not reachable from the exception a caller catches.
+    """
+    session, _bearer, _channel, _grpc, _sup = await _open()
+    inner = RuntimeError("upstream")
+
+    async def augment(_bearer: str) -> tuple[tuple[str, bytes], ...]:
+        try:
+            raise inner
+        except RuntimeError as error:
+            raise ValueError("augmentor blew up") from error
+
+    with pytest.raises(ValueError) as caught:
+        await session.prepare_metadata(augment, expected_epoch=1)
+
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+    # The re-raise in ``prepare_metadata`` attaches its own frame, but the
+    # credential-bearing frames it unwound through are gone.
+    frames = _traceback_function_names(caught.value)
+    assert "augment" not in frames
+    assert "_prepare_metadata_impl" not in frames
+
+
+# ---------------------------------------------------------------------------
+# Deadlines during an attempt
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_deadline_reached_while_minting_reports_deadline_exceeded() -> None:
+    """The bearer wait is inside the deadline, so it maps to the gRPC status."""
+    bearer = _Bearer()
+    bearer.wait = asyncio.Event()
+    session, _bearer, _channel, _grpc, _sup = await _open(bearer=bearer, timeout=0.01)
+
+    with pytest.raises(RPCTimeoutError):
+        await session.unary(METHOD, _Message(b"request"), replay_safe=False, response_type=_Message)
+
+
+@pytest.mark.asyncio
+async def test_a_deadline_reached_inside_the_augmentor_reports_deadline_exceeded() -> None:
+    session, _bearer, _channel, _grpc, _sup = await _open(timeout=0.01)
+
+    async def augment(_bearer: str) -> tuple[tuple[str, bytes], ...]:
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    with pytest.raises(RPCTimeoutError):
+        await session.unary(
+            METHOD,
+            _Message(b"request"),
+            replay_safe=False,
+            response_type=_Message,
+            metadata_augmentor=augment,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Queue admission
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_waiting_for_a_call_slot_past_the_deadline_is_a_timeout_not_an_error() -> None:
+    """A caller that never gets admitted must see DEADLINE_EXCEEDED."""
+    supervisor = _supervisor(limit=1)
+    blocker = asyncio.Event()
+    channel = _Channel()
+
+    async def _blocked() -> bytes:
+        await blocker.wait()
+        return b"response"
+
+    channel.unary_outcomes = [asyncio.ensure_future(_blocked()), b"response"]
+    session, _bearer, _channel, _grpc, _sup = await _open(
+        channel=channel, supervisor=supervisor, timeout=None
+    )
+
+    holder = asyncio.create_task(
+        session.unary(METHOD, _Message(b"a"), replay_safe=False, response_type=_Message)
+    )
+    await asyncio.sleep(0)
+
+    with pytest.raises(RPCTimeoutError):
+        await session.unary(
+            METHOD, _Message(b"b"), replay_safe=False, response_type=_Message, timeout=0.01
+        )
+
+    blocker.set()
+    await asyncio.gather(holder, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_a_deadline_is_started_from_the_injected_clock() -> None:
+    """``RuntimeDeadline`` must use the session's monotonic, not the global one."""
+    ticks = iter([100.0, 100.0, 101.0, 102.0, 103.0])
+    session, _bearer, _channel, _grpc, _sup = await _open(
+        timeout=5.0, monotonic=lambda: next(ticks, 103.0)
+    )
+
+    deadline = session._deadline(None)
+
+    assert isinstance(deadline, RuntimeDeadline)
+    assert deadline.timeout == 5.0
+
+
+@pytest.mark.asyncio
+async def test_a_stream_deadline_reached_while_minting_reports_deadline_exceeded() -> None:
+    bearer = _Bearer()
+    bearer.wait = asyncio.Event()
+    session, _bearer, _channel, _grpc, _sup = await _open(bearer=bearer, timeout=0.01)
+
+    stream = session.stream(METHOD, _Message(b"request"), response_type=_Message)
+    with pytest.raises(RPCTimeoutError):
+        async for _item in stream:
+            pass
+
+
+@pytest.mark.asyncio
+async def test_a_stream_deadline_reached_mid_iteration_reports_deadline_exceeded() -> None:
+    """The per-frame await is inside the deadline, so a late frame times out.
+
+    The clock is advanced from the consumer between frames rather than by
+    sleeping, so the deadline expires deterministically.
+    """
+    channel = _Channel()
+    channel.stream_outcomes = [[_Message(b"one"), _Message(b"two")]]
+    clock = {"now": 0.0}
+    session, _bearer, _channel, _grpc, _sup = await _open(
+        channel=channel, timeout=1.0, monotonic=lambda: clock["now"]
+    )
+
+    received = []
+    stream = session.stream(METHOD, _Message(b"request"), response_type=_Message)
+    with pytest.raises(RPCTimeoutError):
+        async for item in stream:
+            received.append(item)
+            clock["now"] = 1_000.0
+
+    assert received == [_Message(b"one")]
+    # The abandoned call is cancelled rather than left running.
+    assert channel.stream_calls[0].cancelled is True
+
+
+@pytest.mark.asyncio
+async def test_an_unmapped_stream_wire_error_logs_only_its_type(caplog) -> None:
+    """The wire error may embed the bearer; only the class name is recorded."""
+
+    class _Opaque(Exception):
+        def __str__(self) -> str:  # pragma: no cover - must never be logged
+            return f"opaque failure {BEARER}"
+
+    channel = _Channel()
+    channel.stream_outcomes = [[_Message(b"one"), _Opaque()]]
+    session, _bearer, _channel, _grpc, _sup = await _open(channel=channel)
+
+    with caplog.at_level(logging.DEBUG, logger="notebooklm._android.session"):
+        stream = session.stream(METHOD, _Message(b"request"), response_type=_Message)
+        with pytest.raises(RPCError):
+            async for _item in stream:
+                pass
+
+    assert "_Opaque" in caplog.text
+    assert BEARER not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_a_stream_cancel_that_itself_fails_is_swallowed() -> None:
+    """Teardown must not replace the real failure with the cancel's error."""
+
+    class _UncancellableCall(_StreamCall):
+        def cancel(self) -> None:
+            raise RuntimeError("cancel is not supported by this transport")
+
+    channel = _Channel()
+
+    def unary_stream(method, *, request_serializer, response_deserializer):
+        def invoke(request, *, metadata, timeout):
+            return _UncancellableCall([_Message(b"one"), _RawRpcError(_Status.INTERNAL)])
+
+        return invoke
+
+    channel.unary_stream = unary_stream  # type: ignore[method-assign]
+    session, _bearer, _channel, _grpc, _sup = await _open(channel=channel)
+
+    stream = session.stream(METHOD, _Message(b"request"), response_type=_Message)
+    with pytest.raises(ServerError):
+        async for _item in stream:
+            pass
+
+
+@pytest.mark.asyncio
+async def test_a_stream_waiting_for_a_call_slot_past_its_deadline_times_out() -> None:
+    supervisor = _supervisor(limit=1)
+    blocker = asyncio.Event()
+    channel = _Channel()
+
+    async def _blocked() -> bytes:
+        await blocker.wait()
+        return b"response"
+
+    channel.unary_outcomes = [asyncio.ensure_future(_blocked())]
+    channel.stream_outcomes = [[_Message(b"one")]]
+    session, _bearer, _channel, _grpc, _sup = await _open(
+        channel=channel, supervisor=supervisor, timeout=None
+    )
+
+    holder = asyncio.create_task(
+        session.unary(METHOD, _Message(b"a"), replay_safe=False, response_type=_Message)
+    )
+    await asyncio.sleep(0)
+
+    stream = session.stream(METHOD, _Message(b"b"), response_type=_Message, timeout=0.01)
+    with pytest.raises(RPCTimeoutError):
+        async for _item in stream:
+            pass
+
+    blocker.set()
+    await asyncio.gather(holder, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_closing_a_session_that_never_opened_a_channel_is_a_no_op() -> None:
+    """``close_resources`` runs on the teardown path even for an unused session."""
+    session, _bearer, channel, _grpc, _sup = await _open()
+
+    await session.close_resources()
+
+    assert channel.closed == 0
+    assert session._channel is None
+
+
+@pytest.mark.asyncio
+async def test_closing_is_idempotent_after_the_channel_is_released() -> None:
+    session, _bearer, channel, _grpc, _sup = await _open()
+    await session.unary(METHOD, _Message(b"request"), replay_safe=True, response_type=_Message)
+
+    await session.close_resources()
+    await session.close_resources()
+
+    assert channel.closed == 1
+    assert session._channel is None
+    assert session._callables == {}
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_teardown_tolerates_a_session_never_bound_to_a_loop() -> None:
+    """Both teardown hooks skip their loop assertion when nothing was bound."""
+    session = AndroidSession(
+        _Bearer(),  # type: ignore[arg-type]
+        _supervisor(),
+        timeout=1.0,
+        grpc_loader=lambda: _Grpc(_Channel()),
+    )
+
+    await session.prepare_close()
+    await session.close_resources()
+
+    assert session.active_epoch is None
+
+
+@pytest.mark.asyncio
+async def test_a_stream_call_without_a_cancel_hook_is_abandoned_cleanly() -> None:
+    """Not every transport exposes ``cancel`` — teardown must not require it."""
+
+    class _NoCancelCall(_StreamCall):
+        cancel = None  # type: ignore[assignment]
+
+    channel = _Channel()
+
+    def unary_stream(method, *, request_serializer, response_deserializer):
+        def invoke(request, *, metadata, timeout):
+            return _NoCancelCall([_Message(b"one"), _RawRpcError(_Status.INTERNAL)])
+
+        return invoke
+
+    channel.unary_stream = unary_stream  # type: ignore[method-assign]
+    session, _bearer, _channel, _grpc, _sup = await _open(channel=channel)
+
+    stream = session.stream(METHOD, _Message(b"request"), response_type=_Message)
+    with pytest.raises(ServerError):
+        async for _item in stream:
+            pass
