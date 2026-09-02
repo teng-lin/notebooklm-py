@@ -52,7 +52,9 @@ class FakeAskResult:
 # ---------------------------------------------------------------------------
 
 
-async def test_registry_start_completes_and_caches() -> None:
+async def test_registry_finished_entry_never_short_circuits_a_new_start() -> None:
+    """A finished ask is never replayed to a new start (asking twice = two turns,
+    like chat_ask) — but its payload stays pollable by task_id for the TTL."""
     registry = ChatTaskRegistry()
 
     async def _work() -> dict[str, Any]:
@@ -64,11 +66,13 @@ async def test_registry_start_completes_and_caches() -> None:
     assert entry.task is not None
     await entry.task
     assert entry.result == {"answer": "42"}
-    assert entry.done_at is not None
-    # An identical start now answers instantly from the completed entry.
-    cached, how2 = registry.start("k1", _work)
-    assert how2 == "completed"
-    assert cached is entry
+    assert entry.done_at is not None and entry.done_wall is not None
+    fresh, how2 = registry.start("k1", _work)
+    assert how2 == "created"  # re-asks — no cached replay
+    assert fresh is not entry
+    assert registry.status(entry.task_id) is entry  # old payload still pollable
+    assert fresh.task is not None
+    await fresh.task
 
 
 async def test_registry_attaches_to_running_duplicate() -> None:
@@ -135,9 +139,9 @@ async def test_registry_task_survives_cancelled_caller() -> None:
     request.cancel()  # the ~60s watchdog killing the start call
     with pytest.raises(asyncio.CancelledError):
         await request
-    gate.set()
     entry, how = registry.start("k1", _work)
-    assert how in ("running", "completed")  # the detached ask is still alive
+    assert how == "running"  # the detached ask is still alive; we attached to it
+    gate.set()
     assert entry.task is not None
     await entry.task
     assert entry.result == {"answer": "survived"}
@@ -189,7 +193,7 @@ async def test_registry_capacity_fuse_when_all_slots_unfinished() -> None:
 
 
 async def test_registry_ttl_expires_completed_entries() -> None:
-    registry = ChatTaskRegistry()
+    registry = ChatTaskRegistry(result_ttl_s=60.0)
 
     async def _work() -> dict[str, Any]:
         return {"answer": "ephemeral"}
@@ -201,11 +205,25 @@ async def test_registry_ttl_expires_completed_entries() -> None:
     # Age the completion past the TTL deterministically (no clock patching).
     # Expiry runs on the WALL clock (done_wall), not monotonic — see the field's
     # docstring (gVisor monotonic freeze observed in production).
-    entry.done_wall = time.time() - registry._result_ttl_s - 1
+    entry.done_wall = time.time() - 61
     assert registry.counts()["cached_results"] == 0  # gauges sweep expired cache
     assert registry.status(entry.task_id) is None  # expired == never existed
-    _, how = registry.start("k1", _work)  # and the key is claimable again
-    assert how == "created"
+
+
+async def test_registry_start_sweeps_expired_entries() -> None:
+    """The sweep on ``start()`` (not ``status()``'s own drop path) evicts an
+    expired entry for a DIFFERENT key."""
+    registry = ChatTaskRegistry(result_ttl_s=60.0)
+
+    async def _work() -> dict[str, Any]:
+        return {}
+
+    old, _ = registry.start("k1", _work)
+    assert old.task is not None
+    await old.task
+    old.done_wall = time.time() - 61
+    registry.start("k2", _work)  # sweeps before claiming
+    assert old.task_id not in registry._tasks  # dropped by _sweep, not by status()
 
 
 async def test_registry_evicts_oldest_done_at_cap() -> None:
@@ -225,6 +243,8 @@ async def test_registry_evicts_oldest_done_at_cap() -> None:
 
 
 async def test_registry_aclose_cancels_running() -> None:
+    """The real path: the ask is mid-flight, so ``_guard``'s CancelledError
+    branch records the outcome."""
     registry = ChatTaskRegistry()
 
     async def _work() -> dict[str, Any]:
@@ -232,9 +252,29 @@ async def test_registry_aclose_cancels_running() -> None:
         return {}
 
     entry, _ = registry.start("k1", _work)
+    await asyncio.sleep(0)  # let _guard acquire the slot and await the ask
+    assert entry.started_at is not None
     await registry.aclose()
-    assert entry.done_at is not None
+    assert entry.done_at is not None and entry.done_wall is not None
     assert isinstance(entry.error, asyncio.CancelledError)
+
+
+async def test_registry_aclose_stamps_task_cancelled_before_first_step() -> None:
+    """Cancelled before its first scheduler step, a task never enters ``_guard``;
+    ``aclose`` stamps both clocks itself so the entry can still expire."""
+    registry = ChatTaskRegistry(result_ttl_s=60.0)
+
+    async def _work() -> dict[str, Any]:
+        await asyncio.sleep(3600)
+        return {}
+
+    entry, _ = registry.start("k1", _work)
+    await registry.aclose()  # no sleep(0): cancelled pre-start
+    assert entry.started_at is None
+    assert entry.done_at is not None and entry.done_wall is not None
+    assert isinstance(entry.error, asyncio.CancelledError)
+    entry.done_wall = time.time() - 61
+    assert registry.status(entry.task_id) is None  # expirable
 
 
 def test_compute_chat_task_key_semantics() -> None:
@@ -293,12 +333,15 @@ async def test_chat_start_then_status_full_cycle(server_factory, mock_client) ->
     )
 
 
-async def test_chat_start_deduplicates_and_serves_cache(server_factory, mock_client) -> None:
+async def test_chat_start_dedupes_in_flight_but_reasks_after_completion(
+    server_factory, mock_client
+) -> None:
     gate = asyncio.Event()
+    answers = iter(["FIRST answer", "SECOND answer"])
 
     async def _slow_ask(*args: Any, **kwargs: Any) -> FakeAskResult:
         await gate.wait()
-        return FakeAskResult(answer="cached", conversation_id=CONV_ID)
+        return FakeAskResult(answer=next(answers), conversation_id=CONV_ID)
 
     mock_client.chat.ask = AsyncMock(side_effect=_slow_ask)
     async with Client(server_factory()) as session:
@@ -308,7 +351,7 @@ async def test_chat_start_deduplicates_and_serves_cache(server_factory, mock_cli
         dup = (
             await session.call_tool("chat_start", {"notebook": NB_ID, "question": "same q"})
         ).structured_content
-        assert dup["status"] == "already_running"
+        assert dup["status"] == "already_running"  # in-flight dedupe
         assert dup["task_id"] == first["task_id"]
 
         gate.set()
@@ -320,15 +363,75 @@ async def test_chat_start_deduplicates_and_serves_cache(server_factory, mock_cli
                 break
             await asyncio.sleep(0.01)
         assert done["status"] == "completed"
+        assert done["answer"] == "FIRST answer"
 
-        # A repeat of the SAME question now completes instantly from the cache —
-        # and no second generation ever ran.
-        cached = (
+        # Asking the SAME question again after completion re-asks: a NEW task,
+        # a fresh generation, the second answer — never the cached first one.
+        again = (
             await session.call_tool("chat_start", {"notebook": NB_ID, "question": "same q"})
         ).structured_content
-        assert cached["status"] == "completed"
-        assert cached["answer"] == "cached"
-    assert mock_client.chat.ask.await_count == 1
+        assert again["status"] == "started"
+        assert again["task_id"] != first["task_id"]
+        for _ in range(50):
+            done2 = (
+                await session.call_tool("chat_status", {"task_id": again["task_id"]})
+            ).structured_content
+            if done2["status"] != "pending":
+                break
+            await asyncio.sleep(0.01)
+        assert done2["answer"] == "SECOND answer"
+        # The first payload is still pollable by its own task_id.
+        old = (
+            await session.call_tool("chat_status", {"task_id": first["task_id"]})
+        ).structured_content
+        assert old["answer"] == "FIRST answer"
+    assert mock_client.chat.ask.await_count == 2
+
+
+async def test_chat_start_with_source_ids_scopes_and_echoes(server_factory, mock_client) -> None:
+    src_a = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    src_b = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    mock_client.chat.ask = AsyncMock(
+        return_value=FakeAskResult(answer="scoped", conversation_id=CONV_ID)
+    )
+    async with Client(server_factory()) as session:
+        started = (
+            await session.call_tool(
+                "chat_start",
+                {"notebook": NB_ID, "question": "scoped q", "source_ids": [src_a, src_b]},
+            )
+        ).structured_content
+        for _ in range(50):
+            done = (
+                await session.call_tool("chat_status", {"task_id": started["task_id"]})
+            ).structured_content
+            if done["status"] != "pending":
+                break
+            await asyncio.sleep(0.01)
+        assert done["status"] == "completed"
+        assert done["source_ids"] == [src_a, src_b]  # resolved scope echoed (#1808)
+    assert mock_client.chat.ask.await_args.kwargs["source_ids"] == [src_a, src_b]
+
+
+async def test_chat_start_capacity_projects_as_retriable(mcp_call, monkeypatch) -> None:
+    """The registry fuse must surface as a RETRIABLE category (the call succeeds
+    unchanged once a slot frees), never as VALIDATION, which agents stop on."""
+    from notebooklm.mcp import _chattasks
+
+    def _full(self, key, coro_factory):  # noqa: ANN001 - test double
+        raise ChatTaskCapacityError("all 256 task slots hold unfinished asks")
+
+    monkeypatch.setattr(_chattasks.ChatTaskRegistry, "start", _full)
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call("chat_start", {"notebook": NB_ID, "question": "q"})
+    text = str(excinfo.value)
+    assert "RATE_LIMITED" in text
+    assert "VALIDATION" not in text
+
+
+async def test_chat_status_rejects_oversized_batch(mcp_call) -> None:
+    with pytest.raises(ToolError, match="at most 64"):
+        await mcp_call("chat_status", {"task_id": [f"id{i}" for i in range(65)]})
 
 
 async def test_chat_start_failure_surfaces_via_status(server_factory, mock_client) -> None:

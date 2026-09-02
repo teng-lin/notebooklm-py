@@ -42,7 +42,7 @@ from ..._app.chat import ChatModeChoice, ResponseLengthChoice
 from ..._app.notebooks import SUGGEST_SURFACE_MAP, SuggestSurface
 from ..._app.serialize import to_jsonable
 from ..._app.views import ask_result_view
-from ...exceptions import ValidationError
+from ...exceptions import RateLimitError, ValidationError
 from .._chattasks import ChatTaskCapacityError, compute_chat_task_key
 from .._coerce import coerce_list
 from .._confirm import READ_ONLY
@@ -55,6 +55,11 @@ from .._resolve import resolve_notebook, resolve_sources
 #: ``passage_id`` / ``score`` — useful for deep citation tooling but pure context
 #: bloat for a typical agent, so they are dropped unless ``references="full"``.
 _LITE_REFERENCE_FIELDS = ("source_id", "citation_number", "cited_text")
+
+#: Ceiling on ids per ``chat_status`` call. The registry retains at most 256
+#: entries, so a legitimate batch is small; the cap keeps a hostile or runaway
+#: caller from turning one poll into unbounded per-id work.
+_MAX_STATUS_BATCH = 64
 
 
 def _entry_status_payload(entry: Any) -> dict[str, Any]:
@@ -73,10 +78,10 @@ def _entry_status_payload(entry: Any) -> dict[str, Any]:
             "state": "queued" if waiting else "generating",
             "waited_s": round(time.monotonic() - entry.created_at, 1),
             "hint": (
-                "waiting for a generation slot — re-invoke chat_status in ~15-30s"
+                "waiting for a generation slot — re-invoke chat_status in ~20-30s"
                 if waiting
                 else "the answer is still generating — re-invoke chat_status "
-                "with the same task_id in ~15-30s"
+                "with the same task_id in ~20-30s"
             ),
         }
     timings = {
@@ -312,12 +317,13 @@ def register(mcp: Any) -> None:
         * ``{"status": "started", "task_id": ...}`` — **call ``chat_status``
           with this ``task_id`` in ~20–30s**; re-invoke while ``pending``.
         * ``{"status": "already_running", "task_id": ...}`` — an identical ask
-          is already in flight; poll that ``task_id`` (no double generation).
-        * ``{"status": "completed", "answer": ..., ...}`` — an identical ask
-          finished recently; the cached answer, instantly.
+          is still in flight; poll that ``task_id`` (no double generation).
 
-        Results expire ~30 minutes after completion (``chat_status`` then
-        reports ``unknown``; start again).
+        A finished ask is never replayed: starting the same question again
+        re-asks and appends a new conversation turn, exactly like ``chat_ask``
+        (so an answer can't go stale after ``source_add`` / ``chat_configure``).
+        A finished payload stays pollable by its ``task_id`` for ~30 minutes,
+        then ``chat_status`` reports ``unknown``.
         """
         client = get_client(ctx)
         with mcp_errors():
@@ -353,11 +359,11 @@ def register(mcp: Any) -> None:
             try:
                 entry, how = get_chat_tasks(ctx).start(key, _run_ask)
             except ChatTaskCapacityError as exc:
-                raise ValidationError(str(exc)) from exc
-            if how == "completed":
-                # The cache hit reuses the status projection so it carries the
-                # same timings a chat_status poll would.
-                return _entry_status_payload(entry)
+                # Nothing about the arguments is wrong and the same call succeeds
+                # once a slot frees — so it must project as a RETRIABLE category
+                # (RATE_LIMITED: "back off and retry"), not VALIDATION, which the
+                # guide tells agents to stop on.
+                raise RateLimitError(str(exc)) from exc
             return {
                 "status": "started" if how == "created" else "already_running",
                 "task_id": entry.task_id,
@@ -387,13 +393,19 @@ def register(mcp: Any) -> None:
           again.
 
         A single string id returns that task's status dict; a list (even of
-        one) returns ``{"tasks": [...]}`` in input order.
+        one) returns ``{"tasks": [...]}`` in input order. At most 64 ids per
+        call.
         """
         with mcp_errors():
             registry = get_chat_tasks(ctx)
             ids = coerce_list(task_id)
             if not ids:
                 raise ValidationError("chat_status needs at least one task_id.")
+            if len(ids) > _MAX_STATUS_BATCH:
+                raise ValidationError(
+                    f"chat_status accepts at most {_MAX_STATUS_BATCH} task_ids per call "
+                    f"(got {len(ids)}); poll in smaller batches."
+                )
 
             def _one(tid: str) -> dict[str, Any]:
                 entry = registry.status(tid)

@@ -25,12 +25,16 @@ lock. The registry is bounded two ways — a hard entry cap with oldest-done-fir
 eviction, and a completion TTL — so a long-lived server cannot leak memory. It
 dies with the process, like the lifespan client it rides on.
 
-Idempotency: entries are keyed by a stable hash of the ask's semantic inputs
-(:func:`compute_chat_task_key`). A retry of the same question attaches to the
-in-flight task (no double generation) or returns the cached completed payload
-instantly — which also converts a transport's dropped *response* (the host
-discards results that arrive after its watchdog fired) into a cheap successful
-retry.
+In-flight dedupe only: entries are keyed by a stable hash of the ask's semantic
+inputs (:func:`compute_chat_task_key`), so a retry of a question that is still
+generating attaches to the running task (no double generation, and a
+``chat_start`` response the transport dropped is recovered by re-issuing it).
+A FINISHED entry never satisfies a new ``chat_start``: ``client.chat.ask``
+appends a turn to a conversation, so asking twice must produce two turns —
+exactly like ``chat_ask`` — and a replayed answer would silently go stale the
+moment a source is added or ``chat_configure`` runs. Finished entries stay in
+the registry only so ``chat_status(task_id)`` can serve their payload for the
+completion TTL.
 
 This module imports NO ``click`` / ``rich`` / ``cli`` / ``fastmcp`` — pure
 stdlib, so the tool layer owns all MCP-facing shapes.
@@ -200,12 +204,15 @@ class ChatTaskRegistry(LoopBoundPrimitive):
 
     # -- internals ---------------------------------------------------------
 
-    def _drop(self, entry: ChatTaskEntry) -> None:
-        self._tasks.pop(entry.task_id, None)
-        # Only unlink the key if it still points at THIS entry (a failed entry's
-        # key may have been re-claimed by a fresh start).
+    def _unlink(self, entry: ChatTaskEntry) -> None:
+        # Only unlink the key if it still points at THIS entry (a finished
+        # entry's key may already have been re-claimed by a fresh start).
         if self._by_key.get(entry.key) == entry.task_id:
             del self._by_key[entry.key]
+
+    def _drop(self, entry: ChatTaskEntry) -> None:
+        self._tasks.pop(entry.task_id, None)
+        self._unlink(entry)
 
     def _expired(self, entry: ChatTaskEntry, now_wall: float) -> bool:
         return entry.done_wall is not None and (now_wall - entry.done_wall) > self._result_ttl_s
@@ -255,11 +262,17 @@ class ChatTaskRegistry(LoopBoundPrimitive):
         except asyncio.CancelledError:
             entry.error = asyncio.CancelledError("chat task cancelled at server shutdown")
             raise
-        except BaseException as exc:  # noqa: BLE001 - terminal outcome capture, projected at read time
+        except Exception as exc:  # noqa: BLE001 - terminal outcome capture, projected at read time
             entry.error = exc
         finally:
+            if entry.result is None and entry.error is None:
+                # Only reachable while a non-Exception BaseException (SystemExit /
+                # KeyboardInterrupt) propagates — never report a bare "completed".
+                entry.error = RuntimeError("chat task ended without a result")
             entry.done_at = time.monotonic()
             entry.done_wall = time.time()
+            # A finished key is free again: the next chat_start for it re-asks.
+            self._unlink(entry)
 
     # -- API ---------------------------------------------------------------
 
@@ -267,19 +280,19 @@ class ChatTaskRegistry(LoopBoundPrimitive):
         self,
         key: str,
         coro_factory: Callable[[], Awaitable[dict[str, Any]]],
-    ) -> tuple[ChatTaskEntry, Literal["created", "running", "completed"]]:
+    ) -> tuple[ChatTaskEntry, Literal["created", "running"]]:
         """Claim ``key`` and return its entry plus how it was satisfied.
 
         * ``"running"`` — an identical ask is already in flight; attach to it
           (no double generation).
-        * ``"completed"`` — an identical ask finished successfully within the
-          TTL; the cached payload answers instantly.
         * ``"created"`` — a fresh server-owned task was accepted. It generates
           immediately if a concurrency slot is free, else queues (FIFO) and
           auto-starts as slots free up — callers submit whole batches and just
-          poll; the server owns the pacing. A previous FAILED entry for the key
-          is replaced (a retry after an error must re-ask, mirroring "failures
-          are not cached" idempotency semantics).
+          poll; the server owns the pacing. A FINISHED entry for the key —
+          result or error — never short-circuits: asking again re-asks (two
+          asks are two conversation turns, as with ``chat_ask``; a replayed
+          answer would be stale after ``source_add`` / ``chat_configure``). The
+          finished entry stays pollable by ``task_id`` for the TTL.
 
         No ``await`` between the existence check and the spawn — on the single
         server loop the claim is atomic, so concurrent duplicate calls cannot
@@ -297,9 +310,7 @@ class ChatTaskRegistry(LoopBoundPrimitive):
             if entry is not None:
                 if entry.done_at is None:
                     return entry, "running"
-                if entry.result is not None:
-                    return entry, "completed"
-                # Failed within TTL: fall through and replace with a fresh ask.
+                # Finished (result or error): fall through and spawn a fresh ask.
         if len(self._tasks) >= self._max_tasks:
             # Evict oldest DONE entries to make room; unfinished tasks are never
             # evicted (their work is paid for).
@@ -353,11 +364,14 @@ class ChatTaskRegistry(LoopBoundPrimitive):
         if running:
             await asyncio.gather(*(e.task for e in running if e.task), return_exceptions=True)
         now = time.monotonic()
+        now_wall = time.time()
         for entry in running:
             if entry.done_at is None:
                 # A task cancelled before its first scheduler step never entered
                 # ``_guard`` (the coroutine body never ran), so nothing stamped
-                # the entry — stamp it here so no entry outlives ``aclose`` in a
-                # perpetually-"running" state.
+                # the entry — stamp it here (both clocks, so it can expire) so no
+                # entry outlives ``aclose`` in a perpetually-"running" state.
                 entry.error = asyncio.CancelledError("chat task cancelled at server shutdown")
                 entry.done_at = now
+                entry.done_wall = now_wall
+                self._unlink(entry)

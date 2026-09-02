@@ -31,8 +31,12 @@ pytest.importorskip("fastmcp")
 #: to ~36.0k). Move these DOWN as the surface gets leaner; a rise means
 #: description/param bloat that must be justified, not rubber-stamped.
 SCHEMA_CHAR_BUDGET = (
-    42_100  # total serialized inputSchema + description chars (current 42_082; +18 slack)
+    42_230  # total serialized inputSchema + description chars (current 42_207; +23 slack)
 )
+# Review of #2286 removed completed-result replay from chat_start; its docstring
+# now states the re-ask semantics (a finished ask is never replayed — asking again
+# appends a new turn, like chat_ask) and chat_status caps a batch at 64 ids.
+# 42_082 -> 42_207 (+125 gross, after dropping the old "completed" bullet).
 # The batch/queue follow-up grew chat_status (list-of-ids polling, the
 # queued/generating state vocabulary, the queued_s/generation_s timings) and
 # server_info (the chat_tasks load gauges) by a further +443 — again protocol

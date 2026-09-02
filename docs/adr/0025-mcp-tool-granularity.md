@@ -110,7 +110,7 @@ verbatim — only the two MCP tool *registrations* were removed.
 
 ## Update (2026-07, #1896): fold `studio_get_prompt` into `studio_list`
 
-> This update brings the current surface to **33**.
+> This update brings the current surface to **33** (later **35** — see the 2026-09 update below).
 
 `studio_get_prompt(notebook, artifact)` was a discrete read-only tool returning one
 artifact's generation prompt. But the typed `Artifact` already carries
@@ -139,3 +139,33 @@ is exact-shared by both a note and an artifact resolves ambiguously (pass `kind`
 and artifact-*title-prefix* lookups are not supported (use the id or full title). This is a
 deliberate consequence of the one-resolver Studio surface — and moot for the common case,
 since the summary listing already exposes every artifact's prompt without any ref.
+
+## Update (2026-09, #2286): `chat_start` / `chat_status` as two standalone verbs
+
+The detached-ask pair for slow chat generations (issue #2285) lands as **two new
+tools** rather than an overload of `chat_ask` — the first surface growth since this
+ADR's two fold-ins, and the one that most needs recording here because it runs
+against the "prefer overloading an existing tool" grain.
+
+The overload alternative was weighed: `chat_ask(..., detach=true)` returning a
+`task_id`, with the poll folded onto `chat_ask(task_id=…)`, lands around 9 params
+against `MAX_PARAMS_PER_TOOL = 22`. It was rejected for two reasons that the
+fold-ins above did not face:
+
+1. **`chat_ask`'s wire contract is `{answer, turn_number, references, …}`** and is
+   pinned by every existing caller; a `detach` flag makes the same tool return two
+   unrelated shapes depending on one boolean, which is exactly the "different
+   success shape per tool" cost the mutation-envelope rule exists to prevent.
+2. **The poll is a different operation with a different lifecycle vocabulary**
+   (`pending` / `completed` / `failed` / `unknown`, matching `await_upload`), and it
+   is READ_ONLY where `chat_ask` is not — folding it onto `chat_ask` would drop the
+   `readOnlyHint` on the poll or wrongly extend it to the ask.
+
+So chat follows the existing precedent for long-running work — `studio_generate` /
+`studio_status` and `research_start` / `research_status` are also standalone
+starter + poll pairs — rather than the fold-in precedent, which applied to
+variants of *one* operation.
+
+Net **33 → 35 tools**; `SCHEMA_CHAR_BUDGET` ratcheted 39,400 → 42,100 (+2,262 for the
+pair's re-invoke protocol text, then +443 for batch polling / queue states /
+timings — both justified in `test_tool_eval.py`).

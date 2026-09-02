@@ -17,10 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `chat_start` resolves the ask, spawns it as a server-owned task
   (`mcp/_chattasks.ChatTaskRegistry` — bounded, TTL-swept, ADR-0024-shaped
   in-process state) and returns a `task_id` immediately; `chat_status` polls it
-  and returns the finished `chat_ask`-shaped payload inline. Identical asks
-  dedupe: a repeat attaches to the in-flight task or answers instantly from the
-  ~30-minute completion cache, so a host that dropped the response recovers it
-  with one cheap retry. Same re-invoke contract as `await_upload` and the
+  and returns the finished `chat_ask`-shaped payload inline. An identical ask
+  still in flight is attached to (no double generation, and a dropped
+  `chat_start` response is recovered by re-issuing it); a finished ask is never
+  replayed — asking again appends a new turn, like `chat_ask`, so an answer
+  cannot go stale after `source_add` / `chat_configure`. Finished payloads stay
+  pollable by `task_id` for ~30 minutes. Same re-invoke contract as `await_upload` and the
   `studio_generate`/`studio_status`, `research_start`/`research_status` pairs —
   chat was the last long-running surface without it.
   Batch-friendly by design: submissions past the generation-concurrency
