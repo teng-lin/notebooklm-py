@@ -146,21 +146,25 @@ def _dotted_name(node: ast.AST) -> str | None:
     return ".".join(reversed(parts))
 
 
-def _auth_import_bindings(node: ast.Import | ast.ImportFrom) -> dict[str, str]:
-    """Auth-module bindings created by one import statement."""
+def _auth_import_bindings(
+    node: ast.Import | ast.ImportFrom,
+    package_dotted: str = AUTH_DOTTED,
+) -> dict[str, str]:
+    """Inspected-package module bindings created by one import statement."""
     result: dict[str, str] = {}
+    package_parent, package_name = package_dotted.rsplit(".", 1)
     if isinstance(node, ast.ImportFrom):
         module = node.module or ""
-        if module == AUTH_DOTTED:
+        if module == package_dotted:
             for alias in node.names:
-                result[alias.asname or alias.name] = f"{AUTH_DOTTED}.{alias.name}"
-        elif module == AUTH_PACKAGE[0]:
+                result[alias.asname or alias.name] = f"{package_dotted}.{alias.name}"
+        elif module == package_parent:
             for alias in node.names:
-                if alias.name == AUTH_PACKAGE[1]:
-                    result[alias.asname or alias.name] = AUTH_DOTTED
+                if alias.name == package_name:
+                    result[alias.asname or alias.name] = package_dotted
     else:
         for alias in node.names:
-            if not alias.name.startswith(f"{AUTH_DOTTED}."):
+            if not alias.name.startswith(f"{package_dotted}."):
                 continue
             if alias.asname:
                 result[alias.asname] = alias.name
@@ -287,8 +291,9 @@ class _AliasScope:
 class _AliasResolver:
     """Build per-node alias states with Python's sequential scope rules."""
 
-    def __init__(self, tree: ast.Module) -> None:
+    def __init__(self, tree: ast.Module, package_dotted: str = AUTH_DOTTED) -> None:
         self.context: dict[int, dict[str, str]] = {}
+        self.package_dotted = package_dotted
         self.scope = _AliasScope("module", None, set(), set(), set(), {})
         self._visit(tree)
 
@@ -465,7 +470,7 @@ class _AliasResolver:
             self.scope = parent
             return
         if isinstance(node, ast.Import | ast.ImportFrom):
-            bindings = _auth_import_bindings(node)
+            bindings = _auth_import_bindings(node, self.package_dotted)
             for alias in node.names:
                 name = alias.asname or (
                     alias.name if isinstance(node, ast.ImportFrom) else alias.name.split(".")[0]
@@ -583,9 +588,12 @@ class _AliasResolver:
             self._visit(child)
 
 
-def _alias_context(tree: ast.Module) -> dict[int, dict[str, str]]:
+def _alias_context(
+    tree: ast.Module,
+    package_dotted: str = AUTH_DOTTED,
+) -> dict[int, dict[str, str]]:
     """Effective auth aliases at every node under sequential lexical rules."""
-    return _AliasResolver(tree).context
+    return _AliasResolver(tree, package_dotted).context
 
 
 def load_source_aliases(auth_dir: Path) -> dict[str, dict[str, str]]:
@@ -659,6 +667,7 @@ def _resolve_target(
     node: ast.AST,
     aliases: dict[str, str],
     source_aliases: dict[str, dict[str, str]] | None = None,
+    package_dotted: str = AUTH_DOTTED,
 ) -> str | None:
     """Resolve a patch target expression to the ``_auth`` submodule it patches.
 
@@ -676,8 +685,8 @@ def _resolve_target(
         return None
 
     # Fully-qualified: notebooklm._auth.<module>[.<attr>]
-    if dotted.startswith(f"{AUTH_DOTTED}."):
-        tail = dotted[len(AUTH_DOTTED) + 1 :].split(".")
+    if dotted.startswith(f"{package_dotted}."):
+        tail = dotted[len(package_dotted) + 1 :].split(".")
         if len(tail) == 1:
             return tail[0]
         if len(tail) == 2:
@@ -689,7 +698,7 @@ def _resolve_target(
     if target is None:
         return None
 
-    if target == AUTH_DOTTED:
+    if target == package_dotted:
         # `_auth.refresh` off the package binding.
         parts = rest.split(".") if rest else []
         if len(parts) == 1:
@@ -698,8 +707,8 @@ def _resolve_target(
             return source_aliases.get(parts[0], {}).get(parts[1])
         return None
 
-    if target.startswith(f"{AUTH_DOTTED}."):
-        module = target[len(AUTH_DOTTED) + 1 :].split(".")[0]
+    if target.startswith(f"{package_dotted}."):
+        module = target[len(package_dotted) + 1 :].split(".")[0]
         if not rest:
             return module
         parts = rest.split(".")
@@ -740,8 +749,13 @@ def _attribute_assignment_targets(
     return [target for target in targets if isinstance(target, ast.Attribute)]
 
 
-def collect_sites(tests_dir: Path, auth_dir: Path | None = None) -> list[PatchSite]:
-    """Walk ``tests_dir`` and return every resolved ``_auth`` patch site."""
+def collect_sites(
+    tests_dir: Path,
+    auth_dir: Path | None = None,
+    *,
+    package_dotted: str = AUTH_DOTTED,
+) -> list[PatchSite]:
+    """Walk ``tests_dir`` and return patch sites into one private package."""
     if auth_dir is None:
         auth_dir = REPO_ROOT / "src" / "notebooklm" / "_auth"
     source_aliases = load_source_aliases(auth_dir)
@@ -763,7 +777,7 @@ def collect_sites(tests_dir: Path, auth_dir: Path | None = None) -> list[PatchSi
         ]
         if not candidates:
             continue
-        alias_context = _alias_context(tree)
+        alias_context = _alias_context(tree, package_dotted)
         try:
             rel = path.relative_to(REPO_ROOT).as_posix()
         except ValueError:
@@ -778,7 +792,12 @@ def collect_sites(tests_dir: Path, auth_dir: Path | None = None) -> list[PatchSi
             # into assignments while making the coupling worse.
             if isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
                 for target_node in _attribute_assignment_targets(node):
-                    module = _resolve_target(target_node.value, aliases, source_aliases)
+                    module = _resolve_target(
+                        target_node.value,
+                        aliases,
+                        source_aliases,
+                        package_dotted,
+                    )
                     if module is None:
                         continue
                     # Reject a local that merely shadows a module alias (see
@@ -818,7 +837,7 @@ def collect_sites(tests_dir: Path, auth_dir: Path | None = None) -> list[PatchSi
                 continue
             if not (isinstance(attr_node, ast.Constant) and isinstance(attr_node.value, str)):
                 continue
-            module = _resolve_target(target, aliases, source_aliases)
+            module = _resolve_target(target, aliases, source_aliases, package_dotted)
             if module is None:
                 continue
             sites.append(
@@ -898,6 +917,11 @@ def main(argv: list[str] | None = None) -> int:
         help="the _auth package to resolve aliases against (default: <repo>/src/notebooklm/_auth)",
     )
     parser.add_argument(
+        "--package-prefix",
+        default=AUTH_DOTTED,
+        help="dotted private package represented by --auth-dir",
+    )
+    parser.add_argument(
         "--module",
         action="append",
         default=None,
@@ -919,7 +943,11 @@ def main(argv: list[str] | None = None) -> int:
     if not args.auth_dir.is_dir():
         parser.error(f"not a directory: {args.auth_dir}")
 
-    sites = collect_sites(args.tests_dir, args.auth_dir)
+    sites = collect_sites(
+        args.tests_dir,
+        args.auth_dir,
+        package_dotted=args.package_prefix,
+    )
     if args.module:
         wanted = set(args.module)
         sites = [site for site in sites if site.module in wanted]

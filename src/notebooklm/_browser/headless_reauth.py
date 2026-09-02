@@ -29,7 +29,7 @@ byte-identical to the pre-L3 terminal "Run 'notebooklm login'" path.
 ``storage_state.json``. L3 must NOT become the auth story for a remote / hosted
 MCP server — it is for a local, unattended agent/worker on the operator's own
 machine. It reuses the existing cookie-domain allowlist
-(:func:`notebooklm._auth.browser_capture.filter_storage_state_cookies_by_domain_policy`)
+(:func:`notebooklm._browser.browser_capture.filter_storage_state_cookies_by_domain_policy`)
 on the captured ``storage_state`` and widens neither credential storage nor
 logging (never logs a captured cookie value — only the typed outcome).
 
@@ -50,7 +50,7 @@ dead tokens:
 profile, L3 can attach to an operator-pointed already-running Chrome over the
 Chrome DevTools Protocol (``cdp_url`` /
 :data:`NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL_ENV`), via
-:func:`notebooklm._auth.browser_capture.run_cdp_capture`. This mitigates the
+:func:`notebooklm._browser.browser_capture.run_cdp_capture`. This mitigates the
 dedicated-profile-can-stale weakness — the operator's daily Chrome is
 continuously Google-refreshed. It is EXPLICIT / opt-in (an endpoint the operator
 provides, never auto-discovered), reuses the SAME landing classification and the
@@ -72,6 +72,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
 
+from .._auth.recovery_rungs import HeadlessRungOutcome, HeadlessRungStatus
 from ..exceptions import HeadlessLoginRequiredError
 from ..paths import get_browser_profile_dir
 from .browser_capture import (
@@ -81,7 +82,6 @@ from .browser_capture import (
     run_browser_capture,
     run_cdp_capture,
 )
-from .recovery_rungs import HeadlessRungOutcome, HeadlessRungStatus
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
@@ -641,7 +641,7 @@ def attempt_headless_reauth(
        * **CDP attach** (when ``cdp_url`` resolves, explicit arg or
          :data:`NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL_ENV`): attach to an
          operator-pointed already-running Chrome
-         (:func:`notebooklm._auth.browser_capture.run_cdp_capture`). The
+         (:func:`notebooklm._browser.browser_capture.run_cdp_capture`). The
          dedicated profile is NOT required on this path — the live browser is
          the credential source. This is the freshness mitigation for our
          dedicated-profile-can-stale weakness.
@@ -829,7 +829,7 @@ def _drive_capture(
     """Run one headless capture (profile-launch or CDP-attach) → typed outcome.
 
     When ``cdp_url`` is set, attach to the operator's running Chrome via
-    :func:`notebooklm._auth.browser_capture.run_cdp_capture`; otherwise launch
+    :func:`notebooklm._browser.browser_capture.run_cdp_capture`; otherwise launch
     the dedicated persistent profile via ``run_browser_capture``. Both arms map
     a clean run to SUCCESS, an off-host landing
     (:class:`HeadlessLoginRequiredError`) to FAILED, and any other capture

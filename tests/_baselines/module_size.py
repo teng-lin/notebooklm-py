@@ -28,7 +28,7 @@ OVER_BUDGET_EXEMPTIONS: dict[str, str] = {
     ),
 }
 SHRINK_LOCKED_MODULES: tuple[str, ...] = (
-    "_auth/browser_capture.py",
+    "_browser/browser_capture.py",
     "_auth/psidts_recovery.py",
     "_auth/refresh.py",
     "_auth/storage.py",

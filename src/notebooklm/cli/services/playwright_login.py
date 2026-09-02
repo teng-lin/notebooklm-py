@@ -5,7 +5,7 @@ Owns the interactive ``notebooklm login`` Playwright fast path (the rookie-cooki
 Click handler stays a thin orchestrator over this service.
 
 This module is the **CLI adapter** over the transport-neutral browser-capture
-core in :mod:`notebooklm._auth.browser_capture` (ADR-0021): the neutral
+core in :mod:`notebooklm._browser.browser_capture` (ADR-0021): the neutral
 launch -> navigate -> capture -> filter -> persist sequence lives in the
 ``_auth`` core, reachable by the client runtime and by the headless re-auth
 layer; the interactive / presentation concerns — the chromium install
@@ -47,7 +47,7 @@ from ..._app.profile import (
     ProfileRepairRequest,
     repair_playwright_account,
 )
-from ..._auth.browser_capture import (
+from ..._browser.browser_capture import (
     BROWSER_CLOSED_HELP,
     CHANNEL_BROWSERS,
     GOOGLE_ACCOUNTS_URL,
@@ -87,7 +87,7 @@ class LoginIO(Protocol):
     incl. ``markup=False``); ``fail`` forwards to ``exit_with_code`` (raises
     ``SystemExit``); ``run_async`` forwards to ``run_async``. Shape-compatible
     with the neutral core's
-    :class:`notebooklm._auth.browser_capture.BrowserCaptureIO`, so the same
+    :class:`notebooklm._browser.browser_capture.BrowserCaptureIO`, so the same
     concrete sink drives both layers.
     """
 
@@ -470,7 +470,7 @@ def run_playwright_login(plan: PlaywrightLoginPlan, io: LoginIO) -> None:
     """Drive the interactive Playwright Google login and persist storage state.
 
     The CLI adapter over
-    :func:`notebooklm._auth.browser_capture.run_browser_capture`: it runs the
+    :func:`notebooklm._browser.browser_capture.run_browser_capture`: it runs the
     chromium install pre-flight for the bundled browser, prints the launch
     banner, delegates the launch -> navigate -> capture -> filter ->
     atomic-persist sequence to the neutral core (``interactive=True,

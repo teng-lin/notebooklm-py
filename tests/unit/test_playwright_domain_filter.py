@@ -259,7 +259,7 @@ def test_non_google_optional_domains_rejected_by_default(domain: str) -> None:
 # (the flat loaders rank by ``_auth_domain_priority``).
 # ---------------------------------------------------------------------------
 
-_FILTER_LOGGER = "notebooklm._auth.browser_capture"
+_FILTER_LOGGER = "notebooklm._browser.browser_capture"
 
 
 def test_non_dict_cookie_entry_skipped(caplog: pytest.LogCaptureFixture) -> None:

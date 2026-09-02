@@ -34,7 +34,7 @@ lived in comments, not enforcement, and were violated in practice:
 
 - Writes happened from many call sites — `_auth/storage.py` (cookie CAS merge),
   `_auth/account.py` (in-band account metadata), `_auth/master_token.py`
-  (L4 re-mint persist + `master_token.json`), `_auth/browser_capture.py`, and
+  (L4 re-mint persist + `master_token.json`), `_browser/browser_capture.py`, and
   several `cli/services/login/` writers — each with its own locking (or none).
 - The storage-sentinel lock was spelled two ways: cookie saves used the dotted
   `.storage_state.json.lock` sibling via the project-internal `_file_lock`

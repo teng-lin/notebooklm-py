@@ -69,7 +69,7 @@ _NATIVE_REPLACE_CALLER_TESTS: dict[NativeReplaceCaller, tuple[str, ...]] = {
     ("_app/login_cookie.py", "import_cookie_payload", "replace_profile_from_login"): (
         "tests/unit/app/test_app_login_cookie.py::test_import_preserves_callback_order_identity_and_backup",
     ),
-    ("_auth/browser_capture.py", "replace_captured_profile", "replace_from_remint"): (
+    ("_browser/browser_capture.py", "replace_captured_profile", "replace_from_remint"): (
         "tests/unit/test_browser_capture_headless_arm.py::test_headless_authenticated_landing_persists_storage",
         "tests/unit/test_browser_capture_cdp_arm.py::test_cdp_authenticated_landing_persists_and_filters",
     ),
@@ -518,7 +518,7 @@ def test_production_importers_are_exactly_approved_store_owners_and_loader() -> 
         "account_email.py",
         "account_repair.py",
         "auth.py",
-        "browser_capture.py",
+        "_browser/browser_capture.py",
         "master_token.py",
         "master_token_bootstrap.py",
         "profile_migration.py",
@@ -1580,8 +1580,8 @@ def test_direct_production_store_callers_are_exact_and_function_granular() -> No
             "_write_account_metadata_if_document_unchanged",
             "_update_account_if_document_unchanged",
         ),
-        ("browser_capture.py", "replace_captured_profile", "ProfileStore"),
-        ("browser_capture.py", "replace_captured_profile", "replace_from_remint"),
+        ("_browser/browser_capture.py", "replace_captured_profile", "ProfileStore"),
+        ("_browser/browser_capture.py", "replace_captured_profile", "replace_from_remint"),
         ("master_token.py", "_bootstrapper", "ProfileStore"),
         (
             "master_token_bootstrap.py",

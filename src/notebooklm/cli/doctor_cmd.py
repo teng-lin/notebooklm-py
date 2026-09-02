@@ -56,7 +56,7 @@ def _headless_reauth_check() -> dict[str, str]:
     """Map the L3 readiness probe to the standard ``{status, detail}`` check shape.
 
     The transport-neutral ``_app.doctor`` core must not import the private
-    ``_auth.headless_reauth`` runtime sibling (``_app`` boundary lint), so the
+    ``_browser.headless_reauth`` runtime sibling (``_app`` boundary lint), so the
     CLI adapter — which may — owns this credential-free, browser-free probe and
     hands the neutral core a ready-made check row.
 
@@ -77,7 +77,7 @@ def _headless_reauth_check() -> dict[str, str]:
     doctor paths so root ``--storage`` and ``--profile`` select the same browser
     directory as runtime re-auth.
     """
-    from .._auth.headless_reauth import headless_reauth_readiness
+    from .._browser.headless_reauth import headless_reauth_readiness
 
     try:
         auth = AuthSource.from_click_context(click.get_current_context(silent=True))

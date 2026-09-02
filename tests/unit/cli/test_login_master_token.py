@@ -21,7 +21,7 @@ from notebooklm._app.master_token import (
     MasterTokenLoginSuccess,
     MasterTokenRemintSuccess,
 )
-from notebooklm._auth import browser_capture
+from notebooklm._browser import browser_capture
 from notebooklm.notebooklm_cli import cli
 from notebooklm.paths import get_storage_path
 

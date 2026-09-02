@@ -113,7 +113,7 @@ def _default_headless_rung(
     allow_headless: bool,
 ) -> _auth_recovery_rungs.HeadlessRungOutcome:
     """Load the optional browser implementation only when L3 actually fires."""
-    from ._auth.headless_reauth import headless_rung
+    from ._browser.headless_reauth import headless_rung
 
     return headless_rung(storage_path=storage_path, allow_headless=allow_headless)
 

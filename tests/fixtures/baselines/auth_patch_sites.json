@@ -31,24 +31,6 @@
       "module": "account_email"
     },
     {
-      "attribute": "get_base_host",
-      "count": 1,
-      "idiom": "patch.object",
-      "module": "browser_capture"
-    },
-    {
-      "attribute": "replace_captured_profile",
-      "count": 1,
-      "idiom": "patch.object",
-      "module": "browser_capture"
-    },
-    {
-      "attribute": "time",
-      "count": 1,
-      "idiom": "patch.object",
-      "module": "browser_capture"
-    },
-    {
       "attribute": "MINIMUM_REQUIRED_COOKIES",
       "count": 3,
       "idiom": "monkeypatch.setattr",
@@ -125,42 +107,6 @@
       "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "credential_io"
-    },
-    {
-      "attribute": "_get_drive_record",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth"
-    },
-    {
-      "attribute": "_playwright_installed",
-      "count": 16,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth"
-    },
-    {
-      "attribute": "attempt_headless_reauth",
-      "count": 10,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth"
-    },
-    {
-      "attribute": "get_browser_profile_dir",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth"
-    },
-    {
-      "attribute": "run_browser_capture",
-      "count": 17,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth"
-    },
-    {
-      "attribute": "run_cdp_capture",
-      "count": 7,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth"
     },
     {
       "attribute": "_KEEPALIVE_RATE_LIMIT_SECONDS",
@@ -501,9 +447,9 @@
   ],
   "summary": {
     "TOTAL": {
-      "private": 161,
-      "public": 137,
-      "total": 298
+      "private": 144,
+      "public": 99,
+      "total": 243
     },
     "account": {
       "private": 2,
@@ -514,11 +460,6 @@
       "private": 2,
       "public": 0,
       "total": 2
-    },
-    "browser_capture": {
-      "private": 0,
-      "public": 3,
-      "total": 3
     },
     "cookie_policy": {
       "private": 6,
@@ -539,11 +480,6 @@
       "private": 3,
       "public": 0,
       "total": 3
-    },
-    "headless_reauth": {
-      "private": 17,
-      "public": 35,
-      "total": 52
     },
     "keepalive": {
       "private": 8,

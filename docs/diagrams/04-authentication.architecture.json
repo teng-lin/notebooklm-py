@@ -86,7 +86,7 @@
       "id": "headless",
       "type": "backend",
       "label": "Headless Re-auth",
-      "sublabel": "_auth/headless_reauth",
+      "sublabel": "_browser/headless_reauth",
       "tag": "opt-in",
       "pos": [
         544,

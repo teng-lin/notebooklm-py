@@ -72,51 +72,6 @@
     },
     {
       "scope": "module",
-      "source": "browser_capture",
-      "target": "browser_launch_errors"
-    },
-    {
-      "scope": "module",
-      "source": "browser_capture",
-      "target": "cookie_policy"
-    },
-    {
-      "scope": "module",
-      "source": "browser_capture",
-      "target": "cookies"
-    },
-    {
-      "scope": "module",
-      "source": "browser_capture",
-      "target": "navigation_errors"
-    },
-    {
-      "scope": "module",
-      "source": "browser_capture",
-      "target": "profile_account"
-    },
-    {
-      "scope": "module",
-      "source": "browser_capture",
-      "target": "profile_document"
-    },
-    {
-      "scope": "module",
-      "source": "browser_capture",
-      "target": "profile_store"
-    },
-    {
-      "scope": "module",
-      "source": "browser_capture",
-      "target": "psidts_recovery"
-    },
-    {
-      "scope": "module",
-      "source": "browser_capture",
-      "target": "storage"
-    },
-    {
-      "scope": "module",
       "source": "cookie_filter",
       "target": "cookie_policy"
     },
@@ -179,16 +134,6 @@
       "scope": "function",
       "source": "cookies",
       "target": "psidts_recovery"
-    },
-    {
-      "scope": "module",
-      "source": "headless_reauth",
-      "target": "browser_capture"
-    },
-    {
-      "scope": "module",
-      "source": "headless_reauth",
-      "target": "recovery_rungs"
     },
     {
       "scope": "module",
@@ -718,16 +663,6 @@
       "path": "src/notebooklm/_auth/account_types.py"
     },
     {
-      "lines": 1445,
-      "name": "browser_capture",
-      "path": "src/notebooklm/_auth/browser_capture.py"
-    },
-    {
-      "lines": 151,
-      "name": "browser_launch_errors",
-      "path": "src/notebooklm/_auth/browser_launch_errors.py"
-    },
-    {
       "lines": 96,
       "name": "cookie_filter",
       "path": "src/notebooklm/_auth/cookie_filter.py"
@@ -768,11 +703,6 @@
       "path": "src/notebooklm/_auth/extraction.py"
     },
     {
-      "lines": 903,
-      "name": "headless_reauth",
-      "path": "src/notebooklm/_auth/headless_reauth.py"
-    },
-    {
       "lines": 438,
       "name": "keepalive",
       "path": "src/notebooklm/_auth/keepalive.py"
@@ -801,11 +731,6 @@
       "lines": 304,
       "name": "mint_service",
       "path": "src/notebooklm/_auth/mint_service.py"
-    },
-    {
-      "lines": 113,
-      "name": "navigation_errors",
-      "path": "src/notebooklm/_auth/navigation_errors.py"
     },
     {
       "lines": 239,
@@ -884,10 +809,10 @@
   },
   "summary": {
     "function_local_edges": 12,
-    "module_edges": 126,
-    "modules": 37,
-    "total_lines": 16527,
-    "unique_edges": 138
+    "module_edges": 115,
+    "modules": 33,
+    "total_lines": 13915,
+    "unique_edges": 127
   },
   "version": 1
 }

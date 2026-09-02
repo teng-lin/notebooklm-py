@@ -1,6 +1,6 @@
 """Unit tests for the layer-3 headless re-auth decision layer.
 
-Covers :mod:`notebooklm._auth.headless_reauth`:
+Covers :mod:`notebooklm._browser.headless_reauth`:
 
 * the opt-in × profile-present × failure-class decision matrix,
 * the three typed honest outcomes (UNAVAILABLE / FAILED / SUCCESS) and that
@@ -21,9 +21,9 @@ from typing import Any
 
 import pytest
 
-from notebooklm._auth import headless_reauth as hr
-from notebooklm._auth.browser_capture import _CaptureAbortKind, _HeadlessCaptureAbort
-from notebooklm._auth.headless_reauth import (
+from notebooklm._browser import headless_reauth as hr
+from notebooklm._browser.browser_capture import _CaptureAbortKind, _HeadlessCaptureAbort
+from notebooklm._browser.headless_reauth import (
     HeadlessReauthResult,
     HeadlessReauthStatus,
     attempt_headless_reauth,

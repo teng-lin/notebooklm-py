@@ -29,8 +29,8 @@ out-of-tree private importers; no replacement shims were added. The canonical re
 |---|---|
 | `_auth._browser_cookie_filter` | `_auth.cookie_filter` |
 | `_auth.browser_cookie_recovery` | `_auth.psidts_recovery` |
-| `_auth.browser_state_validation` | `_auth.browser_capture` |
-| `_auth.login_wait_trace` | `_auth.browser_capture` |
+| `_auth.browser_state_validation` | `_browser.browser_capture` |
+| `_auth.login_wait_trace` | `_browser.browser_capture` |
 | `_auth.storage_transaction` | `_auth.profile_store` |
 | `_auth.storage_writer` | `_auth.storage` |
 

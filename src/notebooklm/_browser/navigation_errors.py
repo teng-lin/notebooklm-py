@@ -1,4 +1,4 @@
-"""Classification of Playwright navigation failures.
+"""Classification of browser navigation failures.
 
 A cohesive pure classifier leaf, in the same spirit as
 ``browser_launch_errors.py``: no CLI, no I/O, no Playwright import. It answers

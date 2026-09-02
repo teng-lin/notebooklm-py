@@ -473,7 +473,7 @@ _SEMANTIC_HASHES = {
     "browser_accounts": "0b4278d9971e3522be70481aa98d0dde869455be703aa8f24e61840fb16e79ed",
     "chromium_accounts": "3f7241d07681f66823c212bb3b8292caa59b65a402d022537b134ca3e6995c92",
     "cookie_domains": "a09898adcc9d4e9cba6308fd4bd8a13d36ca9a17bc462834eb27f5854d1e65c3",
-    "cookie_jar": "7c90f535d9d380b6879a884133395ec996f484fb868d428990c8652e5e5ea4ca",
+    "cookie_jar": "f5d19993cbb714ab62be53d8696cfa427d2b94722187edf148fb2e9b3428a62e",
 }
 
 

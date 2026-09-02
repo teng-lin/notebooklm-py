@@ -51,7 +51,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 import pytest
 from rich.console import Console, ConsoleDimensions
 
-import notebooklm._auth.browser_capture as _bc
+import notebooklm._browser.browser_capture as _bc
 import notebooklm.auth as auth_module
 import notebooklm.cli.services.playwright_login as _pl
 import notebooklm.cli.session_cmd as session_cmd_module

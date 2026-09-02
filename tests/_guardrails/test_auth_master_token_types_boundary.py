@@ -711,6 +711,7 @@ def test_production_consumers_are_exactly_the_phase_11d_owners() -> None:
         ("_auth/mint_service.py", "from-import"),
         ("_auth/storage.py", "bare-call:MasterToken"),
         ("_auth/storage.py", "from-import"),
+        ("_browser/oauth_token.py", "from-import"),
     }
 
 

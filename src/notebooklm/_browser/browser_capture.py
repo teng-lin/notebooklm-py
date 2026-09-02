@@ -31,6 +31,31 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 from urllib.parse import urlparse
 
+# Collaborators of :func:`heal_captured_state` (absorbed from
+# ``browser_state_validation.py``, ADR-0033 PR 4.1): the sanitiser that shapes
+# captured rows for the rookiepy contract, and the shared PSIDTS recovery that
+# contract runs. These were already on this module's import path transitively,
+# via the leaf that used to hold the bridge.
+from .._auth import cookies as _auth_cookies
+from .._auth import psidts_recovery as _psidts_recovery
+
+# ``app_host_scope_note`` owns the both-personal-hosts cookie-scope caveat that
+# every "open the app in your browser" instruction needs (it is appended to the
+# binding-related hints in ``cookie_policy.missing_cookies_hint``). It is
+# re-exported here because ``browser_capture`` is the only ``_auth`` module the
+# CLI-boundary guardrail sanctions as an import site, and the CLI's own
+# cookie-refresh advice (``cli/services/login/cookie_jar.py``) must not grow a
+# second, drifting copy of that caveat.
+from .._auth.cookie_policy import app_host_scope_note
+from .._auth.profile_account import DomainSelection
+from .._auth.profile_document import ProfileDocument
+from .._auth.profile_store import ProfileStore, RemintWriteRequest, ReplaceResult
+
+# The storage-state cookie filter is WRITE-time policy and lives beside the
+# writers applying it (ADR-0033 PR 4.2); re-exported here, the CLI's import site.
+from .._auth.storage import _safe_cookie_shape as _safe_cookie_shape
+from .._auth.storage import filter_storage_state_cookies_by_domain_policy
+
 # ``PERSONAL_APP_HOSTS`` is imported from ``_env`` rather than ``config``
 # deliberately: it is not part of ``config.__all__``, and re-exporting it there
 # just to reach it here would add a public export for an internal host fact.
@@ -40,28 +65,11 @@ from .._env import PERSONAL_APP_HOSTS
 from ..config import get_base_host, get_base_url
 from ..exceptions import HeadlessLoginRequiredError, LockUnavailableError
 
-# Collaborators of :func:`heal_captured_state` (absorbed from
-# ``browser_state_validation.py``, ADR-0033 PR 4.1): the sanitiser that shapes
-# captured rows for the rookiepy contract, and the shared PSIDTS recovery that
-# contract runs. These were already on this module's import path transitively,
-# via the leaf that used to hold the bridge.
-from . import cookies as _auth_cookies
-from . import psidts_recovery as _psidts_recovery
-
 # ``CHANNEL_BROWSERS`` and the launch-failure triage live in the
 # ``browser_launch_errors`` leaf (ADR-0008). ``CHANNEL_BROWSERS`` is re-exported
 # below because this module has always been its import site for the CLI adapter
 # (``cli/services/playwright_login.py``) and the launch banner.
 from .browser_launch_errors import CHANNEL_BROWSERS, classify_launch_failure
-
-# ``app_host_scope_note`` owns the both-personal-hosts cookie-scope caveat that
-# every "open the app in your browser" instruction needs (it is appended to the
-# binding-related hints in ``cookie_policy.missing_cookies_hint``). It is
-# re-exported here because ``browser_capture`` is the only ``_auth`` module the
-# CLI-boundary guardrail sanctions as an import site, and the CLI's own
-# cookie-refresh advice (``cli/services/login/cookie_jar.py``) must not grow a
-# second, drifting copy of that caveat.
-from .cookie_policy import app_host_scope_note
 
 # Navigation-failure classification lives in its own pure leaf (ADR-0008); these
 # are re-exported below because this module is the sanctioned CLI import site.
@@ -72,14 +80,6 @@ from .navigation_errors import (
     is_navigation_race,
     navigation_error_code,
 )
-from .profile_account import DomainSelection
-from .profile_document import ProfileDocument
-from .profile_store import ProfileStore, RemintWriteRequest, ReplaceResult
-
-# The storage-state cookie filter is WRITE-time policy and lives beside the
-# writers applying it (ADR-0033 PR 4.2); re-exported here, the CLI's import site.
-from .storage import _safe_cookie_shape as _safe_cookie_shape
-from .storage import filter_storage_state_cookies_by_domain_policy
 
 if TYPE_CHECKING:
     from playwright.sync_api import BrowserContext, Page

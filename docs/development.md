@@ -991,6 +991,8 @@ surface change is a deliberate, diff-visible act. These **regenerable baselines*
 | `cli_contract` | `build_cli_contract()` | `tests/fixtures/cli_contract_baseline.json` |
 | `auth_import_graph` | static direct imports under `notebooklm._auth` | `tests/fixtures/baselines/auth_import_graph.json` |
 | `auth_patch_sites` | auth test patch-site audit | `tests/fixtures/baselines/auth_patch_sites.json` |
+| `browser_import_graph` | package-aware imports under `notebooklm._browser` | `tests/fixtures/baselines/browser_import_graph.json` |
+| `browser_patch_sites` | browser test patch-site audit | `tests/fixtures/baselines/browser_patch_sites.json` |
 | `module_size` | live over-budget and ADR-0033 shrink-locked LOC | `tests/fixtures/baselines/module_size.json` |
 | `storage_transaction_policy` | AST-derived lock-policy callers | `tests/fixtures/baselines/storage_transaction_policy.json` |
 | `guardrail_inline_literals` | grandfathered large guardrail literals | `tests/fixtures/baselines/guardrail_inline_literals.json` |

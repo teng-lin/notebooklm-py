@@ -25,7 +25,7 @@ import os
 
 import pytest
 
-from notebooklm._auth.headless_reauth import (
+from notebooklm._browser.headless_reauth import (
     HeadlessReauthStatus,
     attempt_headless_reauth,
 )

@@ -18,7 +18,7 @@
 > removed in v0.8.x by explicit maintainer decision, earlier than their documented next-major
 > window. Replace `_auth._browser_cookie_filter` with `_auth.cookie_filter`,
 > `_auth.browser_cookie_recovery` with `_auth.psidts_recovery`, both
-> `_auth.browser_state_validation` and `_auth.login_wait_trace` with `_auth.browser_capture`,
+> `_auth.browser_state_validation` and `_auth.login_wait_trace` with `_browser.browser_capture`,
 > `_auth.storage_transaction` with `_auth.profile_store`, and `_auth.storage_writer` with
 > `_auth.storage`. No transitional replacement shims were added.
 

@@ -62,7 +62,7 @@ class DoctorPaths:
 
     ``headless_reauth_check`` is an injected ``() -> {"status", "detail"}``
     closure rather than a path helper: the L3 readiness probe lives in
-    ``notebooklm._auth.headless_reauth`` (a private runtime sibling this
+    ``notebooklm._browser.headless_reauth`` (a private runtime sibling this
     transport-neutral core must NOT import — see the ``_app`` boundary lint),
     so the adapter that *may* import ``_auth`` supplies the probe and maps its
     credential-free outcome to the standard check shape.

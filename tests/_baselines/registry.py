@@ -39,6 +39,7 @@ _TESTS_ROOT = Path(__file__).resolve().parents[1]
 _PROJECT_ROOT = _TESTS_ROOT.parent
 _FIXTURES_DIR = _TESTS_ROOT / "fixtures"
 _BASELINES_DIR = _FIXTURES_DIR / "baselines"
+_BROWSER_ROOT = _PROJECT_ROOT / "src" / "notebooklm" / "_browser"
 
 # Audit source-of-truth for the allowlist ``extra_public_names`` (mirrors
 # ``scripts/audit_public_api_compat.py``). The collected public surface for a
@@ -136,11 +137,35 @@ def _derive_auth_patch_sites() -> dict[str, object]:
     return build_projection(collect_sites(_TESTS_ROOT))
 
 
+def _derive_browser_patch_sites() -> dict[str, object]:
+    """Stable projection from patch sites into the browser package."""
+    from scripts.audit_auth_patch_sites import build_projection, collect_sites
+
+    return build_projection(
+        collect_sites(
+            _TESTS_ROOT,
+            _BROWSER_ROOT,
+            package_dotted="notebooklm._browser",
+        )
+    )
+
+
 def _derive_auth_import_graph() -> dict[str, object]:
     """Static direct-module import graph for ``notebooklm._auth``."""
     from scripts.audit_auth_import_graph import build_projection
 
     return build_projection()
+
+
+def _derive_browser_import_graph() -> dict[str, object]:
+    """Package-aware import projection for ``notebooklm._browser``."""
+    from scripts.audit_auth_import_graph import build_projection
+
+    return build_projection(
+        _BROWSER_ROOT,
+        package_prefix="notebooklm._browser",
+        include_external=True,
+    )
 
 
 def _derive_module_size() -> dict[str, object]:
@@ -274,11 +299,25 @@ BASELINES: list[Baseline] = [
         description="Auth test patch sites aggregated by module, attribute, and idiom.",
     ),
     Baseline(
+        name="browser_patch_sites",
+        path=_BASELINES_DIR / "browser_patch_sites.json",
+        derive=_derive_browser_patch_sites,
+        sort_keys=True,
+        description="Browser test patch sites aggregated by module, attribute, and idiom.",
+    ),
+    Baseline(
         name="auth_import_graph",
         path=_BASELINES_DIR / "auth_import_graph.json",
         derive=_derive_auth_import_graph,
         sort_keys=True,
         description="Static direct-module import graph for notebooklm._auth.",
+    ),
+    Baseline(
+        name="browser_import_graph",
+        path=_BASELINES_DIR / "browser_import_graph.json",
+        derive=_derive_browser_import_graph,
+        sort_keys=True,
+        description="Static package-aware import graph for notebooklm._browser.",
     ),
     Baseline(
         name="types_all",

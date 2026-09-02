@@ -55,7 +55,7 @@ async def refresh_auth_session(
     NotebookLM cookies are fully dead, and neither this L1 token refresh nor
     the L2 ``RotateCookies`` rotation can help. ``allow_headless`` (or the
     ``NOTEBOOKLM_HEADLESS_REAUTH=1`` env opt-in) lets this function fall
-    through to :func:`notebooklm._auth.headless_reauth.attempt_headless_reauth`,
+    through to :func:`notebooklm._browser.headless_reauth.attempt_headless_reauth`,
     which drives an unattended headless browser against the persistent profile
     to silently re-mint cookies. On a successful re-mint the fresh cookies are
     reloaded into the live HTTP client and the homepage GET is retried ONCE; if

@@ -19,8 +19,8 @@ from notebooklm._auth import session as session_mod
 from notebooklm._auth.cookie_types import CookieJar
 from notebooklm._auth.cookies import _LoadedCookiePair
 from notebooklm._auth.extraction import _LoginRedirectError
-from notebooklm._auth.headless_reauth import HeadlessReauthResult, HeadlessReauthStatus
 from notebooklm._auth.mint_service import MintService
+from notebooklm._browser.headless_reauth import HeadlessReauthResult, HeadlessReauthStatus
 from notebooklm._env import PERSONAL_APP_HOSTS
 from notebooklm.auth import AuthTokens, fetch_tokens_with_domains
 from notebooklm.client import NotebookLMClient
@@ -169,7 +169,7 @@ async def test_auth_tokens_cold_start_headless_recovery_is_explicit(
         _write_storage(storage, sid="browser-fresh")
         return HeadlessReauthResult(HeadlessReauthStatus.SUCCESS, "ok", storage_path=storage)
 
-    import notebooklm._auth.headless_reauth as headless
+    import notebooklm._browser.headless_reauth as headless
 
     monkeypatch.setattr(headless, "attempt_headless_reauth", drive_browser)
     _stub_dead_then_fresh(
@@ -206,7 +206,7 @@ async def test_auth_tokens_cold_start_headless_recovery_honors_env(
         assert interactive is False
         _write_storage(storage, sid="browser-fresh")
 
-    import notebooklm._auth.headless_reauth as headless
+    import notebooklm._browser.headless_reauth as headless
 
     monkeypatch.setenv("NOTEBOOKLM_HEADLESS_REAUTH", "1")
     monkeypatch.setattr(headless, "_playwright_installed", lambda: True)
@@ -576,7 +576,7 @@ async def test_headless_retry_that_still_redirects_falls_through_to_l4(
         jar.set("__Secure-1PSIDTS", "master-fresh-ts", domain=".google.com")
         return jar
 
-    import notebooklm._auth.headless_reauth as headless
+    import notebooklm._browser.headless_reauth as headless
 
     monkeypatch.setattr(headless, "attempt_headless_reauth", drive_browser)
     _stub_dead_then_fresh(
@@ -866,7 +866,7 @@ async def test_mixed_headless_permissions_serialize_and_reuse_l4_success(
         jar.set("__Secure-1PSIDTS", "fresh-ts", domain=".google.com")
         return jar
 
-    import notebooklm._auth.headless_reauth as headless
+    import notebooklm._browser.headless_reauth as headless
 
     monkeypatch.setattr(headless, "attempt_headless_reauth", drive_browser)
     _stub_dead_then_fresh(httpx_mock, fresh_sid="fresh", csrf="csrf", session="session")

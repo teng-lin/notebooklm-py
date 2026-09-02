@@ -31,7 +31,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from notebooklm._auth.browser_capture import (
+from notebooklm._browser.browser_capture import (
     TARGET_CLOSED_ERROR,
     BrowserCapturePlan,
     _CaptureAbortKind,
@@ -358,7 +358,7 @@ def test_cdp_malformed_cookie_value_never_logged(tmp_path: Path, caplog) -> None
 
 def test_safe_cookie_shape_is_value_free() -> None:
     """``_safe_cookie_shape`` summarizes structure with NO values."""
-    from notebooklm._auth.browser_capture import _safe_cookie_shape
+    from notebooklm._browser.browser_capture import _safe_cookie_shape
 
     shape = _safe_cookie_shape({"name": "SID", "value": "SECRET", "domain": 5})
     assert "SECRET" not in shape
@@ -373,7 +373,7 @@ def test_safe_cookie_shape_tolerates_non_str_keys() -> None:
     This helper exists to *describe* malformed rows, so it must never itself
     choke on one (regression for a ``cookie[str(k)]`` re-subscript bug).
     """
-    from notebooklm._auth.browser_capture import _safe_cookie_shape
+    from notebooklm._browser.browser_capture import _safe_cookie_shape
 
     shape = _safe_cookie_shape({3: "x", "value": "SECRET"})
     assert "SECRET" not in shape
@@ -409,7 +409,7 @@ def test_capture_persists_even_when_the_psidts_heal_declines(
     )
     io = _RaisingCaptureIO()
 
-    with caplog.at_level("WARNING", logger="notebooklm._auth.browser_capture"):
+    with caplog.at_level("WARNING", logger="notebooklm._browser.browser_capture"):
         result = _run_cdp(_plan(tmp_path), io, playwright, "http://127.0.0.1:9222")
 
     assert result is not None

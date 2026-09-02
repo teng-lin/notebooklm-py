@@ -14,7 +14,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = REPO_ROOT / "src" / "notebooklm"
-GATEWAY = ("src/notebooklm/_auth/browser_capture.py", "sync_playwright_context")
+GATEWAY = ("src/notebooklm/_browser/browser_capture.py", "sync_playwright_context")
 
 
 class _RawSyncPlaywrightVisitor(ast.NodeVisitor):

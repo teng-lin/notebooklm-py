@@ -56,7 +56,8 @@ it one clean regen command.
      source for which paths are exempt and why.
    - `storage_transaction_policy` → direct AST-derived callers of the three
      lock-unavailable policies.
-   - `auth_import_graph` / `auth_patch_sites` → their audit projections.
+   - `auth_import_graph` / `auth_patch_sites` and the sibling
+     `browser_import_graph` / `browser_patch_sites` → their audit projections.
    - `guardrail_inline_literals` → the grandfathered inventory of large
      module-level container literals under `tests/_guardrails/`.
 

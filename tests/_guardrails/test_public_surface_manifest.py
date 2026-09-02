@@ -1311,6 +1311,8 @@ def test_baseline_registry_is_non_trivial() -> None:
     assert {
         "auth_import_graph",
         "auth_patch_sites",
+        "browser_import_graph",
+        "browser_patch_sites",
         "guardrail_inline_literals",
         "module_size",
         "storage_transaction_policy",

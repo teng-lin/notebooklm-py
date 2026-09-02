@@ -131,7 +131,8 @@ class TestWriteTimeFilterParity:
         This is write-time policy, not browser code, so this asserts against
         the canonical home.
         """
-        from notebooklm._auth import browser_capture, cookie_filter, storage
+        from notebooklm._auth import cookie_filter, storage
+        from notebooklm._browser import browser_capture
         from notebooklm.cli.services.playwright_login import (
             filter_storage_state_cookies_by_domain_policy as playwright_filter,
         )

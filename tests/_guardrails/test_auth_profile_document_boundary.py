@@ -189,13 +189,13 @@ def test_production_consumers_are_exactly_the_approved_set() -> None:
             consumers.append(path.relative_to(REPO_ROOT).as_posix())
     assert consumers == [
         "src/notebooklm/_auth/account_email.py",
-        "src/notebooklm/_auth/browser_capture.py",
         "src/notebooklm/_auth/cookie_merge.py",
         "src/notebooklm/_auth/profile_migration.py",
         "src/notebooklm/_auth/profile_store.py",
         "src/notebooklm/_auth/psidts_recovery.py",
         "src/notebooklm/_auth/storage.py",
         "src/notebooklm/_auth/tokens.py",
+        "src/notebooklm/_browser/browser_capture.py",
     ]
 
 

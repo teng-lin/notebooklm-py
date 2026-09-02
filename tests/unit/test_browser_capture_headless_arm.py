@@ -25,8 +25,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from notebooklm._auth import browser_capture
-from notebooklm._auth.browser_capture import (
+from notebooklm._browser import browser_capture
+from notebooklm._browser.browser_capture import (
     RETRYABLE_CONNECTION_ERRORS,
     TARGET_CLOSED_ERROR,
     BrowserCapturePlan,

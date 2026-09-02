@@ -53,7 +53,7 @@ HOST_CONSTANT_NAMES = ("PERSONAL_BASE_HOST", "PERSONAL_LEGACY_HOST")
 
 # Pre-existing bare literals, allowlisted so this ratchet lands without
 # cross-editing files another PR owns. **Empty, and it should stay that way** --
-# the last entry (``_auth/browser_capture.py``, which had hardcoded the alias in
+# the last entry (``_browser/browser_capture.py``, which had hardcoded the alias in
 # ``url_matches_base_host`` since #2015) was folded onto ``PERSONAL_APP_HOSTS``
 # when ``accepted_login_hosts`` learned to accept both personal hosts.
 # Entries may be deleted, never added.

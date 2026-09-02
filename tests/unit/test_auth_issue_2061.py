@@ -15,7 +15,6 @@ from pytest_httpx import HTTPXMock
 from notebooklm import auth
 from notebooklm._app.auth_check import AuthCheckPlan, run_auth_check
 from notebooklm._auth import (
-    browser_capture,
     cookie_semantics,
     cookies,
     psidts_recovery,
@@ -23,6 +22,7 @@ from notebooklm._auth import (
     tokens,
 )
 from notebooklm._auth.cookie_policy import RequiredCookieValidationError
+from notebooklm._browser import browser_capture
 from notebooklm.cli.services import auth_source
 from notebooklm.cli.services.auth_source import AuthSource, has_env_auth_json
 

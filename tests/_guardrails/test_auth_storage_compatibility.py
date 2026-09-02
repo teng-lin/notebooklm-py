@@ -23,7 +23,6 @@ import notebooklm.auth as auth
 from notebooklm import NotebookLMClient
 from notebooklm._auth import (
     account,
-    browser_capture,
     cookies,
     keepalive,
     master_token,
@@ -38,6 +37,7 @@ from notebooklm._auth import (
 )
 from notebooklm._auth.storage_lock import LockState, StorageLockManager
 from notebooklm._auth.tokens import AuthTokens
+from notebooklm._browser import browser_capture
 from notebooklm._runtime import lifecycle
 from notebooklm._web.transport.cookie_persistence import CookiePersistence
 
