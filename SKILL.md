@@ -1,9 +1,9 @@
 ---
 name: notebooklm
-description: Operate Google Gemini Notebook through notebooklm-py to create notebooks, add sources, chat over content, run research, generate and download artifacts, and use features beyond the web UI. Use when the user names NotebookLM or asks to use it for podcasts, videos, reports, quizzes, flashcards, slide decks, infographics, mind maps, or source-grounded summaries.
+description: Operate Google Gemini Notebook through notebooklm-py to create notebooks, add sources, chat over content, run research, generate and download artifacts, and use features beyond the web UI. Use when the user names Google Gemini Notebook or asks to use it for podcasts, videos, reports, quizzes, flashcards, slide decks, infographics, mind maps, or source-grounded summaries.
 ---
 
-# NotebookLM Automation
+# Google Gemini Notebook Automation
 
 Use the `notebooklm` CLI for agent workflows. Prefer `--json` and explicit IDs so every
 operation is inspectable and safe under concurrency. Use the typed async Python API only when the
@@ -182,8 +182,8 @@ Use JSON structurally rather than parsing human output. Common lifecycle values 
 - artifacts: `pending`/`in_progress` -> `completed`.
 
 Chat JSON includes `answer`, `conversation_id`, and `references[].source_id`. Citation offsets refer
-to NotebookLM's internal chunks, not raw fulltext offsets. In Python, retrieve source fulltext and use
-`SourceFulltext.find_citation_context()` when exact surrounding text is needed.
+to Google Gemini Notebook's internal chunks, not raw fulltext offsets. In Python, retrieve source
+fulltext and use `SourceFulltext.find_citation_context()` when exact surrounding text is needed.
 
 ## Failure Handling
 
