@@ -7,6 +7,7 @@ Complete reference for the `notebooklm` Python library.
 
 See also:
 - [Architecture Guide](./architecture.md) for structural overview, capability protocols, and transport design.
+- [Architecture diagrams](./diagrams/README.md) for explorable call flows, lifecycles, and class models.
 - [RPC Development Guide](./rpc-development.md) for custom RPC design, protocols, and mock assertions.
 
 ## Quick Start
@@ -149,6 +150,10 @@ only `web` and `android` are accepted.
 
 Web cookies are not Android credentials. Install the runtime and bootstrap the
 same profile the client will open:
+
+The [backend comparison](./diagrams/06-backends-web-and-android.html) shows the shared
+public contract and separate wire graphs; the
+[selection workflow](./diagrams/28-profile-auth-backend-selection.workflow.html) shows precedence.
 
 ```bash
 pip install "notebooklm-py[android,browser]"

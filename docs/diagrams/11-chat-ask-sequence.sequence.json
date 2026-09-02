@@ -1,0 +1,244 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Chat Ask Streaming Path",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1060,
+      560
+    ],
+    "views": [
+      {
+        "id": "prepare",
+        "label": "Prepare",
+        "focus": [
+          "caller",
+          "chat",
+          "notebooks"
+        ],
+        "note": "Loop guard, source-id lookup and the conversation lock all run before any send."
+      },
+      {
+        "id": "stream",
+        "label": "Stream",
+        "focus": [
+          "chat",
+          "webchat",
+          "transport",
+          "google"
+        ],
+        "note": "The one chat-flavored request body in the client, outside RpcExecutor."
+      },
+      {
+        "id": "settle",
+        "label": "Settle",
+        "focus": [
+          "webchat",
+          "chat",
+          "caller"
+        ],
+        "note": "The authoritative conversation id is recovered before the cache is updated."
+      }
+    ]
+  },
+  "participants": [
+    {
+      "id": "caller",
+      "type": "external",
+      "label": "Caller",
+      "sublabel": "client.chat.ask"
+    },
+    {
+      "id": "chat",
+      "type": "backend",
+      "label": "ChatAPI",
+      "sublabel": "neutral base"
+    },
+    {
+      "id": "notebooks",
+      "type": "backend",
+      "label": "NotebooksAPI",
+      "sublabel": "source ids"
+    },
+    {
+      "id": "webchat",
+      "type": "backend",
+      "label": "WebChatAPI",
+      "sublabel": "_stream_answer"
+    },
+    {
+      "id": "transport",
+      "type": "backend",
+      "label": "RuntimeTransport",
+      "sublabel": "authed POST"
+    },
+    {
+      "id": "google",
+      "type": "cloud",
+      "label": "NotebookLM API",
+      "sublabel": "streaming"
+    }
+  ],
+  "segments": [
+    {
+      "from": 165,
+      "to": 260,
+      "label": "Prepare"
+    },
+    {
+      "from": 268,
+      "to": 388,
+      "label": "Stream"
+    },
+    {
+      "from": 396,
+      "to": 484,
+      "label": "Settle"
+    }
+  ],
+  "messages": [
+    {
+      "id": "ask",
+      "from": "caller",
+      "to": "chat",
+      "y": 180,
+      "label": "ask(notebook, question)",
+      "variant": "emphasis",
+      "note": "assert_bound_loop before anything else"
+    },
+    {
+      "id": "source-ids",
+      "from": "chat",
+      "to": "notebooks",
+      "y": 212,
+      "label": "resolve source ids"
+    },
+    {
+      "id": "ids-back",
+      "from": "notebooks",
+      "to": "chat",
+      "y": 244,
+      "label": "source ids",
+      "variant": "return"
+    },
+    {
+      "id": "delegate",
+      "from": "chat",
+      "to": "webchat",
+      "y": 276,
+      "label": "_stream_answer(...)",
+      "variant": "emphasis",
+      "note": "conversation lock held; prior-role and cache read"
+    },
+    {
+      "id": "chat-post",
+      "from": "webchat",
+      "to": "transport",
+      "y": 308,
+      "label": "chat_aware_authed_post",
+      "note": "next_reqid() plus the chat request body"
+    },
+    {
+      "id": "wire",
+      "from": "transport",
+      "to": "google",
+      "y": 340,
+      "label": "streaming POST",
+      "variant": "emphasis"
+    },
+    {
+      "id": "chunks",
+      "from": "google",
+      "to": "transport",
+      "y": 372,
+      "label": "streamed chunks",
+      "variant": "return"
+    },
+    {
+      "id": "parsed",
+      "from": "transport",
+      "to": "webchat",
+      "y": 404,
+      "label": "answer + citations",
+      "variant": "return"
+    },
+    {
+      "id": "posted",
+      "from": "webchat",
+      "to": "chat",
+      "y": 436,
+      "label": "_PostedAsk",
+      "variant": "return",
+      "note": "recover the authoritative conversation id"
+    },
+    {
+      "id": "result",
+      "from": "chat",
+      "to": "caller",
+      "y": 468,
+      "label": "AskResult",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "chat",
+      "from": 175,
+      "to": 474,
+      "type": "backend"
+    },
+    {
+      "participant": "notebooks",
+      "from": 207,
+      "to": 250,
+      "type": "backend"
+    },
+    {
+      "participant": "webchat",
+      "from": 271,
+      "to": 442,
+      "type": "backend"
+    },
+    {
+      "participant": "transport",
+      "from": 303,
+      "to": 410,
+      "type": "backend"
+    },
+    {
+      "participant": "google",
+      "from": 335,
+      "to": 378,
+      "type": "cloud"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Owned by the neutral base",
+      "items": [
+        "Conversation, lock, cache, id recovery and turn numbers live on ChatAPI",
+        "Only one send/decode seam is backend-specific"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Why it is special",
+      "items": [
+        "Streaming chat has a custom request body and chat-flavored error mapping",
+        "AndroidChatAPI implements the same neutral base over gRPC instead"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Tenancy caution",
+      "items": [
+        "The chat cache keys on conversation_id with no account dimension",
+        "Reusing one client across tenants risks mixing local chat history"
+      ]
+    }
+  ]
+}

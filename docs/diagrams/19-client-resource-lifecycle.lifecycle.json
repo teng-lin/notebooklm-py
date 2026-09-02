@@ -1,0 +1,224 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Client Resource Lifecycle",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1080,
+      620
+    ],
+    "views": [
+      {
+        "id": "main",
+        "label": "Main path",
+        "focus": [
+          "closed",
+          "opening",
+          "open",
+          "closing",
+          "reclosed"
+        ],
+        "note": "Four resource states, each open wave carrying its own generation epoch."
+      },
+      {
+        "id": "waves",
+        "label": "Waves",
+        "focus": [
+          "opening",
+          "draining"
+        ],
+        "note": "Drain waits for in-flight calls without retiring the generation."
+      },
+      {
+        "id": "rollback",
+        "label": "Rollback",
+        "focus": [
+          "opening",
+          "rollback",
+          "closed"
+        ],
+        "note": "A failed open runs prepare_close then close_resources and returns to CLOSED."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "Resource states"
+    },
+    {
+      "id": "waves",
+      "label": "Waves and rollback"
+    }
+  ],
+  "states": [
+    {
+      "id": "closed",
+      "type": "start",
+      "label": "CLOSED",
+      "sublabel": "no generation",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "tag": "entry"
+    },
+    {
+      "id": "opening",
+      "type": "active",
+      "label": "OPENING",
+      "sublabel": "transactional wave",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "epoch allocated"
+    },
+    {
+      "id": "open",
+      "type": "active",
+      "label": "OPEN",
+      "sublabel": "calls admitted",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "tag": "bound loop"
+    },
+    {
+      "id": "closing",
+      "type": "active",
+      "label": "CLOSING",
+      "sublabel": "phased teardown",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "tag": "coalesced"
+    },
+    {
+      "id": "reclosed",
+      "type": "success",
+      "label": "CLOSED",
+      "sublabel": "generation retired",
+      "lane": "main",
+      "col": 4,
+      "step": "05",
+      "tag": "reopenable"
+    },
+    {
+      "id": "rollback",
+      "type": "failure",
+      "label": "Rollback",
+      "sublabel": "open failed",
+      "lane": "waves",
+      "col": 0,
+      "tag": "recoverable"
+    },
+    {
+      "id": "draining",
+      "type": "waiting",
+      "label": "Draining",
+      "sublabel": "in-flight calls",
+      "lane": "waves",
+      "col": 1,
+      "tag": "no retire"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "closed-opening",
+      "from": "closed",
+      "to": "opening",
+      "variant": "emphasis"
+    },
+    {
+      "id": "opening-open",
+      "from": "opening",
+      "to": "open",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "open-closing",
+      "from": "open",
+      "to": "closing",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "closing-reclosed",
+      "from": "closing",
+      "to": "reclosed",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "opening-rollback",
+      "from": "opening",
+      "to": "rollback",
+      "variant": "security",
+      "route": "drop"
+    },
+    {
+      "id": "rollback-closed",
+      "from": "rollback",
+      "to": "closed",
+      "label": "retry open",
+      "variant": "emphasis",
+      "fromSide": "left",
+      "toSide": "top",
+      "via": [
+        [
+          20,
+          307
+        ],
+        [
+          20,
+          86
+        ],
+        [
+          94,
+          86
+        ]
+      ],
+      "labelAt": [
+        20,
+        250
+      ]
+    },
+    {
+      "id": "open-draining",
+      "from": "open",
+      "to": "draining",
+      "route": "auto",
+      "fromSide": "right",
+      "toSide": "left",
+      "channelX": 474
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Generations",
+      "items": [
+        "Each open wave allocates an epoch that fences the kernel and auth coordinator",
+        "A stale epoch cannot write into a newer generation"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Drain",
+      "items": [
+        "drain() waits for in-flight calls but leaves the generation open",
+        "Close waves are coalesced and retained across caller cancellation"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Rollback",
+      "items": [
+        "A failed open runs prepare_close then close_resources on every participant",
+        "Rollback failures are logged, never allowed to mask the original open error"
+      ]
+    }
+  ]
+}

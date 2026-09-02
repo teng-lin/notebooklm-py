@@ -1,0 +1,230 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Artifact Generation Lifecycle",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1080,
+      620
+    ],
+    "views": [
+      {
+        "id": "main",
+        "label": "Main path",
+        "focus": [
+          "requested",
+          "pending",
+          "processing",
+          "completed",
+          "downloaded"
+        ],
+        "note": "The five phases from a generate_* call to a published local file."
+      },
+      {
+        "id": "polling",
+        "label": "Caller wait",
+        "focus": [
+          "processing",
+          "polling",
+          "completed"
+        ],
+        "note": "One leader polls the studio projection; concurrent callers follow it."
+      },
+      {
+        "id": "exits",
+        "label": "Failure and retry",
+        "focus": [
+          "processing",
+          "failed"
+        ],
+        "note": "FAILED is recoverable: retry re-enters generation for the same target."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "Generation phases"
+    },
+    {
+      "id": "waits",
+      "label": "Caller wait and recovery"
+    }
+  ],
+  "states": [
+    {
+      "id": "requested",
+      "type": "start",
+      "label": "Requested",
+      "sublabel": "generate_* called",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "tag": "entry"
+    },
+    {
+      "id": "pending",
+      "type": "active",
+      "label": "PENDING",
+      "sublabel": "row created",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "status 1"
+    },
+    {
+      "id": "processing",
+      "type": "active",
+      "label": "PROCESSING",
+      "sublabel": "worker running",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "tag": "status 2"
+    },
+    {
+      "id": "completed",
+      "type": "success",
+      "label": "COMPLETED",
+      "sublabel": "ready to use",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "tag": "status 3"
+    },
+    {
+      "id": "downloaded",
+      "type": "success",
+      "label": "Published",
+      "sublabel": "atomic local write",
+      "lane": "main",
+      "col": 4,
+      "step": "05",
+      "tag": "done"
+    },
+    {
+      "id": "polling",
+      "type": "waiting",
+      "label": "Leader Poll",
+      "sublabel": "followers wait",
+      "lane": "waits",
+      "col": 1,
+      "tag": "one in flight"
+    },
+    {
+      "id": "failed",
+      "type": "failure",
+      "label": "FAILED",
+      "sublabel": "generation error",
+      "lane": "waits",
+      "col": 0,
+      "tag": "status 4"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "start-pending",
+      "from": "requested",
+      "to": "pending",
+      "variant": "emphasis"
+    },
+    {
+      "id": "pending-processing",
+      "from": "pending",
+      "to": "processing",
+      "variant": "emphasis"
+    },
+    {
+      "id": "processing-completed",
+      "from": "processing",
+      "to": "completed",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "completed-downloaded",
+      "from": "completed",
+      "to": "downloaded",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "processing-failed",
+      "from": "processing",
+      "to": "failed",
+      "variant": "security",
+      "route": "drop"
+    },
+    {
+      "id": "failed-retry",
+      "from": "failed",
+      "to": "processing",
+      "label": "retry",
+      "variant": "emphasis",
+      "fromSide": "left",
+      "toSide": "top",
+      "via": [
+        [
+          20,
+          307
+        ],
+        [
+          20,
+          86
+        ],
+        [
+          402,
+          86
+        ]
+      ],
+      "labelAt": [
+        20,
+        250
+      ]
+    },
+    {
+      "id": "processing-poll",
+      "from": "processing",
+      "to": "polling",
+      "route": "auto",
+      "fromSide": "right",
+      "toSide": "left",
+      "channelX": 474
+    },
+    {
+      "id": "poll-completed",
+      "from": "polling",
+      "to": "completed",
+      "label": "observes done",
+      "route": "straight"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Main path",
+      "items": [
+        "Five ordered phases from generate to a published file",
+        "Byte transfer happens after COMPLETED, outside the RPC pipeline"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Waiting",
+      "items": [
+        "One leader polls while followers await the same result",
+        "Pending and in-progress timeouts are separate typed errors"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Other statuses",
+      "items": [
+        "SUGGESTED rows are filtered out of LIST_ARTIFACTS",
+        "UNKNOWN means the backend status was not recognised"
+      ]
+    }
+  ]
+}

@@ -19,6 +19,10 @@ This guide covers everything you need to contribute to `notebooklm-py`: architec
 > remains as the contributor on-ramp (package layout + adding-features
 > guidance) and links out to the architecture doc rather than duplicating it.
 
+Use the [system overview](./diagrams/01-system-overview.html) while orienting to the packages and
+the [testing/guardrails map](./diagrams/22-testing-and-guardrails.html)
+when deciding which boundary a change must exercise.
+
 ### Package Structure
 
 ```

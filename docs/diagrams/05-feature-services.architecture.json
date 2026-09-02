@@ -1,0 +1,360 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Feature Namespaces and Domain Services",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "ingest",
+        "label": "Source ingest",
+        "focus": [
+          "sources",
+          "upload",
+          "scotty"
+        ],
+        "note": "File adds leave the RPC path for a dedicated resumable upload client."
+      },
+      {
+        "id": "artifacts",
+        "label": "Artifact lifecycle",
+        "focus": [
+          "artifacts",
+          "gen",
+          "polling",
+          "download"
+        ],
+        "note": "Generate, poll, then transfer bytes outside the RPC pipeline."
+      },
+      {
+        "id": "chat",
+        "label": "Chat streaming",
+        "focus": [
+          "chat",
+          "stream",
+          "rpc"
+        ],
+        "note": "The single streaming send and decode seam is the transport-sharing exception."
+      },
+      {
+        "id": "android",
+        "label": "Android services",
+        "focus": [
+          "client",
+          "androidsvc"
+        ],
+        "note": "Selecting the Android backend swaps in gRPC and HTTPS services with the same public surface."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "sources",
+      "type": "backend",
+      "label": "SourcesAPI",
+      "sublabel": "client.sources",
+      "tag": "operation scope",
+      "pos": [
+        282,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "upload",
+      "type": "backend",
+      "label": "Upload Pipeline",
+      "sublabel": "own client · semaphore",
+      "pos": [
+        544,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "scotty",
+      "type": "cloud",
+      "label": "Scotty Upload",
+      "sublabel": "start · finalize",
+      "pos": [
+        806,
+        60
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "download",
+      "type": "cloud",
+      "label": "Asset Hosts",
+      "sublabel": "lh3 · usercontent",
+      "pos": [
+        1063,
+        60
+      ],
+      "size": [
+        155,
+        84
+      ]
+    },
+    {
+      "id": "client",
+      "type": "backend",
+      "label": "NotebookLMClient",
+      "sublabel": "11 namespaces",
+      "pos": [
+        30,
+        260
+      ],
+      "size": [
+        160,
+        90
+      ]
+    },
+    {
+      "id": "artifacts",
+      "type": "backend",
+      "label": "ArtifactsAPI",
+      "sublabel": "11 generate_* flows",
+      "tag": "backend-neutral",
+      "pos": [
+        282,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "gen",
+      "type": "backend",
+      "label": "Generation Service",
+      "sublabel": "CREATE_ARTIFACT",
+      "pos": [
+        544,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "polling",
+      "type": "backend",
+      "label": "Polling Service",
+      "sublabel": "leader · follower",
+      "pos": [
+        806,
+        260
+      ],
+      "size": [
+        165,
+        90
+      ]
+    },
+    {
+      "id": "chat",
+      "type": "backend",
+      "label": "ChatAPI",
+      "sublabel": "lock · cache · turns",
+      "tag": "loop guard",
+      "pos": [
+        282,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "stream",
+      "type": "backend",
+      "label": "Stream Seam",
+      "sublabel": "_stream_answer",
+      "pos": [
+        544,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "rpc",
+      "type": "backend",
+      "label": "Authed POST Path",
+      "sublabel": "executor · transport",
+      "pos": [
+        806,
+        460
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "androidsvc",
+      "type": "backend",
+      "label": "Android Services",
+      "sublabel": "session · upload · assets",
+      "tag": "opt-in",
+      "pos": [
+        30,
+        460
+      ],
+      "size": [
+        160,
+        84
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "byte transfer outside the RPC pipeline",
+      "wraps": [
+        "scotty",
+        "download"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-to-sources",
+      "from": "client",
+      "to": "sources"
+    },
+    {
+      "id": "client-to-artifacts",
+      "from": "client",
+      "to": "artifacts",
+      "variant": "emphasis"
+    },
+    {
+      "id": "client-to-chat",
+      "from": "client",
+      "to": "chat"
+    },
+    {
+      "id": "sources-to-upload",
+      "from": "sources",
+      "to": "upload",
+      "label": "add_file"
+    },
+    {
+      "id": "upload-to-scotty",
+      "from": "upload",
+      "to": "scotty",
+      "label": "resumable",
+      "variant": "dashed"
+    },
+    {
+      "id": "artifacts-to-gen",
+      "from": "artifacts",
+      "to": "gen",
+      "label": "create"
+    },
+    {
+      "id": "gen-to-polling",
+      "from": "gen",
+      "to": "polling",
+      "label": "task id"
+    },
+    {
+      "id": "polling-to-rpc",
+      "from": "polling",
+      "to": "rpc",
+      "label": "rpc_call",
+      "variant": "emphasis",
+      "labelAt": [
+        888.5,
+        405
+      ]
+    },
+    {
+      "id": "chat-to-stream",
+      "from": "chat",
+      "to": "stream",
+      "label": "ask()"
+    },
+    {
+      "id": "stream-to-rpc",
+      "from": "stream",
+      "to": "rpc",
+      "label": "streaming"
+    },
+    {
+      "id": "artifacts-to-download",
+      "from": "artifacts",
+      "to": "download",
+      "label": "guarded byte transfer",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "via": [
+        [
+          367,
+          205
+        ],
+        [
+          1140.5,
+          205
+        ]
+      ],
+      "variant": "dashed"
+    },
+    {
+      "id": "client-android",
+      "from": "client",
+      "to": "androidsvc",
+      "label": "backend=android",
+      "variant": "dashed",
+      "labelAt": [
+        110,
+        398
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Source ingest",
+      "items": [
+        "The pipeline registers the file through ADD_SOURCE_FILE, then uploads with its own httpx client",
+        "Upload uses epoch-fenced live Kernel cookies, not the RPC pipeline",
+        "URL and Drive adds wrap mutating RPCs in idempotent_create where a stable probe exists"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Artifacts",
+      "items": [
+        "ArtifactsAPI owns validation, source and language resolution for all eleven flows",
+        "Polling is leader/follower over an abstract target-aware studio projection",
+        "AssetDownloadService owns rejection, staging and atomic publication"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Chat",
+      "items": [
+        "ChatAPI owns the conversation lock, cache, id recovery and turn numbering",
+        "_stream_answer is the one custom request body and error mapping in the client",
+        "AndroidChatAPI implements the same neutral base without the web seam"
+      ]
+    }
+  ]
+}

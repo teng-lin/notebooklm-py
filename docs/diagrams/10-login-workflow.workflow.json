@@ -1,0 +1,237 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Login and Credential Bootstrap",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1080,
+      620
+    ],
+    "views": [
+      {
+        "id": "browser",
+        "label": "Interactive login",
+        "focus": [
+          "invoke",
+          "resolve",
+          "launch",
+          "capture",
+          "commit"
+        ],
+        "note": "The default path: a real sign-in captured from a persistent Chromium profile."
+      },
+      {
+        "id": "token",
+        "label": "Master token path",
+        "focus": [
+          "resolve",
+          "oauth",
+          "mint",
+          "commit"
+        ],
+        "note": "Headless-capable alternative that also unlocks the Android bearer."
+      },
+      {
+        "id": "browser-cookies",
+        "label": "Installed browser",
+        "focus": [
+          "invoke",
+          "resolve",
+          "capture",
+          "commit"
+        ],
+        "note": "The cookies extra imports and validates an already signed-in local browser profile."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "cli",
+      "label": "CLI command"
+    },
+    {
+      "id": "browser",
+      "label": "Browser credentials"
+    },
+    {
+      "id": "token",
+      "label": "Alternative sources"
+    },
+    {
+      "id": "store",
+      "label": "Persistence"
+    }
+  ],
+  "phases": [
+    {
+      "id": "select",
+      "label": "Select source",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "acquire",
+      "label": "Acquire credentials",
+      "fromCol": 3,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "persist",
+      "label": "Persist",
+      "fromCol": 5,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "invoke",
+    "resolve",
+    "launch",
+    "capture",
+    "commit"
+  ],
+  "nodes": [
+    {
+      "id": "invoke",
+      "lane": "cli",
+      "col": 0,
+      "width": 68,
+      "type": "external",
+      "label": "login",
+      "sublabel": "operator"
+    },
+    {
+      "id": "resolve",
+      "lane": "cli",
+      "col": 2,
+      "width": 68,
+      "type": "backend",
+      "label": "Resolve",
+      "sublabel": "source"
+    },
+    {
+      "id": "launch",
+      "lane": "browser",
+      "col": 3,
+      "width": 68,
+      "type": "external",
+      "label": "Launch",
+      "sublabel": "Chromium"
+    },
+    {
+      "id": "capture",
+      "lane": "browser",
+      "col": 5,
+      "width": 110,
+      "type": "backend",
+      "label": "Browser Jar",
+      "sublabel": "Playwright · cookies"
+    },
+    {
+      "id": "oauth",
+      "lane": "token",
+      "col": 2,
+      "width": 68,
+      "type": "security",
+      "label": "oauth",
+      "sublabel": "single use"
+    },
+    {
+      "id": "mint",
+      "lane": "token",
+      "col": 4,
+      "width": 68,
+      "type": "cloud",
+      "label": "Mint",
+      "sublabel": "gpsoauth"
+    },
+    {
+      "id": "commit",
+      "lane": "store",
+      "col": 5,
+      "width": 68,
+      "type": "database",
+      "label": "Commit",
+      "sublabel": "atomic",
+      "tag": "lock held"
+    }
+  ],
+  "edges": [
+    {
+      "from": "invoke",
+      "to": "resolve",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "from": "resolve",
+      "to": "launch",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "from": "launch",
+      "to": "capture",
+      "label": "sign-in wait",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "from": "capture",
+      "to": "commit",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "from": "resolve",
+      "to": "oauth",
+      "label": "master token",
+      "variant": "dashed",
+      "role": "branch",
+      "channelX": 268,
+      "labelDx": -52
+    },
+    {
+      "from": "oauth",
+      "to": "mint",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "from": "mint",
+      "to": "commit",
+      "label": "durable",
+      "variant": "dashed",
+      "role": "branch"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Capture core",
+      "items": [
+        "browser_capture.py owns launch through atomic persistence",
+        "login_cookie.py projects installed-browser cookies into the same profile store"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Redaction",
+      "items": [
+        "Login-wait tracing keeps only scheme and host, never the path",
+        "Stricter than extraction, because SSO paths can carry one-time assertions"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Failure classification",
+      "items": [
+        "Launch failures map to actionable help or re-raise unchanged",
+        "A landing URL redirected to login raises HeadlessLoginRequiredError"
+      ]
+    }
+  ]
+}

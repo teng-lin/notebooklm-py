@@ -1,0 +1,345 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "REST Server Subsystem",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "request",
+        "label": "Request path",
+        "focus": [
+          "caller",
+          "app",
+          "routes",
+          "cores",
+          "client"
+        ],
+        "note": "Guarded /v1 routes over the same neutral cores and public namespaces."
+      },
+      {
+        "id": "guards",
+        "label": "Guards",
+        "focus": [
+          "auth",
+          "bodylimit",
+          "limiters"
+        ],
+        "note": "Bearer plus loopback Host, a body cap, and per-group concurrency limits."
+      },
+      {
+        "id": "async",
+        "label": "Long-running work",
+        "focus": [
+          "pending",
+          "routes",
+          "errors"
+        ],
+        "note": "Create returns immediately; the matching GET reports the resource state."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "auth",
+      "type": "security",
+      "label": "Auth Dependency",
+      "sublabel": "bearer + Host",
+      "tag": "constant-time",
+      "pos": [
+        282,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "bodylimit",
+      "type": "security",
+      "label": "Body Limit",
+      "sublabel": "per-route cap",
+      "pos": [
+        544,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "limiters",
+      "type": "security",
+      "label": "Concurrency Limits",
+      "sublabel": "lifespan-owned",
+      "pos": [
+        806,
+        60
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "caller",
+      "type": "external",
+      "label": "HTTP Caller",
+      "sublabel": "loopback client",
+      "pos": [
+        30,
+        260
+      ],
+      "size": [
+        160,
+        90
+      ]
+    },
+    {
+      "id": "app",
+      "type": "frontend",
+      "label": "FastAPI App",
+      "sublabel": "create_app()",
+      "tag": "docs disabled",
+      "pos": [
+        282,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "routes",
+      "type": "frontend",
+      "label": "/v1 Routes",
+      "sublabel": "server/routes/",
+      "pos": [
+        544,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "cores",
+      "type": "backend",
+      "label": "Application Cores",
+      "sublabel": "_app/",
+      "pos": [
+        806,
+        260
+      ],
+      "size": [
+        165,
+        90
+      ]
+    },
+    {
+      "id": "client",
+      "type": "backend",
+      "label": "NotebookLMClient",
+      "sublabel": "opened at lifespan",
+      "tag": "ADR-0004",
+      "pos": [
+        1063,
+        260
+      ],
+      "size": [
+        155,
+        90
+      ]
+    },
+    {
+      "id": "healthz",
+      "type": "frontend",
+      "label": "/healthz",
+      "sublabel": "only public route",
+      "pos": [
+        30,
+        460
+      ],
+      "size": [
+        160,
+        84
+      ]
+    },
+    {
+      "id": "errors",
+      "type": "backend",
+      "label": "Error Envelope",
+      "sublabel": "category + status",
+      "pos": [
+        282,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "pending",
+      "type": "database",
+      "label": "Pending Registry",
+      "sublabel": "bounded FIFO",
+      "tag": "poll the resource",
+      "pos": [
+        544,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "passthrough",
+      "type": "backend",
+      "label": "Passthrough",
+      "sublabel": "raw RPC escape",
+      "pos": [
+        806,
+        460
+      ],
+      "size": [
+        165,
+        84
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "caller-app",
+      "from": "caller",
+      "to": "app",
+      "label": "HTTP",
+      "variant": "emphasis"
+    },
+    {
+      "id": "app-routes",
+      "from": "app",
+      "to": "routes",
+      "label": "dispatch",
+      "variant": "emphasis"
+    },
+    {
+      "id": "routes-cores",
+      "from": "routes",
+      "to": "cores",
+      "label": "typed request",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cores-client",
+      "from": "cores",
+      "to": "client",
+      "label": "live client",
+      "variant": "emphasis"
+    },
+    {
+      "id": "app-auth",
+      "from": "app",
+      "to": "auth",
+      "label": "guards",
+      "variant": "security",
+      "labelAt": [
+        367,
+        202
+      ]
+    },
+    {
+      "id": "routes-bodylimit",
+      "from": "routes",
+      "to": "bodylimit",
+      "label": "size cap",
+      "variant": "security",
+      "labelAt": [
+        629,
+        202
+      ]
+    },
+    {
+      "id": "cores-limiters",
+      "from": "cores",
+      "to": "limiters",
+      "label": "admission",
+      "variant": "security",
+      "labelAt": [
+        888.5,
+        202
+      ]
+    },
+    {
+      "id": "app-errors",
+      "from": "app",
+      "to": "errors",
+      "label": "classify",
+      "labelAt": [
+        367,
+        398
+      ]
+    },
+    {
+      "id": "routes-pending",
+      "from": "routes",
+      "to": "pending",
+      "label": "created ids",
+      "labelAt": [
+        629,
+        398
+      ]
+    },
+    {
+      "id": "cores-passthrough",
+      "from": "cores",
+      "to": "passthrough",
+      "label": "rpc_call",
+      "variant": "dashed",
+      "labelAt": [
+        888.5,
+        398
+      ]
+    },
+    {
+      "id": "app-healthz",
+      "from": "app",
+      "to": "healthz",
+      "label": "unguarded",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Single tenant",
+      "items": [
+        "One client is opened at ASGI lifespan, inside the server event loop",
+        "Routes map onto the same _app/ cores the CLI and MCP adapters use",
+        "server/ imports no click, rich or cli — pinned by test_server_boundary.py"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Guards",
+      "items": [
+        "Every /v1 request needs a static bearer plus a loopback Host literal",
+        "The /docs and /openapi.json schema surface is disabled"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Long-running work",
+      "items": [
+        "Create returns immediately; the matching GET reports pending, 200, 404, 409 or 410",
+        "Expensive route groups have lifespan-owned concurrency limiters"
+      ]
+    }
+  ]
+}

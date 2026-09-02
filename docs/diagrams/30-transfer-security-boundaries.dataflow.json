@@ -1,0 +1,237 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Transfer Security Boundaries",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1250,
+      540
+    ],
+    "views": [
+      {
+        "id": "upload",
+        "label": "Source upload",
+        "focus": [
+          "localfile",
+          "uploadpolicy",
+          "uploadcreds",
+          "scotty",
+          "source"
+        ],
+        "note": "Upload clients are lifecycle-owned, redirect-disabled, and attach live credentials only after validating the server-named session URL."
+      },
+      {
+        "id": "web-download",
+        "label": "Web download",
+        "focus": [
+          "asseturl",
+          "hoppolicy",
+          "downloadcreds",
+          "response",
+          "verify"
+        ],
+        "note": "Every HTTPS redirect hop is revalidated; the structured cookie jar is authoritative only on trusted hosts."
+      },
+      {
+        "id": "android-download",
+        "label": "Android download",
+        "focus": [
+          "asseturl",
+          "hoppolicy",
+          "downloadcreds",
+          "response",
+          "verify"
+        ],
+        "note": "The Android bearer is limited to evidenced entry hosts and is permanently stripped when a chain leaves that set."
+      }
+    ]
+  },
+  "stages": [
+    {
+      "label": "Input"
+    },
+    {
+      "label": "Policy"
+    },
+    {
+      "label": "Credential"
+    },
+    {
+      "label": "Transfer"
+    },
+    {
+      "label": "Verify / publish"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "localfile",
+      "type": "frontend",
+      "label": "Local File",
+      "stage": 0,
+      "row": 0
+    },
+    {
+      "id": "uploadpolicy",
+      "type": "security",
+      "label": "Upload Policy",
+      "stage": 1,
+      "row": 0,
+      "tag": "no redirects"
+    },
+    {
+      "id": "uploadcreds",
+      "type": "security",
+      "label": "Live Credential",
+      "stage": 2,
+      "row": 0,
+      "tag": "epoch fenced"
+    },
+    {
+      "id": "scotty",
+      "type": "cloud",
+      "label": "Scotty Session",
+      "stage": 3,
+      "row": 0
+    },
+    {
+      "id": "source",
+      "type": "database",
+      "label": "Source Row",
+      "stage": 4,
+      "row": 0
+    },
+    {
+      "id": "asseturl",
+      "type": "frontend",
+      "label": "Asset URL",
+      "stage": 0,
+      "row": 2
+    },
+    {
+      "id": "hoppolicy",
+      "type": "security",
+      "label": "Per-hop Policy",
+      "stage": 1,
+      "row": 2,
+      "tag": "every redirect"
+    },
+    {
+      "id": "downloadcreds",
+      "type": "security",
+      "label": "Scoped Auth",
+      "stage": 2,
+      "row": 2
+    },
+    {
+      "id": "response",
+      "type": "cloud",
+      "label": "Media Response",
+      "stage": 3,
+      "row": 2
+    },
+    {
+      "id": "verify",
+      "type": "backend",
+      "label": "Verify & Publish",
+      "stage": 4,
+      "row": 2,
+      "tag": "same-dir staging"
+    }
+  ],
+  "flows": [
+    {
+      "id": "file-policy",
+      "from": "localfile",
+      "to": "uploadpolicy",
+      "label": "admit",
+      "classification": "selected backend",
+      "variant": "emphasis"
+    },
+    {
+      "id": "policy-upload-creds",
+      "from": "uploadpolicy",
+      "to": "uploadcreds",
+      "label": "validated URL",
+      "classification": "credential boundary",
+      "variant": "security"
+    },
+    {
+      "id": "upload-transfer",
+      "from": "uploadcreds",
+      "to": "scotty",
+      "label": "authorized bytes",
+      "classification": "dedicated client",
+      "variant": "emphasis"
+    },
+    {
+      "id": "upload-source",
+      "from": "scotty",
+      "to": "source",
+      "label": "finalize",
+      "classification": "server indexes",
+      "variant": "dashed"
+    },
+    {
+      "id": "url-policy",
+      "from": "asseturl",
+      "to": "hoppolicy",
+      "label": "check",
+      "labelDy": -23,
+      "route": "straight",
+      "variant": "security"
+    },
+    {
+      "id": "policy-download-creds",
+      "from": "hoppolicy",
+      "to": "downloadcreds",
+      "label": "auth",
+      "labelDy": -23,
+      "route": "straight",
+      "variant": "security"
+    },
+    {
+      "id": "creds-response",
+      "from": "downloadcreds",
+      "to": "response",
+      "label": "GET",
+      "labelDy": -23,
+      "route": "straight"
+    },
+    {
+      "id": "response-verify",
+      "from": "response",
+      "to": "verify",
+      "label": "stream chunks",
+      "classification": "bounded"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Separate planes",
+      "items": [
+        "Uploads and asset downloads use dedicated lifecycle participants outside RpcExecutor",
+        "The selected backend supplies the correct credential policy"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "No credential drift",
+      "items": [
+        "Each download hop revalidates URL policy before attaching credentials",
+        "Android clears ambient cookies and never restores a bearer after leaving bearer hosts"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Safe publication",
+      "items": [
+        "Limits and media signatures are checked before publication",
+        "A same-directory staging file is atomically replaced only after a complete transfer"
+      ]
+    }
+  ]
+}

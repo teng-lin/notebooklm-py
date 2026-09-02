@@ -1,0 +1,368 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "notebooklm-py System Overview",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "adapter-fan-in",
+        "label": "Adapter fan-in",
+        "focus": [
+          "cli",
+          "mcp",
+          "rest",
+          "app",
+          "client"
+        ],
+        "note": "Three thin frontend adapters converge on one transport-neutral application layer."
+      },
+      {
+        "id": "web-rpc-path",
+        "label": "Web RPC path",
+        "focus": [
+          "client",
+          "web",
+          "google"
+        ],
+        "note": "The default backend encodes batchexecute frames and posts them to Google."
+      },
+      {
+        "id": "android-path",
+        "label": "Android backend",
+        "focus": [
+          "client",
+          "android",
+          "mobile"
+        ],
+        "note": "The opt-in protobuf backend is selected once for all eleven typed namespaces."
+      },
+      {
+        "id": "credentials",
+        "label": "Credential loop",
+        "focus": [
+          "client",
+          "auth",
+          "store"
+        ],
+        "note": "Cookies load at open, rotate in flight, and persist back to the profile store."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "library",
+      "type": "external",
+      "label": "Python Caller",
+      "sublabel": "async with NotebookLMClient",
+      "pos": [
+        30,
+        30
+      ],
+      "size": [
+        150,
+        68
+      ]
+    },
+    {
+      "id": "cli",
+      "type": "frontend",
+      "label": "CLI",
+      "sublabel": "cli/ · Click",
+      "tag": "base install",
+      "pos": [
+        30,
+        140
+      ],
+      "size": [
+        150,
+        68
+      ]
+    },
+    {
+      "id": "mcp",
+      "type": "frontend",
+      "label": "MCP Server",
+      "sublabel": "mcp/ · FastMCP",
+      "tag": "mcp extra",
+      "pos": [
+        30,
+        250
+      ],
+      "size": [
+        150,
+        68
+      ]
+    },
+    {
+      "id": "rest",
+      "type": "frontend",
+      "label": "REST Server",
+      "sublabel": "server/ · FastAPI",
+      "tag": "server extra",
+      "pos": [
+        30,
+        360
+      ],
+      "size": [
+        150,
+        68
+      ]
+    },
+    {
+      "id": "app",
+      "type": "backend",
+      "label": "Application Layer",
+      "sublabel": "_app/ · neutral cores",
+      "tag": "errors.classify",
+      "pos": [
+        272,
+        234
+      ],
+      "size": [
+        165,
+        100
+      ]
+    },
+    {
+      "id": "client",
+      "type": "backend",
+      "label": "NotebookLMClient",
+      "sublabel": "composition root · 11 namespaces",
+      "tag": "one bound loop",
+      "pos": [
+        529,
+        224
+      ],
+      "size": [
+        175,
+        120
+      ]
+    },
+    {
+      "id": "web",
+      "type": "backend",
+      "label": "Web Backend",
+      "sublabel": "_web/ · batchexecute wire",
+      "tag": "default",
+      "pos": [
+        796,
+        120
+      ],
+      "size": [
+        155,
+        88
+      ]
+    },
+    {
+      "id": "google",
+      "type": "cloud",
+      "label": "NotebookLM Web API",
+      "sublabel": "notebook.google.com",
+      "pos": [
+        1043,
+        120
+      ],
+      "size": [
+        155,
+        88
+      ]
+    },
+    {
+      "id": "android",
+      "type": "backend",
+      "label": "Android Backend",
+      "sublabel": "_android/ · protobuf",
+      "tag": "opt-in",
+      "pos": [
+        796,
+        360
+      ],
+      "size": [
+        155,
+        88
+      ]
+    },
+    {
+      "id": "mobile",
+      "type": "cloud",
+      "label": "Mobile gRPC API",
+      "sublabel": "labs.google orchestration",
+      "pos": [
+        1043,
+        360
+      ],
+      "size": [
+        155,
+        88
+      ]
+    },
+    {
+      "id": "store",
+      "type": "database",
+      "label": "Profile Store",
+      "sublabel": "storage_state.json",
+      "pos": [
+        272,
+        480
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "auth",
+      "type": "security",
+      "label": "Auth Subsystem",
+      "sublabel": "_auth/ · refresh ladder",
+      "pos": [
+        529,
+        480
+      ],
+      "size": [
+        175,
+        84
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "notebooklm-py package (src/notebooklm)",
+      "wraps": [
+        "cli",
+        "mcp",
+        "rest",
+        "app",
+        "client",
+        "web",
+        "android",
+        "store",
+        "auth"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "credential authority",
+      "wraps": [
+        "store",
+        "auth"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "cli-to-app",
+      "from": "cli",
+      "to": "app"
+    },
+    {
+      "id": "mcp-to-app",
+      "from": "mcp",
+      "to": "app"
+    },
+    {
+      "id": "rest-to-app",
+      "from": "rest",
+      "to": "app"
+    },
+    {
+      "id": "library-to-client",
+      "from": "library",
+      "to": "client",
+      "label": "direct async API",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [
+        [
+          616.5,
+          64
+        ]
+      ]
+    },
+    {
+      "id": "app-to-client",
+      "from": "app",
+      "to": "client",
+      "label": "live client",
+      "variant": "emphasis"
+    },
+    {
+      "id": "client-to-web",
+      "from": "client",
+      "to": "web",
+      "label": "encode",
+      "variant": "emphasis"
+    },
+    {
+      "id": "web-to-google",
+      "from": "web",
+      "to": "google",
+      "label": "HTTPS POST",
+      "variant": "emphasis"
+    },
+    {
+      "id": "client-to-android",
+      "from": "client",
+      "to": "android",
+      "label": "serialize",
+      "variant": "dashed"
+    },
+    {
+      "id": "android-to-mobile",
+      "from": "android",
+      "to": "mobile",
+      "label": "gRPC",
+      "variant": "dashed"
+    },
+    {
+      "id": "client-to-auth",
+      "from": "client",
+      "to": "auth",
+      "label": "refresh",
+      "variant": "security",
+      "labelAt": [
+        616.5,
+        410
+      ]
+    },
+    {
+      "id": "auth-to-store",
+      "from": "auth",
+      "to": "store",
+      "label": "cookie I/O",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Adapters",
+      "items": [
+        "CLI: exit codes plus a byte-stable --json error envelope",
+        "MCP: CODE: message · REST: error category plus HTTP status",
+        "None import rpc/ or build raw batchexecute payloads"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Shared core",
+      "items": [
+        "_app/ owns id resolution, plans, retry and wait orchestration",
+        "errors.classify is the single failure-category source",
+        "One client wires eleven feature namespaces at construction"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Credentials and loops",
+      "items": [
+        "AuthTokens load from the profile store at open()",
+        "1PSIDTS rotation writes back through the store",
+        "A client is bound to one event loop and one tenant"
+      ]
+    }
+  ]
+}

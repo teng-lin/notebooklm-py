@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Chat, Notes and Mind Maps Class Model",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1240,
+      540
+    ],
+    "views": [
+      {
+        "id": "chat",
+        "label": "Chat implementations",
+        "focus": ["client", "bases", "web", "android"],
+        "note": "ChatAPI owns orchestration while WebChatAPI and AndroidChatAPI implement the selected send path."
+      },
+      {
+        "id": "notes",
+        "label": "Notes implementations",
+        "focus": ["client", "bases", "web", "android", "values"],
+        "note": "Both concrete NotesAPI subclasses expose the same Note value type over different transports."
+      },
+      {
+        "id": "mindmaps",
+        "label": "Mind map implementations",
+        "focus": ["client", "bases", "web", "android", "values"],
+        "note": "Both MindMapsAPI subclasses compose artifact and note-backed operations without a separate store."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "client",
+      "type": "backend",
+      "label": "NotebookLMClient",
+      "sublabel": "composition root",
+      "tag": "selects backend",
+      "pos": [30, 220],
+      "size": [170, 100]
+    },
+    {
+      "id": "bases",
+      "type": "backend",
+      "label": "Namespace ABCs",
+      "sublabel": "Chat · Notes · Mind Maps",
+      "tag": "3 neutral bases",
+      "pos": [300, 220],
+      "size": [220, 100]
+    },
+    {
+      "id": "web",
+      "type": "backend",
+      "label": "Web Implementations",
+      "sublabel": "three concrete subclasses",
+      "tag": "batchexecute",
+      "pos": [650, 80],
+      "size": [220, 100]
+    },
+    {
+      "id": "android",
+      "type": "backend",
+      "label": "Android Implementations",
+      "sublabel": "three concrete subclasses",
+      "tag": "AndroidSession",
+      "pos": [650, 360],
+      "size": [220, 100]
+    },
+    {
+      "id": "values",
+      "type": "backend",
+      "label": "Public Dataclasses",
+      "sublabel": "AskResult · Note · MindMap",
+      "tag": "shared values",
+      "pos": [980, 220],
+      "size": [220, 100]
+    }
+  ],
+  "connections": [
+    {"id": "client-bases", "from": "client", "to": "bases", "variant": "emphasis"},
+    {"id": "bases-web", "from": "bases", "to": "web", "label": "subclass"},
+    {"id": "bases-android", "from": "bases", "to": "android", "label": "subclass"},
+    {"id": "web-values", "from": "web", "to": "values", "label": "returns"},
+    {"id": "android-values", "from": "android", "to": "values", "label": "returns"}
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Selected backend graph",
+      "items": [
+        "NotebookLMClient installs either the Web or Android subclass for every namespace",
+        "Both graphs return the same public AskResult, Note and MindMap dataclasses"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Chat orchestration",
+      "items": [
+        "ChatAPI owns conversation state, locking, cache, id recovery and turn numbering",
+        "WebChatAPI sends through chat_aware_authed_post; AndroidChatAPI uses AndroidSession"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Notes and mind maps",
+      "items": [
+        "ChatAPI, NotesAPI and MindMapsAPI are the three backend-neutral abstract bases",
+        "WebNotesAPI, WebChatAPI and WebMindMapsAPI have matching Android implementations"
+      ]
+    }
+  ]
+}

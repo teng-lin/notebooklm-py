@@ -1,0 +1,250 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Typed batchexecute RPC Call Path",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "dispatch",
+        "label": "Dispatch",
+        "focus": [
+          "caller",
+          "feature",
+          "executor",
+          "transport"
+        ],
+        "note": "Params and method id are resolved before any transport work begins."
+      },
+      {
+        "id": "wire",
+        "label": "Wire hop",
+        "focus": [
+          "transport",
+          "kernel",
+          "google"
+        ],
+        "note": "The chain leaf re-enters the transport for a final auth rebuild before the POST."
+      },
+      {
+        "id": "decode",
+        "label": "Decode and return",
+        "focus": [
+          "google",
+          "kernel",
+          "executor",
+          "feature",
+          "caller"
+        ],
+        "note": "Strict positional decoding turns shape drift into a typed error."
+      }
+    ],
+    "column_fit": "spread",
+    "viewBox": [
+      1000,
+      560
+    ]
+  },
+  "participants": [
+    {
+      "id": "caller",
+      "type": "external",
+      "label": "Caller",
+      "sublabel": "CLI · MCP · REST · library"
+    },
+    {
+      "id": "feature",
+      "type": "backend",
+      "label": "Feature API",
+      "sublabel": "params + RPCMethod"
+    },
+    {
+      "id": "executor",
+      "type": "backend",
+      "label": "RpcExecutor",
+      "sublabel": "single dispatch path"
+    },
+    {
+      "id": "transport",
+      "type": "backend",
+      "label": "RuntimeTransport",
+      "sublabel": "lease · auth snapshot"
+    },
+    {
+      "id": "kernel",
+      "type": "backend",
+      "label": "Kernel",
+      "sublabel": "httpx.AsyncClient"
+    },
+    {
+      "id": "google",
+      "type": "cloud",
+      "label": "NotebookLM API",
+      "sublabel": "batchexecute"
+    }
+  ],
+  "segments": [
+    {
+      "from": 165,
+      "to": 228,
+      "label": "Feature layer"
+    },
+    {
+      "from": 236,
+      "to": 388,
+      "label": "Admission and ADR-0009 chain"
+    },
+    {
+      "from": 396,
+      "to": 480,
+      "label": "Decode and return"
+    }
+  ],
+  "messages": [
+    {
+      "id": "public-call",
+      "from": "caller",
+      "to": "feature",
+      "y": 180,
+      "label": "client.notebooks.list()",
+      "variant": "emphasis"
+    },
+    {
+      "id": "rpc-call",
+      "from": "feature",
+      "to": "executor",
+      "y": 212,
+      "label": "rpc_call(method, params)",
+      "variant": "emphasis",
+      "note": "logical request id and rpc_calls_started metric"
+    },
+    {
+      "id": "authed-post",
+      "from": "executor",
+      "to": "transport",
+      "y": 244,
+      "label": "perform_authed_post",
+      "variant": "emphasis",
+      "note": "idempotency policy, method id, request encoding"
+    },
+    {
+      "id": "chain-terminal",
+      "from": "transport",
+      "to": "kernel",
+      "y": 276,
+      "label": "chain leaf → terminal",
+      "note": "retry, auth refresh, error injection, tracing"
+    },
+    {
+      "id": "wire-post",
+      "from": "kernel",
+      "to": "google",
+      "y": 308,
+      "label": "POST batchexecute",
+      "variant": "emphasis"
+    },
+    {
+      "id": "streamed-body",
+      "from": "google",
+      "to": "kernel",
+      "y": 340,
+      "label": "streamed body",
+      "variant": "return"
+    },
+    {
+      "id": "raw-response",
+      "from": "kernel",
+      "to": "transport",
+      "y": 372,
+      "label": "raw response",
+      "variant": "return"
+    },
+    {
+      "id": "unwind",
+      "from": "transport",
+      "to": "executor",
+      "y": 404,
+      "label": "response",
+      "variant": "return"
+    },
+    {
+      "id": "decoded",
+      "from": "executor",
+      "to": "feature",
+      "y": 436,
+      "label": "decoded rows",
+      "variant": "return",
+      "note": "strict safe_index; shape drift raises RPCError"
+    },
+    {
+      "id": "typed-result",
+      "from": "feature",
+      "to": "caller",
+      "y": 468,
+      "label": "typed result",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "feature",
+      "from": 175,
+      "to": 474,
+      "type": "backend"
+    },
+    {
+      "participant": "executor",
+      "from": 207,
+      "to": 442,
+      "type": "backend"
+    },
+    {
+      "participant": "transport",
+      "from": 239,
+      "to": 410,
+      "type": "backend"
+    },
+    {
+      "participant": "kernel",
+      "from": 271,
+      "to": 378,
+      "type": "backend"
+    },
+    {
+      "participant": "google",
+      "from": 303,
+      "to": 346,
+      "type": "cloud"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "One dispatch path",
+      "items": [
+        "Every typed RPC enters through RpcExecutor.rpc_call",
+        "client.rpc_call is the raw escape hatch on the same path",
+        "The Android backend replaces this path with a typed gRPC unary call"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Retry safety",
+      "items": [
+        "The registry resolves retry policy once per call",
+        "Probe-then-create and no-retry RPCs disable inner retries",
+        "An explicit caller override always wins"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Failure handling",
+      "items": [
+        "Auth-refresh middleware retries once, with a capped budget",
+        "Decode wraps JSON, Key, Index and Type errors into RPCError",
+        "AttributeError propagates as a code bug, not shape drift"
+      ]
+    }
+  ]
+}

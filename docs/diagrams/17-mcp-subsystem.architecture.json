@@ -1,0 +1,371 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "MCP Adapter Subsystem",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "tool-call",
+        "label": "Tool call path",
+        "focus": [
+          "host",
+          "server",
+          "tools",
+          "app",
+          "client"
+        ],
+        "note": "Every MCP tool is a thin wrapper over the same transport-neutral cores."
+      },
+      {
+        "id": "guards",
+        "label": "Guards",
+        "focus": [
+          "server",
+          "guards",
+          "confirm"
+        ],
+        "note": "Loopback binding, optional OAuth, and confirmation gating on mutations."
+      },
+      {
+        "id": "files",
+        "label": "File transfer",
+        "focus": [
+          "tools",
+          "filelink",
+          "fileroutes"
+        ],
+        "note": "Signed short links move artifact bytes outside the tool result."
+      },
+      {
+        "id": "detached-chat",
+        "label": "Detached chat",
+        "focus": [
+          "tools",
+          "chattasks",
+          "client"
+        ],
+        "note": "chat_start survives request watchdog cancellation and remains pollable through chat_status."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "guards",
+      "type": "security",
+      "label": "HTTP Guards",
+      "sublabel": "loopback · OAuth",
+      "tag": "HTTP mode only",
+      "pos": [
+        282,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "confirm",
+      "type": "security",
+      "label": "Confirm Gate",
+      "sublabel": "needs_confirmation",
+      "pos": [
+        544,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "host",
+      "type": "external",
+      "label": "MCP Host",
+      "sublabel": "Claude · Cursor",
+      "pos": [
+        30,
+        260
+      ],
+      "size": [
+        160,
+        90
+      ]
+    },
+    {
+      "id": "server",
+      "type": "frontend",
+      "label": "FastMCP Server",
+      "sublabel": "create_server()",
+      "tag": "stdio or HTTP",
+      "pos": [
+        282,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "tools",
+      "type": "frontend",
+      "label": "MCP Tools",
+      "sublabel": "mcp/tools/",
+      "tag": "notebooks · studio",
+      "pos": [
+        544,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "app",
+      "type": "backend",
+      "label": "Application Cores",
+      "sublabel": "_app/",
+      "pos": [
+        806,
+        260
+      ],
+      "size": [
+        165,
+        90
+      ]
+    },
+    {
+      "id": "client",
+      "type": "backend",
+      "label": "NotebookLMClient",
+      "sublabel": "one long-lived",
+      "pos": [
+        1063,
+        260
+      ],
+      "size": [
+        155,
+        90
+      ]
+    },
+    {
+      "id": "installer",
+      "type": "backend",
+      "label": "mcp install",
+      "sublabel": "config + .mcpb",
+      "pos": [
+        30,
+        460
+      ],
+      "size": [
+        160,
+        84
+      ]
+    },
+    {
+      "id": "errors",
+      "type": "backend",
+      "label": "Error Projection",
+      "sublabel": "CODE: message",
+      "pos": [
+        282,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "filelink",
+      "type": "security",
+      "label": "File Link Signer",
+      "sublabel": "single-use jti",
+      "pos": [
+        544,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "fileroutes",
+      "type": "frontend",
+      "label": "File Routes",
+      "sublabel": "short-link fetch",
+      "pos": [
+        806,
+        460
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "chattasks",
+      "type": "messagebus",
+      "label": "ChatTaskRegistry",
+      "sublabel": "bounded · detached · FIFO",
+      "tag": "process lifetime",
+      "pos": [
+        1063,
+        460
+      ],
+      "size": [
+        155,
+        84
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "host-server",
+      "from": "host",
+      "to": "server",
+      "label": "MCP protocol",
+      "variant": "emphasis"
+    },
+    {
+      "id": "server-tools",
+      "from": "server",
+      "to": "tools",
+      "label": "registers",
+      "variant": "emphasis"
+    },
+    {
+      "id": "tools-app",
+      "from": "tools",
+      "to": "app",
+      "label": "typed request",
+      "variant": "emphasis"
+    },
+    {
+      "id": "app-client",
+      "from": "app",
+      "to": "client",
+      "label": "live client",
+      "variant": "emphasis"
+    },
+    {
+      "id": "server-guards",
+      "from": "server",
+      "to": "guards",
+      "label": "HTTP mode",
+      "variant": "security",
+      "labelAt": [
+        367,
+        202
+      ]
+    },
+    {
+      "id": "tools-confirm",
+      "from": "tools",
+      "to": "confirm",
+      "label": "mutations",
+      "variant": "security",
+      "labelAt": [
+        629,
+        202
+      ]
+    },
+    {
+      "id": "server-errors",
+      "from": "server",
+      "to": "errors",
+      "label": "classify",
+      "labelAt": [
+        367,
+        398
+      ]
+    },
+    {
+      "id": "tools-filelink",
+      "from": "tools",
+      "to": "filelink",
+      "label": "sign link",
+      "labelAt": [
+        680,
+        398
+      ]
+    },
+    {
+      "id": "filelink-fileroutes",
+      "from": "filelink",
+      "to": "fileroutes",
+      "label": "short link"
+    },
+    {
+      "id": "installer-host",
+      "from": "installer",
+      "to": "host",
+      "label": "writes config",
+      "variant": "dashed",
+      "labelAt": [
+        110,
+        398
+      ]
+    },
+    {
+      "id": "tools-chattasks",
+      "from": "tools",
+      "to": "chattasks",
+      "label": "start · poll · cancel",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          629,
+          407
+        ],
+        [
+          1020,
+          407
+        ],
+        [
+          1020,
+          502
+        ]
+      ],
+      "labelAt": [
+        824,
+        407
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Same cores",
+      "items": [
+        "Tools parse their arguments into typed requests and call _app/ directly",
+        "One long-lived client serves every tool call in the process",
+        "ChatTaskRegistry owns bounded detached asks for chat_start and chat_status",
+        "mcp/ imports no click, rich or cli — pinned by test_mcp_boundary.py"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Safety gates",
+      "items": [
+        "Mutating tools return a needs_confirmation preview unless confirm=true",
+        "HTTP mode binds loopback and rejects non-loopback Host headers"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "File transfer",
+      "items": [
+        "Downloads are handed back as signed single-use short links, not inline bytes",
+        "notebooklm mcp install wires Claude Desktop, Claude Code, Cursor or Windsurf"
+      ]
+    }
+  ]
+}

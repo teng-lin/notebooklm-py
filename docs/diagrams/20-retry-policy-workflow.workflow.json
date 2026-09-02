@@ -1,0 +1,242 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Web RPC Retry Safety Decision",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1080,
+      620
+    ],
+    "views": [
+      {
+        "id": "lookup",
+        "label": "Policy lookup",
+        "focus": [
+          "call",
+          "registry",
+          "resolve",
+          "dispatch"
+        ],
+        "note": "The registry is consulted once per call, before any request is materialised."
+      },
+      {
+        "id": "safe",
+        "label": "Retry-safe RPCs",
+        "focus": [
+          "resolve",
+          "idem",
+          "atleast"
+        ],
+        "note": "Replay-safe operations keep the inner retry loop enabled."
+      },
+      {
+        "id": "unsafe",
+        "label": "Retry-unsafe RPCs",
+        "focus": [
+          "resolve",
+          "probe",
+          "noretry"
+        ],
+        "note": "Commit-lost failures must surface rather than duplicate a write."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "caller",
+      "label": "Caller"
+    },
+    {
+      "id": "executor",
+      "label": "RpcExecutor"
+    },
+    {
+      "id": "safe",
+      "label": "Retries enabled"
+    },
+    {
+      "id": "unsafe",
+      "label": "Retries disabled",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "enter",
+      "label": "Enter",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "classify",
+      "label": "Classify",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "dispatch",
+      "label": "Dispatch",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "call",
+    "registry",
+    "resolve",
+    "dispatch"
+  ],
+  "nodes": [
+    {
+      "id": "call",
+      "lane": "caller",
+      "col": 0,
+      "width": 68,
+      "type": "external",
+      "label": "rpc_call",
+      "sublabel": "public API"
+    },
+    {
+      "id": "registry",
+      "lane": "executor",
+      "col": 2,
+      "width": 68,
+      "type": "database",
+      "label": "Registry",
+      "sublabel": "5 policies"
+    },
+    {
+      "id": "resolve",
+      "lane": "executor",
+      "col": 4,
+      "width": 68,
+      "type": "backend",
+      "label": "Resolve",
+      "sublabel": "retry flag"
+    },
+    {
+      "id": "idem",
+      "lane": "safe",
+      "col": 3,
+      "width": 68,
+      "type": "backend",
+      "label": "Set op",
+      "sublabel": "replay ok"
+    },
+    {
+      "id": "atleast",
+      "lane": "safe",
+      "col": 5,
+      "width": 68,
+      "type": "messagebus",
+      "label": "At least",
+      "sublabel": "dupe cost"
+    },
+    {
+      "id": "probe",
+      "lane": "unsafe",
+      "col": 3,
+      "width": 68,
+      "type": "security",
+      "label": "Probe",
+      "sublabel": "probe loop"
+    },
+    {
+      "id": "noretry",
+      "lane": "unsafe",
+      "col": 5,
+      "width": 68,
+      "type": "security",
+      "label": "No retry",
+      "sublabel": "surface it"
+    },
+    {
+      "id": "dispatch",
+      "lane": "executor",
+      "col": 5,
+      "width": 68,
+      "type": "cloud",
+      "label": "Dispatch",
+      "sublabel": "wire POST"
+    }
+  ],
+  "edges": [
+    {
+      "from": "call",
+      "to": "registry",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "from": "registry",
+      "to": "resolve",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "from": "resolve",
+      "to": "dispatch",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "from": "registry",
+      "to": "idem",
+      "label": "replay safe",
+      "role": "branch"
+    },
+    {
+      "from": "idem",
+      "to": "atleast",
+      "label": "side effects",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "from": "registry",
+      "to": "probe",
+      "label": "no dedupe key",
+      "variant": "security",
+      "role": "error",
+      "labelDx": 52,
+      "labelDy": 40
+    },
+    {
+      "from": "probe",
+      "to": "noretry",
+      "label": "no probe",
+      "variant": "security",
+      "role": "error"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Why it exists",
+      "items": [
+        "Every mutating Web RPC is exposed to a commit-lost failure over HTTPS",
+        "Retry safety is a property of the RPC, declared once in the registry"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "The five policies",
+      "items": [
+        "IDEMPOTENT_SET_OP and AT_LEAST_ONCE_ACCEPTED keep inner retries on",
+        "PROBE_THEN_CREATE and NON_IDEMPOTENT_NO_RETRY force them off"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Closed axis",
+      "items": [
+        "UNCLASSIFIED survives only as a placeholder for hand-built test registries",
+        "A sixth policy needs an ADR amendment and an executor change in lockstep"
+      ]
+    }
+  ]
+}

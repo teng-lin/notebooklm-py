@@ -1,0 +1,339 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Test Suite and Architectural Guardrails",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "tiers",
+        "label": "Four scopes",
+        "focus": [
+          "source",
+          "unit",
+          "server",
+          "integration",
+          "e2e"
+        ],
+        "note": "Only the e2e tier touches the real API, and it is excluded by default."
+      },
+      {
+        "id": "replay",
+        "label": "Cassette replay",
+        "focus": [
+          "integration",
+          "cassettes",
+          "scrubber"
+        ],
+        "note": "Replay is pinned to the recorded host and the decoded form body."
+      },
+      {
+        "id": "pins",
+        "label": "Invariant pins",
+        "focus": [
+          "guardrails",
+          "pins",
+          "wire",
+          "golden"
+        ],
+        "note": "Changing an invariant without updating its pin is treated as a bug."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "pins",
+      "type": "security",
+      "label": "Static Pins",
+      "sublabel": "imports · module size",
+      "pos": [
+        282,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "wire",
+      "type": "security",
+      "label": "Wire Contract",
+      "sublabel": "positional shapes",
+      "pos": [
+        544,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "source",
+      "type": "backend",
+      "label": "src/notebooklm",
+      "sublabel": "system under test",
+      "pos": [
+        30,
+        260
+      ],
+      "size": [
+        160,
+        90
+      ]
+    },
+    {
+      "id": "guardrails",
+      "type": "backend",
+      "label": "Guardrails",
+      "sublabel": "tests/_guardrails/",
+      "tag": "invariant pins",
+      "pos": [
+        282,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "unit",
+      "type": "backend",
+      "label": "Unit Tests",
+      "sublabel": "tests/unit/",
+      "tag": "no network",
+      "pos": [
+        544,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "integration",
+      "type": "backend",
+      "label": "Integration",
+      "sublabel": "tests/integration/",
+      "tag": "VCR replay",
+      "pos": [
+        806,
+        260
+      ],
+      "size": [
+        165,
+        90
+      ]
+    },
+    {
+      "id": "e2e",
+      "type": "external",
+      "label": "E2E Tests",
+      "sublabel": "real API · marked",
+      "pos": [
+        1063,
+        260
+      ],
+      "size": [
+        155,
+        90
+      ]
+    },
+    {
+      "id": "golden",
+      "type": "backend",
+      "label": "Golden Coverage",
+      "sublabel": "decode coverage pin",
+      "pos": [
+        282,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "server",
+      "type": "backend",
+      "label": "Server Tests",
+      "sublabel": "tests/server/",
+      "tag": "in-process ASGI",
+      "pos": [
+        30,
+        460
+      ],
+      "size": [
+        160,
+        84
+      ]
+    },
+    {
+      "id": "fixtures",
+      "type": "backend",
+      "label": "FakeSession",
+      "sublabel": "constructor injection",
+      "tag": "ADR-0007",
+      "pos": [
+        544,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "cassettes",
+      "type": "database",
+      "label": "Cassettes",
+      "sublabel": "tests/cassettes/",
+      "pos": [
+        806,
+        460
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "scrubber",
+      "type": "security",
+      "label": "Scrubber",
+      "sublabel": "ADR-0006",
+      "pos": [
+        1063,
+        460
+      ],
+      "size": [
+        155,
+        84
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "guardrails-source",
+      "from": "guardrails",
+      "to": "source",
+      "label": "inspects",
+      "variant": "security"
+    },
+    {
+      "id": "guardrails-pins",
+      "from": "guardrails",
+      "to": "pins",
+      "label": "import rules",
+      "variant": "security",
+      "labelAt": [
+        367,
+        202
+      ]
+    },
+    {
+      "id": "unit-wire",
+      "from": "unit",
+      "to": "wire",
+      "label": "decode pins",
+      "labelAt": [
+        629,
+        202
+      ]
+    },
+    {
+      "id": "guardrails-golden",
+      "from": "guardrails",
+      "to": "golden",
+      "label": "coverage pin",
+      "labelAt": [
+        367,
+        398
+      ]
+    },
+    {
+      "id": "unit-guardrails",
+      "from": "unit",
+      "to": "guardrails",
+      "label": "same run",
+      "variant": "dashed"
+    },
+    {
+      "id": "unit-integration",
+      "from": "unit",
+      "to": "integration",
+      "label": "then replay",
+      "variant": "emphasis"
+    },
+    {
+      "id": "integration-e2e",
+      "from": "integration",
+      "to": "e2e",
+      "label": "opt-in",
+      "variant": "dashed"
+    },
+    {
+      "id": "unit-fixtures",
+      "from": "unit",
+      "to": "fixtures",
+      "label": "injects",
+      "labelAt": [
+        629,
+        398
+      ]
+    },
+    {
+      "id": "server-source",
+      "from": "server",
+      "to": "source",
+      "label": "REST surface"
+    },
+    {
+      "id": "integration-cassettes",
+      "from": "integration",
+      "to": "cassettes",
+      "label": "replays",
+      "labelAt": [
+        888.5,
+        398
+      ]
+    },
+    {
+      "id": "cassettes-scrubber",
+      "from": "cassettes",
+      "to": "scrubber",
+      "label": "recorded via"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Four execution scopes",
+      "items": [
+        "Unit tests decode and encode with no network at all",
+        "Server tests exercise the FastAPI adapter in-process",
+        "Integration replays scrubbed VCR cassettes; e2e is excluded by default"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Replay matching",
+      "items": [
+        "Cassettes match on method, scheme, host, port, path, rpcids and the decoded form body",
+        "Because host is matched, replay is pinned to the host a cassette was recorded against"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Pinned invariants",
+      "items": [
+        "Boundary gates reject forbidden imports per adapter and per backend",
+        "Changing chain order or a Protocol without updating its pin is a bug"
+      ]
+    }
+  ]
+}

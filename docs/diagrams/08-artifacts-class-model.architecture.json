@@ -1,0 +1,373 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Artifacts Class Model",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "hierarchy",
+        "label": "Inheritance",
+        "focus": [
+          "baseapi",
+          "webapi",
+          "andapi"
+        ],
+        "note": "One neutral abstract base with two concrete backend subclasses."
+      },
+      {
+        "id": "web",
+        "label": "Web collaborators",
+        "focus": [
+          "webapi",
+          "gen",
+          "webrows",
+          "rpc"
+        ],
+        "note": "The web subclass implements the create hook over positional builders."
+      },
+      {
+        "id": "results",
+        "label": "Typed results",
+        "focus": [
+          "rpc",
+          "artifact",
+          "status",
+          "typecode"
+        ],
+        "note": "Decoded payloads become frozen dataclasses carrying two enums."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "webapi",
+      "type": "backend",
+      "label": "WebArtifactsAPI",
+      "sublabel": "_web/artifacts.py",
+      "pos": [
+        282,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "gen",
+      "type": "backend",
+      "label": "Artifact Generation",
+      "sublabel": "ArtifactGenerationService",
+      "pos": [
+        544,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "webrows",
+      "type": "backend",
+      "label": "Row Adapters",
+      "sublabel": "_web/rows/artifacts",
+      "pos": [
+        806,
+        60
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "status",
+      "type": "backend",
+      "label": "ArtifactStatus",
+      "sublabel": "PENDING · PROCESSING",
+      "tag": "IntEnum",
+      "pos": [
+        1063,
+        60
+      ],
+      "size": [
+        155,
+        84
+      ]
+    },
+    {
+      "id": "client",
+      "type": "backend",
+      "label": "NotebookLMClient",
+      "sublabel": "composition root",
+      "pos": [
+        30,
+        260
+      ],
+      "size": [
+        160,
+        90
+      ]
+    },
+    {
+      "id": "baseapi",
+      "type": "backend",
+      "label": "ArtifactsAPI",
+      "sublabel": "abstract base",
+      "tag": "11 generate_* flows",
+      "pos": [
+        282,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "polling",
+      "type": "backend",
+      "label": "Artifact Polling",
+      "sublabel": "ArtifactPollingService",
+      "pos": [
+        544,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "rpc",
+      "type": "backend",
+      "label": "RpcCaller",
+      "sublabel": "Protocol",
+      "tag": "structural",
+      "pos": [
+        806,
+        260
+      ],
+      "size": [
+        165,
+        90
+      ]
+    },
+    {
+      "id": "artifact",
+      "type": "database",
+      "label": "Artifact",
+      "sublabel": "_types/artifacts.py",
+      "tag": "frozen",
+      "pos": [
+        1063,
+        260
+      ],
+      "size": [
+        155,
+        90
+      ]
+    },
+    {
+      "id": "andapi",
+      "type": "backend",
+      "label": "AndroidArtifactsAPI",
+      "sublabel": "_android/artifacts.py",
+      "pos": [
+        282,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "andcodec",
+      "type": "backend",
+      "label": "Proto Codec",
+      "sublabel": "_android/codecs",
+      "pos": [
+        544,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "andsess",
+      "type": "backend",
+      "label": "AndroidSession",
+      "sublabel": "lazy gRPC channel",
+      "pos": [
+        806,
+        460
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "typecode",
+      "type": "backend",
+      "label": "ArtifactTypeCode",
+      "sublabel": "AUDIO · VIDEO · QUIZ",
+      "tag": "IntEnum",
+      "pos": [
+        1063,
+        460
+      ],
+      "size": [
+        155,
+        84
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "web implementation",
+      "wraps": [
+        "webapi",
+        "gen",
+        "webrows"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "android implementation",
+      "wraps": [
+        "andapi",
+        "andcodec",
+        "andsess"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-constructs",
+      "from": "client",
+      "to": "baseapi",
+      "label": "constructs",
+      "variant": "emphasis"
+    },
+    {
+      "id": "web-subclass",
+      "from": "baseapi",
+      "to": "webapi",
+      "label": "subclass",
+      "variant": "emphasis"
+    },
+    {
+      "id": "android-subclass",
+      "from": "baseapi",
+      "to": "andapi",
+      "label": "subclass",
+      "variant": "dashed",
+      "labelAt": [
+        367,
+        398
+      ]
+    },
+    {
+      "id": "base-polling",
+      "from": "baseapi",
+      "to": "polling",
+      "label": "injected"
+    },
+    {
+      "id": "polling-rpc",
+      "from": "polling",
+      "to": "rpc",
+      "label": "status poll"
+    },
+    {
+      "id": "web-gen",
+      "from": "webapi",
+      "to": "gen",
+      "label": "create hook"
+    },
+    {
+      "id": "gen-rows",
+      "from": "gen",
+      "to": "webrows",
+      "label": "decode"
+    },
+    {
+      "id": "rows-status",
+      "from": "webrows",
+      "to": "status",
+      "label": "maps to"
+    },
+    {
+      "id": "rpc-artifact",
+      "from": "rpc",
+      "to": "artifact",
+      "label": "typed result",
+      "variant": "emphasis"
+    },
+    {
+      "id": "artifact-status",
+      "from": "artifact",
+      "to": "status",
+      "label": "status"
+    },
+    {
+      "id": "artifact-type",
+      "from": "artifact",
+      "to": "typecode",
+      "label": "type",
+      "labelAt": [
+        1140.5,
+        398
+      ]
+    },
+    {
+      "id": "and-codec",
+      "from": "andapi",
+      "to": "andcodec",
+      "label": "typed proto"
+    },
+    {
+      "id": "codec-session",
+      "from": "andcodec",
+      "to": "andsess",
+      "label": "unary call"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Inheritance",
+      "items": [
+        "ArtifactsAPI is an ABC; its eleven shared generate_* workflows converge on _send_create_artifact",
+        "All eleven generate_* workflows and validation live on the base",
+        "Both subclasses return the same frozen Artifact dataclass"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Injected collaborators",
+      "items": [
+        "Multi-capability features take collaborators by keyword-only argument",
+        "RpcCaller is a structural Protocol, satisfied by RpcExecutor",
+        "Polling receives the shared CallSupervisor, not a runtime facade"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Typed results",
+      "items": [
+        "ArtifactStatus: UNKNOWN, PENDING, PROCESSING, COMPLETED, FAILED, SUGGESTED",
+        "ArtifactTypeCode spans AUDIO through FILE, ten codes in total",
+        "SUGGESTED rows are filtered out of LIST_ARTIFACTS results"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,337 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Backend Split: Web Wire and Android gRPC",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "web",
+        "label": "Web wire",
+        "focus": [
+          "neutral",
+          "webns",
+          "params",
+          "wire",
+          "webep"
+        ],
+        "note": "Positional param builders and strict positional decoding over batchexecute."
+      },
+      {
+        "id": "android",
+        "label": "Android gRPC",
+        "focus": [
+          "neutral",
+          "andns",
+          "codecs",
+          "session",
+          "andep"
+        ],
+        "note": "Typed protobuf messages over a lazily opened, supervised gRPC channel."
+      },
+      {
+        "id": "identity",
+        "label": "Android identity",
+        "focus": [
+          "andauth",
+          "session"
+        ],
+        "note": "The bearer is minted from a stored gpsoauth master token with Android scopes."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "webns",
+      "type": "backend",
+      "label": "Web Namespaces",
+      "sublabel": "_web/*.py",
+      "pos": [
+        282,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "params",
+      "type": "backend",
+      "label": "Param Builders",
+      "sublabel": "_web/params/",
+      "tag": "position-sensitive",
+      "pos": [
+        544,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "wire",
+      "type": "backend",
+      "label": "batchexecute Codec",
+      "sublabel": "_web/wire/",
+      "tag": "strict safe_index",
+      "pos": [
+        806,
+        60
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "webep",
+      "type": "cloud",
+      "label": "NotebookLM Web",
+      "sublabel": "batchexecute RPC",
+      "pos": [
+        1063,
+        60
+      ],
+      "size": [
+        155,
+        84
+      ]
+    },
+    {
+      "id": "client",
+      "type": "backend",
+      "label": "NotebookLMClient",
+      "sublabel": "composition root",
+      "pos": [
+        30,
+        260
+      ],
+      "size": [
+        160,
+        90
+      ]
+    },
+    {
+      "id": "neutral",
+      "type": "backend",
+      "label": "Neutral Bases",
+      "sublabel": "shared base classes",
+      "tag": "no wire shapes",
+      "pos": [
+        282,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "andauth",
+      "type": "security",
+      "label": "Bearer Provider",
+      "sublabel": "gpsoauth bearer",
+      "pos": [
+        1063,
+        260
+      ],
+      "size": [
+        155,
+        90
+      ]
+    },
+    {
+      "id": "andns",
+      "type": "backend",
+      "label": "Android Namespaces",
+      "sublabel": "_android/*.py",
+      "pos": [
+        282,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "codecs",
+      "type": "backend",
+      "label": "Proto Codecs",
+      "sublabel": "_android/codecs/",
+      "tag": "generated protos",
+      "pos": [
+        544,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "session",
+      "type": "backend",
+      "label": "gRPC Session",
+      "sublabel": "lazy · supervised",
+      "pos": [
+        806,
+        460
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "andep",
+      "type": "cloud",
+      "label": "NotebookLM PA",
+      "sublabel": "notebooklm-pa.googleapis.com",
+      "pos": [
+        1063,
+        460
+      ],
+      "size": [
+        155,
+        84
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "_web/ · default backend",
+      "wraps": [
+        "webns",
+        "params",
+        "wire"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "_android/ · opt-in backend",
+      "wraps": [
+        "andns",
+        "codecs",
+        "session"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-to-neutral",
+      "from": "client",
+      "to": "neutral",
+      "label": "assemble",
+      "variant": "emphasis"
+    },
+    {
+      "id": "neutral-to-webns",
+      "from": "neutral",
+      "to": "webns",
+      "label": "default",
+      "variant": "emphasis"
+    },
+    {
+      "id": "neutral-to-andns",
+      "from": "neutral",
+      "to": "andns",
+      "label": "explicit select",
+      "variant": "dashed",
+      "labelAt": [
+        367,
+        398
+      ]
+    },
+    {
+      "id": "webns-to-params",
+      "from": "webns",
+      "to": "params",
+      "label": "positional"
+    },
+    {
+      "id": "params-to-wire",
+      "from": "params",
+      "to": "wire",
+      "label": "encode"
+    },
+    {
+      "id": "wire-to-webep",
+      "from": "wire",
+      "to": "webep",
+      "label": "HTTPS POST",
+      "variant": "emphasis"
+    },
+    {
+      "id": "andns-to-codecs",
+      "from": "andns",
+      "to": "codecs",
+      "label": "typed proto"
+    },
+    {
+      "id": "codecs-to-session",
+      "from": "codecs",
+      "to": "session",
+      "label": "unary call"
+    },
+    {
+      "id": "session-to-andep",
+      "from": "session",
+      "to": "andep",
+      "label": "gRPC TLS",
+      "variant": "dashed"
+    },
+    {
+      "id": "andauth-to-session",
+      "from": "andauth",
+      "to": "session",
+      "label": "bearer token",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "via": [
+        [
+          1140.5,
+          405
+        ],
+        [
+          888.5,
+          405
+        ]
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Shared shape",
+      "items": [
+        "Public namespace classes stay transport-neutral",
+        "test_backend_boundaries.py constrains private imports",
+        "Typed results are identical whichever backend served the call"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Web wire",
+      "items": [
+        "Method IDs in rpc/types.py are the top breakage class",
+        "Nested source-id params are position-sensitive",
+        "safe_index raises typed shape drift, never raw IndexError"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Android backend",
+      "items": [
+        "Needs the android extra: grpcio plus a protobuf runtime",
+        "The channel opens lazily and drains with the client",
+        "A pinned evidence profile fixes app version and user-agent"
+      ]
+    }
+  ]
+}

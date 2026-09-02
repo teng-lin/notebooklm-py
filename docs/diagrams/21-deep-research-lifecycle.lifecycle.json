@@ -1,0 +1,240 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Deep Research Lifecycle",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1080,
+      640
+    ],
+    "views": [
+      {
+        "id": "main",
+        "label": "Main path",
+        "focus": [
+          "started",
+          "inprogress",
+          "completed",
+          "importing",
+          "imported"
+        ],
+        "note": "A research run finishes server-side, then its sources are imported into the notebook."
+      },
+      {
+        "id": "wait",
+        "label": "Polling",
+        "focus": [
+          "inprogress",
+          "polling"
+        ],
+        "note": "The wait loop classifies each status sample rather than assuming progress."
+      },
+      {
+        "id": "exits",
+        "label": "Non-success exits",
+        "focus": [
+          "polling",
+          "failed",
+          "cancelled"
+        ],
+        "note": "Failure and no-results are backend outcomes; cancellation is an explicit caller call."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "Research phases"
+    },
+    {
+      "id": "events",
+      "label": "Waits and exits"
+    },
+    {
+      "id": "terminal",
+      "label": "Caller exits"
+    }
+  ],
+  "states": [
+    {
+      "id": "started",
+      "type": "start",
+      "label": "Started",
+      "sublabel": "run_id issued",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "tag": "entry"
+    },
+    {
+      "id": "inprogress",
+      "type": "active",
+      "label": "IN_PROGRESS",
+      "sublabel": "backend working",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "status"
+    },
+    {
+      "id": "completed",
+      "type": "active",
+      "label": "COMPLETED",
+      "sublabel": "report ready",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "tag": "status"
+    },
+    {
+      "id": "importing",
+      "type": "active",
+      "label": "Importing",
+      "sublabel": "cited or all",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "tag": "caller step"
+    },
+    {
+      "id": "imported",
+      "type": "success",
+      "label": "Sources Added",
+      "sublabel": "ready to ground",
+      "lane": "main",
+      "col": 4,
+      "step": "05",
+      "tag": "done"
+    },
+    {
+      "id": "polling",
+      "type": "waiting",
+      "label": "Wait Loop",
+      "sublabel": "classify sample",
+      "lane": "events",
+      "col": 0,
+      "tag": "timeout budget"
+    },
+    {
+      "id": "failed",
+      "type": "failure",
+      "label": "FAILED",
+      "sublabel": "or NO_RESULTS",
+      "lane": "events",
+      "col": 2,
+      "tag": "terminal"
+    },
+    {
+      "id": "cancelled",
+      "type": "failure",
+      "label": "CANCELLED",
+      "sublabel": "caller stopped",
+      "lane": "terminal",
+      "col": 1,
+      "tag": "terminal"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "start-run",
+      "from": "started",
+      "to": "inprogress",
+      "variant": "emphasis"
+    },
+    {
+      "id": "run-complete",
+      "from": "inprogress",
+      "to": "completed",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "complete-import",
+      "from": "completed",
+      "to": "importing",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "import-done",
+      "from": "importing",
+      "to": "imported",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "run-poll",
+      "from": "inprogress",
+      "to": "polling",
+      "route": "drop"
+    },
+    {
+      "id": "poll-failed",
+      "from": "polling",
+      "to": "failed",
+      "variant": "security"
+    },
+    {
+      "id": "poll-retry",
+      "from": "polling",
+      "to": "inprogress",
+      "label": "still running",
+      "variant": "emphasis",
+      "fromSide": "left",
+      "toSide": "top",
+      "via": [
+        [
+          20,
+          307
+        ],
+        [
+          20,
+          86
+        ],
+        [
+          248,
+          86
+        ]
+      ],
+      "labelAt": [
+        140,
+        76
+      ]
+    },
+    {
+      "id": "poll-cancelled",
+      "from": "polling",
+      "to": "cancelled",
+      "variant": "security",
+      "route": "drop"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Two halves",
+      "items": [
+        "The run is server-side; importing sources is a caller step",
+        "Import takes every source, or only the cited ones"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Status classification",
+      "items": [
+        "in_progress, completed, failed, no_research, not_found",
+        "An unrecognised code degrades to unknown, not a crash"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Exits",
+      "items": [
+        "Reasons: completed, no_results, cancelled, unknown",
+        "The wait loop never cancels a run on timeout"
+      ]
+    }
+  ]
+}

@@ -13,6 +13,10 @@ notebooks and sources, chat over a notebook's sources, generate and download stu
 and run deep research. It is a thin adapter over the same business logic the CLI uses, so it
 behaves identically to `notebooklm <command>`.
 
+See the [MCP subsystem diagram](./diagrams/17-mcp-subsystem.html) for process and
+application boundaries. Remote file movement is expanded in the
+[transfer-security data flow](./diagrams/30-transfer-security-boundaries.dataflow.html).
+
 ## Install
 
 The server is behind the `mcp` extra (pulls in `fastmcp`):

@@ -1,0 +1,268 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Organization and Sharing Namespaces",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1140,
+      654
+    ],
+    "views": [
+      {
+        "id": "notebook-sharing",
+        "label": "Notebook and sharing",
+        "focus": [
+          "assembly",
+          "contracts",
+          "notebooks",
+          "sharing"
+        ],
+        "note": "Notebook lifecycle and access policy remain separate typed contracts even though both are notebook-scoped."
+      },
+      {
+        "id": "organization",
+        "label": "Membership",
+        "focus": [
+          "contracts",
+          "labels",
+          "collections"
+        ],
+        "note": "Labels group sources inside one notebook; collections group notebooks at account scope."
+      },
+      {
+        "id": "backend-parity",
+        "label": "Backend parity",
+        "focus": [
+          "web",
+          "android",
+          "assembly",
+          "contracts"
+        ],
+        "note": "Construction installs one concrete backend implementation for all five namespaces."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "web",
+      "type": "backend",
+      "label": "Web Adapters",
+      "sublabel": "batchexecute rows",
+      "tag": "default",
+      "pos": [
+        30,
+        140
+      ],
+      "size": [
+        165,
+        86
+      ]
+    },
+    {
+      "id": "android",
+      "type": "backend",
+      "label": "Android Adapters",
+      "sublabel": "protobuf messages",
+      "tag": "opt-in",
+      "pos": [
+        30,
+        390
+      ],
+      "size": [
+        165,
+        86
+      ]
+    },
+    {
+      "id": "assembly",
+      "type": "backend",
+      "label": "Client Assembly",
+      "sublabel": "one selected graph",
+      "tag": "client.backends",
+      "pos": [
+        292,
+        265
+      ],
+      "size": [
+        170,
+        92
+      ]
+    },
+    {
+      "id": "contracts",
+      "type": "backend",
+      "label": "Five Typed APIs",
+      "sublabel": "notebooks · sharing · settings",
+      "tag": "labels · collections",
+      "pos": [
+        559,
+        265
+      ],
+      "size": [
+        190,
+        92
+      ]
+    },
+    {
+      "id": "notebooks",
+      "type": "database",
+      "label": "NotebooksAPI",
+      "sublabel": "lifecycle · metadata · prompts",
+      "pos": [
+        846,
+        50
+      ],
+      "size": [
+        190,
+        76
+      ]
+    },
+    {
+      "id": "sharing",
+      "type": "security",
+      "label": "SharingAPI",
+      "sublabel": "public · users · view level",
+      "pos": [
+        846,
+        160
+      ],
+      "size": [
+        190,
+        76
+      ]
+    },
+    {
+      "id": "settings",
+      "type": "backend",
+      "label": "SettingsAPI",
+      "sublabel": "language · account limits",
+      "pos": [
+        846,
+        270
+      ],
+      "size": [
+        190,
+        76
+      ]
+    },
+    {
+      "id": "labels",
+      "type": "backend",
+      "label": "LabelsAPI",
+      "sublabel": "source membership · notebook scope",
+      "pos": [
+        846,
+        380
+      ],
+      "size": [
+        190,
+        76
+      ]
+    },
+    {
+      "id": "collections",
+      "type": "backend",
+      "label": "CollectionsAPI",
+      "sublabel": "notebook membership · account scope",
+      "pos": [
+        846,
+        490
+      ],
+      "size": [
+        190,
+        76
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "backend-neutral public contracts",
+      "wraps": [
+        "contracts",
+        "notebooks",
+        "sharing",
+        "settings",
+        "labels",
+        "collections"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "web-assembly",
+      "from": "web",
+      "to": "assembly",
+      "label": "install",
+      "variant": "emphasis"
+    },
+    {
+      "id": "android-assembly",
+      "from": "android",
+      "to": "assembly",
+      "label": "install",
+      "variant": "dashed"
+    },
+    {
+      "id": "assembly-contracts",
+      "from": "assembly",
+      "to": "contracts",
+      "label": "publish",
+      "variant": "emphasis"
+    },
+    {
+      "id": "contracts-notebooks",
+      "from": "contracts",
+      "to": "notebooks"
+    },
+    {
+      "id": "contracts-sharing",
+      "from": "contracts",
+      "to": "sharing",
+      "variant": "security"
+    },
+    {
+      "id": "contracts-settings",
+      "from": "contracts",
+      "to": "settings"
+    },
+    {
+      "id": "contracts-labels",
+      "from": "contracts",
+      "to": "labels"
+    },
+    {
+      "id": "contracts-collections",
+      "from": "contracts",
+      "to": "collections"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Two scopes",
+      "items": [
+        "Notebooks, sharing and labels are notebook-scoped",
+        "Settings and collections are account-scoped"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Membership joins",
+      "items": [
+        "Labels receive the selected sources.list capability",
+        "Collections receive the selected notebooks.list capability"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Stable surface",
+      "items": [
+        "Abstract APIs and public dataclasses stay backend-neutral",
+        "Web and Android adapters own only wire encoding and row projection"
+      ]
+    }
+  ]
+}

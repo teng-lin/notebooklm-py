@@ -1,0 +1,362 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "CLI Subsystem",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "command",
+        "label": "Command path",
+        "focus": [
+          "root",
+          "command",
+          "authrt",
+          "services",
+          "client"
+        ],
+        "note": "One asyncio.run bridge per invocation, wrapped by the shared error handler."
+      },
+      {
+        "id": "identity",
+        "label": "Auth source",
+        "focus": [
+          "authsrc",
+          "context",
+          "authrt"
+        ],
+        "note": "Storage flag, environment variable, then the active profile."
+      },
+      {
+        "id": "output",
+        "label": "Rendering and exits",
+        "focus": [
+          "render",
+          "errors",
+          "resolve"
+        ],
+        "note": "Status lines go to stderr so stdout stays parseable JSON."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "authsrc",
+      "type": "security",
+      "label": "AuthSource",
+      "sublabel": "precedence resolver",
+      "pos": [
+        282,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "context",
+      "type": "database",
+      "label": "CLI Context",
+      "sublabel": "context.json",
+      "tag": "active notebook",
+      "pos": [
+        544,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "resolve",
+      "type": "backend",
+      "label": "ID Resolver",
+      "sublabel": "partial-id match",
+      "pos": [
+        806,
+        60
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "root",
+      "type": "frontend",
+      "label": "Root Group",
+      "sublabel": "notebooklm_cli.py",
+      "tag": "SectionedGroup",
+      "pos": [
+        30,
+        260
+      ],
+      "size": [
+        160,
+        90
+      ]
+    },
+    {
+      "id": "command",
+      "type": "frontend",
+      "label": "Click Command",
+      "sublabel": "cli/*_cmd.py",
+      "pos": [
+        282,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "authrt",
+      "type": "backend",
+      "label": "Auth Runtime",
+      "sublabel": "one asyncio.run",
+      "tag": "ADR-0004",
+      "pos": [
+        544,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "services",
+      "type": "backend",
+      "label": "CLI Services",
+      "sublabel": "plans · retry · wait",
+      "tag": "ADR-0008",
+      "pos": [
+        806,
+        260
+      ],
+      "size": [
+        165,
+        90
+      ]
+    },
+    {
+      "id": "client",
+      "type": "backend",
+      "label": "NotebookLMClient",
+      "sublabel": "opened per command",
+      "pos": [
+        1063,
+        260
+      ],
+      "size": [
+        155,
+        90
+      ]
+    },
+    {
+      "id": "errors",
+      "type": "security",
+      "label": "Error Handler",
+      "sublabel": "exit-code policy",
+      "tag": "ADR-0015",
+      "pos": [
+        282,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "render",
+      "type": "frontend",
+      "label": "Rendering",
+      "sublabel": "rich · text · JSON",
+      "pos": [
+        544,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "login",
+      "type": "backend",
+      "label": "Login Services",
+      "sublabel": "interactive · cookies · token",
+      "pos": [
+        806,
+        460
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "capture",
+      "type": "security",
+      "label": "Credential Sources",
+      "sublabel": "browser · cookies · OAuth",
+      "tag": "sanctioned import",
+      "pos": [
+        1063,
+        460
+      ],
+      "size": [
+        155,
+        84
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "cli/ · imports no notebooklm._* except _app and browser_capture",
+      "wraps": [
+        "root",
+        "command",
+        "authrt",
+        "services",
+        "errors",
+        "render",
+        "login",
+        "authsrc",
+        "context",
+        "resolve"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "root-command",
+      "from": "root",
+      "to": "command",
+      "label": "dispatch",
+      "variant": "emphasis"
+    },
+    {
+      "id": "command-authrt",
+      "from": "command",
+      "to": "authrt",
+      "label": "with_auth",
+      "variant": "emphasis"
+    },
+    {
+      "id": "authrt-services",
+      "from": "authrt",
+      "to": "services",
+      "label": "workflow",
+      "variant": "emphasis"
+    },
+    {
+      "id": "services-client",
+      "from": "services",
+      "to": "client",
+      "label": "public API",
+      "variant": "emphasis"
+    },
+    {
+      "id": "authrt-authsrc",
+      "from": "authrt",
+      "to": "authsrc",
+      "label": "resolve auth",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "via": [
+        [
+          629,
+          190
+        ],
+        [
+          367,
+          190
+        ]
+      ],
+      "labelAt": [
+        498,
+        180
+      ]
+    },
+    {
+      "id": "authsrc-context",
+      "from": "authsrc",
+      "to": "context",
+      "label": "active profile"
+    },
+    {
+      "id": "services-resolve",
+      "from": "services",
+      "to": "resolve",
+      "label": "partial ids"
+    },
+    {
+      "id": "command-errors",
+      "from": "command",
+      "to": "errors",
+      "label": "raises",
+      "labelAt": [
+        367,
+        398
+      ]
+    },
+    {
+      "id": "command-render",
+      "from": "command",
+      "to": "render",
+      "label": "stdout"
+    },
+    {
+      "id": "services-login",
+      "from": "services",
+      "to": "login",
+      "label": "login flow",
+      "variant": "dashed",
+      "labelAt": [
+        888.5,
+        398
+      ]
+    },
+    {
+      "id": "login-capture",
+      "from": "login",
+      "to": "capture",
+      "label": "capture",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Thin adapter",
+      "items": [
+        "Commands own Click options, rendering and exit codes; services own workflows",
+        "The CLI never builds batchexecute payloads or imports rpc/"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "One loop per command",
+      "items": [
+        "cli/runtime.py holds the single asyncio.run bridge for sync Click handlers",
+        "Auth precedence is --storage, then NOTEBOOKLM_AUTH_JSON, then the active profile"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Output contract",
+      "items": [
+        "Under --json, failures use the byte-stable typed error envelope",
+        "Parse-time Click errors stay Click-owned and are not re-wrapped"
+      ]
+    }
+  ]
+}

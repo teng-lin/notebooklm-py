@@ -1,0 +1,202 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Profile, Auth, and Backend Selection",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1100,
+      590
+    ],
+    "views": [
+      {
+        "id": "web-open",
+        "label": "Web client",
+        "focus": [
+          "open",
+          "authselect",
+          "backendselect",
+          "webgraph"
+        ],
+        "note": "The default graph uses profile or inline cookies and preserves the batchexecute compatibility path."
+      },
+      {
+        "id": "android-open",
+        "label": "Android client",
+        "focus": [
+          "open",
+          "authselect",
+          "backendselect",
+          "androidgraph"
+        ],
+        "note": "Explicit Android selection installs all eleven adapters and validates the profile's master token at async open."
+      },
+      {
+        "id": "precedence",
+        "label": "Precedence rules",
+        "focus": [
+          "authselect",
+          "backendselect"
+        ],
+        "note": "Authentication source and backend preference are resolved independently before the client graph opens."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "auth",
+      "label": "Authentication source"
+    },
+    {
+      "id": "backend",
+      "label": "Backend preference"
+    },
+    {
+      "id": "web",
+      "label": "Web graph"
+    },
+    {
+      "id": "android",
+      "label": "Android graph",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "inputs",
+      "label": "Construct",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "resolve",
+      "label": "Resolve",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "openphase",
+      "label": "Install and open",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "open",
+    "backendselect",
+    "webgraph"
+  ],
+  "nodes": [
+    {
+      "id": "open",
+      "lane": "backend",
+      "col": 0,
+      "width": 84,
+      "type": "external",
+      "label": "Build Client",
+      "sublabel": "constructor"
+    },
+    {
+      "id": "authselect",
+      "lane": "auth",
+      "col": 2,
+      "width": 112,
+      "type": "security",
+      "label": "Select Auth",
+      "sublabel": "path · env · profile"
+    },
+    {
+      "id": "backendselect",
+      "lane": "backend",
+      "col": 2,
+      "width": 104,
+      "type": "backend",
+      "label": "Select Backend",
+      "sublabel": "arg · env · Web"
+    },
+    {
+      "id": "webgraph",
+      "lane": "web",
+      "col": 4,
+      "width": 108,
+      "type": "backend",
+      "label": "Web Namespaces",
+      "sublabel": "11 adapters",
+      "tag": "default"
+    },
+    {
+      "id": "androidgraph",
+      "lane": "android",
+      "col": 4,
+      "width": 108,
+      "type": "backend",
+      "label": "Android Graph",
+      "sublabel": "11 adapters",
+      "tag": "opt-in"
+    }
+  ],
+  "edges": [
+    {
+      "from": "open",
+      "to": "backendselect",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "from": "backendselect",
+      "to": "webgraph",
+      "label": "web",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "from": "open",
+      "to": "authselect",
+      "role": "branch"
+    },
+    {
+      "from": "authselect",
+      "to": "webgraph",
+      "label": "cookie jar",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "from": "backendselect",
+      "to": "androidgraph",
+      "label": "android",
+      "labelDx": -24,
+      "variant": "dashed",
+      "role": "branch"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Authentication precedence",
+      "items": [
+        "Path > NOTEBOOKLM_AUTH_JSON > active profile",
+        "Inline JSON is not a durable Android token"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Backend precedence",
+      "items": [
+        "backend= > NOTEBOOKLM_BACKEND > Web",
+        "client.backends reports installed adapters"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Open-time boundary",
+      "items": [
+        "Android checks extras and token at async open",
+        "client.rpc_call remains Web-only under either graph"
+      ]
+    }
+  ]
+}

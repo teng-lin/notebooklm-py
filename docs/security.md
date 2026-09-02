@@ -13,6 +13,11 @@ the same account also uses Web. Protect each as described below. Android and
 Web are both unofficial integrations over undocumented Google services, so
 backend selection does not change the security or availability guarantees.
 
+The [authentication architecture](./diagrams/04-authentication.html) maps credential
+owners and recovery, while the
+[transfer-security data flow](./diagrams/30-transfer-security-boundaries.dataflow.html) shows URL
+validation, per-hop credential stripping, bounded reads, and atomic publication.
+
 ## Credential boundaries
 
 - `ProfileStore` owns one caller-spelled profile path, its derived token path, typed reads, and

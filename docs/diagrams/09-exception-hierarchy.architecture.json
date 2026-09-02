@@ -1,0 +1,258 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Selected Public Exception Hierarchy",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1258,
+      600
+    ],
+    "views": [
+      {
+        "id": "rpc",
+        "label": "RPC failures",
+        "focus": [
+          "root",
+          "rpc",
+          "rpctimeout",
+          "rpcfailures"
+        ],
+        "note": "RPCError directly owns timeout, authentication, rate-limit and server failures."
+      },
+      {
+        "id": "notfound",
+        "label": "Domain not found",
+        "focus": [
+          "root",
+          "rpc",
+          "notfound",
+          "domainmissing"
+        ],
+        "note": "Notebook, source and artifact not-found errors inherit both NotFoundError and RPCError."
+      },
+      {
+        "id": "wait",
+        "label": "Local wait timeout",
+        "focus": [
+          "root",
+          "waittimeout",
+          "artifacttimeout"
+        ],
+        "note": "ArtifactTimeoutError is a local polling timeout, separate from RPCTimeoutError."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "root",
+      "type": "backend",
+      "label": "NotebookLMError",
+      "sublabel": "public exception root",
+      "tag": "Exception",
+      "pos": [
+        30,
+        252
+      ],
+      "size": [
+        160,
+        96
+      ]
+    },
+    {
+      "id": "network",
+      "type": "backend",
+      "label": "NetworkError",
+      "sublabel": "transport failures",
+      "pos": [
+        282,
+        40
+      ],
+      "size": [
+        176,
+        86
+      ]
+    },
+    {
+      "id": "rpc",
+      "type": "backend",
+      "label": "RPCError",
+      "sublabel": "remote-call failures",
+      "pos": [
+        282,
+        180
+      ],
+      "size": [
+        176,
+        86
+      ]
+    },
+    {
+      "id": "notfound",
+      "type": "backend",
+      "label": "NotFoundError",
+      "sublabel": "missing entity",
+      "pos": [
+        282,
+        340
+      ],
+      "size": [
+        176,
+        86
+      ]
+    },
+    {
+      "id": "waittimeout",
+      "type": "backend",
+      "label": "WaitTimeoutError",
+      "sublabel": "local polling timeout",
+      "pos": [
+        282,
+        480
+      ],
+      "size": [
+        176,
+        86
+      ]
+    },
+    {
+      "id": "rpctimeout",
+      "type": "backend",
+      "label": "RPCTimeoutError",
+      "sublabel": "request timed out",
+      "pos": [
+        1022,
+        40
+      ],
+      "size": [
+        206,
+        86
+      ]
+    },
+    {
+      "id": "rpcfailures",
+      "type": "backend",
+      "label": "RPC Failure Types",
+      "sublabel": "Auth · RateLimit · Server",
+      "tag": "direct subclasses",
+      "pos": [
+        1022,
+        172
+      ],
+      "size": [
+        206,
+        96
+      ]
+    },
+    {
+      "id": "domainmissing",
+      "type": "backend",
+      "label": "Domain *NotFoundError",
+      "sublabel": "Notebook · Source · Artifact",
+      "tag": "also RPCError",
+      "pos": [
+        1002,
+        332
+      ],
+      "size": [
+        226,
+        100
+      ]
+    },
+    {
+      "id": "artifacttimeout",
+      "type": "backend",
+      "label": "ArtifactTimeoutError",
+      "sublabel": "generation wait expired",
+      "pos": [
+        1002,
+        480
+      ],
+      "size": [
+        226,
+        86
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "root-network",
+      "from": "root",
+      "to": "network"
+    },
+    {
+      "id": "root-rpc",
+      "from": "root",
+      "to": "rpc",
+      "variant": "emphasis"
+    },
+    {
+      "id": "root-notfound",
+      "from": "root",
+      "to": "notfound"
+    },
+    {
+      "id": "root-wait",
+      "from": "root",
+      "to": "waittimeout"
+    },
+    {
+      "id": "network-rpctimeout",
+      "from": "network",
+      "to": "rpctimeout",
+      "label": "specializes"
+    },
+    {
+      "id": "rpc-failures",
+      "from": "rpc",
+      "to": "rpcfailures",
+      "label": "direct subclasses",
+      "variant": "emphasis"
+    },
+    {
+      "id": "notfound-domain",
+      "from": "notfound",
+      "to": "domainmissing"
+    },
+    {
+      "id": "rpc-domain",
+      "from": "rpc",
+      "to": "domainmissing",
+      "label": "also RPCError",
+      "variant": "dashed"
+    },
+    {
+      "id": "wait-artifact",
+      "from": "waittimeout",
+      "to": "artifacttimeout",
+      "label": "specializes"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "violet",
+      "title": "Direct RPC failures",
+      "items": [
+        "AuthError, RateLimitError and ServerError directly subclass RPCError",
+        "DecodingError and UnknownRPCMethodError remain narrow RPCError types"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Multiple inheritance",
+      "items": [
+        "NotebookNotFoundError, SourceNotFoundError and ArtifactNotFoundError share both branches",
+        "Callers can catch the domain family or the broader RPC failure family"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Two timeout meanings",
+      "items": [
+        "RPCTimeoutError reports a transport request timeout",
+        "ArtifactTimeoutError reports an exhausted local generation wait"
+      ]
+    }
+  ]
+}

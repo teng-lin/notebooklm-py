@@ -1,0 +1,368 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Authentication Class Model",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "load",
+        "label": "Load path",
+        "focus": [
+          "loader",
+          "tokens",
+          "store",
+          "merge"
+        ],
+        "note": "One closed result type carries either an inline or a file-backed load."
+      },
+      {
+        "id": "cookies",
+        "label": "Cookie values",
+        "focus": [
+          "jar",
+          "cookie",
+          "mint",
+          "store"
+        ],
+        "note": "Canonical value types own conversion and the cookie-set policy questions."
+      },
+      {
+        "id": "recovery",
+        "label": "Recovery classes",
+        "focus": [
+          "flight",
+          "cold",
+          "mint",
+          "mastertoken"
+        ],
+        "note": "One leader per canonical path drives the ladder; followers bridge its result."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "loader",
+      "type": "backend",
+      "label": "StoredAuthLoader",
+      "sublabel": "source · seed · route",
+      "pos": [
+        282,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "cookie",
+      "type": "database",
+      "label": "Cookie",
+      "sublabel": "identity + attributes",
+      "pos": [
+        806,
+        60
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "merge",
+      "type": "database",
+      "label": "CookieMergeResult",
+      "sublabel": "transaction result",
+      "pos": [
+        544,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "client",
+      "type": "backend",
+      "label": "Client Runtime",
+      "sublabel": "AuthRefreshCoordinator",
+      "pos": [
+        30,
+        260
+      ],
+      "size": [
+        160,
+        90
+      ]
+    },
+    {
+      "id": "tokens",
+      "type": "security",
+      "label": "AuthTokens",
+      "sublabel": "mutable, aliased",
+      "tag": "authoritative",
+      "pos": [
+        282,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "store",
+      "type": "database",
+      "label": "ProfileStore",
+      "sublabel": "path-owned writes",
+      "pos": [
+        544,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "jar",
+      "type": "database",
+      "label": "CookieJar",
+      "sublabel": "canonical container",
+      "pos": [
+        806,
+        260
+      ],
+      "size": [
+        165,
+        90
+      ]
+    },
+    {
+      "id": "lock",
+      "type": "security",
+      "label": "StorageLockManager",
+      "sublabel": "dependency bottom",
+      "pos": [
+        1063,
+        260
+      ],
+      "size": [
+        155,
+        90
+      ]
+    },
+    {
+      "id": "cold",
+      "type": "backend",
+      "label": "ColdRecoveryCoordinator",
+      "sublabel": "L2.5 to L4 ladder",
+      "pos": [
+        282,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "flight",
+      "type": "backend",
+      "label": "SingleFlight",
+      "sublabel": "leader + followers",
+      "pos": [
+        544,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "mint",
+      "type": "backend",
+      "label": "MintService",
+      "sublabel": "stateless boundary",
+      "pos": [
+        806,
+        460
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "mastertoken",
+      "type": "security",
+      "label": "MasterToken",
+      "sublabel": "frozen value",
+      "tag": "redacted repr",
+      "pos": [
+        1063,
+        460
+      ],
+      "size": [
+        155,
+        84
+      ]
+    },
+    {
+      "id": "lockfiles",
+      "type": "database",
+      "label": "Lock Files",
+      "sublabel": "four derived paths",
+      "pos": [
+        1063,
+        60
+      ],
+      "size": [
+        155,
+        84
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-tokens",
+      "from": "client",
+      "to": "tokens",
+      "label": "aliases",
+      "variant": "emphasis"
+    },
+    {
+      "id": "tokens-loader",
+      "from": "tokens",
+      "to": "loader",
+      "label": "loaded by",
+      "labelAt": [
+        367,
+        202
+      ]
+    },
+    {
+      "id": "tokens-cold",
+      "from": "tokens",
+      "to": "cold",
+      "label": "refreshed by",
+      "labelAt": [
+        367,
+        398
+      ]
+    },
+    {
+      "id": "tokens-store",
+      "from": "tokens",
+      "to": "store",
+      "label": "persists to",
+      "variant": "emphasis"
+    },
+    {
+      "id": "store-flight",
+      "from": "store",
+      "to": "flight",
+      "label": "guarded by",
+      "labelAt": [
+        629,
+        398
+      ]
+    },
+    {
+      "id": "store-jar",
+      "from": "store",
+      "to": "jar",
+      "label": "merges",
+      "variant": "emphasis"
+    },
+    {
+      "id": "jar-cookie",
+      "from": "jar",
+      "to": "cookie",
+      "label": "holds",
+      "labelAt": [
+        888.5,
+        202
+      ]
+    },
+    {
+      "id": "jar-lock",
+      "from": "jar",
+      "to": "lock",
+      "label": "written under",
+      "variant": "security"
+    },
+    {
+      "id": "mastertoken-lock",
+      "from": "mastertoken",
+      "to": "lock",
+      "label": "bootstrap lock",
+      "variant": "security",
+      "labelAt": [
+        1140.5,
+        398
+      ]
+    },
+    {
+      "id": "store-merge",
+      "from": "store",
+      "to": "merge",
+      "label": "returns",
+      "labelAt": [
+        629,
+        202
+      ]
+    },
+    {
+      "id": "lock-files",
+      "from": "lock",
+      "to": "lockfiles",
+      "label": "derives",
+      "variant": "security",
+      "labelAt": [
+        1140.5,
+        202
+      ]
+    },
+    {
+      "id": "mint-jar",
+      "from": "mint",
+      "to": "jar",
+      "label": "minted session",
+      "labelAt": [
+        888.5,
+        398
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Value types",
+      "items": [
+        "Cookie and CookieJar own every conversion plus the cookie-set policy questions",
+        "MasterToken is frozen and redacts its credential from repr"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Load result",
+      "items": [
+        "StoredAuthLoader returns a closed InlineLoadedAuth or FileLoadedAuth",
+        "TokenAcquirer is its only structural seam; blocking work is offloaded"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Concurrency",
+      "items": [
+        "SingleFlight keys on the canonical storage path with per-path success epochs",
+        "Waiter cancellation never cancels the shared leader task"
+      ]
+    }
+  ]
+}

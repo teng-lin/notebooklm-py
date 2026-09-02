@@ -1,0 +1,369 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Android Backend Subsystem",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "control",
+        "label": "Control plane",
+        "focus": [
+          "client",
+          "namespaces",
+          "codecs",
+          "session",
+          "pa"
+        ],
+        "note": "Android namespace control-plane calls use typed protobuf unary or streaming gRPC methods."
+      },
+      {
+        "id": "identity",
+        "label": "Identity",
+        "focus": [
+          "mastertoken",
+          "mint",
+          "bearer",
+          "session"
+        ],
+        "note": "A durable master token mints the short-lived Android OAuth bearer."
+      },
+      {
+        "id": "data",
+        "label": "Data plane",
+        "focus": [
+          "bearer",
+          "dataplane",
+          "hosts"
+        ],
+        "note": "Uploads and asset transfers use plain HTTPS with per-hop bearer decisions."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "mastertoken",
+      "type": "security",
+      "label": "Master Token",
+      "sublabel": "durable record",
+      "pos": [
+        30,
+        60
+      ],
+      "size": [
+        160,
+        84
+      ]
+    },
+    {
+      "id": "mint",
+      "type": "cloud",
+      "label": "gpsoauth Mint",
+      "sublabel": "MintService",
+      "pos": [
+        282,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "bearer",
+      "type": "security",
+      "label": "BearerProvider",
+      "sublabel": "shared · generation",
+      "tag": "repr-safe",
+      "pos": [
+        544,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "evidence",
+      "type": "backend",
+      "label": "Evidence Profile",
+      "sublabel": "pinned app version",
+      "pos": [
+        1063,
+        60
+      ],
+      "size": [
+        155,
+        84
+      ]
+    },
+    {
+      "id": "client",
+      "type": "backend",
+      "label": "NotebookLMClient",
+      "sublabel": "backend=android",
+      "pos": [
+        30,
+        260
+      ],
+      "size": [
+        160,
+        90
+      ]
+    },
+    {
+      "id": "namespaces",
+      "type": "backend",
+      "label": "Android APIs",
+      "sublabel": "_android/*.py",
+      "tag": "11 namespaces",
+      "pos": [
+        282,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "codecs",
+      "type": "backend",
+      "label": "Proto Codecs",
+      "sublabel": "_android/codecs/",
+      "pos": [
+        544,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "session",
+      "type": "backend",
+      "label": "AndroidSession",
+      "sublabel": "lazy · supervised",
+      "tag": "epoch fenced",
+      "pos": [
+        806,
+        260
+      ],
+      "size": [
+        165,
+        90
+      ]
+    },
+    {
+      "id": "pa",
+      "type": "cloud",
+      "label": "NotebookLM PA",
+      "sublabel": "notebooklm-pa.googleapis.com",
+      "pos": [
+        1063,
+        260
+      ],
+      "size": [
+        155,
+        90
+      ]
+    },
+    {
+      "id": "dataplane",
+      "type": "backend",
+      "label": "HTTPS Data Plane",
+      "sublabel": "upload · download",
+      "pos": [
+        806,
+        460
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "hosts",
+      "type": "cloud",
+      "label": "Asset Hosts",
+      "sublabel": "lh3 · usercontent",
+      "pos": [
+        1063,
+        460
+      ],
+      "size": [
+        155,
+        84
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "bearer authority",
+      "wraps": [
+        "mastertoken",
+        "mint",
+        "bearer"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "gRPC control plane",
+      "wraps": [
+        "namespaces",
+        "codecs",
+        "session"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-namespaces",
+      "from": "client",
+      "to": "namespaces",
+      "label": "assembles",
+      "variant": "emphasis"
+    },
+    {
+      "id": "namespaces-codecs",
+      "from": "namespaces",
+      "to": "codecs",
+      "label": "typed proto"
+    },
+    {
+      "id": "codecs-session",
+      "from": "codecs",
+      "to": "session",
+      "label": "unary call"
+    },
+    {
+      "id": "session-pa",
+      "from": "session",
+      "to": "pa",
+      "label": "gRPC TLS",
+      "variant": "emphasis"
+    },
+    {
+      "id": "token-mint",
+      "from": "mastertoken",
+      "to": "mint",
+      "label": "gpsoauth",
+      "variant": "security"
+    },
+    {
+      "id": "mint-bearer",
+      "from": "mint",
+      "to": "bearer",
+      "label": "OAuth token",
+      "variant": "security"
+    },
+    {
+      "id": "bearer-session",
+      "from": "bearer",
+      "to": "session",
+      "label": "Authorization",
+      "variant": "security",
+      "labelAt": [
+        888.5,
+        190
+      ],
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [
+        [
+          888.5,
+          102
+        ]
+      ]
+    },
+    {
+      "id": "evidence-pa",
+      "from": "evidence",
+      "to": "pa",
+      "label": "user-agent",
+      "labelAt": [
+        1140.5,
+        202
+      ]
+    },
+    {
+      "id": "data-hosts",
+      "from": "dataplane",
+      "to": "hosts",
+      "label": "bearer GET",
+      "variant": "dashed"
+    },
+    {
+      "id": "session-data",
+      "from": "session",
+      "to": "dataplane",
+      "label": "upload control",
+      "labelAt": [
+        888.5,
+        405
+      ],
+      "variant": "dashed"
+    },
+    {
+      "id": "bearer-data",
+      "from": "bearer",
+      "to": "dataplane",
+      "label": "per-hop bearer",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "via": [
+        [
+          629,
+          20
+        ],
+        [
+          20,
+          20
+        ],
+        [
+          20,
+          580
+        ],
+        [
+          888.5,
+          580
+        ]
+      ],
+      "labelAt": [
+        470,
+        570
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Control plane",
+      "items": [
+        "The channel opens lazily on first use and is fenced to the client resource epoch",
+        "Unary and streaming calls carry deadlines and typed gRPC status mapping"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Identity",
+      "items": [
+        "The OAuth spec pins the app package, client signature and seven scopes",
+        "BearerCredential never exposes its token through repr"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Data plane",
+      "items": [
+        "AndroidUploadPipeline and AndroidAssetDownloadService bypass gRPC entirely",
+        "Asset hops clear ambient cookies and strip credentials once off the allowlist"
+      ]
+    }
+  ]
+}

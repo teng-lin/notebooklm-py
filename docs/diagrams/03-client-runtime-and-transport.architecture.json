@@ -1,0 +1,364 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Client Runtime and Web Transport",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "dispatch",
+        "label": "Dispatch spine",
+        "focus": [
+          "client",
+          "executor",
+          "transport",
+          "chain",
+          "kernel",
+          "google"
+        ],
+        "note": "One logical batchexecute RPC from the public call down to the socket."
+      },
+      {
+        "id": "policy",
+        "label": "Admission and policy",
+        "focus": [
+          "supervisor",
+          "idem",
+          "executor",
+          "transport"
+        ],
+        "note": "Retry safety is a property of the RPC; admission is owned by the supervisor."
+      },
+      {
+        "id": "lifecycle",
+        "label": "Lifecycle and auth",
+        "focus": [
+          "lifecycle",
+          "webLifecycle",
+          "authcoord",
+          "kernel"
+        ],
+        "note": "Resource epochs, keepalive and auth refresh are owned outside the dispatch path."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "lifecycle",
+      "type": "backend",
+      "label": "ClientLifecycle",
+      "sublabel": "_runtime/lifecycle.py",
+      "tag": "open · drain · close",
+      "pos": [
+        30,
+        60
+      ],
+      "size": [
+        160,
+        84
+      ]
+    },
+    {
+      "id": "idem",
+      "type": "backend",
+      "label": "IdempotencyRegistry",
+      "sublabel": "_web/policy.py",
+      "pos": [
+        282,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "supervisor",
+      "type": "backend",
+      "label": "CallSupervisor",
+      "sublabel": "drain → metrics → sem",
+      "tag": "generation leases",
+      "pos": [
+        544,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "webLifecycle",
+      "type": "backend",
+      "label": "WebTransportLifecycle",
+      "sublabel": "kernel epoch · keepalive",
+      "pos": [
+        806,
+        60
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "client",
+      "type": "backend",
+      "label": "NotebookLMClient",
+      "sublabel": "client.py · root",
+      "pos": [
+        30,
+        260
+      ],
+      "size": [
+        160,
+        90
+      ]
+    },
+    {
+      "id": "executor",
+      "type": "backend",
+      "label": "RpcExecutor",
+      "sublabel": "_web/transport/executor",
+      "tag": "one RPC path",
+      "pos": [
+        282,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "transport",
+      "type": "backend",
+      "label": "RuntimeTransport",
+      "sublabel": "_web/transport/runtime",
+      "pos": [
+        544,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "chain",
+      "type": "backend",
+      "label": "Middleware Chain",
+      "sublabel": "_web/transport/middleware",
+      "tag": "ADR-0009 order",
+      "pos": [
+        806,
+        260
+      ],
+      "size": [
+        165,
+        90
+      ]
+    },
+    {
+      "id": "kernel",
+      "type": "backend",
+      "label": "Kernel",
+      "sublabel": "httpx client · cookie jar",
+      "pos": [
+        1063,
+        260
+      ],
+      "size": [
+        155,
+        90
+      ]
+    },
+    {
+      "id": "wire",
+      "type": "backend",
+      "label": "Wire Codec",
+      "sublabel": "_web/wire/ · codec",
+      "tag": "strict safe_index",
+      "pos": [
+        282,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "authcoord",
+      "type": "security",
+      "label": "AuthRefreshCoordinator",
+      "sublabel": "snapshot lock · refresh",
+      "pos": [
+        544,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "google",
+      "type": "cloud",
+      "label": "NotebookLM Web API",
+      "sublabel": "batchexecute endpoint",
+      "pos": [
+        1063,
+        460
+      ],
+      "size": [
+        155,
+        84
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "ADR-0009 authed POST spine",
+      "wraps": [
+        "executor",
+        "transport",
+        "chain",
+        "kernel"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-to-lifecycle",
+      "from": "client",
+      "to": "lifecycle",
+      "label": "open · close"
+    },
+    {
+      "id": "client-to-executor",
+      "from": "client",
+      "to": "executor",
+      "label": "rpc_call",
+      "variant": "emphasis"
+    },
+    {
+      "id": "executor-to-idem",
+      "from": "executor",
+      "to": "idem",
+      "label": "retry policy",
+      "labelAt": [
+        367,
+        185
+      ]
+    },
+    {
+      "id": "executor-to-wire",
+      "from": "executor",
+      "to": "wire",
+      "label": "encode · decode",
+      "labelAt": [
+        367,
+        405
+      ]
+    },
+    {
+      "id": "executor-to-transport",
+      "from": "executor",
+      "to": "transport",
+      "label": "authed POST",
+      "variant": "emphasis"
+    },
+    {
+      "id": "transport-to-supervisor",
+      "from": "transport",
+      "to": "supervisor",
+      "label": "call scope"
+    },
+    {
+      "id": "transport-to-auth",
+      "from": "transport",
+      "to": "authcoord",
+      "label": "auth snapshot",
+      "variant": "security",
+      "labelAt": [
+        629,
+        405
+      ]
+    },
+    {
+      "id": "transport-to-chain",
+      "from": "transport",
+      "to": "chain",
+      "label": "dispatch",
+      "variant": "emphasis"
+    },
+    {
+      "id": "chain-to-kernel",
+      "from": "chain",
+      "to": "kernel",
+      "label": "chain leaf",
+      "variant": "emphasis"
+    },
+    {
+      "id": "kernel-to-google",
+      "from": "kernel",
+      "to": "google",
+      "label": "HTTPS POST",
+      "variant": "emphasis",
+      "labelAt": [
+        1140.5,
+        405
+      ]
+    },
+    {
+      "id": "weblifecycle-to-kernel",
+      "from": "webLifecycle",
+      "to": "kernel",
+      "label": "fences epoch",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "via": [
+        [
+          888.5,
+          205
+        ],
+        [
+          1140.5,
+          205
+        ]
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Dispatch",
+      "items": [
+        "RpcExecutor is the single logical batchexecute dispatch path",
+        "RuntimeTransport takes an admission lease before loop check and auth snapshot",
+        "The chain leaf re-enters RuntimeTransport.terminal for a final freshness rebuild"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Policy",
+      "items": [
+        "Five retry-safety policies, closed axis: unclassified, probe-then-create, idempotent set-op, at-least-once, no-retry",
+        "The caller's explicit disable_internal_retries always wins over the registry",
+        "safe_index raises a typed shape-drift error; strict decoding is the only mode"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Lifecycle",
+      "items": [
+        "ClientLifecycle owns resource state and open/close waves, no HTTP client",
+        "WebTransportLifecycle owns the Kernel, keepalive task and cookie save routing",
+        "The Android backend runs its own AndroidSession under the same CallSupervisor"
+      ]
+    }
+  ]
+}

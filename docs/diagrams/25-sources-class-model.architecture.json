@@ -1,0 +1,306 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Sources Class Model",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "hierarchy",
+        "label": "Inheritance",
+        "focus": [
+          "baseapi",
+          "webns",
+          "andns"
+        ],
+        "note": "One neutral abstract namespace with two concrete backend subclasses."
+      },
+      {
+        "id": "upload",
+        "label": "Upload classes",
+        "focus": [
+          "webns",
+          "pipeline",
+          "scotty"
+        ],
+        "note": "The pipeline owns its own client, semaphore and transport-lifecycle participation."
+      },
+      {
+        "id": "values",
+        "label": "Value types",
+        "focus": [
+          "addsvc",
+          "source",
+          "sourcetype"
+        ],
+        "note": "Both backends return the same frozen Source dataclass."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "pipeline",
+      "type": "backend",
+      "label": "SourceUploadPipeline",
+      "sublabel": "own client + semaphore",
+      "tag": "loop-bound",
+      "pos": [
+        544,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "scotty",
+      "type": "cloud",
+      "label": "Scotty Upload",
+      "sublabel": "start · finalize",
+      "pos": [
+        806,
+        60
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "client",
+      "type": "backend",
+      "label": "NotebookLMClient",
+      "sublabel": "composition root",
+      "pos": [
+        30,
+        260
+      ],
+      "size": [
+        160,
+        90
+      ]
+    },
+    {
+      "id": "baseapi",
+      "type": "backend",
+      "label": "SourcesAPI",
+      "sublabel": "abstract base",
+      "tag": "ABC",
+      "pos": [
+        282,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "webns",
+      "type": "backend",
+      "label": "WebSourcesAPI",
+      "sublabel": "_web/sources/",
+      "pos": [
+        544,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "addsvc",
+      "type": "backend",
+      "label": "SourceAddService",
+      "sublabel": "probe then create",
+      "pos": [
+        806,
+        260
+      ],
+      "size": [
+        165,
+        90
+      ]
+    },
+    {
+      "id": "drive",
+      "type": "backend",
+      "label": "DriveImportService",
+      "sublabel": "fetch + confirm",
+      "pos": [
+        1063,
+        260
+      ],
+      "size": [
+        155,
+        90
+      ]
+    },
+    {
+      "id": "andns",
+      "type": "backend",
+      "label": "AndroidSourcesAPI",
+      "sublabel": "_android/sources.py",
+      "pos": [
+        282,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "andupload",
+      "type": "backend",
+      "label": "AndroidUploadPipeline",
+      "sublabel": "control + data plane",
+      "pos": [
+        544,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "source",
+      "type": "database",
+      "label": "Source",
+      "sublabel": "_types/sources.py",
+      "tag": "frozen",
+      "pos": [
+        806,
+        460
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "sourcetype",
+      "type": "database",
+      "label": "SourceStatus",
+      "sublabel": "READY · PROCESSING",
+      "tag": "IntEnum",
+      "pos": [
+        1063,
+        460
+      ],
+      "size": [
+        155,
+        84
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-base",
+      "from": "client",
+      "to": "baseapi",
+      "label": "constructs",
+      "variant": "emphasis"
+    },
+    {
+      "id": "base-web",
+      "from": "baseapi",
+      "to": "webns",
+      "label": "subclass",
+      "variant": "emphasis"
+    },
+    {
+      "id": "base-android",
+      "from": "baseapi",
+      "to": "andns",
+      "label": "subclass",
+      "variant": "dashed",
+      "labelAt": [
+        367,
+        398
+      ]
+    },
+    {
+      "id": "web-pipeline",
+      "from": "webns",
+      "to": "pipeline",
+      "label": "add_file",
+      "labelAt": [
+        629,
+        202
+      ]
+    },
+    {
+      "id": "pipeline-scotty",
+      "from": "pipeline",
+      "to": "scotty",
+      "label": "resumable",
+      "variant": "dashed"
+    },
+    {
+      "id": "web-addsvc",
+      "from": "webns",
+      "to": "addsvc",
+      "label": "add_url"
+    },
+    {
+      "id": "addsvc-drive",
+      "from": "addsvc",
+      "to": "drive",
+      "label": "drive refs"
+    },
+    {
+      "id": "android-upload",
+      "from": "andns",
+      "to": "andupload",
+      "label": "add_file",
+      "variant": "dashed"
+    },
+    {
+      "id": "addsvc-source",
+      "from": "addsvc",
+      "to": "source",
+      "label": "returns",
+      "labelAt": [
+        888.5,
+        398
+      ]
+    },
+    {
+      "id": "source-status",
+      "from": "source",
+      "to": "sourcetype",
+      "label": "status"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Inheritance",
+      "items": [
+        "SourcesAPI is an ABC; both backends return the same frozen Source",
+        "WebSourcesAPI and its pipeline share one CallSupervisor"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Upload pipeline",
+      "items": [
+        "The pipeline is a phased transport-lifecycle participant, not a plain helper",
+        "It holds its own upload semaphore and a dedicated httpx client"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Duplicate safety",
+      "items": [
+        "SourceAddService wraps URL and Drive mutations in idempotent_create",
+        "Text adds stay non-idempotent unless the caller dedupes externally"
+      ]
+    }
+  ]
+}

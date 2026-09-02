@@ -1,0 +1,262 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Source Ingest Data Flow",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1080,
+      540
+    ],
+    "views": [
+      {
+        "id": "file",
+        "label": "File upload",
+        "focus": [
+          "file",
+          "pipeline",
+          "scotty",
+          "indexer"
+        ],
+        "note": "Bytes leave the RPC pipeline for a dedicated resumable upload client."
+      },
+      {
+        "id": "link",
+        "label": "URL and Drive",
+        "focus": [
+          "url",
+          "addsvc",
+          "rpcpath"
+        ],
+        "note": "Link-shaped adds use the selected backend and Web mutations can be probe-guarded."
+      },
+      {
+        "id": "consume",
+        "label": "Ready for grounding",
+        "focus": [
+          "rows",
+          "waitready",
+          "grounded"
+        ],
+        "note": "A source is usable only after the backend reports READY."
+      },
+      {
+        "id": "books",
+        "label": "Play Books",
+        "focus": [
+          "url",
+          "addsvc",
+          "rpcpath",
+          "indexer"
+        ],
+        "note": "A library lookup checks exportability before the selected backend registers the book as a source."
+      }
+    ]
+  },
+  "stages": [
+    {
+      "label": "Input"
+    },
+    {
+      "label": "Register"
+    },
+    {
+      "label": "Transfer"
+    },
+    {
+      "label": "Index"
+    },
+    {
+      "label": "Consume"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "file",
+      "type": "frontend",
+      "label": "Local File",
+      "sublabel": "pdf · md · audio",
+      "stage": 0,
+      "row": 0,
+      "tag": "bytes"
+    },
+    {
+      "id": "url",
+      "type": "frontend",
+      "label": "No-byte Inputs",
+      "sublabel": "URL · text · Drive",
+      "stage": 0,
+      "row": 2,
+      "tag": "+ Play Books"
+    },
+    {
+      "id": "pipeline",
+      "type": "backend",
+      "label": "Upload Pipeline",
+      "sublabel": "Web · Android control",
+      "stage": 1,
+      "row": 0,
+      "tag": "own client"
+    },
+    {
+      "id": "addsvc",
+      "type": "backend",
+      "label": "Source Add Services",
+      "sublabel": "validate · register",
+      "stage": 1,
+      "row": 2,
+      "tag": "idempotent"
+    },
+    {
+      "id": "scotty",
+      "type": "cloud",
+      "label": "Scotty",
+      "sublabel": "resumable upload",
+      "stage": 2,
+      "row": 0,
+      "tag": "start · finalize"
+    },
+    {
+      "id": "rpcpath",
+      "type": "backend",
+      "label": "Selected Backend",
+      "sublabel": "batchexecute · gRPC",
+      "stage": 2,
+      "row": 2
+    },
+    {
+      "id": "indexer",
+      "type": "cloud",
+      "label": "NotebookLM Indexer",
+      "sublabel": "server-side parse",
+      "stage": 3,
+      "row": 1,
+      "tag": "async"
+    },
+    {
+      "id": "rows",
+      "type": "database",
+      "label": "Source Rows",
+      "sublabel": "Web · Android rows",
+      "stage": 3,
+      "row": 2,
+      "tag": "status field"
+    },
+    {
+      "id": "waitready",
+      "type": "backend",
+      "label": "wait_for_ready",
+      "sublabel": "poll until READY",
+      "stage": 4,
+      "row": 1,
+      "tag": "PROCESSING"
+    },
+    {
+      "id": "grounded",
+      "type": "backend",
+      "label": "Grounded Use",
+      "sublabel": "chat · artifacts",
+      "stage": 4,
+      "row": 2
+    }
+  ],
+  "flows": [
+    {
+      "id": "file-register",
+      "from": "file",
+      "to": "pipeline",
+      "label": "register file",
+      "classification": "metadata first",
+      "variant": "emphasis"
+    },
+    {
+      "id": "url-add",
+      "from": "url",
+      "to": "addsvc",
+      "label": "register source",
+      "classification": "selected backend",
+      "route": "straight"
+    },
+    {
+      "id": "upload-bytes",
+      "from": "pipeline",
+      "to": "scotty",
+      "label": "upload bytes",
+      "classification": "outside RPC",
+      "variant": "dashed"
+    },
+    {
+      "id": "add-rpc",
+      "from": "addsvc",
+      "to": "rpcpath",
+      "label": "mutating RPC",
+      "classification": "probe guarded",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "scotty-index",
+      "from": "scotty",
+      "to": "indexer",
+      "label": "finalized blob",
+      "classification": "server owned"
+    },
+    {
+      "id": "rpc-index",
+      "from": "rpcpath",
+      "to": "indexer",
+      "label": "source created",
+      "classification": "server owned"
+    },
+    {
+      "id": "index-rows",
+      "from": "indexer",
+      "to": "rows",
+      "label": "status updates",
+      "classification": "PROCESSING then READY",
+      "variant": "dashed"
+    },
+    {
+      "id": "rows-wait",
+      "from": "rows",
+      "to": "waitready",
+      "label": "polled rows",
+      "classification": "read-only"
+    },
+    {
+      "id": "wait-grounded",
+      "from": "waitready",
+      "to": "grounded",
+      "label": "ready sources",
+      "classification": "usable",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Two ingest shapes",
+      "items": [
+        "File adds register metadata, then move bytes outside the RPC path",
+        "The Android backend mirrors both shapes over gRPC plus its own upload pipeline"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Duplicate safety",
+      "items": [
+        "Web URL and Drive mutations are probe-guarded by idempotent_create",
+        "Text and Play Book adds register through the selected backend"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Readiness",
+      "items": [
+        "SourceStatus: PREPARING, PROCESSING, READY, ERROR, UNKNOWN",
+        "Only READY sources can ground chat or artifact generation"
+      ]
+    }
+  ]
+}

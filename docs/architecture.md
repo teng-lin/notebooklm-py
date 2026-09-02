@@ -4,61 +4,39 @@ This document is the canonical map of `notebooklm-py`'s current runtime shape.
 The historical refactor narrative (including the program that first established
 this layering) lives in [`docs/refactor-history.md`](./refactor-history.md).
 
-## Layered overview
+## System shape
 
-```text
-            three thin, transport-specific adapters
-+----------------+  +----------------+  +----------------+
-| CLI    (cli/)  |  | MCP    (mcp/)  |  | REST (server/) |
-| Click commands |  | FastMCP tools  |  | FastAPI routes |
-+----------------+  +----------------+  +----------------+
-         \                  |                  /
-          \                 |                 /
-           +----------------+----------------+
-                            ▼
-+----------------------------------------------------------+
-| Application Layer  (src/notebooklm/_app/*)               |
-|   Transport-neutral business logic shared by all three   |
-|   adapters: id validation/resolution, plan-building,     |
-|   status projection, retry/wait orchestration,           |
-|   errors.classify (the single failure-category source),  |
-|   diagnostics. Imports no click / rich / fastmcp /       |
-|   fastapi (boundary lint-enforced; ADR-0021).            |
-+----------------------------------------------------------+
-                            ▼
-+----------------------------------------------------------+
-| Client Layer (client.py + feature APIs)                  |
-|   NotebookLMClient + namespaced sub-clients:             |
-|     .notebooks  .sources  .artifacts  .chat              |
-|     .notes      .mind_maps .research   .settings         |
-|     .sharing    .labels    .collections                  |
-+----------------------------------------------------------+
-                            ▼
-+----------------------------------------------------------+
-| Shared Runtime (client-owned collaborators)              |
-|   CallSupervisor + root ClientLifecycle; Web and Android |
-|   transport participants share admission and telemetry. |
-+----------------------------------------------------------+
-             /                              \
-            ▼                                ▼
-+-------------------------------+  +-------------------------------+
-| Web backend (`_web/`)         |  | Android backend (`_android/`) |
-| RpcExecutor + HTTP            |  | AndroidSession + gRPC         |
-| batchexecute/Scotty           |  | protobuf/Scotty/assets        |
-+-------------------------------+  +-------------------------------+
-```
+Start with the explorable [system overview](./diagrams/01-system-overview.html).
+The [adapter view](./diagrams/02-adapters-and-app-layer.html) expands the frontend
+boundary, and the [backend split](./diagrams/06-backends-web-and-android.html) shows
+where the Web and Android graphs stop sharing implementation. The complete visual index is in
+[`docs/diagrams/README.md`](./diagrams/README.md).
 
-Three thin **frontend adapters** fan into the shared application and client
-layers. Backend selection happens below that boundary: the default Web graph
-uses batchexecute/HTTP, while explicit Android selection installs the Android
-gRPC adapters for every public namespace. The two graphs share root lifecycle,
-admission, metrics, and public dataclasses, but they are not one wire stack.
+The runtime is organized into six ownership layers:
 
-| Adapter | Package | Transport | Console script | Install | Failures render as |
+| Layer | Owns | Must not own |
+| --- | --- | --- |
+| Library and frontend adapters | Python calls, Click parsing/rendering, MCP tools, REST routes | Raw RPC payload construction |
+| Application layer (`_app/`) | Transport-neutral plans, resolution, waits, retries, status projection, error classification | Click, Rich, FastMCP, FastAPI, or wire decoding |
+| Public client and feature contracts | `NotebookLMClient`, eleven typed namespaces, public dataclasses and exceptions | Backend selection after construction |
+| Client-owned runtime | Loop binding, admission, metrics, drain, lifecycle, Web execution and transport | Domain-specific parameter or result shapes |
+| Selected backend | Web batchexecute/HTTP or Android protobuf/gRPC adapters | Mixing typed namespace operations across backends |
+| Transfer participants | Scotty uploads, Drive staging, artifact asset downloads, Phenotype token acquisition | Passing file bytes through the ordinary RPC executor |
+
+CLI, MCP, and REST are frontend adapters over the same neutral application and client layers.
+Backend selection occurs below them. Web remains the compatibility default; Android is an
+explicit, construction-time alternative that installs Android implementations for all eleven
+typed namespaces. The graphs share public contracts, root lifecycle, admission, and telemetry,
+but not their wire transport, as decided in
+[ADR-0035](./adr/0035-mobile-resilience-transport.md). See the
+[selection workflow](./diagrams/28-profile-auth-backend-selection.workflow.html) for the exact
+argument/environment/profile precedence.
+
+| Adapter | Package | Transport | Console script | Install | Failure projection |
 | --- | --- | --- | --- | --- | --- |
-| **CLI** | `cli/` | terminal (Click) | `notebooklm` | base | exit codes + the byte-stable `--json` error envelope (ADR-0015) |
+| **CLI** | `cli/` | terminal (Click) | `notebooklm` | base | exit codes and the byte-stable `--json` envelope (ADR-0015) |
 | **MCP** | `mcp/` | Model Context Protocol (FastMCP) | `notebooklm-mcp` | `mcp` extra · experimental | MCP tool error content (`CODE: message`) |
-| **REST** | `server/` | HTTP (FastAPI) | `notebooklm-server` | `server` extra · experimental | HTTP status + `{"error": {"category": "...", "message": "..."}}` |
+| **REST** | `server/` | HTTP (FastAPI) | `notebooklm-server` | `server` extra · experimental | HTTP status plus `{"error": {"category": "...", "message": "..."}}` |
 
 ### Transport-neutral application layer (`_app/`)
 
@@ -77,6 +55,8 @@ sibling packages — with the boundary lint-enforced
 `notebooklm.exceptions` hierarchy, with `_app.errors.classify` as the single
 neutral source of the failure-category decision each adapter projects onto its
 own codes (CLI exit codes, MCP error shapes, REST HTTP statuses). See ADR-0021.
+The [exception hierarchy](./diagrams/09-exception-hierarchy.html) shows that shared
+failure vocabulary and its transport-specific projections.
 The per-module index and the full tree are in [File map](#file-map) below.
 
 ## Library call flows
@@ -99,10 +79,16 @@ advanced `client.rpc_call(...)` escape hatch is deliberately different: its
 `RPCMethod` values are Web batchexecute IDs, so it remains Web-specific under
 either namespace selection.
 
+Use the [runtime and transport view](./diagrams/03-client-runtime-and-transport.html)
+for ownership, the [RPC sequence](./diagrams/07-rpc-call-path.html) for call order, and
+the [runtime class model](./diagrams/23-runtime-class-model.html) for constructor
+relationships. The [capability-contract map](./diagrams/27-capability-contracts.html)
+shows why feature APIs receive narrow collaborators instead of the whole client runtime.
+
 ### Web batchexecute path
 
 On the default Web backend, public methods (`client.notebooks.list()`, `client.sources.rename()`,
-`client.settings.get()`, artifact generation, note CRUD, etc.) follow this path:
+`client.settings.get_user_settings()`, artifact generation, note CRUD, etc.) follow this path:
 
 ```text
 +----------------------------------------------------------------+
@@ -187,6 +173,10 @@ pipeline.
 With `backend="android"`, the same typed namespace calls terminate in Android
 adapters instead of `RpcExecutor`:
 
+The [Android backend view](./diagrams/14-android-backend.html) identifies its
+participants, while the [Android call sequence](./diagrams/15-android-call-path.html)
+shows lazy bearer acquisition, channel creation, and result projection.
+
 ```text
 NotebookLMClient.<feature>.<method>()
     → Android<Feature>API validates/builds a protobuf request
@@ -212,6 +202,9 @@ turn-number orchestration. Its single Web send/decode seam,
 `WebChatAPI._stream_answer()`, is the major transport-sharing exception to the
 pure `RpcExecutor` shape. Streaming chat has a custom request body and
 chat-flavored error mapping, so the first ask POST goes through:
+
+For a compact view, see the [chat sequence](./diagrams/11-chat-ask-sequence.html) and
+the [chat/notes class model](./diagrams/26-chat-notes-class-model.html).
 
 ```text
 +----------------------------------------------------------------+
@@ -284,11 +277,16 @@ operations use native unary gRPC methods. It does not traverse
 
 Some feature workflows intentionally combine RPC with non-RPC HTTP work:
 
+The [source-ingest data flow](./diagrams/12-source-ingest-dataflow.html),
+[artifact lifecycle](./diagrams/13-artifact-lifecycle.html), and
+[transfer security boundaries](./diagrams/30-transfer-security-boundaries.dataflow.html) provide
+the visual counterparts to the detailed ownership table below.
+
 | Flow | Runtime shape |
 |------|---------------|
 | Source file upload | `WebSourcesAPI.add_file()` delegates to `SourceUploadPipeline.add_file()`. The pipeline holds a generation-bearing `CallSupervisor.operation_scope`, takes its own upload semaphore, registers the file source through `runtime.rpc_call(ADD_SOURCE_FILE)`, then uses a dedicated `httpx.AsyncClient` and epoch-fenced live Kernel cookies for the Scotty resumable-upload start/finalize calls. Optional wait/rename steps remain inside the same admitted workflow and return to `rpc_call`. |
 | Source URL/text/Drive add | `WebSourcesAPI` holds a `CallSupervisor.operation_scope` across URL workflows that combine create, optional wait, and optional rename. `SourceAddService` wraps URL and Drive mutating RPCs in `idempotent_create(...)` where those flows have stable probes. Text-source adds remain intentionally non-idempotent unless the caller handles dedupe externally. |
-| Artifact generation | The backend-neutral `ArtifactsAPI` owns validation, source/language resolution, and all ten `generate_*` workflows over the sole `_send_create_artifact` hook. `WebArtifactsAPI` implements that hook with `ArtifactGenerationService` (`_web/artifact/generation.py`), whose positional `CREATE_ARTIFACT` builders live in `_web/params/artifacts.py`; Web revise/retry/mind-map paths use the same service. When `backend="android"` is explicit, `AndroidArtifactsAPI` is publicly assembled and dispatches the evidence-admitted exact `CreateArtifact` families, including cinematic videos and data tables, plus live-proven `DeriveArtifact`. Retry and Drive export use web-derived mobile gRPC handlers; note-backed generation is native composition over current-bundle `ActOnSources` and exact `CreateNote`. `ArtifactPollingService` owns leader/follower polling over the abstract target-aware studio projection. |
+| Artifact generation | The backend-neutral `ArtifactsAPI` owns validation and source/language resolution for ten Studio creation methods over `_send_create_artifact`. `generate_mind_map()` is the eleventh public `generate_*` method and has its own backend hook because it returns `MindMapResult` and may persist note-backed output. `WebArtifactsAPI` implements the shared creation hook with `ArtifactGenerationService` (`_web/artifact/generation.py`), whose positional `CREATE_ARTIFACT` builders live in `_web/params/artifacts.py`; Web revise, retry, and mind-map paths also use that service. When `backend="android"` is explicit, `AndroidArtifactsAPI` dispatches the evidence-admitted exact `CreateArtifact` families, including cinematic videos and data tables, plus live-proven `DeriveArtifact`. Retry and Drive export use web-derived mobile gRPC handlers; note-backed generation is native composition over current-bundle `ActOnSources` and exact `CreateNote`. `ArtifactPollingService` owns leader/follower polling over the abstract target-aware studio projection. |
 | Artifact download | Web `ArtifactDownloadService` (`_web/artifact/downloads.py`) selects artifacts and decodes raw rows/interactive HTML. The neutral `AssetDownloadService` (`_artifact/downloads.py`) owns byte transfer, rejection, staging, and atomic publication. Web supplies a storage-cookie jar. The publicly selected Android asset service validates canonical hosts, clears ambient cookies on every hop, uses the APK-evidenced bearer-authenticated `GET` plus `alr=yes` on the exact `lh3.googleusercontent.com` and slide `contribution.usercontent.google.com` entry hosts, strips credentials once a chain leaves the allowlist, applies representation byte/signature limits, corrects verified WAV output to `.wav`, and is drained with the client lifecycle. These transfers do not go through `RpcExecutor` or `Kernel.post`. |
 | Notes and mind maps | `NoteService` owns Web note-row CRUD/classification through `RpcCaller`. `NoteBackedMindMapService` keeps Web row decoding and exact-content note-backed rename in `WebMindMapsAPI`; rename fetches the raw stored row and resends its content unchanged. The neutral `MindMapsAPI` composes unified list/lookup/rename/delete workflows over base-typed `ArtifactsAPI` and `NotesAPI` collaborators. For explicit Android selection, `AndroidMindMapsAPI` is publicly assembled over the Android artifact and note APIs: interactive generation/tree/mutation uses live artifact operations, while note-backed reads/rename/delete/tree and typed prefetch compose without fabricating Web rows. Note-backed generation uses the current-bundle `ActOnSources` request and persists its JSON through native `CreateNote`. |
 
@@ -296,6 +294,11 @@ Some feature workflows intentionally combine RPC with non-RPC HTTP work:
 
 Three policies thread through the layers above and are easy to violate by
 accident. Each is pinned by an ADR.
+
+The [client resource lifecycle](./diagrams/19-client-resource-lifecycle.html) shows
+open, drain, close, and rollback states. The
+[retry-policy workflow](./diagrams/20-retry-policy-workflow.html) complements the
+idempotency discussion by showing the decision path for one call.
 
 ### Loop affinity (ADR-0004)
 
@@ -582,6 +585,13 @@ work:
 
 Beyond the client-owned runtime graph, several feature APIs are implemented via dedicated domain services and helper modules:
 
+The [feature-service map](./diagrams/05-feature-services.html) is the compact index;
+the [artifact class model](./diagrams/08-artifacts-class-model.html) and
+[sources class model](./diagrams/25-sources-class-model.html) expand its two densest
+resource domains. The [deep-research lifecycle](./diagrams/21-deep-research-lifecycle.html)
+and [organization/sharing map](./diagrams/29-organization-and-sharing.architecture.html) cover the
+remaining multi-step and cross-scope relationships.
+
 | Service / Module | Module | Responsibility |
 |-------------------|--------|----------------|
 | `NoteService` | [`_web/notes.py`](../src/notebooklm/_web/notes.py) | Web note-row service managing note CRUD, note-backed content generation, and sync. |
@@ -607,6 +617,13 @@ in `_auth.tokens`, `_validate_required_cookies` is a direct
 `_auth.cookie_policy` re-export, and `async def enumerate_accounts` is the
 only remaining `auth.py` function body because it binds `_poke_session` as
 the default dependency.
+
+Three visuals separate concerns that are easy to conflate: the
+[authentication architecture](./diagrams/04-authentication.html) shows ownership,
+the [login workflow](./diagrams/10-login-workflow.html) shows credential acquisition,
+and the [auth class model](./diagrams/24-auth-class-model.html) shows the storage and
+recovery owners. ADR-0031 names the credential tiers; ADR-0032 introduces the domain values;
+ADR-0033 constrains consolidation; and ADR-0034 defines the current storage object model.
 
 | Module | Responsibility |
 |--------|----------------|
@@ -692,6 +709,8 @@ workflow logic lives in
 [`src/notebooklm/cli/services/`](../src/notebooklm/cli/services). This
 separation is the [ADR-0008](./adr/0008-cli-services-extraction-pattern.md)
 extraction pattern.
+See the [CLI subsystem diagram](./diagrams/16-cli-subsystem.html) for the command,
+service, `_app`, client, and rendering boundaries.
 
 The console-script entry point is
 [`notebooklm_cli.py`](../src/notebooklm/notebooklm_cli.py). It declares
@@ -800,7 +819,7 @@ browser launch→capture→filter→persist core that the Playwright login adapt
 [`cli/services/playwright_login.py`](../src/notebooklm/cli/services/playwright_login.py)
 sits over, per ADR-0021 — interactive presentation stays in `cli/` while the
 neutral core moves down to `_auth`, reachable by the client runtime and the
-future headless re-auth layer). No other `_auth.*` module may be imported by
+shipped opt-in layer-3 headless re-auth path). No other `_auth.*` module may be imported by
 the CLI — the rest stays behind the `auth.py` facade. The same test keeps
 low-level helpers (`runtime`, `context`, `resolve`, `rendering`,
 `auth_runtime`, `options`) from growing upward dependencies on command modules
@@ -820,6 +839,8 @@ preview unless called with `confirm=true`). `notebooklm mcp install <client>`
 wires it into Claude Desktop/Code, Cursor, or Windsurf, and `desktop-extension/`
 packages a one-click `.mcpb` bundle. Full guide:
 [`docs/mcp-guide.md`](./mcp-guide.md).
+The [MCP subsystem diagram](./diagrams/17-mcp-subsystem.html) shows the adapter,
+application-core, client, and remote-transfer boundaries together.
 
 ## REST server (`server/`)
 
@@ -841,6 +862,8 @@ Expensive route groups have lifespan-owned concurrency limiters, tuned by
 `NOTEBOOKLM_SERVER_*_CONCURRENCY` env vars, so source mutation/wait, artifact
 generation/download, research, and blocking chat work cannot unboundedly starve
 cheap reads or `/healthz`.
+The [REST subsystem diagram](./diagrams/18-rest-server-subsystem.html) shows the
+lifespan-owned client, route guards, application cores, and response projection.
 
 ## Middleware chain (ADR-0009)
 
@@ -924,6 +947,8 @@ factory.
 ## Testing patterns
 
 Two policies define how tests interact with the architecture above.
+The [testing and guardrails view](./diagrams/22-testing-and-guardrails.html) maps the
+suite taxonomy to the boundaries each tier protects.
 
 ### Constructor-injection fixtures (ADR-0007)
 
@@ -1195,7 +1220,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_artifacts.py` | Backend-neutral abstract `ArtifactsAPI`; owns artifact generation orchestration, decoded polling, family lists, lookup, neutral formatting, and asset transfer |
 | `_chat.py` | Backend-neutral abstract `ChatAPI`; owns locks, cache, deleted-conversation tracking, ID recovery, authoritative turn counting, modes, and shared ask/delete/save-note orchestration over three protected adapter hooks plus the typed `_list_turn_roles` read boundary |
 | `_research.py` | Thin lazy compatibility shim for the moved `ResearchAPI` implementation |
-| `_web/research.py` | Web-only `client.research` API implementation; keeps the historical `notebooklm._research` logger key |
+| `_web/research.py` | Web implementation of `client.research`; keeps the historical `notebooklm._research` logger key |
 | `_web/research_import.py` | Web-only free-function helpers for `ResearchAPI` source import + verification: URL normalization, report-source predicates, imported-entry merging, and the #1961 idempotency pre-filter |
 | `_notes.py` | Backend-neutral abstract `NotesAPI` contract |
 | `_sharing.py` | Backend-neutral abstract `SharingAPI`; owns the shared `add_user` / `update_user` workflows |
@@ -1606,7 +1631,7 @@ src/notebooklm/
 │   ├── notebooks.py             # WebNotebooksAPI
 │   ├── labels.py                # WebLabelsAPI (historical logger preserved)
 │   ├── collections.py           # WebCollectionsAPI (historical logger preserved)
-│   ├── research.py              # ResearchAPI (web-only; historical logger preserved)
+│   ├── research.py              # WebResearchAPI (historical logger preserved)
 │   ├── research_import.py       # Research import/verification helpers
 │   ├── sources/                 # WebSourcesAPI + web source services
 │   │   ├── __init__.py          # WebSourcesAPI facade
@@ -1828,8 +1853,14 @@ src/notebooklm/
 - [ADR-0025](./adr/0025-mcp-tool-granularity.md) — MCP tool granularity (Accepted).
 - [ADR-0026](./adr/0026-mcp-studio-surface.md) — MCP Studio surface — notes + artifacts unified (Accepted).
 - [ADR-0027](./adr/0027-mcp-app-upload-widget.md) — In-app MCP-App upload widget (Accepted; experimental / opt-in, `NOTEBOOKLM_MCP_UPLOAD_WIDGET=1`).
-- [ADR-0029](./adr/0029-canonical-storage-writer.md) — Single canonical `storage_state.json` writer (Accepted; rolling out).
-- [ADR-0030](./adr/0030-one-recovery-ladder.md) — One recovery ladder for auth cold-start/refresh (Accepted; rolling out; companion to ADR-0029).
+- [ADR-0028](./adr/0028-gemini-notebook-rename.md) — Proposed package/distribution rename for Google's Gemini Notebook rebrand; not yet an implemented identity change.
+- [ADR-0029](./adr/0029-canonical-storage-writer.md) — Single canonical `storage_state.json` writer (Accepted; later refined by ADR-0033 and ADR-0034).
+- [ADR-0030](./adr/0030-one-recovery-ladder.md) — One recovery ladder for auth cold-start/refresh (Accepted; companion to ADR-0029).
+- [ADR-0031](./adr/0031-credential-tier-auth-model.md) — Credential-tier domain model for `_auth` (Proposed; Stage 0 implemented and later work refined by ADR-0032 through ADR-0034).
+- [ADR-0032](./adr/0032-auth-domain-types.md) — Auth domain values and boundaries for `Cookie`, `CookieJar`, and `MasterToken` (Accepted; incremental adoption).
+- [ADR-0033](./adr/0033-auth-consolidation-policy.md) — `_auth` consolidation ceilings and function-granular write boundary (Accepted; amended by ADR-0034).
+- [ADR-0034](./adr/0034-auth-storage-object-model.md) — Current auth storage object model and owner extraction (Accepted; Phase 12C complete).
+- [ADR-0035](./adr/0035-mobile-resilience-transport.md) — Explicit Android backend as a resilience transport (Accepted; all eleven namespaces now close their former Web compatibility seams).
 
 ## See also
 

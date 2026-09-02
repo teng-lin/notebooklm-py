@@ -1,0 +1,393 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Authentication and Credential Recovery",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "ladder",
+        "label": "Recovery ladder",
+        "focus": [
+          "refresh",
+          "psidts",
+          "cold",
+          "headless",
+          "mastertoken"
+        ],
+        "note": "Inline heal first, then the explicit cold ladder from L2.5 through L4."
+      },
+      {
+        "id": "persistence",
+        "label": "Persistence",
+        "focus": [
+          "store",
+          "tokens",
+          "lock"
+        ],
+        "note": "Every credential commit goes through one lock-guarded atomic write."
+      },
+      {
+        "id": "external",
+        "label": "External credential sources",
+        "focus": [
+          "headless",
+          "browser",
+          "mastertoken",
+          "mint"
+        ],
+        "note": "Interactive capture, installed-browser import and master-token minting are explicit local credential sources."
+      },
+      {
+        "id": "android",
+        "label": "Android identity",
+        "focus": [
+          "mastertoken",
+          "mint",
+          "androidbearer"
+        ],
+        "note": "The same master token mints the short-lived bearer the Android backend uses."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "keepalive",
+      "type": "backend",
+      "label": "Keepalive",
+      "sublabel": "_auth/keepalive.py",
+      "tag": "60s slot",
+      "pos": [
+        30,
+        60
+      ],
+      "size": [
+        160,
+        84
+      ]
+    },
+    {
+      "id": "psidts",
+      "type": "backend",
+      "label": "PSIDTS Recovery",
+      "sublabel": "load → heal → retry",
+      "tag": "L2.5 inline",
+      "pos": [
+        282,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "headless",
+      "type": "backend",
+      "label": "Headless Re-auth",
+      "sublabel": "_auth/headless_reauth",
+      "tag": "opt-in",
+      "pos": [
+        544,
+        60
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "browser",
+      "type": "external",
+      "label": "Browser Sources",
+      "sublabel": "Playwright · cookies · CDP",
+      "pos": [
+        806,
+        60
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "client",
+      "type": "backend",
+      "label": "Client Runtime",
+      "sublabel": "AuthRefreshCoordinator",
+      "pos": [
+        30,
+        260
+      ],
+      "size": [
+        160,
+        90
+      ]
+    },
+    {
+      "id": "refresh",
+      "type": "backend",
+      "label": "Refresh Driver",
+      "sublabel": "_auth/refresh.py",
+      "tag": "single flight",
+      "pos": [
+        282,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "cold",
+      "type": "backend",
+      "label": "Cold Recovery",
+      "sublabel": "L2.5 → L3 → L4",
+      "tag": "one shot",
+      "pos": [
+        544,
+        260
+      ],
+      "size": [
+        170,
+        90
+      ]
+    },
+    {
+      "id": "mastertoken",
+      "type": "security",
+      "label": "Master Token",
+      "sublabel": "bootstrap · remint",
+      "tag": "L4",
+      "pos": [
+        806,
+        260
+      ],
+      "size": [
+        165,
+        90
+      ]
+    },
+    {
+      "id": "mint",
+      "type": "cloud",
+      "label": "Google OAuth",
+      "sublabel": "MergeSession · Rotate",
+      "pos": [
+        1063,
+        260
+      ],
+      "size": [
+        155,
+        90
+      ]
+    },
+    {
+      "id": "tokens",
+      "type": "backend",
+      "label": "AuthTokens",
+      "sublabel": "_auth/tokens.py",
+      "pos": [
+        282,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "store",
+      "type": "database",
+      "label": "ProfileStore",
+      "sublabel": "storage_state.json",
+      "pos": [
+        544,
+        460
+      ],
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "lock",
+      "type": "security",
+      "label": "Storage Locks",
+      "sublabel": "4 advisory lockfiles",
+      "pos": [
+        806,
+        460
+      ],
+      "size": [
+        165,
+        84
+      ]
+    },
+    {
+      "id": "androidbearer",
+      "type": "security",
+      "label": "Android Bearer",
+      "sublabel": "labs-tailwind scopes",
+      "pos": [
+        1063,
+        460
+      ],
+      "size": [
+        155,
+        84
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "on-disk credential authority",
+      "wraps": [
+        "tokens",
+        "store",
+        "lock"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-to-keepalive",
+      "from": "client",
+      "to": "keepalive",
+      "label": "keepalive task"
+    },
+    {
+      "id": "client-to-refresh",
+      "from": "client",
+      "to": "refresh",
+      "label": "refresh_auth",
+      "variant": "emphasis"
+    },
+    {
+      "id": "refresh-to-psidts",
+      "from": "refresh",
+      "to": "psidts",
+      "label": "inline heal"
+    },
+    {
+      "id": "refresh-to-cold",
+      "from": "refresh",
+      "to": "cold",
+      "label": "escalate",
+      "variant": "emphasis"
+    },
+    {
+      "id": "refresh-to-tokens",
+      "from": "refresh",
+      "to": "tokens",
+      "label": "mutate in place",
+      "labelAt": [
+        367,
+        398
+      ]
+    },
+    {
+      "id": "cold-to-headless",
+      "from": "cold",
+      "to": "headless",
+      "label": "L3 headless"
+    },
+    {
+      "id": "cold-to-mastertoken",
+      "from": "cold",
+      "to": "mastertoken",
+      "label": "L4 remint"
+    },
+    {
+      "id": "cold-to-store",
+      "from": "cold",
+      "to": "store",
+      "label": "typed merge",
+      "labelAt": [
+        629,
+        398
+      ]
+    },
+    {
+      "id": "mastertoken-to-mint",
+      "from": "mastertoken",
+      "to": "mint",
+      "label": "gpsoauth",
+      "variant": "security"
+    },
+    {
+      "id": "headless-to-browser",
+      "from": "headless",
+      "to": "browser",
+      "label": "launch",
+      "variant": "dashed"
+    },
+    {
+      "id": "store-to-tokens",
+      "from": "store",
+      "to": "tokens",
+      "label": "load"
+    },
+    {
+      "id": "mastertoken-to-lock",
+      "from": "mastertoken",
+      "to": "lock",
+      "label": "bootstrap lock",
+      "variant": "security",
+      "labelAt": [
+        889,
+        398
+      ]
+    },
+    {
+      "id": "store-to-lock",
+      "from": "store",
+      "to": "lock",
+      "label": "file lock",
+      "variant": "security"
+    },
+    {
+      "id": "mint-android",
+      "from": "mint",
+      "to": "androidbearer",
+      "label": "Android scopes",
+      "variant": "security",
+      "labelAt": [
+        1140.5,
+        398
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Refresh path",
+      "items": [
+        "SingleFlight coalesces concurrent refreshes per canonical storage path",
+        "Waiter cancellation never cancels the shared leader task",
+        "AuthTokens is mutated in place; collaborators alias it rather than copying"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Recovery ladder",
+      "items": [
+        "L2.5 inline PSIDTS heal runs outside the cold single flight",
+        "L3 headless re-auth is opt-in and never the remote or MCP auth path",
+        "L4 remints from a stored gpsoauth master token"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Persistence",
+      "items": [
+        "One path derivation backs all four lock files",
+        "credential_io.py is the sole unchecked-atomic writer",
+        "Keepalive stamps its claim before the POST, so failure consumes the slot"
+      ]
+    }
+  ]
+}

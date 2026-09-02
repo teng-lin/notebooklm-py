@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Capability Contracts and Their Satisfiers",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "rpc", "label": "RPC contract", "focus": ["rpccaller", "executor", "features", "bases"], "note": "One chokepoint Protocol every web feature API depends on." },
+      { "id": "loop", "label": "Loop affinity", "focus": ["loopguard", "supervisor", "chatapi", "loopbound"], "note": "Loop binding is a single-method contract plus a shared mixin." },
+      { "id": "kernel", "label": "Transport contract", "focus": ["kernelp", "kernelc", "upload", "authmeta"], "note": "A single-consumer contract lives beside its consumer, not in a shared module." }
+    ]
+  },
+  "components": [
+    { "id": "rpccaller", "type": "backend", "label": "RpcCaller", "sublabel": "rpc_call(...)", "tag": "Protocol", "pos": [282, 60], "size": [170, 84] },
+    { "id": "executor", "type": "backend", "label": "RpcExecutor", "sublabel": "production satisfier", "pos": [544, 60], "size": [170, 84] },
+    { "id": "features", "type": "backend", "label": "Web Feature APIs", "sublabel": "declare RpcCaller", "pos": [806, 60], "size": [165, 84] },
+    { "id": "bases", "type": "backend", "label": "Namespace ABCs", "sublabel": "eleven bases", "tag": "abstract", "pos": [1063, 60], "size": [155, 84] },
+    { "id": "loopguard", "type": "backend", "label": "LoopGuard", "sublabel": "assert_bound_loop()", "tag": "Protocol", "pos": [282, 260], "size": [170, 90] },
+    { "id": "supervisor", "type": "backend", "label": "CallSupervisor", "sublabel": "production satisfier", "pos": [544, 260], "size": [170, 90] },
+    { "id": "chatapi", "type": "backend", "label": "ChatAPI", "sublabel": "declares LoopGuard", "pos": [806, 260], "size": [165, 90] },
+    { "id": "loopbound", "type": "backend", "label": "LoopBoundPrimitive", "sublabel": "eleven direct subclasses", "tag": "mixin", "pos": [1063, 260], "size": [155, 90] },
+    { "id": "kernelp", "type": "backend", "label": "Kernel", "sublabel": "post · cookies · close", "tag": "Protocol", "pos": [282, 460], "size": [170, 84] },
+    { "id": "kernelc", "type": "backend", "label": "Kernel (concrete)", "sublabel": "epoch-fenced client", "pos": [544, 460], "size": [170, 84] },
+    { "id": "upload", "type": "backend", "label": "SourceUploadPipeline", "sublabel": "sole consumer", "pos": [806, 460], "size": [165, 84] },
+    { "id": "authmeta", "type": "backend", "label": "AuthMetadata", "sublabel": "lives beside consumer", "tag": "Protocol", "pos": [1063, 460], "size": [155, 84] }
+  ],
+  "connections": [
+    { "id": "rpc-executor", "from": "rpccaller", "to": "executor", "label": "satisfied by", "variant": "emphasis" },
+    { "id": "executor-features", "from": "executor", "to": "features", "label": "injected into", "variant": "emphasis" },
+    { "id": "features-bases", "from": "features", "to": "bases", "label": "subclass" },
+    { "id": "loop-supervisor", "from": "loopguard", "to": "supervisor", "label": "satisfied by", "variant": "emphasis" },
+    { "id": "supervisor-chat", "from": "supervisor", "to": "chatapi", "label": "injected into", "variant": "emphasis" },
+    { "id": "chat-loopbound", "from": "chatapi", "to": "loopbound", "label": "mixes in" },
+    { "id": "bases-loopbound", "from": "bases", "to": "loopbound", "label": "ChatAPI only", "variant": "dashed", "labelAt": [1140.5, 202] },
+    { "id": "kernel-concrete", "from": "kernelp", "to": "kernelc", "label": "satisfied by", "variant": "emphasis" },
+    { "id": "kernel-upload", "from": "kernelc", "to": "upload", "label": "injected into", "variant": "emphasis" },
+    { "id": "upload-authmeta", "from": "upload", "to": "authmeta", "label": "declares" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Narrow contracts", "items": [
+      "Web features depend on narrow capability Protocols rather than a generic Session facade",
+      "Production satisfies them structurally; no explicit registration exists"]},
+    { "dot": "violet", "title": "Where contracts live", "items": [
+      "RpcCaller and Kernel live in _web/contracts.py; LoopGuard in _runtime/contracts.py",
+      "AuthMetadata has one consumer, so it lives in that consumer's module"]},
+    { "dot": "rose", "title": "Deleted abstractions", "items": [
+      "AsyncWorkRuntime and the feature-local composite runtimes were removed",
+      "They no longer represented independently varying production dependencies"]}
+  ]
+}
