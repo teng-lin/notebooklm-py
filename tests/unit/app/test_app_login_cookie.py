@@ -464,11 +464,11 @@ def test_quiet_network_error_is_reraised_same_object(monkeypatch: pytest.MonkeyP
 
 
 _SEMANTIC_HASHES = {
-    "login_cookie": "ba59ebbc0bec733f33a8e8239fc747a8da391b5293a52a94a0a2f7c039daed2c",
+    "login_cookie": "ba6c11e67a09365d017b9ec46aed5e37eb7173f864ba45746ca289fc49bed2dd",
     "cookie_import": "5a50d08f573f05bf6eba1879014d9c6736a152a37456009da8306a9f6f49281f",
-    "browser_accounts": "1630a821af90a41440da92df589beee1fbf6666639b6ad3fbb87016c9977d480",
+    "browser_accounts": "0b4278d9971e3522be70481aa98d0dde869455be703aa8f24e61840fb16e79ed",
     "chromium_accounts": "3f7241d07681f66823c212bb3b8292caa59b65a402d022537b134ca3e6995c92",
-    "cookie_domains": "9874aab5c760feab5cc772bf0792f3775c1377896db7bf4ba22542432c31b534",
+    "cookie_domains": "a09898adcc9d4e9cba6308fd4bd8a13d36ca9a17bc462834eb27f5854d1e65c3",
     "cookie_jar": "7c90f535d9d380b6879a884133395ec996f484fb868d428990c8652e5e5ea4ca",
 }
 
