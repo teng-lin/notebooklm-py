@@ -4,11 +4,11 @@ These pin the Click-free notebook workflows at the ``_app`` boundary with a
 ``MagicMock`` client + an injected partial-id resolver (the CLI normally
 injects ``cli.resolve.resolve_notebook_id``):
 
-* ``create`` / ``delete`` / ``rename`` / ``describe`` (summary) / ``metadata``
-  executors delegate to the right ``client.notebooks`` RPC and project the typed
-  result dataclasses,
-* the resolver is threaded through ``rename`` / ``describe`` / ``metadata`` and
-  the resolved id flows into the downstream RPC,
+* ``create`` / ``copy`` / ``delete`` / ``rename`` / ``describe`` (summary) /
+  ``metadata`` executors delegate to the right ``client.notebooks`` RPC and
+  project the typed result dataclasses,
+* the resolver is threaded through ``copy`` / ``rename`` / ``describe`` /
+  ``metadata`` and the resolved id flows into the downstream RPC,
 * ``describe`` tolerates a ``None`` description (the CLI renders both views from
   the typed field).
 
@@ -25,10 +25,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._app.notebooks import (
+    NotebookCopyResult,
     NotebookCreateResult,
     NotebookDescribeResult,
     NotebookMetadataResult,
     NotebookRenameResult,
+    execute_notebook_copy,
     execute_notebook_create,
     execute_notebook_delete,
     execute_notebook_describe,
@@ -184,6 +186,31 @@ async def test_execute_notebook_create_empty_id_skips_reread() -> None:
 
     assert nb.created_at is None
     client.notebooks.get.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# copy — resolver threading
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_execute_notebook_copy_resolves_then_copies_once() -> None:
+    client = _client()
+    copied = Notebook(id="nb_copy", title="Copied notebook")
+    client.notebooks.copy = AsyncMock(return_value=copied)
+
+    result = await execute_notebook_copy(
+        client,
+        "nb_part",
+        "Copied notebook",
+        resolve_notebook_id=_resolve_nb,
+        json_output=True,
+    )
+
+    assert isinstance(result, NotebookCopyResult)
+    assert result.source_notebook_id == "full_nb_part"
+    assert result.notebook is copied
+    client.notebooks.copy.assert_awaited_once_with("full_nb_part", "Copied notebook")
 
 
 # ---------------------------------------------------------------------------

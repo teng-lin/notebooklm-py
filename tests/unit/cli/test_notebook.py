@@ -529,6 +529,132 @@ class TestNotebookCreate:
 
 
 # =============================================================================
+# NOTEBOOK COPY TESTS
+# =============================================================================
+
+
+class TestNotebookCopy:
+    def _client(self) -> MagicMock:
+        mock_client = create_mock_client()
+        mock_client.notebooks.list = AsyncMock(
+            return_value=[Notebook(id="nb_source_full", title="Source notebook")]
+        )
+        mock_client.notebooks.copy = AsyncMock(
+            return_value=Notebook(
+                id="nb_copy",
+                title="Copied notebook",
+                created_at=datetime(2024, 1, 2),
+                role=SharePermission.OWNER,
+            )
+        )
+        return mock_client
+
+    def test_notebook_copy_uses_and_preserves_current_context(
+        self, runner, mock_auth, mock_context_file
+    ):
+        mock_context_file.write_text(
+            json.dumps({"notebook_id": "nb_source", "title": "Source notebook"})
+        )
+        mock_client = self._client()
+
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["copy", "Copied notebook"],
+                obj=inject_client(mock_client),
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Copied notebook" in result.output
+        assert "nb_source_full -> nb_copy" in result.output
+        mock_client.notebooks.copy.assert_awaited_once_with("nb_source_full", "Copied notebook")
+        assert json.loads(mock_context_file.read_text())["notebook_id"] == "nb_source"
+
+    def test_notebook_copy_json_output(self, runner, mock_auth, mock_context_file):
+        mock_client = self._client()
+
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["copy", "Copied notebook", "-n", "nb_source", "--json"],
+                obj=inject_client(mock_client),
+            )
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.stdout)
+        assert "Matched:" not in result.stdout
+        assert "Matched:" in result.stderr
+        assert data["source_notebook_id"] == "nb_source_full"
+        assert data["notebook"] == {
+            "id": "nb_copy",
+            "title": "Copied notebook",
+            "role": "owner",
+            "created_at": "2024-01-02T00:00:00",
+            "last_viewed_at": None,
+            "modified_at": None,
+        }
+        assert "active_notebook_id" not in data
+        assert not mock_context_file.exists()
+
+    def test_notebook_copy_json_missing_source_returns_structured_error(
+        self, runner, mock_auth, mock_context_file, monkeypatch
+    ):
+        monkeypatch.delenv("NOTEBOOKLM_NOTEBOOK", raising=False)
+        mock_client = self._client()
+
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["copy", "Copied notebook", "--json"],
+                obj=inject_client(mock_client),
+            )
+
+        assert result.exit_code == 1
+        assert json.loads(result.stdout) == {
+            "error": True,
+            "code": "VALIDATION_ERROR",
+            "message": (
+                "No notebook specified. Use 'notebooklm use <id>' to set context, "
+                "pass -n/--notebook, or set NOTEBOOKLM_NOTEBOOK."
+            ),
+        }
+        assert result.stderr == ""
+        mock_client.notebooks.copy.assert_not_awaited()
+
+    @pytest.mark.parametrize("use_flag", ["--use", "-u"])
+    def test_notebook_copy_use_switches_context(
+        self, runner, mock_auth, mock_context_file, use_flag
+    ):
+        mock_client = self._client()
+
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["copy", "Copied notebook", "-n", "nb_source", use_flag, "--json"],
+                obj=inject_client(mock_client),
+            )
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.stdout)
+        assert data["active_notebook_id"] == "nb_copy"
+        context = json.loads(mock_context_file.read_text())
+        assert context["notebook_id"] == "nb_copy"
+        assert context["title"] == "Copied notebook"
+
+
+# =============================================================================
 # NOTEBOOK DELETE TESTS
 # =============================================================================
 

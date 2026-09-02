@@ -257,6 +257,10 @@ def _fail_source_list(client: MagicMock) -> None:
     client.sources.list = AsyncMock(side_effect=RuntimeError("net down"))
 
 
+def _fail_source_search(client: MagicMock) -> None:
+    client.sources.search = AsyncMock(side_effect=RuntimeError("net down"))
+
+
 def _fail_note_list(client: MagicMock) -> None:
     client.notes.list = AsyncMock(side_effect=RuntimeError("net down"))
 
@@ -393,6 +397,10 @@ def _fail_notebook_create(client: MagicMock) -> None:
     client.notebooks.create = AsyncMock(side_effect=RuntimeError("notebook quota exceeded"))
 
 
+def _fail_notebook_copy(client: MagicMock) -> None:
+    client.notebooks.copy = AsyncMock(side_effect=RuntimeError("copy response lost"))
+
+
 # ---------------------------------------------------------------------------
 # Parametrized sweep
 # ---------------------------------------------------------------------------
@@ -402,6 +410,11 @@ def _fail_notebook_create(client: MagicMock) -> None:
 JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
     # source group: client raises -> @with_client routes to json_error_response.
     ("source_list_unauthorized", ["source", "list", "-n", "abc", "--json"], _fail_source_list),
+    (
+        "source_search_failure",
+        ["source", "search", "ranked passage", "-n", "abc", "--json"],
+        _fail_source_search,
+    ),
     # artifact group
     (
         "artifact_list_unauthorized",
@@ -694,6 +707,11 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         "notebook_create_failure",
         ["create", "My Notebook", "--json"],
         _fail_notebook_create,
+    ),
+    (
+        "notebook_copy_failure",
+        ["copy", "My Notebook Copy", "-n", "abc", "--json"],
+        _fail_notebook_copy,
     ),
     # doctor + profile-list: filesystem-driven failures wrapped in the
     # canonical ADR-0015 JSON error envelope.

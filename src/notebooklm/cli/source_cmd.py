@@ -67,6 +67,7 @@ from ._source_render import (  # noqa: F401
     _render_source_guide_result,
     _render_source_refresh_result,
     _render_source_rename_result,
+    _render_source_search_result,
     _render_source_stale_result,
     _render_source_wait_outcome,
     _resolve_source_fulltext_output_path,
@@ -80,6 +81,7 @@ from .options import (
     _complete_sources,
     json_option,
     list_options,
+    multi_source_option,
     notebook_option,
     prompt_file_option,
     wait_polling_options,
@@ -133,6 +135,7 @@ def source():
     \b
     Commands:
       list             List sources in a notebook
+      search           Search ranked passages across notebook sources
       add              Add a source (url, text, file, youtube)
       add-drive        Add a Google Drive document (native Docs/Slides/Sheets + PDF)
       add-drive-file   Add an upload-only Drive file (epub/docx/txt/...) via download
@@ -226,6 +229,60 @@ def source_list(
                 )
                 raise AssertionError("unreachable") from None  # pragma: no cover
             render_list(render)
+
+    return _run()
+
+
+@source.command("search")
+@click.argument("query")
+@notebook_option
+@multi_source_option
+@click.option(
+    "--limit",
+    type=click.IntRange(min=1),
+    default=None,
+    help="Maximum number of globally ranked passages to return.",
+)
+@json_option
+@with_client
+def source_search(ctx, query, notebook_id, source_ids, limit, json_output, client_auth):
+    """Search indexed passages across notebook sources.
+
+    Results are globally ordered by relevance rank. Repeat ``--source`` to
+    restrict the search to selected source IDs or unique ID prefixes.
+
+    \b
+    Examples:
+      notebooklm source search "revenue growth" --limit 5
+      notebooklm source search "revenue growth" -s src1 -s src2 --json
+    """
+    nb_id = require_notebook(notebook_id)
+
+    async def _run():
+        async with resolve_client_factory(ctx)(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            resolved_source_ids = await resolve_source_ids(
+                client,
+                nb_id_resolved,
+                tuple(source_ids),
+                json_output=json_output,
+            )
+            if json_output:
+                chunks = await client.sources.search(
+                    nb_id_resolved,
+                    query,
+                    source_ids=resolved_source_ids,
+                    limit=limit,
+                )
+            else:
+                with cli_status("Searching source passages...", ctx=ctx):
+                    chunks = await client.sources.search(
+                        nb_id_resolved,
+                        query,
+                        source_ids=resolved_source_ids,
+                        limit=limit,
+                    )
+            _render_source_search_result(chunks, json_output=json_output, ctx=ctx)
 
     return _run()
 

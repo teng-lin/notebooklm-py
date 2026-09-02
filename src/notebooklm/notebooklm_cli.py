@@ -6,6 +6,7 @@ Command structure:
   notebooklm status                   # Show current context
   notebooklm list                     # List notebooks
   notebooklm create <title>           # Create notebook
+  notebooklm copy <title>             # Copy current notebook
   notebooklm ask <question>           # Ask the current notebook a question
 
   notebooklm source <command>         # Source operations

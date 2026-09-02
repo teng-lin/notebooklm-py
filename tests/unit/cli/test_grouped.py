@@ -33,6 +33,7 @@ class TestSectionedHelp:
         assert "Notebooks:" in result.output
         assert "list" in result.output
         assert "create" in result.output
+        assert "copy" in result.output
         assert "delete" in result.output
         assert "rename" in result.output
         assert "share" in result.output

@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server-owned stream when passed a detached `task_id`, while existing
   `chat_status(notebook=...)` exposes live session state. The MCP registry is
   now explicitly bound and cleared by the server lifespan loop protocol.
+- `notebooklm copy <title> [-n <notebook-id>] [--use] [--json]` exposes the
+  existing cross-backend `notebooks.copy()` operation in the CLI. It accepts
+  partial IDs or the active notebook, copies sources and Studio artifacts, and
+  can switch context to the new notebook explicitly with `--use`.
 - `sources.search(notebook_id, query, *, source_ids=None, limit=None)` on **both**
   the Web and Android backends: ranked passage retrieval through
   `RetrieveRelevantChunks` (Web id `ASU5Oe`) with optional source filtering and
@@ -26,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Android route were live-verified independently; the Android protobuf overlay,
   public-client cassettes, and lazy-module-aware RPC drift classification pin the
   recovered contract (#2283).
+- `notebooklm source search QUERY` exposes ranked passage retrieval in the CLI,
+  with repeatable `-s/--source` filters (including unique ID prefixes), an
+  optional `--limit`, a human-readable rank/source/span/text table, and the full
+  `RelevantChunk` array under `--json`.
 - **Google Play Books ("Expert Intelligence") sources** (#2292), initially on
   the web backend: `sources.list_play_books()` lists the account's Play Books library as
   `PlayBook` rows (content id, title, authors, `export_disabled` + `reason`),

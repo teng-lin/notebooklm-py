@@ -1,11 +1,11 @@
 """Transport-neutral notebook business logic.
 
 This is the Click-free core of ``cli/notebook_cmd.py``: it owns the
-``create`` / ``delete`` / ``rename`` / ``describe`` (summary) / ``metadata``
-workflows and returns typed result dataclasses instead of an adapter-shaped
-envelope dict. Every transport adapter (the Click CLI today, the FastMCP
-server / future HTTP later) drives this core and renders the typed result into
-its own surface + exit-code policy.
+``create`` / ``copy`` / ``delete`` / ``rename`` / ``describe`` (summary) /
+``metadata`` workflows and returns typed result dataclasses instead of an
+adapter-shaped envelope dict. Every transport adapter (the Click CLI today,
+the FastMCP server / future HTTP later) drives this core and renders the typed
+result into its own surface + exit-code policy.
 
 Two boundary-imposed seams are worth calling out:
 
@@ -155,6 +155,39 @@ async def _backfill_create_timestamps(
 
 
 # ---------------------------------------------------------------------------
+# notebook copy
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class NotebookCopyResult:
+    """Outcome of ``notebook copy``."""
+
+    source_notebook_id: str
+    notebook: Notebook
+
+
+async def execute_notebook_copy(
+    client: NotebookLMClient,
+    notebook_id: str,
+    title: str,
+    *,
+    resolve_notebook_id: ResolveNotebookIdFn,
+    json_output: bool = False,
+) -> NotebookCopyResult:
+    """Resolve + copy a notebook, including its sources and Studio artifacts.
+
+    ``notebooks.copy`` deliberately does not retry an ambiguous transport
+    failure because the server may already have committed the copy. That
+    policy lives in the backend implementation; this workflow preserves it by
+    issuing exactly one copy call after resolution.
+    """
+    resolved_id = await resolve_notebook_id(client, notebook_id, json_output=json_output)
+    notebook = await client.notebooks.copy(resolved_id, title)
+    return NotebookCopyResult(source_notebook_id=resolved_id, notebook=notebook)
+
+
+# ---------------------------------------------------------------------------
 # notebook delete
 # ---------------------------------------------------------------------------
 
@@ -263,6 +296,7 @@ async def execute_notebook_metadata(
 
 
 __all__ = [
+    "NotebookCopyResult",
     "NotebookCreateResult",
     "NotebookDescribeResult",
     "NotebookMetadataResult",
@@ -270,6 +304,7 @@ __all__ = [
     "ResolveNotebookIdFn",
     "SUGGEST_SURFACE_MAP",
     "SuggestSurface",
+    "execute_notebook_copy",
     "execute_notebook_create",
     "execute_notebook_delete",
     "execute_notebook_describe",

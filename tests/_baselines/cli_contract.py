@@ -56,7 +56,7 @@ CLICK_GROUPS = (
 
 TOP_LEVEL_SURFACES = {
     "session": ("login", "auth", "use", "status", "clear"),
-    "notebook": ("list", "create", "delete", "rename", "metadata", "summary"),
+    "notebook": ("list", "create", "copy", "delete", "rename", "metadata", "summary"),
     "chat": ("ask", "suggest-prompts", "configure", "history"),
 }
 

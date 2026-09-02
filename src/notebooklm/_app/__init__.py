@@ -125,10 +125,12 @@ from .labels import (
 )
 from .language import SUPPORTED_LANGUAGES, LanguageConfigStore, is_supported_language, language_name
 from .notebooks import (
+    NotebookCopyResult,
     NotebookCreateResult,
     NotebookDescribeResult,
     NotebookMetadataResult,
     NotebookRenameResult,
+    execute_notebook_copy,
     execute_notebook_create,
     execute_notebook_delete,
     execute_notebook_describe,
@@ -394,10 +396,12 @@ __all__ = [
     "is_supported_language",
     "language_name",
     # notebooks
+    "NotebookCopyResult",
     "NotebookCreateResult",
     "NotebookDescribeResult",
     "NotebookMetadataResult",
     "NotebookRenameResult",
+    "execute_notebook_copy",
     "execute_notebook_create",
     "execute_notebook_delete",
     "execute_notebook_describe",

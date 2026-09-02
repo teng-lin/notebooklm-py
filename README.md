@@ -87,7 +87,7 @@ These combine ordinary library primitives — see the [CLI Reference](docs/cli-r
 
 | Category | Capabilities |
 |----------|--------------|
-| **Notebooks** | Create, list, rename, delete |
+| **Notebooks** | Create, copy (including sources and Studio artifacts), list, rename, delete |
 | **Sources** | URLs, YouTube, files (PDF, text, Markdown, Word, EPUB, audio, video, images), Google Drive, pasted text; refresh, get guide/fulltext |
 | **Chat** | Questions, conversation history, custom personas, suggested starter prompts |
 | **Notes** | Create, list, rename, delete, save chat answers, save conversation history |
