@@ -271,26 +271,43 @@ async def test_mint_failures_are_classified_without_echoing_the_cause(
     assert "unexpected internal state" not in str(caught.value)
 
 
+def _mint_frame_locals(error: BaseException) -> dict:
+    """Return ``_mint_once``'s frame locals from an escaping exception."""
+    tb = error.__traceback__
+    while tb is not None:
+        if tb.tb_frame.f_code.co_name == "_mint_once":
+            return tb.tb_frame.f_locals
+        tb = tb.tb_next
+    raise AssertionError("_mint_once frame not found on the traceback")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "error", [KeyboardInterrupt(), SystemExit()], ids=["keyboard-interrupt", "system-exit"]
 )
-async def test_interpreter_exits_during_mint_propagate(error: BaseException) -> None:
-    """Driven through ``_mint_once`` directly rather than ``get``.
+async def test_interpreter_exits_during_mint_drop_the_master_token(
+    error: BaseException,
+) -> None:
+    """The exit propagates, and the master token is not left on the traceback.
 
-    ``get`` runs the mint in an ``asyncio.Task``; a ``KeyboardInterrupt``
-    escaping a task reaches the event loop and tears down the whole pytest
-    session instead of being caught by ``pytest.raises``. Awaiting the
-    coroutine in this frame exercises the same guard safely.
+    Driven through ``_mint_once`` directly rather than ``get``: a
+    ``KeyboardInterrupt`` escaping an ``asyncio.Task`` reaches the event loop
+    and tears down the whole pytest session instead of being caught by
+    ``pytest.raises``.
+
+    The assertion inspects ``_mint_once``'s surviving frame locals, because
+    that is what the handler's ``record = None`` exists to clear: an escaping
+    exception keeps its frames alive, so the master token would otherwise stay
+    reachable through the traceback.
     """
     provider = _provider(minter=_Minter(error))
     await _activate(provider)
 
-    with pytest.raises(type(error)):
+    with pytest.raises(type(error)) as caught:
         await provider._mint_once(provider._provider_epoch)
 
-    # The record is dropped on the way out rather than retained past the raise.
-    assert provider._cached is None
+    assert _mint_frame_locals(caught.value).get("record") is None
+    assert MASTER_SECRET not in repr(_mint_frame_locals(caught.value))
 
 
 @pytest.mark.asyncio
@@ -414,10 +431,10 @@ async def test_a_cancelled_mint_propagates_and_retains_nothing() -> None:
     provider = _provider(minter=_Minter(asyncio.CancelledError()))
     await _activate(provider)
 
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(asyncio.CancelledError) as caught:
         await provider._mint_once(provider._provider_epoch)
 
-    assert provider._cached is None
+    assert _mint_frame_locals(caught.value).get("record") is None
 
 
 @pytest.mark.asyncio

@@ -304,11 +304,25 @@ def test_fsync_directory_ignores_a_path_it_cannot_open(tmp_path: Path) -> None:
     _fsync_directory(tmp_path / "does-not-exist")
 
 
-def test_fsync_directory_ignores_an_unsyncable_descriptor(
+def test_fsync_directory_releases_the_descriptor_when_fsync_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A filesystem that refuses directory fsync must not leak the descriptor.
+
+    ``os.open`` is stubbed to hand back a real descriptor because Windows
+    cannot open a directory as a file at all — there the production code takes
+    its early-return branch, and this release path would never run.
+    """
+    probe = tmp_path / "probe"
+    probe.write_bytes(b"")
+    opened: list[int] = []
     closed: list[int] = []
-    real_close = os.close
+    real_open, real_close = os.open, os.close
+
+    def _open_a_real_file(_path: object, _flags: int) -> int:
+        descriptor = real_open(probe, os.O_RDONLY)
+        opened.append(descriptor)
+        return descriptor
 
     def _failing_fsync(_fd: int) -> None:
         raise OSError("fsync unsupported on this filesystem")
@@ -317,13 +331,13 @@ def test_fsync_directory_ignores_an_unsyncable_descriptor(
         closed.append(fd)
         real_close(fd)
 
+    monkeypatch.setattr(os, "open", _open_a_real_file)
     monkeypatch.setattr(os, "fsync", _failing_fsync)
     monkeypatch.setattr(os, "close", _tracking_close)
 
     _fsync_directory(tmp_path)
 
-    # The descriptor is still released on the failure path.
-    assert len(closed) == 1
+    assert closed == opened != []
 
 
 # ---------------------------------------------------------------------------

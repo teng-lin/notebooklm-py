@@ -91,6 +91,8 @@ def test_resolving_an_alias_is_what_imports_the_submodule() -> None:
 
 def test_resolution_survives_a_reimport_of_the_package() -> None:
     """``__getattr__`` holds no cached state of its own."""
+    from notebooklm._android.codecs import sources
+
     reloaded = importlib.reload(codecs)
 
-    assert reloaded.decode_source is not None
+    assert reloaded.decode_source is sources.decode_source

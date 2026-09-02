@@ -1039,17 +1039,31 @@ async def test_waiting_for_a_call_slot_past_the_deadline_is_a_timeout_not_an_err
 
 
 @pytest.mark.asyncio
-async def test_a_deadline_is_started_from_the_injected_clock() -> None:
-    """``RuntimeDeadline`` must use the session's monotonic, not the global one."""
-    ticks = iter([100.0, 100.0, 101.0, 102.0, 103.0])
+async def test_a_deadline_is_driven_by_the_injected_clock() -> None:
+    """``RuntimeDeadline`` must read the session's monotonic, not the global one.
+
+    Asserting ``deadline.timeout`` alone would pass either way; this drives the
+    injected clock forward and checks the budget it reports actually moves.
+    """
+    clock = {"now": 100.0}
     session, _bearer, _channel, _grpc, _sup = await _open(
-        timeout=5.0, monotonic=lambda: next(ticks, 103.0)
+        timeout=5.0, monotonic=lambda: clock["now"]
     )
 
     deadline = session._deadline(None)
 
     assert isinstance(deadline, RuntimeDeadline)
-    assert deadline.timeout == 5.0
+    assert deadline.monotonic is not time.monotonic
+    assert deadline.started_at == 100.0
+    assert deadline.remaining() == 5.0
+
+    clock["now"] = 102.0
+    assert deadline.elapsed() == 2.0
+    assert deadline.remaining() == 3.0
+
+    clock["now"] = 200.0
+    assert deadline.remaining() == 0.0
+    assert deadline.expired() is True
 
 
 @pytest.mark.asyncio
