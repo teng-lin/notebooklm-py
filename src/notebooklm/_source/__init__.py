@@ -1,6 +1,6 @@
 """Transport-neutral source services and lazy compatibility exports.
 
-Polling and Markdown rendering remain neutral. Historical package-level names
+Polling, batch types, and Markdown rendering remain neutral. Historical package-level names
 for concrete services resolve lazily to their web owners so importing
 ``notebooklm._source`` itself never pulls in the web backend.
 """
@@ -14,7 +14,7 @@ _MODULE_EXPORTS = {
     "markdown": "notebooklm._source.markdown",
     "polling": "notebooklm._source.polling",
     "add": "notebooklm._web.sources.add",
-    "batch": "notebooklm._web.sources.batch",
+    "batch": "notebooklm._source.batch",
     "content": "notebooklm._web.sources.content",
     "drive_import": "notebooklm._web.sources.drive_import",
     "listing": "notebooklm._web.sources.listing",

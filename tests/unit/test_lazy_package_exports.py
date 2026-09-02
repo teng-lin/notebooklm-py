@@ -69,17 +69,7 @@ def test_artifact_all_is_fully_resolvable() -> None:
         assert getattr(_artifact, name) is not None
 
 
-#: ``notebooklm._source.batch`` is a real neutral submodule, so once anything
-#: imports it (production does, for ``SourceUrlBatchItem``) normal attribute
-#: lookup finds it and ``__getattr__`` is never consulted for that name. Its
-#: ``_MODULE_EXPORTS`` entry pointing at the web module is therefore shadowed;
-#: covered separately below rather than asserted as a lazy alias.
-_SOURCE_SHADOWED_BY_A_REAL_SUBMODULE = frozenset({"batch"})
-
-
-@pytest.mark.parametrize(
-    "name", sorted(set(_source._MODULE_EXPORTS) - _SOURCE_SHADOWED_BY_A_REAL_SUBMODULE)
-)
+@pytest.mark.parametrize("name", sorted(_source._MODULE_EXPORTS))
 def test_source_module_exports_resolve_to_the_named_module(name: str) -> None:
     value = getattr(_source, name)
 
@@ -87,16 +77,34 @@ def test_source_module_exports_resolve_to_the_named_module(name: str) -> None:
     assert _source.__dict__[name] is value
 
 
-def test_a_real_submodule_shadows_its_lazy_alias() -> None:
-    """``_source.batch`` is the neutral module, not the web one the map names.
+def test_source_batch_resolves_to_the_neutral_submodule() -> None:
+    """``_source.batch`` must always resolve to the neutral submodule.
 
-    Characterization, not endorsement: the answer depends on whether anything
-    has imported ``notebooklm._source.batch`` yet, and production always has.
+    The declared ``_MODULE_EXPORTS['batch']`` matches the real neutral
+    submodule rather than pointing at ``_web.sources.batch``.
     """
     import notebooklm._source.batch as neutral_batch
 
     assert _source.batch is neutral_batch
-    assert _source._MODULE_EXPORTS["batch"] == "notebooklm._web.sources.batch"
+    assert _source._MODULE_EXPORTS["batch"] == "notebooklm._source.batch"
+
+
+def test_accessing_source_batch_adds_no_additional_web_modules() -> None:
+    """Accessing ``_source.batch`` must not import additional web backend modules."""
+    probe = (
+        "import sys, json; import notebooklm; "
+        "before = {n for n in sys.modules if n.startswith('notebooklm._web')}; "
+        "import notebooklm._source; "
+        "_ = notebooklm._source.batch; "
+        "after = {n for n in sys.modules if n.startswith('notebooklm._web')}; "
+        "print(json.dumps(sorted(after - before)))"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+    )
+
+    assert json.loads(result.stdout) == []
 
 
 @pytest.mark.parametrize("name", sorted(_source._SYMBOL_EXPORTS))
