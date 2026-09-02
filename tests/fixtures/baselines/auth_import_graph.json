@@ -2,11 +2,6 @@
   "edges": [
     {
       "scope": "module",
-      "source": "_browser_cookie_filter",
-      "target": "storage"
-    },
-    {
-      "scope": "module",
       "source": "account",
       "target": "account_repair"
     },
@@ -122,16 +117,6 @@
     },
     {
       "scope": "module",
-      "source": "browser_cookie_recovery",
-      "target": "psidts_recovery"
-    },
-    {
-      "scope": "module",
-      "source": "browser_state_validation",
-      "target": "browser_capture"
-    },
-    {
-      "scope": "module",
       "source": "cookie_filter",
       "target": "cookie_policy"
     },
@@ -214,11 +199,6 @@
       "scope": "module",
       "source": "keepalive",
       "target": "storage_lock"
-    },
-    {
-      "scope": "module",
-      "source": "login_wait_trace",
-      "target": "browser_capture"
     },
     {
       "scope": "function",
@@ -652,16 +632,6 @@
     },
     {
       "scope": "module",
-      "source": "storage_transaction",
-      "target": "storage"
-    },
-    {
-      "scope": "module",
-      "source": "storage_writer",
-      "target": "storage"
-    },
-    {
-      "scope": "module",
       "source": "tokens",
       "target": "account"
     },
@@ -723,11 +693,6 @@
       "path": "src/notebooklm/_auth/__init__.py"
     },
     {
-      "lines": 29,
-      "name": "_browser_cookie_filter",
-      "path": "src/notebooklm/_auth/_browser_cookie_filter.py"
-    },
-    {
       "lines": 252,
       "name": "account",
       "path": "src/notebooklm/_auth/account.py"
@@ -753,19 +718,9 @@
       "path": "src/notebooklm/_auth/browser_capture.py"
     },
     {
-      "lines": 37,
-      "name": "browser_cookie_recovery",
-      "path": "src/notebooklm/_auth/browser_cookie_recovery.py"
-    },
-    {
       "lines": 151,
       "name": "browser_launch_errors",
       "path": "src/notebooklm/_auth/browser_launch_errors.py"
-    },
-    {
-      "lines": 21,
-      "name": "browser_state_validation",
-      "path": "src/notebooklm/_auth/browser_state_validation.py"
     },
     {
       "lines": 96,
@@ -816,11 +771,6 @@
       "lines": 438,
       "name": "keepalive",
       "path": "src/notebooklm/_auth/keepalive.py"
-    },
-    {
-      "lines": 30,
-      "name": "login_wait_trace",
-      "path": "src/notebooklm/_auth/login_wait_trace.py"
     },
     {
       "lines": 469,
@@ -913,16 +863,6 @@
       "path": "src/notebooklm/_auth/storage_lock.py"
     },
     {
-      "lines": 32,
-      "name": "storage_transaction",
-      "path": "src/notebooklm/_auth/storage_transaction.py"
-    },
-    {
-      "lines": 56,
-      "name": "storage_writer",
-      "path": "src/notebooklm/_auth/storage_writer.py"
-    },
-    {
       "lines": 894,
       "name": "tokens",
       "path": "src/notebooklm/_auth/tokens.py"
@@ -934,10 +874,10 @@
   },
   "summary": {
     "function_local_edges": 12,
-    "module_edges": 131,
-    "modules": 42,
-    "total_lines": 16653,
-    "unique_edges": 143
+    "module_edges": 125,
+    "modules": 36,
+    "total_lines": 16448,
+    "unique_edges": 137
   },
   "version": 1
 }

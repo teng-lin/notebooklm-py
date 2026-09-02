@@ -19,7 +19,7 @@ import httpx
 import pytest
 
 from notebooklm._auth import master_token as mt_mod
-from notebooklm._auth import master_token_file, profile_store, storage_writer
+from notebooklm._auth import master_token_file, profile_store
 from notebooklm._auth import storage as storage_mod
 from notebooklm._auth.profile_account import DomainSelection
 from notebooklm._auth.profile_document import ProfileDocument
@@ -287,7 +287,6 @@ def test_replace_from_remint_is_one_typed_store_delegation_and_exact_legacy_resu
     assert request.source.to_json() == state
     assert request.carry_account == "truthy"
     assert request.domain_selection == DomainSelection(frozenset({"mail"}), False)
-    assert storage_writer.replace_from_remint is storage_mod.replace_from_remint
 
 
 def test_replace_from_remint_impossible_status_uses_named_contract_violation() -> None:
@@ -647,10 +646,6 @@ def test_replace_from_login_account_copy_failure_precedes_store_and_parent_creat
 
 
 # --- persist_minted_jar: full replace, fails CLOSED ------------------------
-
-
-def test_persist_minted_jar_storage_writer_identity_is_unchanged() -> None:
-    assert storage_writer.persist_minted_jar is storage_mod.persist_minted_jar
 
 
 def _minted_jar() -> httpx.Cookies:

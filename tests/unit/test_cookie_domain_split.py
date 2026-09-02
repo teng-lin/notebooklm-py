@@ -128,12 +128,10 @@ class TestWriteTimeFilterParity:
 
         Since ADR-0034 PR 7C the login owner is ``_auth/profile_store.py``, beside
         the path transaction; minted-session filtering remains in ``_auth/storage.py``.
-        This is write-time policy, not browser code. The old
-        ``_browser_cookie_filter`` leaf is a re-export shim (pinned by
-        ``test_consolidation_shims_are_identity_reexports``), so this asserts
-        against the canonical home.
+        This is write-time policy, not browser code, so this asserts against
+        the canonical home.
         """
-        from notebooklm._auth import _browser_cookie_filter, browser_capture, cookie_filter, storage
+        from notebooklm._auth import browser_capture, cookie_filter, storage
         from notebooklm.cli.services.playwright_login import (
             filter_storage_state_cookies_by_domain_policy as playwright_filter,
         )
@@ -143,7 +141,6 @@ class TestWriteTimeFilterParity:
         assert browser_capture._safe_cookie_shape is storage._safe_cookie_shape
         assert storage.filter_storage_state_cookies_by_domain_policy is canonical
         assert browser_capture.filter_storage_state_cookies_by_domain_policy is canonical
-        assert _browser_cookie_filter.filter_storage_state_cookies_by_domain_policy is canonical
         assert playwright_filter is canonical
 
     @pytest.mark.parametrize("include_domains", [None, {"mail"}, {"all"}])

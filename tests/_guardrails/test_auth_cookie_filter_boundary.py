@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm._auth import _browser_cookie_filter, browser_capture, cookie_filter, storage
+from notebooklm._auth import browser_capture, cookie_filter, storage
 from notebooklm.cli.services import playwright_login
 
 pytestmark = pytest.mark.repo_lint
@@ -164,7 +164,6 @@ def test_compatibility_aliases_and_logger_are_exact() -> None:
     assert browser_capture._safe_cookie_shape is storage._safe_cookie_shape
     assert storage.filter_storage_state_cookies_by_domain_policy is canonical
     assert browser_capture.filter_storage_state_cookies_by_domain_policy is canonical
-    assert _browser_cookie_filter.filter_storage_state_cookies_by_domain_policy is canonical
     assert playwright_login.filter_storage_state_cookies_by_domain_policy is canonical
     assert cookie_filter.logger is logging.getLogger("notebooklm.auth")
 
@@ -201,7 +200,6 @@ _PROVIDERS = {
     "notebooklm._auth.profile_store",
     "notebooklm._auth.storage",
     "notebooklm._auth.browser_capture",
-    "notebooklm._auth._browser_cookie_filter",
     "notebooklm.cli.services.playwright_login",
 }
 
@@ -358,11 +356,6 @@ def test_alias_detectors_bite_and_a_seventh_caller_is_visible() -> None:
         ),
         (
             "import notebooklm._auth.browser_capture as provider\n"
-            "def seventh(state):\n"
-            "    return provider.filter_storage_state_cookies_by_domain_policy(state)\n"
-        ),
-        (
-            "from notebooklm._auth import _browser_cookie_filter as provider\n"
             "def seventh(state):\n"
             "    return provider.filter_storage_state_cookies_by_domain_policy(state)\n"
         ),

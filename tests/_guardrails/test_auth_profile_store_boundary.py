@@ -11,7 +11,7 @@ import pytest
 
 import notebooklm._auth as auth_package
 import notebooklm.auth as auth_facade
-from notebooklm._auth import profile_migration, profile_store, storage, storage_writer
+from notebooklm._auth import profile_migration, profile_store, storage
 from notebooklm._auth.cookie_types import Cookie, CookieJar
 from notebooklm._auth.master_token_types import MasterToken
 from notebooklm._auth.profile_account import DomainSelection
@@ -682,7 +682,6 @@ def test_replace_types_remain_internal_to_profile_store() -> None:
         "ReplaceStatus",
     }
     assert names.isdisjoint(storage.__all__)
-    assert names.isdisjoint(storage_writer.__all__)
     assert all(not hasattr(auth_facade, name) for name in names)
     assert all(not hasattr(auth_package, name) for name in names)
     assert auth_facade.ReplaceResult is profile_store.ReplaceResult

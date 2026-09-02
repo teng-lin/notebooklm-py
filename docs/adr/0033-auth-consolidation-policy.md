@@ -20,6 +20,20 @@ carries the same grow/tighten semantics but is deliberately exempt from the
 budget-below-every-ceiling invariant. **The guarantee in this ADR is unchanged; only its
 enforcement site moved.**
 
+**Amended 2026-09-02 (early compatibility-shim removal):** the six private compatibility shims
+created by this consolidation were removed in v0.8.x by explicit maintainer decision, before their
+documented next-major removal window. This is an intentional compatibility-policy override for
+out-of-tree private importers; no replacement shims were added. The canonical replacements are:
+
+| removed private module | canonical replacement |
+|---|---|
+| `_auth._browser_cookie_filter` | `_auth.cookie_filter` |
+| `_auth.browser_cookie_recovery` | `_auth.psidts_recovery` |
+| `_auth.browser_state_validation` | `_auth.browser_capture` |
+| `_auth.login_wait_trace` | `_auth.browser_capture` |
+| `_auth.storage_transaction` | `_auth.profile_store` |
+| `_auth.storage_writer` | `_auth.storage` |
+
 **Amended during PR 1.2 (2026-08-08):** decision 1 gains a **third** sanctioned class, *template
 adoption*. The effort's plan assumed PR 1.2 would shrink `storage.py`; it does not — converting a
 hand-rolled preamble onto a shared template is net-additive in lines, as #2152 already demonstrated
