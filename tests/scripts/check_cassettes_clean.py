@@ -70,6 +70,12 @@ DEFAULT_CASSETTE_DIR = _REPO_ROOT / "tests" / "cassettes"
 _SECRETS_ONLY_EXTENSIONS: tuple[str, ...] = (".yaml", ".yml", ".json", ".html", ".txt")
 DEFAULT_ALLOWLIST = _REPO_ROOT / "tests" / "scripts" / "cassette_repair_allowlist.txt"
 _ANDROID_GRPC_FORMAT = "notebooklm.android.grpc-cassette"
+_ANDROID_SAFE_METADATA_KEYS = frozenset(
+    {
+        "x-goog-ext-174067345-bin",
+        "x-goog-ext-202964622-bin",
+    }
+)
 _PROTOBUF_ASCII_TOKEN = re.compile(rb"[A-Za-z0-9_+\-/=]{40,}")
 
 
@@ -275,8 +281,20 @@ def _scan_android_grpc_cassette(path: Path) -> list[tuple[int, str]]:
     payloads: list[str] = []
     for interaction in data["interactions"]:
         expected = {"method", "request", "response_protobuf_type", "responses", "shape"}
-        if not isinstance(interaction, dict) or set(interaction) != expected:
+        if not isinstance(interaction, dict) or set(interaction) not in (
+            expected,
+            expected | {"application_metadata_keys"},
+        ):
             return [(1, "Leak (invalid Android gRPC cassette): unexpected interaction schema")]
+        metadata_keys = interaction.get("application_metadata_keys")
+        if metadata_keys is not None and (
+            not isinstance(metadata_keys, list)
+            or not metadata_keys
+            or any(not isinstance(key, str) for key in metadata_keys)
+            or metadata_keys != sorted(set(metadata_keys))
+            or not set(metadata_keys) <= _ANDROID_SAFE_METADATA_KEYS
+        ):
+            return [(1, "Leak (invalid Android gRPC cassette): unsafe application metadata keys")]
         request = interaction["request"]
         responses = interaction["responses"]
         if not isinstance(request, dict) or set(request) != {"protobuf_b64", "protobuf_type"}:

@@ -5,11 +5,13 @@ whereas ``grpc.aio`` performs I/O in gRPC C-core.  These adapters implement the
 small channel surface used by :class:`notebooklm._android.session.AndroidSession`
 and are injected through its existing ``grpc_loader`` seam.
 
-The persisted format contains protobuf messages only.  Call metadata (including
-the bearer) is never copied into the cassette model. Recording requires an
-explicit application-level sanitizer, then always applies
-:class:`ProtoRedactor` as the final security boundary. It replaces every
-user-controlled scalar while preserving message shape and enum values.
+The persisted format contains redacted protobuf messages and, for explicitly
+allowlisted application headers, metadata *key names* only. Credential metadata
+and every metadata value (including the bearer and experiment token) are never
+copied into the cassette model. Recording requires an explicit
+application-level sanitizer, then always applies :class:`ProtoRedactor` as the
+final security boundary. It replaces every user-controlled scalar while
+preserving message shape and enum values.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.message import Message
 
 from notebooklm._android.auth import BearerCredential
+from notebooklm._android.phenotype import CLIENT_TYPE_HEADER, EXPERIMENT_TOKEN_HEADER
 from notebooklm._android.session import ANDROID_GRPC_TARGET
 from notebooklm._loop_bound import LoopBoundPrimitive
 
@@ -51,6 +54,7 @@ _SAFE_BYTES_RE = re.compile(rb"^SCRUBBED_(BYTES|REQUEST_BYTES)_[0-9]{4}$")
 # (field 1, length 36): GetLabels source members arrive in this shape.
 _WRAPPED_UUID_RE = re.compile(rb"^\x0a\x24([0-9a-fA-F-]{36})$")
 _SAFE_URL_PREFIX = "https://example.invalid/grpc-cassette/url-"
+_RECORDED_APPLICATION_METADATA_KEYS = frozenset({CLIENT_TYPE_HEADER, EXPERIMENT_TOKEN_HEADER})
 # Integer fields that carry a schema-defined status code rather than data.
 # The recovered proto declares them as ``int32`` instead of an enum; their
 # meaning is pinned in ``notebooklm._types.research`` (RESEARCH_STATUS_CODE_*).
@@ -128,6 +132,21 @@ def _deserializer_type(deserializer: Callable[[bytes], Message]) -> str:
             "AndroidSession response deserializer does not expose a protobuf FQN"
         )
     return type_name
+
+
+def _application_metadata_keys(metadata: Any) -> tuple[str, ...] | None:
+    """Return safe application metadata key names, never values or credentials."""
+
+    if metadata is None:
+        return None
+    keys = sorted(
+        str(item[0]).casefold()
+        for item in metadata
+        if isinstance(item, (tuple, list))
+        and len(item) == 2
+        and str(item[0]).casefold() in _RECORDED_APPLICATION_METADATA_KEYS
+    )
+    return tuple(keys) or None
 
 
 _PLACEHOLDER_BUDGET = 9999
@@ -493,6 +512,7 @@ class GrpcInteraction:
     request: ProtoPayload
     response_type: str
     responses: tuple[ProtoPayload, ...]
+    application_metadata_keys: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         if not _METHOD_RE.fullmatch(self.method):
@@ -507,36 +527,64 @@ class GrpcInteraction:
             raise AndroidGrpcCassetteError(
                 "Interaction response payload type does not match its pinned protobuf type"
             )
+        if self.application_metadata_keys is not None:
+            if not self.application_metadata_keys or (
+                tuple(sorted(set(self.application_metadata_keys))) != self.application_metadata_keys
+            ):
+                raise AndroidGrpcCassetteError(
+                    "Interaction application metadata keys must be non-empty, sorted, and unique"
+                )
+            if any(
+                key not in _RECORDED_APPLICATION_METADATA_KEYS
+                for key in self.application_metadata_keys
+            ):
+                raise AndroidGrpcCassetteError(
+                    "Interaction carries a non-allowlisted application metadata key"
+                )
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        value: dict[str, Any] = {
             "method": self.method,
             "request": self.request.to_json(),
             "response_protobuf_type": self.response_type,
             "responses": [response.to_json() for response in self.responses],
             "shape": self.shape,
         }
+        if self.application_metadata_keys is not None:
+            value["application_metadata_keys"] = list(self.application_metadata_keys)
+        return value
 
     @classmethod
     def from_json(cls, value: Any, *, index: int) -> GrpcInteraction:
         location = f"interactions[{index}]"
         if not isinstance(value, dict):
             raise AndroidGrpcCassetteError(f"{location} must be an object")
-        _exact_keys(
-            value,
-            {"method", "request", "response_protobuf_type", "responses", "shape"},
-            location=location,
-        )
+        required_keys = {"method", "request", "response_protobuf_type", "responses", "shape"}
+        actual_keys = set(value)
+        allowed_keys = required_keys | {"application_metadata_keys"}
+        if not required_keys <= actual_keys or not actual_keys <= allowed_keys:
+            raise AndroidGrpcCassetteError(
+                f"{location} keys must be {sorted(required_keys)!r} with optional "
+                "'application_metadata_keys'"
+            )
         method = value["method"]
         shape = value["shape"]
         response_type = value["response_protobuf_type"]
         responses = value["responses"]
+        metadata_keys = value.get("application_metadata_keys")
         if not all(isinstance(item, str) for item in (method, shape, response_type)):
             raise AndroidGrpcCassetteError(
                 f"{location} method, shape, and response type must be text"
             )
         if not isinstance(responses, list):
             raise AndroidGrpcCassetteError(f"{location}.responses must be a list")
+        if metadata_keys is not None and (
+            not isinstance(metadata_keys, list)
+            or not all(isinstance(item, str) for item in metadata_keys)
+        ):
+            raise AndroidGrpcCassetteError(
+                f"{location}.application_metadata_keys must be a list of text keys"
+            )
         return cls(
             method=method,
             shape=cast(RpcShape, shape),
@@ -546,6 +594,7 @@ class GrpcInteraction:
                 ProtoPayload.from_json(item, location=f"{location}.responses[{response_index}]")
                 for response_index, item in enumerate(responses)
             ),
+            application_metadata_keys=(None if metadata_keys is None else tuple(metadata_keys)),
         )
 
 
@@ -670,6 +719,7 @@ class _RecordingStreamCall:
         method: str,
         request: ProtoPayload,
         response_type: str,
+        application_metadata_keys: tuple[str, ...] | None,
     ) -> None:
         self._call = call
         self._iterator = call.__aiter__()
@@ -677,6 +727,7 @@ class _RecordingStreamCall:
         self._method = method
         self._request = request
         self._response_type = response_type
+        self._application_metadata_keys = application_metadata_keys
         self._responses: list[ProtoPayload] = []
         self._complete = False
 
@@ -695,6 +746,7 @@ class _RecordingStreamCall:
                         request=self._request,
                         response_type=self._response_type,
                         responses=tuple(self._responses),
+                        application_metadata_keys=self._application_metadata_keys,
                     )
                 )
                 self._complete = True
@@ -726,6 +778,7 @@ class _RecordingChannel:
 
         async def invoke(request: Message, *, metadata: Any, timeout: float | None) -> Message:
             request_payload = self._recorder.payload(method, "request", request)
+            application_metadata_keys = _application_metadata_keys(metadata)
             response = await live(request, metadata=metadata, timeout=timeout)
             response_payload = self._recorder.payload(method, "response", response)
             if response_payload.type_name != response_type:
@@ -739,6 +792,7 @@ class _RecordingChannel:
                     request=request_payload,
                     response_type=response_type,
                     responses=(response_payload,),
+                    application_metadata_keys=application_metadata_keys,
                 )
             )
             return response
@@ -757,6 +811,7 @@ class _RecordingChannel:
 
         def invoke(request: Message, *, metadata: Any, timeout: float | None) -> Any:
             request_payload = self._recorder.payload(method, "request", request)
+            application_metadata_keys = _application_metadata_keys(metadata)
             call = live(request, metadata=metadata, timeout=timeout)
             return _RecordingStreamCall(
                 call,
@@ -764,6 +819,7 @@ class _RecordingChannel:
                 method,
                 request_payload,
                 response_type,
+                application_metadata_keys,
             )
 
         return invoke
@@ -809,6 +865,7 @@ class _Player:
         shape: RpcShape,
         request: Message,
         response_type: str,
+        metadata: Any,
     ) -> GrpcInteraction:
         if self.cursor >= len(self.cassette.interactions):
             raise AndroidGrpcCassetteMismatch("Android gRPC cassette is exhausted")
@@ -828,6 +885,14 @@ class _Player:
                 "Android gRPC cassette response protobuf type mismatch at interaction "
                 f"{self.cursor}"
             )
+        expected_metadata = interaction.application_metadata_keys
+        if expected_metadata is not None:
+            actual_metadata = _application_metadata_keys(metadata)
+            if actual_metadata != expected_metadata:
+                raise AndroidGrpcCassetteMismatch(
+                    "Android gRPC cassette application metadata mismatch at interaction "
+                    f"{self.cursor}: expected {expected_metadata!r}, got {actual_metadata!r}"
+                )
         self.cursor += 1
         return interaction
 
@@ -890,8 +955,8 @@ class _ReplayChannel:
         response_type = _deserializer_type(response_deserializer)
 
         async def invoke(request: Message, *, metadata: Any, timeout: float | None) -> Message:
-            del metadata, timeout
-            interaction = self._player.take(method, "unary_unary", request, response_type)
+            del timeout
+            interaction = self._player.take(method, "unary_unary", request, response_type, metadata)
             return response_deserializer(interaction.responses[0].wire_bytes)
 
         return invoke
@@ -903,8 +968,10 @@ class _ReplayChannel:
         response_type = _deserializer_type(response_deserializer)
 
         def invoke(request: Message, *, metadata: Any, timeout: float | None) -> _ReplayStreamCall:
-            del metadata, timeout
-            interaction = self._player.take(method, "unary_stream", request, response_type)
+            del timeout
+            interaction = self._player.take(
+                method, "unary_stream", request, response_type, metadata
+            )
             return _ReplayStreamCall(
                 tuple(
                     response_deserializer(response.wire_bytes) for response in interaction.responses

@@ -31,6 +31,7 @@ import pytest
 
 from notebooklm import AuthTokens, NotebookLMClient
 from notebooklm._android import auth as android_auth
+from notebooklm._android import phenotype as android_phenotype
 from notebooklm._android import session as android_session
 
 from .android_grpc_cassette import (
@@ -237,6 +238,7 @@ async def android_cassette_client(
     monkeypatch: pytest.MonkeyPatch,
     scratch: ScratchNotebook | None,
     question: str = QUESTION,
+    phenotype_cassette_path: Path | None = None,
     on_recorded: RecordedCallback | None = None,
 ) -> AsyncIterator[tuple[NotebookLMClient, CassetteValues]]:
     """Open the public Android client bound to ``cassette_path`` in the current mode.
@@ -249,7 +251,28 @@ async def android_cassette_client(
     """
 
     redactor = ProtoRedactor(trust_placeholders=True)
-    if is_record_mode():
+    record = is_record_mode()
+    phenotype_staging_path: Path | None = None
+    phenotype_http_post: Any | None = None
+    if phenotype_cassette_path is not None:
+        from .android_phenotype_http_cassette import build_phenotype_http_post
+
+        provider_type = android_phenotype.PhenotypeTokenProvider
+        phenotype_capture_path = phenotype_cassette_path
+        if record:
+            phenotype_staging_path = phenotype_cassette_path.with_name(
+                phenotype_cassette_path.name + ".recording"
+            )
+            discard_recording(phenotype_staging_path)
+            phenotype_capture_path = phenotype_staging_path
+        phenotype_http_post = build_phenotype_http_post(phenotype_capture_path)
+
+        def cassette_provider(*args: Any, **kwargs: Any) -> Any:
+            kwargs["http_post"] = phenotype_http_post
+            return provider_type(*args, **kwargs)
+
+        monkeypatch.setattr(android_phenotype, "PhenotypeTokenProvider", cassette_provider)
+    if record:
         if scratch is None:
             raise RuntimeError("Recording requires the android_record_scratch fixture")
         values = bind_values(
@@ -281,13 +304,26 @@ async def android_cassette_client(
             async with _live_client() as client:
                 assert set(client.backends.values()) == {"android"}
                 yield client, values
+            if phenotype_http_post is not None:
+                phenotype_http_post.assert_consumed()
         except BaseException:
             discard_recording(staging_path)
+            if phenotype_staging_path is not None:
+                discard_recording(phenotype_staging_path)
             raise
-        if on_recorded is None:
-            promote_recording(staging_path, cassette_path)
-        else:
-            on_recorded(staging_path, cassette_path)
+        recordings = [(staging_path, cassette_path)]
+        if phenotype_staging_path is not None and phenotype_cassette_path is not None:
+            recordings.append((phenotype_staging_path, phenotype_cassette_path))
+        missing = [target.name for staging, target in recordings if not staging.exists()]
+        if missing:
+            for staging, _target in recordings:
+                discard_recording(staging)
+            raise RuntimeError(f"Recording captured no interactions for: {', '.join(missing)}")
+        for finished_path, target_path in recordings:
+            if on_recorded is None:
+                promote_recording(finished_path, target_path)
+            else:
+                on_recorded(finished_path, target_path)
         return
 
     values = bind_values(
@@ -314,6 +350,8 @@ async def android_cassette_client(
     async with NotebookLMClient(auth, backend="android") as client:
         assert set(client.backends.values()) == {"android"}
         yield client, values
+    if phenotype_http_post is not None:
+        phenotype_http_post.assert_consumed()
     replay.assert_consumed()
     assert bearer.gets, "replay never consulted the non-secret bearer"
     assert replay.secure_channel_calls == 1

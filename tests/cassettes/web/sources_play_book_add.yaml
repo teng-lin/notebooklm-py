@@ -1,0 +1,285 @@
+interactions:
+- request:
+    body: f.req=%5B%5B%5B%22mVtEUb%22%2C%22%5Bnull%2C1%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1788321590819&
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '131'
+      content-type:
+      - application/x-www-form-urlencoded;charset=UTF-8
+      cookie:
+      - SID=SCRUBBED; __Secure-1PSID=SCRUBBED; __Secure-3PSID=SCRUBBED; HSID=SCRUBBED; SSID=SCRUBBED;
+        APISID=SCRUBBED; SAPISID=SCRUBBED; __Secure-1PAPISID=SCRUBBED; __Secure-3PAPISID=SCRUBBED; NID=SCRUBBED;
+        SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; AEC=SCRUBBED; __Secure-1PSIDTS=SCRUBBED;
+        __Secure-3PSIDTS=SCRUBBED; OSID=SCRUBBED; __Secure-OSID=SCRUBBED
+      host:
+      - notebook.google.com
+      user-agent:
+      - python-httpx/0.28.1
+    method: POST
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=mVtEUb&source-path=%2F&f.sid=SCRUBBED&hl=en&rt=c&authuser=SCRUBBED_EMAIL%40example.com
+  response:
+    body:
+      string: ')]}''
+
+
+        676
+
+        [["wrb.fr","mVtEUb","[[[\"EIBOOK00000001\",1,\"Placeholder ebook 001\",\"<p>public-domain placeholder
+        001</p>\",\"https://play.google.com/books/publisher/content/images/frontcover/EIBOOK00000001\",false,null,[\"author
+        001\"],4.5,[1]],[\"EIBOOK00000002\",1,\"Placeholder ebook 002\",\"<p>public-domain placeholder
+        002</p>\",\"https://play.google.com/books/publisher/content/images/frontcover/EIBOOK00000002\",false,null,[\"author
+        002\"],4.2,[1]],[\"EIBOOK00000003\",1,\"Placeholder ebook 003\",\"<p>blocked placeholder 003</p>\",\"https://play.google.com/books/publisher/content/images/frontcover/EIBOOK00000003\",true,1,[\"author
+        003\"],null,[1]]]]",null,null,null,"generic"]]
+
+        '
+    headers:
+      accept-ch:
+      - Sec-CH-UA-Arch, Sec-CH-UA-Bitness, Sec-CH-UA-Full-Version, Sec-CH-UA-Full-Version-List, Sec-CH-UA-Model,
+        Sec-CH-UA-WoW64, Sec-CH-UA-Form-Factors, Sec-CH-UA-Platform, Sec-CH-UA-Platform-Version
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      cache-control:
+      - no-cache, no-store, max-age=0, must-revalidate
+      content-disposition:
+      - attachment; filename="response.bin"; filename*=UTF-8''response.bin
+      content-length:
+      - '687'
+      content-security-policy:
+      - require-trusted-types-for 'script';report-uri /_/LabsTailwindUi/cspreport
+      content-type:
+      - application/json; charset=utf-8
+      cross-origin-opener-policy:
+      - same-origin-allow-popups
+      cross-origin-resource-policy:
+      - same-site
+      date:
+      - Wed, 02 Sep 2026 03:59:52 GMT
+      expires:
+      - Mon, 01 Jan 1990 00:00:00 GMT
+      permissions-policy:
+      - ch-ua-arch=*, ch-ua-bitness=*, ch-ua-full-version=*, ch-ua-full-version-list=*, ch-ua-model=*,
+        ch-ua-wow64=*, ch-ua-form-factors=*, ch-ua-platform=*, ch-ua-platform-version=*
+      pragma:
+      - no-cache
+      server:
+      - ESF
+      set-cookie:
+      - SIDCC=SCRUBBED; expires=Thu, 02-Sep-2027 03:59:52 GMT; path=/; domain=.google.com; priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Thu, 02-Sep-2027 03:59:52 GMT; path=/; domain=.google.com;
+        Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Thu, 02-Sep-2027 03:59:52 GMT; path=/; domain=.google.com;
+        Secure; HttpOnly; priority=high; SameSite=none
+      - SIDCC=SCRUBBED; expires=Thu, 02-Sep-2027 03:59:52 GMT; path=/; domain=.google.com; priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Thu, 02-Sep-2027 03:59:52 GMT; path=/; domain=.google.com;
+        Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Thu, 02-Sep-2027 03:59:52 GMT; path=/; domain=.google.com;
+        Secure; HttpOnly; priority=high; SameSite=none
+      transfer-encoding:
+      - chunked
+      vary:
+      - Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: f.req=%5B%5B%5B%22mVtEUb%22%2C%22%5Bnull%2C1%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1788321590819&
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '131'
+      content-type:
+      - application/x-www-form-urlencoded;charset=UTF-8
+      cookie:
+      - SID=SCRUBBED; __Secure-1PSID=SCRUBBED; __Secure-3PSID=SCRUBBED; HSID=SCRUBBED; SSID=SCRUBBED;
+        APISID=SCRUBBED; SAPISID=SCRUBBED; __Secure-1PAPISID=SCRUBBED; __Secure-3PAPISID=SCRUBBED; NID=SCRUBBED;
+        SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; AEC=SCRUBBED; __Secure-1PSIDTS=SCRUBBED;
+        __Secure-3PSIDTS=SCRUBBED; OSID=SCRUBBED; __Secure-OSID=SCRUBBED
+      host:
+      - notebook.google.com
+      user-agent:
+      - python-httpx/0.28.1
+    method: POST
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=mVtEUb&source-path=%2F&f.sid=SCRUBBED&hl=en&rt=c&authuser=SCRUBBED_EMAIL%40example.com
+  response:
+    body:
+      string: ')]}''
+
+
+        676
+
+        [["wrb.fr","mVtEUb","[[[\"EIBOOK00000001\",1,\"Placeholder ebook 001\",\"<p>public-domain placeholder
+        001</p>\",\"https://play.google.com/books/publisher/content/images/frontcover/EIBOOK00000001\",false,null,[\"author
+        001\"],4.5,[1]],[\"EIBOOK00000002\",1,\"Placeholder ebook 002\",\"<p>public-domain placeholder
+        002</p>\",\"https://play.google.com/books/publisher/content/images/frontcover/EIBOOK00000002\",false,null,[\"author
+        002\"],4.2,[1]],[\"EIBOOK00000003\",1,\"Placeholder ebook 003\",\"<p>blocked placeholder 003</p>\",\"https://play.google.com/books/publisher/content/images/frontcover/EIBOOK00000003\",true,1,[\"author
+        003\"],null,[1]]]]",null,null,null,"generic"]]
+
+        '
+    headers:
+      accept-ch:
+      - Sec-CH-UA-Arch, Sec-CH-UA-Bitness, Sec-CH-UA-Full-Version, Sec-CH-UA-Full-Version-List, Sec-CH-UA-Model,
+        Sec-CH-UA-WoW64, Sec-CH-UA-Form-Factors, Sec-CH-UA-Platform, Sec-CH-UA-Platform-Version
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      cache-control:
+      - no-cache, no-store, max-age=0, must-revalidate
+      content-disposition:
+      - attachment; filename="response.bin"; filename*=UTF-8''response.bin
+      content-length:
+      - '687'
+      content-security-policy:
+      - require-trusted-types-for 'script';report-uri /_/LabsTailwindUi/cspreport
+      content-security-policy-report-only:
+      - script-src 'unsafe-inline';report-uri https://csp.withgoogle.com/csp/script-inclusions/a00d54fdef4a77536baac3725d1409f8
+      content-type:
+      - application/json; charset=utf-8
+      cross-origin-opener-policy:
+      - same-origin-allow-popups
+      cross-origin-resource-policy:
+      - same-site
+      date:
+      - Wed, 02 Sep 2026 03:59:52 GMT
+      expires:
+      - Mon, 01 Jan 1990 00:00:00 GMT
+      permissions-policy:
+      - ch-ua-arch=*, ch-ua-bitness=*, ch-ua-full-version=*, ch-ua-full-version-list=*, ch-ua-model=*,
+        ch-ua-wow64=*, ch-ua-form-factors=*, ch-ua-platform=*, ch-ua-platform-version=*
+      pragma:
+      - no-cache
+      server:
+      - ESF
+      set-cookie:
+      - SIDCC=SCRUBBED; expires=Thu, 02-Sep-2027 03:59:52 GMT; path=/; domain=.google.com; priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Thu, 02-Sep-2027 03:59:52 GMT; path=/; domain=.google.com;
+        Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Thu, 02-Sep-2027 03:59:52 GMT; path=/; domain=.google.com;
+        Secure; HttpOnly; priority=high; SameSite=none
+      - SIDCC=SCRUBBED; expires=Thu, 02-Sep-2027 03:59:52 GMT; path=/; domain=.google.com; priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Thu, 02-Sep-2027 03:59:52 GMT; path=/; domain=.google.com;
+        Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Thu, 02-Sep-2027 03:59:52 GMT; path=/; domain=.google.com;
+        Secure; HttpOnly; priority=high; SameSite=none
+      transfer-encoding:
+      - chunked
+      vary:
+      - Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: f.req=%5B%5B%5B%22X1snv%22%2C%22%5B%5B%5Bnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C1%2Cnull%2Cnull%2Cnull%2Cnull%2C%5B1%2C%5C%22EIBOOK00000001%5C%22%2C%5C%22Placeholder+ebook+001%5C%22%2C%5C%22%3Cp%3Epublic-domain+placeholder+001%3C%2Fp%3E%5C%22%2C%5C%22https%3A%2F%2Fplay.google.com%2Fbooks%2Fpublisher%2Fcontent%2Fimages%2Ffrontcover%2FEIBOOK00000001%5C%22%2C4.5%2C%5B%5C%22author+001%5C%22%5D%5D%5D%5D%2C%5C%2200000000-0000-4000-8000-000000000001%5C%22%2C%5B2%2Cnull%2Cnull%2C%5B1%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C%5B1%5D%5D%5D%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1788321590819
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1945'
+      content-type:
+      - application/x-www-form-urlencoded;charset=UTF-8
+      cookie:
+      - SID=SCRUBBED; __Secure-1PSID=SCRUBBED; __Secure-3PSID=SCRUBBED; HSID=SCRUBBED; SSID=SCRUBBED;
+        APISID=SCRUBBED; SAPISID=SCRUBBED; __Secure-1PAPISID=SCRUBBED; __Secure-3PAPISID=SCRUBBED; NID=SCRUBBED;
+        SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; AEC=SCRUBBED; __Secure-1PSIDTS=SCRUBBED;
+        __Secure-3PSIDTS=SCRUBBED; OSID=SCRUBBED; __Secure-OSID=SCRUBBED
+      host:
+      - notebook.google.com
+      user-agent:
+      - python-httpx/0.28.1
+    method: POST
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=X1snv&source-path=%2Fnotebook%2F00000000-0000-4000-8000-000000000001&f.sid=SCRUBBED&hl=en&rt=c&authuser=SCRUBBED_EMAIL%40example.com
+  response:
+    body:
+      string: ')]}''
+
+
+        292
+
+        [["wrb.fr","X1snv","[[[[\"00000000-0000-4000-8000-000000000002\"],\"SCRUBBED_NAME\",[null,null,null,null,20]]],null,[[[[\"00000000-0000-4000-8000-000000000002\"],\"SCRUBBED_NAME\",[null,null,null,null,20]],0]]]",null,null,null,"generic"],["di",633],["af.httprm",633,"2703687566713757060",14]]
+
+        23
+
+        [["e",4,null,null,324]]
+
+        '
+    headers:
+      accept-ch:
+      - Sec-CH-UA-Arch, Sec-CH-UA-Bitness, Sec-CH-UA-Full-Version, Sec-CH-UA-Full-Version-List, Sec-CH-UA-Model,
+        Sec-CH-UA-WoW64, Sec-CH-UA-Form-Factors, Sec-CH-UA-Platform, Sec-CH-UA-Platform-Version
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      cache-control:
+      - no-cache, no-store, max-age=0, must-revalidate
+      content-disposition:
+      - attachment; filename="response.bin"; filename*=UTF-8''response.bin
+      content-length:
+      - '324'
+      content-security-policy:
+      - require-trusted-types-for 'script';report-uri /_/LabsTailwindUi/cspreport
+      content-type:
+      - application/json; charset=utf-8
+      cross-origin-opener-policy:
+      - same-origin-allow-popups
+      cross-origin-resource-policy:
+      - same-site
+      date:
+      - Wed, 02 Sep 2026 03:59:53 GMT
+      expires:
+      - Mon, 01 Jan 1990 00:00:00 GMT
+      permissions-policy:
+      - ch-ua-arch=*, ch-ua-bitness=*, ch-ua-full-version=*, ch-ua-full-version-list=*, ch-ua-model=*,
+        ch-ua-wow64=*, ch-ua-form-factors=*, ch-ua-platform=*, ch-ua-platform-version=*
+      pragma:
+      - no-cache
+      server:
+      - ESF
+      set-cookie:
+      - SIDCC=SCRUBBED; expires=Thu, 02-Sep-2027 03:59:53 GMT; path=/; domain=.google.com; priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Thu, 02-Sep-2027 03:59:53 GMT; path=/; domain=.google.com;
+        Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Thu, 02-Sep-2027 03:59:53 GMT; path=/; domain=.google.com;
+        Secure; HttpOnly; priority=high; SameSite=none
+      - SIDCC=SCRUBBED; expires=Thu, 02-Sep-2027 03:59:53 GMT; path=/; domain=.google.com; priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Thu, 02-Sep-2027 03:59:53 GMT; path=/; domain=.google.com;
+        Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Thu, 02-Sep-2027 03:59:53 GMT; path=/; domain=.google.com;
+        Secure; HttpOnly; priority=high; SameSite=none
+      transfer-encoding:
+      - chunked
+      vary:
+      - Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+version: 1

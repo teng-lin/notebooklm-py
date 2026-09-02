@@ -24,6 +24,7 @@ from tests._helpers.android_grpc_cassette import (
 from tests.cassette_patterns import _CREDENTIAL_DETECTORS
 
 from notebooklm._android.auth import BearerCredential
+from notebooklm._android.phenotype import CLIENT_TYPE_HEADER, EXPERIMENT_TOKEN_HEADER
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     account_pb2,
     artifacts_pb2,
@@ -95,6 +96,10 @@ _CASSETTE_MESSAGE_TYPES = (
     # 8. ListChatSessions plus ListChatTurns
     chat_pb2.ListChatSessionsRequest,
     chat_pb2.ListChatSessionsResponse,
+    chat_pb2.GetChatSessionStatusRequest,
+    chat_pb2.GetChatSessionStatusResponse,
+    chat_pb2.CancelGenerationRequest,
+    chat_pb2.CancelGenerationResponse,
     chat_pb2.ListChatTurnsRequest,
     chat_pb2.ListChatTurnsResponse,
     # 9. server-streaming GenerateFreeFormStreamed
@@ -119,6 +124,8 @@ _CASSETTE_MESSAGE_TYPES = (
     sources_pb2.AddTentativeSourcesResponse,
     sources_pb2.AddSourcesRequest,
     sources_pb2.AddSourcesResponse,
+    sources_pb2.ListExpertIntelligenceContentRequest,
+    sources_pb2.ListExpertIntelligenceContentResponse,
     sources_pb2.MutateSourceRequest,
     sources_pb2.MutateSourceResponse,
     sources_pb2.GenerateDocumentGuidesRequest,
@@ -395,6 +402,69 @@ async def test_recording_serializes_redacted_deterministic_unary_protobuf(tmp_pa
     cassette.dump(cassette_path)
     assert cassette_path.read_bytes() == before
     assert json.loads(raw_cassette)["format"] == "notebooklm.android.grpc-cassette"
+
+
+@pytest.mark.asyncio
+async def test_recording_pins_allowlisted_application_metadata_keys_without_values(
+    tmp_path: Path,
+) -> None:
+    cassette_path = tmp_path / "application-metadata.grpc.json"
+    recorder = RecordingGrpcModule(
+        _LiveGrpc(_LiveChannel(_response())),
+        cassette_path,
+        sanitizer=ProtoRedactor(),
+    )
+    session, supervisor = await _open_session(recorder, _LeaseBearer([]))
+
+    async def application_metadata(_bearer: str) -> tuple[tuple[str, bytes], ...]:
+        return (
+            (CLIENT_TYPE_HEADER, b"private-client-marker"),
+            (EXPERIMENT_TOKEN_HEADER, b"private-experiment-token"),
+        )
+
+    await session.unary(
+        METHOD,
+        read_pb2.GetProjectRequest(project_id=RAW_PROJECT_ID),
+        replay_safe=True,
+        response_type=read_pb2.GetProjectResponse,
+        metadata_augmentor=application_metadata,
+    )
+    await _close_session(session, supervisor)
+
+    raw = cassette_path.read_text(encoding="utf-8")
+    [interaction] = AndroidGrpcCassette.load(cassette_path).interactions
+    assert interaction.application_metadata_keys == (
+        CLIENT_TYPE_HEADER,
+        EXPERIMENT_TOKEN_HEADER,
+    )
+    assert "private-client-marker" not in raw
+    assert "private-experiment-token" not in raw
+    assert "authorization" not in raw.casefold()
+
+    mismatch = ReplayGrpcModule(cassette_path)
+    invoke = mismatch.secure_channel(ANDROID_GRPC_TARGET, object()).unary_unary(
+        METHOD,
+        request_serializer=lambda message: message.SerializeToString(),
+        response_deserializer=read_pb2.GetProjectResponse.FromString,
+    )
+    with pytest.raises(AndroidGrpcCassetteMismatch, match="application metadata mismatch"):
+        await invoke(
+            read_pb2.GetProjectRequest(project_id=SAFE_PROJECT_ID),
+            metadata=(("authorization", "Bearer ignored"),),
+            timeout=None,
+        )
+
+    replay = ReplayGrpcModule(cassette_path)
+    replay_session, replay_supervisor = await _open_session(replay, ReplayBearer())
+    await replay_session.unary(
+        METHOD,
+        read_pb2.GetProjectRequest(project_id=SAFE_PROJECT_ID),
+        replay_safe=True,
+        response_type=read_pb2.GetProjectResponse,
+        metadata_augmentor=application_metadata,
+    )
+    replay.assert_consumed()
+    await _close_session(replay_session, replay_supervisor)
 
 
 @pytest.mark.asyncio

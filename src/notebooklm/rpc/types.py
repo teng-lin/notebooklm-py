@@ -155,11 +155,10 @@ class RPCMethod(str, Enum):
     # -> ListExpertIntelligenceContent. Lists the account's Google Play Books
     # library eligible to be added as sources ("Expert Intelligence", US/18+).
     # Web-verified live 2026-09-01; the Android tier serves the same method over
-    # gRPC. Adding a listed book rides ADD_SOURCE / ADD_SOURCES_ASYNC with an
-    # ExpertIntelligenceContent spec (see _web.params.sources) — no add method
-    # of its own. The Android write path additionally requires a per-account
-    # Phenotype experiment header the client cannot synthesize, so add is
-    # web-only (#2292).
+    # gRPC. Adding a listed book rides ADD_SOURCE / ADD_SOURCES_ASYNC on Web
+    # and AddSources on Android with an ExpertIntelligenceContent spec — no add
+    # method of its own. Android obtains a per-account Phenotype experiment
+    # token and sends it in the required gRPC metadata (#2292).
     LIST_EXPERT_INTELLIGENCE_CONTENT = "mVtEUb"
 
     # Source label operations (AI topic grouping).

@@ -1,0 +1,33 @@
+interactions:
+- request:
+    body: !!binary |
+      CtYCItMCCAESzAIIARgBIhVTQ1JVQkJFRF9SRVFVRVNUXzAwMDEqFVNDUlVCQkVEX1JFUVVFU1Rf
+      MDAwMjIVU0NSVUJCRURfUkVRVUVTVF8wMDAzOhVTQ1JVQkJFRF9SRVFVRVNUXzAwMDRCFVNDUlVC
+      QkVEX1JFUVVFU1RfMDAwMkoVU0NSVUJCRURfUkVRVUVTVF8wMDAyWhVTQ1JVQkJFRF9SRVFVRVNU
+      XzAwMDViFVNDUlVCQkVEX1JFUVVFU1RfMDAwNmoVU0NSVUJCRURfUkVRVUVTVF8wMDA3chVTQ1JV
+      QkJFRF9SRVFVRVNUXzAwMDh6FVNDUlVCQkVEX1JFUVVFU1RfMDAwMoIBFVNDUlVCQkVEX1JFUVVF
+      U1RfMDAwOYoBFVNDUlVCQkVEX1JFUVVFU1RfMDAxMJgBAdIBFVNDUlVCQkVEX1JFUVVFU1RfMDAx
+      MWABEh8KHQoVU0NSVUJCRURfUkVRVUVTVF8wMDEyEAEaAggBIAEoAToVU0NSVUJCRURfUkVRVUVT
+      VF8wMDEz
+    headers:
+      content-length:
+      - '405'
+      content-type:
+      - application/x-protobuf
+      user-agent:
+      - com.google.android.gms/253434035 (Linux; U; Android 34; en_US; Pixel 8; Build/AP2A.240905.003)
+    method: POST
+    uri: https://www.googleapis.com/experimentsandconfigs/v1/getExperimentsAndConfigs?r=8&c=1
+  response:
+    body:
+      string: !!binary |
+        CjAKGAoUU0NSVUJCRURfU1RSSU5HXzAwMDEQASIUU0NSVUJCRURfU1RSSU5HXzAwMDIgAQ==
+    headers:
+      content-length:
+      - '52'
+      content-type:
+      - application/octet-stream
+    status:
+      code: 200
+      message: OK
+version: 1

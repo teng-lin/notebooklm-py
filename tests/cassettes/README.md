@@ -21,8 +21,9 @@ tests/cassettes/
 │   │   └── *.yaml                          (derived replay fixtures for gzip coverage)
 │   └── examples/
 │       └── example_<description>.yaml      (illustrative fixtures, not recordings)
-└── android/                                Android gRPC (sanitized protobuf JSON)
-    └── *.grpc.json
+└── android/                                Android protocol captures
+    ├── *.grpc.json                         sanitized protobuf gRPC interactions
+    └── *_phenotype.yaml                    auxiliary protobuf-over-HTTP (VCR.py)
 ```
 
 `web/` is the VCR `cassette_library_dir` (`tests/vcr_config.py`), so cassette
@@ -33,10 +34,12 @@ names in test code are **relative to `web/`** and carry no tier prefix:
 @notebooklm_vcr.use_cassette("examples/example_scrubbed_cookies.yaml")
 ```
 
-`android/` is not a vcrpy corpus at all — it replays through a consumer-owned
-gRPC channel seam (`tests/unit/android/test_grpc_cassette.py`,
+Android gRPC JSON replays through a consumer-owned channel seam
+(`tests/unit/android/test_grpc_cassette.py`,
 `tests/integration/test_android_grpc_cassette.py`), which resolves those paths
-itself.
+itself. The narrowly scoped `*_phenotype.yaml` exception captures the separate
+protobuf-over-HTTP call needed to obtain Play Books experiment metadata; it is
+never used to capture gRPC.
 
 ## Naming convention
 
@@ -101,6 +104,14 @@ Sanitized protobuf captures replayed through the test-only gRPC channel seam
 (`@pytest.mark.grpc_cassette`). They are JSON, not YAML, and are never loaded
 by vcrpy. See [docs/development.md](../../docs/development.md) for the Android
 recording workflow.
+
+### Android auxiliary HTTP — `android/*_phenotype.yaml`
+
+The Play Books write path obtains an experiment token through an HTTPS
+protobuf request before invoking gRPC. Its integration test captures that one
+HTTP exchange with VCR.py and protobuf-aware body redaction. Authorization and
+token values are never committed; the corresponding gRPC cassette pins only
+the required application metadata key names.
 
 ## When to add a cassette
 

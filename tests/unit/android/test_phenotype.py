@@ -4,11 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from tests._helpers.android_phenotype_http_cassette import (
+    _scrub_phenotype_request,
+    _scrub_phenotype_response,
+    build_phenotype_http_post,
+)
 
 from notebooklm._android.phenotype import (
+    _ENDPOINT,
     CLIENT_TYPE_HEADER,
     EXPERIMENT_TOKEN_HEADER,
     AndroidDeviceProfile,
@@ -81,6 +89,113 @@ def test_wrap_and_decode_server_token_roundtrip() -> None:
     assert wrapped[0] == 0x0A  # field 1, length-delimited
     assert wrapped[2:] == _SERVER_TOKEN_MSG
     assert _decode_server_token(_SERVER_TOKEN_B64URL) == _SERVER_TOKEN_MSG
+
+
+def test_phenotype_vcr_hooks_redact_both_protobuf_bodies() -> None:
+    request_body = _build_request(AndroidDeviceProfile())
+    request = SimpleNamespace(
+        body=request_body,
+        headers={
+            "Authorization": "Bearer private",
+            "Content-Length": str(len(request_body)),
+            "Content-Type": "application/x-protobuf",
+            "User-Agent": "fixed-agent",
+            "X-Future-Secret": "private-value",
+        },
+    )
+    _scrub_phenotype_request(request)
+    clean_request = pb.HeterodyneRequest.FromString(request.body)
+    assert clean_request.header.clearcut_logger_header.timestamp_millis == 1
+    assert clean_request.data[0].package_details.package_name.startswith("SCRUBBED_")
+    assert request.headers["Content-Length"] == str(len(request.body))
+    assert set(request.headers) == {"Content-Length", "Content-Type", "User-Agent"}
+    assert request.headers["User-Agent"] == AndroidDeviceProfile().user_agent
+
+    response = {
+        "body": {"string": _response_bytes()},
+        "headers": {
+            "content-length": [str(len(_response_bytes()))],
+            "content-type": ["application/octet-stream"],
+            "set-cookie": ["SID=private"],
+            "x-future-secret": ["private-value"],
+        },
+        "status": {"code": 200, "message": "OK"},
+    }
+    _scrub_phenotype_response(response)
+    clean_body = response["body"]["string"]
+    clean_response = pb.HeterodyneResponse.FromString(clean_body)
+    clean_token = clean_response.heterodyne_config[0].server_token
+    assert _SERVER_TOKEN_B64URL.encode() not in clean_body
+    assert clean_token.startswith("SCRUBBED_")
+    assert _decode_server_token(clean_token)
+    assert response["headers"]["content-length"] == [str(len(clean_body))]
+    assert set(response["headers"]) == {"content-length", "content-type"}
+
+
+@pytest.mark.asyncio
+async def test_phenotype_cassette_rejects_semantically_wrong_request_constants(
+    tmp_path,
+) -> None:
+    body = pb.HeterodyneRequest.FromString(_build_request(AndroidDeviceProfile()))
+    body.fetch_reason = 999
+    post = build_phenotype_http_post(tmp_path / "phenotype.yaml")
+    headers = {
+        "Authorization": "Bearer replay",
+        "Content-Type": "application/x-protobuf",
+        "User-Agent": AndroidDeviceProfile().user_agent,
+    }
+
+    with pytest.raises(ValueError, match="unexpected request constants"):
+        await post(_ENDPOINT, body.SerializeToString(), headers)
+
+
+@pytest.mark.asyncio
+async def test_phenotype_cassette_rejects_wrong_endpoint_and_headers(tmp_path) -> None:
+    post = build_phenotype_http_post(tmp_path / "phenotype.yaml")
+    body = _build_request(AndroidDeviceProfile())
+    headers = {
+        "Authorization": "Bearer replay",
+        "Content-Type": "application/x-protobuf",
+        "User-Agent": "fixed-agent",
+    }
+
+    with pytest.raises(ValueError, match="unexpected endpoint"):
+        await post("https://example.invalid/phenotype", body, headers)
+    with pytest.raises(ValueError, match="unexpected request headers"):
+        await post(
+            "https://www.googleapis.com/experimentsandconfigs/v1/getExperimentsAndConfigs?r=8&c=1",
+            body,
+            {**headers, "X-Future-Secret": "private"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_phenotype_cassette_replays_exactly_one_pinned_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("NOTEBOOKLM_ANDROID_GRPC_RECORD", raising=False)
+    cassette = Path(__file__).parents[2] / "cassettes" / "android" / "play_books_phenotype.yaml"
+    post = build_phenotype_http_post(cassette)
+    body = _build_request(AndroidDeviceProfile())
+    headers = {
+        "Authorization": "Bearer replay",
+        "Content-Type": "application/x-protobuf",
+        "User-Agent": AndroidDeviceProfile().user_agent,
+    }
+
+    status, response = await post(_ENDPOINT, body, headers)
+
+    assert status == 200
+    assert response
+    with pytest.raises(RuntimeError, match="exactly one HTTP interaction"):
+        await post(_ENDPOINT, body, headers)
+
+
+def test_phenotype_cassette_rejects_an_unconsumed_interaction(tmp_path) -> None:
+    post = build_phenotype_http_post(tmp_path / "phenotype.yaml")
+
+    with pytest.raises(AssertionError, match="expected exactly one HTTP interaction"):
+        post.assert_consumed()
 
 
 @pytest.mark.asyncio

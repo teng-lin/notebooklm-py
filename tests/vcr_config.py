@@ -372,13 +372,15 @@ _FREQ_VOLATILE_KEYS: frozenset[str] = frozenset(
 # this placeholder in a cassette flags only the normalization, not real data.
 _UUID_PLACEHOLDER = "00000000-0000-0000-0000-_NORMALIZED"
 
-# Canonical UUID v4 string regex. Matches the 8-4-4-4-12 hex layout used by
-# every UUID NotebookLM emits (notebook IDs, source IDs, artifact IDs, project
-# IDs, conversation IDs all share this shape). Anchored to word boundaries so a
-# UUID embedded in a larger string still normalizes but a hex string of similar
-# length (e.g. a session token) does not accidentally match.
+# Canonical UUID string regex. Matches the 8-4-4-4-12 hex layout used by every
+# UUID NotebookLM emits (notebook IDs, source IDs, artifact IDs, project IDs,
+# conversation IDs all share this shape). Deliberately do not use word
+# boundaries: form and URL encoding puts hexadecimal characters immediately
+# beside an identifier (for example ``%22<uuid>%5C``), so ``\b`` misses the
+# request-side copy while still scrubbing the decoded response. The four
+# hyphens make this specific enough to find safely inside a larger string.
 _UUID_RE = re.compile(
-    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 )
 
 

@@ -36,21 +36,24 @@ violating node IDs.
 Android cassettes live in `tests/cassettes/android/` and intentionally use the
 `.grpc.json` suffix rather than vcrpy's YAML format. Each interaction pins the
 full method path, unary-unary versus unary-stream shape, deterministic request
-protobuf FQN/bytes, and deterministic response protobuf FQN/bytes. Metadata is
-not part of the model, so bearer credentials cannot be serialized. Recording
-requires an explicit application-level sanitizer and then unconditionally runs
-the generalized protobuf redactor as its final security boundary. The redactor
+protobuf FQN/bytes, and deterministic response protobuf FQN/bytes. The model
+can pin an allowlisted set of application metadata key names, but never stores
+metadata values or bearer credentials. Recording requires an explicit
+application-level sanitizer and then unconditionally runs the generalized
+protobuf redactor as its final security boundary. The redactor
 discards unknown fields, replaces every string and byte string, and maps
 integers/floats to safe non-zero placeholders while preserving scalar presence,
 message structure, booleans, and schema-defined enum values. Replay injects an
 in-memory channel and a non-secret bearer provider; it must never construct a
 live gRPC channel or mint OAuth credentials.
 
-Set `NOTEBOOKLM_ANDROID_GRPC_RECORD=1` only for an explicitly reviewed,
-read-only recording test. In that mode, `@pytest.mark.grpc_cassette` keeps the
-real profile home available. Replay remains isolated from the developer's
-profile. Hand-built fixtures must be named `*_synthetic.grpc.json`; do not call
-them recorded traffic.
+Set `NOTEBOOKLM_ANDROID_GRPC_RECORD=1` only for an explicitly reviewed recording
+test. In that mode, `@pytest.mark.grpc_cassette` keeps the real profile home
+available. Replay remains isolated from the developer's profile. The Play Books
+family also records its auxiliary Phenotype protobuf-over-HTTP exchange through
+VCR.py into `play_books_phenotype.yaml`; the HTTP cassette strips authorization
+and redacts both protobuf bodies. Hand-built fixtures must be named
+`*_synthetic.grpc.json`; do not call them recorded traffic.
 
 ### Recorded families
 
@@ -64,6 +67,7 @@ records and replays (`tests/_helpers/android_grpc_harness.py`):
 | `get_or_create_account` | `settings.get_user_settings()` | `GetOrCreateAccount` |
 | `get_project_rich` | `notebooks.get()`, `sources.list()` | `GetProject` ×2 |
 | `load_source` | `sources.get_fulltext()` | `GetProject` ×2, `LoadSource` |
+| `retrieve_relevant_chunks` | `sources.search()`, `sources.search(..., source_ids=...)` | `GetProject`, `RetrieveRelevantChunks` ×2 |
 | `list_artifacts_get_notes` | `artifacts.list()`, `notes.list()` | `ListArtifacts`, `GetNotes` ×2 |
 | `get_labels` | `labels.list()`, `collections.create()`, `collections.list()`, `collections.delete()` | `GetLabels` ×5, `CreateLabel`, `DeleteLabels` |
 | `list_discover_sources_job` | `research.poll()` | `ListDiscoverSourcesJob` |
@@ -71,6 +75,7 @@ records and replays (`tests/_helpers/android_grpc_harness.py`):
 | `get_project_details` | `sharing.get_status()` | `GetProjectDetails` |
 | `generate_free_form_streamed` | `chat.ask()` | `GetProject`, `ListChatSessions` ×2, `ListChatTurns`, `GenerateFreeFormStreamed (stream)` |
 | `list_chat_sessions_turns` | `chat.ask()`, `chat.get_conversation_id()`, `chat.get_history()` | `GetProject`, `ListChatSessions` ×5, `ListChatTurns` ×2, `GenerateFreeFormStreamed (stream)` |
+| `chat_session_control` | `chat.ask()`, `chat.session_status()`, `chat.cancel()` | `GetProject`, `ListChatSessions` ×2, `ListChatTurns`, `GenerateFreeFormStreamed (stream)`, `GetChatSessionStatus`, `CancelGeneration` |
 | `notebook_lifecycle` | `notebooks.create/rename/set_emoji/list/copy/delete()` | `ListRecentlyViewedProjects` ×2, `CreateProject`, `MutateProject` ×2, `CopyProject`, `DeleteProjects` ×2 |
 | `generate_notebook_guide` | `notebooks.get_description()`, `notebooks.get_summary()` | `GenerateNotebookGuide` ×2 |
 | `source_lifecycle` | `sources.add_text/add_url/wait_until_ready/rename/get_guide/check_freshness/refresh/delete()` | `AddTentativeSources` ×2, `AddSources` ×2, `GetProject` ×10, `MutateSource`, `GenerateDocumentGuides`, `CheckSourceFreshness` ×2, `DeleteSources` ×2 |
@@ -85,6 +90,7 @@ records and replays (`tests/_helpers/android_grpc_harness.py`):
 | `generate_report_suggestions` | `artifacts.suggest_reports()` | `GenerateReportSuggestions` |
 | `next_step_suggestions` | `notebooks.suggest_next_steps()`, `artifacts.get_customization_choices()` | `NextStepSuggestions` ×2, `GetArtifactCustomizationChoices` |
 | `source_transfers` | `notebooks.create()`, `sources.add_urls_async/wait_until_ready/append_text/get_fulltext/copy()`, `notebooks.delete()` | `CreateProject`, `AddSourcesAsync`, `GetProject` ×N, `AppendSource`, `LoadSource` ×2, `CopySourcesAsync`, `DeleteProjects` |
+| `play_books` | `sources.list_play_books()`, `sources.add_play_book()`, `sources.delete()` | `ListExpertIntelligenceContent` ×2, `AddTentativeSources`, `AddSources`, `GetProject` ×2, `DeleteSources` |
 | `artifact_copy` | `artifacts.generate_flashcards/poll_status()`, `notebooks.create()`, `artifacts.copy()`, `artifacts.delete()`, `notebooks.delete()` | `GetProject`, `CreateArtifact`, `ListArtifacts` ×N, `CreateProject`, `CopyArtifactsAsync`, `DeleteArtifact`, `DeleteProjects` |
 | `research_fast_cancel` | `research.start(mode="fast")`, `research.cancel()`, `research.poll()` | `DiscoverSourcesManifold`, `ListDiscoverSourcesJob` ×2, `CancelDiscoverSourcesJob` |
 | `research_fast_import` | `research.start(mode="fast")`, `research.poll()`, `research.import_sources()` | `DiscoverSourcesManifold`, `ListDiscoverSourcesJob`, `FinishDiscoverSourcesRun` |
@@ -92,7 +98,7 @@ records and replays (`tests/_helpers/android_grpc_harness.py`):
 | `generate_flashcards` | `artifacts.generate_flashcards/poll_status/get/delete/get_or_none()` | `GetProject`, `CreateArtifact`, `ListArtifacts` ×6, `GetArtifact` ×3, `GetNotes` ×2, `DeleteArtifact` |
 | `generate_audio` | `artifacts.generate_audio/poll_status/get/delete/get_or_none()` | `GetProject`, `CreateArtifact`, `ListArtifacts` ×23, `GetArtifact` ×20, `GetNotes` ×2, `DeleteArtifact` |
 
-26 families, 228 interactions. Re-record everything (creates one disposable scratch notebook with a text
+33 families, 281 interactions. Re-record everything (creates one disposable scratch notebook with a text
 source and a note through an *unrecorded* client, records, then deletes it):
 
 ```bash

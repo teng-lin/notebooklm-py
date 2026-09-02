@@ -594,30 +594,36 @@ def test_python_guard_secrets_only_ignores_placeholder_content(tmp_path: Path) -
     assert "0 leaks found" in res.stdout
 
 
-def _write_android_grpc_cassette(path: Path, response_wire: bytes) -> None:
+def _write_android_grpc_cassette(
+    path: Path,
+    response_wire: bytes,
+    *,
+    application_metadata_keys: list[str] | None = None,
+) -> None:
     empty_wire = base64.b64encode(b"").decode("ascii")
     response_b64 = base64.b64encode(response_wire).decode("ascii")
+    interaction = {
+        "method": "/example.Service/GetValue",
+        "request": {
+            "protobuf_b64": empty_wire,
+            "protobuf_type": "example.GetValueRequest",
+        },
+        "response_protobuf_type": "example.GetValueResponse",
+        "responses": [
+            {
+                "protobuf_b64": response_b64,
+                "protobuf_type": "example.GetValueResponse",
+            }
+        ],
+        "shape": "unary_unary",
+    }
+    if application_metadata_keys is not None:
+        interaction["application_metadata_keys"] = application_metadata_keys
     path.write_text(
         json.dumps(
             {
                 "format": "notebooklm.android.grpc-cassette",
-                "interactions": [
-                    {
-                        "method": "/example.Service/GetValue",
-                        "request": {
-                            "protobuf_b64": empty_wire,
-                            "protobuf_type": "example.GetValueRequest",
-                        },
-                        "response_protobuf_type": "example.GetValueResponse",
-                        "responses": [
-                            {
-                                "protobuf_b64": response_b64,
-                                "protobuf_type": "example.GetValueResponse",
-                            }
-                        ],
-                        "shape": "unary_unary",
-                    }
-                ],
+                "interactions": [interaction],
                 "version": 1,
             },
             indent=2,
@@ -636,6 +642,34 @@ def test_python_guard_scans_grpc_payload_instead_of_base64_envelope(tmp_path: Pa
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "0 leaks found" in result.stdout
+
+
+def test_python_guard_allows_only_pinned_grpc_application_metadata_keys(
+    tmp_path: Path,
+) -> None:
+    cassette = tmp_path / "metadata_synthetic.grpc.json"
+    _write_android_grpc_cassette(
+        cassette,
+        b"",
+        application_metadata_keys=[
+            "x-goog-ext-174067345-bin",
+            "x-goog-ext-202964622-bin",
+        ],
+    )
+
+    clean = _run_guard(str(cassette))
+
+    assert clean.returncode == 0, clean.stdout + clean.stderr
+
+    _write_android_grpc_cassette(
+        cassette,
+        b"",
+        application_metadata_keys=["authorization"],
+    )
+    unsafe = _run_guard(str(cassette))
+
+    assert unsafe.returncode == 1
+    assert "unsafe application metadata keys" in unsafe.stdout
 
 
 def test_python_guard_detects_novel_token_inside_grpc_protobuf(tmp_path: Path) -> None:

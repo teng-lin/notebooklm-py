@@ -90,12 +90,15 @@ def android_grpc_cassette(
 
     recorded: list[tuple[Path, Path]] = []
 
-    def bind(name: str) -> Any:
+    def bind(name: str, *, phenotype_http: bool = False) -> Any:
         path = ANDROID_CASSETTES_DIR / f"{name}_recorded.grpc.json"
         return android_cassette_client(
             path,
             monkeypatch=monkeypatch,
             scratch=android_record_scratch,
+            phenotype_cassette_path=(
+                ANDROID_CASSETTES_DIR / f"{name}_phenotype.yaml" if phenotype_http else None
+            ),
             on_recorded=lambda staging, target: recorded.append((staging, target)),
         )
 

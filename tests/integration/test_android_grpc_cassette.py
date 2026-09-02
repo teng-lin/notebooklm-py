@@ -12,19 +12,30 @@ sanitized placeholders while replaying. Re-record with::
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
-from typing import Any
+from typing import Any, Protocol
 
 import grpc
 import httpx
 import pytest
 
-from notebooklm.types import Notebook, RelevantChunk, ShareStatus, Source, UserSettings
+from notebooklm.types import (
+    ChatSessionStatus,
+    Notebook,
+    PlayBook,
+    RelevantChunk,
+    ShareStatus,
+    Source,
+    SourceType,
+    UserSettings,
+)
 from tests._helpers.android_grpc_harness import SCRATCH_NOTE_TITLE, is_record_mode
 
 pytestmark = pytest.mark.grpc_cassette
 
-CassetteBinder = Callable[[str], Any]
+
+class CassetteBinder(Protocol):
+    def __call__(self, name: str, *, phenotype_http: bool = False) -> Any: ...
+
 
 replay_only = pytest.mark.skipif(
     is_record_mode(), reason="the unbound-channel guards are lifted while recording"
@@ -116,6 +127,28 @@ async def test_source_search_over_retrieve_relevant_chunks(
     assert chunks[0].source_id == source.id
     assert chunks[0].text
     assert filtered and all(chunk.source_id == source.id for chunk in filtered)
+
+
+@pytest.mark.asyncio
+async def test_play_books_list_and_add_with_phenotype_metadata(
+    android_grpc_cassette: CassetteBinder,
+) -> None:
+    async with android_grpc_cassette("play_books", phenotype_http=True) as (client, values):
+        books = await client.sources.list_play_books()
+        assert books and all(isinstance(book, PlayBook) for book in books)
+        exportable = next((book for book in books if not book.export_disabled), None)
+        assert exportable is not None, "recording account needs one exportable Play Book"
+
+        added = await client.sources.add_play_book(
+            values.notebook_id,
+            exportable.content_id,
+            wait=False,
+        )
+        try:
+            assert added.kind is SourceType.EXPERT_INTELLIGENCE
+            assert added.id
+        finally:
+            await client.sources.delete(values.notebook_id, added.id)
 
 
 # --- 4. ListArtifacts plus GetNotes ------------------------------------------
@@ -219,6 +252,22 @@ async def test_chat_history_over_list_chat_sessions_and_turns(
     # collapses, so only its type is asserted here (see tests/integration/README.md).
     assert [question for question, _answer in history] == [values.question]
     assert all(isinstance(answer, str) for _question, answer in history)
+
+
+@pytest.mark.asyncio
+async def test_chat_session_status_and_cancel(
+    android_grpc_cassette: CassetteBinder,
+) -> None:
+    async with android_grpc_cassette("chat_session_control") as (client, values):
+        answer = await client.chat.ask(values.notebook_id, values.question)
+        status = await client.chat.session_status(
+            values.notebook_id,
+            answer.conversation_id,
+        )
+        await client.chat.cancel(values.notebook_id, answer.conversation_id)
+    assert isinstance(status, ChatSessionStatus)
+    assert status.generating is False
+    assert status.token is None
 
 
 # =============================================================================
