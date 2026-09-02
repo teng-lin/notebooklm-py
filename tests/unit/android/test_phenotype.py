@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import copy
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+import yaml
 from tests._helpers.android_phenotype_http_cassette import (
     _scrub_phenotype_request,
     _scrub_phenotype_response,
@@ -187,6 +189,7 @@ async def test_phenotype_cassette_replays_exactly_one_pinned_request(
 
     assert status == 200
     assert response
+    post.assert_consumed()
     with pytest.raises(RuntimeError, match="exactly one HTTP interaction"):
         await post(_ENDPOINT, body, headers)
 
@@ -195,6 +198,30 @@ def test_phenotype_cassette_rejects_an_unconsumed_interaction(tmp_path) -> None:
     post = build_phenotype_http_post(tmp_path / "phenotype.yaml")
 
     with pytest.raises(AssertionError, match="expected exactly one HTTP interaction"):
+        post.assert_consumed()
+
+
+@pytest.mark.asyncio
+async def test_phenotype_cassette_rejects_surplus_interactions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("NOTEBOOKLM_ANDROID_GRPC_RECORD", raising=False)
+    source = Path(__file__).parents[2] / "cassettes" / "android" / "play_books_phenotype.yaml"
+    data = yaml.safe_load(source.read_text(encoding="utf-8"))
+    data["interactions"].append(copy.deepcopy(data["interactions"][0]))
+    duplicate = tmp_path / "phenotype.yaml"
+    duplicate.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    post = build_phenotype_http_post(duplicate)
+    headers = {
+        "Authorization": "Bearer replay",
+        "Content-Type": "application/x-protobuf",
+        "User-Agent": AndroidDeviceProfile().user_agent,
+    }
+
+    await post(_ENDPOINT, _build_request(AndroidDeviceProfile()), headers)
+
+    with pytest.raises(AssertionError, match="found 2"):
         post.assert_consumed()
 
 

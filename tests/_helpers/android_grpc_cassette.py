@@ -571,20 +571,22 @@ class GrpcInteraction:
         shape = value["shape"]
         response_type = value["response_protobuf_type"]
         responses = value["responses"]
-        metadata_keys = value.get("application_metadata_keys")
+        metadata_keys: tuple[str, ...] | None = None
+        if "application_metadata_keys" in value:
+            raw_metadata_keys = value["application_metadata_keys"]
+            if not isinstance(raw_metadata_keys, list) or not all(
+                isinstance(item, str) for item in raw_metadata_keys
+            ):
+                raise AndroidGrpcCassetteError(
+                    f"{location}.application_metadata_keys must be a list of text keys"
+                )
+            metadata_keys = tuple(raw_metadata_keys)
         if not all(isinstance(item, str) for item in (method, shape, response_type)):
             raise AndroidGrpcCassetteError(
                 f"{location} method, shape, and response type must be text"
             )
         if not isinstance(responses, list):
             raise AndroidGrpcCassetteError(f"{location}.responses must be a list")
-        if metadata_keys is not None and (
-            not isinstance(metadata_keys, list)
-            or not all(isinstance(item, str) for item in metadata_keys)
-        ):
-            raise AndroidGrpcCassetteError(
-                f"{location}.application_metadata_keys must be a list of text keys"
-            )
         return cls(
             method=method,
             shape=cast(RpcShape, shape),
@@ -594,7 +596,7 @@ class GrpcInteraction:
                 ProtoPayload.from_json(item, location=f"{location}.responses[{response_index}]")
                 for response_index, item in enumerate(responses)
             ),
-            application_metadata_keys=(None if metadata_keys is None else tuple(metadata_keys)),
+            application_metadata_keys=metadata_keys,
         )
 
 
@@ -886,13 +888,12 @@ class _Player:
                 f"{self.cursor}"
             )
         expected_metadata = interaction.application_metadata_keys
-        if expected_metadata is not None:
-            actual_metadata = _application_metadata_keys(metadata)
-            if actual_metadata != expected_metadata:
-                raise AndroidGrpcCassetteMismatch(
-                    "Android gRPC cassette application metadata mismatch at interaction "
-                    f"{self.cursor}: expected {expected_metadata!r}, got {actual_metadata!r}"
-                )
+        actual_metadata = _application_metadata_keys(metadata)
+        if actual_metadata != expected_metadata:
+            raise AndroidGrpcCassetteMismatch(
+                "Android gRPC cassette application metadata mismatch at interaction "
+                f"{self.cursor}: expected {expected_metadata!r}, got {actual_metadata!r}"
+            )
         self.cursor += 1
         return interaction
 

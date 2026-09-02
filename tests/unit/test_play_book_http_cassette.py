@@ -53,7 +53,8 @@ def test_play_book_response_scrubber_replaces_the_entire_private_library() -> No
     private_result = json.dumps(
         [[["PRIVATE_CONTENT_ID", 1, "Private library title", "Private description"]]]
     )
-    live_body = f')]}}\'\n\n1\n[["wrb.fr","mVtEUb",{json.dumps(private_result)}]]\n'
+    payload = json.dumps([["wrb.fr", "mVtEUb", private_result]])
+    live_body = f")]}}'\n\n1\n{payload}\n"
     response = {
         "body": {"string": live_body},
         "headers": {"content-length": [str(len(live_body.encode()))]},
@@ -68,4 +69,28 @@ def test_play_book_response_scrubber_replaces_the_entire_private_library() -> No
     payload = next(line for line in clean_body.splitlines() if line.startswith("[["))
     frame = json.loads(payload)
     assert json.loads(frame[0][2]) == [SYNTHETIC_BOOK_ROWS]
+    assert response["headers"]["content-length"] == [str(len(clean_body.encode()))]
+
+
+def test_play_book_response_scrubber_replaces_the_private_add_response() -> None:
+    private_stub = [["PRIVATE_SOURCE_ID"], "7", ["PRIVATE_UNMODELED_DATA", None, None, None, 20]]
+    private_result = json.dumps([[private_stub], None, [[private_stub, 0]]])
+    payload = json.dumps([["wrb.fr", "X1snv", private_result]])
+    live_body = f")]}}'\n\n1\n{payload}\n"
+    response = {
+        "body": {"string": live_body},
+        "headers": {"content-length": [str(len(live_body.encode()))]},
+        "status": {"code": 200, "message": "OK"},
+    }
+
+    PlayBookHttpCassetteScrubber().scrub_response(response)
+
+    clean_body = response["body"]["string"]
+    assert "PRIVATE_SOURCE_ID" not in clean_body
+    assert "PRIVATE_UNMODELED_DATA" not in clean_body
+    payload = next(line for line in clean_body.splitlines() if line.startswith("[["))
+    frame = json.loads(payload)
+    result = json.loads(frame[0][2])
+    assert result[0][0][0][0] == "00000000-0000-4000-8000-000000000002"
+    assert result[0][0][1] == "Placeholder ebook 001"
     assert response["headers"]["content-length"] == [str(len(clean_body.encode()))]

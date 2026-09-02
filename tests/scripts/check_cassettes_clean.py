@@ -287,7 +287,7 @@ def _scan_android_grpc_cassette(path: Path) -> list[tuple[int, str]]:
         ):
             return [(1, "Leak (invalid Android gRPC cassette): unexpected interaction schema")]
         metadata_keys = interaction.get("application_metadata_keys")
-        if metadata_keys is not None and (
+        if "application_metadata_keys" in interaction and (
             not isinstance(metadata_keys, list)
             or not metadata_keys
             or any(not isinstance(key, str) for key in metadata_keys)

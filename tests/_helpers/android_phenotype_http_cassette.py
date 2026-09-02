@@ -121,6 +121,7 @@ class PhenotypeHttpPost:
         self._recorder = recorder
         self._cassette_name = cassette_name
         self._used = False
+        self._interaction_count: int | None = None
 
     async def __call__(self, url: str, body: bytes, headers: dict[str, str]) -> tuple[int, bytes]:
         if url != phenotype._ENDPOINT:
@@ -141,12 +142,19 @@ class PhenotypeHttpPost:
         if self._used:
             raise RuntimeError("Phenotype cassette permits exactly one HTTP interaction")
         self._used = True
-        with self._recorder.use_cassette(self._cassette_name):
-            return await phenotype._default_http_post(url, body, headers)
+        with self._recorder.use_cassette(self._cassette_name) as cassette:
+            response = await phenotype._default_http_post(url, body, headers)
+            self._interaction_count = len(cassette)
+            return response
 
     def assert_consumed(self) -> None:
         if not self._used:
             raise AssertionError("Phenotype cassette expected exactly one HTTP interaction")
+        if self._interaction_count != 1:
+            raise AssertionError(
+                "Phenotype cassette expected exactly one HTTP interaction, "
+                f"found {self._interaction_count}"
+            )
 
 
 def build_phenotype_http_post(cassette_path: Path) -> PhenotypeHttpPost:

@@ -15,6 +15,7 @@ from google.protobuf.empty_pb2 import Empty
 from google.protobuf.timestamp_pb2 import Timestamp
 from tests._helpers.android_grpc_cassette import (
     AndroidGrpcCassette,
+    AndroidGrpcCassetteError,
     AndroidGrpcCassetteMismatch,
     ProtoRedactor,
     RecordingGrpcModule,
@@ -403,6 +404,22 @@ async def test_recording_serializes_redacted_deterministic_unary_protobuf(tmp_pa
     assert cassette_path.read_bytes() == before
     assert json.loads(raw_cassette)["format"] == "notebooklm.android.grpc-cassette"
 
+    mismatch = ReplayGrpcModule(cassette_path)
+    invoke = mismatch.secure_channel(ANDROID_GRPC_TARGET, object()).unary_unary(
+        METHOD,
+        request_serializer=lambda message: message.SerializeToString(),
+        response_deserializer=read_pb2.GetProjectResponse.FromString,
+    )
+    with pytest.raises(AndroidGrpcCassetteMismatch, match="application metadata mismatch"):
+        await invoke(
+            read_pb2.GetProjectRequest(
+                project_id=SAFE_PROJECT_ID,
+                include_audio_overview_ids=True,
+            ),
+            metadata=((CLIENT_TYPE_HEADER, b"unexpected-propagation"),),
+            timeout=None,
+        )
+
 
 @pytest.mark.asyncio
 async def test_recording_pins_allowlisted_application_metadata_keys_without_values(
@@ -465,6 +482,17 @@ async def test_recording_pins_allowlisted_application_metadata_keys_without_valu
     )
     replay.assert_consumed()
     await _close_session(replay_session, replay_supervisor)
+
+
+def test_cassette_loader_rejects_explicit_null_application_metadata(tmp_path: Path) -> None:
+    source = ANDROID_CASSETTES / "chat_session_control_recorded.grpc.json"
+    data = json.loads(source.read_text(encoding="utf-8"))
+    data["interactions"][0]["application_metadata_keys"] = None
+    cassette = tmp_path / "null-metadata.grpc.json"
+    cassette.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(AndroidGrpcCassetteError, match="must be a list of text keys"):
+        AndroidGrpcCassette.load(cassette)
 
 
 @pytest.mark.asyncio

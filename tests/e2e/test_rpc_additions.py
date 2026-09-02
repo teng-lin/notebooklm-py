@@ -8,6 +8,7 @@ and backend assembly users exercise.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from uuid import uuid4
 
 import pytest
@@ -131,12 +132,45 @@ async def test_play_books_list_and_add(client, temp_notebook) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(120)
 async def test_chat_session_status_and_cancel(client, temp_notebook) -> None:
-    answer = await client.chat.ask(temp_notebook.id, "Summarize this notebook briefly.")
+    seed = await client.chat.ask(temp_notebook.id, "Summarize this notebook briefly.")
+    generation = asyncio.create_task(
+        client.chat.ask(
+            temp_notebook.id,
+            "Write a detailed, exhaustive explanation of every source in this notebook.",
+            conversation_id=seed.conversation_id,
+        )
+    )
+    try:
+        deadline = asyncio.get_running_loop().time() + 30
+        while True:
+            active = await client.chat.session_status(temp_notebook.id, seed.conversation_id)
+            if active.generating:
+                break
+            if generation.done():
+                await generation
+                pytest.fail("Chat generation completed before an active status was observable")
+            if asyncio.get_running_loop().time() >= deadline:
+                pytest.fail("Chat session did not enter the generating state within 30 seconds")
+            await asyncio.sleep(0.1)
 
-    status = await client.chat.session_status(temp_notebook.id, answer.conversation_id)
-    assert isinstance(status, ChatSessionStatus)
-    assert status.generating is False
-    assert status.token is None
+        assert isinstance(active, ChatSessionStatus)
+        assert active.token
+        assert await client.chat.cancel(temp_notebook.id, seed.conversation_id) is None
 
-    assert await client.chat.cancel(temp_notebook.id, answer.conversation_id) is None
+        deadline = asyncio.get_running_loop().time() + 30
+        while True:
+            terminal = await client.chat.session_status(temp_notebook.id, seed.conversation_id)
+            if not terminal.generating:
+                break
+            if asyncio.get_running_loop().time() >= deadline:
+                pytest.fail("Cancelled chat session did not become idle within 30 seconds")
+            await asyncio.sleep(0.25)
+
+        assert isinstance(terminal, ChatSessionStatus)
+        assert terminal.token is None
+    finally:
+        generation.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await generation

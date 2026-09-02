@@ -218,13 +218,9 @@ interactions:
       string: ')]}''
 
 
-        292
+        254
 
-        [["wrb.fr","X1snv","[[[[\"00000000-0000-4000-8000-000000000002\"],\"SCRUBBED_NAME\",[null,null,null,null,20]]],null,[[[[\"00000000-0000-4000-8000-000000000002\"],\"SCRUBBED_NAME\",[null,null,null,null,20]],0]]]",null,null,null,"generic"],["di",633],["af.httprm",633,"2703687566713757060",14]]
-
-        23
-
-        [["e",4,null,null,324]]
+        [["wrb.fr","X1snv","[[[[\"00000000-0000-4000-8000-000000000002\"],\"Placeholder ebook 001\",[null,null,null,null,20]]],null,[[[[\"00000000-0000-4000-8000-000000000002\"],\"Placeholder ebook 001\",[null,null,null,null,20]],0]]]",null,null,null,"generic"]]
 
         '
     headers:
@@ -238,7 +234,7 @@ interactions:
       content-disposition:
       - attachment; filename="response.bin"; filename*=UTF-8''response.bin
       content-length:
-      - '324'
+      - '265'
       content-security-policy:
       - require-trusted-types-for 'script';report-uri /_/LabsTailwindUi/cspreport
       content-type:

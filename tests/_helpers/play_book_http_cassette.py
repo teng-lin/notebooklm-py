@@ -10,6 +10,7 @@ from tests.vcr_config import ResourceIdCassetteScrubber
 
 _LIST_RPC_ID = "mVtEUb"
 _ADD_RPC_ID = "X1snv"
+_SYNTHETIC_SOURCE_ID = "00000000-0000-4000-8000-000000000002"
 
 SYNTHETIC_BOOK_ROWS: list[list[Any]] = [
     [
@@ -67,14 +68,27 @@ def _set_content_length(headers: Any, length: int) -> None:
             headers[key] = [str(length)] if isinstance(headers[key], list) else str(length)
 
 
-def _synthetic_list_body() -> str:
-    result = json.dumps([SYNTHETIC_BOOK_ROWS], separators=(",", ":"), ensure_ascii=True)
+def _synthetic_rpc_body(rpc_id: str, result: Any) -> str:
+    result_text = json.dumps(result, separators=(",", ":"), ensure_ascii=True)
     payload = json.dumps(
-        [["wrb.fr", _LIST_RPC_ID, result, None, None, None, "generic"]],
+        [["wrb.fr", rpc_id, result_text, None, None, None, "generic"]],
         separators=(",", ":"),
         ensure_ascii=True,
     )
     return f")]}}'\n\n{len(payload.encode('utf-8'))}\n{payload}\n"
+
+
+def _synthetic_list_body() -> str:
+    return _synthetic_rpc_body(_LIST_RPC_ID, [SYNTHETIC_BOOK_ROWS])
+
+
+def _synthetic_add_body() -> str:
+    source_stub = [
+        [_SYNTHETIC_SOURCE_ID],
+        SYNTHETIC_BOOK_ROWS[0][2],
+        [None, None, None, None, 20],
+    ]
+    return _synthetic_rpc_body(_ADD_RPC_ID, [[source_stub], None, [[source_stub, 0]]])
 
 
 def _rewrite_add_body(body: str | bytes) -> str | bytes:
@@ -133,9 +147,12 @@ class PlayBookHttpCassetteScrubber:
         if content is None:
             return response
         text = content.decode("utf-8") if isinstance(content, bytes) else content
-        if f'"{_LIST_RPC_ID}"' not in text:
+        if f'"{_LIST_RPC_ID}"' in text:
+            synthetic = _synthetic_list_body()
+        elif f'"{_ADD_RPC_ID}"' in text:
+            synthetic = _synthetic_add_body()
+        else:
             return response
-        synthetic = _synthetic_list_body()
         body["string"] = synthetic.encode("utf-8") if isinstance(content, bytes) else synthetic
         _set_content_length(response.get("headers", {}), len(synthetic.encode("utf-8")))
         return response

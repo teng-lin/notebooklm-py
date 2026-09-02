@@ -671,6 +671,14 @@ def test_python_guard_allows_only_pinned_grpc_application_metadata_keys(
     assert unsafe.returncode == 1
     assert "unsafe application metadata keys" in unsafe.stdout
 
+    data = json.loads(cassette.read_text(encoding="utf-8"))
+    data["interactions"][0]["application_metadata_keys"] = None
+    cassette.write_text(json.dumps(data), encoding="utf-8")
+    explicit_null = _run_guard(str(cassette))
+
+    assert explicit_null.returncode == 1
+    assert "unsafe application metadata keys" in explicit_null.stdout
+
 
 def test_python_guard_detects_novel_token_inside_grpc_protobuf(tmp_path: Path) -> None:
     novel = "kJ8sLm2NpQr5" + "TvWxYz0AbCdEf" + "GhIjKlMnOpQrSt" + "UvWxYz12345678"
