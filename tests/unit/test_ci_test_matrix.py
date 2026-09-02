@@ -29,7 +29,7 @@ def _step(job: dict[str, object], name: str) -> dict[str, object]:
 
 
 def test_test_matrix_is_independent_and_preserves_ci_contract() -> None:
-    """The required matrix covers every supported OS/Python combination."""
+    """The required PR matrix covers every Python on Linux plus one 3.12 cell per secondary OS."""
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     jobs = workflow["jobs"]
 
@@ -40,22 +40,34 @@ def test_test_matrix_is_independent_and_preserves_ci_contract() -> None:
     assert jobs["test"]["strategy"]["fail-fast"] is False
 
     matrix = jobs["test"]["strategy"]["matrix"]
-    assert matrix == {
-        "os": SUPPORTED_OSES,
-        "python-version": SUPPORTED_PYTHONS,
-        "include": [
+    # The full 3-OS by 5-Python product is nightly's job (see
+    # ``test_nightly_runs_full_sha_pinned_compatibility_matrix``); PRs run the
+    # reduced 7-cell matrix so the suite is not multiplied fifteen-fold per push.
+    assert set(matrix) == {"include"}
+    assert matrix["include"] == [
+        *(
             {
                 "os": "ubuntu-latest",
-                "python-version": "3.12",
-                "canonical": True,
-            },
-            {
-                "os": "windows-latest",
-                "python-version": "3.12",
-                "windows_playwright": True,
-            },
-        ],
-    }
+                "python-version": python,
+                "canonical": python == "3.12",
+                "windows_playwright": False,
+            }
+            for python in SUPPORTED_PYTHONS
+        ),
+        {
+            "os": "macos-latest",
+            "python-version": "3.12",
+            "canonical": False,
+            "windows_playwright": False,
+        },
+        {
+            "os": "windows-latest",
+            "python-version": "3.12",
+            "canonical": False,
+            "windows_playwright": True,
+        },
+    ]
+    assert {cell["os"] for cell in matrix["include"]} == set(SUPPORTED_OSES)
 
 
 def test_pr_matrix_runs_once_without_coverage_and_canonical_owns_reality() -> None:
@@ -131,7 +143,7 @@ def test_pr_matrix_runs_once_without_coverage_and_canonical_owns_reality() -> No
 
 
 def test_nightly_runs_full_sha_pinned_compatibility_matrix() -> None:
-    """Nightly repeats the full 3-OS by 5-Python ordinary test matrix."""
+    """Nightly owns the full 3-OS by 5-Python ordinary test matrix (PRs run a reduced one)."""
     workflow = yaml.safe_load(NIGHTLY_WORKFLOW.read_text(encoding="utf-8"))
     job = workflow["jobs"]["compatibility"]
 
@@ -152,9 +164,14 @@ def test_nightly_runs_full_sha_pinned_compatibility_matrix() -> None:
     assert "secrets." not in str(job)
 
     workflow_text = NIGHTLY_WORKFLOW.read_text(encoding="utf-8")
+    # PyYAML parses a bare ``on`` key as boolean ``True``.
+    triggers = workflow.get("on", workflow.get(True))
+    dispatch_inputs = triggers["workflow_dispatch"]["inputs"]
+    assert dispatch_inputs["run_compatibility"]["type"] == "boolean"
+    # Manual dispatches (release branches) default to the full matrix because the
+    # PR gate only runs the reduced 7-cell one.
+    assert dispatch_inputs["run_compatibility"]["default"] is True
     assert "run_compatibility:" in workflow_text
-    assert "type: boolean" in workflow_text
-    assert "default: false" in workflow_text
 
     checkout = next(
         step for step in job["steps"] if str(step.get("uses", "")).startswith("actions/checkout@")

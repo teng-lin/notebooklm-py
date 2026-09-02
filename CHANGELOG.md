@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Pull requests run a reduced 7-cell compatibility matrix again (Python
+  3.10–3.14 on Ubuntu plus Python 3.12 on macOS and Windows). The full 15-cell
+  Ubuntu/macOS/Windows × Python 3.10–3.14 matrix now runs only in the nightly
+  workflow, and manual nightly dispatches include it by default.
+
 ## [0.8.2] - 2026-09-02
 
 The headline of this release is the new **Android backend**. The Python SDK, CLI,

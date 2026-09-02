@@ -248,18 +248,18 @@ no break against the baseline) is a CI failure, not silent cruft.
 - [ ] Wait for **test.yml** to pass:
   - Linting and formatting
   - Type checking
-  - Unit and integration tests in the full 15-cell matrix: Ubuntu, macOS, and
-    Windows across Python 3.10-3.14
+  - Unit and integration tests in the reduced 7-cell PR matrix: Python
+    3.10-3.14 on Ubuntu plus Python 3.12 on macOS and Windows
 
 ### E2E Tests on Release Branch
 
 - [ ] Go to **Actions** → **Nightly E2E Tests**
 - [ ] Click **Run workflow**, set **custom_branch** to `release/vX.Y.Z`
-- [ ] Leave **run_compatibility** disabled because the PR's required 15-cell
-      matrix already covers that commit. Scheduled nightlies still run the full
-      compatibility matrix automatically.
-- [ ] Wait for coverage, repository-lint, and both full Windows E2E jobs (Web
-      and Android) to pass
+- [ ] Leave **run_compatibility** enabled (the default): the PR gate only ran
+      the reduced 7-cell matrix, so this dispatch is what proves the release
+      commit on the full 15-cell Ubuntu/macOS/Windows × Python 3.10-3.14 matrix.
+- [ ] Wait for the compatibility matrix, coverage, repository-lint, and both
+      full Windows E2E jobs (Web and Android) to pass
 - [ ] If E2E tests fail:
   1. Fix issues in the release worktree
   2. Commit and push

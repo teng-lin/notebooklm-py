@@ -550,7 +550,7 @@ lock sibling and the two invocations never contend.
    green run that never exercised the adapter surface. Add both extras
    (CI installs `--extra mcp --extra server --extra impersonate`) to run them.
 
-   CI runs the same lint gate with `uv run pre-commit run --all-files`, so local hook results should match the `quality` job. The ordinary suite then runs in a full 15-cell compatibility matrix: Ubuntu, macOS, and Windows crossed with Python 3.10–3.14. Scheduled nightly runs repeat that matrix against one resolved commit before their dedicated coverage and two full Windows live-E2E jobs, one each for the Web and Android backends. Manual nightly dispatches default to skipping the duplicate compatibility matrix; select `run_compatibility` when that extra rerun is intentional.
+   CI runs the same lint gate with `uv run pre-commit run --all-files`, so local hook results should match the `quality` job. The ordinary suite then runs in a reduced 7-cell compatibility matrix on every PR: Python 3.10–3.14 on Ubuntu, plus one Python 3.12 cell each on macOS and Windows. The full 15-cell matrix (all three OSes crossed with Python 3.10–3.14) runs nightly against one resolved commit before the dedicated coverage and two full Windows live-E2E jobs, one each for the Web and Android backends. Manual nightly dispatches also run the full compatibility matrix by default; untick `run_compatibility` for a quick E2E-only rerun.
 
 2. **Authenticate:**
    ```bash
@@ -1360,8 +1360,8 @@ The `RedactingFilter` preserves `record.exc_info` (the live exception object) so
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `test.yml` | Push/PR | Full 3-OS × 5-Python compatibility matrix, linting, type checking |
-| `nightly.yml` | Daily 6 AM UTC (`main`), manual dispatch for `release/*` | Full compatibility matrix, coverage floors, repository lint, and E2E tests with the real API |
+| `test.yml` | Push/PR | Reduced 7-cell compatibility matrix (Ubuntu × Python 3.10–3.14, plus macOS/Windows on 3.12), linting, type checking |
+| `nightly.yml` | Daily 6 AM UTC (`main`), manual dispatch for `release/*` | Full 3-OS × 5-Python compatibility matrix, coverage floors, repository lint, and E2E tests with the real API |
 | `rpc-health.yml` | Daily 7 AM UTC (`main`), manual dispatch for `release/*` | RPC method ID monitoring (see [stability.md](stability.md#automated-rpc-health-check)) plus the [Android gRPC canary](#android-grpc-canary) |
 | `testpypi-publish.yml` | Manual dispatch | Publish to TestPyPI |
 | `verify-package.yml` | Manual dispatch | Verify TestPyPI or PyPI install + E2E |

@@ -15,10 +15,10 @@ on:
         required: false
         default: ''
       run_compatibility:
-        description: 'Also run the 3-OS by 5-Python compatibility matrix'
+        description: 'Also run the full 3-OS by 5-Python compatibility matrix (PRs only run the reduced 7-cell matrix)'
         required: false
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
@@ -89,16 +89,20 @@ jobs:
           echo "short_sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
           echo "Resolved commit: $SHA"
 
-  # Re-run the complete compatibility matrix nightly, pinned to the same
-  # resolved commit as coverage and E2E. Every supported Python version runs on
-  # every supported CI operating system; heavyweight browser, coverage, and
-  # live-API responsibilities remain in their dedicated jobs below.
+  # Run the complete compatibility matrix nightly, pinned to the same resolved
+  # commit as coverage and E2E. Every supported Python version runs on every
+  # supported CI operating system — this is the only place the full 3-OS by
+  # 5-Python product runs; `test.yml` keeps PRs on a reduced 7-cell matrix
+  # (all Pythons on Ubuntu plus one 3.12 cell each on macOS and Windows).
+  # Heavyweight browser, coverage, and live-API responsibilities remain in
+  # their dedicated jobs below.
   compatibility:
     name: Compatibility (${{ needs.resolve-branch.outputs.branch }}@${{ needs.resolve-branch.outputs.short_sha }}/${{ matrix.os }}/Python ${{ matrix.python-version }})
     needs: resolve-branch
     # Scheduled nightlies always exercise the full support matrix. Manual
-    # release E2E dispatches may skip this duplicate work after the PR's
-    # required 15-cell matrix has already passed.
+    # dispatches run it by default too (release branches only get the reduced
+    # PR matrix otherwise); untick `run_compatibility` for a quick E2E-only
+    # rerun.
     if: >-
       needs.resolve-branch.outputs.is_standard == 'true' &&
       (github.event_name == 'schedule' || inputs.run_compatibility)
