@@ -194,7 +194,7 @@ def register_notebook_commands(cli):
           notebooklm copy "Research — Copy" -n abc123 --use
           notebooklm copy "Research — Copy" -n abc123 --json
         """
-        source_id = require_notebook(notebook_id)
+        source_id = require_notebook(notebook_id, json_output=json_output)
 
         async def _run():
             async with resolve_client_factory(ctx)(client_auth) as client:

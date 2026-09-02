@@ -602,6 +602,34 @@ class TestNotebookCopy:
         assert "active_notebook_id" not in data
         assert not mock_context_file.exists()
 
+    def test_notebook_copy_json_missing_source_returns_structured_error(
+        self, runner, mock_auth, mock_context_file, monkeypatch
+    ):
+        monkeypatch.delenv("NOTEBOOKLM_NOTEBOOK", raising=False)
+        mock_client = self._client()
+
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["copy", "Copied notebook", "--json"],
+                obj=inject_client(mock_client),
+            )
+
+        assert result.exit_code == 1
+        assert json.loads(result.stdout) == {
+            "error": True,
+            "code": "VALIDATION_ERROR",
+            "message": (
+                "No notebook specified. Use 'notebooklm use <id>' to set context, "
+                "pass -n/--notebook, or set NOTEBOOKLM_NOTEBOOK."
+            ),
+        }
+        assert result.stderr == ""
+        mock_client.notebooks.copy.assert_not_awaited()
+
     @pytest.mark.parametrize("use_flag", ["--use", "-u"])
     def test_notebook_copy_use_switches_context(
         self, runner, mock_auth, mock_context_file, use_flag

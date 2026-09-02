@@ -17,7 +17,7 @@ from .. import paths as paths_module
 from ..paths import get_context_path
 from . import context as context_helpers
 from . import rendering as rendering_helpers
-from .error_handler import exit_with_code
+from .error_handler import exit_with_code, output_error
 
 ContextPathFn = Callable[..., Path]
 ListFn = Callable[[], Awaitable[list[Any]]]
@@ -122,6 +122,7 @@ def require_notebook(
     *,
     context_path_fn: ContextPathFn | None = None,
     output_console: Console | None = None,
+    json_output: bool = False,
 ) -> str:
     """Get notebook ID from argument, env var, or active context.
 
@@ -140,6 +141,8 @@ def require_notebook(
             wrappers and tests. ``None`` keeps the module-level
             ``get_context_path`` lookup call-time patchable.
         output_console: Console used for the no-notebook diagnostic.
+        json_output: Emit a structured validation error instead of Rich text
+            when no notebook can be resolved.
 
     Returns:
         Notebook ID from argument, env var, or context, validated and stripped.
@@ -162,11 +165,15 @@ def require_notebook(
     if current:
         return validate_id(current, "Notebook")
 
-    output_console = _default_stdout_console(output_console)
-    output_console.print(
-        "[red]No notebook specified. Use 'notebooklm use <id>' to set context, "
-        "pass -n/--notebook, or set NOTEBOOKLM_NOTEBOOK.[/red]"
+    message = (
+        "No notebook specified. Use 'notebooklm use <id>' to set context, "
+        "pass -n/--notebook, or set NOTEBOOKLM_NOTEBOOK."
     )
+    if json_output:
+        output_error(message, "VALIDATION_ERROR", json_output=True, exit_code=1)
+
+    output_console = _default_stdout_console(output_console)
+    output_console.print(f"[red]{message}[/red]")
     exit_with_code(1)
 
 
