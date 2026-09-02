@@ -15,6 +15,7 @@
     "Notebook",
     "PremiumFeatureInfo",
     "ChatSession",
+    "ChatSessionStatus",
     "NotebookDescription",
     "NotebookMetadata",
     "SuggestedTopic",

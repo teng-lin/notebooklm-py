@@ -107,6 +107,13 @@
       "response_type": "google.internal.labs.tailwind.orchestration.v1.NextStepSuggestions",
       "confidence": "response_ctor_exact_request_name_inferred",
       "evidence": "docs/android/copy-append-suggestion-evidence.md#nextstepsuggestions"
+    },
+    {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetChatSessionStatus",
+      "request_type": "google.internal.labs.tailwind.orchestration.v1.GetChatSessionStatusRequest",
+      "response_type": "google.internal.labs.tailwind.orchestration.v1.GetChatSessionStatusResponse",
+      "confidence": "type_names_inferred_wire_shape_and_live_status_flip_pinned",
+      "evidence": "docs/android/chat-session-control-evidence.md#getchatsessionstatus"
     }
   ]
 }

@@ -1741,6 +1741,8 @@ else:
 | `get_settings(notebook_id)` | `str` | `ChatSettings` | Read the notebook's current chat configuration (`goal`, `response_length`, `custom_prompt`). A never-configured notebook reads back as `DEFAULT`/`DEFAULT`. |
 | `get_history(notebook_id, limit=100, conversation_id=None)` | `str, int, str` | `list[tuple[str, str]]` | Get Q&A pairs from most recent conversation |
 | `get_conversation_id(notebook_id)` | `str` | `str \| None` | Get most recent conversation ID from server |
+| `session_status(notebook_id, conversation_id=None)` | `str, str \| None` | `ChatSessionStatus` | Read the selected session's live generation state. Omitting `conversation_id` selects the most recent session; a notebook with no session is idle. |
+| `cancel(notebook_id, conversation_id=None)` | `str, str \| None` | `None` | Idempotently stop active generation for the selected session. Omitting `conversation_id` selects the most recent session. The caller holding a Web response stream must also abandon that stream after success. |
 | `delete_conversation(notebook_id, conversation_id)` | `str, str` | `None` | **DESTRUCTIVE.** Permanently delete a server-side conversation (web UI's "Delete history" action). The next `ask()` with no `conversation_id` then starts a brand-new conversation. |
 | `save_answer_as_note(notebook_id, ask_result, *, title=None)` | `str, AskResult, str \| None` | `Note` | Save a chat answer as a citation-rich note ([issue #660](https://github.com/teng-lin/notebooklm-py/issues/660)) — the resulting note's `[N]` markers remain interactive hover-anchored citations in the NotebookLM web UI. Owns the saved-from-chat workflow on `ChatAPI` (the data owner). Raises `ValueError` if `ask_result.references` is empty. When `title is None`, derives `f"Chat: {ask_result.answer[:50].strip().replace(chr(10), ' ')}"`. |
 
@@ -1777,7 +1779,7 @@ async def ask(
 
 **Example:**
 ```python
-from notebooklm import ChatGoal, ChatResponseLength
+from notebooklm import ChatGoal, ChatResponseLength, ChatSessionStatus
 
 # Ask questions (uses all sources)
 result = await client.chat.ask(nb_id, "What are the main themes?")
@@ -1796,6 +1798,15 @@ result = await client.chat.ask(nb_id, "Summarize the key points", source_ids=["s
 result = await client.chat.ask(
     nb_id, "Can you elaborate on the first point?", conversation_id=result.conversation_id
 )
+
+# Inspect or stop an in-flight generation. ChatSessionStatus is also exported
+# from notebooklm for annotations and isinstance checks.
+status = await client.chat.session_status(nb_id, result.conversation_id)
+assert isinstance(status, ChatSessionStatus)
+if status.generating:
+    print(status.token)  # opaque server token, when supplied
+    await client.chat.cancel(nb_id, result.conversation_id)
+# On Web, cancel the local task/iterator that owns the still-open HTTP stream too.
 
 # Force a fresh conversation (destructive — turns are not recoverable).
 # Mirrors the web UI's "Delete history" button.

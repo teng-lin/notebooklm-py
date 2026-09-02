@@ -1,0 +1,38 @@
+{
+  "method_name": "CANCEL_GENERATION",
+  "method_id": "XgrPMd",
+  "description": "Idempotently stop generation for one chat session; the server returns an empty list.",
+  "request": {
+    "params": [
+      null,
+      "SCRUBBED_CONV_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "XgrPMd",
+          "[null,\"SCRUBBED_CONV_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "XgrPMd",
+          "[]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": []
+  }
+}

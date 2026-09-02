@@ -9,6 +9,7 @@ import "labs/language/tailwind/common/protos/provenance.proto";
 
 enum ClientType {
   UNKNOWN = 0;
+  WEB = 2;
   ANDROID_APP = 3;
 }
 

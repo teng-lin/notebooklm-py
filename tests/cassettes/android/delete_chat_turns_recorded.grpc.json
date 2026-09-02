@@ -64,7 +64,7 @@
     {
       "method": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed",
       "request": {
-        "protobuf_b64": "CigKJgokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyEhRTQ1JVQkJFRF9TVFJJTkdfMDAwMUIkMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxSAE=",
+        "protobuf_b64": "CigKJgokMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyEhRTQ1JVQkJFRF9TVFJJTkdfMDAwMSI8CAISFwoVU0NSVUJCRURfUkVRVUVTVF8wMDAxIh8IAVobCAIQARoVU0NSVUJCRURfUkVRVUVTVF8wMDAxQiQwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDFIAQ==",
         "protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GenerateFreeFormStreamedRequest"
       },
       "response_protobuf_type": "google.internal.labs.tailwind.orchestration.v1.GenerateFreeFormStreamedResponse",

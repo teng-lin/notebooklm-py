@@ -22,6 +22,7 @@ from .types import (
     AskResult,
     ChatMode,
     ChatReference,
+    ChatSessionStatus,
     ChatSettings,
     ConversationTurn,
     ConversationTurnKey,
@@ -463,6 +464,63 @@ class ChatAPI(LoopBoundPrimitive, ABC):
             for turn in cached
         ]
 
+    async def session_status(
+        self,
+        notebook_id: str,
+        conversation_id: str | None = None,
+    ) -> ChatSessionStatus:
+        """Return whether a chat session is currently generating.
+
+        Args:
+            notebook_id: The notebook that owns the session.
+            conversation_id: Session to inspect. When omitted, resolves the
+                notebook's most recent session just like :meth:`ask`.
+
+        Returns:
+            A :class:`ChatSessionStatus`. A notebook with no chat session is
+            idle and returns ``ChatSessionStatus(False, None)`` without issuing
+            a status request.
+
+        Note:
+            Google's status transition is slightly wider than the streamed
+            response lifetime: it can become idle shortly before the HTTP/gRPC
+            stream closes. Use it as a polling signal, not as proof that a
+            caller already holding the stream has consumed its final frame.
+        """
+        self._loop_guard.assert_bound_loop()
+        resolved_id = conversation_id or await self.get_conversation_id(notebook_id)
+        if resolved_id is None:
+            return ChatSessionStatus(generating=False)
+        return await self._get_session_status(notebook_id, resolved_id)
+
+    async def cancel(
+        self,
+        notebook_id: str,
+        conversation_id: str | None = None,
+    ) -> None:
+        """Stop the active generation for a chat session, if any.
+
+        Args:
+            notebook_id: The notebook that owns the session.
+            conversation_id: Session to cancel. When omitted, resolves the
+                notebook's most recent session just like :meth:`ask`.
+
+        Returns:
+            ``None``. A notebook with no chat session is already idle and is a
+            no-op; server and authorization failures still raise.
+
+        Note:
+            Google stops emitting answer frames but does not close an existing
+            Web streaming response. A caller that owns that stream must abandon
+            or cancel its local task after this method succeeds.
+        """
+        self._loop_guard.assert_bound_loop()
+        resolved_id = conversation_id or await self.get_conversation_id(notebook_id)
+        if resolved_id is None:
+            return None
+        await self._cancel_generation(notebook_id, resolved_id)
+        return None
+
     async def delete_conversation(self, notebook_id: str, conversation_id: str) -> None:
         """Delete a conversation from the server.
 
@@ -663,6 +721,22 @@ class ChatAPI(LoopBoundPrimitive, ABC):
         conversation_id: str,
     ) -> None:
         """Send the backend delete request."""
+
+    @abstractmethod
+    async def _get_session_status(
+        self,
+        notebook_id: str,
+        conversation_id: str,
+    ) -> ChatSessionStatus:
+        """Send and decode the backend chat-session status request."""
+
+    @abstractmethod
+    async def _cancel_generation(
+        self,
+        notebook_id: str,
+        conversation_id: str,
+    ) -> None:
+        """Send the backend generation-cancel request."""
 
     @abstractmethod
     async def _send_note(

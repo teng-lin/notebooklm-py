@@ -17,7 +17,7 @@ LINKED_HASH = re.compile(
 
 def test_every_linked_evidence_hash_matches_checked_in_bytes() -> None:
     rows = list(LINKED_HASH.finditer(LEDGER.read_text(encoding="utf-8")))
-    assert len(rows) == 18
+    assert len(rows) == 20
 
     for row in rows:
         target, _separator, _anchor = row.group("target").partition("#")

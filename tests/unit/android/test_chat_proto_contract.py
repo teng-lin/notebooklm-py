@@ -329,6 +329,30 @@ def test_chat_request_response_fields_are_exhaustive() -> None:
         chat_pb2.ListChatSessionsResponse: {
             "sessions": (1, repeated, message, f"{COMMON_PACKAGE}.ChatSession"),
         },
+        chat_pb2.GetChatSessionStatusRequest: {
+            "request_context": (
+                1,
+                singular,
+                message,
+                "labs.language.tailwind.common.protos.RequestContext",
+            ),
+            "chat_session_id": (2, singular, string, None),
+        },
+        chat_pb2.GetChatSessionStatusResponse: {
+            "generation_token": (1, singular, string, None),
+            "status": (2, singular, int32, None),
+        },
+        chat_pb2.CancelGenerationRequest: {
+            "request_context": (
+                1,
+                singular,
+                message,
+                "labs.language.tailwind.common.protos.RequestContext",
+            ),
+            "chat_session_id": (2, singular, string, None),
+            "agency_session_id": (3, singular, string, None),
+        },
+        chat_pb2.CancelGenerationResponse: {},
         chat_pb2.ListChatTurnsRequest: {
             "chat_session_id": (4, singular, string, None),
             "page_token": (6, singular, string, None),
@@ -349,6 +373,12 @@ def test_chat_request_response_fields_are_exhaustive() -> None:
             "sources": (1, repeated, message, f"{o}.InputSource"),
             "user_query": (2, singular, string, None),
             "conversation_history": (3, repeated, message, f"{o}.ConversationEvent"),
+            "request_context": (
+                4,
+                singular,
+                message,
+                "labs.language.tailwind.common.protos.RequestContext",
+            ),
             "chat_session_id": (5, singular, string, None),
             "user_message_id": (6, singular, string, None),
             "project_id": (8, singular, string, None),

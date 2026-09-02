@@ -23,7 +23,14 @@ from ..exceptions import (
     UnknownRPCMethodError,
     ValidationError,
 )
-from ..types import ChatReference, ChatSettings, ConversationTurn, NextStepSuggestion, Note
+from ..types import (
+    ChatReference,
+    ChatSessionStatus,
+    ChatSettings,
+    ConversationTurn,
+    NextStepSuggestion,
+    Note,
+)
 from .codecs.chat import decode_document, decode_history, decode_references, decode_turn_key
 from .codecs.notebooks import validate_project_identity
 from .notes import SAVED_RESPONSE_NOTE_TYPE, create_note
@@ -32,6 +39,8 @@ from .session import AndroidSession
 logger = logging.getLogger("notebooklm._chat.api")
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 LIST_CHAT_SESSIONS_METHOD = f"/{_SERVICE}/ListChatSessions"
+GET_CHAT_SESSION_STATUS_METHOD = f"/{_SERVICE}/GetChatSessionStatus"
+CANCEL_GENERATION_METHOD = f"/{_SERVICE}/CancelGeneration"
 LIST_CHAT_TURNS_METHOD = f"/{_SERVICE}/ListChatTurns"
 DELETE_CHAT_TURNS_METHOD = f"/{_SERVICE}/DeleteChatTurns"
 GENERATE_FREE_FORM_STREAMED_METHOD = f"/{_SERVICE}/GenerateFreeFormStreamed"
@@ -73,6 +82,20 @@ def _new_turn_id() -> str:
     return str(uuid4())
 
 
+def _cancellable_chat_request_context() -> Any:
+    """Return the Android metadata envelope with Web chat semantics.
+
+    Google's cancel endpoint only stops generations whose originating request
+    carries ``clientType=WEB``. The rest of the captured Android metadata and
+    provenance stay unchanged.
+    """
+    from .upload import android_request_context
+
+    context = android_request_context()
+    context.client_type = 2  # labs.language.tailwind.common.protos.WEB
+    return context
+
+
 class AndroidChatAPI(ChatAPI):
     """Android chat adapter installed by public Android backend selection."""
 
@@ -111,6 +134,49 @@ class AndroidChatAPI(ChatAPI):
         if not response.sessions:
             return None
         return response.sessions[0].chat_session_id or None
+
+    async def _get_session_status(
+        self,
+        notebook_id: str,
+        conversation_id: str,
+    ) -> ChatSessionStatus:
+        del notebook_id  # the native request is keyed only by chat session id
+        proto = _proto()
+        response = await self._transport.unary(
+            GET_CHAT_SESSION_STATUS_METHOD,
+            proto.GetChatSessionStatusRequest(chat_session_id=conversation_id),
+            replay_safe=True,
+            response_type=proto.GetChatSessionStatusResponse,
+        )
+        token = response.generation_token or None
+        if response.status == 1 and token is None:
+            return ChatSessionStatus(generating=False)
+        if response.status == 2 and token is not None:
+            return ChatSessionStatus(generating=True, token=token)
+        raise UnknownRPCMethodError(
+            "Android GetChatSessionStatus returned an unknown status/token combination.",
+            method_id=GET_CHAT_SESSION_STATUS_METHOD,
+            path=(2,),
+            source="AndroidChatAPI.session_status",
+            data_at_failure=(response.status, token),
+        )
+
+    async def _cancel_generation(
+        self,
+        notebook_id: str,
+        conversation_id: str,
+    ) -> None:
+        del notebook_id  # the native request is keyed only by chat session id
+        proto = _proto()
+        await self._transport.unary(
+            CANCEL_GENERATION_METHOD,
+            proto.CancelGenerationRequest(
+                request_context=_cancellable_chat_request_context(),
+                chat_session_id=conversation_id,
+            ),
+            replay_safe=True,
+            response_type=proto.CancelGenerationResponse,
+        )
 
     async def _require_owned_conversation(
         self,
@@ -287,6 +353,9 @@ class AndroidChatAPI(ChatAPI):
             ],
             user_query=question,
             conversation_history=self._conversation_history(cached_turns),
+            # CancelGeneration ignores ANDROID_APP-originated streams. WEB is
+            # required here for the public cancel() contract to be truthful.
+            request_context=_cancellable_chat_request_context(),
             chat_session_id=conversation_id or "",
             user_message_id=turn_id,
             project_id=notebook_id,
@@ -506,9 +575,11 @@ class AndroidChatAPI(ChatAPI):
 
 __all__ = [
     "AndroidChatAPI",
+    "CANCEL_GENERATION_METHOD",
     "DELETE_CHAT_TURNS_METHOD",
     "GENERATE_FREE_FORM_STREAMED_METHOD",
     "GET_PROJECT_METHOD",
+    "GET_CHAT_SESSION_STATUS_METHOD",
     "LIST_CHAT_SESSIONS_METHOD",
     "LIST_CHAT_TURNS_METHOD",
     "MUTATE_PROJECT_METHOD",

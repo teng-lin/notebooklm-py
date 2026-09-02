@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from notebooklm._android.proto.labs.language.tailwind.common.protos import provenance_pb2 as labs_dot_language_dot_tailwind_dot_common_dot_protos_dot_provenance__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n3labs/language/tailwind/common/protos/metadata.proto\x12$labs.language.tailwind.common.protos\x1a\x35labs/language/tailwind/common/protos/provenance.proto\"(\n\x0e\x43lientMetadata\x12\x16\n\x0e\x63lient_version\x18\x01 \x01(\t\"\xec\x01\n\x0eRequestContext\x12\x45\n\x0b\x63lient_type\x18\x01 \x01(\x0e\x32\x30.labs.language.tailwind.common.protos.ClientType\x12M\n\x0f\x63lient_metadata\x18\x02 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.ClientMetadata\x12\x44\n\nprovenance\x18\x04 \x01(\x0b\x32\x30.labs.language.tailwind.common.protos.Provenance**\n\nClientType\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x0f\n\x0b\x41NDROID_APP\x10\x03\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n3labs/language/tailwind/common/protos/metadata.proto\x12$labs.language.tailwind.common.protos\x1a\x35labs/language/tailwind/common/protos/provenance.proto\"(\n\x0e\x43lientMetadata\x12\x16\n\x0e\x63lient_version\x18\x01 \x01(\t\"\xec\x01\n\x0eRequestContext\x12\x45\n\x0b\x63lient_type\x18\x01 \x01(\x0e\x32\x30.labs.language.tailwind.common.protos.ClientType\x12M\n\x0f\x63lient_metadata\x18\x02 \x01(\x0b\x32\x34.labs.language.tailwind.common.protos.ClientMetadata\x12\x44\n\nprovenance\x18\x04 \x01(\x0b\x32\x30.labs.language.tailwind.common.protos.Provenance*3\n\nClientType\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x07\n\x03WEB\x10\x02\x12\x0f\n\x0b\x41NDROID_APP\x10\x03\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,7 +33,7 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'labs.language.tailwind.comm
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
   _globals['_CLIENTTYPE']._serialized_start=429
-  _globals['_CLIENTTYPE']._serialized_end=471
+  _globals['_CLIENTTYPE']._serialized_end=480
   _globals['_CLIENTMETADATA']._serialized_start=148
   _globals['_CLIENTMETADATA']._serialized_end=188
   _globals['_REQUESTCONTEXT']._serialized_start=191

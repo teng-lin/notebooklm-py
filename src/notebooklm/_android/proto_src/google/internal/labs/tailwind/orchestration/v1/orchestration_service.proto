@@ -68,6 +68,9 @@ service LabsTailwindOrchestrationService {
   rpc ExportToDrive(ExportToDriveRequest) returns (ExportToDriveResponse);
 
   rpc ListChatSessions(ListChatSessionsRequest) returns (ListChatSessionsResponse);
+  rpc GetChatSessionStatus(GetChatSessionStatusRequest)
+      returns (GetChatSessionStatusResponse);
+  rpc CancelGeneration(CancelGenerationRequest) returns (CancelGenerationResponse);
   rpc ListChatTurns(ListChatTurnsRequest) returns (ListChatTurnsResponse);
   rpc DeleteChatTurns(DeleteChatTurnsRequest) returns (google.protobuf.Empty);
   rpc GenerateFreeFormStreamed(GenerateFreeFormStreamedRequest)

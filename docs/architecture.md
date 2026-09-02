@@ -1130,6 +1130,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/params/notebooks.py` | Stable `batchexecute` notebook RPC request payload builders, including `SUGGEST_PROMPTS` |
 | `_web/params/chat_stream.py` | Streamed-chat URL, form-body, and source/history request construction |
 | `_web/params/chat_note.py` | Saved-from-chat `CREATE_NOTE` positional payload and citation-anchor encoding |
+| `_web/params/chat_session.py` | Chat session-status and generation-cancel positional payload builders (#2303) |
 | `_web/transport/chat.py` | Chat-specific HTTP/error mapping over the shared authenticated streaming transport |
 | `_web/wire/decoder.py` | Batchexecute response framing, status/error decoding, and process-wide byte-count drift telemetry; retains the established `notebooklm.rpc.decoder` logger category |
 | `_web/wire/encoder.py` | Batchexecute request envelope and form-body encoding helpers; retains the established `notebooklm.rpc.encoder` logger category |
@@ -1356,7 +1357,7 @@ src/notebooklm/
 │           │   ├── notebooks_pb2.py         # Exact notebook messages/descriptors
 │           │   ├── notebooks_pb2_grpc.py    # Deterministic service-free companion
 │           │   ├── orchestration_service_pb2.py      # Cumulative exact service descriptor
-│           │   ├── orchestration_service_pb2_grpc.py # 47-method generated stub
+│           │   ├── orchestration_service_pb2_grpc.py # 55-method generated stub
 │           │   ├── sources_pb2.py               # Source and generic-upload descriptors
 │           │   ├── sources_pb2_grpc.py          # Deterministic service-free companion
 │           │   ├── artifacts_pb2.py         # Exact artifact message overlay
@@ -1576,6 +1577,7 @@ src/notebooklm/
 │   ├── params/                   # Web batchexecute payload builders
 │   │   ├── artifacts.py         # Artifact RPC payload builders
 │   │   ├── chat_note.py         # Saved-chat CREATE_NOTE payload builder
+│   │   ├── chat_session.py      # Session status/cancel payload builders
 │   │   ├── chat_stream.py       # Streamed-chat URL/form request builder
 │   │   ├── collections.py       # Collection RPC payload builders
 │   │   ├── labels.py            # Source-label RPC payload builders

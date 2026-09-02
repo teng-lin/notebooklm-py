@@ -18,12 +18,13 @@ load-bearing completion mechanism per the ADR-0024 upload precedent) reads the
 completed payload from the registry.
 
 Contract mirrors :class:`~notebooklm.mcp._filelink.ConsumedJtiStore` (ADR-0024's
-blessed ephemeral in-process state): single process / single tenant; every
-mutating method is fully synchronous and contains NO ``await``, so it runs
-atomically w.r.t. other coroutines on the one server event loop and needs no
-lock. The registry is bounded two ways — a hard entry cap with oldest-done-first
-eviction, and a completion TTL — so a long-lived server cannot leak memory. It
-dies with the process, like the lifespan client it rides on.
+blessed ephemeral in-process state): single process / single tenant, with all
+operations serialized by the server event loop and no lock. The ``start`` claim
+contains no ``await``, so duplicate submissions remain atomic; explicit cancel
+waits only after it has found and cancelled the claimed task. The registry is
+bounded two ways — a hard entry cap with oldest-done-first eviction, and a
+completion TTL — so a long-lived server cannot leak memory. It dies with the
+process, like the lifespan client it rides on.
 
 In-flight dedupe only: entries are keyed by a stable hash of the ask's semantic
 inputs (:func:`compute_chat_task_key`), so a retry of a question that is still
@@ -138,6 +139,8 @@ class ChatTaskEntry:
     task_id: str
     key: str
     created_at: float  # time.monotonic(); submission time
+    notebook_id: str | None = None
+    conversation_id: str | None = None
     #: The server-owned task. Assigned immediately after construction (the entry
     #: must exist first so ``_guard`` can stamp it); ``None`` only in that gap.
     task: asyncio.Task[None] | None = None
@@ -162,12 +165,10 @@ class ChatTaskRegistry(LoopBoundPrimitive):
     """Bounded, TTL-swept map of detached chat asks (see module docstring).
 
     Carries the #1196 loop-affinity protocol (via :class:`LoopBoundPrimitive` +
-    :meth:`reset_after_open`): the semaphore binds lazily to the loop it first
-    gates on, so a loop rebind rebuilds it and drops unfinished entries (their
-    tasks died with the old loop; completed results are plain dicts and
-    survive). Under the MCP lifespan the registry lives and dies with one loop,
-    so the hook never fires there — it exists to keep the affinity ratchet
-    honest for any other embedding.
+    :meth:`reset_after_open`): the MCP lifespan binds the registry to its running
+    loop, and a later loop rebind rebuilds the semaphore and drops unfinished
+    entries (their tasks died with the old loop; completed results are plain
+    dicts and survive).
     """
 
     def __init__(
@@ -251,16 +252,15 @@ class ChatTaskRegistry(LoopBoundPrimitive):
         The generation waits for a concurrency slot first (the queue), and the
         coroutine is only CREATED once the slot is held — a task cancelled while
         queued never instantiates (and so never leaks) the underlying ask.
-        ``CancelledError`` (server shutdown via :meth:`aclose` — nothing else
-        cancels these tasks) is recorded then re-raised, per asyncio's
-        cancellation contract.
+        ``CancelledError`` (explicit generation cancellation or server shutdown)
+        is recorded then re-raised, per asyncio's cancellation contract.
         """
         try:
             async with self._gate:
                 entry.started_at = time.monotonic()
                 entry.result = await coro_factory()
         except asyncio.CancelledError:
-            entry.error = asyncio.CancelledError("chat task cancelled at server shutdown")
+            entry.error = asyncio.CancelledError("chat task cancelled")
             raise
         except Exception as exc:  # noqa: BLE001 - terminal outcome capture, projected at read time
             entry.error = exc
@@ -280,6 +280,9 @@ class ChatTaskRegistry(LoopBoundPrimitive):
         self,
         key: str,
         coro_factory: Callable[[], Awaitable[dict[str, Any]]],
+        *,
+        notebook_id: str | None = None,
+        conversation_id: str | None = None,
     ) -> tuple[ChatTaskEntry, Literal["created", "running"]]:
         """Claim ``key`` and return its entry plus how it was satisfied.
 
@@ -326,7 +329,13 @@ class ChatTaskRegistry(LoopBoundPrimitive):
                     "poll chat_status and let the queue drain before starting more"
                 )
         task_id = secrets.token_urlsafe(8)
-        entry = ChatTaskEntry(task_id=task_id, key=key, created_at=now)
+        entry = ChatTaskEntry(
+            task_id=task_id,
+            key=key,
+            created_at=now,
+            notebook_id=notebook_id,
+            conversation_id=conversation_id,
+        )
         # Spawn AFTER the entry exists so ``_guard`` can stamp it; a plain loop
         # task (not a child of the request scope) is the detachment guarantee.
         # The factory is handed over uncalled — the ask coroutine is created
@@ -350,6 +359,26 @@ class ChatTaskRegistry(LoopBoundPrimitive):
             self._drop(entry)
             return None
         return entry
+
+    async def cancel(self, task_id: str) -> bool:
+        """Cancel one unfinished local ask task and wait for it to unwind.
+
+        Returns ``True`` only when a live task was cancelled. Unknown and
+        already-terminal task IDs are harmless no-ops.
+        """
+        entry = self.status(task_id)
+        if entry is None or entry.done_at is not None or entry.task is None:
+            return False
+        entry.task.cancel()
+        await asyncio.gather(entry.task, return_exceptions=True)
+        if entry.done_at is None:
+            # Cancellation before the task's first scheduler step never enters
+            # ``_guard``; stamp it here so status and TTL remain truthful.
+            entry.error = asyncio.CancelledError("chat task cancelled")
+            entry.done_at = time.monotonic()
+            entry.done_wall = time.time()
+            self._unlink(entry)
+        return True
 
     async def aclose(self) -> None:
         """Cancel every running ask and wait them out (lifespan teardown).

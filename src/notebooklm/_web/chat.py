@@ -19,14 +19,19 @@ from .._runtime.contracts import LoopGuard
 from .._types.enums import ChatGoal, ChatResponseLength
 from ..exceptions import ChatError, NetworkError, UnknownRPCMethodError, ValidationError
 from ..rpc import RPCMethod, safe_index
-from ..types import ChatReference, ChatSettings, ConversationTurn, Note
+from ..types import ChatReference, ChatSessionStatus, ChatSettings, ConversationTurn, Note
 from .contracts import RpcCaller
 from .params.chat_note import build_save_chat_as_note_params
+from .params.chat_session import (
+    build_cancel_generation_params,
+    build_chat_session_status_params,
+)
 from .params.chat_stream import build_streaming_chat_request
 from .params.notebooks import build_get_notebook_params
 from .rows.chat import (
     ConversationTurnRow,
     SavedChatNoteRow,
+    unwrap_chat_session_status,
     unwrap_chat_settings,
     unwrap_conversation_turns,
     unwrap_last_conversation_id,
@@ -259,6 +264,30 @@ class WebChatAPI(ChatAPI):
         await self._rpc.rpc_call(
             RPCMethod.DELETE_CONVERSATION,
             params,
+            source_path=f"/notebook/{notebook_id}",
+        )
+
+    async def _get_session_status(
+        self,
+        notebook_id: str,
+        conversation_id: str,
+    ) -> ChatSessionStatus:
+        raw = await self._rpc.rpc_call(
+            RPCMethod.GET_CHAT_SESSION_STATUS,
+            build_chat_session_status_params(conversation_id),
+            source_path=f"/notebook/{notebook_id}",
+        )
+        row = unwrap_chat_session_status(raw)
+        return ChatSessionStatus(generating=row.generating, token=row.token)
+
+    async def _cancel_generation(
+        self,
+        notebook_id: str,
+        conversation_id: str,
+    ) -> None:
+        await self._rpc.rpc_call(
+            RPCMethod.CANCEL_GENERATION,
+            build_cancel_generation_params(conversation_id),
             source_path=f"/notebook/{notebook_id}",
         )
 

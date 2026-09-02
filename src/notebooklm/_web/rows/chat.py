@@ -105,6 +105,7 @@ __all__ = [
     "AnswerRow",
     "CitationRow",
     "CitationDetail",
+    "ChatSessionStatusRow",
     "ChatSettingsRow",
     "ConversationTurnRow",
     "count_question_turn_rows",
@@ -114,6 +115,7 @@ __all__ = [
     "StreamFrameRow",
     "SavedChatNoteRow",
     "unwrap_chat_settings",
+    "unwrap_chat_session_status",
     "unwrap_conversation_turns",
     "unwrap_last_conversation_id",
 ]
@@ -149,6 +151,56 @@ _TURNS_CONTAINER_POS = 0
 # Position of the conversation id inside one innermost ``[conv_id]`` row of the
 # ``GET_LAST_CONVERSATION_ID`` (``hPTbtc``) ``[[[conv_id]]]`` payload.
 _LAST_CONVERSATION_ID_POS = 0
+
+_SESSION_STATUS_METHOD_ID = RPCMethod.GET_CHAT_SESSION_STATUS.value
+
+
+@dataclass(frozen=True)
+class ChatSessionStatusRow:
+    """Decoded semantic fields from ``GetChatSessionStatus``."""
+
+    generating: bool
+    token: str | None
+
+
+def unwrap_chat_session_status(raw: Any) -> ChatSessionStatusRow:
+    """Decode ``[token-or-null, status]`` into a strict semantic row.
+
+    Status ``1`` is idle and must not carry a token; status ``2`` is active and
+    must carry a non-empty token. Any other present shape is protocol drift.
+    """
+    source = "WebChatAPI.session_status"
+    if not isinstance(raw, list) or len(raw) < 2:
+        raise UnknownRPCMethodError(
+            "chat session status response is not a two-slot list",
+            method_id=_SESSION_STATUS_METHOD_ID,
+            path=(),
+            source=source,
+            data_at_failure=reprlib.repr(raw),
+        )
+    token = safe_index(
+        raw,
+        0,
+        method_id=_SESSION_STATUS_METHOD_ID,
+        source=source,
+    )
+    status = safe_index(
+        raw,
+        1,
+        method_id=_SESSION_STATUS_METHOD_ID,
+        source=source,
+    )
+    if status == 1 and token is None:
+        return ChatSessionStatusRow(generating=False, token=None)
+    if status == 2 and isinstance(token, str) and token:
+        return ChatSessionStatusRow(generating=True, token=token)
+    raise UnknownRPCMethodError(
+        "chat session status response has an unknown status/token combination",
+        method_id=_SESSION_STATUS_METHOD_ID,
+        path=(1,),
+        source=source,
+        data_at_failure=reprlib.repr(raw),
+    )
 
 
 def unwrap_last_conversation_id(raw: Any) -> str | None:

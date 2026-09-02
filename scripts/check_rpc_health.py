@@ -710,6 +710,11 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
     if method == RPCMethod.GET_LAST_CONVERSATION_ID:
         return [[], None, notebook_id, 1]
 
+    # GET_CHAT_SESSION_STATUS: an unknown session is safe and still exercises
+    # the read-only RPC id (the response may be idle or NOT_FOUND by account).
+    if method == RPCMethod.GET_CHAT_SESSION_STATUS:
+        return [None, "placeholder_conv_id"]
+
     # GET_CONVERSATION_TURNS: placeholder conv ID - API echoes RPC ID even in error response
     if method == RPCMethod.GET_CONVERSATION_TURNS:
         return [[], None, None, "placeholder_conv_id", 2]

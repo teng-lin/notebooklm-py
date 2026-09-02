@@ -29,6 +29,24 @@ class ConversationTurn:
 
 
 @dataclass(frozen=True)
+class ChatSessionStatus:
+    """Whether a server-side chat generation is active for one session.
+
+    Returned by :meth:`ChatAPI.session_status`. ``token`` is Google's opaque
+    generation identifier and is populated only while :attr:`generating` is
+    true; callers should use it for correlation only, not as a cancellation
+    key. Cancellation is addressed by conversation ID.
+
+    Attributes:
+        generating: ``True`` while the session is producing an answer.
+        token: Opaque generation token while active, otherwise ``None``.
+    """
+
+    generating: bool
+    token: str | None = None
+
+
+@dataclass(frozen=True)
 class ConversationTurnKey:
     """The backend's three-part identifier for one chat turn (#2122).
 

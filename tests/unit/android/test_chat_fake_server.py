@@ -179,15 +179,20 @@ async def test_base_ask_over_real_android_session_and_fake_grpc_server() -> None
         chat_pb2.ListChatSessionsRequest(project_id="notebook-1"),
         chat_pb2.ListChatSessionsRequest(project_id="notebook-1"),
     ]
+    assert len(service.generate_requests) == 1
+    (request,) = service.generate_requests
     assert service.generate_requests == [
         chat_pb2.GenerateFreeFormStreamedRequest(
             sources=[sources_pb2.InputSource(source_id={"id": "source-1"})],
             user_query="Question?",
+            request_context=request.request_context,
             user_message_id="00000000-0000-4000-8000-000000000123",
             project_id="notebook-1",
             origin=chat_pb2.QUERY_ORIGIN_CHAT_TEXT_BOX,
         )
     ]
+    assert request.request_context.client_type == 2
+    assert request.request_context.provenance.client_info.device == 1
     # Both session lookups and the streamed ask emit public RPC telemetry;
     # the stream uses the stable backend-neutral ``chat.ask`` label.
     snapshot = supervisor._metrics.snapshot()

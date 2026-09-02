@@ -1,0 +1,41 @@
+{
+  "method_name": "GET_CHAT_SESSION_STATUS",
+  "method_id": "oXwmh",
+  "description": "Read generation state for one chat session. Status 1 is idle; status 2 carries a generation token.",
+  "request": {
+    "params": [
+      null,
+      "SCRUBBED_CONV_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "oXwmh",
+          "[null,\"SCRUBBED_CONV_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "oXwmh",
+          "[null,1]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      null,
+      1
+    ]
+  }
+}

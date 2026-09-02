@@ -47,6 +47,8 @@
 | `Rytqqe` | RETRY_ARTIFACT | Retry a failed Studio artifact in place | `_web/artifacts.py` |
 | `hPTbtc` | GET_LAST_CONVERSATION_ID | Get most recent conversation ID | `_web/chat.py` |
 | `khqZz` | GET_CONVERSATION_TURNS | Get Q&A turns for a conversation | `_web/chat.py` |
+| `oXwmh` | GET_CHAT_SESSION_STATUS | Read idle/generating state and token for a chat session | `_web/chat.py` |
+| `XgrPMd` | CANCEL_GENERATION | Stop active generation for a chat session | `_web/chat.py` |
 | `J7Gthc` | DELETE_CONVERSATION | Delete a conversation (web UI's "Delete history") | `_web/chat.py` |
 | `otmP3b` | SUGGEST_PROMPTS | Get AI-suggested prompts for a notebook | `_web/notebooks.py` |
 | `CYK0Xb` | CREATE_NOTE | Create a note (placeholder) | `_web/notes.py` |
@@ -191,7 +193,7 @@ or local convenience that has no stable web-control equivalent in the capture.
 | `SourcesAPI.get_guide/get_fulltext` | UI covered/read-derived | Opening a source exposes the source viewer, source guide toggle, title input, and source content; `get_fulltext()` is the programmatic extraction path. |
 | `SourcesAPI.wait_*`, `refresh`, `check_freshness` | Library-only/partial UI | Wait methods are polling helpers. Refresh/freshness RPCs are documented, but no stable refresh selector was captured in the current source-list/label-list state. |
 | `LabelsAPI.list/sources/generate/create/update/rename/set_emoji/add_sources/remove_sources/delete` | UI covered | Auto-label, Reorganize all sources, manual label creation, inline rename, emoji picker, delete, label panels, and source Move to label checkboxes are documented. |
-| `ChatAPI.ask/get_history/delete_conversation/configure/save_answer_as_note` | UI covered | Chat input/send, options/delete history, configure dialog, and `Save message to a note` buttons are documented. `get_conversation_id`, cache methods, and history parsing are backend/local conveniences. |
+| `ChatAPI.ask/get_history/session_status/cancel/delete_conversation/configure/save_answer_as_note` | UI covered | Chat input/send, live generation state/cancel, options/delete history, configure dialog, and `Save message to a note` buttons are documented. `get_conversation_id`, cache methods, and history parsing are backend/local conveniences. |
 | `ArtifactsAPI.generate_*`, `suggest_reports`, `list/get/get_prompt/delete/rename/share/export` | UI covered/partial | All live Studio generation tiles and option sets are documented. Artifact list/open/menu/view-prompt/share/delete selectors are covered; export/download/retry availability depends on artifact type/status. |
 | `ArtifactsAPI.download_*`, `wait_for_completion`, `poll_status`, `revise_slide`, `retry_failed` | Library-only/conditional UI | Downloads, polling, and slide revision are programmatic conveniences. Retry requires a failed artifact row; the RPC is documented but no failed-row retry selector was present in the probe. |
 | `NotesAPI.list/get/create/update/delete` | UI covered/partial | Add note, note row, note view close/title input, and note menu delete are documented. Rich body editing uses NotebookLM's internal editor; keep selectors conservative. |
@@ -1079,6 +1081,41 @@ params = [
 **Response turn structure:**
 - `turn[2] == 1`: User question — text is at `turn[3]`
 - `turn[2] == 2`: AI answer — text is at `turn[4][0][0]`
+
+---
+
+### RPC: GET_CHAT_SESSION_STATUS (oXwmh)
+
+**Source:** shared `_chat.py::ChatAPI.session_status()` selection and
+`_web/chat.py::WebChatAPI._get_session_status()` send/decode.
+
+```python
+params = [
+    None,  # 0: reserved
+    conversation_id,  # 1: chat session id
+]
+```
+
+**Response:** `[None, 1]` when idle; `[generation_token, 2]` while generating.
+Unknown status codes or a missing token in state 2 fail closed as wire drift.
+
+---
+
+### RPC: CANCEL_GENERATION (XgrPMd)
+
+**Source:** shared `_chat.py::ChatAPI.cancel()` selection and
+`_web/chat.py::WebChatAPI._cancel_generation()` send.
+
+```python
+params = [
+    None,  # 0: reserved
+    conversation_id,  # 1: chat session id
+]
+```
+
+**Response:** empty `[]`. Generation stops, but an already-open Web streaming
+HTTP response does not close; its owner must abandon the local stream after
+this RPC succeeds.
 
 ---
 

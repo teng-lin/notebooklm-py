@@ -5,7 +5,7 @@ in-memory FastMCP ``Client``, then pins:
 
 * the EXACT set of tool names — so a tool can't be silently added, removed, or
   renamed without updating this gate;
-* a tool-count ceiling (40): the current surface is 35 tools; the next tool
+* a tool-count ceiling (40): the current surface is 38 tools; the next tool
   stays under the ceiling, but an accidental explosion still trips the gate;
 * the ``destructiveHint`` annotation + a ``confirm`` parameter on every
   destructive (delete) tool; and
@@ -27,7 +27,7 @@ from notebooklm._app.download_specs import DOWNLOAD_FORMAT_NAMES, DOWNLOAD_SPECS
 pytest.importorskip("fastmcp")
 
 
-#: The complete, pinned tool surface. 35 tools across 8 domains. Adding or
+#: The complete, pinned tool surface. 38 tools across 8 domains. Adding or
 #: removing a tool MUST update this set (and the ceiling below if it grows).
 EXPECTED_TOOLS: frozenset[str] = frozenset(
     {
@@ -48,10 +48,11 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
         "source_list_play_books",
         "source_add_play_book",
         "await_upload",
-        # Chat (5)
+        # Chat (6)
         "chat_ask",
         "chat_start",
         "chat_status",
+        "chat_cancel",
         "chat_configure",
         "suggest_prompts",
         # Notes (1)
@@ -88,7 +89,8 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
 #: then #1890 folded them BACK into source_add (wait= / bytes_base64=) for 34, and
 #: #1896 folded studio_get_prompt into studio_list (each artifact's generation_prompt
 #: rides the summary listing / the item= fetch) for 33; the detached-ask pair
-#: (chat_start/chat_status — the watchdog-safe long-generation path) took it to 35.
+#: (chat_start/chat_status — the watchdog-safe long-generation path) took it to 35,
+#: #2292's Play Books tools took it to 37, and #2303's generation-cancel verb to 38.
 #: The ceiling has headroom, but an accidental explosion still trips the gate.
 TOOL_CEILING = 40
 

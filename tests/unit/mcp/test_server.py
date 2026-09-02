@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from collections.abc import AsyncIterator
 from unittest.mock import MagicMock
@@ -15,6 +16,7 @@ from fastmcp import Client, FastMCP  # noqa: E402 - after importorskip guard
 
 from notebooklm.client import NotebookLMClient  # noqa: E402 - after importorskip guard
 from notebooklm.mcp import __main__ as entry  # noqa: E402 - after importorskip guard
+from notebooklm.mcp._chattasks import ChatTaskRegistry  # noqa: E402 - after importorskip guard
 from notebooklm.mcp._context import (  # noqa: E402 - after importorskip guard
     AppState,
     CancelledResearchTracker,
@@ -58,6 +60,35 @@ async def test_lifespan_binds_the_factory_client(mock_client: MagicMock) -> None
     async with Client(server):
         pass
     assert captured["client"] is mock_client
+
+
+async def test_lifespan_binds_and_clears_chat_task_registry_loop(
+    mock_client: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The registry participates in the same loop-binding lifecycle as the client."""
+    seen: list[asyncio.AbstractEventLoop | None] = []
+    original = ChatTaskRegistry.set_bound_loop
+
+    def spy(
+        self: ChatTaskRegistry,
+        loop: asyncio.AbstractEventLoop | None,
+    ) -> None:
+        seen.append(loop)
+        original(self, loop)
+
+    monkeypatch.setattr(ChatTaskRegistry, "set_bound_loop", spy)
+
+    @contextlib.asynccontextmanager
+    async def factory() -> AsyncIterator[MagicMock]:
+        yield mock_client
+
+    async with Client(create_server(client_factory=factory)):
+        pass
+
+    assert len(seen) == 2
+    assert isinstance(seen[0], asyncio.AbstractEventLoop)
+    assert seen[1] is None
 
 
 async def test_default_factory_enables_keepalive(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -24,6 +24,7 @@ pytest.importorskip("fastmcp")
 from fastmcp import Client  # noqa: E402 - after importorskip guard
 from fastmcp.exceptions import ToolError  # noqa: E402 - after importorskip guard
 
+from notebooklm import ChatSessionStatus  # noqa: E402 - after importorskip guard
 from notebooklm.exceptions import ChatError  # noqa: E402 - after importorskip guard
 from notebooklm.mcp._chattasks import (  # noqa: E402 - after importorskip guard
     ChatTaskCapacityError,
@@ -259,6 +260,29 @@ async def test_registry_aclose_cancels_running() -> None:
     assert isinstance(entry.error, asyncio.CancelledError)
 
 
+async def test_registry_cancel_stops_one_task_and_preserves_metadata() -> None:
+    registry = ChatTaskRegistry()
+
+    async def _work() -> dict[str, Any]:
+        await asyncio.sleep(3600)
+        return {}
+
+    entry, _ = registry.start(
+        "k1",
+        _work,
+        notebook_id=NB_ID,
+        conversation_id=CONV_ID,
+    )
+    await asyncio.sleep(0)
+
+    assert await registry.cancel(entry.task_id) is True
+    assert entry.notebook_id == NB_ID
+    assert entry.conversation_id == CONV_ID
+    assert entry.done_at is not None
+    assert isinstance(entry.error, asyncio.CancelledError)
+    assert await registry.cancel(entry.task_id) is False
+
+
 async def test_registry_aclose_stamps_task_cancelled_before_first_step() -> None:
     """Cancelled before its first scheduler step, a task never enters ``_guard``;
     ``aclose`` stamps both clocks itself so the entry can still expire."""
@@ -418,7 +442,7 @@ async def test_chat_start_capacity_projects_as_retriable(mcp_call, monkeypatch) 
     unchanged once a slot frees), never as VALIDATION, which agents stop on."""
     from notebooklm.mcp import _chattasks
 
-    def _full(self, key, coro_factory):  # noqa: ANN001 - test double
+    def _full(self, key, coro_factory, **kwargs):  # noqa: ANN001 - test double
         raise ChatTaskCapacityError("all 256 task slots hold unfinished asks")
 
     monkeypatch.setattr(_chattasks.ChatTaskRegistry, "start", _full)
@@ -516,3 +540,91 @@ async def test_chat_status_unknown_task(mcp_call) -> None:
     result = (await mcp_call("chat_status", {"task_id": "nope"})).structured_content
     assert result["status"] == "unknown"
     assert "chat_start" in result["hint"]
+
+
+async def test_chat_status_live_session_mode(mcp_call, mock_client) -> None:
+    mock_client.chat.get_conversation_id = AsyncMock(return_value=CONV_ID)
+    mock_client.chat.session_status = AsyncMock(
+        return_value=ChatSessionStatus(generating=True, token="generation-token")
+    )
+
+    result = (await mcp_call("chat_status", {"notebook": NB_ID})).structured_content
+
+    assert result == {
+        "status": "generating",
+        "notebook_id": NB_ID,
+        "conversation_id": CONV_ID,
+        "generation_token": "generation-token",
+    }
+    mock_client.chat.session_status.assert_awaited_once_with(NB_ID, CONV_ID)
+
+
+async def test_chat_cancel_stops_backend_and_detached_stream(server_factory, mock_client) -> None:
+    gate = asyncio.Event()
+
+    async def _slow_ask(*args: Any, **kwargs: Any) -> FakeAskResult:
+        await gate.wait()
+        return FakeAskResult(answer="too late", conversation_id=CONV_ID)
+
+    mock_client.chat.ask = AsyncMock(side_effect=_slow_ask)
+    mock_client.chat.cancel = AsyncMock(return_value=None)
+    async with Client(server_factory()) as session:
+        started = (
+            await session.call_tool(
+                "chat_start",
+                {
+                    "notebook": NB_ID,
+                    "question": "stop this",
+                    "conversation_id": CONV_ID,
+                },
+            )
+        ).structured_content
+        cancelled = (
+            await session.call_tool(
+                "chat_cancel",
+                {"notebook": NB_ID, "task_id": started["task_id"]},
+            )
+        ).structured_content
+        status = (
+            await session.call_tool("chat_status", {"task_id": started["task_id"]})
+        ).structured_content
+
+    assert cancelled == {
+        "status": "cancelled",
+        "cancelled": True,
+        "local_task_cancelled": True,
+        "notebook_id": NB_ID,
+        "conversation_id": CONV_ID,
+    }
+    assert status["status"] == "cancelled"
+    mock_client.chat.cancel.assert_awaited_once_with(NB_ID, CONV_ID)
+
+
+async def test_chat_cancel_rejects_task_conversation_mismatch(server_factory, mock_client) -> None:
+    gate = asyncio.Event()
+
+    async def _slow_ask(*args: Any, **kwargs: Any) -> FakeAskResult:
+        await gate.wait()
+        return FakeAskResult(answer="still scoped", conversation_id=CONV_ID)
+
+    mock_client.chat.ask = AsyncMock(side_effect=_slow_ask)
+    async with Client(server_factory()) as session:
+        started = (
+            await session.call_tool(
+                "chat_start",
+                {
+                    "notebook": NB_ID,
+                    "question": "keep scoped",
+                    "conversation_id": CONV_ID,
+                },
+            )
+        ).structured_content
+        with pytest.raises(ToolError, match="different conversation"):
+            await session.call_tool(
+                "chat_cancel",
+                {
+                    "notebook": NB_ID,
+                    "conversation_id": "33333333-3333-3333-3333-333333333333",
+                    "task_id": started["task_id"],
+                },
+            )

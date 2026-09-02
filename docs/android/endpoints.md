@@ -3,7 +3,7 @@
 **Status:** Recovered from capture, schema-level (field numbers + wire types), not
 field-named by Google
 
-**Last verified:** 2026-08-31 (`1.46.7` capture snapshot plus `1.55.10` binary delta; `GenerateDocumentGuides` echo re-probed live across repeat calls)
+**Last verified:** 2026-09-01 (`1.46.7` capture snapshot plus `1.55.10` binary delta; chat session status/cancel re-probed live)
 
 **Scope:** the original `1.46.7.940945420` **49-method surface** (4 gRPC services) is enumerated
 and cross-referenced to the 48-method Web registry used for that audit. The newer Google-signed
@@ -328,6 +328,8 @@ Write / mutation RPCs (see [Write RPCs](#write--mutation-rpcs) — **do not repl
 | `GenerateArtifact` / `ExportToDrive` / `ShareAudio` | variable | mixed | retry wire + READY precondition rejection; report-to-Docs success/read-back/delete; ShareAudio invalid-ID only |
 | `DiscoverSources` | 136 | 2,047 | research / "find sources from the web" |
 | `GenerateFreeFormStreamed` | 476 | streamed | chat: ask the notebook (**server-streaming**) |
+| `GetChatSessionStatus` | variable | status/token row | chat: read idle/generating state; Web-derived signature, mobile-live tags |
+| `CancelGeneration` | variable | named empty response | chat: stop an active WEB-client-type stream; APK-exact signature |
 | `DeleteChatTurns` | 103 | 0 | chat: clear history |
 | `ShareProject` † | 109 | 0 | set notebook visibility |
 | `GetProjectDetails` † | 101 | 157–161 | read share settings |
@@ -804,6 +806,21 @@ arrives first. It never concatenates frames. Citations are exposed only through 
 sourceAttribution.ingestedSource.source`, with cited paragraph text from `Citation.fragment` and
 answer anchors from `TailwindDoc.body.inlineObjectLocations`. Speculative flattened citation slots
 are not part of the compile closure.
+
+### GetChatSessionStatus / CancelGeneration — inspect or stop generation
+
+`GetChatSessionStatus` takes the chat session ID at request tag 2. Response tag 2 is status `1`
+(idle) or `2` (generating); the generating response also carries an opaque token at tag 1.
+`CancelGeneration` uses the APK-exact request (`RequestContext #1`, chat session ID `#2`, optional
+agency session ID `#3`) and a named empty response. An unowned session preserves gRPC
+`PERMISSION_DENIED` instead of being flattened into success.
+
+Cancellation stops server emission, but an existing Web HTTP response does not close itself. Live
+probes also show that Google cancels only streams whose generation request context says
+`clientType=WEB` (2), not `ANDROID_APP` (3). The Android adapter therefore keeps Android
+metadata/provenance while using client type 2 for this isolated generation/cancel path. Full probe
+notes and provenance are in
+[`chat-session-control-evidence.md`](chat-session-control-evidence.md).
 
 ### DeleteChatTurns — clear chat history
 

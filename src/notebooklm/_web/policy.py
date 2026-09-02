@@ -789,6 +789,12 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
         RPCMethod.GET_CONVERSATION_TURNS: (
             "read-only conversation history fetch; replay does not mutate chat state"
         ),
+        RPCMethod.GET_CHAT_SESSION_STATUS: (
+            "read-only chat generation-state fetch; replay does not mutate chat state"
+        ),
+        RPCMethod.CANCEL_GENERATION: (
+            "chat generation cancel is idempotent; replay leaves the session stopped"
+        ),
         # Live method DeleteChatTurns: deletes the conversation's chat turns
         # (the web UI "Delete history" action), idempotent set-op.
         RPCMethod.DELETE_CONVERSATION: (

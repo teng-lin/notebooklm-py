@@ -24,6 +24,7 @@ _DOCUMENTED_PUBLIC_IMPORTS = {
         "ChatGoal",
         "ChatResponseLength",
         "ChatSession",
+        "ChatSessionStatus",
         "ConnectionLimits",
         "correlation_id",
         "ExportType",

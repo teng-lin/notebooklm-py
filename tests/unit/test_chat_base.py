@@ -16,6 +16,7 @@ from notebooklm._types.enums import ChatGoal, ChatResponseLength
 from notebooklm._web.chat import WebChatAPI
 from notebooklm.types import (
     ChatReference,
+    ChatSessionStatus,
     ChatSettings,
     ConversationTurn,
     Note,
@@ -153,6 +154,21 @@ class _FakeChatAPI(ChatAPI):
         conversation_id: str,
     ) -> None:
         self.events.append(("delete", (notebook_id, conversation_id)))
+
+    async def _get_session_status(
+        self,
+        notebook_id: str,
+        conversation_id: str,
+    ) -> ChatSessionStatus:
+        self.events.append(("session_status", (notebook_id, conversation_id)))
+        return ChatSessionStatus(generating=False)
+
+    async def _cancel_generation(
+        self,
+        notebook_id: str,
+        conversation_id: str,
+    ) -> None:
+        self.events.append(("cancel", (notebook_id, conversation_id)))
 
     async def _send_note(
         self,

@@ -6,7 +6,8 @@ Accepted.
 
 ## Context
 
-The MCP surface is **35 tools** (`tests/unit/mcp/test_manifest.py`, ceiling 40),
+The MCP surface was **35 tools** when this decision was written and is **38 tools** after the
+updates below (`tests/unit/mcp/test_manifest.py`, ceiling 40),
 above the 5–15/server that current guidance recommends (Anthropic *Writing
 effective tools for agents*, Sep 2025; GitHub cut Copilot 40→13 for measurable
 accuracy + latency gains). A tool-interface review flagged that two tools carry
@@ -170,3 +171,15 @@ Net **35 → 37 tools** (33 → 35 when first written; #2292's two Play Books ve
 landed in between); `SCHEMA_CHAR_BUDGET` ratcheted 40,580 → 43,410 (+2,830: +2,262
 for the pair's re-invoke protocol text, +443 for batch polling / queue states /
 timings, +125 for the review's re-ask wording — all justified in `test_tool_eval.py`).
+
+## Update (2026-09, #2303): live chat session control
+
+Generation status reuses `chat_status` in a mutually exclusive `notebook` mode: it is still the
+same read verb and retains `readOnlyHint`. Cancellation is a distinct mutating operation, so
+`chat_cancel` is added rather than making `chat_status` conditionally write or overloading
+`chat_ask`. When a detached `task_id` is supplied it composes the server cancel with abandonment
+of the MCP-owned stream, which Google deliberately leaves open on Web.
+
+Net **37 → 38 tools** and **43,386 → 44,590 schema chars**. This uses one of the ceiling's
+remaining slots for a backend operation that cannot be expressed truthfully through an existing
+mutating tool.

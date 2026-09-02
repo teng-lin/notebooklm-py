@@ -224,6 +224,10 @@ class RPCMethod(str, Enum):
     # -> ListChatSessions (we read only the most recent session id)
     GET_LAST_CONVERSATION_ID = "hPTbtc"
     GET_CONVERSATION_TURNS = "khqZz"  # -> ListChatTurns. Returns full Q&A turns for a conversation
+    # -> GetChatSessionStatus. Returns an opaque generation token plus 1=idle / 2=active.
+    GET_CHAT_SESSION_STATUS = "oXwmh"
+    # -> CancelGeneration. Stops the active turn for a chat session; idempotent.
+    CANCEL_GENERATION = "XgrPMd"
     # -> DeleteChatTurns (deletes the chat turns; web UI's "Delete history")
     DELETE_CONVERSATION = "J7Gthc"
     # -> GeneratePromptSuggestions. AI-suggested questions/prompts to ask a notebook

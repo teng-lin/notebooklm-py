@@ -106,6 +106,9 @@ MUTATING_SKIP_LIST: frozenset[str] = frozenset(
         # the server returns [] unconditionally (no echo to confirm), so it is
         # not probed by the canary.
         "CANCEL_RESEARCH",
+        # Idempotently stops an active chat generation, but needs a real
+        # conversation and is still a write. Covered by adapter tests instead.
+        "CANCEL_GENERATION",
         # AI auto-groups / creates source labels (multi-mode write) — write op,
         # --full only. LIST_LABELS (read) is probed via get_test_params.
         "CREATE_LABEL",

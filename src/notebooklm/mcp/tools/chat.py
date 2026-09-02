@@ -18,6 +18,10 @@ Thin adapters over the chat surface:
   ``chat_ask`` mid-generation — the re-invoke poll, not any keepalive, is the
   load-bearing completion mechanism (same ADR-0024 shape as ``await_upload``,
   same contract ``studio_generate``/``studio_status`` ship for studio work).
+* ``chat_status(notebook=...)`` and ``chat_cancel`` expose Google's live
+  session controls. Cancellation is paired with local task cancellation when a
+  detached ``task_id`` is supplied, because the Web response stream does not
+  close itself after the server stops generating.
 
 Neither the ``ask`` RPC nor ``execute_configure`` emits progress events, so this
 module wires no :class:`~notebooklm._app.events.ProgressSink` — there is nothing
@@ -89,6 +93,13 @@ def _entry_status_payload(entry: Any) -> dict[str, Any]:
         "generation_s": round(entry.done_at - (entry.started_at or entry.created_at), 1),
     }
     if entry.error is not None:
+        if isinstance(entry.error, asyncio.CancelledError):
+            return {
+                "status": "cancelled",
+                "task_id": entry.task_id,
+                **timings,
+                "hint": "generation was cancelled; call chat_start to ask again",
+            }
         return {
             "status": "failed",
             "task_id": entry.task_id,
@@ -357,7 +368,12 @@ def register(mcp: Any) -> None:
                 return payload
 
             try:
-                entry, how = get_chat_tasks(ctx).start(key, _run_ask)
+                entry, how = get_chat_tasks(ctx).start(
+                    key,
+                    _run_ask,
+                    notebook_id=nb_id,
+                    conversation_id=conversation_id,
+                )
             except ChatTaskCapacityError as exc:
                 # Nothing about the arguments is wrong and the same call succeeds
                 # once a slot frees — so it must project as a RETRIABLE category
@@ -376,10 +392,16 @@ def register(mcp: Any) -> None:
             }
 
     @mcp.tool(annotations=READ_ONLY)
-    async def chat_status(ctx: Context, task_id: str | list[str]) -> dict[str, Any]:
-        """Poll detached ask(s) started by ``chat_start``; answers return inline.
+    async def chat_status(
+        ctx: Context,
+        task_id: str | list[str] | None = None,
+        notebook: str | None = None,
+        conversation_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Poll detached asks, or inspect a notebook's live generation session.
 
-        ``task_id`` accepts one id, a list, or a comma-separated string — **poll
+        Detached-task mode: ``task_id`` accepts one id, a list, or a
+        comma-separated string — **poll
         a whole batch in ONE call** and re-invoke every ~20–30s while anything
         is pending. Per-task statuses:
 
@@ -395,8 +417,38 @@ def register(mcp: Any) -> None:
         A single string id returns that task's status dict; a list (even of
         one) returns ``{"tasks": [...]}`` in input order. At most 64 ids per
         call.
+
+        Live-session mode: pass ``notebook`` instead of ``task_id`` to inspect
+        Google's current chat session. ``conversation_id`` is optional and
+        defaults to that notebook's most-recent conversation. The result is
+        ``idle`` or ``generating`` and includes the generation token when Google
+        supplies one. The two modes are mutually exclusive.
         """
         with mcp_errors():
+            if notebook is not None:
+                if task_id is not None:
+                    raise ValidationError(
+                        "chat_status accepts either notebook or task_id, not both."
+                    )
+                client = get_client(ctx)
+                nb_id = await resolve_notebook(client, notebook)
+                resolved_id = conversation_id or await client.chat.get_conversation_id(nb_id)
+                if resolved_id is None:
+                    return {
+                        "status": "idle",
+                        "notebook_id": nb_id,
+                        "conversation_id": None,
+                        "generation_token": None,
+                    }
+                session = await client.chat.session_status(nb_id, resolved_id)
+                return {
+                    "status": "generating" if session.generating else "idle",
+                    "notebook_id": nb_id,
+                    "conversation_id": resolved_id,
+                    "generation_token": session.token,
+                }
+            if conversation_id is not None:
+                raise ValidationError("conversation_id requires notebook in chat_status.")
             registry = get_chat_tasks(ctx)
             ids = coerce_list(task_id)
             if not ids:
@@ -426,6 +478,59 @@ def register(mcp: Any) -> None:
                 (only_id,) = ids
                 return _one(only_id)
             return {"tasks": [_one(tid) for tid in ids]}
+
+    @mcp.tool
+    async def chat_cancel(
+        ctx: Context,
+        notebook: str,
+        conversation_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Stop a notebook's active chat generation.
+
+        ``conversation_id`` defaults to the notebook's most-recent session.
+        Pass the ``task_id`` returned by ``chat_start`` when cancelling a
+        detached ask: after Google accepts the cancellation, the MCP server also
+        abandons its local response stream so the task reaches ``cancelled``.
+        An unknown task ID or one belonging to another notebook is rejected.
+        """
+        client = get_client(ctx)
+        with mcp_errors():
+            nb_id = await resolve_notebook(client, notebook)
+            registry = get_chat_tasks(ctx)
+            entry = registry.status(task_id) if task_id is not None else None
+            if task_id is not None and entry is None:
+                raise ValidationError(f"unknown or expired chat task_id: {task_id}")
+            if entry is not None and entry.notebook_id not in (None, nb_id):
+                raise ValidationError("task_id belongs to a different notebook.")
+            if (
+                entry is not None
+                and entry.conversation_id is not None
+                and conversation_id is not None
+                and entry.conversation_id != conversation_id
+            ):
+                raise ValidationError("task_id belongs to a different conversation.")
+            resolved_id = conversation_id or (entry.conversation_id if entry is not None else None)
+            if resolved_id is None:
+                resolved_id = await client.chat.get_conversation_id(nb_id)
+            if resolved_id is None:
+                return {
+                    "status": "idle",
+                    "cancelled": False,
+                    "local_task_cancelled": False,
+                    "notebook_id": nb_id,
+                    "conversation_id": None,
+                }
+
+            await client.chat.cancel(nb_id, resolved_id)
+            local_cancelled = await registry.cancel(task_id) if task_id is not None else False
+            return {
+                "status": "cancelled",
+                "cancelled": True,
+                "local_task_cancelled": local_cancelled,
+                "notebook_id": nb_id,
+                "conversation_id": resolved_id,
+            }
 
     @mcp.tool
     async def chat_configure(

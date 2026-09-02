@@ -319,6 +319,28 @@ message ListChatSessionsResponse {
   repeated .labs.language.tailwind.common.protos.ChatSession sessions = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
 }
 
+// #2303: live-verified on both front doors. The APK does not expose this
+// method, so the conventional message names are admitted as a Web-derived
+// overlay; the tag shapes are captured exactly.
+message GetChatSessionStatusRequest {
+  .labs.language.tailwind.common.protos.RequestContext request_context = 1;
+  string chat_session_id = 2;
+}
+
+message GetChatSessionStatusResponse {
+  string generation_token = 1;
+  int32 status = 2; // 1 = idle; 2 = generating
+}
+
+// Exact 1.55.10 APK messages (see docs/android/schema.proto and #2303).
+message CancelGenerationRequest {
+  .labs.language.tailwind.common.protos.RequestContext request_context = 1;
+  string chat_session_id = 2;
+  string agency_session_id = 3;
+}
+
+message CancelGenerationResponse {}
+
 message ListChatTurnsRequest {
   string chat_session_id = 4; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   string page_token = 6; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
@@ -338,6 +360,7 @@ message GenerateFreeFormStreamedRequest {
   repeated InputSource sources = 1; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   string user_query = 2; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   repeated ConversationEvent conversation_history = 3; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  .labs.language.tailwind.common.protos.RequestContext request_context = 4; // exact APK schema; WEB client type makes cancellation effective (#2303)
   string chat_session_id = 5; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   string user_message_id = 6; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   string project_id = 8; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger

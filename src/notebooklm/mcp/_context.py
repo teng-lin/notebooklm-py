@@ -93,7 +93,7 @@ class AppState:
     (no persistence, consistent with the loop-bound lifespan client).
 
     ``chat_tasks`` is the bounded registry of detached chat asks backing
-    ``chat_start`` / ``chat_status`` — see
+    ``chat_start`` / ``chat_status`` / ``chat_cancel`` — see
     :class:`~notebooklm.mcp._chattasks.ChatTaskRegistry`. Same process-scoped
     in-memory contract; the lifespan cancels its running tasks (``aclose``)
     before the client closes.
@@ -145,9 +145,10 @@ def get_chat_tasks(ctx: Context) -> ChatTaskRegistry:
     """Return the detached-chat-task registry for the current tool call.
 
     The live :class:`~notebooklm.mcp._chattasks.ChatTaskRegistry` backing
-    ``chat_start`` / ``chat_status``: the start tool claims a slot and spawns the
-    server-owned ask here; the status tool polls it. Returns the live registry so
-    callers mutate it in place. Mirrors :func:`get_client`.
+    ``chat_start`` / ``chat_status`` / ``chat_cancel``: the start tool claims a
+    slot and spawns the server-owned ask here; the status and cancel tools inspect
+    or stop it. Returns the live registry so callers mutate it in place. Mirrors
+    :func:`get_client`.
     """
     return _app_state(ctx).chat_tasks
 

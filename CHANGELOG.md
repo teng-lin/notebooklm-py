@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Chat generation status and cancellation on both backends (#2303):
+  `client.chat.session_status()` returns typed `ChatSessionStatus` state and
+  `client.chat.cancel()` idempotently stops the selected/latest session. Web
+  uses `oXwmh` / `XgrPMd`; Android uses the live-qualified gRPC status shape and
+  APK-exact cancel request. The new `chat_cancel` MCP tool also abandons the
+  server-owned stream when passed a detached `task_id`, while existing
+  `chat_status(notebook=...)` exposes live session state. The MCP registry is
+  now explicitly bound and cleared by the server lifespan loop protocol.
 - **Google Play Books ("Expert Intelligence") sources** (#2292), initially on
   the web backend: `sources.list_play_books()` lists the account's Play Books library as
   `PlayBook` rows (content id, title, authors, `export_disabled` + `reason`),

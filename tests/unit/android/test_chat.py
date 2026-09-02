@@ -12,8 +12,10 @@ import pytest
 from google.protobuf.empty_pb2 import Empty
 
 from notebooklm._android.chat import (
+    CANCEL_GENERATION_METHOD,
     DELETE_CHAT_TURNS_METHOD,
     GENERATE_FREE_FORM_STREAMED_METHOD,
+    GET_CHAT_SESSION_STATUS_METHOD,
     GET_PROJECT_METHOD,
     LIST_CHAT_SESSIONS_METHOD,
     LIST_CHAT_TURNS_METHOD,
@@ -39,6 +41,7 @@ from notebooklm._chat import ChatAPI
 from notebooklm._types.documents import BlockKind, BlockStyle, ListStyle, StructuredDocument
 from notebooklm._types.enums import ChatGoal, ChatResponseLength
 from notebooklm.exceptions import (
+    AuthError,
     ChatError,
     ChatResponseParseError,
     DecodingError,
@@ -75,7 +78,10 @@ class FakeSession:
             return chat_pb2.ListChatSessionsResponse(
                 sessions=[common_pb2.ChatSession(chat_session_id="conversation-1")]
             )
-        return self.unary_responses[method].pop(0)
+        response = self.unary_responses[method].pop(0)
+        if isinstance(response, BaseException):
+            raise response
+        return response
 
     async def stream(self, method: str, request: Any, **kwargs: Any) -> AsyncIterator[Any]:
         self.stream_calls.append((method, request, kwargs))
@@ -197,6 +203,103 @@ def _document() -> Any:
             ),
         ],
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("response", "generating", "token"),
+    [
+        (chat_pb2.GetChatSessionStatusResponse(status=1), False, None),
+        (
+            chat_pb2.GetChatSessionStatusResponse(
+                generation_token="generation-token",
+                status=2,
+            ),
+            True,
+            "generation-token",
+        ),
+    ],
+)
+async def test_session_status_decodes_native_state_and_exact_request(
+    response: Any,
+    generating: bool,
+    token: str | None,
+) -> None:
+    fake = FakeSession()
+    fake.unary_responses[GET_CHAT_SESSION_STATUS_METHOD] = [response]
+    api, guard, _ = _api(fake)
+
+    status = await api.session_status("notebook-1", "conversation-1")
+
+    assert (status.generating, status.token) == (generating, token)
+    assert guard.calls == 1
+    method, request, kwargs = fake.unary_calls[0]
+    assert method == GET_CHAT_SESSION_STATUS_METHOD
+    assert request == chat_pb2.GetChatSessionStatusRequest(chat_session_id="conversation-1")
+    assert kwargs == {
+        "replay_safe": True,
+        "response_type": chat_pb2.GetChatSessionStatusResponse,
+    }
+
+
+@pytest.mark.asyncio
+async def test_session_status_resolves_latest_conversation() -> None:
+    fake = FakeSession()
+    fake.unary_responses[GET_CHAT_SESSION_STATUS_METHOD] = [
+        chat_pb2.GetChatSessionStatusResponse(status=1)
+    ]
+    api, _, _ = _api(fake)
+
+    status = await api.session_status("notebook-1")
+
+    assert status.generating is False
+    assert [method for method, _request, _kwargs in fake.unary_calls] == [
+        LIST_CHAT_SESSIONS_METHOD,
+        GET_CHAT_SESSION_STATUS_METHOD,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_cancel_generation_sends_cancellable_context_and_preserves_auth_error() -> None:
+    fake = FakeSession()
+    fake.unary_responses[CANCEL_GENERATION_METHOD] = [
+        chat_pb2.CancelGenerationResponse(),
+        AuthError("permission denied", method_id=CANCEL_GENERATION_METHOD, rpc_code=7),
+    ]
+    api, guard, _ = _api(fake)
+
+    assert await api.cancel("notebook-1", "conversation-1") is None
+    method, request, kwargs = fake.unary_calls[0]
+    assert method == CANCEL_GENERATION_METHOD
+    assert request.chat_session_id == "conversation-1"
+    assert request.request_context.client_type == 2
+    assert kwargs == {
+        "replay_safe": True,
+        "response_type": chat_pb2.CancelGenerationResponse,
+    }
+
+    with pytest.raises(AuthError) as raised:
+        await api.cancel("notebook-1", "foreign-conversation")
+    assert raised.value.rpc_code == 7
+    assert guard.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_session_control_is_noop_without_a_conversation() -> None:
+    fake = FakeSession()
+    fake.unary_responses[LIST_CHAT_SESSIONS_METHOD] = [
+        chat_pb2.ListChatSessionsResponse(),
+        chat_pb2.ListChatSessionsResponse(),
+    ]
+    api, _, _ = _api(fake)
+
+    status = await api.session_status("notebook-1")
+    assert (status.generating, status.token) == (False, None)
+    assert await api.cancel("notebook-1") is None
+    assert [method for method, _request, _kwargs in fake.unary_calls] == [
+        LIST_CHAT_SESSIONS_METHOD,
+        LIST_CHAT_SESSIONS_METHOD,
+    ]
 
 
 def test_shared_document_decoder_preserves_style_lists_tables_and_offset_kinds() -> None:
@@ -675,10 +778,12 @@ async def test_base_ask_uses_latest_cumulative_final_without_concatenating_frame
             sources_pb2.InputSource(source_id=read_pb2.SourceId(id="source-2")),
         ],
         user_query="Question?",
+        request_context=request.request_context,
         user_message_id="00000000-0000-4000-8000-000000000099",
         project_id="notebook-1",
         origin=chat_pb2.QUERY_ORIGIN_CHAT_TEXT_BOX,
     )
+    assert request.request_context.client_type == 2
     assert kwargs == {
         "timeout": 180.0,
         "response_type": chat_pb2.GenerateFreeFormStreamedResponse,
