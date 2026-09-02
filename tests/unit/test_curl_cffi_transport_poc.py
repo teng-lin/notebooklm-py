@@ -14,6 +14,7 @@ contract the transport kernel relies on, end-to-end, without Google auth:
 from __future__ import annotations
 
 import asyncio
+import socket
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -76,6 +77,17 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    @staticmethod
+    def _echo_safe(value: str) -> str:
+        """Strip CR/LF before reflecting a request value into a response.
+
+        Echoing a client-controlled value into a response header is HTTP
+        response splitting (flagged by CodeQL) even in a test server. The
+        assertions only need the value's content, so drop the control
+        characters and bound the length.
+        """
+        return "".join(ch for ch in value if ch not in "\r\n")[:200]
+
     def do_DELETE(self):  # noqa: N802
         if self.path == "/gone":
             self.send_response(404)
@@ -88,7 +100,8 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        body = (f"deleted {self.path} auth={self.headers.get('Authorization', '')}").encode()
+        auth = self._echo_safe(self.headers.get("Authorization", ""))
+        body = f"deleted {self.path} auth={auth}".encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.send_header("Set-Cookie", "DELCOOKIE=set; Path=/")
@@ -110,9 +123,14 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("X-Echo-Len", str(len(data)))
         # Echo what the client actually sent, so a test can prove the header
         # and cookie plumbing is real rather than merely non-fatal.
-        self.send_header("X-Echo-Content-Type", self.headers.get("Content-Type", ""))
-        self.send_header("X-Echo-Cookie", self.headers.get("Cookie", ""))
-        self.send_header("X-Echo-Upload-Command", self.headers.get("X-Goog-Upload-Command", ""))
+        self.send_header(
+            "X-Echo-Content-Type", self._echo_safe(self.headers.get("Content-Type", ""))
+        )
+        self.send_header("X-Echo-Cookie", self._echo_safe(self.headers.get("Cookie", "")))
+        self.send_header(
+            "X-Echo-Upload-Command",
+            self._echo_safe(self.headers.get("X-Goog-Upload-Command", "")),
+        )
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -140,6 +158,23 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+
+@pytest.fixture
+def refused_url():
+    """A loopback address guaranteed to refuse connections.
+
+    Port 1 is only *usually* free; a local service can bind it and turn a
+    transport-failure test into a false pass. A socket that is bound but never
+    listening refuses deterministically, and holding it open for the test keeps
+    the port reserved.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    try:
+        yield f"127.0.0.1:{sock.getsockname()[1]}"
+    finally:
+        sock.close()
 
 
 @pytest.fixture
@@ -544,12 +579,11 @@ async def test_delete_surfaces_a_not_found_without_raising(server):
         await client.aclose()
 
 
-async def test_delete_maps_a_transport_failure_to_httpx_request_error():
+async def test_delete_maps_a_transport_failure_to_httpx_request_error(refused_url):
     client = CurlCffiAsyncClient()
     try:
         with pytest.raises(httpx.RequestError):
-            # Port 1 is reserved and refuses connections.
-            await client.delete("http://127.0.0.1:1/staged-file")
+            await client.delete(f"http://{refused_url}/staged-file")
     finally:
         await client.aclose()
 
@@ -578,7 +612,9 @@ async def test_stream_upload_sends_a_file_from_disk_without_buffering(server, tm
 
         assert response.status_code == 200
         assert response.headers["X-Echo-Len"] == str(len(payload))
-        assert response.text.startswith("put:")
+        # The server echoes the body's leading bytes, so a corrupted or
+        # truncated read function is caught, not just a wrong length.
+        assert response.text == "put:" + payload[:8].decode()
         # Real resumable-upload callers depend on these reaching the server.
         assert response.headers["X-Echo-Content-Type"] == "application/octet-stream"
         assert response.headers["X-Echo-Upload-Command"] == "upload, finalize"
@@ -656,14 +692,14 @@ async def test_stream_upload_surfaces_a_server_error_as_a_response(server, tmp_p
         await client.aclose()
 
 
-async def test_stream_upload_maps_a_transport_failure_to_httpx_request_error(tmp_path):
+async def test_stream_upload_maps_a_transport_failure_to_httpx_request_error(tmp_path, refused_url):
     source = tmp_path / "upload.bin"
     source.write_bytes(b"data")
     client = CurlCffiAsyncClient()
     try:
         with pytest.raises(httpx.RequestError):
             await client.stream_upload(
-                "http://127.0.0.1:1/target",
+                f"http://{refused_url}/target",
                 source,
                 total_bytes=4,
                 headers={},
@@ -685,21 +721,21 @@ async def test_the_client_works_as_an_async_context_manager(server):
     assert response.status_code == 200
 
 
-async def test_get_guarded_maps_a_transport_failure_to_httpx_request_error():
+async def test_get_guarded_maps_a_transport_failure_to_httpx_request_error(refused_url):
     client = CurlCffiAsyncClient()
     try:
         with pytest.raises(httpx.RequestError):
             # HTTPS: the scheme guard runs before the connection, and rejecting
             # ``http://`` here would never reach the transport-failure branch.
             await client.get_guarded(
-                "https://127.0.0.1:1/asset", is_trusted_host=lambda _host: True
+                f"https://{refused_url}/asset", is_trusted_host=lambda _host: True
             )
     finally:
         await client.aclose()
 
 
 async def test_opening_a_stream_against_a_dead_peer_raises_and_closes_the_handle(
-    monkeypatch,
+    monkeypatch, refused_url
 ):
     """``__aexit__`` is not auto-called when ``__aenter__`` raises.
 
@@ -725,7 +761,7 @@ async def test_opening_a_stream_against_a_dead_peer_raises_and_closes_the_handle
     monkeypatch.setattr(client._curl, "stream", _instrumented_stream)
     try:
         with pytest.raises(httpx.RequestError):
-            async with client.stream("GET", "http://127.0.0.1:1/asset"):
+            async with client.stream("GET", f"http://{refused_url}/asset"):
                 pass  # pragma: no cover - the enter must raise
 
         assert exits, "the curl stream handle was never closed on the failure path"

@@ -1638,6 +1638,8 @@ class TestImportProvenanceGuards:
         )
 
         research.import_sources.assert_awaited()
+        # ``assert_awaited`` alone would pass if a different task id were sent.
+        assert research.import_sources.await_args.args[1] == "task-1"
 
 
 class TestResearchPublicHelperDelegation:

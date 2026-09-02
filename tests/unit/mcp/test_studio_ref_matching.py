@@ -15,7 +15,8 @@ import pytest
 
 pytest.importorskip("fastmcp", reason="requires the optional [mcp] extra")
 
-from notebooklm._app.resolve import AmbiguousIdError  # noqa: E402
+from notebooklm._app.resolve import AmbiguousIdError, validate_id  # noqa: E402
+from notebooklm.exceptions import ValidationError  # noqa: E402
 from notebooklm.mcp.tools._studio_items import _match_studio_ref  # noqa: E402
 
 UUID_A = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa"
@@ -86,10 +87,33 @@ def test_an_exact_title_matches_case_insensitively() -> None:
     assert _match_studio_ref(items, "weekly REPORT", None) == items[0]
 
 
-def test_an_untitled_item_is_not_matched_by_an_empty_ref() -> None:
+def test_an_untitled_item_is_not_matched_by_an_unrelated_ref() -> None:
     items = [_item(UUID_A, None)]
 
     assert _match_studio_ref(items, "anything", None) is None
+
+
+def test_the_matcher_itself_does_not_guard_an_empty_ref() -> None:
+    """Characterization, not endorsement.
+
+    A missing title normalises to ``""``, so an empty ref *does* match an
+    untitled item at this level. That is safe only because the empty ref is
+    rejected upstream — see the companion test below. Anything that calls
+    ``_match_studio_ref`` directly has to do that rejection itself.
+    """
+    items = [_item(UUID_A, None)]
+
+    assert _match_studio_ref(items, "", None) is items[0]
+
+
+@pytest.mark.parametrize(
+    "ref", [pytest.param("", id="empty"), pytest.param("   ", id="whitespace-only")]
+)
+def test_an_empty_ref_is_rejected_before_it_reaches_the_matcher(ref: str) -> None:
+    """``resolve_studio_item`` validates the ref first, so a blank one cannot
+    reach the title path and select an untitled note for deletion."""
+    with pytest.raises(ValidationError):
+        validate_id(ref, "item")
 
 
 def test_a_miss_returns_none_for_the_caller_to_classify() -> None:

@@ -864,8 +864,9 @@ async def test_spawn_child_is_safe_with_eager_task_factory() -> None:
 # ---------------------------------------------------------------------------
 # Admission-generation state machine
 #
-# These guards keep a retired resource generation from admitting work. They are
-# raised, not returned, so an unexercised one fails open rather than loud.
+# These guards keep a retired resource generation from admitting work. They
+# raise rather than returning a sentinel, so an invalid transition fails closed
+# and loudly — and an unexercised guard is one nothing proves still fires.
 # ---------------------------------------------------------------------------
 
 
