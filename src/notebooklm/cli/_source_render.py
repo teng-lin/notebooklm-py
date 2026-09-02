@@ -9,7 +9,7 @@ few wrappers remain explicit test patch points.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import click
 from rich.markup import escape as escape_markup
@@ -54,14 +54,49 @@ from .services.source_mutations import (
 )
 from .services.source_research import SourceAddResearchResult
 from .services.source_serializers import (
+    relevant_chunk_payload,
     source_fulltext_payload,
     source_kind_value,
     source_row_payload,
     source_summary_payload,
 )
 
+if TYPE_CHECKING:
+    from ..types import RelevantChunk
+
 # Compatibility wrappers — tests patch these names on this module. Each
 # one is a one-liner forwarder to the canonical service-layer home.
+
+
+def _render_source_search_result(
+    chunks: list[RelevantChunk],
+    *,
+    json_output: bool,
+    ctx: click.Context,
+) -> None:
+    """Render ranked passage search results as JSON or a readable table."""
+    if json_output:
+        json_output_response([relevant_chunk_payload(chunk) for chunk in chunks])
+        return
+
+    if not chunks:
+        cli_print("No relevant passages found.", ctx=ctx)
+        return
+
+    table = Table(title=f"{len(chunks)} relevant passage(s)")
+    table.add_column("Rank", justify="right", no_wrap=True)
+    table.add_column("Source ID", style="cyan", overflow="fold")
+    table.add_column("Span", no_wrap=True)
+    table.add_column("Text", overflow="fold")
+    for chunk in chunks:
+        span = f"{chunk.start}:{chunk.end}" if chunk.start is not None else "-"
+        table.add_row(
+            str(chunk.rank),
+            escape_markup(chunk.source_id),
+            span,
+            escape_markup(chunk.text),
+        )
+    console.print(table)
 
 
 def _looks_like_path(content: str) -> bool:

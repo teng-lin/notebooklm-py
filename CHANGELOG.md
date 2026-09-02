@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Android route were live-verified independently; the Android protobuf overlay,
   public-client cassettes, and lazy-module-aware RPC drift classification pin the
   recovered contract (#2283).
+- `notebooklm source search QUERY` exposes ranked passage retrieval in the CLI,
+  with repeatable `-s/--source` filters (including unique ID prefixes), an
+  optional `--limit`, a human-readable rank/source/span/text table, and the full
+  `RelevantChunk` array under `--json`.
 - **Google Play Books ("Expert Intelligence") sources** (#2292), initially on
   the web backend: `sources.list_play_books()` lists the account's Play Books library as
   `PlayBook` rows (content id, title, authors, `export_disabled` + `reason`),

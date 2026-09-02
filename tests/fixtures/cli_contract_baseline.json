@@ -135,6 +135,7 @@
       "list",
       "refresh",
       "rename",
+      "search",
       "stale",
       "wait"
     ]
@@ -10220,6 +10221,7 @@
         "list",
         "refresh",
         "rename",
+        "search",
         "stale",
         "wait"
       ],
@@ -11772,6 +11774,98 @@
         }
       ],
       "short_help": "Rename a source."
+    },
+    "source search": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "query",
+          "nargs": 1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "Sentinel.UNSET",
+          "envvar": null,
+          "has_custom_shell_complete": true,
+          "help": "Limit to specific source IDs",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "source_ids",
+          "opts": [
+            "--source",
+            "-s"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Maximum number of globally ranked passages to return.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "limit",
+          "opts": [
+            "--limit"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "clamp": false,
+            "max": null,
+            "min": 1,
+            "name": "integer range"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Search indexed passages across notebook..."
     },
     "source stale": {
       "class": "Command",

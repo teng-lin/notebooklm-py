@@ -49,6 +49,7 @@ from notebooklm.types import (
     Notebook,
     PlayBook,
     PromptSuggestion,
+    RelevantChunk,
     ReportPreset,
     ResearchSource,
     ResearchStart,
@@ -408,6 +409,20 @@ def _customize_source_fulltext(client: MagicMock) -> None:
     )
 
 
+def _customize_source_search(client: MagicMock) -> None:
+    client.sources.search = AsyncMock(
+        return_value=[
+            RelevantChunk(
+                source_id="src123def456ghi789jkl",
+                text="Ranked passage",
+                rank=1,
+                start=10,
+                end=24,
+            )
+        ]
+    )
+
+
 def _customize_source_guide(client: MagicMock) -> None:
     client.sources.get_guide = AsyncMock(
         return_value=SourceGuide(summary="a summary", keywords=["k1", "k2"])
@@ -599,6 +614,11 @@ _FS_SETUPS = {
 JSON_COMMANDS: list[tuple[str, list[str], object]] = [
     # source group
     ("source_list", ["source", "list", "-n", "abc123def456ghi789jkl", "--json"], None),
+    (
+        "source_search",
+        ["source", "search", "ranked passage", "-n", "abc123def456ghi789jkl", "--json"],
+        _customize_source_search,
+    ),
     (
         "source_fulltext",
         [
