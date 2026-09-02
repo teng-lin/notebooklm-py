@@ -438,8 +438,11 @@ context `#4`. Current accessors close `GetProjectDetailsResponse.shared_users #1
 
 These exact bytes and stateful write/read-back behavior are pinned by focused contract tests. No
 live invitation or removal was attempted without a controlled secondary identity, so this is not
-claimed as live collaborator-side-effect proof. Public link and collaborator operations are native;
-only the independently rejected view-level mutation remains a Web compatibility seam.
+claimed as live collaborator-side-effect proof. At this 2026-08-29 checkpoint, public link and
+collaborator operations were native while the independently rejected view-level probe remained a
+Web compatibility seam. Follow-up work showed that probe had targeted the wrong service and moved
+view-level mutation to native `MutateProject`; see
+[`web-compat-seam-closure.md`](web-compat-seam-closure.md#sharingset_view_level--wrong-service).
 
 ### What this changes
 
@@ -448,7 +451,10 @@ only the independently rejected view-level mutation remains a Web compatibility 
 - Eleven of the 15 APK gaps have valid-resource semantic proof.
 - Three more have safe route proof only.
 - The later stale-Google-Doc probe closes `RefreshSource` with valid-resource Android success.
-- Exact `RemoveRecentlyViewedProject` still reaches a failing server handler and changes no state.
+- Exact `RemoveRecentlyViewedProject` reaches a failing server handler for an
+  owned project and changes no state; later two-account evidence established
+  native success for shared projects and the public adapter's owned-project
+  no-op rule.
 - Native account settings and note-backed mind-map generation have live mutation/read-back proof;
   collaborator sharing is bundle/byte/test qualified without a live invitation.
 

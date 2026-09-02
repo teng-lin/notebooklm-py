@@ -1,9 +1,14 @@
 # RPC Development Guide
 
 **Status:** Active
-**Last Updated:** 2026-08-05
+**Last Updated:** 2026-09-02
 
-This guide covers everything about NotebookLM's RPC protocol: capturing calls, debugging issues, and implementing new methods.
+This guide covers the Web backend's batchexecute protocol: capturing calls,
+debugging issues, and implementing Web methods. For Android gRPC/protobuf work,
+start with the [Android evidence index](android/README.md), then use
+[`android/capture.md`](android/capture.md) and the checked-in proto/evidence ledger.
+Typed public namespaces may implement both backends, but the wire-development
+workflows are intentionally separate.
 
 See also: [Python API Reference](python-api.md)
 
@@ -11,7 +16,10 @@ See also: [Python API Reference](python-api.md)
 
 ## Protocol Overview
 
-NotebookLM uses Google's `batchexecute` RPC protocol.
+NotebookLM's Web frontend uses Google's `batchexecute` RPC protocol. The
+explicit Android backend uses bearer-authenticated gRPC instead; `RPCMethod`
+and `client.rpc_call(...)` remain Web-specific even when the typed namespace
+graph is Android-selected.
 
 ### Key Concepts
 
@@ -44,6 +52,9 @@ NotebookLM uses Google's `batchexecute` RPC protocol.
   feature-specific unit tests such as `tests/unit/test_label_params.py`
 - **Human reference:** `docs/rpc-reference.md`, updated after the builder and
   tests land
+- **Android contracts:** `docs/android/endpoints.md` and
+  `docs/android/proto-evidence-ledger.md`, with adapter paths pinned by Android
+  manifest/descriptor tests
 
 ---
 
@@ -244,6 +255,11 @@ def parse_response(text: str, rpc_id: str):
 
 ## Adding New RPC Methods
 
+The workflow below is for a Web batchexecute method. If the public feature must
+also work under explicit Android selection, add or extend the corresponding
+`Android*API`, protobuf overlay/evidence entry, and Android unit/cassette tests;
+do not inject a Web operation collaborator into the Android namespace graph.
+
 ### Workflow
 
 ```
@@ -441,6 +457,8 @@ print(f"DEBUG: {result}")  # See actual structure
 - [ ] Integration test with mock
 - [ ] E2E test (manual verification OK for rare operations)
 - [ ] Updated `rpc-reference.md`
+- [ ] If the typed public method is backend-neutral, implemented and tested the
+  Android adapter or explicitly documented why the method is Web-only
 
 ---
 

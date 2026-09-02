@@ -2,7 +2,7 @@
 
 This module defines a small sum-type ADT that the
 :mod:`notebooklm.cli.services.login` helper chain (``browser_accounts``,
-``cookie_jar``, ``cookie_writes``, ``rookiepy_errors``) returns instead
+``cookie_jar``, ``cookie_writes``, ``rookie_cookies_errors``) returns instead
 of calling ``console.print`` + ``exit_with_code(1)`` directly. Command
 bodies dispatch on the returned outcome — they emit a JSON envelope
 under ``--json`` (per :doc:`/adr/0015-json-envelope-contract-for-post-parse-click-exceptions`)
@@ -19,9 +19,9 @@ layers strip it for JSON envelopes and preserve it for text output.
 Outcome variants:
 
 * :class:`UnknownBrowser` — caller passed a browser name we do not
-  support (``--browser foo`` where ``foo`` is not in the rookiepy
+  support (``--browser foo`` where ``foo`` is not in the browser-cookie
   alias map). Carries the supported list for the message body.
-* :class:`UnsupportedBrowser` — rookiepy itself doesn't support the
+* :class:`UnsupportedBrowser` — rookie-cookies itself doesn't support the
   named browser on this platform (e.g. ``safari`` on Linux). Distinct
   from :class:`UnknownBrowser` so callers can render a different hint.
 * :class:`CookieValidationFailure` — cookies were read but failed the
@@ -71,7 +71,7 @@ class BrowserCookieOutcome:
 
 @dataclass(frozen=True)
 class UnknownBrowser(BrowserCookieOutcome):
-    """User passed a browser name the rookiepy alias map does not know."""
+    """User passed a browser name the rookie-cookies alias map does not know."""
 
     code: str
     message: str
@@ -81,7 +81,7 @@ class UnknownBrowser(BrowserCookieOutcome):
 
 @dataclass(frozen=True)
 class UnsupportedBrowser(BrowserCookieOutcome):
-    """rookiepy is installed but does not support this browser on this platform."""
+    """rookie-cookies is installed but does not support this browser on this platform."""
 
     code: str
     message: str

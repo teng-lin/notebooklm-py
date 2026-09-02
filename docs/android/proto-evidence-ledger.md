@@ -103,15 +103,15 @@ fixtures. Hashes prevent a later local checkout from silently changing what was 
 | [`enums.txt`](enums.txt) | `fb138adfec1d701932f7efaee9f20f4fbb43b3df27acb00de91c169e659c5401` | exhaustive enum names and integers |
 | blutter `pp.txt` | `2fc0bad6bee700cb628deb9ac1922eeea3d1255b51d8d2e1f63c5537d98965b0` | adjacent generated-client method paths, request/response generic bindings, and response constructors for the six formerly empty-response exceptions |
 | blutter `ida_script/addNames.py` | `982fcbf1c5ef1d7d0aa9d5d0ae8af3c6e6a7c575af9bdba1fc3d7469aa8bc511` | exact protobuf Dart-library identity for `Empty`, `DeleteNotesResponse`, and `ShareProjectResponse`; summarized in [`blutter-grpc-signature-evidence.md`](blutter-grpc-signature-evidence.md) |
-| [`grpc-capability-and-signature-evidence.md`](grpc-capability-and-signature-evidence.md) | `cd43b24f84e77000787306797d4dab26fbf11b68c51d0111d478c5bc9594a271` | consolidated signed-APK inventory, current authenticated Web-bundle signature inference, and mobile-backend route/semantic evidence; preserves the original report hashes and their distinct evidence boundaries |
+| [`grpc-capability-and-signature-evidence.md`](grpc-capability-and-signature-evidence.md) | `00091066e51b76c8e072100da8935de6b39cca30a8e7142ce11fb7a07b2ae15c` | consolidated signed-APK inventory, current authenticated Web-bundle signature inference, and mobile-backend route/semantic evidence; preserves the original report hashes and their distinct evidence boundaries |
 | [`latest_apk_grpc_paths.txt`](../../tests/fixtures/android/latest_apk_grpc_paths.txt) | `b5df4996f271e71ccc14e0ae0f8eaa13e1e337b4bc726b54a487a0c4f6d31697` | complete 53-path `1.55.10` generated-client inventory, including the path-only unresolved `UpsertArtifactUserState` entry |
 | [`latest_apk_grpc_signatures.csv`](../../tests/fixtures/android/latest_apk_grpc_signatures.csv) | `6381163929c18d51eb654bc677846061ea65e9d501b9beb9db3952b749b32b7c` | 52 exact `1.55.10` generated-client bindings with request/response FQNs and object-pool offsets |
 | [`external_method_manifest.csv`](../../tests/fixtures/android/external_method_manifest.csv) | `411129064d2528b7ea108571ab382bd786055ed434209d6e733e13f130d9ebbd` | version-scoped `1.46.7` binary inventory plus independently live/web-proven signatures used by the implemented-adapter admission gate |
 | [`chat-session-control-evidence.md`](chat-session-control-evidence.md) | `d348a05caa9fd61aff63caef1d506a08835d555d37edab1323382f152fa342d6` | live Web/Android status transitions, exact APK cancel binding, authorization boundary, and WEB-client-type cancellation qualification |
-| [`public-api-audit.md`](public-api-audit.md) | `e1ddd699175403994b3a9f38d4cab913ba263483524bb743d9582fcbcf873995` | complete public-adapter rejection inventory, current web/APK mapping, and disposable-copy Android-bearer validation for the newly admitted operations |
+| [`public-api-audit.md`](public-api-audit.md) | `f2fbe716b0b95899737e3abda740009bc9a17fa8dd1a0b0702a18f07e06301b0` | dated 2026-08-29 public-adapter rejection inventory and disposable-copy validation; its three compatibility seams are superseded by the closure report |
 | [`artifact-contracts-and-live-validation.md`](artifact-contracts-and-live-validation.md) | `58af0bbeebdfa6a6a7366577d90a5479bdf971a1ed76fe3d6d7d0b8420f8454d` | consolidated artifact generation, representation, data-table, retry/export, mind-map, and transfer evidence; preserves all four source-report hashes and cleanup qualifications |
-| [`file-transfer-evidence.md`](file-transfer-evidence.md) | `f09a518c398f7355f7ab55c69d6e990037c806a9cc3e3f1291de5efd4971a6a5` | official-app/headless PDF upload request, qualified CSV/DOCX compatibility boundary, and live artifact representation/direct infographic/slide transfer |
-| [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md) | `f505fed8baa5e5976748fddb0a464a125235c18e199ee35f5ae85d30c9eb648c` | consolidated notebook copy/metadata, note/mind-map, label/collection, membership, cleanup, and public-qualification evidence; preserves all four source-report hashes |
+| [`file-transfer-evidence.md`](file-transfer-evidence.md) | `3752ef8cf75e3fcafaca3522a28a323c01d931c4d9f4ca39eb2d5ddb0679d2b9` | official-app/headless PDF upload request, qualified CSV/DOCX compatibility boundary, and live artifact representation/direct infographic/slide transfer |
+| [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md) | `bf66c01d168e2cb8f191a97670d767c796681610b9a649c891e8439a27117526` | consolidated notebook copy/metadata, note/mind-map, label/collection, membership, cleanup, and public-qualification evidence; preserves all four source-report hashes |
 | [`endpoints.md`](endpoints.md) | `f7842e7450380d233d84512dfc5b046a99730db346f4dd87315ebaf7ef84ab5c` | live request/response envelopes, route results, version-scoped APK inventories, captured note/sharing bytes, and the account-bootstrap replay boundary |
 
 The recovery method and the warning about duplicate packages are committed in
@@ -163,7 +163,7 @@ exact-package message, and empty deletion uses `google.protobuf.Empty` directly.
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/MutateProject` | local `WireMutateProjectRequest` runtime override for live-only emoji #3; remote FQN is exact | exact-package `Project` (bare) | never | [`endpoints.md`](endpoints.md#mutateproject--rename--edit-notebook-fields) |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CopyProject` | generated web-derived `CopyProjectRequest` | exact-package `Project` (bare) | never; transport ambiguity is surfaced | [web signature inference](grpc-capability-and-signature-evidence.md#signature-matrix) |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateNotebookGuide` | exact-package `GenerateNotebookGuideRequest` | local `WireGenerateNotebookGuideResponse` runtime override for captured topic field #2; remote FQN is exact | never; stateful | [`endpoints.md`](endpoints.md#generatenotebookguide) |
-| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/RemoveRecentlyViewedProject` | exact-package `RemoveRecentlyViewedProjectRequest` | exact `google.protobuf.Empty` | never; exact current-context retry returned handler `INTERNAL` and changed no recent-project state, so the public adapter uses the Web compatibility callable | [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md#notebook-metadata-lifecycle) |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/RemoveRecentlyViewedProject` | exact-package `RemoveRecentlyViewedProjectRequest` | exact `google.protobuf.Empty` | never; succeeds for genuinely shared projects; an owned project returns `INTERNAL`, which the public adapter folds into the same already-absent no-op exposed by Web | [`web-compat-seam-closure.md`](web-compat-seam-closure.md#notebooksremove_from_recent--wrong-resource) |
 
 ## Artifact service ledger
 
@@ -446,7 +446,7 @@ retain their established builders.
 | web-derived `CopyProjectRequest` | `source_project_id` | 2 | singular | string; direct successful replay |
 | web-derived `CopyProjectRequest` | `title` | 3 | singular | string; direct successful replay |
 | exact `GenerateNotebookGuideRequest` | `project_id` | 1 | singular | string; pinned source and captured stateful request |
-| exact `RemoveRecentlyViewedProjectRequest` | `project_id`, `request_context` | 1, 2 | singular | official APK exact binding; current Android context retry reached the handler but returned `INTERNAL`, remained listed by `ListRecentlyViewedProjects`, and left the project readable |
+| exact `RemoveRecentlyViewedProjectRequest` | `project_id`, `request_context` | 1, 2 | singular | official APK exact binding; the owned-project probe returned `INTERNAL`, while later two-account evidence established native shared-project removal and the owned-project no-op rule |
 | exact `NotebookSummary` | `text_summary` | 1 | singular | string; pinned source and captured guide response |
 | exact `NextStep` / `NextStepSuggestions` | `suggestion`, `suggestion_type` / `next_steps` | 1, 2 / 1 | singular / repeated | string plus exact `MagicArtifactType`; pinned semantic guide closure |
 | exact `NotebookGuide` / `GenerateNotebookGuideResponse` | `summary`, `next_step_suggestions` / `notebook_guide` | 1, 6 / 1 | singular | pinned semantic response FQN closure |
@@ -621,8 +621,10 @@ Collaborator invitations/removals were intentionally not live-probed without a c
 secondary identity. Their admission boundary is therefore the current authenticated bundle,
 serialized byte-contract tests, and stateful write/read-back unit coverage, not a claim of live
 side-effect proof. Populated but unnamed response tags #7/#8 remain protobuf unknown fields.
-`sharing.set_view_level` is the sole sharing compatibility seam: the owned-copy mobile mutation
-probe returned `PERMISSION_DENIED`, and no distinct admitted Android view-level branch replaces it.
+The earlier owned-copy `ShareProject` mutation returned `PERMISSION_DENIED`, but that probe targeted
+the public-access service rather than the view-level field. Current `sharing.set_view_level` uses
+the admitted native `MutateProject` tag-9 branch; see
+[`web-compat-seam-closure.md`](web-compat-seam-closure.md#sharingset_view_level--wrong-service).
 
 ## Cross-backend mind-map classifier and the chat seam
 
@@ -862,7 +864,7 @@ live text-file run reached READY, preserved the title, deleted the Drive file by
 
 The valid-resource replay in
 [`grpc-capability-and-signature-evidence.md`](grpc-capability-and-signature-evidence.md#mutatesource)
-(SHA-256 `cd43b24f84e77000787306797d4dab26fbf11b68c51d0111d478c5bc9594a271`)
+(SHA-256 `00091066e51b76c8e072100da8935de6b39cca30a8e7142ce11fb7a07b2ae15c`)
 proves the method path and request bytes — `SourceId #2`, repeated mutation `#3`, change-title
 message `#1`, title `#1`. The current web bundle additionally proves request context `#4` and a
 dedicated response wrapper containing exact-package `Source #1`. The source adapter now uses generated

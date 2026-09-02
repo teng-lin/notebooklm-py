@@ -609,7 +609,7 @@ def register_session_commands(cli):
         default="auto",
         help=(
             "Browser to read cookies from (chrome, firefox, brave, edge, "
-            "safari, arc, ...). 'auto' picks the first one rookiepy can read. "
+            "safari, arc, ...). 'auto' picks the first one rookie-cookies can read. "
             "Use 'chrome::<profile>' for one Chromium profile or "
             "'firefox::<container>' for one Firefox container. "
             "Requires: pip install 'notebooklm-py[cookies]'"

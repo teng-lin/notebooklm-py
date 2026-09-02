@@ -7,184 +7,112 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+The headline of this release is the new **Android backend**. The Python SDK, CLI,
+MCP server, and REST server can now use NotebookLM's native mobile API as an
+alternative to the Web backend. Install the `android` extra and select it with
+`backend="android"`, `--backend android`, or `NOTEBOOKLM_BACKEND=android`.
+The Web backend remains the default. All eleven public API namespaces are
+available, and Android operations no longer fall back to the Web transport. See
+the [installation](docs/installation.md#optional-extras-matrix) and
+[configuration](docs/configuration.md#backend-preference) guides
+([#2269], [#2281]).
+
+Why choose it? The Android transport talks directly to NotebookLM's native gRPC
+service, using short-lived OAuth bearer tokens minted on demand from a stored
+master token. This avoids the Web backend's expiring browser-cookie sessions,
+frontend build labels, obfuscated RPC IDs, and positional `batchexecute`
+responses. It can therefore be a better fit for unattended CI, containers, and
+long-running services, while also providing an independent route when a Web UI
+change disrupts automation. The tradeoff is that a durable master token is a
+more powerful credential than a cookie snapshot; use a dedicated account and
+protect it carefully. Both backends rely on undocumented Google APIs and may
+change without notice.
+
 ### Added
 
-- Chat generation status and cancellation on both backends (#2303):
-  `client.chat.session_status()` returns typed `ChatSessionStatus` state and
-  `client.chat.cancel()` idempotently stops the selected/latest session. Web
-  uses `oXwmh` / `XgrPMd`; Android uses the live-qualified gRPC status shape and
-  APK-exact cancel request. The new `chat_cancel` MCP tool also abandons the
-  server-owned stream when passed a detached `task_id`, while existing
-  `chat_status(notebook=...)` exposes live session state. The MCP registry is
-  now explicitly bound and cleared by the server lifespan loop protocol.
-- `notebooklm copy <title> [-n <notebook-id>] [--use] [--json]` exposes the
-  existing cross-backend `notebooks.copy()` operation in the CLI. It accepts
-  partial IDs or the active notebook, copies sources and Studio artifacts, and
-  can switch context to the new notebook explicitly with `--use`.
-- `sources.search(notebook_id, query, *, source_ids=None, limit=None)` on **both**
-  the Web and Android backends: ranked passage retrieval through
-  `RetrieveRelevantChunks` (Web id `ASU5Oe`) with optional source filtering and
-  a client-side global result limit. Results are immutable `RelevantChunk`
-  values carrying `source_id`, joined `text`, global `rank`, and the backend's
-  source-relative `start` / `end` span. The Web response layout and native
-  Android route were live-verified independently; the Android protobuf overlay,
-  public-client cassettes, and lazy-module-aware RPC drift classification pin the
-  recovered contract (#2283).
-- `notebooklm source search QUERY` exposes ranked passage retrieval in the CLI,
-  with repeatable `-s/--source` filters (including unique ID prefixes), an
-  optional `--limit`, a human-readable rank/source/span/text table, and the full
-  `RelevantChunk` array under `--json`.
-- **Google Play Books ("Expert Intelligence") sources** (#2292), initially on
-  the web backend: `sources.list_play_books()` lists the account's Play Books library as
-  `PlayBook` rows (content id, title, authors, `export_disabled` + `reason`),
-  and `sources.add_play_book(notebook_id, content_id, *, wait=…)` adds a title
-  (refusing a non-exportable one with `PlayBookNotExportableError`). The created
-  source ingests as `SourceType.EXPERT_INTELLIGENCE` and carries
-  `Source.expert_intelligence` (`ExpertIntelligenceSourceMetadata`) provenance.
-  CLI: `notebooklm source books` / `source add-book <content-id>`; MCP:
-  `source_list_play_books` / `source_add_play_book`. New RPC
-  `LIST_EXPERT_INTELLIGENCE_CONTENT` (web id `mVtEUb`).
-- **Google Play Books on the Android backend** (#2302, follow-up to #2292):
-  `sources.list_play_books()` / `add_play_book(...)` now work on the native
-  Android backend too, so the whole capability is backend-parity. The add path
-  needs the per-account GMS Phenotype experiment header
-  (`x-goog-ext-202964622-bin`) the app forwards from Play Services; the new
-  `PhenotypeTokenProvider` mints it headlessly from the user's existing
-  credentials — a single-package `getExperimentsAndConfigs` registration
-  (`experimentsandconfigs` scope, already granted) whose `serverToken` is
-  TTL-cached and attached to `AddSources`. No emulator or Play Services needed.
-  Verified live end-to-end on both tiers.
-- `research.discover(notebook_id, query, *, mode="default")` on **both** the
-  Web and Android backends (`DiscoverSources`, web id `Es3dTe`): the
-  synchronous "Discover sources" call the web dialog makes — one blocking
-  round trip that returns a completed `ResearchTask` (ranked `sources`,
-  `summary` = overview) instead of the start → poll cycle. Modes `default`,
-  `raw`, `curious` and `curious_raw` (the curious modes pick a topic and send
-  an empty query). The backend also records the call as a completed run, so the
-  returned `task_id` works with `import_sources()` / `cancel()`. CLI:
-  `notebooklm research discover [QUERY] [--mode …] [--json]`. Live-verified on
-  150 result rows across both transports (#2283).
-- Six previously unmapped RPCs from the #2283 registry inventory, on **both**
-  the Web and Android backends: `sources.add_urls_async()` (`AddSourcesAsync` —
-  one non-blocking batch add that returns the queued stub rows),
-  `sources.append_text()` (`AppendSource` — append a text block to a source in
-  place), `sources.copy()` (`CopySourcesAsync`), `artifacts.copy()`
-  (`CopyArtifactsAsync` — both copies return an original → new-row mapping),
-  `notebooks.suggest_next_steps()` (`NextStepSuggestions` — the grounded
-  follow-up questions a chat answer carries, without a conversation) and
-  `artifacts.get_customization_choices()` (`GetArtifactCustomizationChoices` —
-  the Studio "Customize" option tables; account-level). New public types
-  `CopiedSource`, `CopiedArtifact`, `ArtifactCustomizationChoices`,
-  `CustomizationChoice`, `ReportPreset`. CLI: `source add-async` / `append` /
-  `copy`, `artifact copy` / `choices`, `suggest-next-steps`. The request shapes
-  were recovered with the mobile tag oracle and every route was live-validated
-  over native Android gRPC (`docs/android/copy-append-suggestion-evidence.md`);
-  this also corrects the earlier note that `AddSourcesAsync` is blocked for the
-  mobile bearer — the impersonation refusal was the Web upload-finalize path.
-- `chat_start` / `chat_status` MCP tools — a detached, watchdog-safe path for
-  long chat generations. Remote MCP transports (claude.ai custom connectors in
-  particular) cut a tool call at ~60s of time-to-first-response-byte, and the
-  cancellation propagates into the handler, killing a blocking `chat_ask`
-  mid-generation while the same question succeeds in the NotebookLM web UI.
-  `chat_start` resolves the ask, spawns it as a server-owned task
-  (`mcp/_chattasks.ChatTaskRegistry` — bounded, TTL-swept, ADR-0024-shaped
-  in-process state) and returns a `task_id` immediately; `chat_status` polls it
-  and returns the finished `chat_ask`-shaped payload inline. An identical ask
-  still in flight is attached to (no double generation, and a dropped
-  `chat_start` response is recovered by re-issuing it); a finished ask is never
-  replayed — asking again appends a new turn, like `chat_ask`, so an answer
-  cannot go stale after `source_add` / `chat_configure`. Finished payloads stay
-  pollable by `task_id` for ~30 minutes. Same re-invoke contract as `await_upload` and the
-  `studio_generate`/`studio_status`, `research_start`/`research_status` pairs —
-  chat was the last long-running surface without it.
-  Batch-friendly by design: submissions past the generation-concurrency
-  ceiling (`NOTEBOOKLM_MCP_CHAT_CONCURRENCY`, default 3 — deliberately small,
-  bursts on one shared Google account have empirically triggered account-level
-  throttling) queue FIFO and auto-start as slots free, so a caller submits a
-  whole batch of questions and just polls; `chat_status` accepts a list of
-  task_ids (one poll call per batch round), reports `queued` vs `generating`,
-  and carries `queued_s`/`generation_s` timings; `server_info` gains a live
-  `chat_tasks` load gauge (`{generating, queued, concurrency, cached_results}`).
-  Completion TTL runs on the wall clock, not `time.monotonic()` — observed
-  live on a gVisor-sandboxed host (bunny Magic Containers) whose monotonic
-  clock effectively freezes while the container idles, which let cached
-  results outlive their 30-minute window by wall-hours; the gauges also sweep
-  expired entries before counting.
-- `SourceType.GEMINI_CHAT`, `EXCEL`, `GMAIL`, `AI_MODE_CHAT` and
-  `EXPERT_INTELLIGENCE` for backend type codes `18`, `12`, `15`, `19` and `20`.
-  The decode map now covers `0`-`20` contiguously and matches every value of
-  the `OriginalSourceContentType` enum recovered from the Android binary.
-  Code `18` is live-observed: an Android `AddSources` carrying
-  `CONTENT_TYPE_GEMINI_CHAT` returns a source with it, and it previously
-  decoded as `UNKNOWN` with an `UnknownTypeWarning`. The other four are mapped
-  from the enum only — no reachable route produces one (`.xlsx` is refused at
-  the Web upload `start` with HTTP 400, a Drive spreadsheet comes back as `14`,
-  and Gmail, AI Mode chat and Expert Intelligence imports are not exposed) — so
-  they are there to keep a server that does emit one from reading as `UNKNOWN`.
-- The Android backend needs **no Web collaborator**. `sharing.set_view_level`
-  and `notebooks.remove_from_recent` are now native (the earlier probes had used
-  the wrong RPC and an owned rather than shared notebook), and `add_file` covers
-  every supported extension. `.csv`, `.docx` and `.pptx` reach the backend
-  through a Drive round-trip, since the mobile upload frontend has no parser for
-  them; the staged copy is deleted afterwards. See
-  `docs/android/web-compat-seam-closure.md`.
-- `SourceType.GOOGLE_DRIVE` for backend type code `14`.
+- Added chat generation status and cancellation on both backends.
+  `client.chat.session_status()` reports the active session state, while
+  `client.chat.cancel()` idempotently stops the selected or latest session.
+  MCP users can cancel a detached chat task with `chat_cancel` and inspect live
+  session state through `chat_status` ([#2306]).
+- Added `notebooklm copy <title>` as a CLI entry point for copying a notebook
+  with its sources and Studio artifacts on either backend. It accepts a partial
+  or active notebook ID, `--use` selects the new copy, and `--json` returns
+  structured output ([#2308]).
+- Added ranked passage search on both backends through
+  `sources.search(notebook_id, query, source_ids=..., limit=...)` and
+  `notebooklm source search`. Results include the source, text, rank, and
+  source-relative span, and can be filtered to selected sources
+  ([#2305], [#2307]).
+- Added Google Play Books sources on both backends. Use
+  `sources.list_play_books()` and `sources.add_play_book()`,
+  `notebooklm source books` / `source add-book`, or the corresponding MCP
+  tools to add eligible books from your library. Availability follows
+  NotebookLM's account and region restrictions ([#2300], [#2304]).
+- Added `research.discover()` and `notebooklm research discover` on both
+  backends for a single-call "Discover sources" workflow. It returns ranked
+  sources and an overview immediately, while preserving a task ID for later
+  import ([#2299]).
+- Added source and artifact workflow helpers on both backends: non-blocking URL
+  batches, appending text to a source, copying sources or artifacts, fetching
+  Studio customization choices, and requesting grounded next-step suggestions.
+  These are also available through the corresponding CLI commands ([#2291]).
+- Added `chat_start` and `chat_status` MCP tools for chat generations that
+  may outlast a remote connector's request timeout. Requests queue when the
+  configurable concurrency limit is reached, and `chat_status` can poll
+  multiple task IDs at once ([#2286]).
+- Added source-type recognition for Gemini chats, Excel, Gmail, AI Mode chats,
+  Google Play Books, and general Google Drive files ([#2282], [#2300]).
+
+### Changed
+
+- **Compatibility note:** backend source type code `14` now reports
+  `SourceType.GOOGLE_DRIVE` instead of `GOOGLE_SPREADSHEET`. Native Google
+  Sheets continue to report `SourceType.GOOGLE_SPREADSHEET` through code `7`
+  ([#2281]).
+- The `cookies` extra now uses the maintained `rookie-cookies` package,
+  restoring browser-cookie import support on Python 3.13 and newer ([#2162]).
 
 ### Fixed
 
-- **`sources.refresh()` no longer reports success while the server rejects the
-  call** (#2290). `REFRESH_SOURCE` answers a rejection as a null payload tagged
-  with a gRPC status (live: `[3]` INVALID_ARGUMENT); the call site's
-  `allow_null=True` decoded that to `None`, which is also the documented success
-  value, so Python callers, `notebooklm source refresh` and the e2e test could
-  not tell the two apart. The call now passes `raise_on_null_status=True`, so a
-  rejection raises `RPCError` while a genuinely empty success reply still
-  returns `None`. The same swallow was closed on every other write RPC whose
-  result the client reports as "done" without a verifying re-read:
-  `sources.rename()` and the post-upload retitle (`UPDATE_SOURCE`),
-  `notebooks.update()` / `chat.configure()` / `sharing.set_view_level()`
-  (`RENAME_NOTEBOOK`), `notes.update()` (`UPDATE_NOTE`), every label and
-  collection `UPDATE_LABEL` / `CREATE_LABEL` mutation, `artifacts.rename()`
-  (`RENAME_ARTIFACT`), the three `artifacts.export*()` methods
-  (`EXPORT_ARTIFACT`) and `artifacts.generate_mind_map()`
-  (`GENERATE_MIND_MAP`). Deletes (idempotent by contract), `SHARE_NOTEBOOK` /
-  `SHARE_ARTIFACT` / `REMOVE_RECENTLY_VIEWED` (recorded returning a tagged null
-  on successful flows) and the derived reads are unchanged. No recorded
-  success frame for any changed RPC carries a status, so replayed traffic is
-  unaffected; a guardrail test now keeps `allow_null=True` on these write RPCs
-  from landing without the strictness flag.
-- **Behaviour change:** type code `14` now decodes as
-  `SourceType.GOOGLE_DRIVE`, not `GOOGLE_SPREADSHEET`, and code `7` decodes as
-  `GOOGLE_SPREADSHEET`. `14` is the backend's catch-all for a Drive-hosted file
-  it gives no format-specific code: importing one Drive file of each class shows
-  a Google Doc returning `1` and a Drive PDF returning `3`, while a Google
-  Sheet, a `.txt`, a `.csv`, a `.docx` and a `.pptx` all return `14`. The
-  recovered mobile `SourceContentType` enum names it `DRIVE`, and agrees with
-  this client on every other code it defines. A native Sheet still reports
-  `GOOGLE_SPREADSHEET`: its MIME is disambiguated to `7`, the code that enum
-  reserves for it. Affects both backends — anything reaching `add_drive_file`
-  previously reported `google_spreadsheet` whatever it was.
+- Write operations no longer report success when NotebookLM actually rejected
+  the request. This covers source refresh and rename, notebook and chat
+  updates, sharing changes, note, label, and collection mutations, and artifact
+  rename, export, and mind-map generation ([#2296]).
+- Android `sources.get_guide()` now accepts the server's valid unlabelled
+  response on repeated reads. Missing or not-yet-summarized sources also match
+  Web behavior for `get_guide()` and `check_freshness()` instead of raising a
+  false not-found error ([#2277], [#2280]).
+- Android file uploads now always perform one status check before timing out
+  when given a positive wait timeout, so a ready or failed source is not
+  misreported as an indeterminate timeout ([#2294]).
+- Interactive login now tolerates interrupted navigation during Google's
+  sign-in flow and gives actionable fallback guidance after repeated failures.
+  Browser-cookie import also handles millisecond or microsecond expiry values
+  and Firefox session cookies correctly ([#2260], [#2252]).
+- Fixed evaluation of public method annotations on Python 3.14 when a class
+  method shadows a builtin type name ([#2268]).
 
-- **Behaviour change (Android backend):** `sources.get_guide()` and
-  `sources.check_freshness()` no longer raise `SourceNotFoundError` for a
-  source that is absent or not yet summarised. Per ADR-0019 these are *derived
-  reads* that must not police parent existence, and the web backend already
-  returned `SourceGuide("", ())` / `True` for the same inputs — Android now
-  matches it. Existence remains `get()`'s job: the MCP tool and REST route
-  already run their own guard, and the CLI resolves ids against
-  `sources.list()`. Dropping the pre-flight also removes a `GetProject`
-  round-trip from every call. Note both backends' underlying RPCs are
-  notebook-agnostic, so neither validates that the source belongs to the
-  notebook you name.
-- `sources.get_guide()` on the Android backend no longer raises `DecodingError`
-  for a sole guide that carries no source-id echo. `GenerateDocumentGuides`
-  labels a returned guide with the requested source id on the *first* response
-  for a source and omits the label on every repeat call, so the strict echo
-  check rejected guides the server really had returned for all but each
-  source's first read. A populated-but-different echo, and an ambiguous
-  multi-guide response, are both still `DecodingError`; those paths now report
-  the requested id, every observed echo, the guide count, and each guide's
-  protobuf field tags.
+[#2162]: https://github.com/teng-lin/notebooklm-py/pull/2162
+[#2252]: https://github.com/teng-lin/notebooklm-py/pull/2252
+[#2260]: https://github.com/teng-lin/notebooklm-py/pull/2260
+[#2268]: https://github.com/teng-lin/notebooklm-py/pull/2268
+[#2269]: https://github.com/teng-lin/notebooklm-py/pull/2269
+[#2277]: https://github.com/teng-lin/notebooklm-py/pull/2277
+[#2280]: https://github.com/teng-lin/notebooklm-py/pull/2280
+[#2281]: https://github.com/teng-lin/notebooklm-py/pull/2281
+[#2282]: https://github.com/teng-lin/notebooklm-py/pull/2282
+[#2286]: https://github.com/teng-lin/notebooklm-py/pull/2286
+[#2291]: https://github.com/teng-lin/notebooklm-py/pull/2291
+[#2294]: https://github.com/teng-lin/notebooklm-py/pull/2294
+[#2296]: https://github.com/teng-lin/notebooklm-py/pull/2296
+[#2299]: https://github.com/teng-lin/notebooklm-py/pull/2299
+[#2300]: https://github.com/teng-lin/notebooklm-py/pull/2300
+[#2304]: https://github.com/teng-lin/notebooklm-py/pull/2304
+[#2305]: https://github.com/teng-lin/notebooklm-py/pull/2305
+[#2306]: https://github.com/teng-lin/notebooklm-py/pull/2306
+[#2307]: https://github.com/teng-lin/notebooklm-py/pull/2307
+[#2308]: https://github.com/teng-lin/notebooklm-py/pull/2308
 
 ## [0.8.1] - 2026-08-14
 

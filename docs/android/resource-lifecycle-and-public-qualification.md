@@ -5,6 +5,12 @@ note-backed mind maps, source labels, and notebook collections
 
 **Validation window:** 2026-08-27 through 2026-08-29
 
+> **Later implementation update (2026-08-31):** this document preserves the
+> validation-window results, including negative probes against owned notebooks.
+> Follow-up qualification closed the remaining operation seams; current Android
+> assembly has no Web operation collaborators. See
+> [`web-compat-seam-closure.md`](web-compat-seam-closure.md).
+
 This document consolidates four dated Android-bearer reports into one stable resource-lifecycle
 record. It distinguishes backend routing and wire behavior from public adapter selection. The
 probes used isolated temporary profiles, minted short-lived bearers in memory, omitted account and
@@ -288,9 +294,10 @@ required.
 
 Manual source-label Android CRUD, notebook operations, source operations, and note CRUD/mind-map
 operations are now selected publicly. Source refresh, upload-only Drive-file import, and note-backed
-mind-map generation no longer require Web collaborators. The isolated notebook recent-removal
-exception described below remains a compatibility seam because its exact mobile route repeatedly
-returned an internal error on fresh disposable resources.
+mind-map generation no longer require Web collaborators. Follow-up two-account probing established
+that notebook recent-removal succeeds natively for genuinely shared notebooks; the `INTERNAL`
+result below is specific to owned notebooks and is folded into an already-absent no-op. It is no
+longer a Web compatibility seam.
 
 ## Native source refresh and Drive-file import
 
@@ -343,10 +350,14 @@ semantics but not an unrecovered Google descriptor name.
 ### Promotion boundary
 
 Emoji set, explicit clear, and combined title/emoji update are native Android operations.
-`RemoveRecentlyViewedProject` remains unusable through the exact mobile route: reproducing status
-`13` on a fresh notebook rules out the earlier copied-notebook setup. The selected
-`AndroidNotebooksAPI` therefore delegates only `remove_from_recent` to an injected Web callable;
-the other sixteen public methods remain native.
+At this validation checkpoint, `RemoveRecentlyViewedProject` remained unusable
+for the owned-notebook resource used here: reproducing status `13` on a fresh
+notebook ruled out the earlier copied-notebook setup, so the selected
+`AndroidNotebooksAPI` delegated `remove_from_recent` to an injected Web callable.
+Later two-account probing showed that the exact mobile route succeeds for a
+genuinely shared notebook; the current adapter uses it natively and folds the
+owned-notebook `INTERNAL` result into an already-absent no-op. See
+[`web-compat-seam-closure.md`](web-compat-seam-closure.md#notebooksremove_from_recent--wrong-resource).
 
 ## Note-backed mind-map lifecycle
 

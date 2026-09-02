@@ -124,7 +124,7 @@ def _build_google_cookie_domains(
     include_optional: bool = False,
     include_domains: set[str] | None = None,
 ) -> list[str]:
-    """Return the cookie-domain list fed to extractors (rookiepy / Firefox).
+    """Return the cookie-domain list fed to extractors (rookie-cookies / Firefox).
 
     Defaults to :data:`REQUIRED_COOKIE_DOMAINS` plus all known regional
     ``.google.<ccTLD>`` variants. Sibling-product hosts (YouTube, Docs,
@@ -143,7 +143,7 @@ def _build_google_cookie_domains(
             accepted as a shortcut for every label.
 
     Returns:
-        Sorted cookie-domain strings (suitable for ``rookiepy.load(
+        Sorted cookie-domain strings (suitable for ``rookie_cookies.load(
         domains=...)`` or :func:`extract_firefox_container_cookies`).
     """
     labels = selection = None

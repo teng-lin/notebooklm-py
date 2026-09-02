@@ -1,9 +1,47 @@
-# Android API reverse-engineering
+# Android backend and protocol evidence
 
-`notebooklm-py` drives NotebookLM's **web** `batchexecute` transport. The official
-**Android** app drives the *same backend services* over gRPC — where fields are
-tag-addressed instead of positional. That makes the mobile surface a useful oracle
-for the web one, and these files are what came out of reading it.
+`notebooklm-py` supports the default **Web** `batchexecute` backend and an
+explicit **Android** backend over the same product's bearer-authenticated gRPC
+services. The mobile protobuf surface is also a useful oracle for Web's
+positional payloads. This directory combines the Android user entry point with
+the protocol contracts and evidence used to maintain both transports.
+
+## Using the Android backend
+
+Install the Android runtime (and the browser extra for the one-time interactive
+master-token bootstrap), then create a durable credential in the selected
+profile:
+
+```bash
+pip install "notebooklm-py[android]"
+pip install "notebooklm-py[browser]"  # one-time interactive bootstrap only
+notebooklm login --master-token --account you@example.com
+```
+
+Select Android per CLI invocation, for the process, or in Python:
+
+```bash
+notebooklm --backend android list --json
+NOTEBOOKLM_BACKEND=android notebooklm list --json
+```
+
+```python
+from notebooklm import NotebookLMClient
+
+async with NotebookLMClient.from_storage(backend="android") as client:
+    notebooks = await client.notebooks.list()
+```
+
+Web remains the default when no backend is selected. Explicit Android selection
+installs Android implementations for all 11 typed namespaces and performs no
+typed-operation fallback to Web. The advanced `client.rpc_call(...)` escape
+hatch remains Web-specific.
+
+`master_token.json` is a durable, full-account credential that can mint OAuth
+tokens for multiple Google services and survives a password change. Prefer a
+dedicated account, protect the selected profile, never log or commit the token,
+and revoke the associated device/session in Google Account security if it may
+have leaked. See the full [installation and authentication guide](../installation.md#d-headless-server-or-ci).
 
 ## Why this exists
 
@@ -45,7 +83,8 @@ consolidated document rather than encoded in filenames.
 | [`artifact-contracts-and-live-validation.md`](artifact-contracts-and-live-validation.md) | generation families, representations, data tables, retry, mind maps, transfers, and Drive export |
 | [`grpc-capability-and-signature-evidence.md`](grpc-capability-and-signature-evidence.md) | signed-APK inventory, Web-derived signatures, backend routing, and semantic probes |
 | [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md) | notebook copy/metadata, notes/maps, labels, collections, and public-selection boundaries |
-| [`public-api-audit.md`](public-api-audit.md) | current implementation/rejection decisions across Android adapters |
+| [`public-api-audit.md`](public-api-audit.md) | 2026-08-29 rejection-audit snapshot; its three compatibility seams were later closed |
+| [`web-compat-seam-closure.md`](web-compat-seam-closure.md) | current zero-Web-operation-collaborator boundary and the evidence that closed the final seams |
 | [`file-transfer-evidence.md`](file-transfer-evidence.md) | Scotty upload and artifact-download protocol with interception details |
 | [`deep-research-evidence.md`](deep-research-evidence.md) | Deep Research wire contract, lifecycle, reproducer, and interception |
 | [`copy-append-suggestion-evidence.md`](copy-append-suggestion-evidence.md) | live Android gRPC evidence for the #2283 family: `AddSourcesAsync`, `AppendSource`, `CopySourcesAsync`, `CopyArtifactsAsync`, `NextStepSuggestions`, `GetArtifactCustomizationChoices` |
@@ -123,13 +162,13 @@ hash-pinned external method manifest are checked in both
 directions, so a locally repeated claim cannot admit a normalized or unresolved response type.
 The package and generated protos remain private implementation details. Explicit
 `backend="android"` selection installs Android adapters for all eleven public namespaces. The
-adapters use native Android gRPC/Scotty wherever the mobile contract is usable and isolate the
-remaining handler gaps behind narrow Web compatibility collaborators. There are exactly three:
-
-- notebook recent-removal, whose exact mobile route consistently rejects valid owned resources;
-- CSV/DOCX file upload, whose exact mobile transaction finalizes but processing reaches
-  `UNKNOWN`/`ERROR`; and
-- sharing view-level mutation, whose separate `MutateProject` branch remains rejected.
+installed Android namespace graph has no Web operation collaborators. Native Android gRPC/Scotty,
+bearer-authenticated assets, Drive staging, and local composition cover the typed public contract:
+recent-removal uses the native shared-project route and treats the owned-project `INTERNAL` result
+as the same already-absent no-op exposed by Web; CSV/DOCX/PPTX uploads stage through Drive when the
+mobile Scotty frontend cannot parse the format; and sharing view level uses the native
+`MutateProject` tag-9 branch. The evidence and bounded divergences are recorded in
+[`web-compat-seam-closure.md`](web-compat-seam-closure.md).
 
 Artifact mind-map generation, source refresh and Drive download/upload, account settings,
 collaborator sharing, and automatic labels now remain native under Android selection. The settings
@@ -138,8 +177,9 @@ readback, then restored and re-verified the original value in `finally`. Collabo
 bundle- and byte-contract-qualified; no live invitation was sent without a controlled secondary
 identity.
 
-`client.backends` describes the installed namespace adapters, so every entry is `android`; it does
-not claim that each internal operation has a native mobile RPC.
+`client.backends` describes the installed namespace adapters, so every entry is `android`. It does
+not reparameterize the advanced `client.rpc_call(...)` escape hatch, whose `RPCMethod` identifiers
+remain Web batchexecute-specific, or imply that every Android workflow is a single gRPC call.
 
 ## Public Collections qualification
 

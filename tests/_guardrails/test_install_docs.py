@@ -166,8 +166,8 @@ def test_skill_md_contains_agent_install_pattern() -> None:
     docs/installation.md.
 
     The strict `[browser]"` regex (no extras inside the brackets) forbids a
-    regression to the single-step `[browser,cookies]` form which would break
-    on Python 3.13+.
+    regression to the single-step `[browser,cookies]` form, which makes the
+    optional browser-cookie dependency mandatory for every agent.
     """
     text = _read(SKILL_MD)
     assert SKILL_BROWSER_LINE_RE.search(text), (
@@ -176,7 +176,7 @@ def test_skill_md_contains_agent_install_pattern() -> None:
     )
     assert 'pip install "notebooklm-py[cookies]"' in text, (
         'SKILL.md must contain a separate `pip install "notebooklm-py[cookies]"` line '
-        "(optional install, may fail on Python 3.13+)."
+        "(optional browser-cookie extractor install)."
     )
     assert INSTALLATION_LINK_RE.search(text), "SKILL.md must link to docs/installation.md."
 
@@ -367,7 +367,7 @@ def test_troubleshooting_md_keeps_bare_platform_headings() -> None:
 
 
 def test_no_uv_sync_all_extras_in_canonical_install_paths() -> None:
-    """`uv sync --all-extras` includes `cookies`, which fails on Python 3.13+.
+    """`uv sync --all-extras` includes the optional `cookies` extractor.
     The `[all]` extra deliberately excludes `cookies`. Only the warning callout
     in installation.md is allowed to mention `--all-extras` as a flag.
 

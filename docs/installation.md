@@ -1,6 +1,6 @@
 # Installation
 
-**Last Updated:** 2026-08-05
+**Last Updated:** 2026-09-02
 
 This is the canonical installation guide for `notebooklm-py`. The README has a quickstart; everything else lives here.
 
@@ -55,7 +55,17 @@ This is the canonical installation guide for `notebooklm-py`. The README has a q
 | **C — Library user** | `uv add notebooklm-py` (or `pip install notebooklm-py` inside your project venv) |
 | **D — Headless server / CI** | `pip install notebooklm-py` inside a venv/container; ship a `storage_state.json` (no Playwright) |
 | **E — Contributor** | `uv sync --frozen --extra browser --extra dev --extra markdown && uv run playwright install chromium && uv run pre-commit install` |
-| **F — Power user** | `uv tool install --python 3.12 "notebooklm-py[browser,cookies,markdown]"` (the `cookies` extra needs Python ≤ 3.12; `--python 3.12` makes uv provision a matching interpreter even if your default is 3.13+) |
+| **F — Power user** | `uv tool install "notebooklm-py[browser,cookies,markdown]"` |
+
+The Android backend is an opt-in runtime choice: install
+`notebooklm-py[android]` (plus `[browser]` for the one-time interactive
+bootstrap), create the profile's durable credential with
+`notebooklm login --master-token --account EMAIL`, then select Android with `--backend android`,
+`NOTEBOOKLM_BACKEND=android`, or `backend="android"` in Python. It mints
+short-lived mobile bearer tokens from `master_token.json`; typed namespace
+operations do not use Web cookies or fall back to the Web transport. Android
+dependencies are excluded from `[all]`. See the
+[Android backend guide](android/README.md) for setup and security details.
 
 ---
 
@@ -75,19 +85,13 @@ The project ships `notebooklm skill install`, [SKILL.md](../SKILL.md), and [AGEN
 ```bash
 pip install "notebooklm-py[browser]"   # mandatory; errors must propagate
 
-# [cookies] (rookiepy) is optional and known to FAIL TO BUILD on Python 3.13+.
-# Skip it deliberately on 3.13+ rather than swallowing the error — that lets
-# *real* install failures (typos, network, PyPI outages) surface for the agent.
-if python -c "import sys; sys.exit(0 if sys.version_info < (3, 13) else 1)"; then
-    pip install "notebooklm-py[cookies]"   # errors propagate
-else
-    echo "Skipping [cookies] on Python 3.13+ (rookiepy unavailable). Use 'notebooklm login' interactively."
-fi
+pip install "notebooklm-py[cookies]"   # optional browser-cookie extraction
 ```
 
 > If `pip install` errors with `externally-managed-environment` (modern macOS / Debian system Python, [PEP 668](https://peps.python.org/pep-0668/)), retry with `uv tool install "notebooklm-py[browser]"` or `pipx install "notebooklm-py[browser]"` — isolated installs that don't touch system Python. Inside an active virtualenv, `pip` works as-is.
 
-**Why two separate calls (not `[browser,cookies]`):** the combined form is atomic — if `rookiepy` fails to compile, the whole install fails and the user gets **nothing**. Splitting means `[browser]` always succeeds; `[cookies]` is recoverable.
+The `[cookies]` extra is optional; install it only when importing cookies from an
+already signed-in browser. Interactive `notebooklm login` needs only `[browser]`.
 
 **Skill install (separate from the Python package):**
 
@@ -113,10 +117,10 @@ After login, `storage_state.json` persists at `~/.notebooklm/profiles/default/st
 
 <!-- not mirrored: headless-agent auth path; out of scope for the contributor README -->
 ```bash
-notebooklm login --browser-cookies auto    # rookiepy autodetects an installed browser
+notebooklm login --browser-cookies auto    # rookie-cookies autodetects an installed browser
 ```
 
-If the agent is in a no-display sandbox AND `[cookies]` isn't installed (Python 3.13+ skipped it), ask the user to run `notebooklm login` on a workstation and copy the resulting `~/.notebooklm/profiles/default/storage_state.json` to the agent's environment (or set `NOTEBOOKLM_AUTH_JSON`).
+If the agent is in a no-display sandbox and `[cookies]` isn't installed, ask the user to run `notebooklm login` on a workstation and copy the resulting `~/.notebooklm/profiles/default/storage_state.json` to the agent's environment (or set `NOTEBOOKLM_AUTH_JSON`).
 
 #### Sandboxed agents (Claude Cowork)
 
@@ -155,7 +159,7 @@ notebooklm list --json                  # JSON list (may be empty for new accoun
 **Error strings the agent should grep:**
 
 - `"Playwright not installed"` → install `[browser]`
-- `"rookiepy"` (in stderr of `pip install`) → expected on Python 3.13+; skip `[cookies]` and use interactive `notebooklm login`
+- `"rookie-cookies"` → install or repair the `[cookies]` extra when using `--browser-cookies`
 - `"status": "ok"` (in `auth check --json`) → auth file present and parses; pair with `--test` for network validation
 
 ### B. End user
@@ -234,7 +238,7 @@ print(notebooklm.__version__)
    ```
    **For CI, ship the master token — not a cookie snapshot.** A cookie snapshot
    is superseded by any other active client within ~10 minutes and is rejected
-   shortly after (see [auth-cookie-lifecycle.md §2.5](auth-cookie-lifecycle.md#25-four-timers-people-confuse)),
+   shortly after; use the session-refresh guidance in [Troubleshooting](troubleshooting.md#cookie-freshness-for-long-running--unattended-use),
    so a secret exported on a workstation is routinely dead before the run starts.
    A master token does not rotate. Write it to a file and mint a session per run:
 
@@ -243,7 +247,8 @@ print(notebooklm.__version__)
    # one-off, on the workstation: mint the master token, then ship it.
    # Plain `notebooklm login` (step 1) does NOT create master_token.json.
    pip install "notebooklm-py[headless]"
-   notebooklm login --master-token   # writes ~/.notebooklm/profiles/default/master_token.json
+   notebooklm login --master-token --account you@example.com
+   # writes ~/.notebooklm/profiles/default/master_token.json
    gh secret set NOTEBOOKLM_MASTER_TOKEN_JSON < ~/.notebooklm/profiles/default/master_token.json
 
    # in the job, before anything that authenticates.
@@ -339,7 +344,7 @@ pre-commit install
 
 **Why `uv sync --frozen` and not `uv pip install -e ".[all]"`:** the repo has a checked-in `uv.lock`. `uv sync --frozen` enforces the lockfile and fails fast on drift; `uv pip install` ignores the lockfile and re-resolves transitively (will silently get newer versions of `playwright`, `ruff`, etc.).
 
-**Why three extras and not `[all]`:** `[all]` is `pip` extras semantics. `uv sync --extra X` is the `uv` equivalent. `[all]` itself expands to six extras — `[browser, dev, headless, markdown, mcp, server]` — but the command above installs only three of them (`browser, dev, markdown`), the contributor subset. `cookies` is intentionally excluded from both (`rookiepy` build issues on Python 3.13+); `headless` / `mcp` / `server` are the other three `[all]` extras, omitted from the default contributor flow because those adapters are not needed for the standard local suite. Opt in via `--extra headless` / `--extra cookies` / `--extra mcp` / `--extra server` if needed.
+**Why three extras and not `[all]`:** `[all]` is `pip` extras semantics. `uv sync --extra X` is the `uv` equivalent. `[all]` itself expands to six extras — `[browser, dev, headless, markdown, mcp, server]` — but the command above installs only three of them (`browser, dev, markdown`), the contributor subset. `cookies` is intentionally excluded because browser-cookie extraction is optional; `headless` / `mcp` / `server` are the other three `[all]` extras, omitted from the default contributor flow because those adapters are not needed for the standard local suite. Opt in via `--extra headless` / `--extra cookies` / `--extra mcp` / `--extra server` if needed.
 
 **Why `browser` is part of the contributor install:** the default local test suite includes unit tests that import and patch `playwright.sync_api`, even though they do not launch a real browser. `uv sync --frozen --extra dev` installs pytest/ruff/mypy but not Playwright, so `uv run pytest` will fail with `ModuleNotFoundError: No module named 'playwright'`. Use the full contributor command above before running the default test suite.
 
@@ -367,11 +372,14 @@ uv run pre-commit run --all-files
 
 Non-default browsers, cookie extraction, markdown source dumps.
 
-> **Why this section uses the combined `[browser,cookies]` form** — unlike Persona A, which uses two separate `pip install` calls so a `rookiepy` build failure doesn't leave the user with nothing: power users explicitly opted in, know what `rookiepy` is, and prefer the all-or-nothing tradeoff (single command, no wrapping logic).
+The `[cookies]` extra is optional and can be installed alongside `[browser]` when
+you want browser-cookie extraction.
 
-> ⚠️  **Don't use `[all]` for power-user setups.** `[all]` deliberately *excludes* `cookies` (see [§ All vs All-Extras](#all-vs-all-extras)). If you `pip install "notebooklm-py[all]"` and then try `--browser-cookies`, you'll get an opaque `rookiepy` import error. For everything-and-the-kitchen-sink, use `pip install "notebooklm-py[browser,cookies,markdown]"` explicitly (Python ≤ 3.12 only).
+> **Don't use `[all]` for power-user setups.** `[all]` deliberately *excludes*
+> `cookies` (see [§ All vs All-Extras](#all-vs-all-extras)). Add the explicit
+> `[cookies]` extra when using `--browser-cookies`.
 
-- **`--browser-cookies` (no Playwright login):** `pip install "notebooklm-py[browser,cookies]"`. **Caveat:** `rookiepy` may fail to install on Python 3.13/3.14; use Python 3.12 or accept the risk. See [cli-reference.md#authentication-login](cli-reference.md#authentication-login) for the full `--browser-cookies` syntax, including `chrome::<profile-name-or-directory>` for one Chromium user-profile and `firefox::<container>` for Firefox Multi-Account Containers (on every OS — not just macOS). Use `notebooklm auth inspect --browser <browser>` for previewing available accounts before import.
+- **`--browser-cookies` (no Playwright login):** `pip install "notebooklm-py[browser,cookies]"`. The `cookies` extra installs `rookie-cookies` and supports Python 3.13+. See [cli-reference.md#authentication-login](cli-reference.md#authentication-login) for the full syntax, including `chrome::<profile-name-or-directory>` and `firefox::<container>`. Use `notebooklm auth inspect --browser <browser>` for previewing available accounts before import.
 - **Markdown source dumps:** `pip install "notebooklm-py[markdown]"` for `notebooklm source fulltext -f markdown`.
 - **Edge instead of Chromium:** install Microsoft Edge from [microsoft.com/edge](https://www.microsoft.com/edge) first — `--browser msedge` does NOT auto-install Edge (only `--browser chromium` auto-installs). Then `notebooklm login --browser msedge`.
 - **Multi-account (personal + work):** see [configuration.md#multiple-accounts](configuration.md#multiple-accounts). Common power-user flow: `notebooklm profile create work && notebooklm -p work login --browser-cookies edge --account work@corp.com`. Use `--all-accounts` to bootstrap profiles for every signed-in Google account in one command.
@@ -386,9 +394,9 @@ Source of truth: `pyproject.toml` `[project.optional-dependencies]`.
 |---|---|---|---|---|
 | (none) | `httpx`, `click`, `rich`, `filelock` | All RPC operations, all CLI commands except `login`. Suffices when you ship a `storage_state.json`. | `pip install notebooklm-py` | `uv add notebooklm-py` |
 | `browser` | `playwright>=1.40.0` | `notebooklm login` (interactive). | `pip install "notebooklm-py[browser]"` | `uv add "notebooklm-py[browser]"` |
-| `cookies` | `rookiepy>=0.1.0` | `notebooklm login --browser-cookies <browser>`, `notebooklm auth inspect`. | `pip install "notebooklm-py[cookies]"` | `uv add "notebooklm-py[cookies]"` |
-| `headless` | `gpsoauth>=1.1.0` | `notebooklm login --master-token` — headless auth that mints/refreshes web cookies from a durable master token, no per-session browser. Pure-Python (in `all`). See [§ D](#d-headless-server-or-ci). | `pip install "notebooklm-py[headless]"` | `uv add "notebooklm-py[headless]"` |
-| `android` | exact pinned `grpcio` + `protobuf`, plus `gpsoauth>=1.1.0` | Android backend runtime dependencies. Install before selecting `backend="android"` / `--backend android`; all public namespaces install Android adapters, with narrow documented Web compatibility seams only where no mobile wire contract exists. Excluded from `all`. | `pip install "notebooklm-py[android]"` | `uv add "notebooklm-py[android]"` |
+| `cookies` | `rookie-cookies>=0.1.0` | `notebooklm login --browser-cookies <browser>`, `notebooklm auth inspect`. | `pip install "notebooklm-py[cookies]"` | `uv add "notebooklm-py[cookies]"` |
+| `headless` | `gpsoauth>=1.1.0` | `notebooklm login --master-token --account EMAIL` — headless auth that mints/refreshes web cookies from a durable master token, no per-session browser. Pure-Python (in `all`). See [§ D](#d-headless-server-or-ci). | `pip install "notebooklm-py[headless]"` | `uv add "notebooklm-py[headless]"` |
+| `android` | exact pinned `grpcio` + `protobuf`, plus `gpsoauth>=1.1.0` | Android backend runtime dependencies. Install before selecting `backend="android"` / `--backend android`; all public namespaces stay on Android transport with no Web fallback. Requires the selected profile's `master_token.json`. Excluded from `all`. | `pip install "notebooklm-py[android]"` | `uv add "notebooklm-py[android]"` |
 | `impersonate` | `curl_cffi>=0.11` | **Experimental.** Browser TLS/JA3 impersonation transport — set `NOTEBOOKLM_TRANSPORT=curl_cffi` to route the authenticated API surface through a Chrome-fingerprinted connection (insurance vs TLS fingerprint-gating); override the profile with `NOTEBOOKLM_IMPERSONATE` (default `chrome`, e.g. `safari`, `chrome131`). Native wheels. | `pip install "notebooklm-py[impersonate]"` | `uv add "notebooklm-py[impersonate]"` |
 | `markdown` | `markdownify>=0.14.1` | `notebooklm source fulltext -f markdown`. | `pip install "notebooklm-py[markdown]"` | `uv add "notebooklm-py[markdown]"` |
 | `mcp` | `fastmcp==3.4.2` (exact pin) | Run the MCP server (`notebooklm-mcp`) so an MCP client/agent can drive NotebookLM as tools. | `pip install "notebooklm-py[mcp]"` | `uv add "notebooklm-py[mcp]"` |
@@ -605,8 +613,8 @@ rm -rf ~/.notebooklm                          # optional: remove auth state
 
 > ⚠️  **`pip install ".[all]"` and `uv sync --all-extras` are not equivalent.**
 >
-> - `pyproject.toml` defines: `all = ["notebooklm-py[browser,dev,headless,markdown,mcp,server]"]` — a self-referential extras string that resolves to **browser + dev + headless + markdown + mcp + server only**. It omits the `android`, `cookies`, and `impersonate` extra names. Since `dev` carries the exact protobuf regeneration toolchain, `all` still resolves its pinned gRPC/protobuf packages; no Android backend is selected. The cookies extra remains separate because its browser-cookie dependency has install issues on Python 3.13+ ([CHANGELOG `[0.4.1]`](../CHANGELOG.md)).
-> - `uv sync --all-extras` installs **every** extra including `cookies`, and may fail on Python 3.13/3.14.
+> - `pyproject.toml` defines: `all = ["notebooklm-py[browser,dev,headless,markdown,mcp,server]"]` — a self-referential extras string that resolves to **browser + dev + headless + markdown + mcp + server only**. It omits the `android`, `cookies`, and `impersonate` extra names. Since `dev` carries the exact protobuf regeneration toolchain, `all` still resolves its pinned gRPC/protobuf packages; no Android backend is selected. The cookies extra remains separate because browser-cookie extraction is optional.
+> - `uv sync --all-extras` installs every extra, including the optional `cookies` extractor.
 > - In this repo, prefer `uv sync --frozen --extra browser --extra dev --extra markdown`.
 
 ### `uv pip install` vs `uv sync`

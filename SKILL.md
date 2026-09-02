@@ -13,17 +13,21 @@ Complete programmatic access to Google NotebookLM—including capabilities not e
 ```bash
 pip install "notebooklm-py[browser]"   # mandatory; errors must propagate
 
-# [cookies] (rookiepy) is optional and known to FAIL TO BUILD on Python 3.13+.
-# Skip it deliberately on 3.13+ rather than swallowing the error — that lets
-# *real* install failures (typos, network, PyPI outages) surface for the agent.
-if python -c "import sys; sys.exit(0 if sys.version_info < (3, 13) else 1)"; then
-    pip install "notebooklm-py[cookies]"   # errors propagate
-else
-    echo "Skipping [cookies] on Python 3.13+ (rookiepy unavailable). Use 'notebooklm login' interactively."
-fi
+# [cookies] (rookie-cookies) is optional and supported on Python 3.13+.
+pip install "notebooklm-py[cookies]"   # errors propagate
 ```
 
 > Full install matrix (extras, headless servers, contributor flow): [Installation guide on GitHub](https://github.com/teng-lin/notebooklm-py/blob/main/docs/installation.md).
+
+**Android backend (opt-in):** install `pip install "notebooklm-py[android]"`,
+then select it with `notebooklm --backend android ...` or
+`NOTEBOOKLM_BACKEND=android`. In Python, pass `backend="android"` to
+`NotebookLMClient.from_storage()` or the client constructor. Android requires
+the selected profile's `master_token.json` and mints short-lived mobile bearer
+tokens from it; `[all]` deliberately does not include the Android extra. All
+public namespaces stay on the Android transport. Consult the
+[Android backend guide](https://github.com/teng-lin/notebooklm-py/blob/main/docs/android/README.md)
+for setup and security guidance.
 
 **From GitHub (use latest release tag, NOT main branch):**
 ```bash
@@ -119,7 +123,7 @@ Before starting workflows, verify auth is in place. **Use `--test --json` (not b
 1. `notebooklm auth check --test --json` → require BOTH `"status": "ok"` AND `"checks.token_fetch": true`. Bare `"status": "ok"` (without `--test`) is a false-positive trap — a stale cookie file passes the parse check.
 2. `notebooklm list --json` → expect valid JSON (may be empty for new accounts).
 3. **If auth fails or is missing → run `notebooklm login` first.** This is the primary auth path: opens a browser, the user signs in to Google once, and the resulting `storage_state.json` is reused on every subsequent run. Works on any environment with a display.
-   - For headless contexts where opening a browser is not feasible, use `notebooklm login --browser-cookies <browser>` instead — extracts the user's already-logged-in cookies from Chrome/Firefox/etc. (requires the `[cookies]` extra; rookiepy may not install on Python 3.13+). Use `chrome::<profile-name-or-directory>` to target one Chromium user-profile, or `firefox::<container-name>` / `firefox::none` to target one Firefox container.
+   - For headless contexts where opening a browser is not feasible, use `notebooklm login --browser-cookies <browser>` instead — extracts the user's already-logged-in cookies from Chrome/Firefox/etc. (requires the `[cookies]` extra, which installs `rookie-cookies`). Use `chrome::<profile-name-or-directory>` to target one Chromium user-profile, or `firefox::<container-name>` / `firefox::none` to target one Firefox container.
    - To survey signed-in Google accounts before picking one: `notebooklm auth inspect --browser <browser>` (read-only; pass `-v` to see which Chromium user-profile each account came from, or `--json` for tooling). Scoped forms such as `notebooklm auth inspect --browser 'chrome::Profile 1'` inspect only that browser profile.
    - Re-run step 1 after login to confirm.
 4. **If auth was working but cookies went stale** (Google rotated SIDTS, or you signed in fresh in the browser) **→ refresh the active profile in place instead of full re-login:**

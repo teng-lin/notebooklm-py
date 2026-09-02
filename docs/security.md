@@ -3,8 +3,15 @@
 NotebookLM authentication material is account-equivalent. `storage_state.json` contains live
 cookies; `master_token.json` can mint new sessions. Treat both as secrets: keep them out of source
 control, logs, bug reports, shared artifact stores, and untrusted process environments. Prefer a
-dedicated account for unattended use. The operational cookie and recovery details live in
-[auth-cookie-lifecycle.md](auth-cookie-lifecycle.md).
+dedicated account for unattended use. See [installation.md](installation.md) and
+[troubleshooting.md](troubleshooting.md) for current authentication and session-refresh guidance.
+
+The Android backend requires the active profile's `master_token.json` and
+mints short-lived Google bearer tokens from it. Its typed namespace calls do
+not require `storage_state.json`, but the profile may contain both files when
+the same account also uses Web. Protect each as described below. Android and
+Web are both unofficial integrations over undocumented Google services, so
+backend selection does not change the security or availability guarantees.
 
 ## Credential boundaries
 

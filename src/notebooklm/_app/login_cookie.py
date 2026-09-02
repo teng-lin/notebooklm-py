@@ -69,7 +69,7 @@ class CookieImportFailure:
 
 @dataclass(frozen=True, slots=True)
 class BrowserCookieProbeRequest:
-    """One already-read rookiepy cookie set to probe."""
+    """One already-read browser-extractor cookie set to probe."""
 
     raw_cookies: list[dict[str, Any]] = field(repr=False)
     browser_name: str

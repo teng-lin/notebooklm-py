@@ -84,7 +84,7 @@ extras:
 | `filelock` | base | Cross-process file locking for profile/context writes |
 | `markdownify` | `markdown` extra | HTML-to-Markdown conversion |
 | `playwright` | `browser` extra | Interactive/headless browser login |
-| `rookiepy` | `cookies` extra | Opt-in browser-cookie import |
+| `rookie-cookies` | `cookies` extra | Opt-in browser-cookie import |
 | `fastmcp` | `mcp` extra | MCP server adapter |
 | `fastapi`, `uvicorn[standard]`, `python-multipart` | `server` extra | Optional REST server and file uploads |
 
@@ -103,9 +103,8 @@ uv export --frozen --extra browser --extra dev --extra markdown --extra mcp --ex
   | uv run pip-audit --strict --require-hashes --disable-pip -r /dev/stdin
 ```
 
-The `cookies` extra remains an explicit opt-in because `rookiepy` has had
-interpreter compatibility issues; audit that graph separately when changing the
-browser-cookie import surface.
+The `cookies` extra remains an explicit opt-in because browser-cookie extraction
+reads protected browser stores and is not needed for ordinary interactive login.
 
 ## Known Limitations
 

@@ -1,6 +1,16 @@
 # Android backend integration testing (gRPC capture) — plan
 
-**Date:** 2026-08-30 · **Branch:** `test/android-grpc-integration` · **Status:** in progress
+**Date:** 2026-08-30 · **Branch:** `test/android-grpc-integration` · **Status:** implemented and superseded by live test documentation
+
+> This is the historical implementation plan merged in
+> [#2275](https://github.com/teng-lin/notebooklm-py/pull/2275), not the current
+> test inventory. The shipped suite has since expanded to 31 Android cassette
+> files plus follow-on RPC families. Use
+> [`../../tests/integration/README.md`](../../tests/integration/README.md) for
+> record/replay procedure, `tests/integration/test_android_grpc_cassette.py` for
+> the current family inventory, and the
+> [development guide](../development.md#android-grpc-canary) for the canary.
+> The baseline/branch counts below are retained to explain the plan as approved.
 
 ## Decision
 

@@ -34,9 +34,10 @@ names in test code are **relative to `web/`** and carry no tier prefix:
 @notebooklm_vcr.use_cassette("examples/example_scrubbed_cookies.yaml")
 ```
 
-Android gRPC JSON replays through a consumer-owned channel seam
-(`tests/unit/android/test_grpc_cassette.py`,
-`tests/integration/test_android_grpc_cassette.py`), which resolves those paths
+`android/` is not a vcrpy corpus at all — it replays through a consumer-owned
+gRPC channel seam (`tests/unit/android/test_grpc_cassette.py`,
+`tests/integration/test_android_grpc_cassette.py`). Those tests construct the
+public client with `backend="android"`; the harness resolves cassette paths
 itself. The narrowly scoped `*_phenotype.yaml` exception captures the separate
 protobuf-over-HTTP call needed to obtain Play Books experiment metadata; it is
 never used to capture gRPC.

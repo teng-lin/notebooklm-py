@@ -81,6 +81,32 @@ These combine ordinary library primitives — see the [CLI Reference](docs/cli-r
 | **REST Server** | Local automation over guarded HTTP routes without spawning a CLI process per call |
 | **Agent Integration** | Claude Code, Codex, LLM agents, natural language automation |
 
+### API backends
+
+The default backend is the established Web (`batchexecute`) transport. This
+release also provides an opt-in Android backend that uses NotebookLM's mobile
+gRPC service and bearer authentication. Select it for the CLI with
+`--backend android` (or `NOTEBOOKLM_BACKEND=android`), or for the Python API
+with `NotebookLMClient.from_storage(backend="android")` / `NotebookLMClient(...,
+backend="android")`.
+
+Install the Android runtime explicitly; it is intentionally not included in
+the `all` extra:
+
+```bash
+pip install "notebooklm-py[android,browser]"
+notebooklm login --master-token --account you@example.com
+notebooklm --backend android list --json
+```
+
+Android reads `master_token.json` from the selected profile and mints
+short-lived mobile bearer tokens as needed, so typed namespace calls do not
+depend on a browser-cookie session, Web build labels, or Web RPC IDs. All
+eleven public namespaces are available without falling back to the Web
+transport. Because the durable master token is a powerful full-account
+credential, use a dedicated account and protect the profile carefully. See the
+[Android backend guide](docs/android/README.md) for setup and protocol details.
+
 ## Features
 
 ### Complete NotebookLM Coverage
@@ -294,6 +320,8 @@ asyncio.run(main())
 
 ## Documentation
 
+- **[Installation](docs/installation.md)** - Environment, extras, login, and deployment setup
+- **[Android Backend](docs/android/README.md)** - Mobile gRPC setup, credentials, and protocol notes
 - **[CLI Reference](docs/cli-reference.md)** - Complete command documentation
 - **[Python API](docs/python-api.md)** - Full API reference
 - **[MCP Guide](docs/mcp-guide.md)** - MCP server setup, transports, and tool reference
@@ -302,6 +330,7 @@ asyncio.run(main())
 - **[Quota & Tier Limits](docs/quota-limits.md)** - Per-tier notebook/source/studio limits and how they map to `AccountLimits.tier`
 - **[Release Guide](docs/releasing.md)** - Release checklist and packaging verification
 - **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
+- **[Credential Security](docs/security.md)** - Secret handling and trust boundaries
 - **[API Stability](docs/stability.md)** - Versioning policy and stability guarantees
 - **[Upgrading to v0.8.0](docs/upgrading-to-0.8.0.md)** - Breaking-change migration guide for the v0.8.0 error-and-return contract
 

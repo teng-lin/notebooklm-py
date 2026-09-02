@@ -1,5 +1,13 @@
 # Android public-API rejection audit — 2026-08-29
 
+> **Historical snapshot; superseded for current assembly.** This report records
+> the August 29 rejection audit and intentionally retains the three compatibility
+> seams that existed at that checkpoint. They were closed on August 31; explicit
+> Android selection now installs all eleven Android namespaces with **zero Web
+> operation collaborators**. Use
+> [`web-compat-seam-closure.md`](web-compat-seam-closure.md) and
+> [`README.md`](README.md) for current state.
+
 This audit classifies every explicit `_reject` branch in the Android artifact, chat, mind-map,
 notebook, sharing, and source adapters. It combines the latest APK method/FQN inventory, the current
 web bundle (`8cc2569196b28083ba58a33319df79af97ec1832f442c4a182289894edf5eaef`), recovered mobile
@@ -11,8 +19,8 @@ audit began. They were not all missing gRPC methods: many were local composition
 omitted fields on RPCs that were already admitted. Every callsite has now been removed. The complete
 Android namespace graph contains no `_reject` or `unsupported_operation` branch.
 
-The exact backend-neutral namespace contract contains 146 consumer callables. Under explicit
-`backend="android"`, their selected public paths classify reproducibly as follows:
+At this audit snapshot, the exact backend-neutral namespace contract contained 146 consumer
+callables. Under explicit `backend="android"`, their selected public paths classified as follows:
 
 | Selected public path | Callables | Meaning |
 |---|---:|---|
@@ -31,8 +39,8 @@ The count excludes the chat lifecycle hooks `reset_after_open` and `set_bound_lo
 `batchexecute` identifiers, so that advanced raw escape hatch remains explicitly Web-specific even
 when the eleven typed namespaces select Android.
 
-Where the admitted mobile contract is absent or a valid owned-resource request is demonstrably
-rejected, the selected Android adapter receives a narrow Web compatibility callable. This keeps the
+At that checkpoint, where the admitted mobile contract was absent or a valid owned-resource
+request was demonstrably rejected, the selected Android adapter received a narrow Web compatibility callable. This kept the
 public contract available without inventing Google FQNs or silently switching the whole namespace.
 
 ## Disposable-copy live results
@@ -165,7 +173,7 @@ without a controlled secondary identity, so these writes are qualified by bundle
 bytes and stateful readback tests. The owned-copy view-level mutation returned `PERMISSION_DENIED`,
 making `set_view_level` the sole sharing compatibility callable.
 
-## Remaining compatibility seams and public assembly
+## Compatibility seams and public assembly at the audit snapshot
 
 Fast Drive-corpus research is native: a live `DiscoverSourcesManifold` request with
 `ResearchQuery.source_type #2 = 2` returned a canonical run UUID, followed by exact cancellation and
@@ -175,14 +183,20 @@ verified both modes and cleanup. Account output language and limits are native t
 `GetOrCreateAccount` and `MutateAccount`; a live temporary language mutation/readback succeeded and
 the original language was restored and verified in `finally`.
 
-Only three Web compatibility operations remain: `notebooks.remove_from_recent`, CSV/DOCX
+At the August 29 checkpoint, three Web compatibility operations remained:
+`notebooks.remove_from_recent`, CSV/DOCX
 `sources.add_file`, and `sharing.set_view_level`. Android artifact, chat, mind-map, notes, research,
 settings, labels, collections, all other source operations, and all other notebook/sharing
 operations are native or local composition over native Android transports.
 
-Explicit `backend="android"` now installs Android adapters for all eleven public namespaces plus the
-Android session, asset transport, and upload pipeline. `client.backends` reports the installed
-adapter graph; the operation-level seams above remain explicit and tested.
+At that checkpoint, explicit `backend="android"` installed Android adapters for
+all eleven public namespaces plus the Android session, asset transport, and
+upload pipeline. `client.backends` reported the installed adapter graph, while
+the three operation-level seams above remained explicit and tested.
+
+The August 31 closure later replaced all three operation collaborators; the
+table and probe outcomes above remain useful as the chronology that motivated
+the native recent-removal/view-level routes and Drive-staged file path.
 
 ## Known boundaries outside the public parity count
 

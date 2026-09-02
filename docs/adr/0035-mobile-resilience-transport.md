@@ -4,6 +4,13 @@
 
 Accepted.
 
+**Implementation update (2026-08-31):** the decision below allowed explicit,
+operation-shaped Web compatibility callables while mobile coverage was being
+qualified. The final three were subsequently closed. Current explicit Android
+selection still follows this ADR's all-eleven, no-runtime-failover decision,
+but its installed namespace graph now has zero Web operation collaborators.
+See [`../android/web-compat-seam-closure.md`](../android/web-compat-seam-closure.md).
+
 ## Context
 
 NotebookLM exposes both the browser-oriented batchexecute surface used by this

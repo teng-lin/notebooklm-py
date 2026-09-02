@@ -18,8 +18,9 @@ The important distinction is:
 This corrects the earlier conclusion that Deep Research was web-only. Static APK strings establish
 what the installed app can call, not every method the shared backend accepts.
 
-The runnable mobile reproducer is
-[`scripts/reproduce_mobile_deep_research.py`](../../../gemini-notebook-mobile/scripts/reproduce_mobile_deep_research.py).
+The original runnable mobile reproducer,
+`scripts/reproduce_mobile_deep_research.py`, lived in a separate
+mobile-evidence workspace and is not part of this repository.
 It reads the profile's durable master token, exchanges it for a short-lived Android OAuth bearer in
 memory, and uses real unary gRPC so trailer-only errors remain visible. It never prints or persists
 either credential.
@@ -209,8 +210,11 @@ same host and service:
   URL rows; and
 - report import returned an imported-source header and increased notebook source count by one.
 
-See
-[`live-wire-validation-2026-08-13.md`](../../../gemini-notebook-mobile/docs/live-wire-validation-2026-08-13.md#fast-and-deep-research-over-bearer-grpc).
+The source evidence report was named
+`live-wire-validation-2026-08-13.md`; it lived in that separate workspace and
+is not a stable repository link. The lifecycle observations needed by this
+project are preserved in this section and in the
+[`endpoints.md` research matrix](endpoints.md#research--source-discovery).
 
 ### Recheck on 2026-08-27
 

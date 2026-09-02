@@ -4,6 +4,12 @@
 
 **Last verified:** 2026-08-29
 
+> **Historical qualification snapshot.** The direct-upload outcomes below are
+> retained as August 29 evidence. Follow-up work on August 31 removed the two
+> Web upload collaborators by routing CSV/DOCX/PPTX through bounded Drive
+> staging; current Android assembly has no Web operation collaborators. See
+> [`web-compat-seam-closure.md`](web-compat-seam-closure.md#sourcesadd_file--the-mobile-upload-frontends-allowlist).
+
 **App:** NotebookLM Android `1.46.7.940945420` (`versionCode=138238`)
 
 This report records a successful official-app file upload, a successful headless replay of the
@@ -11,8 +17,8 @@ same mobile upload protocol, and successful mobile artifact downloads including 
 PPTX. Credentials, notebook IDs, source IDs, artifact IDs, capability URLs, resumable-session
 values, and private artifact titles are deliberately omitted.
 
-The runnable reproducer is
-[`scripts/reproduce_android_transfer.py`](../../../gemini-notebook-mobile/scripts/reproduce_android_transfer.py).
+The original runnable reproducer, `scripts/reproduce_android_transfer.py`,
+lived in a separate mobile-evidence workspace and is not part of this repository.
 It reads a profile master token, mints a short-lived mobile OAuth bearer in memory, and never logs or
 persists either credential.
 
@@ -31,8 +37,9 @@ The disposable notebook created for the test was deleted after validation.
 
 ## File-format qualification
 
-The public Sources namespace remains the Android adapter. Its `add_file` implementation uses native
-Android tentative registration plus Scotty except for two extension-qualified compatibility calls:
+At this report's August 29 checkpoint, the public Sources namespace was the Android adapter and its
+`add_file` implementation used native Android tentative registration plus Scotty except for two
+extension-qualified compatibility calls:
 
 | extension | native Android live result | public Android selection |
 |---|---|---|
@@ -402,8 +409,8 @@ reboot, even if the companion remains installed.
 
 ### 4. Install and start the redacting transfer recorder
 
-The recorder is
-[`scripts/capture_mobile_transfer.js`](../../../gemini-notebook-mobile/scripts/capture_mobile_transfer.js).
+The original recorder, `scripts/capture_mobile_transfer.js`, lived in the same
+separate mobile-evidence workspace and is not part of this repository.
 It uses Mockttp directly, so a paid HTTP Toolkit HAR export is neither required nor bypassed.
 
 Install the verified Mockttp dependency outside either repository:

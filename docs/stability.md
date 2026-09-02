@@ -165,7 +165,7 @@ notebooklm.research.normalize_url
 notebooklm.research.extract_report_urls
 
 # Helpers (cookies extra) - imported from notebooklm.auth
-notebooklm.auth.convert_rookiepy_cookies_to_storage_state  # requires `pip install "notebooklm-py[cookies]"` — see docs/installation.md#optional-extras-matrix
+notebooklm.auth.convert_rookiepy_cookies_to_storage_state  # compatibility API name; requires the `rookie-cookies` package
 
 # Cookie-domain tiers - imported from notebooklm.auth
 notebooklm.auth.REQUIRED_COOKIE_DOMAINS
@@ -175,6 +175,11 @@ notebooklm.auth.OPTIONAL_COOKIE_DOMAINS_BY_LABEL
 # Storage-writer failure - imported from notebooklm.auth
 notebooklm.auth.LockUnavailableError  # canonical home: notebooklm.exceptions; also an OSError via TimeoutError (ADR-0029)
 ```
+
+Backend selection is also public: `backend="web"` (the default) or
+`backend="android"` on the client, and `--backend web|android` on the CLI.
+Android is opt-in; see the installation and Android guides for its dependency,
+credential, and undocumented-protocol requirements.
 
 > **`ArtifactStatus` / `artifact_status_to_str` import path.** Unlike every other
 > enum listed above, these two are **not** re-exported at top level — import them
@@ -349,7 +354,7 @@ aliases.
 Version 0.4.0 is backward compatible with v0.3.x. Notable additions:
 
 - **Multi-account profiles** - Existing single-account setups continue to work as the implicit default profile. Your existing `~/.notebooklm/storage_state.json` is auto-detected — no manual migration is required. New accounts can be added via `notebooklm profile create <name>`.
-- **`[cookies]` optional extra** - To reuse cookies from your existing browser, install with `pip install "notebooklm-py[cookies]"` (requires `rookiepy`; full extras matrix: [docs/installation.md#optional-extras-matrix](installation.md#optional-extras-matrix)).
+- **`[cookies]` optional extra** - To reuse cookies from your existing browser, install with `pip install "notebooklm-py[cookies]"` (installs `rookie-cookies`; full extras matrix: [docs/installation.md#optional-extras-matrix](installation.md#optional-extras-matrix)).
 - **Deprecation removal deferred** - The deprecated attributes originally scheduled for v0.4.0 (`Source.source_type`, `Artifact.artifact_type`, `Artifact.variant`, `SourceFulltext.source_type`, `StudioContentType`, `DEFAULT_STORAGE_PATH`) were deferred to v0.5.0. In v0.5.0 and later, use the replacements listed in [Removed in v0.5.0](#removed-in-v050).
 
 ### Migrating from v0.2.x to v0.3.0

@@ -1,11 +1,29 @@
 # Troubleshooting
 
 **Status:** Active
-**Last Updated:** 2026-08-04
+**Last Updated:** 2026-09-02
 
 Common issues, known limitations, and workarounds for `notebooklm-py`.
 
 ## Common Errors
+
+### Android backend
+
+The Android transport is opt-in. Install its runtime before selecting it:
+
+```bash
+pip install "notebooklm-py[android,browser]"
+notebooklm login --master-token --account you@example.com
+notebooklm --backend android list --json
+```
+
+`--backend android` must appear before the command. If the command reports a
+missing `grpcio`, `protobuf`, or `gpsoauth` module, install the `[android]`
+extra in the same environment as the `notebooklm` executable. Android uses the
+active profile's `master_token.json` to mint mobile bearer tokens; an ordinary
+browser-cookie login alone is not sufficient. Typed namespace operations stay
+on the Android transport. See the [Android backend guide](android/README.md)
+for credential and protocol diagnostics.
 
 ### Authentication Errors
 
@@ -47,17 +65,20 @@ Google rotates `__Secure-1PSIDTS` (the freshness partner of `__Secure-1PSID`) on
 6. **Manual re-login** — `notebooklm login`; the legacy `notebooklm login --master-token-refresh` remains for an unconditional master-token re-mint.
 7. **External scheduler** — `notebooklm auth refresh` driven by cron / launchd / systemd / Task Scheduler / k8s CronJob, for idle profiles with no Python process running. Recommended cadence: 15–20 minutes.
 
-> **Master-token troubleshooting:** `MasterTokenError: ... re-bootstrap` means the master token was revoked (password change / Google security action) — re-run `notebooklm login --master-token`. `MissingDependencyError: ... needs gpsoauth` means the `[headless]` extra isn't installed (`pip install "notebooklm-py[headless]"`); recovery stops with that configuration error instead of misreporting rejected credentials. A minted jar "missing required cookies" indicates a MergeSession change — file an issue.
+> **Master-token troubleshooting:** `MasterTokenError: ... re-bootstrap` means Google rejected the stored token or it was explicitly revoked; re-run `notebooklm login --master-token --account you@example.com`. A password change alone is not reliable revocation or containment for a leaked master token—remove its associated device/session in Google Account security. `MissingDependencyError: ... needs gpsoauth` means neither the `[headless]` nor `[android]` extra is installed; add the extra for your backend. Recovery stops with that configuration error instead of misreporting rejected credentials. A minted jar "missing required cookies" indicates a MergeSession change — file an issue.
 >
 > **"This browser or app may not be secure" during `--master-token` sign-in:** Google blocks sign-in inside the automated browser the auto-capture launches. The client drops the obvious automation flags, but Google may still block — use one of the reliable paths instead:
 > - **Attach to your own Chrome (recommended):** quit Chrome, relaunch it with `--remote-debugging-port=9222`, then `notebooklm login --master-token --account you@gmail.com --cdp-url http://127.0.0.1:9222`. It opens an EmbeddedSetup tab in your real (non-automated) browser, so Google allows sign-in, and scrapes the `oauth_token`.
 > - **Capture the token manually:** in a normal browser sign in at `accounts.google.com/EmbeddedSetup`, copy the `oauth_token` cookie (DevTools → Application → Cookies → accounts.google.com), then `notebooklm login --master-token --account you@gmail.com --oauth-token <value>`. The `oauth_token` is single-use and short-lived — use it immediately.
 
-Most users only need layer 1 — it's on by default and requires no configuration. For the full strategy (trade-offs between layers, including Python kwargs like `keepalive_min_interval` and environment variables like `NOTEBOOKLM_REFRESH_CMD_USE_SHELL`, and ready-to-paste launchd / systemd / cron / Task Scheduler / k8s CronJob recipes), see **[docs/auth-cookie-lifecycle.md#tldr](auth-cookie-lifecycle.md#tldr)** for a quick orientation, then [§4 The recovery ladder](auth-cookie-lifecycle.md#4--the-recovery-ladder) for the per-layer deep dive.
+Most users only need layer 1 — it is on by default and requires no configuration.
+For supported authentication methods and session-refresh commands, use the
+[installation guide](installation.md#d-headless-server-or-ci) and the examples
+in this section. Do not copy credentials into scheduler arguments or logs.
 
 #### macOS: `--browser-cookies` prompts for your password
 
-On macOS, Chrome (and Edge / Brave / Opera) encrypts its cookies file with a key stored in the **macOS Keychain** under the entry `Chrome Safe Storage`. By default that entry's ACL only allows `Google Chrome.app` itself to read the key without prompting; any other process — Python, Terminal, cron, an editor — gets a "wants to use the *Chrome Safe Storage* key" dialog. This is how macOS Keychain protects local data and applies to every cookie-extraction tool (`rookiepy`, `browser-cookie3`, `pycookiecheat`), not just `notebooklm-py`.
+On macOS, Chrome (and Edge / Brave / Opera) encrypts its cookies file with a key stored in the **macOS Keychain** under the entry `Chrome Safe Storage`. By default that entry's ACL only allows `Google Chrome.app` itself to read the key without prompting; any other process — Python, Terminal, cron, an editor — gets a "wants to use the *Chrome Safe Storage* key" dialog. This is how macOS Keychain protects local data and applies to every cookie-extraction tool (`rookie-cookies`, `browser-cookie3`, `pycookiecheat`), not just `notebooklm-py`.
 
 Workarounds, ordered by hassle:
 
@@ -103,7 +124,7 @@ Prints `OK` without prompting → keychain is unlocked and your user has access;
 On Windows, both credential paths can leave you without `__Secure-1PSIDTS` (the rotating freshness partner of `__Secure-1PSID` that every real RPC needs — see [Automatic Token Refresh](#automatic-token-refresh) above), so `notebooklm login` reports success but `notebooklm list` then fails with `Missing required cookies: __Secure-1PSIDTS` (issue [#1753](https://github.com/teng-lin/notebooklm-py/issues/1753)). Two distinct causes are in play:
 
 - **`notebooklm login --browser chrome` (Playwright flow).** The interactive browser completes Google sign-in, but Google may serve an automation-detected session *without* the token-binding cookie (and sometimes without the secondary-binding cookies `OSID` / `APISID` + `SAPISID` the automatic `RotateCookies` recovery needs to re-mint it). When that happens the saved `storage_state.json` is genuinely incomplete and re-running the same flow reproduces it.
-- **`notebooklm login --browser-cookies chrome` (or `edge`) → `Could not decrypt chrome cookies`.** Chrome 127+ (and current Edge) protect the cookie database with **App-Bound Encryption (ABE)**: the decryption key is bound to the browser process via a Windows service, so no external process can read it. This blocks every cookie-extraction library (`rookiepy`, `browser-cookie3`, `pycookiecheat`), not just `notebooklm-py`. There is no flag that bypasses ABE.
+- **`notebooklm login --browser-cookies chrome` (or `edge`) → `Could not decrypt chrome cookies`.** Chrome 127+ (and current Edge) protect the cookie database with **App-Bound Encryption (ABE)**: the decryption key is bound to the browser process via a Windows service, so no external process can read it. This blocks every cookie-extraction library (`rookie-cookies`, `browser-cookie3`, `pycookiecheat`), not just `notebooklm-py`. There is no flag that bypasses ABE.
 
 Note that `notebooklm doctor` may still say the auth check passed with an older client — the check historically only looked for `SID`. Current versions surface a **warn** row when `__Secure-1PSIDTS` is missing (`auth check --test` has always reported the real error). Trust `notebooklm auth check --test` / `notebooklm list` over a green `doctor` for "is this session actually usable".
 
@@ -115,9 +136,9 @@ Workarounds, most reliable first:
    ```
    (If your Google session lives in a Multi-Account Containers tab, use the explicit `firefox::Container` / `firefox::none` syntax — see the [macOS section above](#macos---browser-cookies-prompts-for-your-password) for the container notes.) This is the simplest fix for the ABE case.
 
-2. **Set up a master token (best for unattended / long-lived use).** `notebooklm login --master-token` (needs the `[headless]` extra: `pip install "notebooklm-py[headless]"`) stores a durable `master_token.json` beside your profile. When cookies are missing or fully expired, the client re-mints a complete, fresh cookie jar — including `__Secure-1PSIDTS` — from the master token in-process, so it does not depend on what the browser login happened to hand back. If Google blocks sign-in inside the automated capture window ("This browser or app may not be secure"), use the CDP-attach or manual `oauth_token` variants described in the [master-token troubleshooting note](#cookie-freshness-for-long-running--unattended-use) above. See also [installation.md#d-headless-server-or-ci](installation.md#d-headless-server-or-ci).
+2. **Set up a master token (best for unattended / long-lived use).** `notebooklm login --master-token --account you@example.com` (needs `gpsoauth`, supplied by the `[headless]` or `[android]` extra) stores a durable `master_token.json` beside your profile. When cookies are missing or fully expired, the Web client re-mints a complete, fresh cookie jar — including `__Secure-1PSIDTS` — from the master token in-process, so it does not depend on what the browser login happened to hand back. If Google blocks sign-in inside the automated capture window ("This browser or app may not be secure"), use the CDP-attach or manual `oauth_token` variants described in the [master-token troubleshooting note](#cookie-freshness-for-long-running--unattended-use) above. See also [installation.md#d-headless-server-or-ci](installation.md#d-headless-server-or-ci).
 
-   > ⚠️ **The one-time bootstrap is not browser-free.** Plain `notebooklm login --master-token` launches a headed Playwright browser to capture the single-use `oauth_token`, so on a machine where the browser cannot start at all (see [`spawn UNKNOWN`](#windows-browser-fails-to-start-with-spawn-unknown) below) it fails the same way. Only the two manual variants avoid spawning a browser: `--master-token --oauth-token <value>` (paste the cookie yourself) and `--master-token --cdp-url <url>` (attach to a Chrome you started). What *is* browser-free is everything *after* bootstrap — the layer-4 re-mint from the stored `master_token.json`.
+   > ⚠️ **The one-time bootstrap is not browser-free.** Plain `notebooklm login --master-token --account you@example.com` launches a headed Playwright browser to capture the single-use `oauth_token`, so on a machine where the browser cannot start at all (see [`spawn UNKNOWN`](#windows-browser-fails-to-start-with-spawn-unknown) below) it fails the same way. Only the two manual variants avoid spawning a browser: `--master-token --account you@example.com --oauth-token <value>` (paste the cookie yourself) and `--master-token --account you@example.com --cdp-url <url>` (attach to a Chrome you started). What *is* browser-free is everything *after* bootstrap — the layer-4 re-mint from the stored `master_token.json`.
 
 3. **Retry the Playwright login on a fresh profile.** Sometimes a stale persistent profile is the culprit rather than automation detection:
    ```bash
@@ -191,7 +212,7 @@ Common causes:
 ```bash
 notebooklm login   # re-extract cookies with their original domains
 ```
-If it recurs, inspect `storage_state.json` and confirm each cookie kept its own `domain` field rather than being rewritten to one host. See [`docs/auth-cookie-lifecycle.md`](auth-cookie-lifecycle.md) for the cookie-domain model.
+If it recurs, inspect `storage_state.json` and confirm each cookie kept its own `domain` field rather than being rewritten to one host. The [installation guide](installation.md#d-headless-server-or-ci) covers the supported credential files.
 
 **Note:** These errors should rarely surface, since the client automatically retries with a fresh CSRF token on auth failures (see *Automatic Token Refresh* above). When one does reach you, the automatic refresh also failed.
 

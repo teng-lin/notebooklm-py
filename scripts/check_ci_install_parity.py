@@ -7,8 +7,8 @@ Two checks:
    appear verbatim in both ``.github/workflows/test.yml`` and
    ``CONTRIBUTING.md``. The exact wording is deliberate (per
    ``docs/installation.md``): the broader ``--all-extras`` form installs every
-   optional group, including ``cookies`` plus ``mcp``/``server``; ``cookies``
-   fails on Python 3.13/3.14.
+   optional group, including ``cookies`` plus ``mcp``/``server``; the default
+   contributor command keeps optional adapters out of the environment.
 
 2. **Block-mirror policy:** every fenced ``bash`` code block
    in ``docs/installation.md`` (the canonical install guide) must EITHER

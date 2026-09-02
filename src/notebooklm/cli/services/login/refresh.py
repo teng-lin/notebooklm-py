@@ -266,7 +266,7 @@ def _login_all_accounts_from_browser(
     """Extract every signed-in Google account into its own profile.
 
     Args:
-        browser_cookies: rookiepy browser alias forwarded to
+        browser_cookies: rookie-cookies browser alias forwarded to
             :func:`_enumerate_browser_accounts`.
         update: When True and the natural profile name for an account
             (e.g. ``alice`` for ``alice@gmail.com``) already exists but has
@@ -406,11 +406,11 @@ def _login_with_browser_cookies(
     io: LoginIO | None = None,
     deps: RefreshDeps | None = None,
 ) -> None:
-    """Extract Google cookies from an installed browser via rookiepy.
+    """Extract Google cookies from an installed browser via rookie-cookies.
 
     Args:
         storage_path: Where to write storage_state.json.
-        browser_name: "auto" to use rookiepy.load(), or a specific browser name.
+        browser_name: "auto" to use automatic browser discovery, or a specific browser name.
         profile: Profile name (forwarded to verification step).
         authuser: Internal Google account index fallback for this profile.
         email: Optional account email to record for stable routing.

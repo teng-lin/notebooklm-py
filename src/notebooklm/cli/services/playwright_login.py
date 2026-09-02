@@ -1,6 +1,6 @@
 """Playwright-driven Google login service (ADR-0008 click-to-service extraction).
 
-Owns the interactive ``notebooklm login`` Playwright fast path (the rookiepy
+Owns the interactive ``notebooklm login`` Playwright fast path (the rookie-cookies
 ``--browser-cookies`` path stays in :mod:`notebooklm.cli.services.login`). The
 Click handler stays a thin orchestrator over this service.
 

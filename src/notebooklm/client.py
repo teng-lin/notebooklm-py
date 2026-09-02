@@ -305,10 +305,11 @@ class NotebookLMClient:
                 the keepalive loop.
             backend: Preferred namespace backend. ``"web"`` preserves the
                 established implementation; ``"android"`` installs the Android
-                adapter for every public namespace. A few operations retain
-                documented Web compatibility collaborators where the recovered
-                mobile route has no usable admitted contract. When omitted,
-                ``NOTEBOOKLM_BACKEND`` is consulted, then the default is web.
+                adapter for every public namespace, with typed namespace
+                operations staying on the Android transport. Android validates
+                the selected profile's durable master token when the client is
+                opened. When omitted, ``NOTEBOOKLM_BACKEND`` is consulted, then
+                the default is web.
         """
         # The full assembly lives in ``notebooklm._client_assembly`` —
         # one private seam shared with the canonical test factory
@@ -368,9 +369,9 @@ class NotebookLMClient:
     def backends(self) -> Mapping[str, Literal["web", "android"]]:
         """Read-only mapping of namespaces to their installed adapter backend.
 
-        The value describes the namespace object, not every internal operation:
-        an Android adapter may use a documented narrow Web compatibility seam
-        when the recovered mobile route has no usable admitted contract.
+        Explicit Android selection installs Android adapters for all public
+        namespaces, so every mapping value is ``"android"``. The Web-specific
+        root :meth:`rpc_call` escape hatch is outside this namespace mapping.
         """
         return self._backends
 

@@ -489,11 +489,10 @@ def _assemble_client(
     # SourcesAPI) for the membership->Source join in ``labels.sources()``;
     # wired after ``client.sources`` exists. Same client/bound loop (ADR-0004).
     client.labels = WebLabelsAPI(internals.executor, list_sources=client.sources.list)
-    # Android selection replaces the complete public namespace graph while keeping
-    # narrow Web compatibility collaborators only where the recovered mobile route
-    # has no usable admitted operation. Cross-namespace joins receive the selected
-    # Android capabilities instead of manufacturing a second frontend. Android
-    # dependency/token validation remains deferred to async open, and the gRPC
+    # Android selection replaces the complete public namespace graph. Cross-namespace
+    # joins receive selected Android capabilities instead of manufacturing a second
+    # frontend, and no operation collaborator routes back through Web. Android
+    # dependency/token validation remains deferred to async open, while the gRPC
     # channel remains lazy until the first Android RPC.
     client._android_bearer_provider = None
     client._android_session = None

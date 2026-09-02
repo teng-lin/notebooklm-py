@@ -1,11 +1,16 @@
 # WebView upload probe (Phase 2) — results
 
+**Status:** Historical experiment; Phase 2a and short-link mitigation shipped,
+while the in-app Phase 2b cells remained untested in this report. The durable
+widget decision is [ADR-0027](../adr/0027-mcp-app-upload-widget.md).
+
 **Question (Gate A):** does the `<input type="file">` picker fire and can bytes `fetch`-POST
 back, across the surfaces where a mobile user would add a file? The answer decides whether
 the Phase 3 **in-app widget** is worth building, or whether the Phase 1 **link flow** is the
 whole mobile story.
 
-This plan splits the probe (see `docs/plans/remote-mcp-file-upload-plan-v4.md`):
+The original internal upload plan split the probe as follows. That plan was not
+checked into this repository; ADR-0027 is the stable decision record.
 
 - **2a — external-browser probe (this doc, automatable):** open the *existing* signed
   `/files/ul/{token}` page — already an `<input type=file>` + `fetch` POST — in the device's

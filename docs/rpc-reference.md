@@ -1,9 +1,16 @@
 # RPC & UI Reference
 
 **Status:** Active
-**Last Updated:** 2026-08-27
+**Last Updated:** 2026-09-02
 **Source of Truth:** `src/notebooklm/rpc/types.py` for method IDs; payload builders under `src/notebooklm/_web/` and golden tests under `tests/unit/`
-**Purpose:** Complete reference for RPC methods, UI selectors, and payload structures
+**Purpose:** Reference for the Web backend's batchexecute methods, UI selectors, and payload structures
+
+This reference is deliberately Web-specific: `RPCMethod` and
+`client.rpc_call(...)` describe the batchexecute transport even when an
+explicitly selected Android client installs native implementations for all 11
+typed namespaces. For Android gRPC method contracts, start with the
+[Android evidence index](android/README.md) and
+[`android/endpoints.md`](android/endpoints.md).
 
 > **Note:** Payload structures are extracted from the implementation builders in
 > `src/notebooklm/_web/` and pinned by golden unit tests. Each payload includes a
@@ -101,7 +108,9 @@
 
 ### Source Type Codes (file uploads & sources)
 
-Internal integer codes returned by `GET_NOTEBOOK` / `LIST_SOURCES` and consumed by `Source.from_api_response()` (mapped to `SourceType` in `src/notebooklm/types.py`).
+Internal integer codes returned by `GET_NOTEBOOK` / `LIST_SOURCES` and consumed by
+`Source.from_api_response()` (mapped to `SourceType` in
+`src/notebooklm/_types/sources.py`).
 
 | Code | `SourceType` | Used By |
 |------|--------------|---------|
@@ -111,19 +120,32 @@ Internal integer codes returned by `GET_NOTEBOOK` / `LIST_SOURCES` and consumed 
 | 4 | `PASTED_TEXT` | Inline pasted text |
 | 5 | `WEB_PAGE` | Web URL source |
 | 6 | `POWERPOINT` | PowerPoint upload (`.pptx`) |
+| 7 | `GOOGLE_SPREADSHEET` | Native Google Sheets source after MIME disambiguation |
 | 8 | `MARKDOWN` | Markdown file |
 | 9 | `YOUTUBE` | YouTube URL |
 | 10 | `MEDIA` | Audio / video upload |
 | 11 | `DOCX` | Word document |
+| 12 | `EXCEL` | Recovered-schema member; no reachable producer is known |
 | 13 | `IMAGE` | Image upload |
-| 14 | `GOOGLE_SPREADSHEET` | Google Sheets source **and** Drive-hosted binaries (see overload note) |
+| 14 | `GOOGLE_DRIVE` | Generic Drive source before MIME disambiguation (see note) |
+| 15 | `GMAIL` | Recovered-schema member; no reachable producer is known |
 | 16 | `CSV` | CSV upload |
 | 17 | `EPUB` | EPUB upload (added in v0.4.0) |
+| 18 | `GEMINI_CHAT` | Gemini chat source observed through Android `AddSources` |
+| 19 | `AI_MODE_CHAT` | Recovered-schema member; no reachable producer is known |
 | 20 | `EXPERT_INTELLIGENCE` | Google Play Books source added via `sources.add_play_book` (#2292); carries `ExpertIntelligenceSourceMetadata` at `metadata[18]` |
 
 > Codes outside this map are surfaced as `SourceType.UNKNOWN` and emit `UnknownTypeWarning` on first occurrence so unmapped types don't crash callers.
 
-> **Code `14` is overloaded** (live-captured #1828/#1832): the backend returns `14` for a native Google Sheet *and* for a Drive-hosted PDF. Drive sources carry no URL (`metadata[5]/[7]` are null and `metadata[0]` holds the Drive metadata block, not a URL — see `SourceRow.drive_document_id`), so the two are disambiguated by the original-content MIME at `source[7][2]`, falling back to the Drive-only MIME at `metadata[19]` / `metadata[9][2]`: `application/vnd.google-apps.spreadsheet` → `GOOGLE_SPREADSHEET`, `application/pdf` → `PDF`. See `_disambiguate_type_code` in `src/notebooklm/_types/sources.py`.
+> **Code `14` is a generic Drive code** (live-captured #1828/#1832): the backend
+> returns it for a native Google Sheet and for Drive-hosted binaries such as a
+> PDF. Drive sources carry no URL (`metadata[5]/[7]` are null and `metadata[0]`
+> holds the Drive metadata block, not a URL — see
+> `SourceRow.drive_document_id`), so recognized original-content MIME values at
+> `source[7][2]`, with a Drive-only metadata fallback, refine a Sheet to code 7
+> (`GOOGLE_SPREADSHEET`) and a PDF to code 3 (`PDF`). An absent or unrecognized
+> MIME remains `GOOGLE_DRIVE`; see `_disambiguate_type_code` in
+> `src/notebooklm/_types/sources.py`.
 
 ### Source Settings Block (`source[3]`)
 
@@ -2542,10 +2564,12 @@ await rpc_call(
 
 **Source:** `_web/research.py::start()` with `mode="deep"`
 
-Start a deep research session (web only, more thorough).
+Start the Web batchexecute form of a deep research session. The public Android
+research namespace implements its native gRPC counterpart; this payload is only
+the Web wire contract.
 
 ```python
-# Deep research only supports Web (source_type=1)
+# This Web RPC's deep-research form supports only source_type=1 (Web research).
 params = [
     None,  # 0
     [1],  # 1: Fixed flag

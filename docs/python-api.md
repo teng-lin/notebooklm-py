@@ -1,7 +1,7 @@
 # Python API Reference
 
 **Status:** Active
-**Last Updated:** 2026-08-14
+**Last Updated:** 2026-09-02
 
 Complete reference for the `notebooklm` Python library.
 
@@ -89,7 +89,8 @@ finally:
 
 ### Authentication
 
-The client requires valid Google session cookies obtained via browser login:
+The default Web backend requires valid Google session cookies obtained via
+browser login:
 
 ```python
 # From storage file (recommended) — use as an async context manager:
@@ -107,7 +108,8 @@ async with NotebookLMClient.from_storage(profile="work") as client:
 async with NotebookLMClient.from_storage(profile="work", allow_headless=True) as client:
     ...
 
-# Headless: mint cookies from a durable master token (the [headless] extra),
+# Headless: mint cookies from a durable master token (requires gpsoauth, from
+# the [headless] or [android] extra),
 # then drive the normal client. No per-session browser; expired sessions
 # re-mint automatically when master_token.json sits beside storage_state.json.
 # (One-time bootstrap: `notebooklm login --master-token --account you@gmail.com`.)
@@ -138,6 +140,32 @@ auth = AuthTokens(
 client = NotebookLMClient(auth)
 ```
 
+### Backend selection
+
+Web is the default. Pass `backend="android"`, or set
+`NOTEBOOKLM_BACKEND=android`, to select the Android implementation for every
+public namespace. An explicit argument wins over the environment variable;
+only `web` and `android` are accepted.
+
+Web cookies are not Android credentials. Install the runtime and bootstrap the
+same profile the client will open:
+
+```bash
+pip install "notebooklm-py[android,browser]"
+notebooklm --profile work login --master-token --account you@example.com
+```
+
+```python
+async with NotebookLMClient.from_storage(profile="work", backend="android") as client:
+    assert set(client.backends.values()) == {"android"}
+    notebooks = await client.notebooks.list()
+```
+
+Android reads the profile's `master_token.json` when the client opens and mints
+short-lived bearer credentials. It does not use `NOTEBOOKLM_AUTH_JSON` or a
+cookie-only storage file. `client.rpc_call(...)` remains a Web-only escape hatch
+because it takes Web RPC method identifiers.
+
 `AuthTokens.from_storage(...)` remains available as a v0.x compatibility loader,
 but it is deprecated in v0.8.1 and emits `DeprecationWarning` when awaited. Use
 the managed `NotebookLMClient.from_storage(...)` examples above and access
@@ -164,7 +192,10 @@ duplicate names on different domain/path routes remain distinct.
 
 **Building a storage state from existing browser cookies (`[cookies]` extra):**
 
-Install with the optional `cookies` extra to pull cookies from a locally installed browser via [rookiepy](https://pypi.org/project/rookiepy/) — useful for headless environments where you cannot run Playwright (full extras matrix: [docs/installation.md#optional-extras-matrix](installation.md#optional-extras-matrix)):
+Install with the optional `cookies` extra to pull cookies from a locally
+installed browser via [rookie-cookies](https://pypi.org/project/rookie-cookies/)
+— useful for headless environments where you cannot run Playwright (full extras
+matrix: [docs/installation.md#optional-extras-matrix](installation.md#optional-extras-matrix)):
 
 ```bash
 pip install "notebooklm-py[cookies]"
@@ -173,7 +204,7 @@ pip install "notebooklm-py[cookies]"
 ```python
 import json
 import os
-import rookiepy
+import rookie_cookies
 from notebooklm import NotebookLMClient
 from notebooklm.auth import (
     REQUIRED_COOKIE_DOMAINS,
@@ -183,7 +214,7 @@ from notebooklm.auth import (
 # Pull Google cookies from Chrome (or .firefox(), .edge(), .safari(), .load() for auto-detect).
 # REQUIRED_COOKIE_DOMAINS mirrors the CLI's extraction set so rotation, media
 # downloads, and Drive flows all have the cookies they need.
-raw = rookiepy.chrome(domains=list(REQUIRED_COOKIE_DOMAINS))
+raw = rookie_cookies.chrome(domains=list(REQUIRED_COOKIE_DOMAINS))
 storage_state = convert_rookiepy_cookies_to_storage_state(raw)
 
 # Persist for future runs; restrict to owner-only on POSIX since this file holds auth cookies
@@ -197,8 +228,9 @@ async with NotebookLMClient.from_storage(storage_path) as client:
     notebooks = await client.notebooks.list()
 ```
 
-`convert_rookiepy_cookies_to_storage_state(rookiepy_cookies)` converts the
-cookie list returned by `rookiepy` into the storage-state format
+`convert_rookiepy_cookies_to_storage_state(cookies)` converts the cookie list
+returned by `rookie-cookies` into the storage-state format. Its historical
+public name is retained for compatibility.
 `NotebookLMClient.from_storage()` expects:
 
 - **Key remap:** `http_only` → `httpOnly`, `expires=None` →
@@ -210,9 +242,9 @@ cookie list returned by `rookiepy` into the storage-state format
   `storage_state.json`.
 
 Cookie extraction (and Google-account selection) happens in the
-`rookiepy.<browser>(...)` call: the storage state reflects whichever Google
+`rookie_cookies.<browser>(...)` call: the storage state reflects whichever Google
 account is currently active in the source browser. To pick up cookies for
-optional surfaces (YouTube, Docs, MyAccount, Mail), extend the rookiepy
+optional surfaces (YouTube, Docs, MyAccount, Mail), extend the rookie-cookies
 `domains=` argument with `OPTIONAL_COOKIE_DOMAINS` (or a label-specific
 subset via `OPTIONAL_COOKIE_DOMAINS_BY_LABEL`) — both imported from
 `notebooklm.auth` alongside `REQUIRED_COOKIE_DOMAINS`. The CLI equivalent
@@ -725,7 +757,7 @@ follow-up context.
 
 **Cookies in storage are eventually-consistent across processes.** When
 multiple processes share a storage path, an OS-level file lock plus a
-snapshot/delta merge (see `docs/auth-cookie-lifecycle.md` Appendix A2) keep concurrent
+snapshot/delta merge keep concurrent
 writers from corrupting the file. They may, however, observe brief
 staleness — a write committed by process A may not be visible to a
 sibling read in process B until the next refresh cycle. Within a single
@@ -922,85 +954,6 @@ These validations run in `NotebookLMClient.__init__` /
 - `server_error_max_retries ≥ 0`.
 - `keepalive` must be `None` or a positive finite number; values below
   `keepalive_min_interval` (default `60s`) are clamped up to that floor.
-
----
-
-## Internal module map
-
-Kernel owns the live `httpx.AsyncClient`; `NotebookLMClient` constructs the
-runtime graph and owns the public surface. `WebTransportLifecycle` opens,
-epoch-fences, and closes the Kernel and owns web keepalive/cookie-persistence
-work. The protocol-neutral root `ClientLifecycle` orchestrates transactional
-open/drain/close waves over that web participant and the upload pipeline; it
-owns no HTTP or auth resource. `_runtime/init.py` constructs the collaborator
-bundle, `RuntimeTransport`, middleware chain, and
-`RpcExecutor`, then binds them into `ClientComposed`. The supporting state
-(metrics, drain bookkeeping, request-id counter, transport plumbing,
-conversation cache, etc.) is split across single-responsibility runtime
-and kernel collaborator modules such as `notebooklm._web.transport.executor`,
-`notebooklm._transport_drain`, and `notebooklm._web.transport.errors`. The
-split is internal — module-level constants and helpers live in canonical
-seam modules (`_runtime/config.py`, `_runtime/helpers.py`, and
-`_web/transport/`) and are imported
-from those modules directly. The historical `notebooklm._core`
-compatibility shim was removed in v0.5.0.
-
-| Module | Owns | Notes |
-|---|---|---|
-| `_client_composed` | `ClientComposed`: bound runtime holder for transport, executor, middleware chain metadata, and the collaborator bundle. | The composition root binds this once. It owns no semaphore or loop-bound primitive; `CallSupervisor` owns both admission and the global RPC gate. |
-| `_web/transport/kernel.py` | Concrete `Kernel` transport core; owns the epoch-fenced live `httpx.AsyncClient` and cookie jar. | Opened/closed by `WebTransportLifecycle`; pure web transport surface (see `Kernel` Protocol in `_web/contracts.py`). |
-| `_runtime/init.py` | Client composition root helpers: constructor validation, collaborator construction, `RuntimeTransport`, middleware chain, and `RpcExecutor` wiring. | `NotebookLMClient` calls this during construction and stores the result directly. |
-| `_runtime/call_supervisor.py` | `CallSupervisor`: generation admission, operation/call leases, admitted child tasks, drain hooks, terminal RPC telemetry, and the client-wide RPC semaphore. | Concrete shared infrastructure service; owns the transitional `TransportDrainTracker`. |
-| `_runtime/lifecycle.py` | `ClientLifecycle`: protocol-neutral resource state plus transactional/coalesced open, drain, close, and rollback waves. | Orchestrates immutable transport and loop-participant tuples; owns no web resources. |
-| `_web/transport/lifecycle.py` | `WebTransportLifecycle`: Kernel/auth epoch activation and fencing, keepalive, cookie persistence, and web teardown. | Installed as one root transport participant alongside `SourceUploadPipeline`. |
-| `_web/transport/runtime.py` | Authenticated transport leg used by `RpcExecutor` and the middleware chain terminal. | Takes an admission-only epoch lease before auth snapshot/materialization, then enters the supervisor's terminal metrics/semaphore scope and routes the four-middleware web chain to `Kernel.post`. |
-| `_runtime/config.py` | Module-level constants: `DEFAULT_TIMEOUT`, `DEFAULT_CHAT_TIMEOUT`, `DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT`/`_PER_SOURCE_TIMEOUT`/`_MAX_TIMEOUT`, `DEFAULT_KEEPALIVE_MIN_INTERVAL`, `DEFAULT_MAX_CONCURRENT_RPCS`, `DEFAULT_MAX_CONCURRENT_UPLOADS`, `CORE_LOGGER_NAME`, `normalize_max_concurrent_uploads`. | Pure constants; importable without side effects. |
-| `_runtime/helpers.py` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval`. | Cross-seam pure helpers; behaviour-bearing (and therefore unit-tested). |
-| `_web/transport/error_injection.py` | `ERROR_INJECT_ENV_VAR`, `_get_error_injection_mode`, `_refuse_synthetic_error_outside_test_context`. | Env-var resolver + startup guard for the synthetic-error harness. |
-| `_web/transport/auth.py` | `AuthRefreshCoordinator`: refresh-task lifecycle, refresh lock, `AuthSnapshot` rotation. | Lazy `asyncio.Lock` construction; never instantiated outside a running loop. |
-| `_conversation_cache` | Per-instance true-LRU `_conversation_cache` for `ChatAPI` continuity; bounds the conversation count and the turns retained per conversation. | Pure in-process state; not shared across client instances. |
-| `_web/transport/cookie_persistence.py` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. | Exposes a `SaveCookiesToStorage` Protocol host. |
-| `_transport_drain` | `TransportDrainTracker`: transitional in-flight counters and `_TransportOperationToken`. | Owned by `CallSupervisor`; generation admission and public drain policy do not live here. |
-| `_client_metrics` | `ClientMetrics`: `ClientMetricsSnapshot` counters, `_metrics_lock`, `on_rpc_event` callback, queue-wait recorders. | `__init__` is event-loop-agnostic; `emit_rpc_event` is `async` and intentionally awaits the user callback (back-pressure). |
-| `_polling_registry` | Pending-poll registry shared by long-running artifact generations. | Used by artifacts to coordinate and cancel pending polls. |
-| `_web/transport/reqid_counter.py` | `ReqidCounter`: monotonic `_reqid` for the chat backend, lazy `asyncio.Lock` for concurrent `ChatAPI.ask` callers. | Baseline `_value=100000`, default `step=100000` — both are chat-API contract values; do not change. |
-| `_web/transport/executor.py` | RPC dispatch executor; exposes `DecodeResponse` Protocol so callers can be unit-tested against a stub. | `NotebookLMClient.rpc_call` dispatches here directly. |
-| `_web/transport/request_types.py` | `AuthSnapshot`, `BuildRequest`, `BuildRequestResult`, and request materialization helpers. | Shared request Interface for RPC, chat, auth refresh, and the chain terminal. |
-| `_web/transport/errors.py` | Transport exceptions, `Retry-After` parsing, and raw `Kernel.post` error mapping. | Keeps terminal error mapping out of `Kernel` callers and lets the middleware chain consume a narrow exception Interface. |
-| `_web/transport/streaming_post.py` | Streaming POST helper with the response-size cap. | Keeps low-level buffered HTTP read behavior local to the `Kernel.post` implementation. |
-
-Transport-neutral orchestration depends on `LoopGuard` from
-`notebooklm._runtime.contracts`; web feature APIs and services depend on
-`Kernel` / `RpcCaller` from `notebooklm._web.contracts` rather than on a broad
-runtime facade. `ChatAPI`, `ArtifactsAPI`, and `SourceUploadPipeline` each take
-their direct collaborators by keyword-only constructor argument. In the split
-namespaces, the neutral `ChatAPI` takes its loop guard and notebook provider,
-while `WebChatAPI` adds `RpcCaller`, `RuntimeTransport`, and `ReqidCounter`;
-the neutral `ArtifactsAPI` takes the concrete shared `CallSupervisor`,
-notebook-source, and the required backend-configured asset-transfer
-collaborator, while
-`WebArtifactsAPI` adds its web RPC and note/mind-map collaborators.
-`SourceUploadPipeline` is web-only and takes its RPC, supervisor, kernel, and
-auth collaborators directly; it also implements the phased transport-lifecycle
-surface used by the root. The old single-consumer `OperationScopeProvider`
-Protocol no longer exists. The
-feature-local composite-runtime Protocols (`ChatRuntime`,
-`ArtifactsRuntime`, `UploadRuntime`) and their adapter dataclasses that
-previously bundled three collaborators apiece were retired once it was
-clear they only hid three stable collaborators with one production
-satisfier.
-See [ADR-0013](adr/0013-composable-session-capabilities.md) and
-[`docs/architecture.md`](architecture.md) for the rationale and the
-post-v0.5.0 collaborator graph.
-
-If you previously imported from `notebooklm._core` modules, see
-[`docs/refactor-history.md`](refactor-history.md) for the
-Tier 12 → Tier 13 rename table. The `notebooklm._core` compatibility
-shim was removed in v0.5.0; first-party callers should import directly
-from the canonical seam modules (`_runtime/config.py`, `_runtime/helpers.py`,
-`_web/transport/request_types.py`, `_web/transport/errors.py`,
-`_web/transport/streaming_post.py`, `_web/transport/error_injection.py`,
-`_transport_drain.py`, etc.).
 
 ---
 

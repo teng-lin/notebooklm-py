@@ -193,7 +193,7 @@ def _write_extracted_cookies(
     include_domains: set[str] | None = None,
     quiet: bool = False,
 ) -> BrowserCookieOutcome | None:
-    """Write a previously-loaded rookiepy cookie set to ``storage_path``.
+    """Write a previously loaded browser-extractor cookie set to ``storage_path``.
 
     Bypasses :func:`_read_browser_cookies` because the caller already has
     the cookies in hand (e.g. ``--all-accounts`` reads once and writes N

@@ -1,7 +1,7 @@
 # Configuration
 
 **Status:** Active
-**Last Updated:** 2026-08-05
+**Last Updated:** 2026-09-02
 
 This guide covers storage locations, environment settings, and configuration options for `notebooklm-py`.
 
@@ -15,10 +15,12 @@ All data is stored under `~/.notebooklm/` by default, organized by profile:
 ├── profiles/
 │   ├── default/          # Default profile (auto-created)
 │   │   ├── storage_state.json    # Authentication cookies and session
+│   │   ├── master_token.json     # Durable headless/Android credential (optional)
 │   │   ├── context.json          # CLI context (active notebook, conversation)
 │   │   └── browser_profile/      # Persistent Chromium profile
 │   ├── work/             # Named profile example
 │   │   ├── storage_state.json
+│   │   ├── master_token.json
 │   │   ├── context.json
 │   │   └── browser_profile/
 │   └── personal/
@@ -71,7 +73,7 @@ Contains the authentication data extracted from your browser session:
 
 **Cookie requirements** (empirically validated via single-, pair-, and three-way ablation; see [auth-cookie-lifecycle.md](auth-cookie-lifecycle.md#33-empirical-cookie-requirements); enforced by `_validate_required_cookies()` in `_auth/cookie_policy.py`):
 
-- **Tier 1 — strictly required (raises on absence):** `SID` AND `__Secure-1PSIDTS`. `SID` is the only individually-required cookie (`__Secure-1PSIDTS` is removable on its own because Google can re-mint it via `RotateCookies`), but the pair-wise check uncovered that as soon as `__Secure-1PSIDTS` and any one other auth cookie are both missing, Google rejects with `Authentication expired or invalid`. The library therefore enforces both up-front. Authoritative value: `MINIMUM_REQUIRED_COOKIES` in `_auth/cookie_policy.py`.
+- **Tier 1 — strictly required (raises on absence):** both `SID` and `__Secure-1PSIDTS`. Recovery may be able to re-mint `__Secure-1PSIDTS` before validation, but an input that reaches normal validation without either cookie is rejected. Authoritative value: `MINIMUM_REQUIRED_COOKIES` in `_auth/cookie_policy.py`.
 - **Tier 2 — secondary binding (logs a warning if absent):** either `OSID` is present, or `APISID` and `SAPISID` are present **together with bare `LSID`** (the `LSID` conjunct is required — the pair alone fails, per the three-way ablation in #1977). Without this, even valid Tier 1 cookies can't authenticate the homepage GET. Logged rather than raised so unverified edge-case flows (e.g. Workspace SSO) aren't broken by a too-strict client check.
 
 In practice: extract the full cookie set via `notebooklm login` and don't try to subset it. Partial extractions (a known failure mode of browser-cookies tooling under Chrome 127+ App-Bound Encryption) are the leading suspect for "auth expires immediately" reports — see [#371](https://github.com/teng-lin/notebooklm-py/issues/371).
@@ -143,8 +145,9 @@ directory does not count as a reusable L3 browser session.
 
 ### Master Token (`master_token.json`)
 
-Written only by `notebooklm login --master-token` (the `[headless]` extra). Holds
-a durable Google master token (mode `0600`) that mints/refreshes the profile's
+Written only by `notebooklm login --master-token --account EMAIL`. It needs `gpsoauth`, supplied
+by either the `[headless]` or `[android]` extra. It holds a durable Google master
+token (mode `0600`) that mints/refreshes the profile's
 `storage_state.json` cookies with no per-session browser. When present beside a
 profile's `storage_state.json`, an expired session re-mints from it
 automatically. If storage is absent, `notebooklm auth refresh` mints it from the
@@ -157,7 +160,7 @@ remains an unconditional forced re-mint.
 
 > ⚠️ **Full-account, durable credential** — larger blast radius than
 > `storage_state.json`; dedicated/throwaway account only. See
-> [installation.md#alternative-master-token-auth-no-cookie-file-to-ship-survives-expiry](installation.md#d-headless-server-or-ci).
+> [installation.md#alternative-master-token-auth-no-cookie-file-to-ship-survives-expiry](installation.md#alternative-master-token-auth-no-cookie-file-to-ship-survives-expiry).
 
 ## Environment Variables
 
@@ -173,21 +176,19 @@ option, and the `notebooklm-server --backend ...` option. Resolution is always:
 3. `web`.
 
 The preference is fixed when a client is constructed. `backend="android"`
-installs an Android adapter for every public namespace; the read-only
-`client.backends` mapping therefore reports `android` for all eleven entries.
-Exactly three operations use documented, narrow Web compatibility collaborators:
-`notebooks.remove_from_recent`, CSV/DOCX `sources.add_file`, and
-`sharing.set_view_level`. The mapping describes the installed namespace adapters,
-not the transport of every internal operation.
-The root `client.rpc_call(...)` escape hatch is outside the namespace graph and
-remains Web-specific because `RPCMethod` contains `batchexecute` identifiers.
-Neither `auto` nor `mobile` is accepted.
+installs Android adapters for every public namespace; the read-only
+`client.backends` mapping consequently reports `android` for all eleven entries.
+The root `client.rpc_call(...)` escape hatch remains Web-specific because its
+`RPCMethod` values are Web `batchexecute` identifiers. Neither `auto` nor
+`mobile` is accepted.
 
-Selecting Android does not read credentials during construction. When an
-installed Android namespace needs a durable credential, validation occurs on
-`client.open()` / async-context entry. Use `NotebookLMClient.from_storage(...)`
-or provide the profile-backed `storage_path`; there is no public raw
-`master_token=` argument.
+Selecting Android does not read credentials during construction. At
+`client.open()` / async-context entry it requires both the `android` extra and
+a profile-backed `master_token.json`, from which it mints short-lived Android
+bearer credentials. Bootstrap that profile with
+`notebooklm login --master-token --account EMAIL`; a cookie-only storage file
+or `NOTEBOOKLM_AUTH_JSON` is not sufficient for Android. There is no public raw
+`master_token=` constructor argument.
 
 | Variable | Description | Default |
 |----------|-------------|---------|

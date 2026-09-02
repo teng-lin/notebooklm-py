@@ -19,7 +19,11 @@ actually gaps, and what remains.
 
 `tests/unit/test_backend_selection.py::test_android_preference_promotes_every_namespace`
 asserts the complete inventory of remaining Web bindings. It is now **empty**:
-an Android-selected client holds no Web collaborator and needs no cookies.
+an Android-selected namespace graph holds no Web operation collaborator, and
+typed Android operations do not fall back to batchexecute. The composition root
+still constructs the Web/raw-RPC infrastructure, and `client.rpc_call(...)`
+remains Web-specific; this report is about the installed typed namespace graph,
+not removal of every Web-owned object from `NotebookLMClient`.
 
 ## `sharing.set_view_level` — wrong service
 
@@ -135,12 +139,12 @@ and **type parity** for all but `.csv`, `.docx` and `.pptx`, which report the
 Drive type instead. That is a real, bounded divergence, recorded here rather
 than hidden.
 
-> **Separate pre-existing defect.** `_SOURCE_TYPE_CODE_MAP` maps `14` to
-> `GOOGLE_SPREADSHEET` and has no entry for `7`, while the recovered mobile enum
-> says `7 = GOOGLE_SHEET` and `14 = DRIVE`. Any Drive-imported non-native file
-> therefore displays as "GOOGLE_SPREADSHEET" — on the Web backend too, via
-> `add_drive_file`. Not fixed here: it is a Web-side decode bug this branch only
-> made visible.
+> **Follow-up decode fix.** At the August 31 validation point,
+> `_SOURCE_TYPE_CODE_MAP` still mislabeled `14` as `GOOGLE_SPREADSHEET` and had
+> no entry for `7`. The current decoder matches the recovered enum: `14`
+> defaults to `GOOGLE_DRIVE`, while recognized MIME evidence refines a native
+> Sheet to code `7` (`GOOGLE_SPREADSHEET`) and a Drive PDF to code `3` (`PDF`).
+> See `_disambiguate_type_code` in `src/notebooklm/_types/sources.py`.
 
 ### `.docx` / `.pptx` — native by way of Drive
 

@@ -299,6 +299,15 @@ support before relying on the write tools. Then:
 > are OAuth-only. Enable step 6 for either.
 
 ## Notes & security
+
+The stock deployment image uses the Web backend and does not install the
+Android extra. To opt in, build a release spec that includes it, for example
+`notebooklm-py[mcp,headless,android]==<version>`, then set
+`NOTEBOOKLM_BACKEND=android` (or pass `--backend android`). The mounted profile
+must contain `master_token.json`; Android namespace calls mint mobile bearer
+tokens from it and do not fall back to Web. See
+[`docs/android/README.md`](../docs/android/README.md) before deploying it.
+
 - **Two auth layers.** The `NOTEBOOKLM_MCP_TOKEN` bearer gates *who can use the
   endpoint*; the master token authenticates *the server to Google*. The master
   token **never** traverses the tunnel — only MCP tool calls/results do. The

@@ -15,6 +15,11 @@ Claude Desktop without any manual JSON editing.
 The launcher resolves the server from PyPI on demand via `uvx`, so there is no
 vendored Python environment in the bundle — only the two files above.
 
+The extension starts the MCP server with its default Web backend. Android
+backend selection is not bundled; use the standalone `notebooklm-mcp` entry
+point with the `[android]` extra and `--backend android` when the native mobile
+transport is required.
+
 ## Prerequisites
 
 1. **`uv` / `uvx`** — the launcher shells out to `uvx`:
