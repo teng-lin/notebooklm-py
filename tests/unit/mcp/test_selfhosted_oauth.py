@@ -854,3 +854,93 @@ def test_build_oauth_provider_wires_state_without_warning(
         provider = build_oauth_provider(cfg)
     assert isinstance(provider, SelfHostedOAuthProvider)
     assert not [r for r in caplog.records if r.levelno == logging.WARNING]
+
+
+def test_migrate_legacy_state_leaves_an_unreadable_legacy_for_the_next_startup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog
+) -> None:
+    """A transient read error must not retire the file — the tokens are still in it."""
+    legacy = tmp_path / "oauth_state.json"
+    legacy.write_text(json.dumps({"clients": {}}), encoding="utf-8")
+    new = tmp_path / "oauth" / "host.abcd.json"
+
+    def _unreadable(self: Path) -> bytes:
+        raise OSError("temporarily unreadable")
+
+    monkeypatch.setattr(Path, "read_bytes", _unreadable)
+
+    with caplog.at_level(logging.WARNING):
+        _migrate_legacy_state(new, legacy)
+
+    assert legacy.exists(), "the only copy of the tokens must survive"
+    assert not legacy.with_name("oauth_state.json.migrated").exists()
+    assert not new.exists()
+    assert "will retry" in caplog.text
+
+
+def test_migrate_legacy_state_retires_a_non_object_payload_without_writing_it(
+    tmp_path: Path, caplog
+) -> None:
+    """Valid JSON that is not an object is unusable state, not a partial migration."""
+    legacy = tmp_path / "oauth_state.json"
+    legacy.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+    new = tmp_path / "oauth" / "host.abcd.json"
+
+    with caplog.at_level(logging.WARNING):
+        _migrate_legacy_state(new, legacy)
+
+    assert not new.exists()
+    assert not legacy.exists()
+    assert legacy.with_name("oauth_state.json.migrated").exists()
+    assert "unusable" in caplog.text
+
+
+def test_migrate_legacy_state_retires_a_reappeared_legacy_beside_a_marker(
+    tmp_path: Path,
+) -> None:
+    """A restored backup must never resurrect revoked tokens."""
+    legacy = tmp_path / "oauth_state.json"
+    legacy.write_text(json.dumps({"clients": {"resurrected": {}}}), encoding="utf-8")
+    marker = legacy.with_name("oauth_state.json.migrated")
+    marker.write_text("{}", encoding="utf-8")
+    new = tmp_path / "oauth" / "host.abcd.json"
+
+    _migrate_legacy_state(new, legacy)
+
+    assert not new.exists(), "a reappeared legacy file is never imported"
+    assert not legacy.exists()
+    assert marker.exists()
+
+
+def test_migrate_legacy_state_is_a_no_op_when_the_override_points_at_the_legacy_file(
+    tmp_path: Path,
+) -> None:
+    """Retiring it would delete the very file the provider is about to load."""
+    legacy = tmp_path / "oauth_state.json"
+    legacy.write_text(json.dumps({"clients": {}}), encoding="utf-8")
+
+    _migrate_legacy_state(legacy, legacy)
+
+    assert legacy.exists()
+    assert not legacy.with_name("oauth_state.json.migrated").exists()
+
+
+def test_migrate_legacy_state_skips_when_the_legacy_cannot_be_retired(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog
+) -> None:
+    """The marker rename commits before the write; a failure there aborts cleanly."""
+    legacy = tmp_path / "oauth_state.json"
+    legacy.write_text(json.dumps({"clients": {}}), encoding="utf-8")
+    new = tmp_path / "oauth" / "host.abcd.json"
+
+    def _failing_replace(src: object, dst: object) -> None:
+        raise OSError("rename refused")
+
+    monkeypatch.setattr(os, "replace", _failing_replace)
+
+    with caplog.at_level(logging.WARNING):
+        _migrate_legacy_state(new, legacy)
+
+    assert legacy.exists()
+    assert not new.exists()
+    assert "retiring" in caplog.text
