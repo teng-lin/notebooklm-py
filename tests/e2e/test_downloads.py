@@ -9,6 +9,9 @@ from notebooklm.exceptions import ArtifactNotReadyError
 
 from .conftest import requires_auth
 
+# Large artifact transfers can exceed the global 60-second limit on Windows runners.
+pytestmark = pytest.mark.timeout(180)
+
 # Magic bytes for file type verification
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 PDF_MAGIC = b"%PDF"
