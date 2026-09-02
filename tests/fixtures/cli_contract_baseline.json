@@ -2066,6 +2066,77 @@
       ],
       "short_help": "Configure chat persona and response settings."
     },
+    "copy": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "title",
+          "nargs": 1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Set the copied notebook as the current context.",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "switch_context",
+          "opts": [
+            "--use",
+            "-u"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Copy a notebook, including its sources and..."
+    },
     "create": {
       "class": "Command",
       "params": [
@@ -8501,6 +8572,7 @@
         "collection",
         "completion",
         "configure",
+        "copy",
         "create",
         "delete",
         "doctor",
@@ -12200,6 +12272,7 @@
     "collection",
     "completion",
     "configure",
+    "copy",
     "create",
     "delete",
     "doctor",
@@ -12236,6 +12309,7 @@
     "notebook": [
       "list",
       "create",
+      "copy",
       "delete",
       "rename",
       "metadata",

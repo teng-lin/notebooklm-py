@@ -108,6 +108,9 @@ See [Configuration](configuration.md) for full env-var precedence and CI/CD setu
 | `create <title>` | Create notebook (does not change active context) | `notebooklm create "Research"` |
 | `create <title> --use` | Create notebook and make it the active context | `notebooklm create "Research" --use` |
 | `create <title> --json` | JSON envelope; with `--use` includes `active_notebook_id` | `notebooklm create "X" --use --json` |
+| `copy <title>` | Copy the current notebook, including sources and Studio artifacts | `notebooklm copy "Research — Copy"` |
+| `copy <title> -n <id>` | Copy a specific notebook (partial IDs accepted) | `notebooklm copy "Research — Copy" -n abc123` |
+| `copy <title> --use --json` | Make the copy active and emit `{source_notebook_id, notebook, active_notebook_id}` | `notebooklm copy "Research — Copy" --use --json` |
 | `delete -n <id>` | Delete notebook (uses current notebook if `-n` omitted) | `notebooklm delete -n abc123` |
 | `delete -n <id> -y` | Skip confirmation | `notebooklm delete -n abc123 -y` |
 | `delete -n <id> --json` | Emit `{notebook_id, success}` envelope (plus `context_cleared: true` when deleting the active notebook); requires `-y` (refuses to prompt in JSON mode) | `notebooklm delete -n abc123 -y --json` |

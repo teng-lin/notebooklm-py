@@ -393,6 +393,10 @@ def _fail_notebook_create(client: MagicMock) -> None:
     client.notebooks.create = AsyncMock(side_effect=RuntimeError("notebook quota exceeded"))
 
 
+def _fail_notebook_copy(client: MagicMock) -> None:
+    client.notebooks.copy = AsyncMock(side_effect=RuntimeError("copy response lost"))
+
+
 # ---------------------------------------------------------------------------
 # Parametrized sweep
 # ---------------------------------------------------------------------------
@@ -694,6 +698,11 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         "notebook_create_failure",
         ["create", "My Notebook", "--json"],
         _fail_notebook_create,
+    ),
+    (
+        "notebook_copy_failure",
+        ["copy", "My Notebook Copy", "-n", "abc", "--json"],
+        _fail_notebook_copy,
     ),
     # doctor + profile-list: filesystem-driven failures wrapped in the
     # canonical ADR-0015 JSON error envelope.

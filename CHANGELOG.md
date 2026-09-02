@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `notebooklm copy <title> [-n <notebook-id>] [--use] [--json]` exposes the
+  existing cross-backend `notebooks.copy()` operation in the CLI. It accepts
+  partial IDs or the active notebook, copies sources and Studio artifacts, and
+  can switch context to the new notebook explicitly with `--use`.
 - `sources.search(notebook_id, query, *, source_ids=None, limit=None)` on **both**
   the Web and Android backends: ranked passage retrieval through
   `RetrieveRelevantChunks` (Web id `ASU5Oe`) with optional source filtering and
