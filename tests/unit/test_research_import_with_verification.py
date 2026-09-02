@@ -22,7 +22,12 @@ import pytest
 
 import notebooklm._research as _research_mod
 from notebooklm._web.research import ResearchAPI
-from notebooklm.exceptions import NetworkError, RPCError, RPCTimeoutError
+from notebooklm.exceptions import (
+    NetworkError,
+    ResearchTaskMismatchError,
+    RPCError,
+    RPCTimeoutError,
+)
 
 
 class _RecordingRpc:
@@ -1575,3 +1580,83 @@ class TestImportSourcesIdempotency:
             {"url": "https://x.example.com", "title": "X"}
         ]
         mock_sleep.assert_awaited_once_with(5)
+
+
+class TestImportProvenanceGuards:
+    """Input admission before any RPC is sent.
+
+    Provenance is a correctness boundary: sources discovered under one research
+    task must not be imported under another, because the server attributes the
+    import to the task id the caller passes.
+    """
+
+    @pytest.mark.asyncio
+    async def test_an_empty_source_list_returns_without_touching_the_backend(self) -> None:
+        research, mock_rpc, mock_source_lister = _make_research()
+
+        result = await research._import_sources_with_verification("nb1", "task-1", [])
+
+        assert result == []
+        mock_rpc.rpc_call.assert_not_called()
+        mock_source_lister.list.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_source_from_another_research_task_is_refused(self) -> None:
+        research, mock_rpc, _lister = _make_research()
+        sources = [{"url": "https://a.example/x", "research_task_id": "task-OTHER"}]
+
+        with pytest.raises(ResearchTaskMismatchError) as caught:
+            await research._import_sources_with_verification("nb1", "task-1", sources)
+
+        assert caught.value.task_id == "task-1"
+        assert caught.value.source_research_task_id == "task-OTHER"
+        mock_rpc.rpc_call.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_batch_spanning_two_research_tasks_is_refused(self) -> None:
+        """Each source matches the caller's id individually is not enough."""
+        research, mock_rpc, _lister = _make_research()
+        sources = [
+            {"url": "https://a.example/x", "research_task_id": "task-1"},
+            {"url": "https://b.example/y", "research_task_id": "task-2"},
+        ]
+
+        with pytest.raises(ResearchTaskMismatchError):
+            await research._import_sources_with_verification("nb1", "task-1", sources)
+
+        mock_rpc.rpc_call.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_sources_without_provenance_are_admitted(self) -> None:
+        """An unstamped source inherits the caller's task id rather than failing."""
+        research, _rpc, mock_source_lister = _make_research()
+        mock_source_lister.list = AsyncMock(return_value=[])
+        research.import_sources = AsyncMock(return_value=[])
+
+        await research._import_sources_with_verification(
+            "nb1", "task-1", [{"url": "https://a.example/x"}]
+        )
+
+        research.import_sources.assert_awaited()
+
+
+class TestResearchPublicHelperDelegation:
+    """The API surfaces the module-level helpers under stable names."""
+
+    def test_normalize_url_matches_the_public_helper(self) -> None:
+        from notebooklm import research as research_pub
+
+        raw = "HTTPS://Example.COM/a/../b?utm_source=x"
+
+        assert ResearchAPI._normalize_url(raw) == research_pub.normalize_url(raw)
+
+    def test_extract_report_urls_matches_the_public_helper(self) -> None:
+        from notebooklm import research as research_pub
+
+        report = "See https://a.example/one and https://b.example/two for detail."
+
+        assert ResearchAPI.extract_report_urls(report) == research_pub.extract_report_urls(report)
+        assert ResearchAPI.extract_report_urls(report) == {
+            "https://a.example/one",
+            "https://b.example/two",
+        }
