@@ -9,8 +9,10 @@ from notebooklm.exceptions import ArtifactNotReadyError
 
 from .conftest import requires_auth
 
-# Large artifact transfers can exceed the global 60-second limit on Windows runners.
-pytestmark = pytest.mark.timeout(180)
+# Large artifact transfers can be hundreds of MiB and need several minutes on
+# Windows runners. The HTTP client's 60-second read timeout still catches a
+# stalled transfer; this outer budget permits a healthy stream to finish.
+pytestmark = pytest.mark.timeout(600)
 
 # Magic bytes for file type verification
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
