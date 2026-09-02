@@ -381,6 +381,7 @@ cardinality admitted. Every row is asserted exhaustively against the generated d
 | `orchestration.v1.GoogleDriveSourceMetadata` | `mime_type` | 3 | singular | string; exact-package closure + Dart symbol |
 | `orchestration.v1.ExpertIntelligenceSourceMetadata` | `content_id`, `title`, `authors`, `thumbnail_image_url`, `description`, `field_type` | 1, 3, 4, 5, 6, 7 | singular except repeated authors | exact APK schema; field type remains semantically opaque |
 | `orchestration.v1.SourceMetadata` | `google_docs_metadata` | 1 | singular | `GoogleDocsSourceMetadata`; exact companion closure |
+| `orchestration.v1.SourceMetadata` | `source_added_timestamp` | 3 | singular | `.google.protobuf.Timestamp`; exact APK schema + live `GetProject` response |
 | `orchestration.v1.SourceMetadata` | `original_source_content_type` | 5 | singular | `OriginalSourceContentType`; complete values in [`enums.txt`](enums.txt) |
 | `orchestration.v1.SourceMetadata` | `webpage_metadata` | 8 | singular | `WebpageMetadata`; exact-package closure + Dart symbol |
 | `orchestration.v1.SourceMetadata` | `google_drive_source_metadata` | 10 | singular | `GoogleDriveSourceMetadata`; exact-package closure + Dart symbol |
@@ -419,10 +420,11 @@ The exact companion `SourceMetadata` also contains `expert_intelligence_source_m
 content ID, authors, thumbnail, description, and opaque numeric field have no corresponding typed
 `Source` attributes. They remain absent from that typed model rather than being mislabeled as
 revision/download metadata, while `notebooks.get_raw()` preserves the admitted backend-shaped
-fields. Conversely, public `created_at`, download/viewer URLs, word count, revision ID/timestamp,
-and last-modified time have no exact field in this `Source` closure and therefore correctly remain
-`None`. The Google Docs identity was the only concrete ignored exact field that maps to the current
-public `Source` contract.
+fields. Source creation time is projected from `source_added_timestamp #3` to public `Source.created_at`.
+Conversely, public download/viewer URLs, word count, revision ID/timestamp,
+and last-modified time have no exact field in this `Source` closure and therefore remain
+`None`. The Google Docs identity and `source_added_timestamp` are the concrete exact fields that map
+to the current public `Source` contract.
 
 ### Notebook exact and web-derived field ledger
 

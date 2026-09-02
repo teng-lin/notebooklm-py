@@ -815,3 +815,39 @@ def test_decode_source_without_expert_intelligence_leaves_field_none() -> None:
         url="https://example.test/article",
     )
     assert decode_source(raw, method_id=GET_PROJECT_METHOD).expert_intelligence is None
+
+
+def test_decode_source_populates_created_at_from_source_added_timestamp() -> None:
+    metadata = read_pb2.SourceMetadata(
+        original_source_content_type=read_pb2.SOURCE_CONTENT_TYPE_URL,
+        webpage_metadata=read_pb2.WebpageMetadata(url="https://example.test/article"),
+        source_added_timestamp=Timestamp(seconds=1723890544, nanos=740182000),
+    )
+    raw = read_pb2.Source(
+        source_id=read_pb2.SourceId(id="src-1"),
+        title="Article",
+        metadata=metadata,
+        settings=source_settings_pb2.SourceSettings(
+            status=source_settings_pb2.SOURCE_STATUS_COMPLETE,
+        ),
+    )
+    decoded = decode_source(raw, method_id=GET_PROJECT_METHOD)
+    assert decoded.created_at is not None
+    assert decoded.created_at.isoformat() == "2024-08-17T10:29:04.740182+00:00"
+
+
+def test_decode_source_without_source_added_timestamp_leaves_created_at_none() -> None:
+    metadata = read_pb2.SourceMetadata(
+        original_source_content_type=read_pb2.SOURCE_CONTENT_TYPE_URL,
+        webpage_metadata=read_pb2.WebpageMetadata(url="https://example.test/article"),
+    )
+    raw = read_pb2.Source(
+        source_id=read_pb2.SourceId(id="src-1"),
+        title="Article",
+        metadata=metadata,
+        settings=source_settings_pb2.SourceSettings(
+            status=source_settings_pb2.SOURCE_STATUS_COMPLETE,
+        ),
+    )
+    decoded = decode_source(raw, method_id=GET_PROJECT_METHOD)
+    assert decoded.created_at is None

@@ -76,6 +76,7 @@ message ExpertIntelligenceSourceMetadata {
 
 message SourceMetadata {
   GoogleDocsSourceMetadata google_docs_metadata = 1; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
+  google.protobuf.Timestamp source_added_timestamp = 3; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
   OriginalSourceContentType original_source_content_type = 5; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
   WebpageMetadata webpage_metadata = 8; // evidence: docs/android/proto-evidence-ledger.md#field-ledger
   GoogleDriveSourceMetadata google_drive_source_metadata = 10; // evidence: docs/android/proto-evidence-ledger.md#field-ledger

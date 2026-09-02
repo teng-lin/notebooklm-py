@@ -110,6 +110,12 @@ def test_orchestration_message_fields_tags_types_and_cardinality_are_exhaustive(
                 message,
                 f"{ORCHESTRATION_PACKAGE}.GoogleDocsSourceMetadata",
             ),
+            "source_added_timestamp": (
+                3,
+                singular,
+                message,
+                "google.protobuf.Timestamp",
+            ),
             "original_source_content_type": (
                 5,
                 singular,

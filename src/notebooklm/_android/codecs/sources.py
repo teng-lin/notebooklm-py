@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Sequence
+from datetime import timezone
 from typing import Any, cast
 
 from ...exceptions import DecodingError
@@ -131,8 +132,11 @@ def _decode_source(
     content_mime = None
     type_code = 0
     expert_intelligence = None
+    created_at = None
     if source.HasField("metadata"):
         metadata = source.metadata
+        if metadata.HasField("source_added_timestamp"):
+            created_at = metadata.source_added_timestamp.ToDatetime(tzinfo=timezone.utc)
         type_name = _enum_name(
             _read_proto().OriginalSourceContentType,
             metadata.original_source_content_type,
@@ -177,7 +181,7 @@ def _decode_source(
         title=source.title,
         url=url,
         _type_code=type_code,
-        created_at=None,
+        created_at=created_at,
         status=status,
         drive_document_id=drive_document_id,
         drive_status=drive_status,
