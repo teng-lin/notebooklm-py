@@ -35,7 +35,10 @@ from notebooklm.server._auth import (  # noqa: E402 - after importorskip
 )
 from notebooklm.server.app import create_app  # noqa: E402 - after importorskip
 
-from .conftest import requires_auth  # noqa: E402 - after importorskip
+from .conftest import (  # noqa: E402 - after importorskip
+    requires_auth,
+    reset_current_chat_conversation,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -187,6 +190,7 @@ class TestRestServerLiveChat:
     @pytest.mark.readonly
     async def test_chat_ask_returns_answer(self, client: Any, read_only_notebook_id: str) -> None:
         """``POST /v1/notebooks/{id}/chat`` returns a non-empty answer string."""
+        await reset_current_chat_conversation(client, read_only_notebook_id)
         async with _live_rest_app(client) as http:
             try:
                 resp = await http.post(

@@ -45,7 +45,10 @@ from ._mcp_live_helpers import (  # noqa: E402 - after importorskip guard
 from ._mcp_live_helpers import (  # noqa: E402 - after importorskip guard
     pick_downloadable_artifact as _pick_downloadable_artifact,
 )
-from .conftest import requires_auth  # noqa: E402 - after importorskip guard
+from .conftest import (  # noqa: E402 - after importorskip guard
+    requires_auth,
+    reset_current_chat_conversation,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -212,11 +215,14 @@ TOOL_COVERAGE: dict[str, str] = {
     "source_delete": "TestMcpSources.test_source_roundtrip",
     "source_wait": "TestMcpSources.test_source_roundtrip",
     "source_add_drive_file": "tests/unit/mcp/test_sources_drive.py (Drive-doc auto-route; unit — needs a real Drive document_id)",
+    "source_list_play_books": "tests/unit/mcp/test_sources_playbooks.py (list, pagination, and unsupported-backend paths)",
+    "source_add_play_book": "tests/unit/mcp/test_sources_playbooks.py (add, wait, and non-exportable-book paths)",
     "await_upload": "tests/unit/mcp/test_await_upload.py (completion-map poll) + test_fileroutes.py (POST records result; unit — remote signed-URL side-channel, no live browser upload)",
     # chat
     "chat_ask": "TestMcpChat.test_configure_then_ask",
     "chat_start": "tests/unit/mcp/test_chat_start.py (detached-ask registry + tool cycle)",
     "chat_status": "tests/unit/mcp/test_chat_start.py (detached-ask registry + tool cycle)",
+    "chat_cancel": "tests/unit/mcp/test_chat_start.py (backend and detached-task cancellation)",
     "chat_configure": "TestMcpChat.test_configure_then_ask",
     # notes
     "note_save": "TestMcpNotes.test_note_crud",
@@ -376,6 +382,7 @@ class TestMcpChat:
     async def test_configure_then_ask(self, client, read_only_notebook_id):
         """``chat_configure`` then ``chat_ask`` returns a non-empty answer."""
         nb = read_only_notebook_id
+        await reset_current_chat_conversation(client, nb)
 
         configured = await _call(client, "chat_configure", {"notebook": nb, "chat_mode": "concise"})
         assert isinstance(configured, dict)
