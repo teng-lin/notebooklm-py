@@ -26,6 +26,7 @@ cached with a conservative TTL and refreshed on demand.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import time
 from collections.abc import Awaitable, Callable
@@ -178,11 +179,14 @@ def _extract_server_token(response_bytes: bytes) -> bytes:
     )
 
     pb = cast(Any, exptsandconfigs_pb2)
-    response = pb.HeterodyneResponse()
-    response.ParseFromString(response_bytes)
-    for config in response.heterodyne_config:
-        if config.server_token:
-            return _decode_server_token(config.server_token)
+    try:
+        response = pb.HeterodyneResponse()
+        response.ParseFromString(response_bytes)
+        for config in response.heterodyne_config:
+            if config.server_token:
+                return _decode_server_token(config.server_token)
+    except Exception as exc:
+        raise PhenotypeError("GMS Phenotype returned a malformed experiment response.") from exc
     raise PhenotypeError(_MISSING_TOKEN_MESSAGE)
 
 
@@ -211,10 +215,13 @@ class _CachedToken:
 class PhenotypeTokenProvider:
     """Fetch, cache, and refresh the Play Books experiment-token metadata.
 
-    One instance is shared across the Android session. It is safe under
-    concurrent callers on a single event loop (single-flight fetch), and the
-    cached header is reused until its TTL lapses or :meth:`invalidate` is called.
+    One instance is shared across the Android client. Concurrent first callers
+    may perform the same idempotent fetch more than once; the last successful
+    result wins. The cached header is reused until its TTL lapses,
+    :meth:`invalidate` is called, or the client lifecycle closes/reopens.
     """
+
+    name = "android-phenotype"
 
     def __init__(
         self,
@@ -234,6 +241,20 @@ class PhenotypeTokenProvider:
         """Drop the cached token so the next call re-fetches."""
 
         self._cached = None
+
+    async def open(self, loop: asyncio.AbstractEventLoop, epoch: int) -> None:
+        """Start a client generation with no token from a previous account."""
+
+        del loop, epoch
+        self.invalidate()
+
+    async def prepare_close(self) -> None:
+        """Fence cached account-bound metadata before credentials are reloaded."""
+
+        self.invalidate()
+
+    async def close_resources(self) -> None:
+        """Complete the transport-lifecycle protocol; no resource is retained."""
 
     async def experiment_metadata(
         self, bearer: str, *, force: bool = False

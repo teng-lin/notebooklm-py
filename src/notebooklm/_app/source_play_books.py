@@ -2,9 +2,8 @@
 
 The Click-free / fastmcp-free core shared by the CLI (``source books`` /
 ``source add-book``) and the MCP tools. Listing and adding both delegate to the
-public ``client.sources`` facade, so the web-only nature of the capability (the
-Android backend raises ``UnsupportedOperationError``) is inherited, not
-re-encoded here.
+public ``client.sources`` facade, so backend-specific Web/Android protocol
+details stay out of this module.
 
 Transport-neutral — no ``click`` / ``rich`` / ``cli`` / ``fastmcp`` imports
 (enforced by ``tests/_guardrails/test_app_boundary.py``).
@@ -59,9 +58,7 @@ async def execute_source_add_play_book(
     Thin executor over the public client (boundary-legal): library lookup,
     export-eligibility refusal
     (:class:`~notebooklm.exceptions.PlayBookNotExportableError`), spec build and
-    ingest all live in ``SourcesAPI.add_play_book``. On the Android backend the
-    client raises :class:`~notebooklm.exceptions.UnsupportedOperationError`,
-    which the surface adapters render.
+    ingest all live in ``SourcesAPI.add_play_book`` on both supported backends.
     """
     src = await client.sources.add_play_book(
         plan.notebook_id,

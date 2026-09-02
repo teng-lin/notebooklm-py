@@ -3,6 +3,7 @@ syntax = "proto3";
 package google.internal.labs.tailwind.orchestration.v1;
 
 import "google/internal/labs/tailwind/orchestration/v1/read.proto";
+import "google/protobuf/timestamp.proto";
 import "labs/language/tailwind/common/protos/metadata.proto";
 import "labs/language/tailwind/common/protos/provenance.proto";
 
@@ -98,14 +99,14 @@ message UserContent {
 
 // Google Play Books ("Expert Intelligence") add content. Field types are
 // live-captured: provider and field_type are load-bearing (field_type is a
-// float32 on the wire, wire-type 5). See docs/android/proto-evidence-ledger.md.
+// double on the wire, wire-type 1). See docs/android/schema.proto.
 message ExpertIntelligenceContent {
   int32 provider = 1;
   string content_id = 2;
   string title = 3;
   string description = 4;
   string thumbnail_image_url = 5;
-  float field_type = 6;
+  double field_type = 6;
   repeated string authors = 7;
 }
 
@@ -120,7 +121,8 @@ message ExpertIntelligenceContentItem {
   bool export_disabled = 6;
   int32 export_reason = 7;
   repeated string authors = 8;
-  float field_type = 9;
+  double field_type = 9;
+  google.protobuf.Timestamp updated_timestamp = 10;
 }
 
 message ListExpertIntelligenceContentRequest {

@@ -510,6 +510,7 @@ def _assemble_client(
         from ._android.note_backed import NoteBackedMindMapArtifactAdapter
         from ._android.notebooks import AndroidNotebooksAPI
         from ._android.notes import AndroidNotesAPI
+        from ._android.phenotype import PhenotypeTokenProvider
         from ._android.research import AndroidResearchAPI
         from ._android.session import AndroidSession
         from ._android.settings import AndroidSettingsAPI
@@ -538,10 +539,12 @@ def _assemble_client(
             max_concurrent_uploads=max_concurrent_uploads,
             record_upload_queue_wait=internals.collaborators.metrics.record_upload_queue_wait,
         )
+        android_phenotype = PhenotypeTokenProvider()
         client.sources = AndroidSourcesAPI(
             android_session,
             android_upload_pipeline,
             drive_download=android_upload_pipeline.drive_download_scope,
+            phenotype=android_phenotype,
         )
         client.notebooks = AndroidNotebooksAPI(android_session, client.sources)
         client.notes = AndroidNotesAPI(android_session)
@@ -588,6 +591,7 @@ def _assemble_client(
             android_session,
             android_asset_downloads,
             android_upload_pipeline,
+            android_phenotype,
         )
         android_loop_participants = (
             android_bearer_provider,

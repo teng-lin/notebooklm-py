@@ -573,6 +573,7 @@ def test_android_selection_extends_the_frozen_lifecycle_ownership_graph() -> Non
         client._android_session,
         client.artifacts._asset_downloads,
         client.sources._upload_pipeline,
+        client.sources._phenotype,
     )
     assert lifecycle._loop_participants[-3:] == (
         client._android_bearer_provider,

@@ -133,7 +133,9 @@ class _Channel:
     def __init__(self) -> None:
         self.unary_outcomes: list[bytes | BaseException | asyncio.Future[bytes]] = [b"response"]
         self.stream_outcomes = [[_Message(b"one"), _Message(b"two")]]
-        self.invocations: list[tuple[str, bytes, tuple[tuple[str, str], ...], float | None]] = []
+        self.invocations: list[
+            tuple[str, bytes, tuple[tuple[str, str | bytes], ...], float | None]
+        ] = []
         self.created_callables: list[tuple[str, str]] = []
         self.stream_calls: list[_StreamCall] = []
         self.closed = 0
@@ -252,6 +254,57 @@ async def test_open_is_lazy_and_unary_uses_fixed_tls_channel_and_metadata() -> N
     assert snapshot.rpc_calls_started == 1
     assert snapshot.rpc_calls_succeeded == 1
     assert [event.method for event in events] == [METHOD]
+
+
+@pytest.mark.asyncio
+async def test_unary_appends_augmented_metadata() -> None:
+    session, _, channel, _, _ = await _open()
+
+    async def augment(bearer: str) -> tuple[tuple[str, bytes], ...]:
+        assert bearer == BEARER
+        return (("x-extra-bin", b"extra"),)
+
+    assert await session.unary(
+        METHOD,
+        _Message(b"request"),
+        replay_safe=False,
+        response_type=_Message,
+        metadata_augmentor=augment,
+    ) == _Message(b"response")
+    assert channel.invocations[0][2] == (
+        ("authorization", f"Bearer {BEARER}"),
+        ("x-extra-bin", b"extra"),
+    )
+
+
+@pytest.mark.asyncio
+async def test_metadata_augmentor_rechecks_epoch_before_wire_dispatch() -> None:
+    session, _, channel, _, _ = await _open()
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def augment(bearer: str) -> tuple[tuple[str, bytes], ...]:
+        assert bearer == BEARER
+        started.set()
+        await release.wait()
+        return (("x-extra-bin", b"extra"),)
+
+    call = asyncio.create_task(
+        session.unary(
+            METHOD,
+            _Message(b"request"),
+            replay_safe=False,
+            response_type=_Message,
+            metadata_augmentor=augment,
+        )
+    )
+    await started.wait()
+    await session.prepare_close()
+    release.set()
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await call
+    assert channel.invocations == []
 
 
 @pytest.mark.asyncio

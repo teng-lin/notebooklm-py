@@ -2,9 +2,9 @@
 
 Listing rides ``LIST_EXPERT_INTELLIGENCE_CONTENT`` (``mVtEUb``); adding a listed
 title rides ``ADD_SOURCES_ASYNC`` (``X1snv``) with an ``ExpertIntelligenceContent``
-spec built by :mod:`notebooklm._web.params.sources`. Both verified live end to
-end on the web tier. The Android write path additionally requires a per-account
-Phenotype experiment header the client cannot synthesize, so add is web-only.
+spec built by :mod:`notebooklm._web.params.sources`. Both were verified live
+end-to-end on the web tier; the Android adapter implements the same public
+capability over native gRPC with headless Phenotype metadata.
 
 Positional decode lives in :mod:`notebooklm._web.rows.play_books` (list rows) and
 :func:`notebooklm._web.rows.sources.first_added_source_id` (the add response), so

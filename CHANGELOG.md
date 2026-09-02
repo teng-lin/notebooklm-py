@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Google Play Books ("Expert Intelligence") sources** (#2292), **web backend
-  only**: `sources.list_play_books()` lists the account's Play Books library as
+- **Google Play Books ("Expert Intelligence") sources** (#2292), initially on
+  the web backend: `sources.list_play_books()` lists the account's Play Books library as
   `PlayBook` rows (content id, title, authors, `export_disabled` + `reason`),
   and `sources.add_play_book(notebook_id, content_id, *, wait=…)` adds a title
   (refusing a non-exportable one with `PlayBookNotExportableError`). The created
@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   credentials — a single-package `getExperimentsAndConfigs` registration
   (`experimentsandconfigs` scope, already granted) whose `serverToken` is
   TTL-cached and attached to `AddSources`. No emulator or Play Services needed.
-  Verified live end to end on both tiers.
+  Verified live end-to-end on both tiers.
 - `research.discover(notebook_id, query, *, mode="default")` on **both** the
   Web and Android backends (`DiscoverSources`, web id `Es3dTe`): the
   synchronous "Discover sources" call the web dialog makes — one blocking

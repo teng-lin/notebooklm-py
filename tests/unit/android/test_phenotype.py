@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from typing import Any, cast
 
@@ -132,6 +133,22 @@ async def test_force_and_invalidate_bypass_cache() -> None:
 
 
 @pytest.mark.asyncio
+async def test_lifecycle_invalidates_account_bound_cache() -> None:
+    record: list = []
+    provider = PhenotypeTokenProvider(http_post=_make_post(record=record))
+    await provider.open(asyncio.get_running_loop(), 1)
+    await provider.experiment_metadata("account-a")
+    await provider.experiment_metadata("account-a")
+    assert len(record) == 1
+
+    await provider.prepare_close()
+    await provider.open(asyncio.get_running_loop(), 2)
+    await provider.experiment_metadata("account-b")
+    await provider.close_resources()
+    assert len(record) == 2
+
+
+@pytest.mark.asyncio
 async def test_non_200_raises_phenotype_error() -> None:
     provider = PhenotypeTokenProvider(http_post=_make_post(status=403, body=b""))
     with pytest.raises(PhenotypeError, match="HTTP 403"):
@@ -142,6 +159,13 @@ async def test_non_200_raises_phenotype_error() -> None:
 async def test_empty_server_token_raises_phenotype_error() -> None:
     provider = PhenotypeTokenProvider(http_post=_make_post(body=_response_bytes(server_token="")))
     with pytest.raises(PhenotypeError, match="no experiment token"):
+        await provider.experiment_metadata("b")
+
+
+@pytest.mark.asyncio
+async def test_malformed_response_raises_phenotype_error() -> None:
+    provider = PhenotypeTokenProvider(http_post=_make_post(body=b"\x0a"))
+    with pytest.raises(PhenotypeError, match="malformed experiment response"):
         await provider.experiment_metadata("b")
 
 

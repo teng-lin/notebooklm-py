@@ -307,6 +307,48 @@ class AndroidSession(LoopBoundPrimitive):
 
         self._assert_epoch(expected_epoch)
 
+    async def prepare_metadata(
+        self,
+        metadata_augmentor: MetadataAugmentor,
+        *,
+        expected_epoch: int,
+    ) -> tuple[tuple[str, str | bytes], ...]:
+        """Resolve credential-derived metadata before a multi-call write begins."""
+
+        session = self
+        failure: BaseException | None = None
+        result: tuple[tuple[str, str | bytes], ...] | None = None
+        try:
+            result = await session._prepare_metadata_impl(
+                metadata_augmentor,
+                expected_epoch=expected_epoch,
+            )
+        except BaseException as error:
+            failure = sanitize_escaping_exception(error)
+        finally:
+            del self, session
+        if failure is not None:
+            raise failure
+        assert result is not None
+        return result
+
+    async def _prepare_metadata_impl(
+        self,
+        metadata_augmentor: MetadataAugmentor,
+        *,
+        expected_epoch: int,
+    ) -> tuple[tuple[str, str | bytes], ...]:
+        credential: BearerCredential | None = None
+        try:
+            self._assert_epoch(expected_epoch)
+            credential = await self._bearer_provider.get(expected_epoch=expected_epoch)
+            self._assert_epoch(expected_epoch)
+            metadata = tuple(await metadata_augmentor(credential.token))
+            self._assert_epoch(expected_epoch)
+            return metadata
+        finally:
+            del credential
+
     async def _unary_callable(
         self,
         method: str,
@@ -396,6 +438,7 @@ class AndroidSession(LoopBoundPrimitive):
                         GrpcStatus("DEADLINE_EXCEEDED", 4),
                         credential.generation,
                     )
+                self._assert_epoch(lease.epoch)
                 metadata = metadata + tuple(extra)
             try:
                 wire_call = callable_(

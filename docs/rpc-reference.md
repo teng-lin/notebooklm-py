@@ -76,7 +76,7 @@
 | `X1snv` | ADD_SOURCES_ASYNC | Queue URL sources without waiting for ingest (batch; per-source acks) | `_web/sources/transfers.py` |
 | `QsNTEd` | APPEND_SOURCE | Append a plain-text block to an existing source in place | `_web/sources/transfers.py` |
 | `R27wvc` | COPY_SOURCES | Copy sources into another notebook (original → copy mapping) | `_web/sources/transfers.py` |
-| `mVtEUb` | LIST_EXPERT_INTELLIGENCE_CONTENT | List the account's Google Play Books library — every title, with per-row exportability (Expert Intelligence; web-only add) | `_web/sources/play_books.py` |
+| `mVtEUb` | LIST_EXPERT_INTELLIGENCE_CONTENT | List the account's Google Play Books library — every title, with per-row exportability (Expert Intelligence; Android uses its native RPC counterpart) | `_web/sources/play_books.py` |
 | `mKDdke` | COPY_ARTIFACTS | Copy Studio artifacts into another notebook (full new rows inline) | `_web/artifacts.py` |
 | `OcvKNc` | SUGGEST_NEXT_STEPS | Grounded follow-up questions (the chat `next_steps` block, standalone) | `_web/notebooks.py` |
 | `sqTeoe` | GET_CUSTOMIZATION_CHOICES | Studio "Customize" option tables (account-level) | `_web/artifacts.py` |
@@ -3415,4 +3415,3 @@ params = [<context>, notebook_id]   # when a notebook id is supplied
 `[report_type, description, directive]`. The audio and video families (tags 1–2)
 are live-only — the APK schema declares only slides (3) and reports (4).
 Decoded via `_web/rows/customization.py`.
-

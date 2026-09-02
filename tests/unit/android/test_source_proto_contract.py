@@ -41,6 +41,7 @@ def test_source_generated_package_overlay_is_complete_and_service_free() -> None
     assert sources_pb2.DESCRIPTOR.package == ORCHESTRATION_PACKAGE
     assert [dependency.name for dependency in sources_pb2.DESCRIPTOR.dependencies] == [
         "google/internal/labs/tailwind/orchestration/v1/read.proto",
+        "google/protobuf/timestamp.proto",
         "labs/language/tailwind/common/protos/metadata.proto",
         "labs/language/tailwind/common/protos/provenance.proto",
     ]
@@ -156,7 +157,7 @@ def test_source_generated_package_overlay_is_complete_and_service_free() -> None
         "title": (3, False, FieldDescriptor.TYPE_STRING, None),
         "description": (4, False, FieldDescriptor.TYPE_STRING, None),
         "thumbnail_image_url": (5, False, FieldDescriptor.TYPE_STRING, None),
-        "field_type": (6, False, FieldDescriptor.TYPE_FLOAT, None),
+        "field_type": (6, False, FieldDescriptor.TYPE_DOUBLE, None),
         "authors": (7, True, FieldDescriptor.TYPE_STRING, None),
     }
     assert _shape(sources_pb2.ExpertIntelligenceContentItem) == {
@@ -168,7 +169,13 @@ def test_source_generated_package_overlay_is_complete_and_service_free() -> None
         "export_disabled": (6, False, FieldDescriptor.TYPE_BOOL, None),
         "export_reason": (7, False, FieldDescriptor.TYPE_INT32, None),
         "authors": (8, True, FieldDescriptor.TYPE_STRING, None),
-        "field_type": (9, False, FieldDescriptor.TYPE_FLOAT, None),
+        "field_type": (9, False, FieldDescriptor.TYPE_DOUBLE, None),
+        "updated_timestamp": (
+            10,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            "google.protobuf.Timestamp",
+        ),
     }
     assert _shape(sources_pb2.ListExpertIntelligenceContentRequest) == {
         "request_context": (
