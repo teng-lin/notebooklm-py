@@ -9,15 +9,15 @@ from .conftest import requires_auth
 
 
 async def set_view_level_or_skip(client, notebook_id: str, level: ShareViewLevel):
-    """Skip an account-level Android capability refusal, not implementation errors."""
+    """Skip an account-level capability refusal, not implementation errors."""
     try:
         return await client.sharing.set_view_level(notebook_id, level)
     except ClientError as exc:
-        if (
-            client.backends["sharing"] == "android"
-            and normalize_grpc_status(exc.rpc_code) is GrpcStatusCode.PERMISSION_DENIED
-        ):
-            pytest.skip("Selected Android profile is not permitted to mutate the share view level")
+        if normalize_grpc_status(exc.rpc_code) is GrpcStatusCode.PERMISSION_DENIED:
+            backend = client.backends["sharing"]
+            pytest.skip(
+                f"Selected {backend} profile is not permitted to mutate the share view level"
+            )
         raise
 
 
