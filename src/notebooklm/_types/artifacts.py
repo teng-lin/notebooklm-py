@@ -817,7 +817,9 @@ class ArtifactCustomizationChoices:
     Returned by :meth:`ArtifactsAPI.get_customization_choices`
     (``GetArtifactCustomizationChoices``). The table is account-level: the
     server ignores which notebook it is asked about. Each list is served in the
-    UI's display order.
+    UI's display order. It is an availability table, not an exhaustive enum
+    manifest; dedicated options such as cinematic video may be omitted even
+    though their public wire format remains supported.
 
     Attributes:
         audio: Audio Overview formats (codes match :class:`AudioFormat`).

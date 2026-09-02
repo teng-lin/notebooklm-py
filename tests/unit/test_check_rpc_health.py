@@ -867,11 +867,13 @@ make_raw_rpc_request = check_rpc_health.make_raw_rpc_request
 
 _CHOICES_ID = check_rpc_health.RPCMethod.GET_CUSTOMIZATION_CHOICES.value
 _OPTS = [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]]
-# The four families as served live on 2026-09-01 (labels verbatim, descriptions elided).
+# The four families as served live on 2026-09-02 (labels verbatim, descriptions elided).
+# CINEMATIC is a dedicated generation flow and is not always included in this
+# account/UI availability table; its absence is not removal of wire format 3.
 _LIVE_TABLE: list[Any] = [
     [
         [[[1, "Deep Dive", "d"], [2, "Brief", "d"], [3, "Critique", "d"], [4, "Debate", "d"]]],
-        [[[1, "Explainer", "d"], [2, "Brief", "d"], [3, "Cinematic", "d"], [4, "Short", "d"]]],
+        [[[1, "Explainer", "d"], [2, "Brief", "d"], [4, "Short", "d"]]],
         [[[1, "Detailed Deck", "d"], [2, "Presenter Slides", "d"]]],
         [[["Briefing Doc", "d", "directive"]]],
     ]
@@ -925,10 +927,19 @@ async def test_make_raw_rpc_request_threads_id_into_query_and_body() -> None:
     assert check_rpc_health.RPCMethod.LIST_NOTEBOOKS.value not in captured["content"]
 
 
-def test_compare_customization_choices_matches_the_live_table() -> None:
+def test_compare_customization_choices_matches_live_table_without_cinematic_row() -> None:
     status, detail = compare_customization_choices(_LIVE_TABLE)
     assert status is CustomizationStatus.MATCH
-    assert "match" in detail
+    assert "required customization choices are present" in detail
+
+
+def test_compare_customization_choices_matches_when_optional_cinematic_row_is_served() -> None:
+    """CINEMATIC has appeared in sqTeoe too; both availability shapes are valid."""
+    table = json.loads(json.dumps(_LIVE_TABLE))
+    table[0][1][0].insert(2, [3, "Cinematic", "d"])
+    status, detail = compare_customization_choices(table)
+    assert status is CustomizationStatus.MATCH
+    assert "required customization choices are present" in detail
 
 
 def test_compare_customization_choices_drifts_on_a_new_code() -> None:
@@ -943,7 +954,7 @@ def test_compare_customization_choices_drifts_on_a_new_code() -> None:
 def test_compare_customization_choices_drifts_on_a_dropped_member_only() -> None:
     """Codes decide DRIFT; a label rename is reported but is not drift on its own."""
     table = json.loads(json.dumps(_LIVE_TABLE))
-    del table[0][1][0][3]  # video: Short (4) no longer served
+    del table[0][1][0][2]  # video: Short (4) no longer served
     status, detail = compare_customization_choices(table)
     assert status is CustomizationStatus.DRIFT
     assert "video: modelled codes not served [(4, 'SHORT')]" in detail
@@ -953,7 +964,7 @@ def test_compare_customization_choices_drifts_on_a_dropped_member_only() -> None
 def test_compare_customization_choices_reports_a_label_rename_without_drift() -> None:
     """Labels follow ``hl`` and Google's copy; only the codes are load-bearing (#1597)."""
     table = json.loads(json.dumps(_LIVE_TABLE))
-    table[0][1][0][3] = [4, "Panel", "d"]  # video: Short renamed, code unchanged
+    table[0][1][0][2] = [4, "Panel", "d"]  # video: Short renamed, code unchanged
     status, detail = compare_customization_choices(table)
     assert status is CustomizationStatus.MATCH
     assert "video: label differs from member name [(4, 'Panel', 'SHORT')]" in detail

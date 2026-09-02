@@ -667,7 +667,9 @@ class WebArtifactsAPI(ArtifactsAPI):
         of :class:`~notebooklm.types.AudioFormat`,
         :class:`~notebooklm.types.VideoFormat` and
         :class:`~notebooklm.types.SlideDeckFormat`; report presets carry the
-        full generation directive each preset expands to.
+        full generation directive each preset expands to. This is an
+        availability table rather than an exhaustive enum manifest; dedicated
+        options such as cinematic video may be omitted.
 
         .. versionadded:: 0.9.0
         """

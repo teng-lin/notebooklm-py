@@ -3506,8 +3506,10 @@ params = [<context>, notebook_id]   # when a notebook id is supplied
 
 **Response:** `[[ <audio>, <video>, <slide-deck>, <report presets> ]]` — one
 `ArtifactCustomizationChoices` message whose four one-field families each hold
-`[[row, ...]]`. Format rows are `[code, title, description]` (codes match
-`AudioFormat` / `VideoFormat` / `SlideDeckFormat`); report rows are
+`[[row, ...]]`. Format rows are `[code, title, description]` (codes use
+`AudioFormat` / `VideoFormat` / `SlideDeckFormat` values), but this account/UI
+availability table is not an exhaustive enum manifest: dedicated options such
+as cinematic video may be omitted. Report rows are
 `[report_type, description, directive]`. The audio and video families (tags 1–2)
 are live-only — the APK schema declares only slides (3) and reports (4).
 Decoded via `_web/rows/customization.py`.

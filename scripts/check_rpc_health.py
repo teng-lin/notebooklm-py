@@ -11,8 +11,8 @@ Exit codes:
     3 - One or more RPC methods returned a non-transient ERROR
         (timeouts, parse failures, unexpected HTTP errors)
     4 - Studio option-table drift: ``GetArtifactCustomizationChoices`` served
-        format codes/labels that disagree with the client's AudioFormat /
-        VideoFormat / SlideDeckFormat enums (re-capture them; #1597 class)
+        an unknown format code or omitted a required AudioFormat / VideoFormat /
+        SlideDeckFormat choice (re-capture the contract; #1597 class)
     5 - Stale frontend build label: the ``bl`` value pinned in
         ``_env.DEFAULT_BL`` trails the label the app shell actually serves by
         more than ``_env.BUILD_LABEL_STALE_AFTER_DAYS``. Ordinary week-to-week
@@ -144,12 +144,12 @@ class CustomizationStatus(str, Enum):
     ``GetArtifactCustomizationChoices`` serves the Studio "Customize" tables —
     the audio / video / slide-deck format rows whose integer codes the client
     hardcodes as ``AudioFormat`` / ``VideoFormat`` / ``SlideDeckFormat``. The
-    probe compares the served ``(code, label)`` pairs against those enums:
-    ``MATCH`` is the steady state; ``DRIFT`` means a served family disagrees
-    with the client (a new code, a renamed label, a dropped member) and the
-    enums in ``_types/enums.py`` must be re-captured (#1597 was exactly this
-    failure class); ``UNKNOWN`` covers a transport / parse failure on the probe
-    itself (no conclusion drawn — never an alarm).
+    probe compares the served ``(code, label)`` pairs against those enums while
+    allowing documented availability-table omissions: ``MATCH`` is the steady
+    state; ``DRIFT`` means a served family has a new code or dropped a required
+    choice and the contract must be re-captured (#1597 was exactly this failure
+    class); ``UNKNOWN`` covers a transport / parse failure on the probe itself
+    (no conclusion drawn — never an alarm). Label changes are reported only.
 
     Replaces the earlier ``sqTeoe`` "cohort tripwire", which sent a shape the
     server rejects (``[nbctx, None, 3]`` draws ``INVALID_ARGUMENT``) and then
@@ -197,13 +197,18 @@ RECORDED_REBRAND_STATUSES: frozenset[RebrandProbeStatus] = frozenset(
 
 
 # The Studio option-table cross-check compares these served families against the
-# client enums (``compare_customization_choices``). Report presets are free text
-# and only checked for presence. NOTE: the served table has no VideoStyle family,
-# so the ``VideoStyle`` codes (#1597) are still not watched by any lane.
-_CUSTOMIZATION_FAMILIES: tuple[tuple[str, type[Enum]], ...] = (
-    ("audio", AudioFormat),
-    ("video", VideoFormat),
-    ("slide_deck", SlideDeckFormat),
+# client enums (``compare_customization_choices``). The third item lists modelled
+# codes whose absence is not drift. ``sqTeoe`` is an account/UI availability
+# table, not an exhaustive wire-enum manifest: CINEMATIC uses a dedicated
+# generation flow and has been observed both present (2026-09-01) and absent
+# (2026-09-02, #2313) while format code 3 remains supported. Report presets are
+# free text and only checked for presence. NOTE: the served table has no
+# VideoStyle family, so the ``VideoStyle`` codes (#1597) are still not watched by
+# any lane.
+_CUSTOMIZATION_FAMILIES: tuple[tuple[str, type[Enum], frozenset[int]], ...] = (
+    ("audio", AudioFormat, frozenset()),
+    ("video", VideoFormat, frozenset({VideoFormat.CINEMATIC.value})),
+    ("slide_deck", SlideDeckFormat, frozenset()),
 )
 
 
@@ -1097,11 +1102,13 @@ def compare_customization_choices(data: Any) -> tuple[CustomizationStatus, str]:
     """Compare a decoded ``GET_CUSTOMIZATION_CHOICES`` payload with the client enums.
 
     ``DRIFT`` is drawn on the **wire codes** only: a served code the enum lacks,
-    an enum member the server no longer offers, an empty family, an unmodelled
-    fifth family, or no well-formed report preset. Labels are compared too but
-    only *reported* in the detail string — the probe sends ``hl`` from
-    ``NOTEBOOKLM_HL`` and Google renames copy freely, so a label delta must not
-    file a breakage issue on its own (#1597 was a code move, not a rename).
+    a required choice the server no longer offers, an empty family, an
+    unmodelled fifth family, or no well-formed report preset. A documented
+    optional row may be absent without implying that its wire format was
+    removed. Labels are compared too but only *reported* in the detail string —
+    the probe sends ``hl`` from ``NOTEBOOKLM_HL`` and Google renames copy freely,
+    so a label delta must not file a breakage issue on its own (#1597 was a code
+    move, not a rename).
     """
     view = unwrap_customization_choices(
         data, method_id=RPCMethod.GET_CUSTOMIZATION_CHOICES.value, source="rpc-health"
@@ -1113,14 +1120,14 @@ def compare_customization_choices(data: Any) -> tuple[CustomizationStatus, str]:
     }
     problems: list[str] = []
     notes: list[str] = []
-    for family, enum_type in _CUSTOMIZATION_FAMILIES:
+    for family, enum_type, optional_codes in _CUSTOMIZATION_FAMILIES:
         served = {row.code: row.title for row in rows_by_family[family] if row.is_well_formed}
         expected = {member.value: member.name for member in enum_type}
         if not served:
             problems.append(f"{family}: no rows served")
             continue
         extra = sorted(set(served) - set(expected))
-        missing = sorted(set(expected) - set(served))
+        missing = sorted(set(expected) - optional_codes - set(served))
         if extra:
             problems.append(
                 f"{family}: served codes not modelled {[(code, served[code]) for code in extra]}"
@@ -1146,7 +1153,7 @@ def compare_customization_choices(data: Any) -> tuple[CustomizationStatus, str]:
         problems.append("reports: no well-formed presets served")
     if problems:
         return CustomizationStatus.DRIFT, "; ".join(problems + notes)
-    detail = "served audio / video / slide-deck codes match the client enums"
+    detail = "served codes are modelled and all required customization choices are present"
     if notes:
         detail += " (" + "; ".join(notes) + ")"
     return CustomizationStatus.MATCH, detail
