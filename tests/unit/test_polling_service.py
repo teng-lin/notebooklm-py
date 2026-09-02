@@ -79,3 +79,62 @@ async def test_status_with_elapsed_json_output_is_no_op() -> None:
 
     assert entered is True
     status.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_poll_until_returns_immediately_when_the_first_fetch_is_terminal() -> None:
+    """The happy path costs exactly one fetch and never sleeps."""
+    sleeps: list[float] = []
+
+    async def fetch() -> str:
+        return "completed"
+
+    with patch.object(polling.asyncio, "sleep", side_effect=lambda d: sleeps.append(d)):
+        result = await poll_until(
+            fetch, lambda value: value == "completed", timeout=10.0, interval=1.0
+        )
+
+    assert (result.value, result.attempts, result.timed_out) == ("completed", 1, False)
+    assert result.elapsed >= 0.0
+    assert sleeps == []
+
+
+@pytest.mark.asyncio
+async def test_poll_until_still_fetches_once_with_a_zero_timeout() -> None:
+    """``timeout=0`` is a single-shot poll, not a refusal."""
+    attempts = 0
+
+    async def fetch() -> str:
+        nonlocal attempts
+        attempts += 1
+        return "pending"
+
+    result = await poll_until(fetch, lambda value: value == "done", timeout=0.0, interval=1.0)
+
+    assert (attempts, result.attempts, result.timed_out) == (1, 1, True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        pytest.param({"timeout": -1.0, "interval": 1.0}, "non-negative", id="negative-timeout"),
+        pytest.param({"timeout": 1.0, "interval": 0.0}, "must be positive", id="zero-interval"),
+        pytest.param(
+            {"timeout": 1.0, "interval": -1.0}, "must be positive", id="negative-interval"
+        ),
+    ],
+)
+async def test_poll_until_rejects_unusable_budgets(kwargs: dict, message: str) -> None:
+    """Rejection happens before the first fetch."""
+    called = False
+
+    async def fetch() -> str:
+        nonlocal called
+        called = True
+        return "pending"
+
+    with pytest.raises(ValueError, match=message):
+        await poll_until(fetch, lambda _value: True, **kwargs)
+
+    assert called is False
