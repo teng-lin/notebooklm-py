@@ -93,8 +93,8 @@ def test_accessing_source_batch_adds_no_additional_web_modules() -> None:
     """Accessing ``_source.batch`` must not import additional web backend modules."""
     probe = (
         "import sys, json; import notebooklm; "
-        "before = {n for n in sys.modules if n.startswith('notebooklm._web')}; "
         "import notebooklm._source; "
+        "before = {n for n in sys.modules if n.startswith('notebooklm._web')}; "
         "_ = notebooklm._source.batch; "
         "after = {n for n in sys.modules if n.startswith('notebooklm._web')}; "
         "print(json.dumps(sorted(after - before)))"
