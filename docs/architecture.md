@@ -1300,6 +1300,7 @@ src/notebooklm/
 │   ├── __init__.py              # Dependency-free package marker
 │   ├── auth.py                  # Epoch-aware short-lived bearer provider
 │   ├── account.py               # Private non-replayed account bootstrap adapter
+│   ├── phenotype.py             # Headless GMS Phenotype token acquisition for Play Books
 │   ├── codecs/                  # Android protobuf projections
 │   │   ├── __init__.py          # Codec package marker
 │   │   ├── account.py           # Strict frozen account projection
@@ -1377,6 +1378,9 @@ src/notebooklm/
 │           ├── sharing_pb2_grpc.py               # Deterministic service-free companion
 │           ├── organization_mutations_pb2.py     # Repository-local organization wire
 │           └── organization_mutations_pb2_grpc.py # Deterministic service-free companion
+│       ├── notebooklm/experiments/v1/
+│           ├── exptsandconfigs_pb2.py      # Minimal Phenotype/Heterodyne messages
+│           └── exptsandconfigs_pb2_grpc.py # Deterministic service-free companion
 │       ├── notebooklm/internal/android/wire/v1/
 │           ├── notebooks_pb2.py       # Repository-local notebook wire messages
 │           ├── notebooks_pb2_grpc.py  # Deterministic service-free companion

@@ -32,7 +32,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-from ..exceptions import MissingDependencyError, RPCError
+from ..exceptions import MissingDependencyError, NotebookLMError
 
 # A fixed, plausible device identity. Verified live: the experiment assignment
 # that gates Play Books is keyed on the *account* (via the bearer), not on the
@@ -68,7 +68,7 @@ _MISSING_TOKEN_MESSAGE = (
 )
 
 
-class PhenotypeError(RPCError):
+class PhenotypeError(NotebookLMError):
     """The Phenotype ``getExperimentsAndConfigs`` fetch could not be completed."""
 
 
