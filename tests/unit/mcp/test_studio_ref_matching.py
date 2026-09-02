@@ -23,12 +23,20 @@ UUID_B = "bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb"
 UUID_C = "cccccccc-3333-4333-8333-cccccccccccc"
 
 
-def _item(item_id: str, title: str | None, kind: str = "note") -> dict[str, Any]:
+#: Studio items carry a note's literal ``"note"`` or an artifact's *hyphenated*
+#: kind (``hyphenated_type``), never a generic ``"artifact"`` — keeping that
+#: vocabulary here is what makes the scoping cases relate to real behaviour.
+NOTE = "note"
+SLIDE_DECK = "slide-deck"
+MIND_MAP = "mind-map"
+
+
+def _item(item_id: str, title: str | None, kind: str = NOTE) -> dict[str, Any]:
     return {"id": item_id, "title": title, "type": kind}
 
 
 def test_a_full_uuid_matches_its_item() -> None:
-    items = [_item(UUID_A, "Notes"), _item(UUID_B, "Deck", "artifact")]
+    items = [_item(UUID_A, "Notes"), _item(UUID_B, "Deck", SLIDE_DECK)]
 
     assert _match_studio_ref(items, UUID_A, None) == items[0]
 
@@ -116,12 +124,12 @@ def test_an_ambiguous_title_listing_is_truncated() -> None:
 @pytest.mark.parametrize(
     ("kind", "expected_id"),
     [
-        pytest.param("note", UUID_A, id="note-scope"),
-        pytest.param("artifact", UUID_B, id="artifact-scope"),
+        pytest.param(NOTE, UUID_A, id="note-scope"),
+        pytest.param(SLIDE_DECK, UUID_B, id="slide-deck-scope"),
     ],
 )
 def test_a_kind_scope_restricts_the_candidate_set(kind: str, expected_id: str) -> None:
-    items = [_item(UUID_A, "Same", "note"), _item(UUID_B, "Same", "artifact")]
+    items = [_item(UUID_A, "Same", NOTE), _item(UUID_B, "Same", SLIDE_DECK)]
 
     match = _match_studio_ref(items, "Same", kind)
 
@@ -130,15 +138,15 @@ def test_a_kind_scope_restricts_the_candidate_set(kind: str, expected_id: str) -
 
 
 def test_a_kind_scope_hides_an_item_of_another_type() -> None:
-    items = [_item(UUID_A, "Notes", "note")]
+    items = [_item(UUID_A, "Notes", NOTE)]
 
-    assert _match_studio_ref(items, UUID_A, "artifact") is None
+    assert _match_studio_ref(items, UUID_A, SLIDE_DECK) is None
 
 
 def test_a_kind_scope_resolves_what_would_otherwise_be_ambiguous() -> None:
-    items = [_item(UUID_A, "Draft", "note"), _item(UUID_B, "Draft", "artifact")]
+    items = [_item(UUID_A, "Draft", NOTE), _item(UUID_B, "Draft", MIND_MAP)]
 
-    match = _match_studio_ref(items, "Draft", "note")
+    match = _match_studio_ref(items, "Draft", NOTE)
 
     assert match is not None
     assert match["id"] == UUID_A

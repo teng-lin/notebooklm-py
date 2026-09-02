@@ -88,7 +88,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        body = b"deleted " + self.path.encode()
+        body = (f"deleted {self.path} auth={self.headers.get('Authorization', '')}").encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.send_header("Set-Cookie", "DELCOOKIE=set; Path=/")
@@ -104,10 +104,15 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        body = b"put:" + data
+        body = b"put:" + data[:8]
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.send_header("X-Echo-Len", str(len(data)))
+        # Echo what the client actually sent, so a test can prove the header
+        # and cookie plumbing is real rather than merely non-fatal.
+        self.send_header("X-Echo-Content-Type", self.headers.get("Content-Type", ""))
+        self.send_header("X-Echo-Cookie", self.headers.get("Cookie", ""))
+        self.send_header("X-Echo-Upload-Command", self.headers.get("X-Goog-Upload-Command", ""))
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -506,7 +511,7 @@ async def test_delete_returns_an_httpx_response_and_syncs_cookies(server):
 
         assert isinstance(response, httpx.Response)
         assert response.status_code == 200
-        assert response.text == "deleted /staged-file"
+        assert response.text.startswith("deleted /staged-file")
         # The response jar is synced back like every other verb.
         assert client.cookies.get("DELCOOKIE") == "set"
     finally:
@@ -514,6 +519,8 @@ async def test_delete_returns_an_httpx_response_and_syncs_cookies(server):
 
 
 async def test_delete_forwards_request_headers(server):
+    """Dropping ``headers`` would make the authenticated Drive cleanup 401 and
+    silently leave the staged file behind, so the server echoes what it saw."""
     client = CurlCffiAsyncClient()
     try:
         response = await client.delete(
@@ -521,6 +528,7 @@ async def test_delete_forwards_request_headers(server):
         )
 
         assert response.status_code == 200
+        assert "auth=Bearer token" in response.text
     finally:
         await client.aclose()
 
@@ -552,7 +560,7 @@ async def test_delete_maps_a_transport_failure_to_httpx_request_error():
 
 
 async def test_stream_upload_sends_a_file_from_disk_without_buffering(server, tmp_path):
-    payload = b"x" * 4096
+    payload = b"x" * (512 * 1024)
     source = tmp_path / "upload.bin"
     source.write_bytes(payload)
     client = CurlCffiAsyncClient()
@@ -561,13 +569,19 @@ async def test_stream_upload_sends_a_file_from_disk_without_buffering(server, tm
             f"{server}/target",
             source,
             total_bytes=len(payload),
-            headers={"Content-Type": "application/octet-stream"},
+            headers={
+                "Content-Type": "application/octet-stream",
+                "X-Goog-Upload-Command": "upload, finalize",
+            },
             method="PUT",
         )
 
         assert response.status_code == 200
         assert response.headers["X-Echo-Len"] == str(len(payload))
         assert response.text.startswith("put:")
+        # Real resumable-upload callers depend on these reaching the server.
+        assert response.headers["X-Echo-Content-Type"] == "application/octet-stream"
+        assert response.headers["X-Echo-Upload-Command"] == "upload, finalize"
     finally:
         await client.aclose()
 
@@ -596,7 +610,8 @@ async def test_stream_upload_accepts_an_already_open_handle_and_leaves_it_open(s
 
 
 async def test_stream_upload_reports_progress_per_chunk(server, tmp_path):
-    payload = b"z" * 8192
+    """Several positive callbacks, not one after buffering the whole file."""
+    payload = b"z" * (512 * 1024)
     source = tmp_path / "upload.bin"
     source.write_bytes(payload)
     seen: list[int] = []
@@ -617,6 +632,8 @@ async def test_stream_upload_reports_progress_per_chunk(server, tmp_path):
 
         assert response.status_code == 200
         assert sum(seen) == len(payload)
+        assert all(count > 0 for count in seen)
+        assert len(seen) > 1, f"body was delivered in one read: {seen}"
     finally:
         await client.aclose()
 
@@ -681,13 +698,37 @@ async def test_get_guarded_maps_a_transport_failure_to_httpx_request_error():
         await client.aclose()
 
 
-async def test_opening_a_stream_against_a_dead_peer_raises_and_closes_the_handle():
-    """``__aexit__`` is not auto-called when ``__aenter__`` raises."""
+async def test_opening_a_stream_against_a_dead_peer_raises_and_closes_the_handle(
+    monkeypatch,
+):
+    """``__aexit__`` is not auto-called when ``__aenter__`` raises.
+
+    The curl stream context is instrumented so this proves the explicit
+    failure-path cleanup ran, rather than relying on the later
+    ``client.aclose()`` to tidy the whole session.
+    """
     client = CurlCffiAsyncClient()
+    exits: list[object] = []
+    real_stream = client._curl.stream
+
+    def _instrumented_stream(method, url, **kwargs):
+        cm = real_stream(method, url, **kwargs)
+        real_aexit = cm.__aexit__
+
+        async def _tracking_aexit(*exc):
+            exits.append(exc[0])
+            return await real_aexit(*exc)
+
+        cm.__aexit__ = _tracking_aexit
+        return cm
+
+    monkeypatch.setattr(client._curl, "stream", _instrumented_stream)
     try:
         with pytest.raises(httpx.RequestError):
             async with client.stream("GET", "http://127.0.0.1:1/asset"):
                 pass  # pragma: no cover - the enter must raise
+
+        assert exits, "the curl stream handle was never closed on the failure path"
     finally:
         await client.aclose()
 
@@ -729,5 +770,7 @@ async def test_stream_upload_sends_the_session_cookie_jar_for_that_url(server, t
         )
 
         assert response.status_code == 200
+        # Without the CURLOPT_COOKIE setup this upload leg would be anonymous.
+        assert "SESSION=value" in response.headers["X-Echo-Cookie"]
     finally:
         await client.aclose()
