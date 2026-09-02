@@ -321,13 +321,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        - os: ubuntu-latest
+        - os: windows-latest
           backend: web
           generation_notebook: shared
         - os: windows-latest
-          backend: web
-          generation_notebook: unused
-        - os: ubuntu-latest
           backend: android
           generation_notebook: scratch
     env:
@@ -491,7 +488,7 @@ jobs:
           fi
           echo "::warning::master-token mint attempt ${attempt} failed."
           if [ "$attempt" -lt 3 ]; then
-            # Jitter: nightly's ubuntu/windows legs mint concurrently from the
+            # Jitter: nightly's Web/Android legs mint concurrently from the
             # same token, so a fixed backoff would have them retry in lockstep
             # and collide again on whatever throttled the first attempt.
             sleep $((attempt * 15 + RANDOM % 20))
@@ -535,10 +532,9 @@ jobs:
         PY
 
     - name: Bind shared Web generation notebook
-      # Only the full Web/Ubuntu lane may clean the long-lived generation
+      # Only the full Web lane may clean the long-lived generation
       # notebook. Android intentionally receives no generation-notebook env
       # value, so the E2E fixture creates and deletes its own disposable copy.
-      # Windows runs the read-only marker subset and needs neither form.
       if: matrix.generation_notebook == 'shared'
       env:
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
@@ -694,12 +690,11 @@ jobs:
           # the run — so disable enforcement for filtered dispatches (codex).
           unset E2E_ENFORCE_COVERAGE_FLOOR
           uv run pytest -s -v --tb=short --reruns 1 --reruns-delay 30 -- "$TEST_FILTER"
-        elif [ "$MATRIX_OS" = "ubuntu-latest" ]; then
-          # Linux: run all E2E tests except variants
-          uv run pytest tests/e2e -m "not variants" -s -v --tb=short --reruns 1 --reruns-delay 30
         else
-          # Windows: run only read-only tests (safer, avoids write operations)
-          uv run pytest tests/e2e -m "readonly and not variants" -s -v --tb=short --reruns 1 --reruns-delay 30
+          # Both Windows backend lanes run the complete E2E surface. Web uses
+          # the dedicated shared generation notebook; Android uses an isolated
+          # scratch notebook created and cleaned up by this job.
+          uv run pytest tests/e2e -m "not variants" -s -v --tb=short --reruns 1 --reruns-delay 30
         fi
 
     - name: Retry failed E2E tests after 10-min cool-down
@@ -748,13 +743,11 @@ jobs:
       # Minimum live coverage of the opt-in curl_cffi transport: the handful of
       # @pytest.mark.impersonate_smoke e2e tests (one per transport-critical op —
       # read / ask / upload / download) run with NOTEBOOKLM_TRANSPORT=curl_cffi.
-      # ubuntu-only (the write path exercises the upload-fingerprint case that no
-      # offline test can reach; Windows just needs the read/ask path, already
-      # covered by the httpx legs + the test.yml hermetic matrix). Same is_standard
-      # secret gate as the steps above.
+      # Keep this on the Web lane: the write path exercises the upload-fingerprint
+      # case that no offline test can reach. The ordinary E2E run above uses httpx.
+      # Same is_standard secret gate as the steps above.
       if: |
         needs.resolve-branch.outputs.is_standard == 'true'
-        && matrix.os == 'ubuntu-latest'
         && matrix.backend == 'web'
       env:
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}

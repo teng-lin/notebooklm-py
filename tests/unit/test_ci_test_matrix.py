@@ -266,9 +266,8 @@ def test_nightly_e2e_runs_explicit_web_and_android_backends() -> None:
 
     assert "${{ matrix.backend }}" in job["name"]
     assert job["strategy"]["matrix"]["include"] == [
-        {"os": "ubuntu-latest", "backend": "web", "generation_notebook": "shared"},
-        {"os": "windows-latest", "backend": "web", "generation_notebook": "unused"},
-        {"os": "ubuntu-latest", "backend": "android", "generation_notebook": "scratch"},
+        {"os": "windows-latest", "backend": "web", "generation_notebook": "shared"},
+        {"os": "windows-latest", "backend": "android", "generation_notebook": "scratch"},
     ]
     assert job["env"]["NOTEBOOKLM_BACKEND"] == "${{ matrix.backend }}"
     assert "${{ matrix.backend }}" in job["concurrency"]["group"]
@@ -330,8 +329,13 @@ def test_nightly_e2e_runs_explicit_web_and_android_backends() -> None:
     assert "unset E2E_ENFORCE_COVERAGE_FLOOR" in retry_command
     assert "tests/e2e --last-failed --last-failed-no-failures=none" in retry_command
 
+    primary_command = str(primary["run"])
+    assert 'tests/e2e -m "not variants"' in primary_command
+    assert "readonly and not variants" not in primary_command
+
     curl_smoke = _step(job, "curl_cffi transport smoke (live, minimal)")
     assert "matrix.backend == 'web'" in str(curl_smoke["if"])
+    assert "ubuntu-latest" not in str(curl_smoke["if"])
     assert "NOTEBOOKLM_GENERATION_NOTEBOOK_ID" not in curl_smoke["env"]
 
 
