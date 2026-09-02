@@ -39,7 +39,6 @@ from ..exceptions import (
     NetworkError,
     RateLimitError,
     ResearchStartUnavailableError,
-    ResearchTimeoutError,
     RPCError,
     RPCTimeoutError,
     ServerError,
@@ -531,112 +530,6 @@ class WebResearchAPI(BaseResearchAPI):
             return ResearchTask.not_found(task_id)
 
         return ResearchTask.empty()
-
-    async def _web_wait_for_completion(
-        self,
-        notebook_id: str,
-        task_id: str | None = None,
-        *,
-        timeout: float = 1800,
-        initial_interval: float = _INITIAL_INTERVAL_UNSET,
-    ) -> ResearchTask:
-        """Poll until research reaches a terminal state or times out.
-
-        When the first poll returns a concrete ``task_id``, subsequent polls
-        pass it back through :meth:`poll` as the discriminator. This prevents a
-        later concurrent research task in the same notebook from substituting
-        its sources/report into this wait loop.
-
-        Args:
-            notebook_id: The notebook ID.
-            task_id: Optional research task discriminator. Pass the value
-                returned by :meth:`start` when available. When ``None`` and two
-                or more tasks are in flight on the first poll,
-                :class:`~notebooklm.exceptions.AmbiguousResearchTaskError` is
-                raised; a single in-flight task is selected and pinned silently.
-            timeout: Maximum seconds to wait.
-            initial_interval: Seconds between status checks (default: 5). This
-                is the canonical poll-interval keyword, matching
-                :meth:`SourcesAPI.wait_until_ready` and
-                :meth:`ArtifactsAPI.wait_for_completion`.
-
-        Returns:
-            The final :meth:`poll` result (a
-            :class:`~notebooklm._types.research.ResearchTask`) for
-            ``COMPLETED`` or ``FAILED`` statuses. ``NO_RESEARCH`` is returned
-            immediately only when no task id is known; for a known/pinned task
-            it can be a transient live-API state before the task appears in
-            ``POLL_RESEARCH``. Unlike :meth:`poll`, this method never returns
-            ``NOT_FOUND`` — a pinned task that is temporarily absent from a poll
-            is treated as a transient replication-lag condition and keeps
-            polling until it appears, reaches a terminal state, or times out.
-            Use attribute access (``result.status``).
-
-        Raises:
-            AmbiguousResearchTaskError: If ``task_id`` is ``None`` and two or
-                more tasks are in flight on the first poll (pass ``task_id``).
-            ResearchTimeoutError: If research does not reach a terminal status
-                before ``timeout`` elapses. Subclass of
-                :class:`WaitTimeoutError` and the built-in :class:`TimeoutError`,
-                so ``except TimeoutError`` continues to catch it.
-            ValueError: If ``timeout`` is negative or the poll interval is not
-                positive.
-            TypeError: If the resolved poll interval is not a number.
-        """
-        # Unset sentinel → default cadence. An *explicit* non-numeric value
-        # (``None``, ``"1"``) is a caller bug: fail fast with TypeError rather
-        # than silently coercing it back to the default.
-        if initial_interval is _INITIAL_INTERVAL_UNSET:
-            poll_interval = _DEFAULT_RESEARCH_POLL_INTERVAL
-        elif isinstance(initial_interval, bool) or not isinstance(initial_interval, (int, float)):
-            raise TypeError("poll interval must be a number")
-        else:
-            poll_interval = float(initial_interval)
-
-        if timeout < 0:
-            raise ValueError("timeout must be non-negative")
-        if poll_interval <= 0:
-            raise ValueError("poll interval must be positive")
-
-        loop = asyncio.get_running_loop()
-        start = loop.time()
-        pinned_task_id = task_id
-
-        while True:
-            parsed_tasks = self._select_polled_tasks(
-                await self._poll_task_models(notebook_id),
-                notebook_id=notebook_id,
-                task_id=pinned_task_id,
-                raise_on_ambiguous=pinned_task_id is None,
-            )
-            selected_task = next(iter(parsed_tasks), None)
-            if pinned_task_id is None and selected_task is not None:
-                pinned_task_id = selected_task.task_id
-
-            status_val: ResearchStatus = (
-                selected_task.status if selected_task is not None else ResearchStatus.NO_RESEARCH
-            )
-            if selected_task is not None and status_val in (
-                ResearchStatus.COMPLETED,
-                ResearchStatus.FAILED,
-            ):
-                return self._public_poll_result(selected_task, parsed_tasks)
-            if status_val == ResearchStatus.NO_RESEARCH and pinned_task_id is None:
-                return ResearchTask.empty()
-
-            elapsed = loop.time() - start
-            if elapsed >= timeout:
-                task_label = pinned_task_id or "unknown"
-                raise ResearchTimeoutError(
-                    notebook_id,
-                    task_label,
-                    timeout,
-                    last_status=status_val.value,
-                )
-
-            sleep_for = min(poll_interval, timeout - elapsed)
-            if sleep_for > 0:
-                await asyncio.sleep(sleep_for)
 
     def _wait_observed_status(self, result: ResearchTask) -> ResearchStatus:
         """Preserve Web wait's pre-neutralization pinned-absence status."""
