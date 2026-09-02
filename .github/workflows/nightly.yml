@@ -14,6 +14,11 @@ on:
         description: 'Override branch to test (leave empty to test the branch you triggered from)'
         required: false
         default: ''
+      run_compatibility:
+        description: 'Also run the 3-OS by 5-Python compatibility matrix'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -91,7 +96,12 @@ jobs:
   compatibility:
     name: Compatibility (${{ needs.resolve-branch.outputs.branch }}@${{ needs.resolve-branch.outputs.short_sha }}/${{ matrix.os }}/Python ${{ matrix.python-version }})
     needs: resolve-branch
-    if: needs.resolve-branch.outputs.is_standard == 'true'
+    # Scheduled nightlies always exercise the full support matrix. Manual
+    # release E2E dispatches may skip this duplicate work after the PR's
+    # required 15-cell matrix has already passed.
+    if: >-
+      needs.resolve-branch.outputs.is_standard == 'true' &&
+      (github.event_name == 'schedule' || inputs.run_compatibility)
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

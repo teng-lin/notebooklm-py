@@ -132,7 +132,10 @@ def test_nightly_runs_full_sha_pinned_compatibility_matrix() -> None:
     job = workflow["jobs"]["compatibility"]
 
     assert job["needs"] == "resolve-branch"
-    assert job["if"] == "needs.resolve-branch.outputs.is_standard == 'true'"
+    assert job["if"] == (
+        "needs.resolve-branch.outputs.is_standard == 'true' && "
+        "(github.event_name == 'schedule' || inputs.run_compatibility)"
+    )
     assert job["runs-on"] == "${{ matrix.os }}"
     assert job["strategy"] == {
         "fail-fast": False,
@@ -143,6 +146,11 @@ def test_nightly_runs_full_sha_pinned_compatibility_matrix() -> None:
     }
     assert "environment" not in job
     assert "secrets." not in str(job)
+
+    workflow_text = NIGHTLY_WORKFLOW.read_text(encoding="utf-8")
+    assert "run_compatibility:" in workflow_text
+    assert "type: boolean" in workflow_text
+    assert "default: false" in workflow_text
 
     checkout = next(
         step for step in job["steps"] if str(step.get("uses", "")).startswith("actions/checkout@")

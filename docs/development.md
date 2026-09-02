@@ -550,7 +550,7 @@ lock sibling and the two invocations never contend.
    green run that never exercised the adapter surface. Add both extras
    (CI installs `--extra mcp --extra server --extra impersonate`) to run them.
 
-   CI runs the same lint gate with `uv run pre-commit run --all-files`, so local hook results should match the `quality` job. The ordinary suite then runs in a full 15-cell compatibility matrix: Ubuntu, macOS, and Windows crossed with Python 3.10–3.14. Nightly repeats that matrix against one resolved commit before its dedicated coverage and two full Windows live-E2E jobs, one each for the Web and Android backends.
+   CI runs the same lint gate with `uv run pre-commit run --all-files`, so local hook results should match the `quality` job. The ordinary suite then runs in a full 15-cell compatibility matrix: Ubuntu, macOS, and Windows crossed with Python 3.10–3.14. Scheduled nightly runs repeat that matrix against one resolved commit before their dedicated coverage and two full Windows live-E2E jobs, one each for the Web and Android backends. Manual nightly dispatches default to skipping the duplicate compatibility matrix; select `run_compatibility` when that extra rerun is intentional.
 
 2. **Authenticate:**
    ```bash
