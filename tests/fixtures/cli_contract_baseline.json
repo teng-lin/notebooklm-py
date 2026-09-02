@@ -10217,7 +10217,7 @@
           }
         }
       ],
-      "short_help": "Check installed skill targets and version..."
+      "short_help": "Check installed skill targets, versions,..."
     },
     "skill uninstall": {
       "class": "Command",

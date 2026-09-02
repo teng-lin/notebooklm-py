@@ -196,6 +196,32 @@ def test_skill_md_does_not_use_status_for_auth() -> None:
     )
 
 
+def test_skill_md_workflows_preserve_readiness_identity_and_safe_autonomy() -> None:
+    """Stateful workflow guidance must remain ID-pinned and harness-neutral."""
+    text = _read(SKILL_MD)
+    automatic = text.split("**Run automatically (no confirmation):**", 1)[1].split(
+        "**Ask before running:**", 1
+    )[0]
+    confirmation = text.split("**Ask before running:**", 1)[1].split("## Quick Reference", 1)[0]
+    document_analysis = text.split("### Document Analysis", 1)[1].split("### Bulk Import", 1)[0]
+    deep_research = text.split("### Deep Web Research (Background Pattern)", 1)[1].split(
+        "## Output Style", 1
+    )[0]
+
+    assert "notebooklm language set" not in automatic
+    assert "notebooklm language set" in confirmation
+    assert 'status == "ready"' in text
+    assert "status=READY" not in text
+    assert "source wait {source_id} -n {notebook_id}" in document_analysis
+    assert "--run-id {research_run_id}" in deep_research
+    assert "subagent" not in text.lower()
+    assert "Task(" not in text
+    assert "-a {artifact_id} -n {notebook_id}" in text
+    assert "run safe read-only diagnosis first" in text
+    assert "Mind map (`--kind note-backed`)" in text
+    assert "Mind map (`--kind interactive`, default)" in text
+
+
 # ---------------------------------------------------------------------------
 # §8.4 #4 — every (installation.md#anchor) cross-link resolves to a heading
 # ---------------------------------------------------------------------------

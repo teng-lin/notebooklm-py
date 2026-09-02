@@ -34,6 +34,7 @@ from notebooklm._app.skill import (
     build_skill_archive_bytes,
     classify_target,
     get_scope_root,
+    get_skill_content_mismatch,
     get_skill_path,
     get_skill_version,
     iter_targets,
@@ -62,6 +63,59 @@ def test_get_skill_version_no_version(tmp_path: Path) -> None:
 
 def test_get_skill_version_file_not_exists(tmp_path: Path) -> None:
     assert get_skill_version(tmp_path / "nonexistent.md") is None
+
+
+def test_get_skill_version_invalid_utf8_is_unknown(tmp_path: Path) -> None:
+    skill_file = tmp_path / "SKILL.md"
+    skill_file.write_bytes(b"<!-- notebooklm-py v1.2.3 -->\n\xff")
+
+    assert get_skill_version(skill_file) is None
+
+
+# ---------------------------------------------------------------------------
+# get_skill_content_mismatch
+# ---------------------------------------------------------------------------
+
+
+def test_get_skill_content_mismatch_false_for_exact_bytes(tmp_path: Path) -> None:
+    skill_file = tmp_path / "SKILL.md"
+    canonical = "<!-- notebooklm-py v1.2.3 -->\n# Test"
+    skill_file.write_text(canonical, encoding="utf-8")
+
+    assert get_skill_content_mismatch(skill_file, canonical) is False
+
+
+def test_get_skill_content_mismatch_true_for_drift(tmp_path: Path) -> None:
+    skill_file = tmp_path / "SKILL.md"
+    skill_file.write_text("locally edited", encoding="utf-8")
+
+    assert get_skill_content_mismatch(skill_file, "canonical") is True
+
+
+def test_get_skill_content_mismatch_true_for_invalid_utf8(tmp_path: Path) -> None:
+    skill_file = tmp_path / "SKILL.md"
+    skill_file.write_bytes(b"canonical\xff")
+
+    assert get_skill_content_mismatch(skill_file, "canonical") is True
+
+
+def test_get_skill_content_mismatch_none_when_target_missing(tmp_path: Path) -> None:
+    assert get_skill_content_mismatch(tmp_path / "missing.md", "canonical") is None
+
+
+def test_get_skill_content_mismatch_none_when_canonical_unavailable(tmp_path: Path) -> None:
+    skill_file = tmp_path / "SKILL.md"
+    skill_file.write_text("installed", encoding="utf-8")
+
+    assert get_skill_content_mismatch(skill_file, None) is None
+
+
+def test_get_skill_content_mismatch_none_on_io_failure(tmp_path: Path) -> None:
+    skill_file = tmp_path / "SKILL.md"
+    skill_file.write_text("installed", encoding="utf-8")
+
+    with patch.object(Path, "read_bytes", side_effect=PermissionError("denied")):
+        assert get_skill_content_mismatch(skill_file, "canonical") is None
 
 
 # ---------------------------------------------------------------------------

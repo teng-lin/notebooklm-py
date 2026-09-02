@@ -485,6 +485,17 @@ class TestSkillStatus:
         assert "claude code" in result.output.lower()
         assert "agent skills" in result.output.lower()
 
+    def test_skill_status_not_installed_json_has_unknown_content_integrity(self, runner, tmp_path):
+        home = tmp_path / "home"
+
+        with patch.object(skill_module.Path, "home", return_value=home):
+            result = runner.invoke(cli, ["skill", "status", "--target", "agents", "--json"])
+
+        assert result.exit_code == 0, result.output
+        agents = json.loads(result.output)["targets"][0]
+        assert agents["installed"] is False
+        assert agents["content_mismatch"] is None
+
     def test_skill_status_installed_version_mismatch(self, runner, tmp_path):
         """Test status when skill is installed with a different version than the CLI."""
         home = tmp_path / "home"
@@ -501,37 +512,44 @@ class TestSkillStatus:
         assert result.exit_code == 0
         assert "installed" in result.output.lower()
         assert "version mismatch" in result.output.lower()
+        assert "content drift" not in result.output.lower()
 
     def test_skill_status_both_targets_same_version(self, runner, tmp_path):
         """Test status when both targets are installed with the current version."""
         home = tmp_path / "home"
         version = "1.2.3"
+        source = "---\nname: notebooklm\n---\n# Test"
+        canonical = skill_module.add_version_comment(source, version)
         for subdir in [".claude/skills/notebooklm", ".agents/skills/notebooklm"]:
             dest = home / subdir / "SKILL.md"
             dest.parent.mkdir(parents=True)
-            dest.write_text(f"<!-- notebooklm-py v{version} -->\n# Test")
+            dest.write_text(canonical, encoding="utf-8")
 
         with (
             patch.object(skill_module.Path, "home", return_value=home),
             patch.object(skill_module, "get_package_version", return_value=version),
+            patch.object(skill_module, "get_skill_source_content", return_value=source),
         ):
             result = runner.invoke(cli, ["skill", "status"])
 
         assert result.exit_code == 0
         assert "version mismatch" not in result.output.lower()
+        assert "content drift" not in result.output.lower()
         assert result.output.count("Installed") >= 2
 
     def test_skill_status_json(self, runner, tmp_path):
         """``skill status --json`` emits a single structured document."""
         home = tmp_path / "home"
         version = "1.2.3"
+        source = "---\nname: notebooklm\n---\n# Test"
         dest = home / ".agents" / "skills" / "notebooklm" / "SKILL.md"
         dest.parent.mkdir(parents=True)
-        dest.write_text(f"<!-- notebooklm-py v{version} -->\n# Test")
+        dest.write_text(skill_module.add_version_comment(source, version), encoding="utf-8")
 
         with (
             patch.object(skill_module.Path, "home", return_value=home),
             patch.object(skill_module, "get_package_version", return_value=version),
+            patch.object(skill_module, "get_skill_source_content", return_value=source),
         ):
             result = runner.invoke(cli, ["skill", "status", "--target", "agents", "--json"])
 
@@ -542,6 +560,93 @@ class TestSkillStatus:
         assert agents["installed"] is True
         assert agents["skill_version"] == version
         assert agents["version_mismatch"] is False
+        assert agents["content_mismatch"] is False
+
+    def test_skill_status_reports_same_version_content_drift(self, runner, tmp_path):
+        home = tmp_path / "home"
+        version = "1.2.3"
+        source = "---\nname: notebooklm\n---\n# Canonical"
+        dest = home / ".agents" / "skills" / "notebooklm" / "SKILL.md"
+        dest.parent.mkdir(parents=True)
+        dest.write_text(
+            skill_module.add_version_comment(
+                "---\nname: notebooklm\n---\n# Locally edited", version
+            ),
+            encoding="utf-8",
+        )
+
+        with (
+            patch.object(skill_module.Path, "home", return_value=home),
+            patch.object(skill_module, "get_package_version", return_value=version),
+            patch.object(skill_module, "get_skill_source_content", return_value=source),
+        ):
+            human = runner.invoke(cli, ["skill", "status", "--target", "agents"])
+            structured = runner.invoke(cli, ["skill", "status", "--target", "agents", "--json"])
+
+        assert human.exit_code == 0, human.output
+        assert "content drift" in human.output.lower()
+        assert "version mismatch" not in human.output.lower()
+        assert json.loads(structured.output)["targets"][0]["content_mismatch"] is True
+
+    def test_skill_status_invalid_utf8_is_content_drift(self, runner, tmp_path):
+        home = tmp_path / "home"
+        version = "1.2.3"
+        source = "---\nname: notebooklm\n---\n# Canonical"
+        dest = home / ".agents" / "skills" / "notebooklm" / "SKILL.md"
+        dest.parent.mkdir(parents=True)
+        dest.write_bytes(b"<!-- notebooklm-py v1.2.3 -->\n\xff")
+
+        with (
+            patch.object(skill_module.Path, "home", return_value=home),
+            patch.object(skill_module, "get_package_version", return_value=version),
+            patch.object(skill_module, "get_skill_source_content", return_value=source),
+        ):
+            result = runner.invoke(cli, ["skill", "status", "--target", "agents", "--json"])
+
+        assert result.exit_code == 0, result.output
+        agents = json.loads(result.output)["targets"][0]
+        assert agents["skill_version"] is None
+        assert agents["content_mismatch"] is True
+
+    def test_skill_status_reports_unavailable_content_comparison(self, runner, tmp_path):
+        home = tmp_path / "home"
+        version = "1.2.3"
+        dest = home / ".agents" / "skills" / "notebooklm" / "SKILL.md"
+        dest.parent.mkdir(parents=True)
+        dest.write_text(f"<!-- notebooklm-py v{version} -->\n# Test", encoding="utf-8")
+
+        with (
+            patch.object(skill_module.Path, "home", return_value=home),
+            patch.object(skill_module, "get_package_version", return_value=version),
+            patch.object(skill_module, "get_skill_source_content", return_value=None),
+        ):
+            human = runner.invoke(cli, ["skill", "status", "--target", "agents"])
+            structured = runner.invoke(cli, ["skill", "status", "--target", "agents", "--json"])
+
+        assert human.exit_code == 0, human.output
+        assert "content comparison unavailable" in human.output.lower()
+        assert json.loads(structured.output)["targets"][0]["content_mismatch"] is None
+
+    def test_skill_status_packaged_source_io_failure_is_comparison_unavailable(
+        self, runner, tmp_path
+    ):
+        home = tmp_path / "home"
+        dest = home / ".agents" / "skills" / "notebooklm" / "SKILL.md"
+        dest.parent.mkdir(parents=True)
+        dest.write_text("# Installed", encoding="utf-8")
+
+        with (
+            patch.object(skill_module.Path, "home", return_value=home),
+            patch.object(
+                skill_module,
+                "get_skill_source_content",
+                side_effect=PermissionError("denied"),
+            ),
+        ):
+            result = runner.invoke(cli, ["skill", "status", "--target", "agents", "--json"])
+
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output)["targets"][0]["content_mismatch"] is None
 
 
 class TestSkillUninstall:
