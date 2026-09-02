@@ -42,6 +42,14 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _section(text: str, start: str, end: str) -> str:
+    """Extract a required Markdown section with actionable failures."""
+    assert start in text, f"SKILL.md is missing required heading: {start}"
+    remainder = text.split(start, 1)[1]
+    assert end in remainder, f"SKILL.md is missing required heading after {start}: {end}"
+    return remainder.split(end, 1)[0]
+
+
 def _tracked_repository_files() -> list[Path]:
     return tracked_files(REPO_ROOT, fallback_globs=("docs/**/*", "src/**/*", "*.md"))
 
@@ -193,7 +201,7 @@ def test_skill_md_does_not_use_status_for_auth() -> None:
         "— `status` is context-only. Use `notebooklm auth check` for auth verification."
     )
     assert "auth check" in text, (
-        "SKILL.md Agent Setup Verification section must mention `notebooklm auth check`."
+        "SKILL.md Setup and Authentication section must mention `notebooklm auth check`."
     )
 
 
@@ -209,15 +217,11 @@ def test_skill_md_stays_compact() -> None:
 def test_skill_md_workflows_preserve_readiness_identity_and_safe_autonomy() -> None:
     """The compact skill must retain the stateful safety invariants."""
     text = _read(SKILL_MD)
-    authorization = text.split("## Authorization Boundaries", 1)[1].split(
-        "## Command Discovery", 1
-    )[0]
-    workflow = text.split("## Canonical Source-to-Artifact Workflow", 1)[1].split(
-        "## Deep Research", 1
-    )[0]
-    deep_research = text.split("## Deep Research", 1)[1].split("## Generation Notes", 1)[0]
-    generation = text.split("## Generation Notes", 1)[1].split("## Output and Citations", 1)[0]
-    failure_handling = text.split("## Failure Handling", 1)[1].split("## Skill Installation", 1)[0]
+    authorization = _section(text, "## Authorization Boundaries", "## Command Discovery")
+    workflow = _section(text, "## Canonical Source-to-Artifact Workflow", "## Deep Research")
+    deep_research = _section(text, "## Deep Research", "## Generation Notes")
+    generation = _section(text, "## Generation Notes", "## Output and Citations")
+    failure_handling = _section(text, "## Failure Handling", "## Skill Installation")
 
     assert "language set" in authorization
     assert "research wait --import-all" in authorization
@@ -228,8 +232,14 @@ def test_skill_md_workflows_preserve_readiness_identity_and_safe_autonomy() -> N
     assert "one sequential job" in text
     assert "only after the wait exits 0" in text
     assert "run safe read-only diagnosis first" in failure_handling
+    assert 'pip install "notebooklm-py[headless]"' in text
+    assert "For every concurrent run" in text
+    assert "asynchronous generators" in text
+    assert "no task ID or separate wait step" in text
     assert "Mind map (`--kind note-backed`)" in generation
     assert "Mind map (`--kind interactive`, default)" in generation
+    assert "A `source wait` timeout uses exit 2" in failure_handling
+    assert "`artifact wait` and `research wait` timeouts use exit 1" in failure_handling
 
     assert workflow.index("notebooklm create") < workflow.index("notebooklm source add")
     assert workflow.index("notebooklm source add") < workflow.index("notebooklm source wait")
@@ -243,6 +253,7 @@ def test_skill_md_workflows_preserve_readiness_identity_and_safe_autonomy() -> N
         "notebooklm research wait"
     )
     assert "--run-id {research_run_id}" in deep_research
+    assert "--mode deep --no-wait --json" in deep_research
     assert "--import-all --timeout 1800 --json" in deep_research
 
     workflow_sections = {
@@ -257,6 +268,13 @@ def test_skill_md_workflows_preserve_readiness_identity_and_safe_autonomy() -> N
         "notebooklm download ",
         "notebooklm research ",
     )
+    json_required_prefixes = (
+        "notebooklm create ",
+        "notebooklm source add ",
+        "notebooklm source add-research ",
+        "notebooklm ask ",
+        "notebooklm generate ",
+    )
     for workflow_name, section in workflow_sections.items():
         inline_commands = re.findall(r"`(notebooklm [^`\n]+)`", section)
         fenced_commands = [
@@ -267,6 +285,10 @@ def test_skill_md_workflows_preserve_readiness_identity_and_safe_autonomy() -> N
             if command.startswith(notebook_scoped_prefixes):
                 assert "-n {notebook_id}" in command, (
                     f"{workflow_name} command is not notebook-pinned: {command}"
+                )
+            if command.startswith(json_required_prefixes):
+                assert "--json" in command, (
+                    f"{workflow_name} command must retain machine-readable output: {command}"
                 )
 
 

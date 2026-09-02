@@ -19,9 +19,10 @@ pip install "notebooklm-py[browser]"
 pip install "notebooklm-py[cookies]"  # optional browser-cookie extraction
 ```
 
-In a resettable headless sandbox that only reuses host-generated credentials, the base
-`pip install notebooklm-py` is sufficient; `[browser]` is needed for interactive login, and
-`[cookies]` is needed for browser-cookie extraction.
+In a resettable headless sandbox that reuses a host-generated `storage_state.json` or
+`NOTEBOOKLM_AUTH_JSON`, the base `pip install notebooklm-py` is sufficient. Reusing a
+`master_token.json` requires `pip install "notebooklm-py[headless]"`; `[browser]` is needed for
+interactive login, and `[cookies]` is needed for browser-cookie extraction.
 
 Use PyPI or a release tag, not an unreleased `main` checkout. For the extras matrix, headless setup,
 CI secrets, skill installation, or the opt-in Android backend, read the
@@ -51,14 +52,17 @@ never print, log, or commit them. Prefer a secret store in CI.
 
 1. Use `--json` for discovery and mutations, then retain the returned full UUIDs. Important
    envelopes are `.notebook.id` from `create`, `.source.id` from `source add`, and `.task_id` from
-   `generate *`.
+   asynchronous generators. `generate mind-map` instead returns `mind_map`, `note_id`, and `kind`;
+   it has no task ID or separate wait step.
 2. Pass `-n/--notebook <id>` on every notebook-scoped command in automation or concurrent work.
-   Do not rely on `notebooklm use`. If agents must use context, isolate each one with
-   `NOTEBOOKLM_PROFILE=agent-<id>`.
+   Do not rely on `notebooklm use`. For every concurrent run, also set a unique
+   `NOTEBOOKLM_PROFILE=agent-<id>` so authentication recovery and other profile writes are isolated.
 3. After adding sources, wait for every captured source ID before chat or generation. Source JSON
    states are lowercase: require `status == "ready"`; stop on `"error"`.
-4. After generation, retain the returned task/artifact ID. Wait for and download that exact artifact
-   with both `-n <notebook_id>` and `-a <artifact_id>`; never select the latest visible artifact.
+4. After an asynchronous generator returns a task/artifact ID, pass it positionally to
+   `artifact wait` with `-n <notebook_id>`. Download that exact artifact with
+   `-a <artifact_id> -n <notebook_id>`; never select the latest visible artifact. Mind-map generation
+   returns its completed result directly and does not need `artifact wait`.
 5. For overlapping research runs, always pass `--run-id <research_run_id>`.
 6. Use a host's background facility only when it actually exists. Keep wait and dependent download
    commands in one sequential job, and download only after the wait exits 0. Otherwise run in the
@@ -103,7 +107,7 @@ Common operations:
 | List or create notebooks | `notebooklm list --json`; `notebooklm create "Title" --json` |
 | Add and wait for a source | `notebooklm source add <input> -n <nb> --json`; `notebooklm source wait <src> -n <nb>` |
 | Chat | `notebooklm ask "question" -n <nb> --json` |
-| Research | `notebooklm source add-research "query" -n <nb> --mode fast\|deep --json` |
+| Research | `notebooklm source add-research "query" -n <nb> --mode fast --json` (`deep` is also supported) |
 | List or wait for artifacts | `notebooklm artifact list -n <nb> --json`; `notebooklm artifact wait <id> -n <nb>` |
 | Generate | `notebooklm generate <type> ... -n <nb> --json` |
 | Download | `notebooklm download <type> <path> -n <nb> -a <artifact>` |
@@ -199,7 +203,8 @@ notebooklm research status -n {notebook_id} --run-id {research_run_id} --json
 
 Inspect only the commands relevant to the failed workflow. Do not mutate state during diagnosis.
 
-- Exit 0 means success; exit 1 means an error; wait commands use exit 2 for timeout.
+- Exit 0 means success. Expected command failures use exit 1. A `source wait` timeout uses exit 2;
+  `artifact wait` and `research wait` timeouts use exit 1.
 - On auth failure, revalidate `checks.token_fetch`; log in only if it is not `true`.
 - On a wait timeout, report it and inspect the exact source, artifact, or research run.
 - Generation is rate-limited by Google. Preserve the task ID, inspect status, and retry only when the
@@ -215,4 +220,3 @@ If this file is already inside an agent skill directory, the skill itself is ins
 
 - `notebooklm skill install` installs or updates supported local skill targets.
 - `notebooklm skill package` builds an uploadable archive for sandboxed agent environments.
-- `npx skills add teng-lin/notebooklm-py` installs from the GitHub repository for compatible agents.
