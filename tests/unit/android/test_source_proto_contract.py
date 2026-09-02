@@ -48,6 +48,10 @@ def test_source_generated_package_overlay_is_complete_and_service_free() -> None
     assert set(sources_pb2.DESCRIPTOR.message_types_by_name) == {
         "AddSourcesRequest",
         "AddSourcesResponse",
+        "ExpertIntelligenceContent",
+        "ExpertIntelligenceContentItem",
+        "ListExpertIntelligenceContentRequest",
+        "ListExpertIntelligenceContentResponse",
         "AddTentativeSourcesRequest",
         "AddTentativeSourcesResponse",
         "CheckSourceFreshnessRequest",
@@ -138,6 +142,49 @@ def test_source_generated_package_overlay_is_complete_and_service_free() -> None
             False,
             FieldDescriptor.TYPE_MESSAGE,
             f"{ORCHESTRATION_PACKAGE}.SourceId",
+        ),
+        "expert_intelligence_content": (
+            16,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{ORCHESTRATION_PACKAGE}.ExpertIntelligenceContent",
+        ),
+    }
+    assert _shape(sources_pb2.ExpertIntelligenceContent) == {
+        "provider": (1, False, FieldDescriptor.TYPE_INT32, None),
+        "content_id": (2, False, FieldDescriptor.TYPE_STRING, None),
+        "title": (3, False, FieldDescriptor.TYPE_STRING, None),
+        "description": (4, False, FieldDescriptor.TYPE_STRING, None),
+        "thumbnail_image_url": (5, False, FieldDescriptor.TYPE_STRING, None),
+        "field_type": (6, False, FieldDescriptor.TYPE_FLOAT, None),
+        "authors": (7, True, FieldDescriptor.TYPE_STRING, None),
+    }
+    assert _shape(sources_pb2.ExpertIntelligenceContentItem) == {
+        "content_id": (1, False, FieldDescriptor.TYPE_STRING, None),
+        "provider": (2, False, FieldDescriptor.TYPE_INT32, None),
+        "title": (3, False, FieldDescriptor.TYPE_STRING, None),
+        "description": (4, False, FieldDescriptor.TYPE_STRING, None),
+        "thumbnail_image_url": (5, False, FieldDescriptor.TYPE_STRING, None),
+        "export_disabled": (6, False, FieldDescriptor.TYPE_BOOL, None),
+        "export_reason": (7, False, FieldDescriptor.TYPE_INT32, None),
+        "authors": (8, True, FieldDescriptor.TYPE_STRING, None),
+        "field_type": (9, False, FieldDescriptor.TYPE_FLOAT, None),
+    }
+    assert _shape(sources_pb2.ListExpertIntelligenceContentRequest) == {
+        "request_context": (
+            1,
+            False,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{COMMON_PACKAGE}.RequestContext",
+        ),
+        "source_class": (2, False, FieldDescriptor.TYPE_INT32, None),
+    }
+    assert _shape(sources_pb2.ListExpertIntelligenceContentResponse) == {
+        "items": (
+            1,
+            True,
+            FieldDescriptor.TYPE_MESSAGE,
+            f"{ORCHESTRATION_PACKAGE}.ExpertIntelligenceContentItem",
         ),
     }
     assert _shape(sources_pb2.AddSourcesRequest) == {

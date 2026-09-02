@@ -118,6 +118,11 @@ class LabsTailwindOrchestrationServiceStub(object):
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.AddSourcesRequest.SerializeToString,
                 response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.AddSourcesResponse.FromString,
                 _registered_method=True)
+        self.ListExpertIntelligenceContent = channel.unary_unary(
+                '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListExpertIntelligenceContent',
+                request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.ListExpertIntelligenceContentRequest.SerializeToString,
+                response_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.ListExpertIntelligenceContentResponse.FromString,
+                _registered_method=True)
         self.DeleteSources = channel.unary_unary(
                 '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/DeleteSources',
                 request_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.DeleteSourcesRequest.SerializeToString,
@@ -406,6 +411,12 @@ class LabsTailwindOrchestrationServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def AddSources(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListExpertIntelligenceContent(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -720,6 +731,11 @@ def add_LabsTailwindOrchestrationServiceServicer_to_server(servicer, server):
                     servicer.AddSources,
                     request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.AddSourcesRequest.FromString,
                     response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.AddSourcesResponse.SerializeToString,
+            ),
+            'ListExpertIntelligenceContent': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListExpertIntelligenceContent,
+                    request_deserializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.ListExpertIntelligenceContentRequest.FromString,
+                    response_serializer=google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.ListExpertIntelligenceContentResponse.SerializeToString,
             ),
             'DeleteSources': grpc.unary_unary_rpc_method_handler(
                     servicer.DeleteSources,
@@ -1283,6 +1299,33 @@ class LabsTailwindOrchestrationService(object):
             '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/AddSources',
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.AddSourcesRequest.SerializeToString,
             google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.AddSourcesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListExpertIntelligenceContent(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListExpertIntelligenceContent',
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.ListExpertIntelligenceContentRequest.SerializeToString,
+            google_dot_internal_dot_labs_dot_tailwind_dot_orchestration_dot_v1_dot_sources__pb2.ListExpertIntelligenceContentResponse.FromString,
             options,
             channel_credentials,
             insecure,

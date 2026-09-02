@@ -144,6 +144,11 @@ _EXPECTED_ORCHESTRATION_SIGNATURES = {
         f"{ORCHESTRATION_PACKAGE}.AddSourcesResponse",
         False,
     ),
+    "ListExpertIntelligenceContent": (
+        f"{ORCHESTRATION_PACKAGE}.ListExpertIntelligenceContentRequest",
+        f"{ORCHESTRATION_PACKAGE}.ListExpertIntelligenceContentResponse",
+        False,
+    ),
     "DeleteSources": (
         f"{ORCHESTRATION_PACKAGE}.DeleteSourcesRequest",
         "google.protobuf.Empty",
@@ -507,9 +512,9 @@ def test_adapter_paths_equal_generated_descriptor_with_no_omitted_exceptions() -
     entries = _manifest_entries()
     assert entries == []
     assert _adapter_paths() == _descriptor_paths()
-    assert len(_adapter_paths()) == 55
-    assert len(_descriptor_paths()) == 55
-    assert sum(path.startswith(f"/{ORCHESTRATION_SERVICE}/") for path in _descriptor_paths()) == 53
+    assert len(_adapter_paths()) == 56
+    assert len(_descriptor_paths()) == 56
+    assert sum(path.startswith(f"/{ORCHESTRATION_SERVICE}/") for path in _descriptor_paths()) == 54
     assert sum(path.startswith(f"/{SHARING_SERVICE}/") for path in _descriptor_paths()) == 2
 
     sharing_paths = {path for path in _adapter_paths() if path.startswith(f"/{SHARING_SERVICE}/")}

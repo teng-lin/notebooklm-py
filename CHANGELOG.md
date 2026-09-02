@@ -18,10 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Source.expert_intelligence` (`ExpertIntelligenceSourceMetadata`) provenance.
   CLI: `notebooklm source books` / `source add-book <content-id>`; MCP:
   `source_list_play_books` / `source_add_play_book`. New RPC
-  `LIST_EXPERT_INTELLIGENCE_CONTENT` (web id `mVtEUb`). The Android backend
-  raises `UnsupportedOperationError` — its write path needs a per-account
-  Phenotype experiment header the client cannot synthesize. Verified live end
-  to end on the web tier.
+  `LIST_EXPERT_INTELLIGENCE_CONTENT` (web id `mVtEUb`).
+- **Google Play Books on the Android backend** (#2302, follow-up to #2292):
+  `sources.list_play_books()` / `add_play_book(...)` now work on the native
+  Android backend too, so the whole capability is backend-parity. The add path
+  needs the per-account GMS Phenotype experiment header
+  (`x-goog-ext-202964622-bin`) the app forwards from Play Services; the new
+  `PhenotypeTokenProvider` mints it headlessly from the user's existing
+  credentials — a single-package `getExperimentsAndConfigs` registration
+  (`experimentsandconfigs` scope, already granted) whose `serverToken` is
+  TTL-cached and attached to `AddSources`. No emulator or Play Services needed.
+  Verified live end to end on both tiers.
 - `research.discover(notebook_id, query, *, mode="default")` on **both** the
   Web and Android backends (`DiscoverSources`, web id `Es3dTe`): the
   synchronous "Discover sources" call the web dialog makes — one blocking

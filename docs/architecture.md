@@ -978,6 +978,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/transport/seams.py` | Constructor-only injectable seams used by tests and collaborator construction. |
 | `_android/` | Android backend package. Its package marker and selected adapter imports are dependency-free; generated protobuf modules remain lazy. Explicit Android preference installs Android adapters for all eleven public namespaces, with operation-level Web compatibility seams only where the admitted mobile contract has no usable equivalent. |
 | `_android/auth.py` | Generation-fenced `BearerProvider`: off-loop typed profile reads, shared mint waves, bounded expiry caching, compare-and-clear invalidation, and secret-safe teardown. |
+| `_android/phenotype.py` | Headless GMS Phenotype token provider: mints the per-account Play Books experiment `serverToken` via a single-package `getExperimentsAndConfigs` POST, TTL-caches it, and wraps it into the `x-goog-ext-202964622-bin` add-path metadata (#2302). |
 | `_android/codecs/` | Typed protobuf-to-public-dataclass projection package for Android adapters. |
 | `_android/codecs/account.py` | Strict frozen account-flag projection; missing account/user/premium message blocks fail closed. |
 | `_android/codecs/notebooks.py` | Android project and notebook-guide projections plus bounded notebook decode/status errors. |

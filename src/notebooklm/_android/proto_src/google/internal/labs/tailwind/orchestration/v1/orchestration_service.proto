@@ -45,6 +45,8 @@ service LabsTailwindOrchestrationService {
   rpc AddTentativeSources(AddTentativeSourcesRequest)
       returns (AddTentativeSourcesResponse);
   rpc AddSources(AddSourcesRequest) returns (AddSourcesResponse);
+  rpc ListExpertIntelligenceContent(ListExpertIntelligenceContentRequest)
+      returns (ListExpertIntelligenceContentResponse);
   rpc DeleteSources(DeleteSourcesRequest) returns (google.protobuf.Empty);
   rpc MutateSource(MutateSourceRequest) returns (MutateSourceResponse);
   rpc CheckSourceFreshness(CheckSourceFreshnessRequest)

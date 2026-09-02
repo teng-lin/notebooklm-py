@@ -21,6 +21,7 @@ from .._source.batch import SourceUrlBatchItem
 from .._sources import SourcesAPI
 from .._types.documents import StructuredDocument
 from .._types.research import SourceGuide
+from .._types.sources import _PLAY_BOOK_EXPORT_REASON_MAP
 from .._url_utils import is_youtube_url
 from ..exceptions import (
     AuthError,
@@ -28,6 +29,7 @@ from ..exceptions import (
     DecodingError,
     NetworkError,
     NonIdempotentRetryError,
+    PlayBookNotExportableError,
     RateLimitError,
     RPCError,
     ServerError,
@@ -35,7 +37,6 @@ from ..exceptions import (
     SourceNotFoundError,
     SourceProcessingError,
     SourceTimeoutError,
-    UnsupportedOperationError,
     ValidationError,
 )
 from ..types import PlayBook, Source, SourceFulltext, SourceStatus, SourceType
@@ -43,6 +44,7 @@ from .codecs.documents import decode_document, tailwind_doc_markdown, tailwind_d
 from .codecs.notebooks import decode_project, map_get_project_error, validate_project_identity
 from .codecs.sources import decode_source, decode_sources, select_document_guide
 from .drive_staging import _DRIVE_STAGED_UPLOAD_EXTENSIONS
+from .phenotype import PhenotypeTokenProvider
 from .session import AndroidSession
 from .source_transfers import (
     ADD_SOURCES_ASYNC_METHOD,
@@ -93,6 +95,7 @@ _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestra
 GET_PROJECT_METHOD = f"/{_SERVICE}/GetProject"
 ADD_TENTATIVE_SOURCES_METHOD = f"/{_SERVICE}/AddTentativeSources"
 ADD_SOURCES_METHOD = f"/{_SERVICE}/AddSources"
+LIST_EXPERT_INTELLIGENCE_CONTENT_METHOD = f"/{_SERVICE}/ListExpertIntelligenceContent"
 DELETE_SOURCES_METHOD = f"/{_SERVICE}/DeleteSources"
 MUTATE_SOURCE_METHOD = f"/{_SERVICE}/MutateSource"
 GENERATE_DOCUMENT_GUIDES_METHOD = f"/{_SERVICE}/GenerateDocumentGuides"
@@ -357,6 +360,49 @@ def _merge_commit_proof(
     return None
 
 
+def _decode_play_book_item(item: Any) -> PlayBook:
+    """Decode one ``ListExpertIntelligenceContent`` item into a :class:`PlayBook`.
+
+    Field numbers mirror the live-captured wire (see the Android proto); an item
+    with no ``content_id`` is a malformed row.
+    """
+    content_id = item.content_id
+    if not content_id:
+        raise DecodingError(
+            "ListExpertIntelligenceContent item is missing its content id",
+            method_id=LIST_EXPERT_INTELLIGENCE_CONTENT_METHOD,
+        )
+    reason = _PLAY_BOOK_EXPORT_REASON_MAP.get(item.export_reason) if item.export_reason else None
+    return PlayBook(
+        content_id=content_id,
+        title=item.title or None,
+        authors=tuple(item.authors),
+        description_html=item.description or None,
+        cover_url=item.thumbnail_image_url or None,
+        export_disabled=bool(item.export_disabled),
+        reason=reason,
+        field_type=float(item.field_type),
+        updated_at=None,
+    )
+
+
+def _build_expert_intelligence_content(book: PlayBook) -> Any:
+    """Build the ``ExpertIntelligenceContent`` add payload from a :class:`PlayBook`.
+
+    ``field_type`` is echoed back verbatim (a float32 on the wire); ``provider``
+    is the constant ``1`` observed for Play Books.
+    """
+    return _write_proto().ExpertIntelligenceContent(
+        provider=1,
+        content_id=book.content_id,
+        title=book.title or "",
+        description=book.description_html or "",
+        thumbnail_image_url=book.cover_url or "",
+        field_type=book.field_type or 0.0,
+        authors=list(book.authors),
+    )
+
+
 class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
     """Android source adapter installed by public Android backend selection."""
 
@@ -367,6 +413,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         *,
         drive_download: DriveDownload | None = None,
         add_file_compat: AddFileCompat | None = None,
+        phenotype: PhenotypeTokenProvider | None = None,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         """Bind the fully native source surface.
@@ -384,6 +431,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         self._transport = session
         self._upload_pipeline = upload_pipeline
         self._add_file_compat = add_file_compat
+        self._phenotype = phenotype or PhenotypeTokenProvider()
         self._monotonic = monotonic
         native_drive_download = getattr(upload_pipeline, "drive_download_scope", None)
         self._drive_download = drive_download or (
@@ -700,6 +748,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         entries: Sequence[tuple[Any, str]],
         *,
         expected_epoch: int,
+        metadata_augmentor: Any = None,
     ) -> tuple[dict[str, _CommitProof], set[str]]:
         candidate_ids = [source_id for _, source_id in entries]
         request = _write_proto().AddSourcesRequest(
@@ -716,6 +765,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                 replay_safe=False,
                 response_type=_write_proto().AddSourcesResponse,
                 expected_epoch=expected_epoch,
+                metadata_augmentor=metadata_augmentor,
             )
         except asyncio.CancelledError:
             raise
@@ -795,6 +845,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         build_content: Callable[[str], Any],
         wait: bool,
         wait_timeout: float,
+        metadata_augmentor: Any = None,
     ) -> Source:
         correlation = _correlation_name()
         async with self._transport.operation_scope(operation_label) as lease:
@@ -832,6 +883,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                 notebook_id,
                 [(build_content(source_id), source_id)],
                 expected_epoch=lease.epoch,
+                metadata_augmentor=metadata_augmentor,
             )
             proof = proofs.get(source_id)
             if proof is None:
@@ -1116,19 +1168,24 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         return source
 
     async def list_play_books(self) -> builtins.list[PlayBook]:
-        """Google Play Books are a web-tier capability (#2292).
+        """List the account's Google Play Books library (#2292, #2302).
 
-        The Android gRPC ``ListExpertIntelligenceContent`` serves the same
-        library, but the write path this listing feeds
-        (:meth:`add_play_book`) requires a per-account Phenotype experiment
-        header the client cannot synthesize, so the whole capability is exposed
-        on the web backend only. Use a web-backed client
-        (``NotebookLMClient.from_storage()`` without ``backend="android"``).
+        Calls the Android ``ListExpertIntelligenceContent`` RPC — the same
+        library the web backend serves — and returns **every** title, addable or
+        not. Inspect :attr:`~notebooklm.types.PlayBook.export_disabled` before
+        passing a ``content_id`` to :meth:`add_play_book`.
         """
-        raise UnsupportedOperationError(
-            "Google Play Books sources are supported on the web backend only; "
-            "the Android backend cannot add them. Use a web-backed client (#2292)."
+        request = _write_proto().ListExpertIntelligenceContentRequest(
+            request_context=android_request_context(),
+            source_class=1,
         )
+        response = await self._transport.unary(
+            LIST_EXPERT_INTELLIGENCE_CONTENT_METHOD,
+            request,
+            replay_safe=True,
+            response_type=_write_proto().ListExpertIntelligenceContentResponse,
+        )
+        return [_decode_play_book_item(item) for item in response.items]
 
     async def add_play_book(
         self,
@@ -1138,16 +1195,54 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         wait: bool = False,
         wait_timeout: float = 120.0,
     ) -> Source:
-        """Adding a Play Book is web-only (#2292).
+        """Add a Google Play Book as a source over the Android backend (#2302).
 
-        The Android ``AddSources`` for an ``ExpertIntelligenceContent`` returns
-        ``INTERNAL`` unless the request carries a per-account Phenotype
-        experiment header the client cannot reproduce, so this is refused
-        rather than sent. Use a web-backed client.
+        Looks ``content_id`` up in :meth:`list_play_books` (which supplies the
+        title, description, cover, authors, and opaque ``field_type`` echoed back
+        in the add), refuses a non-exportable title with
+        :class:`~notebooklm.exceptions.PlayBookNotExportableError`, then commits
+        it via ``AddSources``. The commit carries the GMS Phenotype experiment
+        header (``x-goog-ext-202964622-bin``) minted headlessly by
+        :class:`~notebooklm._android.phenotype.PhenotypeTokenProvider`; without
+        it the server refuses the Expert-Intelligence content with ``INTERNAL``.
+        The created source ingests as
+        :attr:`~notebooklm.types.SourceType.EXPERT_INTELLIGENCE`.
+
+        Args:
+            notebook_id: The notebook ID.
+            content_id: Play Books volume id (from a :class:`PlayBook`).
+            wait: If True, wait for the source to be READY before returning.
+            wait_timeout: Maximum seconds to wait if ``wait=True`` (default 120).
+
+        Raises:
+            SourceNotFoundError: ``content_id`` is not in the library.
+            PlayBookNotExportableError: the title cannot be exported.
         """
-        raise UnsupportedOperationError(
-            "Google Play Books sources are supported on the web backend only; "
-            "the Android backend cannot add them. Use a web-backed client (#2292)."
+        books = await self.list_play_books()
+        book = next((b for b in books if b.content_id == content_id), None)
+        if book is None:
+            raise SourceNotFoundError(
+                content_id,
+                method_id=LIST_EXPERT_INTELLIGENCE_CONTENT_METHOD,
+            )
+        if book.export_disabled:
+            raise PlayBookNotExportableError(book.content_id, book.reason)
+
+        async def _augment(bearer: str) -> tuple[tuple[str, bytes], ...]:
+            return await self._phenotype.experiment_metadata(bearer)
+
+        return await self._add_registered_content(
+            notebook_id,
+            subject=book.title or content_id,
+            kind="Play Books",
+            operation_label="source.add_play_book",
+            build_content=lambda source_id: _write_proto().UserContent(
+                expert_intelligence_content=_build_expert_intelligence_content(book),
+                tentative_source_id=_read_proto().SourceId(id=source_id),
+            ),
+            wait=wait,
+            wait_timeout=wait_timeout,
+            metadata_augmentor=_augment,
         )
 
     async def add_drive_file(

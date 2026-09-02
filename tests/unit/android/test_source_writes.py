@@ -32,6 +32,7 @@ from notebooklm._android.sources import (
     DELETE_SOURCES_METHOD,
     GENERATE_DOCUMENT_GUIDES_METHOD,
     GET_PROJECT_METHOD,
+    LIST_EXPERT_INTELLIGENCE_CONTENT_METHOD,
     LOAD_SOURCE_METHOD,
     MUTATE_SOURCE_METHOD,
     REFRESH_SOURCE_METHOD,
@@ -39,11 +40,13 @@ from notebooklm._android.sources import (
 )
 from notebooklm._android.upload import AndroidUploadPipeline
 from notebooklm._types.research import SourceGuide
+from notebooklm._types.sources import PlayBookExportReason
 from notebooklm.exceptions import (
     AuthError,
     DecodingError,
     NetworkError,
     NonIdempotentRetryError,
+    PlayBookNotExportableError,
     RateLimitError,
     RPCError,
     RPCTimeoutError,
@@ -51,7 +54,6 @@ from notebooklm.exceptions import (
     SourceAddError,
     SourceNotFoundError,
     SourceTimeoutError,
-    UnsupportedOperationError,
     ValidationError,
 )
 from notebooklm.types import Source, SourceStatus
@@ -1565,19 +1567,99 @@ async def test_cancellation_between_registration_and_commit_dispatches_no_later_
     assert [call[0] for call in transport.calls] == [ADD_TENTATIVE_SOURCES_METHOD]
 
 
-class TestPlayBooksAreWebOnly:
-    """Play Books (Expert Intelligence) is a web-tier capability (#2292)."""
+def _ei_item(
+    content_id: str,
+    *,
+    title: str = "The Art of War",
+    export_disabled: bool = False,
+    export_reason: int = 0,
+    field_type: float = 4.5,
+) -> Any:
+    return sources_pb2.ExpertIntelligenceContentItem(
+        content_id=content_id,
+        provider=1,
+        title=title,
+        description="<p>desc</p>",
+        thumbnail_image_url=f"https://books/{content_id}",
+        export_disabled=export_disabled,
+        export_reason=export_reason,
+        authors=["Sun Tzu"],
+        field_type=field_type,
+    )
+
+
+def _ei_response(*items: Any) -> Any:
+    return sources_pb2.ListExpertIntelligenceContentResponse(items=list(items))
+
+
+class TestPlayBooksAndroid:
+    """Play Books (Expert Intelligence) on the Android backend (#2302)."""
 
     @pytest.mark.asyncio
-    async def test_list_play_books_raises_unsupported(self) -> None:
+    async def test_list_play_books_decodes_items(self) -> None:
         transport = FakeTransport()
-        with pytest.raises(UnsupportedOperationError, match="web backend only"):
-            await _api(transport).list_play_books()
-        assert transport.calls == []
+        transport.handlers[LIST_EXPERT_INTELLIGENCE_CONTENT_METHOD] = _ei_response(
+            _ei_item("QhsZEAAAQBAJ"),
+            _ei_item("BAD", export_disabled=True, export_reason=1, field_type=0.0),
+        )
+        books = await _api(transport).list_play_books()
+        assert [b.content_id for b in books] == ["QhsZEAAAQBAJ", "BAD"]
+        first = books[0]
+        assert first.title == "The Art of War"
+        assert first.authors == ("Sun Tzu",)
+        assert first.export_disabled is False
+        assert first.reason is None
+        assert first.field_type == pytest.approx(4.5)
+        assert books[1].export_disabled is True
+        assert books[1].reason is PlayBookExportReason.OPTED_OUT
 
     @pytest.mark.asyncio
-    async def test_add_play_book_raises_unsupported_without_sending(self) -> None:
+    async def test_list_play_books_sends_source_class(self) -> None:
         transport = FakeTransport()
-        with pytest.raises(UnsupportedOperationError, match="web backend only"):
-            await _api(transport).add_play_book(NOTEBOOK_ID, "QhsZEAAAQBAJ")
-        assert transport.calls == []
+        transport.handlers[LIST_EXPERT_INTELLIGENCE_CONTENT_METHOD] = _ei_response()
+        await _api(transport).list_play_books()
+        method, request, kwargs = transport.calls[0]
+        assert method == LIST_EXPERT_INTELLIGENCE_CONTENT_METHOD
+        assert request.source_class == 1
+        assert request.HasField("request_context")
+        assert kwargs["replay_safe"] is True
+
+    @pytest.mark.asyncio
+    async def test_add_play_book_unknown_content_id_raises(self) -> None:
+        transport = FakeTransport()
+        transport.handlers[LIST_EXPERT_INTELLIGENCE_CONTENT_METHOD] = _ei_response(
+            _ei_item("QhsZEAAAQBAJ")
+        )
+        with pytest.raises(SourceNotFoundError):
+            await _api(transport).add_play_book(NOTEBOOK_ID, "MISSING")
+        assert all(m != ADD_SOURCES_METHOD for m, _, _ in transport.calls)
+
+    @pytest.mark.asyncio
+    async def test_add_play_book_refuses_non_exportable(self) -> None:
+        transport = FakeTransport()
+        transport.handlers[LIST_EXPERT_INTELLIGENCE_CONTENT_METHOD] = _ei_response(
+            _ei_item("BAD", export_disabled=True, export_reason=1)
+        )
+        with pytest.raises(PlayBookNotExportableError):
+            await _api(transport).add_play_book(NOTEBOOK_ID, "BAD")
+        assert all(
+            m not in (ADD_TENTATIVE_SOURCES_METHOD, ADD_SOURCES_METHOD)
+            for m, _, _ in transport.calls
+        )
+
+    @pytest.mark.asyncio
+    async def test_add_play_book_commits_expert_intelligence_content(self) -> None:
+        transport = _successful_transport()
+        transport.handlers[LIST_EXPERT_INTELLIGENCE_CONTENT_METHOD] = _ei_response(
+            _ei_item("QhsZEAAAQBAJ")
+        )
+        await _api(transport).add_play_book(NOTEBOOK_ID, "QhsZEAAAQBAJ")
+        add = next((req, kw) for method, req, kw in transport.calls if method == ADD_SOURCES_METHOD)
+        request, kwargs = add
+        content = request.user_content[0].expert_intelligence_content
+        assert content.content_id == "QhsZEAAAQBAJ"
+        assert content.provider == 1
+        assert content.authors == ["Sun Tzu"]
+        assert content.field_type == pytest.approx(4.5)
+        # The Phenotype experiment header augmentor rides the commit (#2302).
+        assert callable(kwargs["metadata_augmentor"])
