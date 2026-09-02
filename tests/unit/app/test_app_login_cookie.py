@@ -463,9 +463,13 @@ def test_quiet_network_error_is_reraised_same_object(monkeypatch: pytest.MonkeyP
     assert caught.value is error
 
 
+#: ``cookie_import`` was re-pinned when the three helpers left unreferenced by
+#: the ``_app/login_cookie`` extraction (``_coerce_cookie_json_to_storage_state``,
+#: ``_normalize_imported_cookie``, ``_nonempty_cookie_names``) were deleted; the
+#: live logic behind them is unchanged and still lives in ``_app/login_cookie``.
 _SEMANTIC_HASHES = {
     "login_cookie": "ba6c11e67a09365d017b9ec46aed5e37eb7173f864ba45746ca289fc49bed2dd",
-    "cookie_import": "5a50d08f573f05bf6eba1879014d9c6736a152a37456009da8306a9f6f49281f",
+    "cookie_import": "80135a3c19f81812c3486bfab695b9348d63514901e51ac8978bbab00ba6d254",
     "browser_accounts": "0b4278d9971e3522be70481aa98d0dde869455be703aa8f24e61840fb16e79ed",
     "chromium_accounts": "3f7241d07681f66823c212bb3b8292caa59b65a402d022537b134ca3e6995c92",
     "cookie_domains": "a09898adcc9d4e9cba6308fd4bd8a13d36ca9a17bc462834eb27f5854d1e65c3",

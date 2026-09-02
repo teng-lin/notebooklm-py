@@ -1003,3 +1003,251 @@ def test_strict_codecs_reject_malformed_ids_without_echoing_them() -> None:
     )
     with pytest.raises(DecodingError, match="malformed notebook member ID"):
         decode_collections(response, method_id=GET_LABELS_METHOD)
+
+
+# ---------------------------------------------------------------------------
+# Read-back and write-failure branches shared by both organization adapters
+# ---------------------------------------------------------------------------
+
+
+class _VanishingResourceServer(FakeOrganizationServer):
+    """Drops the mutated label/collection right after the write lands.
+
+    Models a concurrent delete landing between the mutation and the read-back,
+    which is the only way the adapters' post-write ``is None`` guards fire.
+    """
+
+    async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        response = await super().unary(method, request, **kwargs)
+        if method == MUTATE_LABEL_METHOD:
+            self.labels[NB].pop(LABEL_A, None)
+            self.collections.pop(COLLECTION_A, None)
+        return response
+
+
+class _DeleteThenReportMissingServer(FakeOrganizationServer):
+    """Applies the delete, then answers ``NOT_FOUND`` — a benign double-delete."""
+
+    async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        response = await super().unary(method, request, **kwargs)
+        if method == DELETE_LABELS_METHOD:
+            raise RPCError("already deleted", method_id=DELETE_LABELS_METHOD, rpc_code=5)
+        return response
+
+
+async def test_label_get_returns_the_matching_row() -> None:
+    labels, _collections = _apis(FakeOrganizationServer())
+
+    label = await labels.get(NB, LABEL_A)
+
+    assert (label.id, label.name, label.emoji) == (LABEL_A, "Papers", "📄")
+
+
+async def test_collection_get_returns_the_matching_row() -> None:
+    _labels, collections = _apis(FakeOrganizationServer())
+
+    collection = await collections.get(COLLECTION_A)
+
+    assert (collection.id, collection.name) == (COLLECTION_A, "Research")
+
+
+async def test_label_sources_rejects_an_absent_label() -> None:
+    labels, _collections = _apis(FakeOrganizationServer())
+
+    with pytest.raises(LabelNotFoundError):
+        await labels.sources(NB, LABEL_MISSING)
+
+
+async def test_collection_notebooks_rejects_an_absent_collection() -> None:
+    _labels, collections = _apis(FakeOrganizationServer())
+
+    with pytest.raises(CollectionNotFoundError):
+        await collections.notebooks(COLLECTION_MISSING)
+
+
+@pytest.mark.parametrize("kind", ["label", "collection"])
+async def test_create_treats_an_undecodable_echo_as_unconfirmed(kind: str) -> None:
+    """A malformed created row cannot be reported as a clean success."""
+    server = FakeOrganizationServer()
+    if kind == "label":
+        server.create_response_override = organization_pb2.CreateLabelResponse(
+            label_and_sources=[organization_pb2.LabelAndSources(label="X", label_id="not-a-uuid")]
+        )
+    else:
+        server.create_response_override = organization_pb2.CreateLabelResponse(
+            notebook_collections=[organization_pb2.NotebookCollection(name="X", id="not-a-uuid")]
+        )
+    labels, collections = _apis(server)
+
+    with pytest.raises(DecodingError) as caught:
+        if kind == "label":
+            await labels.create(NB, "Requested")
+        else:
+            await collections.create("Requested")
+
+    assert getattr(caught.value, "unconfirmed", False) is True
+
+
+async def test_label_update_rejects_an_absent_label() -> None:
+    labels, _collections = _apis(FakeOrganizationServer())
+
+    with pytest.raises(LabelNotFoundError):
+        await labels.update(NB, LABEL_MISSING, name="New")
+
+
+async def test_collection_update_rejects_an_absent_collection() -> None:
+    _labels, collections = _apis(FakeOrganizationServer())
+
+    with pytest.raises(CollectionNotFoundError):
+        await collections.rename(COLLECTION_MISSING, "New")
+
+
+@pytest.mark.parametrize("kind", ["label", "collection"])
+async def test_property_write_not_found_maps_to_the_typed_miss(kind: str) -> None:
+    """The property write has already proven the resource existed on read."""
+    server = FakeOrganizationServer()
+    server.failures[2] = RPCError("gone", method_id=MUTATE_LABEL_METHOD, rpc_code=5)
+    labels, collections = _apis(server)
+
+    expected = LabelNotFoundError if kind == "label" else CollectionNotFoundError
+    with pytest.raises(expected):
+        if kind == "label":
+            await labels.update(NB, LABEL_A, name="New")
+        else:
+            await collections.rename(COLLECTION_A, "New")
+
+
+@pytest.mark.parametrize("kind", ["label", "collection"])
+async def test_property_write_other_rpc_errors_propagate_unchanged(kind: str) -> None:
+    server = FakeOrganizationServer()
+    denied = RPCError("denied", method_id=MUTATE_LABEL_METHOD, rpc_code=7)
+    server.failures[2] = denied
+    labels, collections = _apis(server)
+
+    with pytest.raises(RPCError) as caught:
+        if kind == "label":
+            await labels.update(NB, LABEL_A, name="New")
+        else:
+            await collections.rename(COLLECTION_A, "New")
+
+    assert caught.value is denied
+
+
+@pytest.mark.parametrize("kind", ["label", "collection"])
+async def test_property_write_read_back_absence_maps_to_the_typed_miss(kind: str) -> None:
+    labels, collections = _apis(_VanishingResourceServer())
+
+    expected = LabelNotFoundError if kind == "label" else CollectionNotFoundError
+    with pytest.raises(expected):
+        if kind == "label":
+            await labels.update(NB, LABEL_A, name="New")
+        else:
+            await collections.rename(COLLECTION_A, "New")
+
+
+@pytest.mark.parametrize("kind", ["label", "collection"])
+async def test_property_write_that_does_not_stick_is_reported_as_drift(kind: str) -> None:
+    server = FakeOrganizationServer()
+    server.ignore_mutations = True
+    labels, collections = _apis(server)
+
+    with pytest.raises(DecodingError, match="did not read back the requested properties"):
+        if kind == "label":
+            await labels.update(NB, LABEL_A, name="Renamed")
+        else:
+            await collections.rename(COLLECTION_A, "Renamed")
+
+
+@pytest.mark.parametrize("kind", ["label", "collection"])
+async def test_membership_read_back_absence_maps_to_the_typed_miss(kind: str) -> None:
+    labels, collections = _apis(_VanishingResourceServer())
+
+    expected = LabelNotFoundError if kind == "label" else CollectionNotFoundError
+    with pytest.raises(expected):
+        if kind == "label":
+            await labels.add_sources(NB, LABEL_A, [SOURCE_B])
+        else:
+            await collections.add_notebooks(COLLECTION_A, [NB_B])
+
+
+@pytest.mark.parametrize("kind", ["label", "collection"])
+async def test_membership_write_that_does_not_stick_is_reported_as_drift(kind: str) -> None:
+    server = FakeOrganizationServer()
+    server.ignore_mutations = True
+    labels, collections = _apis(server)
+
+    with pytest.raises(DecodingError, match="did not read back the requested state"):
+        if kind == "label":
+            await labels.add_sources(NB, LABEL_A, [SOURCE_B])
+        else:
+            await collections.add_notebooks(COLLECTION_A, [NB_B])
+
+
+async def test_label_membership_other_rpc_errors_skip_the_absence_probe() -> None:
+    """Only ``NOT_FOUND`` is ambiguous — anything else propagates immediately."""
+    server = FakeOrganizationServer()
+    denied = RPCError("denied", method_id=MUTATE_LABEL_METHOD, rpc_code=7)
+    server.failures[1] = denied
+    labels, _collections = _apis(server)
+
+    with pytest.raises(RPCError) as caught:
+        await labels.add_sources(NB, LABEL_A, [SOURCE_B])
+
+    assert caught.value is denied
+    assert [method for method, _request, _kwargs in server.calls] == [MUTATE_LABEL_METHOD]
+
+
+@pytest.mark.parametrize("kind", ["label", "collection"])
+async def test_delete_of_only_unknown_ids_issues_no_write(kind: str) -> None:
+    server = FakeOrganizationServer()
+    labels, collections = _apis(server)
+
+    if kind == "label":
+        await labels.delete(NB, [LABEL_MISSING])
+    else:
+        await collections.delete([COLLECTION_MISSING])
+
+    assert [method for method, _request, _kwargs in server.calls] == [GET_LABELS_METHOD]
+
+
+@pytest.mark.parametrize("kind", ["label", "collection"])
+async def test_delete_tolerates_a_not_found_answer_once_absence_is_proven(kind: str) -> None:
+    server = _DeleteThenReportMissingServer()
+    labels, collections = _apis(server)
+
+    if kind == "label":
+        await labels.delete(NB, LABEL_A)
+        assert LABEL_A not in server.labels[NB]
+    else:
+        await collections.delete(COLLECTION_A)
+        assert COLLECTION_A not in server.collections
+
+
+@pytest.mark.parametrize("kind", ["label", "collection"])
+async def test_delete_propagates_non_not_found_rpc_errors(kind: str) -> None:
+    server = FakeOrganizationServer()
+    denied = RPCError("denied", method_id=DELETE_LABELS_METHOD, rpc_code=7)
+    server.failures[2] = denied
+    labels, collections = _apis(server)
+
+    with pytest.raises(RPCError) as caught:
+        if kind == "label":
+            await labels.delete(NB, LABEL_A)
+        else:
+            await collections.delete(COLLECTION_A)
+
+    assert caught.value is denied
+
+
+@pytest.mark.parametrize("kind", ["label", "collection"])
+async def test_delete_that_does_not_remove_the_row_is_reported_as_drift(kind: str) -> None:
+    """A swallowed ``NOT_FOUND`` still has to prove absence on read-back."""
+    server = FakeOrganizationServer()
+    server.failures[2] = RPCError("gone", method_id=DELETE_LABELS_METHOD, rpc_code=5)
+    labels, collections = _apis(server)
+
+    with pytest.raises(DecodingError, match="did not read back absence"):
+        if kind == "label":
+            await labels.delete(NB, LABEL_A)
+        else:
+            await collections.delete(COLLECTION_A)
