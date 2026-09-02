@@ -859,3 +859,226 @@ async def test_spawn_child_is_safe_with_eager_task_factory() -> None:
         assert observed_parent_depth == [1]
     finally:
         loop.set_task_factory(previous)
+
+
+# ---------------------------------------------------------------------------
+# Admission-generation state machine
+#
+# These guards keep a retired resource generation from admitting work. They are
+# raised, not returned, so an unexercised one fails open rather than loud.
+# ---------------------------------------------------------------------------
+
+
+def test_a_concurrency_limit_below_one_is_rejected() -> None:
+    with pytest.raises(ValueError, match="max_concurrent_rpcs must be >= 1"):
+        CallSupervisor(
+            metrics=ClientMetrics(),
+            drain_tracker=TransportDrainTracker(),
+            max_concurrent_rpcs=0,
+        )
+
+
+@pytest.mark.asyncio
+async def test_bound_loop_is_reported_once_assigned() -> None:
+    supervisor = CallSupervisor(
+        metrics=ClientMetrics(),
+        drain_tracker=TransportDrainTracker(),
+        max_concurrent_rpcs=1,
+    )
+    loop = asyncio.get_running_loop()
+
+    assert supervisor.bound_loop is None
+    supervisor.set_bound_loop(loop)
+    assert supervisor.bound_loop is loop
+
+
+@pytest.mark.asyncio
+async def test_preparing_a_second_generation_while_one_is_current_is_refused() -> None:
+    supervisor = _supervisor()
+
+    with pytest.raises(RuntimeError, match="is still current"):
+        supervisor.prepare_generation(2)
+
+
+@pytest.mark.asyncio
+async def test_a_generation_epoch_must_move_forward() -> None:
+    """Reusing an epoch would let retired work rejoin admission."""
+    supervisor = _supervisor()
+    supervisor.mark_closed(1)
+
+    with pytest.raises(RuntimeError, match="not newer than prior epochs"):
+        supervisor.prepare_generation(1)
+
+
+@pytest.mark.asyncio
+async def test_a_generation_can_only_start_from_closed() -> None:
+    supervisor = _supervisor()
+
+    with pytest.raises(RuntimeError, match="cannot start from accepting"):
+        supervisor.start_accepting(1)
+
+
+@pytest.mark.asyncio
+async def test_operations_naming_a_non_current_generation_are_refused() -> None:
+    supervisor = _supervisor()
+
+    with pytest.raises(RuntimeError, match="generation 99 is not current"):
+        supervisor.start_accepting(99)
+
+
+@pytest.mark.asyncio
+async def test_closing_is_idempotent_but_cannot_reopen_a_closed_generation() -> None:
+    supervisor = _supervisor()
+
+    await supervisor.begin_closing(1)
+    # Repeating the transition is a no-op rather than an error.
+    await supervisor.begin_closing(1)
+
+    supervisor.mark_closed(1)
+    supervisor.prepare_generation(2)
+    with pytest.raises(RuntimeError, match="cannot close from closed"):
+        await supervisor.begin_closing(2)
+
+
+@pytest.mark.asyncio
+async def test_a_negative_idle_timeout_is_rejected() -> None:
+    supervisor = _supervisor()
+
+    with pytest.raises(ValueError, match="timeout must be >= 0 or None"):
+        await supervisor.wait_for_idle(1, -1.0)
+
+
+@pytest.mark.asyncio
+async def test_waiting_for_idle_on_an_already_idle_generation_returns_at_once() -> None:
+    supervisor = _supervisor()
+
+    await supervisor.wait_for_idle(1, None)
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_generation_is_named_in_the_error() -> None:
+    supervisor = _supervisor()
+
+    with pytest.raises(RuntimeError, match="generation 42 is unknown"):
+        supervisor._find_generation(42)
+
+
+@pytest.mark.asyncio
+async def test_task_depth_is_zero_outside_a_known_generation() -> None:
+    """Depth lookups happen on teardown paths where the generation may be gone."""
+    supervisor = _supervisor()
+    task = asyncio.current_task()
+
+    assert supervisor._task_depth(None, 1) == 0
+    assert supervisor._task_depth(task, 999) == 0
+    assert supervisor._task_depth(task, 1) == 0
+
+
+@pytest.mark.asyncio
+async def test_no_other_generation_depth_without_a_task() -> None:
+    supervisor = _supervisor()
+
+    assert supervisor._has_other_generation_depth(None, 1) is False
+
+
+@pytest.mark.asyncio
+async def test_spawning_a_child_without_a_current_generation_is_refused() -> None:
+    """The factory must not be invoked once the generation is gone.
+
+    The message comes from ``assert_bound_loop``, which checks ``_current is
+    None`` first; ``spawn_child``'s own "requires a current generation" guard
+    is consequently unreachable and is left untested rather than contrived.
+    """
+    supervisor = _supervisor()
+    supervisor.mark_closed(1)
+    spawned: list[str] = []
+
+    def _factory():  # noqa: ANN202
+        spawned.append("factory")  # pragma: no cover - must never be reached
+        raise AssertionError("child must not start")
+
+    with pytest.raises(RuntimeError, match="Client not initialized"):
+        await supervisor.spawn_child("label", _factory)
+
+    assert spawned == []
+
+
+# ---------------------------------------------------------------------------
+# Drain hooks
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_running_drain_hooks_without_any_registered_is_a_no_op() -> None:
+    supervisor = _supervisor()
+
+    await supervisor.run_drain_hooks()
+
+
+@pytest.mark.asyncio
+async def test_every_drain_hook_runs_even_when_one_fails(caplog) -> None:
+    """A feature's close hook must not be able to skip another feature's."""
+    supervisor = _supervisor()
+    ran: list[str] = []
+
+    async def _ok() -> None:
+        ran.append("ok")
+
+    async def _boom() -> None:
+        ran.append("boom")
+        raise RuntimeError("hook failed")
+
+    supervisor.register_drain_hook("boom", _boom)
+    supervisor.register_drain_hook("ok", _ok)
+
+    with caplog.at_level("WARNING"):
+        await supervisor.run_drain_hooks()
+
+    assert sorted(ran) == ["boom", "ok"]
+    assert "hook failed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_registering_a_hook_under_an_existing_name_replaces_it() -> None:
+    supervisor = _supervisor()
+    ran: list[str] = []
+
+    async def _first() -> None:  # pragma: no cover - replaced before running
+        ran.append("first")
+
+    async def _second() -> None:
+        ran.append("second")
+
+    supervisor.register_drain_hook("only", _first)
+    supervisor.register_drain_hook("only", _second)
+
+    await supervisor.run_drain_hooks()
+
+    assert ran == ["second"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error", [KeyboardInterrupt(), SystemExit()], ids=["keyboard-interrupt", "system-exit"]
+)
+async def test_an_interpreter_exit_from_a_drain_hook_takes_precedence(
+    error: BaseException,
+) -> None:
+    """It is re-raised after the sweep rather than logged like an ordinary failure."""
+    supervisor = _supervisor()
+    ran: list[str] = []
+
+    async def _exiting() -> None:
+        raise error
+
+    async def _ordinary() -> None:
+        ran.append("ordinary")
+        raise RuntimeError("logged, not raised")
+
+    supervisor.register_drain_hook("exiting", _exiting)
+    supervisor.register_drain_hook("ordinary", _ordinary)
+
+    with pytest.raises(type(error)):
+        await supervisor.run_drain_hooks()
+
+    assert ran == ["ordinary"], "the sweep still completes"
