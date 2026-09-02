@@ -777,18 +777,22 @@ def test_main_exits_two_on_unhandled_crash(
 ) -> None:
     """An unhandled crash in main must return exit code 2 (infrastructure failure),
     never exit 1 which the workflow interprets as an RPC mismatch (#2323).
+    Secrets in the exception and formatted traceback must be scrubbed.
     """
     monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", "{}")
     monkeypatch.setattr("sys.argv", ["check_rpc_health.py"])
 
     async def _crashing_run(*_args: Any, **_kwargs: Any) -> Any:
-        raise RuntimeError("Unexpected pipeline crash")
+        # Include a secret token that should be redacted by scrub_secrets
+        raise RuntimeError("Crash with SID=secret_cookie_value_here")
 
     monkeypatch.setattr(check_rpc_health, "run_health_check", _crashing_run)
     exit_code = check_rpc_health.main()
     assert exit_code == 2
     err = capsys.readouterr().err
-    assert "FATAL: RPC health check crashed: Unexpected pipeline crash" in err
+    assert "FATAL: RPC health check crashed:" in err
+    assert "secret_cookie_value_here" not in err
+    assert "***" in err
 
 
 async def _load_auth_raising(monkeypatch: pytest.MonkeyPatch, error: BaseException) -> None:

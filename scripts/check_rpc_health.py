@@ -2673,8 +2673,8 @@ def main() -> int:
     except SystemExit:
         raise
     except Exception as e:
-        print(f"\nFATAL: RPC health check crashed: {e}", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
+        print(f"\nFATAL: RPC health check crashed: {scrub_secrets(e)}", file=sys.stderr)
+        print(scrub_secrets(traceback.format_exc()), file=sys.stderr)
         return 2
 
 
