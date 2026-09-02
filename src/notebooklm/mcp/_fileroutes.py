@@ -300,8 +300,12 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
         if spec is None:  # pragma: no cover - tokens are minted only for known types
             return PlainTextResponse("Unknown artifact type.", status_code=400)
         try:
-            client = get_client_from_app(request)
-        except RuntimeError:
+            client = await get_client_from_app(request)
+        except Exception:  # noqa: BLE001 - not-bound, shutting down, or a failed lazy open
+            # The client is opened lazily (#2330), so this now also covers an
+            # auth/network failure on the open. Never echo the cause: an auth error
+            # can carry the on-disk storage path, and this route is reachable by
+            # anyone holding the signed link.
             return PlainTextResponse("Server is not ready.", status_code=500)
 
         # ``aid`` rides inside the HMAC-signed token, so a non-string value should be
@@ -521,9 +525,12 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
             except ValueError:
                 pass
         try:
-            client = get_client_from_app(request)
-        except RuntimeError:
-            return PlainTextResponse("Server is not ready.", status_code=500)
+            client = await get_client_from_app(request)
+        except Exception:  # noqa: BLE001 - not-bound, shutting down, or a failed lazy open
+            # Same widening as the download route (#2330), and it carries the CORS
+            # header like every other /files/ul error response — a bare 500 would be
+            # invisible to the in-app widget's fetch.
+            return PlainTextResponse("Server is not ready.", status_code=500, headers=_CORS_ORIGIN)
 
         # Atomically claim the single-use jti BEFORE any concurrency slot / spool: a
         # sequential replay (jti already consumed) or a concurrent duplicate (jti

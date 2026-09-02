@@ -1024,6 +1024,43 @@ def test_lifespan_not_set_returns_500(mock_client, config) -> None:
     assert resp.status_code == 500
 
 
+def _failing_open_app(config: FileTransferConfig):
+    """A server whose lazy client open always fails (#2330), e.g. expired cookies."""
+
+    from notebooklm.exceptions import AuthError
+
+    @contextlib.asynccontextmanager
+    async def factory():
+        raise AuthError("session expired: cookie SID=AAAA1111secret")
+        yield  # pragma: no cover - unreachable, keeps this an async generator
+
+    server = create_server(client_factory=factory, file_transfer=config)  # type: ignore[arg-type]
+    return server.http_app()
+
+
+def test_download_route_returns_500_when_the_lazy_open_fails(config) -> None:
+    # The client is opened lazily (#2330), so the accessor can now raise an
+    # auth/network error, not just RuntimeError. It must still be a clean 500 that
+    # echoes nothing of the cause (the route is reachable by anyone with the link).
+    url = config.download_url({"op": "dl", "nb": NB, "atype": "audio"})
+    with starlette_testclient.TestClient(_failing_open_app(config)) as client:
+        resp = client.get(_path(url))
+    assert resp.status_code == 500
+    assert "AAAA1111secret" not in resp.text
+    assert "session expired" not in resp.text
+
+
+def test_upload_route_500_on_failed_lazy_open_still_carries_cors(config) -> None:
+    # Same widening on the upload route — and the CORS header must ride along, or
+    # the in-app widget's cross-origin fetch cannot even read the failure.
+    url = config.upload_url({"op": "ul", "nb": NB})
+    with starlette_testclient.TestClient(_failing_open_app(config)) as client:
+        resp = client.post(_path(url), content=b"hello")
+    assert resp.status_code == 500
+    assert resp.headers["Access-Control-Allow-Origin"] == "*"
+    assert "AAAA1111secret" not in resp.text
+
+
 # --------------------------------------------------------------------------- #
 # Upstream-error classification + redaction (#1682)
 # --------------------------------------------------------------------------- #

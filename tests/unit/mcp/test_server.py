@@ -17,6 +17,7 @@ from fastmcp import Client, FastMCP  # noqa: E402 - after importorskip guard
 from notebooklm.client import NotebookLMClient  # noqa: E402 - after importorskip guard
 from notebooklm.mcp import __main__ as entry  # noqa: E402 - after importorskip guard
 from notebooklm.mcp._chattasks import ChatTaskRegistry  # noqa: E402 - after importorskip guard
+from notebooklm.mcp._clientprovider import ClientProvider  # noqa: E402 - after importorskip
 from notebooklm.mcp._context import (  # noqa: E402 - after importorskip guard
     AppState,
     CancelledResearchTracker,
@@ -145,20 +146,20 @@ async def test_backend_does_not_reparameterize_injected_factory(
     assert calls == 1
 
 
-def test_get_client_reads_appstate() -> None:
+async def test_get_client_reads_appstate() -> None:
     """get_client unwraps the AppState bound in the request lifespan context."""
     sentinel = MagicMock()
-    state = AppState(client=sentinel)
+    state = AppState(client_provider=ClientProvider.of(sentinel))
 
     ctx = MagicMock()
     ctx.request_context.lifespan_context = state
-    assert get_client(ctx) is sentinel
+    assert await get_client(ctx) is sentinel
 
 
 def test_get_cancelled_research_returns_live_appstate_tracker() -> None:
     """get_cancelled_research returns the live tracker on the bound AppState so
     research_cancel/research_status share cancel intent (issue #1922, F9)."""
-    state = AppState(client=MagicMock())
+    state = AppState(client_provider=ClientProvider.of(MagicMock()))
     ctx = MagicMock()
     ctx.request_context.lifespan_context = state
 

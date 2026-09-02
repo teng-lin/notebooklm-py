@@ -2,11 +2,14 @@
 
 Design highlights:
 
-- **One client per process, bound at lifespan.** The FastMCP lifespan opens a
-  single :class:`~notebooklm.client.NotebookLMClient` via
-  ``from_storage(profile=..., keepalive=600.0)`` inside the server loop
-  (satisfies the ADR-0004 loop-affinity contract) and keeps it for the process
-  lifetime. Its keepalive task gives long sessions cookie rotation for free.
+- **One client per process, opened lazily.** The FastMCP lifespan binds a
+  :class:`~notebooklm.mcp._clientprovider.ClientProvider` over
+  ``from_storage(profile=..., keepalive=600.0)``, starts the open in the
+  background, and yields *immediately* — the MCP ``initialize`` handshake is
+  never gated on Google's auth round-trip (#2330). The open runs on the server
+  loop, so the client still satisfies the ADR-0004 loop-affinity contract, and
+  is kept for the process lifetime; its keepalive task gives long sessions
+  cookie rotation for free.
 - **Transport-neutral.** Tools are thin adapters over the ``_app/`` cores; this
   package imports NO ``click`` / ``rich`` / ``cli`` (enforced by
   ``tests/_guardrails/test_mcp_boundary.py``).
@@ -28,6 +31,7 @@ from fastmcp.server.auth import AuthProvider
 from .._runtime.config import DEFAULT_SERVER_KEEPALIVE_INTERVAL
 from ..client import NotebookLMClient
 from ..paths import get_active_profile, resolve_profile, set_active_profile
+from ._clientprovider import ClientProvider
 from ._context import AppState
 from ._filelink import FileTransferConfig
 
@@ -162,18 +166,23 @@ def create_server(
         previous_profile = get_active_profile()
         set_active_profile(resolve_profile(profile))
         try:
-            async with factory() as client:
-                state = AppState(client=client, file_transfer=file_transfer)
-                state.chat_tasks.set_bound_loop(asyncio.get_running_loop())
-                state.chat_tasks.reset_after_open()
-                try:
-                    yield state
-                finally:
-                    # Cancel any detached chat asks BEFORE the factory context
-                    # closes the client, so no server-owned task ever touches a
-                    # closing client (see ChatTaskRegistry.aclose).
-                    await state.chat_tasks.aclose()
-                    state.chat_tasks.set_bound_loop(None)
+            provider = ClientProvider(factory)
+            state = AppState(client_provider=provider, file_transfer=file_transfer)
+            state.chat_tasks.set_bound_loop(asyncio.get_running_loop())
+            state.chat_tasks.reset_after_open()
+            # Warm the client on the server loop WITHOUT awaiting it: the auth
+            # round-trip can outlast the client's handshake deadline, and gating
+            # ``initialize`` on it is what surfaced as CONNECT_TIMEOUT (#2330).
+            provider.start()
+            try:
+                yield state
+            finally:
+                # Cancel any detached chat asks BEFORE the provider closes the
+                # client, so no server-owned task ever touches a closing client
+                # (see ChatTaskRegistry.aclose).
+                await state.chat_tasks.aclose()
+                state.chat_tasks.set_bound_loop(None)
+                await provider.aclose()
         finally:
             set_active_profile(previous_profile)
 

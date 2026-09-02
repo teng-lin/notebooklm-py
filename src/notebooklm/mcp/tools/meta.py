@@ -63,7 +63,7 @@ async def _account_block(ctx: Context, *, authenticated: bool) -> dict[str, Any]
     response, that degrades to ``available: False`` with a short (scrubbed) reason
     (identity still included) — keeping the diagnostic useful.
     """
-    client = get_client(ctx)
+    client = await get_client(ctx)
     # Identity from a single source (the client). Never raises. ``live_fallback`` is
     # gated on ``authenticated`` — suppress the live WIZ probe when the session is
     # already known stale (it would just fail), so the unauth path stays network-free.

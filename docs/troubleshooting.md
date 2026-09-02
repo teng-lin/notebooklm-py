@@ -953,6 +953,28 @@ into `source_add(bytes_base64=…)` (and `studio_get_prompt` into
 `source_add` with the new `bytes_base64` argument reached the upgraded server and
 worked without a reconnect.
 
+### MCP server `CONNECT_TIMEOUT` on connect ("connection timed out after 30000ms")
+
+**Cause (fixed in the version that shipped #2330):** the server used to open its
+`NotebookLMClient` — cookie rotation plus the CSRF fetch, and the cold-recovery
+ladder when those fail — *before* answering the MCP `initialize` handshake. That
+auth work has a larger budget (a 15 s `RotateCookies` poke plus a 30 s CSRF
+fetch, more on the recovery rungs) than the 30 s deadline hosts give the
+handshake, so a slow or rate-limited Google looked to the host like a dead
+server: `CONNECT_TIMEOUT`, with no way to tell "still working" from "stuck".
+Each retry spawned a fresh process that redid the same work, which is why it
+took several attempts (and, once cookies were warm, eventually succeeded).
+
+The client is now opened **lazily and in the background**: the handshake answers
+immediately, and the first tool call awaits the auth round-trip instead. An auth
+problem now arrives as a normal tool error (`AUTH: …`) naming the real cause, and
+the next call retries the open — so re-running `notebooklm login` recovers a
+running server without restarting it.
+
+**If you still see `CONNECT_TIMEOUT`:** you are on an older server. Upgrade, and
+check the host's MCP logs (the server logs to stderr) for the real error. It is
+not an auth problem in the client — the handshake never reaches auth.
+
 ## Getting Help
 
 1. Check this troubleshooting guide

@@ -46,7 +46,7 @@ def register(mcp: Any) -> None:
         0), plus ``total`` / ``offset`` / ``has_more``. Page forward by re-calling
         with ``offset += limit`` while ``has_more`` is true.
         """
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             notebooks = await client.notebooks.list()
             page, meta = paginate([_notebook_view(nb) for nb in notebooks], limit, offset)
@@ -55,7 +55,7 @@ def register(mcp: Any) -> None:
     @mcp.tool
     async def notebook_create(ctx: Context, title: str) -> dict[str, Any]:
         """Create a new notebook with the given title."""
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             result = await core.execute_notebook_create(client, title)
             # Flatten the created notebook to a top-level shape consistent with
@@ -85,7 +85,7 @@ def register(mcp: Any) -> None:
         (details + source list) and surface it under a ``metadata`` key; the
         default output (``include_metadata`` omitted) is unchanged.
         """
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
             if include_metadata:
@@ -138,7 +138,7 @@ def register(mcp: Any) -> None:
     @mcp.tool
     async def notebook_rename(ctx: Context, notebook: str, new_title: str) -> dict[str, Any]:
         """Rename a notebook. Accepts a notebook name or ID."""
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
             result = await core.execute_notebook_rename(
@@ -154,7 +154,7 @@ def register(mcp: Any) -> None:
         NOT delete — it returns a ``needs_confirmation`` preview of the resolved
         notebook. Call again with ``confirm=True`` to perform the delete.
         """
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
             if not confirm:

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **MCP server: `CONNECT_TIMEOUT` on connect.** The FastMCP lifespan opened the
+  `NotebookLMClient` — cookie rotation, the CSRF fetch, and the cold-recovery
+  ladder when those fail — *before* answering the MCP `initialize` handshake.
+  That auth work's budget (a 15 s `RotateCookies` poke plus a 30 s CSRF fetch,
+  more on the recovery rungs) exceeds the 30 s deadline hosts give the handshake,
+  so a slow or rate-limited Google surfaced to the host as a dead server
+  (`MCP server notebooklm connection timed out after 30000ms`) rather than an
+  auth error, and every retry spawned a fresh process that redid the same work.
+  The client is now opened lazily behind a `ClientProvider` that the lifespan
+  warms in the background: the handshake answers immediately, the first tool call
+  awaits the open, an auth failure arrives as a normal categorized tool error,
+  and a failed open is retried by the next call — so a mid-session
+  `notebooklm login` recovers a running server without a restart ([#2330]).
+
 ### Changed
 
 - Pull requests run a reduced 7-cell compatibility matrix again (Python
@@ -146,6 +162,7 @@ change without notice.
 [#2307]: https://github.com/teng-lin/notebooklm-py/pull/2307
 [#2308]: https://github.com/teng-lin/notebooklm-py/pull/2308
 [#2313]: https://github.com/teng-lin/notebooklm-py/issues/2313
+[#2330]: https://github.com/teng-lin/notebooklm-py/issues/2330
 
 ## [0.8.1] - 2026-08-14
 

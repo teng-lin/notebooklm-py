@@ -70,7 +70,7 @@ def register(mcp: Any) -> None:
         not report it (it would always read ``"full"``). Set it via
         ``share_set_access``, which echoes the value it just set.
         """
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
             status = await client.sharing.get_status(nb_id)
@@ -96,7 +96,7 @@ def register(mcp: Any) -> None:
         set here (the read API can't report it); with both fields it is applied
         before ``public`` so a partial failure fails closed.
         """
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
             if public is True and not confirm:
@@ -161,7 +161,7 @@ def register(mcp: Any) -> None:
         ``notify`` (default ``False``) emails the user on grant/re-grade; ``message``
         is an optional welcome note. Returns the updated status (or a preview).
         """
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
             if not confirm:
@@ -194,7 +194,7 @@ def register(mcp: Any) -> None:
         it returns a ``needs_confirmation`` preview. Call with ``confirm=True`` to
         actually remove the user.
         """
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
             if not confirm:

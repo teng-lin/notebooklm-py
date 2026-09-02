@@ -126,7 +126,7 @@ def register(mcp: Any) -> None:
         ``source`` is ``web`` (default) or ``drive``. ``mode`` is ``fast``
         (default) or ``deep`` (deep is web-only).
         """
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             # ``deep`` mode is web-only — reject the invalid combination at the tool
             # boundary (the independent Literals can't express this cross-field rule).
@@ -193,7 +193,7 @@ def register(mcp: Any) -> None:
         for a single task (ambiguous with two+). An unmatched pin reports
         ``not_found``. ``task_id`` is a deprecated alias (removed in v0.9.0).
         """
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             # Fold the deprecated ``task_id`` pin into ``poll_task_id`` (#1789).
             poll_task_id, deprecation = _resolve_poll_task_id(
@@ -348,7 +348,7 @@ def register(mcp: Any) -> None:
         ``no_research`` (replication lag) is cancelled too. Fire-and-forget; poll
         ``research_status`` afterward to confirm.
         """
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             # Fold the deprecated ``run_id`` alias into ``poll_task_id`` (#1789).
             poll_task_id, deprecation = _resolve_poll_task_id(
@@ -429,7 +429,7 @@ def register(mcp: Any) -> None:
         ``cited_only`` imports only report-cited sources (all, if none resolve).
         ``max_sources`` caps the count.
         """
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             # Fold the deprecated ``task_id`` alias into ``poll_task_id`` (#1789).
             poll_task_id, deprecation = _resolve_poll_task_id(

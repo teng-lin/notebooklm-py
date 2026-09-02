@@ -251,7 +251,7 @@ def register(mcp: Any) -> None:
         a broken import's ghost row). Pass ``label`` (name or ID) to restrict to that
         label's members; composes with ``status``.
         """
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
             sources = await listing_core.fetch_sources(
@@ -296,7 +296,7 @@ def register(mcp: Any) -> None:
         ``detail="full"`` (ignored for ``summary``). Prefer ``chat_ask`` for
         querying large sources rather than pulling the whole body.
         """
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             # Validate windowing args unconditionally — a bad value must error even
             # in ``summary`` mode (where they are ignored), never silently pass.
@@ -367,7 +367,7 @@ def register(mcp: Any) -> None:
         ctx: Context, notebook: str, source: str, new_title: str
     ) -> dict[str, Any]:
         """Rename a source. Accepts a notebook/source name or ID."""
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
             src_id = await resolve_source(client, nb_id, source)
@@ -390,7 +390,7 @@ def register(mcp: Any) -> None:
         ``needs_confirmation`` preview of the resolved source without deleting;
         call again with ``confirm=True`` to perform the delete.
         """
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
             src_id = await resolve_source(client, nb_id, source)
@@ -440,7 +440,7 @@ def register(mcp: Any) -> None:
         an input error, distinct from a resolved source the backend reports missing /
         failed / slow (which lands in a bucket).
         """
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             # Non-finite + range guards (shared with the REST route so the two
             # can't drift); fail-fast before any I/O.
@@ -579,7 +579,7 @@ def register(mcp: Any) -> None:
         single-mode named inputs (incl. ``bytes_base64``/``filename``/``wait``) are not
         valid with ``urls``; ``allow_internal`` applies to every entry.
         """
-        client = get_client(ctx)
+        client = await get_client(ctx)
         with mcp_errors():
             # Mode selection (fail-closed) BEFORE any notebook I/O, so a malformed
             # call never reaches notebooks.list. Exactly one of source_type / urls.
