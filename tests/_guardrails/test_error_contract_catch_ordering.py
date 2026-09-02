@@ -125,6 +125,7 @@ EXCLUDED_FROM_REQUIRED: dict[str, str] = {
     "AuthExtractionError": "login/setup-time extraction fault",
     "ArtifactFeatureUnavailableError": "feature availability, not transport",
     "ResearchStartUnavailableError": "research start returned no run, not transport",
+    "PhenotypeError": "GMS experiment-token acquisition fault, not NotebookLM transport",
 }
 
 # Files (relative to src/notebooklm, posix) with a baselined violation that is
