@@ -629,7 +629,14 @@ class TestFileUpload:
             test_csv,
             mime_type="text/csv",
             expected_title="test_data.csv",
-            expected_kind=SourceType.CSV,
+            # Android stages CSV through Drive because the mobile upload
+            # frontend cannot parse it directly. The resulting source remains
+            # Drive-backed after the temporary staging copy is removed.
+            expected_kind=(
+                SourceType.GOOGLE_DRIVE
+                if client.backends["sources"] == "android"
+                else SourceType.CSV
+            ),
         )
 
     @pytest.mark.asyncio
@@ -674,7 +681,13 @@ class TestFileUpload:
             test_docx,
             mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             expected_title="test_document.docx",
-            expected_kind=SourceType.DOCX,
+            # See the CSV case above: OOXML reaches Android through Drive and
+            # is therefore reported consistently as a Drive-backed source.
+            expected_kind=(
+                SourceType.GOOGLE_DRIVE
+                if client.backends["sources"] == "android"
+                else SourceType.DOCX
+            ),
         )
 
     @pytest.mark.asyncio

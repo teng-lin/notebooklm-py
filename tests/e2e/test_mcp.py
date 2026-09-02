@@ -45,10 +45,7 @@ from ._mcp_live_helpers import (  # noqa: E402 - after importorskip guard
 from ._mcp_live_helpers import (  # noqa: E402 - after importorskip guard
     pick_downloadable_artifact as _pick_downloadable_artifact,
 )
-from .conftest import (  # noqa: E402 - after importorskip guard
-    requires_auth,
-    reset_current_chat_conversation,
-)
+from .conftest import requires_auth  # noqa: E402 - after importorskip guard
 
 pytestmark = pytest.mark.e2e
 
@@ -375,14 +372,13 @@ class TestMcpSources:
 @requires_auth
 @pytest.mark.live_chat_ask
 class TestMcpChat:
-    """Chat domain: configure then ask against the read-only notebook."""
+    """Chat domain: configure then ask against an isolated notebook."""
 
     @pytest.mark.asyncio
-    @pytest.mark.readonly
-    async def test_configure_then_ask(self, client, read_only_notebook_id):
+    @pytest.mark.timeout(240)
+    async def test_configure_then_ask(self, client, temp_notebook):
         """``chat_configure`` then ``chat_ask`` returns a non-empty answer."""
-        nb = read_only_notebook_id
-        await reset_current_chat_conversation(client, nb)
+        nb = temp_notebook.id
 
         configured = await _call(client, "chat_configure", {"notebook": nb, "chat_mode": "concise"})
         assert isinstance(configured, dict)

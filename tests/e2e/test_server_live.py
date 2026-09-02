@@ -35,10 +35,7 @@ from notebooklm.server._auth import (  # noqa: E402 - after importorskip
 )
 from notebooklm.server.app import create_app  # noqa: E402 - after importorskip
 
-from .conftest import (  # noqa: E402 - after importorskip
-    requires_auth,
-    reset_current_chat_conversation,
-)
+from .conftest import requires_auth  # noqa: E402 - after importorskip
 
 pytestmark = pytest.mark.e2e
 
@@ -182,19 +179,14 @@ class TestRestServerLiveReads:
 class TestRestServerLiveChat:
     """A live chat answer over the REST POST route."""
 
-    # @pytest.mark.readonly: chat.ask only appends ephemeral conversation history
-    # — no source, artifact, or note is mutated — so it is safe against the shared
-    # read-only notebook, matching the MCP TestMcpChat.test_configure_then_ask
-    # convention (also @readonly with the same fixture).
     @pytest.mark.asyncio
-    @pytest.mark.readonly
-    async def test_chat_ask_returns_answer(self, client: Any, read_only_notebook_id: str) -> None:
+    @pytest.mark.timeout(240)
+    async def test_chat_ask_returns_answer(self, client: Any, temp_notebook: Any) -> None:
         """``POST /v1/notebooks/{id}/chat`` returns a non-empty answer string."""
-        await reset_current_chat_conversation(client, read_only_notebook_id)
         async with _live_rest_app(client) as http:
             try:
                 resp = await http.post(
-                    f"/v1/notebooks/{read_only_notebook_id}/chat",
+                    f"/v1/notebooks/{temp_notebook.id}/chat",
                     headers=_HEADERS,
                     json={"question": "In one sentence, what are these sources about?"},
                 )

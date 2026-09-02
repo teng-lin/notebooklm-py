@@ -104,7 +104,7 @@ def raise_grpc_status(
     """Raise the existing public exception for one safe gRPC status copy."""
 
     message = f"Android RPC {method} failed with {status.name}."
-    if status.name in {"UNAUTHENTICATED", "PERMISSION_DENIED"}:
+    if status.name == "UNAUTHENTICATED":
         error: Exception = AuthError(message, method_id=method, rpc_code=status.code)
     elif status.name == "RESOURCE_EXHAUSTED":
         error = RateLimitError(message, method_id=method, rpc_code=status.code)
@@ -116,7 +116,7 @@ def raise_grpc_status(
         )
     elif status.name in {"UNAVAILABLE", "INTERNAL"}:
         error = ServerError(message, method_id=method, rpc_code=status.code)
-    elif status.name in {"INVALID_ARGUMENT", "FAILED_PRECONDITION"}:
+    elif status.name in {"INVALID_ARGUMENT", "FAILED_PRECONDITION", "PERMISSION_DENIED"}:
         error = ClientError(message, method_id=method, rpc_code=status.code)
     else:
         error = RPCError(message, method_id=method, rpc_code=status.code)

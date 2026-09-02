@@ -43,7 +43,7 @@ def test_status_extraction_ignores_raw_details() -> None:
     [
         ("NOT_FOUND", 5, RPCError),
         ("UNAUTHENTICATED", 16, AuthError),
-        ("PERMISSION_DENIED", 7, AuthError),
+        ("PERMISSION_DENIED", 7, ClientError),
         ("RESOURCE_EXHAUSTED", 8, RateLimitError),
         ("DEADLINE_EXCEEDED", 4, RPCTimeoutError),
         ("UNAVAILABLE", 14, ServerError),

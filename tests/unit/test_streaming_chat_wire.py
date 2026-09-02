@@ -33,7 +33,7 @@ from notebooklm._web.rows.chat_stream import (
     parse_streaming_chat_response,
     raise_if_rate_limited,
 )
-from notebooklm.exceptions import ChatError, UnknownRPCMethodError
+from notebooklm.exceptions import ChatError, RateLimitError, UnknownRPCMethodError
 from notebooklm.rpc.types import get_query_url
 
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
@@ -980,26 +980,27 @@ def test_e_terminator_frame_does_not_break_successful_answer() -> None:
     assert result.answer == "Real answer."
 
 
-def test_error_only_e_terminator_surfaces_bounded_chat_diagnostic() -> None:
-    """A payload-free terminal frame is not misreported as wire drift.
+def test_error_only_e_terminator_surfaces_rate_limit() -> None:
+    """A payload-free terminal frame is the Web chat-quota response.
 
-    The sequence value is diagnostic bookkeeping, not a status code: the live
-    failure used 3, while successful streams carry values such as 15.
+    Android reports the same live account state as RESOURCE_EXHAUSTED. The
+    sequence value remains diagnostic bookkeeping, not a status code: the
+    quota response used 3, while successful streams carry values such as 15.
     """
     body = _length_prefixed(
         json.dumps([["di", 651], ["af.httprm", 651, "redacted-request", 15]]),
         json.dumps([["e", 3, None, None, 91]]),
     )
 
-    with pytest.raises(ChatError) as raised:
+    with pytest.raises(RateLimitError) as raised:
         parse_streaming_chat_response(body)
 
     message = str(raised.value)
     assert "before the server returned an RPC payload" in message
     assert "terminal stream sequence 3" in message
-    assert "no server status or reason" in message
+    assert "rate limit" in message.lower()
+    assert raised.value.rpc_code == "STREAM_TERMINATED_WITHOUT_RPC_PAYLOAD"
     assert "redacted-request" not in message
-    assert "rate limit" not in message.lower()
 
 
 def test_chat_wire_static_import_guard() -> None:

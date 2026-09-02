@@ -2,9 +2,23 @@
 
 import pytest
 
-from notebooklm import ShareAccess, SharePermission, ShareStatus, ShareViewLevel
+from notebooklm import ClientError, ShareAccess, SharePermission, ShareStatus, ShareViewLevel
+from notebooklm.types import GrpcStatusCode, normalize_grpc_status
 
 from .conftest import requires_auth
+
+
+async def set_view_level_or_skip(client, notebook_id: str, level: ShareViewLevel):
+    """Skip an account-level Android capability refusal, not implementation errors."""
+    try:
+        return await client.sharing.set_view_level(notebook_id, level)
+    except ClientError as exc:
+        if (
+            client.backends["sharing"] == "android"
+            and normalize_grpc_status(exc.rpc_code) is GrpcStatusCode.PERMISSION_DENIED
+        ):
+            pytest.skip("Selected Android profile is not permitted to mutate the share view level")
+        raise
 
 
 @requires_auth
@@ -88,7 +102,7 @@ class TestSharingSetViewLevel:
     async def test_set_view_level_chat_only(self, client, temp_notebook):
         """Test setting view level to chat only."""
         # This should complete without error
-        await client.sharing.set_view_level(temp_notebook.id, ShareViewLevel.CHAT_ONLY)
+        await set_view_level_or_skip(client, temp_notebook.id, ShareViewLevel.CHAT_ONLY)
 
         # Note: GET_SHARE_STATUS doesn't return view_level, so we can't verify it directly
         # The test passes if no exception is raised
@@ -97,7 +111,7 @@ class TestSharingSetViewLevel:
     @pytest.mark.e2e
     async def test_set_view_level_full_notebook(self, client, temp_notebook):
         """Test setting view level to full notebook."""
-        await client.sharing.set_view_level(temp_notebook.id, ShareViewLevel.FULL_NOTEBOOK)
+        await set_view_level_or_skip(client, temp_notebook.id, ShareViewLevel.FULL_NOTEBOOK)
 
         # The test passes if no exception is raised
 
@@ -120,7 +134,7 @@ class TestSharingWorkflow:
         assert public_status.share_url is not None
 
         # 3. Set view level to chat only
-        await client.sharing.set_view_level(temp_notebook.id, ShareViewLevel.CHAT_ONLY)
+        await set_view_level_or_skip(client, temp_notebook.id, ShareViewLevel.CHAT_ONLY)
 
         # 4. Verify status still shows public
         current = await client.sharing.get_status(temp_notebook.id)

@@ -446,7 +446,7 @@ async def test_safe_read_replays_unavailable_once_and_mutation_never_replays() -
     [
         (_Status.NOT_FOUND, RPCError),
         (_Status.UNAUTHENTICATED, AuthError),
-        (_Status.PERMISSION_DENIED, AuthError),
+        (_Status.PERMISSION_DENIED, ClientError),
         (_Status.RESOURCE_EXHAUSTED, RateLimitError),
         (_Status.DEADLINE_EXCEEDED, RPCTimeoutError),
         (_Status.UNAVAILABLE, ServerError),

@@ -21,7 +21,12 @@ from ..._types.documents import (
     _utf16_slice,
     utf16_len,
 )
-from ...exceptions import ChatError, ChatResponseParseError, UnknownRPCMethodError
+from ...exceptions import (
+    ChatError,
+    ChatResponseParseError,
+    RateLimitError,
+    UnknownRPCMethodError,
+)
 from ...rpc.types import RPCMethod
 from ...types import ChatReference, ConversationTurnKey, NextStepSuggestion
 from ..wire.decoder import strip_anti_xssi
@@ -130,10 +135,15 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
 
     Failure contract (see :class:`notebooklm.exceptions.ChatResponseParseError`):
 
-    * **Zero parseable chunks** — no chunk in the response yielded a
-      successfully decoded ``wrb.fr`` envelope. This means either the
-      response body was empty/garbage, or the API's wire format drifted
-      and the parser no longer recognizes the envelope shape. Raises
+    * **Terminal bookkeeping without an RPC payload** — the stream contains
+      only transport frames and a terminal ``e`` frame. The Web backend emits
+      this shape when chat quota is exhausted (the Android backend reports the
+      same account state explicitly as ``RESOURCE_EXHAUSTED``). Raises
+      :class:`~notebooklm.exceptions.RateLimitError`.
+    * **Zero parseable chunks without a terminal frame** — no chunk in the
+      response yielded a successfully decoded ``wrb.fr`` envelope. This means
+      either the response body was empty/garbage, or the API's wire format
+      drifted and the parser no longer recognizes the envelope shape. Raises
       :class:`ChatResponseParseError`.
     * **Chunks parsed but empty answer** — at least one ``wrb.fr`` chunk
       decoded, but no chunk yielded answer text (the model legitimately
@@ -241,11 +251,17 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
 
     if parseable_chunk_count == 0:
         if terminal_sequence is not None:
-            raise ChatError(
-                "Chat request ended before the server returned an RPC payload "
-                f"(terminal stream sequence {terminal_sequence}). The response "
-                "contained only stream bookkeeping and no server status or reason; "
-                "retry later, and investigate the request/backend if it persists."
+            # Live cross-backend characterization: when an account is out of
+            # chat quota, Android reports RESOURCE_EXHAUSTED while Web emits
+            # only the transport bookkeeping plus this terminal frame. The
+            # sequence value itself is still NOT an error code (successful
+            # streams have one too); the quota signal is the complete absence
+            # of any ``wrb.fr`` payload before termination.
+            raise RateLimitError(
+                "Chat rate limit reached: the request ended before the server "
+                "returned an RPC payload "
+                f"(terminal stream sequence {terminal_sequence}). Retry later.",
+                rpc_code="STREAM_TERMINATED_WITHOUT_RPC_PAYLOAD",
             )
         # No ``wrb.fr`` envelopes recognized — distinguishable from a
         # legitimate empty answer (which still produces at least one

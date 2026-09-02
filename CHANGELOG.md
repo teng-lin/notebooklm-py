@@ -80,6 +80,13 @@ change without notice.
 
 ### Fixed
 
+- Android gRPC `PERMISSION_DENIED` responses now surface as client request
+  failures rather than authentication failures, matching the Web backend and
+  avoiding misleading re-authentication guidance for operation-level refusals.
+- Web chat now identifies payload-free terminal streams as quota exhaustion,
+  matching the Android backend's explicit `RESOURCE_EXHAUSTED` result for the
+  same account state. CLI, MCP, and REST callers now receive a retriable
+  rate-limit error instead of a non-retriable generic chat failure.
 - The public API compatibility audit now treats a previously uninspectable
   baseline signature as unknown rather than a breaking change. This prevents
   false release failures on Python 3.14 while still rejecting regressions that

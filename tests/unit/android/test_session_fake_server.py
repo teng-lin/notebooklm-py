@@ -379,7 +379,7 @@ async def test_partial_stream_then_unavailable_surfaces_first_frame_then_server_
     ("code", "error_type"),
     [
         (grpc.StatusCode.UNAUTHENTICATED, AuthError),
-        (grpc.StatusCode.PERMISSION_DENIED, AuthError),
+        (grpc.StatusCode.PERMISSION_DENIED, ClientError),
         (grpc.StatusCode.UNAVAILABLE, ServerError),
         (grpc.StatusCode.RESOURCE_EXHAUSTED, RateLimitError),
         (grpc.StatusCode.INVALID_ARGUMENT, ClientError),
@@ -412,7 +412,7 @@ async def test_unary_abort_status_maps_to_public_exception_without_details(
     ("code", "error_type"),
     [
         (grpc.StatusCode.UNAUTHENTICATED, AuthError),
-        (grpc.StatusCode.PERMISSION_DENIED, AuthError),
+        (grpc.StatusCode.PERMISSION_DENIED, ClientError),
         (grpc.StatusCode.UNAVAILABLE, ServerError),
         (grpc.StatusCode.RESOURCE_EXHAUSTED, RateLimitError),
         (grpc.StatusCode.INVALID_ARGUMENT, ClientError),
