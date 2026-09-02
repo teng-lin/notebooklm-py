@@ -94,6 +94,7 @@ _COPY_NOTEBOOK_VCR = "tests/integration/test_notebook_copy_vcr.py"
 _TRANSFER_VCR = "tests/integration/test_transfer_rpcs_vcr.py"
 _DISCOVER_VCR = "tests/integration/test_research_discover_vcr.py"
 _PLAY_BOOKS_VCR = "tests/integration/test_play_books_vcr.py"
+_CHAT_SESSION_CONTROL_VCR = "tests/integration/test_chat_session_control_vcr.py"
 
 GoldenPointer = tuple[str, str]
 
@@ -177,6 +178,12 @@ GOLDEN_COVERAGE: dict[RPCMethod, tuple[GoldenPointer, ...]] = {
     # --- chat ---
     RPCMethod.GET_CONVERSATION_TURNS: (
         (_GOLDEN_EXPANSION, "TestChatHistoryGoldenDecoded::test_get_history_decoded_golden"),
+    ),
+    RPCMethod.GET_CHAT_SESSION_STATUS: (
+        (
+            _CHAT_SESSION_CONTROL_VCR,
+            "TestChatSessionControlVCR::test_status_decoded_golden",
+        ),
     ),
     # --- labels ---
     RPCMethod.LIST_LABELS: (
@@ -281,6 +288,8 @@ GOLDEN_EXEMPT: dict[RPCMethod, str] = {
     # ``research.cancel`` is fire-and-forget: the server returns [] (decodes to
     # None-equivalent) and is not branched on — there is no decoded field to pin.
     RPCMethod.CANCEL_RESEARCH: _REASON_NONE_CONTRACT,
+    # ``chat.cancel`` is also fire-and-forget and returns None on success.
+    RPCMethod.CANCEL_GENERATION: _REASON_NONE_CONTRACT,
     # ``sources.refresh`` returns None on success (v0.8.0, #1290).
     RPCMethod.REFRESH_SOURCE: _REASON_NONE_CONTRACT,
     # ``sources.append_text`` returns None: AppendSource answers with an empty body (#2283).

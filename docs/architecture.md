@@ -1357,7 +1357,7 @@ src/notebooklm/
 │           │   ├── notebooks_pb2.py         # Exact notebook messages/descriptors
 │           │   ├── notebooks_pb2_grpc.py    # Deterministic service-free companion
 │           │   ├── orchestration_service_pb2.py      # Cumulative exact service descriptor
-│           │   ├── orchestration_service_pb2_grpc.py # 55-method generated stub
+│           │   ├── orchestration_service_pb2_grpc.py # 56-method generated stub
 │           │   ├── sources_pb2.py               # Source and generic-upload descriptors
 │           │   ├── sources_pb2_grpc.py          # Deterministic service-free companion
 │           │   ├── artifacts_pb2.py         # Exact artifact message overlay

@@ -53,7 +53,16 @@ def test_web_status_decoder_maps_idle_and_generating(
 
 @pytest.mark.parametrize(
     "raw",
-    [None, [], [None], [None, 2], ["token", 1], ["token", 99], {"status": 1}],
+    [
+        None,
+        [],
+        [None],
+        [None, 1, "trailing-drift"],
+        [None, 2],
+        ["token", 1],
+        ["token", 99],
+        {"status": 1},
+    ],
 )
 def test_web_status_decoder_rejects_drift(raw: object) -> None:
     with pytest.raises(UnknownRPCMethodError) as raised:

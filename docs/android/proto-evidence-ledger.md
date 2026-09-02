@@ -125,11 +125,11 @@ The recovery method and the warning about duplicate packages are committed in
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject` | `.google.internal.labs.tailwind.orchestration.v1.GetProjectRequest` | `.google.internal.labs.tailwind.orchestration.v1.GetProjectResponse` | unary/unary | `project_id #1`, `include_audio_overview_ids #2`; no `RequestContext` |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListRecentlyViewedProjects` | `.google.internal.labs.tailwind.orchestration.v1.ListRecentlyViewedProjectsRequest` | `.google.internal.labs.tailwind.orchestration.v1.ListRecentlyViewedProjectsResponse` | unary/unary | `include_own_projects #2`, `include_audio_overview_ids #3`; no `RequestContext` |
 
-The two read signatures above and fifty-three later exact or web-derived signatures live in the sole
+The two read signatures above and fifty-four later exact or web-derived signatures live in the sole
 `google/internal/labs/tailwind/orchestration/v1/orchestration_service.proto` service declaration.
 The individual message overlays remain service-free so protobuf never reopens one service across
-files. Its generated stub exposes 55 implemented methods. The exact sharing service adds
-`GetProjectDetails` and `ShareProject`, producing 57 generated paths across the two services. Sixteen
+files. Its generated stub exposes 56 implemented methods. The exact sharing service adds
+`GetProjectDetails` and `ShareProject`, producing 58 generated paths across the two services. Sixteen
 signatures retain explicit web-derived type-name provenance; the signature-exception manifest is
 empty. The inference and runtime-parser manifests name each adapter seam and evidence link;
 bidirectional descriptor/adapter/external-manifest equality is pinned by

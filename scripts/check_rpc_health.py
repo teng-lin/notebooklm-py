@@ -675,6 +675,11 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
         # Use "en" as safe language code
         return [[[None, [[None, None, None, None, ["en"]]]]]]
 
+    # An unknown chat session is safe and does not require a notebook ID. Keep
+    # this above the notebook guard so quick mode still probes the read-only RPC.
+    if method == RPCMethod.GET_CHAT_SESSION_STATUS:
+        return [None, "placeholder_conv_id"]
+
     # Methods that require a notebook ID
     if not notebook_id:
         return None
@@ -709,11 +714,6 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
     # GET_LAST_CONVERSATION_ID: returns most recent conversation ID
     if method == RPCMethod.GET_LAST_CONVERSATION_ID:
         return [[], None, notebook_id, 1]
-
-    # GET_CHAT_SESSION_STATUS: an unknown session is safe and still exercises
-    # the read-only RPC id (the response may be idle or NOT_FOUND by account).
-    if method == RPCMethod.GET_CHAT_SESSION_STATUS:
-        return [None, "placeholder_conv_id"]
 
     # GET_CONVERSATION_TURNS: placeholder conv ID - API echoes RPC ID even in error response
     if method == RPCMethod.GET_CONVERSATION_TURNS:

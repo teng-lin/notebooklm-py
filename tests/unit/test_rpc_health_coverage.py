@@ -200,6 +200,14 @@ def test_every_rpc_method_is_probed_or_explicitly_skipped() -> None:
     )
 
 
+def test_chat_session_status_probe_does_not_require_notebook_id() -> None:
+    """Quick mode still exercises the account-safe placeholder status read."""
+    assert check_rpc_health.get_test_params(RPCMethod.GET_CHAT_SESSION_STATUS, None) == [
+        None,
+        "placeholder_conv_id",
+    ]
+
+
 def test_skip_lists_are_disjoint_from_probed() -> None:
     """A method must not appear in both a skip list and the probe set."""
     probed = _probed_method_names()

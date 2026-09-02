@@ -170,7 +170,7 @@ def unwrap_chat_session_status(raw: Any) -> ChatSessionStatusRow:
     must carry a non-empty token. Any other present shape is protocol drift.
     """
     source = "WebChatAPI.session_status"
-    if not isinstance(raw, list) or len(raw) < 2:
+    if not isinstance(raw, list) or len(raw) != 2:
         raise UnknownRPCMethodError(
             "chat session status response is not a two-slot list",
             method_id=_SESSION_STATUS_METHOD_ID,

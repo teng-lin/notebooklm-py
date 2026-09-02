@@ -600,6 +600,123 @@ async def test_chat_cancel_stops_backend_and_detached_stream(server_factory, moc
     mock_client.chat.cancel.assert_awaited_once_with(NB_ID, CONV_ID)
 
 
+async def test_chat_start_resolves_conversation_before_detaching(
+    server_factory, mock_client
+) -> None:
+    gate = asyncio.Event()
+
+    async def _slow_ask(*args: Any, **kwargs: Any) -> FakeAskResult:
+        await gate.wait()
+        return FakeAskResult(answer="resolved", conversation_id=CONV_ID)
+
+    mock_client.chat.get_conversation_id = AsyncMock(return_value=CONV_ID)
+    mock_client.chat.ask = AsyncMock(side_effect=_slow_ask)
+    mock_client.chat.cancel = AsyncMock(return_value=None)
+    async with Client(server_factory()) as session:
+        started = (
+            await session.call_tool("chat_start", {"notebook": NB_ID, "question": "continue"})
+        ).structured_content
+        cancelled = (
+            await session.call_tool(
+                "chat_cancel",
+                {"notebook": NB_ID, "task_id": started["task_id"]},
+            )
+        ).structured_content
+
+    assert cancelled["conversation_id"] == CONV_ID
+    mock_client.chat.ask.assert_awaited_once_with(
+        NB_ID, "continue", source_ids=None, conversation_id=CONV_ID
+    )
+    mock_client.chat.cancel.assert_awaited_once_with(NB_ID, CONV_ID)
+
+
+async def test_chat_cancel_cancels_queued_task_without_remote_session(
+    server_factory, mock_client, monkeypatch
+) -> None:
+    monkeypatch.setenv("NOTEBOOKLM_MCP_CHAT_CONCURRENCY", "1")
+    gate = asyncio.Event()
+
+    async def _slow_ask(*args: Any, **kwargs: Any) -> FakeAskResult:
+        await gate.wait()
+        return FakeAskResult(answer="first", conversation_id=CONV_ID)
+
+    mock_client.chat.ask = AsyncMock(side_effect=_slow_ask)
+    mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
+    mock_client.chat.cancel = AsyncMock(return_value=None)
+    async with Client(server_factory()) as session:
+        first = (
+            await session.call_tool("chat_start", {"notebook": NB_ID, "question": "first"})
+        ).structured_content
+        second = (
+            await session.call_tool("chat_start", {"notebook": NB_ID, "question": "queued"})
+        ).structured_content
+        pending = (
+            await session.call_tool("chat_status", {"task_id": second["task_id"]})
+        ).structured_content
+        assert pending["state"] == "queued"
+
+        cancelled = (
+            await session.call_tool(
+                "chat_cancel",
+                {"notebook": NB_ID, "task_id": second["task_id"]},
+            )
+        ).structured_content
+        first_status = (
+            await session.call_tool("chat_status", {"task_id": first["task_id"]})
+        ).structured_content
+        gate.set()
+
+    assert cancelled == {
+        "status": "cancelled",
+        "cancelled": True,
+        "local_task_cancelled": True,
+        "notebook_id": NB_ID,
+        "conversation_id": None,
+    }
+    assert first_status["status"] == "pending"
+    mock_client.chat.cancel.assert_not_awaited()
+
+
+async def test_chat_cancel_terminal_task_does_not_cancel_newer_session(
+    server_factory, mock_client
+) -> None:
+    mock_client.chat.ask = AsyncMock(
+        return_value=FakeAskResult(answer="done", conversation_id=CONV_ID)
+    )
+    mock_client.chat.cancel = AsyncMock(return_value=None)
+    async with Client(server_factory()) as session:
+        started = (
+            await session.call_tool(
+                "chat_start",
+                {"notebook": NB_ID, "question": "done", "conversation_id": CONV_ID},
+            )
+        ).structured_content
+        for _ in range(50):
+            status = (
+                await session.call_tool("chat_status", {"task_id": started["task_id"]})
+            ).structured_content
+            if status["status"] != "pending":
+                break
+            await asyncio.sleep(0.01)
+        assert status["status"] == "completed"
+
+        cancelled = (
+            await session.call_tool(
+                "chat_cancel",
+                {"notebook": NB_ID, "task_id": started["task_id"]},
+            )
+        ).structured_content
+
+    assert cancelled == {
+        "status": "already_finished",
+        "cancelled": False,
+        "local_task_cancelled": False,
+        "notebook_id": NB_ID,
+        "conversation_id": CONV_ID,
+    }
+    mock_client.chat.cancel.assert_not_awaited()
+
+
 async def test_chat_cancel_rejects_task_conversation_mismatch(server_factory, mock_client) -> None:
     gate = asyncio.Event()
 

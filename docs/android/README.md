@@ -112,11 +112,11 @@ this regeneration is not yet captured as a patch.
 The reduced compile inputs used by the internal Android adapters live under
 `src/notebooklm/_android/proto_src/`. Regenerate their checked-in Python modules and the full
 descriptor fixture with `python scripts/regenerate_android_protos.py --write`; use `--check` in CI.
-The cumulative `orchestration_service.proto` owns the 55-method orchestration service;
+The cumulative `orchestration_service.proto` owns the 56-method orchestration service;
 `sharing.proto` owns the separately proven two-method exact sharing service, and individual
 orchestration message overlays remain service-free. Sixteen orchestration signatures are explicitly
 marked as web-derived conventional-name inferences; all other generated signatures are exact.
-The 57 generated methods exhaustively equal the 57 implemented adapter paths, and the signature
+The 58 generated methods exhaustively equal the 58 implemented adapter paths, and the signature
 exception manifest is empty. Generated descriptors, adapter paths, inference provenance, and the
 hash-pinned external method manifest are checked in both
 directions, so a locally repeated claim cannot admit a normalized or unresolved response type.

@@ -114,6 +114,7 @@ def mock_client() -> MagicMock:
     # ``get_account_email`` is awaited, ``get_account_authuser`` is sync.
     client.get_account_email = AsyncMock(return_value=None)
     client.get_account_authuser = MagicMock(return_value=0)
+    client.chat.get_conversation_id = AsyncMock(return_value=None)
     return client
 
 

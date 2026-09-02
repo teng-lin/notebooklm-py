@@ -336,8 +336,8 @@ def register(mcp: Any) -> None:
         A finished payload stays pollable by its ``task_id`` for ~30 minutes,
         then ``chat_status`` reports ``unknown``.
         """
-        client = get_client(ctx)
         with mcp_errors():
+            client = get_client(ctx)
             question = question.strip()
             if not question:
                 raise ValidationError("chat_start needs a non-empty question.")
@@ -346,10 +346,13 @@ def register(mcp: Any) -> None:
             # resolved ONCE up front; omitted/empty stays None (=> all sources).
             refs = coerce_list(source_ids)
             resolved_source_ids = await resolve_sources(client, nb_id, refs) if refs else None
+            resolved_conversation_id = conversation_id
+            if resolved_conversation_id is None:
+                resolved_conversation_id = await client.chat.get_conversation_id(nb_id)
             # Key on the RESOLVED inputs so retries dedupe however the caller
             # spelled the notebook/source refs (see compute_chat_task_key).
             key = compute_chat_task_key(
-                nb_id, question, resolved_source_ids, conversation_id, references
+                nb_id, question, resolved_source_ids, resolved_conversation_id, references
             )
 
             async def _run_ask() -> dict[str, Any]:
@@ -359,7 +362,7 @@ def register(mcp: Any) -> None:
                     nb_id,
                     question,
                     source_ids=resolved_source_ids,
-                    conversation_id=conversation_id,
+                    conversation_id=resolved_conversation_id,
                 )
                 payload: dict[str, Any] = {"notebook_id": nb_id}
                 payload.update(_ask_result_payload(ask_result, references))
@@ -372,7 +375,7 @@ def register(mcp: Any) -> None:
                     key,
                     _run_ask,
                     notebook_id=nb_id,
-                    conversation_id=conversation_id,
+                    conversation_id=resolved_conversation_id,
                 )
             except ChatTaskCapacityError as exc:
                 # Nothing about the arguments is wrong and the same call succeeds
@@ -490,12 +493,12 @@ def register(mcp: Any) -> None:
 
         ``conversation_id`` defaults to the notebook's most-recent session.
         Pass the ``task_id`` returned by ``chat_start`` when cancelling a
-        detached ask: after Google accepts the cancellation, the MCP server also
-        abandons its local response stream so the task reaches ``cancelled``.
+        detached ask: the MCP server abandons its local response stream first,
+        then cancels the associated Google session when one exists.
         An unknown task ID or one belonging to another notebook is rejected.
         """
-        client = get_client(ctx)
         with mcp_errors():
+            client = get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             registry = get_chat_tasks(ctx)
             entry = registry.status(task_id) if task_id is not None else None
@@ -510,20 +513,37 @@ def register(mcp: Any) -> None:
                 and entry.conversation_id != conversation_id
             ):
                 raise ValidationError("task_id belongs to a different conversation.")
+
+            # A task-specific cancel owns the local task first. This makes the
+            # terminal check race-safe: an old completed task can never cancel a
+            # newer generation that happens to share its conversation.
+            local_cancelled = False
+            task_started = False
+            if task_id is not None:
+                local_cancelled = await registry.cancel(task_id)
+                if not local_cancelled:
+                    return {
+                        "status": "already_finished",
+                        "cancelled": False,
+                        "local_task_cancelled": False,
+                        "notebook_id": nb_id,
+                        "conversation_id": entry.conversation_id if entry is not None else None,
+                    }
+                task_started = entry is not None and entry.started_at is not None
+
             resolved_id = conversation_id or (entry.conversation_id if entry is not None else None)
-            if resolved_id is None:
+            if resolved_id is None and (task_id is None or task_started):
                 resolved_id = await client.chat.get_conversation_id(nb_id)
             if resolved_id is None:
                 return {
-                    "status": "idle",
-                    "cancelled": False,
-                    "local_task_cancelled": False,
+                    "status": "cancelled" if local_cancelled else "idle",
+                    "cancelled": local_cancelled,
+                    "local_task_cancelled": local_cancelled,
                     "notebook_id": nb_id,
                     "conversation_id": None,
                 }
 
             await client.chat.cancel(nb_id, resolved_id)
-            local_cancelled = await registry.cancel(task_id) if task_id is not None else False
             return {
                 "status": "cancelled",
                 "cancelled": True,

@@ -235,7 +235,8 @@ async def test_session_status_decodes_native_state_and_exact_request(
     assert guard.calls == 1
     method, request, kwargs = fake.unary_calls[0]
     assert method == GET_CHAT_SESSION_STATUS_METHOD
-    assert request == chat_pb2.GetChatSessionStatusRequest(chat_session_id="conversation-1")
+    assert request.chat_session_id == "conversation-1"
+    assert request.request_context.client_type == 2
     assert kwargs == {
         "replay_safe": True,
         "response_type": chat_pb2.GetChatSessionStatusResponse,

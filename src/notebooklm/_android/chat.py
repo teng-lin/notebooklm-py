@@ -144,7 +144,10 @@ class AndroidChatAPI(ChatAPI):
         proto = _proto()
         response = await self._transport.unary(
             GET_CHAT_SESSION_STATUS_METHOD,
-            proto.GetChatSessionStatusRequest(chat_session_id=conversation_id),
+            proto.GetChatSessionStatusRequest(
+                request_context=_cancellable_chat_request_context(),
+                chat_session_id=conversation_id,
+            ),
             replay_safe=True,
             response_type=proto.GetChatSessionStatusResponse,
         )
