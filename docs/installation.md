@@ -66,7 +66,7 @@ short-lived mobile bearer tokens from `master_token.json`; typed namespace
 operations do not use Web cookies or fall back to the Web transport. Android
 dependencies are excluded from `[all]`. See the
 [Android backend guide](android/README.md) for setup and security details.
-The [selection workflow](diagrams/28-profile-auth-backend-selection.workflow.html) summarizes the
+The [selection workflow](https://teng-lin.github.io/notebooklm-py/diagrams/28-profile-auth-backend-selection.workflow.html) summarizes the
 argument, environment, and profile precedence used by every frontend.
 
 ---
@@ -416,7 +416,7 @@ Source of truth: `pyproject.toml` `[project.optional-dependencies]`.
 
 A single-tenant, localhost REST API over the same transport-neutral core as the CLI — the natural shape for scripting and agent automation (feed a notebook, generate an artifact, pull it down) without spawning a CLI process per call.
 
-The [REST subsystem diagram](diagrams/18-rest-server-subsystem.html) shows its
+The [REST subsystem diagram](https://teng-lin.github.io/notebooklm-py/diagrams/18-rest-server-subsystem.html) shows its
 lifespan-owned client, route guards, concurrency limits, and response projection.
 
 <!-- not mirrored: the server extra is end-user/automation tooling, not part of the contributor `uv sync` flow; CONTRIBUTING.md tracks only browser/dev/markdown. -->

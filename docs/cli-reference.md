@@ -5,9 +5,9 @@
 
 Complete command reference for the `notebooklm` CLI—providing full programmatic access to all NotebookLM features, including capabilities not exposed in the web UI.
 
-The [CLI subsystem diagram](./diagrams/16-cli-subsystem.html) explains how commands,
+The [CLI subsystem diagram](https://teng-lin.github.io/notebooklm-py/diagrams/16-cli-subsystem.html) explains how commands,
 services, the transport-neutral application layer, and output rendering fit together. The
-[selection workflow](./diagrams/28-profile-auth-backend-selection.workflow.html) shows how profile,
+[selection workflow](https://teng-lin.github.io/notebooklm-py/diagrams/28-profile-auth-backend-selection.workflow.html) shows how profile,
 credential, and backend options are resolved.
 
 > **Exit codes:** every command follows the convention documented in [CLI Exit-Code Convention](cli-exit-codes.md) (`0` success, `1` user/app error, `2` system/unexpected, `130` SIGINT). Two commands intentionally deviate for shell control-flow use (`source stale --exit-on-stale` opts into an inverted predicate; `source wait` is three-way); see the doc for details.

@@ -1,0 +1,64 @@
+name: Deploy architecture diagrams
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/pages.yml"
+      - "docs/diagrams/*.html"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build Pages artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v6
+
+      - name: Stage standalone diagram viewers
+        shell: bash
+        run: |
+          mkdir -p _site/diagrams
+
+          viewer_count=$(find docs/diagrams -maxdepth 1 -type f -name '[0-9][0-9]-*.html' | wc -l | tr -d ' ')
+          source_count=$(find docs/diagrams -maxdepth 1 -type f -name '[0-9][0-9]-*.json' | wc -l | tr -d ' ')
+
+          test "$viewer_count" -gt 0
+          test "$viewer_count" = "$source_count"
+
+          cp docs/diagrams/[0-9][0-9]-*.html _site/diagrams/
+          cp docs/diagrams/01-system-overview.html _site/index.html
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

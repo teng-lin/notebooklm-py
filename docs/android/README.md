@@ -6,12 +6,12 @@ services. The mobile protobuf surface is also a useful oracle for Web's
 positional payloads. This directory combines the Android user entry point with
 the protocol contracts and evidence used to maintain both transports.
 
-Start with the [Web/Android comparison](../diagrams/06-backends-web-and-android.html), then open the
-[Android subsystem](../diagrams/14-android-backend.html) and
-[call sequence](../diagrams/15-android-call-path.html). Profile/backend precedence and
+Start with the [Web/Android comparison](https://teng-lin.github.io/notebooklm-py/diagrams/06-backends-web-and-android.html), then open the
+[Android subsystem](https://teng-lin.github.io/notebooklm-py/diagrams/14-android-backend.html) and
+[call sequence](https://teng-lin.github.io/notebooklm-py/diagrams/15-android-call-path.html). Profile/backend precedence and
 credential-scoped transfers are covered by diagrams
-[28](../diagrams/28-profile-auth-backend-selection.workflow.html) and
-[30](../diagrams/30-transfer-security-boundaries.dataflow.html).
+[28](https://teng-lin.github.io/notebooklm-py/diagrams/28-profile-auth-backend-selection.workflow.html) and
+[30](https://teng-lin.github.io/notebooklm-py/diagrams/30-transfer-security-boundaries.dataflow.html).
 
 ## Using the Android backend
 

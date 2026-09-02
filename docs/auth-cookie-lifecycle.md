@@ -12,9 +12,9 @@ send it to third parties, or expose it in logs. Keep profile directories and
 credential files readable only by the account that runs the client.
 
 For the component-level view, open the
-[authentication architecture](./diagrams/04-authentication.html), then use the
-[login workflow](./diagrams/10-login-workflow.html) and
-[auth class model](./diagrams/24-auth-class-model.html) for acquisition and storage
+[authentication architecture](https://teng-lin.github.io/notebooklm-py/diagrams/04-authentication.html), then use the
+[login workflow](https://teng-lin.github.io/notebooklm-py/diagrams/10-login-workflow.html) and
+[auth class model](https://teng-lin.github.io/notebooklm-py/diagrams/24-auth-class-model.html) for acquisition and storage
 ownership respectively.
 
 ## Choose an authentication method

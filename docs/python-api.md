@@ -151,9 +151,9 @@ only `web` and `android` are accepted.
 Web cookies are not Android credentials. Install the runtime and bootstrap the
 same profile the client will open:
 
-The [backend comparison](./diagrams/06-backends-web-and-android.html) shows the shared
+The [backend comparison](https://teng-lin.github.io/notebooklm-py/diagrams/06-backends-web-and-android.html) shows the shared
 public contract and separate wire graphs; the
-[selection workflow](./diagrams/28-profile-auth-backend-selection.workflow.html) shows precedence.
+[selection workflow](https://teng-lin.github.io/notebooklm-py/diagrams/28-profile-auth-backend-selection.workflow.html) shows precedence.
 
 ```bash
 pip install "notebooklm-py[android,browser]"

@@ -6,9 +6,9 @@ this layering) lives in [`docs/refactor-history.md`](./refactor-history.md).
 
 ## System shape
 
-Start with the explorable [system overview](./diagrams/01-system-overview.html).
-The [adapter view](./diagrams/02-adapters-and-app-layer.html) expands the frontend
-boundary, and the [backend split](./diagrams/06-backends-web-and-android.html) shows
+Start with the explorable [system overview](https://teng-lin.github.io/notebooklm-py/diagrams/01-system-overview.html).
+The [adapter view](https://teng-lin.github.io/notebooklm-py/diagrams/02-adapters-and-app-layer.html) expands the frontend
+boundary, and the [backend split](https://teng-lin.github.io/notebooklm-py/diagrams/06-backends-web-and-android.html) shows
 where the Web and Android graphs stop sharing implementation. The complete visual index is in
 [`docs/diagrams/README.md`](./diagrams/README.md).
 
@@ -29,7 +29,7 @@ explicit, construction-time alternative that installs Android implementations fo
 typed namespaces. The graphs share public contracts, root lifecycle, admission, and telemetry,
 but not their wire transport, as decided in
 [ADR-0035](./adr/0035-mobile-resilience-transport.md). See the
-[selection workflow](./diagrams/28-profile-auth-backend-selection.workflow.html) for the exact
+[selection workflow](https://teng-lin.github.io/notebooklm-py/diagrams/28-profile-auth-backend-selection.workflow.html) for the exact
 argument/environment/profile precedence.
 
 | Adapter | Package | Transport | Console script | Install | Failure projection |
@@ -55,7 +55,7 @@ sibling packages — with the boundary lint-enforced
 `notebooklm.exceptions` hierarchy, with `_app.errors.classify` as the single
 neutral source of the failure-category decision each adapter projects onto its
 own codes (CLI exit codes, MCP error shapes, REST HTTP statuses). See ADR-0021.
-The [exception hierarchy](./diagrams/09-exception-hierarchy.html) shows that shared
+The [exception hierarchy](https://teng-lin.github.io/notebooklm-py/diagrams/09-exception-hierarchy.html) shows that shared
 failure vocabulary and its transport-specific projections.
 The per-module index and the full tree are in [File map](#file-map) below.
 
@@ -79,10 +79,10 @@ advanced `client.rpc_call(...)` escape hatch is deliberately different: its
 `RPCMethod` values are Web batchexecute IDs, so it remains Web-specific under
 either namespace selection.
 
-Use the [runtime and transport view](./diagrams/03-client-runtime-and-transport.html)
-for ownership, the [RPC sequence](./diagrams/07-rpc-call-path.html) for call order, and
-the [runtime class model](./diagrams/23-runtime-class-model.html) for constructor
-relationships. The [capability-contract map](./diagrams/27-capability-contracts.html)
+Use the [runtime and transport view](https://teng-lin.github.io/notebooklm-py/diagrams/03-client-runtime-and-transport.html)
+for ownership, the [RPC sequence](https://teng-lin.github.io/notebooklm-py/diagrams/07-rpc-call-path.html) for call order, and
+the [runtime class model](https://teng-lin.github.io/notebooklm-py/diagrams/23-runtime-class-model.html) for constructor
+relationships. The [capability-contract map](https://teng-lin.github.io/notebooklm-py/diagrams/27-capability-contracts.html)
 shows why feature APIs receive narrow collaborators instead of the whole client runtime.
 
 ### Web batchexecute path
@@ -173,8 +173,8 @@ pipeline.
 With `backend="android"`, the same typed namespace calls terminate in Android
 adapters instead of `RpcExecutor`:
 
-The [Android backend view](./diagrams/14-android-backend.html) identifies its
-participants, while the [Android call sequence](./diagrams/15-android-call-path.html)
+The [Android backend view](https://teng-lin.github.io/notebooklm-py/diagrams/14-android-backend.html) identifies its
+participants, while the [Android call sequence](https://teng-lin.github.io/notebooklm-py/diagrams/15-android-call-path.html)
 shows lazy bearer acquisition, channel creation, and result projection.
 
 ```text
@@ -203,8 +203,8 @@ turn-number orchestration. Its single Web send/decode seam,
 pure `RpcExecutor` shape. Streaming chat has a custom request body and
 chat-flavored error mapping, so the first ask POST goes through:
 
-For a compact view, see the [chat sequence](./diagrams/11-chat-ask-sequence.html) and
-the [chat/notes class model](./diagrams/26-chat-notes-class-model.html).
+For a compact view, see the [chat sequence](https://teng-lin.github.io/notebooklm-py/diagrams/11-chat-ask-sequence.html) and
+the [chat/notes class model](https://teng-lin.github.io/notebooklm-py/diagrams/26-chat-notes-class-model.html).
 
 ```text
 +----------------------------------------------------------------+
@@ -277,9 +277,9 @@ operations use native unary gRPC methods. It does not traverse
 
 Some feature workflows intentionally combine RPC with non-RPC HTTP work:
 
-The [source-ingest data flow](./diagrams/12-source-ingest-dataflow.html),
-[artifact lifecycle](./diagrams/13-artifact-lifecycle.html), and
-[transfer security boundaries](./diagrams/30-transfer-security-boundaries.dataflow.html) provide
+The [source-ingest data flow](https://teng-lin.github.io/notebooklm-py/diagrams/12-source-ingest-dataflow.html),
+[artifact lifecycle](https://teng-lin.github.io/notebooklm-py/diagrams/13-artifact-lifecycle.html), and
+[transfer security boundaries](https://teng-lin.github.io/notebooklm-py/diagrams/30-transfer-security-boundaries.dataflow.html) provide
 the visual counterparts to the detailed ownership table below.
 
 | Flow | Runtime shape |
@@ -295,9 +295,9 @@ the visual counterparts to the detailed ownership table below.
 Three policies thread through the layers above and are easy to violate by
 accident. Each is pinned by an ADR.
 
-The [client resource lifecycle](./diagrams/19-client-resource-lifecycle.html) shows
+The [client resource lifecycle](https://teng-lin.github.io/notebooklm-py/diagrams/19-client-resource-lifecycle.html) shows
 open, drain, close, and rollback states. The
-[retry-policy workflow](./diagrams/20-retry-policy-workflow.html) complements the
+[retry-policy workflow](https://teng-lin.github.io/notebooklm-py/diagrams/20-retry-policy-workflow.html) complements the
 idempotency discussion by showing the decision path for one call.
 
 ### Loop affinity (ADR-0004)
@@ -585,11 +585,11 @@ work:
 
 Beyond the client-owned runtime graph, several feature APIs are implemented via dedicated domain services and helper modules:
 
-The [feature-service map](./diagrams/05-feature-services.html) is the compact index;
-the [artifact class model](./diagrams/08-artifacts-class-model.html) and
-[sources class model](./diagrams/25-sources-class-model.html) expand its two densest
-resource domains. The [deep-research lifecycle](./diagrams/21-deep-research-lifecycle.html)
-and [organization/sharing map](./diagrams/29-organization-and-sharing.architecture.html) cover the
+The [feature-service map](https://teng-lin.github.io/notebooklm-py/diagrams/05-feature-services.html) is the compact index;
+the [artifact class model](https://teng-lin.github.io/notebooklm-py/diagrams/08-artifacts-class-model.html) and
+[sources class model](https://teng-lin.github.io/notebooklm-py/diagrams/25-sources-class-model.html) expand its two densest
+resource domains. The [deep-research lifecycle](https://teng-lin.github.io/notebooklm-py/diagrams/21-deep-research-lifecycle.html)
+and [organization/sharing map](https://teng-lin.github.io/notebooklm-py/diagrams/29-organization-and-sharing.architecture.html) cover the
 remaining multi-step and cross-scope relationships.
 
 | Service / Module | Module | Responsibility |
@@ -619,9 +619,9 @@ only remaining `auth.py` function body because it binds `_poke_session` as
 the default dependency.
 
 Three visuals separate concerns that are easy to conflate: the
-[authentication architecture](./diagrams/04-authentication.html) shows ownership,
-the [login workflow](./diagrams/10-login-workflow.html) shows credential acquisition,
-and the [auth class model](./diagrams/24-auth-class-model.html) shows the storage and
+[authentication architecture](https://teng-lin.github.io/notebooklm-py/diagrams/04-authentication.html) shows ownership,
+the [login workflow](https://teng-lin.github.io/notebooklm-py/diagrams/10-login-workflow.html) shows credential acquisition,
+and the [auth class model](https://teng-lin.github.io/notebooklm-py/diagrams/24-auth-class-model.html) shows the storage and
 recovery owners. ADR-0031 names the credential tiers; ADR-0032 introduces the domain values;
 ADR-0033 constrains consolidation; and ADR-0034 defines the current storage object model.
 
@@ -709,7 +709,7 @@ workflow logic lives in
 [`src/notebooklm/cli/services/`](../src/notebooklm/cli/services). This
 separation is the [ADR-0008](./adr/0008-cli-services-extraction-pattern.md)
 extraction pattern.
-See the [CLI subsystem diagram](./diagrams/16-cli-subsystem.html) for the command,
+See the [CLI subsystem diagram](https://teng-lin.github.io/notebooklm-py/diagrams/16-cli-subsystem.html) for the command,
 service, `_app`, client, and rendering boundaries.
 
 The console-script entry point is
@@ -839,7 +839,7 @@ preview unless called with `confirm=true`). `notebooklm mcp install <client>`
 wires it into Claude Desktop/Code, Cursor, or Windsurf, and `desktop-extension/`
 packages a one-click `.mcpb` bundle. Full guide:
 [`docs/mcp-guide.md`](./mcp-guide.md).
-The [MCP subsystem diagram](./diagrams/17-mcp-subsystem.html) shows the adapter,
+The [MCP subsystem diagram](https://teng-lin.github.io/notebooklm-py/diagrams/17-mcp-subsystem.html) shows the adapter,
 application-core, client, and remote-transfer boundaries together.
 
 ## REST server (`server/`)
@@ -862,7 +862,7 @@ Expensive route groups have lifespan-owned concurrency limiters, tuned by
 `NOTEBOOKLM_SERVER_*_CONCURRENCY` env vars, so source mutation/wait, artifact
 generation/download, research, and blocking chat work cannot unboundedly starve
 cheap reads or `/healthz`.
-The [REST subsystem diagram](./diagrams/18-rest-server-subsystem.html) shows the
+The [REST subsystem diagram](https://teng-lin.github.io/notebooklm-py/diagrams/18-rest-server-subsystem.html) shows the
 lifespan-owned client, route guards, application cores, and response projection.
 
 ## Middleware chain (ADR-0009)
@@ -947,7 +947,7 @@ factory.
 ## Testing patterns
 
 Two policies define how tests interact with the architecture above.
-The [testing and guardrails view](./diagrams/22-testing-and-guardrails.html) maps the
+The [testing and guardrails view](https://teng-lin.github.io/notebooklm-py/diagrams/22-testing-and-guardrails.html) maps the
 suite taxonomy to the boundaries each tier protects.
 
 ### Constructor-injection fixtures (ADR-0007)
