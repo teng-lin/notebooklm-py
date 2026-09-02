@@ -13,6 +13,7 @@
   "SuggestedTopic",
   "Source",
   "SourceFulltext",
+  "RelevantChunk",
   "CopiedSource",
   "PlayBook",
   "PlayBookExportReason",

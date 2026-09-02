@@ -107,6 +107,13 @@
       "response_type": "google.internal.labs.tailwind.orchestration.v1.NextStepSuggestions",
       "confidence": "response_ctor_exact_request_name_inferred",
       "evidence": "docs/android/copy-append-suggestion-evidence.md#nextstepsuggestions"
+    },
+    {
+      "path": "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/RetrieveRelevantChunks",
+      "request_type": "google.internal.labs.tailwind.orchestration.v1.RetrieveRelevantChunksRequest",
+      "response_type": "google.internal.labs.tailwind.orchestration.v1.RetrieveRelevantChunksResponse",
+      "confidence": "type_names_inferred_wire_shape_and_mobile_live_pinned",
+      "evidence": "docs/android/source-search-evidence.md#wire-layout"
     }
   ]
 }

@@ -22,12 +22,16 @@ reported so a minifier change that widens a gap shows up as a number.)
 The obfuscated ``<rpc_id>`` values are this project's #1 breakage class — they
 rotate without notice and a stale id silently breaks the affected operation. This
 script extracts the live ``id -> /Service.Method`` map and diffs it against the
-ids we hardcode, surfacing four classes:
+ids we hardcode, surfacing five classes:
 
 * CONFIRMED       — our id is still registered (shown with its decoded method name)
 * ABSENT          — our id no longer appears in the bundle at all (rotation/stale — the alarm)
 * PRESENT-UNPARSED— our id string is in the bundle but its registration form wasn't
                     parsed (not a rotation; a parser gap to widen, not an alert)
+* LAZY-MODULE     — a live-probed id whose registration is loaded only with a
+                    feature module and is therefore intentionally absent from
+                    the authenticated homepage's eager bundle set (not an alert;
+                    the direct RPC health probe remains its rotation canary)
 * UNMAPPED        — a live RPC the bundle declares that we don't expose, grouped by
                     service family: **current** (old `LabsTailwind*` consumer backend
                     — callable on our cohort now, just unexposed), **enterprise** (the
@@ -122,6 +126,14 @@ _RPC_ID_RE = re.compile(r"[A-Za-z0-9]{5,8}")
 _UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138 Safari/537.36"
 
 _AUTH_FAILURE_EXIT = 2
+
+# The authenticated homepage exposes only the eager JS bundle set. This RPC is
+# registered by the source-search feature's lazy module, so it cannot be proven
+# by the entry-bundle scrape even though both Web batchexecute and Android gRPC
+# accepted it live on 2026-09-01. Keep it in a separate report bucket instead
+# of falsely calling it CONFIRMED or ABSENT. ``check_rpc_health.py`` sends a
+# direct read-only request for the id, so a rotation still has a live canary.
+_LAZY_MODULE_RPC_IDS: frozenset[str] = frozenset({"ASU5Oe"})
 
 
 class _BundleAuthenticationError(RuntimeError):
@@ -316,11 +328,21 @@ def diff(ours: dict[str, str], live: dict[str, str], bundle: str) -> dict[str, d
 
     confirmed = {i: live[i] for i in ours if i in live}
     present_unparsed = {i: ours[i] for i in ours if i not in live and _in_bundle(i)}
-    absent = {i: ours[i] for i in ours if i not in live and not _in_bundle(i)}
+    lazy_module = {
+        i: ours[i]
+        for i in ours
+        if i not in live and not _in_bundle(i) and i in _LAZY_MODULE_RPC_IDS
+    }
+    absent = {
+        i: ours[i]
+        for i in ours
+        if i not in live and not _in_bundle(i) and i not in _LAZY_MODULE_RPC_IDS
+    }
     unmapped = {i: live[i] for i in live if i not in ours}
     return {
         "confirmed": confirmed,
         "present_unparsed": present_unparsed,
+        "lazy_module": lazy_module,
         "absent": absent,
         "unmapped": unmapped,
     }
@@ -665,9 +687,10 @@ def _print_report(
     ids resolve to; it drives the UNMAPPED service-family grouping
     (``current`` / ``enterprise`` / ``other``) via :func:`classify_service`.
     """
-    confirmed, present, absent, unmapped = (
+    confirmed, present, lazy_module, absent, unmapped = (
         buckets["confirmed"],
         buckets["present_unparsed"],
+        buckets["lazy_module"],
         buckets["absent"],
         buckets["unmapped"],
     )
@@ -685,6 +708,7 @@ def _print_report(
     print()
     print(
         f"CONFIRMED: {len(confirmed)}  ABSENT: {len(absent)}  "
+        f"LAZY-MODULE: {len(lazy_module)}  "
         f"PRESENT-UNPARSED: {len(present)}  UNMAPPED: {len(unmapped)}\n"
     )
     print("CONFIRMED (our id -> live /Service.Method):")
@@ -698,6 +722,13 @@ def _print_report(
         print("\nPRESENT-UNPARSED — id is in the bundle but registration not parsed (widen regex):")
         for rpc_id in sorted(present, key=lambda i: present[i]):
             print(f"  {rpc_id:<8} {present[rpc_id]}")
+    if lazy_module:
+        print(
+            "\nLAZY-MODULE — registration is outside the eager bundle; "
+            "direct health probe owns drift detection:"
+        )
+        for rpc_id in sorted(lazy_module, key=lambda i: lazy_module[i]):
+            print(f"  {rpc_id:<8} {lazy_module[rpc_id]}")
     # Group the unexposed RPCs by service family so "callable on our cohort now"
     # (current) is visually separated from the gated Discovery-Engine surface.
     fam_groups: dict[str, list[tuple[str, str]]] = {
@@ -896,6 +927,7 @@ def main(argv: list[str] | None = None) -> int:
                     },
                     "absent": buckets["absent"],
                     "present_unparsed": buckets["present_unparsed"],
+                    "lazy_module": buckets["lazy_module"],
                     "unmapped": {
                         i: {
                             "method": m,

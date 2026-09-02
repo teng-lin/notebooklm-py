@@ -77,6 +77,7 @@
 | `QsNTEd` | APPEND_SOURCE | Append a plain-text block to an existing source in place | `_web/sources/transfers.py` |
 | `R27wvc` | COPY_SOURCES | Copy sources into another notebook (original → copy mapping) | `_web/sources/transfers.py` |
 | `mVtEUb` | LIST_EXPERT_INTELLIGENCE_CONTENT | List the account's Google Play Books library — every title, with per-row exportability (Expert Intelligence; Android uses its native RPC counterpart) | `_web/sources/play_books.py` |
+| `ASU5Oe` | RETRIEVE_RELEVANT_CHUNKS | Search ranked passages across notebook sources, optionally filtered by source id | `_web/sources/search.py` |
 | `mKDdke` | COPY_ARTIFACTS | Copy Studio artifacts into another notebook (full new rows inline) | `_web/artifacts.py` |
 | `OcvKNc` | SUGGEST_NEXT_STEPS | Grounded follow-up questions (the chat `next_steps` block, standalone) | `_web/notebooks.py` |
 | `sqTeoe` | GET_CUSTOMIZATION_CHOICES | Studio "Customize" option tables (account-level) | `_web/artifacts.py` |
@@ -187,7 +188,7 @@ or local convenience that has no stable web-control equivalent in the capture.
 |-----------------|------------------|-------|
 | `NotebooksAPI.list/create/get/rename/delete/remove_from_recent` | Partial UI coverage | Home create/card/action-menu selectors are covered. Rename/delete/remove-recent are represented by project action menus and RPC payloads; destructive menu items were not re-mutated in the live probe. |
 | `NotebooksAPI.get_summary/get_description/get_metadata/get_raw/get_share_url` | Library-only/read-derived | Summary content is visible in the chat panel, but these are read/format helpers rather than direct UI controls. |
-| `SourcesAPI.list/get/add_url/add_text/add_file/add_drive/delete/rename` | UI covered | Source cards, add-source modal tabs, upload/Drive entry points, source menus, and submit selectors are documented. |
+| `SourcesAPI.list/get/search/add_url/add_text/add_file/add_drive/delete/rename` | UI covered | Source cards, indexed passage search, add-source modal tabs, upload/Drive entry points, source menus, and submit selectors are documented. |
 | `SourcesAPI.get_guide/get_fulltext` | UI covered/read-derived | Opening a source exposes the source viewer, source guide toggle, title input, and source content; `get_fulltext()` is the programmatic extraction path. |
 | `SourcesAPI.wait_*`, `refresh`, `check_freshness` | Library-only/partial UI | Wait methods are polling helpers. Refresh/freshness RPCs are documented, but no stable refresh selector was captured in the current source-list/label-list state. |
 | `LabelsAPI.list/sources/generate/create/update/rename/set_emoji/add_sources/remove_sources/delete` | UI covered | Auto-label, Reorganize all sources, manual label creation, inline rename, emoji picker, delete, label panels, and source Move to label checkboxes are documented. |
@@ -702,6 +703,40 @@ await rpc_call(
     source_path=f"/notebook/{notebook_id}",
 )
 ```
+
+### RPC: RETRIEVE_RELEVANT_CHUNKS (ASU5Oe)
+
+**Source:** `_web/sources/search.py::SourceSearchService.search()`
+
+**Purpose:** Search the indexed source corpus and return globally ranked source
+passages. An omitted or empty source filter searches the whole notebook.
+
+```python
+params = [
+    notebook_id,
+    query,
+    None,
+    [1],
+]
+
+# Optional source filter at position 4:
+params.append([[[source_id] for source_id in source_ids]])
+
+await rpc_call(
+    RPCMethod.RETRIEVE_RELEVANT_CHUNKS,
+    params,
+    source_path=f"/notebook/{notebook_id}",
+    allow_null=True,
+    raise_on_null_status=True,
+)
+```
+
+The live response is `[[[source_id, [chunk, ...]], ...]]]`, where each chunk is
+`[[[[text_part, ...]]], rank, [[None, start, end], ...]]`. The decoder joins
+text parts and returns `RelevantChunk` values. This rpcid is registered by a
+lazy feature module, so the eager-homepage registry monitor reports it as
+`LAZY-MODULE`; the direct read-only RPC health probe remains its rotation
+canary.
 
 ---
 

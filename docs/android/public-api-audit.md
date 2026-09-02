@@ -49,6 +49,7 @@ in `finally` cleanup.
 | `AddSources` `GoogleDriveContent #1` using an already-accessible Drive source | raw and public registration/commit adapter both succeeded; returned source retained its Drive ID through exact `GoogleDocsSourceMetadata #1` with the Drive-descriptor ID as fallback | implemented `sources.add_drive` |
 | `GeneratePromptSuggestions` | success; three structurally valid suggestions | implemented `notebooks.suggest_prompts` |
 | `CheckSourceFreshness` | prior and repeat valid-resource success | implemented |
+| `RetrieveRelevantChunks` | unfiltered and source-filtered calls returned ranked chunks with source-relative spans | implemented `sources.search` natively |
 | `GetDriveSourceStatus` | `UNIMPLEMENTED` (gRPC 12) | do not use as a readiness dependency |
 | `RemoveRecentlyViewedProject` | `INTERNAL` (gRPC 13) | exact direct route retained for conformance; public operation delegates through the Web compatibility callable |
 | `RefreshSource` | corrected current-bundle request (`SourceId #2`, `RequestContext #3`) succeeded through Android bearer | implemented natively |

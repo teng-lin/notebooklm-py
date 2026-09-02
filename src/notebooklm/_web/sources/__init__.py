@@ -2,7 +2,7 @@
 
 import builtins
 import logging
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Sequence
 from pathlib import Path
 from typing import IO, Any, Literal
 from urllib.parse import urlparse
@@ -11,7 +11,7 @@ import httpx
 
 from ..._runtime.call_supervisor import CallSupervisor
 from ..._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
-from ..._sources import SourcesAPI
+from ..._sources import SourcesAPI, validate_search
 from ..._types.research import SourceGuide
 from ..._types.sources import _EXPERT_INTELLIGENCE_TYPE_CODE
 from ..._url_utils import is_youtube_url
@@ -20,6 +20,7 @@ from ...rpc import RPCMethod
 from ...types import (
     CopiedSource,
     PlayBook,
+    RelevantChunk,
     Source,
     SourceFulltext,
     SourceStatus,
@@ -40,6 +41,7 @@ from .batch import SourceBatchAddService, SourceUrlBatchItem
 from .content import SourceContentRenderer
 from .listing import SourceLister
 from .play_books import PlayBooksService
+from .search import SourceSearchService
 from .transfers import SourceTransferService
 from .upload import SourceUploadPipeline
 
@@ -114,6 +116,7 @@ class WebSourcesAPI(SourcesAPI):
         self._content = SourceContentRenderer(self._rpc, logger=logger)
         self._lister = SourceLister(self._rpc)
         self._play_books = PlayBooksService(self._rpc)
+        self._searcher = SourceSearchService(self._rpc, logger=logger)
         super().__init__()
         self._upload_timeout = upload_timeout
         self._max_concurrent_uploads = max_concurrent_uploads
@@ -179,6 +182,34 @@ class WebSourcesAPI(SourcesAPI):
             strict=strict,
             statuses=statuses,
             types=types,
+        )
+
+    async def search(
+        self,
+        notebook_id: str,
+        query: str,
+        *,
+        source_ids: Sequence[str] | None = None,
+        limit: int | None = None,
+    ) -> builtins.list[RelevantChunk]:
+        """Search indexed source passages by relevance.
+
+        Args:
+            notebook_id: Notebook containing the sources to search.
+            query: Natural-language relevance query.
+            source_ids: Optional source-id subset; omitted or empty searches
+                every source in the notebook.
+            limit: Optional positive maximum number of ranked chunks.
+
+        Returns:
+            Relevant chunks ordered by their global backend rank.
+        """
+        query, normalized_ids, limit = validate_search(query, source_ids, limit)
+        return await self._searcher.search(
+            notebook_id,
+            query,
+            source_ids=normalized_ids,
+            limit=limit,
         )
 
     async def list_play_books(self) -> builtins.list[PlayBook]:

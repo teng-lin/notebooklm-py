@@ -19,7 +19,7 @@ import grpc
 import httpx
 import pytest
 
-from notebooklm.types import Notebook, ShareStatus, Source, UserSettings
+from notebooklm.types import Notebook, RelevantChunk, ShareStatus, Source, UserSettings
 from tests._helpers.android_grpc_harness import SCRATCH_NOTE_TITLE, is_record_mode
 
 pytestmark = pytest.mark.grpc_cassette
@@ -97,6 +97,25 @@ async def test_source_fulltext_over_load_source(android_grpc_cassette: CassetteB
     assert fulltext.source_id == source.id
     assert fulltext.content
     assert fulltext.title
+
+
+@pytest.mark.asyncio
+async def test_source_search_over_retrieve_relevant_chunks(
+    android_grpc_cassette: CassetteBinder,
+) -> None:
+    async with android_grpc_cassette("retrieve_relevant_chunks") as (client, values):
+        (source,) = await client.sources.list(values.notebook_id)
+        chunks = await client.sources.search(values.notebook_id, values.question, limit=1)
+        filtered = await client.sources.search(
+            values.notebook_id,
+            values.question,
+            source_ids=[source.id],
+        )
+    assert len(chunks) == 1
+    assert isinstance(chunks[0], RelevantChunk)
+    assert chunks[0].source_id == source.id
+    assert chunks[0].text
+    assert filtered and all(chunk.source_id == source.id for chunk in filtered)
 
 
 # --- 4. ListArtifacts plus GetNotes ------------------------------------------

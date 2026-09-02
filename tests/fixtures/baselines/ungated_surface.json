@@ -20,6 +20,7 @@
     "SuggestedTopic",
     "Source",
     "SourceFulltext",
+    "RelevantChunk",
     "SourceGuide",
     "SourceSummary",
     "Artifact",

@@ -55,6 +55,8 @@ service LabsTailwindOrchestrationService {
   rpc GenerateDocumentGuides(GenerateDocumentGuidesRequest)
       returns (GenerateDocumentGuidesResponse);
   rpc LoadSource(LoadSourceRequest) returns (LoadSourceResponse);
+  rpc RetrieveRelevantChunks(RetrieveRelevantChunksRequest)
+      returns (RetrieveRelevantChunksResponse);
 
   rpc ListArtifacts(ListArtifactsRequest) returns (ListArtifactsResponse);
   rpc GetArtifact(GetArtifactRequest) returns (GetArtifactResponse);

@@ -34,7 +34,7 @@ consolidated document rather than encoded in filenames.
 | [`proto-evidence-ledger.md`](proto-evidence-ledger.md) | exact/local compile closure, replay policy, hashes, and admission decisions |
 | [`schema.proto`](schema.proto) | generated 323-message / 868-field Dart-AOT recovery parsed by CI |
 | [`enums.txt`](enums.txt) | generated 104-block (94 enum names) integer inventory parsed by CI |
-| [`grpc-service-signature-inferences.json`](grpc-service-signature-inferences.json) | ten Web-derived signatures with conventional request/response type names |
+| [`grpc-service-signature-inferences.json`](grpc-service-signature-inferences.json) | sixteen Web-derived signatures with conventional request/response type names |
 | [`grpc-service-signature-exceptions.json`](grpc-service-signature-exceptions.json) | empty implemented-path exception manifest |
 | [`grpc-runtime-parser-overrides.json`](grpc-runtime-parser-overrides.json) | exact paths intentionally decoded through local live-field overlays |
 
@@ -49,6 +49,7 @@ consolidated document rather than encoded in filenames.
 | [`file-transfer-evidence.md`](file-transfer-evidence.md) | Scotty upload and artifact-download protocol with interception details |
 | [`deep-research-evidence.md`](deep-research-evidence.md) | Deep Research wire contract, lifecycle, reproducer, and interception |
 | [`copy-append-suggestion-evidence.md`](copy-append-suggestion-evidence.md) | live Android gRPC evidence for the #2283 family: `AddSourcesAsync`, `AppendSource`, `CopySourcesAsync`, `CopyArtifactsAsync`, `NextStepSuggestions`, `GetArtifactCustomizationChoices` |
+| [`source-search-evidence.md`](source-search-evidence.md) | live Web and Android wire evidence for `RetrieveRelevantChunks` / `sources.search` |
 | [`auth-research.md`](auth-research.md) | Android OAuth identity, scopes, and bearer validation |
 | [`blutter-grpc-signature-evidence.md`](blutter-grpc-signature-evidence.md) | exact generated-client bindings for formerly unresolved response FQNs |
 
@@ -111,11 +112,11 @@ this regeneration is not yet captured as a patch.
 The reduced compile inputs used by the internal Android adapters live under
 `src/notebooklm/_android/proto_src/`. Regenerate their checked-in Python modules and the full
 descriptor fixture with `python scripts/regenerate_android_protos.py --write`; use `--check` in CI.
-The cumulative `orchestration_service.proto` owns the 47-method orchestration service;
+The cumulative `orchestration_service.proto` owns the 55-method orchestration service;
 `sharing.proto` owns the separately proven two-method exact sharing service, and individual
-orchestration message overlays remain service-free. Ten orchestration signatures are explicitly
+orchestration message overlays remain service-free. Sixteen orchestration signatures are explicitly
 marked as web-derived conventional-name inferences; all other generated signatures are exact.
-The 49 generated methods exhaustively equal the 49 implemented adapter paths, and the signature
+The 57 generated methods exhaustively equal the 57 implemented adapter paths, and the signature
 exception manifest is empty. Generated descriptors, adapter paths, inference provenance, and the
 hash-pinned external method manifest are checked in both
 directions, so a locally repeated claim cannot admit a normalized or unresolved response type.

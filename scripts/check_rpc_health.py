@@ -774,6 +774,14 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
     if method == RPCMethod.GET_SOURCE:
         return [[notebook_id], ["placeholder_source_id"]]
 
+    if method == RPCMethod.RETRIEVE_RELEVANT_CHUNKS:
+        stable_id = (
+            os.environ.get("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID")
+            or os.environ.get("NOTEBOOKLM_GENERATION_NOTEBOOK_ID")
+            or notebook_id
+        )
+        return [stable_id, "RPC health check", None, [1]]
+
     if method in (RPCMethod.REFRESH_SOURCE, RPCMethod.CHECK_SOURCE_FRESHNESS):
         return [[notebook_id], [["placeholder"]]]
 

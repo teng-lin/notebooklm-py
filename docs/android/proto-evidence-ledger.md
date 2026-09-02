@@ -106,12 +106,12 @@ fixtures. Hashes prevent a later local checkout from silently changing what was 
 | [`grpc-capability-and-signature-evidence.md`](grpc-capability-and-signature-evidence.md) | `cd43b24f84e77000787306797d4dab26fbf11b68c51d0111d478c5bc9594a271` | consolidated signed-APK inventory, current authenticated Web-bundle signature inference, and mobile-backend route/semantic evidence; preserves the original report hashes and their distinct evidence boundaries |
 | [`latest_apk_grpc_paths.txt`](../../tests/fixtures/android/latest_apk_grpc_paths.txt) | `b5df4996f271e71ccc14e0ae0f8eaa13e1e337b4bc726b54a487a0c4f6d31697` | complete 53-path `1.55.10` generated-client inventory, including the path-only unresolved `UpsertArtifactUserState` entry |
 | [`latest_apk_grpc_signatures.csv`](../../tests/fixtures/android/latest_apk_grpc_signatures.csv) | `6381163929c18d51eb654bc677846061ea65e9d501b9beb9db3952b749b32b7c` | 52 exact `1.55.10` generated-client bindings with request/response FQNs and object-pool offsets |
-| [`external_method_manifest.csv`](../../tests/fixtures/android/external_method_manifest.csv) | `46d15ebbae2567a66a88cd9785bcfe944ab6de077ec1c0ab53294c28e768526d` | version-scoped `1.46.7` binary inventory plus independently live/web-proven signatures used by the implemented-adapter admission gate |
-| [`public-api-audit.md`](public-api-audit.md) | `c34745b9cc79d1ebdeb1b12318a08dfb75e22530042c4e25248e30aa71573440` | complete public-adapter rejection inventory, current web/APK mapping, and disposable-copy Android-bearer validation for the newly admitted operations |
+| [`external_method_manifest.csv`](../../tests/fixtures/android/external_method_manifest.csv) | `83a9553bf95f11f28805b02df20887d61bd6c85906141cb0bc462d1ead7aee23` | version-scoped `1.46.7` binary inventory plus independently live/web-proven signatures used by the implemented-adapter admission gate |
+| [`public-api-audit.md`](public-api-audit.md) | `e1ddd699175403994b3a9f38d4cab913ba263483524bb743d9582fcbcf873995` | complete public-adapter rejection inventory, current web/APK mapping, and disposable-copy Android-bearer validation for the newly admitted operations |
 | [`artifact-contracts-and-live-validation.md`](artifact-contracts-and-live-validation.md) | `58af0bbeebdfa6a6a7366577d90a5479bdf971a1ed76fe3d6d7d0b8420f8454d` | consolidated artifact generation, representation, data-table, retry/export, mind-map, and transfer evidence; preserves all four source-report hashes and cleanup qualifications |
 | [`file-transfer-evidence.md`](file-transfer-evidence.md) | `f09a518c398f7355f7ab55c69d6e990037c806a9cc3e3f1291de5efd4971a6a5` | official-app/headless PDF upload request, qualified CSV/DOCX compatibility boundary, and live artifact representation/direct infographic/slide transfer |
 | [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md) | `f505fed8baa5e5976748fddb0a464a125235c18e199ee35f5ae85d30c9eb648c` | consolidated notebook copy/metadata, note/mind-map, label/collection, membership, cleanup, and public-qualification evidence; preserves all four source-report hashes |
-| [`endpoints.md`](endpoints.md) | `5f707e65ebf3afb0a152642362302ecb9749ff06db4d459305d9f1864124542c` | live request/response envelopes, route results, version-scoped APK inventories, captured note/sharing bytes, and the account-bootstrap replay boundary |
+| [`endpoints.md`](endpoints.md) | `65ca83f0c75217867022f48ce246af5c63db37861a78169aaeda62af2ea0335d` | live request/response envelopes, route results, version-scoped APK inventories, captured note/sharing bytes, and the account-bootstrap replay boundary |
 
 The recovery method and the warning about duplicate packages are committed in
 [`README.md`](README.md#caveats-that-will-bite-you). Live request/response shapes are documented in
@@ -124,14 +124,11 @@ The recovery method and the warning about duplicate packages are committed in
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject` | `.google.internal.labs.tailwind.orchestration.v1.GetProjectRequest` | `.google.internal.labs.tailwind.orchestration.v1.GetProjectResponse` | unary/unary | `project_id #1`, `include_audio_overview_ids #2`; no `RequestContext` |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/ListRecentlyViewedProjects` | `.google.internal.labs.tailwind.orchestration.v1.ListRecentlyViewedProjectsRequest` | `.google.internal.labs.tailwind.orchestration.v1.ListRecentlyViewedProjectsResponse` | unary/unary | `include_own_projects #2`, `include_audio_overview_ids #3`; no `RequestContext` |
 
-The two read signatures above and forty-five later exact or web-derived signatures live in the sole
+The two read signatures above and fifty-three later exact or web-derived signatures live in the sole
 `google/internal/labs/tailwind/orchestration/v1/orchestration_service.proto` service declaration.
 The individual message overlays remain service-free so protobuf never reopens one service across
-files. Its generated stub exposes 47 implemented methods: two account operations, the two reads
-above, seven notebook operations, eight source methods, ten artifact methods (including
-`ActOnSources`), four chat methods, four note methods, six Research methods, and four organization
-methods. The exact sharing service adds `GetProjectDetails` and `ShareProject`, producing 49
-generated paths across the two services. Ten
+files. Its generated stub exposes 55 implemented methods. The exact sharing service adds
+`GetProjectDetails` and `ShareProject`, producing 57 generated paths across the two services. Sixteen
 signatures retain explicit web-derived type-name provenance; the signature-exception manifest is
 empty. The inference and runtime-parser manifests name each adapter seam and evidence link;
 bidirectional descriptor/adapter/external-manifest equality is pinned by
@@ -691,8 +688,9 @@ The source contract copies only the fields
 its builders and codecs reach into
 `google/internal/labs/tailwind/orchestration/v1/sources.proto`; it imports the read types rather
 than redeclaring `Source` or `SourceId`. The message overlay intentionally declares no service. The
-cumulative service imports those five exact signatures plus the web-derived `MutateSource`
-signature and the current-bundle-derived `CheckSourceFreshness`/`RefreshSource` signatures.
+cumulative service imports those five exact signatures plus the web-derived `MutateSource` and
+`RetrieveRelevantChunks` signatures and the current-bundle-derived
+`CheckSourceFreshness`/`RefreshSource` signatures.
 Blutter's generated-client binding proves `DeleteSources` returns
 `google.protobuf.Empty`. Runtime dispatch stays on `AndroidSession`'s generic typed callable.
 
@@ -706,6 +704,7 @@ Blutter's generated-client binding proves `DeleteSources` returns
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/RefreshSource` | generated current-bundle-derived `.google.internal.labs.tailwind.orchestration.v1.RefreshSourceRequest` | generated current-bundle-derived `.google.internal.labs.tailwind.orchestration.v1.RefreshSourceResponse` | never; valid stale Drive source refreshed successfully through Android bearer |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateDocumentGuides` | `.google.internal.labs.tailwind.orchestration.v1.GenerateDocumentGuidesRequest` | `.google.internal.labs.tailwind.orchestration.v1.GenerateDocumentGuidesResponse` | safe read |
 | `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/LoadSource` | `.google.internal.labs.tailwind.orchestration.v1.LoadSourceRequest` | `.google.internal.labs.tailwind.orchestration.v1.LoadSourceResponse` | safe read |
+| `/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/RetrieveRelevantChunks` | generated web-derived `.google.internal.labs.tailwind.orchestration.v1.RetrieveRelevantChunksRequest` | generated web-derived `.google.internal.labs.tailwind.orchestration.v1.RetrieveRelevantChunksResponse` | safe read; unfiltered and source-filtered Android success; [wire evidence](source-search-evidence.md#wire-layout) |
 
 ### Source field ledger
 
@@ -727,6 +726,8 @@ Blutter's generated-client binding proves `DeleteSources` returns
 | `orchestration.v1.RefreshSourceRequest/Response` | request `source_id #2`, `request_context #3`; response `source #1` | current-bundle constructor/accessor plus valid stale-Google-Doc Android refresh |
 | `orchestration.v1.PlainTextSourceContent` | `header #1`, `body #2` | exact response closure; flat text uses body |
 | `orchestration.v1.LoadSourceRequest/Response` | `source_id #1` / `source #1`, `plain_text #2`, `markdown_string #3`, `TailwindDoc #4` | exact method closure; current live responses used only `source #1` plus `TailwindDoc #4`, decoded through the local response overlay |
+| `orchestration.v1.RetrieveRelevantChunksRequest` | `project_id #1`, `query #2`, options `#4`, source-id filter `#5` | Web layout plus unfiltered and filtered native Android calls |
+| `orchestration.v1.RetrieveRelevantChunksResponse` | repeated source groups `#1`; group `source_id #1`, chunks `#2`; chunk content/rank/spans `#1/#2/#3`; span start/end `#2/#3` | Web and Android live replies; [full evidence](source-search-evidence.md#wire-layout) |
 
 ### Document-guide source echo
 

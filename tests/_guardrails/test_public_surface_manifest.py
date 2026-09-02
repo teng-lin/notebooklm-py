@@ -334,6 +334,7 @@ _TOP_LEVEL_TYPE_EXPORTS = [
     "SlideDeckLength",
     "Source",
     "SourceFulltext",
+    "RelevantChunk",
     "SourceGuide",
     "SourceStatus",
     "SourceSummary",

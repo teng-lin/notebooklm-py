@@ -40,6 +40,7 @@ class _ConcreteSources(SourcesAPI):
         raise NotImplementedError
 
     add_url = _unsupported
+    search = _unsupported
     add_text = _unsupported
     add_file = _unsupported
     add_drive = _unsupported

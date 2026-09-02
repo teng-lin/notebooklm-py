@@ -1261,6 +1261,7 @@ print(url)
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
 | `list(notebook_id, *, strict=False, statuses=None, types=None)` | `str, *, bool, Collection[SourceStatus] \| None, Collection[SourceType] \| None` | `list[Source]` | List sources, optionally filtered after normalization |
+| `search(notebook_id, query, *, source_ids=None, limit=None)` | `str, str, *, Sequence[str] \| None, int \| None` | `list[RelevantChunk]` | Search indexed passages across all notebook sources or an optional source-id subset. Results use global relevance rank (lower is better); `limit` is applied after global ordering. |
 | `get(notebook_id, source_id)` | `str, str` | `Source` | Get source details; raises `SourceNotFoundError` on a miss |
 | `get_or_none(notebook_id, source_id)` | `str, str` | `Source \| None` | Optional lookup; returns `None` when absent |
 | `get_fulltext(notebook_id, source_id, *, output_format="text")` | `str, str, *, output_format: Literal["text", "markdown"]` | `SourceFulltext` | Get full content; `"markdown"` requires the optional `markdownify` extra |
@@ -1292,6 +1293,11 @@ await client.sources.add_url(nb_id, "https://example.com/article")
 await client.sources.add_url(nb_id, "https://youtube.com/watch?v=...")  # YouTube URLs autodetected
 await client.sources.add_text(nb_id, "My Notes", "Content here...")
 await client.sources.add_file(nb_id, Path("./document.pdf"))
+
+# Search ranked passages across every source, or pass source_ids=[...] to narrow it.
+chunks = await client.sources.search(nb_id, "revenue growth", limit=5)
+for chunk in chunks:
+    print(chunk.rank, chunk.source_id, chunk.text)
 
 # Upload a file with a custom display title (rename happens after upload via
 # UPDATE_SOURCE — a brief registration wait runs even when wait=False so the
@@ -3215,6 +3221,23 @@ one-call path when you need both (`get_account_limits()` and
 class UserSettings:
     limits: AccountLimits = AccountLimits()  # Account-level quota limits
     output_language: str | None = None  # Global output language, or None
+```
+
+### RelevantChunk
+
+Returned by `client.sources.search()`. Ranks are global across the searched
+sources and lower values are more relevant. A rank of `0` means the backend did
+not supply one. `start` and `end` are source-relative character offsets; both
+are `None` when the reply has no span.
+
+```python
+@dataclass(frozen=True)
+class RelevantChunk:
+    source_id: str
+    text: str
+    rank: int
+    start: int | None = None
+    end: int | None = None
 ```
 
 ### SourceFulltext

@@ -6,7 +6,7 @@
     "ENUM_BINDINGS": 156,
     "ENUM_GAPS": 34,
     "MAPPINGS": 751,
-    "PINNED": 114,
+    "PINNED": 174,
     "UNMAPPED": 340
   },
   "tests/_guardrails/test_asyncio_loop_affinity_guard.py": {
@@ -68,7 +68,7 @@
     "_NON_AUTHTOKENS_CANDIDATES": 30
   },
   "tests/_guardrails/test_backend_abstract_contracts.py": {
-    "BASE_ABSTRACT_CONTRACTS": 160
+    "BASE_ABSTRACT_CONTRACTS": 161
   },
   "tests/_guardrails/test_backend_boundaries.py": {
     "LAZY_WEB_IMPORT_ALLOWLIST": 34
@@ -92,7 +92,7 @@
     "_EXECUTOR_RAW_ARGS": 32
   },
   "tests/_guardrails/test_golden_decode_coverage.py": {
-    "GOLDEN_COVERAGE": 48
+    "GOLDEN_COVERAGE": 49
   },
   "tests/_guardrails/test_login_package_dag.py": {
     "ALLOWED_EDGES": 43
@@ -115,7 +115,7 @@
     "_REEXPORTED_RPC_ENUMS": 24,
     "_RPC_LEGACY_REEXPORTS": 47,
     "_TOP_LEVEL_EXCEPTION_EXPORTS": 52,
-    "_TOP_LEVEL_TYPE_EXPORTS": 60
+    "_TOP_LEVEL_TYPE_EXPORTS": 61
   },
   "tests/_guardrails/test_server_classify_consistency.py": {
     "_EXEMPLARS": 22

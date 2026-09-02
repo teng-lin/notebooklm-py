@@ -122,6 +122,7 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
                 "list_play_books",
                 "refresh",
                 "rename",
+                "search",
             }
         ),
         wire_hooks=frozenset(),

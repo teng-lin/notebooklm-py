@@ -136,7 +136,7 @@ Status vocabulary below:
   Drive/share/generation side effect;
 - **compiled** — present in the APK/schema but not independently exercised here.
 
-### Complete web-library → APK/backend matrix (48/48)
+### Complete web-library → APK/backend matrix (49/49)
 
 | Server method | web `rpcid` (constant) | APK | mobile backend evidence |
 |---|---|---:|---|
@@ -151,6 +151,7 @@ Status vocabulary below:
 | AddTentativeSources | `o4cbdc` (ADD_SOURCE_FILE) | ✅ | captured; file/tentative registration path |
 | DeleteSources | `tGMBJ` (DELETE_SOURCE) | ✅ | captured + live delete/read-back on copied source |
 | LoadSource | `hizoJc` (GET_SOURCE) | ✅ | captured |
+| **RetrieveRelevantChunks** | `ASU5Oe` (RETRIEVE_RELEVANT_CHUNKS) | ❌ | **live** unfiltered and source-filtered native calls; [wire evidence](source-search-evidence.md) |
 | **MutateSource** | `b7Wfje` (UPDATE_SOURCE) | ❌ | **live** title mutation + read-back |
 | **RefreshSource** | `FLmJqe` (REFRESH_SOURCE) | ❌ | **live** on a stale native Google Doc; an earlier copied-URL probe returned `INVALID_ARGUMENT` for four context variants |
 | **CheckSourceFreshness** | `yR9Yof` (CHECK_SOURCE_FRESHNESS) | ❌ | **live** on copied URL source |
