@@ -593,7 +593,7 @@ class TestArtifactsSourceSelection:
             )
 
     @pytest.mark.asyncio
-    async def test_generate_video_cinematic_rejects_style_prompt(
+    async def test_generate_video_short_rejects_style_prompt(
         self, mock_core, mock_mind_map_service
     ):
         api = WebArtifactsAPI(
@@ -603,11 +603,11 @@ class TestArtifactsSourceSelection:
             **mock_mind_map_service,
         )
 
-        with pytest.raises(ValidationError, match="cinematic"):
+        with pytest.raises(ValidationError, match="short"):
             await api.generate_video(
                 notebook_id="nb_123",
                 source_ids=["src_a"],
-                video_format=VideoFormat.CINEMATIC,
+                video_format=VideoFormat.SHORT,
                 style_prompt="Use hand-drawn diagrams",
             )
 

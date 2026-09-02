@@ -265,12 +265,22 @@ PLACEHOLDER_FAIL_METHODS: set[RPCMethod] = set()
 FULL_MODE_ONLY_METHODS = {
     # Create operations
     RPCMethod.CREATE_NOTEBOOK,
+    RPCMethod.COPY_NOTEBOOK,
     RPCMethod.ADD_SOURCE,
     RPCMethod.ADD_SOURCE_FILE,  # Registers file source intent (no upload needed)
+    RPCMethod.ADD_SOURCES_ASYNC,
+    RPCMethod.APPEND_SOURCE,
+    RPCMethod.COPY_SOURCES,
+    RPCMethod.CREATE_LABEL,
+    RPCMethod.UPDATE_LABEL,
+    RPCMethod.DELETE_LABEL,
     RPCMethod.CREATE_NOTE,
     RPCMethod.CREATE_ARTIFACT,  # Main RPC for all artifacts - test with flashcards (fast)
+    RPCMethod.COPY_ARTIFACTS,
     RPCMethod.START_FAST_RESEARCH,  # Starts research (verify RPC ID, don't wait)
     RPCMethod.DISCOVER_SOURCES,  # Synchronous discovery (~8 s; also records a job)
+    RPCMethod.CANCEL_RESEARCH,
+    RPCMethod.CANCEL_GENERATION,
     # Delete operations (tested after creates)
     RPCMethod.DELETE_NOTE,
     RPCMethod.DELETE_SOURCE,
@@ -283,6 +293,8 @@ FULL_MODE_ONLY_METHODS = {
 ALWAYS_SKIP_METHODS = {
     # Takes too long
     RPCMethod.START_DEEP_RESEARCH,
+    # Account-scoped to Play Books library; empty on canary account (#2292)
+    RPCMethod.LIST_EXPERT_INTELLIGENCE_CONTENT,
 }
 
 

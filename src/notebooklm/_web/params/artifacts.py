@@ -200,7 +200,7 @@ def build_cinematic_video_artifact_params(
                     language,
                     instructions,
                     None,
-                    VideoFormat.CINEMATIC.value,
+                    3,  # Cinematic format code (separate endpoint from standard video options)
                 ],
             ],
         ],

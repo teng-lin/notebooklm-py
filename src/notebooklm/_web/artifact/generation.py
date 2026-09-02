@@ -129,8 +129,6 @@ class ArtifactGenerationService:
         if language is None:
             language = get_default_language()
         normalized_style_prompt = style_prompt.strip() if style_prompt is not None else None
-        if video_format == VideoFormat.CINEMATIC and normalized_style_prompt:
-            raise ValidationError("style_prompt is not supported for cinematic videos")
         # Short videos have a FIXED visual style — the server silently ignores any
         # style code (live-verified: anime vs watercolor render identically). Reject
         # an explicit style/style_prompt rather than pretend it takes effect (#1805).

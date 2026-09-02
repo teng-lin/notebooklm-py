@@ -144,7 +144,6 @@ _AUDIO_LENGTH_MAP: Mapping[str, AudioLength] = {
 _VIDEO_FORMAT_MAP: Mapping[str, VideoFormat] = {
     "explainer": VideoFormat.EXPLAINER,
     "brief": VideoFormat.BRIEF,
-    "cinematic": VideoFormat.CINEMATIC,
     # "short" rides the standard build_video_artifact_params (not the cinematic
     # special-case builder), but has a FIXED visual style — the server ignores
     # style codes, so _build_video_plan_for_kind rejects an explicit style for

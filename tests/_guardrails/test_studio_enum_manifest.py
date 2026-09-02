@@ -167,7 +167,7 @@ _RPC_ENUM_SNAPSHOT: dict[str, dict[str, int]] = {
         "DEEP_RESEARCH": 5,
         "LITE_LLM_SEARCH": 6,
     },
-    "VideoFormat": {"EXPLAINER": 1, "BRIEF": 2, "CINEMATIC": 3, "SHORT": 4},
+    "VideoFormat": {"EXPLAINER": 1, "BRIEF": 2, "SHORT": 4},
     "VideoStyle": {
         "AUTO_SELECT": 1,
         "CUSTOM": 0,

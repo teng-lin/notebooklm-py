@@ -871,7 +871,7 @@ _OPTS = [2, None, None, [1, None, None, None, None, None, None, None, None, None
 _LIVE_TABLE: list[Any] = [
     [
         [[[1, "Deep Dive", "d"], [2, "Brief", "d"], [3, "Critique", "d"], [4, "Debate", "d"]]],
-        [[[1, "Explainer", "d"], [2, "Brief", "d"], [3, "Cinematic", "d"], [4, "Short", "d"]]],
+        [[[1, "Explainer", "d"], [2, "Brief", "d"], [4, "Short", "d"]]],
         [[[1, "Detailed Deck", "d"], [2, "Presenter Slides", "d"]]],
         [[["Briefing Doc", "d", "directive"]]],
     ]
@@ -943,7 +943,7 @@ def test_compare_customization_choices_drifts_on_a_new_code() -> None:
 def test_compare_customization_choices_drifts_on_a_dropped_member_only() -> None:
     """Codes decide DRIFT; a label rename is reported but is not drift on its own."""
     table = json.loads(json.dumps(_LIVE_TABLE))
-    del table[0][1][0][3]  # video: Short (4) no longer served
+    del table[0][1][0][2]  # video: Short (4) no longer served
     status, detail = compare_customization_choices(table)
     assert status is CustomizationStatus.DRIFT
     assert "video: modelled codes not served [(4, 'SHORT')]" in detail
@@ -953,7 +953,7 @@ def test_compare_customization_choices_drifts_on_a_dropped_member_only() -> None
 def test_compare_customization_choices_reports_a_label_rename_without_drift() -> None:
     """Labels follow ``hl`` and Google's copy; only the codes are load-bearing (#1597)."""
     table = json.loads(json.dumps(_LIVE_TABLE))
-    table[0][1][0][3] = [4, "Panel", "d"]  # video: Short renamed, code unchanged
+    table[0][1][0][2] = [4, "Panel", "d"]  # video: Short renamed, code unchanged
     status, detail = compare_customization_choices(table)
     assert status is CustomizationStatus.MATCH
     assert "video: label differs from member name [(4, 'Panel', 'SHORT')]" in detail

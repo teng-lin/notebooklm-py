@@ -21,6 +21,7 @@ from tests._helpers.android_supervisor import SupervisedAndroidTransport
 from notebooklm._android import artifact_outputs
 from notebooklm._android import artifacts as android_artifacts
 from notebooklm._android import notes as android_notes
+from notebooklm._android.artifact_creation import normalize_creation_options
 from notebooklm._android.artifact_outputs import report_doc_markdown, write_text_atomic
 from notebooklm._android.artifacts import (
     ACT_ON_SOURCES_METHOD,
@@ -870,22 +871,13 @@ async def test_generate_video_families_use_exact_mobile_options() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("through_video_format", [False, True])
-async def test_cinematic_video_uses_mobile_template_code_three(
-    through_video_format: bool,
-) -> None:
+async def test_cinematic_video_uses_mobile_template_code_three() -> None:
     session, notebooks, _, _, api = _graph()
     session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
         artifact=_artifact("cinematic", type_code=_PROTO.ARTIFACT_TYPE_EXPLAINER_VIDEO)
     )
 
-    if through_video_format:
-        status = await api.generate_video(
-            "notebook-1",
-            video_format=VideoFormat.CINEMATIC,
-        )
-    else:
-        status = await api.generate_cinematic_video("notebook-1")
+    status = await api.generate_cinematic_video("notebook-1")
 
     assert status.task_id == "cinematic"
     options = session.calls[0][1].artifact.explainer_video.generation_options
@@ -896,18 +888,13 @@ async def test_cinematic_video_uses_mobile_template_code_three(
 
 @pytest.mark.asyncio
 async def test_cinematic_video_rejects_style_prompt_before_io() -> None:
-    session, notebooks, _, _, api = _graph()
-
     with pytest.raises(ValidationError, match="cinematic"):
-        await api.generate_video(
-            "notebook-1",
-            video_format=VideoFormat.CINEMATIC,
+        normalize_creation_options(
+            "cinematic_video",
+            language="en",
             video_style=VideoStyle.CUSTOM,
             style_prompt="Use hand-drawn diagrams",
         )
-
-    assert session.calls == []
-    assert notebooks.calls == []
 
 
 @pytest.mark.asyncio

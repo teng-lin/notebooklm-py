@@ -121,6 +121,6 @@
     "_EXEMPLARS": 22
   },
   "tests/_guardrails/test_studio_enum_manifest.py": {
-    "_RPC_ENUM_SNAPSHOT": 290
+    "_RPC_ENUM_SNAPSHOT": 288
   }
 }

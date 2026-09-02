@@ -111,7 +111,7 @@ def get_base_host() -> str:
 # it isn't, which is why :data:`BUILD_LABEL_STALE_AFTER_DAYS` exists and the
 # nightly canary's build-label lane (``scripts/check_rpc_health.py``) watches the
 # gap instead of leaving this constant unattended.
-DEFAULT_BL = "boq_labs-tailwind-frontend_20260802.02_p0"
+DEFAULT_BL = "boq_labs-tailwind-frontend_20260831.16_p0"
 
 # How far behind the served label this pin may fall before the canary calls it
 # stale. Wide on purpose: Google ships a new build roughly weekly, so a tighter

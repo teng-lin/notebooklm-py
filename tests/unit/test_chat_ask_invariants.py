@@ -520,7 +520,7 @@ class TestChatBlOverride:
         )
         assert (
             _extract_query_param(str(request.url), "bl")
-            == "boq_labs-tailwind-frontend_20260802.02_p0"
+            == "boq_labs-tailwind-frontend_20260831.16_p0"
         )
 
 

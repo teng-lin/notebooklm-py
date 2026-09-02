@@ -127,15 +127,16 @@ def normalize_creation_options(family: str, **options: Any) -> dict[str, Any]:
     if family in {"video", "cinematic_video"}:
         language = _language(options.get("language"))
         instructions = _optional_string(options.get("instructions"), "instructions")
-        video_format = (
-            VideoFormat.CINEMATIC if family == "cinematic_video" else options.get("video_format")
-        )
-        format_code = _enum_code(
-            video_format,
-            VideoFormat,
-            "video_format",
-            VideoFormat.EXPLAINER.value,
-        )
+        if family == "cinematic_video":
+            format_code = 3
+        else:
+            video_format = options.get("video_format")
+            format_code = _enum_code(
+                video_format,
+                VideoFormat,
+                "video_format",
+                VideoFormat.EXPLAINER.value,
+            )
         video_style = options.get("video_style")
         style_code = _enum_code(
             video_style,
@@ -145,7 +146,7 @@ def normalize_creation_options(family: str, **options: Any) -> dict[str, Any]:
         )
         style_prompt = _optional_string(options.get("style_prompt"), "style_prompt")
         style_prompt = style_prompt.strip() if style_prompt is not None else None
-        if format_code == VideoFormat.CINEMATIC.value:
+        if format_code == 3:
             if style_prompt:
                 raise ValidationError("style_prompt is not supported for cinematic videos")
             style_code = 0

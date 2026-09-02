@@ -253,8 +253,6 @@ class ArtifactsAPI(ABC):
         """Generate a Video Overview."""
         language = self._resolve_language(language)
         normalized_style_prompt = style_prompt.strip() if style_prompt is not None else None
-        if video_format == VideoFormat.CINEMATIC and normalized_style_prompt:
-            raise ValidationError("style_prompt is not supported for cinematic videos")
         if video_format == VideoFormat.SHORT and (
             (video_style is not None and video_style != VideoStyle.AUTO_SELECT)
             or normalized_style_prompt
