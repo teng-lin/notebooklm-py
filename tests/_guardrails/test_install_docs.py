@@ -35,6 +35,7 @@ CHANGELOG_MD = REPO_ROOT / "CHANGELOG.md"
 CANONICAL_CONTRIBUTOR_INSTALL = "uv sync --frozen --extra browser --extra dev --extra markdown"
 SKILL_BROWSER_LINE_RE = re.compile(r'pip install "notebooklm-py\[browser\]"(?![\w,])')
 INSTALLATION_LINK_RE = re.compile(r"\bdocs/installation\.md\b")
+SKILL_MAX_BYTES = 16_384
 
 
 def _read(path: Path) -> str:
@@ -196,55 +197,47 @@ def test_skill_md_does_not_use_status_for_auth() -> None:
     )
 
 
-def test_skill_md_workflows_preserve_readiness_identity_and_safe_autonomy() -> None:
-    """Stateful workflow guidance must remain ID-pinned and harness-neutral."""
-    text = _read(SKILL_MD)
-    automatic = text.split("**Run automatically (no confirmation):**", 1)[1].split(
-        "**Ask before running:**", 1
-    )[0]
-    confirmation = text.split("**Ask before running:**", 1)[1].split("## Quick Reference", 1)[0]
-    podcast = text.split("### Research to Podcast (Interactive)", 1)[1].split(
-        "### Document Analysis", 1
-    )[0]
-    document_analysis = text.split("### Document Analysis", 1)[1].split("### Bulk Import", 1)[0]
-    bulk_import = text.split("### Bulk Import", 1)[1].split(
-        "### Deep Web Research (Background Pattern)", 1
-    )[0]
-    deep_research = text.split("### Deep Web Research (Background Pattern)", 1)[1].split(
-        "## Output Style", 1
-    )[0]
+def test_skill_md_stays_compact() -> None:
+    """Keep version-specific catalogs in CLI help and maintained documentation."""
+    size = len(SKILL_MD.read_bytes())
+    assert size <= SKILL_MAX_BYTES, (
+        f"SKILL.md is {size:,} bytes; the {SKILL_MAX_BYTES:,}-byte entrypoint budget exists "
+        "to limit always-loaded context. Move conditional detail to CLI help or maintained docs."
+    )
 
-    assert "notebooklm language set" not in automatic
-    assert "notebooklm language set" in confirmation
-    assert "`notebooklm research wait --import-all`" not in automatic
-    assert "research wait --import-all" in confirmation
+
+def test_skill_md_workflows_preserve_readiness_identity_and_safe_autonomy() -> None:
+    """The compact skill must retain the stateful safety invariants."""
+    text = _read(SKILL_MD)
+    authorization = text.split("## Authorization Boundaries", 1)[1].split(
+        "## Command Discovery", 1
+    )[0]
+    workflow = text.split("## Canonical Source-to-Artifact Workflow", 1)[1].split(
+        "## Deep Research", 1
+    )[0]
+    deep_research = text.split("## Deep Research", 1)[1].split("## Generation Notes", 1)[0]
+    generation = text.split("## Generation Notes", 1)[1].split("## Output and Citations", 1)[0]
+    failure_handling = text.split("## Failure Handling", 1)[1].split("## Skill Installation", 1)[0]
+
+    assert "language set" in authorization
+    assert "research wait --import-all" in authorization
     assert 'status == "ready"' in text
     assert "status=READY" not in text
     assert "subagent" not in text.lower()
     assert "Task(" not in text
-    assert "run safe read-only diagnosis first" in text
-    assert "Mind map (`--kind note-backed`)" in text
-    assert "Mind map (`--kind interactive`, default)" in text
+    assert "one sequential job" in text
+    assert "only after the wait exits 0" in text
+    assert "run safe read-only diagnosis first" in failure_handling
+    assert "Mind map (`--kind note-backed`)" in generation
+    assert "Mind map (`--kind interactive`, default)" in generation
 
-    assert podcast.index("notebooklm create") < podcast.index("notebooklm source add")
-    assert podcast.index("notebooklm source add") < podcast.index("notebooklm source wait")
-    assert podcast.index("notebooklm source wait") < podcast.index("notebooklm generate audio")
-    assert podcast.index("notebooklm generate audio") < podcast.index("notebooklm artifact wait")
-    assert podcast.index("notebooklm artifact wait") < podcast.index("notebooklm download audio")
-    assert "After confirmation, wait for **every** captured source" in podcast
-    assert "After confirmation, wait for that exact artifact" in podcast
-    assert "one sequential job" in podcast
-    assert "only after `artifact wait` exits 0" in podcast
-
-    assert document_analysis.index("notebooklm create") < document_analysis.index(
-        "notebooklm source add"
-    )
-    assert document_analysis.index("notebooklm source add") < document_analysis.index(
-        "notebooklm source wait"
-    )
-    assert document_analysis.index("notebooklm source wait") < document_analysis.index(
-        "notebooklm ask"
-    )
+    assert workflow.index("notebooklm create") < workflow.index("notebooklm source add")
+    assert workflow.index("notebooklm source add") < workflow.index("notebooklm source wait")
+    assert workflow.index("notebooklm source wait") < workflow.index("notebooklm generate audio")
+    assert workflow.index("notebooklm generate audio") < workflow.index("notebooklm artifact wait")
+    assert workflow.index("notebooklm artifact wait") < workflow.index("notebooklm download audio")
+    assert "for every captured source" in workflow
+    assert "-a {artifact_id} -n {notebook_id}" in workflow
 
     assert deep_research.index("notebooklm source add-research") < deep_research.index(
         "notebooklm research wait"
@@ -253,9 +246,7 @@ def test_skill_md_workflows_preserve_readiness_identity_and_safe_autonomy() -> N
     assert "--import-all --timeout 1800 --json" in deep_research
 
     workflow_sections = {
-        "podcast": podcast,
-        "document analysis": document_analysis,
-        "bulk import": bulk_import,
+        "canonical source-to-artifact": workflow,
         "deep research": deep_research,
     }
     notebook_scoped_prefixes = (
