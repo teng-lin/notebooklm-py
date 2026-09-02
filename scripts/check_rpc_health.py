@@ -73,6 +73,7 @@ import json
 import os
 import re
 import sys
+import traceback
 from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
@@ -115,6 +116,7 @@ from notebooklm.exceptions import (
     ChatError,
     ChatResponseParseError,
     DecodingError,
+    RateLimitError,
     UnknownRPCMethodError,
 )
 from notebooklm.paths import get_storage_path
@@ -1059,7 +1061,7 @@ async def check_chat_query(
             found_ids=[],
             error=f"Parse error: {e}",
         )
-    except ChatError as e:
+    except (ChatError, RateLimitError) as e:
         # A recognized server-side ``"er"`` / rate-limit frame: the wire shape
         # is INTACT (the parser identified the frame), the server simply
         # declined this request. Treat as OK — the contract is healthy. The
@@ -1521,7 +1523,7 @@ async def probe_rebrand_chat(
             RebrandProbeStatus.ABSENT,
             "HTTP 200 but the body is not a streamed-chat response",
         )
-    except ChatError as e:
+    except (ChatError, RateLimitError) as e:
         return RebrandProbe(
             REBRAND_CHAT,
             RebrandProbeStatus.PRESENT,
@@ -2340,6 +2342,7 @@ TRANSIENT_ERROR_MARKERS: tuple[str, ...] = (
     "HTTP 429",
     "RESOURCE_EXHAUSTED",
     "API rate limit",
+    "Chat rate limit",
     "ReadTimeout",
 )
 
@@ -2656,16 +2659,23 @@ def main() -> int:
     print("=" * 60)
     print()
 
-    results, customization_status, rebrand_state, build_label = asyncio.run(
-        run_health_check(
-            full_mode=args.full,
-            base_url_source=source,
-            rebrand_state_path=args.rebrand_state_file,
-            rebrand_previous_state_path=args.rebrand_previous_state_file,
-            rebrand_run_id=args.rebrand_run_id,
+    try:
+        results, customization_status, rebrand_state, build_label = asyncio.run(
+            run_health_check(
+                full_mode=args.full,
+                base_url_source=source,
+                rebrand_state_path=args.rebrand_state_file,
+                rebrand_previous_state_path=args.rebrand_previous_state_file,
+                rebrand_run_id=args.rebrand_run_id,
+            )
         )
-    )
-    return print_summary(results, customization_status, rebrand_state, build_label)
+        return print_summary(results, customization_status, rebrand_state, build_label)
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(f"\nFATAL: RPC health check crashed: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

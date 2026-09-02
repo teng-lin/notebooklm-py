@@ -361,6 +361,7 @@ def test_is_transient_error_classifies_readtimeout_as_transient() -> None:
     # point at client- or network-side problems worth surfacing. If this
     # policy ever changes, update this test deliberately — don't drop it.
     assert is_transient_error("ReadTimeout") is True
+    assert is_transient_error("Chat rate limit reached: terminal stream sequence 3") is True
     assert is_transient_error("ConnectTimeout") is False
     assert is_transient_error("WriteTimeout") is False
     assert is_transient_error("PoolTimeout") is False
@@ -703,6 +704,27 @@ async def test_chat_probe_ok_on_recognized_server_error_frame() -> None:
 
 
 @pytest.mark.asyncio
+async def test_chat_probe_ok_on_rate_limit_frame(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A terminal stream sequence without an RPC payload raises RateLimitError
+    # (server quota exhausted): the wire contract is intact, the server merely
+    # declined. -> OK (#2323).
+    from notebooklm.exceptions import RateLimitError
+
+    def _raise_rate_limit(_text: str) -> Any:
+        raise RateLimitError(
+            "Chat rate limit reached: the request ended before the server "
+            "returned an RPC payload (terminal stream sequence 3). Retry later."
+        )
+
+    monkeypatch.setattr(check_rpc_health, "parse_streaming_chat_response", _raise_rate_limit)
+    client = _ChatClient(text=")]}'\n")
+    result = await check_rpc_health.check_chat_query(client, _chat_auth(), "nb_123")
+    assert result.status is CheckStatus.OK
+    assert "Server declined (recognized frame)" in (result.error or "")
+    assert "rate limit reached" in (result.error or "")
+
+
+@pytest.mark.asyncio
 async def test_chat_probe_error_on_http_status() -> None:
     client = _ChatClient(status=500, text="boom")
     result = await check_rpc_health.check_chat_query(client, _chat_auth(), "nb_123")
@@ -748,6 +770,25 @@ def test_main_exits_two_when_auth_missing(monkeypatch: pytest.MonkeyPatch, tmp_p
     with pytest.raises(SystemExit) as excinfo:
         check_rpc_health.main()
     assert excinfo.value.code == 2
+
+
+def test_main_exits_two_on_unhandled_crash(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unhandled crash in main must return exit code 2 (infrastructure failure),
+    never exit 1 which the workflow interprets as an RPC mismatch (#2323).
+    """
+    monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", "{}")
+    monkeypatch.setattr("sys.argv", ["check_rpc_health.py"])
+
+    async def _crashing_run(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("Unexpected pipeline crash")
+
+    monkeypatch.setattr(check_rpc_health, "run_health_check", _crashing_run)
+    exit_code = check_rpc_health.main()
+    assert exit_code == 2
+    err = capsys.readouterr().err
+    assert "FATAL: RPC health check crashed: Unexpected pipeline crash" in err
 
 
 async def _load_auth_raising(monkeypatch: pytest.MonkeyPatch, error: BaseException) -> None:
@@ -1352,6 +1393,25 @@ async def test_rebrand_chat_present_on_recognized_server_frame() -> None:
         client, _chat_auth(), "notebook.google.com", "nb_123"
     )
     assert probe.status is RebrandProbeStatus.PRESENT
+
+
+@pytest.mark.asyncio
+async def test_rebrand_chat_present_on_rate_limit_frame(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rate-limit frame proves the endpoint is live — it just declined (#2323)."""
+    from notebooklm.exceptions import RateLimitError
+
+    def _raise_rate_limit(_text: str) -> Any:
+        raise RateLimitError("Chat rate limit reached")
+
+    monkeypatch.setattr(check_rpc_health, "parse_streaming_chat_response", _raise_rate_limit)
+    client = _ChatClient(text=")]}'\n")
+    probe = await check_rpc_health.probe_rebrand_chat(
+        client, _chat_auth(), "notebook.google.com", "nb_123"
+    )
+    assert probe.status is RebrandProbeStatus.PRESENT
+    assert "recognized server frame" in probe.detail
 
 
 @pytest.mark.asyncio
