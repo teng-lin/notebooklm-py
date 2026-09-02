@@ -8,10 +8,12 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import click
 import pytest
 from click.testing import CliRunner
 
 from notebooklm.cli.profile_cmd import _PROFILE_NAME_RE, email_to_profile_name
+from notebooklm.cli.services.login.exceptions import LoginConfigurationError
 from notebooklm.notebooklm_cli import cli
 from notebooklm.paths import _reset_config_cache, set_active_profile
 
@@ -542,3 +544,108 @@ class TestProfileJsonOutput:
         payload = json.loads(result.output)
         assert payload["error"] is True
         assert payload["code"] == "VALIDATION_ERROR"
+
+
+class TestProfileNameTranslation:
+    """``_validate_profile_name_or_click`` owns the service->Click translation.
+
+    ADR-0015 Pattern B: the login service raises ``LoginConfigurationError``
+    and this command layer converts it, appending the hint when there is one.
+    """
+
+    def test_a_valid_name_passes_through(self):
+        assert profile_module._validate_profile_name_or_click("work") == "work"
+
+    def test_a_hintless_service_error_becomes_the_bare_message(self):
+        error = LoginConfigurationError("Profile name is empty.")
+        with (
+            patch.object(profile_module, "_validate_profile_name", side_effect=error),
+            pytest.raises(click.ClickException) as caught,
+        ):
+            profile_module._validate_profile_name_or_click("")
+
+        assert str(caught.value) == "Profile name is empty."
+        assert caught.value.__cause__ is None
+
+    def test_a_hinted_service_error_appends_its_hint(self):
+        error = LoginConfigurationError("Bad name.", hint="Use letters and digits.")
+        with (
+            patch.object(profile_module, "_validate_profile_name", side_effect=error),
+            pytest.raises(click.ClickException) as caught,
+        ):
+            profile_module._validate_profile_name_or_click("!!")
+
+        assert str(caught.value) == "Bad name. Use letters and digits."
+
+
+class TestReadConfigErrorPolicy:
+    """``_read_config`` tolerates a corrupt config only when asked to."""
+
+    def test_a_missing_config_reads_as_empty(self, tmp_path):
+        assert profile_module._read_config(tmp_path / "absent.json") == {}
+
+    def test_a_corrupt_config_is_suppressed_by_default(self, tmp_path):
+        path = tmp_path / "config.json"
+        path.write_text("{not json", encoding="utf-8")
+
+        assert profile_module._read_config(path) == {}
+
+    def test_a_corrupt_config_propagates_when_errors_are_not_suppressed(self, tmp_path):
+        path = tmp_path / "config.json"
+        path.write_text("{not json", encoding="utf-8")
+
+        with pytest.raises(json.JSONDecodeError):
+            profile_module._read_config(path, suppress_errors=False)
+
+    def test_a_non_object_payload_reads_as_empty(self, tmp_path):
+        path = tmp_path / "config.json"
+        path.write_text("[1, 2]", encoding="utf-8")
+
+        assert profile_module._read_config(path) == {}
+
+
+class TestProfilePathValidationIsTranslated:
+    """A traversal-shaped profile name surfaces as a friendly Click error.
+
+    ``get_profile_dir`` raises ``ValueError`` when the resolved name would
+    escape the profiles directory. Each command must translate that rather
+    than letting it escape as a traceback.
+    """
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            pytest.param(["profile", "create", "work"], id="create"),
+            pytest.param(["profile", "switch", "work"], id="switch"),
+            pytest.param(["profile", "delete", "work", "--yes"], id="delete"),
+            pytest.param(["profile", "rename", "work", "other"], id="rename"),
+        ],
+    )
+    def test_a_path_traversal_name_is_reported_not_raised(self, runner, tmp_path, argv):
+        with patch.object(
+            profile_module,
+            "get_profile_dir",
+            side_effect=ValueError("Profile name escapes the profiles directory"),
+        ):
+            result = runner.invoke(cli, argv, env=notebooklm_env(tmp_path))
+
+        assert result.exit_code == 1, result.output
+        assert "escapes the profiles directory" in result.output
+        assert "Traceback" not in result.output
+
+
+class TestRenameDestinationGuard:
+    def test_renaming_onto_an_existing_profile_is_refused(self, runner, tmp_path):
+        profiles = tmp_path / "profiles"
+        (profiles / "work").mkdir(parents=True)
+        (profiles / "taken").mkdir(parents=True)
+
+        result = runner.invoke(
+            cli, ["profile", "rename", "work", "taken"], env=notebooklm_env(tmp_path)
+        )
+
+        assert result.exit_code == 1, result.output
+        assert "already exists" in result.output
+        # Neither directory is touched by the refusal.
+        assert (profiles / "work").exists()
+        assert (profiles / "taken").exists()
