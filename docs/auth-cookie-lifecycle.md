@@ -42,6 +42,12 @@ needs `gpsoauth` (provided by `headless` and `android` extras) and, unless an
 > Use a dedicated account where possible, restrict the file to its owner, and
 > never put it in an image, repository, or command line.
 
+Treat Web session re-minting from a master token as **single-consumer per account**.
+Overlapping automatic L4 recoveries for the same storage path and rung policy coalesce in-process;
+direct or manual re-mint calls do not. Separate processes can also mint competing sessions and
+invalidate each other's `SID`. Serialize every direct/manual re-mint and run one automatic
+recovery worker per account, or give independent workers separate dedicated accounts.
+
 ## Cookie requirements for the Web backend
 
 Use a complete browser export. The loader requires `SID` and
@@ -72,10 +78,13 @@ def _has_rotatable_secondary_binding(cookie_names: set[str]) -> bool:
 
 <a id="25-four-timers-people-confuse"></a>
 
-Cookie names alone are not a guarantee that a session will work. Google can
-rotate or revoke a session based on account policy and risk signals. Do not
-rely on cookie expiry timestamps as a health check; run `notebooklm auth check
---test` when an application needs a live Web-auth probe.
+Cookie names alone are not a guarantee that a session will work. In observed competing-client
+tests, another active client could supersede an exported cookie snapshot within roughly ten
+minutes, and a superseded snapshot could fail within about half an hour. Those observations are
+not a service guarantee; sessions without a competing client may last much longer. Google can
+also rotate or revoke a session based on account policy and risk signals. Do not rely on cookie
+expiry timestamps as a health check; run `notebooklm auth check --test` when an application needs
+a live Web-auth probe.
 
 <a id="33-empirical-cookie-requirements"></a>
 
@@ -105,9 +114,19 @@ master-token profile. `NOTEBOOKLM_REFRESH_CMD` is an optional operator-supplied
 recovery hook; its command must safely rewrite the specified storage file and
 must not print secrets.
 
-When several processes share one file-backed profile, coordinate operationally
-where possible. The library protects writes, but a process can still hold an
-older in-memory session until its next reload or refresh.
+<a id="persistence-concurrency"></a>
+
+### Persistence compatibility and concurrent writers
+
+When several processes share one file-backed profile, coordinate operationally where possible.
+The library locks and atomically replaces profile files, and its managed persistence path uses
+snapshot/delta/CAS merging so a stale in-memory jar does not overwrite a newer disk value. A
+process can still hold an older in-memory session until its next reload or refresh.
+
+The public `save_cookies_to_storage(original_snapshot=None)` compatibility form cannot identify
+per-cookie deltas. It therefore emits a permanent `RuntimeWarning` about the stale-overwrite-fresh
+risk; pass the original snapshot or use a managed `NotebookLMClient` instead. This is a safety
+warning, not a scheduled deprecation, and `NOTEBOOKLM_QUIET_DEPRECATIONS` does not suppress it.
 
 ## Browser-cookie imports
 

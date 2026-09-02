@@ -543,8 +543,7 @@ class DriveSourceStatus(int, Enum):
 
     .. warning::
        Only :attr:`ACTIVE` has been observed on the wire (4 Drive rows in a
-       409-row live capture; see
-       ``docs/notes/web-rpc-vs-mobile-grpc-audit-2026-08-07.md`` §1.6).
+       409-row live capture from the 2026-08-07 Web/Android wire audit).
        The degraded members below are read off the backend enum, **not**
        from an observed response — producing them requires deliberately
        breaking access to a real Drive file. Treat their exact wire behaviour

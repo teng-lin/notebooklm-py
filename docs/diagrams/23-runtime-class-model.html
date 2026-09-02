@@ -5037,10 +5037,10 @@
         <path data-edge-from="assembly" data-edge-to="composed" data-edge-label="binds once" data-edge-key="1" data-edge-id="assembly-composed" data-composition-points="367,260;367,144" d="M 367 260 L 367 144" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="assembly" data-edge-to="features" data-edge-label="wires" data-edge-key="2" data-edge-id="assembly-features" data-composition-points="367,350;367,460" d="M 367 350 L 367 460" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="assembly" data-edge-to="executor" data-edge-label="creates" data-edge-key="3" data-edge-id="assembly-executor" data-composition-points="452,305;544,305" d="M 452 305 L 544 305" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="executor" data-edge-to="collaborators" data-edge-label="shared bundle" data-edge-key="4" data-edge-id="executor-collaborators" data-composition-points="629,260;629,144" d="M 629 260 L 629 144" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="assembly" data-edge-to="collaborators" data-edge-label="builds" data-edge-key="4" data-edge-id="assembly-collaborators" data-composition-points="452,305;498,305;498,102;544,102" d="M 452 305 L 490 305 Q 498 305 498 297 L 498 110 Q 498 102 506 102 L 544 102" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="executor" data-edge-to="supervisor" data-edge-label="admission" data-edge-key="5" data-edge-id="executor-supervisor" data-composition-points="629,350;629,460" d="M 629 350 L 629 460" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="executor" data-edge-to="transport" data-edge-label="authed POST" data-edge-key="6" data-edge-id="executor-transport" data-composition-points="714,305;806,305" d="M 714 305 L 806 305" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="transport" data-edge-to="seams" data-edge-label="re-reads" data-edge-key="7" data-edge-id="transport-seams" data-composition-points="888.5,260;888.5,144" d="M 888.5 260 L 888.5 144" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="executor" data-edge-to="seams" data-edge-label="decode · sleep" data-edge-key="7" data-edge-id="executor-seams" data-composition-points="714,305;760,305;760,102;806,102" d="M 714 305 L 752 305 Q 760 305 760 297 L 760 110 Q 760 102 768 102 L 806 102" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="transport" data-edge-to="chainhost" data-edge-label="dispatches" data-edge-key="8" data-edge-id="transport-chainhost" data-composition-points="888.5,350;888.5,460" d="M 888.5 350 L 888.5 460" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="transport" data-edge-to="kernel" data-edge-label="terminal post" data-edge-key="9" data-edge-id="transport-kernel" data-composition-points="971,305;1063,305" d="M 971 305 L 1063 305" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="kernel" data-edge-to="protocols" data-edge-label="satisfies" data-edge-key="10" data-edge-id="kernel-protocols" data-composition-points="1140.5,260;1140.5,144" d="M 1140.5 260 L 1140.5 144" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
@@ -5210,24 +5210,24 @@
           <text x="367" y="398" class="t-muted" font-size="8" text-anchor="middle">wires</text>
         </g>
         <g data-detail="context" data-edge-from="assembly" data-edge-to="executor" data-edge-label="creates" data-edge-key="3" data-edge-id="assembly-executor">
-          <rect x="476.2" y="285" width="43.6" height="14" rx="3" class="c-mask"/>
-          <text x="498" y="295" class="t-backend" font-size="8" text-anchor="middle">creates</text>
+          <rect x="448.2" y="246" width="43.6" height="14" rx="3" class="c-mask"/>
+          <text x="470" y="256" class="t-backend" font-size="8" text-anchor="middle">creates</text>
         </g>
-        <g data-detail="context" data-edge-from="executor" data-edge-to="collaborators" data-edge-label="shared bundle" data-edge-key="4" data-edge-id="executor-collaborators">
-          <rect x="592.8" y="192" width="72.4" height="14" rx="3" class="c-mask"/>
-          <text x="629" y="202" class="t-muted" font-size="8" text-anchor="middle">shared bundle</text>
+        <g data-detail="context" data-edge-from="assembly" data-edge-to="collaborators" data-edge-label="builds" data-edge-key="4" data-edge-id="assembly-collaborators">
+          <rect x="480.6" y="192" width="38.8" height="14" rx="3" class="c-mask"/>
+          <text x="500" y="202" class="t-muted" font-size="8" text-anchor="middle">builds</text>
         </g>
         <g data-detail="context" data-edge-from="executor" data-edge-to="supervisor" data-edge-label="admission" data-edge-key="5" data-edge-id="executor-supervisor">
           <rect x="602.4" y="388" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
           <text x="629" y="398" class="t-muted" font-size="8" text-anchor="middle">admission</text>
         </g>
         <g data-detail="context" data-edge-from="executor" data-edge-to="transport" data-edge-label="authed POST" data-edge-key="6" data-edge-id="executor-transport">
-          <rect x="728.6" y="285" width="62.8" height="14" rx="3" class="c-mask"/>
-          <text x="760" y="295" class="t-backend" font-size="8" text-anchor="middle">authed POST</text>
+          <rect x="683.6" y="246" width="62.8" height="14" rx="3" class="c-mask"/>
+          <text x="715" y="256" class="t-backend" font-size="8" text-anchor="middle">authed POST</text>
         </g>
-        <g data-detail="context" data-edge-from="transport" data-edge-to="seams" data-edge-label="re-reads" data-edge-key="7" data-edge-id="transport-seams">
-          <rect x="864.3" y="192" width="48.4" height="14" rx="3" class="c-mask"/>
-          <text x="888.5" y="202" class="t-muted" font-size="8" text-anchor="middle">re-reads</text>
+        <g data-detail="context" data-edge-from="executor" data-edge-to="seams" data-edge-label="decode · sleep" data-edge-key="7" data-edge-id="executor-seams">
+          <rect x="721.4" y="192" width="77.2" height="14" rx="3" class="c-mask"/>
+          <text x="760" y="202" class="t-muted" font-size="8" text-anchor="middle">decode · sleep</text>
         </g>
         <g data-detail="context" data-edge-from="transport" data-edge-to="chainhost" data-edge-label="dispatches" data-edge-key="8" data-edge-id="transport-chainhost">
           <rect x="859.5" y="388" width="58" height="14" rx="3" class="c-mask"/>

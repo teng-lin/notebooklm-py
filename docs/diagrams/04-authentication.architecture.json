@@ -16,7 +16,7 @@
           "headless",
           "mastertoken"
         ],
-        "note": "Inline heal first, then the explicit cold ladder from L2.5 through L4."
+        "note": "Inline PSIDTS healing is L2; the explicit cold ladder then runs L2.5 through L4."
       },
       {
         "id": "persistence",
@@ -72,7 +72,7 @@
       "type": "backend",
       "label": "PSIDTS Recovery",
       "sublabel": "load → heal → retry",
-      "tag": "L2.5 inline",
+      "tag": "L2 inline",
       "pos": [
         282,
         60
@@ -366,8 +366,8 @@
       "dot": "cyan",
       "title": "Refresh path",
       "items": [
-        "SingleFlight coalesces concurrent refreshes per canonical storage path",
-        "Waiter cancellation never cancels the shared leader task",
+        "Live RPC refreshes coalesce per AuthRefreshCoordinator instance",
+        "Cold SingleFlight keys canonical path + rung policy; cancellation spares leader",
         "AuthTokens is mutated in place; collaborators alias it rather than copying"
       ]
     },
@@ -375,7 +375,7 @@
       "dot": "amber",
       "title": "Recovery ladder",
       "items": [
-        "L2.5 inline PSIDTS heal runs outside the cold single flight",
+        "L2 inline PSIDTS heal runs outside the cold single flight",
         "L3 headless re-auth is opt-in and never the remote or MCP auth path",
         "L4 remints from a stored gpsoauth master token"
       ]

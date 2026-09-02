@@ -202,8 +202,8 @@
     {
       "id": "passthrough",
       "type": "backend",
-      "label": "Passthrough",
-      "sublabel": "raw RPC escape",
+      "label": "Full-ID Resolvers",
+      "sublabel": "identity functions",
       "pos": [
         806,
         460
@@ -300,7 +300,7 @@
       "id": "cores-passthrough",
       "from": "cores",
       "to": "passthrough",
-      "label": "rpc_call",
+      "label": "injected resolver",
       "variant": "dashed",
       "labelAt": [
         888.5,
@@ -321,7 +321,7 @@
       "title": "Single tenant",
       "items": [
         "One client is opened at ASGI lifespan, inside the server event loop",
-        "Routes map onto the same _app/ cores the CLI and MCP adapters use",
+        "Workflow routes use _app/ cores; simple operations call public client namespaces",
         "server/ imports no click, rich or cli — pinned by test_server_boundary.py"
       ]
     },

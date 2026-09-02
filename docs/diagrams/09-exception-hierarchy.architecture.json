@@ -19,7 +19,7 @@
           "rpctimeout",
           "rpcfailures"
         ],
-        "note": "RPCError directly owns timeout, authentication, rate-limit and server failures."
+        "note": "RPCError owns authentication, rate-limit and server failures; request timeout is a NetworkError."
       },
       {
         "id": "notfound",

@@ -102,11 +102,11 @@
       "id": "imported",
       "type": "success",
       "label": "Sources Added",
-      "sublabel": "ready to ground",
+      "sublabel": "ids returned",
       "lane": "main",
       "col": 4,
       "step": "05",
-      "tag": "done"
+      "tag": "import accepted"
     },
     {
       "id": "polling",
@@ -217,7 +217,7 @@
       "title": "Two halves",
       "items": [
         "The run is server-side; importing sources is a caller step",
-        "Import takes every source, or only the cited ones"
+        "Import accepts all or cited sources and returns IDs before readiness"
       ]
     },
     {

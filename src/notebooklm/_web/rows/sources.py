@@ -1140,8 +1140,8 @@ class SourceRow:
         ``SourceSettings.userDriveSourceStatus`` (tag 4). Only Drive-backed
         rows carry it: in a 409-row live capture, 4 rows populated it (all
         Drive-backed, all ``ACTIVE``) and the other 405 left it absent — 402
-        with ``settings=[null,2]`` and 3 with ``settings=[null,2,[...]]`` (see
-        ``docs/notes/web-rpc-vs-mobile-grpc-audit-2026-08-07.md`` §1.6).
+        with ``settings=[null,2]`` and 3 with ``settings=[null,2,[...]]`` in
+        the 2026-08-07 Web/Android wire audit.
 
         Return values:
 

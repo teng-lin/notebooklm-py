@@ -37,9 +37,10 @@
         "label": "Failure and retry",
         "focus": [
           "processing",
-          "failed"
+          "failed",
+          "pending"
         ],
-        "note": "FAILED is recoverable: retry re-enters generation for the same target."
+        "note": "FAILED is recoverable: an accepted retry returns the same target to PENDING."
       }
     ]
   },
@@ -160,7 +161,7 @@
     {
       "id": "failed-retry",
       "from": "failed",
-      "to": "processing",
+      "to": "pending",
       "label": "retry",
       "variant": "emphasis",
       "fromSide": "left",
@@ -175,7 +176,7 @@
           86
         ],
         [
-          402,
+          248,
           86
         ]
       ],

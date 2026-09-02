@@ -64,7 +64,7 @@ per-hop transfer security were the material gaps in the original set.
 
 Some views are deliberately not generated:
 
-- The exact repository tree stays in [`architecture.md`](../architecture.md#repository-structure),
+- The exact repository tree stays in [`architecture.md`](../architecture.md#file-map),
   where `scripts/check_claude_md_freshness.py` gates it against `src/notebooklm/`.
 - Individual RPC payloads and every generated protobuf type would churn faster than they teach;
   use [`rpc-reference.md`](../rpc-reference.md), [`rpc-development.md`](../rpc-development.md), and
@@ -75,15 +75,19 @@ Some views are deliberately not generated:
 
 ## Updating a diagram
 
-Run the repository-pinned Archify commands with the diagram's type (`architecture`, `workflow`,
-`sequence`, `dataflow`, or `lifecycle`):
+The repository commits Archify JSON sources and self-contained HTML viewers, but it does not
+currently vendor or pin the generator. Set `ARCHIFY_ROOT` to the installed Archify skill/package,
+record its version in the PR, and review the generated diff. Use the diagram's type
+(`architecture`, `workflow`, `sequence`, `dataflow`, or `lifecycle`):
 
 ```bash
-node /path/to/archify/bin/archify.mjs validate <type> <diagram.json> \
+ARCHIFY_ROOT=/path/to/archify
+node "$ARCHIFY_ROOT/bin/archify.mjs" doctor --json
+node "$ARCHIFY_ROOT/bin/archify.mjs" validate <type> <diagram.json> \
   --quality showcase --json
-node /path/to/archify/bin/archify.mjs deliver <type> <diagram.json> <diagram.html> \
+node "$ARCHIFY_ROOT/bin/archify.mjs" deliver <type> <diagram.json> <diagram.html> \
   --quality showcase --json
-node /path/to/archify/bin/archify.mjs visual-check <diagram.html> --json
+node "$ARCHIFY_ROOT/bin/archify.mjs" visual-check <diagram.html> --json
 ```
 
 Inspect the light and dark screenshots from `visual-check`, then delete all generated

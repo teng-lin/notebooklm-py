@@ -670,9 +670,9 @@ also preserved. The exact scratch notebook was deleted and a prefix sweep found 
 ## Project optional fields
 
 The flattened [`schema.proto`](schema.proto) names `Project.premiumFeatureInfo #10` and its three
-boolean leaves; the
-[web/Android audit](../notes/web-rpc-vs-mobile-grpc-audit-2026-08-07.md#123-lower) independently
-observed the same three-field block on the Web wire. A current authenticated
+boolean leaves; a 2026-08-07 authenticated Web/Android audit independently observed the same
+three-field block on the Web wire (`[true,true,false]` for free tier and `[true,true,true]` for
+Pro). A current authenticated
 `ListRecentlyViewedProjects` probe then found field #10 on every one of 18 returned Android project
 rows, always with the exact nested fields #1/#2/#3 and boolean wire types. That independent live
 corroboration admits `PremiumFeatureInfo` into the exact read closure and the public notebook

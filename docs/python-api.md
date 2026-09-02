@@ -3842,6 +3842,9 @@ with correlation_id("my-custom-flow-id"):
 ### Capability Protocols (Extension Surface)
 
 Decomposed Protocols introduced in ADR-0013 to decouple service facades from target domain runtimes.
+Web transport extensions should use the `RpcCaller` object Protocol or, for low-level transport
+work, see `Kernel` Protocol in `_web/contracts.py`. These private protocols are structural seams,
+not a supported replacement for the public client namespaces.
 
 #### `NotebookSourceLister` Protocol
 

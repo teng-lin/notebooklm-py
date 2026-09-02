@@ -88,7 +88,7 @@
       "type": "backend",
       "label": "ArtifactStatus",
       "sublabel": "PENDING · PROCESSING",
-      "tag": "IntEnum",
+      "tag": "int + Enum",
       "pos": [
         1063,
         60
@@ -218,7 +218,7 @@
       "type": "backend",
       "label": "ArtifactTypeCode",
       "sublabel": "AUDIO · VIDEO · QUIZ",
-      "tag": "IntEnum",
+      "tag": "int + Enum",
       "pos": [
         1063,
         460
@@ -346,8 +346,8 @@
       "dot": "cyan",
       "title": "Inheritance",
       "items": [
-        "ArtifactsAPI is an ABC; its eleven shared generate_* workflows converge on _send_create_artifact",
-        "All eleven generate_* workflows and validation live on the base",
+        "ArtifactsAPI is an ABC; ten Studio creators converge on _send_create_artifact",
+        "generate_mind_map is the eleventh public generator and uses a separate backend hook",
         "Both subclasses return the same frozen Artifact dataclass"
       ]
     },
@@ -364,7 +364,7 @@
       "dot": "amber",
       "title": "Typed results",
       "items": [
-        "ArtifactStatus: UNKNOWN, PENDING, PROCESSING, COMPLETED, FAILED, SUGGESTED",
+        "ArtifactStatus: UNKNOWN, PENDING, PROCESSING, COMPLETED, FAILED, SUGGESTED, PENDING_REVIEW",
         "ArtifactTypeCode spans AUDIO through FILE, ten codes in total",
         "SUGGESTED rows are filtered out of LIST_ARTIFACTS results"
       ]

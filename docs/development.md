@@ -1425,8 +1425,8 @@ baseline by hand, not something the canary fixes.
    active client supersedes a cookie snapshot within ~10 minutes (the ~600 s
    rotation cadence), and a *superseded* value has been observed failing
    within roughly half an hour — so a snapshot exported on a workstation was
-   routinely dead before a scheduled run started (see
-   [auth-cookie-lifecycle.md §2.5](auth-cookie-lifecycle.md#25-four-timers-people-confuse)).
+   routinely dead before a scheduled run started (see the
+   [cookie lifetime observations](auth-cookie-lifecycle.md#25-four-timers-people-confuse)).
 
 The live-E2E workflows (`verify-package.yml`, `nightly.yml`, `rpc-health.yml`,
 `verify-artifacts.yml`) ship no inline credential at all. Their "Materialize

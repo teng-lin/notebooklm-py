@@ -16,7 +16,7 @@
           "app",
           "client"
         ],
-        "note": "Every MCP tool is a thin wrapper over the same transport-neutral cores."
+        "note": "Tools choose a transport-neutral core for workflows or a selected client namespace for simple operations."
       },
       {
         "id": "guards",
@@ -127,8 +127,8 @@
     {
       "id": "app",
       "type": "backend",
-      "label": "Application Cores",
-      "sublabel": "_app/",
+      "label": "Dispatch Choice",
+      "sublabel": "_app/ or client.*",
       "pos": [
         806,
         260
@@ -243,14 +243,14 @@
       "id": "tools-app",
       "from": "tools",
       "to": "app",
-      "label": "typed request",
+      "label": "core or namespace",
       "variant": "emphasis"
     },
     {
       "id": "app-client",
       "from": "app",
       "to": "client",
-      "label": "live client",
+      "label": "selected client",
       "variant": "emphasis"
     },
     {
@@ -345,7 +345,7 @@
       "dot": "cyan",
       "title": "Same cores",
       "items": [
-        "Tools parse their arguments into typed requests and call _app/ directly",
+        "Multi-step tools call _app/ cores; simple reads and mutations call selected client namespaces",
         "One long-lived client serves every tool call in the process",
         "ChatTaskRegistry owns bounded detached asks for chat_start and chat_status",
         "mcp/ imports no click, rich or cli — pinned by test_mcp_boundary.py"

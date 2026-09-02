@@ -5042,7 +5042,7 @@
         <path data-edge-from="cores" data-edge-to="limiters" data-edge-label="admission" data-edge-key="6" data-edge-id="cores-limiters" data-composition-points="888.5,260;888.5,144" d="M 888.5 260 L 888.5 144" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
         <path data-edge-from="app" data-edge-to="errors" data-edge-label="classify" data-edge-key="7" data-edge-id="app-errors" data-composition-points="367,350;367,460" d="M 367 350 L 367 460" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="routes" data-edge-to="pending" data-edge-label="created ids" data-edge-key="8" data-edge-id="routes-pending" data-composition-points="629,350;629,460" d="M 629 350 L 629 460" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="cores" data-edge-to="passthrough" data-edge-label="rpc_call" data-edge-key="9" data-edge-id="cores-passthrough" data-composition-points="888.5,350;888.5,460" d="M 888.5 350 L 888.5 460" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="cores" data-edge-to="passthrough" data-edge-label="injected resolver" data-edge-key="9" data-edge-id="cores-passthrough" data-composition-points="888.5,350;888.5,460" d="M 888.5 350 L 888.5 460" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         <path data-edge-from="app" data-edge-to="healthz" data-edge-label="unguarded" data-edge-key="10" data-edge-id="app-healthz" data-composition-points="282,312;236,312;236,502;190,502" d="M 282 312 L 244 312 Q 236 312 236 320 L 236 494 Q 236 502 228 502 L 190 502" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
 
         <!-- Components -->
@@ -5185,15 +5185,15 @@
         <text data-detail="fine" x="629" y="536" class="t-database" font-size="7" text-anchor="middle">poll the resource</text>
         </g>
 
-        <g id="node-passthrough" data-node-id="passthrough" data-node-label="Passthrough" tabindex="0" role="button" aria-label="Focus Passthrough, raw RPC escape, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="raw RPC escape" data-node-context="Architecture component">
-          <title>Passthrough · raw RPC escape · Architecture component</title>
+        <g id="node-passthrough" data-node-id="passthrough" data-node-label="Full-ID Resolvers" tabindex="0" role="button" aria-label="Focus Full-ID Resolvers, identity functions, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="identity functions" data-node-context="Architecture component">
+          <title>Full-ID Resolvers · identity functions · Architecture component</title>
           <rect x="806" y="460" width="165" height="84" rx="6" class="c-mask"/>
           <rect x="806" y="460" width="165" height="84" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(812 466) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="888.5" y="500" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Passthrough</text>
-        <text data-detail="context" x="888.5" y="516" class="t-muted" font-size="9" text-anchor="middle">raw RPC escape</text>
+          <text data-node-label="" data-detail-anchor="" x="888.5" y="500" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Full-ID Resolvers</text>
+        <text data-detail="context" x="888.5" y="516" class="t-muted" font-size="9" text-anchor="middle">identity functions</text>
         </g>
 
         <!-- Connection labels -->
@@ -5233,9 +5233,9 @@
           <rect x="597.6" y="388" width="62.8" height="14" rx="3" class="c-mask"/>
           <text x="629" y="398" class="t-muted" font-size="8" text-anchor="middle">created ids</text>
         </g>
-        <g data-detail="context" data-edge-from="cores" data-edge-to="passthrough" data-edge-label="rpc_call" data-edge-key="9" data-edge-id="cores-passthrough">
-          <rect x="864.3" y="388" width="48.4" height="14" rx="3" class="c-mask"/>
-          <text x="888.5" y="398" class="t-messagebus" font-size="8" text-anchor="middle">rpc_call</text>
+        <g data-detail="context" data-edge-from="cores" data-edge-to="passthrough" data-edge-label="injected resolver" data-edge-key="9" data-edge-id="cores-passthrough">
+          <rect x="842.7" y="388" width="91.6" height="14" rx="3" class="c-mask"/>
+          <text x="888.5" y="398" class="t-messagebus" font-size="8" text-anchor="middle">injected resolver</text>
         </g>
         <g data-detail="context" data-edge-from="app" data-edge-to="healthz" data-edge-label="unguarded" data-edge-key="10" data-edge-id="app-healthz">
           <rect x="209.4" y="387" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
@@ -5462,7 +5462,7 @@
         </div>
         <ul>
           <li>&bull; One client is opened at ASGI lifespan, inside the server event loop</li>
-          <li>&bull; Routes map onto the same _app/ cores the CLI and MCP adapters use</li>
+          <li>&bull; Workflow routes use _app/ cores; simple operations call public client namespaces</li>
           <li>&bull; server/ imports no click, rich or cli — pinned by test_server_boundary.py</li>
         </ul>
       </div>

@@ -173,6 +173,15 @@
       "role": "main"
     },
     {
+      "from": "resolve",
+      "to": "capture",
+      "label": "installed browser",
+      "variant": "dashed",
+      "role": "branch",
+      "channelX": 420,
+      "labelDx": 24
+    },
+    {
       "from": "launch",
       "to": "capture",
       "label": "sign-in wait",

@@ -155,7 +155,8 @@ migration for each is in
 * Not every inline `warnings.warn(...)` is a deprecation. The
   `save_cookies_to_storage(original_snapshot=None)` legacy full-merge path is a
   *permanent* public-API back-compat shim (see
-  `docs/auth-cookie-lifecycle.md` Appendix A2), not a scheduled removal, so it emits
+  [`docs/auth-cookie-lifecycle.md`](auth-cookie-lifecycle.md#persistence-concurrency)), not a
+  scheduled removal, so it emits
   a **`RuntimeWarning`** safety advisory about the stale-overwrite-fresh race —
   outside ADR-0018's scope and intentionally **not** silenced by
   `NOTEBOOKLM_QUIET_DEPRECATIONS`.

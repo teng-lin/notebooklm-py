@@ -772,9 +772,8 @@ jobs:
         exit 1
 
   # ------------------------------------------------------------------
-  # Android gRPC canary — Layer 3 of
-  # docs/plan/2026-08-30-android-grpc-integration-testing.md. A light,
-  # READ-ONLY probe of the private Android gRPC backend: bearer mint plus
+  # Android gRPC canary — a light, READ-ONLY probe of the private Android
+  # gRPC backend: bearer mint plus
   # one forced refresh, unary GetProject, unary ListChatSessions, and a
   # strict protobuf decode that fingerprints each response's shape and
   # fails on any unknown field (``scripts/android_grpc_canary.py``). It is

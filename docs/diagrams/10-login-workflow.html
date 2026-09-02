@@ -5059,11 +5059,12 @@
         <!-- Edge paths -->
         <path data-edge-from="invoke" data-edge-to="resolve" data-edge-key="0" data-composition-points="122,119;266,119" d="M 122 119 L 266 119" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="resolve" data-edge-to="launch" data-edge-key="1" data-composition-points="300,145;300,243;396,243" d="M 300 145 L 300 243 L 396 243" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="launch" data-edge-to="capture" data-edge-label="sign-in wait" data-edge-key="2" data-composition-points="464,243;570,243" d="M 464 243 L 570 243" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="capture" data-edge-to="commit" data-edge-key="3" data-composition-points="625,269;625,352;625,352;625,457" d="M 625 269 L 625 352 L 625 352 L 625 457" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="resolve" data-edge-to="oauth" data-edge-label="master token" data-edge-key="4" data-composition-points="300,145;300,228;300,228;300,341" d="M 300 145 L 300 228 L 300 228 L 300 341" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="oauth" data-edge-to="mint" data-edge-key="5" data-composition-points="334,367;466,367" d="M 334 367 L 466 367" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="mint" data-edge-to="commit" data-edge-label="durable" data-edge-key="6" data-composition-points="500,393;500,491;591,491" d="M 500 393 L 500 491 L 591 491" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="resolve" data-edge-to="capture" data-edge-label="installed browser" data-edge-key="2" data-composition-points="334,119;625,119;625,217" d="M 334 119 L 625 119 L 625 217" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="launch" data-edge-to="capture" data-edge-label="sign-in wait" data-edge-key="3" data-composition-points="464,243;570,243" d="M 464 243 L 570 243" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="capture" data-edge-to="commit" data-edge-key="4" data-composition-points="625,269;625,352;625,352;625,457" d="M 625 269 L 625 352 L 625 352 L 625 457" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="resolve" data-edge-to="oauth" data-edge-label="master token" data-edge-key="5" data-composition-points="300,145;300,228;300,228;300,341" d="M 300 145 L 300 228 L 300 228 L 300 341" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="oauth" data-edge-to="mint" data-edge-key="6" data-composition-points="334,367;466,367" d="M 334 367 L 466 367" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="mint" data-edge-to="commit" data-edge-label="durable" data-edge-key="7" data-composition-points="500,393;500,491;591,491" d="M 500 393 L 500 491 L 591 491" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
 
         <!-- Nodes -->
         <g id="node-invoke" data-node-id="invoke" data-node-label="login" tabindex="0" role="button" aria-label="Focus login, operator, CLI command › Select source" aria-pressed="false" data-node-kind="external" data-node-sublabel="operator" data-node-context="CLI command › Select source">
@@ -5151,17 +5152,21 @@
         <!-- Edge labels -->
 
 
-        <g data-detail="context" data-edge-from="launch" data-edge-to="capture" data-edge-label="sign-in wait" data-edge-key="2">
+        <g data-detail="context" data-edge-from="resolve" data-edge-to="capture" data-edge-label="installed browser" data-edge-key="2">
+          <rect x="457.7" y="99" width="91.6" height="14" rx="3" class="c-mask"/>
+          <text x="503.5" y="109" class="t-database" font-size="8" text-anchor="middle">installed browser</text>
+        </g>
+        <g data-detail="context" data-edge-from="launch" data-edge-to="capture" data-edge-label="sign-in wait" data-edge-key="3">
           <rect x="483.2" y="223" width="67.6" height="14" rx="3" class="c-mask"/>
           <text x="517" y="233" class="t-backend" font-size="8" text-anchor="middle">sign-in wait</text>
         </g>
 
-        <g data-detail="context" data-edge-from="resolve" data-edge-to="oauth" data-edge-label="master token" data-edge-key="4">
+        <g data-detail="context" data-edge-from="resolve" data-edge-to="oauth" data-edge-label="master token" data-edge-key="5">
           <rect x="214.2" y="208" width="67.6" height="14" rx="3" class="c-mask"/>
           <text x="248" y="218" class="t-database" font-size="8" text-anchor="middle">master token</text>
         </g>
 
-        <g data-detail="context" data-edge-from="mint" data-edge-to="commit" data-edge-label="durable" data-edge-key="6">
+        <g data-detail="context" data-edge-from="mint" data-edge-to="commit" data-edge-label="durable" data-edge-key="7">
           <rect x="478.2" y="432" width="43.6" height="14" rx="3" class="c-mask"/>
           <text x="500" y="442" class="t-database" font-size="8" text-anchor="middle">durable</text>
         </g>

@@ -23,6 +23,30 @@ Known library errors exit `1`. In JSON output, common codes include
 and `VALIDATION_ERROR`. An unhandled exception is `UNEXPECTED_ERROR` and exits
 `2`.
 
+The complete central mapping is:
+
+| Exception or failure | JSON `code` | Exit |
+|---|---|---:|
+| Any emitted exception marked `unconfirmed=True` | `UNCONFIRMED_WRITE` | Inherits the matched branch (`1` for handled library errors; `2` for an unexpected exception) |
+| `RateLimitError` | `RATE_LIMITED` | `1` |
+| `AuthError` | `AUTH_ERROR` | `1` |
+| `ValidationError` | `VALIDATION_ERROR` | `1` |
+| `ConfigurationError` | `CONFIG_ERROR` | `1` |
+| `NetworkError` | `NETWORK_ERROR` | `1` |
+| `NotebookLimitError` | `NOTEBOOK_LIMIT` | `1` |
+| `ArtifactTimeoutError` | `ARTIFACT_TIMEOUT` | `1` |
+| `NotFoundError` and domain `*NotFoundError` | `NOT_FOUND` | `1` |
+| Other `NotebookLMError` | `NOTEBOOKLM_ERROR` | `1` |
+| `KeyboardInterrupt` | `CANCELLED` | `130` |
+| Unhandled `Exception` | `UNEXPECTED_ERROR` | `2` |
+
+The `UNCONFIRMED_WRITE` override takes precedence over the exception-type mapping. It means the
+write may have committed, so callers should reconcile state before retrying to avoid duplicates.
+
+Parse-time Click usage/parameter failures use `VALIDATION_ERROR` under `--json` while preserving
+Click's exit (`2` for usage errors, otherwise the Click exception's exit). Post-parse Click
+validation raised from a command body uses `VALIDATION_ERROR` and exits `1`.
+
 Click parser errors (for example an unknown flag or a missing required value)
 normally exit `2`. With `--json`, the root command emits a
 `VALIDATION_ERROR` envelope on stdout while preserving Click's exit status;

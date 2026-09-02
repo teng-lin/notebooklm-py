@@ -853,7 +853,7 @@ class TestDriveDocumentIdDriftWarning:
 #
 # Fixture provenance: the settings-block shapes below are the ones observed
 # across 409 live source rows in the 2026-08-07 wire audit
-# (``docs/notes/web-rpc-vs-mobile-grpc-audit-2026-08-07.md`` §1.6):
+# (Web and Android transports):
 #
 #     402x  [null, 2]                       — no Drive-status slot
 #       4x  [null, 2, null, 3]              — Drive-backed, ACTIVE

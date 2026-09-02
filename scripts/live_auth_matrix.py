@@ -997,7 +997,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--skip-browser",
         action="store_true",
         help=(
-            "Skip rookiepy browser discovery/login and browser-refresh cells. "
+            "Skip rookie-cookies browser discovery/login and browser-refresh cells. "
             "Storage-only mid-session recovery and RPC access-gate cells still run."
         ),
     )
