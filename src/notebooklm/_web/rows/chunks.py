@@ -7,7 +7,6 @@ import reprlib
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from ..._sources import finalize_search_results
 from ...exceptions import DecodingError
 from ...types import RelevantChunk
 
@@ -104,9 +103,12 @@ class RelevantChunkRow:
         if not isinstance(span, list) or len(span) <= self._SPAN_END_POS:
             return None
         start, end = span[self._SPAN_START_POS], span[self._SPAN_END_POS]
-        if any(
-            not isinstance(value, int) or isinstance(value, bool) or value < 0
-            for value in (start, end)
+        if (
+            any(
+                not isinstance(value, int) or isinstance(value, bool) or value < 0
+                for value in (start, end)
+            )
+            or start > end
         ):
             return None
         return start, end
@@ -151,7 +153,7 @@ def decode_relevant_chunks(
     method_id: str,
     logger: logging.Logger,
 ) -> list[RelevantChunk]:
-    """Decode and globally rank a ``RetrieveRelevantChunks`` response."""
+    """Decode a ``RetrieveRelevantChunks`` response in wire order."""
     decoded: list[RelevantChunk] = []
     for raw_source in unwrap_relevant_chunk_sources(payload, method_id=method_id):
         source = RelevantChunkSourceRow(raw_source)
@@ -183,4 +185,4 @@ def decode_relevant_chunks(
                     end=None if span is None else span[1],
                 )
             )
-    return finalize_search_results(decoded, None)
+    return decoded

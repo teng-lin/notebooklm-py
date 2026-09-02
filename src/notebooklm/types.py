@@ -399,6 +399,7 @@ for _public_moved_type in (
     ExpertIntelligenceSourceMetadata,
     PlayBook,
     PlayBookExportReason,
+    RelevantChunk,
     Source,
     SourceFulltext,
     SourceGuide,

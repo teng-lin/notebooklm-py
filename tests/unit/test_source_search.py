@@ -121,6 +121,10 @@ class TestRows:
         assert row.span is None
         assert row.is_well_formed
 
+    @pytest.mark.parametrize("start,end", [(-1, 10), (0, -1), (11, 10)])
+    def test_chunk_invalid_span_degrades_to_none(self, start: int, end: int) -> None:
+        assert RelevantChunkRow(_chunk(TEXT_A, 1, start, end)).span is None
+
     @pytest.mark.parametrize("raw", [None, [], [None, 1], [[[[""]]], 1], "text", [[[[1]]], 1]])
     def test_chunk_row_without_text_is_malformed(self, raw: Any) -> None:
         assert not RelevantChunkRow(raw).is_well_formed
@@ -132,19 +136,17 @@ class TestRows:
             RelevantChunk(source_id=SRC_A, text=TEXT_A, rank=2, start=0, end=903),
         ]
 
-    def test_decode_sorts_by_rank_not_document_order(self) -> None:
-        # Live: chunks within a source arrive in document order carrying a
-        # global rank; the API contract is most-relevant first.
+    def test_decode_preserves_wire_order_for_service_finalization(self) -> None:
         payload = [[[SRC_A, [_chunk("first", 14, 0, 10), _chunk("best", 1, 20, 30)]]]]
         chunks = decode_relevant_chunks(payload, method_id="ASU5Oe", logger=_LOGGER)
-        assert [c.text for c in chunks] == ["best", "first"]
-        assert [c.rank for c in chunks] == [1, 14]
+        assert [c.text for c in chunks] == ["first", "best"]
+        assert [c.rank for c in chunks] == [14, 1]
 
-    def test_decode_unranked_chunks_sort_last_in_arrival_order(self) -> None:
+    def test_decode_unranked_chunks_remain_in_arrival_order(self) -> None:
         payload = [[[SRC_A, [[[[["z"]]]], _chunk("ranked", 2, 0, 1), [[[["y"]]]]]]]]
         chunks = decode_relevant_chunks(payload, method_id="ASU5Oe", logger=_LOGGER)
-        assert [c.text for c in chunks] == ["ranked", "z", "y"]
-        assert [c.rank for c in chunks] == [2, 0, 0]
+        assert [c.text for c in chunks] == ["z", "ranked", "y"]
+        assert [c.rank for c in chunks] == [0, 2, 0]
 
     def test_decode_skips_malformed_rows_and_logs(self, caplog: pytest.LogCaptureFixture) -> None:
         payload = [
@@ -201,6 +203,10 @@ class TestRelevantChunkType:
         chunk = RelevantChunk(source_id=SRC_A, text="t", rank=1)
         with pytest.raises(AttributeError):
             chunk.text = "u"  # type: ignore[misc]
+
+    def test_rejects_inverted_span(self) -> None:
+        with pytest.raises(ValueError, match="less than or equal"):
+            RelevantChunk(source_id=SRC_A, text="t", rank=1, start=2, end=1)
 
 
 class TestService:

@@ -49,6 +49,12 @@ def _decode_response(response: Any, limit: int | None) -> list[RelevantChunk]:
             if chunk.spans:
                 start = int(chunk.spans[0].start)
                 end = int(chunk.spans[0].end)
+                if start < 0 or end < 0 or start > end:
+                    logger.warning(
+                        "RetrieveRelevantChunks: omitting malformed Android span for source %s",
+                        source_id,
+                    )
+                    start = end = None
             else:
                 start = end = None
             decoded.append(

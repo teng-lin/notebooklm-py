@@ -473,6 +473,8 @@ class RelevantChunk:
                 raise ValueError(f"{name} must be a non-negative integer or None")
         if (self.start is None) != (self.end is None):
             raise ValueError("start and end must either both be set or both be None")
+        if self.start is not None and self.end is not None and self.start > self.end:
+            raise ValueError("start must be less than or equal to end")
 
 
 @dataclass

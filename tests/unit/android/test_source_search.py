@@ -137,6 +137,21 @@ async def test_search_multi_part_text_is_joined_and_missing_span_is_none() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("start,end", [(-1, 10), (0, -1), (11, 10)])
+async def test_search_omits_malformed_span(start: int, end: int) -> None:
+    reply = sources_pb2.RetrieveRelevantChunksResponse(
+        source_chunks=[
+            sources_pb2.SourceRelevantChunks(
+                source_id=SRC_A,
+                chunks=[_chunk("kept", 1, start, end)],
+            )
+        ]
+    )
+    transport = FakeTransport({RETRIEVE_RELEVANT_CHUNKS_METHOD: [reply]})
+    assert await _api(transport).search(NB, "q") == [RelevantChunk(SRC_A, "kept", 1, None, None)]
+
+
+@pytest.mark.asyncio
 async def test_search_skips_textless_chunks_and_idless_sources() -> None:
     reply = sources_pb2.RetrieveRelevantChunksResponse(
         source_chunks=[

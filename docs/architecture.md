@@ -1029,7 +1029,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/read_pb2_grpc.py` | Deterministic service-free companion for the read message overlay. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/notebooks_pb2.py` | Durable exact-package notebook mutation/guide messages imported by the cumulative service; local parser overrides remain only for live-only fields. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/notebooks_pb2_grpc.py` | Deterministic service-free companion for the exact notebook message overlay. |
-| `_android/proto/google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2.py` | Sole exact-package cumulative orchestration descriptor: 54 implemented methods, including exact `RemoveRecentlyViewedProject`, live APK-exact `DeriveArtifact`, and sixteen conventional-name signatures explicitly tracked as Web-derived inferences; the separate sharing descriptor adds two exact paths and the exception manifest is empty. |
+| `_android/proto/google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2.py` | Sole exact-package cumulative orchestration descriptor: 55 implemented methods, including exact `RemoveRecentlyViewedProject`, live APK-exact `DeriveArtifact`, and sixteen conventional-name signatures explicitly tracked as Web-derived inferences; the separate sharing descriptor adds two exact paths and the exception manifest is empty. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2_grpc.py` | Generated `LabsTailwindOrchestrationServiceStub` exposing the cumulative exact unary and unary-stream methods. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/sources_pb2.py` | Source-operation and `UploadFileRequest` descriptors plus the explicitly web-derived `MutateSource` request/response wrapper. |
 | `_android/proto/google/internal/labs/tailwind/orchestration/v1/artifacts_pb2.py` | Artifact request/response and projection overlay, including the explicitly web-derived report-suggestion closure. |
@@ -1360,7 +1360,7 @@ src/notebooklm/
 │           │   ├── notebooks_pb2.py         # Exact notebook messages/descriptors
 │           │   ├── notebooks_pb2_grpc.py    # Deterministic service-free companion
 │           │   ├── orchestration_service_pb2.py      # Cumulative exact service descriptor
-│           │   ├── orchestration_service_pb2_grpc.py # 54-method generated stub
+│           │   ├── orchestration_service_pb2_grpc.py # 55-method generated stub
 │           │   ├── sources_pb2.py               # Source and generic-upload descriptors
 │           │   ├── sources_pb2_grpc.py          # Deterministic service-free companion
 │           │   ├── artifacts_pb2.py         # Exact artifact message overlay
