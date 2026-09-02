@@ -162,6 +162,7 @@ _PUBLIC_MOVABLE_CLASSES = [
     "NotebookDescription",
     "NotebookMetadata",
     "ReportSuggestion",
+    "RelevantChunk",
     "RpcTelemetryEvent",
     "SharedUser",
     "ShareStatus",

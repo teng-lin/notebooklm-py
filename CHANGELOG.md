@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server-owned stream when passed a detached `task_id`, while existing
   `chat_status(notebook=...)` exposes live session state. The MCP registry is
   now explicitly bound and cleared by the server lifespan loop protocol.
+- `sources.search(notebook_id, query, *, source_ids=None, limit=None)` on **both**
+  the Web and Android backends: ranked passage retrieval through
+  `RetrieveRelevantChunks` (Web id `ASU5Oe`) with optional source filtering and
+  a client-side global result limit. Results are immutable `RelevantChunk`
+  values carrying `source_id`, joined `text`, global `rank`, and the backend's
+  source-relative `start` / `end` span. The Web response layout and native
+  Android route were live-verified independently; the Android protobuf overlay,
+  public-client cassettes, and lazy-module-aware RPC drift classification pin the
+  recovered contract (#2283).
 - **Google Play Books ("Expert Intelligence") sources** (#2292), initially on
   the web backend: `sources.list_play_books()` lists the account's Play Books library as
   `PlayBook` rows (content id, title, authors, `export_disabled` + `reason`),

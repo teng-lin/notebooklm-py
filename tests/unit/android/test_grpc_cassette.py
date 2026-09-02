@@ -126,6 +126,8 @@ _CASSETTE_MESSAGE_TYPES = (
     sources_pb2.CheckSourceFreshnessRequest,
     sources_pb2.CheckSourceFreshnessResponse,
     sources_pb2.DeleteSourcesRequest,
+    sources_pb2.RetrieveRelevantChunksRequest,
+    sources_pb2.RetrieveRelevantChunksResponse,
     # sources (#2283): AddSourcesAsync, AppendSource, CopySourcesAsync
     sources_pb2.AddSourcesAsyncResponse,
     sources_pb2.AppendSourceRequest,

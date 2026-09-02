@@ -237,6 +237,7 @@ def test_exact_abstract_sets_and_android_adapters_are_concrete() -> None:
             "list",
             "refresh",
             "rename",
+            "search",
         }
     )
     assert AndroidNotebooksAPI.__abstractmethods__ == frozenset()

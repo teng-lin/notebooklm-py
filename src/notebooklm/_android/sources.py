@@ -18,7 +18,7 @@ from typing import Any, Literal, Protocol, TypeVar, cast
 from .._deadline import RuntimeDeadline
 from .._idempotency import mark_unconfirmed
 from .._source.batch import SourceUrlBatchItem
-from .._sources import SourcesAPI
+from .._sources import SourcesAPI, validate_search
 from .._types.documents import StructuredDocument
 from .._types.research import SourceGuide
 from .._url_utils import is_youtube_url
@@ -38,7 +38,7 @@ from ..exceptions import (
     SourceTimeoutError,
     ValidationError,
 )
-from ..types import PlayBook, Source, SourceFulltext, SourceStatus, SourceType
+from ..types import PlayBook, RelevantChunk, Source, SourceFulltext, SourceStatus, SourceType
 from .codecs.documents import decode_document, tailwind_doc_markdown, tailwind_doc_plain_text
 from .codecs.notebooks import decode_project, map_get_project_error, validate_project_identity
 from .codecs.sources import decode_source, decode_sources, select_document_guide
@@ -51,6 +51,7 @@ from .play_books import (
     tentative_source_ids,
 )
 from .session import AndroidSession
+from .source_search import AndroidSourceSearchService
 from .source_transfers import (
     ADD_SOURCES_ASYNC_METHOD,
     APPEND_SOURCE_METHOD,
@@ -391,6 +392,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         wait with a stepping clock instead of racing ``time.monotonic()``.
         """
         self._transport = session
+        self._searcher = AndroidSourceSearchService(session)
         self._upload_pipeline = upload_pipeline
         self._add_file_compat = add_file_compat
         self._phenotype = phenotype or PhenotypeTokenProvider()
@@ -418,6 +420,23 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
             strict=strict,
             status_filter=status_filter,
             type_filter=type_filter,
+        )
+
+    async def search(
+        self,
+        notebook_id: str,
+        query: str,
+        *,
+        source_ids: Sequence[str] | None = None,
+        limit: int | None = None,
+    ) -> builtins.list[RelevantChunk]:
+        """Search indexed source passages through native Android gRPC."""
+        query, normalized_ids, limit = validate_search(query, source_ids, limit)
+        return await self._searcher.search(
+            notebook_id,
+            query,
+            source_ids=normalized_ids,
+            limit=limit,
         )
 
     async def _list_project_sources(

@@ -6,7 +6,7 @@ import asyncio
 import builtins
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Sequence
 from pathlib import Path
 from time import monotonic
 from typing import Any, Literal
@@ -15,10 +15,57 @@ from ._lookup import unwrap_or_raise
 from ._source.batch import SourceUrlBatchItem
 from ._source.polling import SourcePoller, SourceWaitResult
 from ._types.research import SourceGuide
-from .exceptions import SourceNotFoundError
-from .types import CopiedSource, PlayBook, Source, SourceFulltext, SourceStatus, SourceType
+from .exceptions import SourceNotFoundError, ValidationError
+from .types import (
+    CopiedSource,
+    PlayBook,
+    RelevantChunk,
+    Source,
+    SourceFulltext,
+    SourceStatus,
+    SourceType,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def validate_search(
+    query: str,
+    source_ids: Sequence[str] | None,
+    limit: int | None,
+) -> tuple[str, tuple[str, ...], int | None]:
+    """Validate and normalize transport-neutral source-search inputs."""
+    if not isinstance(query, str) or not query.strip():
+        raise ValidationError("query must be a non-empty string")
+    normalized_query = query.strip()
+
+    if source_ids is None:
+        normalized_ids: tuple[str, ...] = ()
+    else:
+        if isinstance(source_ids, (str, bytes)):
+            raise ValidationError("source_ids must be a sequence of source IDs")
+        deduplicated: list[str] = []
+        seen: set[str] = set()
+        for source_id in source_ids:
+            if not isinstance(source_id, str) or not source_id:
+                raise ValidationError("source_ids must contain only non-empty strings")
+            if source_id not in seen:
+                seen.add(source_id)
+                deduplicated.append(source_id)
+        normalized_ids = tuple(deduplicated)
+
+    if limit is not None and (not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0):
+        raise ValidationError("limit must be a positive integer")
+    return normalized_query, normalized_ids, limit
+
+
+def finalize_search_results(
+    chunks: Sequence[RelevantChunk],
+    limit: int | None,
+) -> list[RelevantChunk]:
+    """Return globally ranked chunks, with unranked rows stable and last."""
+    ranked = sorted(chunks, key=lambda chunk: (chunk.rank == 0, chunk.rank))
+    return ranked if limit is None else ranked[:limit]
 
 
 class SourcesAPI(ABC):
@@ -43,6 +90,32 @@ class SourcesAPI(ABC):
         types: Collection[SourceType] | None = None,
     ) -> list[Source]:
         """List all sources in a notebook."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def search(
+        self,
+        notebook_id: str,
+        query: str,
+        *,
+        source_ids: Sequence[str] | None = None,
+        limit: int | None = None,
+    ) -> builtins.list[RelevantChunk]:
+        """Search indexed source passages by relevance.
+
+        Args:
+            notebook_id: Notebook containing the sources to search.
+            query: Natural-language relevance query; surrounding whitespace is
+                ignored and a blank query is rejected.
+            source_ids: Optional source-id filter. Duplicates are collapsed in
+                first-seen order; ``None`` or an empty sequence searches all
+                sources in the notebook.
+            limit: Optional positive maximum number of chunks returned after
+                global relevance ranking.
+
+        Returns:
+            Relevant source chunks ordered most-relevant first.
+        """
         raise NotImplementedError
 
     async def get(self, notebook_id: str, source_id: str) -> Source:

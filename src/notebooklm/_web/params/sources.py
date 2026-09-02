@@ -16,6 +16,24 @@ class ResumableUploadStartRequest:
     body: str
 
 
+def build_retrieve_relevant_chunks_params(
+    notebook_id: str,
+    query: str,
+    source_ids: list[str] | tuple[str, ...] | None,
+) -> list[Any]:
+    """Build ``RetrieveRelevantChunks`` params from its live proto layout.
+
+    Fields 1/2 are notebook id and query, field 3 is unused, and field 4 is
+    the retrieval-options message with mode ``1``. Field 5 is omitted when no
+    source filter is requested; when present it wraps the repeated ``SourceId``
+    messages in the filter message.
+    """
+    params: list[Any] = [notebook_id, query, None, [1]]
+    if source_ids:
+        params.append([[[source_id] for source_id in source_ids]])
+    return params
+
+
 def build_template_block() -> list[Any]:
     """Return the nested request-options wrapper ``[2, None, None, [1, ..., [1]]]``.
 

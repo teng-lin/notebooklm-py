@@ -221,6 +221,53 @@ message UploadFileRequest {
   .labs.language.tailwind.common.protos.Provenance provenance = 6; // evidence: docs/android/file-transfer-evidence.md
 }
 
+// RetrieveRelevantChunks is absent from the app's eager generated closure but
+// is served by both front doors. The request and response tags below were
+// cross-checked against a successful Web call and live Android bearer calls on
+// 2026-09-01 (docs/android/source-search-evidence.md#wire-layout; #2283).
+message RetrieveRelevantChunksOptions {
+  int32 mode = 1;
+}
+
+message SourceIdFilter {
+  repeated SourceId source_ids = 1;
+}
+
+message RetrieveRelevantChunksRequest {
+  string project_id = 1;
+  string query = 2;
+  RetrieveRelevantChunksOptions options = 4;
+  SourceIdFilter source_filter = 5;
+}
+
+message RelevantChunkText {
+  repeated string parts = 1;
+}
+
+message RelevantChunkContent {
+  RelevantChunkText text = 1;
+}
+
+message RelevantChunkSpan {
+  int32 start = 2;
+  int32 end = 3;
+}
+
+message RelevantChunk {
+  RelevantChunkContent content = 1;
+  int32 rank = 2;
+  repeated RelevantChunkSpan spans = 3;
+}
+
+message SourceRelevantChunks {
+  string source_id = 1;
+  repeated RelevantChunk chunks = 2;
+}
+
+message RetrieveRelevantChunksResponse {
+  repeated SourceRelevantChunks source_chunks = 1;
+}
+
 // ---------------------------------------------------------------------------
 // #2283 transfer family. None of these messages are compiled into the official
 // app; their tag layout is pinned by successful live Android gRPC calls

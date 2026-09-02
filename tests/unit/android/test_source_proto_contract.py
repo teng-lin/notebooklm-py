@@ -71,6 +71,15 @@ def test_source_generated_package_overlay_is_complete_and_service_free() -> None
         "PlainTextSourceContent",
         "RefreshSourceRequest",
         "RefreshSourceResponse",
+        "RelevantChunk",
+        "RelevantChunkContent",
+        "RelevantChunkSpan",
+        "RelevantChunkText",
+        "RetrieveRelevantChunksOptions",
+        "RetrieveRelevantChunksRequest",
+        "RetrieveRelevantChunksResponse",
+        "SourceIdFilter",
+        "SourceRelevantChunks",
         "ChangeTitle",
         "Snippet",
         "SourceMutation",
@@ -245,6 +254,57 @@ def test_source_generated_package_overlay_is_complete_and_service_free() -> None
             FieldDescriptor.TYPE_MESSAGE,
             f"{COMMON_PACKAGE}.Provenance",
         ),
+    }
+
+
+def test_retrieve_relevant_chunks_shapes_are_live_pinned() -> None:
+    """#2283: the Web layout and native Android reply agree field-for-field."""
+    message = FieldDescriptor.TYPE_MESSAGE
+    string = FieldDescriptor.TYPE_STRING
+    integer = FieldDescriptor.TYPE_INT32
+    assert _shape(sources_pb2.RetrieveRelevantChunksOptions) == {
+        "mode": (1, False, integer, None),
+    }
+    assert _shape(sources_pb2.SourceIdFilter) == {
+        "source_ids": (1, True, message, f"{ORCHESTRATION_PACKAGE}.SourceId"),
+    }
+    assert _shape(sources_pb2.RetrieveRelevantChunksRequest) == {
+        "project_id": (1, False, string, None),
+        "query": (2, False, string, None),
+        "options": (
+            4,
+            False,
+            message,
+            f"{ORCHESTRATION_PACKAGE}.RetrieveRelevantChunksOptions",
+        ),
+        "source_filter": (
+            5,
+            False,
+            message,
+            f"{ORCHESTRATION_PACKAGE}.SourceIdFilter",
+        ),
+    }
+    assert _shape(sources_pb2.RelevantChunkText) == {
+        "parts": (1, True, string, None),
+    }
+    assert _shape(sources_pb2.RelevantChunkContent) == {
+        "text": (1, False, message, f"{ORCHESTRATION_PACKAGE}.RelevantChunkText"),
+    }
+    assert _shape(sources_pb2.RelevantChunkSpan) == {
+        "start": (2, False, integer, None),
+        "end": (3, False, integer, None),
+    }
+    assert _shape(sources_pb2.RelevantChunk) == {
+        "content": (1, False, message, f"{ORCHESTRATION_PACKAGE}.RelevantChunkContent"),
+        "rank": (2, False, integer, None),
+        "spans": (3, True, message, f"{ORCHESTRATION_PACKAGE}.RelevantChunkSpan"),
+    }
+    assert _shape(sources_pb2.SourceRelevantChunks) == {
+        "source_id": (1, False, string, None),
+        "chunks": (2, True, message, f"{ORCHESTRATION_PACKAGE}.RelevantChunk"),
+    }
+    assert _shape(sources_pb2.RetrieveRelevantChunksResponse) == {
+        "source_chunks": (1, True, message, f"{ORCHESTRATION_PACKAGE}.SourceRelevantChunks"),
     }
 
 

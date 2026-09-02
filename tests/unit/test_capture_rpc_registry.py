@@ -90,6 +90,15 @@ def test_diff_buckets() -> None:
     assert set(buckets["unmapped"]) == {"NewOne"}
 
 
+def test_live_probed_lazy_module_id_is_not_reported_as_absent() -> None:
+    """ASU5Oe is loaded after entry-bundle startup; its direct probe owns drift."""
+    ours = {"ASU5Oe": "RETRIEVE_RELEVANT_CHUNKS", "ZZxxYY": "GONE"}
+    buckets = diff(ours, {}, "")
+
+    assert buckets["lazy_module"] == {"ASU5Oe": "RETRIEVE_RELEVANT_CHUNKS"}
+    assert buckets["absent"] == {"ZZxxYY": "GONE"}
+
+
 def test_main_bundle_file_mode(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """End-to-end offline run of main() via --bundle-file / --types (no network/auth).
 

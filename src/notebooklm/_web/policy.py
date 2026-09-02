@@ -742,6 +742,9 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
             "set notebook title/settings to caller-supplied values; replay leaves the same state"
         ),
         RPCMethod.GET_SOURCE: "read-only source content fetch; replay does not mutate source state",
+        RPCMethod.RETRIEVE_RELEVANT_CHUNKS: (
+            "read-only ranked source-passage retrieval; replay does not mutate source state"
+        ),
         RPCMethod.CHECK_SOURCE_FRESHNESS: (
             "read-only freshness check; replay does not start a refresh job"
         ),

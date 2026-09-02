@@ -138,6 +138,10 @@ class RPCMethod(str, Enum):
     REFRESH_SOURCE = "FLmJqe"  # -> RefreshSource
     CHECK_SOURCE_FRESHNESS = "yR9Yof"  # -> CheckSourceFreshness
     UPDATE_SOURCE = "b7Wfje"  # -> MutateSource
+    # -> RetrieveRelevantChunks. Ranked passage retrieval across all notebook
+    # sources or an explicit source-id subset. The registration lives in a
+    # lazy Web module rather than the entry bundle (#2283).
+    RETRIEVE_RELEVANT_CHUNKS = "ASU5Oe"
     # -> AddSourcesAsync. Same request as AddSources; returns the queued stub
     # rows plus a per-source acknowledgement list without waiting for ingest
     # (#2283). Served to both front doors (live-verified 2026-09-01).

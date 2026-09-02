@@ -443,6 +443,40 @@ class ExpertIntelligenceSourceMetadata:
     field_type: float | None
 
 
+@dataclass(frozen=True)
+class RelevantChunk:
+    """A source passage returned by :meth:`SourcesAPI.search`.
+
+    ``rank`` is global across the searched sources: lower values are more
+    relevant, while ``0`` means the backend omitted a rank. ``start`` and
+    ``end`` are source-relative character offsets when the backend supplies a
+    span; both are ``None`` when it does not.
+    """
+
+    source_id: str
+    text: str
+    rank: int
+    start: int | None = None
+    end: int | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source_id, str) or not self.source_id:
+            raise ValueError("source_id must be a non-empty string")
+        if not isinstance(self.text, str) or not self.text:
+            raise ValueError("text must be a non-empty string")
+        if not isinstance(self.rank, int) or isinstance(self.rank, bool) or self.rank < 0:
+            raise ValueError("rank must be a non-negative integer")
+        for name, value in (("start", self.start), ("end", self.end)):
+            if value is not None and (
+                not isinstance(value, int) or isinstance(value, bool) or value < 0
+            ):
+                raise ValueError(f"{name} must be a non-negative integer or None")
+        if (self.start is None) != (self.end is None):
+            raise ValueError("start and end must either both be set or both be None")
+        if self.start is not None and self.end is not None and self.start > self.end:
+            raise ValueError("start must be less than or equal to end")
+
+
 @dataclass
 class Source:
     """Represents a NotebookLM source."""

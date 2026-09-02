@@ -95,6 +95,7 @@ _TRANSFER_VCR = "tests/integration/test_transfer_rpcs_vcr.py"
 _DISCOVER_VCR = "tests/integration/test_research_discover_vcr.py"
 _PLAY_BOOKS_VCR = "tests/integration/test_play_books_vcr.py"
 _CHAT_SESSION_CONTROL_VCR = "tests/integration/test_chat_session_control_vcr.py"
+_SOURCE_SEARCH_VCR = "tests/integration/test_source_search_vcr.py"
 
 GoldenPointer = tuple[str, str]
 
@@ -148,6 +149,9 @@ GOLDEN_COVERAGE: dict[RPCMethod, tuple[GoldenPointer, ...]] = {
     ),
     RPCMethod.ADD_SOURCE_FILE: (
         (_GOLDEN_EXPANSION, "TestSourceMutationsGoldenDecoded::test_add_file_decoded_golden"),
+    ),
+    RPCMethod.RETRIEVE_RELEVANT_CHUNKS: (
+        (_SOURCE_SEARCH_VCR, "test_source_search_ranks_limits_and_filters"),
     ),
     RPCMethod.UPDATE_SOURCE: (
         (_GOLDEN_EXPANSION, "TestSourceMutationsGoldenDecoded::test_rename_decoded_golden"),

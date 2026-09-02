@@ -1,0 +1,74 @@
+{
+  "method_name": "RETRIEVE_RELEVANT_CHUNKS",
+  "method_id": "ASU5Oe",
+  "description": "Search ranked source passages, optionally filtered by source id (#2283).",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001",
+      "semantic query",
+      null,
+      [
+        1
+      ],
+      [
+        [
+          [
+            "SCRUBBED_SRC_001"
+          ]
+        ]
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "ASU5Oe",
+          "[\"SCRUBBED_NB_001\",\"semantic query\",null,[1],[[[\"SCRUBBED_SRC_001\"]]]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "ASU5Oe",
+          "[[[\"SCRUBBED_SRC_001\",[[[[[\"Chunk text.\"]]],1,[[null,0,11]]]]]]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": [
+      [
+        [
+          "SCRUBBED_SRC_001",
+          [
+            [
+              [
+                [
+                  [
+                    "Chunk text."
+                  ]
+                ]
+              ],
+              1,
+              [
+                [
+                  null,
+                  0,
+                  11
+                ]
+              ]
+            ]
+          ]
+        ]
+      ]
+    ]
+  }
+}
