@@ -163,6 +163,7 @@ def test_exact_public_manifest_and_abstract_set() -> None:
     }
     assert manifest == {
         "start",
+        "discover",
         "poll",
         "wait_for_completion",
         "cancel",
@@ -172,7 +173,7 @@ def test_exact_public_manifest_and_abstract_set() -> None:
         "select_cited_sources",
     }
     assert BaseResearchAPI.__abstractmethods__ == frozenset(
-        {"start", "poll", "cancel", "import_sources"}
+        {"start", "discover", "poll", "cancel", "import_sources"}
     )
     assert ResearchAPI is WebResearchAPI
     assert AndroidResearchAPI.__abstractmethods__ == frozenset()
@@ -303,14 +304,85 @@ async def test_synchronous_discover_sources_uses_committed_mobile_binding_once()
             ]
         }
     )
-    result = await api._discover_sources("nb", "q")
+    result = await api.discover("nb", "q")
     method, request, kwargs = transport.calls[0]
     assert method == DISCOVER_SOURCES_METHOD
     assert request.discovery_context.context == "q"
     assert request.discovery_mode == research_pb2.DEFAULT_LLM_SEARCH
     assert request.project_id == "nb"
     assert kwargs["replay_safe"] is False
+    assert transport.scopes == ["research.discover"]
     assert result.task_id == RUN_ID and result.summary == "overview"
+    assert result.status is ResearchStatus.COMPLETED and result.status_code == 2
+    assert result.discovery_mode is DiscoveryMode.DEFAULT_LLM_SEARCH
+    assert result.query == "q" and result.source_type == 1
+    assert [(src.url, src.title, src.research_task_id) for src in result.sources] == [
+        ("https://example.com/a", "A", RUN_ID)
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "query", "expected_mode", "sent_query"),
+    [
+        ("raw", "q", research_pb2.RAW_SEARCH, "q"),
+        ("curious", "", research_pb2.CURIOUS_SEARCH, ""),
+        ("CURIOUS_RAW", "", research_pb2.CURIOUS_RAW_SEARCH, ""),
+        # Curious modes always send an empty context, whatever the caller passed.
+        ("curious", "ignored text", research_pb2.CURIOUS_SEARCH, ""),
+    ],
+)
+async def test_discover_sends_the_selected_mode_and_allows_an_empty_curious_query(
+    mode: str, query: str, expected_mode: int, sent_query: str
+) -> None:
+    api, transport = _api(
+        {
+            DISCOVER_SOURCES_METHOD: [
+                research_pb2.DiscoverSourcesResponse(
+                    discover_sources_feedback_key=research_pb2.DiscoverSourcesFeedbackKey(
+                        discover_sources_id=RUN_ID
+                    ),
+                )
+            ]
+        }
+    )
+    result = await api.discover("nb", query, mode=mode)
+    _method, request, _kwargs = transport.calls[0]
+    assert request.discovery_mode == expected_mode
+    assert request.discovery_context.context == sent_query
+    assert result.discovery_mode is DiscoveryMode(expected_mode)
+    assert result.query == sent_query
+    assert result.sources == ()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "query", "message"),
+    [
+        ("deep", "q", "Invalid mode 'deep'"),
+        ("lite", "q", "Invalid mode 'lite'"),
+        ("default", "   ", "query must not be empty"),
+        ("raw", "", "query must not be empty"),
+    ],
+)
+async def test_discover_rejects_unsupported_modes_and_empty_queries_before_the_wire(
+    mode: str, query: str, message: str
+) -> None:
+    api, transport = _api({})
+    with pytest.raises(ValidationError, match=message):
+        await api.discover("nb", query, mode=mode)
+    assert transport.calls == []
+
+
+@pytest.mark.asyncio
+async def test_discover_without_a_job_id_raises_an_unconfirmed_decoding_error() -> None:
+    api, transport = _api(
+        {DISCOVER_SOURCES_METHOD: [research_pb2.DiscoverSourcesResponse(overview="o")]}
+    )
+    with pytest.raises(DecodingError) as raised:
+        await api.discover("nb", "q")
+    assert getattr(raised.value, "unconfirmed", False) is True
+    assert len(transport.calls) == 1
 
 
 @pytest.mark.asyncio

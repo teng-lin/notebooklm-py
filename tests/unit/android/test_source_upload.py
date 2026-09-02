@@ -330,6 +330,7 @@ async def _graph(
     *,
     upload_timeout: float = 2.0,
     curl: bool = False,
+    monotonic: Callable[[], float] | None = None,
 ) -> tuple[FakeSession, FakeBearerProvider, AndroidUploadPipeline, AndroidSourcesAPI]:
     session = FakeSession()
     bearer = FakeBearerProvider()
@@ -370,7 +371,12 @@ async def _graph(
     pipeline.set_bound_loop(loop)
     pipeline.reset_after_open()
     await pipeline.open(loop, session.epoch)
-    return session, bearer, pipeline, AndroidSourcesAPI(cast(AndroidSession, session), pipeline)
+    api = (
+        AndroidSourcesAPI(cast(AndroidSession, session), pipeline)
+        if monotonic is None
+        else AndroidSourcesAPI(cast(AndroidSession, session), pipeline, monotonic=monotonic)
+    )
+    return session, bearer, pipeline, api
 
 
 def _write_pdf(tmp_path: Path, size: int = 140_000) -> tuple[Path, bytes]:
@@ -486,6 +492,11 @@ async def test_waiting_branches_use_one_exact_read_then_optional_no_readback_tit
 @pytest.mark.asyncio
 async def test_error_or_wait_timeout_never_dispatches_title_mutation(tmp_path: Path) -> None:
     path, _ = _write_pdf(tmp_path)
+    # A tight budget is safe here: ``_wait_uploaded_source`` polls before it
+    # consults the deadline, so the ERROR leg always reaches its first look
+    # (pinned with a stepping clock in
+    # ``test_upload_wait_always_looks_once_before_declaring_timeout``).
+    wait_timeout = 0.01
     for response, expected in [
         (_project(_SETTINGS.SOURCE_STATUS_ERROR), SourceProcessingError),
         (_project(_SETTINGS.SOURCE_STATUS_TENTATIVE), SourceTimeoutError),
@@ -498,10 +509,124 @@ async def test_error_or_wait_timeout_never_dispatches_title_mutation(tmp_path: P
                 NOTEBOOK_ID,
                 path,
                 wait=False,
-                wait_timeout=0.01,
+                wait_timeout=wait_timeout,
                 title="Custom",
             )
         assert MUTATE_SOURCE_METHOD not in [call[0] for call in session.calls]
+
+
+def _stepping_clock(*readings: float) -> Callable[[], float]:
+    """A monotonic clock that returns each reading once, then the last forever."""
+    queue = deque(readings)
+
+    def read() -> float:
+        if len(queue) > 1:
+            return queue.popleft()
+        return queue[0]
+
+    return read
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("raw_status", "expected"),
+    [
+        (_SETTINGS.SOURCE_STATUS_ERROR, SourceProcessingError),
+        (_SETTINGS.SOURCE_STATUS_TENTATIVE, SourceTimeoutError),
+    ],
+    ids=["error", "tentative"],
+)
+async def test_upload_wait_always_looks_once_before_declaring_timeout(
+    tmp_path: Path,
+    raw_status: int,
+    expected: type[Exception],
+) -> None:
+    """A positive budget buys one GetProject even if the clock already spent it.
+
+    The clock reads 0.0 when the deadline starts and 1.0 on every read after,
+    so a 10 ms budget is gone before the first ``expired()`` check — the shape
+    of one coarse ``GetTickCount64`` tick on Windows before 3.13. The loop must
+    still look: a server-side ERROR is reported as ``SourceProcessingError``,
+    and a timeout carries the status it actually observed, not ``None``. The
+    single look also gets a real wire budget rather than the ``0.0`` that
+    ``remaining()`` reads on that tick.
+    """
+    harness = HTTPHarness()
+    session, _, _, api = await _graph(harness, monotonic=_stepping_clock(0.0, 1.0))
+    session.handlers[GET_PROJECT_METHOD] = _project(raw_status)
+    path, _ = _write_pdf(tmp_path)
+
+    with pytest.raises(expected) as captured:
+        await api.add_file(NOTEBOOK_ID, path, wait=False, wait_timeout=0.01, title="Custom")
+
+    methods = [call[0] for call in session.calls]
+    assert methods.count(GET_PROJECT_METHOD) == 1
+    assert MUTATE_SOURCE_METHOD not in methods
+    poll_kwargs = next(call[2] for call in session.calls if call[0] == GET_PROJECT_METHOD)
+    assert poll_kwargs["timeout"] == pytest.approx(0.01)
+    if expected is SourceTimeoutError:
+        assert captured.value.last_status == raw_status
+
+
+@pytest.mark.asyncio
+async def test_upload_wait_zero_budget_never_polls(tmp_path: Path) -> None:
+    """``wait_timeout=0`` is an explicit "do not wait": no look, plain timeout."""
+    harness = HTTPHarness()
+    session, _, _, api = await _graph(harness, monotonic=_stepping_clock(0.0))
+    session.handlers[GET_PROJECT_METHOD] = _project(_SETTINGS.SOURCE_STATUS_ERROR)
+    path, _ = _write_pdf(tmp_path)
+
+    with pytest.raises(SourceTimeoutError) as captured:
+        await api.add_file(NOTEBOOK_ID, path, wait=False, wait_timeout=0.0, title="Custom")
+
+    assert GET_PROJECT_METHOD not in [call[0] for call in session.calls]
+    assert captured.value.last_status is None
+
+
+@pytest.mark.asyncio
+async def test_upload_wait_never_polls_past_the_deadline_after_sleeping(
+    tmp_path: Path,
+) -> None:
+    """Only the first look may bypass the deadline; a spent sleep ends the wait.
+
+    start=0.0 against a 30 s budget; the first look reads 10.0 elapsed and gets
+    ``remaining()`` as its wire budget, then the post-sleep check reads 40.0 —
+    the loop must raise without issuing a second, post-deadline GetProject.
+    """
+    harness = HTTPHarness()
+    clock = _stepping_clock(0.0, 10.0, 10.0, 10.0, 40.0)
+    session, _, _, api = await _graph(harness, monotonic=clock)
+    session.handlers[GET_PROJECT_METHOD] = _project(_SETTINGS.SOURCE_STATUS_TENTATIVE)
+    path, _ = _write_pdf(tmp_path)
+
+    with pytest.raises(SourceTimeoutError):
+        await api.add_file(NOTEBOOK_ID, path, wait=False, wait_timeout=30.0, title="Custom")
+
+    budgets = [call[2]["timeout"] for call in session.calls if call[0] == GET_PROJECT_METHOD]
+    assert budgets == [pytest.approx(20.0)]
+
+
+@pytest.mark.asyncio
+async def test_upload_wait_wire_budget_tracks_remaining_and_floors_near_expiry(
+    tmp_path: Path,
+) -> None:
+    """A look that starts inside the budget is floored, never handed ~0.0.
+
+    The second look begins with 0.2 s remaining of a 30 s budget; its wire
+    budget is floored to ``_POLL_WIRE_FLOOR`` so the request actually goes out
+    instead of being rejected pre-wire as an ``RPCTimeoutError``.
+    """
+    harness = HTTPHarness()
+    clock = _stepping_clock(0.0, 10.0, 29.6, 29.6, 29.8, 29.8, 40.0)
+    session, _, _, api = await _graph(harness, monotonic=clock)
+    session.handlers[GET_PROJECT_METHOD] = _project(_SETTINGS.SOURCE_STATUS_TENTATIVE)
+    path, _ = _write_pdf(tmp_path)
+
+    with pytest.raises(SourceTimeoutError):
+        await api.add_file(NOTEBOOK_ID, path, wait=False, wait_timeout=30.0, title="Custom")
+
+    budgets = [call[2]["timeout"] for call in session.calls if call[0] == GET_PROJECT_METHOD]
+    assert budgets == [pytest.approx(20.0), pytest.approx(1.0)]
 
 
 @pytest.mark.asyncio

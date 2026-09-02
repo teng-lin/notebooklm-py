@@ -1,7 +1,7 @@
 {
   "method_name": "REFRESH_SOURCE",
   "method_id": "FLmJqe",
-  "description": "Refresh a URL-backed source (production shape [None, [source_id], [2]]).",
+  "description": "Refresh a URL-backed source (production shape [None, [source_id], [2]]). Success is a null payload with nothing at index 5; production passes raise_on_null_status=True so a status-tagged null ([3] INVALID_ARGUMENT, live) raises instead of decoding to the None success value (#2290).",
   "request": {
     "params": [
       null,

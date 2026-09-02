@@ -168,9 +168,13 @@ Four findings, none of which yields a direct upload:
    Rejected by impersonation policy for /…AddSourcesAsync
    ```
 
-   `AddSourcesAsync` is internal to the Web frontend — it appears in no mobile
-   binary string and in no recovered mobile service. This is a server-side
-   credential-class boundary, not a header that can be added.
+   `AddSourcesAsync` appears in no mobile binary string, and this refusal is a
+   server-side credential-class boundary on the **Web** front door, not a header
+   that can be added. *Correction (2026-09-01, #2283):* the native gRPC route
+   `/LabsTailwindOrchestrationService/AddSourcesAsync` accepts the same Android
+   bearer and commits — the block is the Web frontend refusing to impersonate a
+   mobile credential, not a missing mobile route. See
+   [copy-append-suggestion-evidence.md](copy-append-suggestion-evidence.md#addsourcesasync).
 
 **No content type makes the native transaction work.** The declared type was
 swept across the OOXML types, `application/zip`, `application/x-zip-compressed`,

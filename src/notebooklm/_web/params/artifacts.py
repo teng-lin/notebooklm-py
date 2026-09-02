@@ -22,6 +22,7 @@ from ..._types.enums import (
 )
 from ...exceptions import ValidationError
 from ...rpc import nest_source_ids
+from .sources import build_template_block as _build_template_block
 
 _STATIC_REPORT_CONFIGS: dict[ReportFormat, dict[str, str]] = {
     ReportFormat.BRIEFING_DOC: {
@@ -652,3 +653,29 @@ def _report_config(
             f"Unsupported report format {report_format!r}; expected one of: "
             f"{known_formats}, {ReportFormat.CUSTOM.value}"
         ) from exc
+
+
+def build_copy_artifacts_params(artifact_ids: list[str], target_notebook_id: str) -> list[Any]:
+    """Build ``COPY_ARTIFACTS`` (``mKDdke`` / ``CopyArtifactsAsync``) params.
+
+    Mobile proto (live-pinned, #2283): ``{ RequestContext request_context = 1;
+    repeated string artifact_ids = 2; string target_project_id = 3 }``. The
+    artifact ids are bare strings (not ``SourceId``-style wrappers).
+    """
+    return [_build_template_block(), list(artifact_ids), target_notebook_id]
+
+
+def build_customization_choices_params(notebook_id: str | None = None) -> list[Any]:
+    """Build ``GET_CUSTOMIZATION_CHOICES`` (``sqTeoe``) params.
+
+    Mobile proto (APK-exact): ``{ RequestContext request_context = 1; string
+    project_id = 2; ArtifactType artifact_type = 3 }``. Live (both front doors,
+    2026-09-01) the server ignores fields 2 and 3 entirely — an empty request,
+    a bogus notebook id and every artifact type return the same account-level
+    table — so only the context is required. ``notebook_id`` is appended when the
+    caller has one purely to fill the request's ``project_id`` (#2) slot.
+    """
+    params: list[Any] = [_build_template_block()]
+    if notebook_id is not None:
+        params.append(notebook_id)
+    return params

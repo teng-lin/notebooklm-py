@@ -850,7 +850,11 @@ class TestUpdateNotebook:
             RPCMethod.RENAME_NOTEBOOK,
             ["nb-1", [[None, None, None, [None, None, "🧬"]]]],
         )
-        assert first.kwargs == {"source_path": "/", "allow_null": True}
+        assert first.kwargs == {
+            "source_path": "/",
+            "allow_null": True,
+            "raise_on_null_status": True,
+        }
 
     @pytest.mark.asyncio
     async def test_update_title_and_emoji_in_one_mutation(self) -> None:

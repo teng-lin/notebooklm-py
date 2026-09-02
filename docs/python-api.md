@@ -1210,6 +1210,7 @@ async with NotebookLMClient.from_storage(rate_limit_max_retries=0) as client:
 | `get_metadata(notebook_id)` | `notebook_id: str` | `NotebookMetadata` | Get notebook metadata and sources |
 | `get_summary(notebook_id)` | `notebook_id: str` | `str` | Get raw summary text |
 | `get_share_url(notebook_id, artifact_id=None)` | `notebook_id: str, str \| None` | `str` | Get a share URL |
+| `suggest_next_steps(notebook_id, *, source_ids=None)` | `str, list[str] \| None` | `list[NextStepSuggestion]` | Grounded follow-up **questions** for the notebook (`NextStepSuggestions`) — the block a chat answer carries as `AskResult.next_steps`, without needing a prior conversation. `source_ids=None` lets the server use all sources (no `GET_NOTEBOOK` round-trip). Distinct from `suggest_prompts`, which returns `(title, prompt)` steering pairs. |
 | `remove_from_recent(notebook_id)` | `notebook_id: str` | `None` | Remove from recently viewed |
 | `get_raw(notebook_id)` | `notebook_id: str` | `Any` | Get raw API response data |
 
@@ -1268,11 +1269,16 @@ print(url)
 | `add_text(notebook_id, title, content, *, wait=False, wait_timeout=120.0, idempotent=False)` | `str, str, str, *, bool, float, bool` | `Source` | Add text content. `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
 | `add_file(notebook_id, file_path, mime_type=None, *, wait=False, wait_timeout=120.0, title=None, on_progress=None)` | `str, str \| Path, str \| None, *, bool, float, str \| None, Callable \| None` | `Source` | Upload file. `mime_type` is a **supported** parameter — it overrides filename-extension inference to set the resumable-upload content-type header (omit it to infer from the extension). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). `title` sets the display name via a post-upload `UPDATE_SOURCE` and forces a brief registration wait even when `wait=False`. `on_progress(bytes_sent, total_bytes)` may be sync or async. |
 | `add_drive(notebook_id, file_id, title, mime_type="application/vnd.google-apps.document", *, wait=False, wait_timeout=120.0)` | `str, str, str, str, *, bool, float` | `Source` | Add Google Drive doc. `mime_type` defaults to Google Docs; override for Slides/Sheets/PDF via `DriveMimeType` (see `notebooklm.types`). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). NotebookLM's backend re-derives the display title from live Drive metadata for native Drive imports, discarding the requested `title`; the method now issues an automatic best-effort follow-up `rename()` so an explicit `title` still wins (non-fatal — a rename failure logs a warning and keeps the added source under its upstream title; issue #1960). |
+| `list_play_books()` | - | `list[PlayBook]` | List the account's Google Play Books library ("Expert Intelligence"; US only, 18+) — every title, each exposing its own exportability (`export_disabled` / `reason`), not only the addable ones. Empty for an account with no Play Books library. **Web backend only** — the Android backend raises `UnsupportedOperationError`. See [Google Play Books sources](#google-play-books-sources). |
+| `add_play_book(notebook_id, content_id, *, wait=False, wait_timeout=120.0)` | `str, str, *, bool, float` | `Source` | Add a Play Book by its `content_id` (from `list_play_books()`). Refuses a non-exportable title with `PlayBookNotExportableError`; the created source ingests as `SourceType.EXPERT_INTELLIGENCE` with `Source.expert_intelligence` provenance. **Web backend only.** |
 | `rename(notebook_id, source_id, new_title, *, return_object=True)` | `str, str, str` | `Source \| None` | Rename source (prefers the `UPDATE_SOURCE` echo, else re-fetched; raises `SourceNotFoundError` if missing). `return_object=False` returns `None` without hydrating. |
-| `refresh(notebook_id, source_id)` | `str, str` | `None` | Refresh URL/Drive source |
+| `refresh(notebook_id, source_id)` | `str, str` | `None` | Refresh URL/Drive source. `None` means the server accepted the call; a rejection raises `RPCError` (v0.9.0, #2290 — previously a server-side `INVALID_ARGUMENT` also returned `None`). |
 | `check_freshness(notebook_id, source_id)` | `str, str` | `bool` | Check if source needs refresh |
 | `delete(notebook_id, source_id)` | `str, str` | `None` | Delete source (idempotent; returns `None` whether or not it existed) |
 | `wait_until_ready(notebook_id, source_id, timeout=120.0, ...)` | `str, str, float, ...` | `Source` | Poll until `status == READY` (fully processed). Raises `SourceTimeoutError`/`SourceProcessingError`/`SourceNotFoundError` — see [Processing failures vs. timeouts](#processing-failures-vs-timeouts). |
+| `add_urls_async(notebook_id, urls)` | `str, list[str]` | `list[Source]` | Queue URL sources with one non-blocking `AddSourcesAsync` call and return the queued stub rows (id, url, type; status still processing). Never replayed on a transport failure — the error is marked unconfirmed for the caller to reconcile against `list()`. |
+| `append_text(notebook_id, source_id, text, *, header="")` | `str, str, str, *, str` | `None` | Append a plain-text block to an existing source in place (`AppendSource`). `text` lands at the very end of the fulltext; `header` is accepted but not shown in the fulltext. |
+| `copy(notebook_id, source_ids, target_notebook_id)` | `str, list[str], str` | `list[CopiedSource]` | Copy sources into another notebook (`CopySourcesAsync`); each result pairs `original_id` with the new `source` row. Unknown ids / target draw `NOT_FOUND` (`RPCError`); an empty mapping raises `SourceNotFoundError`; a partial result is returned with a warning. |
 | `wait_until_registered(notebook_id, source_id, timeout=30.0, ...)` | `str, str, float, ...` | `Source` | Poll until the source is visible server-side (any non-ERROR status). Completes quickly (seconds for typical sources); intended for narrow follow-up RPCs (e.g. `UPDATE_SOURCE`) that only require registration, not full processing. |
 | `wait_for_sources(notebook_id, source_ids, timeout=120.0, **kwargs)` | `str, list[str], float, ...` | `list[Source]` | Wait for multiple sources to become ready **in parallel**. Per-source timeout; `**kwargs` are forwarded to `wait_until_ready`. |
 | `wait_all_until_ready(notebook_id, source_ids, timeout=120.0, initial_interval=1.0, max_interval=10.0, backoff_factor=1.5, transient_error_types=None)` | `str, list[str], float, ...` | `list[SourceWaitResult]` | Wait for many sources with **one notebook snapshot per poll tick** (cheaper than `wait_for_sources`'s per-source polling for large batches). Terminal per-source failures (`SourceNotFoundError` / `SourceProcessingError` / `SourceTimeoutError`) are **returned**, not raised — one result per id, in input order. |
@@ -1371,6 +1377,38 @@ inventory object: the backend already returns the source rows needed to count,
 so another public surface would imply authority or efficiency that does not
 exist.
 
+#### Google Play Books sources
+
+NotebookLM can add ebooks from an account's **Google Play Books** library as
+sources ("Expert Intelligence"; US only, 18+). `list_play_books()` returns the
+library as `PlayBook` objects; `add_play_book(notebook_id, content_id)` adds one
+by its volume id. A title whose publisher opted out of content export has
+`export_disabled=True` and a `reason` (`PlayBookExportReason`); `add_play_book`
+refuses those client-side with `PlayBookNotExportableError`.
+
+```python
+books = await client.sources.list_play_books()
+for book in books:
+    print(
+        book.content_id, book.title, "" if not book.export_disabled else f"(blocked: {book.reason})"
+    )
+
+exportable = next(b for b in books if not b.export_disabled)
+source = await client.sources.add_play_book(nb_id, exportable.content_id, wait=True)
+assert source.kind is SourceType.EXPERT_INTELLIGENCE
+print(source.expert_intelligence.authors)  # ExpertIntelligenceSourceMetadata
+```
+
+**Web backend only.** Adding a Play Book on the Android backend requires a
+per-account Phenotype experiment header the client cannot synthesize (the
+server returns `INTERNAL` without it), so both methods raise
+`UnsupportedOperationError` on an Android-backed client. Listing works on the
+web tier; use a web-backed client (`NotebookLMClient.from_storage()` without
+`backend="android"`). Added sources read back with type
+`SourceType.EXPERT_INTELLIGENCE` and carry `Source.expert_intelligence`
+(`ExpertIntelligenceSourceMetadata`) provenance decoded from `SourceMetadata`
+field 19.
+
 ---
 
 ### ArtifactsAPI (`client.artifacts`)
@@ -1390,6 +1428,8 @@ exist.
 | `poll_status(notebook_id, task_id)` | `str, str` | `GenerationStatus` | Check generation status |
 | `wait_for_completion(notebook_id, task_id, ...)` | `str, str, ...` | `GenerationStatus` | Wait for generation. Pass `on_status_change(status)` for sync or async progress callbacks. |
 | `retry_failed(notebook_id, artifact_id)` | `str, str` | `GenerationStatus` | Retry a failed Studio artifact in place (the UI "Retry"). Same `artifact_id` preserved; accepted → `status="pending"` (re-queued; advances to `in_progress` on a later poll); a synchronous refusal (rate limit / quota / not-retryable) **raises** `RateLimitError`/`RPCError`. See below. |
+| `copy(notebook_id, artifact_ids, target_notebook_id)` | `str, list[str], str` | `list[CopiedArtifact]` | Copy Studio artifacts into another notebook (`CopyArtifactsAsync`); each result pairs `original_id` with the full new `artifact` row. Raises `ArtifactNotFoundError` when nothing was copied; a partial result is returned with a warning. |
+| `get_customization_choices(notebook_id=None)` | `str \| None` | `ArtifactCustomizationChoices` | The Studio "Customize" option tables (`GetArtifactCustomizationChoices`): `audio` / `video` / `slide_deck` format choices (tuples; codes match `AudioFormat` / `VideoFormat` / `SlideDeckFormat`) and `reports` presets with their full generation `directive`. Account-level — the server ignores the notebook id (it only fills the request's `project_id` slot). The server always serves the table, so a missing / re-shaped envelope raises `DecodingError` rather than returning empty families. |
 
 #### Type-Specific List Methods
 
@@ -1795,6 +1835,7 @@ if result.references:
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
 | `start(notebook_id, query, source, mode)` | `str, str, str="web", str="fast"` | `ResearchStart` | Start research (mode: "fast" or "deep"); raises `ValidationError` on invalid source/mode and `DecodingError` if no task is created |
+| `discover(notebook_id, query, *, mode="default")` | `str, str, str` | `ResearchTask` | **Synchronous** web discovery in one blocking call (~8 s): returns a completed task whose `sources` are the ranked results and `summary` the backend's overview. `mode` is `"default"`, `"raw"`, `"curious"` or `"curious_raw"` (the curious modes pick a topic; `query` is dropped and sent empty). The backend also records the call as a completed run, so `task_id` works with `import_sources` / `cancel`. Raises `ValidationError` on an unknown mode or an empty query outside the curious modes. |
 | `poll(notebook_id, task_id=None)` | `str, str \| None = None` | `ResearchTask` | Check research status. If multiple tasks are in flight and `task_id` is omitted, raises `AmbiguousResearchTaskError` |
 | `wait_for_completion(notebook_id, task_id=None, *, timeout=1800, initial_interval=5)` | `str, str \| None, float, float` | `ResearchTask` | Wait for research to complete, pinning the discovered task ID between polls. Raises `ResearchTimeoutError` (a `WaitTimeoutError`/`TimeoutError`) and `AmbiguousResearchTaskError` when unpinned polling is ambiguous. |
 | `import_sources(notebook_id, task_id, sources)` | `str, str, Sequence[dict[str, Any] \| ResearchSource]` | `list[dict]` | Import findings. Accepts plain dicts **or** the typed `ResearchSource` objects from `poll().sources`. |
@@ -3528,17 +3569,18 @@ class DiscoveryMode(Enum):
     """How a research run searched for sources — `ResearchTask.discovery_mode`."""
 
     UNKNOWN = -1  # Client sentinel: slot populated with a code we cannot map
-    DEFAULT_LLM_SEARCH = 1  # Sent + observed for mode="fast"
-    RAW_SEARCH = 2  # Never sent by this client
-    CURIOUS_SEARCH = 3  # Never sent by this client
-    CURIOUS_RAW_SEARCH = 4  # Never sent by this client
-    DEEP_RESEARCH = 5  # Sent + observed for mode="deep"
-    LITE_LLM_SEARCH = 6  # Never sent by this client
+    DEFAULT_LLM_SEARCH = 1  # start(mode="fast") and discover(mode="default")
+    RAW_SEARCH = 2  # discover(mode="raw")
+    CURIOUS_SEARCH = 3  # discover(mode="curious")
+    CURIOUS_RAW_SEARCH = 4  # discover(mode="curious_raw")
+    DEEP_RESEARCH = 5  # start(mode="deep")
+    LITE_LLM_SEARCH = 6  # Never sent by this client (faults server-side)
 
 
-# Same UNSPECIFIED(0) treatment as DriveSourceStatus above. Only 1 and 5 have been
-# observed — they are the two this client sends, and the poll echoes them back, so
-# the mode a run is executing under is confirmable rather than merely remembered.
+# Same UNSPECIFIED(0) treatment as DriveSourceStatus above. `research.start` sends
+# 1 and 5 and the poll echoes them back, so the mode a run is executing under is
+# confirmable rather than merely remembered; `research.discover` sends 1–4 and
+# echoes the same value on its returned task.
 # `notebooklm.types.discovery_mode_to_str` maps a member to its lower-snake label.
 ```
 

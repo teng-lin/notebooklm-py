@@ -6,7 +6,8 @@ app and checked into ``docs/android/``:
 * ``docs/android/schema.proto`` — protobuf messages with real field names and
   tag numbers, recovered from the Dart AOT ``BuilderInfo`` disassembly.
 * ``docs/android/enums.txt`` — every ``ProtobufEnum`` value with its exact
-  integer, merged from the snapshot object pool **and** the object store.
+  integer, merged from the snapshot object pool **and** the object store, one
+  block per (Dart library, enum class) so same-named enums stay distinct.
 
 Why this matters for a positional JSON client
 ---------------------------------------------
@@ -60,7 +61,14 @@ _FIELD_RE = re.compile(
     r"(?P<type>\.?[A-Za-z_][A-Za-z0-9_.]*)\s+"
     r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?P<tag>\d+)\s*;"
 )
-_ENUM_HEADER_RE = re.compile(r"^===\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s+\((?P<count>\d+)\)")
+_ENUM_HEADER_RE = re.compile(
+    r"^===\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s+\((?P<count>\d+)\)"
+    r"(?:\s+\[library\s+(?P<library>[A-Za-z0-9_.]+)\])?"
+)
+# Enum blocks from these Dart libraries describe backend wire messages; the
+# app's local persistence/model copies (``labs.language.tailwind.mobile.app.*``)
+# may reuse a class name with different integers and must never shadow them.
+_WIRE_LIBRARY_PREFIXES = ("google.internal.labs.tailwind.", "labs.language.tailwind.common.")
 _ENUM_VALUE_RE = re.compile(r"^\s+(?P<value>-?\d+)\s*=\s*(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*$")
 
 
@@ -185,17 +193,41 @@ def load_proto_schema() -> ProtoSchema:
 def load_enums() -> dict[str, dict[int, str]]:
     """Parse the merged enum dump into ``{enum_name: {value: MEMBER_NAME}}``.
 
-    Merged from both the object pool and the object store: the pool alone yields
-    74 enums / 273 values, the merge 77 / ~1900. Auditing against the pool alone
-    manufactures false "we invented this value" findings and hides real members.
+    Merged from both the object pool and the object store; auditing against the
+    pool alone manufactures false "we invented this value" findings and hides
+    real members. When several Dart libraries declare the same enum class name,
+    only the wire-library blocks are kept (app-local persistence/model copies
+    reuse names with different integers). Two wire blocks that disagree on an
+    integer raise rather than letting one silently shadow the other.
     """
-    enums: dict[str, dict[int, str]] = {}
-    current: str | None = None
+    blocks: dict[str, list[tuple[str | None, dict[int, str]]]] = {}
+    current: dict[int, str] | None = None
     for raw in ENUMS_PATH.read_text(encoding="utf-8").splitlines():
         if (m := _ENUM_HEADER_RE.match(raw)) is not None:
-            current = m.group("name")
-            enums.setdefault(current, {})
+            current = {}
+            blocks.setdefault(m.group("name"), []).append((m.group("library"), current))
             continue
         if current is not None and (m := _ENUM_VALUE_RE.match(raw)) is not None:
-            enums[current][int(m.group("value"))] = m.group("name")
+            current[int(m.group("value"))] = m.group("name")
+
+    enums: dict[str, dict[int, str]] = {}
+    for name, declared in blocks.items():
+        chosen = [
+            (library, values)
+            for library, values in declared
+            if library is not None and library.startswith(_WIRE_LIBRARY_PREFIXES)
+        ]
+        if not chosen:
+            chosen = declared
+        merged: dict[int, str] = {}
+        for library, values in chosen:
+            for value, member in values.items():
+                if merged.get(value, member) != member:
+                    raise ValueError(
+                        f"enum {name!r}: integer {value} is {merged[value]!r} in one wire "
+                        f"library but {member!r} in {library!r}; {ENUMS_PATH.name} needs a "
+                        "library-scoped lookup here"
+                    )
+                merged[value] = member
+        enums[name] = merged
     return enums

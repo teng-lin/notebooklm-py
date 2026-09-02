@@ -43,7 +43,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from ..types import Source
+    from ..types import PlayBook, Source
 
 # JSON-native scalar leaves that pass through untouched. ``bool`` is a subclass
 # of ``int`` so listing ``int`` alone would already catch it, but naming it
@@ -118,6 +118,27 @@ def source_summary(source: Source) -> dict[str, Any]:
         "title": source.title,
         "type": kind.value if kind is not None else None,
         "url": source.url,
+    }
+
+
+def play_book_summary(book: PlayBook) -> dict[str, Any]:
+    """Return the transport-neutral JSON shape for one Play Books library row.
+
+    The single source of truth for the ``sources.list_play_books`` row shape
+    shared by the CLI (``source books --json``) and the MCP
+    ``source_list_play_books`` tool (#2292). ``reason`` is the export-block
+    reason's public ``.value`` (``None`` when the title is exportable).
+    """
+    return {
+        "content_id": book.content_id,
+        "title": book.title,
+        "authors": list(book.authors),
+        "export_disabled": book.export_disabled,
+        "reason": book.reason.value if book.reason is not None else None,
+        "field_type": book.field_type,
+        "cover_url": book.cover_url,
+        "store_url": book.store_url,
+        "updated_at": book.updated_at.isoformat() if book.updated_at is not None else None,
     }
 
 

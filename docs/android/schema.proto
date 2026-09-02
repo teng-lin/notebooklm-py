@@ -1,8 +1,63 @@
 // Schema evidence fragments; do not place every message in one synthetic package.
 // Protobuf FQNs below come only from BuilderInfo PackageName evidence.
 
+// ===== google.internal.labs.tailwind.api.v1.discovery/batch_search_notebooks_request.pb.dart =====
+// Dart library: package:google.internal.labs.tailwind.api.v1.discovery/batch_search_notebooks_request.pb.dart
+// Protobuf FQN: google.internal.labs.tailwind.api.v1.BatchSearchNotebooksRequest
+message BatchSearchNotebooksRequest {
+  string query = 2;
+  repeated NotebookSearchOptions options = 3;
+}
+
+// ===== google.internal.labs.tailwind.api.v1.discovery/batch_search_notebooks_response.pb.dart =====
+// Dart library: package:google.internal.labs.tailwind.api.v1.discovery/batch_search_notebooks_response.pb.dart
+// Protobuf FQN: google.internal.labs.tailwind.api.v1.NotebookSearchResultGroup
+message NotebookSearchResultGroup {
+  NotebookSearchScope scope = 1;
+  SearchNotebooksResponse searchNotebooksResponse = 5;
+}
+// Protobuf FQN: google.internal.labs.tailwind.api.v1.BatchSearchNotebooksResponse
+message BatchSearchNotebooksResponse {
+  repeated NotebookSearchResultGroup groups = 1;
+}
+
+// ===== google.internal.labs.tailwind.api.v1.discovery/notebook_search_options.pb.dart =====
+// Dart library: package:google.internal.labs.tailwind.api.v1.discovery/notebook_search_options.pb.dart
+// Protobuf FQN: google.internal.labs.tailwind.api.v1.NotebookSearchOptions
+message NotebookSearchOptions {
+  NotebookSearchScope scope = 1;
+  PagingOptions pagingOptions = 2;
+}
+
+// ===== google.internal.labs.tailwind.api.v1.discovery/notebook_search_result.pb.dart =====
+// Dart library: package:google.internal.labs.tailwind.api.v1.discovery/notebook_search_result.pb.dart
+// Protobuf FQN: google.internal.labs.tailwind.api.v1.NotebookSearchResult
+message NotebookSearchResult {
+  Notebook notebook = 1;
+}
+
+// ===== google.internal.labs.tailwind.api.v1.discovery/search_notebooks_request.pb.dart =====
+// Dart library: package:google.internal.labs.tailwind.api.v1.discovery/search_notebooks_request.pb.dart
+// Protobuf FQN: google.internal.labs.tailwind.api.v1.SearchNotebooksRequest
+message SearchNotebooksRequest {
+  string query = 2;
+  NotebookSearchOptions options = 3;
+}
+
+// ===== google.internal.labs.tailwind.api.v1.discovery/search_notebooks_response.pb.dart =====
+// Dart library: package:google.internal.labs.tailwind.api.v1.discovery/search_notebooks_response.pb.dart
+// Protobuf FQN: google.internal.labs.tailwind.api.v1.SearchNotebooksResponse
+message SearchNotebooksResponse {
+  repeated NotebookSearchResult results = 1;
+  int32 totalSize = 2;
+  PagingState pagingState = 3;
+}
+
 // ===== google.internal.labs.tailwind.api.v1/live_session.pb.dart =====
 // Dart library: package:google.internal.labs.tailwind.api.v1/live_session.pb.dart
+// Protobuf FQN: google.internal.labs.tailwind.api.v1.LiveGoAway
+message LiveGoAway {
+}
 // Protobuf FQN: google.internal.labs.tailwind.api.v1.LiveTranscription
 message LiveTranscription {
   string text = 1;
@@ -20,6 +75,7 @@ message LiveContent {
 message LiveServerContent {
   LiveContent modelTurn = 1;
   bool turnComplete = 3;
+  bool interrupted = 4;
   LiveTranscription inputTranscription = 5;
   LiveTranscription outputTranscription = 6;
   int64 generationId = 7;
@@ -31,6 +87,8 @@ message LiveSessionEstablished {
 message LiveSessionServerMessage {
   LiveSessionEstablished sessionEstablished = 1;
   LiveServerContent serverContent = 2;
+  LiveGoAway goAway = 3;
+  string reconnectionToken = 5;
 }
 // Protobuf FQN: google.internal.labs.tailwind.api.v1.LiveBlob
 message LiveBlob {
@@ -45,6 +103,9 @@ message LiveSessionSetup {
   string project = 1;
   bool enableInputTranscription = 2;
   bool enableOutputTranscription = 3;
+  repeated SourceId sourceIds = 4;
+  int32 liveUseCount = 5;
+  string reconnectionToken = 8;
 }
 // Protobuf FQN: google.internal.labs.tailwind.api.v1.LiveSessionClientMessage
 message LiveSessionClientMessage {
@@ -52,36 +113,53 @@ message LiveSessionClientMessage {
   LiveRealtimeInput realtimeInput = 2;
 }
 
-// ===== google.internal.labs.tailwind.discovery.v1/labs_tailwind_discovery_service.pb.dart =====
-// Dart library: package:google.internal.labs.tailwind.discovery.v1/labs_tailwind_discovery_service.pb.dart
-// Protobuf FQN: google.internal.labs.tailwind.discovery.v1.PrototypeProjectInfo
-message PrototypeProjectInfo {
-  string projectId = 1;
-  string title = 2;
-  Timestamp lastUpdatedTime = 3;
-  string emoji = 7;
+// ===== google.internal.labs.tailwind.api.v1/notebook.pb.dart =====
+// Dart library: package:google.internal.labs.tailwind.api.v1/notebook.pb.dart
+// Protobuf FQN: google.internal.labs.tailwind.api.v1.NotebookAccessInfo
+message NotebookAccessInfo {
+  bool isPublic = 1;
 }
-// Protobuf FQN: google.internal.labs.tailwind.discovery.v1.PrototypeNotebookFeedEntry
-message PrototypeNotebookFeedEntry {
-  PrototypeProjectInfo projectInfo = 1;
-  repeated Source sources = 4;
+// Protobuf FQN: google.internal.labs.tailwind.api.v1.NotebookEffectiveAccess
+message NotebookEffectiveAccess {
+  NotebookPermission_NotebookAccessRole effectiveRole = 1;
+  bool canEditAdvancedSettings = 5;
+  bool canEditGuidebookConfig = 6;
+  bool canViewAnalytics = 7;
 }
-// Protobuf FQN: google.internal.labs.tailwind.discovery.v1.PrototypeNotebookSearchResponse
-message PrototypeNotebookSearchResponse {
-  repeated PrototypeNotebookFeedEntry entries = 1;
+// Protobuf FQN: google.internal.labs.tailwind.api.v1.Notebook
+message Notebook {
+  string name = 1;
+  string displayName = 2;
+  string emoji = 3;
+  Timestamp createTime = 4;
+  NotebookAccessInfo accessInfo = 6;
+  bool isOwner = 7;
+  NotebookEffectiveAccess effectiveAccess = 11;
+  int32 sourceCount = 23;
+  int32 artifactCount = 24;
 }
-// Protobuf FQN: google.internal.labs.tailwind.discovery.v1.PrototypeNotebookSearchRequest
-message PrototypeNotebookSearchRequest {
-  string query = 1;
+
+// ===== google.internal.labs.tailwind.api.v1/quota_service.pb.dart =====
+// Dart library: package:google.internal.labs.tailwind.api.v1/quota_service.pb.dart
+// Protobuf FQN: google.internal.labs.tailwind.api.v1.ListQuotaSummaryRequest
+message ListQuotaSummaryRequest {
+  RequestContext requestContext = 1;
+}
+
+// ===== google.internal.labs.tailwind.api.v1/source_id.pb.dart =====
+// Dart library: package:google.internal.labs.tailwind.api.v1/source_id.pb.dart
+// Protobuf FQN: google.internal.labs.tailwind.api.v1.SourceId
+message SourceId {
+  string id = 1;
 }
 
 // ===== google.internal.labs.tailwind.orchestration.v1.agency/function_call.pb.dart =====
 // Dart library: package:google.internal.labs.tailwind.orchestration.v1.agency/function_call.pb.dart
-// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.agency.FunctionResponse
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.FunctionResponse
 message FunctionResponse {
   string name = 1;
 }
-// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.agency.FunctionCall
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.FunctionCall
 message FunctionCall {
   string name = 1;
   TailwindStruct args = 2;
@@ -89,17 +167,17 @@ message FunctionCall {
 
 // ===== google.internal.labs.tailwind.orchestration.v1.agency/tailwind_struct.pb.dart =====
 // Dart library: package:google.internal.labs.tailwind.orchestration.v1.agency/tailwind_struct.pb.dart
-// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.agency.TailwindValue
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.TailwindValue
 message TailwindValue {
   double numberValue = 2;
   string stringValue = 3;
   bool boolValue = 4;
 }
-// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.agency.TailwindStruct
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.TailwindStruct
 message TailwindStruct {
   repeated TailwindStruct_TailwindStructEntry fields = 1;
 }
-// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.agency.TailwindStructEntry
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.TailwindStruct.TailwindStructEntry
 message TailwindStruct_TailwindStructEntry {
   string key = 1;
   TailwindValue value = 2;
@@ -111,6 +189,7 @@ message TailwindStruct_TailwindStructEntry {
 message QuizGenerationOptions {
   QuizGenerationOptions_QuestionQuantity questionQuantity = 1;
   QuizGenerationOptions_QuizDifficulty quizDifficulty = 2;
+  repeated QuizGenerationOptions_QuestionType avoidQuestionTypes = 4;
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.FlashcardsGenerationOptions
 message FlashcardsGenerationOptions {
@@ -141,23 +220,27 @@ message AppArtifact {
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ArtifactState
 message ArtifactState {
   AudioOverviewState audioOverviewState = 1;
-  VideoOverviewState videoOverviewState = 2;
   AppArtifactState appArtifactState = 3;
   repeated ScheduledNotificationConfig scheduledNotificationConfigs = 4;
-}
-// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ScheduledNotificationConfig
-message ScheduledNotificationConfig {
+  bool isUnread = 5;
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.AppArtifactState
 message AppArtifactState {
   Struct appState = 1;
 }
-// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.VideoOverviewState
-message VideoOverviewState {
-}
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.AudioOverviewState
 message AudioOverviewState {
   Duration playbackPosition = 1;
+}
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ScheduledNotificationConfig
+message ScheduledNotificationConfig {
+  int32 intervalMinutes = 1;
+  StatusTrackingMetadata statusTrackingMetadata = 4;
+  string artifactId = 7;
+}
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.StatusTrackingMetadata
+message StatusTrackingMetadata {
+  SchedulingStatus schedulingStatus = 1;
 }
 
 // ===== google.internal.labs.tailwind.orchestration.v1/artifacts.pb.dart =====
@@ -192,6 +275,7 @@ message Artifact {
   ArtifactState artifactUserState = 18;
   string etag = 22;
   FileArtifact file = 25;
+  Timestamp scheduledExecutionTime = 34;
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ArtifactSource
 message ArtifactSource {
@@ -201,6 +285,7 @@ message ArtifactSource {
   string mimeType = 4;
   string providerId = 5;
   string contentId = 6;
+  KnowledgeItem knowledgeItem = 7;
 }
 
 // ===== google.internal.labs.tailwind.orchestration.v1/audio_overviews.pb.dart =====
@@ -295,6 +380,12 @@ message InputSourceOptions {
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.InputSource
 message InputSource {
   SourceId sourceId = 1;
+  KnowledgeItem knowledgeItem = 4;
+}
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.KnowledgeItem
+message KnowledgeItem {
+  string id = 1;
+  KnowledgeItemType type = 2;
 }
 
 // ===== google.internal.labs.tailwind.orchestration.v1/labs_tailwind_orchestration_service.pb.dart =====
@@ -306,6 +397,11 @@ message LogInteractionEventResponse {
 message LogInteractionEventRequest {
   RequestContext requestContext = 1;
   ViewStudioArtifactEvent viewStudioArtifact = 2;
+  ExportStudioArtifactEvent exportStudioArtifact = 3;
+}
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ExportStudioArtifactEvent
+message ExportStudioArtifactEvent {
+  string artifactId = 1;
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ViewStudioArtifactEvent
 message ViewStudioArtifactEvent {
@@ -315,7 +411,7 @@ message ViewStudioArtifactEvent {
 message ListExpertIntelligenceContentResponse {
   repeated ListExpertIntelligenceContentResponse_ContentMetadata contents = 1;
 }
-// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ListExpertIntelligenceContentResponse_ContentMetadata
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ListExpertIntelligenceContentResponse.ContentMetadata
 message ListExpertIntelligenceContentResponse_ContentMetadata {
   string contentId = 1;
   string title = 3;
@@ -335,7 +431,7 @@ message ListExpertIntelligenceContentRequest {
 message GetDriveSourceStatusResponse {
   repeated GetDriveSourceStatusResponse_SourceStatus sourceStatuses = 1;
 }
-// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.GetDriveSourceStatusResponse_SourceStatus
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.GetDriveSourceStatusResponse.SourceStatus
 message GetDriveSourceStatusResponse_SourceStatus {
   string sourceId = 1;
   SourceSettings settings = 2;
@@ -356,11 +452,13 @@ message ChatHistoryMessage {
   Timestamp timestamp = 2;
   string userQueryText = 4;
   ActOnSourcesResponse actOnSourcesResponse = 5;
+  TurnStatus turnStatus = 6;
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ListChatTurnsResponse
 message ListChatTurnsResponse {
   repeated ChatHistoryMessage chatTurns = 1;
   string nextPageToken = 2;
+  string agencySessionId = 3;
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ListChatTurnsRequest
 message ListChatTurnsRequest {
@@ -424,6 +522,15 @@ message FinishDiscoverSourcesRunRequest {
   repeated UserContent userContent = 5;
   repeated MagicArtifactType magicArtifactTypes = 7;
 }
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.CancelGenerationResponse
+message CancelGenerationResponse {
+}
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.CancelGenerationRequest
+message CancelGenerationRequest {
+  RequestContext requestContext = 1;
+  string chatSessionId = 2;
+  string agencySessionId = 3;
+}
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.DiscoverSourcesRequest
 message DiscoverSourcesRequest {
   DiscoveryContext discoveryContext = 1;
@@ -469,7 +576,7 @@ message DeleteNotesRequest {
 message NoteMutation {
   NoteMutation_EditNoteMutation editNoteMutation = 1;
 }
-// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.NoteMutation_EditNoteMutation
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.NoteMutation.EditNoteMutation
 message NoteMutation_EditNoteMutation {
   string content = 1;
   string name = 2;
@@ -563,6 +670,7 @@ message GenerateFreeFormStreamedResponse {
   AnswerResponse answer = 1;
   bool isFinalResponse = 5;
   NextStepSuggestions nextStepSuggestions = 6;
+  string agencySessionId = 8;
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.GenerateFreeFormStreamedRequest
 message GenerateFreeFormStreamedRequest {
@@ -574,6 +682,7 @@ message GenerateFreeFormStreamedRequest {
   string userMessageId = 6;
   string projectId = 8;
   QueryOrigin origin = 9;
+  string a2uiClientCapabilitiesJson = 15;
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.FreeFormAction
 message FreeFormAction {
@@ -692,6 +801,7 @@ message GetNotesResponse {
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.GetNotesRequest
 message GetNotesRequest {
   string projectId = 1;
+  repeated string noteIds = 2;
   RequestContext requestContext = 4;
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.LabelAndSources
@@ -749,15 +859,25 @@ message MutateAccountRequest {
 message AccountMutation {
   AccountMutation_ChangePropertyMutation changeProperty = 2;
 }
-// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.AccountMutation_ChangePropertyMutation
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.AccountMutation.ChangePropertyMutation
 message AccountMutation_ChangePropertyMutation {
   UserInfo newUserInfo = 1;
+}
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.UserSettings
+message UserSettings {
+  ArtifactsSettings artifactsSettings = 5;
+}
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ArtifactsSettings
+message ArtifactsSettings {
+  ArtifactsSettings_WatermarkStyle watermarkStyle = 1;
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.UserInfo
 message UserInfo {
   bool acceptedTos = 1;
   bool optedInToMarketingEmails = 4;
+  UserSettings userSettings = 5;
   bool isEeaUser = 9;
+  bool isMandatoryWatermarkRegion = 10;
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.Account
 message Account {
@@ -796,7 +916,7 @@ message MutateProjectRequest {
 message ProjectMutation {
   ProjectMutation_ChangePropertyMutation changeProperty = 4;
 }
-// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ProjectMutation_ChangePropertyMutation
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ProjectMutation.ChangePropertyMutation
 message ProjectMutation_ChangePropertyMutation {
   string newTitle = 2;
 }
@@ -812,6 +932,7 @@ message ProjectMetadata {
   Timestamp createTime = 9;
   bool isPublic = 13;
   repeated string audioOverviewArtifactIds = 17;
+  Provenance_OriginProductType creationOrigin = 26;
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.Project
 message Project {
@@ -823,6 +944,7 @@ message Project {
   PremiumFeatureInfo premiumFeatureInfo = 10;
   TierLimits projectTierLimits = 11;
   repeated ChatSession chatSessions = 12;
+  repeated ProjectNote notes = 18;
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.PremiumFeatureInfo
 message PremiumFeatureInfo {
@@ -844,6 +966,7 @@ message Source {
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.SourceMetadata
 message SourceMetadata {
   GoogleDocsSourceMetadata googleDocsMetadata = 1;
+  Timestamp sourceAddedTimestamp = 3;
   OriginalSourceContentType originalSourceContentType = 5;
   WebpageMetadata webpageMetadata = 8;
   GoogleDriveSourceMetadata googleDriveSourceMetadata = 10;
@@ -886,6 +1009,7 @@ message GeneratePromptSuggestionsRequest {
   string projectId = 2;
   repeated SourceId sourceIds = 3;
   SuggestionConfigId configId = 4;
+  string languageCode = 7;
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.GetArtifactCustomizationChoicesResponse
 message GetArtifactCustomizationChoicesResponse {
@@ -930,6 +1054,22 @@ message CreateArtifactRequest {
 message DeleteArtifactRequest {
   RequestContext requestContext = 1;
   string artifactId = 2;
+}
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.UpdateArtifactScheduledNotificationConfigRequest
+message UpdateArtifactScheduledNotificationConfigRequest {
+  RequestContext requestContext = 1;
+  ScheduledNotificationConfig scheduledNotificationConfig = 2;
+  string projectId = 4;
+}
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ListArtifactScheduledNotificationConfigsResponse
+message ListArtifactScheduledNotificationConfigsResponse {
+  repeated ScheduledNotificationConfig scheduledNotificationConfigs = 1;
+}
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ListArtifactScheduledNotificationConfigsRequest
+message ListArtifactScheduledNotificationConfigsRequest {
+  RequestContext requestContext = 1;
+  string artifactId = 2;
+  string projectId = 4;
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.UpsertArtifactUserStateResponse
 message UpsertArtifactUserStateResponse {
@@ -1006,6 +1146,8 @@ message PremiumUserInfo {
   bool isPremiumUser = 1;
   UserDomain userDomain = 2;
   PremiumTier userPremiumTier = 4;
+  bool nosEnabled = 5;
+  bool computeMeteringEnabled = 7;
 }
 
 // ===== google.internal.labs.tailwind.orchestration.v1/project_note.pb.dart =====
@@ -1015,6 +1157,7 @@ message NoteMetadata {
   NoteType type = 1;
   Timestamp lastEditTimestamp = 3;
   NotePromptType notePromptType = 4;
+  bool isRetrievable = 7;
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.ProjectNote
 message ProjectNote {
@@ -1169,6 +1312,7 @@ message ParagraphElement {
   TextRun textRun = 3;
   Image image = 4;
   Resource resource = 5;
+  A2uiInline a2uiInline = 6;
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.Paragraph
 message Paragraph {
@@ -1181,6 +1325,9 @@ message Image {
   string url = 1;
   string sourceImageId = 3;
   ImageBlockReason blockReason = 4;
+}
+// Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.A2uiInline
+message A2uiInline {
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.A2uiBlock
 message A2uiBlock {
@@ -1212,9 +1359,10 @@ message StructuralElement {
   CodeBlock codeBlock = 7;
   A2uiBlock a2uiBlock = 8;
   Thought thought = 9;
-  .google.internal.labs.tailwind.orchestration.v1.agency.FunctionCall functionCall = 10;
-  .google.internal.labs.tailwind.orchestration.v1.agency.FunctionResponse functionResponse = 11;
+  FunctionCall functionCall = 10;
+  FunctionResponse functionResponse = 11;
   HorizontalRule horizontalRule = 12;
+  Resource resource = 13;
 }
 // Protobuf FQN: google.internal.labs.tailwind.orchestration.v1.Body
 message Body {
@@ -1337,12 +1485,33 @@ message ArtifactReadyPushNotificationCustomPayload {
   string projectId = 3;
 }
 
+// ===== labs.language.tailwind.common.protos/pagination.pb.dart =====
+// Dart library: package:labs.language.tailwind.common.protos/pagination.pb.dart
+// Protobuf FQN: labs_language.tailwind.common.protos.PagingState
+message PagingState {
+  PagingState_ContinuationState continuationState = 1;
+  ContinuationToken token = 2;
+}
+// Protobuf FQN: labs_language.tailwind.common.protos.PagingOptions
+message PagingOptions {
+  int32 limit = 1;
+  ContinuationToken token = 2;
+}
+// Protobuf FQN: labs_language.tailwind.common.protos.ContinuationToken
+message ContinuationToken {
+  string next = 1;
+}
+
 // ===== labs.language.tailwind.common.protos/projects.pb.dart =====
 // Dart library: package:labs.language.tailwind.common.protos/projects.pb.dart
 // Protobuf FQN: labs_language.tailwind.common.protos.ProjectPublicSettings
 message ProjectPublicSettings {
   bool isPubliclyReadable = 1;
   bool isDiscoverable = 2;
+}
+// Protobuf FQN: labs_language.tailwind.common.protos.UserInfoAndRole
+message UserInfoAndRole {
+  ProjectRole role = 2;
 }
 
 // ===== labs.language.tailwind.common.protos/provenance.pb.dart =====
@@ -1408,6 +1577,22 @@ message CachedAudioOverview {
   Duration playbackPosition = 9;
 }
 
+// ===== labs.language.tailwind.mobile.app.protos.persistence/note.pb.dart =====
+// Dart library: package:labs.language.tailwind.mobile.app.protos.persistence/note.pb.dart
+// Protobuf FQN: labs_language_tailwind_mobile_app_protos.NoteMetadata
+message NoteMetadata {
+  Timestamp lastEditTimestamp = 3;
+  bool isRetrievable = 7;
+}
+// Protobuf FQN: labs_language_tailwind_mobile_app_protos.ProjectNote
+message ProjectNote {
+  string id = 1;
+  string content = 2;
+  NoteMetadata metadata = 3;
+  string name = 5;
+  TailwindDoc tailwindDocContent = 6;
+}
+
 // ===== labs.language.tailwind.mobile.app.protos.persistence/project.pb.dart =====
 // Dart library: package:labs.language.tailwind.mobile.app.protos.persistence/project.pb.dart
 // Protobuf FQN: labs_language_tailwind_mobile_app_protos.TierLimits
@@ -1422,6 +1607,7 @@ message ProjectMetadata {
   Timestamp createTime = 2;
   repeated string audioOverviewIds = 3;
   bool isPublic = 4;
+  OriginProductType creationOrigin = 5;
 }
 // Protobuf FQN: labs_language_tailwind_mobile_app_protos.Project
 message Project {
@@ -1433,6 +1619,7 @@ message Project {
   PremiumFeatureInfo premiumFeatureInfo = 6;
   TierLimits projectTierLimits = 7;
   repeated ChatSession chatSessions = 9;
+  repeated ProjectNote notes = 10;
 }
 // Protobuf FQN: labs_language_tailwind_mobile_app_protos.ChatSession
 message ChatSession {
@@ -1507,6 +1694,7 @@ message SourceMetadata {
   GoogleDriveSourceMetadata googleDriveSourceMetadata = 3;
   string webpageUrl = 4;
   ExpertIntelligenceSourceMetadata expertIntelligenceSourceMetadata = 5;
+  Timestamp sourceAddedTimestamp = 6;
 }
 // Protobuf FQN: labs_language_tailwind_mobile_app_protos.Source
 message Source {
@@ -1514,6 +1702,19 @@ message Source {
   string title = 2;
   SourceMetadata metadata = 3;
   SourceSettings settings = 4;
+}
+
+// ===== labs.language.tailwind.mobile.app.protos.persistence/stored_audio_metadata.pb.dart =====
+// Dart library: package:labs.language.tailwind.mobile.app.protos.persistence/stored_audio_metadata.pb.dart
+// Protobuf FQN: labs.language.tailwind.mobile.app.protos.persistence.StoredAudioMetadataStore
+message StoredAudioMetadataStore {
+}
+// Protobuf FQN: labs.language.tailwind.mobile.app.protos.persistence.StoredAudioMetadata
+message StoredAudioMetadata {
+  string filename = 1;
+  string projectId = 2;
+  StoredAudioUploadState uploadState = 3;
+  string sourceId = 4;
 }
 
 // ===== labs.language.tailwind.mobile.app.protos.persistence/tailwind_doc.pb.dart =====
@@ -1661,6 +1862,10 @@ message TailwindAccount {
   UserDomain userDomain = 4;
   PremiumTier premiumTier = 5;
   bool isEeaUser = 6;
+  bool nosEnabled = 7;
+  ArtifactsSettings_WatermarkStyle watermarkStyle = 8;
+  bool isMandatoryWatermarkRegion = 9;
+  bool computeMeteringEnabled = 10;
 }
 
 // ===== labs.language.tailwind.mobile.app.services/user_preferences.pb.dart =====
@@ -1672,6 +1877,10 @@ message UserPreferences {
   bool hasNotificationPermissionPromptBeenShown = 3;
   bool hasCinematicBannerBeenDismissed = 4;
   bool hasShortsBannerBeenDismissed = 6;
+  bool hasRebrandModalBeenShown = 7;
+  int32 liveUseCount = 8;
+  int64 lastInAppReviewRequestedTimestampSeconds = 9;
+  int32 inAppReviewRequestedCount = 10;
 }
 
 // ===== labs.language.tailwind.sharing/labs_tailwind_sharing_service.pb.dart =====
@@ -1690,18 +1899,19 @@ message ShareProjectRequest {
   repeated ShareProjectRequest_ProjectToShare project = 1;
   RequestContext requestContext = 4;
 }
-// Protobuf FQN: labs.language.tailwind.sharing.ShareProjectRequest_PublicDocumentSettings
+// Protobuf FQN: labs.language.tailwind.sharing.ShareProjectRequest.PublicDocumentSettings
 message ShareProjectRequest_PublicDocumentSettings {
   bool isPubliclyReadable = 1;
   bool isDiscoverable = 2;
 }
-// Protobuf FQN: labs.language.tailwind.sharing.ShareProjectRequest_ProjectToShare
+// Protobuf FQN: labs.language.tailwind.sharing.ShareProjectRequest.ProjectToShare
 message ShareProjectRequest_ProjectToShare {
   string projectId = 1;
   ShareProjectRequest_PublicDocumentSettings publicDocumentSettings = 3;
 }
 // Protobuf FQN: labs.language.tailwind.sharing.GetProjectDetailsResponse
 message GetProjectDetailsResponse {
+  repeated UserInfoAndRole userInfoAndRole = 1;
   ProjectPublicSettings publicSettings = 2;
   int32 maxIndividualsShareLimit = 3;
   bool isPublicSharingAllowed = 4;
@@ -1734,6 +1944,15 @@ message A2uiMetadata {
 message ArtifactEngagementMetadata {
   ArtifactType artifactType = 1;
   Duration consumptionDuration = 2;
+}
+
+// ===== logs.proto.labs_tailwind.metadata/audio_recording_metadata.pb.dart =====
+// Dart library: package:logs.proto.labs_tailwind.metadata/audio_recording_metadata.pb.dart
+// Protobuf FQN: logs.proto.labs_tailwind.AudioRecordingMetadata
+message AudioRecordingMetadata {
+  AudioRecordingStatus status = 1;
+  Duration duration = 2;
+  AudioRecordingFailureReason failureReason = 3;
 }
 
 // ===== logs.proto.labs_tailwind.metadata/chat_streaming_terminated_metadata.pb.dart =====
@@ -1785,6 +2004,7 @@ message TailwindUiInteractionMetadata {
   SearchMetadata searchMetadata = 13;
   ChatStreamingTerminatedMetadata chatStreamingTerminatedMetadata = 14;
   NotificationMetadata notificationMetadata = 15;
+  AudioRecordingMetadata audioRecordingMetadata = 16;
 }
 // Protobuf FQN: logs.proto.labs_tailwind.TailwindClientExtension
 message TailwindClientExtension {
@@ -1812,5 +2032,6 @@ message TailwindVisualElementMetadata {
   SearchMetadata searchMetadata = 8;
   bool isPublicProject = 9;
   UserRole userRole = 10;
+  ArtifactType artifactType = 11;
   ExplainerVideoType explainerVideoType = 14;
 }

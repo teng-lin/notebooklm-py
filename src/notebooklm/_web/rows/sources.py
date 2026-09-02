@@ -6,12 +6,15 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from ..._types.common import _datetime_from_timestamp
 from ..._types.enums import DriveSourceStatus, SourceStatus
 from ...exceptions import DecodingError
 from ...rpc import RPCMethod, safe_index
+
+if TYPE_CHECKING:
+    from ..._types.sources import ExpertIntelligenceSourceMetadata
 
 logger = logging.getLogger("notebooklm._row_adapters.sources")
 
@@ -307,7 +310,18 @@ class SourceRow:
     # rows have no URL (metadata[5]/[7] null; metadata[0] is the Drive block).
     _META_DRIVE_DESCRIPTOR_POS: ClassVar[int] = 9
     _META_LAST_MODIFIED_POS: ClassVar[int] = 14
+    # ``SourceMetadata.expertIntelligenceSourceMetadata`` (proto tag 19, index
+    # 18) — Play Books provenance on an Expert-Intelligence source (#2292).
+    _META_EXPERT_INTELLIGENCE_POS: ClassVar[int] = 18
     _META_MIME_POS: ClassVar[int] = 19
+    # Inner positions of the ExpertIntelligenceSourceMetadata sub-array at [18].
+    _EI_CONTENT_ID_POS: ClassVar[int] = 0
+    _EI_PROVIDER_POS: ClassVar[int] = 1
+    _EI_TITLE_POS: ClassVar[int] = 2
+    _EI_AUTHORS_POS: ClassVar[int] = 3
+    _EI_THUMBNAIL_POS: ClassVar[int] = 4
+    _EI_DESCRIPTION_POS: ClassVar[int] = 5
+    _EI_FIELD_TYPE_POS: ClassVar[int] = 6
     # Position of the MIME string inside the drive-file descriptor at [9].
     _DRIVE_DESCRIPTOR_MIME_POS: ClassVar[int] = 2
     # Drive ``documentId`` inside either Drive metadata block (#2113):
@@ -706,6 +720,58 @@ class SourceRow:
             return None
         value = descriptor[self._DRIVE_DESCRIPTOR_MIME_POS]
         return value if isinstance(value, str) and value else None
+
+    @property
+    def expert_intelligence(self) -> ExpertIntelligenceSourceMetadata | None:
+        """Play Books provenance from ``metadata[18]`` — ``None`` when absent.
+
+        Decodes ``SourceMetadata.expertIntelligenceSourceMetadata`` (proto tag
+        19), populated only on Expert-Intelligence sources. The sub-array is
+        ``[content_id, provider, title, [authors], thumbnail_url, description,
+        field_type, context_type]`` (live-captured #2292); the trailing
+        ``context_type`` enum string is not surfaced. Returns ``None`` unless
+        position 18 holds a non-empty list.
+        """
+        # Local import avoids a module-load cycle: ``_types.sources`` imports
+        # this row adapter lazily, so importing its dataclasses at module scope
+        # here would close the loop.
+        from ..._types.sources import ExpertIntelligenceSourceMetadata
+
+        metadata = self.metadata
+        if metadata is None or len(metadata) <= self._META_EXPERT_INTELLIGENCE_POS:
+            return None
+        block = metadata[self._META_EXPERT_INTELLIGENCE_POS]
+        if not isinstance(block, list) or not block:
+            return None
+
+        def _str(pos: int) -> str | None:
+            if len(block) <= pos:
+                return None
+            value = block[pos]
+            return value if isinstance(value, str) and value else None
+
+        def _num(pos: int) -> float | None:
+            if len(block) <= pos:
+                return None
+            value = block[pos]
+            return float(value) if isinstance(value, (int, float)) else None
+
+        authors_raw = block[self._EI_AUTHORS_POS] if len(block) > self._EI_AUTHORS_POS else None
+        authors = (
+            tuple(a for a in authors_raw if isinstance(a, str))
+            if isinstance(authors_raw, list)
+            else ()
+        )
+        provider = _num(self._EI_PROVIDER_POS)
+        return ExpertIntelligenceSourceMetadata(
+            content_id=_str(self._EI_CONTENT_ID_POS),
+            provider=int(provider) if provider is not None else None,
+            title=_str(self._EI_TITLE_POS),
+            authors=authors,
+            thumbnail_image_url=_str(self._EI_THUMBNAIL_POS),
+            description=_str(self._EI_DESCRIPTION_POS),
+            field_type=_num(self._EI_FIELD_TYPE_POS),
+        )
 
     @property
     def drive_document_id(self) -> str | None:
@@ -1383,3 +1449,26 @@ def interpret_source_freshness(result: Any) -> bool:
         raw_response=repr(result),
         method_id=RPCMethod.CHECK_SOURCE_FRESHNESS.value,
     )
+
+
+def first_added_source_id(payload: Any, *, method_id: str | None = None) -> str | None:
+    """Extract the new source id from an ``AddSourcesAsync`` (``X1snv``) response.
+
+    The response is ``[[[[id], "New Source", [.., type_code]], …], null,
+    [[stub, ack], …]]`` — the created stub sources at index 0, each an id
+    envelope ``[[id], title, meta]`` (live-captured #2292). Returns the first
+    stub's id, decoded via :func:`safe_index` so a shape change RAISES
+    ``UnknownRPCMethodError`` rather than silently yielding the wrong slot.
+    Returns ``None`` only when the id slot is present but not a non-empty
+    string.
+    """
+    id_value = safe_index(
+        payload,
+        0,
+        0,
+        0,
+        0,
+        method_id=method_id,
+        source="_web.sources.play_books.add_play_book",
+    )
+    return id_value if isinstance(id_value, str) and id_value else None

@@ -30,6 +30,11 @@ from .._app.source_content import (
     execute_source_guide,
     execute_source_stale,
 )
+from .._app.source_play_books import (
+    SourceAddPlayBookPlan,
+    execute_source_add_play_book,
+    fetch_play_books,
+)
 from .._app.source_wait import (
     SourceWaitPlan,
     execute_source_wait,
@@ -52,8 +57,10 @@ from ._source_render import (  # noqa: F401
     _print_add_research_task_ids,
     _print_clean_candidates,
     _render_add_research_result,
+    _render_play_books_result,
     _render_source_add_drive_file_result,
     _render_source_add_drive_result,
+    _render_source_add_play_book_result,
     _render_source_delete_result,
     _render_source_fulltext_result,
     _render_source_get_result,
@@ -70,6 +77,7 @@ from .auth_runtime import resolve_client_factory, with_client
 from .error_handler import _output_error, exit_with_code, output_error
 from .input import read_stdin_text, resolve_prompt
 from .options import (
+    _complete_sources,
     json_option,
     list_options,
     notebook_option,
@@ -85,7 +93,12 @@ from .rendering import (
     json_output_response,
     render_list,
 )
-from .resolve import require_notebook, resolve_notebook_id, resolve_source_id
+from .resolve import (
+    require_notebook,
+    resolve_notebook_id,
+    resolve_source_id,
+    resolve_source_ids,
+)
 from .runtime import is_quiet
 from .services.label_listing import LabelResolutionError
 from .services.source_listing import SourceListPlan, execute_source_list
@@ -110,6 +123,7 @@ from .services.source_research import (
     execute_source_add_research,
     validate_add_research_flags,
 )
+from .services.source_serializers import source_row_payload
 
 
 @click.group()
@@ -122,6 +136,8 @@ def source():
       add              Add a source (url, text, file, youtube)
       add-drive        Add a Google Drive document (native Docs/Slides/Sheets + PDF)
       add-drive-file   Add an upload-only Drive file (epub/docx/txt/...) via download
+      books            List Google Play Books eligible to add as sources
+      add-book         Add a Google Play Book by its content id
       add-research     Search web/drive and add sources from results
       get              Get source details
       fulltext         Get full indexed text content
@@ -133,6 +149,9 @@ def source():
       delete-by-title  Delete a source by exact title
       rename           Rename a source
       refresh          Refresh a URL/Drive source
+      add-async        Queue URL sources without waiting for ingest (AddSourcesAsync)
+      append           Append a text block to an existing source in place
+      copy             Copy sources into another notebook
 
     Partial ID Support: SOURCE_ID arguments support partial-prefix matching
     (e.g. 'abc' matches 'abc123def456...').
@@ -569,6 +588,58 @@ def source_add_drive_file(ctx, document_id, notebook_id, title, wait, json_outpu
                 with cli_status("Downloading + adding Drive file...", ctx=ctx):
                     result = await execute_source_add_drive_file(client, plan)
             _render_source_add_drive_file_result(result, json_output=json_output, ctx=ctx)
+
+    return _run()
+
+
+@source.command("books")
+@json_option
+@with_client
+def source_books(ctx, json_output, client_auth):
+    """List Google Play Books eligible to be added as sources (#2292).
+
+    Shows the account's "Expert Intelligence" library — purchased ebooks
+    NotebookLM can ingest (US only, 18+). Titles marked no cannot be added.
+    Add one with `source add-book <content-id>`. Web backend only.
+    """
+
+    async def _run():
+        async with resolve_client_factory(ctx)(client_auth) as client:
+            books = await fetch_play_books(client)
+            _render_play_books_result(books, json_output=json_output, ctx=ctx)
+
+    return _run()
+
+
+@source.command("add-book")
+@click.argument("content_id")
+@notebook_option
+@click.option("--wait", is_flag=True, default=False, help="Wait for processing to finish")
+@json_option
+@with_client
+def source_add_book(ctx, content_id, notebook_id, wait, json_output, client_auth):
+    """Add a Google Play Book as a source by its content id (#2292).
+
+    CONTENT_ID is a Play Books volume id from `source books`. The title must be
+    exportable (publisher-permitting); a blocked one is refused up front. Web
+    backend only. Reads back as an `expert_intelligence` source.
+    """
+    nb_id = require_notebook(notebook_id)
+
+    async def _run():
+        async with resolve_client_factory(ctx)(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            plan = SourceAddPlayBookPlan(
+                notebook_id=nb_id_resolved,
+                content_id=content_id,
+                wait=wait,
+            )
+            if json_output:
+                result = await execute_source_add_play_book(client, plan)
+            else:
+                with cli_status("Adding Play Book source...", ctx=ctx):
+                    result = await execute_source_add_play_book(client, plan)
+            _render_source_add_play_book_result(result, json_output=json_output, ctx=ctx)
 
     return _run()
 
@@ -1023,3 +1094,186 @@ def _dispatch_source_clean_result(
         f"[green]Successfully cleaned {result.deleted_count} source(s).[/green]",
         ctx=ctx,
     )
+
+
+# ---------------------------------------------------------------------------
+# #2283 transfer family: AddSourcesAsync / AppendSource / CopySourcesAsync
+# ---------------------------------------------------------------------------
+
+
+@source.command("add-async")
+@click.argument("urls", nargs=-1, required=True)
+@click.option(
+    "--allow-internal",
+    is_flag=True,
+    help="Allow private/loopback/link-local hosts (same gate as `source add`).",
+)
+@notebook_option
+@json_option
+@with_client
+def source_add_async(ctx, urls, allow_internal, notebook_id, json_output, client_auth):
+    """Queue one or more URL sources without waiting for ingest.
+
+    Sends a single non-blocking ``AddSourcesAsync`` call and prints the queued
+    source ids immediately (status is still processing). Use ``source wait``
+    or ``source list`` to see them become ready. YouTube URLs are detected
+    automatically. Unlike ``source add`` this never retries a lost response —
+    reconcile against ``source list`` if the command reports an unconfirmed
+    write.
+
+    \b
+    Example:
+      notebooklm source add-async https://example.com https://youtu.be/abc
+      notebooklm source add-async https://example.com --json
+    """
+    nb_id = require_notebook(notebook_id)
+    # Same scheme / SSRF gate as ``source add`` — the async route must not be a
+    # way around it. Raises SourceAddValidationError before any RPC.
+    for url in urls:
+        source_add_service.validate_url(url, allow_internal=allow_internal)
+
+    async def _run():
+        async with resolve_client_factory(ctx)(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            sources = await client.sources.add_urls_async(nb_id_resolved, list(urls))
+            if json_output:
+                json_output_response(
+                    {
+                        "notebook_id": nb_id_resolved,
+                        "sources": [source_row_payload(s) for s in sources],
+                        "count": len(sources),
+                        "requested": len(urls),
+                    }
+                )
+                return
+            cli_print(f"[green]Queued {len(sources)} of {len(urls)} source(s):[/green]", ctx=ctx)
+            for src in sources:
+                cli_print(f"  {src.id}  {src.title}", ctx=ctx)
+
+    return _run()
+
+
+@source.command("append")
+@click.argument("source_id", shell_complete=_complete_sources)
+@click.argument("text")
+@click.option(
+    "--header",
+    default="",
+    help="Optional block header (accepted by the backend; not shown in fulltext)",
+)
+@notebook_option
+@json_option
+@with_client
+def source_append(ctx, source_id, text, header, notebook_id, json_output, client_auth):
+    """Append a plain-text block to an existing source in place.
+
+    TEXT is appended at the very end of the source's fulltext (``AppendSource``).
+    Pass ``-`` as TEXT to read it from stdin. SOURCE_ID can be a full id or a
+    unique prefix.
+
+    \b
+    Example:
+      notebooklm source append src123 "Addendum: see section 4."
+      cat notes.txt | notebooklm source append src123 -
+    """
+    nb_id = require_notebook(notebook_id)
+    body = read_stdin_text(source_label="text") if text == "-" else text
+    if not body:
+        raise ValidationError("text must not be empty")
+
+    async def _run():
+        async with resolve_client_factory(ctx)(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            resolved_id = await resolve_source_id(
+                client, nb_id_resolved, source_id, json_output=json_output
+            )
+            await client.sources.append_text(nb_id_resolved, resolved_id, body, header=header)
+            if json_output:
+                json_output_response(
+                    {
+                        "notebook_id": nb_id_resolved,
+                        "source_id": resolved_id,
+                        "appended": True,
+                        "characters": len(body),
+                    }
+                )
+                return
+            cli_print(
+                f"[green]Appended {len(body)} characters to source:[/green] {resolved_id}", ctx=ctx
+            )
+
+    return _run()
+
+
+@source.command("copy")
+@click.argument("source_ids", nargs=-1, required=True, shell_complete=_complete_sources)
+@click.option("--to", "target", required=True, help="Target notebook id (or unique prefix)")
+@notebook_option
+@json_option
+@with_client
+def source_copy(ctx, source_ids, target, notebook_id, json_output, client_auth):
+    """Copy sources into another notebook (``CopySourcesAsync``).
+
+    Prints each original id alongside its new copy in the target notebook.
+    SOURCE_IDS may be full ids or unique prefixes within the current notebook.
+
+    \b
+    Example:
+      notebooklm source copy src1 src2 --to 1a2b3c4d
+      notebooklm source copy src1 --to 1a2b3c4d --json
+    """
+    nb_id = require_notebook(notebook_id)
+
+    async def _run():
+        async with resolve_client_factory(ctx)(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            target_resolved = await resolve_notebook_id(client, target, json_output=json_output)
+            # One listing for every prefix (resolve_source_ids), not one per id.
+            resolved_ids = (
+                await resolve_source_ids(
+                    client, nb_id_resolved, tuple(source_ids), json_output=json_output
+                )
+                or []
+            )
+            copied = await client.sources.copy(nb_id_resolved, resolved_ids, target_resolved)
+            not_copied = [sid for sid in resolved_ids if sid not in {c.original_id for c in copied}]
+            if json_output:
+                json_output_response(
+                    {
+                        "notebook_id": nb_id_resolved,
+                        "target_notebook_id": target_resolved,
+                        "copied": [
+                            {
+                                "original_id": item.original_id,
+                                "source": source_row_payload(item.source),
+                            }
+                            for item in copied
+                        ],
+                        "not_copied": not_copied,
+                        "count": len(copied),
+                        "requested": len(resolved_ids),
+                    }
+                )
+            else:
+                cli_print(
+                    f"[green]Copied {len(copied)} of {len(resolved_ids)} source(s) to[/green] "
+                    f"{target_resolved}",
+                    ctx=ctx,
+                )
+                for item in copied:
+                    cli_print(
+                        f"  {item.original_id} -> {item.source.id}  {item.source.title}", ctx=ctx
+                    )
+            if not_copied:
+                # A partial copy is a partial failure: the JSON payload already
+                # names the ids that stayed behind (``not_copied``); text mode says
+                # so explicitly. Either way exit non-zero so scripts cannot mistake
+                # a partial copy for success.
+                if not json_output:
+                    cli_print(
+                        f"[yellow]Not copied ({len(not_copied)}):[/yellow] {', '.join(not_copied)}",
+                        ctx=ctx,
+                    )
+                exit_with_code(1)
+
+    return _run()

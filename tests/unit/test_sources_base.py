@@ -44,12 +44,17 @@ class _ConcreteSources(SourcesAPI):
     add_file = _unsupported
     add_drive = _unsupported
     add_drive_file = _unsupported
+    list_play_books = _unsupported
+    add_play_book = _unsupported
     delete = _unsupported
     rename = _unsupported
     refresh = _unsupported
     check_freshness = _unsupported
     get_guide = _unsupported
     get_fulltext = _unsupported
+    add_urls_async = _unsupported
+    append_text = _unsupported
+    copy = _unsupported
 
 
 @pytest.mark.asyncio

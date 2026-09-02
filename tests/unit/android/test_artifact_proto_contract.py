@@ -840,3 +840,88 @@ def test_decode_failure_drops_raw_message_capability_and_exception_frames() -> N
             continue
         assert secret not in repr(frame.f_locals)
         assert raw not in frame.f_locals.values()
+
+
+def test_copy_and_customization_choice_shapes_are_pinned() -> None:
+    """#2283: CopyArtifactsAsync (web-derived) and GetArtifactCustomizationChoices (APK-exact)."""
+    singular = False
+    repeated = True
+    string = FieldDescriptor.TYPE_STRING
+    integer = FieldDescriptor.TYPE_INT32
+    message = FieldDescriptor.TYPE_MESSAGE
+    enum = FieldDescriptor.TYPE_ENUM
+    context = "labs.language.tailwind.common.protos.RequestContext"
+    assert _shapes(artifacts_pb2.CopyArtifactsAsyncRequest) == _expected(
+        ("request_context", 1, singular, message, context),
+        ("artifact_ids", 2, repeated, string, None),
+        ("target_project_id", 3, singular, string, None),
+    )
+    assert _shapes(artifacts_pb2.CopiedArtifact) == _expected(
+        ("source_artifact_id", 1, singular, string, None),
+        ("artifact", 2, singular, message, f"{ORCHESTRATION_PACKAGE}.Artifact"),
+    )
+    assert _shapes(artifacts_pb2.CopyArtifactsAsyncResponse) == _expected(
+        ("copied_artifacts", 1, repeated, message, f"{ORCHESTRATION_PACKAGE}.CopiedArtifact"),
+    )
+    assert _shapes(artifacts_pb2.GetArtifactCustomizationChoicesRequest) == _expected(
+        ("request_context", 1, singular, message, context),
+        ("project_id", 2, singular, string, None),
+        ("artifact_type", 3, singular, enum, f"{ORCHESTRATION_PACKAGE}.ArtifactType"),
+    )
+    assert _shapes(artifacts_pb2.FormatChoice) == _expected(
+        ("format", 1, singular, integer, None),
+        ("title", 2, singular, string, None),
+        ("description", 3, singular, string, None),
+    )
+    assert _shapes(artifacts_pb2.FormatChoices) == _expected(
+        ("choices", 1, repeated, message, f"{ORCHESTRATION_PACKAGE}.FormatChoice"),
+    )
+    assert _shapes(artifacts_pb2.SlidesType) == _expected(
+        ("deck_type", 1, singular, enum, f"{ORCHESTRATION_PACKAGE}.DeckType"),
+        ("title", 2, singular, string, None),
+        ("description", 3, singular, string, None),
+    )
+    assert _shapes(artifacts_pb2.SlidesCustomizationChoices) == _expected(
+        ("types", 1, repeated, message, f"{ORCHESTRATION_PACKAGE}.SlidesType"),
+    )
+    assert _shapes(artifacts_pb2.TailoredReportTypeOption) == _expected(
+        ("report_type", 1, singular, string, None),
+        ("report_description", 2, singular, string, None),
+        ("report_directive", 3, singular, string, None),
+    )
+    assert _shapes(artifacts_pb2.TailoredReportCustomizationChoices) == _expected(
+        (
+            "report_type_options",
+            1,
+            repeated,
+            message,
+            f"{ORCHESTRATION_PACKAGE}.TailoredReportTypeOption",
+        ),
+    )
+    assert _shapes(artifacts_pb2.ArtifactCustomizationChoices) == _expected(
+        ("audio_overview_choices", 1, singular, message, f"{ORCHESTRATION_PACKAGE}.FormatChoices"),
+        ("video_overview_choices", 2, singular, message, f"{ORCHESTRATION_PACKAGE}.FormatChoices"),
+        (
+            "slides_customization_choices",
+            3,
+            singular,
+            message,
+            f"{ORCHESTRATION_PACKAGE}.SlidesCustomizationChoices",
+        ),
+        (
+            "tailored_report_customization_choices",
+            4,
+            singular,
+            message,
+            f"{ORCHESTRATION_PACKAGE}.TailoredReportCustomizationChoices",
+        ),
+    )
+    assert _shapes(artifacts_pb2.GetArtifactCustomizationChoicesResponse) == _expected(
+        (
+            "artifact_customization_choices",
+            1,
+            singular,
+            message,
+            f"{ORCHESTRATION_PACKAGE}.ArtifactCustomizationChoices",
+        ),
+    )

@@ -166,6 +166,24 @@ async def poll_and_classify(
     optional for backward compatibility.
     """
     status = await client.research.poll(notebook_id, task_id)
+    return classify_research_task(status)
+
+
+async def discover_and_classify(
+    client: Any, notebook_id: str, query: str, mode: str = "default"
+) -> ResearchStatusResult:
+    """Run one synchronous ``research.discover`` and classify it like a poll.
+
+    The completed task a discovery returns is projected through the same
+    :class:`ResearchStatusResult` the ``research status`` render and ``--json``
+    payload consume, so the command layer needs no second render path.
+    """
+    task = await client.research.discover(notebook_id, query, mode=mode)
+    return classify_research_task(task)
+
+
+def classify_research_task(status: Any) -> ResearchStatusResult:
+    """Project one typed ``ResearchTask`` into the command-layer result."""
     # ``ResearchStatus`` is a ``str`` enum; ``.value`` yields the canonical
     # lowercase code the CLI render branches + the original status command keyed
     # off (matches ``execute_research_wait``'s ``status.status.value``).

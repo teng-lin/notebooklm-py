@@ -11,8 +11,9 @@ and cross-referenced to the 48-method Web registry used for that audit. The newe
 The original traffic capture exercised 21 methods and decoded their wire shapes here; later direct
 bearer/gRPC probes also exercised APK-unwired methods and destructive APK-present methods on
 disposable copies. The
-**complete protobuf schema** — 295 messages / 767 fields with real field names, tags, types, and
-cardinality — was recovered by decompiling the Flutter binary with a Dart-3.13-ported blutter, and
+**complete protobuf schema** — 323 messages / 868 fields with real field names, tags, types, and
+cardinality — was recovered by decompiling the Flutter binary with a Dart-ported blutter (3.13 for the
+`1.46.7` snapshot, 3.14 for the current `1.55.10` regeneration), and
 is checked in at **[android/schema.proto](schema.proto)**. The inline shapes below keep their
 wire-capture form (field `#N` + type); the `.proto` file is authoritative for names. Read paths
 were driven on real notebooks; mutations were confined to throwaway notebooks or copies and
@@ -169,6 +170,7 @@ Status vocabulary below:
 | GetArtifact | `v9rmvd` (GET_INTERACTIVE_HTML) | ✅ | captured; generic artifact getter |
 | DeriveArtifact | `KmcKPe` (REVISE_SLIDE) | ✅ | compiled; generic derive operation |
 | **GenerateArtifact** | `Rytqqe` (RETRY_ARTIFACT) | ❌ | **live backend overlay**: wire pinned; valid READY artifact rejected as non-retryable; accepted failed-row replay not yet captured |
+| **DiscoverSources** | `Es3dTe` (DISCOVER_SOURCES) | ✅ | **live** synchronous discovery (`research.discover()`; ten rows, overview, job id) |
 | **DiscoverSourcesManifold** | `Ljjv0c` (START_FAST_RESEARCH) | ❌ | **live** fast research start |
 | **DiscoverSourcesAsync** | `QA9ei` (START_DEEP_RESEARCH) | ❌ | **live** deep research start |
 | **ListDiscoverSourcesJob** | `e3bVqc` (POLL_RESEARCH) | ❌ | **live** poll |
@@ -192,10 +194,10 @@ Status vocabulary below:
 
 | APK method | `notebooklm-py` coverage / closest web equivalent |
 |---|---|
-| DiscoverSources | no exact sync caller; web API exposes the async Research family |
+| DiscoverSources | `research.discover()` (both backends, since #2283); the async Research family stays on `start`/`poll` |
 | GenerateAccessToken | no public API |
 | GenerateFreeFormStreamed | implemented through the separate streamed query endpoint, not `RPCMethod` |
-| GetArtifactCustomizationChoices | no public API |
+| GetArtifactCustomizationChoices | `sqTeoe` (GET_CUSTOMIZATION_CHOICES) — `artifacts.get_customization_choices()` on both backends; see [copy-append-suggestion-evidence.md](copy-append-suggestion-evidence.md#getartifactcustomizationchoices) |
 | GetArtifactUserState | no standalone public API |
 | UpsertArtifactUserState | no standalone public API |
 | GetDriveSourceStatus | no exact caller; source freshness uses `CheckSourceFreshness` |
@@ -870,7 +872,7 @@ Graduated options, cheapest first:
 
    **Outcome (2026-07-22): success — full schema recovered.** blutter was ported to Dart 3.13 and
    run to completion; the recovered schema is checked in at
-   [docs/android/schema.proto](schema.proto) (**295 messages, 767 fields**, field
+   [docs/android/schema.proto](schema.proto) (**295 messages, 767 fields** at the time, field
    numbers/names/types/cardinality from the binary). The port took two kinds of change, captured as
    a patch in [docs/android/blutter-dart3.13.patch](blutter-dart3.13.patch):
 
@@ -917,11 +919,14 @@ probes, and one routed-but-rejected `RefreshSource` result. A later stale-Google
 also live-verified on a rich disposable copy. These later results supplement the 21 captured
 shapes; they do not change the capture count.
 
-**Field names/tags/types — recovered:** the full protobuf schema (295 messages, 767 fields) is in
+**Field names/tags/types — recovered:** the full protobuf schema (323 messages, 868 fields) is in
 [android/schema.proto](schema.proto), decompiled from the binary. This supersedes the
 `(inferred)` names in the inline shapes — including every message not reachable from the mobile UI
-(`CreateNote`/`MutateNote`/`DeleteNotes`, `ActOnSources`, artifact ops, the WebRTC Live messages,
-`PrototypeNotebookSearch`). Enum *value* names are in [Enums](#enums-recovered-from-the-binary).
+(`CreateNote`/`MutateNote`/`DeleteNotes`, `ActOnSources`, artifact ops, the WebRTC Live messages).
+The one exception is `PrototypeNotebookSearch`: the `1.55.10` build dropped that RPC and its four
+`Prototype*` discovery messages, so the current file no longer carries them; their recovered names
+and tags remain in the `1.46.7` schema at commit `d5df15e77`. Enum *value* names are in
+[Enums](#enums-recovered-from-the-binary).
 
 **Still approximate:** a few scalar int widths (`int32` vs `int64`) from the adder heuristic; the
 deep rich-text/citation grammar inside `ListChatTurns`/`ListArtifacts`/`LoadSource`/

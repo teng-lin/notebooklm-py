@@ -181,3 +181,43 @@ message UploadFileRequest {
   string source_id = 5; // evidence: docs/android/file-transfer-evidence.md
   .labs.language.tailwind.common.protos.Provenance provenance = 6; // evidence: docs/android/file-transfer-evidence.md
 }
+
+// ---------------------------------------------------------------------------
+// #2283 transfer family. None of these messages are compiled into the official
+// app; their tag layout is pinned by successful live Android gRPC calls
+// (2026-09-01) and cross-checked against the Web front door, while the
+// conventional type names are inferred from the current Web registrations.
+// ---------------------------------------------------------------------------
+
+message SourceContent {
+  PlainTextSourceContent plain_text = 2; // evidence: docs/android/copy-append-suggestion-evidence.md#appendsource
+}
+
+message AppendSourceRequest {
+  SourceId source_id = 2; // evidence: docs/android/copy-append-suggestion-evidence.md#appendsource
+  SourceContent content = 4; // evidence: docs/android/copy-append-suggestion-evidence.md#appendsource
+}
+
+message CopySourcesAsyncRequest {
+  repeated SourceId source_ids = 3; // evidence: docs/android/copy-append-suggestion-evidence.md#copysourcesasync
+  string target_project_id = 4; // evidence: docs/android/copy-append-suggestion-evidence.md#copysourcesasync
+}
+
+message CopiedSource {
+  SourceId source_id = 1; // evidence: docs/android/copy-append-suggestion-evidence.md#copysourcesasync
+  Source source = 2; // evidence: docs/android/copy-append-suggestion-evidence.md#copysourcesasync
+}
+
+message CopySourcesAsyncResponse {
+  repeated CopiedSource copied_sources = 1; // evidence: docs/android/copy-append-suggestion-evidence.md#copysourcesasync
+}
+
+message SourceAcknowledgement {
+  Source source = 1; // evidence: docs/android/copy-append-suggestion-evidence.md#addsourcesasync
+  int32 status = 2; // evidence: docs/android/copy-append-suggestion-evidence.md#addsourcesasync
+}
+
+message AddSourcesAsyncResponse {
+  repeated Source sources = 1; // evidence: docs/android/copy-append-suggestion-evidence.md#addsourcesasync
+  repeated SourceAcknowledgement acknowledgements = 3; // evidence: docs/android/copy-append-suggestion-evidence.md#addsourcesasync
+}

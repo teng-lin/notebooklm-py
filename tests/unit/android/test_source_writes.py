@@ -51,6 +51,7 @@ from notebooklm.exceptions import (
     SourceAddError,
     SourceNotFoundError,
     SourceTimeoutError,
+    UnsupportedOperationError,
     ValidationError,
 )
 from notebooklm.types import Source, SourceStatus
@@ -1562,3 +1563,21 @@ async def test_cancellation_between_registration_and_commit_dispatches_no_later_
     with pytest.raises(asyncio.CancelledError):
         await _api(transport).add_url(NOTEBOOK_ID, URL_A)
     assert [call[0] for call in transport.calls] == [ADD_TENTATIVE_SOURCES_METHOD]
+
+
+class TestPlayBooksAreWebOnly:
+    """Play Books (Expert Intelligence) is a web-tier capability (#2292)."""
+
+    @pytest.mark.asyncio
+    async def test_list_play_books_raises_unsupported(self) -> None:
+        transport = FakeTransport()
+        with pytest.raises(UnsupportedOperationError, match="web backend only"):
+            await _api(transport).list_play_books()
+        assert transport.calls == []
+
+    @pytest.mark.asyncio
+    async def test_add_play_book_raises_unsupported_without_sending(self) -> None:
+        transport = FakeTransport()
+        with pytest.raises(UnsupportedOperationError, match="web backend only"):
+            await _api(transport).add_play_book(NOTEBOOK_ID, "QhsZEAAAQBAJ")
+        assert transport.calls == []

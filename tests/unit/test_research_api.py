@@ -4,8 +4,9 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
-from notebooklm.exceptions import UnknownRPCMethodError
+from notebooklm.exceptions import DecodingError, UnknownRPCMethodError, ValidationError
 from notebooklm.rpc import RPCMethod
+from notebooklm.types import DiscoveryMode, ResearchStatus
 
 
 class TestResearchAPI:
@@ -766,3 +767,197 @@ class TestImportSourcesEdgeCases:
             )
         assert len(result) == 1
         assert result[0]["id"] == "src_real"
+
+
+_DISCOVER_RESULT = [
+    [
+        ["https://example.com/a", "Title A", "Why A matters.", 1],
+        ["https://example.com/b", "Title B", "Why B matters.", 1],
+    ],
+    "An overview sentence.",
+    ["job_001"],
+]
+
+
+def _decoded_f_req(request) -> list:
+    """Return the decoded ``f.req`` params list of a batchexecute request."""
+    import json
+    from urllib.parse import parse_qs
+
+    body = parse_qs(request.content.decode())
+    envelope = json.loads(body["f.req"][0])
+    return json.loads(envelope[0][0][1])
+
+
+class TestResearchDiscover:
+    """``research.discover`` — the synchronous ``Es3dTe DiscoverSources`` call."""
+
+    @pytest.mark.asyncio
+    async def test_discover_sends_the_fast_request_shape_and_returns_a_completed_task(
+        self, auth_tokens, httpx_mock: HTTPXMock, build_rpc_response
+    ):
+        httpx_mock.add_response(content=build_rpc_response("Es3dTe", _DISCOVER_RESULT).encode())
+        async with NotebookLMClient(auth_tokens) as client:
+            task = await client.research.discover("nb_123", "quantum computing")
+        request = httpx_mock.get_request()
+        assert "rpcids=Es3dTe" in str(request.url)
+        assert "source-path=%2Fnotebook%2Fnb_123" in str(request.url)
+        assert _decoded_f_req(request) == [["quantum computing", 1], None, 1, "nb_123"]
+        assert task.task_id == "job_001"
+        assert task.status is ResearchStatus.COMPLETED and task.status_code == 2
+        assert task.query == "quantum computing"
+        assert task.summary == "An overview sentence."
+        assert task.discovery_mode is DiscoveryMode.DEFAULT_LLM_SEARCH
+        assert task.source_type == 1
+        assert [(s.url, s.title, s.hint, s.research_task_id) for s in task.sources] == [
+            ("https://example.com/a", "Title A", "Why A matters.", "job_001"),
+            ("https://example.com/b", "Title B", "Why B matters.", "job_001"),
+        ]
+        assert task.tasks == () and task.report == ""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("mode", "query", "expected_code", "sent_query"),
+        [
+            ("raw", "q", 2, "q"),
+            ("curious", "", 3, ""),
+            ("Curious_Raw", "", 4, ""),
+            # The curious modes send an empty context whatever the caller passed:
+            # a non-empty query would turn the call into a query search.
+            ("curious", "ignored text", 3, ""),
+            ("curious_raw", "ignored text", 4, ""),
+        ],
+    )
+    async def test_discover_modes_map_to_discovery_mode_codes(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+        mode,
+        query,
+        expected_code,
+        sent_query,
+    ):
+        httpx_mock.add_response(
+            content=build_rpc_response("Es3dTe", [[], "", ["job_002"]]).encode()
+        )
+        async with NotebookLMClient(auth_tokens) as client:
+            task = await client.research.discover("nb_123", query, mode=mode)
+        assert _decoded_f_req(httpx_mock.get_request()) == [
+            [sent_query, 1],
+            None,
+            expected_code,
+            "nb_123",
+        ]
+        assert task.discovery_mode is DiscoveryMode(expected_code)
+        assert task.query == sent_query
+        assert task.sources == () and task.summary == ""
+
+    @pytest.mark.asyncio
+    async def test_discover_transport_loss_is_an_unconfirmed_write(
+        self, auth_tokens, httpx_mock: HTTPXMock
+    ):
+        import httpx
+
+        from notebooklm.exceptions import NetworkError
+
+        httpx_mock.add_exception(httpx.ReadTimeout("lost after send"))
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(NetworkError) as raised:
+                await client.research.discover("nb_123", "q")
+        assert getattr(raised.value, "unconfirmed", False) is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("mode", "query", "message"),
+        [
+            ("deep", "q", "Invalid mode 'deep'"),
+            ("lite", "q", "Invalid mode 'lite'"),
+            ("default", "", "query must not be empty"),
+            ("raw", "  ", "query must not be empty"),
+            (None, "q", "mode must be a string"),
+            (3, "q", "mode must be a string"),
+            ("default", None, "query must be a string"),
+        ],
+    )
+    async def test_discover_validates_before_the_wire(
+        self, auth_tokens, httpx_mock: HTTPXMock, mode, query, message
+    ):
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ValidationError, match=message):
+                await client.research.discover("nb_123", query, mode=mode)
+        assert httpx_mock.get_request() is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "payload",
+        [[[], "overview"], [[], "overview", []], [[], "overview", [""]], [[], "overview", [7]]],
+    )
+    async def test_discover_without_a_job_id_raises_decoding_error(
+        self, auth_tokens, httpx_mock: HTTPXMock, build_rpc_response, payload
+    ):
+        httpx_mock.add_response(content=build_rpc_response("Es3dTe", payload).encode())
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(DecodingError, match="job id"):
+                await client.research.discover("nb_123", "q")
+
+    @pytest.mark.asyncio
+    async def test_discover_without_a_job_id_is_an_unconfirmed_write(
+        self, auth_tokens, httpx_mock: HTTPXMock, build_rpc_response
+    ):
+        httpx_mock.add_response(content=build_rpc_response("Es3dTe", [[], "o"]).encode())
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(DecodingError) as raised:
+                await client.research.discover("nb_123", "q")
+        assert getattr(raised.value, "unconfirmed", False) is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("error_code", [1, 2, 3, 4, 5])
+    async def test_discover_in_band_error_slot_is_a_no_results_failure(
+        self, auth_tokens, httpx_mock: HTTPXMock, build_rpc_response, error_code
+    ):
+        # Live shape for the Drive corpus: ``[null, null, null, null, 1]`` plus
+        # the job id the server still records for the failed call.
+        payload = [None, None, ["job_err"], None, error_code]
+        httpx_mock.add_response(content=build_rpc_response("Es3dTe", payload).encode())
+        async with NotebookLMClient(auth_tokens) as client:
+            task = await client.research.discover("nb_123", "q")
+        assert task.status is ResearchStatus.FAILED
+        assert task.status_code == 3
+        assert task.task_id == "job_err" and task.sources == () and task.summary == ""
+        assert task.termination_reason is not None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("slot", [True, "1", 1.0, [1]])
+    async def test_discover_non_integer_error_slot_is_not_a_failure(
+        self, auth_tokens, httpx_mock: HTTPXMock, build_rpc_response, slot
+    ):
+        payload = [[], "overview", ["job_ok"], None, slot]
+        httpx_mock.add_response(content=build_rpc_response("Es3dTe", payload).encode())
+        async with NotebookLMClient(auth_tokens) as client:
+            task = await client.research.discover("nb_123", "q")
+        assert task.status is ResearchStatus.COMPLETED and task.status_code == 2
+
+    @pytest.mark.asyncio
+    async def test_discover_explicit_zero_error_slot_stays_completed(
+        self, auth_tokens, httpx_mock: HTTPXMock, build_rpc_response
+    ):
+        payload = [[], "overview", ["job_ok"], None, 0]
+        httpx_mock.add_response(content=build_rpc_response("Es3dTe", payload).encode())
+        async with NotebookLMClient(auth_tokens) as client:
+            task = await client.research.discover("nb_123", "q")
+        assert task.status is ResearchStatus.COMPLETED and task.status_code == 2
+
+    @pytest.mark.asyncio
+    async def test_discover_skips_malformed_rows_and_keeps_the_rest(
+        self, auth_tokens, httpx_mock: HTTPXMock, build_rpc_response
+    ):
+        payload = [
+            [["https://example.com/a", "Title A", "hint", 1], "junk", [], [None, None]],
+            "overview",
+            ["job_003"],
+        ]
+        httpx_mock.add_response(content=build_rpc_response("Es3dTe", payload).encode())
+        async with NotebookLMClient(auth_tokens) as client:
+            task = await client.research.discover("nb_123", "q")
+        assert [s.url for s in task.sources] == ["https://example.com/a"]

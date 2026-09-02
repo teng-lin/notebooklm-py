@@ -363,6 +363,7 @@ jobs:
         tests/_guardrails/test_master_token_path_single_site.py::test_no_bare_master_token_derivation_outside_paths_module
         tests/_guardrails/test_playwright_gateway.py::test_raw_sync_playwright_is_confined_to_policy_gateway
         tests/_guardrails/test_wire_contract.py::test_every_adapter_constant_is_declared
+        tests/_guardrails/test_builtin_shadowed_annotations.py::test_class_body_annotations_do_not_name_a_shadowed_builtin
 
     - name: Run tests without coverage
       # Every required compatibility cell runs the ordinary suite exactly once.

@@ -71,6 +71,7 @@ __all__ = [
     "ChatResponseParseError",
     # Domain: Sources
     "SourceError",
+    "PlayBookNotExportableError",
     "SourceAddError",
     "SourceNotFoundError",
     "SourceProcessingError",
@@ -904,6 +905,35 @@ class SourceAddError(SourceError):
             "  - Rate limiting or quota exceeded"
         )
         super().__init__(msg)
+
+
+class PlayBookNotExportableError(SourceError):
+    """A Google Play Book cannot be added as a source (#2292).
+
+    Raised by ``client.sources.add_play_book`` when the requested title's
+    ``ListExpertIntelligenceContent`` row has ``export_disabled`` set — the
+    backend accepts the add but the source lands in ``error`` — so the refusal
+    happens client-side before any write.
+
+    Attributes:
+        content_id: The Play Books volume id that was refused.
+        reason: The :class:`~notebooklm.types.PlayBookExportReason` from the
+            library row, or ``None`` when the backend gave no reason.
+    """
+
+    def __init__(self, content_id: str, reason: Any | None = None):
+        self.content_id = content_id
+        self.reason = reason
+        # ``reason`` is normally a ``PlayBookExportReason`` but is typed ``Any``
+        # for callers that pass a raw wire value; read ``.value`` defensively so
+        # a non-enum reason degrades to its ``str`` rather than raising.
+        reason_label = getattr(reason, "value", reason) if reason is not None else None
+        detail = f" ({reason_label})" if reason_label is not None else ""
+        super().__init__(
+            f"Play Book {content_id!r} cannot be exported as a source{detail}. "
+            "The publisher, license, content type, or ownership disallows it; "
+            "pick an exportable title from client.sources.list_play_books()."
+        )
 
 
 class SourceNotFoundError(NotFoundError, RPCError, SourceError):

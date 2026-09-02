@@ -467,6 +467,8 @@ class NoteService:
             params,
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
+            # #2290: a status-tagged null is a server rejection, not an empty success.
+            raise_on_null_status=True,
         )
 
     async def delete_note(self, notebook_id: str, note_id: str) -> None:

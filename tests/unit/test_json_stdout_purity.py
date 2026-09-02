@@ -37,12 +37,19 @@ from notebooklm.notebooklm_cli import cli
 from notebooklm.rpc.types import ShareAccess, ShareViewLevel
 from notebooklm.types import (
     Artifact,
+    ArtifactCustomizationChoices,
     AskResult,
     Collection,
+    CopiedArtifact,
+    CopiedSource,
+    CustomizationChoice,
     Label,
+    NextStepSuggestion,
     Note,
     Notebook,
+    PlayBook,
     PromptSuggestion,
+    ReportPreset,
     ResearchSource,
     ResearchStart,
     ResearchStatus,
@@ -332,6 +339,51 @@ def _customize_suggest_prompts(client: MagicMock) -> None:
     )
 
 
+def _customize_suggest_next_steps(client: MagicMock) -> None:
+    client.notebooks.suggest_next_steps = AsyncMock(
+        return_value=[NextStepSuggestion(question="What is X?", type_code=9)]
+    )
+
+
+def _customize_artifact_choices(client: MagicMock) -> None:
+    client.artifacts.get_customization_choices = AsyncMock(
+        return_value=ArtifactCustomizationChoices(
+            audio=[CustomizationChoice(1, "Deep Dive", "Two hosts")],
+            reports=[ReportPreset("Briefing Doc", "Key insights", "Create a briefing.")],
+        )
+    )
+
+
+def _customize_artifact_copy(client: MagicMock) -> None:
+    client.artifacts.copy = AsyncMock(
+        return_value=[
+            CopiedArtifact(
+                original_id="art123def456ghi789jkl",
+                artifact=MagicMock(
+                    id="art_new",
+                    title="Copy",
+                    kind=MagicMock(value="quiz"),
+                    status_str="completed",
+                ),
+            )
+        ]
+    )
+
+
+def _customize_source_transfers(client: MagicMock) -> None:
+    source = MagicMock(
+        id="src_new",
+        title="Copy",
+        kind=MagicMock(value="url"),
+        status=MagicMock(value="ready"),
+    )
+    client.sources.add_urls_async = AsyncMock(return_value=[source])
+    client.sources.append_text = AsyncMock(return_value=None)
+    client.sources.copy = AsyncMock(
+        return_value=[CopiedSource(original_id="src123def456ghi789jkl", source=source)]
+    )
+
+
 def _customize_share_public(client: MagicMock) -> None:
     client.sharing.set_public = AsyncMock(return_value=_stub_share_status())
 
@@ -362,6 +414,30 @@ def _customize_source_guide(client: MagicMock) -> None:
     )
 
 
+def _customize_source_books(client: MagicMock) -> None:
+    client.sources.list_play_books = AsyncMock(
+        return_value=[
+            PlayBook(
+                content_id="QhsZEAAAQBAJ",
+                title="The Art of War",
+                authors=("Sun Tzu",),
+                description_html="<p>…</p>",
+                cover_url="https://cover",
+                export_disabled=False,
+                reason=None,
+                field_type=4.6,
+                updated_at=None,
+            )
+        ]
+    )
+
+
+def _customize_source_add_book(client: MagicMock) -> None:
+    client.sources.add_play_book = AsyncMock(
+        return_value=Source(id="src_book", title="The Art of War", _type_code=20)
+    )
+
+
 def _customize_source_add_research(client: MagicMock) -> None:
     client.research.start = AsyncMock(
         return_value=ResearchStart(
@@ -370,6 +446,20 @@ def _customize_source_add_research(client: MagicMock) -> None:
             notebook_id="abc123def456ghi789jkl",
             query="",
             mode="fast",
+        )
+    )
+
+
+def _customize_research_discover(client: MagicMock) -> None:
+    client.research.discover = AsyncMock(
+        return_value=_research_task(
+            {
+                "status": "completed",
+                "query": "q",
+                "sources": [{"title": "Source 1", "url": "http://example.com/1"}],
+                "summary": "overview",
+                "task_id": "job_001",
+            }
         )
     )
 
@@ -546,6 +636,19 @@ JSON_COMMANDS: list[tuple[str, list[str], object]] = [
         ],
         _customize_source_add_research,
     ),
+    ("source_books", ["source", "books", "--json"], _customize_source_books),
+    (
+        "source_add_book",
+        [
+            "source",
+            "add-book",
+            "QhsZEAAAQBAJ",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--json",
+        ],
+        _customize_source_add_book,
+    ),
     # artifact group
     ("artifact_list", ["artifact", "list", "-n", "abc123def456ghi789jkl", "--json"], None),
     (
@@ -555,6 +658,11 @@ JSON_COMMANDS: list[tuple[str, list[str], object]] = [
     ),
     # research group
     ("research_status", ["research", "status", "-n", "abc123def456ghi789jkl", "--json"], None),
+    (
+        "research_discover",
+        ["research", "discover", "q", "-n", "abc123def456ghi789jkl", "--json"],
+        _customize_research_discover,
+    ),
     (
         "research_wait",
         ["research", "wait", "-n", "abc123def456ghi789jkl", "--json"],
@@ -713,6 +821,63 @@ JSON_COMMANDS: list[tuple[str, list[str], object]] = [
         "suggest_prompts_cmd",
         ["suggest-prompts", "-n", "abc123def456ghi789jkl", "--json"],
         _customize_suggest_prompts,
+    ),
+    (
+        "suggest_next_steps_cmd",
+        ["suggest-next-steps", "-n", "abc123def456ghi789jkl", "--json"],
+        _customize_suggest_next_steps,
+    ),
+    # #2283 transfer family
+    (
+        "source_add_async",
+        ["source", "add-async", "https://example.com/", "-n", "abc123def456ghi789jkl", "--json"],
+        _customize_source_transfers,
+    ),
+    (
+        "source_append",
+        [
+            "source",
+            "append",
+            "src123def456ghi789jkl",
+            "more text",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--json",
+        ],
+        _customize_source_transfers,
+    ),
+    (
+        "source_copy",
+        [
+            "source",
+            "copy",
+            "src123def456ghi789jkl",
+            "--to",
+            "abc123def456ghi789jkl",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--json",
+        ],
+        _customize_source_transfers,
+    ),
+    (
+        "artifact_copy",
+        [
+            "artifact",
+            "copy",
+            "art123def456ghi789jkl",
+            "--to",
+            "abc123def456ghi789jkl",
+            "-n",
+            "abc123def456ghi789jkl",
+            "--json",
+        ],
+        _customize_artifact_copy,
+    ),
+    (
+        "artifact_choices",
+        ["artifact", "choices", "-n", "abc123def456ghi789jkl", "--json"],
+        _customize_artifact_choices,
     ),
     # doctor / profile / notebook-create coverage (meta-audit G9 + I7 + I9):
     # `doctor` and `profile list` read NOTEBOOKLM_HOME directly and don't
@@ -1051,6 +1216,8 @@ JSON_ERROR_WAIVED: dict[tuple[str, ...], str] = {
     ("source", "add"): _MUTATION_RATIONALE_ERROR,
     ("source", "add-drive"): _MUTATION_RATIONALE_ERROR,
     ("source", "add-drive-file"): _MUTATION_RATIONALE_ERROR,
+    ("source", "add-book"): _MUTATION_RATIONALE_ERROR,
+    ("source", "books"): _INTROSPECTION_RATIONALE,
     ("source", "clean"): _MUTATION_RATIONALE_ERROR,
     ("source", "delete"): _MUTATION_RATIONALE_ERROR,
     ("source", "delete-by-title"): _MUTATION_RATIONALE_ERROR,

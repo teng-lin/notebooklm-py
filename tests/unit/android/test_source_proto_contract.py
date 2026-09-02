@@ -76,6 +76,14 @@ def test_source_generated_package_overlay_is_complete_and_service_free() -> None
         "UserContent",
         "VideoContent",
         "WebContent",
+        # #2283 transfer family (docs/android/copy-append-suggestion-evidence.md)
+        "AddSourcesAsyncResponse",
+        "AppendSourceRequest",
+        "CopiedSource",
+        "CopySourcesAsyncRequest",
+        "CopySourcesAsyncResponse",
+        "SourceAcknowledgement",
+        "SourceContent",
     }
     assert _shape(sources_pb2.WebContent) == {
         "url": (1, False, FieldDescriptor.TYPE_STRING, None),
@@ -417,3 +425,36 @@ def test_source_registration_and_upload_file_request_bytes_are_pinned() -> None:
         "080210011a10312e34362e372e3934303934353432302a06736f75726365321a08015a16080210"
         "011a10312e34362e372e393430393435343230"
     )
+
+
+def test_transfer_family_request_and_response_shapes_are_pinned() -> None:
+    """#2283: AddSourcesAsync / AppendSource / CopySourcesAsync (web-derived, live-pinned)."""
+    message = FieldDescriptor.TYPE_MESSAGE
+    string = FieldDescriptor.TYPE_STRING
+    integer = FieldDescriptor.TYPE_INT32
+    assert _shape(sources_pb2.SourceContent) == {
+        "plain_text": (2, False, message, f"{ORCHESTRATION_PACKAGE}.PlainTextSourceContent"),
+    }
+    assert _shape(sources_pb2.AppendSourceRequest) == {
+        "source_id": (2, False, message, f"{ORCHESTRATION_PACKAGE}.SourceId"),
+        "content": (4, False, message, f"{ORCHESTRATION_PACKAGE}.SourceContent"),
+    }
+    assert _shape(sources_pb2.CopySourcesAsyncRequest) == {
+        "source_ids": (3, True, message, f"{ORCHESTRATION_PACKAGE}.SourceId"),
+        "target_project_id": (4, False, string, None),
+    }
+    assert _shape(sources_pb2.CopiedSource) == {
+        "source_id": (1, False, message, f"{ORCHESTRATION_PACKAGE}.SourceId"),
+        "source": (2, False, message, f"{ORCHESTRATION_PACKAGE}.Source"),
+    }
+    assert _shape(sources_pb2.CopySourcesAsyncResponse) == {
+        "copied_sources": (1, True, message, f"{ORCHESTRATION_PACKAGE}.CopiedSource"),
+    }
+    assert _shape(sources_pb2.SourceAcknowledgement) == {
+        "source": (1, False, message, f"{ORCHESTRATION_PACKAGE}.Source"),
+        "status": (2, False, integer, None),
+    }
+    assert _shape(sources_pb2.AddSourcesAsyncResponse) == {
+        "sources": (1, True, message, f"{ORCHESTRATION_PACKAGE}.Source"),
+        "acknowledgements": (3, True, message, f"{ORCHESTRATION_PACKAGE}.SourceAcknowledgement"),
+    }

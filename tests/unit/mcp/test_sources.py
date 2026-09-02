@@ -431,6 +431,7 @@ async def test_source_list_full_projects_drive_health_of_a_real_source(
         "status_label": "ready",
         "drive_status_label": "deleted",
         "is_drive_degraded": True,
+        "expert_intelligence": None,
     }
 
 

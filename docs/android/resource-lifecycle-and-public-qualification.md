@@ -46,8 +46,10 @@ The mobile path adds the exact package and slash-form gRPC syntax, for example:
 ```
 
 The bundle also registers `CopySourcesAsync`, `CopySources`, `CopyArtifactsAsync`, and
-`CopyArtifacts`. The product call site uses `CopyProject`; clients should not orchestrate those
-internal helpers.
+`CopyArtifacts`. The product call site uses `CopyProject`. The two `*Async` helpers are live and
+now backed by `sources.copy()` / `artifacts.copy()` on both backends (#2283); the two synchronous
+twins are dead (`CopySources`) or a no-op stub (`CopyArtifacts`) and stay unmodelled — see
+[copy-append-suggestion-evidence.md](copy-append-suggestion-evidence.md).
 
 ## Notebook copy fidelity
 

@@ -747,3 +747,86 @@ class ReportSuggestion:
             prompt=data.get("prompt", ""),
             audience_level=data.get("audience_level", 2),
         )
+
+
+@dataclass(frozen=True)
+class CopiedArtifact:
+    """One ``CopyArtifactsAsync`` outcome: an original artifact id and its copy.
+
+    Returned by :meth:`ArtifactsAPI.copy`. The backend answers with a mapping
+    from each requested artifact id to the full new :class:`Artifact` row in
+    the target notebook (title, type, sources, status and content all present),
+    so no follow-up listing is needed to learn the new id.
+
+    Attributes:
+        original_id: The id of the artifact that was copied.
+        artifact: The new artifact row in the target notebook.
+    """
+
+    original_id: str
+    artifact: Artifact
+
+    def __post_init__(self) -> None:
+        if not self.original_id:
+            raise ValueError("CopiedArtifact.original_id must not be empty")
+        if not self.artifact.id:
+            raise ValueError("CopiedArtifact.artifact must carry the new artifact id")
+
+
+@dataclass(frozen=True)
+class CustomizationChoice:
+    """One selectable format in a Studio "Customize" dialog.
+
+    ``code`` is the wire integer the corresponding generation option enum
+    carries (:class:`AudioFormat` for audio, :class:`VideoFormat` for video,
+    :class:`SlideDeckFormat` for slide decks); ``title`` / ``description`` are
+    the labels the web UI shows beside it.
+    """
+
+    code: int
+    title: str
+    description: str
+
+
+@dataclass(frozen=True)
+class ReportPreset:
+    """One preset report format offered by the Studio report dialog.
+
+    Field names follow the recovered ``TailoredReportTypeOption`` message
+    (``reportType`` / ``reportDescription`` / ``reportDirective``) rather than
+    :class:`ReportSuggestion`'s ``title`` / ``prompt``: a preset is a fixed
+    server-side template, not a per-notebook AI suggestion, and keeping the wire
+    vocabulary lines the type up one-to-one with the proto and evidence docs.
+
+    Attributes:
+        report_type: The preset's display name (e.g. ``"Briefing Doc"``).
+        description: One-line description shown under the name.
+        directive: The full generation prompt the preset expands to — a
+            ready-to-send ``custom_prompt`` for :meth:`ArtifactsAPI.generate_report`.
+    """
+
+    report_type: str
+    description: str
+    directive: str
+
+
+@dataclass(frozen=True)
+class ArtifactCustomizationChoices:
+    """The Studio customization option tables served to this account.
+
+    Returned by :meth:`ArtifactsAPI.get_customization_choices`
+    (``GetArtifactCustomizationChoices``). The table is account-level: the
+    server ignores which notebook it is asked about. Each list is served in the
+    UI's display order.
+
+    Attributes:
+        audio: Audio Overview formats (codes match :class:`AudioFormat`).
+        video: Video Overview formats (codes match :class:`VideoFormat`).
+        slide_deck: Slide-deck formats (codes match :class:`SlideDeckFormat`).
+        reports: Report presets with their full generation directives.
+    """
+
+    audio: tuple[CustomizationChoice, ...] = ()
+    video: tuple[CustomizationChoice, ...] = ()
+    slide_deck: tuple[CustomizationChoice, ...] = ()
+    reports: tuple[ReportPreset, ...] = ()

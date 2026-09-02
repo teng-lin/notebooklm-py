@@ -31,24 +31,17 @@ pytest.importorskip("fastmcp")
 #: to ~36.0k). Move these DOWN as the surface gets leaner; a rise means
 #: description/param bloat that must be justified, not rubber-stamped.
 SCHEMA_CHAR_BUDGET = (
-    42_230  # total serialized inputSchema + description chars (current 42_207; +23 slack)
+    43_410  # total serialized inputSchema + description chars (current 43_386; +24 slack)
 )
-# Review of #2286 removed completed-result replay from chat_start; its docstring
-# now states the re-ask semantics (a finished ask is never replayed — asking again
-# appends a new turn, like chat_ask) and chat_status caps a batch at 64 ids.
-# 42_082 -> 42_207 (+125 gross, after dropping the old "completed" bullet).
-# The batch/queue follow-up grew chat_status (list-of-ids polling, the
-# queued/generating state vocabulary, the queued_s/generation_s timings) and
-# server_info (the chat_tasks load gauges) by a further +443 — again protocol
-# text an agent acts on (poll a whole batch in ONE call; check load before
-# submitting). 41_639 -> 42_082, ratcheted to 42_100.
-# chat_start/chat_status (the watchdog-safe detached-ask pair) add two tools whose
-# descriptions carry the re-invoke protocol an agent must follow (the status
-# vocabulary, the poll cadence, the idempotent-retry semantics) — the same class of
-# genuinely agent-actionable text as await_upload's pending/re-invoke contract, and
-# useless if abbreviated to the point the model doesn't poll. Net 39_377 -> 41_639
-# (+2_262, ~1.1k/tool — at the surface average) after a first-draft trim of ~700
-# chars; ratcheted to 41_660 with the ~20-char slack convention.
+# Merge with main after #2292 (Play Books): 40_556 on main + 2_830 for this PR
+# (the pair's re-invoke protocol text, batch polling / queue states / timings,
+# the review's re-ask wording — itemised below) = 43_386; ratcheted to 43_410.
+# #2292 (Google Play Books sources) added two discrete-verb tools —
+# `source_list_play_books` and `source_add_play_book` — each with the
+# agent-facing description an LLM needs to use it (what Expert Intelligence is,
+# the `content_id`/`export_disabled` contract, and the web-backend-only caveat).
+# Two genuinely new source verbs, per ADR-0025's discrete-verb rationale. Net
+# 39_377 -> 40_556 (+1_179); ratcheted to 40_580 keeping the ~20-char slack.
 # #2129 added the genuine listable FANTASY_MAP and FILE artifact types to the
 # `studio_list.kind` enum. Their two required enum strings move the surface from
 # 39_349 to 39_377 (+28); ratcheted to 39_400 with the existing ~20-char slack.

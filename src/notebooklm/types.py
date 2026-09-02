@@ -24,9 +24,13 @@ from ._types.artifact_content import (
 )
 from ._types.artifacts import (
     Artifact,
+    ArtifactCustomizationChoices,
     ArtifactType,
+    CopiedArtifact,
+    CustomizationChoice,
     GenerationState,
     GenerationStatus,
+    ReportPreset,
     ReportSuggestion,
 )
 from ._types.chat import (
@@ -129,6 +133,10 @@ from ._types.research import (
 )
 from ._types.sharing import SharedUser, ShareStatus
 from ._types.sources import (
+    CopiedSource,
+    ExpertIntelligenceSourceMetadata,
+    PlayBook,
+    PlayBookExportReason,
     Source,
     SourceFulltext,
     SourceType,
@@ -215,6 +223,10 @@ __all__ = [
     "SuggestedTopic",
     "Source",
     "SourceFulltext",
+    "CopiedSource",
+    "PlayBook",
+    "PlayBookExportReason",
+    "ExpertIntelligenceSourceMetadata",
     "SourceSummary",
     "Artifact",
     "ArtifactInfographic",
@@ -228,6 +240,10 @@ __all__ = [
     "GenerationState",
     "GenerationStatus",
     "ReportSuggestion",
+    "CopiedArtifact",
+    "CustomizationChoice",
+    "ReportPreset",
+    "ArtifactCustomizationChoices",
     "Note",
     "Label",
     "Collection",
@@ -336,6 +352,7 @@ del _public_common_type
 
 for _public_moved_type in (
     Artifact,
+    ArtifactCustomizationChoices,
     ArtifactInfographic,
     ArtifactMedia,
     ArtifactMediaType,
@@ -352,6 +369,9 @@ for _public_moved_type in (
     Collection,
     ConversationTurn,
     ConversationTurnKey,
+    CopiedArtifact,
+    CopiedSource,
+    CustomizationChoice,
     NextStepSuggestion,
     GenerationState,
     GenerationStatus,
@@ -365,6 +385,7 @@ for _public_moved_type in (
     NotebookMetadata,
     PremiumFeatureInfo,
     PromptSuggestion,
+    ReportPreset,
     ReportSuggestion,
     ResearchSource,
     ResearchStart,
@@ -373,6 +394,9 @@ for _public_moved_type in (
     ResearchTerminationReason,
     SharedUser,
     ShareStatus,
+    ExpertIntelligenceSourceMetadata,
+    PlayBook,
+    PlayBookExportReason,
     Source,
     SourceFulltext,
     SourceGuide,

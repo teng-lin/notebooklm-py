@@ -619,24 +619,26 @@ class DiscoveryMode(int, Enum):
     ``tests/_guardrails/_wire_contract.py``.
 
     .. warning::
-       Only :attr:`DEFAULT_LLM_SEARCH` and :attr:`DEEP_RESEARCH` have been
-       observed: ``1`` on every fast run (live probe #2122 plus 6/6 fast
-       cassette rows) and ``5`` on every deep run (3/3 cassette rows). This
-       client only ever *sends* those two. The remaining members come from the
-       recovered enum and are decode-only forward compatibility.
+       ``research.start`` sends only :attr:`DEFAULT_LLM_SEARCH` (``1``, every
+       fast run — live probe #2122 plus 6/6 fast cassette rows) and
+       :attr:`DEEP_RESEARCH` (``5``, every deep run — 3/3 cassette rows).
+       ``research.discover`` sends ``1``–``4`` (live-verified on both
+       transports, #2283); ``5`` is rejected and ``6`` faults on that route.
+       :attr:`LITE_LLM_SEARCH` is decode-only forward compatibility.
     """
 
     #: Client-side sentinel — the slot carried a code this client does not
     #: model (or a non-integer). Never sent by the backend. ``None`` means
     #: "the poll made no mode claim"; this means "present but unmappable".
     UNKNOWN = -1
-    #: The default LLM-driven search. Sent + observed for ``mode="fast"``.
+    #: The default LLM-driven search. Sent + observed for ``start(mode="fast")``
+    #: and ``discover(mode="default")``.
     DEFAULT_LLM_SEARCH = 1
-    #: Raw (non-LLM) search. Never sent by this client.
+    #: Raw (non-LLM) search. Sent by ``discover(mode="raw")``.
     RAW_SEARCH = 2
-    #: "Curious" LLM search. Never sent by this client.
+    #: "Curious" LLM search (backend picks the topic). ``discover(mode="curious")``.
     CURIOUS_SEARCH = 3
-    #: "Curious" raw search. Never sent by this client.
+    #: "Curious" raw search. ``discover(mode="curious_raw")``.
     CURIOUS_RAW_SEARCH = 4
     #: Multi-step deep research. Sent + observed for ``mode="deep"``.
     DEEP_RESEARCH = 5

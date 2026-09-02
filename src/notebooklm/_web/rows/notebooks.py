@@ -48,6 +48,7 @@ __all__ = [
     "PromptSuggestionRow",
     "ProjectRow",
     "decode_notebook",
+    "unwrap_next_step_suggestions",
     "unwrap_prompt_suggestions",
 ]
 
@@ -297,6 +298,33 @@ _SUGGEST_PROMPTS_METHOD_ID = RPCMethod.SUGGEST_PROMPTS.value
 # list as the first element of a single-element envelope
 # (``[[[title, prompt], ...]]``).
 _SUGGEST_PROMPTS_CONTAINER_POS = 0
+
+# ``NextStepSuggestions`` (``OcvKNc``) method id for the follow-up unwrap.
+_SUGGEST_NEXT_STEPS_METHOD_ID = RPCMethod.SUGGEST_NEXT_STEPS.value
+
+# Envelope-unwrap position: the reply IS one ``NextStepSuggestions`` message
+# (``{ repeated NextStep next_steps = 1 }``), so its rows are the first element
+# (``[[[question, type_code], ...]]``) — the same layout the streamed chat
+# answer carries at ``inner[5]`` (``StreamEnvelopeRow.next_step_rows``).
+_SUGGEST_NEXT_STEPS_ROWS_POS = 0
+
+
+def unwrap_next_step_suggestions(result: Any, *, source: str) -> list[Any]:
+    """Return the ``NextStep`` row list from a ``NextStepSuggestions`` reply.
+
+    A falsy / non-list payload yields ``[]``; a present-but-non-list inner
+    container also yields ``[]``. Same permissive contract as
+    :func:`unwrap_prompt_suggestions` — follow-up chips are best-effort UI sugar.
+    """
+    if not isinstance(result, list) or not result:
+        return []
+    inner = safe_index(
+        result,
+        _SUGGEST_NEXT_STEPS_ROWS_POS,
+        method_id=_SUGGEST_NEXT_STEPS_METHOD_ID,
+        source=source,
+    )
+    return inner if isinstance(inner, list) else []
 
 
 def unwrap_prompt_suggestions(result: Any, *, source: str) -> list[Any]:

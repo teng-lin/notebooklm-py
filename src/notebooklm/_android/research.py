@@ -8,7 +8,7 @@ from typing import Any, cast
 
 from .._idempotency import mark_unconfirmed
 from .._notebook_metadata import NotebookSourceLister
-from .._research import _INITIAL_INTERVAL_UNSET, BaseResearchAPI
+from .._research import _INITIAL_INTERVAL_UNSET, BaseResearchAPI, validate_discover
 from .._runtime.config import (
     AUTO_READ_TIMEOUT,
     DEFAULT_TIMEOUT,
@@ -17,6 +17,7 @@ from .._runtime.config import (
 from .._types.research import (
     RESEARCH_RESULT_TYPE_REPORT,
     RESEARCH_SOURCE_TYPE_WEB,
+    RESEARCH_STATUS_CODE_COMPLETED,
     ResearchSource,
     ResearchSourceInput,
     ResearchStart,
@@ -116,17 +117,27 @@ class AndroidResearchAPI(BaseResearchAPI):
             import_research_timeout=import_research_timeout,
         )
 
-    async def _discover_sources(self, notebook_id: str, query: str) -> ResearchTask:
-        """Run the separate synchronous mobile DiscoverSources operation once."""
-        if not query or not query.strip():
-            raise ValidationError("query must not be empty")
-        async with self._transport.operation_scope("research.discover_sources") as lease:
+    async def discover(
+        self,
+        notebook_id: str,
+        query: str,
+        *,
+        mode: str = "default",
+    ) -> ResearchTask:
+        """Run the synchronous mobile ``DiscoverSources`` operation once.
+
+        Same contract as :meth:`WebResearchAPI.discover`: one blocking call,
+        a completed :class:`ResearchTask` whose ``task_id`` is the job the
+        backend also recorded (live-verified over bearer gRPC, #2283).
+        """
+        query, _mode_label, discovery_mode = validate_discover(query, mode)
+        async with self._transport.operation_scope("research.discover") as lease:
             response = await call_unconfirmed_on_transport_loss(
                 lambda: self._transport.unary(
                     DISCOVER_SOURCES_METHOD,
                     _proto().DiscoverSourcesRequest(
                         discovery_context=_proto().DiscoveryContext(context=query),
-                        discovery_mode=_proto().DEFAULT_LLM_SEARCH,
+                        discovery_mode=int(discovery_mode),
                         project_id=notebook_id,
                     ),
                     replay_safe=False,
@@ -157,8 +168,9 @@ class AndroidResearchAPI(BaseResearchAPI):
                 query=query,
                 sources=sources,
                 summary=response.overview,
-                status_code=2,
+                status_code=RESEARCH_STATUS_CODE_COMPLETED,
                 source_type=RESEARCH_SOURCE_TYPE_WEB,
+                discovery_mode=discovery_mode,
             )
 
     async def start(

@@ -1,0 +1,69 @@
+{
+  "method_name": "COPY_SOURCES",
+  "method_id": "R27wvc",
+  "description": "Copy sources into another notebook (CopySourcesAsync). The reply maps each original [id] to the new source entry row; live-verified by re-listing the target (#2283).",
+  "request": {
+    "params": [
+      null,
+      null,
+      [
+        [
+          "SCRUBBED_SRC_001"
+        ]
+      ],
+      "SCRUBBED_NB_002"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "R27wvc",
+          "[null,null,[[\"SCRUBBED_SRC_001\"]],\"SCRUBBED_NB_002\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "R27wvc",
+          "[[[[\"SCRUBBED_SRC_001\"],[[\"SCRUBBED_SRC_002\"],\"Python Programming\",[null,null,null,null,8],[null,1]]]]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": [
+      [
+        [
+          [
+            "SCRUBBED_SRC_001"
+          ],
+          [
+            [
+              "SCRUBBED_SRC_002"
+            ],
+            "Python Programming",
+            [
+              null,
+              null,
+              null,
+              null,
+              8
+            ],
+            [
+              null,
+              1
+            ]
+          ]
+        ]
+      ]
+    ]
+  }
+}

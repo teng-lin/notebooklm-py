@@ -5,12 +5,19 @@ against ``src/notebooklm/rpc/types.py``.
 NotebookLM declares every ``batchexecute`` RPC in its (public, gstatic-served) JS
 bundle as::
 
-    _.fD("<rpc_id>", <RespCtor>, <ReqCtor>, [<flags>, "/<Service>.<Method>"])
+    new _.dC("<rpc_id>", <RespCtor>, <ReqCtor>, [<flags>, "/<Service>.<Method>"])
 
-(The registration helper is currently minified to ``_.fD``; it was ``_.uD`` in an
-earlier bundle. The scraper does **not** depend on the helper name — it anchors on
-the quoted ``"/<Service>.<Method>"`` path — so a future rename of this helper does
-not blank the diff.)
+(The registration helper is currently minified to ``_.dC``; it was ``_.fD`` and
+``_.uD`` in earlier bundles. The scraper does **not** depend on the helper name:
+it parses *forward* from each ``new _.<helper>("<id>"`` call to the first quoted
+``"/<Service>.<Method>"`` path before the next ``new _.`` call, so id and path
+come from the same registration by construction, and falls back to a
+path-anchored backward scan for any path the forward parse did not claim — so a
+rename of the helper, or a change of the ``new`` call form, does not blank the
+diff. The ctor arguments may be *named* (``zKb``) or *inline anonymous classes*
+hundreds of chars long (#2289); neither form affects the parse. Parse coverage —
+registration sites, method paths, fallback- and un-attributed paths — is
+reported so a minifier change that widens a gap shows up as a number.)
 
 The obfuscated ``<rpc_id>`` values are this project's #1 breakage class — they
 rotate without notice and a stale id silently breaks the affected operation. This
@@ -74,6 +81,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 # The NotebookLM web app's gstatic JS namespace. If Google renames the app this
 # pattern must be updated (the script will then report "no bundle URL").
@@ -81,16 +89,31 @@ _APP = "boq-labs-tailwind"
 _BUNDLE_URL_RE = re.compile(rf'https://www\.gstatic\.com/_/mss/{_APP}/_/js/[^"\\\s<>]+')
 
 # A registration's two stable, quoted anchors: the ``/Service.Method`` path and
-# the rpc id. We anchor on the path and scan *backward* for the nearest id, which
-# is robust to nested ``[...]`` in the options array (a single forward regex
-# spanning to the path breaks on the inner ``]``). Quote-agnostic (``"`` or
-# ``'``) so a change in the bundle minifier's quote style doesn't blank the diff.
+# the rpc id. Quote-agnostic (``"`` or ``'``) so a change in the bundle
+# minifier's quote style doesn't blank the diff.
 _METHOD_PATH_RE = re.compile(r"""["'](/[A-Za-z][\w]*\.[A-Za-z][\w]*)["']""")
 _ID_TOKEN_RE = re.compile(r"""["']([A-Za-z0-9]{5,8})["']""")
-# How far back from a path string to scan for its registration id. The
-# ``_.uD(id, ReqCtor, RespCtor, [flags, path])`` form fits well within ~100 chars;
-# 160 leaves headroom for longer minified constructor names.
-_ID_LOOKBACK = 160
+# Primary parse: a registration *site* is a ``new _.<helper>("<id>"`` call whose
+# first argument is a quoted short token. The registration is that call's
+# bracket-balanced argument list, so the first path inside it belongs to that
+# id by construction — independent of how long the ctor arguments are (named
+# ctors are ~60 chars; inline anonymous classes run 160–370 chars on the
+# 2026-08-31 bundle, #2289), immune to stray quoted tokens inside a ctor body,
+# and a ``new _.X("…")`` call nested *inside* a ctor body is part of the outer
+# span, not a site of its own. ``new _.BD("…")``-style non-RPC calls also match
+# as sites; they simply carry no path and are not counted. If the argument
+# list does not balance within ``_SPAN_SCAN_LIMIT`` chars (a string/regex
+# literal the scanner misreads), the span falls back to the next ``new _.``
+# call so a single odd registration cannot swallow the rest of the bundle.
+_REGISTRATION_SITE_RE = re.compile(r"""new\s+_\.\w+\(\s*(["'])([A-Za-z0-9]{5,8})\1""")
+_REGISTRATION_BOUNDARY_RE = re.compile(r"new\s+_\.\w+\(")
+_SPAN_SCAN_LIMIT = 10_000
+# Fallback for a path the forward parse did not claim (a change of the ``new
+# _.`` call form): scan *backward* from the path for the nearest quoted short
+# token. 400 chars covers the widest inline-anonymous-ctor registration seen
+# (367) and is where the recovered count plateaus (#2289 sweep: 160 -> 171 ids,
+# 240 -> 183, 320 -> 186, 400+ -> 187).
+_ID_LOOKBACK = 400
 
 # Real obfuscated rpc ids are short alphanumerics; this filter keeps non-id enum
 # constants (e.g. ``blog_post``) out of the diff.
@@ -178,21 +201,111 @@ def parse_ids_from_text(types_text: str) -> dict[str, str]:
     return out
 
 
+class RegistryParse(NamedTuple):
+    """The parsed registry plus the parse-coverage numbers behind it (#2289)."""
+
+    registry: dict[str, str]
+    """``{rpc_id: /Service.Method}`` for every registration attributed to an id."""
+    sites: int
+    """``new _.<helper>("<id>"`` calls the forward parse found a method path in."""
+    paths: int
+    """Distinct quoted ``/Service.Method`` strings in the bundle."""
+    fallback: int
+    """Paths attributed only by the backward path-anchored scan (helper-form drift)."""
+    unclaimed: tuple[str, ...]
+    """Distinct method paths no id could be attributed to — a parser gap to widen."""
+
+
+def _call_span_end(bundle: str, start: int) -> int:
+    """Return the index just past the ``)`` that closes the call open at ``start``.
+
+    ``start`` is inside the argument list (depth 1). Quoted strings are skipped
+    so brackets inside literals do not count. If the list does not balance
+    within :data:`_SPAN_SCAN_LIMIT` chars, the span ends at the next
+    ``new _.<helper>(`` call instead (or the end of the bundle).
+    """
+    depth = 1
+    i = start
+    limit = min(len(bundle), start + _SPAN_SCAN_LIMIT)
+    while i < limit:
+        char = bundle[i]
+        if char in "\"'`":
+            i += 1
+            while i < limit and bundle[i] != char:
+                i += 2 if bundle[i] == "\\" else 1
+        elif char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    boundary = _REGISTRATION_BOUNDARY_RE.search(bundle, start)
+    return boundary.start() if boundary else len(bundle)
+
+
+def parse_registry(bundle: str) -> RegistryParse:
+    """Parse every ``id -> /Service.Method`` registration in the bundle.
+
+    Primary pass — *forward* from each registration site: the bracket-balanced
+    argument list of a ``new _.<helper>("<id>"`` call is one registration, and
+    the first ``"/Service.Method"`` inside it is that id's path. Id and path
+    therefore come from the same call regardless of how long the ctor arguments
+    between them are (the #2289 inline-anonymous-ctor form that a fixed
+    backward window silently dropped). A ``new _.X(…)`` call nested inside a
+    ctor body lies within the outer span and is not a site of its own.
+
+    Fallback pass — over every path *occurrence* the forward parse did not
+    claim (e.g. the helper is no longer invoked with ``new``): the nearest
+    preceding quoted short token within :data:`_ID_LOOKBACK` chars, provided
+    that token is not already an attributed id (by either pass), so a stray
+    path never re-maps a known registration. An occurrence whose nearest token
+    is already mapped to that same path is a repeat of a known registration
+    and is ignored. Paths still unattributed after both passes are returned as
+    ``unclaimed`` rather than dropped.
+    """
+    registry: dict[str, str] = {}
+    claimed_occurrences: set[int] = set()
+    sites = 0
+    span_end = 0
+    for site in _REGISTRATION_SITE_RE.finditer(bundle):
+        if site.start() < span_end:
+            continue  # nested inside the registration being parsed
+        span_end = _call_span_end(bundle, site.end())
+        path = _METHOD_PATH_RE.search(bundle, site.end(), span_end)
+        if path is None:
+            continue
+        sites += 1
+        registry[site.group(2)] = path.group(1)
+        claimed_occurrences.add(path.start())
+
+    fallback = 0
+    seen_paths: set[str] = set()
+    unclaimed: list[str] = []
+    for match in _METHOD_PATH_RE.finditer(bundle):
+        path_str = match.group(1)
+        seen_paths.add(path_str)
+        if match.start() in claimed_occurrences:
+            continue
+        window = bundle[max(0, match.start() - _ID_LOOKBACK) : match.start()]
+        ids = _ID_TOKEN_RE.findall(window)
+        if ids and ids[-1] not in registry:
+            registry[ids[-1]] = path_str
+            fallback += 1
+        elif not (ids and registry[ids[-1]] == path_str) and path_str not in unclaimed:
+            unclaimed.append(path_str)
+    # A path the fallback claimed at a later occurrence is no longer unclaimed.
+    attributed = set(registry.values())
+    unclaimed = [p for p in unclaimed if p not in attributed]
+    return RegistryParse(registry, sites, len(seen_paths), fallback, tuple(unclaimed))
+
+
 def extract_registry(bundle: str) -> dict[str, str]:
     """Return ``{rpc_id: /Service.Method}`` for every registration in the bundle.
 
-    Anchored on each ``"/Service.Method"`` path: the rpc id is the nearest
-    preceding quoted short token (the registration's first argument). Scanning
-    backward from the path tolerates nested brackets in the options array that a
-    single forward regex cannot span.
+    Thin wrapper over :func:`parse_registry` for callers that only need the map.
     """
-    out: dict[str, str] = {}
-    for match in _METHOD_PATH_RE.finditer(bundle):
-        window = bundle[max(0, match.start() - _ID_LOOKBACK) : match.start()]
-        ids = _ID_TOKEN_RE.findall(window)
-        if ids:
-            out[ids[-1]] = match.group(1)
-    return out
+    return parse_registry(bundle).registry
 
 
 def diff(ours: dict[str, str], live: dict[str, str], bundle: str) -> dict[str, dict[str, str]]:
@@ -529,9 +642,20 @@ def fetch_bundle() -> str:
     return "\n".join(bodies)
 
 
+def _coverage_counts(parsed: RegistryParse) -> dict[str, int]:
+    """The parse-coverage numbers as reported (a shrinking ``parsed`` or a growing
+    ``fallback``/``unclaimed`` is the minifier-drift signal, #2289)."""
+    return {
+        "registration_sites": parsed.sites,
+        "method_paths": parsed.paths,
+        "parsed": len(parsed.registry),
+        "fallback": parsed.fallback,
+    }
+
+
 def _print_report(
     ours: dict[str, str],
-    live: dict[str, str],
+    parsed: RegistryParse,
     buckets: dict[str, dict[str, str]],
     current_services: set[str],
 ) -> None:
@@ -547,7 +671,18 @@ def _print_report(
         buckets["absent"],
         buckets["unmapped"],
     )
-    print(f"our ids: {len(ours)} | live registrations parsed: {len(live)}")
+    cov = _coverage_counts(parsed)
+    print(f"our ids: {len(ours)} | live registrations parsed: {cov['parsed']}")
+    print(
+        f"parse coverage: registration sites: {cov['registration_sites']}  "
+        f"method paths: {cov['method_paths']}  fallback: {cov['fallback']}  "
+        f"unclaimed: {len(parsed.unclaimed)}"
+    )
+    if parsed.unclaimed:
+        print("UNCLAIMED — method path with no attributable id (parser gap; widen the parser):")
+        for path in parsed.unclaimed:
+            print(f"  {path}")
+    print()
     print(
         f"CONFIRMED: {len(confirmed)}  ABSENT: {len(absent)}  "
         f"PRESENT-UNPARSED: {len(present)}  UNMAPPED: {len(unmapped)}\n"
@@ -741,7 +876,8 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
         return _AUTH_FAILURE_EXIT
-    live = extract_registry(bundle)
+    parsed = parse_registry(bundle)
+    live = parsed.registry
     buckets = diff(ours, live, bundle)
     # Services any CONFIRMED id resolves to are, empirically, serving our cohort.
     current_services = {_service_of(m) for m in buckets["confirmed"].values()}
@@ -768,6 +904,8 @@ def main(argv: list[str] | None = None) -> int:
                         for i, m in buckets["unmapped"].items()
                     },
                     "enums": enum_buckets,
+                    "parse_coverage": _coverage_counts(parsed)
+                    | {"unclaimed": list(parsed.unclaimed)},
                     "quota_codes": {str(code): message for code, message in quota.items()},
                     "proto_assertions": sorted(f"{m}.{f}" for m, f in proto),
                     "counts": {k: len(v) for k, v in buckets.items()}
@@ -779,7 +917,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
     else:
-        _print_report(ours, live, buckets, current_services)
+        _print_report(ours, parsed, buckets, current_services)
         _print_enum_report(enum_buckets, quota, proto)
 
     exit_code = 0

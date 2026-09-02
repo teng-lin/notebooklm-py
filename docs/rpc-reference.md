@@ -57,6 +57,7 @@
 | `VfAZjd` | SUMMARIZE | Get notebook summary | `_web/notebooks.py` |
 | `FLmJqe` | REFRESH_SOURCE | Refresh URL/Drive source | `_web/sources/__init__.py` |
 | `yR9Yof` | CHECK_SOURCE_FRESHNESS | Check if source needs refresh | `_web/sources/__init__.py` |
+| `Es3dTe` | DISCOVER_SOURCES | Synchronous source discovery | `_web/research.py` |
 | `Ljjv0c` | START_FAST_RESEARCH | Start fast research | `_web/research.py` |
 | `QA9ei` | START_DEEP_RESEARCH | Start deep research | `_web/research.py` |
 | `e3bVqc` | POLL_RESEARCH | Poll research status | `_web/research.py` |
@@ -72,6 +73,13 @@
 | `fejl7e` | REMOVE_RECENTLY_VIEWED | Remove notebook from recent list | `_web/notebooks.py` |
 | `ZwVcOc` | GET_USER_SETTINGS | Get user settings including output language | `_web/settings.py` |
 | `hT54vc` | SET_USER_SETTINGS | Set user settings (e.g., output language) | `_web/settings.py` |
+| `X1snv` | ADD_SOURCES_ASYNC | Queue URL sources without waiting for ingest (batch; per-source acks) | `_web/sources/transfers.py` |
+| `QsNTEd` | APPEND_SOURCE | Append a plain-text block to an existing source in place | `_web/sources/transfers.py` |
+| `R27wvc` | COPY_SOURCES | Copy sources into another notebook (original → copy mapping) | `_web/sources/transfers.py` |
+| `mVtEUb` | LIST_EXPERT_INTELLIGENCE_CONTENT | List the account's Google Play Books library — every title, with per-row exportability (Expert Intelligence; web-only add) | `_web/sources/play_books.py` |
+| `mKDdke` | COPY_ARTIFACTS | Copy Studio artifacts into another notebook (full new rows inline) | `_web/artifacts.py` |
+| `OcvKNc` | SUGGEST_NEXT_STEPS | Grounded follow-up questions (the chat `next_steps` block, standalone) | `_web/notebooks.py` |
+| `sqTeoe` | GET_CUSTOMIZATION_CHOICES | Studio "Customize" option tables (account-level) | `_web/artifacts.py` |
 
 ### Content Type Codes (ArtifactTypeCode)
 
@@ -108,6 +116,7 @@ Internal integer codes returned by `GET_NOTEBOOK` / `LIST_SOURCES` and consumed 
 | 14 | `GOOGLE_SPREADSHEET` | Google Sheets source **and** Drive-hosted binaries (see overload note) |
 | 16 | `CSV` | CSV upload |
 | 17 | `EPUB` | EPUB upload (added in v0.4.0) |
+| 20 | `EXPERT_INTELLIGENCE` | Google Play Books source added via `sources.add_play_book` (#2292); carries `ExpertIntelligenceSourceMetadata` at `metadata[18]` |
 
 > Codes outside this map are surfaced as `SourceType.UNKNOWN` and emit `UnknownTypeWarning` on first occurrence so unmapped types don't crash callers.
 
@@ -2335,8 +2344,16 @@ await rpc_call(
     RPCMethod.REFRESH_SOURCE,
     params,
     source_path=f"/notebook/{notebook_id}",
+    allow_null=True,  # success is a null payload with nothing at index 5
+    raise_on_null_status=True,  # a status-tagged null ([3] live) raises (#2290)
 )
 ```
+
+Success is an empty reply; a rejection arrives as the same null payload tagged
+with a gRPC status at index 5 (live 2026-09-01: `[3]` INVALID_ARGUMENT for every
+shape tried, on an account where the plural `dtT1F BatchRefreshSources` accepts
+the same source id — see #2290 / #2283). `raise_on_null_status=True` keeps the
+two apart; without it both decoded to `None`.
 
 ### RPC: CHECK_SOURCE_FRESHNESS (yR9Yof)
 
@@ -2377,6 +2394,45 @@ Research allows searching the web or Google Drive for sources to add to notebook
 |------|--------|
 | 1 | Web |
 | 2 | Google Drive |
+
+### RPC: DISCOVER_SOURCES (Es3dTe)
+
+**Source:** `_web/research.py::discover()`
+
+Discover web sources for a query in one synchronous round trip (the web UI's
+"Discover sources" dialog). Same request message as `START_FAST_RESEARCH`
+(`DiscoverSourcesRequest`), a different verb: the call blocks (~8 s live) and
+answers with the results directly, and the backend also records it as a
+completed job that `POLL_RESEARCH` lists (live-verified on both transports
+in issue #2283).
+
+```python
+params = [
+    [query, 1],  # 0: DiscoveryContext — query text, corpus 1 = Web (Drive fails on this route)
+    None,  # 1: RequestContext (optional)
+    mode,  # 2: DiscoveryMode — 1 DEFAULT_LLM_SEARCH, 2 RAW_SEARCH, 3 CURIOUS_SEARCH,
+    #             4 CURIOUS_RAW_SEARCH (3/4 take an empty query). 5 DEEP_RESEARCH is
+    #             rejected (INVALID_ARGUMENT) and 6 LITE_LLM_SEARCH faults (INTERNAL).
+    notebook_id,  # 3: Notebook ID (required; unknown id → NOT_FOUND)
+]
+
+await rpc_call(
+    RPCMethod.DISCOVER_SOURCES,
+    params,
+    source_path=f"/notebook/{notebook_id}",
+)
+
+# Response: [sources, overview, [job_id]]
+#
+#   sources  — [[url, title, hint, corpus_type], ...]; ten rows on every live
+#              call, corpus_type always 1 (150/150 rows), no favicon or deep
+#              payload slots. Identical to the [sources, summary] bundle a
+#              POLL_RESEARCH task row carries at task_info[3].
+#   overview — one sentence summarising the set.
+#   job_id   — DiscoverSourcesFeedbackKey[0]: the id of the completed job the
+#              call recorded; `discover()` returns it as ``task_id`` so the
+#              result imports through IMPORT_RESEARCH like any run.
+```
 
 ### RPC: START_FAST_RESEARCH (Ljjv0c)
 
@@ -3224,3 +3280,139 @@ These RPC method IDs exist in `rpc/types.py` but are either legacy (superseded b
 3. They become useful for specific edge cases
 
 **Note:** The unified `CREATE_ARTIFACT` (R7cb6c) method handles all artifact generation (audio, video, reports, quizzes, etc.).
+
+## Transfer & Suggestion RPCs (#2283)
+
+Six RPCs the web bundle registers but the web UI never calls from a visible
+control. Their request shapes were recovered with the mobile tag oracle
+(`docs/android/copy-append-suggestion-evidence.md`): the same
+`LabsTailwindOrchestrationService` serves both front doors, so web index `i` is
+proto tag `i+1`. All six are also served natively to the Android backend.
+
+### RPC: ADD_SOURCES_ASYNC (X1snv)
+
+**Source:** `_web/sources/transfers.py::SourceTransferService.add_urls_async()` (`WebSourcesAPI.add_urls_async`)
+
+Same request as the batch `ADD_SOURCE` (`AddSources`), but the server answers as
+soon as the sources are queued (~0.65 s for two URLs vs ~2 s per synchronous
+add in the #2283 web probe) with stub rows.
+
+```python
+params = [
+    [<source spec>, ...],   # 0: repeated UserContent — the same URL / YouTube specs ADD_SOURCE sends
+    notebook_id,            # 1
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],  # 2: RequestContext
+]
+# source_path = f"/notebook/{notebook_id}"
+```
+
+**Response:** `[[Source, ...], null, [[Source, ack], ...]]` — stub `Source`
+rows at `[0]` (`[[id], url, [null, null, null, null, type]]`; no word count or
+ingest timestamps), and a per-source acknowledgement list at `[2]` pairing each
+row with an `int` status (`0` on every live observation). Decoded via
+`AddSourcesAsyncResponseRow`; never replayed on a transport failure.
+
+### RPC: APPEND_SOURCE (QsNTEd)
+
+**Source:** `_web/sources/transfers.py::SourceTransferService.append_text()` (`WebSourcesAPI.append_text`)
+
+```python
+# AppendSourceRequest { SourceId source_id = 2; SourceContent content = 4 }
+# SourceContent { PlainTextSourceContent plain_text = 2 }  ->  { header = 1; body = 2 }
+params = [
+    None,  # 0: unused
+    [source_id],  # 1: SourceId
+    None,  # 2: unused
+    [
+        None,
+        [header, body],
+    ],  # 3: SourceContent.plain_text — doubly nested: a bare string here draws
+    #    INVALID_ARGUMENT, a string in the plain_text slot draws INTERNAL
+]
+```
+
+**Response:** empty on success (`body` lands at the very end of the fulltext;
+`header` does not appear in it). Called with `allow_null=True,
+raise_on_null_status=True` so a rejected call is not read as that empty success.
+
+### RPC: COPY_SOURCES (R27wvc)
+
+**Source:** `_web/sources/transfers.py::SourceTransferService.copy()` (`WebSourcesAPI.copy`)
+
+Live method `CopySourcesAsync`. The synchronous twin `CopySources` (`Z8UXi`) is
+dead on both front doors and is not modelled.
+
+```python
+# CopySourcesAsyncRequest { repeated SourceId source_ids = 3; string target_project_id = 4 }
+params = [None, None, [[source_id], ...], target_notebook_id]
+```
+
+**Response:** `[[ [[original_id], <source entry>], ... ]]` — one mapping entry
+per copied source; the entry row is the standard `[[id], title, metadata,
+settings]` shape (`CopiedSourceRow`). An unknown source id or target notebook
+draws `NOT_FOUND` (live-verified); an empty mapping on success is treated as
+`SourceNotFoundError` so a silent no-op never reads as a copy.
+
+### RPC: COPY_ARTIFACTS (mKDdke)
+
+**Source:** `_web/artifacts.py::WebArtifactsAPI.copy()`
+
+Live method `CopyArtifactsAsync`. The synchronous twin `CopyArtifacts`
+(`zVGIdd`) validates arity, ignores the ids and copies nothing while reporting
+success — never model it.
+
+```python
+# CopyArtifactsAsyncRequest { RequestContext = 1; repeated string artifact_ids = 2; string target_project_id = 3 }
+params = [
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+    [artifact_id, ...],  # bare strings, not [id] wrappers
+    target_notebook_id,
+]
+```
+
+**Response:** `[[ [original_id, <artifact row>], ... ]]` — the full new artifact
+row inline (`CopiedArtifactRow` → `Artifact.from_api_response`). Verified live by
+re-listing the target.
+
+### RPC: SUGGEST_NEXT_STEPS (OcvKNc)
+
+**Source:** `_web/notebooks.py::WebNotebooksAPI.suggest_next_steps()`
+
+Live method `NextStepSuggestions` — the standalone form of the block every chat
+answer carries at `inner[5]`, so no prior conversation is needed.
+
+```python
+# NextStepSuggestionsRequest { string project_id = 2; repeated InputSource sources = 3 }
+params = [None, notebook_id]  # all sources
+params = [None, notebook_id, [[[source_id]], ...]]  # scoped (nest_source_ids depth 2)
+```
+
+**Response:** `[[ [question, MagicArtifactType], ... ]]` — three questions per
+call live, each with type `9` (`CONVERSATIONAL_TEXT_CHIP`). Decoded through the
+chat `NextStepSuggestionRow`. A bogus notebook draws `NOT_FOUND`; a bare
+`[id]` at index 2 draws `INVALID_ARGUMENT`.
+
+### RPC: GET_CUSTOMIZATION_CHOICES (sqTeoe)
+
+**Source:** `_web/artifacts.py::WebArtifactsAPI.get_customization_choices()`
+
+Live method `GetArtifactCustomizationChoices`. **Account-level:** `[]`, a bogus
+notebook id and every artifact type return the same ~3.3 KB table on both front
+doors, so only the request context is sent (the notebook id is appended when
+the caller has one; it only fills the ``project_id`` slot). Called with `allow_null=False`: the
+server always serves the table, so a null or re-shaped envelope is drift
+(`DecodingError`), never "no choices".
+
+```python
+params = [[2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]]]
+params = [<context>, notebook_id]   # when a notebook id is supplied
+```
+
+**Response:** `[[ <audio>, <video>, <slide-deck>, <report presets> ]]` — one
+`ArtifactCustomizationChoices` message whose four one-field families each hold
+`[[row, ...]]`. Format rows are `[code, title, description]` (codes match
+`AudioFormat` / `VideoFormat` / `SlideDeckFormat`); report rows are
+`[report_type, description, directive]`. The audio and video families (tags 1–2)
+are live-only — the APK schema declares only slides (3) and reports (4).
+Decoded via `_web/rows/customization.py`.
+

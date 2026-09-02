@@ -68,7 +68,7 @@ pre-commit run --all-files                      # manual run on the whole tree (
 
 > **Caveat:** if `pre-commit install` errors with `Cowardly refusing to install hooks with core.hooksPath set`, your git is configured to use a custom hooks directory (common with Husky / nx / shared dev configs). Workaround: `git config --unset core.hooksPath` then re-run `pre-commit install`, or run `pre-commit run --all-files` manually before each commit. CI runs the same hook either way, so a clean local hook is convenience, not correctness.
 
-> **CI parity.** The local pre-commit one-liner above matches the CI **lint gate** (`uv run pre-commit run --all-files` in `.github/workflows/test.yml`). CI additionally runs the full test matrix on multiple Python versions (3.10–3.14) and asserts a 90% coverage floor (`pytest --cov=src/notebooklm --cov-report=term-missing --cov-fail-under=90`). The lint+test failure modes are caught locally; the multi-Python-version drift is not — `uv run pytest --cov=src/notebooklm --cov-report=term-missing --cov-fail-under=90` here uses your local Python version only.
+> **CI parity.** The local pre-commit one-liner above matches the CI **lint gate** (`uv run pre-commit run --all-files` in `.github/workflows/test.yml`). CI additionally runs the full test matrix on multiple Python versions (3.10–3.14) without coverage; the 90% coverage floor (`pytest --cov=src/notebooklm --cov-report=term-missing --cov-fail-under=90`) is asserted by the nightly workflow. The lint+test failure modes are caught locally; the multi-Python-version drift is not — `uv run pytest --cov=src/notebooklm --cov-report=term-missing --cov-fail-under=90` here uses your local Python version only.
 
 ### Pull Request Process
 
@@ -132,9 +132,17 @@ uv run pytest tests/unit tests/integration -m "not repo_lint"
 uv run pytest tests/unit tests/integration -m "repo_lint"
 ```
 
-Run the full suite (including `repo_lint`) before pushing — CI runs everything
-by default, so `repo_lint` failures still block merge. The default
-`uv run pytest` invocation does not filter the marker out.
+Run the full suite (including `repo_lint`) before pushing. PR CI does **not**
+run `repo_lint` in bulk: every matrix cell passes `-m "not repo_lint"`, so of
+the marker itself only the guards named by node id in the `Run critical
+contract guards` step of `.github/workflows/test.yml` are merge-blocking (the
+ordinary non-`repo_lint` suite blocks merge as always, and the Code Quality job
+independently runs some of the same scripts several `repo_lint` tests wrap).
+The rest of the marker runs in the manual `repo-lint` job (`workflow_dispatch`)
+and nightly, so a `repo_lint` failure with no promoted node id and no
+Code-Quality mirror can reach `main` unnoticed until the next nightly. The
+default `uv run pytest` invocation does not filter the marker out; `make gates`
+runs the marker with CI's shape.
 
 Quick guidance:
 

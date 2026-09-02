@@ -38,6 +38,12 @@ ADDERS = {
 }
 
 NAME_RE = re.compile(r'"([A-Za-z_][A-Za-z0-9_]*)"')
+# The name handed to BuilderInfo() is dotted for nested messages
+# ("TailwindStruct.TailwindStructEntry"); NAME_RE would skip it and the Dart
+# class name ("TailwindStruct_TailwindStructEntry") would be passed off as exact.
+# Only a bare register load of a string literal (``r2 = "Outer.Entry"``) counts: the
+# ``r4 = const [..., createEmptyInstance, ...]`` line that follows also quotes strings.
+BUILDER_NAME_RE = re.compile(r'r\d+ = "([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)"\s*$')
 TYPE_RE = re.compile(r"<([A-Za-z_][A-Za-z0-9_.]*)>")
 INT_RE = re.compile(r"r\d+ = (\d+)\b")
 ADDER_RE = re.compile(r"BuilderInfo::([A-Za-z0-9_]+)\b")
@@ -104,6 +110,7 @@ def parse_ii_body(lines):
     recent_name = None
     recent_tag = None
     recent_type = None
+    recent_builder_name = None
     seen_first_builderinfo = False
     for ln in lines:
         m = TYPE_RE.search(ln)
@@ -116,16 +123,16 @@ def parse_ii_body(lines):
                 recent_tag = v
         mn = NAME_RE.search(ln)
         if mn and ("PP," in ln or '"' in ln):
-            cand = mn.group(1)
-            if not seen_first_builderinfo and cand[:1].isupper() and msg_name is None:
-                # first quoted PascalCase string after entering _i() is the message name
-                pass
-            recent_name = cand
+            recent_name = mn.group(1)
+        if not seen_first_builderinfo and (mb := BUILDER_NAME_RE.search(ln)) is not None:
+            # the last quoted string before BuilderInfo() is the (possibly dotted) name
+            recent_builder_name = mb.group(1)
         if "BuilderInfo::BuilderInfo" in ln:
             seen_first_builderinfo = True
-            # message name is the recent PascalCase name
-            if msg_name is None and recent_name and recent_name[:1].isupper():
-                msg_name = recent_name
+            # message name is the recent PascalCase name (last segment when nested)
+            if msg_name is None and recent_builder_name:
+                if recent_builder_name.rsplit(".", 1)[-1][:1].isupper():
+                    msg_name = recent_builder_name
             recent_name = None
             recent_tag = None
             recent_type = None

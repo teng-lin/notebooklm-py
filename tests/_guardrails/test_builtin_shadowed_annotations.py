@@ -9,18 +9,21 @@ builtin and everything worked. PEP 649 defers the evaluation into a synthesized
 resolves *after* the class exists and raises ``TypeError: 'function' object is
 not subscriptable`` the moment anything reads it (#2266).
 
-The repo's answer predates the break: ``builtins.list[...]`` is spelled
-explicitly at ~40 sites across the client classes for exactly this reason. The
-twelve sites #2266 found were the ones that missed the convention, not a
-different design. This lint keeps them from coming back.
+The repo's answer predates the break: ``builtins.list[...]`` is the established
+spelling across the client classes for exactly this reason, at hundreds of
+sites today. The twelve sites #2266 found were the ones that missed the
+convention, not a different design. This lint keeps them from coming back.
 
 **Static on purpose.** It parses rather than imports, so it catches a 3.14-only
-break while running on 3.12 — which is where it will actually run. The failing
-signature check is marked ``repo_lint``, and every compatibility cell in
-``test.yml`` runs ``-m "not repo_lint"``, while both lanes that do execute
-``repo_lint`` pin 3.12. Adding a 3.14 lane would close today's hole on one
-version; parsing closes it on every version, including whichever one breaks
-next.
+break while running on 3.12 — which is where it will actually run.
+``test_class_body_annotations_do_not_name_a_shadowed_builtin`` is named as a
+node id in the ``Run critical contract guards`` step of ``test.yml``, and that
+step passes no ``-m``, so the ``repo_lint`` marker does not stop it from
+running on every PR. The marker does keep it out of the compatibility cells,
+which run ``-m "not repo_lint"``, and the two lanes that execute ``repo_lint``
+in bulk — the manual ``repo-lint`` job and nightly — both pin 3.12. Adding a
+3.14 ``repo_lint`` lane would close today's hole on one version; parsing closes
+it on every version, including whichever one breaks next.
 
 **Every builtin, not just ``list``.** Only ``list`` is shadowed today. A future
 method named ``type``, ``filter`` or ``id`` fails the same way for the same

@@ -316,6 +316,10 @@ KIND_TO_PAYLOAD_BUILDERS: Mapping[str, tuple[str, ...]] = {
 PAYLOAD_BUILDER_EXTRAS: Mapping[str, str] = {
     "build_retry_artifact_params": "retries an existing artifact by id; not kind-keyed",
     "build_suggest_reports_params": "AI report-topic suggestions; not a generation kind",
+    "build_copy_artifacts_params": "copies existing artifacts by id (#2283); not a generation kind",
+    "build_customization_choices_params": (
+        "reads the studio customization option tables (#2283); not a generation kind"
+    ),
 }
 
 #: KNOWN BUG BASELINE (FIXME — see module docstring): the per-kind duration-hint

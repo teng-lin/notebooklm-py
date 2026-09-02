@@ -32,6 +32,7 @@ from .._app.research import (
     ResearchStatusResult,
     cancel_research,
     classify_importable_research,
+    discover_and_classify,
     poll_and_classify,
     validate_research_wait_flags,
 )
@@ -81,6 +82,7 @@ def research():
 
     \b
     Commands:
+      discover  Find web sources for a query synchronously (one call)
       status    Check research status (non-blocking)
       wait      Wait for research to complete (blocking)
       import    Import a completed run's sources (no wait for the run)
@@ -103,6 +105,49 @@ def research():
       notebooklm research import
     """
     pass
+
+
+@research.command("discover")
+@click.argument("query", required=False, default="")
+@notebook_option
+@click.option(
+    "--mode",
+    type=click.Choice(["default", "raw", "curious", "curious_raw"], case_sensitive=False),
+    default="default",
+    show_default=True,
+    help=(
+        "Search mode. 'curious' and 'curious_raw' let the backend pick a topic "
+        "and accept an empty QUERY."
+    ),
+)
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@with_client
+def research_discover(ctx, query, notebook_id, mode, json_output, client_auth):
+    """Discover web sources for QUERY in one synchronous call.
+
+    Unlike 'source add-research', this blocks for the single round trip
+    (about 8 seconds) and prints the ranked sources with the backend's overview.
+    The run is also recorded, so its run id works with 'research import'.
+
+    \b
+    Examples:
+      notebooklm research discover "history of the transistor"
+      notebooklm research discover --mode curious
+      notebooklm research discover "quantum error correction" --json
+    """
+    nb_id = require_notebook(notebook_id)
+
+    async def _run():
+        async with resolve_client_factory(ctx)(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            result = await discover_and_classify(client, nb_id_resolved, query, mode)
+            if json_output:
+                json_output_response(result.public_dict)
+                return
+            _render_status_result(result)
+            console.print(f"[dim]Run id: {result.task_id}[/dim]")
+
+    return _run()
 
 
 @research.command("status")

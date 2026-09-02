@@ -64,6 +64,7 @@ EXPECTED_NOTEBOOK_PUBLIC_CALLABLES = {
     "remove_from_recent",
     "rename",
     "set_emoji",
+    "suggest_next_steps",
     "suggest_prompts",
     "update",
 }
@@ -212,6 +213,7 @@ def test_exact_abstract_sets_and_android_adapters_are_concrete() -> None:
             "get_summary",
             "list",
             "remove_from_recent",
+            "suggest_next_steps",
             "suggest_prompts",
             "update",
         }
@@ -221,9 +223,14 @@ def test_exact_abstract_sets_and_android_adapters_are_concrete() -> None:
             "add_drive",
             "add_drive_file",
             "add_file",
+            "add_play_book",
+            "list_play_books",
             "add_text",
             "add_url",
+            "add_urls_async",
+            "append_text",
             "check_freshness",
+            "copy",
             "delete",
             "get_fulltext",
             "get_guide",
@@ -762,3 +769,48 @@ async def test_notebook_metadata_composes_exact_android_source_collaborator() ->
         (SourceType.MARKDOWN, "Draft", None),
         (SourceType.GOOGLE_DRIVE, "Drive file", None),
     ]
+
+
+def test_decode_source_populates_expert_intelligence_metadata() -> None:
+    """An Android EI source read carries its Play Books provenance (#2292)."""
+    metadata = read_pb2.SourceMetadata(
+        original_source_content_type=read_pb2.SOURCE_CONTENT_TYPE_EXPERT_INTELLIGENCE,
+        expert_intelligence_source_metadata=read_pb2.ExpertIntelligenceSourceMetadata(
+            content_id="QhsZEAAAQBAJ",
+            title="The Art of War",
+            authors=["Sun Tzu"],
+            thumbnail_image_url="https://cover",
+            description="<p>desc</p>",
+            field_type=4.6458335,
+        ),
+    )
+    raw = read_pb2.Source(
+        source_id=read_pb2.SourceId(id="ei-1"),
+        title="The Art of War",
+        metadata=metadata,
+        settings=source_settings_pb2.SourceSettings(
+            status=source_settings_pb2.SOURCE_STATUS_COMPLETE,
+        ),
+    )
+    decoded = decode_source(raw, method_id=GET_PROJECT_METHOD)
+    assert decoded.kind is SourceType.EXPERT_INTELLIGENCE
+    ei = decoded.expert_intelligence
+    assert ei is not None
+    assert ei.content_id == "QhsZEAAAQBAJ"
+    assert ei.title == "The Art of War"
+    assert ei.authors == ("Sun Tzu",)
+    assert ei.thumbnail_image_url == "https://cover"
+    assert ei.field_type == pytest.approx(4.6458335)
+    # The recovered mobile schema does not carry ContentProvider.
+    assert ei.provider is None
+
+
+def test_decode_source_without_expert_intelligence_leaves_field_none() -> None:
+    raw = _source(
+        "url-1",
+        title="Website",
+        content_type=read_pb2.SOURCE_CONTENT_TYPE_URL,
+        status=source_settings_pb2.SOURCE_STATUS_COMPLETE,
+        url="https://example.test/article",
+    )
+    assert decode_source(raw, method_id=GET_PROJECT_METHOD).expert_intelligence is None

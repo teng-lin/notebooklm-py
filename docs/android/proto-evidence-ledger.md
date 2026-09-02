@@ -99,19 +99,19 @@ fixtures. Hashes prevent a later local checkout from silently changing what was 
 | exact-package `source_settings.proto` | `becd695c4281e23064c16fc1441c61117e5dc2a44c52cadf44af9e31c7cb8b18` | separate settings package, fields #2/#4, complete enums |
 | exact-package sharing `supported.proto` | `f966dfebebe5eee213ad53607d2fddd44c8c33892f2a338d734491d9fb7b4309` | sharing service/message FQNs, tags, cardinality, and common-protos import |
 | exact-package common `common.proto` | `0a2a7acbeebf3a97ad0fffa8b7496cb119c9f0fffb731011c47e9dba43313044` | exact `ChatSession` and `ProjectPublicSettings` message closure without duplicate declarations |
-| [`schema.proto`](schema.proto) | `be9a1b43aab41a5509b1b1ccc15c25e8096a0edce37b118335d1179c90b704db` | flattened Dart recovery used to identify gaps, never as a compile input; retains 13 zero-field messages and exact per-message package/library provenance |
-| [`enums.txt`](enums.txt) | `8c8137c1842d07b54ba9e52feeea7c3ce09246415c26d964d17bec68eee228bc` | exhaustive enum names and integers |
+| [`schema.proto`](schema.proto) | `4d546eadc76aeca5b41e350ca11d11a943d7f2f89be9ff0de1f3d37eaf65eb07` | flattened Dart recovery used to identify gaps, never as a compile input; retains 15 zero-field messages and exact per-message package/library provenance |
+| [`enums.txt`](enums.txt) | `fb138adfec1d701932f7efaee9f20f4fbb43b3df27acb00de91c169e659c5401` | exhaustive enum names and integers |
 | blutter `pp.txt` | `2fc0bad6bee700cb628deb9ac1922eeea3d1255b51d8d2e1f63c5537d98965b0` | adjacent generated-client method paths, request/response generic bindings, and response constructors for the six formerly empty-response exceptions |
 | blutter `ida_script/addNames.py` | `982fcbf1c5ef1d7d0aa9d5d0ae8af3c6e6a7c575af9bdba1fc3d7469aa8bc511` | exact protobuf Dart-library identity for `Empty`, `DeleteNotesResponse`, and `ShareProjectResponse`; summarized in [`blutter-grpc-signature-evidence.md`](blutter-grpc-signature-evidence.md) |
 | [`grpc-capability-and-signature-evidence.md`](grpc-capability-and-signature-evidence.md) | `cd43b24f84e77000787306797d4dab26fbf11b68c51d0111d478c5bc9594a271` | consolidated signed-APK inventory, current authenticated Web-bundle signature inference, and mobile-backend route/semantic evidence; preserves the original report hashes and their distinct evidence boundaries |
 | [`latest_apk_grpc_paths.txt`](../../tests/fixtures/android/latest_apk_grpc_paths.txt) | `b5df4996f271e71ccc14e0ae0f8eaa13e1e337b4bc726b54a487a0c4f6d31697` | complete 53-path `1.55.10` generated-client inventory, including the path-only unresolved `UpsertArtifactUserState` entry |
 | [`latest_apk_grpc_signatures.csv`](../../tests/fixtures/android/latest_apk_grpc_signatures.csv) | `6381163929c18d51eb654bc677846061ea65e9d501b9beb9db3952b749b32b7c` | 52 exact `1.55.10` generated-client bindings with request/response FQNs and object-pool offsets |
-| [`external_method_manifest.csv`](../../tests/fixtures/android/external_method_manifest.csv) | `364dd70ac0e4e101047e570133a44cc007b384aa9a5063187abfd5d04ade1f57` | version-scoped `1.46.7` binary inventory plus independently live/web-proven signatures used by the implemented-adapter admission gate |
-| [`public-api-audit.md`](public-api-audit.md) | `77d68255eb6cf98d6d9d118dca37a350673def13801df3befe79fc0227b7159e` | complete public-adapter rejection inventory, current web/APK mapping, and disposable-copy Android-bearer validation for the newly admitted operations |
+| [`external_method_manifest.csv`](../../tests/fixtures/android/external_method_manifest.csv) | `46d15ebbae2567a66a88cd9785bcfe944ab6de077ec1c0ab53294c28e768526d` | version-scoped `1.46.7` binary inventory plus independently live/web-proven signatures used by the implemented-adapter admission gate |
+| [`public-api-audit.md`](public-api-audit.md) | `c34745b9cc79d1ebdeb1b12318a08dfb75e22530042c4e25248e30aa71573440` | complete public-adapter rejection inventory, current web/APK mapping, and disposable-copy Android-bearer validation for the newly admitted operations |
 | [`artifact-contracts-and-live-validation.md`](artifact-contracts-and-live-validation.md) | `58af0bbeebdfa6a6a7366577d90a5479bdf971a1ed76fe3d6d7d0b8420f8454d` | consolidated artifact generation, representation, data-table, retry/export, mind-map, and transfer evidence; preserves all four source-report hashes and cleanup qualifications |
 | [`file-transfer-evidence.md`](file-transfer-evidence.md) | `f09a518c398f7355f7ab55c69d6e990037c806a9cc3e3f1291de5efd4971a6a5` | official-app/headless PDF upload request, qualified CSV/DOCX compatibility boundary, and live artifact representation/direct infographic/slide transfer |
-| [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md) | `7e21ddb46ff851b9ae27c38c7ce6d18cfc6e4589f3730fe30160ef8f7dfcf585` | consolidated notebook copy/metadata, note/mind-map, label/collection, membership, cleanup, and public-qualification evidence; preserves all four source-report hashes |
-| [`endpoints.md`](endpoints.md) | `e1dbbd0b98f6a65bb7a76ce3597282b15d4c884987f806b0744cf17ecbfb4248` | live request/response envelopes, route results, version-scoped APK inventories, captured note/sharing bytes, and the account-bootstrap replay boundary |
+| [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md) | `f505fed8baa5e5976748fddb0a464a125235c18e199ee35f5ae85d30c9eb648c` | consolidated notebook copy/metadata, note/mind-map, label/collection, membership, cleanup, and public-qualification evidence; preserves all four source-report hashes |
+| [`endpoints.md`](endpoints.md) | `5f707e65ebf3afb0a152642362302ecb9749ff06db4d459305d9f1864124542c` | live request/response envelopes, route results, version-scoped APK inventories, captured note/sharing bytes, and the account-bootstrap replay boundary |
 
 The recovery method and the warning about duplicate packages are committed in
 [`README.md`](README.md#caveats-that-will-bite-you). Live request/response shapes are documented in
@@ -463,7 +463,7 @@ retain their established builders.
 
 The compile inputs are
 [`chat.proto`](../../src/notebooklm/_android/proto_src/google/internal/labs/tailwind/orchestration/v1/chat.proto)
-(SHA-256 `f232bf0d5fdc7dcf770147e8f819435a0bc743046973ed83277a7cd37dff79ac`) and
+(SHA-256 `75105fc8ffced63f37ba20b4dcd643a30960ae78be4e9a2d3bce42b2f678f576`) and
 [`common.proto`](../../src/notebooklm/_android/proto_src/labs/language/tailwind/common/protos/common.proto)
 (SHA-256 `7d064bf11e3f01465e485004e6dbba078ae9b92f02be53ac2a8a4ac6a420af75`).
 The exact agency value closure is imported from

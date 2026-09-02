@@ -32,7 +32,7 @@ at **84.39%** coverage and fails the 90% gate, while CI's set runs **15,478** at
 **96.61%** and passes. That ~1,500-test blind spot hid a real MCP-adapter defect
 through eight red CI jobs on #2198.
 
-To reproduce a CI test run exactly (`.github/workflows/test.yml`):
+To approximate the nightly coverage gate (`.github/workflows/nightly.yml` — nightly actually splits coverage into a marker-filtered xdist pass plus a serial Playwright `--cov-append` pass and checks per-file floors via `scripts/check_coverage_thresholds.py`; PR cells run the same suite without coverage):
 
 ```bash
 uv run pytest -n auto --dist loadgroup --cov=src/notebooklm \

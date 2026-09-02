@@ -32,8 +32,15 @@ from .._app.artifacts import (
 )
 from ..exceptions import ArtifactNotFoundError
 from .auth_runtime import resolve_client_factory, with_client
+from .context import get_current_notebook
 from .error_handler import _output_error, exit_with_code
-from .options import json_option, list_options, notebook_option, wait_polling_options
+from .options import (
+    _complete_artifacts,
+    json_option,
+    list_options,
+    notebook_option,
+    wait_polling_options,
+)
 from .polling_ui import status_with_elapsed
 from .rendering import (
     cli_name_to_artifact_type,
@@ -71,6 +78,8 @@ def artifact():
       wait         Wait for generation to complete (blocking)
       retry        Retry a failed artifact in place
       suggestions  Get AI-suggested report topics
+      copy         Copy artifacts into another notebook
+      choices      Show the Studio "Customize" option tables
 
     \b
     Partial ID Support:
@@ -796,5 +805,164 @@ def artifact_suggestions(ctx, notebook_id, json_output, client_auth):
 
             console.print(table)
             console.print('\n[dim]Use the prompt with: notebooklm generate report "<prompt>"[/dim]')
+
+    return _run()
+
+
+# ---------------------------------------------------------------------------
+# #2283: CopyArtifactsAsync / GetArtifactCustomizationChoices
+# ---------------------------------------------------------------------------
+
+
+@artifact.command("copy")
+@click.argument("artifact_ids", nargs=-1, required=True, shell_complete=_complete_artifacts)
+@click.option("--to", "target", required=True, help="Target notebook id (or unique prefix)")
+@notebook_option
+@json_option
+@with_client
+def artifact_copy(ctx, artifact_ids, target, notebook_id, json_output, client_auth):
+    """Copy Studio artifacts into another notebook (``CopyArtifactsAsync``).
+
+    Prints each original id alongside the new artifact created in the target
+    notebook. ARTIFACT_IDS may be full ids or unique prefixes within the
+    current notebook.
+
+    \b
+    Example:
+      notebooklm artifact copy art1 art2 --to 1a2b3c4d
+      notebooklm artifact copy art1 --to 1a2b3c4d --json
+    """
+    nb_id = require_notebook(notebook_id)
+
+    async def _run():
+        async with resolve_client_factory(ctx)(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            target_resolved = await resolve_notebook_id(client, target, json_output=json_output)
+            resolved_ids = [
+                await resolve_artifact_id(client, nb_id_resolved, aid, json_output=json_output)
+                for aid in artifact_ids
+            ]
+            copied = await client.artifacts.copy(nb_id_resolved, resolved_ids, target_resolved)
+            not_copied = [aid for aid in resolved_ids if aid not in {c.original_id for c in copied}]
+            if json_output:
+                json_output_response(
+                    {
+                        "notebook_id": nb_id_resolved,
+                        "target_notebook_id": target_resolved,
+                        "copied": [
+                            {
+                                "original_id": item.original_id,
+                                "artifact": {
+                                    "id": item.artifact.id,
+                                    "title": item.artifact.title,
+                                    "type": item.artifact.kind.value,
+                                    "status": item.artifact.status_str,
+                                },
+                            }
+                            for item in copied
+                        ],
+                        "not_copied": not_copied,
+                        "count": len(copied),
+                        "requested": len(resolved_ids),
+                    }
+                )
+            else:
+                cli_print(
+                    f"[green]Copied {len(copied)} of {len(resolved_ids)} artifact(s) to[/green] "
+                    f"{target_resolved}",
+                    ctx=ctx,
+                )
+                for item in copied:
+                    cli_print(
+                        f"  {item.original_id} -> {item.artifact.id}  {item.artifact.title}",
+                        ctx=ctx,
+                    )
+            if not_copied:
+                # A partial copy is a partial failure: the JSON payload already
+                # names the ids that stayed behind (``not_copied``); text mode says
+                # so explicitly. Either way exit non-zero so scripts cannot mistake
+                # a partial copy for success.
+                if not json_output:
+                    cli_print(
+                        f"[yellow]Not copied ({len(not_copied)}):[/yellow] {', '.join(not_copied)}",
+                        ctx=ctx,
+                    )
+                exit_with_code(1)
+
+    return _run()
+
+
+@artifact.command("choices")
+@notebook_option
+@json_option
+@with_client
+def artifact_choices(ctx, notebook_id, json_output, client_auth):
+    """Show the Studio "Customize" option tables served to this account.
+
+    Lists the audio / video / slide-deck formats (with the wire codes behind
+    the ``generate --format`` names) and the report presets with their full
+    generation directives (``GetArtifactCustomizationChoices``). The table is
+    account-level, so ``-n`` is optional and only fills the request's project_id slot.
+
+    \b
+    Example:
+      notebooklm artifact choices
+      notebooklm artifact choices --json
+    """
+    nb_id = notebook_id or get_current_notebook()
+
+    async def _run():
+        async with resolve_client_factory(ctx)(client_auth) as client:
+            nb_id_resolved = (
+                await resolve_notebook_id(client, nb_id, json_output=json_output) if nb_id else None
+            )
+            choices = await client.artifacts.get_customization_choices(nb_id_resolved)
+            if json_output:
+                json_output_response(
+                    {
+                        "audio": [
+                            {"code": c.code, "title": c.title, "description": c.description}
+                            for c in choices.audio
+                        ],
+                        "video": [
+                            {"code": c.code, "title": c.title, "description": c.description}
+                            for c in choices.video
+                        ],
+                        "slide_deck": [
+                            {"code": c.code, "title": c.title, "description": c.description}
+                            for c in choices.slide_deck
+                        ],
+                        "reports": [
+                            {
+                                "report_type": r.report_type,
+                                "description": r.description,
+                                "directive": r.directive,
+                            }
+                            for r in choices.reports
+                        ],
+                    }
+                )
+                return
+            for label, rows in (
+                ("Audio formats", choices.audio),
+                ("Video formats", choices.video),
+                ("Slide-deck formats", choices.slide_deck),
+            ):
+                table = Table(title=label)
+                table.add_column("Code", style="dim")
+                table.add_column("Title", style="green")
+                table.add_column("Description")
+                for row in rows:
+                    table.add_row(str(row.code), row.title, row.description)
+                console.print(table)
+            table = Table(title="Report presets")
+            table.add_column("Preset", style="green")
+            table.add_column("Description")
+            for preset in choices.reports:
+                table.add_row(preset.report_type, preset.description)
+            console.print(table)
+            console.print(
+                "\n[dim]Use --json to see each report preset's full generation directive.[/dim]"
+            )
 
     return _run()

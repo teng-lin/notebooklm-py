@@ -345,6 +345,15 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     )
 
     registry.register(
+        RPCMethod.DISCOVER_SOURCES,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        notes=(
+            "synchronous discovery also records a completed job server-side "
+            "(#2283); a blind retry after a lost commit would run a second, "
+            "quota-bearing search and leave two jobs. Caller decides"
+        ),
+    )
+    registry.register(
         RPCMethod.START_FAST_RESEARCH,
         IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         notes=_START_RESEARCH_NOT_IDEMPOTENT_NOTE,
@@ -407,6 +416,56 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
             "CopyProject has no caller-provided idempotency token and creates a "
             "new notebook with duplicated children; a blind retry after a lost "
             "response can create a second full copy"
+        ),
+    )
+    # The #2283 transfer family: every write below creates or extends rows with
+    # no client-token slot and no post-failure probe that can bind a lost
+    # response to this call, so a blind transport retry duplicates the work.
+    registry.register(
+        RPCMethod.ADD_SOURCES_ASYNC,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        notes=(
+            "AddSourcesAsync queues new source rows for every URL in the batch; "
+            "the reply is the only proof of which rows were created, so a retry "
+            "after a lost response would enqueue a duplicate set"
+        ),
+    )
+    registry.register(
+        RPCMethod.ADD_SOURCES_ASYNC,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        variant="play_book",
+        notes=(
+            "the Play Books add (sources.add_play_book) enqueues a new "
+            "ExpertIntelligenceContent source row with no client-token slot and "
+            "no post-failure probe, so a blind retry after a lost response would "
+            "add the book a second time (#2292)"
+        ),
+    )
+    registry.register(
+        RPCMethod.APPEND_SOURCE,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        notes=(
+            "AppendSource appends a text block to the source fulltext in place "
+            "(live-verified: the block lands at the very end); a replay appends "
+            "the same block a second time"
+        ),
+    )
+    registry.register(
+        RPCMethod.COPY_SOURCES,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        notes=(
+            "CopySourcesAsync creates new source rows in the target notebook and "
+            "maps each original to its copy; a retry after a lost response "
+            "creates a second set of copies"
+        ),
+    )
+    registry.register(
+        RPCMethod.COPY_ARTIFACTS,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        notes=(
+            "CopyArtifactsAsync creates new artifact rows in the target notebook "
+            "(live-verified by re-listing the target); a retry after a lost "
+            "response creates a second set of copies"
         ),
     )
 
@@ -740,6 +799,16 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
         RPCMethod.SUGGEST_PROMPTS: (
             "response-only prompt suggestion generation; no persisted resource is created by replay"
         ),
+        # Live method NextStepSuggestions: the standalone follow-up-question
+        # generator (the block chat answers carry at index 5); persists nothing.
+        RPCMethod.SUGGEST_NEXT_STEPS: (
+            "response-only follow-up question generation; no persisted resource is created by replay"
+        ),
+        # Live method GetArtifactCustomizationChoices: account-level read of the
+        # Studio option tables; the server ignores the notebook id entirely.
+        RPCMethod.GET_CUSTOMIZATION_CHOICES: (
+            "read-only studio customization table; replay does not mutate any state"
+        ),
         RPCMethod.GET_SHARE_STATUS: "read-only share status fetch; replay does not mutate ACL state",
         RPCMethod.REMOVE_RECENTLY_VIEWED: (
             "remove notebook from recents is idempotent; replay leaves it absent"
@@ -756,6 +825,9 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
             "set user settings to caller-supplied values; replay leaves the same state"
         ),
         RPCMethod.LIST_LABELS: "read-only label list; replay does not mutate label state",
+        RPCMethod.LIST_EXPERT_INTELLIGENCE_CONTENT: (
+            "read-only Play Books library list; replay does not mutate any state (#2292)"
+        ),
         RPCMethod.UPDATE_LABEL: (
             "default (rename / set-emoji) sets label fields to caller-supplied values; "
             "replay leaves the same state. The add_sources variant is classified "

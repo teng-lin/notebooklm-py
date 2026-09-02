@@ -52,7 +52,7 @@ from tests._guardrails._wire_contract import (
     Mapping,
     Pinned,
 )
-from tests._guardrails._wire_schema import load_enums, load_proto_schema
+from tests._guardrails._wire_schema import PROTO_PATH, load_enums, load_proto_schema
 
 pytestmark = pytest.mark.repo_lint
 
@@ -176,21 +176,33 @@ def test_positional_constant_matches_proto_tag(mapping: Mapping) -> None:
     )
 
 
-def test_schema_parser_preserves_absolute_message_type_names() -> None:
-    """Exact-FQN evidence fields remain visible to positional guardrails."""
+def test_function_call_messages_register_under_the_orchestration_package() -> None:
+    """``FunctionCall``/``FunctionResponse`` carry the ``orchestration.v1`` package.
+
+    Their Dart libraries live under an ``orchestration.v1.agency`` directory, but the
+    ``BuilderInfo`` of both messages is constructed with the
+    ``google.internal.labs.tailwind.orchestration.v1`` ``PackageName`` object in both the
+    ``1.46.7`` and ``1.55.10`` dumps, and neither object store holds an ``agency`` package
+    object. The schema must keep saying what the binary says rather than the directory name.
+    """
     schema = load_proto_schema()
     message = schema.find("StructuralElement", DOC)
 
     function_call = message.field("functionCall")
     function_response = message.field("functionResponse")
     assert function_call is not None
-    assert function_call.type == (
-        ".google.internal.labs.tailwind.orchestration.v1.agency.FunctionCall"
-    )
+    assert function_call.type == "FunctionCall"
     assert function_response is not None
-    assert function_response.type == (
-        ".google.internal.labs.tailwind.orchestration.v1.agency.FunctionResponse"
-    )
+    assert function_response.type == "FunctionResponse"
+
+    fqn_lines = {
+        line.removeprefix("// Protobuf FQN: ")
+        for line in PROTO_PATH.read_text(encoding="utf-8").splitlines()
+        if line.startswith("// Protobuf FQN: ")
+    }
+    for name in ("FunctionCall", "FunctionResponse"):
+        assert f"google.internal.labs.tailwind.orchestration.v1.{name}" in fqn_lines
+    assert not {fqn for fqn in fqn_lines if ".orchestration.v1.agency." in fqn}
 
 
 def test_every_adapter_constant_is_declared() -> None:

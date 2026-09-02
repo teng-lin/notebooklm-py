@@ -532,32 +532,33 @@ jobs:
         content-filepath: error-issue-body.md
         labels: rpc-error, bug, automated
 
-    # Exit code 4 = the ``sqTeoe`` cohort tripwire flipped (GetArtifactCustomization
-    # Choices returned non-null). Our account migrated to the new studio-customization
-    # surface; the VideoStyle / format codes in rpc/types.py must be re-captured.
-    # GATED-null is the expected steady state and never reaches this branch.
-    - name: Check for existing cohort-flip issue
+    # Exit code 4 = the ``sqTeoe`` studio option-table cross-check found DRIFT:
+    # GetArtifactCustomizationChoices served audio / video / slide-deck format
+    # codes or labels that disagree with the client's AudioFormat / VideoFormat /
+    # SlideDeckFormat enums (#1597 class). MATCH is the steady state and never
+    # reaches this branch (#2284 replaced the earlier never-firing probe).
+    - name: Check for existing customization-drift issue
       if: steps.health.outputs.exit_code == '4'
-      id: dup_cohort
+      id: dup_customization
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         if ! count=$(gh issue list --repo "$GITHUB_REPOSITORY" \
           --state open --label automated --label rpc-breakage \
-          --search 'in:title "Studio customization cohort flipped"' \
+          --search 'in:title "Studio customization table drifted"' \
           --json number --jq 'length'); then
-          echo "::warning::Cohort-flip dedup probe failed; allowing issue creation"
+          echo "::warning::Customization-drift dedup probe failed; allowing issue creation"
           count=0
         fi
         echo "open=${count}" >> "$GITHUB_OUTPUT"
 
-    - name: Create Issue on cohort flip
+    - name: Create Issue on customization drift
       if: |
         steps.health.outputs.exit_code == '4'
-        && steps.dup_cohort.outputs.open == '0'
+        && steps.dup_customization.outputs.open == '0'
       uses: peter-evans/create-issue-from-file@fca9117c27cdc29c6c4db3b86c48e4115a786710  # @ v6.0.0
       with:
-        title: "Studio customization cohort flipped — re-capture VideoStyle codes"
+        title: "Studio customization table drifted — re-capture format enums"
         content-filepath: health-report.txt
         labels: rpc-breakage, automated
 

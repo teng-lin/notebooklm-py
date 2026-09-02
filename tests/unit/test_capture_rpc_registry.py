@@ -26,6 +26,7 @@ from scripts.capture_rpc_registry import (
     main,
     parse_enum_members_from_text,
     parse_ids_from_text,
+    parse_registry,
 )
 
 # Mixed quote styles on purpose — exercises the quote-agnostic parsing of both
@@ -559,3 +560,186 @@ def test_check_and_check_enums_combine(tmp_path: Path, capsys: pytest.CaptureFix
     assert (
         main(["--bundle-file", str(bundle), "--types", str(types), "--check", "--check-enums"]) == 1
     )
+
+
+# ---------------------------------------------------------------------------
+# Registration-form robustness (#2289)
+# ---------------------------------------------------------------------------
+
+# Verbatim registrations from the 2026-08-31 bundle. Both constructor arguments
+# are *inline anonymous classes*, so the id sits 160+ chars before the path —
+# outside the old 160-char backward window, which silently dropped 16 of 187
+# live registrations (#2289). ``WJkjP`` is the example quoted in the issue;
+# ``OcvKNc`` is the widest gap (232 chars) among the sixteen.
+_INLINE_CTOR_WJKJP = (
+    'new _.dC("WJkjP",class extends _.n{constructor(a){super(a)}},'
+    "class extends _.n{constructor(a){super(a)}Xs(a){return _.io(this,_.Ru,2,a)}"
+    "Lc(){return _.r(this,4)}},"
+    '[_.ne,!0,_.me,"/LabsTailwindOrchestrationService.GetSuggestedArtifactFromChat"]);'
+)
+_INLINE_CTOR_OCVKNC = (
+    'new _.dC("OcvKNc",class extends _.n{constructor(a){super(a)}},'
+    "class extends _.n{constructor(a){super(a)}Lc(){return _.r(this,2)}"
+    "Co(a){return _.Ml(this,zE,3,_.Nl(a))}Fp(a,b){return _.Jl(this,3,zE,a,b)}"
+    "Xs(a){return _.io(this,_.Ru,6,a)}},"
+    '[_.ne,!0,_.me,"/LabsTailwindOrchestrationService.NextStepSuggestions"]);'
+)
+# A *named*-ctor registration (verbatim), the form the old window was sized for.
+_NAMED_CTOR = (
+    "var zKb=class extends _.n{constructor(a){super(a)}};"
+    'new _.dC("wXbhsf",class extends _.n{constructor(a){super(a)}},zKb,'
+    '[_.ne,!0,_.me,"/LabsTailwindOrchestrationService.ListRecentlyViewedProjects"]);'
+)
+
+
+def test_extract_registry_inline_anonymous_ctors() -> None:
+    """Inline anonymous ctor args push the id far from the path; it must still parse."""
+    bundle = _INLINE_CTOR_WJKJP + _INLINE_CTOR_OCVKNC + _NAMED_CTOR
+    assert extract_registry(bundle) == {
+        "WJkjP": "/LabsTailwindOrchestrationService.GetSuggestedArtifactFromChat",
+        "OcvKNc": "/LabsTailwindOrchestrationService.NextStepSuggestions",
+        "wXbhsf": "/LabsTailwindOrchestrationService.ListRecentlyViewedProjects",
+    }
+    parsed = parse_registry(bundle)
+    # All three came from the forward parse (id and path from the same ``new _.``
+    # registration), not from the path-anchored fallback.
+    assert parsed.sites == 3
+    assert parsed.fallback == 0
+    assert parsed.unclaimed == ()
+
+
+def test_extract_registry_adjacent_registrations_do_not_cross_wire() -> None:
+    """Id and path must come from the *same* registration.
+
+    Two traps a naive parse falls into: (1) a non-RPC ``new _.X("<short>", …)``
+    call with no path directly precedes a registration — a forward regex without
+    a ``new _.`` boundary would span into the neighbour and attribute its path to
+    the wrong token; (2) an inline ctor body carries a stray 5–8 char string
+    literal between the id and the path — the nearest-preceding-token backward
+    scan would take *that* as the id.
+    """
+    bundle = (
+        'new _.BD("notRpc",class extends _.n{constructor(a){super(a)}});'
+        'new _.dC("realId",class extends _.n{constructor(a){super(a,"strayS")}},Q,'
+        '[_.ne,!0,_.me,"/Svc.Real"]);'
+        'new _.dC("nextId",A,B,[_.ne,!1,_.me,"/Svc.Next"]);'
+    )
+    assert extract_registry(bundle) == {"realId": "/Svc.Real", "nextId": "/Svc.Next"}
+    parsed = parse_registry(bundle)
+    assert parsed.sites == 2
+    assert parsed.fallback == 0
+    assert parsed.unclaimed == ()
+
+
+def test_extract_registry_falls_back_to_path_anchor_without_new_form() -> None:
+    """A helper-form change (no ``new _.`` prefix) must not blank the registry.
+
+    The path-anchored backward scan stays as a fallback and now tolerates the
+    inline-anonymous-ctor distances too (the window was widened to 400).
+    """
+    bundle = '_.fD("wXbhsf",kF,csb,[_.Ue,!1,_.Se,"/Svc.List"]);' + _INLINE_CTOR_WJKJP.replace(
+        "new _.dC(", "_.dC("
+    )
+    assert extract_registry(bundle) == {
+        "wXbhsf": "/Svc.List",
+        "WJkjP": "/LabsTailwindOrchestrationService.GetSuggestedArtifactFromChat",
+    }
+    parsed = parse_registry(bundle)
+    assert parsed.sites == 0
+    assert parsed.fallback == 2
+    assert parsed.unclaimed == ()
+
+
+def test_extract_registry_nested_new_inside_ctor_body_is_not_a_boundary() -> None:
+    """A ``new _.X("…")`` call *inside* an inline ctor body belongs to the outer
+    registration: it must neither end the outer span nor claim the path itself."""
+    bundle = (
+        'new _.dC("outerId",class extends _.n{constructor(a){super(a);'
+        'this.x=new _.BD("innerX",[1,2]);this.y=_.q("(",")")}},Q,'
+        '[_.ne,!0,_.me,"/Svc.Outer"]);'
+        'new _.dC("nextId",A,B,[_.ne,!1,_.me,"/Svc.Next"]);'
+    )
+    assert extract_registry(bundle) == {"outerId": "/Svc.Outer", "nextId": "/Svc.Next"}
+    parsed = parse_registry(bundle)
+    assert parsed.sites == 2
+    assert parsed.fallback == 0
+    assert parsed.unclaimed == ()
+
+
+def test_fallback_never_overwrites_an_id_it_already_attributed() -> None:
+    """Two orphan paths whose nearest token is the same id: the second must not
+    silently replace the first's mapping — it is reported as unclaimed."""
+    bundle = '_.fD("legacy",A,B,[_.Ue,!1,_.Se,"/Svc.First"]);x="/Svc.Second";'
+    parsed = parse_registry(bundle)
+    assert parsed.registry == {"legacy": "/Svc.First"}
+    assert parsed.fallback == 1
+    assert parsed.unclaimed == ("/Svc.Second",)
+
+
+def test_same_path_registered_under_two_ids_keeps_both() -> None:
+    """A forward-form and a legacy-form registration of the same method under
+    different ids are both kept: claiming is per path *occurrence*, not value."""
+    bundle = (
+        'new _.dC("newId",A,B,[_.ne,!0,_.me,"/Svc.Same"]);'
+        '_.fD("oldId",A,B,[_.Ue,!1,_.Se,"/Svc.Same"]);'
+    )
+    parsed = parse_registry(bundle)
+    assert parsed.registry == {"newId": "/Svc.Same", "oldId": "/Svc.Same"}
+    assert parsed.sites == 1
+    assert parsed.fallback == 1
+    assert parsed.unclaimed == ()
+
+
+def test_repeated_occurrence_of_a_known_registration_is_not_unclaimed() -> None:
+    """The bundle registers some RPCs twice (once per chunk). A second occurrence
+    whose nearest token is already mapped to the same path is a repeat, not a gap."""
+    bundle = (
+        _NAMED_CTOR + 'r("wXbhsf","/LabsTailwindOrchestrationService.ListRecentlyViewedProjects");'
+    )
+    parsed = parse_registry(bundle)
+    assert parsed.registry == {
+        "wXbhsf": "/LabsTailwindOrchestrationService.ListRecentlyViewedProjects",
+    }
+    assert parsed.fallback == 0
+    assert parsed.unclaimed == ()
+
+
+def test_parse_registry_reports_unclaimed_paths() -> None:
+    """A path with no attributable id is surfaced as a count, not silently dropped."""
+    bundle = _NAMED_CTOR + 'x="/Svc.Orphan";' + "y" * 500 + 'z="/Svc.Orphan2";'
+    parsed = parse_registry(bundle)
+    assert parsed.registry == {
+        "wXbhsf": "/LabsTailwindOrchestrationService.ListRecentlyViewedProjects",
+    }
+    assert parsed.sites == 1
+    # ``/Svc.Orphan`` is within the fallback window of ``wXbhsf`` but that id is
+    # already claimed by its own registration, so the fallback must not re-map it.
+    assert parsed.unclaimed == ("/Svc.Orphan", "/Svc.Orphan2")
+    assert parsed.fallback == 0
+
+
+def test_main_reports_parse_coverage(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """The report and --json carry the parse-coverage numbers (#2289)."""
+    types = tmp_path / "types.py"
+    types.write_text(_TYPES, encoding="utf-8")
+    bundle = tmp_path / "bundle.js"
+    # Three registrations (one an inline-ctor form) plus one orphan path.
+    bundle.write_text(_BUNDLE + _INLINE_CTOR_WJKJP + 'o="/Svc.Orphan";', encoding="utf-8")
+
+    assert main(["--bundle-file", str(bundle), "--types", str(types)]) == 0
+    out = capsys.readouterr().out
+    assert "live registrations parsed: 4" in out
+    assert "registration sites: 4" in out
+    assert "method paths: 5" in out
+    assert "unclaimed: 1" in out
+    assert "/Svc.Orphan" in out
+
+    assert main(["--bundle-file", str(bundle), "--types", str(types), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["parse_coverage"] == {
+        "registration_sites": 4,
+        "method_paths": 5,
+        "parsed": 4,
+        "fallback": 0,
+        "unclaimed": ["/Svc.Orphan"],
+    }

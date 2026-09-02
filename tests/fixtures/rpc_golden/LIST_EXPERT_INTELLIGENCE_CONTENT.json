@@ -1,0 +1,70 @@
+{
+  "method_name": "LIST_EXPERT_INTELLIGENCE_CONTENT",
+  "method_id": "mVtEUb",
+  "description": "List the account's Google Play Books eligible to add as sources (Expert Intelligence). Params are [RequestContext, ContentProvider]; 1 = GOOGLE_PLAY_BOOKS. Returns [[row,...]] (single-element outer); each row is [content_id, provider, title, description_html, cover_url, export_disabled, reason, [authors], field_type, [updated_ts]].",
+  "request": {
+    "params": [null, 1],
+    "expected_f_req": [
+      [
+        [
+          "mVtEUb",
+          "[null,1]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "mVtEUb",
+          "[[[\"SCRUBBED_BOOK_001\",1,\"Scrubbed Title\",\"<p>Scrubbed</p>\",\"https://cover/SCRUBBED_BOOK_001\",false,null,[\"Scrubbed Author\"],4.5,[1788284189]]]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": [
+      [
+        [
+          "SCRUBBED_BOOK_001",
+          1,
+          "Scrubbed Title",
+          "<p>Scrubbed</p>",
+          "https://cover/SCRUBBED_BOOK_001",
+          false,
+          null,
+          [
+            "Scrubbed Author"
+          ],
+          4.5,
+          [
+            1788284189
+          ]
+        ]
+      ]
+    ]
+  },
+  "mapper": "tests.unit._golden_mappers:list_expert_intelligence",
+  "mapper_expected": [
+    {
+      "content_id": "SCRUBBED_BOOK_001",
+      "title": "Scrubbed Title",
+      "authors": [
+        "Scrubbed Author"
+      ],
+      "description_html": "<p>Scrubbed</p>",
+      "cover_url": "https://cover/SCRUBBED_BOOK_001",
+      "export_disabled": false,
+      "reason": null,
+      "field_type": 4.5,
+      "updated_at": "2026-09-01T17:36:29+00:00"
+    }
+  ]
+}

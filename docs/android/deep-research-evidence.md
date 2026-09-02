@@ -35,8 +35,9 @@ The current web bundle registers these methods under `LabsTailwindOrchestrationS
 | `e3bVqc` | `ListDiscoverSourcesJob` | `ListDiscoverSourcesJob` | list/poll jobs |
 | `Zbrupe` | `CancelDiscoverSourcesJob` | `CancelDiscoverSourcesJob` | cancel a job |
 | `LBwxtb` | `FinishDiscoverSourcesRun` | `FinishDiscoverSourcesRun` | import selected results |
-| `E1lmYc` | `UpdateDiscoverSourcesStatus` | not probed | additional current web method |
-| `Es3dTe` | `DiscoverSources` | `DiscoverSources` | synchronous discovery |
+| `E1lmYc` | `UpdateDiscoverSourcesStatus` | `UpdateDiscoverSourcesStatus` | set a finished job's status (4/5/6) |
+| `Es3dTe` | `DiscoverSources` | `DiscoverSources` | synchronous discovery; also records a job |
+| `bfVDO` | `PollSourceDiscoveryStatus` | `PollSourceDiscoveryStatus` | dead handler (`INTERNAL` on every shape, both transports) |
 
 The full mobile path is formed without guessing:
 
@@ -229,6 +230,46 @@ deleted, and no job or result ID was logged.
 
 The requested local profile was unavailable. Other credentialed profiles were checked without
 printing account metadata.
+
+### Synchronous `DiscoverSources` and `UpdateDiscoverSourcesStatus` on 2026-09-01
+
+Both methods were probed live on the web `batchexecute` transport and on the Android bearer gRPC
+transport against disposable notebooks (all deleted afterward). The two transports agree on every
+shape and status code below.
+
+**`DiscoverSources` (`Es3dTe`)** is the request the web "Discover sources" cold-start dialog sends.
+It is `DiscoverSourcesRequest` exactly as recovered in `schema.proto`: `discoveryContext = 1`
+(`{context = 1, corpus_type = 2}` — field 2 is a web-only addition, `1` web, `2` Drive),
+`requestContext = 2` (optional), `discoveryMode = 3` (optional; absent or unknown values are
+stored as `1`), `projectId = 4` (required; unknown id → `NOT_FOUND`), `clientSessionId = 6`
+(accepted, no observable effect). The web positional form is `[[query, corpus], ctx, mode, nb]`.
+
+- Modes `1`–`4` answer synchronously in 7–10 s with ten ranked web results, an overview sentence
+  and `DiscoverSourcesFeedbackKey{1: job_id}`. Modes `3`/`4` ("curious") take an empty query.
+- Mode `5` (deep) → `INVALID_ARGUMENT`; mode `6` (lite) → `INTERNAL`; Drive corpus → in-band error
+  `1` on web and `INTERNAL` on mobile.
+- Every call — successful or not — also creates a `ListDiscoverSourcesJob` row carrying the same
+  result payload and the echoed mode, and the feedback key's field 1 is that row's job id. The
+  synchronous method is therefore a fast-research run plus wait, and its results can be imported
+  with `FinishDiscoverSourcesRun` like any other run.
+
+**`UpdateDiscoverSourcesStatus` (`E1lmYc`)** is registered but never called by the current web
+build. Its request is `{requestContext = 1 (optional), <message> = 2 (ignored), jobId = 3
+(required; unknown → NOT_FOUND), status = 4}`, response `Empty`. Only status values `4`, `5` and
+`6` are accepted (`0`–`3`, `7`, `8` → `INVALID_ARGUMENT`); the write is reversible and is applied
+to running jobs as well as finished ones. `FinishDiscoverSourcesRun` pins the meaning of the two
+unmodelled values: an empty import list moves a job to `5`, importing at least one source moves it
+to `6`. Read `4` = cancelled, `5` = finished without import (dismissed), `6` = finished with
+import. `CancelDiscoverSourcesJob` does not change a job already at `5` or `6`.
+
+**`PollSourceDiscoveryStatus` (`bfVDO`)** returned `INTERNAL` on every shape tried, with nothing in
+flight, with a synchronous `DiscoverSources` in flight (its `clientSessionId` at fields 2, 3, 5 and
+6), with the resulting job id, and with a genuinely running Deep Research job (status `1`); the
+mobile transport answers the same for `{}` and `{1: ctx, 4: project_id}`. Its web registration has
+no caller and an empty response class, so it is treated as a dead handler.
+
+Deep Research start returned `RESOURCE_EXHAUSTED` on the default profile again; a second profile
+allowed two starts, both cancelled within seconds of the probes above.
 
 ## Detailed traffic interception
 

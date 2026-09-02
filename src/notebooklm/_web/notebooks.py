@@ -13,6 +13,7 @@ from .._notebook_metadata import (
 from .._notebooks import NotebooksAPI
 from .._types.enums import GrpcStatusCode, normalize_grpc_status
 from ..exceptions import (
+    AuthError,
     ClientError,
     DecodingError,
     NetworkError,
@@ -26,6 +27,7 @@ from ..exceptions import (
 from ..rpc import RPCMethod, safe_index
 from ..types import (
     AccountLimits,
+    NextStepSuggestion,
     Notebook,
     NotebookDescription,
     PromptSuggestion,
@@ -37,10 +39,16 @@ from .params.notebooks import (
     build_copy_notebook_params,
     build_create_notebook_params,
     build_get_notebook_params,
+    build_next_step_suggestions_params,
     build_prompt_suggestions_params,
     build_update_notebook_params,
 )
-from .rows.notebooks import PromptSuggestionRow, unwrap_prompt_suggestions
+from .rows.chat import NextStepSuggestionRow
+from .rows.notebooks import (
+    PromptSuggestionRow,
+    unwrap_next_step_suggestions,
+    unwrap_prompt_suggestions,
+)
 from .rows.sources import SourceRow
 from .settings import build_get_user_settings_params, extract_account_limits
 from .sharing import ShareManager
@@ -482,6 +490,66 @@ class WebNotebooksAPI(NotebooksAPI):
             if row.is_well_formed
         ]
 
+    async def suggest_next_steps(
+        self,
+        notebook_id: str,
+        *,
+        source_ids: builtins.list[str] | None = None,
+    ) -> builtins.list[NextStepSuggestion]:
+        """Return grounded follow-up questions for a notebook.
+
+        Backed by ``NextStepSuggestions`` (``OcvKNc``) — the standalone form of
+        the ``next_steps`` block every chat answer carries, so it needs no prior
+        conversation. Each row is ``[question, MagicArtifactType]``; live the
+        server returns three questions per call with type ``9``
+        (``CONVERSATIONAL_TEXT_CHIP``). Output is model-nondeterministic.
+
+        A different surface from :meth:`suggest_prompts`: this returns
+        ready-to-ask *questions* grounded in the sources, while
+        ``suggest_prompts`` returns ``(title, prompt)`` steering pairs for a
+        chosen studio ``mode``.
+
+        Args:
+            notebook_id: The notebook to suggest follow-ups for. An unknown id
+                raises ``NotebookNotFoundError`` (the server answers
+                ``NOT_FOUND``).
+            source_ids: Source ids to scope the suggestions to. ``None``
+                (default) uses **all** of the notebook's sources — the server
+                does that itself, so no ``GET_NOTEBOOK`` round-trip is spent.
+
+        .. versionadded:: 0.9.0
+        """
+        if not notebook_id:
+            raise ValidationError("notebook_id must not be empty")
+        try:
+            result = await self._rpc.rpc_call(
+                RPCMethod.SUGGEST_NEXT_STEPS,
+                build_next_step_suggestions_params(notebook_id, source_ids),
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                raise_on_null_status=True,
+            )
+        except (AuthError, RateLimitError, ServerError, NetworkError):
+            # ADR-0019: typed transport signals propagate unwrapped.
+            raise
+        except RPCError as exc:
+            # The route answers NOT_FOUND for an unknown notebook (live-verified);
+            # surface it as the public miss exception like ``get`` does.
+            if normalize_grpc_status(exc.rpc_code) == GrpcStatusCode.NOT_FOUND:
+                raise NotebookNotFoundError(
+                    notebook_id,
+                    method_id=RPCMethod.SUGGEST_NEXT_STEPS.value,
+                    raw_response=exc.raw_response,
+                    rpc_code=exc.rpc_code,
+                ) from exc
+            raise
+        rows = unwrap_next_step_suggestions(result, source="suggest_next_steps")
+        return [
+            NextStepSuggestion(question=row.question, type_code=row.type_code)
+            for row in map(NextStepSuggestionRow, rows)
+            if row.is_well_formed and row.question is not None and row.type_code is not None
+        ]
+
     async def list(self) -> builtins.list[Notebook]:
         """List notebooks (most-recently-viewed first).
 
@@ -788,6 +856,8 @@ class WebNotebooksAPI(NotebooksAPI):
             params,
             source_path="/",  # Home page context, not notebook page
             allow_null=True,
+            # #2290: a status-tagged null is a server rejection, not an empty success.
+            raise_on_null_status=True,
         )
         # Fetch and return the updated notebook
         return await self.get(notebook_id)

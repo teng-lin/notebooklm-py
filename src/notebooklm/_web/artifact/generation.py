@@ -499,6 +499,8 @@ class ArtifactGenerationService:
             params,
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
+            # #2290: a status-tagged null is a server rejection, not an empty success.
+            raise_on_null_status=True,
             operation_variant=None,
         )
 

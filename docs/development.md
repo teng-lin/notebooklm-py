@@ -555,7 +555,9 @@ uv run pytest
 uv run pytest -n auto --dist loadgroup
 
 # Fast local loop — skip repo-wide audit / release-gate checks (~40s saved).
-# CI still runs these; the marker just lets you iterate quickly.
+# PR CI also skips the bulk repo_lint marker (of it, only node ids named in
+# the critical-guard step run); the manual repo-lint job and nightly run the
+# full marker. Run `make gates` before pushing a change that could trip one.
 uv run pytest tests/unit tests/integration -m "not repo_lint"
 
 # E2E tests (requires auth + test notebook)
@@ -906,8 +908,8 @@ into `docs/`:
 
 | file | what it pins |
 |---|---|
-| `android/schema.proto` | 295 messages / 767 fields with real names and tag numbers |
-| `android/enums.txt` | 77 enums / ~1900 values with exact integers |
+| `android/schema.proto` | 323 messages / 868 fields with real names and tag numbers |
+| `android/enums.txt` | 104 library-scoped enum blocks (94 class names) / 2180 values with exact integers |
 
 Both come from the official Android app, which speaks the *same backend messages*
 over gRPC — where fields are tag-addressed rather than positional. The two line up

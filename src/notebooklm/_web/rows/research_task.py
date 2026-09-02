@@ -12,9 +12,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from ..._types.enums import DiscoveryMode
 from ..._types.research import (
     RESEARCH_RESULT_TYPE_REPORT,
     RESEARCH_RESULT_TYPE_WEB,
+    RESEARCH_SOURCE_TYPE_WEB,
+    RESEARCH_STATUS_CODE_COMPLETED,
+    RESEARCH_STATUS_CODE_NO_RESULTS,
     ResearchResultType,
     ResearchSource,
     ResearchStatus,
@@ -23,6 +27,7 @@ from ..._types.research import (
     status_from_termination_reason,
     termination_reason_from_code,
 )
+from ...exceptions import DecodingError
 from ...rpc import RPCMethod, safe_index
 from .research import (
     ResearchResultRow,
@@ -345,3 +350,73 @@ def parse_research_tasks(result: Any) -> list[dict[str, Any]]:
     these individual task dicts.
     """
     return [task._to_task_dict() for task in parse_research_task_models(result)]
+
+
+_DISCOVER_METHOD_ID = RPCMethod.DISCOVER_SOURCES.value
+_DISCOVER_SOURCE = "DiscoverSourcesResponse"
+
+
+def parse_discover_task(
+    result: Any,
+    *,
+    query: str = "",
+    discovery_mode: DiscoveryMode | None = None,
+) -> ResearchTask:
+    """Build the completed :class:`ResearchTask` a ``DISCOVER_SOURCES`` call returns.
+
+    The synchronous response is ``[sources, overview, [job_id]]`` — the same
+    ``[sources, summary]`` bundle a ``POLL_RESEARCH`` task row carries at
+    ``task_info[3]``, plus the ``DiscoverSourcesFeedbackKey`` whose first slot
+    is the id of the completed job the call also recorded (live-verified on
+    150 rows, #2283). Source rows reuse the poll row parser so both routes
+    decode identically. The job id is required: without it the result could
+    not be imported or cancelled, so its absence raises
+    :class:`~notebooklm.exceptions.DecodingError`.
+    """
+    if not isinstance(result, list):
+        raise DecodingError(
+            f"DISCOVER_SOURCES returned a non-list payload: {type(result).__name__}",
+            method_id=_DISCOVER_METHOD_ID,
+        )
+    # Every slot is optional on the wire (proto3 omits empties), so read them
+    # by length rather than ``safe_index``: a short payload must surface as the
+    # domain error below ("no job id"), not as a generic index failure.
+    feedback_key = result[2] if len(result) > 2 else None
+    task_id = feedback_key[0] if isinstance(feedback_key, list) and feedback_key else None
+    if not isinstance(task_id, str) or not task_id:
+        raise DecodingError(
+            "DISCOVER_SOURCES response omitted its job id (feedback key [2][0])",
+            method_id=_DISCOVER_METHOD_ID,
+        )
+    raw_sources = result[0] if result else None
+    if raw_sources is not None and not isinstance(raw_sources, list):
+        logger.warning(
+            "DISCOVER_SOURCES [0] is not a list (method_id=%r, source=%r): %r",
+            _DISCOVER_METHOD_ID,
+            _DISCOVER_SOURCE,
+            type(raw_sources).__name__,
+        )
+    sources: list[ResearchSource] = []
+    for src in raw_sources if isinstance(raw_sources, list) else []:
+        parsed_source, _report = _parse_source_row(src, task_id=task_id, report_found=True)
+        if parsed_source is not None:
+            sources.append(parsed_source)
+    raw_overview = result[1] if len(result) > 1 else None
+    # Slot 4 is the web-only in-band error enum (1 "trouble fetching",
+    # 2 unsupported file type, 3 few results, 4 notebook already holds every
+    # result, 5 query too long). Live: the Drive corpus answers
+    # ``[null, null, null, null, 1]`` and the recorded job lands at status 3,
+    # so a non-zero code is the poll path's NO_RESULTS failure, not a success.
+    error_code = result[4] if len(result) > 4 else None
+    # ``type(...) is int`` so a stray boolean is not read as a code.
+    failed = type(error_code) is int and error_code != 0
+    return ResearchTask(
+        task_id=task_id,
+        status=ResearchStatus.FAILED if failed else ResearchStatus.COMPLETED,
+        query=query,
+        sources=tuple(sources),
+        summary=raw_overview if isinstance(raw_overview, str) else "",
+        status_code=RESEARCH_STATUS_CODE_NO_RESULTS if failed else RESEARCH_STATUS_CODE_COMPLETED,
+        source_type=RESEARCH_SOURCE_TYPE_WEB,
+        discovery_mode=discovery_mode,
+    )

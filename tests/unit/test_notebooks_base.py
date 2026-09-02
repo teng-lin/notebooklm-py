@@ -56,6 +56,14 @@ class _FakeNotebooksAPI(NotebooksAPI):
     ) -> builtins.list[PromptSuggestion]:
         raise NotImplementedError
 
+    async def suggest_next_steps(
+        self,
+        notebook_id: str,
+        *,
+        source_ids: builtins.list[str] | None = None,
+    ) -> builtins.list[Any]:
+        raise NotImplementedError
+
     async def get(self, notebook_id: str) -> Notebook:
         raise NotImplementedError
 

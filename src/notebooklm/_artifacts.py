@@ -33,7 +33,14 @@ from ._types.enums import (
 )
 from ._types.research import MindMapResult
 from .exceptions import ArtifactNotFoundError, ValidationError
-from .types import Artifact, ArtifactType, GenerationStatus, ReportSuggestion
+from .types import (
+    Artifact,
+    ArtifactCustomizationChoices,
+    ArtifactType,
+    CopiedArtifact,
+    GenerationStatus,
+    ReportSuggestion,
+)
 
 if TYPE_CHECKING:
     from ._runtime.call_supervisor import CallSupervisor
@@ -757,6 +764,47 @@ class ArtifactsAPI(ABC):
     @abstractmethod
     async def suggest_reports(self, notebook_id: str) -> builtins.list[ReportSuggestion]:
         """Get AI-suggested report formats for a notebook."""
+
+    @abstractmethod
+    async def copy(
+        self,
+        notebook_id: str,
+        artifact_ids: builtins.list[str],
+        target_notebook_id: str,
+    ) -> builtins.list[CopiedArtifact]:
+        """Copy Studio artifacts into another notebook (``CopyArtifactsAsync``).
+
+        Returns one :class:`~notebooklm.types.CopiedArtifact` per copied
+        artifact, pairing the original id with the full new row (verified live
+        by re-listing the target). Raises
+        ``ArtifactNotFoundError`` when none of the requested ids were copied —
+        the server answers unknown ids with an empty mapping rather than
+        ``NOT_FOUND``. A partial result is returned with a warning because the
+        copies it names have already committed.
+
+        The sync twin ``CopyArtifacts`` (``zVGIdd``) accepts any ids, copies
+        nothing and reports success; it is deliberately not modelled (#2283).
+
+        .. versionadded:: 0.9.0
+        """
+
+    @abstractmethod
+    async def get_customization_choices(
+        self, notebook_id: str | None = None
+    ) -> ArtifactCustomizationChoices:
+        """Return the Studio "Customize" option tables (``GetArtifactCustomizationChoices``).
+
+        Account-level: the server returns the same ~3.3 KB table for an empty
+        request, a bogus notebook id and every artifact type (live, both front
+        doors, 2026-09-01), so ``notebook_id`` is optional and only fills the
+        request's ``project_id`` slot. Audio / video / slide-deck rows carry the wire codes
+        of :class:`~notebooklm.types.AudioFormat`,
+        :class:`~notebooklm.types.VideoFormat` and
+        :class:`~notebooklm.types.SlideDeckFormat`; report presets carry the
+        full generation directive each preset expands to.
+
+        .. versionadded:: 0.9.0
+        """
 
 
 __all__ = ["ArtifactsAPI"]

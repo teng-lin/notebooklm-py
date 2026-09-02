@@ -138,6 +138,25 @@ class RPCMethod(str, Enum):
     REFRESH_SOURCE = "FLmJqe"  # -> RefreshSource
     CHECK_SOURCE_FRESHNESS = "yR9Yof"  # -> CheckSourceFreshness
     UPDATE_SOURCE = "b7Wfje"  # -> MutateSource
+    # -> AddSourcesAsync. Same request as AddSources; returns the queued stub
+    # rows plus a per-source acknowledgement list without waiting for ingest
+    # (#2283). Served to both front doors (live-verified 2026-09-01).
+    ADD_SOURCES_ASYNC = "X1snv"
+    # -> AppendSource. Appends a plain-text block to an existing source in place.
+    APPEND_SOURCE = "QsNTEd"
+    # -> CopySourcesAsync. Copies sources into another notebook; the response
+    # maps each original id to its new Source row. The sync twin CopySources
+    # (Z8UXi) is dead on both front doors — never model it (#2283).
+    COPY_SOURCES = "R27wvc"
+    # -> ListExpertIntelligenceContent. Lists the account's Google Play Books
+    # library eligible to be added as sources ("Expert Intelligence", US/18+).
+    # Web-verified live 2026-09-01; the Android tier serves the same method over
+    # gRPC. Adding a listed book rides ADD_SOURCE / ADD_SOURCES_ASYNC with an
+    # ExpertIntelligenceContent spec (see _web.params.sources) — no add method
+    # of its own. The Android write path additionally requires a per-account
+    # Phenotype experiment header the client cannot synthesize, so add is
+    # web-only (#2292).
+    LIST_EXPERT_INTELLIGENCE_CONTENT = "mVtEUb"
 
     # Source label operations (AI topic grouping).
     # NOTE: account-level *collections* (notebook grouping) reuse these four
@@ -172,8 +191,20 @@ class RPCMethod(str, Enum):
     REVISE_SLIDE = "KmcKPe"  # -> DeriveArtifact (generic derive op; we use it to revise a slide)
     # -> GenerateArtifact. Retry a failed Studio artifact in place (UI "Retry")
     RETRY_ARTIFACT = "Rytqqe"
+    # -> CopyArtifactsAsync. Copies Studio artifacts into another notebook; the
+    # response carries each new artifact row inline. The sync twin CopyArtifacts
+    # (zVGIdd) is a no-op stub that reports success and copies nothing — never
+    # model it (#2283).
+    COPY_ARTIFACTS = "mKDdke"
+    # -> GetArtifactCustomizationChoices. The Studio "Customize" option tables
+    # (audio / video / slide-deck formats plus report presets). Account-level:
+    # the server ignores the notebook id on both front doors.
+    GET_CUSTOMIZATION_CHOICES = "sqTeoe"
 
     # Research — the whole family is backed by Google's "DiscoverSources" pipeline
+    # -> DiscoverSources. The synchronous "Discover sources" dialog call: answers
+    # in one round trip and also records a completed job the poll RPC lists (#2283).
+    DISCOVER_SOURCES = "Es3dTe"
     START_FAST_RESEARCH = "Ljjv0c"  # -> DiscoverSourcesManifold
     START_DEEP_RESEARCH = "QA9ei"  # -> DiscoverSourcesAsync
     POLL_RESEARCH = "e3bVqc"  # -> ListDiscoverSourcesJob
@@ -197,6 +228,9 @@ class RPCMethod(str, Enum):
     DELETE_CONVERSATION = "J7Gthc"
     # -> GeneratePromptSuggestions. AI-suggested questions/prompts to ask a notebook
     SUGGEST_PROMPTS = "otmP3b"
+    # -> NextStepSuggestions. Grounded follow-up questions for a notebook — the
+    # standalone form of the block chat answers carry at index 5 (#2283).
+    SUGGEST_NEXT_STEPS = "OcvKNc"
 
     # Sharing operations (notebook-level)
     SHARE_NOTEBOOK = "QDyure"  # -> LabsTailwindSharingService.ShareProject. Set notebook visibility

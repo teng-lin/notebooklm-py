@@ -16,6 +16,8 @@
       "show"
     ],
     "artifact": [
+      "choices",
+      "copy",
       "delete",
       "export",
       "get",
@@ -94,6 +96,7 @@
     ],
     "research": [
       "cancel",
+      "discover",
       "import",
       "status",
       "wait"
@@ -115,10 +118,15 @@
     ],
     "source": [
       "add",
+      "add-async",
+      "add-book",
       "add-drive",
       "add-drive-file",
       "add-research",
+      "append",
+      "books",
       "clean",
+      "copy",
       "delete",
       "delete-by-title",
       "fulltext",
@@ -163,6 +171,8 @@
     "artifact": {
       "class": "Group",
       "commands": [
+        "choices",
+        "copy",
         "delete",
         "export",
         "get",
@@ -176,6 +186,119 @@
       ],
       "params": [],
       "short_help": "Artifact management commands."
+    },
+    "artifact choices": {
+      "class": "Command",
+      "params": [
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Show the Studio \"Customize\" option tables..."
+    },
+    "artifact copy": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "artifact_ids",
+          "nargs": -1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "Sentinel.UNSET",
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Target notebook id (or unique prefix)",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "target",
+          "opts": [
+            "--to"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Copy Studio artifacts into another..."
     },
     "artifact delete": {
       "class": "Command",
@@ -8398,6 +8521,7 @@
         "skill",
         "source",
         "status",
+        "suggest-next-steps",
         "suggest-prompts",
         "summary",
         "use"
@@ -8802,6 +8926,7 @@
       "class": "Group",
       "commands": [
         "cancel",
+        "discover",
         "import",
         "status",
         "wait"
@@ -8860,6 +8985,83 @@
         }
       ],
       "short_help": "Cancel an in-flight research run."
+    },
+    "research discover": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "query",
+          "nargs": 1,
+          "required": false,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "default",
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Search mode. 'curious' and 'curious_raw' let the backend pick a topic and accept an empty QUERY.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "mode",
+          "opts": [
+            "--mode"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "case_sensitive": false,
+            "choices": [
+              "default",
+              "raw",
+              "curious",
+              "curious_raw"
+            ],
+            "name": "choice"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Discover web sources for QUERY in one..."
     },
     "research import": {
       "class": "Command",
@@ -10001,10 +10203,15 @@
       "class": "Group",
       "commands": [
         "add",
+        "add-async",
+        "add-book",
         "add-drive",
         "add-drive-file",
         "add-research",
+        "append",
+        "books",
         "clean",
+        "copy",
         "delete",
         "delete-by-title",
         "fulltext",
@@ -10186,6 +10393,146 @@
         }
       ],
       "short_help": "Add a source to a notebook."
+    },
+    "source add-async": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "urls",
+          "nargs": -1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Allow private/loopback/link-local hosts (same gate as `source add`).",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "allow_internal",
+          "opts": [
+            "--allow-internal"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Queue one or more URL sources without..."
+    },
+    "source add-book": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "content_id",
+          "nargs": 1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Wait for processing to finish",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "wait",
+          "opts": [
+            "--wait"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Add a Google Play Book as a source by its..."
     },
     "source add-drive": {
       "class": "Command",
@@ -10549,6 +10896,109 @@
       ],
       "short_help": "Search web or drive and add sources from..."
     },
+    "source append": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "source_id",
+          "nargs": 1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "kind": "argument",
+          "name": "text",
+          "nargs": 1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "",
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Optional block header (accepted by the backend; not shown in fulltext)",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "header",
+          "opts": [
+            "--header"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Append a plain-text block to an existing..."
+    },
+    "source books": {
+      "class": "Command",
+      "params": [
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "List Google Play Books eligible to be..."
+    },
     "source clean": {
       "class": "Command",
       "params": [
@@ -10628,6 +11078,76 @@
         }
       ],
       "short_help": "Automatically remove duplicate, error, and..."
+    },
+    "source copy": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "source_ids",
+          "nargs": -1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "Sentinel.UNSET",
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Target notebook id (or unique prefix)",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "target",
+          "opts": [
+            "--to"
+          ],
+          "required": true,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Copy sources into another notebook..."
     },
     "source delete": {
       "class": "Command",
@@ -11700,6 +12220,7 @@
     "skill",
     "source",
     "status",
+    "suggest-next-steps",
     "suggest-prompts",
     "summary",
     "use"

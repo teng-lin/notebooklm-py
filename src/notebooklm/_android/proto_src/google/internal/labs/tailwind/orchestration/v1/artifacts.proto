@@ -415,3 +415,72 @@ message ReportSuggestion {
 message GenerateReportSuggestionsResponse {
   repeated ReportSuggestion suggestions = 1;
 }
+
+// ---------------------------------------------------------------------------
+// #2283: CopyArtifactsAsync (web-derived; not compiled into the app) and
+// GetArtifactCustomizationChoices (compiled into the app; request/response
+// FQNs exact). Tag layouts pinned by successful live Android gRPC calls
+// (2026-09-01).
+// ---------------------------------------------------------------------------
+
+message CopyArtifactsAsyncRequest {
+  .labs.language.tailwind.common.protos.RequestContext request_context = 1; // evidence: docs/android/copy-append-suggestion-evidence.md#copyartifactsasync
+  repeated string artifact_ids = 2; // evidence: docs/android/copy-append-suggestion-evidence.md#copyartifactsasync
+  string target_project_id = 3; // evidence: docs/android/copy-append-suggestion-evidence.md#copyartifactsasync
+}
+
+message CopiedArtifact {
+  string source_artifact_id = 1; // evidence: docs/android/copy-append-suggestion-evidence.md#copyartifactsasync
+  Artifact artifact = 2; // evidence: docs/android/copy-append-suggestion-evidence.md#copyartifactsasync
+}
+
+message CopyArtifactsAsyncResponse {
+  repeated CopiedArtifact copied_artifacts = 1; // evidence: docs/android/copy-append-suggestion-evidence.md#copyartifactsasync
+}
+
+message GetArtifactCustomizationChoicesRequest {
+  .labs.language.tailwind.common.protos.RequestContext request_context = 1; // evidence: docs/android/schema.proto GetArtifactCustomizationChoicesRequest
+  string project_id = 2; // evidence: docs/android/schema.proto GetArtifactCustomizationChoicesRequest
+  ArtifactType artifact_type = 3; // evidence: docs/android/schema.proto GetArtifactCustomizationChoicesRequest
+}
+
+message FormatChoice {
+  int32 format = 1; // evidence: docs/android/copy-append-suggestion-evidence.md#getartifactcustomizationchoices
+  string title = 2; // evidence: docs/android/copy-append-suggestion-evidence.md#getartifactcustomizationchoices
+  string description = 3; // evidence: docs/android/copy-append-suggestion-evidence.md#getartifactcustomizationchoices
+}
+
+message FormatChoices {
+  repeated FormatChoice choices = 1; // evidence: docs/android/copy-append-suggestion-evidence.md#getartifactcustomizationchoices
+}
+
+message SlidesType {
+  DeckType deck_type = 1; // evidence: docs/android/schema.proto SlidesType
+  string title = 2; // evidence: docs/android/schema.proto SlidesType
+  string description = 3; // evidence: docs/android/schema.proto SlidesType
+}
+
+message SlidesCustomizationChoices {
+  repeated SlidesType types = 1; // evidence: docs/android/schema.proto SlidesCustomizationChoices
+}
+
+message TailoredReportTypeOption {
+  string report_type = 1; // evidence: docs/android/schema.proto TailoredReportTypeOption
+  string report_description = 2; // evidence: docs/android/schema.proto TailoredReportTypeOption
+  string report_directive = 3; // evidence: docs/android/schema.proto TailoredReportTypeOption
+}
+
+message TailoredReportCustomizationChoices {
+  repeated TailoredReportTypeOption report_type_options = 1; // evidence: docs/android/schema.proto TailoredReportCustomizationChoices
+}
+
+message ArtifactCustomizationChoices {
+  FormatChoices audio_overview_choices = 1; // evidence: docs/android/copy-append-suggestion-evidence.md#getartifactcustomizationchoices (live-only; not in the APK schema)
+  FormatChoices video_overview_choices = 2; // evidence: docs/android/copy-append-suggestion-evidence.md#getartifactcustomizationchoices (live-only; not in the APK schema)
+  SlidesCustomizationChoices slides_customization_choices = 3; // evidence: docs/android/schema.proto ArtifactCustomizationChoices
+  TailoredReportCustomizationChoices tailored_report_customization_choices = 4; // evidence: docs/android/schema.proto ArtifactCustomizationChoices
+}
+
+message GetArtifactCustomizationChoicesResponse {
+  ArtifactCustomizationChoices artifact_customization_choices = 1; // evidence: docs/android/schema.proto GetArtifactCustomizationChoicesResponse
+}

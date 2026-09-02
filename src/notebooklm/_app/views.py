@@ -67,6 +67,9 @@ _SOURCE_VIEW_FIELDS = (
     "status",
     "drive_document_id",
     "drive_status",
+    # Play Books provenance on an Expert-Intelligence source; ``None`` on every
+    # other source, so this widens the schema only for that kind (#2292).
+    "expert_intelligence",
 )
 
 

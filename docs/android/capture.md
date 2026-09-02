@@ -563,14 +563,18 @@ copy are **not** compiled into this mobile app. Direct mobile-bearer calls later
 three families are routed by the backend. See the cross-reference table in
 [docs/android/endpoints.md](endpoints.md#android--web-cross-reference).
 
-The **full protobuf schema** (message/field names, tags, types) was recovered by decompiling the
-Flutter AOT snapshot with [blutter](https://github.com/worawit/blutter) ported to Dart 3.13 (the
-app's `3.13.0-256.0.dev` build). The port is saved as
-[docs/android/blutter-dart3.13.patch](blutter-dart3.13.patch); [scripts/parse_pbschema.py](../../scripts/parse_pbschema.py)
-turns blutter's disassembled `BuilderInfo._i()` methods into
-[docs/android/schema.proto](schema.proto) (295 messages, 767 fields). See
+The **full protobuf schema** (message/field names, tags, types) is recovered by decompiling the
+Flutter AOT snapshot with [blutter](https://github.com/worawit/blutter) ported to the app's
+dev-channel Dart version, then running [scripts/parse_pbschema.py](../../scripts/parse_pbschema.py)
+over the disassembled `BuilderInfo._i()` methods to produce
+[docs/android/schema.proto](schema.proto). The `1.46.7` capture snapshot used Dart
+`3.13.0-256.0.dev`; that port is saved as
+[docs/android/blutter-dart3.13.patch](blutter-dart3.13.patch), and
 [docs/android/endpoints.md](endpoints.md#recovering-the-remaining-field-names-reversing-the-binary)
-for the exact Dart-3.13 changes and build steps.
+documents its exact changes and build steps (it reproduces the historical 295-message / 767-field
+recovery). The **current** checked-in schema (323 messages, 868 fields) is the `1.55.10`
+regeneration, which needed a Dart `3.14.0-166.0.dev` port that is not yet captured as a patch —
+see the regeneration identity table in [docs/android/README.md](README.md).
 
 ## Stopping and restoring HTTP Toolkit
 

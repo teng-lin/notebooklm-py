@@ -213,7 +213,11 @@ async def test_mcp_source_add_url_over_vcr(legacy_vcr_add_url_baseline) -> None:
         "status_label",
         "drive_status_label",
         "is_drive_degraded",
+        # Play Books provenance; ``None`` here (a URL add) but always present in
+        # the full projection (#2292).
+        "expert_intelligence",
     }
+    assert source["expert_intelligence"] is None
     assert source["drive_document_id"] is None
     assert source["status"] == 2  # SourceStatus.READY
     assert source["status_label"] == "ready"

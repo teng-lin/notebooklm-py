@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 import click
+from rich.markup import escape as escape_markup
 from rich.markup import render as render_markup
 from rich.table import Table
 
@@ -576,6 +577,76 @@ def source_add_payload(result: SourceAddResult) -> dict[str, Any]:
     (§11) so the ``_app`` result dataclass stays typed-fields-only.
     """
     return {"source": source_summary_payload(result.source)}
+
+
+def _render_play_books_result(
+    books: list[Any],
+    *,
+    json_output: bool,
+    ctx: click.Context,
+) -> None:
+    """Render ``source books`` — the account's Play Books library (#2292)."""
+    from .._app.serialize import play_book_summary
+
+    if json_output:
+        json_output_response(
+            {
+                "play_books": [play_book_summary(b) for b in books],
+                "count": len(books),
+            }
+        )
+        return
+
+    if not books:
+        cli_print("No Google Play Books available to add as sources.", ctx=ctx)
+        return
+
+    table = Table(title=f"{len(books)} Play Book(s)")
+    table.add_column("Content ID", no_wrap=True)
+    table.add_column("Title")
+    table.add_column("Authors")
+    table.add_column("Add?")
+    for book in books:
+        add_cell = (
+            "[green]yes[/green]"
+            if not book.export_disabled
+            else f"[red]no[/red] ({escape_markup(book.reason.value)})"
+            if book.reason is not None
+            else "[red]no[/red]"
+        )
+        # Escape library-supplied strings so a title/author containing
+        # ``[...]`` is not parsed as Rich console markup.
+        table.add_row(
+            escape_markup(book.content_id),
+            escape_markup(book.title or "-"),
+            escape_markup(", ".join(book.authors) or "-"),
+            add_cell,
+        )
+    console.print(table)
+
+
+def _render_source_add_play_book_result(
+    result: Any,
+    *,
+    json_output: bool,
+    ctx: click.Context,
+) -> None:
+    """Render ``source add-book`` (#2292)."""
+    if json_output:
+        json_output_response(
+            {
+                "action": "add-book",
+                "source": source_summary_payload(result.source),
+                "content_id": result.content_id,
+                "notebook_id": result.notebook_id,
+            }
+        )
+        return
+
+    # Escape the library-supplied title so a value containing ``[...]`` is not
+    # parsed as Rich console markup.
+    cli_print(f"[green]Added Play Book source:[/green] {result.source.id}", ctx=ctx)
+    cli_print(f"[bold]Title:[/bold] {escape_markup(result.source.title or '-')}", ctx=ctx)
 
 
 def _render_source_add_drive_result(

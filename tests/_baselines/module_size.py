@@ -21,6 +21,11 @@ OVER_BUDGET_EXEMPTIONS: dict[str, str] = {
     "exceptions.py": (
         "canonical public exception home; moving classes would fork their documented provenance"
     ),
+    "_android/sources.py": (
+        "the complete native source surface for one backend; the deadline-race fix and its "
+        "rationale comments pushed it just over budget, and splitting the API mid-fix would "
+        "cost more coherence than the overage"
+    ),
 }
 SHRINK_LOCKED_MODULES: tuple[str, ...] = (
     "_auth/browser_capture.py",

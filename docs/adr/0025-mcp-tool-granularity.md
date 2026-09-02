@@ -110,7 +110,7 @@ verbatim — only the two MCP tool *registrations* were removed.
 
 ## Update (2026-07, #1896): fold `studio_get_prompt` into `studio_list`
 
-> This update brings the current surface to **33** (later **35** — see the 2026-09 update below).
+> This update brings the current surface to **33** (later **37** — see the 2026-09 update below).
 
 `studio_get_prompt(notebook, artifact)` was a discrete read-only tool returning one
 artifact's generation prompt. But the typed `Artifact` already carries
@@ -166,6 +166,7 @@ So chat follows the existing precedent for long-running work — `studio_generat
 starter + poll pairs — rather than the fold-in precedent, which applied to
 variants of *one* operation.
 
-Net **33 → 35 tools**; `SCHEMA_CHAR_BUDGET` ratcheted 39,400 → 42,100 (+2,262 for the
-pair's re-invoke protocol text, then +443 for batch polling / queue states /
-timings — both justified in `test_tool_eval.py`).
+Net **35 → 37 tools** (33 → 35 when first written; #2292's two Play Books verbs
+landed in between); `SCHEMA_CHAR_BUDGET` ratcheted 40,580 → 43,410 (+2,830: +2,262
+for the pair's re-invoke protocol text, +443 for batch polling / queue states /
+timings, +125 for the review's re-ask wording — all justified in `test_tool_eval.py`).

@@ -856,16 +856,29 @@ async def test_load_auth_exits_two_and_scrubs_secrets_on_http_error(
 
 
 # ---------------------------------------------------------------------------
-# sqTeoe studio-customization cohort tripwire
+# GET_CUSTOMIZATION_CHOICES studio option-table cross-check (#2284)
 # ---------------------------------------------------------------------------
 
-CohortStatus = check_rpc_health.CohortStatus
+CustomizationStatus = check_rpc_health.CustomizationStatus
 build_customization_choices_params = check_rpc_health.build_customization_choices_params
-check_customization_cohort = check_rpc_health.check_customization_cohort
+check_customization_table = check_rpc_health.check_customization_table
+compare_customization_choices = check_rpc_health.compare_customization_choices
 make_raw_rpc_request = check_rpc_health.make_raw_rpc_request
 
+_CHOICES_ID = check_rpc_health.RPCMethod.GET_CUSTOMIZATION_CHOICES.value
+_OPTS = [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]]
+# The four families as served live on 2026-09-01 (labels verbatim, descriptions elided).
+_LIVE_TABLE: list[Any] = [
+    [
+        [[[1, "Deep Dive", "d"], [2, "Brief", "d"], [3, "Critique", "d"], [4, "Debate", "d"]]],
+        [[[1, "Explainer", "d"], [2, "Brief", "d"], [3, "Cinematic", "d"], [4, "Short", "d"]]],
+        [[[1, "Detailed Deck", "d"], [2, "Presenter Slides", "d"]]],
+        [[["Briefing Doc", "d", "directive"]]],
+    ]
+]
 
-def _cohort_auth() -> check_rpc_health.AuthTokens:
+
+def _probe_auth() -> check_rpc_health.AuthTokens:
     return check_rpc_health.AuthTokens(
         cookies={"SID": "sid"},
         csrf_token="csrf",
@@ -873,20 +886,15 @@ def _cohort_auth() -> check_rpc_health.AuthTokens:
     )
 
 
-def test_build_customization_choices_params_shape() -> None:
-    """The reverse-engineered ``[nbctx, None, artifact_type]`` shape is verified."""
-    params = build_customization_choices_params("nb_42")
-    assert params == [
-        [
-            2,
-            None,
-            None,
-            [1, None, None, None, None, None, None, None, None, None, [1]],
-            ["nb_42"],
-        ],
-        None,
-        3,  # artifact_type = video
-    ]
+def _choices_frame(payload: Any) -> str:
+    inner = "null" if payload is None else json.dumps(json.dumps(payload))
+    return ")]}'\n\n" + f'[["wrb.fr","{_CHOICES_ID}",{inner},null,null,null,"generic"]]'
+
+
+def test_build_customization_choices_params_is_the_production_shape() -> None:
+    """Context only, plus the notebook id when known — the old ``[nbctx, None, 3]`` drew 3 (#2284)."""
+    assert build_customization_choices_params(None) == [_OPTS]
+    assert build_customization_choices_params("nb_42") == [_OPTS, "nb_42"]
 
 
 @pytest.mark.asyncio
@@ -902,96 +910,195 @@ async def test_make_raw_rpc_request_threads_id_into_query_and_body() -> None:
 
     text, error = await make_raw_rpc_request(
         FakeClient(),
-        _cohort_auth(),
-        "sqTeoe",
+        _probe_auth(),
+        "OcvKNc",
         [["x"]],
         source_path="/notebook/nb_1",
     )
     assert error is None
     assert text == ")]}'\n\n[]"
     query = parse_qs(urlparse(captured["url"]).query)
-    assert query["rpcids"] == ["sqTeoe"]
+    assert query["rpcids"] == ["OcvKNc"]
     assert query["source-path"] == ["/notebook/nb_1"]
-    # The body's f.req carries the override id, kept in sync with the query param.
-    assert "sqTeoe" in captured["content"]
+    assert "OcvKNc" in captured["content"]
     # The fallback RPCMethod (LIST_NOTEBOOKS) must NOT leak into the wire.
     assert check_rpc_health.RPCMethod.LIST_NOTEBOOKS.value not in captured["content"]
 
 
-@pytest.mark.asyncio
-async def test_check_customization_cohort_gated_on_null() -> None:
-    """A genuine null payload is GATED (the expected steady state, NOT a failure)."""
+def test_compare_customization_choices_matches_the_live_table() -> None:
+    status, detail = compare_customization_choices(_LIVE_TABLE)
+    assert status is CustomizationStatus.MATCH
+    assert "match" in detail
 
-    class NullClient:
+
+def test_compare_customization_choices_drifts_on_a_new_code() -> None:
+    """A served row the client does not model (e.g. AudioFormat 5 "Lecture") is DRIFT."""
+    table = json.loads(json.dumps(_LIVE_TABLE))
+    table[0][0][0].append([5, "Lecture", "d"])
+    status, detail = compare_customization_choices(table)
+    assert status is CustomizationStatus.DRIFT
+    assert "audio: served codes not modelled [(5, 'Lecture')]" in detail
+
+
+def test_compare_customization_choices_drifts_on_a_dropped_member_only() -> None:
+    """Codes decide DRIFT; a label rename is reported but is not drift on its own."""
+    table = json.loads(json.dumps(_LIVE_TABLE))
+    del table[0][1][0][3]  # video: Short (4) no longer served
+    status, detail = compare_customization_choices(table)
+    assert status is CustomizationStatus.DRIFT
+    assert "video: modelled codes not served [(4, 'SHORT')]" in detail
+    assert "served codes not modelled" not in detail
+
+
+def test_compare_customization_choices_reports_a_label_rename_without_drift() -> None:
+    """Labels follow ``hl`` and Google's copy; only the codes are load-bearing (#1597)."""
+    table = json.loads(json.dumps(_LIVE_TABLE))
+    table[0][1][0][3] = [4, "Panel", "d"]  # video: Short renamed, code unchanged
+    status, detail = compare_customization_choices(table)
+    assert status is CustomizationStatus.MATCH
+    assert "video: label differs from member name [(4, 'Panel', 'SHORT')]" in detail
+
+
+def test_compare_customization_choices_drifts_on_an_unmodelled_family() -> None:
+    table = json.loads(json.dumps(_LIVE_TABLE))
+    table[0].append([[[1, "Infographic style", "d"]]])
+    status, detail = compare_customization_choices(table)
+    assert status is CustomizationStatus.DRIFT
+    assert "1 unmodelled family slot(s) served" in detail
+
+
+def test_compare_customization_choices_drifts_on_an_empty_family_or_no_presets() -> None:
+    table = json.loads(json.dumps(_LIVE_TABLE))
+    table[0][2] = [[]]
+    table[0][3] = [[]]
+    status, detail = compare_customization_choices(table)
+    assert status is CustomizationStatus.DRIFT
+    assert "slide_deck: no rows served" in detail
+    assert "reports: no well-formed presets served" in detail
+    # Presets that are present but all malformed count as none.
+    table[0][3] = [[["no directive", "d", ""]]]
+    _, detail = compare_customization_choices(table)
+    assert "reports: no well-formed presets served" in detail
+
+
+@pytest.mark.asyncio
+async def test_check_customization_table_matches_on_the_live_shape() -> None:
+    captured: dict[str, Any] = {}
+
+    class LiveClient:
         async def post(self, url: str, *, content: str, headers: dict[str, str]) -> httpx.Response:
-            # wrb.fr frame whose payload is JSON null -> decode_response(..., allow_null) == None
-            body = ')]}\'\n\n[["wrb.fr","sqTeoe","null",null,null,null,"generic"]]'
-            return httpx.Response(200, text=body, request=httpx.Request("POST", url))
+            captured["url"] = url
+            captured["content"] = content
+            return httpx.Response(
+                200, text=_choices_frame(_LIVE_TABLE), request=httpx.Request("POST", url)
+            )
 
-    status, detail = await check_customization_cohort(NullClient(), _cohort_auth(), "nb_1")
-    assert status is CohortStatus.GATED
-    assert "gated" in detail.lower()
+    status, detail = await check_customization_table(LiveClient(), _probe_auth(), "nb_1")
+    assert status is CustomizationStatus.MATCH
+    assert parse_qs(urlparse(captured["url"]).query)["rpcids"] == [_CHOICES_ID]
+    # The probe sends the production request shape, not the old ``[nbctx, None, 3]``.
+    sent = json.loads(parse_qs(captured["content"])["f.req"][0])[0][0]
+    assert sent[0] == _CHOICES_ID
+    assert json.loads(sent[1]) == [_OPTS, "nb_1"]
 
 
 @pytest.mark.asyncio
-async def test_check_customization_cohort_migrated_on_non_null() -> None:
-    """A non-null payload is the loud MIGRATED signal (cohort flipped)."""
+async def test_check_customization_table_drifts_on_a_served_difference() -> None:
+    table = json.loads(json.dumps(_LIVE_TABLE))
+    table[0][0][0].append([5, "Lecture", "d"])
 
-    class MigratedClient:
+    class DriftClient:
         async def post(self, url: str, *, content: str, headers: dict[str, str]) -> httpx.Response:
-            body = ')]}\'\n\n[["wrb.fr","sqTeoe","[[1,2,3]]",null,null,null,"generic"]]'
-            return httpx.Response(200, text=body, request=httpx.Request("POST", url))
+            return httpx.Response(
+                200, text=_choices_frame(table), request=httpx.Request("POST", url)
+            )
 
-    status, _ = await check_customization_cohort(MigratedClient(), _cohort_auth(), "nb_1")
-    assert status is CohortStatus.MIGRATED
+    status, detail = await check_customization_table(DriftClient(), _probe_auth(), None)
+    assert status is CustomizationStatus.DRIFT
+    assert "Lecture" in detail
 
 
 @pytest.mark.asyncio
-async def test_check_customization_cohort_unknown_on_transport_error() -> None:
-    """A transport failure never alarms; it draws UNKNOWN (no cohort conclusion)."""
+async def test_check_customization_table_unknown_on_transport_error() -> None:
+    """A transport failure never alarms; it draws UNKNOWN (no conclusion)."""
 
     class FailingClient:
         async def post(self, url: str, *, content: str, headers: dict[str, str]) -> httpx.Response:
             raise httpx.ReadTimeout("")
 
-    status, detail = await check_customization_cohort(FailingClient(), _cohort_auth(), "nb_1")
-    assert status is CohortStatus.UNKNOWN
+    status, detail = await check_customization_table(FailingClient(), _probe_auth(), "nb_1")
+    assert status is CustomizationStatus.UNKNOWN
     assert detail == "ReadTimeout"
 
 
 @pytest.mark.asyncio
-async def test_check_customization_cohort_unknown_without_notebook() -> None:
-    status, _ = await check_customization_cohort(object(), _cohort_auth(), None)
-    assert status is CohortStatus.UNKNOWN
+async def test_check_customization_table_rejection_is_unknown_not_a_crash() -> None:
+    """A status-bearing null is a probe failure (UNKNOWN), never an empty table or a crash."""
+
+    class RejectedClient:
+        async def post(self, url: str, *, content: str, headers: dict[str, str]) -> httpx.Response:
+            body = ")]}'\n\n" + f'[["wrb.fr","{_CHOICES_ID}",null,null,null,[3],"generic"]]'
+            return httpx.Response(200, text=body, request=httpx.Request("POST", url))
+
+    status, detail = await check_customization_table(RejectedClient(), _probe_auth(), "nb_1")
+    assert status is CustomizationStatus.UNKNOWN
+    assert detail.startswith("RPC error")
 
 
-def test_compute_exit_code_cohort_migrated_is_four() -> None:
-    """MIGRATED draws exit 4 when no higher-priority drift fired."""
+@pytest.mark.asyncio
+async def test_check_customization_table_absent_id_still_propagates() -> None:
+    """The absent-id drift guard (UnknownRPCMethodError) must stay loud."""
+
+    class RotatedClient:
+        async def post(self, url: str, *, content: str, headers: dict[str, str]) -> httpx.Response:
+            body = ")]}'\n\n" + '[["wrb.fr","zzzzzz","[[]]",null,null,null,"generic"]]'
+            return httpx.Response(200, text=body, request=httpx.Request("POST", url))
+
+    with pytest.raises(check_rpc_health.UnknownRPCMethodError):
+        await check_customization_table(RotatedClient(), _probe_auth(), "nb_1")
+
+
+@pytest.mark.asyncio
+async def test_check_customization_table_bad_envelope_is_drift() -> None:
+    class ReshapedClient:
+        async def post(self, url: str, *, content: str, headers: dict[str, str]) -> httpx.Response:
+            return httpx.Response(
+                200, text=_choices_frame([42]), request=httpx.Request("POST", url)
+            )
+
+    status, detail = await check_customization_table(ReshapedClient(), _probe_auth(), None)
+    assert status is CustomizationStatus.DRIFT
+    assert detail.startswith("unrecognized envelope")
+
+
+def test_compute_exit_code_customization_drift_is_four() -> None:
+    """DRIFT draws exit 4 when no higher-priority RPC drift fired."""
     clean = Counter({CheckStatus.OK: 3})
-    assert check_rpc_health.compute_exit_code(clean, [], CohortStatus.MIGRATED) == 4
-    assert check_rpc_health.compute_exit_code(clean, [], CohortStatus.GATED) == 0
-    # RPC drift outranks the cohort flip.
+    assert check_rpc_health.compute_exit_code(clean, [], CustomizationStatus.DRIFT) == 4
+    assert check_rpc_health.compute_exit_code(clean, [], CustomizationStatus.MATCH) == 0
+    assert check_rpc_health.compute_exit_code(clean, [], CustomizationStatus.UNKNOWN) == 0
+    # RPC drift outranks the enum drift.
     mismatch = Counter({CheckStatus.MISMATCH: 1})
-    assert check_rpc_health.compute_exit_code(mismatch, [], CohortStatus.MIGRATED) == 1
+    assert check_rpc_health.compute_exit_code(mismatch, [], CustomizationStatus.DRIFT) == 1
     real_error = [_result("e", CheckStatus.ERROR, error="Parse error: boom")]
-    assert check_rpc_health.compute_exit_code(Counter(), real_error, CohortStatus.MIGRATED) == 3
+    assert check_rpc_health.compute_exit_code(Counter(), real_error, CustomizationStatus.DRIFT) == 3
 
 
-def test_print_summary_reports_cohort_flip(capsys: pytest.CaptureFixture[str]) -> None:
+def test_print_summary_reports_customization_drift(capsys: pytest.CaptureFixture[str]) -> None:
     results = [_result("ok", CheckStatus.OK)]
-    rc = print_summary(results, CohortStatus.MIGRATED)
+    rc = print_summary(results, CustomizationStatus.DRIFT)
     out = capsys.readouterr().out
     assert rc == 4
-    assert "COHORT FLIP" in out
-    assert "sqTeoe customization choices = MIGRATED" in out
+    assert "CUSTOMIZATION DRIFT" in out
+    assert "sqTeoe option tables = DRIFT" in out
 
 
-def test_print_summary_gated_is_pass(capsys: pytest.CaptureFixture[str]) -> None:
+def test_print_summary_match_is_pass(capsys: pytest.CaptureFixture[str]) -> None:
     results = [_result("ok", CheckStatus.OK)]
-    rc = print_summary(results, CohortStatus.GATED)
+    rc = print_summary(results, CustomizationStatus.MATCH)
     out = capsys.readouterr().out
     assert rc == 0
-    assert "sqTeoe customization choices = GATED" in out
+    assert "sqTeoe option tables = MATCH" in out
     assert "RESULT: PASS" in out
 
 
@@ -1046,7 +1153,7 @@ def test_compute_exit_code_cannot_see_the_rebrand_lane() -> None:
     assert params == [
         "counts",
         "non_transient_errors",
-        "cohort_status",
+        "customization_status",
         "build_label_status",
     ]
 
@@ -1517,7 +1624,7 @@ def test_print_summary_exit_code_is_rebrand_independent(
         [RebrandProbe(check_rpc_health.REBRAND_BATCHEXECUTE, status, "d")],
         load_rebrand_state(None),
     )
-    rc = print_summary(results, CohortStatus.GATED, state)
+    rc = print_summary(results, CustomizationStatus.MATCH, state)
     out = capsys.readouterr().out
     assert rc == 0
     assert "REBRAND:" in out
@@ -1614,7 +1721,7 @@ def test_main_threads_the_rebrand_state_into_the_report(
         rebrand_state_path: Path | None = None,
         rebrand_previous_state_path: Path | None = None,
         rebrand_run_id: str | None = None,
-    ) -> tuple[list[CheckResult], CohortStatus, dict[str, Any], Any]:
+    ) -> tuple[list[CheckResult], CustomizationStatus, dict[str, Any], Any]:
         captured["base_url_source"] = base_url_source
         captured["rebrand_state_path"] = rebrand_state_path
         captured["rebrand_previous_state_path"] = rebrand_previous_state_path
@@ -1626,7 +1733,7 @@ def test_main_threads_the_rebrand_state_into_the_report(
         )
         return (
             [_result("ok", CheckStatus.OK)],
-            CohortStatus.GATED,
+            CustomizationStatus.MATCH,
             state,
             check_rpc_health.classify_build_label(check_rpc_health.DEFAULT_BL, ""),
         )
@@ -1880,26 +1987,32 @@ def test_compute_exit_code_stale_build_label_is_five() -> None:
     """STALE draws exit 5 — below every live-breakage code, above OK."""
     clean = Counter({CheckStatus.OK: 3})
     assert (
-        check_rpc_health.compute_exit_code(clean, [], CohortStatus.GATED, BuildLabelStatus.STALE)
+        check_rpc_health.compute_exit_code(
+            clean, [], CustomizationStatus.MATCH, BuildLabelStatus.STALE
+        )
         == 5
     )
     for benign in (BuildLabelStatus.CURRENT, BuildLabelStatus.DRIFTED, BuildLabelStatus.UNKNOWN):
-        assert check_rpc_health.compute_exit_code(clean, [], CohortStatus.GATED, benign) == 0
+        assert check_rpc_health.compute_exit_code(clean, [], CustomizationStatus.MATCH, benign) == 0
     # Every live-breakage signal outranks a stale pin: it must never mask one.
     mismatch = Counter({CheckStatus.MISMATCH: 1})
     assert (
-        check_rpc_health.compute_exit_code(mismatch, [], CohortStatus.GATED, BuildLabelStatus.STALE)
+        check_rpc_health.compute_exit_code(
+            mismatch, [], CustomizationStatus.MATCH, BuildLabelStatus.STALE
+        )
         == 1
     )
     real_error = [_result("e", CheckStatus.ERROR, error="Parse error: boom")]
     assert (
         check_rpc_health.compute_exit_code(
-            Counter(), real_error, CohortStatus.GATED, BuildLabelStatus.STALE
+            Counter(), real_error, CustomizationStatus.MATCH, BuildLabelStatus.STALE
         )
         == 3
     )
     assert (
-        check_rpc_health.compute_exit_code(clean, [], CohortStatus.MIGRATED, BuildLabelStatus.STALE)
+        check_rpc_health.compute_exit_code(
+            clean, [], CustomizationStatus.DRIFT, BuildLabelStatus.STALE
+        )
         == 4
     )
 
@@ -1911,7 +2024,7 @@ def test_compute_exit_code_defaults_to_no_build_label_opinion() -> None:
 
 def test_print_summary_reports_a_stale_build_label(capsys: pytest.CaptureFixture[str]) -> None:
     stale = classify_build_label(_label(check_rpc_health.BUILD_LABEL_STALE_AFTER_DAYS + 30), "")
-    rc = print_summary([_result("ok", CheckStatus.OK)], CohortStatus.GATED, None, stale)
+    rc = print_summary([_result("ok", CheckStatus.OK)], CustomizationStatus.MATCH, None, stale)
     out = capsys.readouterr().out
     assert rc == 5
     assert "BUILDLBL: STALE" in out
@@ -1924,7 +2037,7 @@ def test_print_summary_drift_inside_the_window_still_passes(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     drifted = classify_build_label(_label(10), "")
-    rc = print_summary([_result("ok", CheckStatus.OK)], CohortStatus.GATED, None, drifted)
+    rc = print_summary([_result("ok", CheckStatus.OK)], CustomizationStatus.MATCH, None, drifted)
     out = capsys.readouterr().out
     assert rc == 0
     assert "BUILDLBL: DRIFTED" in out
@@ -1934,7 +2047,7 @@ def test_print_summary_drift_inside_the_window_still_passes(
 def test_print_summary_without_a_build_label_verdict_is_silent(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    rc = print_summary([_result("ok", CheckStatus.OK)], CohortStatus.GATED)
+    rc = print_summary([_result("ok", CheckStatus.OK)], CustomizationStatus.MATCH)
     out = capsys.readouterr().out
     assert rc == 0
     assert "BUILDLBL" not in out

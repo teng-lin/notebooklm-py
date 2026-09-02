@@ -349,3 +349,12 @@ message GenerateFreeFormStreamedResponse {
   bool is_final_response = 5; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   NextStepSuggestions next_step_suggestions = 6; // exact checked-in APK schema
 }
+
+// #2283: the standalone NextStepSuggestions RPC. Web-derived (not compiled into
+// the app); the reply is the exact NextStepSuggestions message. Declared here to
+// keep notebooks.proto (the exact APK-recovered file) free of web-derived
+// messages; chat.proto already imports sources.proto for InputSource.
+message NextStepSuggestionsRequest {
+  string project_id = 2; // evidence: docs/android/copy-append-suggestion-evidence.md#nextstepsuggestions
+  repeated InputSource sources = 3; // evidence: docs/android/copy-append-suggestion-evidence.md#nextstepsuggestions
+}

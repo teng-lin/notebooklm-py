@@ -176,7 +176,7 @@ def test_main_issue_lanes_are_untouched_by_the_rebrand_lane() -> None:
     expected = {
         "RPC ID Mismatch Detected": "1",
         MAIN_ERROR_TITLE: "3",
-        "Studio customization cohort flipped — re-capture VideoStyle codes": "4",
+        "Studio customization table drifted — re-capture format enums": "4",
     }
     seen = set()
     for step in _issue_steps():

@@ -1,0 +1,48 @@
+{
+  "method_name": "APPEND_SOURCE",
+  "method_id": "QsNTEd",
+  "description": "Append a plain-text block to an existing source in place (AppendSource). Success is an empty reply; production passes raise_on_null_status=True so a status-bearing null is not read as success (#2283).",
+  "request": {
+    "params": [
+      null,
+      [
+        "SCRUBBED_SRC_001"
+      ],
+      null,
+      [
+        null,
+        [
+          "Header",
+          "Appended text"
+        ]
+      ]
+    ],
+    "expected_f_req": [
+      [
+        [
+          "QsNTEd",
+          "[null,[\"SCRUBBED_SRC_001\"],null,[null,[\"Header\",\"Appended text\"]]]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "QsNTEd",
+          null,
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": null
+  }
+}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import builtins
 import logging
+import time
 import uuid
 from collections import Counter, defaultdict
 from collections.abc import Callable, Collection, Sequence
@@ -34,14 +35,21 @@ from ..exceptions import (
     SourceNotFoundError,
     SourceProcessingError,
     SourceTimeoutError,
+    UnsupportedOperationError,
     ValidationError,
 )
-from ..types import Source, SourceFulltext, SourceStatus, SourceType
+from ..types import PlayBook, Source, SourceFulltext, SourceStatus, SourceType
 from .codecs.documents import decode_document, tailwind_doc_markdown, tailwind_doc_plain_text
 from .codecs.notebooks import decode_project, map_get_project_error, validate_project_identity
 from .codecs.sources import decode_source, decode_sources, select_document_guide
 from .drive_staging import _DRIVE_STAGED_UPLOAD_EXTENSIONS
 from .session import AndroidSession
+from .source_transfers import (
+    ADD_SOURCES_ASYNC_METHOD,
+    APPEND_SOURCE_METHOD,
+    COPY_SOURCES_ASYNC_METHOD,
+    AndroidSourceTransferMixin,
+)
 from .upload import (
     AndroidUploadPipeline,
     android_provenance,
@@ -95,6 +103,12 @@ REFRESH_SOURCE_METHOD = f"/{_SERVICE}/RefreshSource"
 _FilterValue = TypeVar("_FilterValue")
 _CORRELATION_PREFIX = "nblm-"
 _CANONICAL_ID_LENGTH = 36
+# Post-upload readiness polling: sleep between GetProject looks, and the
+# smallest wire budget a single look may be handed (capped by the caller's
+# own ``wait_timeout``) so a deadline that reads as spent on the very tick it
+# was started still gets a real request out.
+_POLL_INTERVAL = 0.5
+_POLL_WIRE_FLOOR = 1.0
 
 
 class DriveDownload(Protocol):
@@ -343,7 +357,7 @@ def _merge_commit_proof(
     return None
 
 
-class AndroidSourcesAPI(SourcesAPI):
+class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
     """Android source adapter installed by public Android backend selection."""
 
     def __init__(
@@ -353,6 +367,7 @@ class AndroidSourcesAPI(SourcesAPI):
         *,
         drive_download: DriveDownload | None = None,
         add_file_compat: AddFileCompat | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         """Bind the fully native source surface.
 
@@ -361,10 +376,15 @@ class AndroidSourcesAPI(SourcesAPI):
         supplies nothing: the adapter holds no Web collaborator. Direct adapter
         callers may inject one to exercise a different uploader, or omit it and
         get the native staging round-trip.
+
+        ``monotonic`` is the clock behind the post-upload readiness deadline,
+        injectable like every other Android deadline so tests can drive the
+        wait with a stepping clock instead of racing ``time.monotonic()``.
         """
         self._transport = session
         self._upload_pipeline = upload_pipeline
         self._add_file_compat = add_file_compat
+        self._monotonic = monotonic
         native_drive_download = getattr(upload_pipeline, "drive_download_scope", None)
         self._drive_download = drive_download or (
             native_drive_download if callable(native_drive_download) else None
@@ -507,9 +527,21 @@ class AndroidSourcesAPI(SourcesAPI):
         *,
         ready: bool,
     ) -> Source:
-        deadline = RuntimeDeadline.start(timeout)
+        deadline = RuntimeDeadline.start(timeout, monotonic=self._monotonic)
         last_status: int | None = None
-        while not deadline.expired():
+        if deadline.timeout <= 0.0:
+            # An explicit zero budget means "do not wait", not "look once".
+            raise SourceTimeoutError(source_id, timeout, last_status)
+        while True:
+            # Poll *before* consulting the deadline. A positive budget always
+            # buys one look at the server, even when the clock has already
+            # crossed it between ``RuntimeDeadline.start()`` and here — one
+            # coarse tick on Windows before 3.13, or an OS stall. Without this
+            # a source the server had already marked ERROR was reported as a
+            # timeout with ``last_status=None``.
+            # The wire budget is floored for the same reason: ``remaining()``
+            # can read ``0.0`` on that same tick, and the session turns that
+            # into an ``RPCTimeoutError`` before any bytes are sent.
             response = await self._transport.unary(
                 GET_PROJECT_METHOD,
                 _read_proto().GetProjectRequest(
@@ -519,7 +551,7 @@ class AndroidSourcesAPI(SourcesAPI):
                 replay_safe=True,
                 response_type=_read_proto().GetProjectResponse,
                 expected_epoch=expected_epoch,
-                timeout=deadline.remaining(),
+                timeout=max(deadline.remaining(), min(deadline.timeout, _POLL_WIRE_FLOOR)),
             )
             validate_project_identity(response.project, notebook_id, method_id=GET_PROJECT_METHOD)
             decode_project(response.project, method_id=GET_PROJECT_METHOD)
@@ -552,10 +584,13 @@ class AndroidSourcesAPI(SourcesAPI):
                 )
                 if accepted:
                     return decode_source(row, method_id=GET_PROJECT_METHOD)
-            remaining = deadline.remaining()
-            if remaining <= 0.0:
+            if deadline.expired():
                 break
-            await asyncio.sleep(min(0.5, remaining))
+            await asyncio.sleep(deadline.clamp_sleep(_POLL_INTERVAL))
+            if deadline.expired():
+                # Re-check after sleeping: the clamp can spend the whole budget,
+                # and only the *first* look may bypass the deadline.
+                break
         raise SourceTimeoutError(source_id, timeout, last_status)
 
     async def _wait_uploaded_registered(
@@ -1080,6 +1115,41 @@ class AndroidSourcesAPI(SourcesAPI):
             source = await self._best_effort_title(notebook_id, source, requested_title)
         return source
 
+    async def list_play_books(self) -> builtins.list[PlayBook]:
+        """Google Play Books are a web-tier capability (#2292).
+
+        The Android gRPC ``ListExpertIntelligenceContent`` serves the same
+        library, but the write path this listing feeds
+        (:meth:`add_play_book`) requires a per-account Phenotype experiment
+        header the client cannot synthesize, so the whole capability is exposed
+        on the web backend only. Use a web-backed client
+        (``NotebookLMClient.from_storage()`` without ``backend="android"``).
+        """
+        raise UnsupportedOperationError(
+            "Google Play Books sources are supported on the web backend only; "
+            "the Android backend cannot add them. Use a web-backed client (#2292)."
+        )
+
+    async def add_play_book(
+        self,
+        notebook_id: str,
+        content_id: str,
+        *,
+        wait: bool = False,
+        wait_timeout: float = 120.0,
+    ) -> Source:
+        """Adding a Play Book is web-only (#2292).
+
+        The Android ``AddSources`` for an ``ExpertIntelligenceContent`` returns
+        ``INTERNAL`` unless the request carries a per-account Phenotype
+        experiment header the client cannot reproduce, so this is refused
+        rather than sent. Use a web-backed client.
+        """
+        raise UnsupportedOperationError(
+            "Google Play Books sources are supported on the web backend only; "
+            "the Android backend cannot add them. Use a web-backed client (#2292)."
+        )
+
     async def add_drive_file(
         self,
         notebook_id: str,
@@ -1465,7 +1535,10 @@ class AndroidSourcesAPI(SourcesAPI):
 
 
 __all__ = [
+    "ADD_SOURCES_ASYNC_METHOD",
     "ADD_SOURCES_METHOD",
+    "APPEND_SOURCE_METHOD",
+    "COPY_SOURCES_ASYNC_METHOD",
     "ADD_TENTATIVE_SOURCES_METHOD",
     "CHECK_SOURCE_FRESHNESS_METHOD",
     "DELETE_SOURCES_METHOD",

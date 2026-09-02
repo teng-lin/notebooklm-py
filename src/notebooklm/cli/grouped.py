@@ -51,7 +51,7 @@ class SectionedGroup(click.Group):
     Instead of a flat alphabetical list, commands are grouped by function:
     - Session: login, use, status, clear, doctor, auth, completion
     - Notebooks: list, create, delete, rename, summary, metadata
-    - Chat: ask, suggest-prompts, configure, history
+    - Chat: ask, suggest-prompts, suggest-next-steps, configure, history
     - Command Groups: source, artifact, note, label, collection, share, research,
       profile, agent, skill, language, mcp (show subcommands)
     - Artifact Actions: generate, download (show types)
@@ -63,7 +63,7 @@ class SectionedGroup(click.Group):
         [
             ("Session", ["login", "use", "status", "clear", "doctor", "auth", "completion"]),
             ("Notebooks", ["list", "create", "delete", "rename", "summary", "metadata"]),
-            ("Chat", ["ask", "suggest-prompts", "configure", "history"]),
+            ("Chat", ["ask", "suggest-prompts", "suggest-next-steps", "configure", "history"]),
         ]
     )
 
