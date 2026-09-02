@@ -354,6 +354,20 @@ def test_the_budget_shrinks_and_is_never_restarted() -> None:
     assert all(t <= 300 * 1000 for t in page.timeouts)
 
 
+def test_deadline_rounding_cannot_grow_the_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A large fractional clock reading can round a re-arm above the original."""
+    err = _playwright_error(ABORTED)
+    page = _ClockedPage([(0.0, err), (0.0, LANDED)])
+    page.now = 33_554_361.3682
+    monkeypatch.setattr("time.monotonic", page.monotonic)
+
+    # Pin the platform-independent IEEE-754 edge that failed on Windows CI.
+    assert ((page.now + 300) - page.now) * 1000 > 300 * 1000
+    wait_for_login_landing(page, timeout_s=300)
+
+    assert page.timeouts == [300 * 1000, 300 * 1000]
+
+
 def test_a_page_failing_in_a_loop_is_bounded_not_spun_on(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

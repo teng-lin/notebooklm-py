@@ -627,7 +627,10 @@ def wait_for_login_landing(
                 )
             # Re-arm on what is actually left, never on a fresh full timeout:
             # the caller's budget has to survive any number of tolerated hops.
-            remaining_ms = (deadline - time.monotonic()) * 1000
+            # Clamp against the previous value as well as the deadline. At
+            # large monotonic readings, floating-point cancellation can make
+            # ``deadline - now`` a fraction larger than the original timeout.
+            remaining_ms = min(remaining_ms, (deadline - time.monotonic()) * 1000)
 
 
 # ---------------------------------------------------------------------------
