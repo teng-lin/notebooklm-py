@@ -84,6 +84,97 @@ jobs:
           echo "short_sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
           echo "Resolved commit: $SHA"
 
+  # Re-run the complete compatibility matrix nightly, pinned to the same
+  # resolved commit as coverage and E2E. Every supported Python version runs on
+  # every supported CI operating system; heavyweight browser, coverage, and
+  # live-API responsibilities remain in their dedicated jobs below.
+  compatibility:
+    name: Compatibility (${{ needs.resolve-branch.outputs.branch }}@${{ needs.resolve-branch.outputs.short_sha }}/${{ matrix.os }}/Python ${{ matrix.python-version }})
+    needs: resolve-branch
+    if: needs.resolve-branch.outputs.is_standard == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+        - ubuntu-latest
+        - macos-latest
+        - windows-latest
+        python-version:
+        - "3.10"
+        - "3.11"
+        - "3.12"
+        - "3.13"
+        - "3.14"
+
+    concurrency:
+      group: nightly-compatibility-${{ needs.resolve-branch.outputs.branch }}-${{ matrix.os }}-${{ matrix.python-version }}
+      cancel-in-progress: true
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.resolve-branch.outputs.sha }}
+        fetch-depth: 1
+        persist-credentials: false
+
+    - name: Stamp compatibility target
+      env:
+        EXPECTED_SHA: ${{ needs.resolve-branch.outputs.sha }}
+        TARGET_BRANCH: ${{ needs.resolve-branch.outputs.branch }}
+        MATRIX_OS: ${{ matrix.os }}
+        MATRIX_PYTHON: ${{ matrix.python-version }}
+      shell: bash
+      run: |
+        ACTUAL_SHA=$(git rev-parse HEAD)
+        if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+          echo "::error::Checked out $ACTUAL_SHA, expected $EXPECTED_SHA"
+          exit 1
+        fi
+        {
+          echo "### Compatibility target"
+          echo "- Branch: \`$TARGET_BRANCH\`"
+          echo "- Commit: \`$ACTUAL_SHA\`"
+          echo "- OS: \`$MATRIX_OS\`"
+          echo "- Python: \`$MATRIX_PYTHON\`"
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v7
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # @ v7.0.0
+
+    - name: Install compatibility dependencies
+      shell: bash
+      run: |
+        attempt=1; max=3
+        until uv sync --frozen --extra browser --extra dev --extra markdown --extra mcp --extra server --extra impersonate --extra cookies; do
+          if [ "$attempt" -ge "$max" ]; then
+            echo "::error::uv sync failed after $max attempts" >&2
+            exit 1
+          fi
+          echo "::warning::uv sync attempt $attempt failed; retrying in $((attempt * 15))s" >&2
+          sleep $((attempt * 15))
+          attempt=$((attempt + 1))
+        done
+
+    - name: Assert native optional dependencies import
+      shell: bash
+      run: >-
+        uv run python -c "import curl_cffi, rookie_cookies;
+        assert callable(rookie_cookies.load);
+        assert callable(rookie_cookies.any_browser)"
+
+    - name: Run compatibility tests without coverage
+      run: >-
+        uv run pytest -n auto --dist loadgroup
+        -m "not repo_lint and not requires_playwright and not requires_chromium"
+        --no-cov
+
   # Coverage is intentionally scheduled/manual only. It exercises the same
   # ordinary suite as pull-request CI, but owns the global and per-file floors
   # without delaying every PR compatibility cell.

@@ -617,10 +617,16 @@ def _accepts_positional(param: dict[str, Any]) -> bool:
 
 def _signature_breakage(old: dict[str, Any] | None, new: dict[str, Any] | None) -> str | None:
     """Return a short incompatibility reason, or ``None`` when old calls still fit."""
-    if old is None or new is None:
-        if old != new:
-            return f"signature changed from {old!r} to {new!r}"
+    # A baseline signature can be unavailable even when the callable itself is
+    # unchanged.  Python 3.14, for example, cannot inspect v0.8.1 class-body
+    # ``list[...]`` annotations when the same class also defines ``list``.  A
+    # newly inspectable signature gives us more information but cannot prove a
+    # compatibility break.  The reverse direction remains a break: losing a
+    # previously inspectable signature is itself an observable regression.
+    if old is None:
         return None
+    if new is None:
+        return f"signature changed from {old!r} to None"
 
     old_params = old["parameters"]
     new_params = new["parameters"]

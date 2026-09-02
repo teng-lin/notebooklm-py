@@ -1,7 +1,7 @@
 # Release Checklist
 
 **Status:** Active
-**Last Updated:** 2026-08-05
+**Last Updated:** 2026-09-02
 
 Checklist for releasing a new version of `notebooklm-py`.
 
@@ -248,13 +248,15 @@ no break against the baseline) is a CI failure, not silent cruft.
 - [ ] Wait for **test.yml** to pass:
   - Linting and formatting
   - Type checking
-  - Unit and integration tests (Python 3.10-3.14, all platforms)
+  - Unit and integration tests in the full 15-cell matrix: Ubuntu, macOS, and
+    Windows across Python 3.10-3.14
 
 ### E2E Tests on Release Branch
 
 - [ ] Go to **Actions** → **Nightly E2E Tests**
 - [ ] Click **Run workflow**, set **custom_branch** to `release/vX.Y.Z`
-- [ ] Wait for E2E tests to pass
+- [ ] Wait for the nightly compatibility (same 15 cells), coverage,
+      repository-lint, and E2E jobs to pass
 - [ ] If E2E tests fail:
   1. Fix issues in the release worktree
   2. Commit and push

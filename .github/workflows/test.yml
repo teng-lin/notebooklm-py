@@ -177,38 +177,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Linux carries the full supported Python range. One 3.12 cell on each
-        # secondary OS preserves platform compatibility without multiplying the
-        # entire suite into a 3-by-5 bottleneck. Canonical Ubuntu 3.12 owns
-        # Chromium, external-reality work, and the critical contract guards.
+        # Release confidence requires the complete supported Cartesian product:
+        # all five Python versions on Linux, macOS, and Windows. Canonical
+        # Ubuntu 3.12 still owns Chromium, external-reality work, and the
+        # critical contract guards so those heavyweight checks run only once.
+        os:
+        - ubuntu-latest
+        - macos-latest
+        - windows-latest
+        python-version:
+        - "3.10"
+        - "3.11"
+        - "3.12"
+        - "3.13"
+        - "3.14"
         include:
-        - os: ubuntu-latest
-          python-version: "3.10"
-          canonical: false
-          windows_playwright: false
-        - os: ubuntu-latest
-          python-version: "3.11"
-          canonical: false
-          windows_playwright: false
         - os: ubuntu-latest
           python-version: "3.12"
           canonical: true
-          windows_playwright: false
-        - os: ubuntu-latest
-          python-version: "3.13"
-          canonical: false
-          windows_playwright: false
-        - os: ubuntu-latest
-          python-version: "3.14"
-          canonical: false
-          windows_playwright: false
-        - os: macos-latest
-          python-version: "3.12"
-          canonical: false
-          windows_playwright: false
         - os: windows-latest
           python-version: "3.12"
-          canonical: false
           windows_playwright: true
     env:
       # Pin Playwright's browser install dir to a single workspace-relative
@@ -256,8 +244,7 @@ jobs:
         # `src/notebooklm/{mcp,server}/**` and `_curl_cffi_transport.py` real
         # coverage in nightly's coverage.json (no 0% blind spot). Installing
         # them in every compatibility cell also proves curl_cffi's native wheels
-        # resolve across every supported Python version on Linux and on the
-        # representative Python 3.12 macOS/Windows cells.
+        # resolve across the full 3-OS by 5-Python support matrix.
         # `cookies` is now included since rookie-cookies supports all Python versions.
         #
         # Tradeoff: the deleted MCP/server jobs each enforced a scoped 90% floor.
@@ -340,7 +327,7 @@ jobs:
       if: matrix.canonical
       # These tests exercise real Playwright driver subprocesses. Keep them out
       # of xdist, but retain one complete PR lane instead of silently dropping
-      # them from the reduced compatibility matrix.
+      # them from the ordinary compatibility suite.
       run: >-
         uv run pytest tests/unit
         -m "(requires_playwright or requires_chromium) and not reality"
@@ -352,7 +339,7 @@ jobs:
       # while their expensive mutation variants live in the bounded manual
       # repo-lint lane.
       # This is one no-coverage lane, so it can use the runner's full worker set
-      # without recreating the old 15 simultaneous coverage jobs.
+      # without adding coverage collection to all 15 compatibility jobs.
       run: >-
         uv run pytest -n auto --dist worksteal --timeout=180 --no-cov
         tests/unit/test_ci_test_matrix.py

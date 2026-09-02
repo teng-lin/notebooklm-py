@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-09-02
+
 The headline of this release is the new **Android backend**. The Python SDK, CLI,
 MCP server, and REST server can now use NotebookLM's native mobile API as an
 alternative to the Web backend. Install the `android` extra and select it with
@@ -66,6 +68,9 @@ change without notice.
 
 ### Changed
 
+- Release and nightly compatibility testing now runs the complete 15-cell
+  matrix: Ubuntu, macOS, and Windows across Python 3.10 through 3.14. Browser,
+  coverage, repository-lint, and live-E2E work remains in dedicated lanes.
 - **Compatibility note:** backend source type code `14` now reports
   `SourceType.GOOGLE_DRIVE` instead of `GOOGLE_SPREADSHEET`. Native Google
   Sheets continue to report `SourceType.GOOGLE_SPREADSHEET` through code `7`
@@ -75,6 +80,10 @@ change without notice.
 
 ### Fixed
 
+- The public API compatibility audit now treats a previously uninspectable
+  baseline signature as unknown rather than a breaking change. This prevents
+  false release failures on Python 3.14 while still rejecting regressions that
+  make a previously inspectable signature unavailable.
 - Credential redaction now recognizes current `AQ.`-prefixed Google
   authorization keys in runtime logs, exception previews, and cassette
   fixtures, alongside legacy `AIza` keys ([#2254]).
@@ -2553,7 +2562,8 @@ This is the initial public release of `notebooklm-py`. While core functionality 
 - **Authentication expiry**: CSRF tokens expire after some time. Re-run `notebooklm login` if you encounter auth errors.
 - **Large file uploads**: Files over 50MB may fail or timeout. Split large documents if needed.
 
-[Unreleased]: https://github.com/teng-lin/notebooklm-py/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/teng-lin/notebooklm-py/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/teng-lin/notebooklm-py/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/teng-lin/notebooklm-py/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/teng-lin/notebooklm-py/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/teng-lin/notebooklm-py/compare/v0.7.2...v0.7.3

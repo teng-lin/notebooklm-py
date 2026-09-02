@@ -280,6 +280,18 @@ def test_signature_compare_allows_optional_parameter_addition(script):
     assert script._signature_breakage(old, new) is None
 
 
+def test_signature_compare_allows_newly_inspectable_signature(script):
+    new = _signature(_param("notebook_id"))
+
+    assert script._signature_breakage(None, new) is None
+
+
+def test_signature_compare_rejects_newly_uninspectable_signature(script):
+    old = _signature(_param("notebook_id"))
+
+    assert script._signature_breakage(old, None) == f"signature changed from {old!r} to None"
+
+
 def test_signature_compare_rejects_required_parameter_addition(script):
     old = _signature(_param("notebook_id"))
     new = _signature(_param("notebook_id"), _param("timeout"))
