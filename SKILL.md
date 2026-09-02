@@ -1,6 +1,6 @@
 ---
 name: notebooklm
-description: Operate Google NotebookLM through notebooklm-py to create notebooks, add sources, chat over content, run research, generate and download artifacts, and use features beyond the web UI. Use when the user names NotebookLM or asks to use it for podcasts, videos, reports, quizzes, flashcards, slide decks, infographics, mind maps, or source-grounded summaries.
+description: Operate Google Gemini Notebook through notebooklm-py to create notebooks, add sources, chat over content, run research, generate and download artifacts, and use features beyond the web UI. Use when the user names NotebookLM or asks to use it for podcasts, videos, reports, quizzes, flashcards, slide decks, infographics, mind maps, or source-grounded summaries.
 ---
 
 # NotebookLM Automation
