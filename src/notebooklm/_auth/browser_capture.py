@@ -625,11 +625,8 @@ def wait_for_login_landing(
                 io.emit(
                     f"[yellow]A navigation failed{detail}; still waiting for sign-in...[/yellow]"
                 )
-            # Re-arm on what is actually left, never on a fresh full timeout:
-            # the caller's budget has to survive any number of tolerated hops.
-            # Clamp against the previous value as well as the deadline. At
-            # large monotonic readings, floating-point cancellation can make
-            # ``deadline - now`` a fraction larger than the original timeout.
+            # Re-arm on what is left, clamped so floating cancellation cannot
+            # grow the caller's budget during any number of tolerated hops.
             remaining_ms = min(remaining_ms, (deadline - time.monotonic()) * 1000)
 
 
