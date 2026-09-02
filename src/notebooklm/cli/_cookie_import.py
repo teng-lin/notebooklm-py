@@ -23,7 +23,6 @@ from .._app.login_cookie import (
     CookieImportSuccess,
     has_usable_secondary_binding,
     import_cookie_payload,
-    normalize_cookie_payload,
 )
 from ..auth import replace_profile_from_login
 from .services.playwright_login import filter_storage_state_cookies_by_domain_policy
@@ -49,54 +48,6 @@ def _read_auth_json_input(path: str) -> Any:
         raise click.ClickException(  # cli-input-validation: import-cookies JSON read failure
             f"Could not read {path!r}: {exc}"
         ) from None
-
-
-def _coerce_cookie_json_to_storage_state(payload: Any) -> dict[str, Any]:
-    """Normalize supported cookie JSON shapes to Playwright storage_state."""
-    result = None
-    try:
-        result = normalize_cookie_payload(payload)
-        if isinstance(result, CookieImportFailure):
-            raise click.ClickException(result.message) from None  # cli-input-validation: payload
-        return result
-    finally:
-        del payload, result
-
-
-def _normalize_imported_cookie(cookie: Any) -> dict[str, Any]:
-    """Translate common browser-export cookie fields toward storage_state."""
-    result = None
-    try:
-        result = normalize_cookie_payload([cookie])
-        if isinstance(result, CookieImportFailure):
-            raise click.ClickException(result.message) from None  # cli-input-validation: record
-        return result["cookies"][0]
-    finally:
-        del cookie, result
-
-
-def _nonempty_cookie_names(filtered_state: dict[str, Any]) -> set[str]:
-    """Names of ``filtered_state`` cookies that carry a non-empty string value.
-
-    Reads the raw cookie list rather than the flattened
-    ``extract_cookies_from_storage`` dict, so a non-empty cookie is never masked
-    by an empty same-name duplicate — matching the runtime jar, which skips empty
-    rows when building httpx cookies.
-    """
-    cookies = result = None
-    try:
-        cookies = filtered_state.get("cookies", [])
-        result = {
-            cookie["name"]
-            for cookie in cookies
-            if isinstance(cookie, dict)
-            and isinstance(cookie.get("name"), str)
-            and isinstance(cookie.get("value"), str)
-            and cookie["value"]
-        }
-        return result
-    finally:
-        del filtered_state, cookies, result
 
 
 def _has_usable_secondary_binding(filtered_state: dict[str, Any]) -> bool:

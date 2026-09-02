@@ -150,6 +150,37 @@ class TestAuthImportCookiesCommand:
         assert "Invalid JSON" in result.output
         assert not storage_path.exists()
 
+    def test_import_cookies_rejects_a_non_utf8_file(self, runner, tmp_path):
+        """A latin-1 / UTF-16 export names the decode failure, not a JSON error."""
+        input_path = tmp_path / "cookies.json"
+        storage_path = tmp_path / "storage_state.json"
+        input_path.write_bytes(b'{"cookies": [{"name": "SID", "value": "\xff\xfe"}]}')
+
+        result = runner.invoke(
+            cli, ["--storage", str(storage_path), "auth", "import-cookies", str(input_path)]
+        )
+
+        assert result.exit_code != 0
+        assert "as UTF-8" in result.output
+        assert not storage_path.exists()
+
+    def test_import_cookies_reports_an_unreadable_path(self, runner, tmp_path):
+        storage_path = tmp_path / "storage_state.json"
+
+        result = runner.invoke(
+            cli,
+            [
+                "--storage",
+                str(storage_path),
+                "auth",
+                "import-cookies",
+                str(tmp_path / "absent.json"),
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert not storage_path.exists()
+
     def test_import_cookies_rejects_unsupported_json_shape(self, runner, tmp_path):
         input_path = tmp_path / "cookies.json"
         storage_path = tmp_path / "storage_state.json"
