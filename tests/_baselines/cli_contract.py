@@ -85,6 +85,19 @@ def _json_default(value):
     return str(value)
 
 
+def _option_default(option: click.Option):
+    """Return the declared default while normalizing Click's unset sentinel.
+
+    Click 8.5 represents an omitted flag default internally as ``UNSET`` even
+    though the public, resolved default remains ``False``.  The CLI contract
+    records public behavior, not Click's internal sentinel representation.
+    """
+    unset = getattr(click.core, "UNSET", None)
+    if unset is not None and option.default is unset:
+        return option.get_default(click.Context(cli))
+    return option.default
+
+
 def _type_contract(param_type: click.ParamType) -> dict[str, object]:
     data: dict[str, object] = {"name": param_type.name}
     if isinstance(param_type, click.Choice):
@@ -128,7 +141,7 @@ def _param_contract(param: click.Parameter) -> dict[str, object]:
                 "kind": "option",
                 "opts": list(param.opts),
                 "secondary_opts": list(param.secondary_opts),
-                "default": _json_default(param.default),
+                "default": _json_default(_option_default(param)),
                 "envvar": _json_default(param.envvar),
                 "is_flag": param.is_flag,
                 "multiple": param.multiple,
