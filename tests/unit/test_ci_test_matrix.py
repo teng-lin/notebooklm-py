@@ -14,6 +14,10 @@ NIGHTLY_WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows"
 VERIFY_PACKAGE_WORKFLOW = (
     Path(__file__).resolve().parents[2] / ".github" / "workflows" / "verify-package.yml"
 )
+PUBLISH_WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "publish.yml"
+TESTPYPI_PUBLISH_WORKFLOW = (
+    Path(__file__).resolve().parents[2] / ".github" / "workflows" / "testpypi-publish.yml"
+)
 SUPPORTED_OSES = ["ubuntu-latest", "macos-latest", "windows-latest"]
 SUPPORTED_PYTHONS = ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
@@ -374,6 +378,16 @@ def test_verify_package_live_checks_published_wheel_android_and_keeps_web_e2e() 
     assert "NOTEBOOKLM_BACKEND" not in job.get("env", {})
     assert "NOTEBOOKLM_BACKEND" not in web_e2e["env"]
     assert 'pytest tests/e2e -m "not variants"' in str(web_e2e["run"])
+
+
+@pytest.mark.parametrize("workflow_path", [PUBLISH_WORKFLOW, TESTPYPI_PUBLISH_WORKFLOW])
+def test_release_publish_smokes_install_impersonate_extra(workflow_path: Path) -> None:
+    """Published-wheel unit smoke must install every CI-required transport."""
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["build-and-test"]
+    install = str(_step(job, "Install built wheel + release-smoke extras in a clean venv")["run"])
+
+    assert '"${WHEEL}[browser,dev,markdown,impersonate]"' in install
 
 
 def test_repository_lint_is_a_bounded_manual_only_job() -> None:
