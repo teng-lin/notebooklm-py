@@ -217,14 +217,34 @@ def test_skill_md_stays_compact() -> None:
 def test_skill_md_workflows_preserve_readiness_identity_and_safe_autonomy() -> None:
     """The compact skill must retain the stateful safety invariants."""
     text = _read(SKILL_MD)
+    setup = _section(text, "## Setup and Authentication", "## Operating Invariants")
+    operating = _section(text, "## Operating Invariants", "## Authorization Boundaries")
     authorization = _section(text, "## Authorization Boundaries", "## Command Discovery")
     workflow = _section(text, "## Canonical Source-to-Artifact Workflow", "## Deep Research")
     deep_research = _section(text, "## Deep Research", "## Generation Notes")
+    python_api = _section(text, "## Python API Baseline", "## Generation Notes")
     generation = _section(text, "## Generation Notes", "## Output and Citations")
+    output = _section(text, "## Output and Citations", "## Failure Handling")
     failure_handling = _section(text, "## Failure Handling", "## Skill Installation")
 
+    assert "Gemini Notebook" in text
+    brand_text = text.replace("NotebookLMClient", "")
+    assert "NotebookLM" not in brand_text
+    assert "Google Gemini Notebook" not in text
+    assert "notebooklm auth check --test --json" in setup
+    assert "may heal and persist refreshed cookies" in setup
+    assert ".checks.token_fetch == true" in setup
+    assert "NOTEBOOKLM_MASTER_TOKEN_JSON" in setup
+    assert "secret-transport convention" in setup
+    assert "not an environment variable" in setup
+    assert "notebooklm auth refresh" in setup
+    assert text.count("NOTEBOOKLM_AUTH_JSON") == 1
     assert "language set" in authorization
     assert "research wait --import-all" in authorization
+    assert "ask --new --json" in authorization
+    assert "prompt absence as consent" in authorization
+    assert "research cancel" in authorization
+    assert "--run-id <research_run_id>" in authorization
     assert 'status == "ready"' in text
     assert "status=READY" not in text
     assert "subagent" not in text.lower()
@@ -232,14 +252,23 @@ def test_skill_md_workflows_preserve_readiness_identity_and_safe_autonomy() -> N
     assert "one sequential job" in text
     assert "only after the wait exits 0" in text
     assert "run safe read-only diagnosis first" in failure_handling
+    assert "notebooklm auth check --test --passive --json" in failure_handling
     assert 'pip install "notebooklm-py[headless]"' in text
     assert "For every concurrent run" in text
+    assert "NOTEBOOKLM_AUTH_JSON" not in operating
+    assert "master_token.json" in operating
+    assert "Never share one writable `storage_state.json`" in operating
     assert "asynchronous generators" in text
-    assert "no task ID or separate wait step" in text
+    assert "no task ID or separate `artifact wait` step" in text
     assert "Mind map (`--kind note-backed`)" in generation
     assert "Mind map (`--kind interactive`, default)" in generation
+    assert "CLI polls it to completion" in generation
+    assert "Both kinds accept `--instructions`" in generation
     assert "A `source wait` timeout uses exit 2" in failure_handling
     assert "`artifact wait` and `research wait` timeouts use exit 1" in failure_handling
+    assert '"status": "timeout"' in failure_handling
+    assert "proceed only on" in output
+    assert "await resolve_chat_reference_passage(client, notebook_id, reference)" in output
 
     assert workflow.index("notebooklm create") < workflow.index("notebooklm source add")
     assert workflow.index("notebooklm source add") < workflow.index("notebooklm source wait")
@@ -255,6 +284,23 @@ def test_skill_md_workflows_preserve_readiness_identity_and_safe_autonomy() -> N
     assert "--run-id {research_run_id}" in deep_research
     assert "--mode deep --no-wait --json" in deep_research
     assert "--import-all --timeout 1800 --json" in deep_research
+    assert ".imported_sources[].id" in deep_research
+    assert "per-phase budget" in deep_research
+
+    assert python_api.index("client.sources.add_url") < python_api.index(
+        "client.sources.wait_until_ready"
+    )
+    assert python_api.index("client.sources.wait_until_ready") < python_api.index("client.chat.ask")
+    assert python_api.index("client.artifacts.generate_audio") < python_api.index(
+        "client.artifacts.wait_for_completion"
+    )
+    assert python_api.index("client.artifacts.wait_for_completion") < python_api.index(
+        "client.artifacts.download_audio"
+    )
+    assert "task.task_id" in python_api
+    assert "artifact_id=task.task_id" in python_api
+    assert "final.is_complete" in python_api
+    assert "not thread-safe" in python_api
 
     workflow_sections = {
         "canonical source-to-artifact": workflow,
