@@ -66,6 +66,7 @@ def test_get_skill_version_file_not_exists(tmp_path: Path) -> None:
 
 
 def test_get_skill_version_invalid_utf8_is_unknown(tmp_path: Path) -> None:
+    """Invalid UTF-8 makes the embedded version unavailable without raising."""
     skill_file = tmp_path / "SKILL.md"
     skill_file.write_bytes(b"<!-- notebooklm-py v1.2.3 -->\n\xff")
 
@@ -78,6 +79,7 @@ def test_get_skill_version_invalid_utf8_is_unknown(tmp_path: Path) -> None:
 
 
 def test_get_skill_content_mismatch_false_for_exact_bytes(tmp_path: Path) -> None:
+    """Canonical installed bytes report no drift."""
     skill_file = tmp_path / "SKILL.md"
     canonical = "<!-- notebooklm-py v1.2.3 -->\n# Test"
     skill_file.write_text(canonical, encoding="utf-8")
@@ -85,7 +87,17 @@ def test_get_skill_content_mismatch_false_for_exact_bytes(tmp_path: Path) -> Non
     assert get_skill_content_mismatch(skill_file, canonical) is False
 
 
+def test_get_skill_content_mismatch_false_for_windows_crlf(tmp_path: Path) -> None:
+    """Platform CRLF translation is equivalent to canonical LF content."""
+    skill_file = tmp_path / "SKILL.md"
+    canonical = "<!-- notebooklm-py v1.2.3 -->\n# Test\n"
+    skill_file.write_bytes(canonical.encode("utf-8").replace(b"\n", b"\r\n"))
+
+    assert get_skill_content_mismatch(skill_file, canonical) is False
+
+
 def test_get_skill_content_mismatch_true_for_drift(tmp_path: Path) -> None:
+    """Differing readable content reports drift."""
     skill_file = tmp_path / "SKILL.md"
     skill_file.write_text("locally edited", encoding="utf-8")
 
@@ -93,6 +105,7 @@ def test_get_skill_content_mismatch_true_for_drift(tmp_path: Path) -> None:
 
 
 def test_get_skill_content_mismatch_true_for_invalid_utf8(tmp_path: Path) -> None:
+    """Malformed installed bytes remain detectable as drift."""
     skill_file = tmp_path / "SKILL.md"
     skill_file.write_bytes(b"canonical\xff")
 
@@ -100,10 +113,12 @@ def test_get_skill_content_mismatch_true_for_invalid_utf8(tmp_path: Path) -> Non
 
 
 def test_get_skill_content_mismatch_none_when_target_missing(tmp_path: Path) -> None:
+    """A missing installed target has unavailable integrity."""
     assert get_skill_content_mismatch(tmp_path / "missing.md", "canonical") is None
 
 
 def test_get_skill_content_mismatch_none_when_canonical_unavailable(tmp_path: Path) -> None:
+    """Missing canonical package content makes comparison unavailable."""
     skill_file = tmp_path / "SKILL.md"
     skill_file.write_text("installed", encoding="utf-8")
 
@@ -111,10 +126,20 @@ def test_get_skill_content_mismatch_none_when_canonical_unavailable(tmp_path: Pa
 
 
 def test_get_skill_content_mismatch_none_on_io_failure(tmp_path: Path) -> None:
+    """An installed-content read failure makes comparison unavailable."""
     skill_file = tmp_path / "SKILL.md"
     skill_file.write_text("installed", encoding="utf-8")
 
     with patch.object(Path, "read_bytes", side_effect=PermissionError("denied")):
+        assert get_skill_content_mismatch(skill_file, "canonical") is None
+
+
+def test_skill_path_probe_failure_returns_unavailable(tmp_path: Path) -> None:
+    """An inaccessible target path does not escape version or drift probes."""
+    skill_file = tmp_path / "SKILL.md"
+
+    with patch.object(Path, "exists", side_effect=PermissionError("denied")):
+        assert get_skill_version(skill_file) is None
         assert get_skill_content_mismatch(skill_file, "canonical") is None
 
 

@@ -147,6 +147,14 @@ def _frontmatter_description(content: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
+def _skill_repair_command(scope: str, target: str) -> str:
+    """Return the command that repairs one reported skill target."""
+    command = f"notebooklm skill install --scope {scope} --target {target}"
+    if scope == "project":
+        command += " --force"
+    return command
+
+
 @click.group()
 def skill():
     """Manage NotebookLM agent skill integration."""
@@ -352,7 +360,10 @@ def status(scope: str, target_name: str, json_output: bool):
     for target in selected_targets:
         skill_path = get_skill_path(target, scope)
         skill_version = get_skill_version(skill_path)
-        installed = skill_path.exists()
+        try:
+            installed = skill_path.exists()
+        except OSError:
+            installed = False
         content_mismatch = get_skill_content_mismatch(skill_path, canonical_content)
         target_rows.append(
             {
@@ -383,10 +394,13 @@ def status(scope: str, target_name: str, json_output: bool):
         console.print(f"  {row['label']}: {status_label}")
         console.print(f"    Path: {row['path']}")
         if row["installed"]:
+            repair_command = _skill_repair_command(scope, str(row["target"]))
+            repair_note = " (overwrites the differing project skill)" if scope == "project" else ""
             console.print(f"    Skill version: {row['skill_version'] or 'unknown'}")
             if row["version_mismatch"]:
                 console.print(
-                    "    [yellow]Version mismatch[/yellow] - run [cyan]notebooklm skill install[/cyan]"
+                    "    [yellow]Version mismatch[/yellow] - run "
+                    f"[cyan]{repair_command}[/cyan]{repair_note}"
                 )
             if row["content_mismatch"] is None:
                 console.print(
@@ -396,7 +410,7 @@ def status(scope: str, target_name: str, json_output: bool):
             elif row["content_mismatch"] and not row["version_mismatch"]:
                 console.print(
                     "    [yellow]Content drift[/yellow] - installed skill differs from this "
-                    "package; run [cyan]notebooklm skill install[/cyan]"
+                    f"package; run [cyan]{repair_command}[/cyan]{repair_note}"
                 )
 
     if not any_installed:

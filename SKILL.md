@@ -161,7 +161,7 @@ Before starting workflows, verify auth is in place. **Use `--test --json` (not b
 - `notebooklm artifact wait` - wait for artifact completion (in supported background context)
 - `notebooklm source wait` - wait for source processing (in supported background context)
 - `notebooklm research status` - check research status
-- `notebooklm research wait` - wait for research (in supported background context)
+- `notebooklm research wait` - wait for research without `--import-all` (in supported background context)
 - `notebooklm use <id>` - set context (⚠️ SINGLE-AGENT ONLY - use `-n` flag in parallel workflows)
 - `notebooklm create` - create notebook
 - `notebooklm ask "..."` - chat queries (without `--save-as-note`)
@@ -181,6 +181,7 @@ Before starting workflows, verify auth is in place. **Use `--test --json` (not b
 - `notebooklm artifact wait` - long-running (when in main conversation)
 - `notebooklm source wait` - long-running (when in main conversation)
 - `notebooklm research wait` - long-running (when in main conversation)
+- `notebooklm research wait --import-all` - state-changing; imports research sources into the notebook in any execution context
 - `notebooklm research cancel <run_id>` - state-changing; cancels a running research job (an in-progress job transitions to FAILED). Fire-and-forget: it does not confirm success — re-check with `notebooklm research status`.
 - `notebooklm ask "..." --save-as-note` - writes a note
 - `notebooklm history --save` - writes a note
@@ -225,7 +226,8 @@ Before starting workflows, verify auth is in place. **Use `--test --json` (not b
 | Web research (deep) | `notebooklm source add-research "query" --mode deep --no-wait` |
 | Web research (query from file) | `notebooklm source add-research --prompt-file research_query.txt --mode deep` |
 | Check research status | `notebooklm research status` |
-| Wait for research | `notebooklm research wait --import-all` |
+| Wait for research | `notebooklm research wait --run-id <run_id>` |
+| Wait and import research (confirm first) | `notebooklm research wait --run-id <run_id> --import-all` |
 | Cancel research | `notebooklm research cancel <run_id>` (run_id = the `task_id` from `research status`) |
 | Suggest questions to ask | `notebooklm suggest-prompts` |
 | Chat | `notebooklm ask "question"` |
@@ -398,11 +400,11 @@ These capabilities are available via CLI but not in NotebookLM's web interface:
 
 Keep every returned ID and pass it explicitly throughout this workflow; do not rely on the active notebook or the latest visible source/artifact.
 
-1. Run `notebooklm create "Research: [topic]" --json` and capture `.notebook.id` as `{notebook_id}` — *if it fails, diagnose auth with `notebooklm auth check`*.
+1. Run `notebooklm create "Research: [topic]" --json` and capture `.notebook.id` as `{notebook_id}` — *if it fails, diagnose auth with `notebooklm auth check --test --json` and require `checks.token_fetch == true`*.
 2. For each URL/document, run `notebooklm source add <source> -n {notebook_id} --json` and capture `.source.id`. Keep every successful ID in `{source_ids}`; if one add fails, diagnose it and continue only if the remaining sources satisfy the request.
-3. Before generation, wait for **every** captured source: `notebooklm source wait {source_id} -n {notebook_id} --timeout 600`. If polling `source list -n {notebook_id} --json` instead, JSON status values are lowercase; require `status == "ready"` and stop on `"error"`.
+3. After confirmation, wait for **every** captured source: `notebooklm source wait {source_id} -n {notebook_id} --timeout 600`. If polling `source list -n {notebook_id} --json` instead, JSON status values are lowercase; require `status == "ready"` and stop on `"error"`.
 4. After confirmation, run `notebooklm generate audio "Focus on [specific angle]" -n {notebook_id} -s {source_id} --json` (repeat `-s` for each selected source) and capture `.task_id` as `{artifact_id}` — *if rate limited: wait 5 minutes, retry once*.
-5. Wait for that exact artifact: `notebooklm artifact wait {artifact_id} -n {notebook_id} --timeout 1200`.
+5. After confirmation, wait for that exact artifact: `notebooklm artifact wait {artifact_id} -n {notebook_id} --timeout 1200`.
 6. After confirmation, download that exact artifact: `notebooklm download audio ./podcast.m4a -a {artifact_id} -n {notebook_id}`.
 
 ### Research to Podcast (Automated with Background Work)
@@ -413,7 +415,7 @@ When user wants full automation (generate and download when ready):
 1. Perform interactive steps 1-3 above, retaining `{notebook_id}` and every `{source_id}`.
 2. After confirmation, run `notebooklm generate audio "..." -n {notebook_id} -s {source_id} --json` (repeat `-s` as needed) and capture `.task_id` as `{artifact_id}`.
 3. Keep `{artifact_id}` with `{notebook_id}`; do not resolve either from current context or the latest artifact.
-4. If the host harness provides a supported background-agent or background-command facility, delegate these exact ID-pinned commands through that facility:
+4. If the host harness provides a supported background-agent or background-command facility, delegate these exact ID-pinned commands as one sequential job. Start the download only after `artifact wait` exits 0, and stop the job if the wait fails:
    ```bash
    notebooklm artifact wait {artifact_id} -n {notebook_id} --timeout 1200
    notebooklm download audio ./podcast.m4a -a {artifact_id} -n {notebook_id}
@@ -431,7 +433,7 @@ When user wants full automation (generate and download when ready):
 
 1. Run `notebooklm create "Analysis: [project]" --json` and capture `.notebook.id` as `{notebook_id}`.
 2. Add each document or URL with `notebooklm source add <source> -n {notebook_id} --json`; capture every `.source.id`.
-3. Wait for **every** captured source with `notebooklm source wait {source_id} -n {notebook_id} --timeout 600`. Do not chat against a source while it is still indexing; stop and diagnose any source that reaches `error`.
+3. After confirmation, wait for **every** captured source with `notebooklm source wait {source_id} -n {notebook_id} --timeout 600`. Do not chat against a source while it is still indexing; stop and diagnose any source that reaches `error`.
 4. `notebooklm ask "Summarize the key points" -n {notebook_id}`.
 5. `notebooklm ask "What are the main arguments?" -n {notebook_id}`.
 6. Continue chatting with `-n {notebook_id}` as needed.
@@ -481,14 +483,14 @@ Deep research finds and analyzes web sources on a topic:
    ```bash
    notebooklm source add-research "topic query" -n {notebook_id} --mode deep --no-wait --json
    ```
-3. If the host harness supports background work, delegate this exact ID-pinned command through that facility:
+3. After confirmation to import the completed research sources, if the host harness supports background work, delegate this exact ID-pinned command through that facility:
    ```bash
-   notebooklm research wait -n {notebook_id} --run-id {research_run_id} --import-all --timeout 1800
+   notebooklm research wait -n {notebook_id} --run-id {research_run_id} --import-all --timeout 1800 --json
    ```
 4. If background work is unavailable, give the user that command with both captured IDs filled in, or run it in the foreground after confirmation. Do not omit `--run-id`: selecting the latest visible run is unsafe when research runs overlap.
 5. When the wait succeeds, retain the returned imported source IDs for any later chat or generation workflow.
 
-**Alternative (blocking):** For simple cases, omit `--no-wait`:
+**Alternative (blocking):** After confirmation to import the research sources, omit `--no-wait` for simple cases:
 ```bash
 notebooklm source add-research "topic" -n {notebook_id} --mode deep --import-all
 # Blocks until research completes (deep mode: 15-30+ min)
@@ -550,7 +552,7 @@ notebooklm artifact list --json
 
 ## Error Handling
 
-**On failure, run safe read-only diagnosis first.** Inspect the relevant explicit notebook/source/artifact/run ID with commands such as `auth check`, `list`, `source list --json`, `artifact list --json`, or `research status --run-id ...`; do not mutate state during diagnosis.
+**On failure, run safe read-only diagnosis first.** Run `notebooklm auth check --test --json` and require `checks.token_fetch == true`. Inspect the relevant explicit IDs with `notebooklm list --json`, `notebooklm source list -n {notebook_id} --json`, `notebooklm artifact list -n {notebook_id} --json`, or `notebooklm research status -n {notebook_id} --run-id {research_run_id} --json`; do not mutate state during diagnosis.
 
 If read-only diagnosis does not identify a safe recovery, offer the user a choice:
 1. Retry the operation
@@ -561,12 +563,12 @@ If read-only diagnosis does not identify a safe recovery, offer the user a choic
 
 | Error | Cause | Action |
 |-------|-------|--------|
-| Auth/cookie error | Session expired | Run `notebooklm auth check` then `notebooklm login` |
+| Auth/cookie error | Session expired | Run `notebooklm auth check --test --json`; if `checks.token_fetch` is not `true`, run `notebooklm login` |
 | "No notebook context" | Context not set | Use `-n <id>` or `--notebook <id>` flag (parallel), or `notebooklm use <id>` (single-agent) |
 | "No result found for RPC ID" | Rate limiting | Wait 5-10 min, retry |
 | `GENERATION_FAILED` | Google rate limit | Wait and retry later |
-| Download fails | Generation incomplete | Check `artifact list` for status |
-| Invalid notebook/source ID | Wrong ID | Run `notebooklm list` to verify |
+| Download fails | Generation incomplete | Check `notebooklm artifact list -n {notebook_id} --json` for the exact artifact ID |
+| Invalid notebook/source ID | Wrong ID | Run `notebooklm list --json` and `notebooklm source list -n {notebook_id} --json` to verify |
 | RPC protocol error | Google changed APIs | May need CLI update |
 
 ## Exit Codes

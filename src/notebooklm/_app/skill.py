@@ -84,7 +84,11 @@ def get_package_version() -> str:
 
 def get_skill_version(skill_path: Path) -> str | None:
     """Extract version from skill file header comment."""
-    if not skill_path.exists():
+    try:
+        installed = skill_path.exists()
+    except OSError:
+        return None
+    if not installed:
         return None
 
     try:
@@ -107,7 +111,13 @@ def get_skill_content_mismatch(skill_path: Path, canonical_content: str | None) 
     read. Bytes are compared deliberately so invalid UTF-8 is reported as
     drift instead of crashing status or being mistaken for an I/O failure.
     """
-    if canonical_content is None or not skill_path.exists():
+    if canonical_content is None:
+        return None
+    try:
+        installed = skill_path.exists()
+    except OSError:
+        return None
+    if not installed:
         return None
 
     try:
@@ -115,7 +125,13 @@ def get_skill_content_mismatch(skill_path: Path, canonical_content: str | None) 
     except OSError:
         return None
 
-    return installed_content != canonical_content.encode("utf-8")
+    # ``atomic_write_text`` uses platform text-mode newline translation, and
+    # ``classify_target`` reads through universal-newline mode. Mirror that
+    # contract at the byte level so a clean Windows CRLF install equals its LF
+    # canonical source without decoding malformed installed content.
+    normalized_installed = installed_content.replace(b"\r\n", b"\n")
+    normalized_canonical = canonical_content.encode("utf-8").replace(b"\r\n", b"\n")
+    return normalized_installed != normalized_canonical
 
 
 def get_scope_root(scope: str) -> Path:

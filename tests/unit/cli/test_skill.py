@@ -3,7 +3,7 @@
 import importlib
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -486,6 +486,7 @@ class TestSkillStatus:
         assert "agent skills" in result.output.lower()
 
     def test_skill_status_not_installed_json_has_unknown_content_integrity(self, runner, tmp_path):
+        """Absent targets expose null content integrity in JSON."""
         home = tmp_path / "home"
 
         with patch.object(skill_module.Path, "home", return_value=home):
@@ -563,6 +564,7 @@ class TestSkillStatus:
         assert agents["content_mismatch"] is False
 
     def test_skill_status_reports_same_version_content_drift(self, runner, tmp_path):
+        """Same-version edits are distinct from package-version mismatches."""
         home = tmp_path / "home"
         version = "1.2.3"
         source = "---\nname: notebooklm\n---\n# Canonical"
@@ -589,6 +591,7 @@ class TestSkillStatus:
         assert json.loads(structured.output)["targets"][0]["content_mismatch"] is True
 
     def test_skill_status_invalid_utf8_is_content_drift(self, runner, tmp_path):
+        """Invalid UTF-8 reports drift without crashing JSON status."""
         home = tmp_path / "home"
         version = "1.2.3"
         source = "---\nname: notebooklm\n---\n# Canonical"
@@ -609,6 +612,7 @@ class TestSkillStatus:
         assert agents["content_mismatch"] is True
 
     def test_skill_status_reports_unavailable_content_comparison(self, runner, tmp_path):
+        """Missing canonical content renders an unavailable comparison."""
         home = tmp_path / "home"
         version = "1.2.3"
         dest = home / ".agents" / "skills" / "notebooklm" / "SKILL.md"
@@ -630,6 +634,7 @@ class TestSkillStatus:
     def test_skill_status_packaged_source_io_failure_is_comparison_unavailable(
         self, runner, tmp_path
     ):
+        """Packaged-source I/O failures render null rather than escaping."""
         home = tmp_path / "home"
         dest = home / ".agents" / "skills" / "notebooklm" / "SKILL.md"
         dest.parent.mkdir(parents=True)
@@ -647,6 +652,62 @@ class TestSkillStatus:
 
         assert result.exit_code == 0, result.output
         assert json.loads(result.output)["targets"][0]["content_mismatch"] is None
+
+    def test_skill_status_path_probe_failure_is_uninstalled_and_unavailable(self, runner, tmp_path):
+        """An inaccessible target path does not crash structured status."""
+        inaccessible_path = MagicMock(spec=Path)
+        inaccessible_path.exists.side_effect = PermissionError("denied")
+
+        with (
+            patch.object(skill_module, "get_skill_path", return_value=inaccessible_path),
+            patch.object(
+                skill_module,
+                "get_skill_source_content",
+                return_value="---\nname: notebooklm\n---\n# Canonical",
+            ),
+        ):
+            result = runner.invoke(cli, ["skill", "status", "--target", "agents", "--json"])
+
+        assert result.exit_code == 0, result.output
+        agents = json.loads(result.output)["targets"][0]
+        assert agents["installed"] is False
+        assert agents["skill_version"] is None
+        assert agents["content_mismatch"] is None
+
+    def test_skill_status_project_drift_shows_scoped_force_repair(self, runner, tmp_path):
+        """Project drift suggests the target-specific forced project repair."""
+        project = tmp_path / "project"
+        version = "1.2.3"
+        source = "---\nname: notebooklm\n---\n# Canonical"
+        dest = project / ".agents" / "skills" / "notebooklm" / "SKILL.md"
+        dest.parent.mkdir(parents=True)
+        dest.write_text(
+            skill_module.add_version_comment(
+                "---\nname: notebooklm\n---\n# Locally edited", version
+            ),
+            encoding="utf-8",
+        )
+
+        with (
+            patch.object(skill_module.Path, "cwd", return_value=project),
+            patch.object(skill_module, "get_package_version", return_value=version),
+            patch.object(skill_module, "get_skill_source_content", return_value=source),
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "skill",
+                    "status",
+                    "--scope",
+                    "project",
+                    "--target",
+                    "agents",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "notebooklm skill install --scope project --target agents --force" in result.output
+        assert "overwrites the differing project skill" in result.output
 
 
 class TestSkillUninstall:

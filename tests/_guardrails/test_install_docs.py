@@ -203,23 +203,80 @@ def test_skill_md_workflows_preserve_readiness_identity_and_safe_autonomy() -> N
         "**Ask before running:**", 1
     )[0]
     confirmation = text.split("**Ask before running:**", 1)[1].split("## Quick Reference", 1)[0]
+    podcast = text.split("### Research to Podcast (Interactive)", 1)[1].split(
+        "### Document Analysis", 1
+    )[0]
     document_analysis = text.split("### Document Analysis", 1)[1].split("### Bulk Import", 1)[0]
+    bulk_import = text.split("### Bulk Import", 1)[1].split(
+        "### Deep Web Research (Background Pattern)", 1
+    )[0]
     deep_research = text.split("### Deep Web Research (Background Pattern)", 1)[1].split(
         "## Output Style", 1
     )[0]
 
     assert "notebooklm language set" not in automatic
     assert "notebooklm language set" in confirmation
+    assert "`notebooklm research wait --import-all`" not in automatic
+    assert "research wait --import-all" in confirmation
     assert 'status == "ready"' in text
     assert "status=READY" not in text
-    assert "source wait {source_id} -n {notebook_id}" in document_analysis
-    assert "--run-id {research_run_id}" in deep_research
     assert "subagent" not in text.lower()
     assert "Task(" not in text
-    assert "-a {artifact_id} -n {notebook_id}" in text
     assert "run safe read-only diagnosis first" in text
     assert "Mind map (`--kind note-backed`)" in text
     assert "Mind map (`--kind interactive`, default)" in text
+
+    assert podcast.index("notebooklm create") < podcast.index("notebooklm source add")
+    assert podcast.index("notebooklm source add") < podcast.index("notebooklm source wait")
+    assert podcast.index("notebooklm source wait") < podcast.index("notebooklm generate audio")
+    assert podcast.index("notebooklm generate audio") < podcast.index("notebooklm artifact wait")
+    assert podcast.index("notebooklm artifact wait") < podcast.index("notebooklm download audio")
+    assert "After confirmation, wait for **every** captured source" in podcast
+    assert "After confirmation, wait for that exact artifact" in podcast
+    assert "one sequential job" in podcast
+    assert "only after `artifact wait` exits 0" in podcast
+
+    assert document_analysis.index("notebooklm create") < document_analysis.index(
+        "notebooklm source add"
+    )
+    assert document_analysis.index("notebooklm source add") < document_analysis.index(
+        "notebooklm source wait"
+    )
+    assert document_analysis.index("notebooklm source wait") < document_analysis.index(
+        "notebooklm ask"
+    )
+
+    assert deep_research.index("notebooklm source add-research") < deep_research.index(
+        "notebooklm research wait"
+    )
+    assert "--run-id {research_run_id}" in deep_research
+    assert "--import-all --timeout 1800 --json" in deep_research
+
+    workflow_sections = {
+        "podcast": podcast,
+        "document analysis": document_analysis,
+        "bulk import": bulk_import,
+        "deep research": deep_research,
+    }
+    notebook_scoped_prefixes = (
+        "notebooklm source ",
+        "notebooklm ask ",
+        "notebooklm generate ",
+        "notebooklm artifact ",
+        "notebooklm download ",
+        "notebooklm research ",
+    )
+    for workflow_name, section in workflow_sections.items():
+        inline_commands = re.findall(r"`(notebooklm [^`\n]+)`", section)
+        fenced_commands = [
+            line.strip() for line in section.splitlines() if line.strip().startswith("notebooklm ")
+        ]
+        commands = [*inline_commands, *fenced_commands]
+        for command in commands:
+            if command.startswith(notebook_scoped_prefixes):
+                assert "-n {notebook_id}" in command, (
+                    f"{workflow_name} command is not notebook-pinned: {command}"
+                )
 
 
 # ---------------------------------------------------------------------------
