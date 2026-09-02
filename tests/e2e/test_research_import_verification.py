@@ -28,6 +28,7 @@ from .conftest import POLL_INTERVAL, requires_auth
 class TestResearchImportVerification:
     """Verify research import actually adds sources to the notebook."""
 
+    @pytest.mark.timeout(360)
     @pytest.mark.asyncio
     async def test_fast_research_import_count_matches(self, client, temp_notebook):
         """Test that imported sources from fast research appear in notebook.
@@ -94,6 +95,11 @@ class TestResearchImportVerification:
             temp_notebook.id,
             task_id,
             sources_to_import,
+            # Keep the fast E2E bounded independently from the library's
+            # deep-research-oriented 30-minute default. Combined with the
+            # 120-second research poll and final 30-second visibility poll,
+            # this fits inside the test's explicit 360-second outer timeout.
+            max_elapsed=180,
         )
 
         # Step 5: Poll for imported sources to appear
