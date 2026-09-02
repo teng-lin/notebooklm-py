@@ -140,7 +140,13 @@
     },
     {
       "attribute": "attempt_headless_reauth",
-      "count": 9,
+      "count": 10,
+      "idiom": "monkeypatch.setattr",
+      "module": "headless_reauth"
+    },
+    {
+      "attribute": "get_browser_profile_dir",
+      "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "headless_reauth"
     },
@@ -496,8 +502,8 @@
   "summary": {
     "TOTAL": {
       "private": 161,
-      "public": 135,
-      "total": 296
+      "public": 137,
+      "total": 298
     },
     "account": {
       "private": 2,
@@ -536,8 +542,8 @@
     },
     "headless_reauth": {
       "private": 17,
-      "public": 33,
-      "total": 50
+      "public": 35,
+      "total": 52
     },
     "keepalive": {
       "private": 8,

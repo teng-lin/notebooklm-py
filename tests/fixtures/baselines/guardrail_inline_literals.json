@@ -13,7 +13,7 @@
     "ALLOWLIST": 21
   },
   "tests/_guardrails/test_auth_cold_recovery_coordinator_boundary.py": {
-    "_EXPECTED_IMPORTS": 225
+    "_EXPECTED_IMPORTS": 215
   },
   "tests/_guardrails/test_auth_cookie_docs.py": {
     "AUTH_COOKIE_DEPRECATION_ROWS": 25

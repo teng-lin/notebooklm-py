@@ -28,6 +28,7 @@ Security Notes:
 
 import logging
 import subprocess  # noqa: F401  # re-exported for tests that patch ``auth.subprocess.run``
+from pathlib import Path as _Path
 from typing import TypeAlias
 
 import httpx
@@ -39,6 +40,7 @@ from ._auth import extraction as _auth_extraction
 from ._auth import keepalive as _auth_keepalive
 from ._auth import paths as _auth_paths
 from ._auth import psidts_recovery as _auth_psidts_recovery
+from ._auth import recovery_rungs as _auth_recovery_rungs
 from ._auth import refresh as _auth_refresh
 from ._auth import storage as _auth_storage
 from ._auth import tokens as _auth_tokens
@@ -103,6 +105,20 @@ from ._auth.tokens import AuthTokens
 # (it is also an OSError via TimeoutError — see ADR-0029).
 from .exceptions import LockUnavailableError  # noqa: F401
 from .paths import get_storage_path  # noqa: F401  # kept as a module-level compat alias
+
+
+def _default_headless_rung(
+    *,
+    storage_path: _Path,
+    allow_headless: bool,
+) -> _auth_recovery_rungs.HeadlessRungOutcome:
+    """Load the optional browser implementation only when L3 actually fires."""
+    from ._auth.headless_reauth import headless_rung
+
+    return headless_rung(storage_path=storage_path, allow_headless=allow_headless)
+
+
+_auth_recovery_rungs.install_headless_rung(_default_headless_rung)
 
 logger = logging.getLogger(__name__)
 

@@ -583,21 +583,23 @@ async def _try_headless_reauth_result(
         logger.debug("Headless re-auth skipped: auth has no writable storage path.")
         return None
 
-    from ..paths import get_browser_profile_dir
     from .cookies import _build_cookie_pair_from_storage
-    from .headless_reauth import HeadlessReauthStatus, attempt_headless_reauth
+    from .recovery_rungs import installed_headless_rung
 
-    result = await asyncio.to_thread(
-        attempt_headless_reauth,
+    rung = installed_headless_rung()
+    if rung is None:
+        logger.debug("Headless re-auth skipped: no recovery rung is installed.")
+        return None
+    outcome = await asyncio.to_thread(
+        rung,
         storage_path=storage_path,
         allow_headless=allow_headless,
-        browser_profile=get_browser_profile_dir(storage_path=storage_path),
     )
-    if result.status is not HeadlessReauthStatus.SUCCESS:
+    if not outcome.succeeded:
         logger.debug(
             "Headless re-auth did not succeed (%s): %s",
-            result.status.value,
-            result.reason,
+            outcome.status.value,
+            outcome.reason,
         )
         return None
     try:

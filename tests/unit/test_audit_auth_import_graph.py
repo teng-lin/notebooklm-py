@@ -91,10 +91,10 @@ def test_scope_duplicate_self_and_scc_rules(audit, tmp_path):
 def test_live_projection_is_the_frozen_scorecard(audit):
     result = audit.build_projection()
     assert result["summary"] == {
-        "modules": 36,
-        "total_lines": 16448,
-        "unique_edges": 137,
-        "module_edges": 125,
+        "modules": 37,
+        "total_lines": 16527,
+        "unique_edges": 138,
+        "module_edges": 126,
         "function_local_edges": 12,
     }
     assert result["sccs"] == {
@@ -262,7 +262,7 @@ def test_live_projection_is_the_frozen_scorecard(audit):
         ("recovery", "cookies", "module"),
         ("recovery", "extraction", "function"),
         ("recovery", "extraction", "module"),
-        ("recovery", "headless_reauth", "function"),
+        ("recovery", "recovery_rungs", "function"),
         ("recovery", "master_token", "function"),
         ("recovery", "paths", "module"),
         ("recovery", "profile_migration", "function"),
@@ -272,6 +272,10 @@ def test_live_projection_is_the_frozen_scorecard(audit):
         ("recovery", "storage", "module"),
         ("refresh", "recovery", "module"),
         ("session", "recovery", "module"),
+    }
+    assert {edge for edge in edges if "recovery_rungs" in edge[:2]} == {
+        ("headless_reauth", "recovery_rungs", "module"),
+        ("recovery", "recovery_rungs", "function"),
     }
     assert {edge for edge in edges if "psidts_recovery" in edge[:2]} == {
         ("browser_capture", "psidts_recovery", "module"),

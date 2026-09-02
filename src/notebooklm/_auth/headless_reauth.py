@@ -73,6 +73,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
 
 from ..exceptions import HeadlessLoginRequiredError
+from ..paths import get_browser_profile_dir
 from .browser_capture import (
     BrowserCapturePlan,
     _CaptureAbortKind,
@@ -80,6 +81,7 @@ from .browser_capture import (
     run_browser_capture,
     run_cdp_capture,
 )
+from .recovery_rungs import HeadlessRungOutcome, HeadlessRungStatus
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
@@ -594,6 +596,21 @@ def headless_reauth_readiness(
         profile_present=resolved_profile is not None,
         playwright_installed=_playwright_installed(),
     )
+
+
+def headless_rung(*, storage_path: Path, allow_headless: bool) -> HeadlessRungOutcome:
+    """Adapt the browser-specific result to the neutral L3 recovery contract."""
+    result = attempt_headless_reauth(
+        storage_path=storage_path,
+        allow_headless=allow_headless,
+        browser_profile=get_browser_profile_dir(storage_path=storage_path),
+    )
+    status = {
+        HeadlessReauthStatus.SUCCESS: HeadlessRungStatus.SUCCEEDED,
+        HeadlessReauthStatus.UNAVAILABLE: HeadlessRungStatus.UNAVAILABLE,
+        HeadlessReauthStatus.FAILED: HeadlessRungStatus.FAILED,
+    }[result.status]
+    return HeadlessRungOutcome(status, result.reason)
 
 
 def attempt_headless_reauth(

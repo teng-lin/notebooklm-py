@@ -187,6 +187,11 @@
     },
     {
       "scope": "module",
+      "source": "headless_reauth",
+      "target": "recovery_rungs"
+    },
+    {
+      "scope": "module",
       "source": "keepalive",
       "target": "mint_service"
     },
@@ -448,11 +453,6 @@
     {
       "scope": "function",
       "source": "recovery",
-      "target": "headless_reauth"
-    },
-    {
-      "scope": "function",
-      "source": "recovery",
       "target": "master_token"
     },
     {
@@ -469,6 +469,11 @@
       "scope": "module",
       "source": "recovery",
       "target": "profile_migration"
+    },
+    {
+      "scope": "function",
+      "source": "recovery",
+      "target": "recovery_rungs"
     },
     {
       "scope": "module",
@@ -763,7 +768,7 @@
       "path": "src/notebooklm/_auth/extraction.py"
     },
     {
-      "lines": 886,
+      "lines": 903,
       "name": "headless_reauth",
       "path": "src/notebooklm/_auth/headless_reauth.py"
     },
@@ -833,9 +838,14 @@
       "path": "src/notebooklm/_auth/psidts_recovery.py"
     },
     {
-      "lines": 710,
+      "lines": 712,
       "name": "recovery",
       "path": "src/notebooklm/_auth/recovery.py"
+    },
+    {
+      "lines": 60,
+      "name": "recovery_rungs",
+      "path": "src/notebooklm/_auth/recovery_rungs.py"
     },
     {
       "lines": 1184,
@@ -874,10 +884,10 @@
   },
   "summary": {
     "function_local_edges": 12,
-    "module_edges": 125,
-    "modules": 36,
-    "total_lines": 16448,
-    "unique_edges": 137
+    "module_edges": 126,
+    "modules": 37,
+    "total_lines": 16527,
+    "unique_edges": 138
   },
   "version": 1
 }

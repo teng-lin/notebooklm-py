@@ -230,9 +230,9 @@ def test_live_replacement_patch_contract_and_scorecard_are_exact(script):
     sites = script.collect_sites(REPO_ROOT / "tests", REPO_ROOT / "src/notebooklm/_auth")
     projection = script.build_projection(sites)
     assert projection["summary"]["TOTAL"] == {
-        "public": 135,
+        "public": 137,
         "private": 161,
-        "total": 296,
+        "total": 298,
     }
     relevant = {
         (row["module"], row["attribute"], row["idiom"]): row["count"]
