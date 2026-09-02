@@ -13,7 +13,6 @@ import pytest
 from click.testing import CliRunner
 
 from notebooklm.cli.profile_cmd import _PROFILE_NAME_RE, email_to_profile_name
-from notebooklm.cli.services.login.exceptions import LoginConfigurationError
 from notebooklm.notebooklm_cli import cli
 from notebooklm.paths import _reset_config_cache, set_active_profile
 
@@ -556,26 +555,32 @@ class TestProfileNameTranslation:
     def test_a_valid_name_passes_through(self):
         assert profile_module._validate_profile_name_or_click("work") == "work"
 
-    def test_a_hintless_service_error_becomes_the_bare_message(self):
-        error = LoginConfigurationError("Profile name is empty.")
-        with (
-            patch.object(profile_module, "_validate_profile_name", side_effect=error),
-            pytest.raises(click.ClickException) as caught,
-        ):
-            profile_module._validate_profile_name_or_click("")
+    @pytest.mark.parametrize(
+        "name",
+        [
+            pytest.param("", id="empty"),
+            pytest.param("   ", id="whitespace-only"),
+            pytest.param("!!bad", id="illegal-characters"),
+            pytest.param("../escape", id="path-traversal-shaped"),
+            pytest.param("-leading-hyphen", id="illegal-leading-character"),
+        ],
+    )
+    def test_an_invalid_name_is_reported_with_the_service_hint(self, name):
+        """Driven through the real validator rather than a patched one.
 
-        assert str(caught.value) == "Profile name is empty."
+        ``_validate_profile_name`` always attaches a hint, so the hintless
+        branch of the translation is unreachable without substituting the
+        validator — which the ADR-0007 monkeypatch guardrail forbids, and
+        which would only assert that a stub was called.
+        """
+        with pytest.raises(click.ClickException) as caught:
+            profile_module._validate_profile_name_or_click(name)
+
+        message = str(caught.value)
+        assert "Invalid profile name" in message
+        assert "alphanumeric characters, hyphens, and underscores" in message
+        # The service exception is not chained into the user-facing error.
         assert caught.value.__cause__ is None
-
-    def test_a_hinted_service_error_appends_its_hint(self):
-        error = LoginConfigurationError("Bad name.", hint="Use letters and digits.")
-        with (
-            patch.object(profile_module, "_validate_profile_name", side_effect=error),
-            pytest.raises(click.ClickException) as caught,
-        ):
-            profile_module._validate_profile_name_or_click("!!")
-
-        assert str(caught.value) == "Bad name. Use letters and digits."
 
 
 class TestReadConfigErrorPolicy:
