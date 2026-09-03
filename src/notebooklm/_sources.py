@@ -14,6 +14,7 @@ from time import monotonic
 from typing import Any, Generic, Literal, Protocol, TypeVar
 
 from ._lookup import unwrap_or_raise
+from ._notebook_metadata import reconcile_copy_mapping
 from ._runtime.call_supervisor import OperationLease
 from ._source.batch import SourceUrlBatchItem
 from ._source.polling import SourcePoller, SourceWaitResult
@@ -67,6 +68,7 @@ class _TransferResult(Generic[_TransferItem]):
 
     items: builtins.list[_TransferItem]
     method_id: str
+    malformed_count: int = 0
     raw_response: str | None = None
 
 
@@ -779,19 +781,19 @@ class SourcesAPI(ABC):
                 source_ids,
                 target_notebook_id,
             )
-        copied = transfer.items
-        if not copied:
-            raise SourceNotFoundError(", ".join(source_ids), method_id=transfer.method_id)
-        missing = set(source_ids) - {item.original_id for item in copied}
-        if missing:
-            logger.warning(
-                "CopySourcesAsync copied %d of %d source(s) into %s; not copied: %s",
-                len(copied),
-                len(source_ids),
-                target_notebook_id,
-                ", ".join(sorted(missing)),
-            )
-        return copied
+        return reconcile_copy_mapping(
+            source_ids,
+            transfer.items,
+            original_id=lambda item: item.original_id,
+            operation="CopySourcesAsync",
+            item_label="source",
+            target_notebook_id=target_notebook_id,
+            method_id=transfer.method_id,
+            malformed_count=transfer.malformed_count,
+            raw_response=transfer.raw_response,
+            empty_error=SourceNotFoundError(", ".join(source_ids), method_id=transfer.method_id),
+            warning_logger=logger,
+        )
 
 
 __all__ = ["SourcesAPI"]

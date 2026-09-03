@@ -417,10 +417,10 @@ class TestCopySources:
     async def test_malformed_entry_fails_closed(self) -> None:
         rpc = _rpc([[[[SRC_A]]]])
         with pytest.raises(DecodingError):
-            await SourceTransferService().copy(NB, [SRC_A], TARGET, **_service_kwargs(rpc))
+            await _sources(rpc)[0].copy(NB, [SRC_A], TARGET)
         rpc = _rpc([[[[SRC_A], [[""], "no id"]]]])
         with pytest.raises(DecodingError):
-            await SourceTransferService().copy(NB, [SRC_A], TARGET, **_service_kwargs(rpc))
+            await _sources(rpc)[0].copy(NB, [SRC_A], TARGET)
 
     @pytest.mark.asyncio
     async def test_validation_and_transport_loss(self) -> None:
@@ -629,10 +629,12 @@ class TestMalformedRowsAndGuards:
         copied = transfer.items
         assert [c.original_id for c in copied] == [SRC_A]
         assert caplog.text.count("malformed mapping entry") == 2
-        with pytest.raises(DecodingError):
-            await SourceTransferService().copy(
-                NB, [SRC_A], TARGET, **_service_kwargs(_rpc([[[[SRC_A]]]]))
-            )
+        malformed = await SourceTransferService().copy(
+            NB, [SRC_A], TARGET, **_service_kwargs(_rpc([[[[SRC_A]]]]))
+        )
+        assert malformed.items == []
+        assert malformed.malformed_count == 1
+        assert malformed.raw_response == "[[['src-a']]]"
         api = _artifacts(AsyncMock(return_value=[[[ART_A, _artifact_row(ART_NEW)], [ART_A]]]))
         assert [c.original_id for c in await api.copy(NB, [ART_A], TARGET)] == [ART_A]
         with pytest.raises(DecodingError):

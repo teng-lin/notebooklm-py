@@ -29,13 +29,7 @@ from typing import cast
 
 from ..._idempotency import unresolved_commit_error
 from ..._sources import _TransferResult
-from ...exceptions import (
-    DecodingError,
-    NetworkError,
-    RateLimitError,
-    RPCError,
-    ServerError,
-)
+from ...exceptions import NetworkError, RateLimitError, RPCError, ServerError
 from ...rpc import RPCMethod
 from ...types import CopiedSource, Source, SourceStatus
 from ..contracts import RpcCaller
@@ -205,10 +199,9 @@ class SourceTransferService:
                 continue
             copied.append(CopiedSource(original_id=row.original_id, source=source))
 
-        if not copied and malformed:
-            raise DecodingError(
-                "CopySourcesAsync returned only malformed mapping entries",
-                raw_response=repr(rows)[:400],
-                method_id=RPCMethod.COPY_SOURCES.value,
-            )
-        return _TransferResult(copied, RPCMethod.COPY_SOURCES.value)
+        return _TransferResult(
+            copied,
+            RPCMethod.COPY_SOURCES.value,
+            malformed_count=malformed,
+            raw_response=repr(rows)[:400] if malformed else None,
+        )

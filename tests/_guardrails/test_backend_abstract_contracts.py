@@ -733,6 +733,29 @@ def test_artifact_shared_workflows_call_only_their_single_wire_hook() -> None:
         assert hooks == expected_hooks
 
 
+def test_copy_workflows_share_the_neutral_mapping_reconciler() -> None:
+    """Sources and artifacts keep one owner for post-decode copy policy."""
+    root = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
+    for filename, class_name in (("_sources.py", "SourcesAPI"), ("_artifacts.py", "ArtifactsAPI")):
+        tree = ast.parse((root / filename).read_text(encoding="utf-8"))
+        owner = next(
+            node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name
+        )
+        method = next(
+            node
+            for node in owner.body
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "copy"
+        )
+        calls = [
+            node
+            for node in ast.walk(method)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "reconcile_copy_mapping"
+        ]
+        assert len(calls) == 1
+
+
 def test_notebook_copy_calls_only_its_single_wire_hook() -> None:
     """Pin notebook copy orchestration above one backend send boundary."""
     from notebooklm._android.notebooks import AndroidNotebooksAPI

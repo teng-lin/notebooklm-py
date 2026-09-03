@@ -20,7 +20,6 @@ from typing import Any, cast
 from .._idempotency import call_unconfirmed_on_transport_loss
 from .._sources import _TransferResult
 from .._url_utils import is_youtube_url
-from ..exceptions import DecodingError
 from ..types import CopiedSource, Source, SourceStatus
 from .codecs.sources import decode_source
 from .session import AndroidSession
@@ -201,12 +200,11 @@ class AndroidSourceTransferMixin:
                 logger.warning("CopySourcesAsync returned a malformed mapping entry")
                 continue
             copied.append(CopiedSource(original_id=original_id, source=source))
-        if not copied and malformed:
-            raise DecodingError(
-                "CopySourcesAsync returned only malformed mapping entries",
-                method_id=COPY_SOURCES_ASYNC_METHOD,
-            )
-        return _TransferResult(copied, COPY_SOURCES_ASYNC_METHOD)
+        return _TransferResult(
+            copied,
+            COPY_SOURCES_ASYNC_METHOD,
+            malformed_count=malformed,
+        )
 
 
 __all__ = [

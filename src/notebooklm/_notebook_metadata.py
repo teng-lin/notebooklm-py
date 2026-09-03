@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 import builtins
 import logging
-from collections.abc import Awaitable, Callable
-from typing import Protocol
+from collections.abc import Awaitable, Callable, Sequence
+from typing import Protocol, TypeVar
 
+from .exceptions import DecodingError
 from .types import Notebook, NotebookMetadata, Source, SourceSummary
 
 # Preserve the historical warning channel from NotebooksAPI.get_metadata().
@@ -44,6 +45,51 @@ class CreatedChatSessionProvider(Protocol):
 
 
 NotebookGetter = Callable[[str], Awaitable[Notebook]]
+_CopyMappingItem = TypeVar("_CopyMappingItem")
+
+
+def reconcile_copy_mapping(
+    requested_ids: Sequence[str],
+    items: list[_CopyMappingItem],
+    *,
+    original_id: Callable[[_CopyMappingItem], str],
+    operation: str,
+    item_label: str,
+    target_notebook_id: str,
+    method_id: str,
+    malformed_count: int,
+    raw_response: str | None,
+    empty_error: Exception,
+    warning_logger: logging.Logger,
+) -> list[_CopyMappingItem]:
+    """Apply the shared post-decode policy for committed copy mappings.
+
+    Backend hooks own wire decoding and report malformed-row diagnostics. This
+    helper preserves decoded response order, distinguishes an all-malformed
+    response from a genuine empty mapping, and warns for the same set-based
+    partial result used by source and artifact copy workflows.
+    """
+    if not items:
+        if malformed_count:
+            raise DecodingError(
+                f"{operation} returned only malformed mapping entries",
+                raw_response=raw_response,
+                method_id=method_id,
+            )
+        raise empty_error
+
+    missing = set(requested_ids) - {original_id(item) for item in items}
+    if missing:
+        warning_logger.warning(
+            "%s copied %d of %d %s(s) into %s; not copied: %s",
+            operation,
+            len(items),
+            len(requested_ids),
+            item_label,
+            target_notebook_id,
+            ", ".join(sorted(missing)),
+        )
+    return items
 
 
 class NotebookMetadataService:
@@ -89,4 +135,5 @@ __all__ = [
     "CreatedChatSessionProvider",
     "NotebookSourceIdProvider",
     "NotebookSourceLister",
+    "reconcile_copy_mapping",
 ]
