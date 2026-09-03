@@ -1130,11 +1130,13 @@ async def test_property_write_read_back_absence_maps_to_the_typed_miss(kind: str
     labels, collections = _apis(_VanishingResourceServer())
 
     expected = LabelNotFoundError if kind == "label" else CollectionNotFoundError
-    with pytest.raises(expected):
+    with pytest.raises(expected) as caught:
         if kind == "label":
             await labels.update(NB, LABEL_A, name="New")
         else:
             await collections.rename(COLLECTION_A, "New")
+
+    assert caught.value.method_id == MUTATE_LABEL_METHOD
 
 
 @pytest.mark.parametrize("kind", ["label", "collection"])

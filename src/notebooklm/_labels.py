@@ -33,6 +33,7 @@ class LabelsAPI(ABC):
 
     _list_method_id = ""
     _mutation_method_id = ""
+    _property_readback_miss_method_id: str
     _delete_method_id = ""
     _verify_writes = False
     _filter_existing_on_delete = False
@@ -133,7 +134,10 @@ class LabelsAPI(ABC):
                 None,
             )
             if read_back is None:
-                raise LabelNotFoundError(label_id, method_id=self._mutation_method_id)
+                raise LabelNotFoundError(
+                    label_id,
+                    method_id=self._property_readback_miss_method_id,
+                )
             if self._verify_writes and (
                 read_back.name != requested_name or (read_back.emoji or "") != requested_emoji
             ):

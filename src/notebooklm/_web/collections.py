@@ -60,6 +60,7 @@ class WebCollectionsAPI(CollectionsAPI):
 
     _list_method_id = RPCMethod.LIST_LABELS.value
     _mutation_method_id = RPCMethod.UPDATE_LABEL.value
+    _property_readback_miss_method_id = RPCMethod.LIST_LABELS.value
     _delete_method_id = RPCMethod.DELETE_LABEL.value
 
     def __init__(self, rpc: RpcCaller, *, list_notebooks: ListNotebooks) -> None:

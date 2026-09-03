@@ -320,6 +320,7 @@ _ANDROID_INHERITED_WORKFLOWS = {
     ),
     "CollectionsAPI": frozenset(
         {
+            "_mutate_members",
             "add_notebooks",
             "delete",
             "get",
@@ -331,6 +332,7 @@ _ANDROID_INHERITED_WORKFLOWS = {
     ),
     "LabelsAPI": frozenset(
         {
+            "_mutate_members",
             "add_sources",
             "delete",
             "get",

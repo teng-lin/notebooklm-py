@@ -49,6 +49,7 @@ class AndroidCollectionsAPI(CollectionsAPI):
 
     _list_method_id = GET_LABELS_METHOD
     _mutation_method_id = MUTATE_LABEL_METHOD
+    _property_readback_miss_method_id = MUTATE_LABEL_METHOD
     _delete_method_id = DELETE_LABELS_METHOD
     _verify_writes = True
     _filter_existing_on_delete = True
