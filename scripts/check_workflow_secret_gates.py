@@ -179,6 +179,20 @@ _ACCOUNT_CONCURRENCY_GROUP_RE = re.compile(
     r"[A-Za-z_][A-Za-z0-9_-]*\.outputs\."
     r"(?:account_slot|[A-Za-z_][A-Za-z0-9_-]*_account_slot))\s*}}"
 )
+_POOLED_TOKEN_BINDING_RE = re.compile(r"^NOTEBOOKLM_MASTER_TOKEN_JSON:\s*.*$")
+_APPROVED_POOLED_TOKEN_BINDING_RE = re.compile(
+    r"^NOTEBOOKLM_MASTER_TOKEN_JSON:\s*\$\{\{\s*secrets\[\s*"
+    r"(?:matrix\.master_token_secret_name|"
+    r"needs\.plan-account\.outputs\.master_token_secret_name|"
+    r"needs\.plan-live-lanes\.outputs\.(?:web|android)_secret_name)"
+    r"\s*\]\s*\}\}\s*$"
+)
+_POOLED_SELECTOR_REF_RE = re.compile(
+    r"\bsecrets\[\s*(?:matrix\.master_token_secret_name|"
+    r"needs\.plan-account\.outputs\.master_token_secret_name|"
+    r"needs\.plan-live-lanes\.outputs\.(?:web|android)_secret_name)\s*\]"
+)
+_MASTER_TOKEN_SECRET_NAMES = _FORBIDDEN_CI_SECRET_NAMES - {"NOTEBOOKLM_ACCOUNTS_JSON"}
 
 _TRUSTED_GUARD_PATTERNS = (
     # is_standard == 'true' / "true"  (quoting may be single or double)
@@ -639,22 +653,15 @@ def _scan_pooled_account_jobs(path: Path) -> list[str]:
         chunks.append(current)
 
     violations: list[str] = []
-    pooled_secret = re.compile(
-        r"secrets\s*(?:\.NOTEBOOKLM_MASTER_TOKEN_JSON_[ABC]"
-        r"|\[[^\]]*master_token_secret_name[^\]]*\])"
-    )
-    any_master_secret = re.compile(
-        r"secrets\s*(?:\.NOTEBOOKLM_MASTER_TOKEN_JSON(?:_[ABC])?"
-        r"|\[[^\]]*master_token_secret_name[^\]]*\])"
-    )
     for job, line_number, body in chunks:
         text = "\n".join(body)
         if "NOTEBOOKLM_ACCOUNTS_JSON" in text:
             violations.append(
                 f"{path}:{line_number}: job '{job}' uses forbidden bundled account secret"
             )
-        selected_secret_lines: list[tuple[str, bool]] = []
+        token_binding_lines: list[tuple[str, bool]] = []
         master_secret_lines: list[tuple[str, bool]] = []
+        has_pooled_selector = False
         job_if = ""
         collecting_job_if = False
         in_step = False
@@ -675,26 +682,35 @@ def _scan_pooled_account_jobs(path: Path) -> list[str]:
                     collecting_job_if = False
                 else:
                     job_if += " " + searchable.strip()
-            if pooled_secret.search(searchable):
-                selected_secret_lines.append((searchable, in_step))
-            if any_master_secret.search(searchable):
+            is_token_binding = _POOLED_TOKEN_BINDING_RE.fullmatch(searchable) is not None
+            has_selector_ref = _POOLED_SELECTOR_REF_RE.search(searchable) is not None
+            has_direct_master_ref = any(
+                name in _MASTER_TOKEN_SECRET_NAMES
+                for match in _SECRET_REF_RE.finditer(searchable)
+                for name in match.groups()
+                if name is not None
+            )
+            if is_token_binding:
+                token_binding_lines.append((searchable, in_step))
+            if is_token_binding or has_selector_ref or has_direct_master_ref:
                 master_secret_lines.append((searchable, in_step))
-        selected_matches = [
-            match
-            for line, _in_step in selected_secret_lines
-            for match in pooled_secret.findall(line)
-        ]
-        if not selected_matches:
+            has_pooled_selector = has_pooled_selector or has_selector_ref
+        if not token_binding_lines and not has_pooled_selector:
             continue
-        master_matches = [
-            match
-            for line, _in_step in master_secret_lines
-            for match in any_master_secret.findall(line)
+        approved_bindings = [
+            line
+            for line, _in_step in token_binding_lines
+            if _APPROVED_POOLED_TOKEN_BINDING_RE.fullmatch(line)
         ]
         concurrency = _job_level_concurrency(body)
         prefix = f"{path}:{line_number}: pooled secret job '{job}'"
-        if len(master_matches) != 1:
+        if len(master_secret_lines) != 1:
             violations.append(f"{prefix} must inject exactly one selected master-token secret")
+        elif len(approved_bindings) != 1:
+            violations.append(
+                f"{prefix} must inject one selected dynamic master-token secret through an "
+                "approved planner output"
+            )
         if any(not in_step for _line, in_step in master_secret_lines):
             violations.append(f"{prefix} must inject the selected token in one step only")
         if not _expression_is_ci_pool_guard(job_if):

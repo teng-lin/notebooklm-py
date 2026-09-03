@@ -9,6 +9,7 @@ import subprocess
 import sys
 import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable
+from contextvars import ContextVar
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
@@ -220,6 +221,9 @@ def _install_generation_journal(client: NotebookLMClient, journal) -> None:
     managed_id = getattr(journal, "notebook_id", None)
     if managed_id is None:
         return
+    journal_call_active: ContextVar[bool] = ContextVar(
+        "notebooklm_e2e_generation_journal_call_active", default=False
+    )
 
     for method_name, family in _JOURNALED_STUDIO_METHODS.items():
         original = getattr(client.artifacts, method_name)
@@ -228,6 +232,8 @@ def _install_generation_journal(client: NotebookLMClient, journal) -> None:
             notebook_id = args[0] if args else kwargs.get("notebook_id")
             if notebook_id != managed_id:
                 return await __original(*args, **kwargs)
+            if journal_call_active.get():
+                return await __original(*args, **kwargs)
             operation = journal.operation(
                 notebook_id=notebook_id,
                 family=__family,
@@ -235,17 +241,21 @@ def _install_generation_journal(client: NotebookLMClient, journal) -> None:
                 id_kind="studio_task",
                 lifecycle="settle",
             )
+            journal_token = journal_call_active.set(True)
             try:
-                result = await __original(*args, **kwargs)
-            except BaseException as exc:
-                if _typed_rate_limit_cause(exc) is not None:
+                try:
+                    result = await __original(*args, **kwargs)
+                except BaseException as exc:
+                    if _typed_rate_limit_cause(exc) is not None:
+                        operation.rate_limited_rejected()
+                    raise
+                if result is not None and getattr(result, "task_id", None):
+                    operation.accepted(result.task_id)
+                elif result is not None and bool(getattr(result, "is_rate_limited", False)):
                     operation.rate_limited_rejected()
-                raise
-            if result is not None and getattr(result, "task_id", None):
-                operation.accepted(result.task_id)
-            elif result is not None and bool(getattr(result, "is_rate_limited", False)):
-                operation.rate_limited_rejected()
-            return result
+                return result
+            finally:
+                journal_call_active.reset(journal_token)
 
         setattr(client.artifacts, method_name, _journaled)
 

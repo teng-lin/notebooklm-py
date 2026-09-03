@@ -208,15 +208,49 @@ def test_ci_pool_dynamic_secret_with_both_literal_gates_passes(
               needs.resolve-target.outputs.is_standard == 'true'
             runs-on: ubuntu-latest
             environment: protected-readonly
+            concurrency:
+              group: notebooklm-account-${{ matrix.account_slot }}
+              queue: max
+              cancel-in-progress: false
             steps:
             - name: auth
               env:
-                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.secret_name] }}
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.master_token_secret_name] }}
               run: python auth.py
         """,
     )
     rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
     assert rc == 0, err
+
+
+def test_ci_pool_rejects_unapproved_dynamic_selector_and_missing_concurrency(
+    tmp_path, monkeypatch, capsys, script
+):
+    _write_workflow(
+        tmp_path,
+        "bad_unapproved_selector.yml",
+        """
+        name: bad-unapproved-selector
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            - name: auth
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[inputs.secret_name] }}
+              run: python auth.py
+        """,
+    )
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+    assert rc == 1
+    assert "selected dynamic" in err
+    assert "approved planner output" in err
+    assert "account-wide concurrency" in err
 
 
 def test_ci_pool_rejects_multiple_master_tokens_in_one_job(tmp_path, monkeypatch, capsys, script):
@@ -988,7 +1022,9 @@ jobs:  # authenticated lanes
       queue: max
     runs-on: ubuntu-latest
     steps:
-    - run: echo ${{ secrets[matrix.master_token_secret_name] }}
+    - env:
+        NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.master_token_secret_name] }}
+      run: echo ready
 """
     )
     assert script._scan_pooled_account_jobs(workflow) == []

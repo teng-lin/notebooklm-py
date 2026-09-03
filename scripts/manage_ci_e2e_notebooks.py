@@ -420,7 +420,14 @@ class NotebookLifecycleManager:
     async def validate_template(self, *, include_title: bool = True) -> dict[str, int]:
         """Validate immutable copied state using public typed APIs only."""
 
-        notebook = await self._read(lambda: self.client.notebooks.get(self.template_id))
+        try:
+            notebook = await self._read(lambda: self.client.notebooks.get(self.template_id))
+        except NotebookNotFoundError as exc:
+            # Only the top-level template lookup is an account-access contract.
+            # A copied child disappearing remains a reconciliation regression.
+            if include_title:
+                raise ContractError("template is unavailable to the selected account") from exc
+            raise
         if getattr(notebook, "id", None) != self.template_id:
             raise ContractError("template lookup returned the wrong notebook")
         if include_title:

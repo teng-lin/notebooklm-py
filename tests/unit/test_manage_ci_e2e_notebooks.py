@@ -1308,6 +1308,33 @@ async def test_template_validation_rejects_wrong_notebook_lookup(
 
 
 @pytest.mark.asyncio
+async def test_missing_template_is_a_safe_template_access_failure(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+) -> None:
+    manager, client, _store, _clock = _manager(tmp_path, contracts)
+    del client.notebooks.items[TEMPLATE_ID]
+
+    with pytest.raises(ContractError, match="unavailable to the selected account") as caught:
+        await manager.validate_template()
+
+    assert caught.value.category == "TEMPLATE_ACCESS"
+    assert isinstance(caught.value.__cause__, NotebookNotFoundError)
+    assert TEMPLATE_ID not in str(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_missing_copied_child_remains_a_reconciliation_failure(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+) -> None:
+    manager, _client, _store, _clock = _manager(tmp_path, contracts)
+
+    with pytest.raises(NotebookNotFoundError):
+        await manager._validate_copy_shape("missing-copy")
+
+
+@pytest.mark.asyncio
 async def test_clean_preparation_deletes_note_backed_map_through_mind_map_api(
     tmp_path: Path,
     contracts: tuple[dict[str, Any], dict[str, Any]],

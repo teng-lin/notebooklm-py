@@ -782,6 +782,49 @@ class TestGenerationRateLimitSkip:
             await artifacts.generate_audio("generation-role")
         assert recorded == ["started", "rate_limited_rejected"]
 
+    async def test_journal_records_delegated_generation_only_once(self):
+        conftest = _load_e2e_conftest()
+        recorded: list[tuple[str, str]] = []
+
+        class Operation:
+            def __init__(self, family):
+                self.family = family
+
+            def accepted(self, resource_id):
+                recorded.append(("accepted", self.family))
+
+            def rate_limited_rejected(self):
+                recorded.append(("rate_limited_rejected", self.family))
+
+        class Journal:
+            notebook_id = "generation-role"
+            surface = "client"
+
+            def operation(self, **kwargs):
+                recorded.append(("started", kwargs["family"]))
+                return Operation(kwargs["family"])
+
+        async def harmless(*args, **kwargs):
+            return SimpleNamespace(task_id="task-id", is_rate_limited=False)
+
+        artifacts = SimpleNamespace(**dict.fromkeys(conftest._JOURNALED_STUDIO_METHODS, harmless))
+        client = SimpleNamespace(artifacts=artifacts)
+
+        async def generate_report(notebook_id):
+            return SimpleNamespace(task_id="shared-task-id", is_rate_limited=False)
+
+        async def generate_study_guide(notebook_id):
+            return await artifacts.generate_report(notebook_id)
+
+        artifacts.generate_report = generate_report
+        artifacts.generate_study_guide = generate_study_guide
+        conftest._install_generation_journal(client, Journal())
+
+        result = await artifacts.generate_study_guide("generation-role")
+
+        assert result.task_id == "shared-task-id"
+        assert recorded == [("started", "study_guide"), ("accepted", "study_guide")]
+
     async def test_wrapped_rate_limit_error_becomes_skip(self):
         conftest = _load_e2e_conftest()
         client = self._make_client()
