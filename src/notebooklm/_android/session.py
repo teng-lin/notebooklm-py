@@ -591,7 +591,10 @@ class AndroidSession(LoopBoundPrimitive):
     ) -> AbstractAsyncContextManager[OperationLease]:
         """Expose the one supervisor-owned workflow admission seam."""
 
-        return self._call_supervisor.operation_scope(label, expected_epoch=expected_epoch)
+        return self._call_supervisor.operation_scope(
+            label,
+            expected_epoch=self._resolve_expected_epoch(expected_epoch),
+        )
 
     def assert_epoch(self, expected_epoch: int) -> None:
         """Reject a workflow lease from a retired resource generation."""

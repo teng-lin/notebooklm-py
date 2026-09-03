@@ -17,6 +17,7 @@ from notebooklm._android.epoch import (
     reset_workflow_epoch,
     workflow_epoch_for,
 )
+from notebooklm._android.notebooks import AndroidNotebooksAPI
 from notebooklm._android.session import (
     ANDROID_GRPC_MAX_RECEIVE_MESSAGE_BYTES,
     ANDROID_GRPC_TARGET,
@@ -1116,6 +1117,43 @@ async def test_child_task_keeps_copied_workflow_epoch_after_parent_reset() -> No
 
     assert await child == 1
     assert workflow_epoch_for(session) is None
+
+
+@pytest.mark.asyncio
+async def test_child_task_cannot_enter_an_inherited_scope_after_its_epoch_retires() -> None:
+    session, _bearer, first_channel, grpc, supervisor = await _open()
+    api = AndroidNotebooksAPI(session, SimpleNamespace())
+    release = asyncio.Event()
+
+    async def create_after_reopen() -> None:
+        await release.wait()
+        await api.create("stale child")
+
+    async with api._operation_scope("test.parent"):
+        child = asyncio.create_task(create_after_reopen())
+
+    await supervisor.begin_closing(1)
+    await session.prepare_close()
+    await session.close_resources()
+    supervisor.mark_closed(1)
+
+    second_channel = _Channel()
+    grpc.channel = second_channel
+    loop = asyncio.get_running_loop()
+    supervisor.set_bound_loop(loop)
+    supervisor.reset_after_open()
+    supervisor.prepare_generation(2)
+    supervisor.start_accepting(2)
+    session.set_bound_loop(loop)
+    session.reset_after_open()
+    await session.open(loop, 2)
+
+    release.set()
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await child
+
+    assert first_channel.invocations == []
+    assert second_channel.invocations == []
 
 
 @pytest.mark.asyncio

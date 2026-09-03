@@ -304,7 +304,9 @@ _ANDROID_INHERITED_WORKFLOWS = {
     "BaseResearchAPI": frozenset(
         {
             "_import_sources_with_verification",
+            "_import_sources_with_verification_in_scope",
             "_wait_for_completion",
+            "_wait_for_completion_in_scope",
             "import_sources_with_verification",
             "wait_for_completion",
         }
@@ -322,9 +324,20 @@ _ANDROID_INHERITED_WORKFLOWS = {
     "CollectionsAPI": frozenset(),
     "LabelsAPI": frozenset(),
     "MindMapsAPI": frozenset(
-        {"_detect_kind", "delete", "get", "get_or_none", "get_tree", "rename"}
+        {
+            "_delete_in_scope",
+            "_detect_kind",
+            "_rename_in_scope",
+            "delete",
+            "get",
+            "get_or_none",
+            "get_tree",
+            "rename",
+        }
     ),
-    "NotebooksAPI": frozenset({"create", "get_metadata", "get_or_none", "rename", "set_emoji"}),
+    "NotebooksAPI": frozenset(
+        {"_create_with_probe", "create", "get_metadata", "get_or_none", "rename", "set_emoji"}
+    ),
     "NotesAPI": frozenset(),
     "SettingsAPI": frozenset(),
     "SharingAPI": frozenset({"add_user", "update_user"}),
