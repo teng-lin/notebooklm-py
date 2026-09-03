@@ -225,10 +225,10 @@ class TestGetSource:
         )
 
         async with NotebookLMClient(auth_tokens) as client:
-            client._rpc_executor.rpc_call = first_rpc
+            client._web_runtime.executor.rpc_call = first_rpc
             assert await client.sources.list("nb_123") == []
 
-            client._rpc_executor.rpc_call = second_rpc
+            client._web_runtime.executor.rpc_call = second_rpc
             sources = await client.sources.list("nb_123")
 
         first_rpc.assert_awaited_once()
@@ -791,7 +791,7 @@ class TestSourcesAPI:
         async with NotebookLMClient(auth_tokens) as client:
             # UPDATE_SOURCE echoes null, then the hydrate fetch blows up.
             rpc = AsyncMock(side_effect=[None, RPCError("boom during hydrate")])
-            client._rpc_executor.rpc_call = rpc
+            client._web_runtime.executor.rpc_call = rpc
             with pytest.raises(RPCError):
                 await client.sources.rename("nb_123", "src_001", "New Title")
 
@@ -805,7 +805,7 @@ class TestSourcesAPI:
         """
         async with NotebookLMClient(auth_tokens) as client:
             rpc = AsyncMock(return_value=None)
-            client._rpc_executor.rpc_call = rpc
+            client._web_runtime.executor.rpc_call = rpc
             # The existence preflight resolves the source as a genuine miss.
             client.sources._get_or_none = AsyncMock(return_value=None)
             with pytest.raises(SourceNotFoundError):

@@ -39,14 +39,15 @@ async def _opened_recovery(auth: AuthTokens):
     await client.__aenter__()
     try:
         collaborators = client._collaborators
+        web = client._web_runtime
         lifecycle = collaborators.lifecycle
         generation = collaborators.call_supervisor._current
         expected_epoch = lifecycle._epoch
         assert lifecycle.is_open()
         assert expected_epoch > 0
         assert generation is not None and generation.epoch == expected_epoch
-        assert collaborators.kernel._active_epoch == expected_epoch
-        yield collaborators.kernel, expected_epoch
+        assert web.kernel._active_epoch == expected_epoch
+        yield web.kernel, expected_epoch
     finally:
         await client.close()
 

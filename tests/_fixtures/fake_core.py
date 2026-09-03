@@ -19,7 +19,7 @@ deleted earlier on the same grounds — ADR-0014 Rule 2 Corollary.) The
 ``fake.rpc_call`` (legacy single-attribute access path that some tests
 still use) AND as ``fake.rpc_executor.rpc_call`` mirroring the
 production composition where ``NotebookLMClient`` stores
-``composed.executor`` as ``self._rpc_executor`` and passes it to every
+``composed.executor`` as ``self._web_runtime.executor`` and passes it to every
 feature API. Both attributes are wired to the same underlying mock so
 ``fake.rpc_call.assert_awaited`` and
 ``fake.rpc_executor.rpc_call.assert_awaited`` observe the same calls.
@@ -101,7 +101,7 @@ def make_fake_core(**overrides: Any) -> FakeSession:
     it is unwrapped into ``rpc_executor=SimpleNamespace(rpc_call=<value>)``
     so the live ``RpcCaller`` Protocol surface on the fake matches the
     production shape (``NotebookLMClient.__init__`` stores
-    ``composed.executor`` as ``self._rpc_executor`` and passes it to
+    ``composed.executor`` as ``self._web_runtime.executor`` and passes it to
     every feature API).
 
     Example::
@@ -149,7 +149,7 @@ def make_fake_core(**overrides: Any) -> FakeSession:
         # RpcCaller — every feature API uses this. The fake exposes the
         # executor as a SimpleNamespace mirror so test sites address it
         # the same way production code does (``fake.rpc_executor.rpc_call``
-        # mirrors ``client._rpc_executor.rpc_call``); the direct
+        # mirrors ``client._web_runtime.executor.rpc_call``); the direct
         # ``rpc_call`` attribute is kept for legacy single-attribute test sites
         # that still treat the fake as a single bag-of-attributes.
         "rpc_call": rpc_call_mock,

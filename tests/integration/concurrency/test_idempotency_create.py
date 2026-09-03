@@ -158,9 +158,9 @@ async def _open_client_with_transport(
     assert generation is not None
     epoch = client._collaborators.lifecycle._epoch
     assert generation.epoch == epoch
-    assert client._collaborators.web_transport._active_epoch == epoch
-    assert client._collaborators.kernel._active_epoch == epoch
-    assert client._collaborators.auth_coord._active_epoch == epoch
+    assert client._web_runtime.web_transport._active_epoch == epoch
+    assert client._web_runtime.kernel._active_epoch == epoch
+    assert client._web_runtime.auth_coord._active_epoch == epoch
     return client
 
 
@@ -724,7 +724,7 @@ async def test_disable_internal_retries_propagates_to_perform_authed_post(
     try:
         request_count = 0
         with pytest.raises(ServerError):
-            await client._rpc_executor.rpc_call(
+            await client._web_runtime.executor.rpc_call(
                 RPCMethod.LIST_NOTEBOOKS,
                 [None, 1, None, [2]],
                 disable_internal_retries=True,
@@ -740,7 +740,7 @@ async def test_disable_internal_retries_propagates_to_perform_authed_post(
     try:
         request_count = 0
         with pytest.raises(ServerError):
-            await client._rpc_executor.rpc_call(
+            await client._web_runtime.executor.rpc_call(
                 RPCMethod.LIST_NOTEBOOKS,
                 [None, 1, None, [2]],
             )

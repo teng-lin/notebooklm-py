@@ -89,9 +89,9 @@ def build_zero_retry_mcp_client() -> Client:
     """
 
     def _zero_retries(client: NotebookLMClient) -> None:
-        client._composed.chain_host._rate_limit_max_retries = 0
-        client._composed.chain_host._server_error_max_retries = 0
-        client._composed.chain_host._refresh_retry_delay = 0
+        client._web_runtime.composed.chain_host._rate_limit_max_retries = 0
+        client._web_runtime.composed.chain_host._server_error_max_retries = 0
+        client._web_runtime.composed.chain_host._refresh_retry_delay = 0
 
     server = create_server(client_factory=_real_client_factory(mutate=_zero_retries))
     return Client(server)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import subprocess
 import sys
 from pathlib import Path
@@ -32,6 +33,7 @@ REMOVED_TRANSPORT_PATHS = frozenset(
     {
         "_auth_refresh_retry.py",
         "_chat/transport.py",
+        "_client_composed.py",
         "_client_seams.py",
         "_cookie_persistence.py",
         "_error_injection.py",
@@ -136,6 +138,28 @@ if loaded_web:
         capture_output=True,
         text=True,
     )
+
+
+def test_runtime_package_tree_has_no_web_imports() -> None:
+    """Neutral runtime modules must never acquire a direct web dependency."""
+    for path in sorted((SRC_ROOT / "_runtime").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        imports = [
+            node
+            for node in ast.walk(tree)
+            if (
+                isinstance(node, ast.Import)
+                and any("_web" in alias.name.split(".") for alias in node.names)
+            )
+            or (
+                isinstance(node, ast.ImportFrom)
+                and (
+                    (node.module is not None and "_web" in node.module.split("."))
+                    or any(alias.name.split(".")[0] == "_web" for alias in node.names)
+                )
+            )
+        ]
+        assert imports == [], path
 
 
 def test_web_transport_leaves_import_without_the_public_composition_root() -> None:

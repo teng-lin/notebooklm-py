@@ -53,7 +53,7 @@ async def scenario() -> ScenarioResult:
         # but a credential file must never widen on any path.
         replacement.chmod(0o600)
         os.replace(replacement, storage)
-        live = client._collaborators.kernel.get_http_client().cookies
+        live = client._require_web_runtime().kernel.get_http_client().cookies
         live.clear()
         after = await client.notebooks.list()
         after_ids = tuple(sorted(item.id for item in after))

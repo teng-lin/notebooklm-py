@@ -71,7 +71,7 @@ async def _make_client_with_transport(
         server_error_max_retries=server_error_max_retries,
     )
     await client.__aenter__()
-    kernel = client._collaborators.kernel
+    kernel = client._web_runtime.kernel
     await kernel.get_http_client(expected_epoch=1).aclose()
     install_http_client_for_test(
         kernel,

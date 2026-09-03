@@ -34,7 +34,7 @@ import httpx
 import pytest
 
 from notebooklm._env import PERSONAL_BASE_HOST, get_base_url
-from notebooklm._runtime.init import _resolve_async_client_factory
+from notebooklm._web.transport.init import _resolve_async_client_factory
 
 from .conftest import requires_auth
 

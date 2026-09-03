@@ -50,7 +50,7 @@ class MiddlewareChainBuilder:
     used by ``RetryMiddleware`` / ``AuthRefreshMiddleware`` so
     post-construction mutations on ``MiddlewareChainHost`` still take
     effect — the integration-test idiom of poking
-    ``core._composed.chain_host._rate_limit_max_retries = 0`` must keep working.
+    ``core._web_runtime.composed.chain_host._rate_limit_max_retries = 0`` must keep working.
     """
 
     def __init__(

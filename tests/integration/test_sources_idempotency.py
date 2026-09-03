@@ -175,7 +175,7 @@ async def _make_client_with_transport(
         server_error_max_retries=server_error_max_retries,
     )
     await client.__aenter__()
-    kernel = client._collaborators.kernel
+    kernel = client._web_runtime.kernel
     await kernel.get_http_client(expected_epoch=1).aclose()
     install_http_client_for_test(
         kernel,
@@ -246,7 +246,7 @@ async def test_add_url_probe_short_circuits_when_first_response_lost(auth_tokens
     try:
         source = await client.sources.add_url(notebook_id, url)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     assert source.id == src_id, "the probe adopted the pre-existing same-URL source"
     assert source.url == url
@@ -329,7 +329,7 @@ async def test_add_url_probe_ignores_a_pre_existing_copy_of_the_same_url(
         with pytest.raises(ServerError):
             await client.sources.add_url(notebook_id, _PROBE_URL)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     # The probe found no *new* match, so idempotent_create retried, exhausted
     # its two attempts, and re-raised the transport error rather than handing
@@ -365,7 +365,7 @@ async def test_add_url_probe_raises_when_baseline_unavailable_and_a_copy_exists(
         with pytest.raises(SourceAddError, match="pre-create baseline snapshot failed"):
             await client.sources.add_url(notebook_id, _PROBE_URL)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     # The load-bearing half: an ambiguous probe must ABORT the retry loop.
     # Classification alone would still pass if a second create had already gone
@@ -396,7 +396,7 @@ async def test_add_url_baseline_unavailable_without_a_match_still_retries(auth_t
         with pytest.raises(ServerError):
             await client.sources.add_url(notebook_id, _PROBE_URL)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     # ServerError (the real failure), not SourceAddError — and the retry ran.
     assert counts["add"] == 2
@@ -422,7 +422,7 @@ async def test_add_url_probe_raises_when_multiple_new_matches_appear(auth_tokens
         with pytest.raises(SourceAddError, match="probe found 2 new sources"):
             await client.sources.add_url(notebook_id, _PROBE_URL)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
 
 @pytest.mark.parametrize(
@@ -476,7 +476,7 @@ async def test_add_url_probe_does_not_match_unrelated_sources(auth_tokens, rows_
         with pytest.raises(ServerError):
             await client.sources.add_url(notebook_id, _PROBE_URL)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     # Both create attempts fired: the probe never spuriously matched.
     assert counts["add"] == 2
@@ -514,7 +514,7 @@ async def test_add_url_probe_matches_on_the_second_attempt(auth_tokens) -> None:
     try:
         source = await client.sources.add_url(notebook_id, _PROBE_URL)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     assert source.id == src_id
     assert counts["add"] == 2, "both attempts should have fired before the probe matched"
@@ -554,7 +554,7 @@ async def test_add_url_probe_decode_failure_aborts_instead_of_retrying(auth_toke
             with pytest.raises(SourceAddError, match="Cannot confirm URL source") as exc_info:
                 await client.sources.add_url(notebook_id, _PROBE_URL)
         finally:
-            await client._collaborators.kernel.get_http_client().aclose()
+            await client._web_runtime.kernel.get_http_client().aclose()
 
     # The load-bearing assertion: the create fired ONCE. Restore the probe's
     # ``return None`` and this becomes 2 — the duplicate this PR prevents.
@@ -608,7 +608,7 @@ async def test_add_url_recovered_create_still_honors_the_requested_title(auth_to
     try:
         source = await client.sources.add_url(notebook_id, _PROBE_URL, title=requested_title)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     assert source.id == src_id
     assert renames == [(src_id, requested_title)], "the recovery path skipped the rename"
@@ -655,7 +655,7 @@ async def test_add_url_bulk_cost_is_one_baseline_read_per_call(auth_tokens) -> N
         for url in urls:
             await client.sources.add_url(notebook_id, url)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     assert counts == {"add": 3, "get": 3}, (
         "a sequential bulk add should cost exactly one baseline GET_NOTEBOOK per "
@@ -754,7 +754,7 @@ async def test_add_drive_probe_short_circuits_when_first_response_lost(
     try:
         source = await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, title)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     assert source.id == src_id
     # The committed source is recognised by its Drive documentId, not a URL.
@@ -796,7 +796,7 @@ async def test_add_drive_probe_ignores_a_pre_existing_copy_of_the_same_file(
         with pytest.raises(ServerError):
             await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, title)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     # The probe found no *new* match, so idempotent_create retried, exhausted
     # its two attempts, and re-raised the transport error rather than handing
@@ -833,7 +833,7 @@ async def test_add_drive_probe_raises_when_baseline_unavailable_and_a_copy_exist
         with pytest.raises(SourceAddError, match="pre-create baseline snapshot failed") as exc_info:
             await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, title)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     # The load-bearing half: an ambiguous probe must ABORT the retry loop.
     # Classification alone would still pass if a second create had already gone
@@ -866,7 +866,7 @@ async def test_add_drive_probe_raises_when_multiple_new_matches_appear(auth_toke
         with pytest.raises(SourceAddError, match="probe found 2 new sources"):
             await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, title)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
 
 async def test_add_drive_rejects_a_blank_file_id_before_writing(auth_tokens) -> None:
@@ -888,7 +888,7 @@ async def test_add_drive_rejects_a_blank_file_id_before_writing(auth_tokens) -> 
         with pytest.raises(ValidationError):
             await client.sources.add_drive("nb_test", "   ", "My Drive Doc")
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     assert counts["add"] == 0, "no RPC may be issued for a blank file_id"
 
@@ -960,7 +960,7 @@ async def test_add_drive_probe_does_not_match_unrelated_sources(
         with pytest.raises(ServerError):
             await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, title)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     # Both create attempts fired: the probe never spuriously matched.
     assert counts["add"] == 2
@@ -1041,7 +1041,7 @@ async def test_register_file_source_probe_short_circuits_when_first_response_los
         ):
             source = await client.sources.add_file(notebook_id, test_file)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     assert source.id == src_id
     # Exactly ONE ADD_SOURCE_FILE register request (no naive re-POST)
@@ -1118,7 +1118,7 @@ async def test_register_file_source_does_not_match_pre_existing_filename(
         ):
             await client.sources.add_file(notebook_id, test_file)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     # The pre-existing source's id was never returned — instead, the
     # original transport error propagated after retries were exhausted.
@@ -1195,7 +1195,7 @@ async def test_register_file_source_baseline_unavailable_raises_on_ambiguity(
         ):
             await client.sources.add_file(notebook_id, test_file)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     # Pre-existing source's id was NOT silently returned — instead the
     # baseline-unavailable ambiguity guard fired.
@@ -1269,7 +1269,7 @@ async def test_add_text_no_probe_no_retry_under_5xx(
         with pytest.raises(NotebookLMError):
             await client.sources.add_text(notebook_id, title, content)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     # Exactly ONE ADD_SOURCE attempt: no retry loop, no probe.
     assert add_count == 1, (
@@ -1323,7 +1323,7 @@ async def test_add_url_probe_network_error_propagates(auth_tokens) -> None:
         with pytest.raises(NetworkError, match="probe synthetic connection error"):
             await client.sources.add_url(notebook_id, url)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     # Probe was attempted (the original create failed with 502, then the
     # probe was issued and raised).
@@ -1397,7 +1397,7 @@ async def test_add_drive_recovered_create_still_honors_the_requested_title(auth_
     try:
         source = await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, requested_title)
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     assert source.id == src_id
     assert renames == [(src_id, requested_title)], "the recovery path skipped the rename"
@@ -1435,7 +1435,7 @@ async def test_add_drive_probe_transport_error_propagates(auth_tokens) -> None:
         with pytest.raises(ServerError):
             await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, "My Drive Doc")
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     # The probe raised on the first attempt, so no second create was issued.
     assert counts["add"] == 1
@@ -1473,7 +1473,7 @@ async def test_add_drive_probe_decode_failure_aborts_instead_of_retrying(
             with pytest.raises(SourceAddError, match="Cannot confirm Drive source") as exc_info:
                 await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, "My Drive Doc")
         finally:
-            await client._collaborators.kernel.get_http_client().aclose()
+            await client._web_runtime.kernel.get_http_client().aclose()
 
     # One create, not two — see the add_url twin.
     assert counts["add"] == 1
@@ -1513,7 +1513,7 @@ async def test_add_drive_probe_matches_on_the_second_attempt(auth_tokens) -> Non
     try:
         source = await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, "My Drive Doc")
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     assert source.id == src_id
     assert counts["add"] == 2, "both attempts should have fired before the probe matched"
@@ -1542,7 +1542,7 @@ async def test_add_drive_baseline_unavailable_without_a_match_still_retries(auth
         with pytest.raises(ServerError):
             await client.sources.add_drive(notebook_id, _DRIVE_FILE_ID, "My Drive Doc")
     finally:
-        await client._collaborators.kernel.get_http_client().aclose()
+        await client._web_runtime.kernel.get_http_client().aclose()
 
     # ServerError (the real failure), not SourceAddError — and the retry ran.
     assert counts["add"] == 2

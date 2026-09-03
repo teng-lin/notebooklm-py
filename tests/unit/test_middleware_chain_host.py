@@ -117,7 +117,7 @@ async def test_chain_host_rate_limit_max_retries_steers_live_chain(monkeypatch) 
     :meth:`RpcExecutor._execute_once`.
     """
     core = _make_core(rate_limit_max_retries=0)
-    chain_host = core._composed.chain_host
+    chain_host = core._web_runtime.composed.chain_host
     await core.__aenter__()
     try:
         # Mutate the host slot directly — the provider lambda captures
@@ -148,9 +148,9 @@ async def test_chain_host_rate_limit_max_retries_steers_live_chain(monkeypatch) 
                 raise _status_error(429, retry_after="1")
             return _ok_response()
 
-        install_post_as_stream(monkeypatch, core._collaborators.kernel.get_http_client(), fake_post)
+        install_post_as_stream(monkeypatch, core._web_runtime.kernel.get_http_client(), fake_post)
 
-        response = await core._composed.transport.perform_authed_post(
+        response = await core._web_runtime.composed.transport.perform_authed_post(
             build_request=build,
             log_label="test-rate-limit-host-steers",
         )
@@ -183,7 +183,7 @@ async def test_chain_host_auth_refresh_rebind_steers_live_refresh() -> None:
     swaps the refresh implementation without rebuilding the chain.
     """
     core = _make_core()
-    chain_host = core._composed.chain_host
+    chain_host = core._web_runtime.composed.chain_host
 
     fake_calls: list[int] = []
 
@@ -222,7 +222,7 @@ async def test_authed_post_chain_on_host_steers_transport() -> None:
     of the larger pipeline test.
     """
     core = _make_core()
-    chain_host = core._composed.chain_host
+    chain_host = core._web_runtime.composed.chain_host
 
     captured: list[RpcRequest] = []
 
@@ -240,7 +240,7 @@ async def test_authed_post_chain_on_host_steers_transport() -> None:
     # The transport's chain_provider lambda must return the fake on
     # the next dispatch. We invoke the lambda directly to assert the
     # live-binding contract without a full perform_authed_post run.
-    assert core._composed.transport._chain_provider() is fake_chain
+    assert core._web_runtime.composed.transport._chain_provider() is fake_chain
 
     await core.__aenter__()
     try:
@@ -248,7 +248,7 @@ async def test_authed_post_chain_on_host_steers_transport() -> None:
         def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             return "https://example.test/x", "payload", {"X-Test": "yes"}
 
-        response = await core._composed.transport.perform_authed_post(
+        response = await core._web_runtime.composed.transport.perform_authed_post(
             build_request=build,
             log_label="test-chain-host-steers-transport",
         )
@@ -275,7 +275,7 @@ def test_authed_post_chain_terminal_on_host_is_rebindable() -> None:
     Mirrors the ``test_observability.py`` rebind pattern: a test
     swaps the chain leaf on the host and rebuilds the chain around
     the new terminal (``chain_host._authed_post_chain =
-    build_chain(core._composed.middlewares, fake_terminal)``). This test only
+    build_chain(core._web_runtime.composed.middlewares, fake_terminal)``). This test only
     asserts the host-side rebind contract; chain-rebuild integration
     is covered by ``test_observability.py``.
     """
@@ -286,7 +286,7 @@ def test_authed_post_chain_terminal_on_host_is_rebindable() -> None:
     auth.csrf_token = "csrf-token"
     auth.session_id = "session-id"
     core = build_client_shell_for_tests(auth=auth)
-    chain_host = core._composed.chain_host
+    chain_host = core._web_runtime.composed.chain_host
 
     async def fake_terminal(request: RpcRequest) -> RpcResponse:
         return RpcResponse(response=_ok_response("fake-terminal"), context=request.context)
@@ -311,7 +311,7 @@ def test_chain_host_tunable_attributes_are_writable() -> None:
     auth.csrf_token = "csrf-token"
     auth.session_id = "session-id"
     core = build_client_shell_for_tests(auth=auth)
-    chain_host = core._composed.chain_host
+    chain_host = core._web_runtime.composed.chain_host
 
     chain_host._refresh_retry_delay = 0.5
     chain_host._rate_limit_max_retries = 7

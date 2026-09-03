@@ -514,7 +514,7 @@ def test_production_importers_are_exactly_approved_store_owners_and_loader() -> 
     assert actual == {
         "_android/auth.py",
         "_web/transport/cookie_persistence.py",
-        "_runtime/init.py",
+        "_web/transport/init.py",
         "account_email.py",
         "account_repair.py",
         "auth.py",
@@ -1567,7 +1567,7 @@ def test_direct_production_store_callers_are_exact_and_function_granular() -> No
             "CookiePersistence._save_canonical",
             "merge_cookie_observation",
         ),
-        ("_runtime/init.py", "build_collaborators", "ProfileStore"),
+        ("_web/transport/init.py", "_build_web_transport", "ProfileStore"),
         ("account_email.py", "_read_matching_account_heal_document", "ProfileStore"),
         ("account_email.py", "_read_matching_account_heal_document", "read_document"),
         (

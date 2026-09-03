@@ -157,50 +157,54 @@ def test_shared_wiring_identities_hold_on_both_paths() -> None:
         )
         assert type(client.chat) is WebChatAPI
         assert isinstance(client.chat, ChatAPI)
-        assert getattr(client.chat, "_rpc", _missing) is client._rpc_executor
-        assert getattr(client.chat, "_transport", _missing) is client._composed.transport
-        assert getattr(client.chat, "_reqid", _missing) is client._collaborators.reqid
+        assert getattr(client.chat, "_rpc", _missing) is client._web_runtime.executor
+        assert (
+            getattr(client.chat, "_transport", _missing) is client._web_runtime.composed.transport
+        )
+        assert getattr(client.chat, "_reqid", _missing) is client._web_runtime.reqid
         assert type(client.notebooks) is WebNotebooksAPI
         assert isinstance(client.notebooks, NotebooksAPI)
-        assert getattr(client.notebooks, "_rpc", _missing) is client._rpc_executor, (
+        assert getattr(client.notebooks, "_rpc", _missing) is client._web_runtime.executor, (
             f"{label}: notebooks (NotebooksAPI._rpc) must dispatch through the "
             "client's shared RpcExecutor"
         )
         assert type(client.sources) is WebSourcesAPI
         assert isinstance(client.sources, SourcesAPI)
-        assert getattr(client.sources, "_rpc", _missing) is client._rpc_executor, (
+        assert getattr(client.sources, "_rpc", _missing) is client._web_runtime.executor, (
             f"{label}: sources must dispatch through the client's shared RpcExecutor"
         )
         assert (
             getattr(client.sources, "_supervisor", _missing)
             is client._collaborators.call_supervisor
         ), f"{label}: sources must share the client's CallSupervisor"
-        assert getattr(client.sources, "_uploader", _missing) is client._source_uploader, (
-            f"{label}: sources and lifecycle must share the client-owned upload pipeline"
-        )
         assert (
-            getattr(client._source_uploader, "_supervisor", _missing)
+            getattr(client.sources, "_uploader", _missing) is client._web_runtime.source_uploader
+        ), f"{label}: sources and lifecycle must share the client-owned upload pipeline"
+        assert (
+            getattr(client._web_runtime.source_uploader, "_supervisor", _missing)
             is client._collaborators.call_supervisor
         ), f"{label}: uploader must share the client's CallSupervisor"
-        assert getattr(client._source_uploader, "_rpc", _missing) is client._rpc_executor, (
-            f"{label}: uploader must dispatch through the client's shared RpcExecutor"
-        )
         assert (
-            getattr(client._source_uploader, "_kernel", _missing) is client._collaborators.kernel
+            getattr(client._web_runtime.source_uploader, "_rpc", _missing)
+            is client._web_runtime.executor
+        ), f"{label}: uploader must dispatch through the client's shared RpcExecutor"
+        assert (
+            getattr(client._web_runtime.source_uploader, "_kernel", _missing)
+            is client._web_runtime.kernel
         ), f"{label}: uploader must share the client's Kernel"
         assert (
             getattr(client._collaborators.lifecycle, "_supervisor", _missing)
             is client._collaborators.call_supervisor
         ), f"{label}: lifecycle must share the client's CallSupervisor"
-        assert getattr(client._source_uploader, "_lister", _missing) is getattr(
+        assert getattr(client._web_runtime.source_uploader, "_lister", _missing) is getattr(
             client.sources, "_lister", _missing
         ), f"{label}: sources and uploader must share one SourceLister"
-        assert getattr(client._source_uploader, "_poller", _missing) is getattr(
+        assert getattr(client._web_runtime.source_uploader, "_poller", _missing) is getattr(
             client.sources, "_poller", _missing
         ), f"{label}: sources and uploader must share one SourcePoller"
         assert type(client.artifacts) is WebArtifactsAPI
         assert isinstance(client.artifacts, ArtifactsAPI)
-        assert getattr(client.artifacts, "_rpc", _missing) is client._rpc_executor, (
+        assert getattr(client.artifacts, "_rpc", _missing) is client._web_runtime.executor, (
             f"{label}: artifacts (WebArtifactsAPI._rpc) must dispatch through the "
             "client's shared RpcExecutor"
         )
@@ -222,7 +226,7 @@ def test_shared_wiring_identities_hold_on_both_paths() -> None:
         )
         assert type(client.mind_maps) is WebMindMapsAPI
         assert isinstance(client.mind_maps, MindMapsAPI)
-        assert getattr(client.mind_maps, "_rpc", _missing) is client._rpc_executor, (
+        assert getattr(client.mind_maps, "_rpc", _missing) is client._web_runtime.executor, (
             f"{label}: mind maps must dispatch through the client's shared RpcExecutor"
         )
         assert getattr(client.mind_maps, "_mind_maps", _missing) is client.artifacts._mind_maps, (
@@ -237,24 +241,25 @@ def test_shared_wiring_identities_hold_on_both_paths() -> None:
         assert getattr(client.mind_maps, "_notebooks", _missing) is client.notebooks, (
             f"{label}: mind maps must resolve sources through the client's NotebooksAPI"
         )
-        assert getattr(client.artifacts._note_service, "_rpc", _missing) is client._rpc_executor, (
-            f"{label}: NoteService must dispatch through the client's shared RpcExecutor"
-        )
+        assert (
+            getattr(client.artifacts._note_service, "_rpc", _missing)
+            is client._web_runtime.executor
+        ), f"{label}: NoteService must dispatch through the client's shared RpcExecutor"
         assert (
             getattr(client.artifacts._note_service, "_supervisor", _missing)
             is client._collaborators.call_supervisor
         ), f"{label}: NoteService must share the client's CallSupervisor"
         assert type(client.settings) is WebSettingsAPI
         assert isinstance(client.settings, SettingsAPI)
-        assert getattr(client.settings, "_rpc", _missing) is client._rpc_executor, (
+        assert getattr(client.settings, "_rpc", _missing) is client._web_runtime.executor, (
             f"{label}: settings must dispatch through the client's shared RpcExecutor"
         )
         assert type(client.sharing) is WebSharingAPI
         assert isinstance(client.sharing, SharingAPI)
-        assert getattr(client.sharing, "_rpc", _missing) is client._rpc_executor, (
+        assert getattr(client.sharing, "_rpc", _missing) is client._web_runtime.executor, (
             f"{label}: sharing must dispatch through the client's shared RpcExecutor"
         )
-        assert getattr(client._source_uploader, "_auth", _missing) is client._auth, (
+        assert getattr(client._web_runtime.source_uploader, "_auth", _missing) is client._auth, (
             f"{label}: the upload pipeline (SourceUploadPipeline._auth) must alias "
             "the client-owned AuthTokens (ADR-0016 Auth Instance Invariant)"
         )

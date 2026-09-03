@@ -94,9 +94,9 @@ def _zero_retry_client(*args: Any, **kwargs: Any) -> NotebookLMClient:
     instead of asking VCR for a non-existent 2nd interaction.
     """
     client = NotebookLMClient(*args, **kwargs)
-    client._composed.chain_host._rate_limit_max_retries = 0
-    client._composed.chain_host._server_error_max_retries = 0
-    client._composed.chain_host._refresh_retry_delay = 0
+    client._web_runtime.composed.chain_host._rate_limit_max_retries = 0
+    client._web_runtime.composed.chain_host._server_error_max_retries = 0
+    client._web_runtime.composed.chain_host._refresh_retry_delay = 0
     return client
 
 
@@ -131,16 +131,16 @@ def _install_zero_retry_seam(
 
             async def _stub_refresh(expected_epoch: int) -> AuthTokens:
                 refresh_calls.append(None)
-                client._collaborators.auth_coord.assert_epoch(expected_epoch)
+                client._web_runtime.auth_coord.assert_epoch(expected_epoch)
                 client._auth.csrf_token = "refreshed_csrf_token"
-                client._collaborators.auth_coord.update_auth_headers(
+                client._web_runtime.auth_coord.update_auth_headers(
                     auth=client._auth,
-                    kernel=client._collaborators.kernel,
+                    kernel=client._web_runtime.kernel,
                     expected_epoch=expected_epoch,
                 )
                 return client._auth
 
-            client._collaborators.auth_coord._refresh_callback = _stub_refresh
+            client._web_runtime.auth_coord._refresh_callback = _stub_refresh
         return client
 
     async def _instant_sleep(_seconds: float) -> None:

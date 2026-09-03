@@ -46,7 +46,7 @@ async def scenario() -> ScenarioResult:
             "total" in before and "notebooks" in before,
             "MCP baseline response is incomplete",
         )
-        holder["client"]._collaborators.kernel.get_http_client().cookies.clear()
+        holder["client"]._require_web_runtime().kernel.get_http_client().cookies.clear()
         after_result = await mcp.call_tool("notebook_list", {"limit": 50})
         require(
             after_result.structured_content is not None,
@@ -65,7 +65,7 @@ async def scenario() -> ScenarioResult:
             before.get("notebooks") == after.get("notebooks"),
             "MCP recovery changed notebook identity",
         )
-        live = holder["client"]._collaborators.kernel.get_http_client().cookies
+        live = holder["client"]._require_web_runtime().kernel.get_http_client().cookies
         require(len(live) > 0, "MCP recovery did not restore the live jar")
         return {
             "before": before.get("total"),

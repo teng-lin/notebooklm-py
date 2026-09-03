@@ -50,7 +50,6 @@ from ._client_assembly import (
     _assemble_client,
     resolve_backend_preference,
 )
-from ._client_composed import ClientComposed
 from ._collections import CollectionsAPI
 from ._deprecation import warn_deprecated
 from ._env import get_base_url as get_base_url
@@ -67,16 +66,17 @@ from ._runtime.config import (
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     DEFAULT_TIMEOUT,
 )
-from ._runtime.init import RuntimeCollaborators
-from ._runtime.init import compose_client_internals as compose_client_internals  # noqa: F401
+from ._runtime.init import SharedRuntime
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
 from ._sources import SourcesAPI
 from ._url_utils import is_google_auth_redirect as is_google_auth_redirect
 from ._web.mind_maps import NoteBackedMindMapService as NoteBackedMindMapService  # noqa: F401
 from ._web.notes import NoteService as NoteService  # noqa: F401
-from ._web.sources.upload import SourceUploadPipeline
-from ._web.transport.executor import RpcExecutor
+from ._web.transport.composed import ClientComposed as ClientComposed  # noqa: F401
+from ._web.transport.executor import RpcExecutor as RpcExecutor  # noqa: F401
+from ._web.transport.init import WebRuntime
+from ._web.transport.init import compose_client_internals as compose_client_internals  # noqa: F401
 from ._web.transport.lifecycle import CookieRotator, CookieSaver
 from ._web.transport.seams import ClientSeams
 from ._web.transport.seams import resolve_client_seams as resolve_client_seams  # noqa: F401
@@ -138,10 +138,8 @@ class NotebookLMClient:
     # runtime attribute surface itself.
     _auth: AuthTokens
     _seams: ClientSeams
-    _composed: ClientComposed
-    _collaborators: RuntimeCollaborators
-    _rpc_executor: RpcExecutor
-    _source_uploader: SourceUploadPipeline
+    _collaborators: SharedRuntime
+    _web_runtime: WebRuntime | None
     _backend_preference: BackendPreference
     _backends: Mapping[str, BackendName]
     _android_bearer_provider: Any
@@ -157,6 +155,13 @@ class NotebookLMClient:
     sharing: SharingAPI
     labels: LabelsAPI
     collections: CollectionsAPI
+
+    def _require_web_runtime(self) -> WebRuntime:
+        """Return the web bundle or fail before a web-only operation."""
+        runtime = self._web_runtime
+        if runtime is None:
+            raise RuntimeError("The web runtime is not available for this client.")
+        return runtime
 
     def __init__(
         self,
@@ -379,7 +384,7 @@ class NotebookLMClient:
         """Open the client connection."""
         logger.debug("Opening NotebookLM client")
         # Preserve the historical fail-fast check that composition is complete.
-        _ = self._composed.transport
+        _ = self._require_web_runtime().composed.transport
         await self._collaborators.lifecycle.open()
         return self
 
@@ -493,7 +498,7 @@ class NotebookLMClient:
             were removed (see :doc:`/deprecations`). The default-shape
             call (``client.rpc_call(method, params)``) is unchanged.
         """
-        return await self._rpc_executor.rpc_call(
+        return await self._require_web_runtime().executor.rpc_call(
             method=method,
             params=params,
             allow_null=allow_null,
@@ -656,15 +661,15 @@ class NotebookLMClient:
         token (SNlM0e) and session ID (FdrFJe).
 
         This call site uses explicit collaborators sourced from
-        ``self._auth`` and ``self._collaborators``. The five kwargs mirror
+        ``self._auth`` and ``self._web_runtime``. The five kwargs mirror
         the :func:`refresh_auth_session` signature: ``auth`` is the
         client-owned :class:`AuthTokens` instance (the Auth Instance
         Invariant guarantees this is the same object every auth consumer
         observes), and the remaining four come from the collaborator
         bundle the composition root produced
-        (:func:`notebooklm._runtime.init.compose_client_internals`). The
+        (:func:`notebooklm._web.transport.init.compose_client_internals`). The
         ``tests/_helpers/client_factory.build_client_shell_for_tests``
-        helper wires ``_auth`` and ``_collaborators`` through the same
+        helper wires ``_auth`` and the runtime bundles through the same
         :func:`notebooklm._client_assembly._assemble_client` seam this
         constructor delegates to, so test shells observe the same
         resolution path.
@@ -764,17 +769,18 @@ class NotebookLMClient:
     ) -> AuthTokens:
         """Run only the compatibility web recovery ladder for one epoch."""
 
-        coord = self._collaborators.auth_coord
+        web = self._require_web_runtime()
+        coord = web.auth_coord
         if not allow_headless or not coord.has_refresh_callback:
             # Base policy — also the coordinator's single-flight callback body,
             # so this branch must NOT re-enter await_refresh (that would recurse
             # through the callback). No coordinator wired ⇒ same direct path.
             return await refresh_auth_session(
                 auth=self._auth,
-                kernel=self._collaborators.kernel,
+                kernel=web.kernel,
                 auth_coord=coord,
-                web_transport=self._collaborators.web_transport,
-                cookie_persistence=self._collaborators.cookie_persistence,
+                web_transport=web.web_transport,
+                cookie_persistence=web.cookie_persistence,
                 allow_headless=allow_headless,
                 expected_epoch=expected_epoch,
             )
@@ -788,10 +794,10 @@ class NotebookLMClient:
             # incidental and must propagate rather than trigger a second refresh.
             return await refresh_auth_session(
                 auth=self._auth,
-                kernel=self._collaborators.kernel,
+                kernel=web.kernel,
                 auth_coord=coord,
-                web_transport=self._collaborators.web_transport,
-                cookie_persistence=self._collaborators.cookie_persistence,
+                web_transport=web.web_transport,
+                cookie_persistence=web.cookie_persistence,
                 allow_headless=True,
                 expected_epoch=expected_epoch,
             )
@@ -828,13 +834,14 @@ class NotebookLMClient:
         # Resolve every network-free source first.  This preserves the public
         # pre-open/post-close diagnostic behavior without granting a live probe
         # a path around client-wide admission.
+        web = self._require_web_runtime()
         email, cached_email, cached_key = await resolve_account_email(
             auth=self._auth,
             cached_email=self._account_email_cache,
             cached_key=self._account_email_cache_route,
             live_fallback=False,
-            get_cookies=self._collaborators.kernel.get_cookies,
-            get_http_client=self._collaborators.kernel.get_http_client,
+            get_cookies=web.kernel.get_cookies,
+            get_http_client=web.kernel.get_http_client,
             probe=_probe_authuser,
             to_thread=asyncio.to_thread,
         )
@@ -854,16 +861,12 @@ class NotebookLMClient:
                 cached_email=self._account_email_cache,
                 cached_key=self._account_email_cache_route,
                 live_fallback=True,
-                get_cookies=lambda: self._collaborators.kernel.get_cookies(
-                    expected_epoch=lease.epoch
-                ),
-                get_http_client=lambda: self._collaborators.kernel.get_http_client(
-                    expected_epoch=lease.epoch
-                ),
+                get_cookies=lambda: web.kernel.get_cookies(expected_epoch=lease.epoch),
+                get_http_client=lambda: web.kernel.get_http_client(expected_epoch=lease.epoch),
                 probe=_probe_authuser,
                 to_thread=asyncio.to_thread,
             )
-            self._collaborators.kernel.assert_epoch(lease.epoch)
+            web.kernel.assert_epoch(lease.epoch)
             self._account_email_cache = cached_email
             self._account_email_cache_route = cached_key
             return email
@@ -950,8 +953,12 @@ class _FromStorageContext:
             backend=kwargs["backend_preference"].preferred,
         )
         client._backend_preference = kwargs["backend_preference"]
-        if isinstance(loaded, _auth_tokens.FileLoadedAuth) and hasattr(client, "_collaborators"):
-            client._collaborators.cookie_persistence.register_open_baseline(
+        if (
+            isinstance(loaded, _auth_tokens.FileLoadedAuth)
+            and hasattr(client, "_web_runtime")
+            and client._web_runtime is not None
+        ):
+            client._web_runtime.cookie_persistence.register_open_baseline(
                 loaded.store, loaded.persistence_baseline
             )
         self._client = client

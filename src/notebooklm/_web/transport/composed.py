@@ -7,12 +7,13 @@ from typing import TYPE_CHECKING, TypeVar
 _T = TypeVar("_T")
 
 if TYPE_CHECKING:
-    from ._runtime.init import RuntimeCollaborators, WiredMiddleware
-    from ._web.transport.executor import RpcExecutor
-    from ._web.transport.middleware.chain import MiddlewareChainBuilder
-    from ._web.transport.middleware.chain_host import MiddlewareChainHost
-    from ._web.transport.middleware.core import Middleware
-    from ._web.transport.runtime import RuntimeTransport
+    from ..._runtime.init import SharedRuntime
+    from .executor import RpcExecutor
+    from .init import WiredMiddleware
+    from .middleware.chain import MiddlewareChainBuilder
+    from .middleware.chain_host import MiddlewareChainHost
+    from .middleware.core import Middleware
+    from .runtime import RuntimeTransport
 
 
 class ClientComposed:
@@ -27,7 +28,7 @@ class ClientComposed:
         # Avoid a plain `.collaborators` attribute here: the ADR-0014 lint
         # reserves that bare name so feature APIs can't grab the whole
         # bundle.
-        self._runtime_collaborators: RuntimeCollaborators | None = None
+        self._runtime_collaborators: SharedRuntime | None = None
 
     @staticmethod
     def _require_bound(attr_name: str, value: _T | None) -> _T:
@@ -56,7 +57,7 @@ class ClientComposed:
         return self._require_bound("_middlewares", self._middlewares)
 
     @property
-    def runtime_collaborators(self) -> RuntimeCollaborators:
+    def runtime_collaborators(self) -> SharedRuntime:
         return self._require_bound("_runtime_collaborators", self._runtime_collaborators)
 
     def bind_transport(self, transport: RuntimeTransport) -> None:
@@ -80,7 +81,7 @@ class ClientComposed:
         self._chain_builder = wired.chain_builder
         self._middlewares = wired.middlewares
 
-    def bind_runtime_collaborators(self, collaborators: RuntimeCollaborators) -> None:
+    def bind_runtime_collaborators(self, collaborators: SharedRuntime) -> None:
         if self._runtime_collaborators is not None:
             raise RuntimeError("ClientComposed._runtime_collaborators already bound")
         self._runtime_collaborators = collaborators

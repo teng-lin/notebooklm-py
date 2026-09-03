@@ -34,10 +34,9 @@ src/notebooklm/
 ├── _app/                # Transport-neutral business logic shared by adapters
 │   └── login_browser.py # Markup-free browser-login plan and orchestration
 ├── _browser/            # Optional Playwright-backed credential acquisition
-├── _client_composed.py  # Client-owned composition holder
 ├── _runtime/            # Neutral runtime contracts, config, helpers, init, lifecycle
 ├── _web/contracts.py    # Web-only Kernel and RpcCaller Protocols
-├── _web/transport/      # Web HTTP transport, executor, middleware, auth, persistence
+├── _web/transport/      # Web runtime bundle, composition holder, HTTP transport, middleware
 ├── _web/wire/           # Web batchexecute codecs, overrides, and strict indexing
 ├── _android/            # Android gRPC/Scotty adapters, codecs, and lazy generated protos
 ├── _notebooks.py        # Backend-neutral NotebooksAPI + share-URL builder
@@ -118,7 +117,7 @@ src/notebooklm/
 | **Adapters** | `cli/`, `mcp/`, `server/` | User commands/tools/routes, transport-specific input/output, auth envelopes |
 | **App core** | `_app/*.py` | Transport-neutral workflows reused by adapters |
 | **Client** | `client.py`, `_*.py` | High-level Python API, returns typed dataclasses |
-| **Runtime** | `client.py`, `_client_composed.py`, `_runtime/`, `_web/transport/`, `_android/session.py`, transfer participants | `NotebookLMClient` composition root; protocol-neutral root lifecycle and call supervision; backend resource lifecycles, admission, telemetry, and feature-owned polling/upload state |
+| **Runtime** | `client.py`, `_runtime/`, `_web/transport/`, `_android/session.py`, transfer participants | `NotebookLMClient` composition root; protocol-neutral root lifecycle and call supervision; backend resource lifecycles, admission, telemetry, and feature-owned polling/upload state |
 | **Web wire** | `_web/wire/*.py` | Batchexecute encoding/decoding, runtime ID overrides, strict positional access |
 | **Android wire** | `_android/codecs/`, `_android/proto/` | Lazy generated protobuf contracts, request construction, and public-type projection for selected Android namespaces |
 | **RPC facade** | `rpc/*.py` | Public power-user compatibility exports and method IDs |
@@ -126,7 +125,9 @@ src/notebooklm/
 #### Runtime seam modules
 
 The client runtime is split across `NotebookLMClient` (composition root),
-`ClientComposed` (holder), `_runtime/init.py` (construction helpers),
+`_runtime/init.py` (neutral validation/shared collaborators),
+`_web/transport/init.py` (web bundle construction),
+`_web/transport/composed.py` (`ClientComposed` holder),
 `_web/transport/kernel.py` (HTTP client owner), and single-responsibility collaborator
 modules. (The legacy `_core.py` compatibility shim was deleted in v0.5.0;
 callers import directly from the canonical modules.) Each helper exposes
@@ -134,8 +135,9 @@ a narrow Protocol surface so it can be unit-tested against a stub:
 
 | Module | Class | Responsibility |
 |---|---|---|
-| `_client_composed.py` | `ClientComposed` | Write-once holder for transport, executor, chain host, middleware metadata, and the runtime collaborator bundle. It owns no loop primitive or RPC semaphore. |
-| `_runtime/init.py` | `RuntimeCollaborators` helpers | Validates constructor args, builds collaborators, wires middleware, and binds `ClientComposed`. |
+| `_runtime/init.py` | `SharedRuntime` helpers | Validates constructor args and builds the backend-neutral metrics/supervisor bundle. It imports no backend implementation. |
+| `_web/transport/init.py` | `WebRuntime` helpers | Builds request-id/auth/kernel/persistence/transport, wires middleware, and returns the web bundle including executor and uploader. |
+| `_web/transport/composed.py` | `ClientComposed` | Write-once holder for web transport, executor, chain host, middleware metadata, and the shared runtime bundle. It owns no loop primitive or RPC semaphore. |
 | `_client_metrics.py` | `ClientMetrics` | `ClientMetricsSnapshot` counters, queue-wait recorders, `on_rpc_event` async callback. |
 | `_transport_drain.py` | `TransportDrainTracker` | Transitional in-flight bookkeeping owned by `CallSupervisor`; it is not the public drain-policy or generation owner. |
 | `_runtime/call_supervisor.py` | `CallSupervisor` | Concrete client-wide admission authority: generation-bearing call/operation leases, drain hooks, admitted child tasks, terminal RPC metrics, and the global RPC semaphore. |

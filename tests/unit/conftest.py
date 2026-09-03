@@ -154,10 +154,10 @@ async def make_core(refresh_callback=None, transport=None, refresh_retry_delay=0
         # can observe real httpx.Request construction (cookie merge, headers).
         # Capture the cookie jar BEFORE aclose() — reading attributes off a
         # closed AsyncClient is brittle across httpx versions.
-        prior_cookies = core._collaborators.kernel.get_http_client().cookies
-        await core._collaborators.kernel.get_http_client().aclose()
+        prior_cookies = core._web_runtime.kernel.get_http_client().cookies
+        await core._web_runtime.kernel.get_http_client().aclose()
         install_http_client_for_test(
-            core._collaborators.kernel,
+            core._web_runtime.kernel,
             httpx.AsyncClient(
                 cookies=prior_cookies,
                 transport=transport,

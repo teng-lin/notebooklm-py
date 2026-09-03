@@ -645,7 +645,7 @@ class TestArtifactsAPI:
         """A transport failure during hydration propagates, not ArtifactNotFoundError."""
         async with NotebookLMClient(auth_tokens) as client:
             rpc = AsyncMock(side_effect=[None, RPCError("boom during hydrate")])
-            client._rpc_executor.rpc_call = rpc
+            client._web_runtime.executor.rpc_call = rpc
             with pytest.raises(RPCError):
                 await client.artifacts.rename("nb_123", "art_001", "New Title")
 
@@ -659,7 +659,7 @@ class TestArtifactsAPI:
         """
         async with NotebookLMClient(auth_tokens) as client:
             rpc = AsyncMock(return_value=None)
-            client._rpc_executor.rpc_call = rpc
+            client._web_runtime.executor.rpc_call = rpc
             with pytest.raises(ArtifactNotFoundError):
                 await client.artifacts.rename("nb_123", "art_001", "New Title", return_object=False)
 

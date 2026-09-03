@@ -83,9 +83,9 @@ async def _open_client_with_post(auth_tokens, mock_post: AsyncMock) -> NotebookL
     assert generation is not None
     epoch = client._collaborators.lifecycle._epoch
     assert generation.epoch == epoch
-    assert client._collaborators.web_transport._active_epoch == epoch
-    assert client._collaborators.kernel._active_epoch == epoch
-    assert client._collaborators.auth_coord._active_epoch == epoch
+    assert client._web_runtime.web_transport._active_epoch == epoch
+    assert client._web_runtime.kernel._active_epoch == epoch
+    assert client._web_runtime.auth_coord._active_epoch == epoch
     return client
 
 
@@ -107,7 +107,7 @@ async def test_default_retries_succeed_after_three_429s(auth_tokens) -> None:
 
     # NotebookLMClient default — NO ``rate_limit_max_retries`` kwarg.
     client = await _open_client_with_post(auth_tokens, mock_post)
-    assert client._composed.chain_host._rate_limit_max_retries == 3, (
+    assert client._web_runtime.composed.chain_host._rate_limit_max_retries == 3, (
         "rate_limit_max_retries default must be 3; check that NotebookLMClient.__init__ "
         "forwards the runtime default."
     )
@@ -138,7 +138,7 @@ async def test_default_retries_exhausted_raises_rate_limit_error(auth_tokens) ->
     mock_post = AsyncMock(return_value=_build_429("1"))
 
     client = await _open_client_with_post(auth_tokens, mock_post)
-    assert client._composed.chain_host._rate_limit_max_retries == 3
+    assert client._web_runtime.composed.chain_host._rate_limit_max_retries == 3
 
     try:
         with patch("asyncio.sleep", AsyncMock()) as mock_sleep, pytest.raises(RateLimitError):
@@ -224,7 +224,7 @@ async def test_disable_internal_retries_skips_429_loop_under_new_default(
     mock_post = AsyncMock(return_value=_build_429("1"))
 
     client = await _open_client_with_post(auth_tokens, mock_post)
-    assert client._composed.chain_host._rate_limit_max_retries == 3
+    assert client._web_runtime.composed.chain_host._rate_limit_max_retries == 3
 
     def _build_request(_snap):
         return ("https://example.invalid/x", b"body", None)
@@ -234,7 +234,7 @@ async def test_disable_internal_retries_skips_429_loop_under_new_default(
             patch("asyncio.sleep", AsyncMock()) as mock_sleep,
             pytest.raises(TransportRateLimited),
         ):
-            await client._composed.transport.perform_authed_post(
+            await client._web_runtime.composed.transport.perform_authed_post(
                 build_request=_build_request,
                 log_label="test",
                 disable_internal_retries=True,

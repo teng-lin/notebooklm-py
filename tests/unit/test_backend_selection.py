@@ -572,8 +572,8 @@ def test_android_selection_extends_the_frozen_lifecycle_ownership_graph() -> Non
     assert client._android_session is not None
     assert client._android_bearer_provider is not None
     assert lifecycle._transports == (
-        client._collaborators.web_transport,
-        client._source_uploader,
+        client._web_runtime.web_transport,
+        client._web_runtime.source_uploader,
         client._android_session,
         client.artifacts._asset_downloads,
         client.sources._upload_pipeline,

@@ -280,10 +280,10 @@ async def test_retry_inherits_parent_request_id():
     core = build_client_shell_for_tests(auth)
     await core.__aenter__()
     try:
-        executor = core._rpc_executor
+        executor = core._web_runtime.executor
         executor._execute_once = fake_impl  # type: ignore[method-assign]
 
-        result = await core._rpc_executor.rpc_call(method=RPCMethod.GET_NOTEBOOK, params=[])
+        result = await core._web_runtime.executor.rpc_call(method=RPCMethod.GET_NOTEBOOK, params=[])
         assert result == "ok"
         assert len(captured_ids) == 2
         assert captured_ids[0] == captured_ids[1]

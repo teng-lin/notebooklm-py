@@ -58,14 +58,14 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     core = build_client_shell_for_tests(
         auth_tokens, on_rpc_event=events.append, decode_response=fake_decode
     )
-    core._collaborators.kernel.activate_epoch(1)
-    install_http_client_for_test(core._collaborators.kernel, AsyncMock(spec=httpx.AsyncClient))
+    core._web_runtime.kernel.activate_epoch(1)
+    install_http_client_for_test(core._web_runtime.kernel, AsyncMock(spec=httpx.AsyncClient))
     supervisor = core._collaborators.call_supervisor
     supervisor.set_bound_loop(asyncio.get_running_loop())
     supervisor.reset_after_open()
     supervisor.prepare_generation(1)
     supervisor.start_accepting(1)
-    core._collaborators.auth_coord.activate_epoch(1)
+    core._web_runtime.auth_coord.activate_epoch(1)
     seen_request_ids: list[str | None] = []
 
     # Mock the chain LEAF (innermost wrapper around
@@ -85,17 +85,17 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
             context=request.context,  # type: ignore[attr-defined]
         )
 
-    core._composed.chain_host._authed_post_chain_terminal = fake_terminal  # type: ignore[method-assign]
+    core._web_runtime.composed.chain_host._authed_post_chain_terminal = fake_terminal  # type: ignore[method-assign]
     # Rebuild the chain so it wraps the new terminal (the original chain
     # was built in the composition root against the original bound method).
     from notebooklm._web.transport.middleware.core import build_chain
 
-    core._composed.chain_host._authed_post_chain = build_chain(
-        core._composed.middlewares, fake_terminal
+    core._web_runtime.composed.chain_host._authed_post_chain = build_chain(
+        core._web_runtime.composed.middlewares, fake_terminal
     )
 
     with correlation_id("batch-42"):
-        result = await core._rpc_executor.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb_123"])
+        result = await core._web_runtime.executor.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb_123"])
 
     assert result == {"ok": True}
     assert seen_request_ids == ["batch-42"]
@@ -135,14 +135,14 @@ async def test_rpc_decode_error_bumps_drift_counter(auth_tokens: AuthTokens) -> 
         raise DecodingError("Google reshaped the response", method_id=rpc_id)
 
     core = build_client_shell_for_tests(auth_tokens, decode_response=drifting_decode)
-    core._collaborators.kernel.activate_epoch(1)
-    install_http_client_for_test(core._collaborators.kernel, AsyncMock(spec=httpx.AsyncClient))
+    core._web_runtime.kernel.activate_epoch(1)
+    install_http_client_for_test(core._web_runtime.kernel, AsyncMock(spec=httpx.AsyncClient))
     supervisor = core._collaborators.call_supervisor
     supervisor.set_bound_loop(asyncio.get_running_loop())
     supervisor.reset_after_open()
     supervisor.prepare_generation(1)
     supervisor.start_accepting(1)
-    core._collaborators.auth_coord.activate_epoch(1)
+    core._web_runtime.auth_coord.activate_epoch(1)
 
     from notebooklm._web.transport.middleware.core import RpcResponse, build_chain
 
@@ -152,13 +152,13 @@ async def test_rpc_decode_error_bumps_drift_counter(auth_tokens: AuthTokens) -> 
             context=request.context,  # type: ignore[attr-defined]
         )
 
-    core._composed.chain_host._authed_post_chain_terminal = fake_terminal  # type: ignore[method-assign]
-    core._composed.chain_host._authed_post_chain = build_chain(
-        core._composed.middlewares, fake_terminal
+    core._web_runtime.composed.chain_host._authed_post_chain_terminal = fake_terminal  # type: ignore[method-assign]
+    core._web_runtime.composed.chain_host._authed_post_chain = build_chain(
+        core._web_runtime.composed.middlewares, fake_terminal
     )
 
     with pytest.raises(DecodingError):
-        await core._rpc_executor.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb_123"])
+        await core._web_runtime.executor.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb_123"])
 
     snapshot = core._collaborators.metrics.snapshot()
     assert snapshot.rpc_decode_errors == 1
@@ -251,7 +251,7 @@ async def test_drain_waits_for_artifact_poll_task(auth_tokens: AuthTokens) -> No
     await core.__aenter__()
     # Artifact polling receives the same call supervisor as production.
     api = WebArtifactsAPI(
-        rpc=core._rpc_executor,
+        rpc=core._web_runtime.executor,
         supervisor=core._collaborators.call_supervisor,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
@@ -341,7 +341,7 @@ async def test_upload_progress_callback_receives_byte_counts(
         api = WebSourcesAPI(
             core,
             supervisor=core._collaborators.call_supervisor,
-            uploader=core._source_uploader,
+            uploader=core._web_runtime.source_uploader,
         )
         test_file = tmp_path / "upload.txt"
         content = b"hello progress"
@@ -381,7 +381,7 @@ async def test_wait_for_completion_status_change_callback(auth_tokens: AuthToken
     core = build_client_shell_for_tests(auth_tokens)
     await core.__aenter__()
     api = WebArtifactsAPI(
-        rpc=core._rpc_executor,
+        rpc=core._web_runtime.executor,
         supervisor=core._collaborators.call_supervisor,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),

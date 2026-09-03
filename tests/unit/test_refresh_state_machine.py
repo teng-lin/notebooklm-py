@@ -3,7 +3,7 @@
 Pins three behaviors of ``RpcExecutor.try_refresh_and_retry`` (the
 canonical implementation; ``Session._try_refresh_and_retry`` was
 inlined in PR #4b and callers now reach the executor through
-``core._rpc_executor``):
+``core._web_runtime.executor``):
 
 1. Concurrent callers share the same in-flight refresh task (single-flight).
 2. Refresh failures propagate to all waiters with chained ``__cause__``.
@@ -41,7 +41,7 @@ EVENT_TIMEOUT_S = 5.0
 async def _trigger_refresh(core):
     """Drive ``RpcExecutor.try_refresh_and_retry`` with throwaway args."""
     resource_epoch = _assert_open_generation(core)
-    return await core._rpc_executor.try_refresh_and_retry(
+    return await core._web_runtime.executor.try_refresh_and_retry(
         RPCMethod.LIST_NOTEBOOKS,
         [],
         "/",
@@ -55,6 +55,7 @@ async def _trigger_refresh(core):
 def _assert_open_generation(core) -> int:
     """Return the lifecycle-created epoch after proving every owner agrees."""
     collaborators = core._collaborators
+    web = core._web_runtime
     lifecycle = collaborators.lifecycle
     generation = collaborators.call_supervisor._current
 
@@ -63,9 +64,9 @@ def _assert_open_generation(core) -> int:
     epoch = lifecycle._epoch
     assert epoch > 0
     assert generation.epoch == epoch
-    assert collaborators.web_transport._active_epoch == epoch
-    assert collaborators.kernel._active_epoch == epoch
-    assert collaborators.auth_coord._active_epoch == epoch
+    assert web.web_transport._active_epoch == epoch
+    assert web.kernel._active_epoch == epoch
+    assert web.auth_coord._active_epoch == epoch
     return epoch
 
 
@@ -74,8 +75,8 @@ async def _wait_for_inflight_refresh_task(core, ticks: int = 20) -> bool:
     for _ in range(ticks):
         await asyncio.sleep(0)
         if (
-            core._collaborators.auth_coord._refresh_task is not None
-            and not core._collaborators.auth_coord._refresh_task.done()
+            core._web_runtime.auth_coord._refresh_task is not None
+            and not core._web_runtime.auth_coord._refresh_task.done()
         ):
             return True
     return False
@@ -113,7 +114,7 @@ async def test_concurrent_callers_share_single_refresh():
         async def fake_retry(*args, **kwargs):
             return "ok"
 
-        core._rpc_executor.rpc_call = fake_retry  # type: ignore[method-assign]
+        core._web_runtime.executor.rpc_call = fake_retry  # type: ignore[method-assign]
 
         tasks = [asyncio.create_task(_trigger_refresh(core)) for _ in range(3)]
 
@@ -125,7 +126,7 @@ async def test_concurrent_callers_share_single_refresh():
         # this loop just lets the scheduler tick.
         if not await _wait_for_inflight_refresh_task(core):
             pytest.fail("Refresh task did not appear in 20 ticks")
-        refresh_task = core._collaborators.auth_coord._refresh_task
+        refresh_task = core._web_runtime.auth_coord._refresh_task
         assert refresh_task is not None and not refresh_task.done()
 
         assert call_count == 1, f"Multiple refreshes fired before release: {call_count}"
@@ -176,7 +177,7 @@ async def test_refresh_failure_propagates_to_all_waiters():
         await asyncio.wait_for(enter.wait(), EVENT_TIMEOUT_S)
         if not await _wait_for_inflight_refresh_task(core):
             pytest.fail("Refresh task did not appear in 20 ticks")
-        refresh_task = core._collaborators.auth_coord._refresh_task
+        refresh_task = core._web_runtime.auth_coord._refresh_task
         assert refresh_task is not None and not refresh_task.done()
 
         assert call_count == 1, (
@@ -225,16 +226,16 @@ async def test_second_wave_creates_distinct_refresh_task():
         async def fake_retry(*args, **kwargs):
             return "ok"
 
-        core._rpc_executor.rpc_call = fake_retry  # type: ignore[method-assign]
+        core._web_runtime.executor.rpc_call = fake_retry  # type: ignore[method-assign]
 
         await _trigger_refresh(core)
-        first_task = core._collaborators.auth_coord._refresh_task
+        first_task = core._web_runtime.auth_coord._refresh_task
         assert first_task is not None and first_task.done()
         assert first_task.result().error is None
         assert first_task.result().value is not None
 
         await _trigger_refresh(core)
-        second_task = core._collaborators.auth_coord._refresh_task
+        second_task = core._web_runtime.auth_coord._refresh_task
         assert second_task is not None and second_task.done()
         assert second_task.result().error is None
         assert second_task.result().value is not None
