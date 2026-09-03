@@ -45,6 +45,7 @@ from _ci_e2e_notebooks import (
 
 from notebooklm import (
     AuthError,
+    ChatError,
     MindMapKind,
     NetworkError,
     NotebookLMClient,
@@ -64,6 +65,15 @@ DEFAULT_PREPARED_CONTRACT = (
 )
 
 T = TypeVar("T")
+
+_WEB_CHAT_QUOTA_MARKERS = (
+    "rate limit",
+    "rate limited",
+    "rate-limited",
+    "rejected by the api",
+    "429",
+    "too many requests",
+)
 
 
 class LifecycleError(RuntimeError):
@@ -176,6 +186,10 @@ def _category_for(exc: BaseException) -> str:
     if isinstance(exc, AuthError):
         return "AUTHENTICATION"
     if isinstance(exc, RateLimitError):
+        return "QUOTA"
+    if isinstance(exc, ChatError) and any(
+        marker in str(exc).lower() for marker in _WEB_CHAT_QUOTA_MARKERS
+    ):
         return "QUOTA"
     if isinstance(exc, (ManifestError, ValueError, OSError)):
         return "CONFIGURATION"
@@ -423,6 +437,26 @@ class NotebookLifecycleManager:
             sleep=self.sleep,
         )
 
+    async def _assert_chat_empty(self, notebook_id: str) -> None:
+        """Confirm no readable turns without the Web history helper's soft fallback."""
+
+        conversation_id = await self._read(
+            lambda: self.client.chat.get_conversation_id(notebook_id)
+        )
+        if conversation_id is None:
+            return
+        if not isinstance(conversation_id, str) or not conversation_id.strip():
+            raise ContractError("prepared clean role returned a malformed conversation ID")
+        turns = await self._read(
+            lambda: self.client.chat.get_conversation_turns(
+                notebook_id,
+                conversation_id,
+                limit=2,
+            )
+        )
+        if _turn_has_content(turns):
+            raise ContractError("prepared clean role inherited conversation state")
+
     async def validate_template(self, *, include_title: bool = True) -> dict[str, int]:
         """Validate immutable copied state using public typed APIs only."""
 
@@ -602,15 +636,11 @@ class NotebookLifecycleManager:
                     bool(getattr(source, "is_ready", False)) for source in final_sources
                 ) >= clean["minimum_ready_sources"] and not (snapshot.ids & final_inventory.ids):
                     if role in clean["empty_chat_roles"]:
-                        history = await self._read(
-                            lambda: self.client.chat.get_history(notebook_id)
-                        )
+                        await self._assert_chat_empty(notebook_id)
                         if self.clock() > deadline:
                             raise ContractError(
                                 "role preparation exceeded its five-minute deadline"
                             )
-                        if history:
-                            raise ContractError("prepared clean role inherited conversation state")
                     return {
                         "removed_artifacts": len(snapshot.artifacts),
                         "removed_notes": len(snapshot.notes),
@@ -737,9 +767,7 @@ class NotebookLifecycleManager:
         if ready_count < minimum:
             raise ContractError("prepared clean role has unready sources")
         if role in self.prepared_contract["clean_roles"]["empty_chat_roles"]:
-            history = await self._read(lambda: self.client.chat.get_history(notebook_id))
-            if history:
-                raise ContractError("prepared clean role inherited conversation state")
+            await self._assert_chat_empty(notebook_id)
         return {"ready_sources": ready_count, **inventory.counts}
 
     def _persist_manifest(self, manifest: dict[str, Any]) -> None:

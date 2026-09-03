@@ -403,6 +403,33 @@ def test_template_secret_alias_still_requires_strict_ci_gate(tmp_path, monkeypat
     assert "exact consumer step" in err
 
 
+def test_trailing_job_env_is_not_mistaken_for_the_last_step(tmp_path, monkeypatch, capsys, script):
+    _write_workflow(
+        tmp_path,
+        "bad_trailing_job_env.yml",
+        """
+        name: bad-trailing-job-env
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            - run: python validate.py
+            env:
+              NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
+        """,
+    )
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "exact consumer step" in err
+
+
 @pytest.mark.parametrize(
     ("flow_step", "continuation"),
     [

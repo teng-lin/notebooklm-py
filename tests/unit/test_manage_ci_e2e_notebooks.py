@@ -46,6 +46,7 @@ from manage_ci_e2e_notebooks import (  # noqa: E402
 
 from notebooklm import (  # noqa: E402
     AuthError,
+    ChatError,
     MindMapKind,
     NotebookNotFoundError,
     RateLimitError,
@@ -296,6 +297,7 @@ class FakeChat:
         self.seeded: set[str] = set()
         self.questions: dict[str, str] = {}
         self.ask_error: BaseException | None = None
+        self.turns_error: BaseException | None = None
         self.turns_response: object | None = None
 
     async def ask(self, notebook_id: str, question: str) -> SimpleNamespace:
@@ -319,6 +321,8 @@ class FakeChat:
         limit: int,
     ) -> object:
         assert limit == 2
+        if self.turns_error is not None:
+            raise self.turns_error
         if notebook_id in self.seeded and conversation_id:
             if self.turns_response is not None:
                 return self.turns_response
@@ -1518,16 +1522,36 @@ async def test_empty_chat_check_cannot_succeed_after_preparation_deadline(
     manager, client, _store, clock = _manager(tmp_path, contracts)
     notebook_id = "clean-target"
     client.sources.by_notebook[notebook_id] = [_source(1), _source(2), _source(3)]
-    original_get_history = client.chat.get_history
+    original_get_conversation_id = client.chat.get_conversation_id
 
-    async def delayed_history(target: str) -> list[tuple[str, str]]:
+    async def delayed_conversation_id(target: str) -> str | None:
         clock.value = 301
-        return await original_get_history(target)
+        return await original_get_conversation_id(target)
 
-    client.chat.get_history = delayed_history  # type: ignore[method-assign]
+    client.chat.get_conversation_id = delayed_conversation_id  # type: ignore[method-assign]
     with pytest.raises(ContractError, match="five-minute deadline"):
         await manager.prepare_clean_role(notebook_id, "rpc")
     assert clock.value == 301
+
+
+@pytest.mark.parametrize("operation", ["prepare", "validate"])
+@pytest.mark.asyncio
+async def test_clean_chat_read_does_not_swallow_turn_failures(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+    operation: str,
+) -> None:
+    manager, client, _store, _clock = _manager(tmp_path, contracts)
+    notebook_id = "clean-target"
+    client.sources.by_notebook[notebook_id] = [_source(1), _source(2), _source(3)]
+    client.chat.seeded.add(notebook_id)
+    client.chat.turns_error = ChatError("turn read failed")
+
+    with pytest.raises(ChatError, match="turn read failed"):
+        if operation == "prepare":
+            await manager.prepare_clean_role(notebook_id, "rpc")
+        else:
+            await manager.validate_prepared_role(notebook_id, "rpc")
 
 
 @pytest.mark.asyncio
@@ -1568,6 +1592,15 @@ def test_diagnostics_do_not_render_exception_bodies_or_resource_ids() -> None:
     assert rendered == "RuntimeError"
     assert "secret-cookie" not in rendered
     assert "copy-sensitive" not in rendered
+
+
+def test_web_chat_quota_marker_is_categorized_without_rendering_the_body() -> None:
+    quota = ChatError("Chat request was rate limited or rejected by the API. secret-id")
+    regression = ChatError("Chat response was malformed. secret-id")
+
+    assert lifecycle._category_for(quota) == "QUOTA"
+    assert lifecycle._category_for(regression) == "REGRESSION"
+    assert _safe_exception_name(quota) == "ChatError"
 
 
 def test_contract_files_are_versioned_and_contain_no_identity_handles() -> None:

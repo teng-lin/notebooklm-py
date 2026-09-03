@@ -551,6 +551,13 @@ def _scan_workflow(path: Path) -> list[str]:
         if current_job is None:
             continue
 
+        # Returning to a non-empty job-level key closes the preceding step.
+        # Without this reset, a trailing job-level ``env:`` block inherits the
+        # last step index and can make a protected binding look step-scoped.
+        indent = len(line) - len(line.lstrip(" "))
+        if in_step and line.strip() and indent <= 4:
+            in_step = False
+
         # Track job-level ``environment:`` declaration. The value must name an
         # environment from ``_APPROVED_ENVIRONMENTS`` as a bare or quoted
         # literal. Expression-valued environments are rejected; use a trusted
