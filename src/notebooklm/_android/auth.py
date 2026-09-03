@@ -270,12 +270,14 @@ class BearerProvider(EpochFenced):
                 or self._active_epoch != expected_epoch
                 or self._master_token is None
             ):
-                del result
                 raise RuntimeError(_INACTIVE_MESSAGE)
             if result.cache_deadline is not None and self._monotonic() < result.cache_deadline:
                 self._cached = result.credential
                 self._cache_deadline = result.cache_deadline
             return result.credential
+        except BaseException:
+            del result
+            raise
         finally:
             self._settle_mint_waiter(task)
             lock.release()

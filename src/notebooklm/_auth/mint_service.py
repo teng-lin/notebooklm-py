@@ -159,24 +159,23 @@ class MintService:
         """Exchange a single-use OAuth token for a durable master token."""
         try:
             gpsoauth = _require_gpsoauth()
-        except BaseException:
-            # MissingDependencyError deliberately bypasses the private auth
-            # translation. Scrub its direct caller frame before it escapes so
-            # traceback inspection cannot recover the single-use token.
+            try:
+                with _quiet_gpsoauth_logging():
+                    result = gpsoauth.exchange_token(email, oauth_token, android_id)
+            except Exception as exc:  # noqa: BLE001 (sanitize dependency/transport failures)
+                raise _MintError("exchange_token failed (network or gpsoauth error).") from exc
+            token = result.get("Token")
+            if not token:
+                raise _MintError(
+                    "exchange_token rejected the oauth_token "
+                    f"(Error={result.get('Error', 'unknown')}). The oauth_token is "
+                    "single-use and short-lived — re-capture it."
+                )
+            return MasterToken(email=email, android_id=android_id, secret=str(token))
+        finally:
+            # Dependency, transport and process-exit paths all leave this frame
+            # without the caller's single-use token.
             del oauth_token
-            raise
-        try:
-            with _quiet_gpsoauth_logging():
-                result = gpsoauth.exchange_token(email, oauth_token, android_id)
-        except Exception as exc:  # noqa: BLE001 (sanitize dependency/transport failures)
-            raise _MintError("exchange_token failed (network or gpsoauth error).") from exc
-        token = result.get("Token")
-        if not token:
-            raise _MintError(
-                f"exchange_token rejected the oauth_token (Error={result.get('Error', 'unknown')}). "
-                "The oauth_token is single-use and short-lived — re-capture it."
-            )
-        return MasterToken(email=email, android_id=android_id, secret=str(token))
 
     async def mint_oauth(
         self,
@@ -184,64 +183,58 @@ class MintService:
         spec: OAuthClientSpec,
     ) -> MintedOAuthToken:
         """Mint one short-lived OAuth token for an immutable client identity."""
-        try:
-            gpsoauth = _require_gpsoauth()
-        except BaseException:
-            # A dependency failure is public and keeps its distinct type. Drop
-            # the durable credential from this escaping traceback frame.
-            del master_token
-            raise
         oauth: Any = None
         bearer: Any = None
         minted_token: str | None = None
         expires_at: int | None = None
         failure_message: str | None = None
         try:
-            oauth = await asyncio.to_thread(
-                _perform_oauth,
-                gpsoauth,
-                master_token.email,
-                master_token.secret,
-                master_token.android_id,
-                spec,
-            )
-        except Exception:  # noqa: BLE001 (discard dependency/transport exception + traceback)
-            failure_message = "perform_oauth failed (network or gpsoauth error)."
-        except BaseException:
-            # Cancellation and process-exit signals keep their identity, but the
-            # durable credential must not remain in this escaping frame.
-            del master_token
-            raise
-        else:
+            gpsoauth = _require_gpsoauth()
             try:
-                bearer = oauth.get("Auth")
-                if bearer:
-                    minted_token = str(bearer)
-                    expires_at = _parse_oauth_expiry(oauth.get("Expiry"))
-                else:
-                    failure_message = (
-                        "perform_oauth rejected the master token. "
-                        "Re-bootstrap with `notebooklm login --master-token`."
-                    )
-            except Exception:  # noqa: BLE001 (sanitize malformed dependency response)
-                failure_message = "perform_oauth returned a malformed response."
+                oauth = await asyncio.to_thread(
+                    _perform_oauth,
+                    gpsoauth,
+                    master_token.email,
+                    master_token.secret,
+                    master_token.android_id,
+                    spec,
+                )
+            except Exception:  # noqa: BLE001 (discard dependency/transport exception + traceback)
+                failure_message = "perform_oauth failed (network or gpsoauth error)."
+            else:
+                try:
+                    bearer = oauth.get("Auth")
+                    if bearer:
+                        minted_token = str(bearer)
+                        expires_at = _parse_oauth_expiry(oauth.get("Expiry"))
+                    else:
+                        failure_message = (
+                            "perform_oauth rejected the master token. "
+                            "Re-bootstrap with `notebooklm login --master-token`."
+                        )
+                except Exception:  # noqa: BLE001 (sanitize malformed dependency response)
+                    failure_message = "perform_oauth returned a malformed response."
 
-        if minted_token is not None:
-            return MintedOAuthToken(token=minted_token, expires_at=expires_at)
+            if minted_token is not None:
+                return MintedOAuthToken(token=minted_token, expires_at=expires_at)
 
-        # Raise only after the dependency exception/parser frame has unwound,
-        # and remove every raw credential carrier from this escaping frame.
-        # The explicit chain reset also prevents an active caller exception
-        # from becoming an implicit, potentially secret-bearing context.
-        del master_token, oauth, bearer, minted_token
-        error = OAuthMintError(failure_message or "perform_oauth returned a malformed response.")
-        try:
-            raise error
-        except OAuthMintError:
-            error.__cause__ = None
-            error.__context__ = None
-            error.__suppress_context__ = False
-            raise
+            # Raise only after the dependency exception/parser frame has unwound.
+            # The explicit chain reset also prevents an active caller exception
+            # from becoming an implicit, potentially secret-bearing context.
+            error = OAuthMintError(
+                failure_message or "perform_oauth returned a malformed response."
+            )
+            try:
+                raise error
+            except OAuthMintError:
+                error.__cause__ = None
+                error.__context__ = None
+                error.__suppress_context__ = False
+                raise
+        finally:
+            # Every exit, including cancellation and process-exit signals,
+            # scrubs raw credential carriers before this frame can escape.
+            del master_token, oauth, bearer, minted_token
 
     async def mint(self, token: MasterToken) -> httpx.Cookies:
         """Mint a fresh live transport jar from one durable master token."""

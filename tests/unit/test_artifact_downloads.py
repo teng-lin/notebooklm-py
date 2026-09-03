@@ -1,5 +1,6 @@
 """Unit tests for artifact download methods."""
 
+import asyncio
 import inspect
 import os
 import tempfile
@@ -68,6 +69,40 @@ async def test_guarded_transfer_supports_a_format_without_magic_bytes(tmp_path) 
 
     assert result == TransferSuccess(str(destination), len(payload))
     assert destination.read_bytes() == payload
+
+
+@pytest.mark.asyncio
+async def test_guarded_transfer_credential_failure_scrubs_helper_frame(tmp_path) -> None:
+    signed_url = "https://storage.googleapis.com/example/file?capability=secret"
+
+    async def credential_for(_url: str):
+        raise asyncio.CancelledError("credential acquisition cancelled")
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await guarded_transfer(
+            MagicMock(),
+            signed_url,
+            str(tmp_path / "unused"),
+            policy=TransferPolicy(
+                artifact_type="representation",
+                formats=(FormatPolicy(frozenset({"application/json"}), ()),),
+                max_bytes=1024,
+            ),
+            credential_for=credential_for,
+            validate_url=lambda _url: "storage.googleapis.com",
+            safe_host=lambda _url: "storage.googleapis.com",
+            assert_active=lambda: None,
+        )
+
+    traceback = raised.value.__traceback__
+    helper_locals: dict[str, object] | None = None
+    while traceback is not None:
+        if traceback.tb_frame.f_code.co_name == "_credentials_for_hop":
+            helper_locals = traceback.tb_frame.f_locals
+            break
+        traceback = traceback.tb_next
+    assert helper_locals is not None, "credential helper frame was not inspected"
+    assert helper_locals == {}
 
 
 @pytest.fixture
