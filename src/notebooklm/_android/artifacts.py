@@ -1064,31 +1064,14 @@ class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin
             raise ArtifactNotFoundError(artifact_id, method_id=UPDATE_ARTIFACT_METHOD)
         return read_back if return_object else None
 
-    async def export_report(
+    async def _send_export(
         self,
         notebook_id: str,
-        artifact_id: str,
-        title: str = "Export",
-        export_type: ExportType = ExportType.DOCS,
-    ) -> Any:
-        return await self.export(notebook_id, artifact_id, title, export_type)
-
-    async def export_data_table(
-        self,
-        notebook_id: str,
-        artifact_id: str,
-        title: str = "Export",
-    ) -> Any:
-        return await self.export(notebook_id, artifact_id, title, ExportType.SHEETS)
-
-    async def export(
-        self,
-        notebook_id: str,
-        artifact_id: str | None = None,
-        title: str = "Export",
-        export_type: ExportType = ExportType.DOCS,
+        artifact_id: str | None,
+        title: str,
+        export_type: ExportType,
         *,
-        content: str | None = None,
+        content: str | None,
     ) -> Any:
         return await export_to_drive(
             self._transport,

@@ -6,7 +6,6 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import urlsplit
 
-from .._artifact import validation as _artifact_validation
 from .._idempotency import call_unconfirmed_on_transport_loss, mark_unconfirmed
 from .._types.artifacts import _status_from_code
 from .._types.enums import ExportType
@@ -115,7 +114,6 @@ async def export_to_drive(
     title: str,
     export_type: ExportType,
 ) -> Any:
-    _artifact_validation.check_exactly_one_export_target(artifact_id, content)
     if not isinstance(title, str):
         raise ValidationError("title must be a string")
     if not isinstance(export_type, ExportType):

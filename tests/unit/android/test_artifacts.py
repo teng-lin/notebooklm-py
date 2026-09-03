@@ -1520,6 +1520,7 @@ async def test_export_to_drive_supports_artifact_and_literal_content_targets() -
     assert second[1].destination == ExportType.SHEETS.value
     assert session.calls[0][2]["replay_safe"] is True
     assert all(call[2]["replay_safe"] is False for call in session.calls[1:])
+    assert session.scopes == ["artifacts.export", "artifacts.export"]
 
 
 @pytest.mark.asyncio
@@ -1532,12 +1533,18 @@ async def test_export_data_table_forces_sheets_and_validates_target_before_io() 
     assert (await api.export_data_table("notebook-1", "table-1")).endswith("/sheet")
     assert session.calls[1][1].destination == ExportType.SHEETS.value
     session.calls.clear()
+    session.scopes.clear()
 
     with pytest.raises(ValidationError, match="exactly one"):
         await api.export("notebook-1")
     with pytest.raises(ValidationError, match="exactly one"):
         await api.export("notebook-1", "artifact-1", content="literal")
+    with pytest.raises(ValidationError, match="title must be a string"):
+        await api.export("notebook-1", "artifact-1", cast(Any, 42))
+    with pytest.raises(ValidationError, match="export_type must be an ExportType"):
+        await api.export("notebook-1", "artifact-1", export_type=cast(Any, 1))
     assert session.calls == []
+    assert session.scopes == []
 
 
 @pytest.mark.asyncio

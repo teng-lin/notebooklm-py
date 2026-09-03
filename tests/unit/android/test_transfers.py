@@ -337,8 +337,9 @@ async def test_copy_artifacts_not_found_malformed_and_unconfirmed() -> None:
     empty = FakeTransport(
         {COPY_ARTIFACTS_ASYNC_METHOD: [artifacts_pb2.CopyArtifactsAsyncResponse()]}
     )
-    with pytest.raises(ArtifactNotFoundError):
+    with pytest.raises(ArtifactNotFoundError) as missing:
         await _artifacts_api(empty).copy(NB, [ART_A], TARGET)
+    assert missing.value.method_id == COPY_ARTIFACTS_ASYNC_METHOD
     malformed = FakeTransport(
         {
             COPY_ARTIFACTS_ASYNC_METHOD: [
@@ -348,11 +349,16 @@ async def test_copy_artifacts_not_found_malformed_and_unconfirmed() -> None:
             ]
         }
     )
-    with pytest.raises(DecodingError):
+    with pytest.raises(DecodingError) as decoding:
         await _artifacts_api(malformed).copy(NB, [ART_A], TARGET)
-    lost = FakeTransport({COPY_ARTIFACTS_ASYNC_METHOD: [NetworkError("gone")]})
+    assert decoding.value.method_id == COPY_ARTIFACTS_ASYNC_METHOD
+    assert decoding.value.raw_response is None
+    error = NetworkError("gone")
+    lost = FakeTransport({COPY_ARTIFACTS_ASYNC_METHOD: [error]})
     with pytest.raises(NetworkError) as excinfo:
         await _artifacts_api(lost).copy(NB, [ART_A], TARGET)
+    assert excinfo.value is error
+    assert excinfo.value.__cause__ is None
     assert is_unconfirmed(excinfo.value)
     with pytest.raises(ValidationError):
         await _artifacts_api(FakeTransport()).copy(NB, [""], TARGET)
