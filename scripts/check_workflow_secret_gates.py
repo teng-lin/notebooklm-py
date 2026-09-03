@@ -118,9 +118,13 @@ _SECRET_REF_RE = re.compile(
 # the called workflow). Always treat as a secret consumer.
 _SECRETS_INHERIT_RE = re.compile(r"^\s*secrets:\s*inherit\s*(#.*)?$")
 
-# Job header: two-space indent, then `<name>:` with nothing else on the
-# line. We pick up the line number to point users at the source.
-_JOB_HEADER_RE = re.compile(r"^  ([A-Za-z_][A-Za-z0-9_-]*):\s*(#.*)?$")
+# Job header: two-space indent, then a plain or consistently quoted
+# `<name>:` with nothing else on the line. Quoted YAML keys must still
+# create a hard job boundary; otherwise their secret use could inherit
+# the preceding job's security envelope.
+_JOB_HEADER_RE = re.compile(
+    r"^  (?P<quote>['\"]?)(?P<name>[A-Za-z_][A-Za-z0-9_-]*)(?P=quote):\s*(#.*)?$"
+)
 
 # Step start: four-space indent then `- ` then either `name:` or `uses:`
 # (or any other step-attribute key on the same line — pytest-style YAML
@@ -545,7 +549,7 @@ def _scan_workflow(path: Path) -> list[str]:
         m_job = _JOB_HEADER_RE.match(line)
         if m_job:
             flush_job()
-            reset_for_new_job(m_job.group(1))
+            reset_for_new_job(m_job.group("name"))
             continue
 
         if current_job is None:
@@ -723,7 +727,7 @@ def _scan_pooled_account_jobs(path: Path) -> list[str]:
         if match:
             if current is not None:
                 chunks.append(current)
-            current = (match.group(1), line_number, [])
+            current = (match.group("name"), line_number, [])
         elif current is not None:
             current[2].append(line)
     if current is not None:

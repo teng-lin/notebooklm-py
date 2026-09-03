@@ -1287,6 +1287,42 @@ def test_future_pooled_dynamic_secret_job_requires_full_account_envelope(tmp_pat
     assert script._scan_pooled_account_jobs(tmp_path / "pool.yml") == []
 
 
+def test_quoted_job_key_cannot_inherit_previous_security_envelope(
+    tmp_path, monkeypatch, capsys, script
+) -> None:
+    _write_workflow(
+        tmp_path,
+        "quoted-job.yml",
+        """
+        name: quoted-job
+        on: workflow_dispatch
+        jobs:
+          safe:
+            if: github.repository == 'teng-lin/notebooklm-py' && needs.resolve-target.outputs.is_standard == 'true'
+            environment: protected-readonly
+            concurrency:
+              group: notebooklm-account-${{ matrix.account_slot }}
+              cancel-in-progress: false
+              queue: max
+            runs-on: ubuntu-latest
+          "live":
+            runs-on: ubuntu-latest
+            steps:
+            - name: auth
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.master_token_secret_name] }}
+              run: python scripts/materialize_ci_auth.py
+        """,
+    )
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "pooled secret job 'live'" in err
+    assert "lacks the conjunctive standard-repository" in err
+    assert "lacks the literal protected-readonly Environment" in err
+
+
 def test_pooled_scanner_accepts_jobs_header_with_trailing_comment(tmp_path, script) -> None:
     workflow = tmp_path / "pool.yml"
     workflow.write_text(

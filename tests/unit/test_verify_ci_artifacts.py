@@ -613,6 +613,32 @@ async def test_inventory_artifact_requires_a_matching_journal_start(tmp_path) ->
 
 
 @pytest.mark.asyncio
+async def test_late_inventory_artifact_requires_a_matching_journal_start(tmp_path) -> None:
+    journal = tmp_path / "journal.jsonl"
+    operation_id = str(uuid.uuid4())
+    write_journal(
+        journal,
+        [
+            row(operation_id, "started"),
+            row(operation_id, "accepted", resource_id="tracked"),
+        ],
+    )
+    tracked = Artifact("tracked", "audio")
+    late_unjournaled = Artifact("late-unjournaled", "video")
+
+    with pytest.raises(verify.JournalError, match="no matching journal start"):
+        await verify.verify_journal(
+            Client([[tracked], [tracked, late_unjournaled]]),
+            notebook_id="generation-role",
+            journal_path=journal,
+            timeout=240,
+            minimum_discovery_window=0,
+            quiet_polls=1,
+            poll_interval=0,
+        )
+
+
+@pytest.mark.asyncio
 async def test_accepted_task_that_is_delisted_fails_even_if_poll_reports_completed(
     tmp_path,
 ) -> None:

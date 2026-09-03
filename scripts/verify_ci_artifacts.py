@@ -568,6 +568,10 @@ async def verify_journal(
             for operation in quota_no_commit_operations
         ):
             raise JournalError("test-owned operation has no verified deletion")
+        if authorized_deleted & current_ids:
+            raise JournalError("delete-confirmed resource is still present")
+        if current_ids - tracked_ids - unjournaled_ids:
+            raise JournalError("inventory artifact has no matching journal start")
         for resource_id, operation in tracked.items():
             artifact = current_by_id.get(resource_id)
             if artifact is None or resource_id in authorized_deleted:
