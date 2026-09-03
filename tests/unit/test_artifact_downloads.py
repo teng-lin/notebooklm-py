@@ -5,9 +5,16 @@ import os
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from notebooklm._artifact import downloads as asset_downloads
+from notebooklm._artifact._guarded_transfer import (
+    FormatPolicy,
+    TransferPolicy,
+    TransferSuccess,
+    guarded_transfer,
+)
 from notebooklm._artifact.downloads import AssetDownloadService
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._web.artifact import downloads as artifact_downloads
@@ -29,6 +36,38 @@ def test_asset_download_service_android_extensions_keep_web_safe_defaults() -> N
     assert parameters["chain"].default is True
     assert parameters["on_auth_error"].kind is inspect.Parameter.KEYWORD_ONLY
     assert parameters["on_auth_error"].default is None
+
+
+@pytest.mark.asyncio
+async def test_guarded_transfer_supports_a_format_without_magic_bytes(tmp_path) -> None:
+    payload = b"signature-free representation"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "application/json"}, content=payload)
+
+    async def credential_for(_url: str):
+        return None
+
+    destination = tmp_path / "representation.json"
+    policy = TransferPolicy(
+        artifact_type="representation",
+        formats=(FormatPolicy(frozenset({"application/json"}), ()),),
+        max_bytes=1024,
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await guarded_transfer(
+            client,
+            "https://storage.googleapis.com/example/representation.json",
+            str(destination),
+            policy=policy,
+            credential_for=credential_for,
+            validate_url=lambda _url: "storage.googleapis.com",
+            safe_host=lambda _url: "storage.googleapis.com",
+            assert_active=lambda: None,
+        )
+
+    assert result == TransferSuccess(str(destination), len(payload))
+    assert destination.read_bytes() == payload
 
 
 @pytest.fixture

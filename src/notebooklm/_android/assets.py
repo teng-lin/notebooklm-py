@@ -567,8 +567,8 @@ class AndroidAssetDownloadService(EpochFenced, AssetDownloadService):
                     return current_policy
 
                 async def on_auth_error(_url: str, _error: AuthError) -> None:
-                    assert current_policy is not None
-                    current_policy.invalidate_last()
+                    if current_policy is not None:
+                        current_policy.invalidate_last()
 
                 return await super()._download_guarded_urls_batch(
                     client,

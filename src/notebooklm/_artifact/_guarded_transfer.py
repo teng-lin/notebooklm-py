@@ -222,7 +222,10 @@ async def guarded_transfer(
                 total = 0
                 prefix = bytearray()
                 signatures = format_policy.signature_checks
-                required_prefix = max(offset + len(signature) for signature, offset in signatures)
+                required_prefix = max(
+                    (offset + len(signature) for signature, offset in signatures),
+                    default=0,
+                )
                 with os.fdopen(fd, "wb") as handle:
                     async for chunk in response.aiter_bytes():
                         if not chunk:

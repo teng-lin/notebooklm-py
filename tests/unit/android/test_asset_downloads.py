@@ -1290,6 +1290,17 @@ async def test_retirement_during_bearer_await_preserves_the_lifecycle_failure(
     assert client.requests == []
 
 
+def test_android_downloads_disable_exception_cause_chaining_at_construction() -> None:
+    """Neither Android single nor batch transfers should build a URL-bearing cause."""
+    service = AndroidAssetDownloadService(
+        bearer_provider=FakeBearer(),  # type: ignore[arg-type]
+        supervisor=_supervisor(),
+        client_factory=lambda: FakeClient([]),
+    )
+
+    assert service._chain is False
+
+
 @pytest.mark.asyncio
 async def test_the_matching_open_generation_passes_the_epoch_fence() -> None:
     """Guards the test above from passing because the fence rejects everything."""
