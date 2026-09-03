@@ -1,5 +1,6 @@
 """Unit tests for artifact download methods."""
 
+import inspect
 import os
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,6 +18,17 @@ from notebooklm.types import (
     ArtifactNotReadyError,
     ArtifactParseError,
 )
+
+
+def test_asset_download_service_android_extensions_keep_web_safe_defaults() -> None:
+    parameters = inspect.signature(AssetDownloadService).parameters
+
+    assert parameters["trusted_host"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameters["trusted_host"].default is asset_downloads._is_trusted_download_host
+    assert parameters["chain"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameters["chain"].default is True
+    assert parameters["on_auth_error"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameters["on_auth_error"].default is None
 
 
 @pytest.fixture

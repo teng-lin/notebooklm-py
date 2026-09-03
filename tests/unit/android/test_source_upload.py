@@ -480,6 +480,9 @@ async def test_waiting_branches_use_one_exact_read_then_optional_no_readback_tit
     )
 
     assert result.status is expected_status
+    # Gate 3: the GetProject row uses the same public PDF type code as the web
+    # source plane, so fail-fast/transient policy sees backend-parity metadata.
+    assert result._type_code == 3
     assert result.title == (custom_title or path.name)
     methods = [call[0] for call in session.calls]
     assert methods.count(GET_PROJECT_METHOD) == 1

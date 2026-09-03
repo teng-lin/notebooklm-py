@@ -29,6 +29,7 @@ from ..exceptions import (
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
+    AuthError,
     DecodingError,
     RPCError,
     ValidationError,
@@ -245,18 +246,23 @@ class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin
         artifact_id: str,
     ) -> str:
         failure: tuple[str | None, int | None] | None = None
+        auth_failure: BaseException | None = None
         result: str | None = None
+        asset_downloads = cast(AndroidAssetDownloadService, self._asset_downloads)
         try:
-            asset_downloads = cast(AndroidAssetDownloadService, self._asset_downloads)
             result = await asset_downloads.download_representation(
                 url,
                 output_path,
                 representation=representation,
             )
+        except AuthError as error:
+            auth_failure = sanitize_escaping_exception(error)
         except ArtifactDownloadError as error:
             failure = (error.details, error.status_code)
         finally:
-            del url
+            del asset_downloads, self, url
+        if auth_failure is not None:
+            raise auth_failure from None
         if failure is not None:
             details, status_code = failure
             raise ArtifactDownloadError(
@@ -655,11 +661,17 @@ class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin
             )
 
         transfer_failure: tuple[str | None, int | None] | None = None
+        auth_failure: BaseException | None = None
         result: str | None = None
         try:
             result = await self._asset_downloads.download_url(selected.url, output_path)
+        except AuthError as error:
+            auth_failure = sanitize_escaping_exception(error)
         except ArtifactDownloadError as error:
             transfer_failure = (error.details, error.status_code)
+        if auth_failure is not None:
+            del selected, self
+            raise auth_failure from None
         if transfer_failure is not None:
             details, status_code = transfer_failure
             selected_id = selected.id

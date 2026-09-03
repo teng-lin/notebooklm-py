@@ -164,6 +164,101 @@ async def test_wait_until_ready_raises_processing_error_for_terminal_error_type(
 
 
 @pytest.mark.asyncio
+async def test_wait_until_ready_empty_transient_types_fail_fast_for_unclassified_source(
+    poller: SourcePoller,
+    logger: logging.Logger,
+) -> None:
+    failed = Source(id="src_android", status=SourceStatus.ERROR, _type_code=0)
+    get_source = AsyncMock(return_value=failed)
+
+    with pytest.raises(SourceProcessingError):
+        await poller.wait_until_ready(
+            "nb_1",
+            "src_android",
+            transient_error_types=(),
+            get_source=get_source,
+            sleep=AsyncMock(),
+            monotonic=MagicMock(return_value=0.0),
+            logger=logger,
+        )
+
+    get_source.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_wait_until_ready_look_first_observes_error_after_deadline(
+    poller: SourcePoller,
+    logger: logging.Logger,
+) -> None:
+    failed = Source(id="src_android", status=SourceStatus.ERROR, _type_code=0)
+    get_source = AsyncMock(return_value=failed)
+    monotonic = MagicMock(side_effect=[0.0, 1.0])
+
+    with pytest.raises(SourceProcessingError):
+        await poller.wait_until_ready(
+            "nb_1",
+            "src_android",
+            timeout=0.01,
+            look_first=True,
+            transient_error_types=(),
+            get_source=get_source,
+            sleep=AsyncMock(),
+            monotonic=monotonic,
+            logger=logger,
+        )
+
+    get_source.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_wait_until_ready_zero_budget_suppresses_look_first(
+    poller: SourcePoller,
+    logger: logging.Logger,
+) -> None:
+    get_source = AsyncMock()
+
+    with pytest.raises(SourceTimeoutError) as captured:
+        await poller.wait_until_ready(
+            "nb_1",
+            "src_android",
+            timeout=0.0,
+            look_first=True,
+            get_source=get_source,
+            sleep=AsyncMock(),
+            monotonic=MagicMock(return_value=0.0),
+            logger=logger,
+        )
+
+    assert captured.value.last_status is None
+    get_source.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_wait_until_ready_can_treat_missing_upload_row_as_pending(
+    poller: SourcePoller,
+    logger: logging.Logger,
+) -> None:
+    ready = Source(id="src_android", status=SourceStatus.READY, _type_code=3)
+    get_source = AsyncMock(side_effect=[None, ready])
+    sleep = AsyncMock()
+
+    result = await poller.wait_until_ready(
+        "nb_1",
+        "src_android",
+        timeout=1.0,
+        initial_interval=0.5,
+        missing_is_pending=True,
+        get_source=get_source,
+        sleep=sleep,
+        monotonic=MagicMock(return_value=0.0),
+        logger=logger,
+    )
+
+    assert result is ready
+    sleep.assert_awaited_once_with(0.5)
+
+
+@pytest.mark.asyncio
 async def test_wait_until_ready_tolerates_transient_error_for_audio(
     poller: SourcePoller,
     logger: logging.Logger,

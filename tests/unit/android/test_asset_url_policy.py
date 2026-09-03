@@ -15,20 +15,22 @@ from pathlib import Path
 import pytest
 
 from notebooklm._android.assets import (
-    _MAX_APPLICATION_REDIRECT_BYTES,
     _append_initial_alr,
-    _bearer_for,
-    _bounded_text,
     _close_clients_and_settle_tasks,
-    _declared_content_length,
     _default_client_factory,
-    _fsync_directory,
     _is_android_download_host,
     _safe_approved_host,
-    _single_location,
+    _StickyBearerPolicy,
     _validated_host,
 )
 from notebooklm._android.auth import BearerCredential
+from notebooklm._artifact._guarded_transfer import (
+    MAX_APPLICATION_REDIRECT_BYTES,
+    _bounded_text,
+    _declared_content_length,
+    _fsync_directory,
+    _single_location,
+)
 
 BEARER = "ya29.asset-secret"
 APPROVED = "lh3.googleusercontent.com"
@@ -170,31 +172,40 @@ def test_an_unparseable_url_yields_no_alr_variant() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _bearer_for
+# sticky bearer policy
 # ---------------------------------------------------------------------------
 
 
-def test_the_bearer_is_attached_only_for_hosts_that_require_it() -> None:
-    credential = BearerCredential(token=BEARER, generation=1)
+class _Bearer:
+    def __init__(self) -> None:
+        self.calls: list[int] = []
 
-    assert _bearer_for(APPROVED, credential) == {"Authorization": f"Bearer {BEARER}"}
-    assert _bearer_for("contribution.usercontent.google.com", credential) == {
-        "Authorization": f"Bearer {BEARER}"
-    }
+    async def get(self, expected_epoch: int) -> BearerCredential:
+        self.calls.append(expected_epoch)
+        return BearerCredential(token=BEARER, generation=len(self.calls))
+
+    def invalidate(self, _generation: int) -> None:
+        return None
 
 
-@pytest.mark.parametrize(
-    ("host", "credential"),
-    [
-        pytest.param("r1.googlevideo.com", BearerCredential(BEARER, 1), id="media-cdn-host"),
-        pytest.param("evil.com", BearerCredential(BEARER, 1), id="unapproved-host"),
-        pytest.param(APPROVED, None, id="no-credential"),
-    ],
-)
-def test_the_bearer_is_withheld_from_every_other_hop(
-    host: str, credential: BearerCredential | None
-) -> None:
-    assert _bearer_for(host, credential) == {}
+@pytest.mark.asyncio
+async def test_the_bearer_is_attached_only_for_hosts_that_require_it() -> None:
+    bearer = _Bearer()
+    policy = _StickyBearerPolicy(bearer, 7)  # type: ignore[arg-type]
+
+    selected = await policy(f"https://{APPROVED}/asset")
+    assert selected is not None and selected.headers == {"Authorization": f"Bearer {BEARER}"}
+    assert bearer.calls == [7]
+
+
+@pytest.mark.asyncio
+async def test_the_bearer_is_permanently_withheld_after_an_off_list_hop() -> None:
+    bearer = _Bearer()
+    policy = _StickyBearerPolicy(bearer, 7)  # type: ignore[arg-type]
+
+    assert await policy("https://r1.googlevideo.com/media") is None
+    assert await policy(f"https://{APPROVED}/returned") is None
+    assert bearer.calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +296,7 @@ async def test_a_small_redirect_body_is_read_whole() -> None:
 @pytest.mark.asyncio
 async def test_an_oversized_redirect_body_is_abandoned() -> None:
     """A hop that streams a large body is not a redirect page — stop reading."""
-    oversized = b"x" * (_MAX_APPLICATION_REDIRECT_BYTES + 1)
+    oversized = b"x" * (MAX_APPLICATION_REDIRECT_BYTES + 1)
 
     assert await _bounded_text(_Response([oversized])) is None
 

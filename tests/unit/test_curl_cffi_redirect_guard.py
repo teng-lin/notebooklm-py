@@ -142,7 +142,7 @@ async def test_get_guarded_applies_cookie_policy_on_every_redirect_hop():
     jar.set("SID", "secret", domain=".googleapis.com")
     policy_calls: list[str] = []
 
-    def credential_for(url: str) -> HopCredentials:
+    async def credential_for(url: str) -> HopCredentials:
         policy_calls.append(url)
         return HopCredentials(cookies=jar)
 
@@ -185,7 +185,7 @@ async def test_get_guarded_policy_replaces_constructor_credentials_then_drops_th
         calls,
     )
 
-    def credential_for(url: str) -> HopCredentials | None:
+    async def credential_for(url: str) -> HopCredentials | None:
         if url.endswith("/start"):
             return HopCredentials(
                 cookies=selected_jar,
@@ -274,11 +274,15 @@ async def test_get_guarded_selected_jar_receives_redirect_set_cookie():
         return response
 
     client._curl.get = fake_get
+
+    async def credential_for(_url: str) -> HopCredentials:
+        return HopCredentials(cookies=selected_jar)
+
     try:
         await client.get_guarded(
             "https://storage.googleapis.com/start",
             is_trusted_host=_trust_local,
-            credential_for=lambda _url: HopCredentials(cookies=selected_jar),
+            credential_for=credential_for,
         )
     finally:
         await client.aclose()
@@ -314,11 +318,15 @@ async def test_get_guarded_structured_jar_domain_matches_each_redirect_host():
         return next(responses)
 
     client._curl.get = fake_get
+
+    async def credential_for(_url: str) -> HopCredentials:
+        return HopCredentials(cookies=selected_jar)
+
     try:
         await client.get_guarded(
             "https://storage.googleapis.com/start",
             is_trusted_host=_trust_local,
-            credential_for=lambda _url: HopCredentials(cookies=selected_jar),
+            credential_for=credential_for,
         )
     finally:
         await client.aclose()

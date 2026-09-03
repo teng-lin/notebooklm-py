@@ -18,7 +18,7 @@ from notebooklm._android.auth import BearerCredential
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._runtime.lifecycle import TransportLifecycle
-from notebooklm.exceptions import ArtifactDownloadError, AuthError, UnsupportedOperationError
+from notebooklm.exceptions import ArtifactDownloadError, AuthError
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"synthetic-png-body"
 MP4 = b"\x00\x00\x00\x18ftypmp42synthetic-mp4-body"
@@ -749,7 +749,7 @@ async def test_untrusted_redirect_rejects_before_next_dispatch(tmp_path: Path) -
 
 
 @pytest.mark.asyncio
-async def test_hop_limit_is_bounded_and_never_dispatches_a_tenth_request(
+async def test_hop_limit_is_bounded_at_twenty_redirects(
     tmp_path: Path,
 ) -> None:
     client = FakeClient(
@@ -758,7 +758,7 @@ async def test_hop_limit_is_bounded_and_never_dispatches_a_tenth_request(
                 302,
                 headers={"location": f"https://google.com/hop-{hop}?cap=hop-secret-{hop}"},
             )
-            for hop in range(9)
+            for hop in range(21)
         ]
     )
     service, _, _ = await _open_service(client)
@@ -766,7 +766,7 @@ async def test_hop_limit_is_bounded_and_never_dispatches_a_tenth_request(
     with pytest.raises(ArtifactDownloadError, match="too_many_hops"):
         await service.download_url(INITIAL, str(tmp_path / "out.png"))
 
-    assert len(client.requests) == 9
+    assert len(client.requests) == 21
 
 
 @pytest.mark.asyncio
@@ -1071,12 +1071,17 @@ async def test_reopen_epoch_fences_old_service_generation_before_dispatch(tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_batch_seam_is_explicitly_unsupported() -> None:
-    client = FakeClient([])
+async def test_batch_download_uses_the_neutral_transfer_plane(tmp_path: Path) -> None:
+    client = FakeClient([_png_response()])
     service, _, _ = await _open_service(client)
-    with pytest.raises(UnsupportedOperationError):
-        await service.download_urls_batch([(INITIAL, "out.png")])
-    assert client.requests == []
+    output = tmp_path / "out.png"
+
+    result = await service.download_urls_batch([(INITIAL, str(output))])
+
+    assert result.succeeded == [str(output)]
+    assert result.failed == []
+    assert output.read_bytes() == PNG
+    assert len(client.requests) == 1
 
 
 @pytest.mark.asyncio
@@ -1553,7 +1558,9 @@ async def test_an_undeletable_partial_file_does_not_replace_the_real_failure(
         [FakeResponse(200, headers={"content-type": "image/png"}, chunks=[b"not a png"])]
     )
     service, _, _ = await _open_service(client)
-    monkeypatch.setattr(assets_module.Path, "unlink", _refuse_unlink)
+    from notebooklm._artifact import _guarded_transfer
+
+    monkeypatch.setattr(_guarded_transfer.Path, "unlink", _refuse_unlink)
 
     with pytest.raises(ArtifactDownloadError, match="code=signature"):
         await service.download_url(INITIAL, str(tmp_path / "out.png"))
