@@ -301,9 +301,9 @@ def load_prepared_contract(path: Path) -> dict[str, Any]:
             or tuple(clean["disallowed"]) != ("artifacts", "notes", "mind_maps")
             or tuple(clean["empty_chat_roles"]) != ("multi-source", "rpc")
             or clean["minimum_ready_sources"] < 3
-            or clean["poll_interval_seconds"] <= 0
-            or clean["quiet_period_seconds"] < 90
-            or clean["preparation_deadline_seconds"] > 300
+            or clean["poll_interval_seconds"] != 30
+            or clean["quiet_period_seconds"] != 90
+            or clean["preparation_deadline_seconds"] != 300
         ):
             raise KeyError
     except (KeyError, TypeError) as exc:
@@ -363,6 +363,21 @@ def _turn_has_content(value: object) -> bool:
     return False
 
 
+def _matching_history_pairs(history: object, question: str) -> int:
+    if not isinstance(history, (list, tuple)):
+        return 0
+    return sum(
+        1
+        for row in history
+        if isinstance(row, (tuple, list))
+        and len(row) >= 2
+        and isinstance(row[0], str)
+        and row[0].strip() == question
+        and isinstance(row[1], str)
+        and bool(row[1].strip())
+    )
+
+
 class NotebookLifecycleManager:
     """Auditable public-API orchestration for one account/backend lane."""
 
@@ -406,6 +421,8 @@ class NotebookLifecycleManager:
         """Validate immutable copied state using public typed APIs only."""
 
         notebook = await self._read(lambda: self.client.notebooks.get(self.template_id))
+        if getattr(notebook, "id", None) != self.template_id:
+            raise ContractError("template lookup returned the wrong notebook")
         if include_title:
             title = getattr(notebook, "title", None)
             if not isinstance(title, str) or title.startswith(RESERVED_PREFIX):
@@ -461,10 +478,27 @@ class NotebookLifecycleManager:
         artifacts = await self._read(lambda: self.client.artifacts.list(notebook_id))
         notes = await self._read(lambda: self.client.notes.list(notebook_id))
         mind_maps = await self._read(lambda: self.client.mind_maps.list(notebook_id))
+
+        def index(items: Sequence[Any], label: str) -> dict[str, Any]:
+            result: dict[str, Any] = {}
+            for item in items:
+                child_id = getattr(item, "id", None)
+                if (
+                    not isinstance(child_id, str)
+                    or not child_id
+                    or child_id.strip() != child_id
+                    or any(ord(character) < 32 for character in child_id)
+                ):
+                    raise ContractError(f"{label} inventory contains a malformed child ID")
+                if child_id in result:
+                    raise ContractError(f"{label} inventory contains duplicate child IDs")
+                result[child_id] = item
+            return result
+
         return Inventory(
-            artifacts={str(item.id): item for item in artifacts},
-            notes={str(item.id): item for item in notes},
-            mind_maps={str(item.id): item for item in mind_maps},
+            artifacts=index(artifacts, "artifact"),
+            notes=index(notes, "note"),
+            mind_maps=index(mind_maps, "mind-map"),
         )
 
     async def _sources(self, notebook_id: str) -> list[Any]:
@@ -476,17 +510,12 @@ class NotebookLifecycleManager:
     async def _delete_inventory(self, notebook_id: str, inventory: Inventory) -> None:
         """Delete one fresh disallowed snapshot with backing-aware de-duplication."""
 
-        for child_id in inventory.artifacts:
-            await self._delete_child(
-                lambda child_id=child_id: self.client.artifacts.delete(notebook_id, child_id)
-            )
-        for child_id in inventory.notes:
-            await self._delete_child(
-                lambda child_id=child_id: self.client.notes.delete(notebook_id, child_id)
-            )
+        # ``artifacts.list`` intentionally merges both mind-map backings into
+        # its public inventory.  Dispatch every ID also present in
+        # ``mind_maps.list`` through the backing-aware mind-map API exactly
+        # once; sending a note-backed ID to ``artifacts.delete`` targets the
+        # wrong RPC family.
         for child_id, mind_map in inventory.mind_maps.items():
-            if child_id in inventory.artifacts:
-                continue
             kind = getattr(mind_map, "kind", None)
             if kind not in {MindMapKind.NOTE_BACKED, MindMapKind.INTERACTIVE}:
                 raise ContractError("copied mind-map backing is unknown")
@@ -496,6 +525,18 @@ class NotebookLifecycleManager:
                     child_id,
                     kind=kind,
                 )
+            )
+        for child_id in inventory.artifacts:
+            if child_id in inventory.mind_maps:
+                continue
+            await self._delete_child(
+                lambda child_id=child_id: self.client.artifacts.delete(notebook_id, child_id)
+            )
+        for child_id in inventory.notes:
+            if child_id in inventory.mind_maps:
+                continue
+            await self._delete_child(
+                lambda child_id=child_id: self.client.notes.delete(notebook_id, child_id)
             )
 
     async def prepare_clean_role(self, notebook_id: str, role: str) -> dict[str, int]:
@@ -517,13 +558,18 @@ class NotebookLifecycleManager:
         consecutive_empty = 0
         deadline = started + policy.deadline
         while True:
-            now = self.clock()
             current = await self._inventory(notebook_id)
             sources = await self._sources(notebook_id)
+            now = self.clock()
+            if now > deadline:
+                raise ContractError("role preparation exceeded its five-minute deadline")
             if current.ids:
                 consecutive_empty = 0
-                last_nonempty = now
                 await self._delete_inventory(notebook_id, current)
+                # The quiet interval begins only after deletion is complete;
+                # network/delete latency cannot satisfy part of the 90-second
+                # post-delete observation window.
+                last_nonempty = self.clock()
             else:
                 consecutive_empty += 1
             ready = len(sources) >= clean["minimum_ready_sources"] and all(
@@ -533,10 +579,13 @@ class NotebookLifecycleManager:
             if not current.ids and consecutive_empty >= 3 and quiet and ready:
                 final_inventory = await self._inventory(notebook_id)
                 final_sources = await self._sources(notebook_id)
+                final_now = self.clock()
+                if final_now > deadline:
+                    raise ContractError("role preparation exceeded its five-minute deadline")
                 if final_inventory.ids:
                     consecutive_empty = 0
-                    last_nonempty = self.clock()
                     await self._delete_inventory(notebook_id, final_inventory)
+                    last_nonempty = self.clock()
                 elif (
                     len(final_sources) >= clean["minimum_ready_sources"]
                     and all(getattr(source, "is_ready", False) for source in final_sources)
@@ -546,6 +595,10 @@ class NotebookLifecycleManager:
                         history = await self._read(
                             lambda: self.client.chat.get_history(notebook_id)
                         )
+                        if self.clock() > deadline:
+                            raise ContractError(
+                                "role preparation exceeded its five-minute deadline"
+                            )
                         if history:
                             raise ContractError("prepared clean role inherited conversation state")
                     return {
@@ -568,24 +621,23 @@ class NotebookLifecycleManager:
             reference["note_title"],
             reference["note_body"],
         )
+        note_id = getattr(note, "id", None)
+        if not is_valid_notebook_id(note_id):
+            raise ContractError("prepared reference note returned a malformed ID")
         await self.client.chat.ask(notebook_id, reference["question"])
         deadline = self.clock() + 90.0
         while True:
             notes = await self._read(lambda: self.client.notes.list(notebook_id))
-            marker = next(
-                (
-                    item
-                    for item in notes
-                    if getattr(item, "title", None) == reference["note_title"]
-                    and getattr(item, "content", None) == reference["note_body"]
-                ),
-                None,
-            )
+            markers = [
+                item
+                for item in notes
+                if getattr(item, "title", None) == reference["note_title"]
+                and getattr(item, "content", None) == reference["note_body"]
+            ]
+            marker = markers[0] if len(markers) == 1 else None
             readable = None
-            if marker is not None:
-                readable = await self._read(
-                    lambda marker=marker: self.client.notes.get(notebook_id, str(marker.id))
-                )
+            if marker is not None and getattr(marker, "id", None) == note_id:
+                readable = await self._read(lambda: self.client.notes.get(notebook_id, note_id))
             conversation_id = await self._read(
                 lambda: self.client.chat.get_conversation_id(notebook_id)
             )
@@ -599,24 +651,24 @@ class NotebookLifecycleManager:
                         limit=int(reference["conversation_turn_limit"]),
                     )
                 )
-            history_valid = any(
-                isinstance(row, (tuple, list))
-                and len(row) >= 2
-                and isinstance(row[0], str)
-                and row[0].strip() == reference["question"]
-                and isinstance(row[1], str)
-                and row[1].strip()
-                for row in history
-            )
-            if (
+            history_pairs = _matching_history_pairs(history, reference["question"])
+            readable_valid = (
                 readable is not None
-                and getattr(readable, "id", None) == getattr(note, "id", None)
-                and conversation_id
-                and history_valid
+                and getattr(readable, "id", None) == note_id
+                and getattr(readable, "title", None) == reference["note_title"]
+                and getattr(readable, "content", None) == reference["note_body"]
+            )
+            now = self.clock()
+            if now > deadline:
+                raise ContractError("prepared reference state exceeded its deadline")
+            if (
+                readable_valid
+                and isinstance(conversation_id, str)
+                and bool(conversation_id.strip())
+                and history_pairs
                 and _turn_has_content(turns)
             ):
-                return {"seeded_notes": 1, "history_pairs": len(history)}
-            now = self.clock()
+                return {"seeded_notes": 1, "history_pairs": history_pairs}
             if now >= deadline:
                 raise ContractError("prepared reference state did not become readable")
             await self.sleep(min(2.0, deadline - now))
@@ -625,28 +677,31 @@ class NotebookLifecycleManager:
         if role == "reference":
             reference = self.prepared_contract["reference"]
             notes = await self._read(lambda: self.client.notes.list(notebook_id))
-            marker = next(
-                (
-                    item
-                    for item in notes
-                    if getattr(item, "title", None) == reference["note_title"]
-                    and getattr(item, "content", None) == reference["note_body"]
-                ),
-                None,
-            )
-            if marker is None:
-                raise ContractError("prepared reference note is absent")
-            await self._read(lambda: self.client.notes.get(notebook_id, str(marker.id)))
+            markers = [
+                item
+                for item in notes
+                if getattr(item, "title", None) == reference["note_title"]
+                and getattr(item, "content", None) == reference["note_body"]
+            ]
+            if len(markers) != 1 or not is_valid_notebook_id(getattr(markers[0], "id", None)):
+                raise ContractError("prepared reference note is absent or ambiguous")
+            marker = markers[0]
+            readable = await self._read(lambda: self.client.notes.get(notebook_id, marker.id))
+            if (
+                getattr(readable, "id", None) != getattr(marker, "id", None)
+                or getattr(readable, "title", None) != reference["note_title"]
+                or getattr(readable, "content", None) != reference["note_body"]
+            ):
+                raise ContractError("prepared reference note readback does not match")
             conversation_id = await self._read(
                 lambda: self.client.chat.get_conversation_id(notebook_id)
             )
             history = await self._read(lambda: self.client.chat.get_history(notebook_id))
-            if not conversation_id or not any(
-                isinstance(row, (tuple, list))
-                and len(row) >= 2
-                and str(row[0]).strip() == reference["question"]
-                and bool(str(row[1]).strip())
-                for row in history
+            history_pairs = _matching_history_pairs(history, reference["question"])
+            if (
+                not isinstance(conversation_id, str)
+                or not conversation_id.strip()
+                or not history_pairs
             ):
                 raise ContractError("prepared reference conversation is absent")
             turns = await self._read(
@@ -658,7 +713,7 @@ class NotebookLifecycleManager:
             )
             if not _turn_has_content(turns):
                 raise ContractError("prepared reference conversation turns are absent")
-            return {"seeded_notes": 1, "history_pairs": len(history)}
+            return {"seeded_notes": 1, "history_pairs": history_pairs}
         if role not in self.prepared_contract["clean_roles"]["roles"]:
             raise ContractError("prepared role is not allowlisted")
         inventory = await self._inventory(notebook_id)
@@ -770,28 +825,34 @@ class NotebookLifecycleManager:
         candidate_id: str | None,
     ) -> tuple[dict[str, Any] | None, bool]:
         anomaly = False
-        if candidate_id is not None:
-            candidate_probe = await self._probe_candidate(candidate_id, title)
-            if candidate_probe.state is ProbeState.VALID:
-                row = self._update_row(
+
+        async def persist_reconciliation(notebook_id: str, *, unsafe: bool) -> dict[str, Any]:
+            try:
+                return self._update_row(
                     manifest,
                     role,
                     status="reconciled",
-                    notebook_id=candidate_id,
-                    last_error_category=None,
+                    notebook_id=notebook_id,
+                    last_error_category="COPY_UNRESOLVED" if unsafe else None,
                 )
+            except PersistenceError:
+                # Once an owned exact-title copy is known, a failed durable
+                # confirmation must trigger the same immediate best-effort
+                # teardown as the normal response-confirmation path.  The
+                # intent remains on disk for unconditional cleanup to retry.
+                await self._guarded_delete(notebook_id, title)
+                raise
+
+        if candidate_id is not None:
+            candidate_probe = await self._probe_candidate(candidate_id, title)
+            if candidate_probe.state is ProbeState.VALID:
+                row = await persist_reconciliation(candidate_id, unsafe=False)
                 return row, False
             anomaly = candidate_probe.state in {ProbeState.UNSAFE, ProbeState.UNREADABLE}
         cardinality, title_probe = await self._reconcile_title(title)
         if cardinality == 1 and title_probe.state is ProbeState.VALID:
             notebook_id = str(title_probe.notebook.id)
-            row = self._update_row(
-                manifest,
-                role,
-                status="reconciled",
-                notebook_id=notebook_id,
-                last_error_category="COPY_UNRESOLVED" if anomaly else None,
-            )
+            row = await persist_reconciliation(notebook_id, unsafe=anomaly)
             return row, anomaly
         self._update_row(
             manifest,
@@ -1047,7 +1108,18 @@ class NotebookLifecycleManager:
 
         if deletion_cap < 1 or deletion_cap > 20:
             raise ValueError("sweep deletion cap must be between one and 20")
+        if max_age <= timedelta(0):
+            raise ValueError("sweep maximum age must be positive")
+        if (current_run_id is None) != (current_run_attempt is None):
+            raise ValueError("current run ID and attempt must be supplied together")
+        if current_run_id is not None and (
+            re.fullmatch(r"[0-9]+", current_run_id) is None
+            or re.fullmatch(r"[0-9]+", str(current_run_attempt)) is None
+        ):
+            raise ValueError("current run ID and attempt must be decimal strings")
         now = now or datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            raise ValueError("sweep clock must be timezone-aware")
         notebooks = await self._read(lambda: self.client.notebooks.list())
         eligible: list[tuple[str, str]] = []
         skipped = 0
@@ -1114,10 +1186,12 @@ def _runner_temp() -> Path | None:
     return Path(value) if value else None
 
 
-def _metadata(args: argparse.Namespace) -> tuple[str, str, str]:
-    run_id = args.run_id or os.environ.get("GITHUB_RUN_ID", "")
-    run_attempt = args.run_attempt or os.environ.get("GITHUB_RUN_ATTEMPT", "")
-    repository = os.environ.get("GITHUB_REPOSITORY", MANIFEST_REPOSITORY)
+def _metadata() -> tuple[str, str, str]:
+    """Read trusted lifecycle identity only from the GitHub runner environment."""
+
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "")
+    repository = os.environ.get("GITHUB_REPOSITORY", "")
     if re.fullmatch(r"[0-9]+", run_id) is None or re.fullmatch(r"[0-9]+", run_attempt) is None:
         raise ManifestError("GITHUB_RUN_ID and GITHUB_RUN_ATTEMPT must be decimal")
     if repository != MANIFEST_REPOSITORY:
@@ -1153,8 +1227,6 @@ def build_parser() -> argparse.ArgumentParser:
     provision.add_argument("--lane", choices=LANES, required=True)
     provision.add_argument("--account-slot", choices=ACCOUNT_SLOTS, required=True)
     provision.add_argument("--github-env", type=Path, required=True)
-    provision.add_argument("--run-id")
-    provision.add_argument("--run-attempt")
     provision.add_argument("--reconcile-timeout", type=float, default=90.0)
 
     validate = common("validate", manifest=False)
@@ -1168,22 +1240,30 @@ def build_parser() -> argparse.ArgumentParser:
     sweep = common("sweep")
     sweep.add_argument("--max-age-hours", type=float, default=24.0)
     sweep.add_argument("--deletion-cap", type=int, default=20)
-    sweep.add_argument("--run-id")
-    sweep.add_argument("--run-attempt")
     return parser
 
 
 async def _run(args: argparse.Namespace) -> int:
     if args.command == "cleanup" and not args.manifest.exists():
+        if args.template_id_env != TEMPLATE_ID_ENV:
+            raise ManifestError("template ID environment name is not allowlisted")
         print("nothing to clean; manifest is absent")
         return 0
     template_id = _template_id_from_env(args.template_id_env)
-    template_contract, fingerprint = load_template_contract(
-        getattr(args, "contract", DEFAULT_TEMPLATE_CONTRACT)
-    )
-    prepared_contract = load_prepared_contract(
-        getattr(args, "prepared_contract", DEFAULT_PREPARED_CONTRACT)
-    )
+    template_contract: dict[str, Any] = {}
+    prepared_contract: dict[str, Any] = {}
+    fingerprint = ""
+    if args.command == "provision" or (args.command == "validate" and args.role is None):
+        template_contract, fingerprint = load_template_contract(
+            getattr(args, "contract", DEFAULT_TEMPLATE_CONTRACT)
+        )
+    if args.command == "provision" or (args.command == "validate" and args.role is not None):
+        prepared_contract = load_prepared_contract(
+            getattr(args, "prepared_contract", DEFAULT_PREPARED_CONTRACT)
+        )
+    if args.command == "validate" and (args.role is None) != (args.manifest is None):
+        raise ManifestError("prepared-role validation requires both --manifest and --role")
+    metadata = _metadata() if args.command in {"provision", "sweep"} else None
     manifest_path = getattr(args, "manifest", None)
     store_path = manifest_path or Path(os.devnull)
     store = AtomicJSONStore(store_path, runner_temp=_runner_temp())
@@ -1201,7 +1281,8 @@ async def _run(args: argparse.Namespace) -> int:
             reconcile_timeout=getattr(args, "reconcile_timeout", 90.0),
         )
         if args.command == "provision":
-            run_id, run_attempt, _repository = _metadata(args)
+            assert metadata is not None
+            run_id, run_attempt, _repository = metadata
             manifest = await manager.provision(
                 run_id=run_id,
                 run_attempt=run_attempt,
@@ -1248,15 +1329,17 @@ async def _run(args: argparse.Namespace) -> int:
             )
             return 0
         if args.command == "sweep":
-            current_run_id = args.run_id or os.environ.get("GITHUB_RUN_ID")
-            current_run_attempt = args.run_attempt or os.environ.get("GITHUB_RUN_ATTEMPT")
+            assert metadata is not None
+            current_run_id, current_run_attempt, _repository = metadata
             if args.manifest.exists():
-                existing = store.read(
+                store.read(
                     template_id=template_id,
-                    expected={"backend": args.backend},
+                    expected={
+                        "backend": args.backend,
+                        "run_id": current_run_id,
+                        "run_attempt": current_run_attempt,
+                    },
                 )
-                current_run_id = str(existing["run_id"])
-                current_run_attempt = str(existing["run_attempt"])
             result = await manager.sweep(
                 current_run_id=current_run_id,
                 current_run_attempt=current_run_attempt,

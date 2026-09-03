@@ -270,6 +270,15 @@ def _is_reparse_point(path: Path) -> bool:
     return bool(file_attributes & reparse_flag)
 
 
+def _validate_runner_temp_location(path: Path, runner_temp: Path | None) -> None:
+    if runner_temp is None:
+        return
+    root = runner_temp.resolve()
+    resolved_parent = path.parent.resolve()
+    if resolved_parent != root and root not in resolved_parent.parents:
+        raise ManifestError("manifest path must stay below RUNNER_TEMP")
+
+
 def validate_local_path(
     path: Path,
     *,
@@ -279,25 +288,26 @@ def validate_local_path(
     """Fail closed on symlink/non-regular state and Windows path escape."""
 
     windows = os.name == "nt" if windows is None else windows
+    _validate_runner_temp_location(path, runner_temp)
     if windows:
         if runner_temp is None:
             raise ManifestError("RUNNER_TEMP is required on Windows")
-        root = runner_temp.resolve()
-        resolved_parent = path.parent.resolve()
-        if resolved_parent != root and root not in resolved_parent.parents:
-            raise ManifestError("manifest path must stay below RUNNER_TEMP")
         for candidate in (path.parent, path):
-            if candidate.exists() and (candidate.is_symlink() or _is_reparse_point(candidate)):
+            if candidate.is_symlink() or (candidate.exists() and _is_reparse_point(candidate)):
                 raise ManifestError("manifest path may not contain a reparse point")
+    if path.is_symlink():
+        raise ManifestError("manifest must be a regular file")
     if path.exists():
         mode = path.lstat().st_mode
-        if stat.S_ISLNK(mode) or not stat.S_ISREG(mode):
+        if not stat.S_ISREG(mode):
             raise ManifestError("manifest must be a regular file")
         if not windows and stat.S_IMODE(mode) != 0o600:
             raise ManifestError("manifest file mode must be 0600")
+    if path.parent.is_symlink():
+        raise ManifestError("manifest parent must be a real directory")
     if path.parent.exists():
         parent_mode = path.parent.lstat().st_mode
-        if stat.S_ISLNK(parent_mode) or not stat.S_ISDIR(parent_mode):
+        if not stat.S_ISDIR(parent_mode):
             raise ManifestError("manifest parent must be a real directory")
         if not windows and stat.S_IMODE(parent_mode) != 0o700:
             raise ManifestError("manifest parent mode must be 0700")
@@ -342,6 +352,11 @@ class AtomicJSONStore:
     def write(self, manifest: Mapping[str, Any], *, template_id: str | None = None) -> None:
         checked = validate_manifest(dict(manifest), template_id=template_id)
         parent = self.path.parent
+        # Reject an escaped runner path before creating or chmod'ing its
+        # parent.  The full type/mode check follows directory creation.
+        if self.windows and self.runner_temp is None:
+            raise ManifestError("RUNNER_TEMP is required on Windows")
+        _validate_runner_temp_location(self.path, self.runner_temp)
         parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         if not self.windows:
             parent_mode = parent.lstat().st_mode

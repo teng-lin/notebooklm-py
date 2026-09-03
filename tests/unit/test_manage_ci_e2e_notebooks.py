@@ -20,6 +20,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+import manage_ci_e2e_notebooks as lifecycle  # noqa: E402
 from _ci_e2e_notebooks import (  # noqa: E402
     AtomicJSONStore,
     ManifestError,
@@ -31,6 +32,7 @@ from _ci_e2e_notebooks import (  # noqa: E402
     validate_manifest,
 )
 from manage_ci_e2e_notebooks import (  # noqa: E402
+    TEMPLATE_ID_ENV,
     CleanupError,
     ContractError,
     CopyUnresolvedError,
@@ -213,6 +215,7 @@ class FakeArtifacts:
         self.by_notebook: dict[str, list[SimpleNamespace]] = {TEMPLATE_ID: _artifacts()}
         self.list_script: deque[object] = deque()
         self.delete_error_ids: set[str] = set()
+        self.delete_calls: list[tuple[str, str]] = []
 
     async def list(self, notebook_id: str) -> list[SimpleNamespace]:
         if self.list_script:
@@ -223,6 +226,7 @@ class FakeArtifacts:
         return list(self.by_notebook.get(notebook_id, []))
 
     async def delete(self, notebook_id: str, artifact_id: str) -> None:
+        self.delete_calls.append((notebook_id, artifact_id))
         if artifact_id in self.delete_error_ids:
             raise RuntimeError("opaque deletion failure with leaked-id")
         self.by_notebook[notebook_id] = [
@@ -233,6 +237,7 @@ class FakeArtifacts:
 class FakeNotes:
     def __init__(self) -> None:
         self.by_notebook: dict[str, list[SimpleNamespace]] = {TEMPLATE_ID: []}
+        self.get_overrides: dict[str, SimpleNamespace] = {}
 
     async def list(self, notebook_id: str) -> list[SimpleNamespace]:
         return list(self.by_notebook.get(notebook_id, []))
@@ -243,6 +248,8 @@ class FakeNotes:
         return note
 
     async def get(self, notebook_id: str, note_id: str) -> SimpleNamespace:
+        if note_id in self.get_overrides:
+            return self.get_overrides[note_id]
         for note in self.by_notebook.get(notebook_id, []):
             if note.id == note_id:
                 return note
@@ -258,6 +265,7 @@ class FakeMindMaps:
     def __init__(self, artifacts: FakeArtifacts) -> None:
         self.artifacts = artifacts
         self.extra: dict[str, list[SimpleNamespace]] = {}
+        self.delete_calls: list[tuple[str, str, MindMapKind]] = []
 
     async def list(self, notebook_id: str) -> list[SimpleNamespace]:
         interactive = [
@@ -269,8 +277,14 @@ class FakeMindMaps:
 
     async def delete(self, notebook_id: str, mind_map_id: str, *, kind: MindMapKind) -> None:
         assert kind in {MindMapKind.INTERACTIVE, MindMapKind.NOTE_BACKED}
+        self.delete_calls.append((notebook_id, mind_map_id, kind))
         self.extra[notebook_id] = [
             item for item in self.extra.get(notebook_id, []) if item.id != mind_map_id
+        ]
+        self.artifacts.by_notebook[notebook_id] = [
+            item
+            for item in self.artifacts.by_notebook.get(notebook_id, [])
+            if item.id != mind_map_id
         ]
 
 
@@ -331,6 +345,8 @@ class RecordingStore(AtomicJSONStore):
             raise OSError("candidate persistence failed with notebook id")
         if self.fail_when == "confirmation" and row.get("status") == "confirmed":
             raise OSError("confirmation persistence failed with notebook id")
+        if self.fail_when == "reconciliation" and row.get("status") == "reconciled":
+            raise OSError("reconciliation persistence failed with notebook id")
         super().write(manifest, template_id=template_id)
 
 
@@ -499,6 +515,29 @@ def test_windows_store_rejects_escape_and_accepts_isolated_regular_file(tmp_path
         outside.write(manifest)
 
 
+def test_posix_store_rejects_runner_escape_before_creating_parent(tmp_path: Path) -> None:
+    runner_temp = tmp_path / "runner"
+    runner_temp.mkdir(mode=0o700)
+    outside_parent = tmp_path / "outside"
+    store = AtomicJSONStore(
+        outside_parent / "manifest.json",
+        runner_temp=runner_temp,
+        windows=False,
+    )
+    manifest = new_manifest(
+        run_id="1",
+        run_attempt="1",
+        lane="nightly-web-windows",
+        mode="full",
+        account_slot="A",
+        backend="web",
+        template_fingerprint=FINGERPRINT,
+    )
+    with pytest.raises(ManifestError, match="RUNNER_TEMP"):
+        store.write(manifest)
+    assert not outside_parent.exists()
+
+
 @pytest.mark.asyncio
 async def test_full_provision_creates_three_roles_and_publishes_activation_last(
     tmp_path: Path,
@@ -577,6 +616,55 @@ async def test_partial_preparation_never_publishes_managed_activation(
     manifest = store.read(template_id=TEMPLATE_ID)
     assert len(manifest["copies"]) == 1
     assert manifest["copies"][0]["prepared"] is False
+
+
+@pytest.mark.asyncio
+async def test_reference_validation_requires_exact_note_readback(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+) -> None:
+    manager, client, _store, _clock = _manager(tmp_path, contracts)
+    notebook_id = "reference-copy"
+    reference = contracts[1]["reference"]
+    marker = SimpleNamespace(
+        id="reference-note",
+        title=reference["note_title"],
+        content=reference["note_body"],
+    )
+    client.notes.by_notebook[notebook_id] = [marker]
+    client.notes.get_overrides[marker.id] = SimpleNamespace(
+        id=marker.id,
+        title=marker.title,
+        content="wrong readback",
+    )
+    client.chat.seeded.add(notebook_id)
+    client.chat.questions[notebook_id] = reference["question"]
+
+    with pytest.raises(ContractError, match="readback"):
+        await manager.validate_prepared_role(notebook_id, "reference")
+
+
+@pytest.mark.asyncio
+async def test_reference_validation_rejects_duplicate_prepared_marker(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+) -> None:
+    manager, client, _store, _clock = _manager(tmp_path, contracts)
+    notebook_id = "reference-copy"
+    reference = contracts[1]["reference"]
+    client.notes.by_notebook[notebook_id] = [
+        SimpleNamespace(
+            id=f"reference-note-{index}",
+            title=reference["note_title"],
+            content=reference["note_body"],
+        )
+        for index in range(2)
+    ]
+    client.chat.seeded.add(notebook_id)
+    client.chat.questions[notebook_id] = reference["question"]
+
+    with pytest.raises(ContractError, match="ambiguous"):
+        await manager.validate_prepared_role(notebook_id, "reference")
 
 
 def test_github_env_refuses_partial_or_unprepared_publication() -> None:
@@ -815,6 +903,24 @@ async def test_persistence_failure_attempts_immediate_guarded_deletion(
         await _provision(manager, tmp_path, mode="rpc")
     assert len(client.notebooks.copy_calls) == 1
     assert client.notebooks.delete_calls == ["copy-1"]
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_persistence_failure_attempts_immediate_guarded_deletion(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+) -> None:
+    store = RecordingStore(tmp_path / "manifest.json", fail_when="reconciliation")
+    manager, client, _store, _clock = _manager(tmp_path, contracts, store=store)
+    client.notebooks.copy_error = TimeoutError("lost response with notebook id")
+    client.notebooks.copy_error_commits = True
+
+    with pytest.raises(PersistenceError):
+        await _provision(manager, tmp_path, mode="rpc")
+
+    assert len(client.notebooks.copy_calls) == 1
+    assert client.notebooks.delete_calls == ["copy-1"]
+    assert store.read(template_id=TEMPLATE_ID)["copies"][0]["status"] == "intent"
 
 
 @pytest.mark.asyncio
@@ -1122,6 +1228,34 @@ async def test_sweep_cap_aborts_before_deleting_anything(
     assert client.notebooks.delete_calls == []
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"max_age": timedelta(0)}, "maximum age"),
+        ({"current_run_id": "1", "current_run_attempt": None}, "supplied together"),
+        ({"current_run_id": "not-decimal", "current_run_attempt": "1"}, "decimal"),
+        ({"now": datetime.now()}, "timezone-aware"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_sweep_rejects_unsafe_policy_or_partial_run_identity_before_listing(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+    kwargs: dict[str, Any],
+    message: str,
+) -> None:
+    manager, client, _store, _clock = _manager(tmp_path, contracts)
+    client.notebooks.list_error = AssertionError("listing must not run")
+    values: dict[str, Any] = {
+        "current_run_id": "1",
+        "current_run_attempt": "1",
+        "now": datetime.now(timezone.utc),
+    }
+    values.update(kwargs)
+    with pytest.raises(ValueError, match=message):
+        await manager.sweep(**values)
+
+
 @pytest.mark.asyncio
 async def test_template_contract_failure_names_family_but_never_ids(
     tmp_path: Path,
@@ -1137,6 +1271,42 @@ async def test_template_contract_failure_names_family_but_never_ids(
     assert "audio" in message
     assert TEMPLATE_ID not in message
     assert "artifact-" not in message
+
+
+@pytest.mark.asyncio
+async def test_template_validation_rejects_wrong_notebook_lookup(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+) -> None:
+    manager, client, _store, _clock = _manager(tmp_path, contracts)
+    client.notebooks.items[TEMPLATE_ID].id = "different-notebook"
+    with pytest.raises(ContractError, match="wrong notebook"):
+        await manager.validate_template()
+
+
+@pytest.mark.asyncio
+async def test_clean_preparation_deletes_note_backed_map_through_mind_map_api(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+) -> None:
+    manager, client, _store, _clock = _manager(tmp_path, contracts)
+    notebook_id = "clean-target"
+    client.sources.by_notebook[notebook_id] = [_source(1), _source(2), _source(3)]
+    note_backed = SimpleNamespace(
+        id="note-backed-map",
+        kind="mind_map",
+        is_completed=True,
+        is_interactive_mind_map=False,
+    )
+    client.artifacts.by_notebook[notebook_id] = [note_backed]
+    client.mind_maps.extra[notebook_id] = [
+        SimpleNamespace(id=note_backed.id, kind=MindMapKind.NOTE_BACKED)
+    ]
+
+    await manager.prepare_clean_role(notebook_id, "generation")
+
+    assert client.artifacts.delete_calls == []
+    assert client.mind_maps.delete_calls == [(notebook_id, note_backed.id, MindMapKind.NOTE_BACKED)]
 
 
 @pytest.mark.asyncio
@@ -1218,6 +1388,70 @@ async def test_final_fresh_read_catches_late_child_and_restarts_quiet_window(
 
 
 @pytest.mark.asyncio
+async def test_final_fresh_read_cannot_succeed_after_preparation_deadline(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+) -> None:
+    manager, client, _store, clock = _manager(tmp_path, contracts)
+    notebook_id = "clean-target"
+    client.sources.by_notebook[notebook_id] = [_source(1), _source(2), _source(3)]
+    calls = 0
+    original_list = client.artifacts.list
+
+    async def delayed_final_list(target: str) -> list[SimpleNamespace]:
+        nonlocal calls
+        calls += 1
+        if calls == 6:
+            clock.value = 301
+        return await original_list(target)
+
+    client.artifacts.list = delayed_final_list  # type: ignore[method-assign]
+    with pytest.raises(ContractError, match="five-minute deadline"):
+        await manager.prepare_clean_role(notebook_id, "generation")
+    assert clock.value == 301
+
+
+@pytest.mark.asyncio
+async def test_empty_chat_check_cannot_succeed_after_preparation_deadline(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+) -> None:
+    manager, client, _store, clock = _manager(tmp_path, contracts)
+    notebook_id = "clean-target"
+    client.sources.by_notebook[notebook_id] = [_source(1), _source(2), _source(3)]
+    original_get_history = client.chat.get_history
+
+    async def delayed_history(target: str) -> list[tuple[str, str]]:
+        clock.value = 301
+        return await original_get_history(target)
+
+    client.chat.get_history = delayed_history  # type: ignore[method-assign]
+    with pytest.raises(ContractError, match="five-minute deadline"):
+        await manager.prepare_clean_role(notebook_id, "rpc")
+    assert clock.value == 301
+
+
+@pytest.mark.asyncio
+async def test_clean_inventory_rejects_control_character_child_id(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+) -> None:
+    manager, client, _store, _clock = _manager(tmp_path, contracts)
+    notebook_id = "clean-target"
+    client.artifacts.by_notebook[notebook_id] = [
+        SimpleNamespace(
+            id="artifact\rhidden",
+            kind="audio",
+            is_completed=True,
+            is_interactive_mind_map=False,
+        )
+    ]
+    with pytest.raises(ContractError, match="malformed child ID"):
+        await manager.prepare_clean_role(notebook_id, "generation")
+    assert client.artifacts.delete_calls == []
+
+
+@pytest.mark.asyncio
 async def test_source_list_failure_is_fail_closed_before_prepared_state(
     tmp_path: Path,
     contracts: tuple[dict[str, Any], dict[str, Any]],
@@ -1244,6 +1478,29 @@ def test_contract_files_are_versioned_and_contain_no_identity_handles() -> None:
         assert value["version"] == 1
         assert "notebook_id" not in raw
         assert "account_email" not in raw
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("poll_interval_seconds", 1),
+        ("quiet_period_seconds", 91),
+        ("preparation_deadline_seconds", 299),
+    ],
+)
+def test_prepared_contract_pins_safety_timing(
+    tmp_path: Path,
+    field: str,
+    value: int,
+) -> None:
+    contract = json.loads(
+        (REPO_ROOT / "tests" / "fixtures" / "e2e_prepared_role_contract.json").read_text()
+    )
+    contract["clean_roles"][field] = value
+    path = tmp_path / "prepared.json"
+    path.write_text(json.dumps(contract))
+    with pytest.raises(ContractError, match="shape"):
+        load_prepared_contract(path)
 
 
 def test_store_refuses_symlink_manifest(tmp_path: Path) -> None:
@@ -1273,3 +1530,141 @@ def test_environment_block_contains_no_activation_for_partial_preparation(tmp_pa
     path.write_text("PREEXISTING=1\n")
     assert "NOTEBOOKLM_E2E_MANAGED_COPIES" not in path.read_text()
     assert os.fspath(path)
+
+
+def test_cli_cleanup_absent_manifest_never_opens_auth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    monkeypatch.delenv(TEMPLATE_ID_ENV, raising=False)
+
+    def fail_from_storage(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("cleanup no-op must not open authentication")
+
+    monkeypatch.setattr(lifecycle.NotebookLMClient, "from_storage", fail_from_storage)
+    rc = lifecycle.main(
+        [
+            "cleanup",
+            "--backend",
+            "web",
+            "--template-id-env",
+            TEMPLATE_ID_ENV,
+            "--manifest",
+            str(tmp_path / "absent.json"),
+        ]
+    )
+    assert rc == 0
+    assert "nothing to clean" in capsys.readouterr().out
+
+
+def test_cli_cleanup_absent_manifest_still_rejects_arbitrary_env_name(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    rc = lifecycle.main(
+        [
+            "cleanup",
+            "--backend",
+            "web",
+            "--template-id-env",
+            "ARBITRARY_ID",
+            "--manifest",
+            str(tmp_path / "absent.json"),
+        ]
+    )
+    assert rc == 1
+    assert "ERROR[CONFIGURATION]" in capsys.readouterr().err
+
+
+def test_cli_metadata_is_strict_and_run_overrides_are_not_exposed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_REPOSITORY"):
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(ManifestError):
+        lifecycle._metadata()
+
+    monkeypatch.setenv(TEMPLATE_ID_ENV, TEMPLATE_ID)
+
+    def fail_from_storage(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("invalid metadata must fail before authentication")
+
+    monkeypatch.setattr(lifecycle.NotebookLMClient, "from_storage", fail_from_storage)
+    rc = lifecycle.main(
+        [
+            "provision",
+            "--backend",
+            "web",
+            "--template-id-env",
+            TEMPLATE_ID_ENV,
+            "--mode",
+            "rpc",
+            "--lane",
+            "rpc-health-web",
+            "--account-slot",
+            "A",
+            "--manifest",
+            "manifest.json",
+            "--github-env",
+            "github-env",
+        ]
+    )
+    assert rc == 1
+
+    parser = lifecycle.build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "provision",
+                "--backend",
+                "web",
+                "--template-id-env",
+                TEMPLATE_ID_ENV,
+                "--mode",
+                "rpc",
+                "--lane",
+                "rpc-health-web",
+                "--account-slot",
+                "A",
+                "--manifest",
+                "manifest.json",
+                "--github-env",
+                "github-env",
+                "--run-id",
+                "1",
+            ]
+        )
+
+
+@pytest.mark.parametrize(
+    "partial_args",
+    [
+        ["--role", "reference"],
+        ["--manifest", "manifest.json"],
+    ],
+)
+def test_cli_prepared_validation_requires_manifest_and_role_together(
+    partial_args: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(TEMPLATE_ID_ENV, TEMPLATE_ID)
+
+    def fail_from_storage(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("invalid validation arguments must fail before authentication")
+
+    monkeypatch.setattr(lifecycle.NotebookLMClient, "from_storage", fail_from_storage)
+    rc = lifecycle.main(
+        [
+            "validate",
+            "--backend",
+            "web",
+            "--template-id-env",
+            TEMPLATE_ID_ENV,
+            *partial_args,
+        ]
+    )
+    assert rc == 1
