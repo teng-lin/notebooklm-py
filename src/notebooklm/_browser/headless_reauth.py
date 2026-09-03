@@ -67,7 +67,8 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -304,6 +305,7 @@ class HeadlessReauthState:
         repr=False,
         compare=False,
     )
+    _active_reservations: int = field(default=0, init=False, repr=False, compare=False)
 
     @classmethod
     def process_default(cls) -> HeadlessReauthState:
@@ -314,21 +316,49 @@ class HeadlessReauthState:
         """Return the per-(resolved-storage-path, source) drive record."""
         key = f"{storage_path.expanduser().resolve()}\x00{source}"
         with self._registry_lock:
-            record = self._records_by_key.get(key)
-            if record is None:
-                record = self._record_factory()
-                self._records_by_key[key] = record
-            return record
+            return self._drive_record_locked(key)
+
+    def _drive_record_locked(self, key: str) -> _DriveRecord:
+        """Get or create ``key`` while the caller holds ``_registry_lock``."""
+        record = self._records_by_key.get(key)
+        if record is None:
+            record = self._record_factory()
+            self._records_by_key[key] = record
+        return record
+
+    @contextmanager
+    def _reserve_drive_record(
+        self,
+        storage_path: Path,
+        *,
+        source: str,
+    ) -> Iterator[_DriveRecord]:
+        """Keep a caller-visible record live until its drive attempt settles.
+
+        The reservation closes the gap between registry lookup and acquiring
+        ``drive_lock``: lifecycle reset must reject both active drivers and
+        callers that have obtained a record and are about to wait on it.
+        """
+        key = f"{storage_path.expanduser().resolve()}\x00{source}"
+        with self._registry_lock:
+            record = self._drive_record_locked(key)
+            self._active_reservations += 1
+        try:
+            yield record
+        finally:
+            with self._registry_lock:
+                self._active_reservations -= 1
 
     def reset_if_quiescent(self) -> None:
         """Clear settled records, refusing to erase an active browser drive.
 
-        This lifecycle operation requires the caller to have joined all threads
-        that could begin a drive; it cannot identify a caller between obtaining
-        its record and acquiring that record's drive lock.
+        A caller reserves its record before waiting on the drive lock, so reset
+        deterministically rejects both active drives and pending followers.
         """
         with self._registry_lock:
-            if any(record.drive_lock.locked() for record in self._records_by_key.values()):
+            if self._active_reservations or any(
+                record.drive_lock.locked() for record in self._records_by_key.values()
+            ):
                 raise RuntimeError("cannot reset headless re-auth state while a drive is active")
             self._records_by_key.clear()
 
@@ -950,26 +980,26 @@ def _drive_capture_coalesced(
     profile must not fail a live CDP attach, nor vice versa).
     """
     source = "cdp" if cdp_url is not None else "profile"
-    record = deps.state.drive_record(plan.storage_path, source=source)
-    # Snapshot BEFORE blocking on the drive lock: we accept an outcome only from
-    # a drive that finishes DURING this wait (strictly-newer sequence).
-    pre_completed = record.snapshot_completed()
-    with record.drive_lock:
-        fresh = record.fresh_outcome_since(pre_completed)
-        if fresh is not None:
-            # A sibling leader's drive completed while we waited; coalesce onto
-            # its TYPED outcome (its status, whether SUCCESS or FAILED), not an
-            # mtime heuristic. Skips a redundant browser without ever inferring
-            # success from an unrelated file write.
-            logger.info(
-                "Layer-3 headless re-auth coalesced onto a concurrent drive's "
-                "outcome (%s); skipping a redundant browser.",
-                fresh.status.value,
-            )
-            return fresh
-        result = _drive_capture(plan, deps=deps, cdp_url=cdp_url)
-        record.publish(result)
-        return result
+    with deps.state._reserve_drive_record(plan.storage_path, source=source) as record:
+        # Snapshot BEFORE blocking on the drive lock: we accept an outcome only from
+        # a drive that finishes DURING this wait (strictly-newer sequence).
+        pre_completed = record.snapshot_completed()
+        with record.drive_lock:
+            fresh = record.fresh_outcome_since(pre_completed)
+            if fresh is not None:
+                # A sibling leader's drive completed while we waited; coalesce onto
+                # its TYPED outcome (its status, whether SUCCESS or FAILED), not an
+                # mtime heuristic. Skips a redundant browser without ever inferring
+                # success from an unrelated file write.
+                logger.info(
+                    "Layer-3 headless re-auth coalesced onto a concurrent drive's "
+                    "outcome (%s); skipping a redundant browser.",
+                    fresh.status.value,
+                )
+                return fresh
+            result = _drive_capture(plan, deps=deps, cdp_url=cdp_url)
+            record.publish(result)
+            return result
 
 
 def _drive_capture(

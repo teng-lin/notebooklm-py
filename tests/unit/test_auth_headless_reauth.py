@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import pytest
 
@@ -41,11 +41,11 @@ def _make_profile(tmp_path: Path) -> Path:
     return profile
 
 
-def _unexpected_profile_capture(*_args: object, **_kwargs: object) -> None:
+def _unexpected_profile_capture(*_args: object, **_kwargs: object) -> NoReturn:
     raise AssertionError("the dedicated-profile capture gateway must not run")
 
 
-def _unexpected_cdp_capture(*_args: object, **_kwargs: object) -> None:
+def _unexpected_cdp_capture(*_args: object, **_kwargs: object) -> NoReturn:
     raise AssertionError("the CDP capture gateway must not run")
 
 
@@ -707,6 +707,35 @@ def test_headless_reauth_state_isolated_and_quiescent_reset(tmp_path: Path) -> N
 
     first.reset_if_quiescent()
     assert first.drive_record(storage, source="profile") is not first_record
+
+
+def test_headless_reauth_state_rejects_reset_during_pre_lock_reservation(
+    tmp_path: Path,
+) -> None:
+    """Reset cannot clear a record between lookup and drive-lock acquisition."""
+    state = HeadlessReauthState()
+    storage = tmp_path / "storage_state.json"
+    reserved = threading.Event()
+    release = threading.Event()
+
+    def reserve_without_locking() -> None:
+        with state._reserve_drive_record(storage, source="profile") as record:
+            assert not record.drive_lock.locked()
+            reserved.set()
+            assert release.wait(timeout=5)
+
+    worker = threading.Thread(target=reserve_without_locking)
+    worker.start()
+    assert reserved.wait(timeout=5)
+    try:
+        with pytest.raises(RuntimeError, match="while a drive is active"):
+            state.reset_if_quiescent()
+    finally:
+        release.set()
+        worker.join(timeout=5)
+
+    assert not worker.is_alive()
+    state.reset_if_quiescent()
 
 
 def test_operation_dependencies_carry_no_credential_values() -> None:
