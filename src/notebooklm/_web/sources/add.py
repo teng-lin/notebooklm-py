@@ -385,6 +385,7 @@ class SourceAddService:
                             "may also have committed."
                         ),
                     ),
+                    preserve_exception=True,
                 ) from exc
             matches = [source for source in sources if source.url == url]
             if baseline_ids is not None:
@@ -411,6 +412,7 @@ class SourceAddService:
                             "the source it just created."
                         ),
                     ),
+                    preserve_exception=True,
                 )
             if len(matches) == 1:
                 (match,) = matches  # exactly one (len==1 guard); unpack, not matches[0]
@@ -430,6 +432,7 @@ class SourceAddService:
                             f"failure ({_describe_sources(matches)})."
                         ),
                     ),
+                    preserve_exception=True,
                 )
             return None
 
@@ -740,6 +743,7 @@ class SourceAddService:
                             "but an earlier attempt in this call may also have committed."
                         ),
                     ),
+                    preserve_exception=True,
                 ) from exc
             matches = [source for source in sources if source.drive_document_id == file_id]
             if baseline_ids is not None:

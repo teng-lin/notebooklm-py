@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -122,8 +123,8 @@ def _string_value(node: ast.expr, names: dict[str, str]) -> str | None:
     return None
 
 
-def _module_strings(tree: ast.Module) -> dict[str, str]:
-    names: dict[str, str] = {}
+def _module_strings(tree: ast.Module, imported: dict[str, str] | None = None) -> dict[str, str]:
+    names = dict(imported or {})
     pending = list(tree.body)
     for _ in range(len(pending) + 1):
         changed = False
@@ -145,13 +146,70 @@ def _module_strings(tree: ast.Module) -> dict[str, str]:
     return names
 
 
-def _android_callsite_classes() -> dict[str, set[bool]]:
+def _module_identity(path: Path) -> tuple[str, str]:
+    relative = path.relative_to(_ANDROID_ROOT).with_suffix("")
+    parts = ["notebooklm", "_android", *relative.parts]
+    if parts[-1] == "__init__":
+        parts.pop()
+        module = ".".join(parts)
+        return module, module
+    module = ".".join(parts)
+    return module, module.rpartition(".")[0]
+
+
+def _android_module_strings(
+    trees: dict[Path, ast.Module],
+) -> dict[Path, dict[str, str]]:
+    """Resolve local and imported string constants across Android modules."""
+
+    identities = {path: _module_identity(path) for path in trees}
+    path_by_module = {module: path for path, (module, _) in identities.items()}
+    resolved = {path: _module_strings(tree) for path, tree in trees.items()}
+
+    for _ in range(len(trees) + 1):
+        changed = False
+        for path, tree in trees.items():
+            imported: dict[str, str] = {}
+            package = identities[path][1]
+            for node in tree.body:
+                if not isinstance(node, ast.ImportFrom) or node.module is None:
+                    continue
+                import_name = f"{'.' * node.level}{node.module}" if node.level else node.module
+                target_module = (
+                    importlib.util.resolve_name(import_name, package) if node.level else import_name
+                )
+                target_path = path_by_module.get(target_module)
+                if target_path is None:
+                    continue
+                for alias in node.names:
+                    value = resolved[target_path].get(alias.name)
+                    if value is not None:
+                        imported[alias.asname or alias.name] = value
+            names = _module_strings(tree, imported)
+            if names != resolved[path]:
+                resolved[path] = names
+                changed = True
+        if not changed:
+            return resolved
+    raise AssertionError("Android string-constant imports did not converge")
+
+
+def _android_callsite_classes(
+    source_overrides: dict[Path, str] | None = None,
+) -> dict[str, set[bool]]:
+    source_overrides = source_overrides or {}
+    paths = [path for path in sorted(_ANDROID_ROOT.rglob("*.py")) if "proto" not in path.parts]
+    trees = {
+        path: ast.parse(
+            source_overrides.get(path, path.read_text(encoding="utf-8")),
+            filename=str(path),
+        )
+        for path in paths
+    }
+    names_by_path = _android_module_strings(trees)
     found: dict[str, set[bool]] = {}
-    for path in sorted(_ANDROID_ROOT.rglob("*.py")):
-        if "proto" in path.parts:
-            continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        names = _module_strings(tree)
+    for path, tree in trees.items():
+        names = names_by_path[path]
         for node in ast.walk(tree):
             if not (
                 isinstance(node, ast.Call)
@@ -161,9 +219,14 @@ def _android_callsite_classes() -> dict[str, set[bool]]:
             ):
                 continue
             method = _string_value(node.args[0], names)
+            assert method is not None, (
+                f"{path.relative_to(_ANDROID_ROOT)}:{node.lineno} has an unresolved "
+                f"{node.func.attr} method expression; every Android transport call must be "
+                "classified"
+            )
             # Ignore unrelated HTTP client.stream("GET", ...). Android gRPC
             # methods are absolute /service/method names.
-            if method is None or not method.startswith("/"):
+            if not method.startswith("/"):
                 continue
             replay_keywords = [kw.value for kw in node.keywords if kw.arg == "replay_safe"]
             assert len(replay_keywords) == 1, (
@@ -210,6 +273,21 @@ def test_android_retry_manifest_negative_self_test_rejects_a_flipped_literal() -
     observed[method] = {not ANDROID_RETRY_MANIFEST[method]}
     with pytest.raises(AssertionError, match="declares replay_safe"):
         _assert_retry_manifest(observed)
+
+
+def test_android_retry_manifest_negative_self_test_covers_imported_constant_site() -> None:
+    path = _ANDROID_ROOT / "artifacts.py"
+    source = path.read_text(encoding="utf-8")
+    method_offset = source.index("LIST_ARTIFACTS_METHOD")
+    literal_offset = source.index("replay_safe=True", method_offset)
+    changed = (
+        source[:literal_offset]
+        + "replay_safe=False"
+        + source[literal_offset + len("replay_safe=True") :]
+    )
+
+    with pytest.raises(AssertionError, match="ListArtifacts.*declares replay_safe"):
+        _assert_retry_manifest(_android_callsite_classes({path: changed}))
 
 
 def test_android_session_consults_the_retry_manifest() -> None:

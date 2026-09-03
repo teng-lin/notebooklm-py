@@ -59,6 +59,7 @@ def _unconfirmed_add(exc: Exception) -> RPCError:
             method_id=RPCMethod.ADD_SOURCES_ASYNC.value,
             rpc_code=rpc_code,
         ),
+        preserve_exception=True,
     )
 
 

@@ -610,6 +610,7 @@ class WebArtifactsAPI(ArtifactsAPI):
                     method_id=RPCMethod.COPY_ARTIFACTS.value,
                     rpc_code=rpc_code,
                 ),
+                preserve_exception=True,
             ) from exc
 
         rows = unwrap_mapping_rows(

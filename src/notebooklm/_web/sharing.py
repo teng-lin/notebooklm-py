@@ -65,6 +65,30 @@ class WebSharingAPI(SharingAPI):
         )
         return ShareStatus.from_api_response(result, notebook_id)
 
+    async def _share_and_readback(
+        self,
+        notebook_id: str,
+        params: list,
+        *,
+        what: str,
+    ) -> ShareStatus:
+        """Apply one share mutation and include its status readback in the outcome boundary."""
+
+        async def mutate_and_readback() -> ShareStatus:
+            await self._rpc.rpc_call(
+                RPCMethod.SHARE_NOTEBOOK,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+            )
+            return await self.get_status(notebook_id)
+
+        return await call_unconfirmed_on_transport_loss(
+            mutate_and_readback,
+            method=RPCMethod.SHARE_NOTEBOOK,
+            what=what,
+        )
+
     async def set_public(
         self,
         notebook_id: str,
@@ -92,17 +116,11 @@ class WebSharingAPI(SharingAPI):
             None,
             [2],
         ]
-        await call_unconfirmed_on_transport_loss(
-            lambda: self._rpc.rpc_call(
-                RPCMethod.SHARE_NOTEBOOK,
-                params,
-                source_path=f"/notebook/{notebook_id}",
-                allow_null=True,
-            ),
-            method=RPCMethod.SHARE_NOTEBOOK,
-            what="ShareNotebook public-access update",
+        return await self._share_and_readback(
+            notebook_id,
+            params,
+            what="ShareNotebook public-access update and status readback",
         )
-        return await self.get_status(notebook_id)
 
     async def set_view_level(
         self,
@@ -254,22 +272,16 @@ class WebSharingAPI(SharingAPI):
             [(email, permission.name) for email, permission in grants],
         )
 
-        await call_unconfirmed_on_transport_loss(
-            lambda: self._rpc.rpc_call(
-                RPCMethod.SHARE_NOTEBOOK,
-                self._share_params(
-                    notebook_id,
-                    grants,
-                    notify=notify,
-                    message_block=[0 if welcome_message else 1, welcome_message],
-                ),
-                source_path=f"/notebook/{notebook_id}",
-                allow_null=True,
+        return await self._share_and_readback(
+            notebook_id,
+            self._share_params(
+                notebook_id,
+                grants,
+                notify=notify,
+                message_block=[0 if welcome_message else 1, welcome_message],
             ),
-            method=RPCMethod.SHARE_NOTEBOOK,
-            what="ShareNotebook user grant",
+            what="ShareNotebook user grant and status readback",
         )
-        return await self.get_status(notebook_id)
 
     async def remove_user(
         self,
@@ -301,17 +313,11 @@ class WebSharingAPI(SharingAPI):
             notify=False,
             message_block=[0, ""],
         )
-        await call_unconfirmed_on_transport_loss(
-            lambda: self._rpc.rpc_call(
-                RPCMethod.SHARE_NOTEBOOK,
-                params,
-                source_path=f"/notebook/{notebook_id}",
-                allow_null=True,
-            ),
-            method=RPCMethod.SHARE_NOTEBOOK,
-            what="ShareNotebook user removal",
+        return await self._share_and_readback(
+            notebook_id,
+            params,
+            what="ShareNotebook user removal and status readback",
         )
-        return await self.get_status(notebook_id)
 
 
 class ShareManager:

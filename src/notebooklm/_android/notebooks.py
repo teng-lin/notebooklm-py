@@ -276,6 +276,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
                     method_id=COPY_PROJECT_METHOD,
                     rpc_code=rpc_code,
                 ),
+                preserve_exception=True,
             ) from None
         try:
             notebook = _notebook_codec().decode_project(response, method_id=COPY_PROJECT_METHOD)

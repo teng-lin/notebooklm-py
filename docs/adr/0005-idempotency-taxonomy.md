@@ -33,7 +33,8 @@ also owns `call_unconfirmed_on_transport_loss()` and
 without changing its type or message; Android selects its cause-scrubbing
 mode, while web keeps normal chaining. The latter constructs or preserves the
 domain-specific `RPCError` used by operations that already surfaced an
-`UNRESOLVED` reconciliation message.
+`UNRESOLVED` reconciliation message. Preservation is selected explicitly with
+`preserve_exception=True`; transport text is never treated as a discriminator.
 
 ## Context
 
@@ -79,6 +80,8 @@ Three operations previously labelled `PROBE_THEN_CREATE` did not own a probe:
 artifact creation, mind-map generation, and notebook sharing. They are
 `NON_IDEMPOTENT_NO_RETRY`; their call sites mark transport loss unconfirmed
 instead of advertising a reconciliation guarantee they cannot provide. The
+sharing outcome boundary includes its mandatory status readback, because that
+read can fail after the invitation or access mutation has committed. The
 registry no longer carries the unused `probe_key_fn` field.
 
 Android's exact gRPC method names have a checked replay-safety manifest derived
@@ -86,8 +89,10 @@ from the corresponding web registry entries: retriable reads are replay-safe;
 mutations, paid inference, and operations whose web policy disables internal
 retries are not. Android session dispatch reads this manifest rather than
 trusting an independently maintained call-site classification. A complete AST
-guardrail compares every Android unary/stream literal with the manifest and
-includes a negative self-test that flips a value. A second, behavioural
+guardrail resolves local and imported method constants, fails closed on every
+unresolved unary/stream expression, compares every replay literal with the
+manifest, and includes negative self-tests that flip local and imported-constant
+sites. A second, behavioural
 manifest resolves mutating public methods through both backend MROs, injects
 transport loss through their normal test fakes, and requires both outcomes to
 carry `unconfirmed=True`; it also pins Android's cause scrubbing and proves a

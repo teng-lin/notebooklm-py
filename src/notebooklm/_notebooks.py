@@ -279,6 +279,7 @@ class NotebooksAPI(ABC):
                         "committed.",
                         method_id=self._create_method_id,
                     ),
+                    preserve_exception=True,
                 ) from exc
             matches = [nb for nb in current if nb.title == title]
             if baseline_ids is not None:

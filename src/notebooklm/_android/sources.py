@@ -212,6 +212,7 @@ def _unresolved_add_error(
                     "was replayed and no cleanup delete was sent."
                 ),
             ),
+            preserve_exception=True,
         ),
     )
 

@@ -885,6 +885,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                             "may also have committed."
                         ),
                     ),
+                    preserve_exception=True,
                 ) from exc
             matches = [source for source in sources if source.title == filename]
             if baseline_ids is not None:

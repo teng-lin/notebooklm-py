@@ -119,6 +119,7 @@ def _unresolved_batch_error(urls: Sequence[str], message: str, cause: Exception)
                     f"reconcile these URLs first: {preview}. {message}"
                 ),
             ),
+            preserve_exception=True,
         ),
     )
 
@@ -179,7 +180,12 @@ class SourceBatchAddService:
                 "reconcile the batch URLs first. The batch transport failed and an "
                 f"unknown subset may have committed; no automatic retry was attempted. {original}",
             )
-            unresolved_commit_error(RPCMethod.ADD_SOURCE, "the batch URL add", exc)
+            unresolved_commit_error(
+                RPCMethod.ADD_SOURCE,
+                "the batch URL add",
+                exc,
+                preserve_exception=True,
+            )
             raise
         except RPCError as exc:
             # Live-characterized all-failed URL batches use the same explicit
@@ -194,7 +200,12 @@ class SourceBatchAddService:
                     "documented all-rejected status, so its committed subset is unknown; "
                     f"no automatic retry was attempted. {original}",
                 )
-                unresolved_commit_error(RPCMethod.ADD_SOURCE, "the batch URL add", exc)
+                unresolved_commit_error(
+                    RPCMethod.ADD_SOURCE,
+                    "the batch URL add",
+                    exc,
+                    preserve_exception=True,
+                )
                 raise
             # Preserve the existing per-item adapter contract instead of
             # turning an all-bad input batch into a top-level failure.

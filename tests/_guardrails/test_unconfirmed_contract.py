@@ -205,6 +205,10 @@ UNCONFIRMED_METHOD_MANIFEST = (
     ),
 )
 
+_WEB_SHARING_CASES = tuple(
+    case for case in UNCONFIRMED_METHOD_MANIFEST if case.namespace == "sharing"
+)
+
 
 def _method_owner(api_type: type[Any], method_name: str) -> type[Any]:
     """Resolve a public method through the same MRO used at runtime."""
@@ -215,8 +219,8 @@ def _method_owner(api_type: type[Any], method_name: str) -> type[Any]:
     raise AssertionError(f"{api_type.__name__}.{method_name} does not resolve through its MRO")
 
 
-def _build_web_api(namespace: str, error: NetworkError) -> Any:
-    fake = make_fake_core(rpc_call=AsyncMock(side_effect=error))
+def _build_web_api(namespace: str, side_effect: Any) -> Any:
+    fake = make_fake_core(rpc_call=AsyncMock(side_effect=side_effect))
     if namespace == "notebooks":
         return WebNotebooksAPI(fake.rpc_executor, fake)
     if namespace == "sources":
@@ -300,6 +304,21 @@ async def test_cross_backend_mutations_mark_transport_loss_unconfirmed(
     )
     assert android_exc is android_error or "UNRESOLVED" in str(android_exc)
     assert android_exc.__cause__ is None
+
+
+@pytest.mark.parametrize("case", _WEB_SHARING_CASES, ids=lambda case: case.id)
+async def test_web_sharing_marks_post_commit_readback_transport_loss_unconfirmed(
+    case: _ContractCase,
+) -> None:
+    error = NetworkError("status response lost after share committed", method_id="web-test")
+    api = _build_web_api("sharing", [[], error])
+
+    exc = await _assert_unconfirmed(
+        lambda: getattr(api, case.method_name)(*case.args, **dict(case.kwargs))
+    )
+
+    assert exc is error
+    assert api._rpc.rpc_call.await_count == 2
 
 
 async def test_unconfirmed_contract_negative_self_test_rejects_plain_raise() -> None:

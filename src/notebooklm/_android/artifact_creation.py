@@ -102,6 +102,7 @@ async def create_artifact_once(
                 method_id=CREATE_ARTIFACT_METHOD,
                 rpc_code=rpc_code,
             ),
+            preserve_exception=True,
         ) from None
 
 

@@ -154,16 +154,19 @@ def unresolved_commit_error(
     method: _Method,
     what: str,
     exc: _E,
+    *,
+    preserve_exception: bool = False,
 ) -> _E | RPCError:
     """Build or tag an error for a write whose commit outcome is unknown.
 
-    Passing an already-rendered exception whose message starts with
-    ``UNRESOLVED`` preserves the domain-specific exception type and guidance.
-    Transport exceptions receive the shared generic ``RPCError`` used by web
-    call sites that do not have a more specific domain wrapper.
+    ``preserve_exception=True`` explicitly preserves an already-rendered
+    domain-specific exception type and guidance. Transport exceptions receive
+    the shared generic ``RPCError`` used by web call sites that do not have a
+    more specific domain wrapper. Exception text is deliberately not used to
+    select between those contracts: upstream transport messages are untrusted.
     """
 
-    if str(exc).startswith("UNRESOLVED"):
+    if preserve_exception:
         return mark_unconfirmed(exc)
 
     rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None

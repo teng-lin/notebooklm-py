@@ -648,6 +648,7 @@ class WebNotebooksAPI(NotebooksAPI):
                     method_id=RPCMethod.COPY_NOTEBOOK.value,
                     rpc_code=rpc_code,
                 ),
+                preserve_exception=True,
             ) from exc
         notebook = Notebook.from_api_response(result)
         if not notebook.id:
