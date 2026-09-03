@@ -11,13 +11,22 @@ from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, 
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Any, Generic, Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, cast
 
+from .._backoff import (
+    RETRY_BACKOFF_BASE_SECONDS,
+    RETRY_BACKOFF_CAP_SECONDS,
+    RETRY_BACKOFF_JITTER_RATIO,
+    RETRY_BACKOFF_MIN_SECONDS,
+    compute_backoff_delay,
+)
 from .._deadline import RuntimeDeadline
 from .._loop_affinity import assert_bound_loop
 from .._loop_bound import LoopBoundPrimitive
+from .._runtime.auth_refresh_retry import RefreshBudget, refresh_and_count
 from .._runtime.call_supervisor import CallLease, CallSupervisor, OperationLease
-from .._runtime.config import DEFAULT_CHAT_RESPONSE_MAX_BYTES
+from .._runtime.config import CORE_LOGGER_NAME, DEFAULT_CHAT_RESPONSE_MAX_BYTES
+from .._runtime.helpers import is_auth_error, resolve_sleep
 from ..exceptions import MissingDependencyError, RPCResponseTooLargeError
 from .auth import BearerCredential, BearerProvider
 from .errors import (
@@ -53,6 +62,10 @@ _ANDROID_NOTES_PROTO = (
     "notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1.notes_pb2"
 )
 logger = logging.getLogger(__name__)
+retry_logger = logging.getLogger(CORE_LOGGER_NAME)
+
+if TYPE_CHECKING:
+    from .._client_metrics import ClientMetrics
 
 
 class _DefaultTelemetry(Enum):
@@ -60,6 +73,20 @@ class _DefaultTelemetry(Enum):
 
 
 _DEFAULT_TELEMETRY = _DefaultTelemetry.METHOD
+
+
+class _RetryClass(Enum):
+    AUTH = auto()
+    RATE_LIMIT = auto()
+    SERVER = auto()
+
+
+_GRPC_RETRY_CLASS = {
+    8: _RetryClass.RATE_LIMIT,
+    13: _RetryClass.SERVER,
+    14: _RetryClass.SERVER,
+    16: _RetryClass.AUTH,
+}
 
 
 class _DeadlineSignal(Exception):
@@ -81,6 +108,20 @@ class _AttemptSuccess(Generic[RespT]):
 class _AttemptFailure:
     status: GrpcStatus
     bearer_generation: int | None
+
+
+def _grpc_status_error(
+    status: GrpcStatus,
+    *,
+    method: str,
+    timeout_seconds: float | None,
+) -> Exception:
+    """Build the public sanitized status error without retaining a wire cause."""
+
+    try:
+        raise_grpc_status(status, method=method, timeout_seconds=timeout_seconds)
+    except Exception as error:
+        return error
 
 
 def _default_grpc_loader(
@@ -156,6 +197,11 @@ class AndroidSession(LoopBoundPrimitive):
         call_supervisor: CallSupervisor,
         *,
         timeout: float | None = 30.0,
+        rate_limit_max_retries: int = 3,
+        server_error_max_retries: int = 3,
+        refresh_retry_delay: float = 0.2,
+        metrics: ClientMetrics | None = None,
+        sleep: Callable[[float], Awaitable[object]] | None = None,
         grpc_loader: Callable[[], Any] = _default_grpc_loader,
         protobuf_loader: Callable[[], Any] = _default_protobuf_loader,
         monotonic: Callable[[], float] = time.monotonic,
@@ -163,6 +209,11 @@ class AndroidSession(LoopBoundPrimitive):
         self._bearer_provider = bearer_provider
         self._call_supervisor = call_supervisor
         self._timeout = timeout
+        self._rate_limit_max_retries = rate_limit_max_retries
+        self._server_error_max_retries = server_error_max_retries
+        self._refresh_retry_delay = refresh_retry_delay
+        self._metrics = metrics
+        self._sleep = sleep
         self._grpc_loader = grpc_loader
         self._protobuf_loader = protobuf_loader
         self._monotonic = monotonic
@@ -533,32 +584,82 @@ class AndroidSession(LoopBoundPrimitive):
                 deadline,
                 expected_epoch=expected_epoch,
             ) as lease:
-                auth_replayed = False
-                unavailable_replayed = False
-                for _attempt in range(3):
+                refresh_budget = RefreshBudget()
+                rate_limit_retries = 0
+                server_error_retries = 0
+                while True:
                     outcome = await self._unary_attempt(
                         lease, method, request, response_type, metadata_augmentor
                     )
                     if isinstance(outcome, _AttemptSuccess):
                         return outcome.value
-                    if outcome.status.name == "UNAUTHENTICATED":
-                        if outcome.bearer_generation is not None:
-                            self._bearer_provider.invalidate(outcome.bearer_generation)
-                        if replay_safe and not auth_replayed:
-                            auth_replayed = True
-                            continue
-                    if (
-                        outcome.status.name == "UNAVAILABLE"
-                        and replay_safe
-                        and not unavailable_replayed
-                    ):
-                        unavailable_replayed = True
-                        continue
-                    raise_grpc_status(
+                    error = _grpc_status_error(
                         outcome.status,
                         method=method,
                         timeout_seconds=None if deadline is None else deadline.timeout,
                     )
+                    retry_class = _GRPC_RETRY_CLASS.get(outcome.status.code)
+                    if is_auth_error(error):
+                        retry_class = _RetryClass.AUTH
+
+                    if retry_class is _RetryClass.AUTH:
+                        if outcome.bearer_generation is not None:
+                            self._bearer_provider.invalidate(outcome.bearer_generation)
+                        if replay_safe and refresh_budget.consume():
+
+                            def preserve_terminal_error(
+                                _refresh_error: Exception,
+                                *,
+                                terminal: Exception = error,
+                            ) -> BaseException:
+                                return terminal
+
+                            await refresh_and_count(
+                                refresh=lambda: self._bearer_provider.get(
+                                    expected_epoch=lease.epoch
+                                ),
+                                on_refresh_failure=preserve_terminal_error,
+                                sleep=resolve_sleep(self._sleep),
+                                refresh_retry_delay=self._refresh_retry_delay,
+                                log_label=telemetry or method,
+                                logger=retry_logger,
+                                metrics=self._metrics,
+                                retry_deadline=deadline,
+                            )
+                            continue
+                    elif (
+                        retry_class is _RetryClass.RATE_LIMIT
+                        and replay_safe
+                        and rate_limit_retries < self._rate_limit_max_retries
+                    ):
+                        await self._wait_before_retry(
+                            attempt=rate_limit_retries,
+                            deadline=deadline,
+                            label=telemetry or method,
+                            retry_class=retry_class,
+                            terminal_error=error,
+                        )
+                        rate_limit_retries += 1
+                        if self._metrics is not None:
+                            self._metrics.increment(rpc_rate_limit_retries=1)
+                        continue
+                    elif (
+                        retry_class is _RetryClass.SERVER
+                        and replay_safe
+                        and server_error_retries < self._server_error_max_retries
+                    ):
+                        await self._wait_before_retry(
+                            attempt=server_error_retries,
+                            deadline=deadline,
+                            label=telemetry or method,
+                            retry_class=retry_class,
+                            terminal_error=error,
+                        )
+                        server_error_retries += 1
+                        if self._metrics is not None:
+                            self._metrics.increment(rpc_server_error_retries=1)
+                        continue
+                    raise error
         except TimeoutError:
             queue_timed_out = True
         if queue_timed_out:
@@ -568,11 +669,45 @@ class AndroidSession(LoopBoundPrimitive):
             )
         raise AssertionError("unary call exited without a result")  # pragma: no cover
 
+    async def _wait_before_retry(
+        self,
+        *,
+        attempt: int,
+        deadline: RuntimeDeadline | None,
+        label: str,
+        retry_class: _RetryClass,
+        terminal_error: Exception,
+    ) -> None:
+        delay = max(
+            RETRY_BACKOFF_MIN_SECONDS,
+            compute_backoff_delay(
+                attempt,
+                base=RETRY_BACKOFF_BASE_SECONDS,
+                cap=RETRY_BACKOFF_CAP_SECONDS,
+                jitter_ratio=RETRY_BACKOFF_JITTER_RATIO,
+            ),
+        )
+        if deadline is not None:
+            remaining = deadline.remaining()
+            if remaining <= 0.0 or delay >= remaining:
+                raise terminal_error
+        actual_delay = delay if deadline is None else deadline.clamp_sleep(delay)
+        retry_logger.warning(
+            "%s Android %s error; backing off %.1fs before retry %d",
+            label,
+            "rate-limit" if retry_class is _RetryClass.RATE_LIMIT else "server",
+            actual_delay,
+            attempt + 1,
+        )
+        if actual_delay > 0:
+            await resolve_sleep(self._sleep)(actual_delay)
+
     async def stream(
         self,
         method: str,
         request: ReqT,
         *,
+        replay_safe: bool = False,
         timeout: float | None = None,
         response_type: type[RespT],
         telemetry_method: str | None | _DefaultTelemetry = _DEFAULT_TELEMETRY,
@@ -580,6 +715,11 @@ class AndroidSession(LoopBoundPrimitive):
     ) -> AsyncIterator[RespT]:
         """Yield a stream without retaining this secret owner in failures."""
 
+        # The only admitted Android stream creates a chat turn and is not safe
+        # to replay. Keep the explicit policy argument on the boundary so the
+        # operation manifest can enumerate it; a failed stream always remains
+        # single-attempt, including failures before its first frame.
+        del replay_safe
         session = self
         iterator = cast(
             AsyncGenerator[RespT, None],

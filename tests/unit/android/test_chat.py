@@ -786,6 +786,7 @@ async def test_base_ask_uses_latest_cumulative_final_without_concatenating_frame
     )
     assert request.request_context.client_type == 2
     assert kwargs == {
+        "replay_safe": False,
         "timeout": 180.0,
         "response_type": chat_pb2.GenerateFreeFormStreamedResponse,
         "telemetry_method": "chat.ask",

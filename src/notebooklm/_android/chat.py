@@ -370,6 +370,7 @@ class AndroidChatAPI(ChatAPI):
         async for response in self._transport.stream(
             GENERATE_FREE_FORM_STREAMED_METHOD,
             request,
+            replay_safe=False,
             timeout=self._chat_timeout,
             response_type=proto.GenerateFreeFormStreamedResponse,
             telemetry_method="chat.ask",

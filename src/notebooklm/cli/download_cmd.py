@@ -91,6 +91,9 @@ def _display_download_result(result: dict[str, Any], artifact_type: str) -> None
             console.print("\n[red]Failed:[/red]")
             for r in failed:
                 console.print(f"  {r['filename']}: {r.get('error', 'unknown error')}")
+        if result.get("code") == "AUTH_ERROR":
+            console.print(f"\n[red]{result['message']}[/red]")
+            console.print(f"[dim]{result['hint']}[/dim]")
     else:
         console.print(
             f"[green]{artifact_type.capitalize()} saved to:[/green] {result['output_path']}"

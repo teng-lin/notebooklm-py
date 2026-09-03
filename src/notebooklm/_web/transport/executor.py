@@ -18,6 +18,7 @@ from ..._auth.account import format_authuser_value
 from ..._deadline import RuntimeDeadline
 from ..._env import get_base_url, get_default_language
 from ..._logging import get_request_id, reset_request_id, set_request_id
+from ..._runtime.auth_refresh_retry import RefreshBudget, refresh_and_count
 from ...exceptions import DecodingError
 from ...rpc import (
     ClientError,
@@ -33,7 +34,6 @@ from ...rpc import (
     resolve_rpc_id,
 )
 from ..policy import IDEMPOTENCY_REGISTRY, resolve_effective_disable_internal_retries
-from .auth_refresh_retry import RefreshBudget, refresh_and_count
 from .errors import (
     TransportAuthExpired,
     TransportRateLimited,
@@ -151,7 +151,7 @@ class RpcExecutor:
         such as ``ADD_SOURCE`` and ``CREATE_NOTE``.
 
         ``_refresh_budget`` carries the shared once-per-logical-call
-        :class:`notebooklm._web.transport.auth_refresh_retry.RefreshBudget` across the
+        :class:`notebooklm._runtime.auth_refresh_retry.RefreshBudget` across the
         decode-time retry recursion so the HTTP-status refresh layer (in the
         chain) and the decoded-RPC refresh layer (here) cannot both refresh on
         the same logical call (issue #1205). Like ``_is_retry`` it is an
@@ -610,7 +610,7 @@ class RpcExecutor:
         """Refresh auth after a decode-time auth error and retry once.
 
         Shares the refresh body with the HTTP-status layer via
-        :func:`notebooklm._web.transport.auth_refresh_retry.refresh_and_count`. The
+        :func:`notebooklm._runtime.auth_refresh_retry.refresh_and_count`. The
         decoded-RPC layer's refresh-failure shape is the ORIGINAL ``RPCError``
         (``original_error``) re-raised ``from refresh_error`` — callers and
         tests pin that exact identity, distinct from the chain layer's

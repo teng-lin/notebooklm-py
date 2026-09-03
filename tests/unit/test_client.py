@@ -589,6 +589,58 @@ class TestRefreshAuth:
         assert calls == [False]
         assert result is client._auth
 
+    @pytest.mark.asyncio
+    async def test_android_refresh_remints_bearer_before_best_effort_web_refresh(
+        self, mock_auth, monkeypatch
+    ):
+        client = NotebookLMClient(mock_auth, backend="android")
+        calls: list[str] = []
+        provider = client._android_bearer_provider
+        assert provider is not None
+
+        async def refresh_bearer(expected_epoch: int):
+            calls.append(f"bearer:{expected_epoch}")
+
+        async def refresh_web(**kwargs):
+            calls.append(f"web:{kwargs['expected_epoch']}")
+            return kwargs["auth"]
+
+        import notebooklm.client as client_mod
+
+        monkeypatch.setattr(provider, "refresh", refresh_bearer)
+        monkeypatch.setattr(client_mod, "refresh_auth_session", refresh_web)
+
+        result = await client._refresh_auth_for_epoch(expected_epoch=7)
+
+        assert calls == ["bearer:7", "web:7"]
+        assert result is client._auth
+
+    @pytest.mark.asyncio
+    async def test_android_refresh_keeps_successful_bearer_when_web_refresh_fails(
+        self, mock_auth, monkeypatch, caplog
+    ):
+        client = NotebookLMClient(mock_auth, backend="android")
+        provider = client._android_bearer_provider
+        assert provider is not None
+        bearer_calls: list[int] = []
+
+        async def refresh_bearer(expected_epoch: int):
+            bearer_calls.append(expected_epoch)
+
+        async def refresh_web(**kwargs):
+            raise ValueError("web cookies are intentionally absent")
+
+        import notebooklm.client as client_mod
+
+        monkeypatch.setattr(provider, "refresh", refresh_bearer)
+        monkeypatch.setattr(client_mod, "refresh_auth_session", refresh_web)
+
+        result = await client._refresh_auth_for_epoch(expected_epoch=9)
+
+        assert bearer_calls == [9]
+        assert result is client._auth
+        assert "compatibility web refresh failed (ValueError)" in caplog.text
+
 
 # =============================================================================
 # AUTH PROPERTY TESTS

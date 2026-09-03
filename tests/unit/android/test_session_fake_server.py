@@ -179,6 +179,8 @@ async def _running_session(
     *,
     timeout: float | None = 1.0,
     max_concurrent_rpcs: int | None = 2,
+    server_error_max_retries: int = 3,
+    sleep: Callable[[float], Awaitable[object]] | None = None,
 ) -> AsyncIterator[_Harness]:
     service = service or _Service()
     server = grpc.aio.server()
@@ -208,6 +210,8 @@ async def _running_session(
         bearer,  # type: ignore[arg-type]
         supervisor,
         timeout=timeout,
+        server_error_max_retries=server_error_max_retries,
+        sleep=sleep,
         grpc_loader=lambda: grpc_loader,
     )
     harness = _Harness(
@@ -495,7 +499,16 @@ async def test_mutation_never_retries_unauthenticated() -> None:
 @pytest.mark.asyncio
 async def test_replay_safe_read_retries_unavailable_once() -> None:
     service = _Service(on_unary=_abort_unary(grpc.StatusCode.UNAVAILABLE))
-    async with _running_session(service) as harness:
+
+    async def sleep(_seconds: float) -> None:
+        return None
+
+    async with _running_session(
+        service,
+        timeout=5.0,
+        server_error_max_retries=1,
+        sleep=sleep,
+    ) as harness:
         with pytest.raises(ServerError):
             await _get_project(harness, replay_safe=True)
 

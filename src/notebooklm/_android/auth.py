@@ -274,6 +274,32 @@ class BearerProvider(LoopBoundPrimitive):
             self._settle_mint_waiter(task)
             lock.release()
 
+    async def refresh(self, expected_epoch: int) -> BearerCredential:
+        """Invalidate the cached bearer and mint/join one fresh credential."""
+
+        provider = self
+        failure: BaseException | None = None
+        result: BearerCredential | None = None
+        try:
+            result = await provider._refresh_impl(expected_epoch)
+        except BaseException as error:
+            failure = sanitize_escaping_exception(error)
+        finally:
+            del self, provider
+        if failure is not None:
+            raise failure
+        assert result is not None
+        return result
+
+    async def _refresh_impl(self, expected_epoch: int) -> BearerCredential:
+        """Credential-owning implementation for :meth:`refresh`."""
+
+        self._assert_active(expected_epoch)
+        cached = self._cached
+        if cached is not None:
+            self.invalidate(cached.generation)
+        return await self.get(expected_epoch)
+
     def _settle_mint_waiter(self, task: asyncio.Task[_MintResult]) -> None:
         if self._mint_task is task:
             self._mint_waiters -= 1

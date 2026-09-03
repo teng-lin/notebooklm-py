@@ -312,6 +312,29 @@ def test_backend_direct_import_boundaries() -> None:
     assert _boundary_violations(imports) == []
 
 
+@pytest.mark.parametrize(
+    ("module", "symbol"),
+    [
+        ("notebooklm._backoff", "compute_backoff_delay"),
+        ("notebooklm._runtime.helpers", "is_auth_error"),
+        ("notebooklm._runtime.auth_refresh_retry", "RefreshBudget"),
+    ],
+)
+def test_android_imports_each_shared_retry_mechanism(module: str, symbol: str) -> None:
+    """D9.7 prevents Android retry parity from drifting back to local copies."""
+
+    expected = f"{module}.{symbol}"
+    android_imports = [
+        direct
+        for path in sorted((SRC_ROOT / "_android").rglob("*.py"))
+        for direct in _scan_path(path)
+        if not direct.type_only
+    ]
+    assert any(direct.target == expected for direct in android_imports), (
+        f"Android must import {expected} directly"
+    )
+
+
 def test_idempotency_policy_has_one_web_owner_and_one_registry_seed() -> None:
     """A12 keeps create probing neutral and seeds web policy exactly once."""
     neutral_imports = _scan_path(NEUTRAL_IDEMPOTENCY_PATH)

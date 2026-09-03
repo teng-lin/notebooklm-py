@@ -1265,6 +1265,25 @@ async def test_artifact_download_remote_report_inline_failure_is_link_only(
     assert not any(getattr(b, "type", None) == "text" for b in result.content)
 
 
+async def test_artifact_download_remote_report_auth_failure_is_typed_auth(
+    mock_client, config
+) -> None:
+    from fastmcp.exceptions import ToolError
+
+    from notebooklm.exceptions import AuthError
+
+    mock_client.artifacts.list = AsyncMock(return_value=[_report_artifact(_AID_A)])
+    mock_client.artifacts.download_report = AsyncMock(side_effect=AuthError("expired"))
+
+    with pytest.raises(ToolError, match=r"^AUTH:"):
+        await _call(
+            mock_client,
+            config,
+            "studio_download",
+            {"notebook": NB_ID, "artifact_type": "report", "artifact_id": _AID_A},
+        )
+
+
 async def test_artifact_download_remote_inline_skipped_when_cap_exceeded(
     mock_client, config, monkeypatch
 ) -> None:

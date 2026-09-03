@@ -3,13 +3,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
 from types import SimpleNamespace
 
 import pytest
 
+import notebooklm._android.session as session_module
 from notebooklm._android.auth import BearerCredential
 from notebooklm._android.session import (
     ANDROID_GRPC_MAX_RECEIVE_MESSAGE_BYTES,
@@ -206,6 +207,10 @@ async def _open(
     supervisor: CallSupervisor | None = None,
     timeout: float | None = 1.0,
     monotonic: Callable[[], float] = time.monotonic,
+    rate_limit_max_retries: int = 3,
+    server_error_max_retries: int = 3,
+    refresh_retry_delay: float = 0.2,
+    sleep: Callable[[float], Awaitable[object]] | None = None,
 ):
     channel = channel or _Channel()
     bearer = bearer or _Bearer()
@@ -220,6 +225,11 @@ async def _open(
         bearer,  # type: ignore[arg-type]
         supervisor,
         timeout=timeout,
+        rate_limit_max_retries=rate_limit_max_retries,
+        server_error_max_retries=server_error_max_retries,
+        refresh_retry_delay=refresh_retry_delay,
+        metrics=supervisor._metrics,
+        sleep=sleep,
         grpc_loader=lambda: grpc,
         monotonic=monotonic,
     )
@@ -390,6 +400,7 @@ async def test_safe_read_replays_unauthenticated_once_and_mutation_never_replays
     session, bearer, _, _, _ = await _open(
         channel=channel,
         bearer=_Bearer(["ya29.first", "ya29.second"]),
+        refresh_retry_delay=0,
     )
     assert await session.unary(
         METHOD,
@@ -399,6 +410,8 @@ async def test_safe_read_replays_unauthenticated_once_and_mutation_never_replays
     ) == _Message(b"ok")
     assert len(channel.invocations) == 2
     assert bearer.invalidated == [1]
+    assert session._metrics is not None
+    assert session._metrics.snapshot().rpc_auth_retries == 1
 
     mutation_channel = _Channel()
     mutation_channel.unary_outcomes = [_RawRpcError(_Status.UNAUTHENTICATED), b"must-not-run"]
@@ -419,7 +432,11 @@ async def test_safe_read_replays_unauthenticated_once_and_mutation_never_replays
 async def test_safe_read_replays_unavailable_once_and_mutation_never_replays() -> None:
     channel = _Channel()
     channel.unary_outcomes = [_RawRpcError(_Status.UNAVAILABLE), b"ok"]
-    session, _, _, _, _ = await _open(channel=channel)
+
+    async def sleep(_seconds: float) -> None:
+        return None
+
+    session, _, _, _, supervisor = await _open(channel=channel, timeout=5.0, sleep=sleep)
 
     assert await session.unary(
         METHOD,
@@ -428,6 +445,7 @@ async def test_safe_read_replays_unavailable_once_and_mutation_never_replays() -
         response_type=_Message,
     ) == _Message(b"ok")
     assert len(channel.invocations) == 2
+    assert supervisor._metrics.snapshot().rpc_server_error_retries == 1
 
     mutation_channel = _Channel()
     mutation_channel.unary_outcomes = [_RawRpcError(_Status.UNAVAILABLE), b"must-not-run"]
@@ -441,6 +459,58 @@ async def test_safe_read_replays_unavailable_once_and_mutation_never_replays() -
         )
     assert len(mutation_channel.invocations) == 1
     assert captured.value.rpc_code == 14
+
+
+@pytest.mark.asyncio
+async def test_resource_exhausted_retries_with_injected_sleep_and_metrics(monkeypatch) -> None:
+    channel = _Channel()
+    channel.unary_outcomes = [_RawRpcError(_Status.RESOURCE_EXHAUSTED), b"ok"]
+    sleeps: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(session_module, "compute_backoff_delay", lambda *_args, **_kwargs: 1.25)
+    session, _, _, _, supervisor = await _open(
+        channel=channel,
+        timeout=10.0,
+        sleep=sleep,
+    )
+
+    assert await session.unary(
+        METHOD,
+        _Message(b"request"),
+        replay_safe=True,
+        response_type=_Message,
+    ) == _Message(b"ok")
+    assert sleeps == [1.25]
+    assert supervisor._metrics.snapshot().rpc_rate_limit_retries == 1
+
+
+@pytest.mark.parametrize("status", [_Status.RESOURCE_EXHAUSTED, _Status.INTERNAL])
+@pytest.mark.asyncio
+async def test_mutating_rpc_never_replays_new_retry_classes(status: _Status) -> None:
+    channel = _Channel()
+    channel.unary_outcomes = [_RawRpcError(status), b"must-not-run"]
+    sleeps: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    session, _, _, _, supervisor = await _open(channel=channel, sleep=sleep)
+    with pytest.raises((RateLimitError, ServerError)):
+        await session.unary(
+            METHOD,
+            _Message(b"mutation"),
+            replay_safe=False,
+            response_type=_Message,
+        )
+
+    assert len(channel.invocations) == 1
+    assert sleeps == []
+    snapshot = supervisor._metrics.snapshot()
+    assert snapshot.rpc_rate_limit_retries == 0
+    assert snapshot.rpc_server_error_retries == 0
 
 
 @pytest.mark.parametrize(
@@ -542,6 +612,35 @@ async def test_stream_is_lazy_holds_scope_and_never_replays_auth_failure() -> No
     wire_timeout = channel.invocations[0][3]
     assert wire_timeout is not None and 0.0 < wire_timeout <= 1.0
     assert supervisor._current is not None and supervisor._current.in_flight == 0
+
+
+@pytest.mark.asyncio
+async def test_stream_auth_failure_invalidates_bearer_for_the_next_unary() -> None:
+    channel = _Channel()
+    channel.stream_outcomes = [[_RawRpcError(_Status.UNAUTHENTICATED)]]
+    channel.unary_outcomes = [b"ok"]
+    session, bearer, _, _, _ = await _open(
+        channel=channel,
+        bearer=_Bearer(["ya29.first", "ya29.second"]),
+    )
+
+    stream = session.stream(
+        METHOD,
+        _Message(b"stream"),
+        replay_safe=False,
+        response_type=_Message,
+    )
+    with pytest.raises(AuthError):
+        await anext(stream)
+
+    assert await session.unary(
+        METHOD,
+        _Message(b"read"),
+        replay_safe=False,
+        response_type=_Message,
+    ) == _Message(b"ok")
+    assert bearer.invalidated == [1]
+    assert channel.invocations[-1][2] == (("authorization", "Bearer ya29.second"),)
 
 
 @pytest.mark.asyncio

@@ -16,12 +16,16 @@ __all__ = [
     "AUTH_ERROR_PATTERNS",
     "_resolve_keepalive_interval",
     "is_auth_error",
+    "map_google_http_status",
     "resolve_sleep",
 ]
 
 import asyncio
 import math
 from collections.abc import Awaitable, Callable
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from typing import Any
 
 import httpx
 
@@ -64,6 +68,7 @@ _LEGACY_AUTH_RPC_MESSAGES = frozenset(
         "authentication required. run 'notebooklm login' to re-authenticate.",
     }
 )
+_MAX_GOOGLE_RETRY_AFTER_SECONDS = 300
 
 
 def _resolve_keepalive_interval(keepalive: float | None, min_interval: float) -> float | None:
@@ -102,6 +107,75 @@ def resolve_sleep(
     monkeypatches — that's the bug this helper exists to prevent.
     """
     return injected if injected is not None else asyncio.sleep
+
+
+def map_google_http_status(
+    response: Any,
+    *,
+    filename: str,
+    chain: bool,
+) -> None:
+    """Map Google HTTP auth, throttle, and server statuses consistently.
+
+    Successful responses and endpoint-specific redirects/client errors pass
+    through for the caller to classify.  ``chain=False`` is required on
+    bearer-authenticated Android paths: their raw HTTP exception may retain an
+    ``Authorization`` header, so neither that exception nor its frames may be
+    attached to the public error.
+    """
+
+    status = int(response if type(response) is int else response.status_code)
+    if status != 401 and status != 429 and status < 500:
+        return
+
+    cause: Exception | None = None
+    if chain:
+        try:
+            response.raise_for_status()
+        except Exception as error:
+            cause = error
+
+    if status == 401:
+        public_error: Exception = AuthError(
+            f"Google authentication expired while {filename}; reauthenticate the selected "
+            "profile with `notebooklm login`, then retry."
+        )
+    elif status == 429:
+        raw_retry_after = getattr(response, "headers", {}).get("retry-after")
+        retry_after = _parse_google_retry_after(raw_retry_after)
+        message = f"Google throttled the download/request while {filename}; retry after a delay."
+        public_error = RateLimitError(message, retry_after=retry_after)
+    else:
+        public_error = ServerError(
+            f"Google returned HTTP {status} while {filename}; retry later.",
+            status_code=status,
+        )
+
+    if chain and cause is not None:
+        raise public_error from cause
+    raise public_error from None
+
+
+def _parse_google_retry_after(value: object) -> int | None:
+    """Parse Google's integer, fractional, or HTTP-date Retry-After value."""
+
+    if not isinstance(value, str) or not value.strip():
+        return None
+    value = value.strip()
+    try:
+        seconds = float(value)
+        if math.isfinite(seconds):
+            return min(_MAX_GOOGLE_RETRY_AFTER_SECONDS, max(0, math.ceil(seconds)))
+    except ValueError:
+        pass
+    try:
+        parsed = parsedate_to_datetime(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        delta = (parsed - datetime.now(timezone.utc)).total_seconds()
+        return min(_MAX_GOOGLE_RETRY_AFTER_SECONDS, max(0, int(delta)))
+    except (OverflowError, TypeError, ValueError):
+        return None
 
 
 def _coerce_int_code(value: object) -> int | None:

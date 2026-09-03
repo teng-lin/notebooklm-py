@@ -189,6 +189,31 @@ async def test_expiry_cache_and_compare_and_clear_generation() -> None:
 
 
 @pytest.mark.asyncio
+async def test_explicit_refresh_invalidates_and_remints_cached_bearer() -> None:
+    minter = _Minter(
+        [
+            MintedOAuthToken("ya29.before-refresh", 2_000),
+            MintedOAuthToken("ya29.after-refresh", 2_000),
+        ]
+    )
+    provider = BearerProvider(
+        _Profile(_record()),
+        minter,
+        wall_clock=lambda: 1_000.0,
+        monotonic=lambda: 50.0,
+    )
+    await _activate(provider)
+
+    before = await provider.get(1)
+    after = await provider.refresh(1)
+
+    assert before.generation != after.generation
+    assert after.token == "ya29.after-refresh"
+    assert await provider.get(1) is after
+    assert minter.calls == 2
+
+
+@pytest.mark.asyncio
 async def test_close_fences_cancel_resistant_late_mint_and_redacts_repr() -> None:
     class _CancelResistantMinter:
         def __init__(self) -> None:

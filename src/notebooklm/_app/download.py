@@ -37,7 +37,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Protocol, TypedDict
 
-from ..exceptions import ValidationError
+from ..exceptions import AuthError, ValidationError
 from ..types import Artifact, ArtifactType
 from .download_specs import EXTENSION_MIME_TYPES, DownloadTypeSpec
 from .download_specs import FORMAT_EXTENSIONS as FORMAT_EXTENSIONS
@@ -215,6 +215,9 @@ class DownloadResult:
 
     outcome: DownloadOutcome
     error: str | None = None
+    error_code: str | None = None
+    message: str | None = None
+    hint: str | None = None
     suggestion: str | None = None
     artifact: dict[str, Any] | None = None
     output_path: str | None = None
@@ -684,6 +687,7 @@ async def _execute_download_all(
     succeeded_count = 0
     failed_count = 0
     skipped_count = 0
+    first_auth_error: AuthError | None = None
 
     for i, (artifact, item_name) in enumerate(
         zip(type_artifacts, planned_filenames, strict=True), 1
@@ -734,6 +738,8 @@ async def _execute_download_all(
             )
             succeeded_count += 1
         except Exception as e:
+            if isinstance(e, AuthError) and first_auth_error is None:
+                first_auth_error = e
             artifacts_results.append(
                 {
                     "id": artifact["id"],
@@ -756,6 +762,13 @@ async def _execute_download_all(
         failed_count=failed_count,
         skipped_count=skipped_count,
         is_failure=failed_count > 0,
+        error_code="AUTH_ERROR" if first_auth_error is not None else None,
+        message=(
+            f"Authentication error: {first_auth_error}" if first_auth_error is not None else None
+        ),
+        hint=(
+            "Run 'notebooklm login' to re-authenticate." if first_auth_error is not None else None
+        ),
         artifacts=tuple(artifacts_results),
     )
 
@@ -855,6 +868,8 @@ async def _execute_download_single(
             # ``size_bytes`` at ``None`` rather than raising.
             size_bytes=_file_size_or_none(written_path),
         )
+    except AuthError:
+        raise
     except Exception as e:
         return DownloadResult(outcome=DownloadOutcome.ERROR, error=str(e), artifact=dict(selected))
 

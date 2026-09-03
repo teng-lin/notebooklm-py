@@ -100,6 +100,12 @@ def build_download_envelope(result: DownloadResult) -> dict[str, Any]:
         }
         if result.is_failure:
             envelope["error"] = True
+        if result.error_code is not None:
+            envelope["code"] = result.error_code
+        if result.message is not None:
+            envelope["message"] = result.message
+        if result.hint is not None:
+            envelope["hint"] = result.hint
         return envelope
 
     if result.outcome is DownloadOutcome.SINGLE_DRY_RUN:

@@ -59,9 +59,9 @@ from typing import TYPE_CHECKING, cast
 
 import httpx
 
+from ...._runtime.auth_refresh_retry import RefreshBudget, refresh_and_count
 from ...._runtime.config import CORE_LOGGER_NAME
 from ...._runtime.helpers import resolve_sleep
-from ..auth_refresh_retry import RefreshBudget, refresh_and_count
 from ..errors import TransportAuthExpired
 from ..request_types import AuthSnapshot, BuildRequest
 from .context import (
@@ -173,7 +173,7 @@ class AuthRefreshMiddleware:
         "one refresh max per logical call" contract.
 
         The guard reads a shared
-        :class:`notebooklm._web.transport.auth_refresh_retry.RefreshBudget` from
+        :class:`notebooklm._runtime.auth_refresh_retry.RefreshBudget` from
         ``request.context[RPC_CONTEXT_REFRESH_BUDGET]`` when present — the
         executor seeds one per logical ``rpc_call`` so this HTTP-status layer
         and the decoded-RPC layer in :class:`RpcExecutor` share ONE refresh

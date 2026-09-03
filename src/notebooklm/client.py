@@ -726,39 +726,58 @@ class NotebookLMClient:
     ) -> AuthTokens:
         """Run refresh against the resource generation admitted by the caller."""
 
+        android_refreshed = self._backend_preference.preferred == "android"
+        if android_refreshed:
+            provider = self._android_bearer_provider
+            if provider is None:  # pragma: no cover - assembly invariant
+                raise RuntimeError("Android bearer provider is not configured.")
+            await provider.refresh(expected_epoch)
+
         coord = self._collaborators.auth_coord
-        if not allow_headless or not coord.has_refresh_callback:
-            # Base policy — also the coordinator's single-flight callback body,
-            # so this branch must NOT re-enter await_refresh (that would recurse
-            # through the callback). No coordinator wired ⇒ same direct path.
-            return await refresh_auth_session(
-                auth=self._auth,
-                kernel=self._collaborators.kernel,
-                auth_coord=coord,
-                web_transport=self._collaborators.web_transport,
-                cookie_persistence=self._collaborators.cookie_persistence,
-                allow_headless=allow_headless,
-                expected_epoch=expected_epoch,
-            )
-        # Wider policy: join the in-flight base refresh (join-then-rerun).
         try:
-            await coord.await_refresh(expected_epoch)
-        except ValueError:
-            # Narrow by design: the L3-remediable base-flight failure surfaces as
-            # ValueError (dead-cookie 302 / token extraction). refresh-cmd swallows
-            # its RuntimeError internally (returns bool), so a RuntimeError here is
-            # incidental (e.g. "Client not initialized") and must propagate, not
-            # trigger a second headless refresh; transport 5xx propagates too.
-            return await refresh_auth_session(
-                auth=self._auth,
-                kernel=self._collaborators.kernel,
-                auth_coord=coord,
-                web_transport=self._collaborators.web_transport,
-                cookie_persistence=self._collaborators.cookie_persistence,
-                allow_headless=True,
-                expected_epoch=expected_epoch,
+            if not allow_headless or not coord.has_refresh_callback:
+                # Base policy — also the coordinator's single-flight callback body,
+                # so this branch must NOT re-enter await_refresh (that would recurse
+                # through the callback). No coordinator wired ⇒ same direct path.
+                return await refresh_auth_session(
+                    auth=self._auth,
+                    kernel=self._collaborators.kernel,
+                    auth_coord=coord,
+                    web_transport=self._collaborators.web_transport,
+                    cookie_persistence=self._collaborators.cookie_persistence,
+                    allow_headless=allow_headless,
+                    expected_epoch=expected_epoch,
+                )
+            # Wider policy: join the in-flight base refresh (join-then-rerun).
+            try:
+                await coord.await_refresh(expected_epoch)
+            except ValueError:
+                # Narrow by design: the L3-remediable base-flight failure surfaces as
+                # ValueError (dead-cookie 302 / token extraction). refresh-cmd swallows
+                # its RuntimeError internally (returns bool), so a RuntimeError here is
+                # incidental and must propagate rather than trigger a second refresh.
+                return await refresh_auth_session(
+                    auth=self._auth,
+                    kernel=self._collaborators.kernel,
+                    auth_coord=coord,
+                    web_transport=self._collaborators.web_transport,
+                    cookie_persistence=self._collaborators.cookie_persistence,
+                    allow_headless=True,
+                    expected_epoch=expected_epoch,
+                )
+            return self._auth
+        except Exception as error:
+            if not android_refreshed:
+                raise
+            # Until backend-conditional assembly lands, Android clients still
+            # own the web compatibility bundle used by ``rpc_call``. Refresh it
+            # best-effort after the bearer, but never turn a successful bearer
+            # refresh into a public failure on master-token-only profiles.
+            logger.warning(
+                "Android bearer refreshed; compatibility web refresh failed (%s)",
+                type(error).__name__,
             )
-        return self._auth
+            return self._auth
 
     def get_account_authuser(self) -> int:
         """Return the ``authuser`` index of the signed-in account (0 = default).

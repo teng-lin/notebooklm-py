@@ -31,7 +31,7 @@ from pydantic import AnyUrl, BeforeValidator, WithJsonSchema
 from ..._app import download as download_core
 from ..._app import download_specs as download_specs_core
 from ..._app.resolve import resolve_ref
-from ...exceptions import NotebookLMError, ValidationError
+from ...exceptions import AuthError, NotebookLMError, ValidationError
 from .._filelink import DOWNLOAD_TTL, FileTransferConfig
 
 if TYPE_CHECKING:
@@ -341,6 +341,10 @@ async def _do_read_inline_artifact_text(
                 notebook_resolver=_passthrough_download_notebook,
                 artifact_resolver=_resolve_artifact_id,
             )
+        except AuthError:
+            # Authentication is actionable and must reach ``mcp_errors`` so
+            # the tool returns the typed AUTH envelope instead of link-only.
+            raise
         except NotebookLMError:
             # Upstream list/RPC failure (execute_download does not wrap its own list
             # call). Inline text is best-effort, so degrade to link-only rather than

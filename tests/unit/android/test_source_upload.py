@@ -47,6 +47,7 @@ from notebooklm._android.upload import (
 from notebooklm._curl_cffi_transport import CurlCffiAsyncClient
 from notebooklm._types.sources import _UPLOAD_FILE_EXTENSIONS
 from notebooklm.exceptions import (
+    AuthError,
     NetworkError,
     RPCError,
     ServerError,
@@ -960,12 +961,16 @@ async def test_http_failure_never_replays_or_cleans_up_and_only_401_invalidates(
     session, bearer, _, api = await _graph(harness)
     path, _ = _write_pdf(tmp_path)
 
-    with pytest.raises(SourceAddError) as raised:
+    error_type = AuthError if status == 401 else SourceAddError
+    with pytest.raises(error_type) as raised:
         await api.add_file(NOTEBOOK_ID, path)
 
     assert cast(Any, raised.value).source_id == SOURCE_ID
     assert cast(Any, raised.value).stage == stage
-    assert raised.value.cause is None
+    if isinstance(raised.value, SourceAddError):
+        assert raised.value.cause is None
+    else:
+        assert raised.value.__cause__ is None
     assert [call.method for call in harness.calls].count("POST" if stage == "start" else "PUT") == 1
     assert all("Delete" not in call[0] for call in session.calls)
     expected_generation = 1 if stage == "start" else 2

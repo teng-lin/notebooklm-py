@@ -38,6 +38,7 @@ from notebooklm._app.download import (
     execute_download,
     select_artifact,
 )
+from notebooklm.exceptions import AuthError
 from notebooklm.types import Artifact, ArtifactType
 
 # ---------------------------------------------------------------------------
@@ -659,6 +660,20 @@ class TestExecuteDownload:
         assert "boom" in result.error
 
     @pytest.mark.asyncio
+    async def test_single_download_auth_error_is_not_swallowed(self, tmp_path):
+        facade = _make_facade(artifacts=[_make_artifact("a1", "Only One")])
+        facade.artifacts.download_audio = AsyncMock(side_effect=AuthError("expired"))
+        plan = build_download_plan(_AUDIO_SPEC, {"notebook_id": "nb_1"}, cwd=tmp_path)
+
+        with pytest.raises(AuthError, match="expired"):
+            await execute_download(
+                plan,
+                facade,
+                notebook_resolver=_passthrough_notebook_resolver(),
+                artifact_resolver=_artifact_resolver_identity,
+            )
+
+    @pytest.mark.asyncio
     async def test_all_dry_run_previews_all(self, tmp_path):
         facade = _make_facade(
             artifacts=[_make_artifact("a1", "First"), _make_artifact("a2", "Second")],
@@ -710,6 +725,33 @@ class TestExecuteDownload:
         assert result.has_error  # ANY per-item failure surfaces a non-zero exit
         assert result.failed_count == 1
         assert result.succeeded_count == 1
+
+    @pytest.mark.asyncio
+    async def test_all_auth_failure_keeps_rows_and_typed_guidance(self, tmp_path):
+        facade = _make_facade(
+            artifacts=[_make_artifact("a1", "First"), _make_artifact("a2", "Second")],
+        )
+        facade.artifacts.download_audio = AsyncMock(
+            side_effect=[AuthError("expired"), str(tmp_path / "out" / "Second.mp3")]
+        )
+        plan = build_download_plan(
+            _AUDIO_SPEC,
+            {"notebook_id": "nb_1", "download_all": True, "output_path": str(tmp_path / "out")},
+            cwd=tmp_path,
+        )
+
+        result = await execute_download(
+            plan,
+            facade,
+            notebook_resolver=_passthrough_notebook_resolver(),
+            artifact_resolver=_artifact_resolver_identity,
+        )
+
+        assert result.outcome is DownloadOutcome.ALL_EXECUTED
+        assert [row["status"] for row in result.artifacts] == ["failed", "downloaded"]
+        assert result.error_code == "AUTH_ERROR"
+        assert result.message == "Authentication error: expired"
+        assert result.hint is not None and "notebooklm login" in result.hint
 
     @pytest.mark.asyncio
     async def test_all_name_filter_no_match_errors(self, tmp_path):

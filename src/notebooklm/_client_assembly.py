@@ -524,6 +524,11 @@ def _assemble_client(
             android_bearer_provider,
             internals.collaborators.call_supervisor,
             timeout=timeout,
+            rate_limit_max_retries=rate_limit_max_retries,
+            server_error_max_retries=server_error_max_retries,
+            refresh_retry_delay=refresh_retry_delay,
+            metrics=internals.collaborators.metrics,
+            sleep=sleep,
         )
         client._android_bearer_provider = android_bearer_provider
         client._android_session = android_session
