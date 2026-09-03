@@ -368,6 +368,7 @@ _ANDROID_INHERITED_WORKFLOWS = {
 }
 
 _TEMPLATE_HOOKS = frozenset({"_operation_scope"})
+_WEB_SCOPE_OVERRIDES = frozenset({"SourcesAPI"})
 
 _WIRE_HOOK_PREFIXES = ("_send_",)
 _WIRE_HOOK_NAMES = frozenset(
@@ -439,7 +440,10 @@ def test_namespace_bases_and_backends_preserve_the_scope_template_hook() -> None
         actual_hooks = frozenset(name for name in _TEMPLATE_HOOKS if name in base.__dict__)
         assert actual_hooks == _TEMPLATE_HOOKS
         assert not getattr(base._operation_scope, "__isabstractmethod__", False)
-        assert web._operation_scope is base._operation_scope
+        if contract.class_name in _WEB_SCOPE_OVERRIDES:
+            assert web._operation_scope is not base._operation_scope
+        else:
+            assert web._operation_scope is base._operation_scope
         assert android._operation_scope is not base._operation_scope
 
 

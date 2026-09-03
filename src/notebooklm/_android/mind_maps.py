@@ -39,6 +39,8 @@ class _SelectedNoteBackedMindMapReader(Protocol):
 
 
 class _AndroidMindMapArtifacts(Protocol):
+    """Native artifact hooks required by the Android composition root."""
+
     async def _list_all_studio(self, notebook_id: str) -> builtins.list[Artifact]: ...
 
     async def _generate_interactive_mind_map(

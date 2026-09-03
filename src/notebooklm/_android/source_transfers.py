@@ -87,7 +87,12 @@ class AndroidSourceTransferMixin:
         source_ids: builtins.list[str] | None = None,
         target_notebook_id: str | None = None,
     ) -> tuple[builtins.list[Source] | builtins.list[CopiedSource] | None, str]:
-        """Send one Android source-transfer operation."""
+        """Send one Android source-transfer operation.
+
+        The enclosing ``AndroidSourcesAPI._operation_scope`` binds its lease
+        epoch task-locally; ``AndroidSession.unary`` resolves the omitted
+        ``expected_epoch`` from that binding before dispatch.
+        """
         if operation == "add_urls_async":
             assert urls is not None
             return await self._send_add_urls_async(notebook_id, urls), ADD_SOURCES_ASYNC_METHOD

@@ -1,6 +1,7 @@
 """Web ``batchexecute`` source operations backend."""
 
 import builtins
+import contextlib
 import logging
 from collections.abc import Callable, Collection, Sequence
 from pathlib import Path
@@ -9,7 +10,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from ..._runtime.call_supervisor import CallSupervisor
+from ..._runtime.call_supervisor import CallSupervisor, OperationLease
 from ..._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
 from ..._sources import SourcesAPI, _validate_add_text_idempotency, validate_search
 from ..._types.research import SourceGuide
@@ -64,6 +65,12 @@ class WebSourcesAPI(SourcesAPI):
             new_src = await client.sources.add_url(notebook_id, "https://example.com")
             await client.sources.rename(notebook_id, new_src.id, "Better Title")
     """
+
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease]:
+        """Keep hoisted multi-call workflows under the web supervisor."""
+        return self._supervisor.operation_scope(label)
 
     def __init__(
         self,
