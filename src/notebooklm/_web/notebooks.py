@@ -5,7 +5,6 @@ import logging
 import reprlib
 from typing import Any
 
-from .._idempotency import unresolved_commit_error
 from .._notebook_metadata import (
     NotebookMetadataService,
     NotebookSourceLister,
@@ -212,6 +211,8 @@ class WebNotebooksAPI(NotebooksAPI):
     """
 
     _create_method_id = RPCMethod.CREATE_NOTEBOOK.value
+    _copy_method_id = RPCMethod.COPY_NOTEBOOK.value
+    _copy_failure_chain = "explicit"
 
     def __init__(
         self,
@@ -616,40 +617,14 @@ class WebNotebooksAPI(NotebooksAPI):
         logger.debug("Created notebook: %s", notebook.id)
         return notebook
 
-    async def copy(self, notebook_id: str, title: str) -> Notebook:
-        """Copy a notebook, including its sources and Studio artifacts.
-
-        ``CopyProject`` has no caller-provided idempotency token. Internal
-        transport retries are disabled so a lost response cannot create a
-        second copy. If the call fails after the server commits, callers must
-        disambiguate the intended copy from their notebook list.
-        """
-        if not notebook_id:
-            raise ValidationError("notebook_id must not be empty")
-        if not title or not title.strip():
-            raise ValidationError("title must not be empty")
-
+    async def _send_copy(self, notebook_id: str, title: str) -> Notebook:
+        """Send one Web ``CopyProject`` request and decode the new notebook."""
         logger.debug("Copying notebook %s", notebook_id)
-        try:
-            result = await self._rpc.rpc_call(
-                RPCMethod.COPY_NOTEBOOK,
-                build_copy_notebook_params(notebook_id, title),
-                source_path=f"/notebook/{notebook_id}",
-            )
-        except (NetworkError, RateLimitError, ServerError) as exc:
-            rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
-            raise unresolved_commit_error(
-                RPCMethod.COPY_NOTEBOOK,
-                "CopyProject",
-                RPCError(
-                    "UNRESOLVED — CopyProject may have committed before its response was "
-                    "lost. Do not blindly retry; list notebooks and resolve copies "
-                    "manually first.",
-                    method_id=RPCMethod.COPY_NOTEBOOK.value,
-                    rpc_code=rpc_code,
-                ),
-                preserve_exception=True,
-            ) from exc
+        result = await self._rpc.rpc_call(
+            RPCMethod.COPY_NOTEBOOK,
+            build_copy_notebook_params(notebook_id, title),
+            source_path=f"/notebook/{notebook_id}",
+        )
         notebook = Notebook.from_api_response(result)
         if not notebook.id:
             raise DecodingError(

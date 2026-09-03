@@ -806,6 +806,7 @@ class TestCopyNotebook:
         assert getattr(caught.value, "unconfirmed", False) is True
         assert caught.value.method_id == RPCMethod.COPY_NOTEBOOK.value
         assert caught.value.rpc_code == expected_rpc_code
+        assert caught.value is not failure
         assert caught.value.__cause__ is failure
         rpc_call.assert_awaited_once_with(
             RPCMethod.COPY_NOTEBOOK,

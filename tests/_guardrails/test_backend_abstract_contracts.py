@@ -79,8 +79,8 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
         implementation_class_name="WebNotebooksAPI",
         abstract_methods=frozenset(
             {
+                "_send_copy",
                 "_send_create",
-                "copy",
                 "delete",
                 "get",
                 "get_description",
@@ -94,7 +94,7 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
                 "update",
             }
         ),
-        wire_hooks=frozenset({"_send_create"}),
+        wire_hooks=frozenset({"_send_copy", "_send_create"}),
     ),
     _AbstractContract(
         module="notebooklm._sources",
@@ -363,7 +363,15 @@ _ANDROID_INHERITED_WORKFLOWS = {
         }
     ),
     "NotebooksAPI": frozenset(
-        {"_create_with_probe", "create", "get_metadata", "get_or_none", "rename", "set_emoji"}
+        {
+            "_create_with_probe",
+            "copy",
+            "create",
+            "get_metadata",
+            "get_or_none",
+            "rename",
+            "set_emoji",
+        }
     ),
     "NotesAPI": frozenset(),
     "SettingsAPI": frozenset(),
@@ -645,6 +653,52 @@ def test_artifact_shared_workflows_call_only_their_single_wire_hook() -> None:
             and node.func.attr.startswith("_send_")
         }
         assert hooks == expected_hooks
+
+
+def test_notebook_copy_calls_only_its_single_wire_hook() -> None:
+    """Pin notebook copy orchestration above one backend send boundary."""
+    from notebooklm._android.notebooks import AndroidNotebooksAPI
+    from notebooklm._notebooks import NotebooksAPI
+    from notebooklm._web.notebooks import WebNotebooksAPI
+
+    path = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_notebooks.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    notebooks = next(
+        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "NotebooksAPI"
+    )
+    method = next(
+        node
+        for node in notebooks.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "copy"
+    )
+    hooks = {
+        node.func.attr
+        for node in ast.walk(method)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr.startswith("_send_")
+    }
+    assert hooks == {"_send_copy"}
+    for backend in (WebNotebooksAPI, AndroidNotebooksAPI):
+        assert "copy" not in backend.__dict__
+        assert backend.copy is NotebooksAPI.copy
+    assert WebNotebooksAPI._copy_failure_chain == "explicit"
+    assert AndroidNotebooksAPI._copy_failure_chain == "suppress"
+
+
+def test_chat_settings_and_turn_role_reads_remain_backend_owned() -> None:
+    """Do not replace transport-specific reads with vacuous send hooks."""
+    from notebooklm._android.chat import AndroidChatAPI
+    from notebooklm._chat import ChatAPI
+    from notebooklm._web.chat import WebChatAPI
+
+    for method_name in ("get_settings", "_list_turn_roles"):
+        assert method_name in ChatAPI.__abstractmethods__
+        base_method = getattr(ChatAPI, method_name)
+        assert getattr(WebChatAPI, method_name) is not base_method
+        assert getattr(AndroidChatAPI, method_name) is not base_method
+
+    assert AndroidChatAPI._count_prior_server_turns is not ChatAPI._count_prior_server_turns
 
 
 def test_backend_implementations_preserve_abstract_method_signatures() -> None:

@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
-from .._idempotency import mark_unconfirmed, unresolved_commit_error
+from .._idempotency import mark_unconfirmed
 from .._notebook_metadata import NotebookSourceLister
 from .._notebooks import NotebooksAPI
 from .._runtime.call_supervisor import OperationLease
@@ -108,6 +108,8 @@ class AndroidNotebooksAPI(NotebooksAPI):
     """Android notebook adapter for the directly tested read/notebook graph."""
 
     _create_method_id = f"/{_SERVICE}/CreateProject"
+    _copy_method_id = COPY_PROJECT_METHOD
+    _copy_failure_chain = "suppress"
 
     @asynccontextmanager
     async def _operation_scope(self, label: str) -> AsyncIterator[OperationLease]:
@@ -243,41 +245,21 @@ class AndroidNotebooksAPI(NotebooksAPI):
         self._remember_created_chat_session(notebook)
         return notebook
 
-    async def copy(self, notebook_id: str, title: str) -> Notebook:
-        """Copy once, surfacing transport loss as an ambiguous outcome."""
-        if not notebook_id:
-            raise ValidationError("notebook_id must not be empty")
-        if not title or not title.strip():
-            raise ValidationError("title must not be empty")
-
+    async def _send_copy(self, notebook_id: str, title: str) -> Notebook:
+        """Send one Android ``CopyProject`` request and decode the new notebook."""
         # evidence: docs/android/proto-evidence-ledger.md#notebook-exact-and-web-derived-field-ledger
         notebook_proto = _notebook_proto()
         read_proto = _read_proto()
-        try:
-            response = await self._transport.unary(
-                COPY_PROJECT_METHOD,
-                notebook_proto.CopyProjectRequest(
-                    request_context=_android_request_context(),
-                    source_project_id=notebook_id,
-                    title=title,
-                ),
-                replay_safe=False,
-                response_type=read_proto.Project,
-            )
-        except (NetworkError, RateLimitError, ServerError) as exc:
-            rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
-            raise unresolved_commit_error(
-                COPY_PROJECT_METHOD,
-                "CopyProject",
-                RPCError(
-                    "UNRESOLVED — CopyProject may have committed before its response was "
-                    "lost. Do not blindly retry; list notebooks and resolve copies "
-                    "manually first.",
-                    method_id=COPY_PROJECT_METHOD,
-                    rpc_code=rpc_code,
-                ),
-                preserve_exception=True,
-            ) from None
+        response = await self._transport.unary(
+            COPY_PROJECT_METHOD,
+            notebook_proto.CopyProjectRequest(
+                request_context=_android_request_context(),
+                source_project_id=notebook_id,
+                title=title,
+            ),
+            replay_safe=False,
+            response_type=read_proto.Project,
+        )
         try:
             notebook = _notebook_codec().decode_project(response, method_id=COPY_PROJECT_METHOD)
             if notebook.id == notebook_id:
