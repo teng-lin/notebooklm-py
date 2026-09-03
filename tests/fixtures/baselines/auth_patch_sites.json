@@ -14,13 +14,13 @@
     },
     {
       "attribute": "enumerate_accounts",
-      "count": 8,
+      "count": 6,
       "idiom": "patch.object",
       "module": "account"
     },
     {
       "attribute": "extract_email_from_html",
-      "count": 3,
+      "count": 1,
       "idiom": "patch.object",
       "module": "account"
     },
@@ -92,7 +92,7 @@
     },
     {
       "attribute": "build_httpx_cookies_from_storage",
-      "count": 4,
+      "count": 2,
       "idiom": "patch.object",
       "module": "cookies"
     },
@@ -164,31 +164,13 @@
     },
     {
       "attribute": "_commit_master_token_json",
-      "count": 5,
-      "idiom": "monkeypatch.setattr",
-      "module": "master_token_file"
-    },
-    {
-      "attribute": "_ensure_secure_parent_dir",
-      "count": 3,
-      "idiom": "monkeypatch.setattr",
-      "module": "master_token_file"
-    },
-    {
-      "attribute": "_master_token_from_legacy_record",
-      "count": 3,
+      "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "master_token_file"
     },
     {
       "attribute": "_master_token_to_legacy_record",
-      "count": 2,
-      "idiom": "monkeypatch.setattr",
-      "module": "master_token_file"
-    },
-    {
-      "attribute": "_storage_state_lock_path",
-      "count": 2,
+      "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "master_token_file"
     },
@@ -230,19 +212,13 @@
     },
     {
       "attribute": "_commit_profile_json",
-      "count": 18,
+      "count": 7,
       "idiom": "monkeypatch.setattr",
       "module": "profile_store"
     },
     {
       "attribute": "_ensure_secure_parent_dir",
       "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "profile_store"
-    },
-    {
-      "attribute": "filter_storage_state_cookies_by_domain_policy",
-      "count": 7,
       "idiom": "monkeypatch.setattr",
       "module": "profile_store"
     },
@@ -386,7 +362,7 @@
     },
     {
       "attribute": "ProfileStore",
-      "count": 6,
+      "count": 3,
       "idiom": "monkeypatch.setattr",
       "module": "storage"
     },
@@ -416,7 +392,7 @@
     },
     {
       "attribute": "replace_profile_from_login",
-      "count": 2,
+      "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "storage"
     },
@@ -434,7 +410,7 @@
     },
     {
       "attribute": "_load_stored_auth",
-      "count": 6,
+      "count": 3,
       "idiom": "monkeypatch.setattr",
       "module": "tokens"
     },
@@ -447,14 +423,14 @@
   ],
   "summary": {
     "TOTAL": {
-      "private": 144,
-      "public": 99,
-      "total": 243
+      "private": 117,
+      "public": 82,
+      "total": 199
     },
     "account": {
       "private": 2,
-      "public": 12,
-      "total": 14
+      "public": 8,
+      "total": 10
     },
     "account_email": {
       "private": 2,
@@ -473,8 +449,8 @@
     },
     "cookies": {
       "private": 3,
-      "public": 7,
-      "total": 10
+      "public": 5,
+      "total": 8
     },
     "credential_io": {
       "private": 3,
@@ -492,9 +468,9 @@
       "total": 8
     },
     "master_token_file": {
-      "private": 15,
+      "private": 2,
       "public": 0,
-      "total": 15
+      "total": 2
     },
     "profile_migration": {
       "private": 1,
@@ -502,9 +478,9 @@
       "total": 8
     },
     "profile_store": {
-      "private": 27,
-      "public": 8,
-      "total": 35
+      "private": 16,
+      "public": 1,
+      "total": 17
     },
     "psidts_recovery": {
       "private": 9,
@@ -528,8 +504,8 @@
     },
     "storage": {
       "private": 2,
-      "public": 13,
-      "total": 15
+      "public": 9,
+      "total": 11
     },
     "storage_lock": {
       "private": 1,
@@ -537,9 +513,9 @@
       "total": 1
     },
     "tokens": {
-      "private": 6,
+      "private": 3,
       "public": 1,
-      "total": 7
+      "total": 4
     }
   },
   "version": 1

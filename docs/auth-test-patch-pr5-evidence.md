@@ -25,14 +25,13 @@ The exact decreased v1 rows are:
 | `account` | `enumerate_accounts` | `patch.object` | 8 | 6 |
 | `account` | `extract_email_from_html` | `patch.object` | 3 | 1 |
 | `cookies` | `build_httpx_cookies_from_storage` | `patch.object` | 4 | 2 |
-| `master_token` | `MasterTokenFile` | `monkeypatch.setattr` | 4 | 3 |
 | `master_token_file` | `_commit_master_token_json` | `monkeypatch.setattr` | 5 | 1 |
 | `master_token_file` | `_ensure_secure_parent_dir` | `monkeypatch.setattr` | 3 | 0 |
 | `master_token_file` | `_master_token_from_legacy_record` | `monkeypatch.setattr` | 3 | 0 |
 | `master_token_file` | `_master_token_to_legacy_record` | `monkeypatch.setattr` | 2 | 1 |
 | `master_token_file` | `_storage_state_lock_path` | `monkeypatch.setattr` | 2 | 0 |
 | `profile_store` | `_commit_profile_json` | `monkeypatch.setattr` | 18 | 7 |
-| `profile_store` | `filter_storage_state_cookies_by_domain_policy` | `monkeypatch.setattr` | 7 | 1 |
+| `profile_store` | `filter_storage_state_cookies_by_domain_policy` | `monkeypatch.setattr` | 7 | 0 |
 | `storage` | `ProfileStore` | `monkeypatch.setattr` | 6 | 3 |
 | `storage` | `replace_profile_from_login` | `monkeypatch.setattr` | 2 | 1 |
 | `tokens` | `_load_stored_auth` | `monkeypatch.setattr` | 6 | 3 |

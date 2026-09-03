@@ -253,9 +253,9 @@ def test_live_replacement_patch_contract_and_scorecard_are_exact(script):
     sites = script.collect_sites(REPO_ROOT / "tests", REPO_ROOT / "src/notebooklm/_auth")
     projection = script.build_projection(sites)
     assert projection["summary"]["TOTAL"] == {
-        "public": 99,
-        "private": 144,
-        "total": 243,
+        "public": 82,
+        "private": 117,
+        "total": 199,
     }
     relevant = {
         (row["module"], row["attribute"], row["idiom"]): row["count"]
@@ -313,35 +313,23 @@ def test_live_replacement_patch_contract_and_scorecard_are_exact(script):
         ("master_token", "_bootstrapper", "monkeypatch.setattr"): 2,
         ("master_token", "_verify_by_listing_notebooks", "monkeypatch.setattr"): 1,
         ("master_token", "generate_android_id", "monkeypatch.setattr"): 1,
-        ("master_token_file", "_commit_master_token_json", "monkeypatch.setattr"): 5,
-        ("master_token_file", "_ensure_secure_parent_dir", "monkeypatch.setattr"): 3,
-        (
-            "master_token_file",
-            "_master_token_from_legacy_record",
-            "monkeypatch.setattr",
-        ): 3,
+        ("master_token_file", "_commit_master_token_json", "monkeypatch.setattr"): 1,
         (
             "master_token_file",
             "_master_token_to_legacy_record",
             "monkeypatch.setattr",
-        ): 2,
-        ("master_token_file", "_storage_state_lock_path", "monkeypatch.setattr"): 2,
+        ): 1,
         ("profile_store", "MasterTokenFile", "monkeypatch.setattr"): 1,
         ("storage", "MasterTokenFile", "monkeypatch.setattr"): 1,
         ("storage", "write_master_token", "monkeypatch.setattr"): 1,
-        ("storage", "ProfileStore", "monkeypatch.setattr"): 6,
+        ("storage", "ProfileStore", "monkeypatch.setattr"): 3,
         ("storage", "LegacyAccountMigrator", "monkeypatch.setattr"): 1,
-        ("storage", "replace_profile_from_login", "monkeypatch.setattr"): 2,
+        ("storage", "replace_profile_from_login", "monkeypatch.setattr"): 1,
         ("cookie_policy", "MINIMUM_REQUIRED_COOKIES", "monkeypatch.setattr"): 3,
         ("cookie_policy", "cookie_names_from_storage", "monkeypatch.setattr"): 1,
-        ("profile_store", "_commit_profile_json", "monkeypatch.setattr"): 18,
-        (
-            "profile_store",
-            "filter_storage_state_cookies_by_domain_policy",
-            "monkeypatch.setattr",
-        ): 7,
+        ("profile_store", "_commit_profile_json", "monkeypatch.setattr"): 7,
         ("cookies", "build_httpx_cookies_from_storage", "monkeypatch.setattr"): 3,
-        ("cookies", "build_httpx_cookies_from_storage", "patch.object"): 4,
+        ("cookies", "build_httpx_cookies_from_storage", "patch.object"): 2,
         ("cookies", "_build_httpx_cookies_from_storage_strict", "monkeypatch.setattr"): 1,
         ("cookies", "_cookie_from_normalized_entry", "monkeypatch.setattr"): 1,
         ("cookie_semantics", "sanitize_cookie_entry", "monkeypatch.setattr"): 1,
@@ -350,7 +338,7 @@ def test_live_replacement_patch_contract_and_scorecard_are_exact(script):
         ("recovery", "coalesced_cold_recovery", "monkeypatch.setattr"): 2,
         ("refresh", "_fetch_tokens_with_exact_baseline", "monkeypatch.setattr"): 6,
         ("storage", "get_account_email_for_storage", "monkeypatch.setattr"): 1,
-        ("tokens", "_load_stored_auth", "monkeypatch.setattr"): 6,
+        ("tokens", "_load_stored_auth", "monkeypatch.setattr"): 3,
         ("tokens", "resolve_auth_json_env", "monkeypatch.setattr"): 1,
     }
     grouped = {(row["module"], row["attribute"], row["idiom"]) for row in projection["sites"]}
