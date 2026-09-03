@@ -481,8 +481,10 @@ async def verify_journal(
         operation
         for operation in operations.values()
         if operation.lifecycle == "test_owned"
-        and operation.event_names & {"accepted", "persisted", "discovered_accepted"}
-        and "delete_confirmed" not in operation.event_names
+        and not (
+            operation.event_names
+            & {"delete_confirmed", "rate_limited_rejected", "quota_no_commit_observed"}
+        )
     ]
     if unresolved_test_owned:
         raise JournalError("test-owned operation has no verified deletion")

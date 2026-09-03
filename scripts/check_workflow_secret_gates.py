@@ -148,7 +148,10 @@ _STEP_IF_RE = re.compile(r"^      if:\s*(.*?)\s*(#.*)?$")
 # in non-comment positions, so this is sound.
 _COMMENT_RE = re.compile(r"^\s*#")
 
-_ENV_SECRET_BINDING_RE = re.compile(r"^\s*(['\"]?)([A-Z][A-Z0-9_]*)\1:\s*.*\bsecrets(?:\.|\[)")
+_CI_SECRET_BINDING_KEY_RE = re.compile(
+    r"^\s*(?P<quote>['\"]?)(?P<binding>NOTEBOOKLM_MASTER_TOKEN_JSON|"
+    r"NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID)(?P=quote)\s*:\s*(?P<value>.*)$"
+)
 _FLOW_STYLE_ENV_RE = re.compile(r"^\s*(?:-\s+)?(?:\{.*)?(?:env|['\"]env['\"])\s*:\s*\{")
 
 # A guard expression is considered "trusted" if it matches one of these
@@ -189,9 +192,9 @@ _POOLED_TOKEN_KEY_PATTERN = (
     r'(?:NOTEBOOKLM_MASTER_TOKEN_JSON|"NOTEBOOKLM_MASTER_TOKEN_JSON"|'
     r"'NOTEBOOKLM_MASTER_TOKEN_JSON')"
 )
-_POOLED_TOKEN_BINDING_RE = re.compile(rf"^{_POOLED_TOKEN_KEY_PATTERN}:\s*.*$")
+_POOLED_TOKEN_BINDING_RE = re.compile(rf"^{_POOLED_TOKEN_KEY_PATTERN}\s*:\s*.*$")
 _APPROVED_POOLED_TOKEN_BINDING_RE = re.compile(
-    rf"^{_POOLED_TOKEN_KEY_PATTERN}:\s*\$\{{\{{\s*secrets\[\s*"
+    rf"^{_POOLED_TOKEN_KEY_PATTERN}\s*:\s*\$\{{\{{\s*secrets\[\s*"
     r"(?P<selector>matrix\.master_token_secret_name|"
     r"needs\.plan-account\.outputs\.master_token_secret_name|"
     r"needs\.plan-live-lanes\.outputs\.(?:web|android)_secret_name)"
@@ -627,10 +630,15 @@ def _scan_workflow(path: Path) -> list[str]:
                 "secret gate can be audited."
             )
 
-        binding_match = _ENV_SECRET_BINDING_RE.match(searchable)
-        if binding_match and binding_match.group(2) in _CI_SECRET_BINDINGS:
-            binding = binding_match.group(2)
+        binding_match = _CI_SECRET_BINDING_KEY_RE.match(searchable)
+        if binding_match:
+            binding = binding_match.group("binding")
             ci_secret_hits.append((i, binding, current_step_index if in_step else -1))
+            if binding_match.group("value") in ("|", ">", "|-", ">-", "|+", ">+"):
+                violations.append(
+                    f"{path}:{i}: {binding} must use a single-line scalar so its selected "
+                    "secret can be audited."
+                )
             if binding == "NOTEBOOKLM_MASTER_TOKEN_JSON" and "secrets[" not in searchable:
                 violations.append(
                     f"{path}:{i}: master-token materialization must use selected dynamic "

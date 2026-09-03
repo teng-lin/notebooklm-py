@@ -460,6 +460,37 @@ async def test_unjournaled_interactive_row_is_settled_as_studio_backing(tmp_path
 
 
 @pytest.mark.asyncio
+async def test_started_only_test_owned_operation_cannot_adopt_discovered_artifact(
+    tmp_path,
+) -> None:
+    journal = tmp_path / "journal.jsonl"
+    operation_id = str(uuid.uuid4())
+    write_journal(
+        journal,
+        [
+            row(
+                operation_id,
+                "started",
+                family="mind_map",
+                lifecycle="test_owned",
+            )
+        ],
+    )
+    leaked = Artifact("interactive", "mind_map", interactive=True)
+
+    with pytest.raises(verify.JournalError, match="test-owned operation has no verified deletion"):
+        await verify.verify_journal(
+            Client([[leaked]]),
+            notebook_id="generation-role",
+            journal_path=journal,
+            timeout=240,
+            minimum_discovery_window=0,
+            quiet_polls=1,
+            poll_interval=0,
+        )
+
+
+@pytest.mark.asyncio
 async def test_unmatched_started_requires_matching_public_backing(tmp_path) -> None:
     journal = tmp_path / "journal.jsonl"
     operation_id = str(uuid.uuid4())

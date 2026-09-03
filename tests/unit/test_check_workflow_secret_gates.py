@@ -452,6 +452,35 @@ def test_ci_pool_rejects_concurrency_from_unrelated_output(tmp_path, monkeypatch
     assert "does not couple account concurrency to the selected token" in err
 
 
+def test_multiline_protected_binding_is_rejected_and_strictly_gated(
+    tmp_path, monkeypatch, capsys, script
+):
+    _write_workflow(
+        tmp_path,
+        "bad_multiline_binding.yml",
+        """
+        name: bad-multiline-binding
+        on: workflow_dispatch
+        jobs:
+          live:
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            - name: template
+              env:
+                NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: >-
+                  ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
+              run: python validate.py
+        """,
+    )
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "single-line scalar" in err
+    assert "canonical repository" in err
+
+
 def test_ci_pool_rejects_multiple_master_tokens_in_one_job(tmp_path, monkeypatch, capsys, script):
     _write_workflow(
         tmp_path,
