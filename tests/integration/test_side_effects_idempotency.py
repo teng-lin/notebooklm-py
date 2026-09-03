@@ -7,9 +7,9 @@ This file validates the Wave-2 classifications added to
 * ``DELETE_SOURCE``   → ``IDEMPOTENT_SET_OP``
 * ``DELETE_ARTIFACT`` → ``IDEMPOTENT_SET_OP``
 * ``REFRESH_SOURCE``  → ``AT_LEAST_ONCE_ACCEPTED`` (extra fetch is acceptable)
-* ``SHARE_NOTEBOOK``  → ``PROBE_THEN_CREATE`` (suppresses blind retry; uses
-                       ``GET_SHARE_STATUS`` as the probe RPC if a future
-                       wrapper is added)
+* ``SHARE_NOTEBOOK``  → ``NON_IDEMPOTENT_NO_RETRY`` (suppresses blind retry;
+                       no reliable probe/retry wrapper exists, so transport
+                       loss is surfaced as unconfirmed)
 
 It also exercises the P1-2 fix to ``NotebooksAPI.create``: a
 ``NetworkError`` during the probe ``list()`` MUST propagate, not be
@@ -128,12 +128,11 @@ def test_refresh_source_classified_at_least_once_accepted() -> None:
     assert entry.policy is IdempotencyPolicy.AT_LEAST_ONCE_ACCEPTED
 
 
-def test_share_notebook_classified_probe_then_create() -> None:
-    """``SHARE_NOTEBOOK`` is PROBE_THEN_CREATE — ``GET_SHARE_STATUS`` exists
-    as the server-side probe RPC, so a blind retry is unsafe and the
-    transport retry loop MUST be suppressed."""
+def test_share_notebook_classified_non_idempotent_no_retry() -> None:
+    """``SHARE_NOTEBOOK`` has no reliable probe wrapper and cannot replay."""
     entry = IDEMPOTENCY_REGISTRY.get_entry(RPCMethod.SHARE_NOTEBOOK)
-    assert entry.policy is IdempotencyPolicy.PROBE_THEN_CREATE
+    assert entry.policy is IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY
+    assert "no reliable probe/retry wrapper" in entry.notes
 
 
 # ===========================================================================
@@ -323,17 +322,17 @@ async def test_refresh_source_emits_rate_limited_warn(
 
 
 # ===========================================================================
-# SHARE_NOTEBOOK — PROBE_THEN_CREATE suppresses the blind transport retry
+# SHARE_NOTEBOOK — no reliable probe, no blind retry, unconfirmed on transport loss
 # ===========================================================================
 
 
 async def test_share_notebook_does_not_retry_on_5xx(
     auth_tokens,
 ) -> None:
-    """``SHARE_NOTEBOOK`` is PROBE_THEN_CREATE, which forces
+    """``SHARE_NOTEBOOK`` is NON_IDEMPOTENT_NO_RETRY, which forces
     ``disable_internal_retries=True`` inside the executor — a 5xx MUST
-    surface immediately so the caller (or a future probe-then-create
-    wrapper) decides whether the ACL mutation landed before re-issuing.
+    surface immediately as unconfirmed because no reliable probe wrapper
+    can decide whether the ACL mutation landed before re-issuing.
 
     Today a blind retry would risk re-sending invitation emails or
     double-flipping public/private access; this test pins the policy.
@@ -347,7 +346,7 @@ async def test_share_notebook_does_not_retry_on_5xx(
             return httpx.Response(502, text="bad gateway")
         return httpx.Response(404, text="unexpected")
 
-    # No sleep-seam patch is needed here: PROBE_THEN_CREATE forces
+    # No sleep-seam patch is needed here: NON_IDEMPOTENT_NO_RETRY forces
     # ``disable_internal_retries=True`` → exactly 1 POST with no retry
     # loop, so no backoff sleep ever fires. The assertion below
     # (``share_count == 1``) is what pins the suppressed-retry policy;
@@ -359,14 +358,16 @@ async def test_share_notebook_does_not_retry_on_5xx(
     try:
         from notebooklm import ServerError
 
-        with pytest.raises(ServerError):
+        with pytest.raises(ServerError) as exc_info:
             await client.sharing.set_public("nb_x", True)
-        # PROBE_THEN_CREATE forces disable_internal_retries=True → exactly 1 POST.
-        # Even with server_error_max_retries=5, the registry suppresses retries.
+        # NON_IDEMPOTENT_NO_RETRY forces disable_internal_retries=True → exactly 1 POST.
+        # Even with server_error_max_retries=5, the registry suppresses retries and the
+        # public workflow preserves the unresolved commit outcome explicitly.
         assert share_count == 1, (
-            f"SHARE_NOTEBOOK with PROBE_THEN_CREATE expected 1 POST "
+            f"SHARE_NOTEBOOK with NON_IDEMPOTENT_NO_RETRY expected 1 POST "
             f"(no blind retry), got {share_count}"
         )
+        assert exc_info.value.unconfirmed is True
     finally:
         await client.close()
 

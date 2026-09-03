@@ -1438,7 +1438,7 @@ src/notebooklm/
 │   ├── notebooks.py             # Selected Android notebook reads/mutations, incl. native recent-removal
 │   ├── session.py               # Supervised lazy gRPC transport
 │   ├── epoch.py                 # Session-tagged task-local workflow epoch propagation
-│   ├── write_safety.py          # Shared ambiguous-write outcome marker
+│   ├── retry_policy.py          # Web-registry-derived Android replay-safety manifest
 │   ├── sources.py               # Selected source surface (fully native)
 │   ├── source_search.py         # Native RetrieveRelevantChunks search service
 │   ├── upload.py                # Epoch-fenced generic Android Scotty transaction
