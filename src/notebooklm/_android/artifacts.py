@@ -12,7 +12,7 @@ from typing import Any, cast
 import httpx
 
 from .._artifacts import ArtifactsAPI
-from .._idempotency import mark_unconfirmed
+from .._idempotency import call_unconfirmed_on_transport_loss, mark_unconfirmed
 from .._notebook_metadata import NotebookSourceIdProvider
 from .._runtime.call_supervisor import CallSupervisor, OperationLease
 from .._types.artifacts import _status_from_code
@@ -36,11 +36,13 @@ from ..exceptions import (
 from ..types import Artifact, ArtifactType, GenerationStatus, ReportSuggestion
 from .artifact_collaborators import NoteBackedMindMapLister
 from .artifact_creation import (
+    CREATE_ARTIFACT_METHOD,
     build_create_artifact_plan,
     create_artifact_once,
     normalize_creation_options,
 )
 from .artifact_mutations import (
+    DELETE_ARTIFACT_METHOD,
     EXPORT_TO_DRIVE_METHOD,
     GENERATE_ARTIFACT_METHOD,
     delete_artifact,
@@ -81,7 +83,6 @@ from .codecs.artifacts import decode_artifact, decode_artifacts, decode_report_s
 from .epoch import bind_workflow_epoch, reset_workflow_epoch
 from .errors import sanitize_escaping_exception
 from .session import AndroidSession
-from .write_safety import call_unconfirmed_on_transport_loss
 
 logger = logging.getLogger(__name__)
 
@@ -93,9 +94,7 @@ def android_request_context() -> Any:
 
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
-CREATE_ARTIFACT_METHOD = f"/{_SERVICE}/CreateArtifact"
 DERIVE_ARTIFACT_METHOD = f"/{_SERVICE}/DeriveArtifact"
-DELETE_ARTIFACT_METHOD = f"/{_SERVICE}/DeleteArtifact"
 UPDATE_ARTIFACT_METHOD = f"/{_SERVICE}/UpdateArtifact"
 GENERATE_REPORT_SUGGESTIONS_METHOD = f"/{_SERVICE}/GenerateReportSuggestions"
 
@@ -351,7 +350,6 @@ class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin
         response = await create_artifact_once(
             self._transport,
             request,
-            method=CREATE_ARTIFACT_METHOD,
         )
         try:
             artifact = decode_artifact(response.artifact, method_id=CREATE_ARTIFACT_METHOD)
@@ -428,7 +426,10 @@ class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin
                     replay_safe=False,
                     response_type=_PROTO.DeriveArtifactResponse,
                     expected_epoch=lease.epoch,
-                )
+                ),
+                method=DERIVE_ARTIFACT_METHOD,
+                what="DeriveArtifact",
+                chain=None,
             )
         try:
             if not response.HasField("artifact"):
@@ -973,7 +974,6 @@ class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin
             self._list_all_studio,
             notebook_id,
             artifact_id,
-            method=DELETE_ARTIFACT_METHOD,
         )
 
     async def rename(

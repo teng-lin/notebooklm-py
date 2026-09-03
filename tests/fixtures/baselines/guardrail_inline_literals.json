@@ -9,6 +9,9 @@
     "PINNED": 174,
     "UNMAPPED": 340
   },
+  "tests/_guardrails/test_android_retry_manifest.py": {
+    "_WEB_CLASS_BY_ANDROID_NAME": 97
+  },
   "tests/_guardrails/test_asyncio_loop_affinity_guard.py": {
     "ALLOWLIST": 21
   },
@@ -124,5 +127,8 @@
   },
   "tests/_guardrails/test_studio_enum_manifest.py": {
     "_RPC_ENUM_SNAPSHOT": 290
+  },
+  "tests/_guardrails/test_unconfirmed_contract.py": {
+    "UNCONFIRMED_METHOD_MANIFEST": 43
   }
 }

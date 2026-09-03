@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, cast
 
+from .._idempotency import call_unconfirmed_on_transport_loss
 from .._types.research import MindMapResult
 from .artifact_proto import READ_PROTO as _READ_PROTO
 from .session import AndroidSession
@@ -57,12 +58,17 @@ async def generate_note_backed_mind_map(
         ),
         request_context=android_request_context(),
     )
-    response = await session.unary(
-        ACT_ON_SOURCES_METHOD,
-        request,
-        replay_safe=False,
-        response_type=chat_proto.ActOnSourcesResponse,
-        expected_epoch=expected_epoch,
+    response = await call_unconfirmed_on_transport_loss(
+        lambda: session.unary(
+            ACT_ON_SOURCES_METHOD,
+            request,
+            replay_safe=False,
+            response_type=chat_proto.ActOnSourcesResponse,
+            expected_epoch=expected_epoch,
+        ),
+        method=ACT_ON_SOURCES_METHOD,
+        what="ActOnSources mind-map generation",
+        chain=None,
     )
     raw_tree = response.response.response if response.HasField("response") else ""
     if not raw_tree:

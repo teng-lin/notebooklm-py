@@ -827,7 +827,7 @@ async def test_create_artifact_lost_response_is_unconfirmed_and_never_replayed(
     assert getattr(caught.value, "unconfirmed", False) is True
     assert caught.value.method_id == CREATE_ARTIFACT_METHOD
     assert caught.value.rpc_code == getattr(error, "rpc_code", None)
-    assert caught.value.__cause__ is error
+    assert caught.value.__cause__ is None
     assert [call[0] for call in session.calls] == [CREATE_ARTIFACT_METHOD]
     assert session.calls[0][2]["replay_safe"] is False
 

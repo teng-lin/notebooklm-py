@@ -20,6 +20,7 @@ from ..._idempotency import (
     _coerce_create_result,
     _IdempotentCreateResult,
     idempotent_create,
+    unresolved_commit_error,
 )
 from ..._idempotency import mark_unconfirmed as _unconfirmed
 from ..._loop_bound import LoopBoundPrimitive
@@ -862,7 +863,9 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                     type(exc).__name__,
                     exc_info=True,
                 )
-                raise _unconfirmed(
+                raise unresolved_commit_error(
+                    RPCMethod.ADD_SOURCE_FILE,
+                    "the file-source registration",
                     SourceAddError(
                         filename,
                         cause=exc,
@@ -881,7 +884,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                             "duplicates happen — but an earlier attempt in this call "
                             "may also have committed."
                         ),
-                    )
+                    ),
                 ) from exc
             matches = [source for source in sources if source.title == filename]
             if baseline_ids is not None:

@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 from typing import Any, cast
 
-from .._idempotency import mark_unconfirmed
+from .._idempotency import call_unconfirmed_on_transport_loss, mark_unconfirmed
 from .._runtime.call_supervisor import OperationLease
 from .._sharing import SharingAPI
 from .._types.enums import SharePermission, ShareViewLevel
@@ -19,7 +19,6 @@ from ..types import ShareStatus
 from .codecs.sharing import decode_share_status
 from .epoch import bind_workflow_epoch, reset_workflow_epoch
 from .session import AndroidSession
-from .write_safety import call_unconfirmed_on_transport_loss
 
 _SERVICE = "labs.language.tailwind.sharing.LabsTailwindSharingService"
 GET_PROJECT_DETAILS_METHOD = f"/{_SERVICE}/GetProjectDetails"
@@ -155,7 +154,10 @@ class AndroidSharingAPI(SharingAPI):
                         replay_safe=False,
                         response_type=proto.ShareProjectResponse,
                         expected_epoch=lease.epoch,
-                    )
+                    ),
+                    method=SHARE_PROJECT_METHOD,
+                    what="ShareProject",
+                    chain=None,
                 )
             except RPCError as exc:
                 mapped = _map_notebook_error(notebook_id, exc, method_id=SHARE_PROJECT_METHOD)
@@ -201,10 +203,13 @@ class AndroidSharingAPI(SharingAPI):
                     lambda: self._transport.unary(
                         MUTATE_PROJECT_METHOD,
                         request,
-                        replay_safe=True,
+                        replay_safe=False,
                         response_type=_read_proto().Project,
                         expected_epoch=lease.epoch,
-                    )
+                    ),
+                    method=MUTATE_PROJECT_METHOD,
+                    what="MutateProject",
+                    chain=None,
                 )
             except RPCError as exc:
                 mapped = _map_notebook_error(notebook_id, exc, method_id=MUTATE_PROJECT_METHOD)
@@ -299,7 +304,10 @@ class AndroidSharingAPI(SharingAPI):
                         replay_safe=False,
                         response_type=proto.ShareProjectResponse,
                         expected_epoch=lease.epoch,
-                    )
+                    ),
+                    method=SHARE_PROJECT_METHOD,
+                    what="ShareProject",
+                    chain=None,
                 )
             except RPCError as exc:
                 mapped = _map_notebook_error(notebook_id, exc, method_id=SHARE_PROJECT_METHOD)

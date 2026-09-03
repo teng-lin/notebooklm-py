@@ -11,7 +11,7 @@ import httpx
 
 from ..._runtime.call_supervisor import CallSupervisor
 from ..._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
-from ..._sources import SourcesAPI, validate_search
+from ..._sources import SourcesAPI, _validate_add_text_idempotency, validate_search
 from ..._types.research import SourceGuide
 from ..._types.sources import _EXPERT_INTELLIGENCE_TYPE_CODE
 from ..._url_utils import is_youtube_url
@@ -33,7 +33,6 @@ from ..settings import build_get_user_settings_params, extract_account_limits
 from . import upload as _source_upload
 from .add import (
     SourceAddService,
-    _validate_add_text_idempotency,
     _validate_drive_file_id,
     honor_requested_title_if_fresh,
 )

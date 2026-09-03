@@ -499,7 +499,7 @@ async def test_copy_lost_response_is_ambiguous_and_never_replayed() -> None:
     assert getattr(caught.value, "unconfirmed", False) is True
     assert caught.value.method_id == COPY_PROJECT_METHOD
     assert caught.value.rpc_code == 14
-    assert isinstance(caught.value.__cause__, ServerError)
+    assert caught.value.__cause__ is None
     assert len(transport.calls) == 1
     assert transport.calls[0][2]["replay_safe"] is False
 

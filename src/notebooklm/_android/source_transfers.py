@@ -17,12 +17,12 @@ import logging
 from dataclasses import replace
 from typing import Any, cast
 
+from .._idempotency import call_unconfirmed_on_transport_loss
 from .._url_utils import is_youtube_url
 from ..exceptions import DecodingError, SourceNotFoundError, ValidationError
 from ..types import CopiedSource, Source, SourceStatus
 from .codecs.sources import decode_source
 from .session import AndroidSession
-from .write_safety import call_unconfirmed_on_transport_loss
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +105,10 @@ class AndroidSourceTransferMixin:
                     replay_safe=False,
                     response_type=proto.AddSourcesAsyncResponse,
                     expected_epoch=lease.epoch,
-                )
+                ),
+                method=ADD_SOURCES_ASYNC_METHOD,
+                what="AddSourcesAsync",
+                chain=None,
             )
         rows = list(response.sources)
         if not rows:
@@ -168,7 +171,10 @@ class AndroidSourceTransferMixin:
                     replay_safe=False,
                     response_type=_empty_type(),
                     expected_epoch=lease.epoch,
-                )
+                ),
+                method=APPEND_SOURCE_METHOD,
+                what="AppendSource",
+                chain=None,
             )
 
     async def copy(
@@ -207,7 +213,10 @@ class AndroidSourceTransferMixin:
                     replay_safe=False,
                     response_type=proto.CopySourcesAsyncResponse,
                     expected_epoch=lease.epoch,
-                )
+                ),
+                method=COPY_SOURCES_ASYNC_METHOD,
+                what="CopySourcesAsync",
+                chain=None,
             )
         # Malformed entries are skipped, not fatal: the well-formed ones are the
         # only proof of copies that have already committed.

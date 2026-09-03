@@ -5,12 +5,11 @@ from __future__ import annotations
 import builtins
 from typing import Any, Literal, cast
 
-from .._idempotency import mark_unconfirmed
+from .._idempotency import call_unconfirmed_on_transport_loss, mark_unconfirmed
 from ..exceptions import NotebookNotFoundError, RPCError
 from ..types import Collection, Label
 from .codecs.organization import decode_collections, decode_labels
 from .session import AndroidSession
-from .write_safety import call_unconfirmed_on_transport_loss
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 GET_LABELS_METHOD = f"/{_SERVICE}/GetLabels"
@@ -127,7 +126,10 @@ async def create_manual(
             replay_safe=False,
             response_type=exact.CreateLabelResponse,
             expected_epoch=expected_epoch,
-        )
+        ),
+        method=CREATE_LABEL_METHOD,
+        what="CreateLabel",
+        chain=None,
     )
 
 
@@ -152,7 +154,10 @@ async def generate_labels(
             replay_safe=False,
             response_type=exact.CreateLabelResponse,
             expected_epoch=expected_epoch,
-        )
+        ),
+        method=CREATE_LABEL_METHOD,
+        what="CreateLabel",
+        chain=None,
     )
     # Return the complete post-write set through the canonical heterogeneous
     # label decoder; CreateLabelResponse may contain only created rows.

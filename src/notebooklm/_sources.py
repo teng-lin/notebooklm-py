@@ -17,7 +17,7 @@ from ._runtime.call_supervisor import OperationLease
 from ._source.batch import SourceUrlBatchItem
 from ._source.polling import SourcePoller, SourceWaitResult
 from ._types.research import SourceGuide
-from .exceptions import SourceNotFoundError, ValidationError
+from .exceptions import NonIdempotentRetryError, SourceNotFoundError, ValidationError
 from .types import (
     CopiedSource,
     PlayBook,
@@ -29,6 +29,18 @@ from .types import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_add_text_idempotency(idempotent: bool) -> None:
+    """Reject an unsupported text idempotency promise before admission."""
+    if idempotent:
+        raise NonIdempotentRetryError(
+            "add_text cannot be marked idempotent: text sources have no "
+            "reliable server-side dedupe key (titles non-unique, content "
+            "not exposed). For idempotent text imports, embed a UUID in "
+            "the title and dedupe client-side. See "
+            "docs/python-api.md#idempotency."
+        )
 
 
 def validate_search(

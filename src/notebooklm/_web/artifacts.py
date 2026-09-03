@@ -15,7 +15,7 @@ from .._artifact import polling as _artifact_polling
 from .._artifact import validation as _artifact_validation
 from .._artifact.downloads import AssetDownloadService
 from .._artifacts import ArtifactsAPI
-from .._idempotency import mark_unconfirmed
+from .._idempotency import unresolved_commit_error
 from .._notebook_metadata import NotebookSourceIdProvider
 from .._types.enums import (
     ArtifactTypeCode,
@@ -600,14 +600,16 @@ class WebArtifactsAPI(ArtifactsAPI):
             )
         except (NetworkError, RateLimitError, ServerError) as exc:
             rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
-            raise mark_unconfirmed(
+            raise unresolved_commit_error(
+                RPCMethod.COPY_ARTIFACTS,
+                "CopyArtifactsAsync",
                 RPCError(
                     "UNRESOLVED — CopyArtifactsAsync may have committed before its "
                     "response was lost. Do not blindly retry; list the target notebook's "
                     "artifacts and reconcile first.",
                     method_id=RPCMethod.COPY_ARTIFACTS.value,
                     rpc_code=rpc_code,
-                )
+                ),
             ) from exc
 
         rows = unwrap_mapping_rows(

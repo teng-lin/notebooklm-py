@@ -47,7 +47,7 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import urlencode, urlparse
 
 import httpx
 
@@ -55,6 +55,7 @@ from ..._artifact._download_client import _is_trusted_download_host
 from ..._artifact._redirect_guard import redirect_revalidation_hooks
 from ..._artifact.downloads import _await_writer_exit
 from ..._runtime.helpers import map_google_http_status
+from ..._source.drive import DriveRef, parse_drive_ref
 from ..._types.sources import _HTML_FILE_EXTENSIONS, _UPLOAD_FILE_EXTENSIONS
 from ...exceptions import (
     ArtifactDownloadError,
@@ -98,9 +99,6 @@ _DRIVE_WRITER_QUEUE_SIZE = 8
 
 # A raw Drive file id, or the id embedded in a share URL. Drive ids are long
 # base64url-ish tokens; the 20-char floor rejects obviously-too-short junk.
-_DRIVE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{20,}$")
-_DRIVE_URL_PATH_ID_RE = re.compile(r"/(?:file/)?d/([A-Za-z0-9_-]{20,})")
-
 # Extensions NotebookLM's resumable upload accepts → download + upload route.
 # Derived from the single declaration in ``_types.sources`` (dot-stripped: this
 # router compares against ``_extension()``'s bare suffix), so the Drive route and
@@ -178,53 +176,6 @@ def _default_streaming_client(cookies: httpx.Cookies, timeout: httpx.Timeout) ->
         timeout=timeout,
         headers={"User-Agent": _BROWSER_UA},
         event_hooks=redirect_revalidation_hooks(_is_trusted_download_host),
-    )
-
-
-@dataclass(frozen=True)
-class DriveRef:
-    """A parsed Drive reference: the file id plus an optional resource key.
-
-    Link-shared files carry a ``resourcekey`` in the share URL that the download
-    request MUST echo back, or Drive refuses the fetch (403 / permission page).
-    """
-
-    file_id: str
-    resource_key: str | None = None
-
-
-def parse_drive_ref(id_or_url: str) -> DriveRef:
-    """Parse a raw Drive file id or a Drive share URL into a :class:`DriveRef`.
-
-    Accepts a raw id, or a ``https://…`` URL (on a Google host) of the ``/d/<id>``,
-    ``/file/d/<id>/…``, or ``?id=<id>`` shapes, preserving a ``resourcekey`` query
-    param when present. A URL on a NON-Google host is rejected — an id-shaped path
-    segment under ``evil.example`` is not a Drive reference. Rejects anything that
-    does not yield a valid id.
-    """
-    candidate = (id_or_url or "").strip()
-    if not candidate:
-        raise ValidationError("A Google Drive file id or share URL is required.")
-    if _DRIVE_ID_RE.fullmatch(candidate):
-        return DriveRef(file_id=candidate)
-
-    parsed = urlparse(candidate)
-    # Only extract from a URL that is actually a Google host (reuses the download
-    # trusted-host allowlist: *.google.com / *.googleusercontent.com / …); a bare
-    # id with no scheme/host stays accepted via the fullmatch above.
-    if parsed.scheme in ("http", "https") and _is_trusted_download_host(parsed.hostname):
-        query = parse_qs(parsed.query)
-        resource_key = next((v for v in query.get("resourcekey", []) if v), None)
-        for value in query.get("id", []):
-            if _DRIVE_ID_RE.fullmatch(value):
-                return DriveRef(file_id=value, resource_key=resource_key)
-        path_match = _DRIVE_URL_PATH_ID_RE.search(parsed.path)
-        if path_match:
-            return DriveRef(file_id=path_match.group(1), resource_key=resource_key)
-
-    raise ValidationError(
-        f"Could not parse a Google Drive file id from {id_or_url!r}. Pass a raw file id "
-        "or a Drive URL like https://drive.google.com/file/d/<id>/view."
     )
 
 

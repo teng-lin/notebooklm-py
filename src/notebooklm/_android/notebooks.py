@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
-from .._idempotency import mark_unconfirmed
+from .._idempotency import mark_unconfirmed, unresolved_commit_error
 from .._notebook_metadata import NotebookSourceLister
 from .._notebooks import NotebooksAPI
 from .._runtime.call_supervisor import OperationLease
@@ -266,15 +266,17 @@ class AndroidNotebooksAPI(NotebooksAPI):
             )
         except (NetworkError, RateLimitError, ServerError) as exc:
             rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
-            raise mark_unconfirmed(
+            raise unresolved_commit_error(
+                COPY_PROJECT_METHOD,
+                "CopyProject",
                 RPCError(
                     "UNRESOLVED — CopyProject may have committed before its response was "
                     "lost. Do not blindly retry; list notebooks and resolve copies "
                     "manually first.",
                     method_id=COPY_PROJECT_METHOD,
                     rpc_code=rpc_code,
-                )
-            ) from exc
+                ),
+            ) from None
         try:
             notebook = _notebook_codec().decode_project(response, method_id=COPY_PROJECT_METHOD)
             if notebook.id == notebook_id:

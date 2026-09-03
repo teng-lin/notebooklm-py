@@ -17,6 +17,7 @@ import builtins
 import logging
 from typing import Any
 
+from .._idempotency import call_unconfirmed_on_transport_loss
 from ..exceptions import ArtifactNotFoundError, DecodingError, ValidationError
 from ..types import (
     ArtifactCustomizationChoices,
@@ -27,7 +28,6 @@ from ..types import (
 from .artifact_proto import ARTIFACTS_PROTO as _PROTO
 from .codecs.artifacts import decode_artifact
 from .session import AndroidSession
-from .write_safety import call_unconfirmed_on_transport_loss
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,10 @@ class AndroidArtifactTransferMixin:
                     replay_safe=False,
                     response_type=_PROTO.CopyArtifactsAsyncResponse,
                     expected_epoch=lease.epoch,
-                )
+                ),
+                method=COPY_ARTIFACTS_ASYNC_METHOD,
+                what="CopyArtifactsAsync",
+                chain=None,
             )
         # Malformed entries are skipped, not fatal: the well-formed ones are the
         # only proof of copies that have already committed.

@@ -20,11 +20,17 @@ class DriveRef:
     resource_key: str | None = None
 
 
+_TRUSTED_GOOGLE_DOMAINS = (".google.com", ".googleusercontent.com", ".googleapis.com")
+
+
 def _trusted_google_host(host: str | None) -> bool:
     if host is None:
         return False
     normalized = host.rstrip(".").lower()
-    return normalized == "google.com" or normalized.endswith(".google.com")
+    return any(
+        normalized == domain.lstrip(".") or normalized.endswith(domain)
+        for domain in _TRUSTED_GOOGLE_DOMAINS
+    )
 
 
 def parse_drive_ref(id_or_url: str) -> DriveRef:

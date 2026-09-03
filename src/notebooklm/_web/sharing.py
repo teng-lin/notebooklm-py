@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
 
+from .._idempotency import call_unconfirmed_on_transport_loss
 from .._sharing import SharingAPI
 from .._types.enums import ShareAccess, SharePermission, ShareViewLevel
 from ..rpc import RPCMethod
@@ -91,11 +92,15 @@ class WebSharingAPI(SharingAPI):
             None,
             [2],
         ]
-        await self._rpc.rpc_call(
-            RPCMethod.SHARE_NOTEBOOK,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
+        await call_unconfirmed_on_transport_loss(
+            lambda: self._rpc.rpc_call(
+                RPCMethod.SHARE_NOTEBOOK,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+            ),
+            method=RPCMethod.SHARE_NOTEBOOK,
+            what="ShareNotebook public-access update",
         )
         return await self.get_status(notebook_id)
 
@@ -249,16 +254,20 @@ class WebSharingAPI(SharingAPI):
             [(email, permission.name) for email, permission in grants],
         )
 
-        await self._rpc.rpc_call(
-            RPCMethod.SHARE_NOTEBOOK,
-            self._share_params(
-                notebook_id,
-                grants,
-                notify=notify,
-                message_block=[0 if welcome_message else 1, welcome_message],
+        await call_unconfirmed_on_transport_loss(
+            lambda: self._rpc.rpc_call(
+                RPCMethod.SHARE_NOTEBOOK,
+                self._share_params(
+                    notebook_id,
+                    grants,
+                    notify=notify,
+                    message_block=[0 if welcome_message else 1, welcome_message],
+                ),
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
             ),
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
+            method=RPCMethod.SHARE_NOTEBOOK,
+            what="ShareNotebook user grant",
         )
         return await self.get_status(notebook_id)
 
@@ -292,11 +301,15 @@ class WebSharingAPI(SharingAPI):
             notify=False,
             message_block=[0, ""],
         )
-        await self._rpc.rpc_call(
-            RPCMethod.SHARE_NOTEBOOK,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
+        await call_unconfirmed_on_transport_loss(
+            lambda: self._rpc.rpc_call(
+                RPCMethod.SHARE_NOTEBOOK,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+            ),
+            method=RPCMethod.SHARE_NOTEBOOK,
+            what="ShareNotebook user removal",
         )
         return await self.get_status(notebook_id)
 

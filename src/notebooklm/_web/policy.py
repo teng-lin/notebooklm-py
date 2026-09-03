@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
 
 from ..exceptions import IdempotencyVariantError
 from ..rpc.types import RPCMethod
@@ -64,13 +63,6 @@ _POLICIES_THAT_FORCE_DISABLE: frozenset[IdempotencyPolicy] = frozenset(
 )
 
 
-# ProbeKeyFn signature: takes the encoded ``params`` list and returns an
-# opaque, hashable probe key the caller can use to identify "is this the
-# write I issued?" Currently informational; future probe-loop work may plumb it
-# into create-probe state machines. ``None`` is the no-probe sentinel.
-ProbeKeyFn = Callable[[list[Any]], Any]
-
-
 @dataclass(frozen=True)
 class IdempotencyEntry:
     """One row in :class:`IdempotencyRegistry`.
@@ -78,9 +70,6 @@ class IdempotencyEntry:
     Attributes:
         policy: Classification for the ``(RPCMethod, operation_variant)``
             row this entry describes.
-        probe_key_fn: Optional probe-key extractor for PROBE_THEN_CREATE
-            entries. ``None`` for policies that don't probe. Future work may
-            wire this into the per-API probe loops.
         notes: Free-form human-readable note. UNCLASSIFIED entries
             registered without an explicit ``notes`` value receive the
             placeholder marker that flags them for explicit classification;
@@ -88,7 +77,6 @@ class IdempotencyEntry:
     """
 
     policy: IdempotencyPolicy
-    probe_key_fn: ProbeKeyFn | None = None
     notes: str = ""
 
 
@@ -133,7 +121,6 @@ class IdempotencyRegistry:
         policy: IdempotencyPolicy,
         *,
         variant: str | None = None,
-        probe_key_fn: ProbeKeyFn | None = None,
         notes: str | None = None,
     ) -> None:
         """Register (or overwrite) the entry for ``(method, variant)``.
@@ -153,7 +140,6 @@ class IdempotencyRegistry:
             )
         entry = IdempotencyEntry(
             policy=policy,
-            probe_key_fn=probe_key_fn,
             notes=notes,
         )
         self._entries.setdefault(method, {})[variant] = entry
@@ -489,23 +475,22 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     # result in ``_web/artifact/generation.py``), so a token-dedupe strategy is
     # impossible.
     #
-    # PROBE_THEN_CREATE forces ``effective_disable_internal_retries=True``,
+    # NON_IDEMPOTENT_NO_RETRY forces ``effective_disable_internal_retries=True``,
     # which suppresses the retry middleware inside
     # ``RuntimeTransport.perform_authed_post``. Without
     # this, a 5xx between server-side commit and client-side response would
     # trigger a naive re-POST and duplicate the artifact (the original
     # audit finding). Callers can layer a list-based probe + retry on top of
-    # this foundation via ``idempotent_create`` in a follow-up; for B-generation
-    # the classification alone removes the duplicate-write risk.
+    # this foundation. No artifact-id probe is implemented, so the registry
+    # must not claim that callers probe before retrying.
     registry.register(
         RPCMethod.CREATE_ARTIFACT,
-        IdempotencyPolicy.PROBE_THEN_CREATE,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         notes=(
             "P0-3: mutating create with no caller-supplied client-token slot. "
-            "Server allocates artifact_id in the response. PROBE_THEN_CREATE "
-            "forces the inner retry loop off to prevent duplicate-write on 5xx; "
-            "a list-based probe wrapper can be layered via idempotent_create "
-            "in a follow-up."
+            "Server allocates artifact_id in the response and no reliable probe is "
+            "implemented. NON_IDEMPOTENT_NO_RETRY forces the inner retry loop off; "
+            "transport loss is surfaced as an unconfirmed outcome."
         ),
     )
 
@@ -525,7 +510,7 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     # Note: ``GENERATE_MIND_MAP`` itself does NOT persist the note server-side
     # (see ``tests/integration/test_mind_map_chain_vcr.py`` header). The actual
     # persistence is the subsequent ``CREATE_NOTE`` + ``UPDATE_NOTE`` chain in
-    # ``NoteService.create_note``. PROBE_THEN_CREATE here suppresses the inner retry loop on
+    # ``NoteService.create_note``. NON_IDEMPOTENT_NO_RETRY suppresses the inner retry loop on
     # the *generation* RPC for two reasons: (a) a blind re-POST wastes the
     # expensive LLM inference, and (b) LLM nondeterminism means a retried
     # generation may return a *different* mind-map JSON, which would
@@ -535,10 +520,11 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     # variants, while ``UPDATE_NOTE`` is an idempotent set op.
     registry.register(
         RPCMethod.GENERATE_MIND_MAP,
-        IdempotencyPolicy.PROBE_THEN_CREATE,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         notes=(
             "P0-3: generation RPC with no caller-supplied client-token slot. "
-            "Response carries the mind-map JSON directly. PROBE_THEN_CREATE "
+            "Response carries the mind-map JSON directly and no reliable probe exists. "
+            "NON_IDEMPOTENT_NO_RETRY "
             "forces the inner retry loop off so a 5xx after server-side "
             "generation does not trigger a fresh LLM inference whose result "
             "may diverge from the first (lost) response. The persisted-note "
@@ -583,12 +569,9 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     #   network blip can re-send invitation emails (with ``notify=True``) or
     #   flip access between RESTRICTED / ANYONE-WITH-LINK twice. The codebase
     #   does expose a server-side probe RPC (``GET_SHARE_STATUS``) that can
-    #   list the current ACL, so the *correct* policy is ``PROBE_THEN_CREATE``
-    #   — the transport must NOT retry blindly, and a future wrapper can
-    #   ``get_status()`` to decide whether the prior call landed before
-    #   re-issuing. Today only the classification is in place (which suppresses
-    #   the blind retry); the caller-side probe-then-create wrapper is a
-    #   follow-up.
+    #   list the current ACL, but no reliable probe/retry state machine is
+    #   implemented. Classify what the code does today: do not retry and surface
+    #   transport loss as unconfirmed.
     registry.register(
         RPCMethod.CREATE_NOTEBOOK,
         IdempotencyPolicy.PROBE_THEN_CREATE,
@@ -623,11 +606,11 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     )
     registry.register(
         RPCMethod.SHARE_NOTEBOOK,
-        IdempotencyPolicy.PROBE_THEN_CREATE,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         notes=(
             "mutates ACL; blind retry can re-send invite emails or double-flip access. "
-            "GET_SHARE_STATUS exposes the server-side ACL for a future probe-then-create "
-            "wrapper; today's classification suppresses the inner retry loop."
+            "GET_SHARE_STATUS exists, but no reliable probe/retry wrapper is implemented; "
+            "transport loss is surfaced as unconfirmed."
         ),
     )
 
@@ -979,7 +962,6 @@ __all__ = [
     "IdempotencyEntry",
     "IdempotencyPolicy",
     "IdempotencyRegistry",
-    "ProbeKeyFn",
     "register_default_policies",
     "resolve_effective_disable_internal_retries",
 ]
