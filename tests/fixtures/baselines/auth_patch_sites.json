@@ -272,7 +272,7 @@
     },
     {
       "attribute": "load_with_recovery",
-      "count": 3,
+      "count": 4,
       "idiom": "monkeypatch.setattr",
       "module": "psidts_recovery"
     },
@@ -308,7 +308,7 @@
     },
     {
       "attribute": "_fetch_tokens_with_exact_baseline",
-      "count": 6,
+      "count": 7,
       "idiom": "monkeypatch.setattr",
       "module": "refresh"
     },
@@ -326,7 +326,7 @@
     },
     {
       "attribute": "_poke_session",
-      "count": 2,
+      "count": 3,
       "idiom": "monkeypatch.setattr",
       "module": "refresh"
     },
@@ -447,9 +447,9 @@
   ],
   "summary": {
     "TOTAL": {
-      "private": 144,
-      "public": 99,
-      "total": 243
+      "private": 146,
+      "public": 100,
+      "total": 246
     },
     "account": {
       "private": 2,
@@ -508,8 +508,8 @@
     },
     "psidts_recovery": {
       "private": 9,
-      "public": 10,
-      "total": 19
+      "public": 11,
+      "total": 20
     },
     "recovery": {
       "private": 13,
@@ -517,9 +517,9 @@
       "total": 15
     },
     "refresh": {
-      "private": 43,
+      "private": 45,
       "public": 28,
-      "total": 71
+      "total": 73
     },
     "single_flight": {
       "private": 0,

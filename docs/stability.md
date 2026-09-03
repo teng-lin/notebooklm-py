@@ -70,7 +70,9 @@ NotebookLMClient.sharing
 NotebookLMClient.labels
 NotebookLMClient.mind_maps
 NotebookLMClient.collections
-NotebookLMClient.rpc_call()
+NotebookLMClient.raw
+WebRawAPI, AndroidRawAPI
+GrpcUnaryMethod, GrpcUnaryStreamMethod, ReplayPolicy
 
 # Types
 Notebook, Source, Artifact, Note, Label, MindMap, Collection
@@ -334,6 +336,7 @@ The following v0.3-era deprecations completed their removal cycle in v0.5.0:
 
 | Deprecated | Replacement | Notes |
 |------------|-------------|-------|
+| `NotebookLMClient.rpc_call(...)` | Web: `client.raw.call(...)`; Android: `client.raw.unary(...)` / `unary_stream(...)`, or a separate Web-selected client's `raw.call(...)` | Deprecated in v0.9.0; warns once per client; scheduled for v1.0 removal. Android compatibility lazily creates a Web sidecar during v0.x. |
 | `AuthTokens.from_storage(...)` | `async with NotebookLMClient.from_storage(...) as client:` and use `client.auth` | Deprecated in v0.8.1; emits `DeprecationWarning`; scheduled for v1.0 removal |
 | `AuthTokens(..., storage_path=..., cookie_jar=None)` synchronous storage fallback | Managed `NotebookLMClient.from_storage(...)`, or an explicit `cookie_jar=` | Deprecated in v0.8.1; only the implicit synchronous-I/O branch warns; scheduled for v1.0 removal |
 | Awaiting `NotebookLMClient.from_storage(...)` | `async with NotebookLMClient.from_storage(...) as client:` | Emits `DeprecationWarning`; scheduled for v1.0 removal |

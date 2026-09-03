@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -595,8 +595,12 @@ class TestRefreshAuth:
     ):
         client = NotebookLMClient(mock_auth, backend="android")
         calls: list[str] = []
-        provider = client._android_bearer_provider
+        assert client._android_runtime is not None
+        provider = client._android_runtime.bearer_provider
         assert provider is not None
+        assert client._web_sidecar is not None
+        web_client = NotebookLMClient(mock_auth)
+        client._web_sidecar._runtime = web_client._require_web_runtime()
 
         async def refresh_bearer(expected_epoch: int):
             calls.append(f"bearer:{expected_epoch}")
@@ -620,8 +624,12 @@ class TestRefreshAuth:
         self, mock_auth, monkeypatch, caplog
     ):
         client = NotebookLMClient(mock_auth, backend="android")
-        provider = client._android_bearer_provider
+        assert client._android_runtime is not None
+        provider = client._android_runtime.bearer_provider
         assert provider is not None
+        assert client._web_sidecar is not None
+        web_client = NotebookLMClient(mock_auth)
+        client._web_sidecar._runtime = web_client._require_web_runtime()
         bearer_calls: list[int] = []
 
         async def refresh_bearer(expected_epoch: int):
@@ -646,8 +654,12 @@ class TestRefreshAuth:
         self, mock_auth, monkeypatch
     ):
         client = NotebookLMClient(mock_auth, backend="android")
-        provider = client._android_bearer_provider
+        assert client._android_runtime is not None
+        provider = client._android_runtime.bearer_provider
         assert provider is not None
+        assert client._web_sidecar is not None
+        web_client = NotebookLMClient(mock_auth)
+        client._web_sidecar._runtime = web_client._require_web_runtime()
         bearer_calls: list[int] = []
         web_calls: list[bool] = []
 
@@ -663,7 +675,7 @@ class TestRefreshAuth:
         monkeypatch.setattr(provider, "refresh", refresh_bearer)
         monkeypatch.setattr(client_mod, "refresh_auth_session", refresh_web)
 
-        coordinator = client._require_web_runtime().auth_coord
+        coordinator = web_client._require_web_runtime().auth_coord
         coordinator.set_bound_loop(asyncio.get_running_loop())
         coordinator.reset_after_open()
         coordinator.activate_epoch(7)
@@ -674,6 +686,24 @@ class TestRefreshAuth:
 
         assert len(bearer_calls) == 1
         assert web_calls == [False]
+        assert result is client._auth
+
+    @pytest.mark.asyncio
+    async def test_android_refresh_without_materialized_sidecar_only_remints_bearer(
+        self, mock_auth, monkeypatch
+    ):
+        client = NotebookLMClient(mock_auth, backend="android")
+        assert client._android_runtime is not None
+        assert client._web_sidecar is not None
+        bearer_refresh = AsyncMock()
+        web_refresh = AsyncMock()
+        monkeypatch.setattr(client._android_runtime.bearer_provider, "refresh", bearer_refresh)
+        monkeypatch.setattr(client, "_refresh_sidecar_auth_for_epoch", web_refresh)
+
+        result = await client._refresh_auth_for_epoch(expected_epoch=11)
+
+        bearer_refresh.assert_awaited_once_with(11)
+        web_refresh.assert_not_awaited()
         assert result is client._auth
 
 

@@ -100,6 +100,33 @@ DEPRECATION_SPECS: Mapping[str, DeprecationSpec] = MappingProxyType(
             removal="1.0",
             stacklevel=3,
         ),
+        "client_rpc_call_web": DeprecationSpec(
+            key="client_rpc_call_web",
+            message=(
+                "NotebookLMClient.rpc_call(...) is deprecated; use "
+                "client.raw.call(...) on a Web-selected client instead. It will be removed "
+                "in v1.0."
+            ),
+            category=DeprecationWarning,
+            replacement="notebooklm.raw.WebRawAPI.call",
+            since="0.9.0",
+            removal="1.0",
+            stacklevel=3,
+        ),
+        "client_rpc_call_android": DeprecationSpec(
+            key="client_rpc_call_android",
+            message=(
+                "NotebookLMClient.rpc_call(...) is deprecated and crosses from Android into "
+                "a lazy Web compatibility transport; use client.raw.unary(...) or "
+                "client.raw.unary_stream(...) for Android methods, or client.raw.call(...) on "
+                "a separate Web-selected client. It will be removed in v1.0."
+            ),
+            category=DeprecationWarning,
+            replacement="notebooklm.raw.AndroidRawAPI.unary",
+            since="0.9.0",
+            removal="1.0",
+            stacklevel=3,
+        ),
     }
 )
 

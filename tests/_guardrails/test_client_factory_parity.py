@@ -118,6 +118,22 @@ def test_factory_shell_matches_production_constructor_surface() -> None:
     )
 
 
+def test_android_factory_shell_matches_production_constructor_surface() -> None:
+    """The parity seam covers the conditional Android assembly branch too."""
+
+    production = NotebookLMClient(_make_auth(), backend="android")
+    shell = build_client_shell_for_tests(auth=_make_auth(), backend="android")
+
+    problems = _attribute_surface_divergence(
+        _attribute_surface(production),
+        _attribute_surface(shell),
+    )
+    assert problems == [], (
+        "Android build_client_shell_for_tests diverged from NotebookLMClient.__init__:"
+        "\n  " + "\n  ".join(problems)
+    )
+
+
 def test_client_namespace_annotations_keep_neutral_api_identities() -> None:
     """Runtime annotations and compatibility imports name the neutral bases."""
     assert client_module.NotesAPI is NotesAPI

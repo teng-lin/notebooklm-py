@@ -216,8 +216,7 @@ async def _running_client(service: _Service, bearer: _Bearer) -> AsyncIterator[A
         )
         client = SimpleNamespace(
             backends=dict(ANDROID_BACKENDS),
-            _android_session=session,
-            _android_bearer_provider=bearer,
+            _android_runtime=SimpleNamespace(session=session, bearer_provider=bearer),
             notebooks=notebooks,
             chat=chat,
         )
@@ -669,8 +668,10 @@ async def test_forced_refresh_advances_generation_on_real_provider() -> None:
     provider.set_bound_loop(asyncio.get_running_loop())
     await provider.activate(1)
     client = SimpleNamespace(
-        _android_session=SimpleNamespace(active_epoch=1),
-        _android_bearer_provider=provider,
+        _android_runtime=SimpleNamespace(
+            session=SimpleNamespace(active_epoch=1),
+            bearer_provider=provider,
+        ),
     )
     try:
         detail = await canary.check_bearer(client)
@@ -687,7 +688,7 @@ async def test_forced_refresh_advances_generation_on_real_provider() -> None:
 
 @pytest.mark.asyncio
 async def test_bearer_step_requires_an_active_session() -> None:
-    client = SimpleNamespace(_android_session=None, _android_bearer_provider=None)
+    client = SimpleNamespace(_android_runtime=None)
     with pytest.raises(RuntimeError, match="not active"):
         await canary.check_bearer(client)
 
@@ -751,8 +752,10 @@ async def test_refresh_mint_retry_backs_off_exactly_once() -> None:
     bearer = _ThrottledBearer(failures=1)
     await bearer.activate(1)
     client = SimpleNamespace(
-        _android_session=SimpleNamespace(active_epoch=1),
-        _android_bearer_provider=bearer,
+        _android_runtime=SimpleNamespace(
+            session=SimpleNamespace(active_epoch=1),
+            bearer_provider=bearer,
+        ),
     )
     assert await canary.check_bearer(client, sleep=sleep) == "generation 1->2"
     assert slept == [canary._REFRESH_RETRY_BACKOFF_SECONDS] == [5.0]
@@ -765,8 +768,10 @@ async def test_refresh_mint_retry_backs_off_exactly_once() -> None:
     cold = _ColdThrottle()
     await cold.activate(1)
     client = SimpleNamespace(
-        _android_session=SimpleNamespace(active_epoch=1),
-        _android_bearer_provider=cold,
+        _android_runtime=SimpleNamespace(
+            session=SimpleNamespace(active_epoch=1),
+            bearer_provider=cold,
+        ),
     )
     slept.clear()
     with pytest.raises(AuthError, match="cold mint refused"):
@@ -787,20 +792,18 @@ async def test_schema_setup_failure_is_labelled_schema_not_close() -> None:
     # And through the whole run the verdict stays ``schema``, never ``close``.
     client = SimpleNamespace(
         backends=dict(ANDROID_BACKENDS),
-        _android_session=None,
-        _android_bearer_provider=None,
+        _android_runtime=None,
         notebooks=SimpleNamespace(),
         chat=SimpleNamespace(),
     )
     full: list[str] = []
     assert await canary.run_canary(lambda: _FakeContext(client), NOTEBOOK_ID, out=full.append) == 1
-    # ``_android_session`` resolves (to None) so each per-RPC probe fails on
+    # ``_android_runtime`` resolves (to None) so each per-RPC probe fails on
     # its own ``schema <rpc>`` line — still ``schema``, never ``close``.
     assert [line.split(" ")[1] for line in full if line.startswith("FAIL")] == [
         "bearer",
         "get_project",
         "list_chat_sessions",
-        "schema",
         "schema",
     ]
     assert not [line for line in full if line.startswith("FAIL close")]

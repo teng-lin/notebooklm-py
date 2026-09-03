@@ -168,8 +168,15 @@ async with NotebookLMClient.from_storage(profile="work", backend="android") as c
 
 Android reads the profile's `master_token.json` when the client opens and mints
 short-lived bearer credentials. It does not use `NOTEBOOKLM_AUTH_JSON` or a
-cookie-only storage file. `client.rpc_call(...)` remains a Web-only escape hatch
-because it takes Web RPC method identifiers.
+cookie-only storage file. Its `from_storage(...)` bootstrap does not poke,
+recover, or write profile cookies; any homepage `Set-Cookie` observation remains
+in memory unless the deprecated Web sidecar is later materialized. `client.raw` is backend-selected: use `raw.call(...)`
+for Web `RPCMethod` identifiers and `raw.unary(...)` / `raw.unary_stream(...)`
+for explicit Android gRPC descriptors. The root `client.rpc_call(...)` wrapper
+is deprecated for removal in v1.0. During the warning window it preserves the
+old behavior on Android by lazily opening a Web compatibility sidecar on first
+use; a master-token-only profile therefore fails as it did before, and the
+sidecar never starts Web keepalive.
 
 `AuthTokens.from_storage(...)` remains available as a v0.x compatibility loader,
 but it is deprecated in v0.8.1 and emits `DeprecationWarning` when awaited. Use
@@ -1033,6 +1040,9 @@ class NotebookLMClient:
 
     def get_account_authuser(self) -> int:
 
+    @property
+    def raw(self) -> WebRawAPI | AndroidRawAPI:
+
     async def rpc_call(
         self,
         method: RPCMethod,
@@ -1045,10 +1055,22 @@ class NotebookLMClient:
     ) -> Any:
 ```
 
-`RPCMethod` is imported from `notebooklm.rpc` for raw-RPC calls; `Any` is
-`typing.Any`. The default-shape call (`client.rpc_call(method, params)`)
-forwards to the underlying `RpcExecutor.rpc_call` with its canonical
-defaults. `read_timeout` (added in #2187) overrides the client-wide read
+`client.raw` is the supported low-level entry point. On a Web-selected client,
+`await client.raw.call(method, params, ...)` accepts `RPCMethod` from
+`notebooklm.rpc` and returns `typing.Any`. Its keyword-only controls are
+`allow_null`, `disable_internal_retries`, `read_timeout`, and
+`raise_on_null_status`, matching the deprecated root wrapper so migrations do
+not narrow per-call retry or null-status behavior. On an Android-selected client,
+construct `GrpcUnaryMethod` or `GrpcUnaryStreamMethod` from `notebooklm.raw`
+and pass a caller-owned protobuf-compatible value (or explicit codecs) to
+`raw.unary(...)` / `raw.unary_stream(...)`. Android raw descriptors default to
+`ReplayPolicy.NEVER`; opt into `SAFE_READ` only for operations that are safe to
+replay.
+
+`client.rpc_call(method, params)` is a deprecated compatibility wrapper. On Web
+it forwards to `client.raw.call(...)`; on Android it warns that the call crosses
+into Web and lazily creates a Web sidecar. The wrapper warns once per client and
+is removed in v1.0. `read_timeout` (added in #2187) overrides the client-wide read
 timeout for this one call — internal callers use it for RPCs known to run
 long (e.g. `ResearchAPI.import_sources`'s batch-scaled IMPORT_RESEARCH
 timeout); `None` (the default) inherits the client's configured `timeout`.
@@ -1060,6 +1082,14 @@ because several RPCs are recorded answering a status on flows this client
 treats as successful — see
 [rpc-reference.md](rpc-reference.md#rejection-frames-googlerpcstatus-at-wrbfr-index-5).
 
+**Android construction:** `cookie_saver`, `cookie_rotator`, `keepalive`,
+`keepalive_min_interval`, and HTTP `limits` remain accepted but are Web-only
+and are ignored (with a debug log) when `backend="android"` is selected. Normal
+Android construction/open/close does not create an HTTP client, recover
+`__Secure-1PSIDTS`, or write Web cookies. `get_account_email()` returns only the
+email already present on `AuthTokens`; it does not probe Web cookies or profile
+metadata.
+
 **Cookie persistence override:** `cookie_saver=None` (the default) uses the
 canonical typed `ProfileStore` merge for close, refresh, and keepalive saves.
 Supplying `cookie_saver=` retains the v0.x callback compatibility seam; the
@@ -1069,10 +1099,12 @@ as `saver(jar, path, original_snapshot=..., return_result=True)` and may return
 `notebooklm._auth.storage.save_cookies_to_storage` does not change a live
 client's normal persistence route.
 
-> **Removed in v0.6.0.** The three previously-deprecated kwargs
+> **Deprecated in v0.9.0.** Migrate the root wrapper to `client.raw.call(...)`
+> on Web, or to `client.raw.unary(...)` / `unary_stream(...)` on Android. The
+> wrapper is scheduled for removal in v1.0. The three previously-deprecated kwargs
 > (`source_path`, `_is_retry`, `operation_variant`) were removed after
 > their v0.5.0 deprecation cycle. The default-shape call
-> (`client.rpc_call(method, params)`) is unchanged. There is no public
+> remains compatible during the warning window. There is no public
 > replacement for the internal-only `_is_retry` / `operation_variant`
 > kwargs; callers that need a non-`"/"` `source_path` should request a
 > typed sub-client method rather than reach across this wrapper. See
@@ -3639,7 +3671,7 @@ class ChatMode(Enum):
 
 ### Custom RPC Calls
 
-For undocumented features, you can make raw RPC calls:
+For undocumented Web features, use the backend-selected raw namespace:
 
 ```python
 from notebooklm.rpc import RPCMethod
@@ -3647,7 +3679,7 @@ from notebooklm.rpc import RPCMethod
 async with NotebookLMClient.from_storage() as client:
     # Each RPCMethod member has its own params shape (a nested list) and
     # source_path; mirror the higher-level APIs when in doubt.
-    result = await client.rpc_call(
+    result = await client.raw.call(
         RPCMethod.CREATE_NOTEBOOK,
         params=[
             "My Notebook",

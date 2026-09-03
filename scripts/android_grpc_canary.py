@@ -332,8 +332,9 @@ async def check_bearer(
     ``refresh-mint`` verdict so triage can tell a throttle from a
     generation-advance failure.
     """
-    session = client._android_session
-    provider = client._android_bearer_provider
+    runtime = client._android_runtime
+    session = None if runtime is None else runtime.session
+    provider = None if runtime is None else runtime.bearer_provider
     epoch = None if session is None else session.active_epoch
     if provider is None or epoch is None:
         raise RuntimeError("Android session is not active")
@@ -485,7 +486,8 @@ async def check_schema(
     # Setup failures (no session, a proto that fails to import) must carry
     # the ``schema`` label rather than escaping to the outer ``close`` handler.
     try:
-        session = client._android_session
+        runtime = client._android_runtime
+        session = runtime.session
         probes = raw_probes(notebook_id)
     except asyncio.CancelledError:
         raise

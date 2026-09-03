@@ -10,13 +10,15 @@ import subprocess
 import sys
 from collections.abc import Mapping
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
 import notebooklm._android.auth as android_auth
+import notebooklm._auth.psidts_recovery as psidts_recovery
+import notebooklm._auth.refresh as auth_refresh
 from notebooklm._android.artifacts import AndroidArtifactsAPI
 from notebooklm._android.chat import AndroidChatAPI
 from notebooklm._android.collections import AndroidCollectionsAPI
@@ -31,10 +33,13 @@ from notebooklm._android.sources import AndroidSourcesAPI
 from notebooklm._auth.master_token_types import MasterToken
 from notebooklm._auth.profile_store import ProfileStore
 from notebooklm._client_assembly import BackendPreference, resolve_backend_preference
+from notebooklm._web.transport.cookie_persistence import CookiePersistence
+from notebooklm._web.transport.kernel import Kernel
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.exceptions import ConfigurationError, MissingDependencyError
 from notebooklm.raw import AndroidRawAPI, WebRawAPI
+from notebooklm.types import ConnectionLimits
 
 
 def _auth() -> AuthTokens:
@@ -108,7 +113,8 @@ def test_invalid_environment_fails_during_construction(monkeypatch: pytest.Monke
 def test_android_preference_promotes_every_namespace() -> None:
     client = NotebookLMClient(_auth(), backend="android")
     assert type(client.raw) is AndroidRawAPI
-    assert client.raw._transport is client._android_session
+    assert client._android_runtime is not None
+    assert client.raw._transport is client._android_runtime.session
     assert isinstance(client.backends, Mapping)
     assert list(client.backends) == [
         "notebooks",
@@ -396,8 +402,7 @@ def test_android_selected_public_callable_inventory_is_exact() -> None:
 def test_default_and_explicit_web_keep_every_namespace_on_web(backend: str | None) -> None:
     client = NotebookLMClient(_auth(), backend=backend)  # type: ignore[arg-type]
     assert set(client.backends.values()) == {"web"}
-    assert client._android_bearer_provider is None
-    assert client._android_session is None
+    assert client._android_runtime is None
 
 
 def test_default_web_construction_does_not_import_android_or_optional_runtime() -> None:
@@ -478,6 +483,37 @@ def test_android_preference_has_no_unqualified_namespace_log(caplog) -> None:  #
     assert records == []
 
 
+@pytest.mark.parametrize(
+    ("limits", "max_concurrent_rpcs"),
+    [
+        (ConnectionLimits(max_connections=1, max_keepalive_connections=1), 16),
+        (None, 101),
+    ],
+)
+def test_android_rpc_cap_ignores_absent_web_pool_width(
+    limits: ConnectionLimits | None,
+    max_concurrent_rpcs: int,
+) -> None:
+    client = NotebookLMClient(
+        _auth(),
+        backend="android",
+        limits=limits,
+        max_concurrent_rpcs=max_concurrent_rpcs,
+    )
+
+    assert client._collaborators.call_supervisor._max_concurrent_rpcs == max_concurrent_rpcs
+
+
+def test_web_rpc_cap_remains_bounded_by_the_http_pool() -> None:
+    with pytest.raises(ValueError, match="max_concurrent_rpcs must be <="):
+        NotebookLMClient(
+            _auth(),
+            backend="web",
+            limits=ConnectionLimits(max_connections=1, max_keepalive_connections=1),
+            max_concurrent_rpcs=16,
+        )
+
+
 def test_backends_mapping_is_read_only() -> None:
     client = NotebookLMClient(_auth())
     with pytest.raises(TypeError):
@@ -522,12 +558,13 @@ async def test_selected_android_reads_token_only_at_open_and_fails_without_one(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = NotebookLMClient(_auth(), backend="android")
-    assert client._android_session is not None
-    assert client._android_bearer_provider is not None
+    assert client._android_runtime is not None
+    session = client._android_runtime.session
+    provider = client._android_runtime.bearer_provider
     token_read = MagicMock(return_value=None)
-    client._android_bearer_provider._profile_store.read_master_token = token_read
-    client._android_session._grpc_loader = lambda: object()
-    client._android_session._protobuf_loader = lambda: object()
+    provider._profile_store.read_master_token = token_read
+    session._grpc_loader = lambda: object()
+    session._protobuf_loader = lambda: object()
     monkeypatch.setattr(android_auth, "_require_gpsoauth", lambda: object())
 
     token_read.assert_not_called()
@@ -538,9 +575,9 @@ async def test_selected_android_reads_token_only_at_open_and_fails_without_one(
 
 async def test_selected_android_missing_dependency_fails_at_open_not_construction() -> None:
     client = NotebookLMClient(_auth(), backend="android")
-    assert client._android_session is not None
+    assert client._android_runtime is not None
     missing = MissingDependencyError("missing android runtime")
-    client._android_session._grpc_loader = MagicMock(side_effect=missing)
+    client._android_runtime.session._grpc_loader = MagicMock(side_effect=missing)
 
     with pytest.raises(MissingDependencyError, match="missing android runtime"):
         await client.__aenter__()
@@ -552,48 +589,94 @@ async def test_selected_android_open_binds_auth_and_session_without_eager_channe
 ) -> None:
     storage = tmp_path / "storage_state.json"
     client = NotebookLMClient(_auth(), storage_path=storage, backend="android")
-    assert client._android_session is not None
-    assert client._android_bearer_provider is not None
-    client._android_session._grpc_loader = lambda: object()
-    client._android_session._protobuf_loader = lambda: object()
+    assert client._android_runtime is not None
+    session = client._android_runtime.session
+    provider = client._android_runtime.bearer_provider
+    session._grpc_loader = lambda: object()
+    session._protobuf_loader = lambda: object()
     token_read = MagicMock(
         return_value=MasterToken(email="test@example.com", android_id="1234", secret="secret")
     )
-    client._android_bearer_provider._profile_store.read_master_token = token_read
+    provider._profile_store.read_master_token = token_read
     monkeypatch.setattr(android_auth, "_require_gpsoauth", lambda: object())
 
     await client.__aenter__()
     try:
         assert client.is_connected
-        assert client._android_session.active_epoch is not None
-        assert client._android_session._channel is None
-        assert client._android_bearer_provider._master_token is not None
+        assert session.active_epoch is not None
+        assert session._channel is None
+        assert provider._master_token is not None
     finally:
         await client.close()
 
-    assert client._android_session.active_epoch is None
-    assert client._android_bearer_provider._master_token is None
+    assert session.active_epoch is None
+    assert provider._master_token is None
     token_read.assert_called_once_with()
 
 
 def test_android_selection_extends_the_frozen_lifecycle_ownership_graph() -> None:
     client = NotebookLMClient(_auth(), backend="android")
     lifecycle = client._collaborators.lifecycle
-    assert client._android_session is not None
-    assert client._android_bearer_provider is not None
+    assert client._android_runtime is not None
+    android = client._android_runtime
+    assert client._web_runtime is None
+    assert client._web_sidecar is not None
     assert lifecycle._transports == (
-        client._web_runtime.web_transport,
-        client._web_runtime.source_uploader,
-        client._android_session,
-        client.artifacts._asset_downloads,
-        client.sources._upload_pipeline,
-        client.sources._phenotype,
+        android.session,
+        android.asset_downloads,
+        android.upload_pipeline,
+        android.phenotype,
+        client._web_sidecar,
     )
-    assert lifecycle._loop_participants[-3:] == (
-        client._android_bearer_provider,
-        client._android_session,
-        client.sources._upload_pipeline,
+    assert lifecycle._loop_participants == (
+        client._collaborators.call_supervisor,
+        client.chat,
+        android.bearer_provider,
+        android.session,
+        android.upload_pipeline,
+        client._web_sidecar,
     )
+
+
+async def test_android_open_without_deprecated_hatch_constructs_no_web_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The primary Android lifecycle is Web-allocation and cookie-write free."""
+
+    forbidden = MagicMock(side_effect=AssertionError("Android constructed a Web owner"))
+    monkeypatch.setattr(Kernel, "__init__", forbidden)
+    monkeypatch.setattr(CookiePersistence, "_from_store", forbidden)
+    monkeypatch.setattr(android_auth, "_require_gpsoauth", lambda: object())
+    cookie_saver = MagicMock()
+    auth = AuthTokens(
+        cookies={},
+        csrf_token="",
+        session_id="",
+        storage_path=tmp_path / "storage_state.json",
+        cookie_jar=httpx.Cookies(),
+    )
+    client = NotebookLMClient(
+        auth,
+        backend="android",
+        keepalive=1.0,
+        cookie_saver=cookie_saver,
+    )
+    assert client._android_runtime is not None
+    client._android_runtime.bearer_provider._profile_store.read_master_token = MagicMock(
+        return_value=MasterToken(email="test@example.com", android_id="1234", secret="secret")
+    )
+    client._android_runtime.session._grpc_loader = lambda: object()
+    client._android_runtime.session._protobuf_loader = lambda: object()
+
+    await client.__aenter__()
+    await client.close()
+
+    assert client._web_runtime is None
+    assert client._web_sidecar is not None
+    assert not client._web_sidecar.is_materialized
+    forbidden.assert_not_called()
+    cookie_saver.assert_not_called()
 
 
 def test_from_storage_freezes_environment_preference_at_wrapper_construction(
@@ -636,3 +719,63 @@ async def test_from_storage_threads_explicit_backend(
     client = await NotebookLMClient.from_storage(path=str(storage), backend="android")._build()
     assert client._backend_preference.preferred == "android"
     assert set(client.backends.values()) == {"android"}
+
+
+async def test_android_from_storage_uses_name_only_psidts_policy(
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = tmp_path / "storage_state.json"
+    stored_payload = json.dumps(
+        {
+            "cookies": [
+                {"name": "SID", "value": "sid", "domain": ".google.com", "path": "/"},
+                {
+                    "name": "HSID",
+                    "value": "hsid",
+                    "domain": ".google.com",
+                    "path": "/",
+                },
+                {
+                    "name": "SSID",
+                    "value": "ssid",
+                    "domain": ".google.com",
+                    "path": "/",
+                },
+                {
+                    "name": "__Secure-1PSIDTS",
+                    "value": "present-but-not-routable",
+                    "domain": ".google.com",
+                    "path": "/not-rotate-cookies",
+                },
+            ],
+            "origins": [],
+        }
+    )
+    storage.write_text(stored_payload, encoding="utf-8")
+    recovery = MagicMock(side_effect=AssertionError("Android entered PSIDTS recovery"))
+    poke = AsyncMock(side_effect=AssertionError("Android poked PSIDTS"))
+    web_ladder = AsyncMock(side_effect=AssertionError("Android entered Web auth recovery"))
+    merge = MagicMock(side_effect=AssertionError("Android persisted a cookie observation"))
+    monkeypatch.setattr(psidts_recovery, "load_with_recovery", recovery)
+    monkeypatch.setattr(auth_refresh, "_poke_session", poke)
+    monkeypatch.setattr(auth_refresh, "_fetch_tokens_with_exact_baseline", web_ladder)
+    monkeypatch.setattr(ProfileStore, "merge_cookie_observation", merge)
+    httpx_mock.add_response(
+        url="https://notebook.google.com/",
+        content=b'"SNlM0e":"csrf" "FdrFJe":"session"',
+        headers={"Set-Cookie": "SID=fresh; Domain=.google.com; Path=/"},
+    )
+
+    client = await NotebookLMClient.from_storage(path=str(storage), backend="android")._build()
+
+    assert client._android_runtime is not None
+    assert client._web_runtime is None
+    assert client.auth.cookie_jar is not None
+    assert client.auth.cookie_jar.get("SID", domain=".google.com", path="/") == "fresh"
+    assert storage.read_text(encoding="utf-8") == stored_payload
+    recovery.assert_not_called()
+    poke.assert_not_called()
+    web_ladder.assert_not_called()
+    merge.assert_not_called()

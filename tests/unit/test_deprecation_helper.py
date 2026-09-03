@@ -31,6 +31,16 @@ _FLAT_COOKIES_MESSAGE = (
     "siblings; use AuthTokens.jar for bootstrap cookie questions and managed NotebookLMClient "
     "request APIs for HTTP. It will be removed in v1.0."
 )
+_RPC_CALL_WEB_MESSAGE = (
+    "NotebookLMClient.rpc_call(...) is deprecated; use client.raw.call(...) on a Web-selected "
+    "client instead. It will be removed in v1.0."
+)
+_RPC_CALL_ANDROID_MESSAGE = (
+    "NotebookLMClient.rpc_call(...) is deprecated and crosses from Android into a lazy Web "
+    "compatibility transport; use client.raw.unary(...) or client.raw.unary_stream(...) for "
+    "Android methods, or client.raw.call(...) on a separate Web-selected client. It will be "
+    "removed in v1.0."
+)
 
 
 def _auth_tokens() -> AuthTokens:
@@ -46,6 +56,8 @@ def test_auth_storage_registry_is_exact_frozen_and_immutable() -> None:
         "auth_tokens_from_storage",
         "auth_tokens_sync_storage_construction",
         "auth_tokens_flat_cookies",
+        "client_rpc_call_web",
+        "client_rpc_call_android",
     )
     assert [field.name for field in fields(DeprecationSpec)] == [
         "key",
@@ -72,6 +84,16 @@ def test_auth_storage_registry_is_exact_frozen_and_immutable() -> None:
             "notebooklm.AuthTokens.jar",
             3,
         ),
+        "client_rpc_call_web": (
+            _RPC_CALL_WEB_MESSAGE,
+            "notebooklm.raw.WebRawAPI.call",
+            3,
+        ),
+        "client_rpc_call_android": (
+            _RPC_CALL_ANDROID_MESSAGE,
+            "notebooklm.raw.AndroidRawAPI.unary",
+            3,
+        ),
     }
     for key, spec in DEPRECATION_SPECS.items():
         message, replacement, stacklevel = expected[key]
@@ -80,7 +102,7 @@ def test_auth_storage_registry_is_exact_frozen_and_immutable() -> None:
             message=message,
             category=DeprecationWarning,
             replacement=replacement,
-            since="0.8.1",
+            since="0.9.0" if key.startswith("client_rpc_call") else "0.8.1",
             removal="1.0",
             stacklevel=stacklevel,
         )

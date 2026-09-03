@@ -30,7 +30,7 @@ _VALUE_FIELDS: dict[str, tuple[str, ...]] = {
     "InlineAuthSource": ("document",),
     "FileAuthSource": ("store", "profile"),
     "SessionSeed": ("live", "baseline"),
-    "LoadPolicy": ("allow_headless",),
+    "LoadPolicy": ("allow_headless", "heal_psidts"),
     "TokenAcquisition": (
         "csrf_token",
         "session_id",

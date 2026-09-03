@@ -178,9 +178,11 @@ option, and the `notebooklm-server --backend ...` option. Resolution is always:
 The preference is fixed when a client is constructed. `backend="android"`
 installs Android adapters for every public namespace; the read-only
 `client.backends` mapping consequently reports `android` for all eleven entries.
-The root `client.rpc_call(...)` escape hatch remains Web-specific because its
-`RPCMethod` values are Web `batchexecute` identifiers. Neither `auto` nor
-`mobile` is accepted.
+`client.raw` is selected with the backend: Web exposes `raw.call(...)`, while
+Android exposes `raw.unary(...)` and `raw.unary_stream(...)`. The deprecated root
+`client.rpc_call(...)` wrapper still accepts Web `RPCMethod` identifiers through
+v0.x; on Android its first call creates a Web compatibility sidecar. That
+sidecar never starts a keepalive task. Neither `auto` nor `mobile` is accepted.
 
 Selecting Android does not read credentials during construction. At
 `client.open()` / async-context entry it requires both the `android` extra and
@@ -188,7 +190,13 @@ a profile-backed `master_token.json`, from which it mints short-lived Android
 bearer credentials. Bootstrap that profile with
 `notebooklm login --master-token --account EMAIL`; a cookie-only storage file
 or `NOTEBOOKLM_AUTH_JSON` is not sufficient for Android. There is no public raw
-`master_token=` constructor argument.
+`master_token=` constructor argument. Android construction and normal open/close
+do not build the Web Kernel, run Web cookie recovery, persist Web cookies, or
+start Web keepalive. Android `from_storage(...)` uses a read-only, name-only
+cookie bootstrap: its homepage token observation stays in memory and it never
+pokes, heals, or merges profile cookies. Web-only constructor options (`cookie_saver`,
+`cookie_rotator`, `keepalive`, `keepalive_min_interval`, and `limits`) remain
+accepted for source compatibility but are ignored when Android is selected.
 
 | Variable | Description | Default |
 |----------|-------------|---------|

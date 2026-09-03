@@ -17,7 +17,7 @@ Tests cover:
 * A deprecation naming a *different* version does not trip the gate.
 * An allowlisted offender does not block; removing the offender makes the
   allowlist entry stale (rc 1).
-* The immutable registered-deprecation table has exactly its three literal keys, valid
+* The immutable registered-deprecation table has exactly its literal keys, valid
   semantic versions and structurally resolvable public replacements.
 * Registered specs and callsites are a one-to-one set; missing, stale,
   duplicate, dynamic, or lapsed entries fail closed without importing package
@@ -159,11 +159,21 @@ def _install_registered_tree(
         _spec_entry("auth_tokens_flat_cookies"),
         _spec_entry("auth_tokens_from_storage"),
         _spec_entry("auth_tokens_sync_storage_construction"),
+        _spec_entry(
+            "client_rpc_call_web",
+            replacement='"notebooklm.raw.WebRawAPI.call"',
+        ),
+        _spec_entry(
+            "client_rpc_call_android",
+            replacement='"notebooklm.raw.AndroidRawAPI.unary"',
+        ),
     ]
     calls = calls or [
         'warn_registered_deprecation("auth_tokens_flat_cookies")',
         'warn_registered_deprecation("auth_tokens_from_storage")',
         'warn_registered_deprecation("auth_tokens_sync_storage_construction")',
+        'warn_registered_deprecation("client_rpc_call_web")',
+        'warn_registered_deprecation("client_rpc_call_android")',
     ]
     (src / "__init__.py").write_text("from .client import NotebookLMClient\n", encoding="utf-8")
     (src / "client.py").write_text(
@@ -173,6 +183,20 @@ def _install_registered_tree(
                 @classmethod
                 def from_storage(cls):
                     return cls()
+            """
+        ),
+        encoding="utf-8",
+    )
+    (src / "raw.py").write_text(
+        dedent(
+            """
+            class WebRawAPI:
+                async def call(self):
+                    pass
+
+            class AndroidRawAPI:
+                async def unary(self):
+                    pass
             """
         ),
         encoding="utf-8",

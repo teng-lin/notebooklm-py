@@ -1704,7 +1704,7 @@ def test_client_refresh_auth_is_facade_only() -> None:
         node for node in ast.walk(public_tree) if isinstance(node, ast.AsyncFunctionDef)
     )
     helper_tree = ast.parse(
-        textwrap.dedent(inspect.getsource(NotebookLMClient._refresh_web_auth_for_epoch))
+        textwrap.dedent(inspect.getsource(NotebookLMClient._refresh_web_runtime_auth_for_epoch))
     )
     helper_function = next(
         node for node in ast.walk(helper_tree) if isinstance(node, ast.AsyncFunctionDef)

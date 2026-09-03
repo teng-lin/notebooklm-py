@@ -11,6 +11,14 @@ selection still follows this ADR's all-eleven, no-runtime-failover decision,
 but its installed namespace graph now has zero Web operation collaborators.
 See [`../android/web-compat-seam-closure.md`](../android/web-compat-seam-closure.md).
 
+**Implementation update (2026-09-03):** the selected typed namespace graph
+still never switches. The deprecated root `NotebookLMClient.rpc_call(...)` is
+the explicit, warned, 0.x-only exception from #2319: an Android client
+pre-registers an inert lifecycle proxy and materialises its separate Web
+compatibility sidecar only if that wrapper is called. The sidecar is not a typed
+operation fallback, starts no keepalive task, and is removed with the wrapper in
+v1.0.
+
 ## Context
 
 NotebookLM exposes both the browser-oriented batchexecute surface used by this

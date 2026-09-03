@@ -276,6 +276,44 @@ def compose_client_internals(
         async_client_factory=async_client_factory,
     )
     shared = build_collaborators(config, on_rpc_event=on_rpc_event)
+    web_runtime = build_web_runtime(
+        config=config,
+        auth=auth,
+        refresh_callback=refresh_callback,
+        shared=shared,
+        upload_timeout=upload_timeout,
+        max_concurrent_uploads=max_concurrent_uploads,
+        cookie_saver=cookie_saver,
+        cookie_rotator=cookie_rotator,
+        seams=seams,
+        composed=composed,
+    )
+    return ClientInternals(collaborators=shared, web_runtime=web_runtime)
+
+
+def build_web_runtime(
+    *,
+    config: ValidatedSessionConfig,
+    auth: AuthTokens,
+    refresh_callback: Callable[[int], Awaitable[AuthTokens]] | None,
+    shared: SharedRuntime,
+    upload_timeout: httpx.Timeout | None,
+    max_concurrent_uploads: int | None,
+    cookie_saver: CookieSaver | None,
+    cookie_rotator: CookieRotator | None,
+    seams: ClientSeams,
+    composed: ClientComposed | None = None,
+) -> WebRuntime:
+    """Build one web-only bundle around an existing neutral runtime.
+
+    Normal web clients reach this through :func:`compose_client_internals`.
+    The deprecated Android ``rpc_call`` compatibility sidecar also uses it,
+    but only after that call has been admitted by the root supervisor.  Keeping
+    this builder separate is what lets ordinary Android construction avoid a
+    ``Kernel``, cookie-persistence owner, executor, or HTTP client entirely.
+    """
+
+    composed = composed or ClientComposed()
     reqid, auth_coord, kernel, cookie_persistence, web_transport = _build_web_transport(
         config,
         auth=auth,
@@ -352,7 +390,7 @@ def compose_client_internals(
         executor=executor,
         source_uploader=source_uploader,
     )
-    return ClientInternals(collaborators=shared, web_runtime=web_runtime)
+    return web_runtime
 
 
 __all__ = [
@@ -360,6 +398,7 @@ __all__ = [
     "WebRuntime",
     "WiredMiddleware",
     "build_runtime_transport",
+    "build_web_runtime",
     "compose_client_internals",
     "wire_middleware_chain",
 ]

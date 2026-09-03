@@ -41,8 +41,13 @@ async with NotebookLMClient.from_storage(backend="android") as client:
 
 Web remains the default when no backend is selected. Explicit Android selection
 installs Android implementations for all 11 typed namespaces and performs no
-typed-operation fallback to Web. The advanced `client.rpc_call(...)` escape
-hatch remains Web-specific.
+typed-operation fallback to Web. Use the backend-selected `client.raw.unary(...)`
+or `client.raw.unary_stream(...)` for advanced Android calls. The deprecated
+`client.rpc_call(...)` wrapper still takes Web `RPCMethod` identifiers; its first
+Android use opens a separate Web compatibility sidecar through v0.x.
+The Android `from_storage(...)` bootstrap is read-only for cookies: it performs
+no PSIDTS poke/recovery or profile-cookie merge. A homepage cookie observation
+remains in memory until the deprecated sidecar takes ownership, if ever.
 
 `master_token.json` is a durable, full-account credential that can mint OAuth
 tokens for multiple Google services and survives a password change. Prefer a
@@ -185,8 +190,9 @@ bundle- and byte-contract-qualified; no live invitation was sent without a contr
 identity.
 
 `client.backends` describes the installed namespace adapters, so every entry is `android`. It does
-not reparameterize the advanced `client.rpc_call(...)` escape hatch, whose `RPCMethod` identifiers
-remain Web batchexecute-specific, or imply that every Android workflow is a single gRPC call.
+not reparameterize the deprecated `client.rpc_call(...)` wrapper, whose `RPCMethod` identifiers
+remain Web batchexecute-specific, or imply that every Android workflow is a single gRPC call. The
+wrapper's compatibility sidecar never starts Web keepalive and is removed with the wrapper in v1.0.
 
 ## Public Collections qualification
 
