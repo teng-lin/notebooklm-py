@@ -40,6 +40,8 @@ _PROJECT_ROOT = _TESTS_ROOT.parent
 _FIXTURES_DIR = _TESTS_ROOT / "fixtures"
 _BASELINES_DIR = _FIXTURES_DIR / "baselines"
 _BROWSER_ROOT = _PROJECT_ROOT / "src" / "notebooklm" / "_browser"
+_AUTH_ROOT = _PROJECT_ROOT / "src" / "notebooklm" / "_auth"
+_AUTH_FACADE = _PROJECT_ROOT / "src" / "notebooklm" / "auth.py"
 
 # Audit source-of-truth for the allowlist ``extra_public_names`` (mirrors
 # ``scripts/audit_public_api_compat.py``). The collected public surface for a
@@ -130,13 +132,15 @@ def _derive_cli_contract() -> dict[str, object]:
     return build_cli_contract()
 
 
+@lru_cache(maxsize=1)
 def _derive_auth_patch_sites() -> dict[str, object]:
-    """Stable path/line-free projection from the auth patch-site audit."""
+    """Stable full-joint projection from the auth patch-site audit."""
     from scripts.audit_auth_patch_sites import build_projection, collect_sites
 
     return build_projection(collect_sites(_TESTS_ROOT))
 
 
+@lru_cache(maxsize=1)
 def _derive_browser_patch_sites() -> dict[str, object]:
     """Stable projection from patch sites into the browser package."""
     from scripts.audit_auth_patch_sites import build_projection, collect_sites
@@ -148,6 +152,65 @@ def _derive_browser_patch_sites() -> dict[str, object]:
             package_dotted="notebooklm._browser",
         )
     )
+
+
+@lru_cache(maxsize=1)
+def _derive_auth_facade_patch_sites() -> dict[str, object]:
+    """Public-auth facade substitution projection (relocation sentinel)."""
+    from scripts.audit_auth_patch_sites import build_projection, collect_sites
+
+    return build_projection(
+        collect_sites(
+            _TESTS_ROOT,
+            _AUTH_FACADE,
+            package_dotted="notebooklm.auth",
+        )
+    )
+
+
+def _derive_auth_family_patch_scorecard() -> dict[str, object]:
+    from scripts.audit_auth_patch_sites import build_family_scorecard
+
+    return build_family_scorecard(
+        [
+            _derive_auth_patch_sites(),
+            _derive_browser_patch_sites(),
+            _derive_auth_facade_patch_sites(),
+        ]
+    )
+
+
+def _patch_projection_growth(previous: object, current: object) -> list[str]:
+    from scripts.audit_auth_patch_sites import projection_growth
+
+    return projection_growth(previous, current)
+
+
+def _auth_family_growth(previous: object, current: object) -> list[str]:
+    from scripts.audit_auth_patch_sites import family_scorecard_growth
+
+    return family_scorecard_growth(previous, current)
+
+
+@lru_cache(maxsize=1)
+def _derive_auth_shared_mutations() -> dict[str, object]:
+    from scripts.audit_auth_shared_mutations import build_projection, collect_mutations
+
+    return build_projection(
+        collect_mutations(
+            _TESTS_ROOT,
+            {
+                "notebooklm._auth": _AUTH_ROOT,
+                "notebooklm._browser": _BROWSER_ROOT,
+            },
+        )
+    )
+
+
+def _auth_shared_mutation_growth(previous: object, current: object) -> list[str]:
+    from scripts.audit_auth_shared_mutations import projection_growth
+
+    return projection_growth(previous, current)
 
 
 def _derive_auth_import_graph() -> dict[str, object]:
@@ -296,14 +359,40 @@ BASELINES: list[Baseline] = [
         path=_BASELINES_DIR / "auth_patch_sites.json",
         derive=_derive_auth_patch_sites,
         sort_keys=True,
-        description="Auth test patch sites aggregated by module, attribute, and idiom.",
+        growth_check=_patch_projection_growth,
+        description="Auth test patch sites with package/path/lexical-owner identity.",
     ),
     Baseline(
         name="browser_patch_sites",
         path=_BASELINES_DIR / "browser_patch_sites.json",
         derive=_derive_browser_patch_sites,
         sort_keys=True,
-        description="Browser test patch sites aggregated by module, attribute, and idiom.",
+        growth_check=_patch_projection_growth,
+        description="Browser test patch sites with package/path/lexical-owner identity.",
+    ),
+    Baseline(
+        name="auth_facade_patch_sites",
+        path=_BASELINES_DIR / "auth_facade_patch_sites.json",
+        derive=_derive_auth_facade_patch_sites,
+        sort_keys=True,
+        growth_check=_patch_projection_growth,
+        description="Public auth facade substitutions; a no-growth relocation sentinel.",
+    ),
+    Baseline(
+        name="auth_family_patch_scorecard",
+        path=_BASELINES_DIR / "auth_family_patch_scorecard.json",
+        derive=_derive_auth_family_patch_scorecard,
+        sort_keys=True,
+        growth_check=_auth_family_growth,
+        description="Combined auth/browser/facade scorecard retaining package identity.",
+    ),
+    Baseline(
+        name="auth_shared_mutations",
+        path=_BASELINES_DIR / "auth_shared_mutations.json",
+        derive=_derive_auth_shared_mutations,
+        sort_keys=True,
+        growth_check=_auth_shared_mutation_growth,
+        description="Auth/browser shared-owner mutations with lexical ownership.",
     ),
     Baseline(
         name="auth_import_graph",

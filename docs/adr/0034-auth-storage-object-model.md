@@ -2,8 +2,7 @@
 
 ## Status
 
-Accepted. The Phase 12C owner extraction is complete. This ADR amends
-[ADR-0033](0033-auth-consolidation-policy.md), whose consolidation removed cap-induced seams but left independently owned state, lifetimes, and reasons to change in `storage.py`.
+Accepted. The Phase 12C owner extraction is complete. This ADR amends [ADR-0033](0033-auth-consolidation-policy.md), whose consolidation removed cap-induced seams but left independently owned state, lifetimes, and reasons to change in `storage.py`.
 
 ## Context
 
@@ -11,11 +10,8 @@ At `87227de1` on 2026-08-08, `_auth/storage.py` is exactly 3,102 lines and owns 
 Its exact ceiling and slack lock mean additions red CI. Seven raw writers exist (six profile intents plus arbitrary-path `write_master_token`), transaction policies are 3 raise / 1 skip / 2 report,
 six physical shims remain, and the corrected patch ledger records 280 sites (171 public, 109 private; storage 27/26).
 
-The static graph has 26 direct modules / 13,745 lines and 68 scoped edges (54 module, 14
-function-local). There is no module-only SCC; all scopes produce
-`cookies, keepalive, master_token, psidts_recovery, storage`. A safe split must preserve opaque JSON,
-per-intent corruption and lock behavior, monkeypatch timing, and v0.x identity while shrinking the
-facade in every production stage.
+The static graph has 26 direct modules / 13,745 lines and 68 scoped edges (54 module, 14 function-local). There is no module-only SCC; all scopes produce `cookies, keepalive, master_token, psidts_recovery, storage`.
+A safe split must preserve opaque JSON, per-intent corruption and lock behavior, monkeypatch timing, and v0.x identity while shrinking the facade in every production stage.
 
 ## Decision
 
@@ -50,21 +46,15 @@ Extract by owned state/invariant, not headings. `A -> B` below means A may depen
 Cross-cutting rules are normative:
 
 - `ProfileDocument` is lossless; each operation owns its distinct corruption policy outside decode.
-- Account directives are closed `KeepAccount | ClearAccount | SetAccount`; adapters retain existing
-  `_AccountAction`, `KEEP_ACCOUNT`, and `CLEAR_ACCOUNT` identities. `BaselineState` is exactly
-  `UninitializedBaseline | ReadyBaseline | FailedBaseline`; `PromotionResult` exactly
-  `Promoted | AlreadyInBand | NoLegacyRecord | PromotionFailed`; `ResolvedAccount` exactly
-  `InBandAccount | LegacyAccount | NoAccount`.
+- Account directives are closed `KeepAccount | ClearAccount | SetAccount`; adapters retain existing `_AccountAction`, `KEEP_ACCOUNT`, and `CLEAR_ACCOUNT` identities.
+  `BaselineState` is exactly `UninitializedBaseline | ReadyBaseline | FailedBaseline`; `PromotionResult` exactly `Promoted | AlreadyInBand | NoLegacyRecord | PromotionFailed`; `ResolvedAccount` exactly `InBandAccount | LegacyAccount | NoAccount`.
 - Session establishment precedes token use. Loaded source and baseline stay paired. Background work
   has explicit close/drain ownership. Dependency-bottom modules have no upward or lazy facade rejoin.
 - Every later `storage.py` change is net-shrinking and lowers its exact LOC pin in the same diff.
   Compatibility lasts through v0.x; removal waits for an announced v1 runway.
 
-The first account seam is the unused dependency-bottom `profile_account.py` leaf. It defines
-immutable `ProfileAccount`, closed keep/clear/set directives, `DomainSelection`, and
-`StoredSession`; the session composes the canonical immutable `CookieJar`. Direct construction is
-permissive so a later compatibility adapter can preserve odd legacy values. Validation belongs to
-the named parsers:
+The first account seam is the unused dependency-bottom `profile_account.py` leaf. It defines immutable `ProfileAccount`, closed keep/clear/set directives, `DomainSelection`, and `StoredSession`; the session composes the canonical immutable `CookieJar`.
+Direct construction is permissive so a later compatibility adapter can preserve odd legacy values. Validation belongs to the named parsers:
 
 | Parser input / view | Typed result |
 |---|---|
@@ -75,13 +65,9 @@ the named parsers:
 | Non-mapping domain namespace | empty `DomainSelection` |
 | Mapping domain namespace | strings from a list become a defensive `frozenset`; optional is enabled only by exact `True` |
 
-`CARRY` is not a lossless namespace carrier. Existing remint/capture operations may preserve the
-entire raw `notebooklm` namespace, including unknown keys; those operations must not round-trip it
-through `ProfileAccount`. No production caller consumes the new leaf in this stage.
+`CARRY` is not a lossless namespace carrier. Existing remint/capture operations may preserve the entire raw `notebooklm` namespace, including unknown keys; those operations must not round-trip it through `ProfileAccount`. No production caller consumes the new leaf in this stage.
 
-The v0.x `AccountRecord`, `_AccountAction`, sentinels, `AccountArg`, writer signature/default, pickle
-path, facade/shim identities, and permissive direct construction remain owned by `storage.py`.
-The login compatibility boundary now applies this exact conversion table:
+The v0.x `AccountRecord`, `_AccountAction`, sentinels, `AccountArg`, writer signature/default, pickle path, facade/shim identities, and permissive direct construction remain owned by `storage.py`. The login compatibility boundary now applies this exact conversion table:
 
 | Legacy runtime value | Internal directive |
 |---|---|
@@ -201,6 +187,19 @@ The resulting graph is 41 modules / 15,898 lines / 142 edges (130 module + 12 lo
 Phase 11B makes `MasterTokenFile` the one-read raw/typed file owner and sole token-commit caller; 11C moves exchange/mint and the raw RotateCookies wire into `MintService`; 11D moves bootstrap/re-mint/missing-storage policy into `MasterTokenBootstrapper`. Phase 12A introduces the one-shot cold coordinator; 12B gives refresh one paired live/SameSite baseline and one typed store merge. Phase 12C completes ownership: `SingleFlight`, `ColdRecoveryState`, and `RotationState` own process state; the coordinator owns the sole L2.5/L3/L4 bodies; PSIDTS recovery uses injected pure loaders, typed document/CAS, and `ProfileStore`; dependency-bottom values own `MasterTokenError`, `Account`, and the repair result; `AccountRepairService` owns one repair. The graph is 40 modules / 15,237 lines / 128 edges (117 module + 11 local), with both SCC sets empty. Public savers, facade values/errors, module adapters, raw keepalive views, logs, traceback/error identity, cancellation, and runtime injection seams remain compatible. Phase 13D preserves that v0.x behavior while announcing the v1 removal of the two `AuthTokens` entry points that independently own storage loading; immutable specs and an import-free checker keep their warning text, targets, and callsites synchronized. Phase B0c later generalizes only the OAuth step behind frozen `OAuthClientSpec` and `MintedOAuthToken` values: the web adapter supplies its unchanged Chromecast identity, optional server expiry remains unknown when absent or malformed, and the source guard pins one production `perform_oauth` call.
 
 The compatibility inventory is explicit:
+
+| Documented late-bound source seam | Focused characterization node | Category | Removal decision / milestone |
+|---|---|---|---|
+| `_auth.refresh.RefreshCmdDeps.runner`, `.flock`, `.lock_path` (`_run_refresh_cmd`, `_keepalive._file_lock_try_exclusive`, `_auth_paths._refresh_lock_path`) | `tests/unit/test_refresh_lock_registry.py::TestFlockLoserWaitsThenReloads::test_leader_body_loser_waits_no_subprocess_no_bump` | `compat_adapter` | Retain through v0.x; remove only when the refresh-command facade and its partial-dependency default are retired at v1. |
+| `_auth.account._extract_active_email_for_repair` | `tests/unit/test_auth_account_repair_service.py::test_extractor_runs_before_handled_region_and_still_scrubs` | `compat_adapter` | Retain until the network adapter constructs `AccountRepairService` without the v0.x account wrapper; no earlier capture-at-import rewrite. |
+| `_auth.cookies.build_httpx_cookies_from_storage`, `_build_httpx_cookies_from_storage_strict` → `_auth.psidts_recovery.load_with_recovery` | `tests/unit/test_auth_load_composition.py::TestBothWrappersUseTheOneComposition::test_jar_wrapper_delegates`, `tests/unit/test_auth_load_composition.py::TestBothWrappersUseTheOneComposition::test_passive_jar_loader_selects_name_only` | `compat_adapter` | Remove with the two legacy storage-loading entry points in the announced next-major `AuthTokens` retirement. |
+| `_auth.psidts_recovery.validate_with_recovery` → `validate` / `heal`, plus `recover_psidts_in_memory` | `tests/unit/test_auth_validate_heal_split.py::TestWrapperComposition::test_post_heal_recheck_is_presence_only` | `compat_adapter` | Retain while v0.x CLI browser extraction calls the wrapper; delete wrapper and characterization together at v1. |
+| `_auth.keepalive._STORAGE_LOCKS`, `_file_lock`, `_rotation_lock_path` and the public-facade identity views `_POKE_STATE_LOCK`, `_POKE_LOCKS_BY_LOOP`, `_LAST_POKE_ATTEMPT_MONOTONIC` | `tests/unit/test_auth_storage_lock.py::test_process_default_and_module_ownership_are_identity_stable`, `tests/unit/test_auth_keepalive.py::TestPokeConcurrencyThrottling::test_rotation_lock_path_is_sibling_of_storage` | `compat_adapter` | Raw state views remain only for v0.x compatibility and are removed with the next-major facade; tests must use `RotationState`/`StorageLockManager` afterward. |
+| `_auth.master_token.generate_android_id` and `_auth.cookies._build_httpx_cookies_from_storage_strict` as call-time `MasterTokenBootstrapper` bridges | `tests/unit/test_auth_master_token_bootstrap.py::test_oauth_call_time_bridges_observe_midflight_rebinding`, `tests/unit/test_auth_master_token_bootstrap.py::test_strict_loader_bridge_observes_midflight_rebinding` | `compat_adapter` | Retain through v0.x master-token wrappers; inject the concrete service directly after their v1 removal. |
+| Public `notebooklm.auth` storage/account/mint/token wrappers and result/error identities | `tests/unit/test_auth_storage.py::test_load_auth_from_storage_lives_in_private_module`, `tests/unit/test_auth_master_token_bootstrap.py::test_public_oauth_exchange_base_exception_traceback_does_not_retain_oauth_token` | `compat_adapter` | Preserve names, signatures, result/error identity, and call-time canonical-home lookup through v0.x; remove only in the announced v1 facade retirement. |
+| Browser runtime facade (`_BrowserFacadeIO`, `_browser_*` call-time loaders) | `tests/unit/test_auth_browser_facade.py::test_capture_delegates_plan_and_projects_page_html`, `tests/unit/test_auth_browser_facade.py::test_oauth_capture_delegates_and_scrubs_facade_frame` | `compat_adapter` | Retain until the public auth facade stops owning browser-runtime dispatch at v1; concrete browser owner tests remain. |
+
+These rows are the complete exception list for documented call-time lookup. A new source comment declaring another patch/lookup seam must add its exact row and characterization node here in the same change; underscore naming alone is not an exception. Owner behavior uses extracted services directly; remaining adapter probes are frozen by full joint-row policy until the stated v1 retirement or owner migration.
 
 - Profile writers: `merge_cookie_delta`, `update_account_metadata`, `clear_in_band_account`, `replace_from_remint`, `replace_from_login`, `persist_minted_jar`; arbitrary: `write_master_token`.
 - Cookie adapters: public `save_cookies_to_storage`, snapshot helpers, and compatibility

@@ -6,6 +6,26 @@ Accepted (#2156). Amended by
 [ADR-0034](0034-auth-storage-object-model.md), which preserves this record's consolidation safety
 boundary while extracting independently owned state and lifecycles from the consolidated facade.
 
+**Amended 2026-09-03 (test-patch coupling).** The old patch-site totals were an
+aggregate diagnostic, not a migration-safe invariant. The registered schema-v2
+auth/browser/facade projections now retain package, target, test path, lexical
+owner, owner kind, idiom, and count. A combined scorecard and shared-lifetime
+mutation projection reject package relocation, helper hiding, direct/item/bulk
+namespace mutation, and displacement to classes or process-default owners.
+Non-underscore is a lexical spelling classification, not a statement that the
+target is supported API; reviewers must read total and private-name counts
+together.
+
+The PR-1 schema-v2 measurement is 244 `_auth` sites (145 private-name, 99
+non-underscore), 66 `_browser` sites (17/49), and 526 public-facade sites
+(0/526): 836 family sites total, 162 private-name, 97 distinct package/target
+identities, 96 files, 714 lexical owners, and 6 direct assignments. This is one
+site above the legacy `_auth` projection because the old collector silently
+ignored a real patch whose attribute was a module-level string constant; the
+fail-closed collector expands that constant. The shared-lifetime companion
+projection starts at 188 operations (32 private-name, 46 in fixture/helper
+bodies, zero direct assignments).
+
 **Amended 2026-08-12 (module-size budget raise):** `MODULE_SIZE_BUDGET` moved 1000 → 1500 under
 ADR-0008. This ADR's sanctioned-merge machinery is unaffected in substance, but one mechanical
 consequence needed handling: the shrink-lock guarantee below was carried by
