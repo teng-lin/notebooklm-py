@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 import traceback
 from pathlib import Path
 from typing import Any
@@ -225,14 +226,34 @@ def _assert_library_traceback_is_secret_free(
     assert error.cause is None
     assert error.__cause__ is None
     assert error.__context__ is None
+
+    inspected: list[str] = []
+    leaked_secret_in: list[str] = []
+    leaked_object_in: list[str] = []
     for frame, _line in traceback.walk_tb(error.__traceback__):
-        if "/src/notebooklm/" not in frame.f_code.co_filename:
+        # Normalise separators before matching: ``co_filename`` uses backslashes
+        # on Windows, where a "/"-joined substring matched nothing and silently
+        # scanned zero frames — disarming this whole assertion. ``PurePath``
+        # does NOT help here, because it only treats "\\" as a separator when
+        # the test itself runs on Windows.
+        source_path = frame.f_code.co_filename.replace("\\", "/")
+        if "/src/notebooklm/" not in source_path:
             continue
-        frame_text = repr(frame.f_locals)
-        for secret in secrets:
-            assert secret not in frame_text
-        for raw in raw_objects:
-            assert raw not in frame.f_locals.values()
+        inspected.append(frame.f_code.co_name)
+        locals_text = repr(frame.f_locals)
+        if any(secret in locals_text for secret in secrets):
+            leaked_secret_in.append(frame.f_code.co_name)
+        if any(raw in frame.f_locals.values() for raw in raw_objects):
+            leaked_object_in.append(frame.f_code.co_name)
+
+    # Without this the helper passes vacuously when the traceback shape changes
+    # (or on a platform where the path match fails), which is exactly how the
+    # Windows bug hid.
+    assert inspected, "no notebooklm frame was inspected; the scan proved nothing"
+    # Report frame NAMES, never ``repr(f_locals)`` — this module's frames hold
+    # the capability URL and bearer, and a failure message must not print them.
+    assert not leaked_secret_in, f"secret survived in library frames: {leaked_secret_in}"
+    assert not leaked_object_in, f"raw object survived in library frames: {leaked_object_in}"
 
 
 @pytest.mark.asyncio
@@ -1088,3 +1109,516 @@ async def test_close_cancellation_waits_for_cleanup_and_precedes_normal_close_fa
         await close_task
     assert service._clients == set()
     assert service._tasks == set()
+
+
+class ExitFailingContext(FakeResponseContext):
+    """A response context whose ``__aexit__`` fails after the body is consumed."""
+
+    def __init__(self, outcome: FakeResponse | BaseException, error: BaseException) -> None:
+        super().__init__(outcome)
+        self.error = error
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        self.exits += 1
+        raise self.error
+
+
+class ExitFailingClient(FakeClient):
+    def __init__(self, outcomes: list[FakeResponse | BaseException], *, error: BaseException):
+        super().__init__(outcomes)
+        self.error = error
+
+    def stream(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str],
+        follow_redirects: bool,
+    ) -> FakeResponseContext:
+        self.requests.append((method, url, dict(headers), follow_redirects))
+        context = ExitFailingContext(self.outcomes.pop(0), self.error)
+        self.contexts.append(context)
+        return context
+
+
+class StreamRefusingClient(FakeClient):
+    """``stream`` raises before returning a context manager to enter."""
+
+    def __init__(self, error: BaseException) -> None:
+        super().__init__([])
+        self.error = error
+
+    def stream(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str],
+        follow_redirects: bool,
+    ) -> FakeResponseContext:
+        self.requests.append((method, url, dict(headers), follow_redirects))
+        raise self.error
+
+
+class CloseFailingClient(FakeClient):
+    def __init__(self, outcomes: list[FakeResponse | BaseException], *, error: BaseException):
+        super().__init__(outcomes)
+        self.error = error
+
+    async def aclose(self) -> None:
+        self.closed += 1
+        raise self.error
+
+
+async def _unopened_service(client: Any) -> AndroidAssetDownloadService:
+    """A service whose ``open`` was never called, as after a failed startup.
+
+    The supervisor behind it *is* accepting, so the service's own
+    ``_active_epoch`` guard is the only thing standing in front of a transfer.
+    """
+
+    supervisor = _supervisor()
+    supervisor.set_bound_loop(asyncio.get_running_loop())
+    supervisor.reset_after_open()
+    supervisor.prepare_generation(1)
+    supervisor.start_accepting(1)
+    return AndroidAssetDownloadService(
+        bearer_provider=FakeBearer(),  # type: ignore[arg-type]
+        supervisor=supervisor,
+        client_factory=lambda: client,
+    )
+
+
+# ---------------------------------------------------------------------------
+# lifecycle fencing
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_transfer_before_open_is_refused_instead_of_dispatching(tmp_path: Path) -> None:
+    """``_active_epoch`` is the only proof a resource generation exists.
+
+    Dispatching without one would build a client the close sweep never learns
+    about, leaking a live connection past ``close_resources``.
+    """
+    client = FakeClient([_png_response()])
+    service = await _unopened_service(client)
+
+    with pytest.raises(RuntimeError, match="Client not initialized"):
+        await service.download_url(INITIAL, str(tmp_path / "out.png"))
+
+    assert client.requests == []
+    assert service._clients == set()
+
+
+@pytest.mark.asyncio
+async def test_a_transfer_with_no_owning_task_is_refused_before_dispatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Forced close cancels ``self._tasks``; an unregistered transfer is unstoppable.
+
+    Rather than run a transfer the close sweep cannot reach, the service
+    refuses it.
+    """
+    client = FakeClient([_png_response()])
+    service, bearer, _ = await _open_service(client)
+    monkeypatch.setattr(assets_module.asyncio, "current_task", lambda: None)
+
+    with pytest.raises(RuntimeError, match="no owning task"):
+        await service.download_url(INITIAL, str(tmp_path / "out.png"))
+
+    assert client.requests == []
+    assert bearer.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("closing", "active_epoch", "expected"),
+    [
+        pytest.param(True, 1, 1, id="closing-fence"),
+        pytest.param(False, 2, 1, id="retired-generation"),
+        pytest.param(False, None, 1, id="already-closed"),
+    ],
+)
+async def test_a_retired_or_closing_generation_fails_the_epoch_fence(
+    closing: bool,
+    active_epoch: int | None,
+    expected: int,
+) -> None:
+    """This fence sits between every hop, so it must reject on either condition.
+
+    A transfer that survived it would keep writing into a destination the next
+    client generation already believes it owns.
+    """
+    service, _, _ = await _open_service(FakeClient([]))
+    service._closing = closing
+    service._active_epoch = active_epoch
+
+    with pytest.raises(RuntimeError, match="retired resource generation") as raised:
+        service._assert_epoch(expected)
+
+    assert f"expected={expected}" in str(raised.value)
+    assert f"active={active_epoch}" in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_the_matching_open_generation_passes_the_epoch_fence() -> None:
+    """Guards the test above from passing because the fence rejects everything."""
+    service, _, _ = await _open_service(FakeClient([]), epoch=4)
+
+    assert service._assert_epoch(4) is None
+
+
+@pytest.mark.asyncio
+async def test_closing_a_service_that_never_opened_is_a_no_op() -> None:
+    """Client startup can fail between constructing the service and ``open``.
+
+    The lifecycle still runs both close phases on it, and neither may trip the
+    bound-loop assertion on a service that has no loop yet.
+    """
+    service = await _unopened_service(FakeClient([]))
+
+    await service.prepare_close()
+    await service.close_resources()
+
+    assert service._closing is True
+    assert service._bound_loop is None
+
+
+@pytest.mark.asyncio
+async def test_prepare_close_never_cancels_the_task_that_called_it() -> None:
+    """A transfer may close the client it is running under.
+
+    Cancelling the caller here would turn an orderly close into a
+    ``CancelledError`` raised inside the very transfer requesting it.
+    """
+    service, _, _ = await _open_service(FakeClient([]))
+
+    async def _never() -> None:
+        await asyncio.Event().wait()
+
+    bystander = asyncio.create_task(_never())
+    service._tasks.add(bystander)
+
+    async def _closes_from_inside() -> str:
+        service._tasks.add(asyncio.current_task())  # type: ignore[arg-type]
+        await service.prepare_close()
+        return "survived"
+
+    assert await asyncio.create_task(_closes_from_inside()) == "survived"
+
+    # ``Task.cancelling()`` is 3.11+, and ``cancelled()`` is still False right
+    # after ``cancel()`` because the task has not been resumed yet. Awaiting is
+    # version-agnostic AND stronger: the previous form cancelled the bystander
+    # itself first, so it passed even if ``prepare_close`` had cancelled nothing.
+    # If the cancel never arrived, ``_never()`` waits forever and the timeout
+    # fails the test rather than hanging it.
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(bystander, timeout=5)
+
+
+@pytest.mark.asyncio
+async def test_a_close_failure_alone_is_reported_as_a_close_failure() -> None:
+    """Distinct from the cancellation case: nothing cancels this close.
+
+    Swallowing it would let a transport that never released its socket look
+    like a clean shutdown.
+    """
+    client = CloseFailingClient([], error=OSError("socket already gone"))
+    service, _, _ = await _open_service(client)
+    service._clients.add(client)
+    await service.prepare_close()
+
+    with pytest.raises(RuntimeError, match="Android asset transport close failed"):
+        await service.close_resources()
+
+    assert client.closed == 1
+    assert service._clients == set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error", [KeyboardInterrupt(), SystemExit()], ids=["keyboard-interrupt", "system-exit"]
+)
+async def test_an_interpreter_exit_during_close_outranks_a_close_failure(
+    error: BaseException,
+) -> None:
+    """Ctrl-C during shutdown must reach the interpreter, not become a RuntimeError."""
+    interrupting = CloseFailingClient([], error=error)
+    also_failing = CloseFailingClient([], error=OSError("socket already gone"))
+    service, _, _ = await _open_service(interrupting)
+    service._clients.update({interrupting, also_failing})
+    await service.prepare_close()
+
+    with pytest.raises(type(error)):
+        await service.close_resources()
+
+    assert service._clients == set()
+    assert service._tasks == set()
+
+
+@pytest.mark.asyncio
+async def test_a_second_close_cancellation_does_not_displace_the_first() -> None:
+    """Repeated Ctrl-C must not restart the wait or relabel the cancellation.
+
+    The sweep is shielded, so every extra cancel lands while it is still
+    running; only the first is kept and republished once it settles.
+    """
+    client = BlockingCloseClient()
+    service, _, _ = await _open_service(client)
+    service._clients.add(client)
+    await service.prepare_close()
+
+    close_task = asyncio.create_task(service.close_resources())
+    await client.close_started.wait()
+    close_task.cancel("first")
+    await asyncio.sleep(0)
+    close_task.cancel("second")
+    await asyncio.sleep(0)
+    assert not close_task.done(), "the shielded sweep still runs"
+
+    client.close_release.set()
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await close_task
+
+    # Python 3.10 drops the optional cancellation message when a cancel is
+    # caught and republished through shielded cleanup; 3.11+ preserves it.
+    # Neither may REPLACE it with the later message, which is the contract.
+    assert raised.value.args == (("first",) if sys.version_info >= (3, 11) else ())
+    assert raised.value.args != ("second",)
+    assert client.closed == 1
+
+
+# ---------------------------------------------------------------------------
+# transfer-worker failure arms
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error", [KeyboardInterrupt(), SystemExit()], ids=["keyboard-interrupt", "system-exit"]
+)
+async def test_an_interpreter_exit_from_the_client_factory_is_not_a_transport_failure(
+    tmp_path: Path,
+    error: BaseException,
+) -> None:
+    """Ctrl-C while building the transport must not be reported as a bad URL/host."""
+
+    def interrupted_factory() -> Any:
+        raise error
+
+    supervisor = _supervisor()
+    loop = asyncio.get_running_loop()
+    supervisor.set_bound_loop(loop)
+    supervisor.reset_after_open()
+    supervisor.prepare_generation(1)
+    supervisor.start_accepting(1)
+    service = AndroidAssetDownloadService(
+        bearer_provider=FakeBearer(),  # type: ignore[arg-type]
+        supervisor=supervisor,
+        client_factory=interrupted_factory,
+    )
+    await service.open(loop, 1)
+
+    with pytest.raises(type(error)):
+        await service.download_url(INITIAL, str(tmp_path / "out.png"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error", [KeyboardInterrupt(), SystemExit()], ids=["keyboard-interrupt", "system-exit"]
+)
+async def test_an_interpreter_exit_mid_stream_is_not_downgraded_to_a_bounded_failure(
+    tmp_path: Path,
+    error: BaseException,
+) -> None:
+    """The catch-all below it turns everything into ``code=transport``.
+
+    Ctrl-C has to be re-raised ahead of it, and the partial file still removed.
+    """
+    response = FakeResponse(200, headers={"content-type": "image/png"}, chunks=[PNG], error=error)
+    client = FakeClient([response])
+    service, _, _ = await _open_service(client)
+    destination = tmp_path / "interrupted.png"
+
+    with pytest.raises(type(error)):
+        await service.download_url(INITIAL, str(destination))
+
+    assert not destination.exists()
+    assert list(tmp_path.glob(".*.part")) == []
+
+
+@pytest.mark.asyncio
+async def test_a_stream_that_never_opens_still_closes_the_hop_cleanly(tmp_path: Path) -> None:
+    """``stream`` can raise before yielding a context there is anything to exit.
+
+    The ``finally`` must skip ``__aexit__`` rather than call it on ``None``,
+    which would replace the bounded failure with an ``AttributeError``.
+    """
+    client = StreamRefusingClient(httpx.ConnectError(f"refused {INITIAL} {BEARER}"))
+    service, _, _ = await _open_service(client)
+
+    with pytest.raises(ArtifactDownloadError) as raised:
+        await service.download_url(INITIAL, str(tmp_path / "out.png"))
+
+    assert "code=transport" in str(raised.value)
+    assert "host=lh3.googleusercontent.com" in str(raised.value)
+    assert len(client.requests) == 1
+    assert client.closed == 1
+
+
+@pytest.mark.asyncio
+async def test_a_failing_response_close_does_not_fail_a_completed_transfer(
+    tmp_path: Path,
+) -> None:
+    """The bytes are already fsynced and renamed; the socket teardown is advisory."""
+    client = ExitFailingClient([_png_response()], error=httpx.ReadError("close after body"))
+    service, _, _ = await _open_service(client)
+    destination = tmp_path / "exit-failure.png"
+
+    assert await service.download_url(INITIAL, str(destination)) == str(destination)
+
+    assert destination.read_bytes() == PNG
+    assert client.contexts[0].exits == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error", [KeyboardInterrupt(), SystemExit()], ids=["keyboard-interrupt", "system-exit"]
+)
+async def test_an_interpreter_exit_closing_the_response_is_not_swallowed(
+    tmp_path: Path,
+    error: BaseException,
+) -> None:
+    """The arm beside it discards every other ``__aexit__`` failure."""
+    client = ExitFailingClient([_png_response()], error=error)
+    service, _, _ = await _open_service(client)
+    destination = tmp_path / "published.png"
+
+    with pytest.raises(type(error)):
+        await service.download_url(INITIAL, str(destination))
+
+    assert destination.read_bytes() == PNG, "the file was already published"
+
+
+@pytest.mark.asyncio
+async def test_a_failing_client_close_does_not_fail_a_completed_transfer(
+    tmp_path: Path,
+) -> None:
+    """A transport that cannot close still leaves the caller a valid file."""
+    client = CloseFailingClient([_png_response()], error=OSError("socket already gone"))
+    service, _, _ = await _open_service(client)
+    destination = tmp_path / "close-failure.png"
+
+    assert await service.download_url(INITIAL, str(destination)) == str(destination)
+
+    assert destination.read_bytes() == PNG
+    assert client.closed == 1
+    assert service._clients == set(), "the failed client is still untracked"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error", [KeyboardInterrupt(), SystemExit()], ids=["keyboard-interrupt", "system-exit"]
+)
+async def test_an_interpreter_exit_closing_the_client_is_not_swallowed(
+    tmp_path: Path,
+    error: BaseException,
+) -> None:
+    """Ctrl-C during the per-transfer client close must reach the interpreter."""
+    client = CloseFailingClient([_png_response()], error=error)
+    service, _, _ = await _open_service(client)
+
+    with pytest.raises(type(error)):
+        await service.download_url(INITIAL, str(tmp_path / "out.png"))
+
+    assert client.closed == 1
+
+
+@pytest.mark.asyncio
+async def test_an_undeletable_partial_file_does_not_replace_the_real_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cleanup of the ``.part`` file is best effort.
+
+    Letting its ``OSError`` escape would hide ``code=signature`` -- the reason
+    the transfer actually failed -- behind an unactionable filesystem error.
+    """
+
+    def _refuse_unlink(self: Path, **_kwargs: Any) -> None:
+        raise OSError("read-only filesystem")
+
+    client = FakeClient(
+        [FakeResponse(200, headers={"content-type": "image/png"}, chunks=[b"not a png"])]
+    )
+    service, _, _ = await _open_service(client)
+    monkeypatch.setattr(assets_module.Path, "unlink", _refuse_unlink)
+
+    with pytest.raises(ArtifactDownloadError, match="code=signature"):
+        await service.download_url(INITIAL, str(tmp_path / "out.png"))
+
+    assert list(tmp_path.glob(".*.part")) != [], "the undeletable partial really did survive"
+
+
+# ---------------------------------------------------------------------------
+# streaming and bearer edge cases
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_empty_chunks_mid_stream_do_not_end_the_transfer(tmp_path: Path) -> None:
+    """A keep-alive frame arrives as a zero-length chunk.
+
+    Treating it as the end of the body -- or as an ``empty`` failure -- would
+    truncate a perfectly good download.
+    """
+    response = FakeResponse(
+        200,
+        headers={"content-type": "image/png"},
+        chunks=[b"", PNG[:4], b"", PNG[4:], b""],
+    )
+    client = FakeClient([response])
+    service, _, _ = await _open_service(client)
+    destination = tmp_path / "keepalive.png"
+
+    assert await service.download_url(INITIAL, str(destination)) == str(destination)
+
+    assert destination.read_bytes() == PNG
+
+
+@pytest.mark.asyncio
+async def test_a_capability_host_outside_the_bearer_set_is_never_sent_a_bearer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The bearer set and the capability-entry set are deliberately separate.
+
+    Today they coincide, so this arm has no production caller; the moment a
+    capability host is added that Google does not accept a bearer for, sending
+    one there would leak the credential to that host.
+    """
+    policy = assets_module._REPRESENTATION_POLICIES["infographic"]
+    progressive_host = "rr5---sn-ab5sznzy.googlevideo.com"
+    monkeypatch.setitem(
+        assets_module._REPRESENTATION_POLICIES,
+        "infographic",
+        assets_module._RepresentationPolicy(
+            artifact_type=policy.artifact_type,
+            formats=policy.formats,
+            max_bytes=policy.max_bytes,
+            capability_initial_hosts=frozenset({progressive_host}),
+        ),
+    )
+    url = f"https://{progressive_host}/image.png?cap=progressive-secret"
+    client = FakeClient([_png_response()])
+    service, bearer, _ = await _open_service(client)
+    destination = tmp_path / "no-bearer.png"
+
+    assert await service.download_url(url, str(destination)) == str(destination)
+
+    assert bearer.calls == [], "no credential is even minted for a non-bearer host"
+    assert client.requests[0][2] == {}
+    assert client.requests[0][1] == f"{url}&alr=yes"

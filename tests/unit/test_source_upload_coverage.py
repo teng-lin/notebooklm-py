@@ -10,6 +10,8 @@ behaviour rather than tautologies.
 from __future__ import annotations
 
 import asyncio
+import io
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
@@ -21,8 +23,11 @@ import httpx
 import pytest
 
 import notebooklm._web.sources._upload_decode as _upload_decode_mod
+import notebooklm._web.sources.drive_import as drive_import_mod
 from notebooklm._app.errors import ErrorCategory, classify
 from notebooklm._app.source_batch import batch_item_is_fatal
+from notebooklm._curl_cffi_transport import CurlCffiAsyncClient
+from notebooklm._types.enums import SourceStatus
 from notebooklm._web.sources.upload import (
     SourceUploadPipeline,
     _build_invalid_argument_source_limit_hint,
@@ -35,6 +40,7 @@ from notebooklm._web.sources.upload import (
     _register_response_shape_label,
     _resolve_upload_content_type,
     _validate_resumable_upload_url,
+    module_logger,
 )
 from notebooklm.exceptions import (
     AuthError,
@@ -391,10 +397,13 @@ def _make_pipeline(
     supervisor: Any | None = None,
     async_client_factory: Any | None = None,
     get_source_limit: Any | None = None,
+    auth: Any | None = None,
+    record_upload_queue_wait: Any | None = None,
 ) -> SourceUploadPipeline:
-    auth = MagicMock()
-    auth.authuser = 0
-    auth.account_email = None
+    if auth is None:
+        auth = MagicMock()
+        auth.authuser = 0
+        auth.account_email = None
     pipeline = SourceUploadPipeline(
         rpc=rpc or MagicMock(),
         supervisor=supervisor or _Supervisor(),
@@ -402,6 +411,7 @@ def _make_pipeline(
         auth=auth,
         async_client_factory=async_client_factory,
         get_source_limit=get_source_limit,
+        record_upload_queue_wait=record_upload_queue_wait,
     )
     pipeline._active_epoch = 1
     pipeline._closing = False
@@ -910,3 +920,1070 @@ class TestUploadFileStreamingFileObject:
                 expected_epoch=1,
             )
         assert file_obj.closed
+
+
+# =============================================================================
+# Transport registry: epoch fencing, snapshots, and teardown settlement
+# =============================================================================
+def test_live_cookies_public_accessor_hands_out_the_upload_leg_jar() -> None:
+    """``live_cookies`` is the seam ``add_drive_file`` authenticates through (#1884).
+
+    It must hand back the *same* jar object the upload leg posts with — a copy
+    would go stale the moment keepalive rotation refreshes a cookie, which is
+    the whole reason the Drive download does not read the on-disk cookies.
+    """
+    kernel = _Kernel()
+    pipeline = _make_pipeline(kernel=kernel)
+
+    assert pipeline.live_cookies(1) is kernel.jar
+    kernel.get_http_client.assert_called_once_with(expected_epoch=1)
+
+
+def test_live_cookies_public_accessor_enforces_the_same_epoch_fence() -> None:
+    """The public accessor must not be a fence bypass for the private one.
+
+    ``add_drive_file`` runs a long server-side download; if the client is closed
+    and reopened underneath it, the stale workflow must not read the replacement
+    transport's cookies.
+    """
+    kernel = _Kernel()
+    pipeline = _make_pipeline(kernel=kernel)
+    pipeline._closing = True
+
+    with pytest.raises(RuntimeError, match="upload generation is retired"):
+        pipeline.live_cookies(1)
+
+    kernel.get_http_client.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_snapshot_transport_resources_reports_nothing_without_a_registry_lock() -> None:
+    """A pipeline that never opened (or already closed) has no lock to take.
+
+    Reading the registries without the lock would race a late child
+    registration, so the snapshot must report *nothing* rather than an
+    unsynchronised view — and must leave the registries themselves untouched
+    for ``close_resources``' own ``finally`` to clear.
+    """
+    pipeline = _make_pipeline()
+    client = MagicMock(spec=httpx.AsyncClient)
+    pipeline._transport_clients.add(client)
+    task = asyncio.create_task(asyncio.sleep(0))
+    pipeline._transport_tasks.add(task)
+    pipeline._registry_lock = None
+
+    assert await pipeline._snapshot_transport_resources() == ([], [])
+    assert pipeline._transport_clients == {client}
+    assert pipeline._transport_tasks == {task}
+
+    await task
+
+
+@pytest.mark.asyncio
+async def test_close_resources_raises_the_client_failure_after_clearing_registries() -> None:
+    """A failed ``aclose`` surfaces, but only *after* the registries are dropped.
+
+    ``close_resources`` is the partial-open / rollback path: if the raise
+    escaped before the ``finally``, a retried close would re-settle handles the
+    first attempt already tore down.
+    """
+    pipeline = _make_pipeline()
+    failure = OSError("socket teardown failed")
+    client = MagicMock(spec=httpx.AsyncClient)
+    client.aclose = AsyncMock(side_effect=failure)
+    pipeline._transport_clients.add(client)
+
+    with pytest.raises(OSError) as exc_info:
+        await pipeline.close_resources()
+
+    assert exc_info.value is failure
+    client.aclose.assert_awaited_once()
+    assert pipeline._transport_clients == set()
+    assert pipeline._transport_tasks == set()
+    assert pipeline._registry_lock is None
+    assert pipeline._closing is True
+    assert pipeline._active_epoch is None
+
+
+@pytest.mark.parametrize(
+    "exc_type",
+    [KeyboardInterrupt, SystemExit, RuntimeError],
+    ids=["keyboard-interrupt", "system-exit", "ordinary-failure"],
+)
+@pytest.mark.asyncio
+async def test_close_clients_keeps_the_first_failure_and_still_closes_the_rest(
+    exc_type: type[BaseException],
+) -> None:
+    """One client's teardown failure must not skip a sibling, nor overwrite the first.
+
+    Both slots (``process_exit`` and ``first_failure``) latch the earliest
+    value; a later failure of the same kind is discarded so the reported cause
+    is the one that actually started the teardown cascade.
+    """
+    first, second = exc_type("first"), exc_type("second")
+    first_client = MagicMock(spec=httpx.AsyncClient)
+    first_client.aclose = AsyncMock(side_effect=first)
+    second_client = MagicMock(spec=httpx.AsyncClient)
+    second_client.aclose = AsyncMock(side_effect=second)
+
+    result = await SourceUploadPipeline._close_clients([first_client, second_client])
+
+    assert result is first
+    second_client.aclose.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_close_clients_prefers_a_late_process_exit_over_an_earlier_failure() -> None:
+    """A process-exit signal outranks an ordinary failure regardless of order.
+
+    Returning the ``OSError`` would let ``prepare_close`` swallow a Ctrl-C into
+    an ordinary teardown error and keep the interpreter alive.
+    """
+    ordinary = OSError("ordinary teardown failure")
+    interrupt = KeyboardInterrupt("ctrl-c")
+    first_client = MagicMock(spec=httpx.AsyncClient)
+    first_client.aclose = AsyncMock(side_effect=ordinary)
+    second_client = MagicMock(spec=httpx.AsyncClient)
+    second_client.aclose = AsyncMock(side_effect=interrupt)
+
+    assert await SourceUploadPipeline._close_clients([first_client, second_client]) is interrupt
+
+
+def test_begin_transport_operation_rejects_a_caller_with_no_owning_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without a current task there is nothing teardown could cancel.
+
+    Admitting the workflow anyway would leave in-flight upload I/O that
+    ``prepare_close`` can neither find nor interrupt.
+    """
+    pipeline = _make_pipeline()
+    monkeypatch.setattr(asyncio, "current_task", lambda *_a, **_k: None)
+
+    with pytest.raises(RuntimeError, match="upload transport is not open"):
+        pipeline._begin_transport_operation(1)
+
+    assert pipeline._transport_tasks == set()
+
+
+def test_track_transport_client_refuses_to_publish_without_the_registry_lock() -> None:
+    """A client published after the lock is dropped would never be closed.
+
+    ``close_resources`` clears ``_registry_lock`` last; anything registered
+    after that point is invisible to every subsequent snapshot, so registration
+    must fail loudly instead of leaking the connection.
+    """
+    pipeline = _make_pipeline()
+    pipeline._registry_lock = None
+    client = MagicMock(spec=httpx.AsyncClient)
+
+    with pytest.raises(RuntimeError, match="upload transport is not open"):
+        pipeline._track_transport_client(client, 1)
+
+    assert client not in pipeline._transport_clients
+
+
+@pytest.mark.asyncio
+async def test_spawn_transport_child_reports_a_missing_owning_task_as_an_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unregisterable child must fail *before* it runs any I/O.
+
+    The child registers itself before its first await precisely so teardown can
+    find it; with no owning task to register, the body must never start.
+    """
+    pipeline = _make_pipeline()
+    factory = AsyncMock()
+    monkeypatch.setattr(asyncio, "current_task", lambda *_a, **_k: None)
+
+    outcome = await (await pipeline._spawn_transport_child("child", factory, expected_epoch=1))
+
+    assert isinstance(outcome.error, RuntimeError)
+    assert "upload child has no owning task" in str(outcome.error)
+    factory.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_spawn_transport_child_reports_a_dropped_registry_lock_as_an_outcome() -> None:
+    """A child spawned after the registry is torn down must not start its body.
+
+    The error is returned as an outcome rather than raised, so the parent's
+    ``await`` settles normally and the failure travels through the same
+    ``outcome.error`` channel as every other child failure.
+    """
+    pipeline = _make_pipeline()
+    pipeline._registry_lock = None
+    factory = AsyncMock()
+
+    outcome = await (await pipeline._spawn_transport_child("child", factory, expected_epoch=1))
+
+    assert isinstance(outcome.error, RuntimeError)
+    assert "upload transport is not open" in str(outcome.error)
+    factory.assert_not_awaited()
+    assert pipeline._transport_tasks == set()
+
+
+# =============================================================================
+# Admission slots and account routing
+# =============================================================================
+@pytest.mark.parametrize(
+    "with_recorder",
+    [True, False],
+    ids=["records-queue-wait", "no-recorder-wired"],
+)
+@pytest.mark.asyncio
+async def test_upload_slot_holds_a_permit_and_records_the_wait_only_when_wired(
+    with_recorder: bool,
+) -> None:
+    """The slot always gates concurrency; the queue-wait metric is optional.
+
+    The recorder is an injected observability hook, so a pipeline built without
+    one must still acquire and release the permit rather than skipping the slot.
+    """
+    waits: list[float] = []
+    pipeline = _make_pipeline(record_upload_queue_wait=waits.append if with_recorder else None)
+    semaphore = pipeline.get_upload_semaphore()
+    free_permits = semaphore._value
+
+    async with pipeline._upload_slot():
+        assert semaphore._value == free_permits - 1
+
+    assert semaphore._value == free_permits
+    assert len(waits) == (1 if with_recorder else 0)
+    if with_recorder:
+        # An ELAPSED wait, not an absolute clock reading. ``>= 0.0`` passed
+        # either way, so a recorder that reported ``monotonic()`` instead of
+        # ``monotonic() - start`` went undetected; an uncontended slot settles
+        # in microseconds, so any wall-clock timestamp blows this bound.
+        assert 0.0 <= waits[0] < 1.0
+
+
+def test_get_download_semaphore_is_cached_and_separate_from_the_upload_pool() -> None:
+    """The Drive download pool must be its own primitive (#1884).
+
+    ``add_drive_file`` downloads and then calls ``add_file``, which takes an
+    *upload* permit; sharing one pool would let a full download pool deadlock
+    against the upload slot it is waiting to enter.
+    """
+    pipeline = _make_pipeline()
+
+    download_semaphore = pipeline.get_download_semaphore()
+
+    assert download_semaphore is pipeline.get_download_semaphore()
+    assert download_semaphore is not pipeline.get_upload_semaphore()
+    assert download_semaphore._value == pipeline._max_concurrent_uploads
+
+
+@pytest.mark.parametrize(
+    ("authuser", "account_email", "expected"),
+    [
+        (0, None, "0"),
+        (3, None, "3"),
+        (3, "person@example.com", "person@example.com"),
+        (3, "   ", "3"),
+    ],
+    ids=["index-zero", "index-only", "email-wins-over-index", "blank-email-falls-back"],
+)
+def test_authuser_value_matches_the_upload_leg_routing(
+    authuser: int, account_email: str | None, expected: str
+) -> None:
+    """The Drive leg must route to the same account as the upload leg.
+
+    A mismatch serves ``authuser=0``'s view of Drive while registering the
+    source against a different account — a silent wrong-file upload.
+    """
+    pipeline = _make_pipeline(auth=SimpleNamespace(authuser=authuser, account_email=account_email))
+
+    assert pipeline.authuser_value() == expected
+    assert pipeline.authuser_value() == pipeline._authuser_header()
+
+
+# =============================================================================
+# drive_download_scope() — the cross-backend Drive fetch seam
+# =============================================================================
+class _RecordingDriveFetcher:
+    """Stand-in for ``DriveFetcher`` that records how the scope wired it up."""
+
+    seen: dict[str, Any] = {}
+
+    def __init__(self, **kwargs: Any) -> None:
+        _RecordingDriveFetcher.seen = dict(kwargs)
+
+    async def __call__(self, ref: Any) -> Any:
+        _RecordingDriveFetcher.seen["file_id"] = ref.file_id
+        _RecordingDriveFetcher.seen["cookies"] = _RecordingDriveFetcher.seen["cookies_provider"]()
+        return drive_import_mod.DriveDownload(
+            _RecordingDriveFetcher.seen["download_path"], "paper.pdf", "application/pdf"
+        )
+
+
+@pytest.mark.asyncio
+async def test_drive_download_scope_routes_the_account_and_unlinks_the_temp_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """The scope owns routing, live cookies, admission, and temp cleanup.
+
+    Consumers only ever see (path, filename, mime); everything that makes the
+    download authentic — the selected account and the post-rotation jar — is
+    the scope's job, and the temp file must not outlive it.
+    """
+    downloaded = tmp_path / "paper.pdf"
+    downloaded.write_bytes(b"%PDF-1.4")
+    _RecordingDriveFetcher.seen = {"download_path": downloaded}
+
+    def _fetcher(**kwargs: Any) -> _RecordingDriveFetcher:
+        kwargs["download_path"] = downloaded
+        return _RecordingDriveFetcher(**kwargs)
+
+    monkeypatch.setattr(drive_import_mod, "DriveFetcher", _fetcher)
+    kernel = _Kernel()
+    pipeline = _make_pipeline(
+        kernel=kernel, auth=SimpleNamespace(authuser=4, account_email="person@example.com")
+    )
+    file_id = "1AbCdEfGhIjKlMnOpQrStUvWxYz01234"
+
+    async with pipeline.drive_download_scope(file_id) as (path, filename, content_type):
+        assert (path, filename, content_type) == (downloaded, "paper.pdf", "application/pdf")
+        assert path.exists()
+        # The download permit is held for the whole scope, not just the fetch.
+        assert pipeline.get_download_semaphore()._value == pipeline._max_concurrent_uploads - 1
+
+    assert not downloaded.exists()
+    assert pipeline.get_download_semaphore()._value == pipeline._max_concurrent_uploads
+    assert _RecordingDriveFetcher.seen["file_id"] == file_id
+    assert _RecordingDriveFetcher.seen["authuser"] == "person@example.com"
+    assert _RecordingDriveFetcher.seen["cookies"] is kernel.jar
+
+
+@pytest.mark.asyncio
+async def test_drive_download_scope_unlinks_the_temp_file_when_the_body_raises(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """A failed upload must not leave the downloaded Drive bytes on disk.
+
+    The temp file is unlinked in a ``finally``; without it every failed
+    ``add_drive_file`` would leak a full copy of the user's document.
+    """
+    downloaded = tmp_path / "paper.pdf"
+    downloaded.write_bytes(b"%PDF-1.4")
+
+    def _fetcher(**kwargs: Any) -> _RecordingDriveFetcher:
+        kwargs["download_path"] = downloaded
+        return _RecordingDriveFetcher(**kwargs)
+
+    monkeypatch.setattr(drive_import_mod, "DriveFetcher", _fetcher)
+    pipeline = _make_pipeline()
+
+    with pytest.raises(NetworkError, match="upload leg failed"):
+        async with pipeline.drive_download_scope("1AbCdEfGhIjKlMnOpQrStUvWxYz01234"):
+            raise NetworkError("upload leg failed")
+
+    assert not downloaded.exists()
+    # The permit is released too, or a failed download would leak admission.
+    assert pipeline.get_download_semaphore()._value == pipeline._max_concurrent_uploads
+
+
+# =============================================================================
+# add_file() — filesystem resolution and descriptor ownership
+# =============================================================================
+@pytest.mark.asyncio
+async def test_add_file_rejects_a_directory_that_passes_the_pure_mime_gate(tmp_path) -> None:
+    """A directory named like a document must be rejected after resolution.
+
+    The pure argument gate only sees the suffix, so ``report.pdf`` as a
+    *directory* survives it; the awaited filesystem check is the only thing
+    standing between that path and an ``open()`` that would raise ``IsADirectoryError``
+    from deep inside the upload slot.
+    """
+    directory = tmp_path / "report.pdf"
+    directory.mkdir()
+    pipeline = _make_pipeline()
+
+    with pytest.raises(ValidationError, match="Not a regular file"):
+        await pipeline.add_file("nb_1", directory)
+
+
+@pytest.mark.asyncio
+async def test_add_file_closes_the_descriptor_when_the_size_probe_fails(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``open`` and ``fstat`` are paired, so a failed ``fstat`` must close the handle.
+
+    They run together on a worker thread; without the ``except BaseException``
+    close the descriptor would leak on every stat failure, and nothing later in
+    ``_add_file_admitted`` has a reference to close it.
+    """
+    source_file = tmp_path / "report.pdf"
+    source_file.write_bytes(b"%PDF-1.4")
+    pipeline = _make_pipeline()
+    pipeline.register_file_source = AsyncMock()  # type: ignore[method-assign]
+    real_fstat = os.fstat
+    probed: dict[str, int] = {}
+
+    def _failing_fstat(fd: int) -> Any:
+        probed["fd"] = fd
+        raise OSError(5, "simulated fstat failure")
+
+    monkeypatch.setattr(os, "fstat", _failing_fstat)
+    try:
+        with pytest.raises(OSError, match="simulated fstat failure"):
+            await pipeline.add_file("nb_1", source_file)
+    finally:
+        monkeypatch.setattr(os, "fstat", real_fstat)
+
+    # Nothing was registered server-side — the failure is pre-registration.
+    pipeline.register_file_source.assert_not_awaited()
+    # The descriptor the failing probe was handed is no longer open.
+    with pytest.raises(OSError):
+        real_fstat(probed["fd"])
+
+
+# =============================================================================
+# register_file_source() — probe with an unavailable baseline
+# =============================================================================
+@pytest.mark.asyncio
+async def test_probe_with_an_unavailable_baseline_is_silent_when_no_title_matches() -> None:
+    """An unavailable baseline is only an ambiguity when a same-titled source EXISTS.
+
+    The disambiguation guard must not fire on an empty match list: doing so
+    would convert every transport blip on a notebook that has no same-titled
+    source into an unresolvable ``SourceAddError`` instead of letting
+    ``idempotent_create`` retry the register.
+    """
+    pipeline = _make_pipeline()
+    list_calls = {"n": 0}
+
+    async def _list(_nb: str) -> list[Source]:
+        list_calls["n"] += 1
+        if list_calls["n"] == 1:
+            raise RuntimeError("baseline boom")
+        return [Source(id="unrelated", title="something-else.pdf")]
+
+    async def _rpc_call(*_a: Any, **_k: Any) -> Any:
+        raise NetworkError("transport down")
+
+    with pytest.raises(NetworkError, match="transport down"):
+        await pipeline.register_file_source(
+            "nb_1",
+            "report.pdf",
+            list_sources=_list,
+            logger=MagicMock(),
+            rpc_call=_rpc_call,
+        )
+
+    # The probe really ran (baseline call plus at least one probe call).
+    assert list_calls["n"] > 1
+
+
+# =============================================================================
+# Source-lifecycle delegation to the shared lister / poller
+# =============================================================================
+@pytest.mark.asyncio
+async def test_get_source_delegates_to_the_lister_with_the_pipeline_list_seam() -> None:
+    """The lister must receive *this* pipeline's ``list_sources``, not its own.
+
+    ``WebSourcesAPI`` swaps in a shared lister; passing the bound seam is what
+    keeps one owner for the source-lifecycle verbs instead of two parallel
+    listing paths.
+    """
+    pipeline = _make_pipeline()
+    expected = Source(id="s1", title="a.pdf")
+    pipeline._lister.get = AsyncMock(return_value=expected)  # type: ignore[method-assign]
+
+    assert await pipeline.get_source("nb_1", "s1") is expected
+
+    pipeline._lister.get.assert_awaited_once_with("nb_1", "s1", list_sources=pipeline.list_sources)
+
+
+@pytest.mark.parametrize(
+    ("method_name", "timeout"),
+    [("wait_until_ready", 7.0), ("wait_until_registered", 3.0)],
+    ids=["wait-until-ready", "wait-until-registered"],
+)
+@pytest.mark.asyncio
+async def test_wait_verbs_forward_every_polling_knob_and_injected_clock(
+    method_name: str, timeout: float
+) -> None:
+    """Both wait verbs hand the poller its full injected environment.
+
+    The poller owns no clock, sleep, or source getter of its own — dropping any
+    of them silently changes the backoff schedule or makes the poll read a
+    different notebook's sources.
+    """
+    from time import monotonic
+
+    pipeline = _make_pipeline()
+    expected = Source(id="s1", title="a.pdf", status=SourceStatus.READY)
+    delegate = AsyncMock(return_value=expected)
+    setattr(pipeline._poller, method_name, delegate)
+
+    result = await getattr(pipeline, method_name)(
+        "nb_1",
+        "s1",
+        timeout=timeout,
+        initial_interval=0.25,
+        max_interval=2.0,
+        backoff_factor=3.0,
+        transient_error_types=(1, None),
+    )
+
+    assert result is expected
+    call = delegate.await_args
+    assert call.args == ("nb_1", "s1")
+    assert call.kwargs["timeout"] == timeout
+    assert call.kwargs["initial_interval"] == 0.25
+    assert call.kwargs["max_interval"] == 2.0
+    assert call.kwargs["backoff_factor"] == 3.0
+    assert call.kwargs["transient_error_types"] == (1, None)
+    assert call.kwargs["get_source"] == pipeline.get_source
+    assert call.kwargs["sleep"] is asyncio.sleep
+    assert call.kwargs["monotonic"] is monotonic
+    assert call.kwargs["logger"] is module_logger
+
+
+# =============================================================================
+# upload_file_streaming() — curl_cffi transport, FD ownership, cancellation
+# =============================================================================
+_UPLOAD_URL = "https://notebooklm.google.com/upload/_/?upload_id=session"
+
+
+class _FakeCurlClient(CurlCffiAsyncClient):
+    """A ``CurlCffiAsyncClient`` by type only — the real ctor needs a curl session.
+
+    ``upload_file_streaming`` selects the low-level path with ``isinstance``
+    (not duck-typing, because a mock auto-spawns any attribute), so the fake has
+    to genuinely be one.
+    """
+
+    def __init__(self, **_kwargs: Any) -> None:
+        self.stream_upload_calls: list[dict[str, Any]] = []
+        self.post_calls = 0
+
+    async def __aenter__(self) -> _FakeCurlClient:
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        return None
+
+    async def stream_upload(
+        self, url: str, source: Any, *, total_bytes: int, headers: Any, **_kwargs: Any
+    ) -> httpx.Response:
+        self.stream_upload_calls.append(
+            {"url": url, "source": source, "total_bytes": total_bytes, "headers": dict(headers)}
+        )
+        return httpx.Response(200, request=httpx.Request("POST", url))
+
+    async def post(self, *_args: Any, **_kwargs: Any) -> httpx.Response:
+        self.post_calls += 1
+        raise AssertionError("the curl transport must not buffer through the generator path")
+
+
+@pytest.mark.parametrize("as_path", [True, False], ids=["path-source", "file-object-source"])
+@pytest.mark.parametrize("with_progress", [True, False], ids=["with-progress", "no-progress"])
+@pytest.mark.asyncio
+async def test_curl_transport_streams_the_body_from_disk_instead_of_the_generator(
+    tmp_path, as_path: bool, with_progress: bool
+) -> None:
+    """The curl backend must be handed the raw handle, never the async generator.
+
+    libcurl streams the request body itself; feeding it the chunk generator
+    would defeat the whole point (no full-file buffer) and the generator's
+    per-chunk progress never fires, so the completion callback is synthesised
+    from ``total_bytes`` instead.
+    """
+    data = b"curl-streamed-payload"
+    source_file = tmp_path / "payload.bin"
+    source_file.write_bytes(data)
+    file_obj: Any = source_file if as_path else open(source_file, "rb")  # noqa: SIM115
+    progress: list[tuple[int, int]] = []
+    client = _FakeCurlClient()
+    pipeline = _make_pipeline(async_client_factory=MagicMock(return_value=client))
+
+    try:
+        await pipeline.upload_file_streaming(
+            _UPLOAD_URL,
+            file_obj,
+            filename="payload.bin",
+            on_progress=(lambda done, total: progress.append((done, total)))
+            if with_progress
+            else None,
+            total_bytes=len(data),
+            expected_epoch=1,
+        )
+    finally:
+        if not as_path and not file_obj.closed:
+            file_obj.close()
+
+    assert client.post_calls == 0
+    (call,) = client.stream_upload_calls
+    assert call["source"] is file_obj
+    assert call["url"] == _UPLOAD_URL
+    assert call["total_bytes"] == len(data)
+    assert call["headers"]["x-goog-upload-command"] == "upload, finalize"
+    assert call["headers"]["x-goog-upload-offset"] == "0"
+    if with_progress:
+        assert progress == [(0, len(data)), (len(data), len(data))]
+    else:
+        assert progress == []
+
+
+class _CloseExplodingFile:
+    """A caller-supplied handle whose ``close()`` always fails."""
+
+    def __init__(self, data: bytes) -> None:
+        self._buffer = io.BytesIO(data)
+        self.close_attempts = 0
+
+    def read(self, size: int) -> bytes:
+        return self._buffer.read(size)
+
+    def close(self) -> None:
+        self.close_attempts += 1
+        raise OSError("descriptor close failed")
+
+
+@pytest.mark.asyncio
+async def test_a_failing_caller_fd_close_is_logged_and_never_fails_the_upload() -> None:
+    """A close failure on the caller's handle must not turn a good upload into an error.
+
+    The bytes are already finalised server-side by then; both close attempts —
+    the in-task ``finally`` and the idempotent done-callback fallback — are
+    best-effort and only get logged.
+    """
+    data = b"payload-with-a-bad-close"
+    file_obj = _CloseExplodingFile(data)
+    logger = MagicMock()
+    body: dict[str, bytes] = {}
+
+    class _CollectingClient:
+        async def __aenter__(self) -> Any:
+            return self
+
+        async def __aexit__(self, *_exc: object) -> None:
+            return None
+
+        async def post(self, url: str, headers: Any, content: Any) -> httpx.Response:
+            body["sent"] = b"".join([chunk async for chunk in content])
+            return httpx.Response(200, request=httpx.Request("POST", url))
+
+    pipeline = _make_pipeline(async_client_factory=MagicMock(return_value=_CollectingClient()))
+
+    await pipeline.upload_file_streaming(
+        _UPLOAD_URL,
+        file_obj,
+        filename="payload.bin",
+        total_bytes=len(data),
+        logger=logger,
+        expected_epoch=1,
+    )
+    await asyncio.sleep(0)  # let the done-callback fallback run
+
+    assert body["sent"] == data
+    assert file_obj.close_attempts == 2
+    messages = [call.args[0] for call in logger.debug.call_args_list]
+    assert any("Caller FD close in finalize failed" in message for message in messages)
+    assert any("Caller FD close in finalize-done failed" in message for message in messages)
+
+
+class _HangingEnterClient:
+    """A client whose ``__aenter__`` never returns, so the body never starts."""
+
+    def __init__(self, entered: asyncio.Event) -> None:
+        self._entered = entered
+
+    async def __aenter__(self) -> Any:
+        self._entered.set()
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")  # pragma: no cover - the wait never returns
+
+    async def __aexit__(self, *_exc: object) -> None:
+        return None
+
+
+class _RecordingSupervisor(_Supervisor):
+    """A supervisor that keeps every spawned child addressable by its label prefix."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.children: dict[str, asyncio.Task[Any]] = {}
+
+    async def spawn_child(self, label: str, factory: Any) -> asyncio.Task[Any]:
+        task = await super().spawn_child(label, factory)
+        self.children[label.split(":", 1)[0]] = task
+        return task
+
+
+@pytest.mark.asyncio
+async def test_cancelling_before_the_body_starts_surfaces_a_failed_scotty_cancel(
+    tmp_path,
+) -> None:
+    """A Scotty cancel that fails must be reported, not silently dropped.
+
+    The session was never finalised, so a swallowed cancel failure would leave
+    an orphaned resumable-upload session on Google's side with nothing in the
+    caller's traceback to say so.
+    """
+    entered = asyncio.Event()
+    payload = tmp_path / "payload.bin"
+    payload.write_bytes(b"payload")
+    pipeline = _make_pipeline(
+        async_client_factory=MagicMock(return_value=_HangingEnterClient(entered))
+    )
+    pipeline.cancel_upload_session = AsyncMock(  # type: ignore[method-assign]
+        side_effect=ValueError("scotty rejected the cancel")
+    )
+
+    task = asyncio.create_task(
+        pipeline.upload_file_streaming(_UPLOAD_URL, payload, expected_epoch=1)
+    )
+    await entered.wait()
+    task.cancel()
+
+    with pytest.raises(ValueError, match="scotty rejected the cancel"):
+        await task
+
+    pipeline.cancel_upload_session.assert_awaited_once()
+    assert pipeline.cancel_upload_session.await_args.kwargs["_expected_epoch"] == 1
+
+
+@pytest.mark.asyncio
+async def test_a_second_cancellation_during_the_scotty_cancel_cancels_that_child_too(
+    tmp_path,
+) -> None:
+    """A caller who cancels again must not leave the cancel child running.
+
+    The original ``CancelledError`` is what the caller sees; the in-flight
+    Scotty cancel is torn down and awaited first so close/reopen cannot race a
+    surviving child task.
+    """
+    entered = asyncio.Event()
+    cancel_started = asyncio.Event()
+
+    async def _hanging_cancel(*_args: Any, **_kwargs: Any) -> None:
+        cancel_started.set()
+        await asyncio.Event().wait()
+
+    supervisor = _RecordingSupervisor()
+    payload = tmp_path / "payload.bin"
+    payload.write_bytes(b"payload")
+    pipeline = _make_pipeline(
+        supervisor=supervisor,
+        async_client_factory=MagicMock(return_value=_HangingEnterClient(entered)),
+    )
+    pipeline.cancel_upload_session = _hanging_cancel  # type: ignore[method-assign]
+
+    task = asyncio.create_task(
+        pipeline.upload_file_streaming(_UPLOAD_URL, payload, expected_epoch=1)
+    )
+    await entered.wait()
+    task.cancel()
+    await cancel_started.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert supervisor.children["upload-finalize"].cancelled()
+    assert supervisor.children["upload-cancel"].cancelled()
+
+
+class _FenceAfterFirstChildSupervisor(_Supervisor):
+    """Refuses the second child, as ``CallSupervisor`` does once a close fenced it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.spawns = 0
+
+    async def spawn_child(self, label: str, factory: Any) -> asyncio.Task[Any]:
+        self.spawns += 1
+        if self.spawns > 1:
+            raise RuntimeError(f"NotebookLMClient is not accepting child work ({label}).")
+        return await super().spawn_child(label, factory)
+
+
+@pytest.mark.asyncio
+async def test_a_fenced_generation_skips_the_scotty_cancel_and_keeps_the_cancellation(
+    tmp_path,
+) -> None:
+    """After a forced close, teardown is local-only — no outbound cancel POST.
+
+    The reopened client owns new cookies and a new transport; emitting a Scotty
+    cancel against those resources would authenticate the dead generation's
+    teardown with the live generation's session. The caller must still see the
+    original cancellation, not the supervisor's ``RuntimeError``.
+    """
+    entered = asyncio.Event()
+    supervisor = _FenceAfterFirstChildSupervisor()
+    payload = tmp_path / "payload.bin"
+    payload.write_bytes(b"payload")
+    pipeline = _make_pipeline(
+        supervisor=supervisor,
+        async_client_factory=MagicMock(return_value=_HangingEnterClient(entered)),
+    )
+    pipeline.cancel_upload_session = AsyncMock()  # type: ignore[method-assign]
+
+    task = asyncio.create_task(
+        pipeline.upload_file_streaming(_UPLOAD_URL, payload, expected_epoch=1)
+    )
+    await entered.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError) as exc_info:
+        await task
+
+    assert supervisor.spawns == 2
+    pipeline.cancel_upload_session.assert_not_awaited()
+    # ``raise cancelled from None`` — the fencing RuntimeError is not chained on.
+    assert exc_info.value.__cause__ is None
+
+
+class _BlockingPostClient:
+    """Enters cleanly (so ``finalize_started`` flips) then blocks inside ``post``."""
+
+    def __init__(
+        self, posting: asyncio.Event, release: asyncio.Event, failure: BaseException | None
+    ) -> None:
+        self._posting = posting
+        self._release = release
+        self._failure = failure
+
+    async def __aenter__(self) -> Any:
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        return None
+
+    async def post(self, url: str, headers: Any, content: Any) -> httpx.Response:
+        self._posting.set()
+        await self._release.wait()
+        if self._failure is not None:
+            raise self._failure
+        return httpx.Response(200, request=httpx.Request("POST", url))
+
+
+@pytest.mark.asyncio
+async def test_cancelling_after_the_body_started_logs_the_late_finalize_failure(
+    tmp_path,
+) -> None:
+    """Once bytes are on the wire the finalize is left to settle, then logged.
+
+    Cancelling mid-body must not emit a Scotty cancel (the session may already
+    be finalised), so the pipeline waits the child out. Its failure is
+    information only — the caller's ``CancelledError`` still wins.
+    """
+    posting, release = asyncio.Event(), asyncio.Event()
+    failure = NetworkError("finalize rejected after cancellation")
+    client = _BlockingPostClient(posting, release, failure)
+    logger = MagicMock()
+    payload = tmp_path / "payload.bin"
+    payload.write_bytes(b"payload")
+    pipeline = _make_pipeline(async_client_factory=MagicMock(return_value=client))
+    pipeline.cancel_upload_session = AsyncMock()  # type: ignore[method-assign]
+
+    task = asyncio.create_task(
+        pipeline.upload_file_streaming(_UPLOAD_URL, payload, logger=logger, expected_epoch=1)
+    )
+    await posting.wait()
+    task.cancel()
+    await asyncio.sleep(0)  # let the parent reach the settle-the-child await
+    release.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    pipeline.cancel_upload_session.assert_not_awaited()
+    late = [
+        call
+        for call in logger.debug.call_args_list
+        if "failed before cancellation propagated" in call.args[0]
+    ]
+    assert [call.args[1] for call in late] == [failure]
+
+
+class _WrapperFailsAfterBodySupervisor(_Supervisor):
+    """A supervisor whose child wrapper fails *after* the child body settled.
+
+    ``CallSupervisor.spawn_child``'s wrapper re-raises a settlement failure when
+    the body itself did not fail, so the task handed back can carry an ordinary
+    exception that the child's own ``except BaseException`` never saw.
+    """
+
+    async def spawn_child(self, label: str, factory: Any) -> asyncio.Task[Any]:
+        async def _wrapper() -> Any:
+            await factory()
+            raise RuntimeError("child settlement failed")
+
+        return asyncio.create_task(_wrapper(), name=label)
+
+
+@pytest.mark.asyncio
+async def test_a_child_task_failing_outside_its_own_catch_still_loses_to_the_cancellation(
+    tmp_path,
+) -> None:
+    """A finalize task that raises while being settled is logged, never re-raised.
+
+    Replacing the caller's ``CancelledError`` with a teardown-time failure would
+    make a cancelled upload look like a transport error and invite a retry of
+    bytes that may already have landed.
+    """
+    posting, release = asyncio.Event(), asyncio.Event()
+    client = _BlockingPostClient(posting, release, None)
+    logger = MagicMock()
+    payload = tmp_path / "payload.bin"
+    payload.write_bytes(b"payload")
+    pipeline = _make_pipeline(
+        supervisor=_WrapperFailsAfterBodySupervisor(),
+        async_client_factory=MagicMock(return_value=client),
+    )
+    # The done-callback reads the same failed result; keep it off stderr.
+    # The handler is process-wide loop state, so it is saved and restored in a
+    # ``finally``: leaving it installed means pytest-asyncio's own teardown
+    # appends any later unhandled task exception to ``loop_errors`` after this
+    # test's assertions have run, silently discarding it.
+    loop_errors: list[dict[str, Any]] = []
+    loop = asyncio.get_running_loop()
+    previous_handler = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, context: loop_errors.append(context))
+    try:
+        task = asyncio.create_task(
+            pipeline.upload_file_streaming(_UPLOAD_URL, payload, logger=logger, expected_epoch=1)
+        )
+        await posting.wait()
+        task.cancel()
+        await asyncio.sleep(0)
+        release.set()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        logged = [
+            call.args[1]
+            for call in logger.debug.call_args_list
+            if "failed before cancellation propagated" in call.args[0]
+        ]
+        assert len(logged) == 1
+        assert isinstance(logged[0], RuntimeError)
+        assert str(logged[0]) == "child settlement failed"
+    finally:
+        loop.set_exception_handler(previous_handler)
+
+
+class _HangingSecondSpawnSupervisor(_Supervisor):
+    """Blocks the second ``spawn_child`` so a cancellation lands before a task exists."""
+
+    def __init__(self, spawning: asyncio.Event) -> None:
+        super().__init__()
+        self._spawning = spawning
+        self.spawns = 0
+
+    async def spawn_child(self, label: str, factory: Any) -> asyncio.Task[Any]:
+        self.spawns += 1
+        if self.spawns > 1:
+            self._spawning.set()
+            await asyncio.Event().wait()
+        return await super().spawn_child(label, factory)
+
+
+@pytest.mark.asyncio
+async def test_a_cancellation_while_the_cancel_child_is_being_admitted_has_nothing_to_tear_down(
+    tmp_path,
+) -> None:
+    """Cancelling inside ``spawn_child`` leaves no cancel task to cancel.
+
+    Admission can block (the supervisor gates children behind a drain
+    condition), so the second cancellation can arrive before ``cancel_task`` is
+    ever bound — the handler must not trip over the ``None`` on its way to
+    re-raising the original cancellation.
+    """
+    entered = asyncio.Event()
+    spawning = asyncio.Event()
+    supervisor = _HangingSecondSpawnSupervisor(spawning)
+    payload = tmp_path / "payload.bin"
+    payload.write_bytes(b"payload")
+    pipeline = _make_pipeline(
+        supervisor=supervisor,
+        async_client_factory=MagicMock(return_value=_HangingEnterClient(entered)),
+    )
+    pipeline.cancel_upload_session = AsyncMock()  # type: ignore[method-assign]
+
+    task = asyncio.create_task(
+        pipeline.upload_file_streaming(_UPLOAD_URL, payload, expected_epoch=1)
+    )
+    await entered.wait()
+    task.cancel()
+    await spawning.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError) as exc_info:
+        await task
+
+    assert supervisor.spawns == 2
+    pipeline.cancel_upload_session.assert_not_awaited()
+    assert exc_info.value.__cause__ is None
+
+
+@pytest.mark.asyncio
+async def test_cancelling_after_the_body_started_settles_a_successful_finalize_quietly(
+    tmp_path,
+) -> None:
+    """A finalize that succeeds after the cancellation is not a failure to report.
+
+    The upload really did land, so the only correct outcome is the caller's
+    ``CancelledError`` with no misleading "finalize failed" record next to it.
+    """
+    posting, release = asyncio.Event(), asyncio.Event()
+    supervisor = _RecordingSupervisor()
+    logger = MagicMock()
+    payload = tmp_path / "payload.bin"
+    payload.write_bytes(b"payload")
+    pipeline = _make_pipeline(
+        supervisor=supervisor,
+        async_client_factory=MagicMock(return_value=_BlockingPostClient(posting, release, None)),
+    )
+    pipeline.cancel_upload_session = AsyncMock()  # type: ignore[method-assign]
+
+    task = asyncio.create_task(
+        pipeline.upload_file_streaming(_UPLOAD_URL, payload, logger=logger, expected_epoch=1)
+    )
+    await posting.wait()
+    task.cancel()
+    await asyncio.sleep(0)  # let the parent reach the settle-the-child await
+    release.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    # The finalize POST completed cleanly — nothing to log, nothing to cancel.
+    assert supervisor.children["upload-finalize"].result().error is None
+    pipeline.cancel_upload_session.assert_not_awaited()
+    assert not [
+        call
+        for call in logger.debug.call_args_list
+        if "failed before cancellation propagated" in call.args[0]
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_failing_close_on_the_pre_wire_path_never_masks_the_original_error() -> None:
+    """The pre-wire fallback close is best-effort; the real rejection must survive.
+
+    Nothing has been wired to close the caller's handle yet, so this branch owns
+    it — but letting its ``OSError`` escape would replace the actionable
+    ``ValidationError`` with a descriptor-teardown error.
+    """
+    file_obj = _CloseExplodingFile(b"data")
+    logger = MagicMock()
+    pipeline = _make_pipeline()
+
+    with pytest.raises(ValidationError, match="Upload URL"):
+        await pipeline.upload_file_streaming(
+            "http://insecure.example.com/?upload_id=x",  # not https -> rejected pre-wire
+            file_obj,
+            filename="payload.bin",
+            logger=logger,
+            expected_epoch=1,
+        )
+
+    assert file_obj.close_attempts == 1
+    messages = [call.args[0] for call in logger.debug.call_args_list]
+    assert any("Caller FD close on pre-wire exception failed" in message for message in messages)
