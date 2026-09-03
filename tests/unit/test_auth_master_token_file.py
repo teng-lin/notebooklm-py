@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from notebooklm._auth import master_token, master_token_file, profile_store, storage
+from notebooklm._auth import master_token, master_token_file, storage
 from notebooklm._auth.master_token_file import MasterTokenFile, _MasterTokenRead
 from notebooklm._auth.master_token_types import MasterToken, _MasterTokenRecordError
 from notebooklm._auth.profile_store import ProfileStore
@@ -611,43 +611,19 @@ def test_arbitrary_relative_path_is_never_canonicalized(
 
 
 def test_profile_store_derives_lazily_uses_same_locks_and_retains_no_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     storage_path = tmp_path / "storage_state.json"
-    paths = [tmp_path / "first-token.json", tmp_path / "second-token.json"]
+    token_path = tmp_path / "master_token.json"
     locks = RecordingLocks()
-    instances: list[FakeTokenFile] = []
-    derived: list[Path] = []
-
-    class FakeTokenFile:
-        def __init__(self, path: Path, *, locks: object) -> None:
-            self.path = path
-            self.locks = locks
-            self.writes: list[MasterToken] = []
-            instances.append(self)
-
-        def read(self) -> MasterToken:
-            return _token()
-
-        def write(self, token: MasterToken) -> None:
-            self.writes.append(token)
-
-    def derive(path: Path) -> Path:
-        assert path is storage_path
-        result = paths[len(derived)]
-        derived.append(result)
-        return result
-
-    monkeypatch.setattr(profile_store._notebooklm_paths, "master_token_path_for", derive)
-    monkeypatch.setattr(profile_store, "MasterTokenFile", FakeTokenFile)
     store = ProfileStore(storage_path, locks=locks)
 
-    assert store.read_master_token() == _token()
+    assert store.read_master_token() is None
     store.write_master_token(_token())
+    assert store.read_master_token() == _token()
 
-    assert [item.path for item in instances] == paths
-    assert all(item.locks is locks for item in instances)
-    assert instances[1].writes == [_token()]
+    assert json.loads(token_path.read_text(encoding="utf-8")) == _record()
+    assert [request.path for request in locks.requests] == [tmp_path / ".master_token.json.lock"]
     assert vars(store) == {"_path": storage_path, "_locks": locks}
 
 

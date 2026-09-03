@@ -92,9 +92,7 @@ class TestPolicyArms:
         assert calls == [storage_file]
         assert "__Secure-1PSIDTS" in {c.name for c in jar.jar}
 
-    def test_successful_heal_retries_exactly_once(
-        self, storage_file: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_successful_heal_retries_exactly_once(self, storage_file: Path) -> None:
         """The one retry uses the name-only contract and cannot recurse."""
         heals = 0
 
@@ -114,11 +112,10 @@ class TestPolicyArms:
                 strict_passes += 1
             return real_loader(path, require_routable=require_routable)
 
-        monkeypatch.setattr(_auth_cookies, "_load_cookies_pure", _counting)
         _auth_psidts_recovery.load_with_recovery(
             storage_file,
             HealPolicy.HEAL_THEN_NAME_ONLY,
-            load=_auth_cookies._load_cookies_pure,
+            load=_counting,
             heal=_heal,
         )
 

@@ -27,6 +27,7 @@ import notebooklm.paths as _nb_paths
 from notebooklm import auth as auth_module
 from notebooklm._auth import cookies as auth_cookies
 from notebooklm._auth import psidts_recovery
+from notebooklm._auth.keepalive import RotationState
 
 _ROTATE_URL_RE = re.compile(r"^https://accounts\.google\.com/RotateCookies$")
 
@@ -203,16 +204,14 @@ class TestRecoveryPreconditions:
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
 
     @pytest.mark.no_default_keepalive_mock
-    def test_throttle_claim_failure_skips_post(self, tmp_path, monkeypatch, httpx_mock: HTTPXMock):
+    def test_throttle_claim_failure_skips_post(self, tmp_path, httpx_mock: HTTPXMock):
         """A claimed rotation slot prevents the POST from firing."""
         storage_path = tmp_path / "storage_state.json"
         _write_storage(storage_path, _RECOVERABLE_COOKIES)
 
-        # Force ``_try_claim_rotation`` to deny the claim, simulating a sibling
-        # caller having just claimed the slot. Patch the local alias on
-        # ``psidts_recovery`` (ADR-0007 object-target form) — the recovery path
-        # resolves the symbol via this module's globals at call time.
-        monkeypatch.setattr(psidts_recovery, "_try_claim_rotation", lambda _path: False)
+        # Claim the real process-owned slot first, exactly as a sibling caller
+        # would. The recovery attempt must observe the recent claim and stop.
+        assert RotationState.process_default().try_claim(storage_path) is True
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
         assert _rotate_requests(httpx_mock) == []

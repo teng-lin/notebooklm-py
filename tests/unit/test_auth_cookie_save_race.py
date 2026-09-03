@@ -31,7 +31,6 @@ from pytest_httpx import HTTPXMock
 
 import notebooklm._atomic_io as _atomic_io
 import notebooklm._auth.refresh as _auth_refresh
-import notebooklm._auth.storage as _auth_storage
 import notebooklm._runtime.lifecycle as _lifecycle
 from notebooklm._auth.cookie_types import CookieJar
 from notebooklm._auth.profile_store import (
@@ -171,17 +170,19 @@ class TestSnapshotCookieJar:
         snap = snapshot_cookie_jar(jar)
         assert CookieSnapshotKey("SID", ".google.com", "/") in snap
 
-    def test_facade_monkeypatches_propagate_to_storage_helpers(self, monkeypatch):
-        """Facade patches still affect helpers moved behind ``_auth.storage``."""
+    def test_facade_snapshot_preserves_real_http_only_marker(self, tmp_path):
+        """The facade snapshot projects the HttpOnly marker from a real cookie."""
         import notebooklm.auth as auth_mod
 
-        def fake_cookie_is_http_only(cookie) -> bool:
-            return True
-
-        monkeypatch.setattr(_auth_storage, "_cookie_is_http_only", fake_cookie_is_http_only)
-
-        jar = httpx.Cookies()
-        jar.set("SID", "abc", domain=".google.com", path="/")
+        storage = tmp_path / "storage_state.json"
+        _write_storage(
+            storage,
+            [
+                _stored_cookie("SID", "abc", http_only=True),
+                _stored_cookie("__Secure-1PSIDTS", "ts", http_only=True),
+            ],
+        )
+        jar = build_httpx_cookies_from_storage(storage)
         snap = auth_mod.snapshot_cookie_jar(jar)
 
         assert snap[auth_mod.CookieSnapshotKey("SID", ".google.com", "/")].http_only is True

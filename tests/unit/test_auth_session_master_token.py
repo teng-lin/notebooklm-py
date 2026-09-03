@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-import notebooklm._auth.cookies as cookies_mod
 from notebooklm._auth import master_token as mt
 from notebooklm._auth import session as session_mod
 from notebooklm._auth.mint_service import MintService
@@ -130,11 +129,6 @@ async def test_reauth_success_remints_and_reloads(tmp_path):
                 autospec=True,
                 side_effect=_persist_writes_valid_storage,
             ) as persist,
-            patch.object(
-                cookies_mod,
-                "build_httpx_cookies_from_storage",
-                return_value=httpx.Cookies(),
-            ),
         ):
             ok = await session_mod._try_master_token_reauth(
                 auth=auth,

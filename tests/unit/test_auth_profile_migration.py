@@ -41,7 +41,12 @@ from notebooklm._auth.profile_migration import (
     PromotionFailed,
     replace_profile_from_login,
 )
-from notebooklm._auth.profile_store import LoginWriteRequest, ReplaceResult, ReplaceStatus
+from notebooklm._auth.profile_store import (
+    LoginWriteRequest,
+    ProfileStore,
+    ReplaceResult,
+    ReplaceStatus,
+)
 
 
 def _document(account: object = None, *, include_account: bool = True) -> ProfileDocument:
@@ -1161,26 +1166,25 @@ def test_account_writer_orders_store_before_scrub_and_stops_on_store_failure(tmp
 
 def test_storage_reader_uses_one_core_call_and_schedules_only_legacy(monkeypatch, tmp_path):
     path = tmp_path / "state.json"
-    store = SimpleNamespace(path=path)
-    migrator = SimpleNamespace()
     calls: list[object] = []
-    migrator._resolve_with_projection = lambda value: (
-        LegacyAccount(ProfileAccount(3, None)),
-        {"authuser": 3},
+    path.with_name("context.json").write_text(
+        json.dumps({"account": {"authuser": 3}}),
+        encoding="utf-8",
     )
-    migrator.needs_reconciliation = lambda value, resolution: isinstance(resolution, LegacyAccount)
 
     class _Scheduler:
         def schedule(self, value, owner):
             calls.append((value, owner))
             return True
 
-    monkeypatch.setattr(storage, "ProfileStore", lambda value: store)
-    monkeypatch.setattr(storage, "LegacyAccountMigrator", lambda: migrator)
     monkeypatch.setattr(storage.LegacyPromotionScheduler, "process_default", lambda: _Scheduler())
 
     assert storage.read_account_metadata(path) == {"authuser": 3}
-    assert calls == [(store, migrator)]
+    assert len(calls) == 1
+    scheduled_store, scheduled_migrator = calls[0]
+    assert isinstance(scheduled_store, ProfileStore)
+    assert scheduled_store.path == path
+    assert isinstance(scheduled_migrator, LegacyAccountMigrator)
     assert storage.read_account_metadata(None) == {}
 
 

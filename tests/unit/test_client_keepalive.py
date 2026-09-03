@@ -8,7 +8,6 @@ import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
-import notebooklm._auth.keepalive as _auth_keepalive
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from tests._helpers.client_factory import build_client_shell_for_tests
@@ -191,80 +190,57 @@ class TestKeepaliveValidation:
 
 class TestKeepalivePokes:
     @pytest.mark.asyncio
-    @pytest.mark.no_default_keepalive_mock
-    async def test_pokes_at_interval(self, mock_auth, httpx_mock: HTTPXMock, monkeypatch):
-        """At least two RotateCookies pokes fire within a short window.
+    async def test_pokes_at_interval(self, mock_auth):
+        """The lifecycle invokes its injected rotator on successive intervals."""
+        calls = 0
+        second_call = asyncio.Event()
 
-        The test uses sub-second intervals to keep wall-clock cheap; the
-        in-process rate-limit window (60 s in production) would otherwise
-        suppress every iteration past the first. Patch the window down so
-        the loop's pacing is the only thing being tested here.
-        """
-
-        monkeypatch.setattr(_auth_keepalive, "_KEEPALIVE_RATE_LIMIT_SECONDS", 0.0)
-        httpx_mock.add_response(
-            url=ROTATE_URL_RE,
-            is_optional=True,
-            is_reusable=True,
-            status_code=204,
-        )
+        async def rotate(_client, storage_path):  # type: ignore[no-untyped-def]
+            nonlocal calls
+            assert storage_path is None
+            calls += 1
+            if calls >= 2:
+                second_call.set()
 
         client = NotebookLMClient(
             mock_auth,
             keepalive=0.05,
             keepalive_min_interval=0.01,
+            cookie_rotator=rotate,
         )
 
         async with client:
-            await _wait_for_rotate_requests(
-                httpx_mock,
-                minimum=2,
-                failure_message="Expected at least 2 keepalive pokes",
-            )
+            await asyncio.wait_for(second_call.wait(), timeout=2.0)
+
+        assert calls >= 2
 
     @pytest.mark.asyncio
-    @pytest.mark.no_default_keepalive_mock
-    async def test_failure_does_not_crash_loop(self, mock_auth, httpx_mock: HTTPXMock, monkeypatch):
-        """A failing poke is swallowed and the loop continues.
+    async def test_failure_does_not_crash_loop(self, mock_auth):
+        """A failing injected rotator is swallowed and the loop continues."""
+        calls = 0
+        retried = asyncio.Event()
 
-        Same rate-limit-window patch as ``test_pokes_at_interval``: the
-        sub-second test interval would otherwise be debounced into a single
-        attempt by the in-process claim.
-        """
-
-        monkeypatch.setattr(_auth_keepalive, "_KEEPALIVE_RATE_LIMIT_SECONDS", 0.0)
-        # First poke: connection error. Subsequent pokes: 204.
-        httpx_mock.add_exception(
-            url=ROTATE_URL_RE,
-            exception=httpx.ConnectError("simulated network blip"),
-        )
-        httpx_mock.add_response(
-            url=ROTATE_URL_RE,
-            is_optional=True,
-            is_reusable=True,
-            status_code=204,
-        )
+        async def rotate(_client, storage_path):  # type: ignore[no-untyped-def]
+            nonlocal calls
+            assert storage_path is None
+            calls += 1
+            if calls == 1:
+                raise httpx.ConnectError("simulated network blip")
+            retried.set()
 
         client = NotebookLMClient(
             mock_auth,
             keepalive=0.05,
             keepalive_min_interval=0.01,
+            cookie_rotator=rotate,
         )
 
         async with client:
-            await _wait_for_rotate_requests(
-                httpx_mock,
-                minimum=1,
-                failure_message="Expected first keepalive poke",
-            )
+            await asyncio.wait_for(retried.wait(), timeout=2.0)
             # Task is still running after the failure
             assert client._collaborators.web_transport._keepalive_task is not None
             assert not client._collaborators.web_transport._keepalive_task.done()
-            await _wait_for_rotate_requests(
-                httpx_mock,
-                minimum=2,
-                failure_message="Loop should have retried after failure",
-            )
+        assert calls >= 2
 
 
 class TestKeepalivePersistenceFailure:

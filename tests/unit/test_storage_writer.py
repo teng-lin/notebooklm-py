@@ -33,9 +33,12 @@ class _UnavailableLocks:
         yield LockState.UNAVAILABLE
 
 
-def _patch_lock_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Force bounded writer transactions to see infrastructure failure."""
-    monkeypatch.setattr(profile_store, "_STORAGE_LOCKS", _UnavailableLocks())
+def _make_lock_unavailable(path: Path) -> None:
+    """Make the real lock manager see an unusable sentinel under ``tmp_path``."""
+    lock_path = path.with_name(f".{path.name}.lock")
+    if lock_path.is_file():
+        lock_path.unlink()
+    lock_path.mkdir(parents=True, exist_ok=True)
 
 
 def _patch_master_token_lock_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -118,12 +121,10 @@ def test_update_account_metadata_only_if_absent_writes_when_empty(tmp_path: Path
     assert data["notebooklm"]["account"] == {"authuser": 3, "email": "x@example.com"}
 
 
-def test_update_account_metadata_fails_closed_on_lock_unavailable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_update_account_metadata_fails_closed_on_lock_unavailable(tmp_path: Path) -> None:
     path = tmp_path / "storage_state.json"
     path.write_text(json.dumps({"cookies": [], "origins": []}), encoding="utf-8")
-    _patch_lock_unavailable(monkeypatch)
+    _make_lock_unavailable(path)
     with pytest.raises(storage_mod.LockUnavailableError):
         storage_mod.update_account_metadata(path, authuser=1, email="a@example.com")
     # Fail-closed: the file must be untouched (no partial account write).
@@ -133,12 +134,10 @@ def test_update_account_metadata_fails_closed_on_lock_unavailable(
 # --- clear_in_band_account: best-effort, swallows lock unavailability -------
 
 
-def test_clear_in_band_account_swallows_lock_unavailable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_clear_in_band_account_swallows_lock_unavailable(tmp_path: Path) -> None:
     path = tmp_path / "storage_state.json"
     storage_mod.update_account_metadata(path, authuser=1, email="a@example.com")  # seed a record
-    _patch_lock_unavailable(monkeypatch)
+    _make_lock_unavailable(path)
     # Best-effort: no raise, and the record is left intact.
     storage_mod.clear_in_band_account(path)
     assert "notebooklm" in json.loads(path.read_text(encoding="utf-8"))
@@ -207,14 +206,12 @@ def test_replace_from_remint_no_carry_drops_stale_binding(tmp_path: Path) -> Non
     }  # stale binding dropped and cannot be resurrected from legacy context
 
 
-def test_replace_from_remint_takes_storage_lock(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_replace_from_remint_takes_storage_lock(tmp_path: Path) -> None:
     """[capture-2] lock-contract: the re-mint write serializes on the storage
     lock and **fails closed** (no write) when the lock is unavailable, instead of
     racing a concurrent keepalive with a lockless write."""
     path = tmp_path / "storage_state.json"
-    _patch_lock_unavailable(monkeypatch)
+    _make_lock_unavailable(path)
     outcome = storage_mod.replace_from_remint(path, _captured_state(), carry_account=True)
     assert outcome.lock_unavailable
     assert not path.exists()  # nothing written without the lock
@@ -506,11 +503,9 @@ def test_replace_from_login_import_backup_inside_lock(tmp_path: Path) -> None:
     assert json.loads(path.read_text())["notebooklm"]["include_optional"] is True
 
 
-def test_replace_from_login_fails_closed_on_lock_unavailable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_replace_from_login_fails_closed_on_lock_unavailable(tmp_path: Path) -> None:
     path = tmp_path / "storage_state.json"
-    _patch_lock_unavailable(monkeypatch)
+    _make_lock_unavailable(path)
     outcome = storage_mod.replace_from_login(path, _login_state(), include_domains=None)
     assert outcome.lock_unavailable
     assert not path.exists()  # nothing written without the lock
@@ -799,11 +794,9 @@ def test_persist_minted_jar_refuse_unknown_owner_false_still_refuses_different_o
         )
 
 
-def test_persist_minted_jar_fails_closed_on_lock_unavailable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_persist_minted_jar_fails_closed_on_lock_unavailable(tmp_path: Path) -> None:
     path = tmp_path / "storage_state.json"
-    _patch_lock_unavailable(monkeypatch)
+    _make_lock_unavailable(path)
     with pytest.raises(storage_mod.LockUnavailableError):
         storage_mod.persist_minted_jar(path, _minted_jar(), email="minted@example.com")
 
@@ -922,9 +915,7 @@ def test_writer_intent_retightens_loose_parent_dir(tmp_path: Path) -> None:
     assert (parent.stat().st_mode & 0o777) == 0o700
 
 
-def test_replace_from_login_failed_write_leaves_legacy_account_untouched(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_replace_from_login_failed_write_leaves_legacy_account_untouched(tmp_path: Path) -> None:
     """A write that did nothing must not reach the legacy-account scrub.
 
     Before the transaction conversion this was STRUCTURAL: both non-OK returns
@@ -956,15 +947,14 @@ def test_replace_from_login_failed_write_leaves_legacy_account_untouched(
         context_path = path.with_name("context.json")
         context_path.write_text(json.dumps(legacy), encoding="utf-8")
 
-        with monkeypatch.context() as patch:
-            if label == "lock_unavailable":
-                _patch_lock_unavailable(patch)
-                state = _login_state()
-            else:
-                state = dropped_state
-            outcome = storage_mod.replace_from_login(
-                path, state, include_domains=None, account=storage_mod.CLEAR_ACCOUNT
-            )
+        if label == "lock_unavailable":
+            _make_lock_unavailable(path)
+            state = _login_state()
+        else:
+            state = dropped_state
+        outcome = storage_mod.replace_from_login(
+            path, state, include_domains=None, account=storage_mod.CLEAR_ACCOUNT
+        )
 
         assert outcome.status is not storage_mod.LoginWriteStatus.OK, label
         # The legacy record — and the file itself — must survive a no-op write.

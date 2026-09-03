@@ -126,14 +126,25 @@ class TestRepairAccountMetadataPokeSession:
             calls.append(kwargs)
             return [Account(authuser=0, email="alice@example.com", is_default=True)]
 
-        from notebooklm._auth import cookies as _auth_cookies
-
         monkeypatch.setattr(_auth_account, "enumerate_accounts", fake_enumerate)
-        monkeypatch.setattr(
-            _auth_cookies, "build_httpx_cookies_from_storage", lambda path: httpx.Cookies()
+        storage_path = tmp_path / "storage_state.json"
+        storage_path.write_text(
+            json.dumps(
+                {
+                    "cookies": [
+                        {"name": "SID", "value": "sid", "domain": ".google.com", "path": "/"},
+                        {
+                            "name": "__Secure-1PSIDTS",
+                            "value": "ts",
+                            "domain": ".google.com",
+                            "path": "/",
+                        },
+                    ]
+                }
+            ),
+            encoding="utf-8",
         )
 
-        storage_path = tmp_path / "storage_state.json"
         result = await repair_account_metadata_from_playwright_storage(storage_path)
 
         assert result.written is True

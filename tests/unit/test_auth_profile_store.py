@@ -376,16 +376,10 @@ def test_bounded_lock_miss_calls_policy_without_body(tmp_path: Path) -> None:
 
 def test_blocking_cookie_lock_has_no_parent_prep_and_fails_open_warning_once(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     locks = RecordingLocks(LockState.UNAVAILABLE)
     store = ProfileStore(tmp_path / "missing" / "A.json", locks=locks)  # type: ignore[arg-type]
-    monkeypatch.setattr(
-        profile_store,
-        "_ensure_secure_parent_dir",
-        lambda path: pytest.fail("blocking cookie path must not prepare/chmod parent"),
-    )
     with caplog.at_level(logging.WARNING, logger="notebooklm.auth"):
         assert (
             store._under_blocking_cookie_lock(  # noqa: SLF001
@@ -403,6 +397,7 @@ def test_blocking_cookie_lock_has_no_parent_prep_and_fails_open_warning_once(
         (True, None),
         (True, None),
     ]
+    assert not (tmp_path / "missing").exists()
     assert [record.getMessage() for record in caplog.records] == [
         f"Cross-process file lock unavailable at {tmp_path / 'missing' / '.A.json.lock'}; "
         "cookie saves will proceed without cross-process coordination and rely solely on "

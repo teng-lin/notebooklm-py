@@ -37,8 +37,6 @@ from notebooklm._app.login_browser import (
     prepare_login_paths,
     validate_login_flag_conflicts,
 )
-from notebooklm._auth import account as _auth_account
-from notebooklm._auth import cookies as _auth_cookies
 from notebooklm._auth.account import _select_playwright_account
 from notebooklm._browser.browser_capture import recover_page, windows_playwright_event_loop
 from notebooklm._env import get_base_host
@@ -154,18 +152,7 @@ def test_repair_metadata_clear_failure_is_logged(tmp_path, caplog) -> None:
     storage_path = tmp_path / "storage.json"
     storage_path.write_bytes(b"\xff")
 
-    def _boom_build(_path):
-        raise ValueError("bad storage state")
-
-    with (
-        patch.object(
-            _auth_cookies,
-            "build_httpx_cookies_from_storage",
-            side_effect=_boom_build,
-        ),
-        patch.object(_auth_account, "extract_email_from_html", return_value=None),
-        caplog.at_level(logging.WARNING, logger="notebooklm.auth"),
-    ):
+    with caplog.at_level(logging.WARNING, logger="notebooklm.auth"):
         result = repair_playwright_account_metadata(
             storage_path, _FakeLoginIO(), page_html=None, quiet=True
         )

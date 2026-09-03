@@ -26,8 +26,17 @@ from notebooklm._auth.cookies import (
 )
 from notebooklm._auth.extraction import _LoginRedirectError
 from notebooklm._auth.mint_service import MintService
+from notebooklm._auth.recovery_rungs import (
+    HeadlessRungOutcome,
+    HeadlessRungStatus,
+    install_headless_rung,
+)
 from notebooklm._auth.storage import snapshot_cookie_jar
-from notebooklm._browser.headless_reauth import HeadlessReauthResult, HeadlessReauthStatus
+from notebooklm._browser.headless_reauth import (
+    HeadlessReauthResult,
+    HeadlessReauthStatus,
+    headless_reauth_env_enabled,
+)
 from notebooklm._env import PERSONAL_APP_HOSTS
 from notebooklm.auth import AuthTokens, fetch_tokens_with_domains
 from notebooklm.client import NotebookLMClient
@@ -249,25 +258,18 @@ async def test_auth_tokens_cold_start_headless_recovery_honors_env(
     """The environment opt-in reaches L3 without a per-call flag."""
     storage = tmp_path / "storage_state.json"
     _write_storage(storage, sid="stale")
-    browser_profile = tmp_path / "browser_profile"
-    browser_profile.mkdir()
-    (browser_profile / "Preferences").write_text("{}", encoding="utf-8")
     drives = 0
 
-    def drive_browser(plan, io, *, headless, interactive):
+    def drive_headless_rung(*, storage_path, allow_headless):
         nonlocal drives
         drives += 1
-        assert plan.storage_path == storage
-        assert plan.browser_profile == browser_profile
-        assert headless is True
-        assert interactive is False
+        assert storage_path == storage
+        assert allow_headless is False
+        assert headless_reauth_env_enabled() is True
         _write_storage(storage, sid="browser-fresh")
-
-    import notebooklm._browser.headless_reauth as headless
+        return HeadlessRungOutcome(HeadlessRungStatus.SUCCEEDED, "test rung persisted fresh auth")
 
     monkeypatch.setenv("NOTEBOOKLM_HEADLESS_REAUTH", "1")
-    monkeypatch.setattr(headless, "_playwright_installed", lambda: True)
-    monkeypatch.setattr(headless, "run_browser_capture", drive_browser)
     _stub_dead_then_fresh(
         httpx_mock,
         fresh_sid="browser-fresh",
@@ -275,7 +277,11 @@ async def test_auth_tokens_cold_start_headless_recovery_honors_env(
         session="session-browser",
     )
 
-    tokens = await AuthTokens.from_storage(storage)
+    previous = install_headless_rung(drive_headless_rung)
+    try:
+        tokens = await AuthTokens.from_storage(storage)
+    finally:
+        install_headless_rung(previous)
 
     assert drives == 1
     assert tokens.flat_cookies["SID"] == "browser-fresh"
