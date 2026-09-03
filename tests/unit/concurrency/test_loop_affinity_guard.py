@@ -36,6 +36,7 @@ import pytest
 
 from notebooklm._artifact.polling import ArtifactPollingService
 from notebooklm._loop_affinity import assert_bound_loop
+from notebooklm._sources import SourcesAPI
 from notebooklm._web.transport.auth import AuthRefreshCoordinator
 from notebooklm._web.transport.reqid_counter import ReqidCounter
 from notebooklm.auth import AuthTokens
@@ -268,6 +269,7 @@ def test_add_file_guards_against_cross_loop_call(monkeypatch: pytest.MonkeyPatch
         await pipeline.add_file(
             "nb-id",
             "/nonexistent/path/should-never-be-touched.pdf",
+            finalize_uploaded=SourcesAPI._finalize_uploaded_file,
         )
 
     with pytest.raises(RuntimeError, match="different event loop"):

@@ -37,6 +37,7 @@ from notebooklm._android.upload import (
     validate_upload_session_url,
 )
 from notebooklm._source.drive import DriveRef
+from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import (
     AuthError,
     RateLimitError,
@@ -1209,6 +1210,7 @@ async def test_a_notebook_id_that_could_escape_the_upload_path_is_refused(
             wait_until_registered=cast(Any, None),
             wait_until_ready=cast(Any, None),
             rename_uploaded=cast(Any, None),
+            finalize_uploaded=SourcesAPI._finalize_uploaded_file,
         )
 
 
@@ -1235,6 +1237,7 @@ async def test_a_timeout_before_registration_reports_no_source_id(tmp_path: Path
             wait_until_registered=cast(Any, None),
             wait_until_ready=cast(Any, None),
             rename_uploaded=cast(Any, None),
+            finalize_uploaded=SourcesAPI._finalize_uploaded_file,
         )
 
     error = excinfo.value

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import traceback
 from collections import deque
@@ -665,17 +666,34 @@ async def test_unaccepted_registration_statuses_time_out_without_title_mutation(
 
 
 @pytest.mark.asyncio
-async def test_title_mutation_rpc_failure_is_best_effort_without_readback(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "rename_error",
+    [RPCError("safe rpc failure", rpc_code=14), NetworkError("safe network failure")],
+    ids=["rpc", "network"],
+)
+async def test_title_mutation_failure_is_best_effort_without_readback(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    rename_error: Exception,
+) -> None:
     harness = HTTPHarness()
     session, _, _, api = await _graph(harness)
     path, _ = _write_pdf(tmp_path)
     session.handlers[GET_PROJECT_METHOD] = _project(_SETTINGS.SOURCE_STATUS_PENDING)
-    session.handlers[MUTATE_SOURCE_METHOD] = RPCError("safe", rpc_code=14)
+    session.handlers[MUTATE_SOURCE_METHOD] = rename_error
 
-    result = await api.add_file(NOTEBOOK_ID, path, title="Custom")
+    with caplog.at_level(logging.WARNING, logger="notebooklm._sources"):
+        result = await api.add_file(NOTEBOOK_ID, path, title="Custom")
 
     assert result.title == path.name
     assert [call[0] for call in session.calls].count(GET_PROJECT_METHOD) == 1
+    warnings = [
+        record for record in caplog.records if "title finalization failed" in record.message
+    ]
+    assert len(warnings) == 1
+    assert "Custom" not in caplog.text
+    assert str(rename_error) not in caplog.text
+    assert warnings[0].exc_info is None
 
 
 @pytest.mark.asyncio
@@ -698,6 +716,46 @@ async def test_title_cancellation_and_lifecycle_failure_propagate(
         await api.add_file(NOTEBOOK_ID, path, title="Custom")
 
     assert [call[0] for call in session.calls].count(MUTATE_SOURCE_METHOD) == 1
+
+
+def _assert_raw_upload_owners_absent_from_library_traceback(
+    error: BaseException,
+    *raw_objects: object,
+) -> None:
+    inspected: list[str] = []
+    leaked: list[str] = []
+    for frame, _line in traceback.walk_tb(error.__traceback__):
+        source_path = frame.f_code.co_filename.replace("\\", "/")
+        if "/src/notebooklm/" not in source_path:
+            continue
+        inspected.append(frame.f_code.co_name)
+        if any(raw is value for raw in raw_objects for value in frame.f_locals.values()):
+            leaked.append(frame.f_code.co_name)
+
+    assert inspected, "no notebooklm frame was inspected; the scan proved nothing"
+    assert not leaked, f"raw upload owner survived in library frames: {leaked}"
+
+
+@pytest.mark.asyncio
+async def test_post_upload_failure_traceback_retains_no_raw_upload_owner(tmp_path: Path) -> None:
+    harness = HTTPHarness()
+    session, bearer, pipeline, api = await _graph(harness)
+    session.handlers[GET_PROJECT_METHOD] = _project(_SETTINGS.SOURCE_STATUS_ERROR)
+    path, _ = _write_pdf(tmp_path)
+
+    with pytest.raises(SourceProcessingError) as raised:
+        await api.add_file(NOTEBOOK_ID, path, wait=True)
+
+    error = raised.value
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    _assert_raw_upload_owners_absent_from_library_traceback(
+        error,
+        session,
+        bearer,
+        pipeline,
+        api,
+    )
 
 
 @pytest.mark.asyncio
@@ -1169,7 +1227,7 @@ async def test_hostile_session_capability_never_reaches_bearer_logs_exception_or
         ("X-Goog-Upload-Status", "active"),
         ("X-Goog-Upload-URL", hostile),
     ]
-    _, bearer, _, api = await _graph(harness)
+    session, bearer, pipeline, api = await _graph(harness)
     path, _ = _write_pdf(tmp_path)
 
     with pytest.raises(SourceAddError) as raised:
@@ -1184,6 +1242,13 @@ async def test_hostile_session_capability_never_reaches_bearer_logs_exception_or
     assert secret not in repr(error)
     assert secret not in caplog.text
     assert secret not in "".join(traceback.format_exception(error))
+    _assert_raw_upload_owners_absent_from_library_traceback(
+        error,
+        session,
+        bearer,
+        pipeline,
+        api,
+    )
     frame = error.__traceback__
     while frame is not None:
         if "/src/notebooklm/" in frame.tb_frame.f_code.co_filename:

@@ -14,10 +14,10 @@ import tempfile
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import IO, Any, Protocol, cast
+from typing import IO, TYPE_CHECKING, Any, Protocol, cast
 from urllib.parse import quote, urlencode, urlsplit
 
 import httpx
@@ -33,16 +33,18 @@ from .._types.sources import _HTML_FILE_EXTENSIONS, _UPLOAD_FILE_EXTENSIONS
 from ..exceptions import (
     AuthError,
     NetworkError,
-    RPCError,
     SourceAddError,
     ValidationError,
 )
-from ..types import Source, SourceStatus
+from ..types import Source
 from .auth import BearerProvider
 from .drive_staging import DriveStagingTransfer, ImportDriveFile
 from .errors import sanitize_escaping_exception
 from .evidence import ANDROID_EVIDENCE_PROFILE
 from .session import AndroidSession
+
+if TYPE_CHECKING:
+    from .._sources import _UploadedSourceFinalizer
 
 
 def _metadata_proto() -> Any:
@@ -855,14 +857,6 @@ class AndroidUploadPipeline(EpochFenced):
         * ``on_progress`` is not reported -- staging is a single multipart
           request, not a chunked transfer.
         """
-        # Trim exactly as the native path does, and pass the trimmed value on:
-        # validating ``title.strip()`` but importing the raw string would give
-        # " report " a different source title on this route than on that one.
-        requested_title = None
-        if title is not None:
-            requested_title = title.strip()
-            if not requested_title:
-                raise ValidationError("Title cannot be empty or whitespace-only")
         content_type = _resolve_upload_content_type(canonical_path, mime_type)
         _validate_upload_file_supported(canonical_path, content_type)
         async with self._drive_staging().scope(
@@ -873,7 +867,7 @@ class AndroidUploadPipeline(EpochFenced):
             return await import_drive_file(
                 notebook_id,
                 staged_file_id,
-                requested_title or canonical_path.name,
+                title or canonical_path.name,
                 mime_type=content_type,
                 wait=True,
                 wait_timeout=wait_timeout,
@@ -929,6 +923,7 @@ class AndroidUploadPipeline(EpochFenced):
         wait_until_registered: WaitForSource,
         wait_until_ready: WaitForSource,
         rename_uploaded: RenameUploaded,
+        finalize_uploaded: _UploadedSourceFinalizer,
     ) -> Source:
         """Upload one NotebookLM-supported file without retaining secret owners."""
 
@@ -948,6 +943,7 @@ class AndroidUploadPipeline(EpochFenced):
                 wait_until_registered=wait_until_registered,
                 wait_until_ready=wait_until_ready,
                 rename_uploaded=rename_uploaded,
+                finalize_uploaded=finalize_uploaded,
             )
         except BaseException as error:
             failure = sanitize_escaping_exception(error)
@@ -971,17 +967,12 @@ class AndroidUploadPipeline(EpochFenced):
         wait_until_registered: WaitForSource,
         wait_until_ready: WaitForSource,
         rename_uploaded: RenameUploaded,
+        finalize_uploaded: _UploadedSourceFinalizer,
     ) -> Source:
         raw_path = Path(file_path)
         content_type = _resolve_upload_content_type(raw_path, mime_type)
         _validate_upload_file_supported(raw_path, content_type)
         _validate_project_id(notebook_id)
-        requested_title = None
-        if title is not None:
-            requested_title = title.strip()
-            if not requested_title:
-                raise ValidationError("Title cannot be empty or whitespace-only")
-
         deadline = RuntimeDeadline.start(self._upload_timeout, monotonic=self._monotonic)
         state = _UploadState()
         scope = self._transport.operation_scope("Android source upload")
@@ -1007,40 +998,53 @@ class AndroidUploadPipeline(EpochFenced):
                     filename=raw_path.name, state=state, detail="timed out"
                 ) from None
 
-            needs_rename = requested_title is not None and requested_title != filename
-            if wait:
-                source = await wait_until_ready(notebook_id, source_id, wait_timeout, lease.epoch)
-            elif needs_rename:
-                source = await wait_until_registered(
-                    notebook_id, source_id, wait_timeout, lease.epoch
-                )
-            else:
-                source = Source(
-                    id=source_id,
-                    title=filename,
-                    status=SourceStatus.PROCESSING,
-                    _type_code=None,
+            async def _wait_until_ready(
+                target_notebook_id: str,
+                target_source_id: str,
+                timeout: float,
+            ) -> Source:
+                return await wait_until_ready(
+                    target_notebook_id,
+                    target_source_id,
+                    timeout,
+                    lease.epoch,
                 )
 
-            if needs_rename:
-                assert requested_title is not None
-                try:
-                    echoed_title = await rename_uploaded(
-                        notebook_id,
-                        source_id,
-                        requested_title,
-                        lease.epoch,
-                    )
-                    source = replace(source, title=echoed_title or requested_title)
-                except (RPCError, NetworkError):
-                    # Fixed, capability-free diagnostic: never log title, URL or token.
-                    import logging
+            async def _wait_until_registered(
+                target_notebook_id: str,
+                target_source_id: str,
+                timeout: float,
+            ) -> Source:
+                return await wait_until_registered(
+                    target_notebook_id,
+                    target_source_id,
+                    timeout,
+                    lease.epoch,
+                )
 
-                    logging.getLogger(__name__).warning(
-                        "Android file source %s uploaded but title finalization failed",
-                        source_id,
-                    )
-            return source
+            async def _rename_uploaded(
+                target_notebook_id: str,
+                target_source_id: str,
+                requested_title: str,
+            ) -> str | None:
+                return await rename_uploaded(
+                    target_notebook_id,
+                    target_source_id,
+                    requested_title,
+                    lease.epoch,
+                )
+
+            return await finalize_uploaded(
+                notebook_id,
+                source_id,
+                filename,
+                wait=wait,
+                wait_timeout=wait_timeout,
+                title=title,
+                wait_until_ready=_wait_until_ready,
+                wait_until_registered=_wait_until_registered,
+                rename_uploaded=_rename_uploaded,
+            )
         finally:
             await scope.__aexit__(None, None, None)
 

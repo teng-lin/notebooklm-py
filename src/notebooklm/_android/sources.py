@@ -43,7 +43,6 @@ from .codecs.notebooks import decode_project, map_get_project_error, validate_pr
 from .codecs.sources import decode_source, decode_sources, select_document_guide
 from .drive_staging import _DRIVE_STAGED_UPLOAD_EXTENSIONS
 from .epoch import bind_workflow_epoch, reset_workflow_epoch
-from .errors import sanitize_async_boundary
 from .phenotype import PhenotypeTokenProvider
 from .play_books import (
     build_expert_intelligence_content,
@@ -385,15 +384,12 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
     ) -> None:
         """Bind the fully native source surface.
 
-        ``add_file_compat`` is an optional override for the Drive-staged upload
-        path (see ``_DRIVE_STAGED_UPLOAD_EXTENSIONS``). Public client assembly
-        supplies nothing: the adapter holds no Web collaborator. Direct adapter
-        callers may inject one to exercise a different uploader, or omit it and
-        get the native staging round-trip.
+        ``add_file_compat`` optionally overrides Drive staging for direct adapter
+        callers. Public client assembly supplies nothing: the adapter holds no
+        Web collaborator and uses the native staging round-trip.
 
-        ``monotonic`` is the clock behind the post-upload readiness deadline,
-        injectable like every other Android deadline so tests can drive the
-        wait with a stepping clock instead of racing ``time.monotonic()``.
+        ``monotonic`` makes the post-upload readiness deadline testable with a
+        stepping clock instead of racing ``time.monotonic()``.
         """
         self._transport = session
         self._searcher = AndroidSourceSearchService(session)
@@ -1084,25 +1080,47 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
             wait_timeout=wait_timeout,
         )
 
-    @sanitize_async_boundary
-    async def add_file(
+    async def _send_upload(
         self,
         notebook_id: str,
         file_path: str | Path,
-        mime_type: str | None = None,
+        mime_type: str | None,
         *,
-        wait: bool = False,
-        wait_timeout: float = 120.0,
-        title: str | None = None,
-        on_progress: Callable[[int, int], object] | None = None,
+        wait: bool,
+        wait_timeout: float,
+        title: str | None,
+        on_progress: Callable[[int, int], object] | None,
     ) -> Source:
-        # Choose the upload path from the same canonical target whose filename
-        # drives MIME inference in either uploader, so a misleading symlink
-        # suffix cannot route a file into the transaction that will reject it.
-        canonical_path = await asyncio.to_thread(Path(file_path).resolve)
-        if canonical_path.suffix.lower() in _DRIVE_STAGED_UPLOAD_EXTENSIONS:
-            if self._add_file_compat is not None:
-                return await self._add_file_compat(
+        adapter = self
+        pipeline = adapter._upload_pipeline
+        compat: AddFileCompat | None = None
+        result: Source | None = None
+        failure: BaseException | None = None
+        try:
+            canonical_path = await asyncio.to_thread(Path(file_path).resolve)
+            if canonical_path.suffix.lower() in _DRIVE_STAGED_UPLOAD_EXTENSIONS:
+                compat = adapter._add_file_compat
+                if compat is not None:
+                    result = await compat(
+                        notebook_id,
+                        canonical_path,
+                        mime_type,
+                        wait=wait,
+                        wait_timeout=wait_timeout,
+                        title=title,
+                        on_progress=on_progress,
+                    )
+                else:
+                    result = await pipeline.add_file_via_drive_staging(
+                        notebook_id,
+                        canonical_path,
+                        mime_type,
+                        wait_timeout=wait_timeout,
+                        title=title,
+                        import_drive_file=adapter.add_drive,
+                    )
+            else:
+                result = await pipeline.upload_file(
                     notebook_id,
                     canonical_path,
                     mime_type,
@@ -1110,29 +1128,21 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                     wait_timeout=wait_timeout,
                     title=title,
                     on_progress=on_progress,
+                    register_tentative=adapter._register_file_tentative,
+                    wait_until_registered=adapter._wait_uploaded_registered,
+                    wait_until_ready=adapter._wait_uploaded_ready,
+                    rename_uploaded=adapter._rename_uploaded,
+                    finalize_uploaded=SourcesAPI._finalize_uploaded_file,
                 )
-            return await self._upload_pipeline.add_file_via_drive_staging(
-                notebook_id,
-                canonical_path,
-                mime_type,
-                wait_timeout=wait_timeout,
-                title=title,
-                import_drive_file=self.add_drive,
-            )
+        except BaseException as error:
+            from .errors import sanitize_escaping_exception
 
-        return await self._upload_pipeline.upload_file(
-            notebook_id,
-            canonical_path,
-            mime_type,
-            wait=wait,
-            wait_timeout=wait_timeout,
-            title=title,
-            on_progress=on_progress,
-            register_tentative=self._register_file_tentative,
-            wait_until_registered=self._wait_uploaded_registered,
-            wait_until_ready=self._wait_uploaded_ready,
-            rename_uploaded=self._rename_uploaded,
-        )
+            failure = sanitize_escaping_exception(error)
+        finally:
+            del self, adapter, pipeline, compat, file_path, title, on_progress
+        if failure is not None:
+            raise failure from None
+        return cast(Source, result)
 
     async def add_drive(
         self,

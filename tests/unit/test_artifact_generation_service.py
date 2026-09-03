@@ -160,55 +160,8 @@ async def test_generate_study_guide_delegates_to_generate_report() -> None:
 
 
 # ---------------------------------------------------------------------------
-# generate_video option compatibility
+# generate_video wire dispatch (validation belongs to ArtifactsAPI)
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("kwargs", "message"),
-    [
-        pytest.param(
-            {"video_format": VideoFormat.CINEMATIC, "style_prompt": "noir"},
-            "style_prompt is not supported for cinematic videos",
-            id="cinematic-rejects-style-prompt",
-        ),
-        pytest.param(
-            {"video_format": VideoFormat.SHORT, "video_style": VideoStyle.ANIME},
-            "short has a fixed visual style",
-            id="short-rejects-style",
-        ),
-        pytest.param(
-            {"video_format": VideoFormat.SHORT, "style_prompt": "noir"},
-            "short has a fixed visual style",
-            id="short-rejects-style-prompt",
-        ),
-        pytest.param(
-            {"video_style": VideoStyle.CUSTOM},
-            "style_prompt is required when video_style is CUSTOM",
-            id="custom-requires-style-prompt",
-        ),
-        pytest.param(
-            {"video_style": VideoStyle.CUSTOM, "style_prompt": "   "},
-            "style_prompt is required when video_style is CUSTOM",
-            id="custom-rejects-whitespace-only-style-prompt",
-        ),
-        pytest.param(
-            {"video_style": VideoStyle.ANIME, "style_prompt": "noir"},
-            "style_prompt requires video_style=VideoStyle.CUSTOM",
-            id="style-prompt-requires-custom",
-        ),
-    ],
-)
-async def test_generate_video_rejects_incompatible_options(
-    kwargs: dict[str, Any], message: str
-) -> None:
-    service, rpc, _, _ = _service()
-
-    with pytest.raises(ValidationError, match=message):
-        await service.generate_video("nb1", source_ids=["s1"], **kwargs)
-
-    # Rejection happens before any dispatch.
-    assert rpc.calls == []
 
 
 async def test_generate_video_accepts_short_with_auto_select_style() -> None:
@@ -225,18 +178,17 @@ async def test_generate_video_accepts_short_with_auto_select_style() -> None:
     assert rpc.only.method is RPCMethod.CREATE_ARTIFACT
 
 
-async def test_generate_video_strips_the_custom_style_prompt() -> None:
+async def test_generate_video_forwards_the_validated_custom_style_prompt() -> None:
     service, rpc, _, _ = _service()
 
     await service.generate_video(
         "nb1",
         source_ids=["s1"],
         video_style=VideoStyle.CUSTOM,
-        style_prompt="  neon skyline  ",
+        style_prompt="neon skyline",
     )
 
     assert "neon skyline" in repr(rpc.only.params)
-    assert "  neon skyline  " not in repr(rpc.only.params)
 
 
 # ---------------------------------------------------------------------------

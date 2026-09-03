@@ -7,18 +7,25 @@ import builtins
 import contextlib
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Collection, Sequence
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Collection, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 from time import monotonic
-from typing import Any, Generic, Literal, TypeVar
+from typing import Any, Generic, Literal, Protocol, TypeVar
 
 from ._lookup import unwrap_or_raise
 from ._runtime.call_supervisor import OperationLease
 from ._source.batch import SourceUrlBatchItem
 from ._source.polling import SourcePoller, SourceWaitResult
 from ._types.research import SourceGuide
-from .exceptions import DecodingError, NonIdempotentRetryError, SourceNotFoundError, ValidationError
+from .exceptions import (
+    DecodingError,
+    NetworkError,
+    NonIdempotentRetryError,
+    RPCError,
+    SourceNotFoundError,
+    ValidationError,
+)
 from .types import (
     CopiedSource,
     PlayBook,
@@ -32,6 +39,26 @@ from .types import (
 logger = logging.getLogger(__name__)
 
 _TransferItem = TypeVar("_TransferItem")
+_UploadedSourceWaiter = Callable[[str, str, float], Awaitable[Source]]
+_UploadedSourceRenamer = Callable[[str, str, str], Awaitable[str | None]]
+
+
+class _UploadedSourceFinalizer(Protocol):
+    """Owner-neutral post-upload callback implemented by :class:`SourcesAPI`."""
+
+    async def __call__(
+        self,
+        notebook_id: str,
+        source_id: str,
+        filename: str,
+        *,
+        wait: bool,
+        wait_timeout: float,
+        title: str | None,
+        wait_until_ready: _UploadedSourceWaiter,
+        wait_until_registered: _UploadedSourceWaiter,
+        rename_uploaded: _UploadedSourceRenamer,
+    ) -> Source: ...
 
 
 @dataclass(frozen=True)
@@ -97,9 +124,9 @@ def finalize_search_results(
 class SourcesAPI(ABC):
     """Backend-neutral operations on NotebookLM sources.
 
-    Concrete backends own listing, mutation, content, and upload choreography.
-    The base owns identity lookup and readiness polling over the abstract
-    :meth:`list` operation.
+    Concrete backends own listing, mutation, content, and upload transport. The
+    base owns identity lookup, post-upload finalization, and readiness polling
+    over the abstract :meth:`list` operation.
     """
 
     def _operation_scope(
@@ -414,7 +441,45 @@ class SourcesAPI(ABC):
         """Add copied text to a notebook."""
         raise NotImplementedError
 
-    @abstractmethod
+    @staticmethod
+    async def _finalize_uploaded_file(
+        notebook_id: str,
+        source_id: str,
+        filename: str,
+        *,
+        wait: bool,
+        wait_timeout: float,
+        title: str | None,
+        wait_until_ready: _UploadedSourceWaiter,
+        wait_until_registered: _UploadedSourceWaiter,
+        rename_uploaded: _UploadedSourceRenamer,
+    ) -> Source:
+        """Apply backend-neutral readiness and display-title policy after upload."""
+        needs_title_rename = title is not None and title != filename
+        if wait:
+            source = await wait_until_ready(notebook_id, source_id, wait_timeout)
+        elif needs_title_rename:
+            source = await wait_until_registered(notebook_id, source_id, wait_timeout)
+        else:
+            source = Source(
+                id=source_id,
+                title=filename,
+                status=SourceStatus.PROCESSING,
+                _type_code=None,
+            )
+
+        if needs_title_rename:
+            try:
+                assert title is not None
+                echoed_title = await rename_uploaded(notebook_id, source_id, title)
+                source = replace(source, title=echoed_title or title)
+            except (RPCError, NetworkError):
+                logger.warning(
+                    "Source %s uploaded but title finalization failed",
+                    source_id,
+                )
+        return source
+
     async def add_file(
         self,
         notebook_id: str,
@@ -459,6 +524,40 @@ class SourcesAPI(ABC):
                 registration retains its backend-specific ``source_id`` and
                 ``stage`` diagnostics.
         """
+        requested_title = None
+        try:
+            if title is not None:
+                requested_title = title.strip()
+                if not requested_title:
+                    raise ValidationError("Title cannot be empty or whitespace-only")
+            return await self._send_upload(
+                notebook_id,
+                file_path,
+                mime_type,
+                wait=wait,
+                wait_timeout=wait_timeout,
+                title=requested_title,
+                on_progress=on_progress,
+            )
+        finally:
+            # Android API objects own the bearer and transport pipeline. Do not
+            # retain either owner (or caller-controlled values) in a published
+            # exception's outer, backend-neutral traceback frame.
+            del self, file_path, title, requested_title, on_progress
+
+    @abstractmethod
+    async def _send_upload(
+        self,
+        notebook_id: str,
+        file_path: str | Path,
+        mime_type: str | None,
+        *,
+        wait: bool,
+        wait_timeout: float,
+        title: str | None,
+        on_progress: Callable[[int, int], object] | None,
+    ) -> Source:
+        """Run one backend upload pipeline around the shared finalization policy."""
         raise NotImplementedError
 
     @abstractmethod
