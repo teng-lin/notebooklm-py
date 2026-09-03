@@ -18,6 +18,7 @@ from typing import Any, cast
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_POLICY = REPO_ROOT / "tests/fixtures/policies/auth_behavior_scenarios.json"
+NON_PASSING_EVIDENCE_MARKERS = {"repo_lint", "reality", "skip", "skipif", "xfail"}
 LIFECYCLE_POLICY = REPO_ROOT / "tests/fixtures/policies/auth_lifecycle_cleanup.json"
 CONTRACT_TAGS = {
     "cancellation",
@@ -263,6 +264,13 @@ def collect_workspace(workspace: Path) -> dict[str, Any]:
                         "nodeid": item.nodeid,
                         "canonical_node": canonical_node,
                         "fixtures": sorted(fixtures),
+                        "non_passing_markers": sorted(
+                            {
+                                marker.name
+                                for marker in item.iter_markers()
+                                if marker.name in NON_PASSING_EVIDENCE_MARKERS
+                            }
+                        ),
                     }
                 )
 
@@ -779,6 +787,15 @@ def validate_policy(
             raise PolicyError(f"{row['id']}: base_mutations cannot be empty")
         old_nodes = _expand(row["base_selectors"], base, f"{row['id']} base") if is_new else set()
         new_nodes = _expand(row["replacement_selectors"], head, f"{row['id']} head")
+        non_passing = {
+            item["nodeid"]: item.get("non_passing_markers", [])
+            for item in head.get("items", [])
+            if item["nodeid"] in new_nodes and item.get("non_passing_markers")
+        }
+        if non_passing:
+            raise PolicyError(
+                f"{row['id']}: replacement nodes are not passing CI evidence: {non_passing}"
+            )
         if not row["node_mapping"] or any(
             not isinstance(entry, dict)
             or set(entry) != {"base", "head"}

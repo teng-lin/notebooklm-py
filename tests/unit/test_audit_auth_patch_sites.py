@@ -671,6 +671,21 @@ def test_bulk_and_namespace_mutations_expand_literal_keys(script, tmp_path):
     )
 
 
+def test_item_idiom_does_not_leak_to_later_assignment_targets(script, tmp_path):
+    body = (
+        "from notebooklm._auth import storage\n"
+        "def test_x():\n"
+        "    storage.__dict__['SEAM'] = storage._PRIVATE_SEAM = 1\n"
+    )
+
+    sites = _sites(script, tmp_path, body, auth_module="storage", module_body=_MODULE_BODY)
+
+    assert [(site.attribute, site.idiom) for site in sites] == [
+        ("SEAM", "item-assignment"),
+        ("_PRIVATE_SEAM", "assignment"),
+    ]
+
+
 def test_finite_literal_loop_names_expand_to_individual_rows(script, tmp_path):
     body = (
         "from notebooklm._auth import storage\n"
@@ -701,6 +716,53 @@ def test_simple_lexical_module_alias_is_resolved(script, tmp_path):
         "    monkeypatch.setattr(alias, 'SEAM', 1)\n"
     )
     sites = _sites(script, tmp_path, body, auth_module="storage", module_body=_MODULE_BODY)
+    assert [(site.module, site.attribute) for site in sites] == [("storage", "SEAM")]
+
+
+def _two_module_sites(script, tmp_path: Path, body: str):
+    auth_dir = tmp_path / "_auth"
+    auth_dir.mkdir()
+    (auth_dir / "__init__.py").write_text("", encoding="utf-8")
+    for module in ("refresh", "storage"):
+        (auth_dir / f"{module}.py").write_text(_MODULE_BODY, encoding="utf-8")
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_fake.py").write_text(body, encoding="utf-8")
+    return script.collect_sites(tests_dir, auth_dir)
+
+
+@pytest.mark.parametrize("copy_alias", [False, True], ids=["direct", "copied"])
+def test_different_family_aliases_across_branches_fail_closed(script, tmp_path, copy_alias: bool):
+    copied = "    mutation_target = target\n" if copy_alias else ""
+    target = "mutation_target" if copy_alias else "target"
+    body = (
+        "from notebooklm._auth import refresh, storage\n"
+        "def test_x(monkeypatch, choose_storage):\n"
+        "    if choose_storage:\n"
+        "        target = storage\n"
+        "    else:\n"
+        "        target = refresh\n"
+        f"{copied}"
+        f"    monkeypatch.setattr({target}, 'SEAM', 1)\n"
+    )
+
+    with pytest.raises(script.AuditError, match="ambiguous family alias"):
+        _two_module_sites(script, tmp_path, body)
+
+
+def test_same_family_alias_across_branches_remains_exact(script, tmp_path):
+    body = (
+        "from notebooklm._auth import refresh, storage\n"
+        "def test_x(monkeypatch, choose_storage):\n"
+        "    if choose_storage:\n"
+        "        target = storage\n"
+        "    else:\n"
+        "        target = storage\n"
+        "    monkeypatch.setattr(target, 'SEAM', 1)\n"
+    )
+
+    sites = _two_module_sites(script, tmp_path, body)
+
     assert [(site.module, site.attribute) for site in sites] == [("storage", "SEAM")]
 
 

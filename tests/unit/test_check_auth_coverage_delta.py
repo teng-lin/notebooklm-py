@@ -149,6 +149,32 @@ def test_unmatched_loss_and_stale_allowance_both_fail(tmp_path: Path) -> None:
     ]
 
 
+def test_deleted_covered_statement_requires_its_exact_removed_allowance(tmp_path: Path) -> None:
+    path = "src/notebooklm/_auth/x.py"
+    base_source = tmp_path / "base" / path
+    head_source = tmp_path / "head" / path
+    base_source.parent.mkdir(parents=True)
+    head_source.parent.mkdir(parents=True)
+    base_source.write_text("kept\nremoved\n", encoding="utf-8")
+    head_source.write_text("kept\n", encoding="utf-8")
+    allowance = {
+        "path": path,
+        "kind": "statement",
+        "base_coordinate": 2,
+        "head_coordinate": None,
+        "disposition": "removed",
+    }
+
+    assert check.check_delta(
+        base_coverage={"files": {path: {"executed_lines": [1, 2], "executed_branches": []}}},
+        head_coverage={"files": {path: {"executed_lines": [1], "executed_branches": []}}},
+        affected={path},
+        base_workspace=tmp_path / "base",
+        head_workspace=tmp_path / "head",
+        allowances=[allowance],
+    ) == [allowance]
+
+
 def test_allowance_must_match_the_exact_mapped_head_coordinate(tmp_path: Path) -> None:
     path = "src/notebooklm/_auth/x.py"
     for workspace in (tmp_path / "base", tmp_path / "head"):

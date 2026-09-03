@@ -199,8 +199,18 @@ jobs:
     - name: Detect auth patch-coupling scope
       id: scope
       shell: bash
+      env:
+        PUSH_BEFORE: ${{ github.event.before }}
       run: |
-        base=$(git merge-base HEAD origin/main)
+        case "$GITHUB_EVENT_NAME" in
+          push) base="$PUSH_BEFORE" ;;
+          pull_request|workflow_dispatch) base=$(git merge-base HEAD origin/main) ;;
+          *) echo "unsupported event: $GITHUB_EVENT_NAME" >&2; exit 1 ;;
+        esac
+        if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+          git fetch --no-tags --depth=1 origin "$base"
+        fi
+        git cat-file -e "$base^{commit}"
         echo "base=$base" >> "$GITHUB_OUTPUT"
         git diff --name-only "$base" HEAD > "$RUNNER_TEMP/auth-patch-changed.txt"
         if grep -Eq '^(src/notebooklm/(_auth/|_browser/)|src/notebooklm/auth\.py|tests/|scripts/(audit_auth_|check_auth_)|\.github/workflows/test\.yml|docs/(adr/|development\.md))' "$RUNNER_TEMP/auth-patch-changed.txt"; then
@@ -273,6 +283,7 @@ jobs:
           "$RUNNER_TEMP/auth-patch-head/tests/unit/test_auth_coverage_allowance_policy.py" \
           "$RUNNER_TEMP/auth-patch-head/tests/unit/test_auth_lifecycle_cleanup_policy.py" \
           "$RUNNER_TEMP/auth-patch-head/tests/unit/test_check_auth_coverage_delta.py" \
+          --timeout=180 \
           --no-cov
         uv --project "$RUNNER_TEMP/auth-patch-head" run python "$RUNNER_TEMP/auth-patch-head/scripts/check_auth_lifecycle_cleanup_policy.py" --policy "$RUNNER_TEMP/auth-patch-head/tests/fixtures/policies/auth_lifecycle_cleanup.json" --tests-dir "$RUNNER_TEMP/auth-patch-head/tests" --head-collection "$RUNNER_TEMP/collection-head.json"
         uv run python scripts/check_auth_behavior_scenario_policy.py validate --base-collection "$RUNNER_TEMP/collection-base.json" --head-collection "$RUNNER_TEMP/collection-head.json" --base-revision "${{ steps.scope.outputs.base }}"

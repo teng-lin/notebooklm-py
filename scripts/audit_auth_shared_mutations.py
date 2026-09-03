@@ -33,6 +33,7 @@ if __package__ in {None, ""}:  # direct ``python scripts/...`` execution
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scripts.audit_auth_patch_sites import (
+    _AMBIGUOUS_FAMILY_ALIAS,
     AuditError,
     _alias_context,
     _call_arg,
@@ -216,7 +217,18 @@ def _absolute_dotted(node: ast.AST, aliases: dict[str, str]) -> str | None:
     target = aliases.get(head)
     if target is None:
         return dotted
+    if target == _AMBIGUOUS_FAMILY_ALIAS:
+        raise AuditError("mutation target is an ambiguous family alias after control-flow merge")
     return target + (separator + tail if separator else "")
+
+
+def _merge_alias_bindings(destination: dict[str, str], source: dict[str, str]) -> None:
+    """Merge family bindings without silently choosing one possible owner."""
+    for name, target in source.items():
+        if name not in destination:
+            destination[name] = target
+        elif destination[name] != target:
+            destination[name] = _AMBIGUOUS_FAMILY_ALIAS
 
 
 def _normalize_private_module(
@@ -658,6 +670,7 @@ def _assignment_rows(
         targets, idiom = node.targets, "deletion"
     rows: list[tuple[str, str, str, str]] = []
     for target in targets:
+        target_idiom = idiom
         owner: tuple[str, str] | None
         attributes: list[str]
         if isinstance(target, ast.Attribute):
@@ -670,11 +683,11 @@ def _assignment_rows(
             attributes = _literal_strings(target.slice, constants, expanded)
             if owner is not None and not attributes:
                 raise AuditError(f"{context}: dynamic shared-owner item assignment")
-            idiom = f"item-{idiom}"
+            target_idiom = f"item-{target_idiom}"
         else:
             owner, attributes = None, []
         if owner is not None:
-            rows.extend((owner[0], owner[1], attribute, idiom) for attribute in attributes)
+            rows.extend((owner[0], owner[1], attribute, target_idiom) for attribute in attributes)
     return rows
 
 
@@ -729,16 +742,23 @@ def collect_mutations(
                 continue
             accessor_aliases: dict[str, str] = {}
             for context in contexts.values():
-                accessor_aliases.update(context.get(id(return_node), {}))
+                _merge_alias_bindings(accessor_aliases, context.get(id(return_node), {}))
             accessor_lexical_owner = owners.get(id(return_node), (candidate.name, "helper"))[0]
             accessor_blocked_names: set[str] = set()
             for module_aliases, local_aliases, local_names in symbols.values():
                 blocked = local_names.get(accessor_lexical_owner, set())
                 accessor_blocked_names.update(blocked)
-                accessor_aliases.update(
-                    {name: target for name, target in module_aliases.items() if name not in blocked}
+                _merge_alias_bindings(
+                    accessor_aliases,
+                    {
+                        name: target
+                        for name, target in module_aliases.items()
+                        if name not in blocked
+                    },
                 )
-                accessor_aliases.update(local_aliases.get(accessor_lexical_owner, {}))
+                _merge_alias_bindings(
+                    accessor_aliases, local_aliases.get(accessor_lexical_owner, {})
+                )
             callable_accessors = {
                 name: owner
                 for name, owner in shared_accessors.items()
@@ -757,38 +777,65 @@ def collect_mutations(
         # Resolve simple ``owner = Class.process_default()`` / ``owner =
         # module.SHARED`` bindings.  They remain scoped to their lexical owner;
         # ordinary fresh construction does not resolve and stays excluded.
-        for assignment_node in ast.walk(tree):
-            if not isinstance(assignment_node, ast.Assign) or len(assignment_node.targets) != 1:
-                continue
-            target = assignment_node.targets[0]
-            if not isinstance(target, ast.Name):
-                continue
-            assignment_aliases: dict[str, str] = {}
-            for context in contexts.values():
-                assignment_aliases.update(context.get(id(assignment_node), {}))
-            assignment_owner = owners.get(id(assignment_node), ("<module>", "helper"))[0]
-            assignment_blocked_names: set[str] = set()
-            for module_aliases, local_aliases, local_names in symbols.values():
-                blocked = local_names.get(assignment_owner, set())
-                assignment_blocked_names.update(blocked)
-                assignment_aliases.update(
-                    {name: target for name, target in module_aliases.items() if name not in blocked}
-                )
-                assignment_aliases.update(local_aliases.get(assignment_owner, {}))
-            assignment_accessors = {
-                name: owner
-                for name, owner in shared_accessors.items()
-                if name not in assignment_blocked_names
+        simple_assignments = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+        ]
+        for _ in range(len(simple_assignments) + 1):
+            previous_local_shared = {
+                owner: dict(bindings) for owner, bindings in local_shared.items()
             }
-            resolved = _resolve_shared_owner(
-                assignment_node.value,
-                assignment_aliases,
-                inventories,
-                facade_aliases,
-                assignment_accessors,
-            )
-            if resolved is not None:
-                local_shared[assignment_owner][target.id] = resolved[1]
+            for assignment_node in simple_assignments:
+                target = assignment_node.targets[0]
+                assert isinstance(target, ast.Name)
+                assignment_aliases: dict[str, str] = {}
+                for context in contexts.values():
+                    _merge_alias_bindings(assignment_aliases, context.get(id(assignment_node), {}))
+                assignment_owner = owners.get(id(assignment_node), ("<module>", "helper"))[0]
+                assignment_blocked_names: set[str] = set()
+                for module_aliases, local_aliases, local_names in symbols.values():
+                    blocked = local_names.get(assignment_owner, set())
+                    assignment_blocked_names.update(blocked)
+                    _merge_alias_bindings(
+                        assignment_aliases,
+                        {
+                            name: target
+                            for name, target in module_aliases.items()
+                            if name not in blocked
+                        },
+                    )
+                    _merge_alias_bindings(
+                        assignment_aliases, local_aliases.get(assignment_owner, {})
+                    )
+                _merge_alias_bindings(assignment_aliases, local_shared.get(assignment_owner, {}))
+                assignment_dotted = _dotted_name(assignment_node.value)
+                if assignment_dotted is not None:
+                    assignment_head = assignment_dotted.partition(".")[0]
+                    if assignment_aliases.get(assignment_head) == _AMBIGUOUS_FAMILY_ALIAS:
+                        _merge_alias_bindings(
+                            local_shared[assignment_owner],
+                            {target.id: _AMBIGUOUS_FAMILY_ALIAS},
+                        )
+                        continue
+                assignment_accessors = {
+                    name: owner
+                    for name, owner in shared_accessors.items()
+                    if name not in assignment_blocked_names
+                }
+                resolved = _resolve_shared_owner(
+                    assignment_node.value,
+                    assignment_aliases,
+                    inventories,
+                    facade_aliases,
+                    assignment_accessors,
+                )
+                if resolved is not None:
+                    _merge_alias_bindings(local_shared[assignment_owner], {target.id: resolved[1]})
+            if local_shared == previous_local_shared:
+                break
 
         def resolution_context(
             node: ast.AST,
@@ -803,17 +850,22 @@ def collect_mutations(
         ) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
             aliases: dict[str, str] = {}
             for context in _contexts.values():
-                aliases.update(context.get(id(node), {}))
+                _merge_alias_bindings(aliases, context.get(id(node), {}))
             lexical_owner = _owners.get(id(node), ("<module>", "helper"))[0]
             blocked_names: set[str] = set()
             for module_aliases, local_aliases, local_names in _symbols.values():
                 blocked = local_names.get(lexical_owner, set())
                 blocked_names.update(blocked)
-                aliases.update(
-                    {name: target for name, target in module_aliases.items() if name not in blocked}
+                _merge_alias_bindings(
+                    aliases,
+                    {
+                        name: target
+                        for name, target in module_aliases.items()
+                        if name not in blocked
+                    },
                 )
-                aliases.update(local_aliases.get(lexical_owner, {}))
-            aliases.update(_local_shared.get(lexical_owner, {}))
+                _merge_alias_bindings(aliases, local_aliases.get(lexical_owner, {}))
+            _merge_alias_bindings(aliases, _local_shared.get(lexical_owner, {}))
             accessors = {
                 name: owner
                 for name, owner in _shared_accessors.items()

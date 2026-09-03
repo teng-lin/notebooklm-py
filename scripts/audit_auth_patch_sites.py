@@ -141,6 +141,7 @@ AUTH_PACKAGE = ("notebooklm", "_auth")
 AUTH_DOTTED = ".".join(AUTH_PACKAGE)
 PATCH_FUNCS = {"setattr", "delattr"}  # matched as <something>.setattr(...)
 REPO_ROOT = Path(__file__).resolve().parent.parent
+_AMBIGUOUS_FAMILY_ALIAS = "<ambiguous-family-alias>"
 
 
 @dataclass(frozen=True, order=True)
@@ -404,6 +405,8 @@ class _AliasResolver:
             return None
         if resolved_head is None:
             resolved_head = head
+        if resolved_head == _AMBIGUOUS_FAMILY_ALIAS:
+            return _AMBIGUOUS_FAMILY_ALIAS
         resolved = resolved_head + (separator + tail if separator else "")
         if resolved == self.package_dotted or resolved.startswith(f"{self.package_dotted}."):
             return resolved
@@ -423,7 +426,9 @@ class _AliasResolver:
         for name in set().union(*(state.keys() for state in states)):
             values = [state.get(name, missing) for state in states]
             aliases = sorted({value for value in values if isinstance(value, str)})
-            if aliases:
+            if len(aliases) > 1:
+                merged[name] = _AMBIGUOUS_FAMILY_ALIAS
+            elif aliases:
                 merged[name] = aliases[0]
             elif missing not in values:
                 merged[name] = None
@@ -783,6 +788,8 @@ def _resolve_target(
     target = aliases.get(head)
     if target is None:
         return None
+    if target == _AMBIGUOUS_FAMILY_ALIAS:
+        raise AuditError("mutation target is an ambiguous family alias after control-flow merge")
 
     if target == package_dotted:
         if not rest and single_module in module_names:
@@ -1672,6 +1679,7 @@ def _assignment_rows(
     rows: list[tuple[str, str, str]] = []
     known_modules = set(module_names)
     for target in targets:
+        target_idiom = idiom
         module: str | None = None
         attribute: str | None = None
         if isinstance(target, ast.Attribute):
@@ -1687,11 +1695,11 @@ def _assignment_rows(
                 attributes = _literal_strings(target.slice, constants, expanded)
                 if not attributes:
                     raise AuditError(f"{context}: dynamic namespace item against {module}")
-                idiom = f"item-{idiom}"
-                rows.extend((module, item, idiom) for item in attributes)
+                target_idiom = f"item-{target_idiom}"
+                rows.extend((module, item, target_idiom) for item in attributes)
                 continue
         if module is not None and attribute is not None:
-            rows.append((module, attribute, idiom))
+            rows.append((module, attribute, target_idiom))
     return rows
 
 

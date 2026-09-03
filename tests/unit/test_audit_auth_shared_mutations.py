@@ -152,6 +152,68 @@ def test_direct_item_bulk_and_in_place_forms_are_counted(audit, tmp_path):
     }
 
 
+def test_item_idiom_does_not_leak_to_later_shared_assignment_targets(audit, tmp_path):
+    body = (
+        "from notebooklm._auth.state import Owner\n"
+        "def test_x():\n"
+        "    Owner._CACHE['key'] = Owner._flag = 1\n"
+    )
+
+    sites = _collect(audit, tmp_path, body)
+
+    assert [(site.attribute, site.idiom) for site in sites] == [
+        ("_flag", "assignment"),
+        ("key", "item-assignment"),
+    ]
+
+
+@pytest.mark.parametrize("copy_alias", [False, True], ids=["direct", "copied"])
+@pytest.mark.parametrize("cross_package", [False, True], ids=["same-package", "cross-package"])
+def test_ambiguous_shared_owner_aliases_fail_closed(
+    audit, tmp_path, copy_alias: bool, cross_package: bool
+):
+    auth_source = tmp_path / "src/notebooklm/_auth"
+    auth_source.mkdir(parents=True)
+    (auth_source / "state.py").write_text(
+        "class First:\n    _CACHE = {}\nclass Second:\n    _CACHE = {}\n",
+        encoding="utf-8",
+    )
+    family = {"notebooklm._auth": auth_source}
+    if cross_package:
+        browser_source = tmp_path / "src/notebooklm/_browser"
+        browser_source.mkdir()
+        (browser_source / "state.py").write_text(
+            "class BrowserOwner:\n    _CACHE = {}\n", encoding="utf-8"
+        )
+        family["notebooklm._browser"] = browser_source
+        imports = (
+            "from notebooklm._auth.state import First\n"
+            "from notebooklm._browser.state import BrowserOwner\n"
+        )
+        alternate = "BrowserOwner"
+    else:
+        imports = "from notebooklm._auth.state import First, Second\n"
+        alternate = "Second"
+    copied = "    mutation_target = target\n" if copy_alias else ""
+    target = "mutation_target" if copy_alias else "target"
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_fake.py").write_text(
+        imports
+        + "def test_x(monkeypatch, choose_alternate):\n"
+        + "    if choose_alternate:\n"
+        + f"        target = {alternate}\n"
+        + "    else:\n"
+        + "        target = First\n"
+        + copied
+        + f"    monkeypatch.setattr({target}, '_flag', True)\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(audit.AuditError, match="ambiguous family alias"):
+        audit.collect_mutations(tests, family)
+
+
 def test_finite_literal_loop_names_expand_for_shared_owners(audit, tmp_path):
     body = (
         "from notebooklm._auth.state import Owner\n"

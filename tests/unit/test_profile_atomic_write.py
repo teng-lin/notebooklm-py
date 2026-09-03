@@ -420,12 +420,20 @@ def test_storage_state_mutators_share_one_lock_file(tmp_path: Path) -> None:
 
     # Canonical name is the dotted, hidden sibling (storage.py contract).
     expected = storage_path.with_name(f".{storage_path.name}.lock").expanduser().resolve()
+    context_lock = storage_path.with_name(".context.json.lock").expanduser().resolve()
 
     def _locks_taken_by(mutator) -> set[Path]:  # type: ignore[no-untyped-def]
-        expected.unlink(missing_ok=True)
+        for candidate in tmp_path.iterdir():
+            if candidate.name.endswith(".lock") and candidate.is_file():
+                candidate.unlink()
         mutator()
-        assert expected.is_file()
-        return {expected}
+        observed = {
+            candidate.resolve()
+            for candidate in tmp_path.iterdir()
+            if candidate.name.endswith(".lock") and candidate.resolve() != context_lock
+        }
+        assert expected in observed
+        return observed
 
     # Assert PER MUTATOR that it created the storage lock — so "a mutator takes
     # no lock" is caught, not masked by another mutator's earlier sentinel.

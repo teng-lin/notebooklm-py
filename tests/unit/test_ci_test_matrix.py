@@ -207,9 +207,15 @@ def test_auth_patch_coverage_delta_is_required_shape_and_always_completes() -> N
 
     scope = _step(job, "Detect auth patch-coupling scope")
     assert scope["id"] == "scope"
-    assert "git merge-base HEAD origin/main" in str(scope["run"])
-    assert 'git diff --name-only "$base" HEAD' in str(scope["run"])
-    assert 'echo "run=true"' in str(scope["run"])
+    assert scope["env"] == {"PUSH_BEFORE": "${{ github.event.before }}"}
+    scope_command = str(scope["run"])
+    assert 'push) base="$PUSH_BEFORE"' in scope_command
+    assert (
+        "pull_request|workflow_dispatch) base=$(git merge-base HEAD origin/main)" in scope_command
+    )
+    assert 'git cat-file -e "$base^{commit}"' in scope_command
+    assert 'git diff --name-only "$base" HEAD' in scope_command
+    assert 'echo "run=true"' in scope_command
 
     base = _step(job, "Run merge-base nightly coverage sequence")
     head = _step(job, "Run head nightly coverage sequence")
@@ -239,6 +245,7 @@ def test_auth_patch_coverage_delta_is_required_shape_and_always_completes() -> N
     assert "test_auth_coverage_allowance_policy.py" in validation
     assert "test_auth_lifecycle_cleanup_policy.py" in validation
     assert "test_check_auth_coverage_delta.py" in validation
+    assert "--timeout=180" in validation
     assert "scripts/check_auth_lifecycle_cleanup_policy.py" in validation
     assert "--head-collection" in validation
 

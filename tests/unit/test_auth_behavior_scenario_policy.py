@@ -79,6 +79,17 @@ def test_parameter_prefix_must_map_the_complete_concrete_set() -> None:
     validate_policy({"version": 1, "scenarios": [row]}, base, head)
 
 
+@pytest.mark.parametrize("marker", ["skip", "skipif", "xfail", "repo_lint", "reality"])
+def test_replacement_nodes_must_be_passing_ci_evidence(marker: str) -> None:
+    node = "tests/unit/test_x.py::test_x"
+    collection = _collection(node)
+    collection["items"][0]["non_passing_markers"] = [marker]
+    row = _row([node], [node], [{"base": node, "head": [node]}])
+
+    with pytest.raises(PolicyError, match="not passing CI evidence"):
+        validate_policy({"version": 1, "scenarios": [row]}, collection, collection)
+
+
 def test_incomplete_parameter_mapping_and_wildcards_fail() -> None:
     base = _collection("tests/unit/test_x.py::test_old[a]", "tests/unit/test_x.py::test_old[b]")
     head = _collection("tests/unit/test_x.py::test_new")
