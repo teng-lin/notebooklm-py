@@ -731,12 +731,11 @@ class TestLegacyScrubTocTouRecheck:
 
 
 class TestClearInBandLockFailure:
-    """Best-effort lock-unavailable handling in ``_clear_in_band_account``.
+    """Best-effort lock-unavailable handling in the ``ProfileStore`` owner.
 
-    The in-band clear now delegates to ``storage.clear_in_band_account``,
-    which serializes on the unified storage lock manager. When the
-    lock is unavailable the clear stays best-effort (swallows, never raises) and
-    leaves the file untouched — the legacy reader still resolves the record.
+    ``ProfileStore.clear_account`` serializes on its injected storage lock
+    manager. When the lock is unavailable, the clear stays best-effort
+    (swallows, never raises) and leaves the file untouched.
     """
 
     def test_lock_unavailable_is_swallowed(self, tmp_path):
