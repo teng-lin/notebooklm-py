@@ -103,6 +103,7 @@ def _result(
         # issues. Pin both phrasings (decoder.py:117 and :470).
         "Parse error: API rate limit exceeded. Please wait before retrying.",
         "Parse error: API rate limit or quota exceeded. Please wait before retrying.",
+        "Parse error: RateLimitError",
         # ``httpx.ReadTimeout`` with an empty message stringifies to the
         # class name (see issue #864 fallback in make_rpc_request) and is
         # a Google-side flake that passes on retry — see #1004 and the
@@ -358,6 +359,38 @@ async def test_test_rpc_method_with_data_propagates_empty_message_errors(
     assert data is None
     assert result.status is CheckStatus.ERROR
     assert result.error == "ReadTimeout"
+
+
+@pytest.mark.asyncio
+async def test_test_rpc_method_with_data_keeps_redacted_rate_limit_transient(
+    monkeypatch: pytest.MonkeyPatch,
+    timing_out_auth: check_rpc_health.AuthTokens,
+) -> None:
+    method = check_rpc_health.RPCMethod.CREATE_NOTEBOOK
+
+    async def fake_request(*args: Any, **kwargs: Any) -> tuple[str, None]:
+        return "wire response", None
+
+    def raise_rate_limit(*args: Any, **kwargs: Any) -> Any:
+        raise check_rpc_health.RateLimitError("quota response with sensitive detail")
+
+    monkeypatch.setattr(check_rpc_health, "make_rpc_request", fake_request)
+    monkeypatch.setattr(check_rpc_health, "strip_anti_xssi", lambda value: value)
+    monkeypatch.setattr(check_rpc_health, "parse_chunked_response", lambda value: [])
+    monkeypatch.setattr(check_rpc_health, "collect_rpc_ids", lambda chunks: [method.value])
+    monkeypatch.setattr(check_rpc_health, "decode_response", raise_rate_limit)
+
+    result, data = await check_rpc_health.test_rpc_method_with_data(
+        _TimingOutClient(),
+        timing_out_auth,
+        method,
+        ["Title"],
+    )
+
+    assert data is None
+    assert result.error == "Parse error: RateLimitError"
+    assert check_rpc_health.is_transient_error(result.error)
+    assert "sensitive detail" not in result.error
 
 
 @pytest.mark.asyncio

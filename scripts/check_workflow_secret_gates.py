@@ -199,7 +199,11 @@ def _expression_is_trusted_guard(expr: str) -> bool:
 
 def _expression_is_ci_pool_guard(expr: str) -> bool:
     """Return whether a job guard pins both repository and trusted target."""
-    return bool(_REPOSITORY_GUARD_RE.search(expr) and _IS_STANDARD_GUARD_RE.search(expr))
+    return bool(
+        "||" not in expr
+        and _REPOSITORY_GUARD_RE.search(expr)
+        and _IS_STANDARD_GUARD_RE.search(expr)
+    )
 
 
 def _environment_value_is_approved(value: str) -> bool:
@@ -621,10 +625,11 @@ def _scan_pooled_account_jobs(path: Path) -> list[str]:
             violations.append(f"{prefix} must inject exactly one selected master-token secret")
         if any(not in_step for _line, in_step in master_secret_lines):
             violations.append(f"{prefix} must inject the selected token in one step only")
-        if not _REPOSITORY_GUARD_RE.search(job_if):
-            violations.append(f"{prefix} lacks the standard-repository job gate")
-        if not _IS_STANDARD_GUARD_RE.search(job_if):
-            violations.append(f"{prefix} lacks the exact-SHA is_standard job gate")
+        if not _expression_is_ci_pool_guard(job_if):
+            violations.append(
+                f"{prefix} lacks the conjunctive standard-repository and exact-SHA "
+                "is_standard job gate"
+            )
         if not any(
             (match := _JOB_ENVIRONMENT_RE.match(line))
             and _environment_value_is_approved(match.group(1))

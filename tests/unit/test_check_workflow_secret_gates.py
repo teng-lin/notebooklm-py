@@ -1039,6 +1039,7 @@ def test_ci_pool_guard_requires_exact_repository_and_standard_output(script) -> 
     repository = "github.repository == 'teng-lin/notebooklm-py'"
     standard = "needs.target.outputs.is_standard == 'true'"
     assert script._expression_is_ci_pool_guard(f"{repository} && {standard}")
+    assert not script._expression_is_ci_pool_guard(f"{repository} || {standard}")
     assert not script._expression_is_ci_pool_guard(f"{repository} && evil_is_standard == 'true'")
     assert not script._expression_is_ci_pool_guard(
         f"other.github.repository == 'teng-lin/notebooklm-py' && {standard}"

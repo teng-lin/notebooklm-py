@@ -2310,11 +2310,9 @@ async def run_health_check(
 # Currently classified as transient:
 #   * ``HTTP 429`` and gRPC ``RESOURCE_EXHAUSTED`` — explicit rate-limit
 #     signals from the backend.
-#   * ``API rate limit`` — catches the decoder's user-displayable messages
-#     raised as ``RateLimitError`` ("API rate limit exceeded..." and
-#     "API rate limit or quota exceeded..."). These reach the canary via
-#     the ``except RPCError`` parse-error branch in
-#     ``test_rpc_method_with_data`` and were previously misclassified.
+#   * ``Parse error: RateLimitError`` — the redacted typed marker emitted
+#     when the decoder rejects a user-displayable quota response. The legacy
+#     ``API rate limit`` marker remains for older safe reports.
 #   * ``ReadTimeout`` — ``httpx.ReadTimeout`` against Google's RPC
 #     endpoints is almost always server-side slowness, not an RPC
 #     contract change. It consistently passes on retry (see #1004 and
@@ -2330,6 +2328,7 @@ TRANSIENT_ERROR_MARKERS: tuple[str, ...] = (
     "HTTP 429",
     "RESOURCE_EXHAUSTED",
     "API rate limit",
+    "Parse error: RateLimitError",
     "Chat rate limit",
     "ReadTimeout",
 )
