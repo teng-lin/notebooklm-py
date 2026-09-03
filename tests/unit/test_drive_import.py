@@ -724,13 +724,18 @@ async def test_a_writer_thread_failure_is_reraised_on_the_event_loop(
     A directory at the destination makes ``open(..., "wb")`` fail
     deterministically inside the writer thread. Without the one-slot exception
     box the caller would see a silent truncated download instead.
+
+    The assertion is on ``OSError``, not a specific subclass: POSIX raises
+    ``IsADirectoryError`` and Windows raises ``PermissionError`` for the same
+    call. Which errno the platform picks is not the contract — that the
+    writer's failure reaches the caller at all is.
     """
     fetcher = _fetcher(temp_dir=tmp_path)
     destination = tmp_path / "occupied-by-a-directory"
     destination.mkdir()
     response = _BodyOnly(b"x" * 64, chunk=8)
 
-    with pytest.raises(IsADirectoryError):
+    with pytest.raises(OSError):
         await fetcher._drain_to_temp(response, destination, "paper.pdf")
 
 
@@ -744,10 +749,12 @@ async def test_the_producer_stops_feeding_a_failed_writer(tmp_path: Path) -> Non
     # forever if it did not observe ``writer_failed``.
     response = _BodyOnly(b"y" * 8192, chunk=16)
 
-    with pytest.raises(IsADirectoryError):
+    with pytest.raises(OSError):
         await asyncio.wait_for(
             fetcher._drain_to_temp(response, destination, "paper.pdf"), timeout=10
         )
+    # Not a ValidationError from the cap or the empty-body guard — the writer's
+    # own failure is what surfaced.
 
     assert response.chunks_yielded < 8192 // 16
 
