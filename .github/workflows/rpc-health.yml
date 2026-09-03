@@ -132,9 +132,7 @@ jobs:
     environment: protected-readonly
     timeout-minutes: 180
     env:
-      NOTEBOOKLM_HOME: ${{ runner.temp }}/notebooklm-home
       NOTEBOOKLM_PROFILE: ci-${{ needs.plan-live-lanes.outputs.web_account_slot }}-rpc-health-web
-      CI_E2E_MANIFEST: ${{ runner.temp }}/notebooklm-rpc-health.json
 
     steps:
     - uses: actions/checkout@v7
@@ -142,6 +140,13 @@ jobs:
         ref: ${{ needs.resolve-target.outputs.sha }}
         fetch-depth: 1
         persist-credentials: false
+
+    - name: Configure runner-local paths
+      run: |
+        {
+          echo "NOTEBOOKLM_HOME=$RUNNER_TEMP/notebooklm-home"
+          echo "CI_E2E_MANIFEST=$RUNNER_TEMP/notebooklm-rpc-health.json"
+        } >> "$GITHUB_ENV"
 
     - name: Set up Python
       uses: actions/setup-python@v7
@@ -954,7 +959,6 @@ jobs:
     # secret gates".
     environment: protected-readonly
     env:
-      NOTEBOOKLM_HOME: ${{ runner.temp }}/notebooklm-home
       NOTEBOOKLM_PROFILE: ci-${{ needs.plan-live-lanes.outputs.android_account_slot }}-rpc-health-android
 
     steps:
@@ -963,6 +967,9 @@ jobs:
         ref: ${{ needs.resolve-target.outputs.sha }}
         fetch-depth: 1
         persist-credentials: false
+
+    - name: Configure runner-local paths
+      run: echo "NOTEBOOKLM_HOME=$RUNNER_TEMP/notebooklm-home" >> "$GITHUB_ENV"
 
     - name: Set up Python
       uses: actions/setup-python@v7

@@ -34,6 +34,13 @@ def test_detached_verifier_is_removed_from_workflow_and_pinning_inventories() ->
     assert '"verify-artifacts.yml"' not in pinning
 
 
+def test_job_level_env_never_uses_step_only_runner_context() -> None:
+    for name in LIVE_NAMES:
+        workflow = _load(name)
+        for job_name, job in workflow["jobs"].items():
+            assert "${{ runner." not in str(job.get("env", {})), f"{name}:{job_name}"
+
+
 def test_live_workflows_resolve_only_main_before_planning_or_secrets() -> None:
     for name in LIVE_NAMES:
         workflow = _load(name)

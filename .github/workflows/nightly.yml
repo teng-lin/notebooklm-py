@@ -280,18 +280,22 @@ jobs:
         shell: bash
     env:
       NOTEBOOKLM_BACKEND: ${{ matrix.backend }}
-      NOTEBOOKLM_HOME: ${{ runner.temp }}/notebooklm-home
       NOTEBOOKLM_PROFILE: ci-${{ matrix.account_slot }}-${{ matrix.lane }}
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
       E2E_COVERAGE_FLOOR_SENTINEL: ${{ github.workspace }}/.e2e-coverage-floor-failed
-      CI_E2E_MANIFEST: ${{ runner.temp }}/notebooklm-e2e.json
-      CI_E2E_JOURNAL: ${{ runner.temp }}/notebooklm-generation.jsonl
     steps:
     - uses: actions/checkout@v7
       with:
         ref: ${{ needs.resolve-target.outputs.sha }}
         fetch-depth: 1
         persist-credentials: false
+    - name: Configure runner-local paths
+      run: |
+        {
+          echo "NOTEBOOKLM_HOME=$RUNNER_TEMP/notebooklm-home"
+          echo "CI_E2E_MANIFEST=$RUNNER_TEMP/notebooklm-e2e.json"
+          echo "CI_E2E_JOURNAL=$RUNNER_TEMP/notebooklm-generation.jsonl"
+        } >> "$GITHUB_ENV"
     - name: Record job budget origin
       id: job_start
       run: |

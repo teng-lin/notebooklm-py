@@ -110,15 +110,19 @@ jobs:
       queue: max
       cancel-in-progress: false
     env:
-      NOTEBOOKLM_HOME: ${{ runner.temp }}/notebooklm-home
       NOTEBOOKLM_PROFILE: ci-${{ needs.plan-account.outputs.account_slot }}-verify-package
-      CI_E2E_MANIFEST: ${{ runner.temp }}/notebooklm-verify-package.json
     steps:
     - uses: actions/checkout@v7
       with:
         ref: ${{ needs.resolve-target.outputs.sha }}
         fetch-depth: 1
         persist-credentials: false
+    - name: Configure runner-local paths
+      run: |
+        {
+          echo "NOTEBOOKLM_HOME=$RUNNER_TEMP/notebooklm-home"
+          echo "CI_E2E_MANIFEST=$RUNNER_TEMP/notebooklm-verify-package.json"
+        } >> "$GITHUB_ENV"
     - name: Set up Python 3.12
       uses: actions/setup-python@v7
       with:
