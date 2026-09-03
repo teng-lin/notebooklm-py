@@ -324,14 +324,9 @@ def test_adapters_are_concrete_and_module_imports_keep_protobuf_lazy() -> None:
     assert server.operation_scopes == []
     assert CollectionsAPI.__abstractmethods__ == {
         "list",
-        "get_or_none",
-        "get",
-        "notebooks",
         "create",
-        "rename",
-        "add_notebooks",
-        "remove_notebooks",
-        "delete",
+        "_send_update",
+        "_send_mutate_member",
     }
     assert all(
         inspect.iscoroutinefunction(getattr(AndroidCollectionsAPI, name))
@@ -1135,11 +1130,13 @@ async def test_property_write_read_back_absence_maps_to_the_typed_miss(kind: str
     labels, collections = _apis(_VanishingResourceServer())
 
     expected = LabelNotFoundError if kind == "label" else CollectionNotFoundError
-    with pytest.raises(expected):
+    with pytest.raises(expected) as caught:
         if kind == "label":
             await labels.update(NB, LABEL_A, name="New")
         else:
             await collections.rename(COLLECTION_A, "New")
+
+    assert caught.value.method_id == MUTATE_LABEL_METHOD
 
 
 @pytest.mark.parametrize("kind", ["label", "collection"])

@@ -5,7 +5,7 @@ from __future__ import annotations
 import builtins
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import NoReturn
+from typing import Literal, NoReturn
 
 from .._collections import CollectionsAPI, ListNotebooks
 from .._idempotency import mark_unconfirmed
@@ -17,15 +17,14 @@ from ..exceptions import (
     NetworkError,
     RPCError,
 )
-from ..types import Collection, Notebook
+from ..types import Collection
 from .codecs.organization import decode_created_collections
-from .epoch import bind_workflow_epoch, reset_workflow_epoch
+from .epoch import bind_workflow_epoch, reset_workflow_epoch, workflow_epoch_for
 from .organization import (
     CREATE_LABEL_METHOD,
     DELETE_LABELS_METHOD,
     GET_LABELS_METHOD,
     MUTATE_LABEL_METHOD,
-    MemberOperation,
     create_manual,
     delete_resources,
     list_collections,
@@ -48,6 +47,14 @@ def _raise_collection_write_miss(collection_id: str, error: RPCError) -> None:
 class AndroidCollectionsAPI(CollectionsAPI):
     """All nine collection operations over live-validated Android RPC shapes."""
 
+    _list_method_id = GET_LABELS_METHOD
+    _mutation_method_id = MUTATE_LABEL_METHOD
+    _property_readback_miss_method_id = MUTATE_LABEL_METHOD
+    _delete_method_id = DELETE_LABELS_METHOD
+    _verify_writes = True
+    _filter_existing_on_delete = True
+    _dedupe_deletes = True
+
     @asynccontextmanager
     async def _operation_scope(self, label: str) -> AsyncIterator[OperationLease]:
         async with self._transport.operation_scope(label) as lease:
@@ -58,53 +65,20 @@ class AndroidCollectionsAPI(CollectionsAPI):
                 reset_workflow_epoch(token)
 
     def __init__(self, session: AndroidSession, *, list_notebooks: ListNotebooks) -> None:
+        super().__init__(list_notebooks=list_notebooks)
         self._transport = session
-        self._list_notebooks = list_notebooks
 
     async def _list(self, *, expected_epoch: int) -> builtins.list[Collection]:
         return await list_collections(self._transport, expected_epoch=expected_epoch)
-
-    async def _get_or_none(
-        self,
-        collection_id: str,
-        *,
-        expected_epoch: int,
-    ) -> Collection | None:
-        return next(
-            (
-                collection
-                for collection in await self._list(expected_epoch=expected_epoch)
-                if collection.id == collection_id
-            ),
-            None,
-        )
 
     async def list(self) -> builtins.list[Collection]:
         async with self._transport.operation_scope("collections.list") as lease:
             return await self._list(expected_epoch=lease.epoch)
 
-    async def get_or_none(self, collection_id: str) -> Collection | None:
-        async with self._transport.operation_scope("collections.get_or_none") as lease:
-            return await self._get_or_none(collection_id, expected_epoch=lease.epoch)
-
-    async def get(self, collection_id: str) -> Collection:
-        async with self._transport.operation_scope("collections.get") as lease:
-            collection = await self._get_or_none(collection_id, expected_epoch=lease.epoch)
-            if collection is None:
-                raise _collection_miss(collection_id, method_id=GET_LABELS_METHOD)
-            return collection
-
-    async def notebooks(self, collection_id: str) -> builtins.list[Notebook]:
-        async with self._transport.operation_scope("collections.notebooks") as lease:
-            collection = await self._get_or_none(collection_id, expected_epoch=lease.epoch)
-            if collection is None:
-                raise _collection_miss(collection_id, method_id=GET_LABELS_METHOD)
-            by_id = {notebook.id: notebook for notebook in await self._list_notebooks()}
-            return [
-                by_id[notebook_id]
-                for notebook_id in collection.notebook_ids
-                if notebook_id in by_id
-            ]
+    async def _list_in_scope(self) -> builtins.list[Collection]:
+        expected_epoch = workflow_epoch_for(self._transport)
+        assert expected_epoch is not None
+        return await self._list(expected_epoch=expected_epoch)
 
     async def create(self, name: str) -> Collection:
         async with self._transport.operation_scope("collections.create") as lease:
@@ -149,89 +123,74 @@ class AndroidCollectionsAPI(CollectionsAPI):
             (collection,) = matching
             return collection
 
-    async def rename(
+    async def _send_update(
         self,
-        collection_id: str,
-        name: str,
+        operation: Literal["properties", "delete"],
+        collection_ids: builtins.list[str],
         *,
-        return_object: bool = True,
-    ) -> Collection | None:
-        async with self._transport.operation_scope("collections.rename") as lease:
-            current = await self._get_or_none(collection_id, expected_epoch=lease.epoch)
-            if current is None:
-                raise _collection_miss(collection_id, method_id=MUTATE_LABEL_METHOD)
-            requested_emoji = current.emoji or ""
+        name: str | None = None,
+        current: Collection | None = None,
+    ) -> None:
+        expected_epoch = workflow_epoch_for(self._transport)
+        assert expected_epoch is not None
+        if operation == "delete":
             try:
-                await mutate_properties(
+                await delete_resources(
                     self._transport,
                     kind="collection",
-                    resource_id=collection_id,
-                    name=name,
-                    emoji=requested_emoji,
+                    resource_ids=collection_ids,
                     notebook_id=None,
-                    expected_epoch=lease.epoch,
+                    expected_epoch=expected_epoch,
                 )
             except RPCError as exc:
-                _raise_collection_write_miss(collection_id, exc)
-            read_back = await self._get_or_none(collection_id, expected_epoch=lease.epoch)
-            if read_back is None:
-                raise _collection_miss(collection_id, method_id=MUTATE_LABEL_METHOD)
-            if read_back.name != name or (read_back.emoji or "") != requested_emoji:
-                raise DecodingError(
-                    "Android collection rename did not read back the requested properties",
-                    method_id=MUTATE_LABEL_METHOD,
-                )
-            return read_back if return_object else None
+                if exc.rpc_code != 5:
+                    raise
+            return
+        (collection_id,) = collection_ids
+        assert name is not None
+        assert current is not None
+        try:
+            await mutate_properties(
+                self._transport,
+                kind="collection",
+                resource_id=collection_id,
+                name=name,
+                emoji=current.emoji or "",
+                notebook_id=None,
+                expected_epoch=expected_epoch,
+            )
+        except RPCError as exc:
+            _raise_collection_write_miss(collection_id, exc)
 
-    async def _mutate_notebooks(
+    async def _send_mutate_member(
         self,
         collection_id: str,
-        notebook_ids: builtins.list[str],
+        notebook_id: str,
         *,
-        add: bool,
-        return_object: bool,
-    ) -> Collection | None:
-        if not notebook_ids:
-            operation_name = "add_notebooks" if add else "remove_notebooks"
-            raise ValueError(f"{operation_name} requires at least one notebook id")
-        unique_ids = list(dict.fromkeys(notebook_ids))
-        operation: MemberOperation = "add_notebooks" if add else "remove_notebooks"
-        async with self._transport.operation_scope(f"collections.{operation}") as lease:
-            for notebook_id in unique_ids:
-                try:
-                    await mutate_member(
-                        self._transport,
-                        kind="collection",
-                        resource_id=collection_id,
-                        member_id=notebook_id,
-                        operation=operation,
-                        notebook_id=None,
-                        expected_epoch=lease.epoch,
-                    )
-                except RPCError as exc:
-                    await self._raise_membership_write_error(
-                        collection_id,
-                        exc,
-                        expected_epoch=lease.epoch,
-                    )
-            read_back = await self._get_or_none(collection_id, expected_epoch=lease.epoch)
-            if read_back is None:
-                raise _collection_miss(collection_id, method_id=MUTATE_LABEL_METHOD)
-            present = set(read_back.notebook_ids)
-            verified = set(unique_ids) <= present if add else set(unique_ids).isdisjoint(present)
-            if not verified:
-                raise DecodingError(
-                    "Android collection membership mutation did not read back the requested state",
-                    method_id=MUTATE_LABEL_METHOD,
-                )
-            return read_back if return_object else None
+        operation: Literal["add_notebooks", "remove_notebooks"],
+    ) -> None:
+        expected_epoch = workflow_epoch_for(self._transport)
+        assert expected_epoch is not None
+        try:
+            await mutate_member(
+                self._transport,
+                kind="collection",
+                resource_id=collection_id,
+                member_id=notebook_id,
+                operation=operation,
+                notebook_id=None,
+                expected_epoch=expected_epoch,
+            )
+        except RPCError as exc:
+            await self._raise_membership_write_error(
+                collection_id,
+                exc,
+            )
 
     async def _raise_membership_write_error(
         self,
         collection_id: str,
         error: RPCError,
-        *,
-        expected_epoch: int,
     ) -> NoReturn:
         """Map ``NOT_FOUND`` only after proving the collection is absent.
 
@@ -246,77 +205,19 @@ class AndroidCollectionsAPI(CollectionsAPI):
         if error.rpc_code != 5:
             raise error
         try:
-            collection = await self._get_or_none(
-                collection_id,
-                expected_epoch=expected_epoch,
+            collection = next(
+                (
+                    collection
+                    for collection in await self._list_in_scope()
+                    if collection.id == collection_id
+                ),
+                None,
             )
         except (NetworkError, RPCError):
             raise error from None
         if collection is None:
             raise _collection_miss(collection_id, method_id=MUTATE_LABEL_METHOD) from error
         raise error
-
-    async def add_notebooks(
-        self,
-        collection_id: str,
-        notebook_ids: builtins.list[str],
-        *,
-        return_object: bool = True,
-    ) -> Collection | None:
-        return await self._mutate_notebooks(
-            collection_id,
-            notebook_ids,
-            add=True,
-            return_object=return_object,
-        )
-
-    async def remove_notebooks(
-        self,
-        collection_id: str,
-        notebook_ids: builtins.list[str],
-        *,
-        return_object: bool = True,
-    ) -> Collection | None:
-        return await self._mutate_notebooks(
-            collection_id,
-            notebook_ids,
-            add=False,
-            return_object=return_object,
-        )
-
-    async def delete(self, collection_ids: str | builtins.list[str]) -> None:
-        requested = [collection_ids] if isinstance(collection_ids, str) else list(collection_ids)
-        requested = list(dict.fromkeys(requested))
-        if not requested:
-            return
-        async with self._transport.operation_scope("collections.delete") as lease:
-            current_ids = {
-                collection.id for collection in await self._list(expected_epoch=lease.epoch)
-            }
-            existing = [
-                collection_id for collection_id in requested if collection_id in current_ids
-            ]
-            if not existing:
-                return
-            try:
-                await delete_resources(
-                    self._transport,
-                    kind="collection",
-                    resource_ids=existing,
-                    notebook_id=None,
-                    expected_epoch=lease.epoch,
-                )
-            except RPCError as exc:
-                if exc.rpc_code != 5:
-                    raise
-            remaining = {
-                collection.id for collection in await self._list(expected_epoch=lease.epoch)
-            }
-            if set(existing) & remaining:
-                raise DecodingError(
-                    "Android collection delete did not read back absence",
-                    method_id=DELETE_LABELS_METHOD,
-                )
 
 
 __all__ = ["AndroidCollectionsAPI"]

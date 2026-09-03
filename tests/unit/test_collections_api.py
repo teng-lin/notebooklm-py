@@ -204,6 +204,24 @@ async def test_rename_missing_raises_even_when_not_returning_object() -> None:
         await api.rename("missing", "X", return_object=False)
 
 
+async def test_rename_readback_miss_keeps_web_list_method_id() -> None:
+    api, rpc, _ = _api(
+        {RPCMethod.UPDATE_LABEL: []},
+        sequences={
+            RPCMethod.LIST_LABELS: [
+                _list_env(_collection_tuple("Old", "c1")),
+                _list_env(),
+            ]
+        },
+    )
+
+    with pytest.raises(CollectionNotFoundError) as caught:
+        await api.rename("c1", "New")
+
+    assert caught.value.method_id == RPCMethod.LIST_LABELS.value
+    assert rpc.methods() == [RPCMethod.LIST_LABELS, RPCMethod.UPDATE_LABEL, RPCMethod.LIST_LABELS]
+
+
 # -- add / remove notebooks --------------------------------------------------
 
 
@@ -343,6 +361,14 @@ async def test_delete_empty_list_issues_no_rpc() -> None:
     api, rpc, _ = _api()
     assert await api.delete([]) is None
     assert rpc.calls == []
+
+
+async def test_delete_preserves_duplicate_ids_for_web_wire_compatibility() -> None:
+    api, rpc, _ = _api({RPCMethod.DELETE_LABEL: []})
+
+    await api.delete(["c1", "c1"])
+
+    assert rpc.calls[0].params[2] == ["c1", "c1"]
 
 
 # -- notebooks join ----------------------------------------------------------

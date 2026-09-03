@@ -164,18 +164,13 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
         implementation_class_name="WebCollectionsAPI",
         abstract_methods=frozenset(
             {
-                "add_notebooks",
+                "_send_mutate_member",
+                "_send_update",
                 "create",
-                "delete",
-                "get",
-                "get_or_none",
                 "list",
-                "notebooks",
-                "remove_notebooks",
-                "rename",
             }
         ),
-        wire_hooks=frozenset(),
+        wire_hooks=frozenset({"_send_mutate_member", "_send_update"}),
     ),
     _AbstractContract(
         module="notebooklm._labels",
@@ -184,21 +179,14 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
         implementation_class_name="WebLabelsAPI",
         abstract_methods=frozenset(
             {
-                "add_sources",
                 "create",
-                "delete",
                 "generate",
-                "get",
-                "get_or_none",
                 "list",
-                "remove_sources",
-                "rename",
-                "set_emoji",
-                "sources",
-                "update",
+                "_send_mutate_member",
+                "_send_update",
             }
         ),
-        wire_hooks=frozenset(),
+        wire_hooks=frozenset({"_send_mutate_member", "_send_update"}),
     ),
     _AbstractContract(
         module="notebooklm._notes",
@@ -330,8 +318,32 @@ _ANDROID_INHERITED_WORKFLOWS = {
             "set_mode",
         }
     ),
-    "CollectionsAPI": frozenset(),
-    "LabelsAPI": frozenset(),
+    "CollectionsAPI": frozenset(
+        {
+            "_mutate_members",
+            "add_notebooks",
+            "delete",
+            "get",
+            "get_or_none",
+            "notebooks",
+            "remove_notebooks",
+            "rename",
+        }
+    ),
+    "LabelsAPI": frozenset(
+        {
+            "_mutate_members",
+            "add_sources",
+            "delete",
+            "get",
+            "get_or_none",
+            "remove_sources",
+            "rename",
+            "set_emoji",
+            "sources",
+            "update",
+        }
+    ),
     "MindMapsAPI": frozenset(
         {
             "_delete_in_scope",

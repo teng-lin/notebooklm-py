@@ -18,14 +18,13 @@ from __future__ import annotations
 
 import builtins
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from .._collections import CollectionsAPI, ListNotebooks
 from .._idempotency import call_unconfirmed_on_transport_loss
-from .._lookup import unwrap_or_raise
-from ..exceptions import CollectionError, CollectionNotFoundError, UnknownRPCMethodError
+from ..exceptions import CollectionError, UnknownRPCMethodError
 from ..rpc import RPCMethod
-from ..types import Collection, Notebook
+from ..types import Collection
 from .contracts import RpcCaller
 from .params.collections import (
     build_create_collection_params,
@@ -59,13 +58,18 @@ class WebCollectionsAPI(CollectionsAPI):
             await client.collections.delete(coll.id)
     """
 
+    _list_method_id = RPCMethod.LIST_LABELS.value
+    _mutation_method_id = RPCMethod.UPDATE_LABEL.value
+    _property_readback_miss_method_id = RPCMethod.LIST_LABELS.value
+    _delete_method_id = RPCMethod.DELETE_LABEL.value
+
     def __init__(self, rpc: RpcCaller, *, list_notebooks: ListNotebooks) -> None:
         """``list_notebooks`` is ``client.notebooks.list`` (wired in
         ``_client_assembly.py`` after ``NotebooksAPI`` is constructed) — needed
         for the membership→``Notebook`` join in ``notebooks()``. Same client /
         bound loop, so no loop-affinity concern (ADR-0004)."""
+        super().__init__(list_notebooks=list_notebooks)
         self._rpc = rpc
-        self._list_notebooks = list_notebooks
 
     # -- internal -----------------------------------------------------------
 
@@ -116,41 +120,6 @@ class WebCollectionsAPI(CollectionsAPI):
             result, method_id=RPCMethod.LIST_LABELS.value, index=1
         )
 
-    async def get_or_none(self, collection_id: str) -> Collection | None:
-        """Get a collection by id, returning ``None`` when absent (sanctioned None-on-miss)."""
-        for collection in await self.list():
-            if collection.id == collection_id:
-                return collection
-        return None
-
-    async def get(self, collection_id: str) -> Collection:
-        """Get a collection by id; raises ``CollectionNotFoundError`` on miss (ADR-0019)."""
-        return unwrap_or_raise(
-            await self.get_or_none(collection_id),
-            CollectionNotFoundError(collection_id, method_id=RPCMethod.LIST_LABELS.value),
-        )
-
-    async def notebooks(self, collection_id: str) -> builtins.list[Notebook]:
-        """Expand a collection to its ``Notebook`` objects — the group-as-list accessor.
-
-        Read-only convenience: one ``get(collection)`` + one
-        ``self._list_notebooks()``, joined client-side (two reads, not N+1).
-        Raises ``CollectionNotFoundError`` if the collection is absent. Order
-        follows the collection's ``notebook_ids`` (membership order). A member id
-        missing from the notebook list is skipped, not raised.
-
-        Two causes of a skipped member, both benign (not schema drift):
-        a notebook deleted between the two reads (a race), OR a member the
-        backing ``notebooks.list`` (``ListRecentlyViewedProjects``) does not
-        return — its completeness for *owned* notebooks is unconfirmed
-        (see ``NotebooksAPI.list``). So this expansion can under-count vs. the
-        authoritative ``len(collection.notebook_ids)`` reported by ``list()``;
-        use ``notebook_ids`` when an exhaustive membership set is required.
-        """
-        collection = await self.get(collection_id)
-        by_id = {nb.id: nb for nb in await self._list_notebooks()}
-        return [by_id[nid] for nid in collection.notebook_ids if nid in by_id]
-
     # -- create -------------------------------------------------------------
 
     async def create(self, name: str) -> Collection:
@@ -197,20 +166,25 @@ class WebCollectionsAPI(CollectionsAPI):
 
     # -- mutate (all UPDATE_LABEL) ------------------------------------------
 
-    async def rename(
-        self, collection_id: str, name: str, *, return_object: bool = True
-    ) -> Collection | None:
-        """Rename a collection (``UPDATE_LABEL``); preserves the existing emoji.
-
-        The existence preflight raises ``CollectionNotFoundError`` on a missing
-        target (ADR-0019) and supplies the current emoji so the rename never
-        clobbers a UI-set emoji. A name-only rename is CONFIRMED to preserve
-        the existing emoji server-side (live-captured, PR #2009), so this is
-        belt-and-suspenders rather than a hedge against unverified behavior.
-        """
-        current = await self.get_or_none(collection_id)
-        if current is None:
-            raise CollectionNotFoundError(collection_id, method_id=RPCMethod.UPDATE_LABEL.value)
+    async def _send_update(
+        self,
+        operation: Literal["properties", "delete"],
+        collection_ids: builtins.list[str],
+        *,
+        name: str | None = None,
+        current: Collection | None = None,
+    ) -> None:
+        if operation == "delete":
+            await self._rpc.rpc_call(
+                RPCMethod.DELETE_LABEL,
+                build_delete_collections_params(collection_ids),
+                source_path=_ACCOUNT_PATH,
+                allow_null=True,
+            )
+            return
+        (collection_id,) = collection_ids
+        assert name is not None
+        assert current is not None
         await self._rpc.rpc_call(
             RPCMethod.UPDATE_LABEL,
             build_rename_collection_params(collection_id, name, current.emoji or ""),
@@ -220,124 +194,26 @@ class WebCollectionsAPI(CollectionsAPI):
             raise_on_null_status=True,
             operation_variant=None,  # default IDEMPOTENT_SET_OP (rename/set)
         )
-        if not return_object:
-            return None
-        return await self.get(collection_id)
 
-    async def add_notebooks(
+    async def _send_mutate_member(
         self,
         collection_id: str,
-        notebook_ids: builtins.list[str],
+        notebook_id: str,
         *,
-        return_object: bool = True,
-    ) -> Collection | None:
-        """Add notebook(s) to a collection (``UPDATE_LABEL``, variant ``'add_notebooks'``).
-
-        APPEND semantics: existing members preserved; pass only the ids to add. A
-        notebook may belong to multiple collections, so this does not remove it
-        from any other collection.
-
-        Raises ``ValueError`` on empty ``notebook_ids`` BEFORE issuing any RPC.
-        Issues **one ``le8sX`` call per notebook id** — the server honours only
-        the first id per call (mirrors the confirmed label behaviour), so a
-        single multi-id call would silently add only the first. After the writes,
-        a single ``get_or_none`` re-fetch backs the ADR-0019 return/not-found
-        contract (``le8sX`` echoes ``[]``, carrying no collection).
-
-        **Not atomic across ids** and ``NON_IDEMPOTENT_NO_RETRY`` — a mid-loop
-        failure leaves the already-written ids assigned and then raises; re-issue
-        with the remaining ids.
-        """
-        if not notebook_ids:
-            raise ValueError("add_notebooks requires at least one notebook id")
-        unique_ids = list(dict.fromkeys(notebook_ids))
-        logger.debug("Adding %d notebook(s) to collection %s", len(unique_ids), collection_id)
-        for notebook_id in unique_ids:
-            await self._rpc.rpc_call(
-                RPCMethod.UPDATE_LABEL,
-                build_update_collection_notebooks_params(
-                    collection_id, add_notebook_id=notebook_id
-                ),
-                source_path=_ACCOUNT_PATH,
-                allow_null=True,
-                # #2290: a status-tagged null is a server rejection, not an empty success.
-                raise_on_null_status=True,
-                operation_variant="add_notebooks",  # → NON_IDEMPOTENT_NO_RETRY
-            )
-        collection = await self.get_or_none(collection_id)
-        if collection is None:
-            raise CollectionNotFoundError(collection_id, method_id=RPCMethod.UPDATE_LABEL.value)
-        return collection if return_object else None
-
-    async def remove_notebooks(
-        self,
-        collection_id: str,
-        notebook_ids: builtins.list[str],
-        *,
-        return_object: bool = True,
-    ) -> Collection | None:
-        """Un-assign notebook(s) from a collection (``UPDATE_LABEL``, variant
-        ``'remove_notebooks'``).
-
-        Removal un-assigns membership only: it does NOT delete the notebook, and
-        a notebook that also belongs to another collection stays there.
-
-        Raises ``ValueError`` on empty ``notebook_ids`` BEFORE issuing any RPC.
-        Issues **one ``le8sX`` call per notebook id** and re-fetches once for the
-        ADR-0019 return/not-found contract, mirroring ``add_notebooks``.
-
-        **Wire shape (live-captured, PR #2009):** the un-assign fieldmask keeps
-        the notebook id in the SAME group as add, shifted one slot (``[3]`` ->
-        ``[4]``) — see
-        :func:`~notebooklm._web.params.collections.build_update_collection_notebooks_params`.
-        An earlier inferred shape (id moved to a second group) was a silent wire
-        no-op; independently confirmed broken and then fixed on four accounts
-        (thanks to contributors tomihe0720 and erricklong85-tech). Removing an
-        already-absent member is a confirmed silent no-op (live-verified), so
-        it is classified ``IDEMPOTENT_SET_OP`` — retry-safe like the label
-        ``remove_sources`` precedent.
-        """
-        if not notebook_ids:
-            raise ValueError("remove_notebooks requires at least one notebook id")
-        unique_ids = list(dict.fromkeys(notebook_ids))
-        logger.debug("Removing %d notebook(s) from collection %s", len(unique_ids), collection_id)
-        for notebook_id in unique_ids:
-            await self._rpc.rpc_call(
-                RPCMethod.UPDATE_LABEL,
-                build_update_collection_notebooks_params(
-                    collection_id, remove_notebook_id=notebook_id
-                ),
-                source_path=_ACCOUNT_PATH,
-                allow_null=True,
-                # #2290: a status-tagged null is a server rejection, not an empty success.
-                raise_on_null_status=True,
-                operation_variant="remove_notebooks",  # → IDEMPOTENT_SET_OP
-            )
-        collection = await self.get_or_none(collection_id)
-        if collection is None:
-            raise CollectionNotFoundError(collection_id, method_id=RPCMethod.UPDATE_LABEL.value)
-        return collection if return_object else None
-
-    # -- delete -------------------------------------------------------------
-
-    async def delete(self, collection_ids: str | builtins.list[str]) -> None:
-        """Delete one or more collections (``DELETE_LABEL``, batch). Accepts a
-        single id or a list. Deleting a collection does NOT delete its member
-        notebooks (they simply leave the collection).
-
-        An absent target is an idempotent no-op returning ``None`` (consistent
-        with ``labels.delete`` / ``notebooks.delete`` and ADR-0019).
-        """
-        ids = [collection_ids] if isinstance(collection_ids, str) else list(collection_ids)
-        if not ids:
-            return None
+        operation: Literal["add_notebooks", "remove_notebooks"],
+    ) -> None:
         await self._rpc.rpc_call(
-            RPCMethod.DELETE_LABEL,
-            build_delete_collections_params(ids),
+            RPCMethod.UPDATE_LABEL,
+            build_update_collection_notebooks_params(
+                collection_id,
+                add_notebook_id=notebook_id if operation == "add_notebooks" else None,
+                remove_notebook_id=notebook_id if operation == "remove_notebooks" else None,
+            ),
             source_path=_ACCOUNT_PATH,
             allow_null=True,
+            raise_on_null_status=True,
+            operation_variant=operation,
         )
-        return None
 
 
 __all__ = ["WebCollectionsAPI"]
