@@ -661,7 +661,7 @@ class NotebookLMClient:
         token (SNlM0e) and session ID (FdrFJe).
 
         This call site uses explicit collaborators sourced from
-        ``self._auth`` and ``self._collaborators``. The five kwargs mirror
+        ``self._auth`` and ``self._web_runtime``. The five kwargs mirror
         the :func:`refresh_auth_session` signature: ``auth`` is the
         client-owned :class:`AuthTokens` instance (the Auth Instance
         Invariant guarantees this is the same object every auth consumer
@@ -669,7 +669,7 @@ class NotebookLMClient:
         bundle the composition root produced
         (:func:`notebooklm._web.transport.init.compose_client_internals`). The
         ``tests/_helpers/client_factory.build_client_shell_for_tests``
-        helper wires ``_auth`` and ``_collaborators`` through the same
+        helper wires ``_auth`` and the runtime bundles through the same
         :func:`notebooklm._client_assembly._assemble_client` seam this
         constructor delegates to, so test shells observe the same
         resolution path.

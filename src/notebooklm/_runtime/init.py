@@ -197,8 +197,8 @@ def build_collaborators(
 
     The order is dependency-driven so the load-bearing inter-collaborator
     wiring stays obvious to future readers: metrics is built first because
-    it absorbs the optional ``on_rpc_event`` callback AND because the
-    callback. The drain tracker and call supervisor follow; web request ids,
+    it absorbs the optional ``on_rpc_event`` callback. The drain tracker and
+    call supervisor follow; web request ids,
     auth coordination, kernels, and cookie persistence are constructed by the
     web composition module.
     """
