@@ -1015,7 +1015,6 @@ class TestPathAwareCookieIdentity:
         """The legacy ``original_snapshot=None`` merge keys ``cookies_by_key`` /
         ``stored_keys`` on ``(name, domain, path)`` so a refreshed cookie at
         path ``/`` does not overwrite a sibling at ``/u/0/`` and vice versa."""
-        import warnings
 
         storage = tmp_path / "storage_state.json"
         storage.write_text(
@@ -1036,8 +1035,9 @@ class TestPathAwareCookieIdentity:
         jar.set("OSID", "root_new", domain="accounts.google.com", path="/")
         jar.set("OSID", "u0_new", domain="accounts.google.com", path="/u/0/")
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
+        with pytest.warns(
+            RuntimeWarning, match="save_cookies_to_storage called without original_snapshot"
+        ):
             save_cookies_to_storage(jar, storage)
 
         reloaded = json.loads(storage.read_text())

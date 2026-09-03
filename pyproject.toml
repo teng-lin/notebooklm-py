@@ -171,6 +171,10 @@ pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "--ignore=tests/e2e"
+filterwarnings = [
+    "ignore:SelectableGroups dict interface is deprecated:DeprecationWarning",
+    "ignore:.*Using .httpx. with .starlette\\.testclient. is deprecated.*",
+]
 # Global timeout prevents tests from hanging indefinitely (CI safety net)
 # Individual tests can override with @pytest.mark.timeout(seconds)
 timeout = 60

@@ -91,6 +91,7 @@ class TestArtifactList:
         assert result.exit_code == 0
         assert "Mind Map" in result.output
 
+    @pytest.mark.filterwarnings("ignore::notebooklm.types.UnknownTypeWarning")
     def test_artifact_list_json_output(self, runner, mock_auth):
         mock_client = create_mock_client()
         mock_client.artifacts.list = AsyncMock(
@@ -306,6 +307,7 @@ class TestArtifactList:
 
 
 class TestArtifactGet:
+    @pytest.mark.filterwarnings("ignore::notebooklm.types.UnknownTypeWarning")
     def test_artifact_get(self, runner, mock_auth):
         mock_client = create_mock_client()
         # Mock list for partial ID resolution
