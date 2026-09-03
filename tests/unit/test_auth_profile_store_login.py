@@ -258,10 +258,14 @@ def test_unheld_lock_reports_without_entering_transaction_body(
     tmp_path: Path,
     lock_state: LockState,
 ) -> None:
-    locks = RecordingLocks(lock_state)
+    class FilterMustNotRun(ProfileDocument):
+        def to_json(self) -> dict[str, object]:
+            pytest.fail("lock miss must not enter the filter projection")
 
+    locks = RecordingLocks(lock_state)
     path = tmp_path / "custom" / "A.json"
-    result = ProfileStore(path, locks=locks).replace_from_login(_request())
+    source = FilterMustNotRun.decode({"cookies": [], "origins": []})
+    result = ProfileStore(path, locks=locks).replace_from_login(_request(source=source))
 
     assert result == ReplaceResult(ReplaceStatus.LOCK_UNAVAILABLE)
     assert not path.exists()

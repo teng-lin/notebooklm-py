@@ -244,6 +244,18 @@ def test_store_lock_miss_raises_exactly_before_every_held_operation(
     caplog: pytest.LogCaptureFixture,
     state: LockState,
 ) -> None:
+    class FilterMustNotRun(str):
+        def __deepcopy__(self, memo: dict[int, object]) -> FilterMustNotRun:
+            return self
+
+        def startswith(
+            self,
+            prefix: str | tuple[str, ...],
+            start: int = 0,
+            end: int | None = None,
+        ) -> bool:
+            pytest.fail("lock miss must not enter the filter projection")
+
     path = tmp_path / "custom.json"
     locks = RecordingLocks(state)
     store = ProfileStore(path, locks=locks)  # type: ignore[arg-type]
@@ -257,7 +269,8 @@ def test_store_lock_miss_raises_exactly_before_every_held_operation(
         caplog.at_level(logging.DEBUG, logger="notebooklm.auth"),
         pytest.raises(LockUnavailableError) as raised,
     ):
-        store.replace_minted_session(_request())
+        request = _request(cookies=CookieJar((_cookie(domain=FilterMustNotRun(".google.com")),)))
+        store.replace_minted_session(request)
     assert str(raised.value) == (
         f"persist_minted_jar: storage lock unavailable at {tmp_path / '.custom.json.lock'}"
     )
@@ -272,11 +285,24 @@ def test_corrupt_existing_destination_is_unknown_and_refused_without_filter(
     tmp_path: Path,
     raw: str,
 ) -> None:
+    class FilterMustNotRun(str):
+        def __deepcopy__(self, memo: dict[int, object]) -> FilterMustNotRun:
+            return self
+
+        def startswith(
+            self,
+            prefix: str | tuple[str, ...],
+            start: int = 0,
+            end: int | None = None,
+        ) -> bool:
+            pytest.fail("owner refusal must precede filtering")
+
     path = tmp_path / "A.json"
     path.write_text(raw, encoding="utf-8")
     original = path.read_bytes()
+    request = _request(cookies=CookieJar((_cookie(domain=FilterMustNotRun(".google.com")),)))
     with pytest.raises(_MintedSessionOwnershipRefused) as raised:
-        ProfileStore(path, locks=RecordingLocks()).replace_minted_session(_request())  # type: ignore[arg-type]
+        ProfileStore(path, locks=RecordingLocks()).replace_minted_session(request)  # type: ignore[arg-type]
     assert str(raised.value) == UNKNOWN_OWNER_MESSAGE
     assert raised.value.__cause__ is None
     assert raised.value.__context__ is None
@@ -522,8 +548,8 @@ def test_non_owner_failures_escape_unchanged_in_exact_order(
     real_read = store.read_document
 
     class ObservedDomain(str):
-        # Sanitization asks the raw domain once whether it is dotted; the
-        # normalized plain string then flows through the remaining policy.
+        # The filter allowlist probes the raw domain once for its leading dot.
+        # Its exact allowlist match then short-circuits the remaining policy.
         def __deepcopy__(self, memo: dict[int, object]) -> ObservedDomain:
             return self
 

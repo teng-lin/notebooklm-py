@@ -93,11 +93,14 @@ def test_value_shapes_signatures_validation_and_redaction() -> None:
 
 @pytest.mark.parametrize("state", [LockState.CONTENDED, LockState.UNAVAILABLE])
 def test_lock_miss_is_typed_and_runs_zero_body(tmp_path: Path, state: LockState) -> None:
+    class FilterMustNotRun(ProfileDocument):
+        def to_json(self) -> dict[str, object]:
+            pytest.fail("lock miss must not enter the filter projection")
+
     locks = RecordingLocks(state)
     path = tmp_path / "custom" / "A.json"
-    result = ProfileStore(path, locks=locks).replace_from_remint(
-        RemintWriteRequest(_source(_row()), True)
-    )
+    source = FilterMustNotRun.decode({"cookies": [], "origins": []})
+    result = ProfileStore(path, locks=locks).replace_from_remint(RemintWriteRequest(source, True))
     assert result == ReplaceResult(ReplaceStatus.LOCK_UNAVAILABLE)
     assert len(locks.requests) == 1
     request = locks.requests[0]
