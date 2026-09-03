@@ -34,6 +34,7 @@ from notebooklm._client_assembly import BackendPreference, resolve_backend_prefe
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.exceptions import ConfigurationError, MissingDependencyError
+from notebooklm.raw import AndroidRawAPI, WebRawAPI
 
 
 def _auth() -> AuthTokens:
@@ -106,6 +107,8 @@ def test_invalid_environment_fails_during_construction(monkeypatch: pytest.Monke
 
 def test_android_preference_promotes_every_namespace() -> None:
     client = NotebookLMClient(_auth(), backend="android")
+    assert type(client.raw) is AndroidRawAPI
+    assert client.raw._transport is client._android_session
     assert isinstance(client.backends, Mapping)
     assert list(client.backends) == [
         "notebooks",
@@ -158,6 +161,13 @@ def test_android_preference_promotes_every_namespace() -> None:
 
     assert client.collections._list_notebooks.__self__ is client.notebooks
     assert client.collections._list_notebooks.__func__ is type(client.notebooks).list
+
+
+def test_web_preference_installs_web_raw_namespace() -> None:
+    client = NotebookLMClient(_auth(), backend="web")
+
+    assert type(client.raw) is WebRawAPI
+    assert client.raw._rpc is client._web_runtime.executor
 
 
 def test_android_chat_receives_configured_response_byte_cap() -> None:

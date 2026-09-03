@@ -257,6 +257,13 @@
     "resolve_profile",
     "set_active_profile"
   ],
+  "notebooklm.raw": [
+    "AndroidRawAPI",
+    "GrpcUnaryMethod",
+    "GrpcUnaryStreamMethod",
+    "ReplayPolicy",
+    "WebRawAPI"
+  ],
   "notebooklm.research": [
     "extract_report_urls",
     "normalize_citation_url",

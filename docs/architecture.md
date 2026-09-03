@@ -1052,7 +1052,9 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | File | Purpose |
 |------|---------|
 | `client.py` | Main `NotebookLMClient` class |
+| `raw.py` | Public raw descriptors, replay policy, and backend-selected escape-hatch APIs. |
 | `_client_assembly.py` | Single private assembly seam (`_assemble_client`) that wires every constructor-set attribute; shared by `NotebookLMClient.__init__` and the canonical test factory (`tests/_helpers/client_factory.py`) so the two construction paths cannot drift. |
+| `_web/raw.py` | Thin Web raw adapter that preserves `RpcExecutor.rpc_call` behavior. |
 | `_web/transport/composed.py` | Web composition holder for transport, executor, chain host, middleware metadata, and the shared runtime bundle. |
 | `_web/transport/seams.py` | Constructor-only injectable seams used by tests and collaborator construction. |
 | `_android/` | Android backend package. Its package marker and selected adapter imports are dependency-free; generated protobuf modules remain lazy. Explicit Android preference installs Android adapters for all eleven public namespaces. The installed namespace graph has no Web operation collaborators; native gRPC/Scotty/asset paths and local composition cover the public contract. |
@@ -1312,6 +1314,7 @@ src/notebooklm/
 ├── migration.py                 # Legacy flat-layout to profile migration
 ├── paths.py                     # Profile-aware path resolution
 ├── research.py                  # Public research citation/report helpers
+├── raw.py                       # Public backend-selected raw wire APIs and gRPC descriptors
 ├── urls.py                      # Public URL helper facade
 ├── utils.py                     # Public async utility helpers
 ├── _atomic_io.py                # Atomic JSON write/update helpers
@@ -1488,6 +1491,7 @@ src/notebooklm/
 ├── _web/                        # Private batchexecute web-backend implementation package
 │   ├── __init__.py              # Package boundary
 │   ├── contracts.py             # Web-only Kernel and RpcCaller Protocols
+│   ├── raw.py                   # Thin raw-RPC adapter over the shared Web executor
 │   ├── notebooks.py             # WebNotebooksAPI
 │   ├── artifacts.py             # WebArtifactsAPI
 │   ├── artifact/                # Web artifact services

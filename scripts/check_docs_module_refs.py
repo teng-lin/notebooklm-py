@@ -70,7 +70,7 @@ _PACKAGE_RELDIR = "src/notebooklm"
 # ``test_test_and_script_refs_are_not_module_shaped`` pins this scope.
 _MODULE_REF_RE = re.compile(
     r"^(_[a-z0-9_]+|client|auth|exceptions|config|io|log|migration|paths|research"
-    r"|types|urls|utils|artifacts|notebooklm_cli|rpc|cli)([/][a-z0-9_]+)*\.py$"
+    r"|types|urls|utils|artifacts|raw|notebooklm_cli|rpc|cli)([/][a-z0-9_]+)*\.py$"
 )
 
 # Inline code spans: ``\`...\```. Non-greedy so adjacent spans on one line are

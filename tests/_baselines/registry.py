@@ -99,6 +99,7 @@ UNGATED_PUBLIC_MODULES: tuple[str, ...] = (
     "notebooklm.log",
     "notebooklm.migration",
     "notebooklm.paths",
+    "notebooklm.raw",
     "notebooklm.research",
     "notebooklm.urls",
     "notebooklm.utils",
