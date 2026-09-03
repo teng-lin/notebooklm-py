@@ -663,7 +663,7 @@ class TestRefreshAuth:
         monkeypatch.setattr(provider, "refresh", refresh_bearer)
         monkeypatch.setattr(client_mod, "refresh_auth_session", refresh_web)
 
-        coordinator = client._collaborators.auth_coord
+        coordinator = client._require_web_runtime().auth_coord
         coordinator.set_bound_loop(asyncio.get_running_loop())
         coordinator.reset_after_open()
         coordinator.activate_epoch(7)
