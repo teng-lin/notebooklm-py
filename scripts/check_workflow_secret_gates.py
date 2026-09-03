@@ -29,9 +29,9 @@ The rotating live-CI credentials have a stricter conjunctive policy. A job
 binding ``NOTEBOOKLM_MASTER_TOKEN_JSON`` or
 ``NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID`` must have the literal approved
 Environment *and* a job-level guard that pins both the canonical repository
-and ``is_standard == 'true'``. Those secrets must be step-scoped, and a job
-may inject only one master-token secret. Dynamic ``secrets[...]`` indexing is
-treated as a real secret reference throughout.
+and ``needs.resolve-target.outputs.is_standard == 'true'``. Those secrets must
+be step-scoped, and a job may inject only one master-token secret. Dynamic
+``secrets[...]`` indexing is treated as a real secret reference throughout.
 
 Usage::
 
@@ -148,7 +148,7 @@ _STEP_IF_RE = re.compile(r"^      if:\s*(.*?)\s*(#.*)?$")
 # in non-comment positions, so this is sound.
 _COMMENT_RE = re.compile(r"^\s*#")
 
-_ENV_SECRET_BINDING_RE = re.compile(r"^\s*([A-Z][A-Z0-9_]*):\s*.*\bsecrets(?:\.|\[)")
+_ENV_SECRET_BINDING_RE = re.compile(r"^\s*(['\"]?)([A-Z][A-Z0-9_]*)\1:\s*.*\bsecrets(?:\.|\[)")
 
 # A guard expression is considered "trusted" if it matches one of these
 # POSITIVE-EQUALITY patterns — substring matching is unsafe because
@@ -169,6 +169,11 @@ _IS_STANDARD_GUARD_RE = re.compile(
     r"is_standard\s*==\s*['\"]true['\"]",
     re.IGNORECASE,
 )
+_CI_POOL_IS_STANDARD_GUARD_RE = re.compile(
+    r"(?<![A-Za-z0-9_.-])needs\.resolve-target\.outputs\."
+    r"is_standard\s*==\s*['\"]true['\"]",
+    re.IGNORECASE,
+)
 _REPOSITORY_GUARD_RE = re.compile(
     r"(?<![A-Za-z0-9_.])github\.repository\s*==\s*['\"]"
     r"teng-lin/notebooklm-py['\"]",
@@ -179,9 +184,13 @@ _ACCOUNT_CONCURRENCY_GROUP_RE = re.compile(
     r"[A-Za-z_][A-Za-z0-9_-]*\.outputs\."
     r"(?:account_slot|[A-Za-z_][A-Za-z0-9_-]*_account_slot))\s*}}"
 )
-_POOLED_TOKEN_BINDING_RE = re.compile(r"^NOTEBOOKLM_MASTER_TOKEN_JSON:\s*.*$")
+_POOLED_TOKEN_KEY_PATTERN = (
+    r'(?:NOTEBOOKLM_MASTER_TOKEN_JSON|"NOTEBOOKLM_MASTER_TOKEN_JSON"|'
+    r"'NOTEBOOKLM_MASTER_TOKEN_JSON')"
+)
+_POOLED_TOKEN_BINDING_RE = re.compile(rf"^{_POOLED_TOKEN_KEY_PATTERN}:\s*.*$")
 _APPROVED_POOLED_TOKEN_BINDING_RE = re.compile(
-    r"^NOTEBOOKLM_MASTER_TOKEN_JSON:\s*\$\{\{\s*secrets\[\s*"
+    rf"^{_POOLED_TOKEN_KEY_PATTERN}:\s*\$\{{\{{\s*secrets\[\s*"
     r"(?:matrix\.master_token_secret_name|"
     r"needs\.plan-account\.outputs\.master_token_secret_name|"
     r"needs\.plan-live-lanes\.outputs\.(?:web|android)_secret_name)"
@@ -259,7 +268,7 @@ def _expression_is_ci_pool_guard(expr: str) -> bool:
     if len(parts) != 2:
         return False
     repository_terms = sum(bool(_REPOSITORY_GUARD_RE.fullmatch(part)) for part in parts)
-    standard_terms = sum(bool(_IS_STANDARD_GUARD_RE.fullmatch(part)) for part in parts)
+    standard_terms = sum(bool(_CI_POOL_IS_STANDARD_GUARD_RE.fullmatch(part)) for part in parts)
     return repository_terms == 1 and standard_terms == 1
 
 
@@ -417,7 +426,8 @@ def _scan_workflow(path: Path) -> list[str]:
             if not _expression_is_ci_pool_guard(current_job_if):
                 violations.append(
                     f"{path}:{line_no}: {binding} used in job {current_job!r} "
-                    "without the canonical repository and `is_standard == 'true'` job gate."
+                    "without the canonical repository and trusted `resolve-target` "
+                    "`is_standard == 'true'` job gate."
                 )
             if step_index < 0:
                 violations.append(
@@ -578,8 +588,8 @@ def _scan_workflow(path: Path) -> list[str]:
         searchable = _strip_yaml_trailing_comment(line)
 
         binding_match = _ENV_SECRET_BINDING_RE.match(searchable)
-        if binding_match and binding_match.group(1) in _CI_SECRET_BINDINGS:
-            binding = binding_match.group(1)
+        if binding_match and binding_match.group(2) in _CI_SECRET_BINDINGS:
+            binding = binding_match.group(2)
             ci_secret_hits.append((i, binding, current_step_index if in_step else -1))
             if binding == "NOTEBOOKLM_MASTER_TOKEN_JSON" and "secrets[" not in searchable:
                 violations.append(
