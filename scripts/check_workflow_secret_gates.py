@@ -198,12 +198,50 @@ def _expression_is_trusted_guard(expr: str) -> bool:
 
 
 def _expression_is_ci_pool_guard(expr: str) -> bool:
-    """Return whether a job guard pins both repository and trusted target."""
-    return bool(
-        "||" not in expr
-        and _REPOSITORY_GUARD_RE.search(expr)
-        and _IS_STANDARD_GUARD_RE.search(expr)
-    )
+    """Return whether a job guard is the canonical two-predicate conjunction.
+
+    Pooled credentials deliberately use one narrow grammar instead of substring
+    matching.  Requiring exactly the repository and resolver predicates prevents
+    negation, disjunction, or a matching string inside another expression from
+    turning an inverted condition into an accepted gate.
+    """
+
+    def strip_wrappers(value: str) -> str:
+        value = value.strip()
+        if value.startswith("${{") and value.endswith("}}"):
+            value = value[3:-2].strip()
+        while value.startswith("(") and value.endswith(")"):
+            depth = 0
+            quote = ""
+            closes_at_end = False
+            for index, char in enumerate(value):
+                if quote:
+                    if char == quote:
+                        quote = ""
+                    continue
+                if char in ("'", '"'):
+                    quote = char
+                elif char == "(":
+                    depth += 1
+                elif char == ")":
+                    depth -= 1
+                    if depth < 0:
+                        return value
+                    if depth == 0:
+                        closes_at_end = index == len(value) - 1
+                        break
+            if not closes_at_end:
+                break
+            value = value[1:-1].strip()
+        return value
+
+    normalized = strip_wrappers(expr)
+    parts = [strip_wrappers(part) for part in normalized.split("&&")]
+    if len(parts) != 2:
+        return False
+    repository_terms = sum(bool(_REPOSITORY_GUARD_RE.fullmatch(part)) for part in parts)
+    standard_terms = sum(bool(_IS_STANDARD_GUARD_RE.fullmatch(part)) for part in parts)
+    return repository_terms == 1 and standard_terms == 1
 
 
 def _environment_value_is_approved(value: str) -> bool:

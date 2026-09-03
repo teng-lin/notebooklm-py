@@ -814,6 +814,7 @@ environment variable so it never appears on the command line:
 export NOTEBOOKLM_PROFILE=agent-e2e-slot-A-web
 export NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID='<template-id>'
 export GITHUB_RUN_ID=1 GITHUB_RUN_ATTEMPT=1
+export GITHUB_REPOSITORY=teng-lin/notebooklm-py
 export RUNNER_TEMP="$(mktemp -d)"
 
 uv run python scripts/manage_ci_e2e_notebooks.py validate \
@@ -1502,6 +1503,8 @@ directory. Never use the template ID as a pytest fixture binding:
 export NOTEBOOKLM_PROFILE=agent-e2e-local
 export RUNNER_TEMP="$(mktemp -d)"
 export NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID=<template-id>
+export GITHUB_RUN_ID=1 GITHUB_RUN_ATTEMPT=1
+export GITHUB_REPOSITORY=teng-lin/notebooklm-py
 uv run python scripts/manage_ci_e2e_notebooks.py provision \
   --backend web --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
   --contract tests/fixtures/e2e_template_contract.json --mode full \
@@ -1568,8 +1571,14 @@ generation notebook are no longer part of CI.
 - Rotate the template by creating a replacement, validating copies under every
   enabled slot and both backends, then replacing the template secret. Keep the
   previous template until one scheduled cycle succeeds; never mutate it in CI.
-- For cleanup alerts, dispatch the affected lane with that slot as the manual
-  base so its bounded sweep runs. Inspect account-owned titles under the exact
+- For cleanup alerts, account for the lane offset when choosing
+  `account_rotation_base`. In the ordered enabled-slot list, use the affected
+  slot for offset-0 lanes (`nightly-web-windows` and `verify-package`), the
+  previous slot cyclically for `nightly-android-windows` (offset 1), two slots
+  before it for `rpc-health-web` (offset 2), and three slots before it for
+  `rpc-health-android` (offset 3). With only one enabled slot every base is that
+  slot. Confirm the intended slot in the workflow's account-plan summary before
+  its authenticated job starts. Inspect account-owned titles under the exact
   `notebooklm-py-ci/` prefix in the UI for resources omitted by recent-project
   listing; delete only after checking exact title and ownership.
 - For broad lifecycle failure, set the slot variable back to `A` or disable the
