@@ -1097,11 +1097,14 @@ removed in a supported, reviewable form. Proven-fresh or proven-non-family
 targets remain excluded.
 Authored scenario, lifecycle-cleanup, and coverage-allowance policies live in
 `tests/fixtures/policies/` and are never emitted by baseline regeneration.
-Every in-scope pull request also runs the always-present Ubuntu
-`auth-patch-coverage-delta` job, which uses isolated merge-base/head workspaces,
-the nightly coverage selection, pytest node/parameter/fixture-closure
-collection, and exact statement/branch preservation. Out-of-scope changes take
-an explicit successful skip path so a required check cannot remain pending.
+The separate **Auth Patch Audit** workflow runs on manual dispatch and is a
+required reusable gate in `publish.yml`, so it runs once for every release but
+not for ordinary pull requests. Manual runs compare the selected branch with
+its merge-base on `main` (or an explicit `base_ref`); releases compare the tag
+with the previous stable release tag. It uses isolated base/head workspaces, a
+bounded auth/browser unit-test coverage slice (never integration or server
+tests), pytest node/parameter/fixture-closure collection, and exact
+statement/branch preservation.
 The initial schema-v2 scorecard is `_auth` 244 (145 private-name), `_browser`
 66 (17 private-name), public facade 526, and shared-lifetime mutation 188. The
 private-package total is 310; the one-site increase over the legacy projection
