@@ -27,7 +27,6 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
 from notebooklm._android.session import AndroidSession
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
-from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.exceptions import (
     AuthError,
     ClientError,
@@ -59,7 +58,7 @@ class _Bearer:
     def token(self) -> str:
         return f"fake-token-{self.generation}"
 
-    async def activate(self, epoch: int) -> None:
+    async def activate_for_epoch(self, epoch: int) -> None:
         self.epoch = epoch
         self.activations.append(epoch)
 
@@ -208,7 +207,6 @@ async def _running_session(
     metrics = ClientMetrics()
     supervisor = CallSupervisor(
         metrics=metrics,
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=max_concurrent_rpcs,
     )
     bearer = _Bearer()

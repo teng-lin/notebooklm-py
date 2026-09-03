@@ -15,7 +15,6 @@ from notebooklm._android.assets import AndroidAssetDownloadService
 from notebooklm._android.auth import BearerCredential
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
-from notebooklm._transport_drain import TransportDrainTracker
 
 PNG = b"\x89PNG\r\n\x1a\ntransport-adapter"
 INITIAL = "https://lh3.googleusercontent.com/start.png?cap=initial"
@@ -57,7 +56,6 @@ class _CurlContext:
 def _supervisor() -> CallSupervisor:
     return CallSupervisor(
         metrics=ClientMetrics(),
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=2,
     )
 

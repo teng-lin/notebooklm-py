@@ -15,7 +15,6 @@ from notebooklm._auth.storage import snapshot_cookie_jar
 from notebooklm._runtime.config import CORE_LOGGER_NAME
 from notebooklm._runtime.helpers import _resolve_keepalive_interval
 from notebooklm._runtime.lifecycle import ClientLifecycle
-from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm._web.transport.kernel import Kernel
 from notebooklm._web.transport.lifecycle import (
     WebTransportLifecycle,
@@ -564,12 +563,3 @@ def test_production_assembly_freezes_exact_root_ownership_graph() -> None:
     assert web.source_uploader._kernel is web.kernel
     assert web.composed.runtime_collaborators is collaborators
     assert web.composed.runtime_collaborators.lifecycle is lifecycle
-
-
-def test_drain_tracker_reset_after_open_clears_draining_flag() -> None:
-    tracker = TransportDrainTracker()
-    tracker._draining = True
-
-    tracker.reset_after_open()
-
-    assert tracker._draining is False

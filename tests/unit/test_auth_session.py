@@ -952,7 +952,7 @@ async def test_profile_reload_adopts_disk_baseline_before_persisting_response_co
         cookies=stale,
         follow_redirects=True,
     ) as http_client:
-        core._web_runtime.kernel.activate_epoch(TEST_EPOCH)
+        core._web_runtime.kernel.activate(TEST_EPOCH)
         core._web_runtime.auth_coord.activate_epoch(TEST_EPOCH)
         install_http_client_for_test(core._web_runtime.kernel, http_client)
         await core._refresh_auth_for_epoch(expected_epoch=TEST_EPOCH)
@@ -1668,7 +1668,7 @@ async def test_refresh_auth_session_persists_through_client_core_save_cookies(
         cookies=auth.cookie_jar,
         follow_redirects=True,
     )
-    core._web_runtime.kernel.activate_epoch(TEST_EPOCH)
+    core._web_runtime.kernel.activate(TEST_EPOCH)
     core._web_runtime.auth_coord.activate_epoch(TEST_EPOCH)
     install_http_client_for_test(core._web_runtime.kernel, http_client)
     core._web_runtime.cookie_persistence.capture_open_snapshot(http_client.cookies)

@@ -58,7 +58,7 @@ def _record() -> MasterToken:
 async def _activate(provider: BearerProvider, epoch: int = 1) -> None:
     provider.set_bound_loop(asyncio.get_running_loop())
     provider.reset_after_open()
-    await provider.activate(epoch)
+    await provider.activate_for_epoch(epoch)
 
 
 @pytest.mark.asyncio
@@ -257,7 +257,7 @@ async def test_missing_token_and_dependency_have_sanitized_diagnostics(
     dependency.set_bound_loop(asyncio.get_running_loop())
     dependency.reset_after_open()
     with pytest.raises(MissingDependencyError, match=r"notebooklm-py\[android\]") as captured:
-        await dependency.activate(1)
+        await dependency.activate_for_epoch(1)
     assert "wrong import detail" not in str(captured.value)
     assert captured.value.__cause__ is None
     assert captured.value.__context__ is None
@@ -267,7 +267,7 @@ async def test_missing_token_and_dependency_have_sanitized_diagnostics(
     missing.set_bound_loop(asyncio.get_running_loop())
     missing.reset_after_open()
     with pytest.raises(ConfigurationError, match="master-token profile"):
-        await missing.activate(1)
+        await missing.activate_for_epoch(1)
 
     minter = _Minter([MissingDependencyError("wrong extra and secret")])
     provider = BearerProvider(_Profile(_record()), minter)
@@ -293,7 +293,7 @@ async def test_close_discards_late_profile_thread_result() -> None:
     provider = BearerProvider(_BlockingProfile(), _Minter([]))
     provider.set_bound_loop(asyncio.get_running_loop())
     provider.reset_after_open()
-    activation = asyncio.create_task(provider.activate(1))
+    activation = asyncio.create_task(provider.activate_for_epoch(1))
     await asyncio.to_thread(started.wait, 2)
     await provider.prepare_close()
     release.set()

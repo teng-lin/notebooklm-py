@@ -1037,7 +1037,7 @@ class ReplayBearer(LoopBoundPrimitive):
     async def close_resources(self) -> None:
         """No-op lifecycle half: replay owns no external credential resource."""
 
-    async def activate(self, epoch: int) -> None:
+    async def activate_for_epoch(self, epoch: int) -> None:
         self.activations.append(epoch)
 
     async def get(self, expected_epoch: int) -> BearerCredential:

@@ -41,7 +41,6 @@ from notebooklm._client_metrics import ClientMetrics
 from notebooklm._notes import NotesAPI
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._sharing import SharingAPI
-from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.exceptions import (
     AuthError,
     DecodingError,
@@ -224,7 +223,6 @@ class SupervisedSharingSession:
     def __init__(self) -> None:
         self.supervisor = CallSupervisor(
             metrics=ClientMetrics(),
-            drain_tracker=TransportDrainTracker(),
             max_concurrent_rpcs=None,
         )
         self.supervisor.set_bound_loop(asyncio.get_running_loop())
@@ -274,7 +272,6 @@ class SupervisedNotesSession:
     def __init__(self, *, block_method: str) -> None:
         self.supervisor = CallSupervisor(
             metrics=ClientMetrics(),
-            drain_tracker=TransportDrainTracker(),
             max_concurrent_rpcs=None,
         )
         self.supervisor.set_bound_loop(asyncio.get_running_loop())
@@ -1050,7 +1047,7 @@ async def test_note_create_readback_completes_in_one_epoch_during_graceful_drain
     generation = session.supervisor._current
     assert generation is not None
     assert generation.in_flight == 0
-    assert generation.drain._in_flight_posts == 0
+    assert generation.in_flight == 0
 
 
 @pytest.mark.asyncio
@@ -1072,7 +1069,7 @@ async def test_note_delete_cancellation_settles_scope_without_polling() -> None:
     generation = session.supervisor._current
     assert generation is not None
     assert generation.in_flight == 0
-    assert generation.drain._in_flight_posts == 0
+    assert generation.in_flight == 0
 
 
 @pytest.mark.asyncio
@@ -1180,7 +1177,7 @@ async def test_sharing_set_public_readback_completes_during_graceful_drain() -> 
     generation = session.supervisor._current
     assert generation is not None
     assert generation.in_flight == 0
-    assert generation.drain._in_flight_posts == 0
+    assert generation.in_flight == 0
 
 
 @pytest.mark.asyncio
@@ -1199,7 +1196,7 @@ async def test_sharing_set_public_cancellation_settles_operation_without_readbac
     generation = session.supervisor._current
     assert generation is not None
     assert generation.in_flight == 0
-    assert generation.drain._in_flight_posts == 0
+    assert generation.in_flight == 0
 
 
 @pytest.mark.asyncio

@@ -11,7 +11,6 @@ import pytest
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._runtime.lifecycle import ClientLifecycle, _ResourceState
-from notebooklm._transport_drain import TransportDrainTracker
 
 
 def _assert_republished_cancel_message(error: asyncio.CancelledError, expected: str) -> None:
@@ -694,7 +693,6 @@ async def test_drain_that_snapshotted_open_joins_or_observes_racing_close(
     transport = _Transport("web", events, prepare_gate=prepare_gate)
     supervisor = CallSupervisor(
         metrics=ClientMetrics(),
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=None,
     )
     lifecycle = ClientLifecycle(

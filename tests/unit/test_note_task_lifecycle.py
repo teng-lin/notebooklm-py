@@ -10,7 +10,6 @@ import pytest
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._runtime.lifecycle import ClientLifecycle
-from notebooklm._transport_drain import TransportDrainTracker, _TransportOperationToken
 from notebooklm._web.note_tasks import NoteTaskRegistry
 from notebooklm._web.notes import NoteService
 from notebooklm.rpc import RPCMethod
@@ -68,36 +67,9 @@ class _RpcHarness:
             raise AssertionError(f"unexpected RPC: {method}")
 
 
-class _BlockingChildPublicationDrain(TransportDrainTracker):
-    """Hold the first note child between reservation and publication."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.child_begin_started = asyncio.Event()
-        self.child_begin_release = asyncio.Event()
-        self.child_begin_cancelled = asyncio.Event()
-
-    async def begin_transport_task(
-        self,
-        task: asyncio.Task[Any],
-        log_label: str,
-    ) -> _TransportOperationToken:
-        if log_label == "note-update-old":
-            self.child_begin_started.set()
-            try:
-                await self.child_begin_release.wait()
-            except asyncio.CancelledError:
-                self.child_begin_cancelled.set()
-                raise
-        return await super().begin_transport_task(task, log_label)
-
-
-def _runtime(
-    drain_tracker: TransportDrainTracker | None = None,
-) -> tuple[CallSupervisor, ClientLifecycle, _Transport, _RpcHarness, NoteService]:
+def _runtime() -> tuple[CallSupervisor, ClientLifecycle, _Transport, _RpcHarness, NoteService]:
     supervisor = CallSupervisor(
         metrics=ClientMetrics(),
-        drain_tracker=drain_tracker or TransportDrainTracker(),
         max_concurrent_rpcs=None,
     )
     transport = _Transport()
@@ -213,55 +185,3 @@ async def test_forced_close_cancels_and_settles_finalize_and_cleanup_children(mo
     assert RPCMethod.DELETE_NOTE not in rpc.calls
     assert notes._task_registry.active_tasks() == []
     assert supervisor._retired == {}
-
-
-@pytest.mark.asyncio
-async def test_forced_close_settles_reservation_publication_race_before_reopen() -> None:
-    drain = _BlockingChildPublicationDrain()
-    supervisor, lifecycle, _transport, _rpc, _notes = _runtime(drain)
-    registry = NoteTaskRegistry(supervisor)
-    supervisor.register_drain_hook("test.racing-notes", registry.drain)
-    old_child_started = asyncio.Event()
-
-    async def _old_child() -> None:
-        old_child_started.set()
-
-    async def _old_parent() -> None:
-        async with supervisor.operation_scope("notes.create-old"):
-            child = await registry.spawn("note-update-old", _old_child)
-            await child
-
-    await lifecycle.open()
-    old_parent = asyncio.create_task(_old_parent())
-    await drain.child_begin_started.wait()
-
-    # spawn_child has reserved supervisor accounting, but the registry has
-    # only the spawning parent until the Task can be published.
-    assert registry.active_tasks() == [old_parent]
-
-    await lifecycle.close(drain=False)
-
-    with pytest.raises(asyncio.CancelledError):
-        await old_parent
-    assert drain.child_begin_cancelled.is_set()
-    assert not old_child_started.is_set()
-    assert registry.active_tasks() == []
-    assert supervisor._retired == {}
-
-    await lifecycle.open()
-    drain.child_begin_release.set()
-    new_child_started = asyncio.Event()
-
-    async def _new_child() -> str:
-        new_child_started.set()
-        return "new-generation"
-
-    async with supervisor.operation_scope("notes.create-new"):
-        new_child = await registry.spawn("note-update-new", _new_child)
-        assert await new_child == "new-generation"
-
-    await asyncio.sleep(0)
-    assert new_child_started.is_set()
-    assert not old_child_started.is_set()
-    assert supervisor._retired == {}
-    await lifecycle.close()

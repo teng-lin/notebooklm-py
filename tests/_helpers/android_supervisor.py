@@ -10,7 +10,6 @@ from typing import Any
 from notebooklm._android.epoch import workflow_epoch_for
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
-from notebooklm._transport_drain import TransportDrainTracker
 
 Handler = Callable[[Any, dict[str, Any]], Any]
 
@@ -22,7 +21,6 @@ class SupervisedAndroidTransport:
         self._workflow_session_id = object()
         self.supervisor = CallSupervisor(
             metrics=ClientMetrics(),
-            drain_tracker=TransportDrainTracker(),
             max_concurrent_rpcs=None,
         )
         self.supervisor.set_bound_loop(asyncio.get_running_loop())

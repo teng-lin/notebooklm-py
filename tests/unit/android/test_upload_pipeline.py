@@ -1394,7 +1394,11 @@ async def test_an_already_expired_budget_closes_the_work_it_refuses_to_start() -
     awaitable = _work()
 
     with pytest.raises(TimeoutError):
-        await upload_module._bounded(awaitable, upload_module.RuntimeDeadline.start(0.0))
+        await upload_module.await_with_deadline(
+            awaitable,
+            upload_module.RuntimeDeadline.start(0.0),
+            on_timeout=TimeoutError,
+        )
 
     assert inspect.getcoroutinestate(awaitable) == inspect.CORO_CLOSED
 
@@ -1406,7 +1410,11 @@ async def test_an_already_expired_budget_refuses_an_awaitable_it_cannot_close() 
     pending = asyncio.get_running_loop().create_future()
 
     with pytest.raises(TimeoutError):
-        await upload_module._bounded(pending, upload_module.RuntimeDeadline.start(0.0))
+        await upload_module.await_with_deadline(
+            pending,
+            upload_module.RuntimeDeadline.start(0.0),
+            on_timeout=TimeoutError,
+        )
 
     assert not pending.done()
     pending.cancel()

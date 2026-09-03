@@ -91,7 +91,7 @@ class WebTransportLifecycle:
         if self._active_epoch == epoch and self._kernel.http_client is not None:
             return
         self._active_epoch = epoch
-        self._kernel.activate_epoch(epoch)
+        self._kernel.activate(epoch)
         self._auth_coord.activate_epoch(epoch)
         await self._cookie_persistence._prepare_open_baseline(
             self._cookie_persistence_path,
@@ -115,7 +115,7 @@ class WebTransportLifecycle:
         """Fence Kernel/Auth synchronously, then settle web background work."""
         epoch = self._active_epoch
         self._active_epoch = None
-        self._kernel.fence_epoch(epoch)
+        self._kernel.fence()
         self._auth_coord.fence_epoch(epoch)
         task = self._keepalive_task
         self._keepalive_task = None

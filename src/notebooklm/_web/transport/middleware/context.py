@@ -14,6 +14,8 @@ RPC_CONTEXT_DISABLE_READ_TIMEOUT_RETRIES: Final = "disable_read_timeout_retries"
 RPC_CONTEXT_AUTH_SNAPSHOT: Final = "auth_snapshot"
 RPC_CONTEXT_AUTH_REFRESHED: Final = "auth_refreshed"
 RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS: Final = "rpc_queue_wait_seconds"
+# Historical spelling retained at the context-vocabulary boundary.
+RPC_QUEUE_WAIT_CONTEXT_KEY: Final = RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS
 # Resource generation captured when the logical web call enters the chain.
 # Every terminal attempt reuses it so a forced close/reopen cannot redirect
 # an old retry into the newly-opened Kernel.
@@ -73,4 +75,5 @@ __all__ = [
     "RPC_CONTEXT_RPC_METHOD",
     "RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS",
     "RPC_CONTEXT_RESOURCE_EPOCH",
+    "RPC_QUEUE_WAIT_CONTEXT_KEY",
 ]

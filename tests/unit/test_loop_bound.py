@@ -1,6 +1,6 @@
-"""Unit tests for the :class:`LoopBoundPrimitive` template-method base.
+"""Unit tests for the shared loop-binding and epoch-fencing bases.
 
-The mixin factors the one axis on which the six loop-bound collaborators'
+The template-method base factors the one axis on which the loop-bound collaborators'
 ``set_bound_loop`` bodies historically diverged: the trivial owners only stored
 the binding, while the clear-on-rebind owners additionally discarded cached
 loop-bound state *when the loop actually changed*. The template method always
@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import asyncio
 
-from notebooklm._loop_bound import LoopBoundPrimitive
+import pytest
+
+from notebooklm._loop_bound import EpochFenced, LoopBoundPrimitive
 
 
 class _Recorder(LoopBoundPrimitive):
@@ -110,3 +112,43 @@ def test_set_bound_loop_none_on_a_fresh_instance_is_a_noop() -> None:
     rec.set_bound_loop(None)
     assert rec.rebinds == []
     assert rec._bound_loop is None
+
+
+def test_epoch_fence_activates_and_retires_one_generation() -> None:
+    owner = EpochFenced("test generation is retired")
+
+    owner.activate(7)
+    owner.assert_epoch(7)
+    owner.fence()
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"test generation is retired \(expected=7, active=None\)\.",
+    ):
+        owner.assert_epoch(7)
+
+
+def test_epoch_fence_uses_the_owner_error_type_and_message() -> None:
+    class _Retired(RuntimeError):
+        pass
+
+    owner = EpochFenced("custom owner retired", error_type=_Retired)
+    owner.activate(3)
+
+    with pytest.raises(_Retired) as raised:
+        owner.assert_epoch(4)
+
+    assert str(raised.value) == "custom owner retired (expected=4, active=3)."
+
+
+def test_epoch_fence_can_preserve_an_exact_fixed_owner_message() -> None:
+    owner = EpochFenced(
+        "fixed inactive message",
+        include_epoch_details=False,
+    )
+    owner.activate(3)
+
+    with pytest.raises(RuntimeError) as raised:
+        owner.assert_epoch(4)
+
+    assert str(raised.value) == "fixed inactive message"

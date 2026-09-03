@@ -41,7 +41,6 @@ from notebooklm._client_metrics import ClientMetrics
 from notebooklm._notes import NotesAPI
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._runtime.lifecycle import ClientLifecycle
-from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.paths import get_storage_path
 
 from .conftest import requires_auth
@@ -112,7 +111,6 @@ async def _open_android_notes(storage_path: Path) -> AsyncIterator[AndroidNotesA
     bearer = BearerProvider(ProfileStore(storage_path), MintService())
     supervisor = CallSupervisor(
         metrics=ClientMetrics(),
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=4,
     )
     session = AndroidSession(bearer, supervisor, timeout=30.0)

@@ -22,14 +22,12 @@ from notebooklm._android.session import (
     ANDROID_GRPC_MAX_RECEIVE_MESSAGE_BYTES,
     ANDROID_GRPC_TARGET,
     AndroidSession,
-    _await_with_deadline,
     _default_grpc_loader,
     _default_protobuf_loader,
 )
 from notebooklm._client_metrics import ClientMetrics
-from notebooklm._deadline import RuntimeDeadline
+from notebooklm._deadline import RuntimeDeadline, await_with_deadline
 from notebooklm._runtime.call_supervisor import CallSupervisor
-from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.exceptions import (
     AuthError,
     ClientError,
@@ -107,7 +105,7 @@ class _Bearer:
         self.closed = 0
         self.wait: asyncio.Event | None = None
 
-    async def activate(self, epoch: int) -> None:
+    async def activate_for_epoch(self, epoch: int) -> None:
         self.activations.append(epoch)
 
     async def get(self, expected_epoch: int) -> BearerCredential:
@@ -214,7 +212,6 @@ def _supervisor(*, limit: int | None = 2, events=None) -> CallSupervisor:
     metrics = ClientMetrics(on_rpc_event=None if events is None else events.append)
     return CallSupervisor(
         metrics=metrics,
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=limit,
     )
 
@@ -976,7 +973,7 @@ def test_default_protobuf_loader_maps_generated_runtime_version_mismatch() -> No
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
-# _await_with_deadline
+# await_with_deadline
 # ---------------------------------------------------------------------------
 
 
@@ -987,7 +984,7 @@ async def test_an_absent_deadline_awaits_without_a_timeout_wrapper() -> None:
     async def _work() -> str:
         return "done"
 
-    assert await _await_with_deadline(_work(), None) == "done"
+    assert await await_with_deadline(_work(), None, on_timeout=TimeoutError) == "done"
 
 
 # ---------------------------------------------------------------------------

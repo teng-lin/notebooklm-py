@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from .._client_metrics import ClientMetrics
-from .._transport_drain import TransportDrainTracker
 from .call_supervisor import CallSupervisor
 from .config import normalize_max_concurrent_uploads
 from .helpers import _resolve_keepalive_interval
@@ -198,8 +197,8 @@ def build_collaborators(
 
     The order is dependency-driven so the load-bearing inter-collaborator
     wiring stays obvious to future readers: metrics is built first because
-    it absorbs the optional ``on_rpc_event`` callback. The drain tracker and
-    call supervisor follow; web request ids,
+    it absorbs the optional ``on_rpc_event`` callback. The call supervisor
+    follows; web request ids,
     auth coordination, kernels, and cookie persistence are constructed by the
     web composition module.
     """
@@ -207,14 +206,8 @@ def build_collaborators(
     # remains the lock-safe read path; helper-level tests that need
     # implementation state read ``self._metrics_obj`` directly.
     metrics = ClientMetrics(on_rpc_event=on_rpc_event)
-    # Transport drain bookkeeping (in-flight posts, drain condition,
-    # per-task operation depth, draining flag). The helper's
-    # ``__init__`` is event-loop-agnostic; the ``asyncio.Condition`` is
-    # created lazily on first ``get_drain_condition`` call.
-    drain_tracker = TransportDrainTracker()
     call_supervisor = CallSupervisor(
         metrics=metrics,
-        drain_tracker=drain_tracker,
         max_concurrent_rpcs=config.max_concurrent_rpcs,
     )
     return SharedRuntime(

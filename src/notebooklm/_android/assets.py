@@ -16,6 +16,7 @@ from .._artifact._download_client import _is_trusted_download_host
 from .._artifact.downloads import AssetDownloadService, DownloadResult
 from .._curl_cffi_transport import resolve_transport_factory
 from .._loop_affinity import assert_bound_loop
+from .._loop_bound import EpochFenced
 from .._runtime.call_supervisor import CallSupervisor
 from ..exceptions import ArtifactDownloadError, AuthError, UnsupportedOperationError
 from .auth import BearerCredential, BearerProvider
@@ -307,7 +308,7 @@ def _single_location(headers: Any) -> str | None:
     return location or None
 
 
-class AndroidAssetDownloadService(AssetDownloadService):
+class AndroidAssetDownloadService(EpochFenced, AssetDownloadService):
     """One manual response loop with per-hop bearer decisions and lifecycle fencing."""
 
     name = "android-assets"
@@ -319,13 +320,15 @@ class AndroidAssetDownloadService(AssetDownloadService):
         supervisor: CallSupervisor,
         client_factory: Callable[[], Any] = _default_client_factory,
     ) -> None:
-        super().__init__(storage_path=None)
+        AssetDownloadService.__init__(self, storage_path=None)
+        EpochFenced.__init__(
+            self,
+            "Android asset transfer belongs to a retired resource generation",
+            assert_loop=True,
+        )
         self._bearer_provider = bearer_provider
         self._supervisor = supervisor
         self._client_factory = client_factory
-        self._bound_loop: asyncio.AbstractEventLoop | None = None
-        self._active_epoch: int | None = None
-        self._closing = False
         self._tasks: set[asyncio.Task[Any]] = set()
         self._clients: set[Any] = set()
 
@@ -333,9 +336,8 @@ class AndroidAssetDownloadService(AssetDownloadService):
         """Activate an empty resource registry for one client generation."""
 
         assert_bound_loop(loop)
-        self._bound_loop = loop
-        self._active_epoch = epoch
-        self._closing = False
+        self.set_bound_loop(loop)
+        self.activate(epoch)
         self._tasks.clear()
         self._clients.clear()
 
@@ -344,8 +346,7 @@ class AndroidAssetDownloadService(AssetDownloadService):
 
         if self._bound_loop is not None:
             assert_bound_loop(self._bound_loop)
-        self._closing = True
-        self._active_epoch = None
+        self.fence()
         current = asyncio.current_task()
         for task in tuple(self._tasks):
             if task is not current:
@@ -383,14 +384,6 @@ class AndroidAssetDownloadService(AssetDownloadService):
             raise sanitize_escaping_exception(cancellation) from None
         if outcome.close_failed:
             raise RuntimeError("Android asset transport close failed.") from None
-
-    def _assert_epoch(self, expected_epoch: int) -> None:
-        assert_bound_loop(self._bound_loop)
-        if self._closing or self._active_epoch != expected_epoch:
-            raise RuntimeError(
-                "Android asset transfer belongs to a retired resource generation "
-                f"(expected={expected_epoch}, active={self._active_epoch})."
-            )
 
     async def download_url(self, url: str, output_path: str) -> str:
         """Download one PNG without retaining credentials in an escaping traceback."""
@@ -497,7 +490,7 @@ class AndroidAssetDownloadService(AssetDownloadService):
             "android artifact download",
             expected_epoch=expected_epoch,
         ) as lease:
-            self._assert_epoch(lease.epoch)
+            self.assert_epoch(lease.epoch)
             task = asyncio.current_task()
             if task is None:
                 raise RuntimeError("Android asset transfer has no owning task.")
@@ -542,10 +535,10 @@ class AndroidAssetDownloadService(AssetDownloadService):
                 )
             assert initial_host is not None
 
-            self._assert_epoch(expected_epoch)
+            self.assert_epoch(expected_epoch)
             if initial_host in _BEARER_HOSTS:
                 credential = await self._bearer_provider.get(expected_epoch)
-                self._assert_epoch(expected_epoch)
+                self.assert_epoch(expected_epoch)
             try:
                 client = self._client_factory()
             except (KeyboardInterrupt, SystemExit):
@@ -555,7 +548,7 @@ class AndroidAssetDownloadService(AssetDownloadService):
             self._clients.add(client)
 
             for hop in range(_MAX_HOPS + 1):
-                self._assert_epoch(expected_epoch)
+                self.assert_epoch(expected_epoch)
                 assert current_url is not None
                 host = _validated_host(current_url)
                 if host is None:
@@ -658,7 +651,7 @@ class AndroidAssetDownloadService(AssetDownloadService):
                         for signature, offset in signatures
                     ):
                         return TransferFailure("signature", host, hop)
-                    self._assert_epoch(expected_epoch)
+                    self.assert_epoch(expected_epoch)
                     os.replace(staging, destination)
                     staging = None
                     _fsync_directory(destination.parent)

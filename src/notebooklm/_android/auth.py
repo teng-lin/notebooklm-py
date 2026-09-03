@@ -19,7 +19,7 @@ from .._auth.mint_service import (
 )
 from .._auth.profile_store import ProfileStore
 from .._loop_affinity import assert_bound_loop
-from .._loop_bound import LoopBoundPrimitive
+from .._loop_bound import EpochFenced
 from ..exceptions import AuthError, ConfigurationError, MissingDependencyError
 from .errors import sanitize_escaping_exception
 
@@ -92,7 +92,7 @@ class _MintResult:
     cache_deadline: float | None
 
 
-class BearerProvider(LoopBoundPrimitive):
+class BearerProvider(EpochFenced):
     """Load a durable profile record and mint one shared short-lived bearer."""
 
     def __init__(
@@ -103,12 +103,16 @@ class BearerProvider(LoopBoundPrimitive):
         wall_clock: Callable[[], float] = time.time,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
+        super().__init__(
+            _INACTIVE_MESSAGE,
+            initially_closing=True,
+            include_epoch_details=False,
+        )
         self._profile_store = profile_store
         self._mint_service = mint_service
         self._wall_clock = wall_clock
         self._monotonic = monotonic
         self._provider_epoch = 0
-        self._active_session_epoch: int | None = None
         self._master_token: MasterToken | None = None
         self._lock: asyncio.Lock | None = None
         self._mint_task: asyncio.Task[_MintResult] | None = None
@@ -140,7 +144,7 @@ class BearerProvider(LoopBoundPrimitive):
         self._lock = None
         self._mint_task = None
         self._mint_waiters = 0
-        self._active_session_epoch = None
+        self.fence()
         self._master_token = None
         self._cached = None
         self._cache_deadline = None
@@ -161,7 +165,8 @@ class BearerProvider(LoopBoundPrimitive):
 
     def _assert_active(self, expected_epoch: int) -> int:
         self._assert_loop()
-        if self._active_session_epoch != expected_epoch or self._master_token is None:
+        self.assert_epoch(expected_epoch)
+        if self._master_token is None:
             raise RuntimeError(_INACTIVE_MESSAGE)
         return self._provider_epoch
 
@@ -172,7 +177,7 @@ class BearerProvider(LoopBoundPrimitive):
             self._lock = lock
         return lock
 
-    async def activate(self, epoch: int) -> None:
+    async def activate_for_epoch(self, epoch: int) -> None:
         """Read and retain the typed durable credential without minting."""
 
         self._assert_loop()
@@ -185,7 +190,7 @@ class BearerProvider(LoopBoundPrimitive):
             raise MissingDependencyError(_ANDROID_EXTRA_MESSAGE)
         self._provider_epoch += 1
         provider_epoch = self._provider_epoch
-        self._active_session_epoch = epoch
+        self.activate(epoch)
         self._master_token = None
         self._cached = None
         self._cache_deadline = None
@@ -198,7 +203,7 @@ class BearerProvider(LoopBoundPrimitive):
         except Exception:
             record = None
 
-        if self._provider_epoch != provider_epoch or self._active_session_epoch != epoch:
+        if self._provider_epoch != provider_epoch or self._closing or self._active_epoch != epoch:
             return
         if type(record) is not MasterToken:
             del record
@@ -261,7 +266,8 @@ class BearerProvider(LoopBoundPrimitive):
         try:
             if (
                 self._provider_epoch != provider_epoch
-                or self._active_session_epoch != expected_epoch
+                or self._closing
+                or self._active_epoch != expected_epoch
                 or self._master_token is None
             ):
                 del result
@@ -338,7 +344,7 @@ class BearerProvider(LoopBoundPrimitive):
             raise failure
         if not isinstance(minted, MintedOAuthToken) or not minted.token:
             raise AuthError(_MINT_FAILURE_MESSAGE)
-        if self._provider_epoch != provider_epoch or self._active_session_epoch is None:
+        if self._provider_epoch != provider_epoch or self._closing or self._active_epoch is None:
             del minted
             raise RuntimeError(_INACTIVE_MESSAGE)
 
@@ -375,7 +381,7 @@ class BearerProvider(LoopBoundPrimitive):
 
         self._assert_loop()
         self._provider_epoch += 1
-        self._active_session_epoch = None
+        self.fence()
         self._master_token = None
         self._cached = None
         self._cache_deadline = None

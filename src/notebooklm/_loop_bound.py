@@ -7,8 +7,8 @@ identically-named ``set_bound_loop(loop)`` that the lifecycle calls to
 propagate the captured loop. The *bodies* historically diverged in exactly one
 axis:
 
-* The trivial owners (``TransportDrainTracker`` / ``ReqidCounter`` /
-  ``AuthRefreshCoordinator``) only stored the new binding.
+* The trivial owners (``ReqidCounter`` / ``AuthRefreshCoordinator``) only
+  stored the new binding.
 * The clear-on-rebind owners (``ClientComposed`` / ``SourceUploadPipeline`` /
   ``ChatAPI``) additionally discarded their cached loop-bound state *when the
   loop actually changed* so a stale primitive bound to a now-dead loop is never
@@ -23,7 +23,7 @@ both the old and new loop and can clear state captured under the old one.
 Scope is deliberately narrow: this base owns the *binding* and the *rebind
 hook* only. The cross-loop **assert** (``assert_bound_loop``) stays in
 ``_loop_affinity`` and is still called at each owner's async entry point — the
-mixin does not guard *use*, only *rebuild*. Each owner also keeps its own
+base does not guard *use*, only *rebuild*. Each owner also keeps its own
 ``reset_after_open`` (they reset different owner-specific state and must not be
 unified). The ``_bound_loop`` field name is preserved because
 ``_runtime/lifecycle.py`` and ``_loop_affinity`` read it directly.
@@ -35,7 +35,7 @@ import asyncio
 
 
 class LoopBoundPrimitive:
-    """Mixin providing the canonical ``set_bound_loop`` template method.
+    """Base providing the canonical ``set_bound_loop`` template method.
 
     Owners inherit this to drop their duplicated ``_bound_loop`` init and
     ``set_bound_loop`` body. Clear-on-rebind owners override
@@ -70,4 +70,54 @@ class LoopBoundPrimitive:
         """
 
 
-__all__ = ["LoopBoundPrimitive"]
+class EpochFenced(LoopBoundPrimitive):
+    """Own the common active-generation fence used by runtime resources.
+
+    ``activate`` publishes one resource epoch, ``fence`` retires it before
+    asynchronous teardown begins, and ``assert_epoch`` rejects work holding a
+    stale lease. Owners provide their diagnostic text and may preserve either
+    the standard epoch-detail suffix or a fixed historical message. The
+    Android upload boundary also supplies its historical ``RuntimeError``
+    subclass.
+    """
+
+    def __init__(
+        self,
+        retired_message: str,
+        *,
+        error_type: type[RuntimeError] = RuntimeError,
+        initially_closing: bool = False,
+        assert_loop: bool = False,
+        include_epoch_details: bool = True,
+    ) -> None:
+        self._epoch_retired_message = retired_message
+        self._epoch_error_type = error_type
+        self._epoch_assert_loop = assert_loop
+        self._epoch_include_details = include_epoch_details
+        self._active_epoch: int | None = None
+        self._closing = initially_closing
+
+    def activate(self, epoch: int) -> None:
+        """Publish ``epoch`` as the active resource generation."""
+        self._active_epoch = epoch
+        self._closing = False
+
+    def fence(self) -> None:
+        """Synchronously retire the active generation before teardown."""
+        self._closing = True
+        self._active_epoch = None
+
+    def assert_epoch(self, expected_epoch: int) -> None:
+        """Reject work that does not belong to the active generation."""
+        if self._epoch_assert_loop:
+            from ._loop_affinity import assert_bound_loop
+
+            assert_bound_loop(self._bound_loop)
+        if self._closing or self._active_epoch != expected_epoch:
+            message = self._epoch_retired_message
+            if self._epoch_include_details:
+                message = f"{message} (expected={expected_epoch}, active={self._active_epoch!r})."
+            raise self._epoch_error_type(message)
+
+
+__all__ = ["EpochFenced", "LoopBoundPrimitive"]

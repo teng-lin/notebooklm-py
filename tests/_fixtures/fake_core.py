@@ -160,11 +160,9 @@ def make_fake_core(**overrides: Any) -> FakeSession:
         "is_closing": MagicMock(return_value=False),
         "operation_scope": MagicMock(side_effect=_operation_scope),
         "spawn_child": _spawn_child,
-        # CallSupervisor delegates close-time artifact hook registration to
-        # its owned TransportDrainTracker. We
-        # keep ``_drain_hooks`` as a public attribute on the fake so test
-        # sites that previously read ``fake._drain_hooks["name"]`` still
-        # work (the fake doesn't have a real ``_drain_tracker``).
+        # CallSupervisor owns close-time artifact hook registration. Keep
+        # ``_drain_hooks`` as a public attribute on the fake so test sites can
+        # inspect registrations without a real supervisor.
         "_drain_hooks": {},
         "register_drain_hook": MagicMock(return_value=None),
         # Upload-pipeline glue: queue-wait recorder consumed by the

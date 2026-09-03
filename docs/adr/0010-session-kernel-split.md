@@ -11,9 +11,9 @@
 > The live shared capability Protocols are `Kernel`, `RpcCaller`, and
 > `LoopGuard` in `_runtime/contracts.py`; single-consumer seams such as
 > upload auth metadata and artifact polling scope live in their owning feature
-> modules, and the old `AsyncWorkRuntime` composite was deleted. Drain-hook registration is the
-> `register_drain_hook(...)` method on `TransportDrainTracker` in
-> `_transport_drain.py`. Read in-body references to `Session`,
+> modules, and the old `AsyncWorkRuntime` composite was deleted. Drain-hook
+> registration and generation admission now live together on
+> `CallSupervisor`. Read in-body references to `Session`,
 > `_session_contracts.py`, `_capabilities.py`, `ChatRuntime`,
 > `ArtifactsRuntime`, the `DrainHookRegistration` Protocol, and exact
 > `file.py:NNN` line numbers as historical — consult `CLAUDE.md` and the

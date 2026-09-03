@@ -6,7 +6,6 @@ __all__ = ["DecodeResponse", "RpcExecutor"]
 
 import json
 import logging
-import math
 import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any, NoReturn, Protocol
@@ -701,10 +700,7 @@ class RpcExecutor:
         ``None`` guard precedes ``float()`` so a disabled timeout returns no
         deadline instead of raising ``TypeError`` mid-call.
         """
-        timeout = self._timeout_provider()
-        if timeout is None or not math.isfinite(float(timeout)):
-            return None
-        return RuntimeDeadline.start(float(timeout))
+        return RuntimeDeadline.from_timeout(self._timeout_provider())
 
 
 if TYPE_CHECKING:

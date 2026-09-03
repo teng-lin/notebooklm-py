@@ -5,13 +5,13 @@ from __future__ import annotations
 import asyncio
 import sys
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._runtime.call_supervisor import AdmissionGeneration, CallSupervisor
-from notebooklm._transport_drain import TransportDrainTracker, _TransportOperationToken
 from notebooklm.types import RpcTelemetryEvent
 
 
@@ -55,87 +55,30 @@ class _SpyMetrics(ClientMetrics):
         super().record_rpc_queue_wait(wait_seconds)
 
 
-class _SpyDrain(TransportDrainTracker):
-    def __init__(self, events: list[str]) -> None:
-        super().__init__()
-        self._events = events
-
-    async def begin_transport_post(self, log_label: str) -> _TransportOperationToken:
-        self._events.append("drain:begin")
-        return await super().begin_transport_post(log_label)
-
-    async def finish_transport_post(self, token: _TransportOperationToken) -> None:
-        await super().finish_transport_post(token)
-        self._events.append("drain:finish")
-
-
-class _BlockingFinishDrain(TransportDrainTracker):
-    def __init__(self) -> None:
-        super().__init__()
+class _BlockingFinishSupervisor(CallSupervisor):
+    def __init__(self, *, metrics: ClientMetrics, max_concurrent_rpcs: int | None) -> None:
+        super().__init__(metrics=metrics, max_concurrent_rpcs=max_concurrent_rpcs)
         self.finish_started = asyncio.Event()
         self.finish_release = asyncio.Event()
 
-    async def finish_transport_post(self, token: _TransportOperationToken) -> None:
+    async def _finish_generation_token(
+        self,
+        generation: AdmissionGeneration,
+        task: asyncio.Task[Any] | None,
+    ) -> None:
         self.finish_started.set()
         await self.finish_release.wait()
-        await super().finish_transport_post(token)
-
-
-class _BlockingBeginDrain(TransportDrainTracker):
-    def __init__(self) -> None:
-        super().__init__()
-        self.begin_started = asyncio.Event()
-
-    async def begin_transport_post(self, log_label: str) -> _TransportOperationToken:
-        del log_label
-        self.begin_started.set()
-        await asyncio.Future()
-        raise AssertionError("unreachable")
-
-
-class _BlockingChildBeginDrain(TransportDrainTracker):
-    def __init__(self) -> None:
-        super().__init__()
-        self.child_begin_started = asyncio.Event()
-
-    async def begin_transport_task(
-        self,
-        task: asyncio.Task[object],
-        log_label: str,
-    ) -> _TransportOperationToken:
-        del task, log_label
-        self.child_begin_started.set()
-        await asyncio.Future()
-        raise AssertionError("unreachable")
-
-
-class _CancelAfterChildAdmissionDrain(TransportDrainTracker):
-    """Cancel the spawning parent immediately after both child tokens exist."""
-
-    async def begin_transport_task(
-        self,
-        task: asyncio.Task[object],
-        log_label: str,
-    ) -> _TransportOperationToken:
-        # Let the gated wrapper reach ``await gate`` first, then make the
-        # cancellation pending before spawn_child publishes the Task.
-        await asyncio.sleep(0)
-        token = await super().begin_transport_task(task, log_label)
-        parent = asyncio.current_task()
-        assert parent is not None
-        parent.cancel("after-child-admission")
-        return token
+        await super()._finish_generation_token(generation, task)
 
 
 def _supervisor(
     *,
     metrics: ClientMetrics | None = None,
-    drain: TransportDrainTracker | None = None,
     max_concurrent_rpcs: int | None = 1,
+    supervisor_type: type[CallSupervisor] = CallSupervisor,
 ) -> CallSupervisor:
-    supervisor = CallSupervisor(
+    supervisor = supervisor_type(
         metrics=metrics if metrics is not None else ClientMetrics(),
-        drain_tracker=drain if drain is not None else TransportDrainTracker(),
         max_concurrent_rpcs=max_concurrent_rpcs,
     )
     supervisor.set_bound_loop(asyncio.get_running_loop())
@@ -145,16 +88,15 @@ def _supervisor(
     return supervisor
 
 
-def _active_drain(supervisor: CallSupervisor) -> TransportDrainTracker:
+def _active_generation(supervisor: CallSupervisor) -> AdmissionGeneration:
     generation = supervisor._current
     assert generation is not None
-    return generation.drain
+    return generation
 
 
 @pytest.mark.asyncio
-async def test_call_scope_preserves_drain_metrics_semaphore_settlement_order() -> None:
+async def test_call_scope_preserves_metrics_semaphore_settlement_order() -> None:
     events: list[str] = []
-    drain = _SpyDrain(events)
     supervisor: CallSupervisor
 
     def _assert_released() -> None:
@@ -162,7 +104,7 @@ async def test_call_scope_preserves_drain_metrics_semaphore_settlement_order() -
         assert supervisor._rpc_semaphore._value == 1
 
     metrics = _SpyMetrics(events, on_emit=_assert_released)
-    supervisor = _supervisor(metrics=metrics, drain=drain)
+    supervisor = _supervisor(metrics=metrics)
     assert supervisor._rpc_semaphore is None
     supervisor.record_started("LIST_NOTEBOOKS")
 
@@ -171,13 +113,7 @@ async def test_call_scope_preserves_drain_metrics_semaphore_settlement_order() -
         assert lease.epoch == 1
         assert lease.deadline is None
 
-    assert events == [
-        "drain:begin",
-        "body",
-        "event:success",
-        "drain:finish",
-        "queue",
-    ]
+    assert events == ["body", "event:success", "queue"]
     snapshot = metrics.snapshot()
     assert snapshot.rpc_calls_started == 1
     assert snapshot.rpc_calls_succeeded == 1
@@ -208,7 +144,7 @@ async def test_run_is_lazy_and_deadline_bounds_semaphore_queue() -> None:
         await supervisor.run("queued", "QUEUED", deadline, _must_not_start)
 
     assert invoked is False
-    assert _active_drain(supervisor)._in_flight_posts == 1
+    assert _active_generation(supervisor).in_flight == 1
     release_first.set()
     await first
     snapshot = metrics.snapshot()
@@ -239,7 +175,7 @@ async def test_web_queue_is_unbounded_while_transport_deadline_bounds_queue() ->
     first = asyncio.create_task(supervisor.run("first", "FIRST", None, _hold))
     await first_entered.wait()
     web = asyncio.create_task(supervisor.run("web", "WEB", None, _web))
-    while _active_drain(supervisor)._in_flight_posts < 2:
+    while _active_generation(supervisor).in_flight < 2:
         await asyncio.sleep(0)
     assert web.done() is False
     assert web_invoked is False
@@ -272,11 +208,11 @@ async def test_cancellation_is_uncounted_but_queued_token_settles() -> None:
         supervisor.run("queued", "QUEUED", None, lambda _lease: asyncio.sleep(0))
     )
     await asyncio.sleep(0)
-    assert _active_drain(supervisor)._in_flight_posts == 2
+    assert _active_generation(supervisor).in_flight == 2
     queued.cancel()
     with pytest.raises(asyncio.CancelledError):
         await queued
-    assert _active_drain(supervisor)._in_flight_posts == 1
+    assert _active_generation(supervisor).in_flight == 1
     release_first.set()
     await first
 
@@ -288,8 +224,11 @@ async def test_cancellation_is_uncounted_but_queued_token_settles() -> None:
 
 @pytest.mark.asyncio
 async def test_recancellation_cannot_orphan_retained_settlement() -> None:
-    drain = _BlockingFinishDrain()
-    supervisor = _supervisor(drain=drain, max_concurrent_rpcs=None)
+    supervisor = _supervisor(
+        max_concurrent_rpcs=None,
+        supervisor_type=_BlockingFinishSupervisor,
+    )
+    assert isinstance(supervisor, _BlockingFinishSupervisor)
     body_started = asyncio.Event()
 
     async def _body() -> None:
@@ -300,149 +239,33 @@ async def test_recancellation_cannot_orphan_retained_settlement() -> None:
     caller = asyncio.create_task(_body())
     await body_started.wait()
     caller.cancel()
-    await drain.finish_started.wait()
+    await supervisor.finish_started.wait()
     caller.cancel()
     with pytest.raises(asyncio.CancelledError):
         await caller
 
-    assert drain._in_flight_posts == 1
+    assert _active_generation(supervisor).in_flight == 1
     assert supervisor._settlement_tasks
-    drain.finish_release.set()
+    supervisor.finish_release.set()
     await asyncio.gather(*tuple(supervisor._settlement_tasks))
-    assert drain._in_flight_posts == 0
+    assert _active_generation(supervisor).in_flight == 0
     assert not supervisor._settlement_tasks
-
-
-@pytest.mark.asyncio
-async def test_recancellation_during_partial_admission_cannot_orphan_generation() -> None:
-    drain = _BlockingBeginDrain()
-    supervisor = _supervisor(drain=drain, max_concurrent_rpcs=None)
-
-    async def _enter() -> None:
-        async with supervisor.operation_scope("partial"):
-            raise AssertionError("unreachable")
-
-    caller = asyncio.create_task(_enter())
-    await drain.begin_started.wait()
-    generation = supervisor._current
-    assert generation is not None
-    condition_held = asyncio.Event()
-    release_condition = asyncio.Event()
-
-    async def _hold_condition() -> None:
-        async with generation.condition:
-            condition_held.set()
-            await release_condition.wait()
-
-    holder = asyncio.create_task(_hold_condition())
-    await condition_held.wait()
-    caller.cancel("first")
-    while not supervisor._settlement_tasks:
-        await asyncio.sleep(0)
-    caller.cancel("second")
-
-    with pytest.raises(asyncio.CancelledError) as raised:
-        await caller
-    _assert_republished_cancel_message(raised.value, "first")
-    assert generation.in_flight == 1
-
-    release_condition.set()
-    await holder
-    await asyncio.gather(*tuple(supervisor._settlement_tasks))
-    await asyncio.sleep(0)
-    assert generation.in_flight == 0
-    assert not supervisor._settlement_tasks
-
-
-@pytest.mark.asyncio
-async def test_recancellation_during_child_admission_retains_both_settlements() -> None:
-    drain = _BlockingChildBeginDrain()
-    supervisor = _supervisor(drain=drain, max_concurrent_rpcs=None)
-    factory_invoked = False
-
-    async def _child() -> None:
-        nonlocal factory_invoked
-        factory_invoked = True
-
-    async def _parent() -> None:
-        async with supervisor.operation_scope("parent"):
-            await supervisor.spawn_child("partial-child", _child)
-
-    caller = asyncio.create_task(_parent())
-    await drain.child_begin_started.wait()
-    generation = supervisor._current
-    assert generation is not None
-    condition_held = asyncio.Event()
-    release_condition = asyncio.Event()
-
-    async def _hold_condition() -> None:
-        async with generation.condition:
-            condition_held.set()
-            await release_condition.wait()
-
-    holder = asyncio.create_task(_hold_condition())
-    await condition_held.wait()
-    caller.cancel("first")
-    while len(supervisor._settlement_tasks) < 1:
-        await asyncio.sleep(0)
-    caller.cancel("second")
-    while len(supervisor._settlement_tasks) < 2:
-        await asyncio.sleep(0)
-    caller.cancel("third")
-
-    with pytest.raises(asyncio.CancelledError) as raised:
-        await caller
-    _assert_republished_cancel_message(raised.value, "first")
-    assert factory_invoked is False
-    assert generation.in_flight == 2
-
-    release_condition.set()
-    await holder
-    await asyncio.gather(*tuple(supervisor._settlement_tasks))
-    await asyncio.sleep(0)
-    assert generation.in_flight == 0
-    assert drain._in_flight_posts == 0
-
-
-@pytest.mark.asyncio
-async def test_parent_cancel_after_child_admission_settles_each_token_once() -> None:
-    drain = _CancelAfterChildAdmissionDrain()
-    supervisor = _supervisor(drain=drain, max_concurrent_rpcs=None)
-    factory_invoked = False
-
-    async def _child() -> None:
-        nonlocal factory_invoked
-        factory_invoked = True
-
-    async def _parent() -> None:
-        async with supervisor.operation_scope("parent"):
-            await supervisor.spawn_child("gated-child", _child)
-
-    caller = asyncio.create_task(_parent())
-    with pytest.raises(asyncio.CancelledError) as raised:
-        await caller
-
-    _assert_republished_cancel_message(raised.value, "after-child-admission")
-    assert factory_invoked is True
-    await asyncio.gather(*tuple(supervisor._settlement_tasks))
-    await asyncio.sleep(0)
-    generation = supervisor._current
-    assert generation is not None
-    assert generation.in_flight == 0
-    assert drain._in_flight_posts == 0
 
 
 @pytest.mark.asyncio
 async def test_recancellation_after_normal_body_preserves_first_cancelled_error() -> None:
-    drain = _BlockingFinishDrain()
-    supervisor = _supervisor(drain=drain, max_concurrent_rpcs=None)
+    supervisor = _supervisor(
+        max_concurrent_rpcs=None,
+        supervisor_type=_BlockingFinishSupervisor,
+    )
+    assert isinstance(supervisor, _BlockingFinishSupervisor)
 
     async def _body() -> None:
         async with supervisor.operation_scope("completed"):
             return
 
     caller = asyncio.create_task(_body())
-    await drain.finish_started.wait()
+    await supervisor.finish_started.wait()
     caller.cancel("first")
     await asyncio.sleep(0)
     caller.cancel("second")
@@ -451,27 +274,26 @@ async def test_recancellation_after_normal_body_preserves_first_cancelled_error(
         await caller
     _assert_republished_cancel_message(raised.value, "first")
 
-    drain.finish_release.set()
+    supervisor.finish_release.set()
     await asyncio.gather(*tuple(supervisor._settlement_tasks))
 
 
 @pytest.mark.asyncio
-async def test_recorder_failure_never_skips_drain_and_body_error_wins() -> None:
+async def test_recorder_failure_never_skips_settlement_and_body_error_wins() -> None:
     events: list[str] = []
-    drain = _SpyDrain(events)
     metrics = _SpyMetrics(
         events,
         emit_error=RuntimeError("emit failed"),
         queue_error=RuntimeError("queue failed"),
     )
-    supervisor = _supervisor(metrics=metrics, drain=drain)
+    supervisor = _supervisor(metrics=metrics)
 
     with pytest.raises(ValueError, match="body failed"):
         async with supervisor.call_scope("call", "METHOD", None):
             raise ValueError("body failed")
 
-    assert drain._in_flight_posts == 0
-    assert events[-2:] == ["drain:finish", "queue"]
+    assert _active_generation(supervisor).in_flight == 0
+    assert events[-1:] == ["queue"]
 
 
 @pytest.mark.asyncio
@@ -483,14 +305,14 @@ async def test_terminal_event_failure_on_success_wins_after_settlement() -> None
         emit_error=terminal_error,
         queue_error=RuntimeError("queue recorder failed"),
     )
-    supervisor = _supervisor(metrics=metrics, drain=_SpyDrain(events))
+    supervisor = _supervisor(metrics=metrics)
 
     with pytest.raises(RuntimeError, match="terminal event failed") as raised:
         async with supervisor.call_scope("call", "METHOD", None):
             events.append("body")
 
     assert raised.value is terminal_error
-    assert events == ["drain:begin", "body", "event:success", "drain:finish", "queue"]
+    assert events == ["body", "event:success", "queue"]
     generation = supervisor._current
     assert generation is not None
     assert generation.in_flight == 0
@@ -501,14 +323,14 @@ async def test_queue_recorder_failure_on_success_is_observed_after_settlement() 
     events: list[str] = []
     queue_error = RuntimeError("queue recorder failed")
     metrics = _SpyMetrics(events, queue_error=queue_error)
-    supervisor = _supervisor(metrics=metrics, drain=_SpyDrain(events))
+    supervisor = _supervisor(metrics=metrics)
 
     with pytest.raises(RuntimeError, match="queue recorder failed") as raised:
         async with supervisor.call_scope("call", "METHOD", None):
             events.append("body")
 
     assert raised.value is queue_error
-    assert events == ["drain:begin", "body", "event:success", "drain:finish", "queue"]
+    assert events == ["body", "event:success", "queue"]
     generation = supervisor._current
     assert generation is not None
     assert generation.in_flight == 0
@@ -519,7 +341,7 @@ async def test_settlement_process_exit_is_captured_then_observed_by_caller() -> 
     events: list[str] = []
     process_exit = SystemExit("shutdown")
     metrics = _SpyMetrics(events, queue_error=process_exit)
-    supervisor = _supervisor(metrics=metrics, drain=_SpyDrain(events))
+    supervisor = _supervisor(metrics=metrics)
 
     with pytest.raises(SystemExit, match="shutdown") as raised:
         async with supervisor.call_scope("call", "METHOD", None):
@@ -541,9 +363,13 @@ async def test_detached_recorder_failure_reaches_loop_handler_once(
     recorder_error: BaseException,
 ) -> None:
     events: list[str] = []
-    drain = _BlockingFinishDrain()
     metrics = _SpyMetrics(events, queue_error=recorder_error)
-    supervisor = _supervisor(metrics=metrics, drain=drain, max_concurrent_rpcs=None)
+    supervisor = _supervisor(
+        metrics=metrics,
+        max_concurrent_rpcs=None,
+        supervisor_type=_BlockingFinishSupervisor,
+    )
+    assert isinstance(supervisor, _BlockingFinishSupervisor)
     body_started = asyncio.Event()
     loop = asyncio.get_running_loop()
     handled: list[dict[str, object]] = []
@@ -558,7 +384,7 @@ async def test_detached_recorder_failure_reaches_loop_handler_once(
         caller = asyncio.create_task(supervisor.run("call", None, None, _invoke))
         await body_started.wait()
         caller.cancel("first")
-        await drain.finish_started.wait()
+        await supervisor.finish_started.wait()
         caller.cancel("second")
         with pytest.raises(asyncio.CancelledError) as raised:
             await caller
@@ -566,7 +392,7 @@ async def test_detached_recorder_failure_reaches_loop_handler_once(
 
         retained = tuple(supervisor._settlement_tasks)
         assert len(retained) == 1
-        drain.finish_release.set()
+        supervisor.finish_release.set()
         await asyncio.gather(*retained)
         await asyncio.sleep(0)
 
@@ -582,13 +408,13 @@ async def test_detached_recorder_failure_reaches_loop_handler_once(
 async def test_method_none_applies_admission_and_queue_without_rpc_accounting() -> None:
     events: list[str] = []
     metrics = _SpyMetrics(events)
-    supervisor = _supervisor(metrics=metrics, drain=_SpyDrain(events))
+    supervisor = _supervisor(metrics=metrics)
 
     supervisor.record_started(None)
     async with supervisor.call_scope("chat", None, None):
         events.append("body")
 
-    assert events == ["drain:begin", "body", "drain:finish", "queue"]
+    assert events == ["body", "queue"]
     snapshot = metrics.snapshot()
     assert snapshot.rpc_calls_started == 0
     assert snapshot.rpc_calls_succeeded == 0
@@ -601,7 +427,6 @@ async def test_record_started_preserves_preopen_error_and_zero_metrics() -> None
     metrics = ClientMetrics()
     supervisor = CallSupervisor(
         metrics=metrics,
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=None,
     )
 
@@ -633,9 +458,8 @@ async def test_record_started_keeps_phase_a_counting_before_drain_rejection() ->
 
 
 @pytest.mark.asyncio
-async def test_expected_epoch_rejects_before_legacy_admission_or_invocation() -> None:
-    events: list[str] = []
-    supervisor = _supervisor(drain=_SpyDrain(events), max_concurrent_rpcs=None)
+async def test_expected_epoch_rejects_before_admission_or_invocation() -> None:
+    supervisor = _supervisor(max_concurrent_rpcs=None)
     invoked = False
 
     async def _invoke(_lease: object) -> None:
@@ -646,7 +470,6 @@ async def test_expected_epoch_rejects_before_legacy_admission_or_invocation() ->
         await supervisor.run("retired", "METHOD", None, _invoke, expected_epoch=2)
 
     assert invoked is False
-    assert events == []
     generation = supervisor._current
     assert generation is not None
     assert generation.in_flight == 0
@@ -670,7 +493,7 @@ async def test_spawn_child_requires_parent_and_invokes_factory_only_after_admiss
         child = await supervisor.spawn_child("child", _child)
         assert lease.epoch == 1
         assert await child == 42
-    assert _active_drain(supervisor)._in_flight_posts == 0
+    assert _active_generation(supervisor).in_flight == 0
 
 
 @pytest.mark.asyncio
@@ -688,10 +511,10 @@ async def test_immediately_cancelled_child_settles_both_admission_tokens() -> No
         generation = supervisor._current
         assert generation is not None
         assert generation.in_flight == 1  # parent only
-        assert _active_drain(supervisor)._in_flight_posts == 1
+        assert _active_generation(supervisor).in_flight == 1
 
     await supervisor.wait_for_idle(1, 0.1)
-    assert _active_drain(supervisor)._in_flight_posts == 0
+    assert _active_generation(supervisor).in_flight == 0
 
 
 @pytest.mark.asyncio
@@ -713,7 +536,6 @@ async def test_retired_parent_cannot_enter_reopened_generation() -> None:
 async def test_lifecycle_transitions_gate_top_level_nested_and_child_work() -> None:
     supervisor = CallSupervisor(
         metrics=ClientMetrics(),
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=None,
     )
     supervisor.set_bound_loop(asyncio.get_running_loop())
@@ -772,9 +594,9 @@ async def test_forced_close_late_settlement_cannot_mutate_new_generation() -> No
     supervisor.start_accepting(2)
     new_generation = supervisor._current
     assert new_generation is not None
-    assert new_generation.drain is not old_generation.drain
-    assert new_generation.drain._in_flight_posts == 0
-    assert old_generation.drain._in_flight_posts == 1
+    assert new_generation.condition is not old_generation.condition
+    assert new_generation.in_flight == 0
+    assert old_generation.in_flight == 1
 
     async with supervisor.operation_scope("new"):
         assert new_generation.epoch == 2
@@ -787,11 +609,10 @@ async def test_forced_close_late_settlement_cannot_mutate_new_generation() -> No
     assert new_generation.in_flight == 0
 
 
-def test_reopen_on_new_loop_allocates_generation_local_drain_state() -> None:
-    """A retired epoch cannot carry its loop-bound tracker into a later open."""
+def test_reopen_on_new_loop_allocates_generation_local_admission_state() -> None:
+    """A retired epoch cannot carry loop-bound state into a later open."""
     supervisor = CallSupervisor(
         metrics=ClientMetrics(),
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=None,
     )
 
@@ -804,14 +625,14 @@ def test_reopen_on_new_loop_allocates_generation_local_drain_state() -> None:
         token = await supervisor._admit("retained epoch-1 operation")
         generation = supervisor._current
         assert generation is not None
-        assert generation.drain._bound_loop is loop
+        assert generation.loop is loop
         await supervisor.begin_closing(1)
         supervisor.mark_closed(1)
         return token, generation
 
     retained_token, old_generation = asyncio.run(retire_with_an_outstanding_token())
 
-    async def reopen_and_use_a_fresh_tracker() -> None:
+    async def reopen_and_use_fresh_admission_state() -> None:
         loop = asyncio.get_running_loop()
         supervisor.set_bound_loop(loop)
         supervisor.reset_after_open()
@@ -819,22 +640,21 @@ def test_reopen_on_new_loop_allocates_generation_local_drain_state() -> None:
         supervisor.start_accepting(2)
         generation = supervisor._current
         assert generation is not None
-        assert generation.drain is not old_generation.drain
-        assert generation.drain._bound_loop is loop
-        assert generation.drain._in_flight_posts == 0
-        assert old_generation.drain._in_flight_posts == 1
+        assert generation.condition is not old_generation.condition
+        assert generation.loop is loop
+        assert generation.in_flight == 0
+        assert old_generation.in_flight == 1
 
         async with supervisor.operation_scope("epoch-2 operation"):
             assert generation.in_flight == 1
-            assert generation.drain._in_flight_posts == 1
 
         await supervisor.begin_closing(2)
         supervisor.mark_closed(2)
 
-    asyncio.run(reopen_and_use_a_fresh_tracker())
+    asyncio.run(reopen_and_use_fresh_admission_state())
     assert retained_token is not None
     assert old_generation.epoch == 1
-    assert old_generation.drain._bound_loop is old_generation.loop
+    assert old_generation.loop is not None
 
 
 @pytest.mark.asyncio
@@ -874,7 +694,6 @@ def test_a_concurrency_limit_below_one_is_rejected() -> None:
     with pytest.raises(ValueError, match="max_concurrent_rpcs must be >= 1"):
         CallSupervisor(
             metrics=ClientMetrics(),
-            drain_tracker=TransportDrainTracker(),
             max_concurrent_rpcs=0,
         )
 
@@ -883,7 +702,6 @@ def test_a_concurrency_limit_below_one_is_rejected() -> None:
 async def test_bound_loop_is_reported_once_assigned() -> None:
     supervisor = CallSupervisor(
         metrics=ClientMetrics(),
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=1,
     )
     loop = asyncio.get_running_loop()

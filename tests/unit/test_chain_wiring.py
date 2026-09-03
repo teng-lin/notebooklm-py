@@ -103,7 +103,7 @@ def _activate_supervisor(core: NotebookLMClient) -> None:
     supervisor.reset_after_open()
     supervisor.prepare_generation(1)
     supervisor.start_accepting(1)
-    core._web_runtime.kernel.activate_epoch(1)
+    core._web_runtime.kernel.activate(1)
     core._web_runtime.auth_coord.activate_epoch(1)
 
 

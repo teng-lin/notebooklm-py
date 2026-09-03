@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import importlib
 import logging
-import math
 import time
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager
@@ -20,9 +19,9 @@ from .._backoff import (
     RETRY_BACKOFF_MIN_SECONDS,
     compute_backoff_delay,
 )
-from .._deadline import RuntimeDeadline
+from .._deadline import RuntimeDeadline, await_with_deadline
 from .._loop_affinity import assert_bound_loop
-from .._loop_bound import LoopBoundPrimitive
+from .._loop_bound import EpochFenced
 from .._runtime.auth_refresh_retry import RefreshBudget, refresh_and_count
 from .._runtime.call_supervisor import CallLease, CallSupervisor, OperationLease
 from .._runtime.config import CORE_LOGGER_NAME, DEFAULT_CHAT_RESPONSE_MAX_BYTES
@@ -205,25 +204,6 @@ def _default_protobuf_loader(
         raise MissingDependencyError(_ANDROID_PROTOBUF_EXTRA) from None
 
 
-async def _await_with_deadline(
-    awaitable: Awaitable[RespT],
-    deadline: RuntimeDeadline | None,
-) -> RespT:
-    if deadline is None:
-        return await awaitable
-    timed_out = False
-    try:
-        return await asyncio.wait_for(awaitable, timeout=deadline.remaining())
-    # Before Python 3.11 ``asyncio.TimeoutError`` is distinct from the
-    # built-in ``TimeoutError``. Catch the asyncio spelling so every supported
-    # interpreter reaches the same Android deadline translation below.
-    except asyncio.TimeoutError:
-        timed_out = True
-    if timed_out:  # pragma: no branch - documents the exception translation boundary
-        raise _DeadlineSignal
-    raise AssertionError("deadline wait exited without a result")  # pragma: no cover
-
-
 class _Serializable(Protocol):
     def SerializeToString(self) -> bytes: ...
 
@@ -238,7 +218,7 @@ def _serialize_message(message: object) -> bytes:
 MetadataAugmentor = Callable[[str], Awaitable[Sequence[tuple[str, str | bytes]]]]
 
 
-class AndroidSession(LoopBoundPrimitive):
+class AndroidSession(EpochFenced):
     """One lazy gRPC channel plus protocol-neutral call supervision."""
 
     name = "android"
@@ -258,6 +238,10 @@ class AndroidSession(LoopBoundPrimitive):
         protobuf_loader: Callable[[], Any] = _default_protobuf_loader,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
+        super().__init__(
+            "Android transport call belongs to a retired resource generation",
+            assert_loop=True,
+        )
         self._bearer_provider = bearer_provider
         self._call_supervisor = call_supervisor
         self._timeout = timeout
@@ -270,9 +254,6 @@ class AndroidSession(LoopBoundPrimitive):
         self._protobuf_loader = protobuf_loader
         self._monotonic = monotonic
         self._workflow_session_id = object()
-        self._bound_loop: asyncio.AbstractEventLoop | None = None
-        self._active_epoch: int | None = None
-        self._closing = False
         self._connection_lock: asyncio.Lock | None = None
         self._channel: Any | None = None
         self._callables: dict[tuple[str, str, int, int], Any] = {}
@@ -305,17 +286,15 @@ class AndroidSession(LoopBoundPrimitive):
         # namespace. Channel construction remains lazy until the first call.
         self._grpc_loader()
         self._protobuf_loader()
-        self._active_epoch = epoch
-        self._closing = False
-        await self._bearer_provider.activate(epoch)
+        self.activate(epoch)
+        await self._bearer_provider.activate_for_epoch(epoch)
 
     async def prepare_close(self) -> None:
         """Fence new channel/token publication before the first await."""
 
         if self._bound_loop is not None:
             assert_bound_loop(self._bound_loop)
-        self._closing = True
-        self._active_epoch = None
+        self.fence()
         await self._bearer_provider.prepare_close()
 
     async def close_resources(self) -> None:
@@ -349,14 +328,12 @@ class AndroidSession(LoopBoundPrimitive):
         if expected_epoch is None:
             return active_epoch
         if expected_epoch != active_epoch:
-            self._assert_epoch(expected_epoch)
+            self.assert_epoch(expected_epoch)
         return expected_epoch
 
     def _deadline(self, timeout: float | None) -> RuntimeDeadline | None:
         resolved = self._timeout if timeout is None else timeout
-        if resolved is None or not math.isfinite(float(resolved)):
-            return None
-        return RuntimeDeadline.start(float(resolved), monotonic=self._monotonic)
+        return RuntimeDeadline.from_timeout(resolved, monotonic=self._monotonic)
 
     @staticmethod
     def _telemetry_method(
@@ -373,7 +350,7 @@ class AndroidSession(LoopBoundPrimitive):
         expected_epoch: int,
         deadline: RuntimeDeadline | None,
     ) -> Any:
-        self._assert_epoch(expected_epoch)
+        self.assert_epoch(expected_epoch)
         channel = self._channel
         if channel is not None:
             return channel
@@ -382,9 +359,9 @@ class AndroidSession(LoopBoundPrimitive):
         if lock is None:
             lock = asyncio.Lock()
             self._connection_lock = lock
-        await _await_with_deadline(lock.acquire(), deadline)
+        await await_with_deadline(lock.acquire(), deadline, on_timeout=_DeadlineSignal)
         try:
-            self._assert_epoch(expected_epoch)
+            self.assert_epoch(expected_epoch)
             channel = self._channel
             if channel is None:
                 grpc = self._grpc_loader()
@@ -394,19 +371,11 @@ class AndroidSession(LoopBoundPrimitive):
                     credentials,
                     options=_ANDROID_GRPC_CHANNEL_OPTIONS,
                 )
-                self._assert_epoch(expected_epoch)
+                self.assert_epoch(expected_epoch)
                 self._channel = channel
             return channel
         finally:
             lock.release()
-
-    def _assert_epoch(self, expected_epoch: int) -> None:
-        assert_bound_loop(self._bound_loop)
-        if self._closing or self._active_epoch != expected_epoch:
-            raise RuntimeError(
-                "Android transport call belongs to a retired resource generation "
-                f"(expected={expected_epoch}, active={self._active_epoch})."
-            )
 
     def operation_scope(
         self,
@@ -420,11 +389,6 @@ class AndroidSession(LoopBoundPrimitive):
             label,
             expected_epoch=self._resolve_expected_epoch(expected_epoch),
         )
-
-    def assert_epoch(self, expected_epoch: int) -> None:
-        """Reject a workflow lease from a retired resource generation."""
-
-        self._assert_epoch(expected_epoch)
 
     async def prepare_metadata(
         self,
@@ -459,11 +423,11 @@ class AndroidSession(LoopBoundPrimitive):
     ) -> tuple[tuple[str, str | bytes], ...]:
         credential: BearerCredential | None = None
         try:
-            self._assert_epoch(expected_epoch)
+            self.assert_epoch(expected_epoch)
             credential = await self._bearer_provider.get(expected_epoch=expected_epoch)
-            self._assert_epoch(expected_epoch)
+            self.assert_epoch(expected_epoch)
             metadata = tuple(await metadata_augmentor(credential.token))
-            self._assert_epoch(expected_epoch)
+            self.assert_epoch(expected_epoch)
             return metadata
         finally:
             del credential
@@ -502,7 +466,7 @@ class AndroidSession(LoopBoundPrimitive):
                 request_serializer=serializer,
                 response_deserializer=deserializer,
             )
-            self._assert_epoch(expected_epoch)
+            self.assert_epoch(expected_epoch)
             self._callables[key] = callable_
         return callable_
 
@@ -540,7 +504,7 @@ class AndroidSession(LoopBoundPrimitive):
                 request_serializer=serializer,
                 response_deserializer=deserializer,
             )
-            self._assert_epoch(expected_epoch)
+            self.assert_epoch(expected_epoch)
             self._callables[key] = callable_
         return callable_
 
@@ -560,9 +524,10 @@ class AndroidSession(LoopBoundPrimitive):
         wire_call: Awaitable[RespT] | None = None
         try:
             try:
-                credential = await _await_with_deadline(
+                credential = await await_with_deadline(
                     self._bearer_provider.get(expected_epoch=lease.epoch),
                     lease.deadline,
+                    on_timeout=_DeadlineSignal,
                 )
                 callable_ = await self._unary_callable(
                     method,
@@ -578,21 +543,23 @@ class AndroidSession(LoopBoundPrimitive):
                     None if credential is None else credential.generation,
                 )
 
-            self._assert_epoch(lease.epoch)
+            self.assert_epoch(lease.epoch)
             wire_metadata = (("authorization", f"Bearer {credential.token}"),) + tuple(
                 caller_metadata
             )
             if metadata_augmentor is not None:
                 try:
-                    extra = await _await_with_deadline(
-                        metadata_augmentor(credential.token), lease.deadline
+                    extra = await await_with_deadline(
+                        metadata_augmentor(credential.token),
+                        lease.deadline,
+                        on_timeout=_DeadlineSignal,
                     )
                 except _DeadlineSignal:
                     return _AttemptFailure(
                         GrpcStatus("DEADLINE_EXCEEDED", 4),
                         credential.generation,
                     )
-                self._assert_epoch(lease.epoch)
+                self.assert_epoch(lease.epoch)
                 wire_metadata = wire_metadata + tuple(extra)
             try:
                 wire_call = callable_(
@@ -600,7 +567,11 @@ class AndroidSession(LoopBoundPrimitive):
                     metadata=wire_metadata,
                     timeout=None if lease.deadline is None else lease.deadline.remaining(),
                 )
-                value = await _await_with_deadline(wire_call, lease.deadline)
+                value = await await_with_deadline(
+                    wire_call,
+                    lease.deadline,
+                    on_timeout=_DeadlineSignal,
+                )
             except _DeadlineSignal:
                 return _AttemptFailure(
                     GrpcStatus("DEADLINE_EXCEEDED", 4),
@@ -925,9 +896,10 @@ class AndroidSession(LoopBoundPrimitive):
                 response_bytes = 0
                 try:
                     try:
-                        credential = await _await_with_deadline(
+                        credential = await await_with_deadline(
                             self._bearer_provider.get(expected_epoch=lease.epoch),
                             lease.deadline,
+                            on_timeout=_DeadlineSignal,
                         )
                         callable_ = await self._stream_callable(
                             method,
@@ -944,7 +916,7 @@ class AndroidSession(LoopBoundPrimitive):
                         )
 
                     if failure is None:
-                        self._assert_epoch(lease.epoch)
+                        self.assert_epoch(lease.epoch)
                         assert credential is not None
                         wire_metadata = (("authorization", f"Bearer {credential.token}"),) + tuple(
                             caller_metadata
@@ -960,9 +932,10 @@ class AndroidSession(LoopBoundPrimitive):
                             iterator = call.__aiter__()
                             while True:
                                 try:
-                                    item = await _await_with_deadline(
+                                    item = await await_with_deadline(
                                         iterator.__anext__(),
                                         lease.deadline,
+                                        on_timeout=_DeadlineSignal,
                                     )
                                 except StopAsyncIteration:
                                     exhausted = True

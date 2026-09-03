@@ -13,7 +13,6 @@ from notebooklm import (
     correlation_id,
     get_request_id,
 )
-from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm._web.mind_maps import NoteBackedMindMapService
 from notebooklm._web.notes import NoteService
@@ -29,13 +28,10 @@ from tests._helpers.client_factory import build_client_shell_for_tests
 async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) -> None:
     """Public contract: ``rpc_call`` bumps counters + emits ``RpcTelemetryEvent``.
 
-    As of Tier-12 PR 12.4 the per-RPC success/failure counters and the
-    ``on_rpc_event`` fire live inside ``MetricsMiddleware`` (which sits
-    in the shared authed transport chain), not inside
-    ``RpcExecutor.rpc_call``. The seam the test mocks therefore has to
-    live below the chain. We mock the chain terminal so the chain runs
-    end-to-end, and we return a wire-format payload that the real decoder
-    accepts.
+    The protocol-neutral ``CallSupervisor`` owns per-RPC success/failure
+    counters and ``on_rpc_event`` outside the shared web middleware chain.
+    We mock the chain terminal and return a wire-format payload that the real
+    decoder accepts.
 
     The test still asserts the same five public-contract invariants it
     always has: result value, correlation-id propagation INTO the chain,
@@ -58,7 +54,7 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     core = build_client_shell_for_tests(
         auth_tokens, on_rpc_event=events.append, decode_response=fake_decode
     )
-    core._web_runtime.kernel.activate_epoch(1)
+    core._web_runtime.kernel.activate(1)
     install_http_client_for_test(core._web_runtime.kernel, AsyncMock(spec=httpx.AsyncClient))
     supervisor = core._collaborators.call_supervisor
     supervisor.set_bound_loop(asyncio.get_running_loop())
@@ -70,10 +66,7 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
 
     # Mock the chain LEAF (innermost wrapper around
     # ``Kernel.post``) so the real chain runs
-    # end-to-end and ``MetricsMiddleware`` sees the call. Mocking
-    # the shared authed transport itself would bypass the chain entirely
-    # and silence the counters this test exists to assert. Mocking above
-    # the chain would do the same.
+    # end-to-end while ``CallSupervisor`` observes the logical call.
     from notebooklm._web.transport.middleware.core import RpcResponse
 
     async def fake_terminal(request: object) -> RpcResponse:
@@ -135,7 +128,7 @@ async def test_rpc_decode_error_bumps_drift_counter(auth_tokens: AuthTokens) -> 
         raise DecodingError("Google reshaped the response", method_id=rpc_id)
 
     core = build_client_shell_for_tests(auth_tokens, decode_response=drifting_decode)
-    core._web_runtime.kernel.activate_epoch(1)
+    core._web_runtime.kernel.activate(1)
     install_http_client_for_test(core._web_runtime.kernel, AsyncMock(spec=httpx.AsyncClient))
     supervisor = core._collaborators.call_supervisor
     supervisor.set_bound_loop(asyncio.get_running_loop())
@@ -166,83 +159,6 @@ async def test_rpc_decode_error_bumps_drift_counter(auth_tokens: AuthTokens) -> 
     # counter stays 0 — the drift is counted ONLY under the dedicated signal.
     assert snapshot.rpc_calls_failed == 0
     assert snapshot.rpc_calls_started == 1
-
-
-@pytest.mark.asyncio
-async def test_drain_rejects_new_work_and_waits_for_in_flight() -> None:
-    tracker = TransportDrainTracker()
-    started = asyncio.Event()
-    release = asyncio.Event()
-
-    async def in_flight() -> None:
-        operation_token = await tracker.begin_transport_post("test")
-        started.set()
-        try:
-            await release.wait()
-        finally:
-            await tracker.finish_transport_post(operation_token)
-
-    task = asyncio.create_task(in_flight())
-    await started.wait()
-
-    drain_task = asyncio.create_task(tracker.drain(timeout=1.0))
-    await asyncio.sleep(0)
-
-    assert not drain_task.done()
-    with pytest.raises(RuntimeError, match="draining"):
-        await tracker.begin_transport_post("new")
-
-    release.set()
-    await drain_task
-    await task
-
-
-@pytest.mark.asyncio
-async def test_drain_allows_nested_work_inside_accepted_operation() -> None:
-    tracker = TransportDrainTracker()
-    outer_token = await tracker.begin_transport_post("source upload")
-    try:
-        drain_task = asyncio.create_task(tracker.drain(timeout=1.0))
-        await asyncio.sleep(0)
-
-        nested_token = await tracker.begin_transport_post("RPC ADD_SOURCE")
-        await tracker.finish_transport_post(nested_token)
-
-        assert not drain_task.done()
-    finally:
-        await tracker.finish_transport_post(outer_token)
-
-    await drain_task
-
-
-@pytest.mark.asyncio
-async def test_operation_scope_tracks_drain_without_upload_semaphore() -> None:
-    tracker = TransportDrainTracker()
-
-    async with tracker.operation_scope("plain-operation"):
-        assert tracker._in_flight_posts == 1
-
-    assert tracker._in_flight_posts == 0
-
-
-@pytest.mark.asyncio
-async def test_drain_rejects_child_task_spawned_from_accepted_operation() -> None:
-    tracker = TransportDrainTracker()
-    outer_token = await tracker.begin_transport_post("source upload")
-    try:
-        drain_task = asyncio.create_task(tracker.drain(timeout=1.0))
-        await asyncio.sleep(0)
-
-        async def child_work() -> None:
-            child_token = await tracker.begin_transport_post("child task")
-            await tracker.finish_transport_post(child_token)
-
-        with pytest.raises(RuntimeError, match="draining"):
-            await asyncio.create_task(child_work())
-    finally:
-        await tracker.finish_transport_post(outer_token)
-
-    await drain_task
 
 
 @pytest.mark.asyncio

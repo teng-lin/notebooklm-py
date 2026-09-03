@@ -567,9 +567,7 @@ class AuthRefreshCoordinator(LoopBoundPrimitive):
         Regression coverage:
         ``tests/unit/concurrency/test_session_close_refresh_race.py`` and
         the three focused unit tests added with this method in
-        ``tests/unit/test_runtime_auth.py`` (the two companion
-        ``reset_after_open`` tests for :class:`TransportDrainTracker` live
-        in ``tests/unit/test_runtime_lifecycle.py``).
+        ``tests/unit/test_runtime_auth.py``.
         """
         refresh_task = self._refresh_task
         if refresh_task is not None and not refresh_task.done():

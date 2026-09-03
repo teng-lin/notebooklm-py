@@ -106,7 +106,7 @@ def test_kernel_post_terminal_has_no_await_before_post_per_attempt():
     # Locate the ``try`` block guarding the POST. Post-PR-12.9 the leaf
     # has no ``while`` retry loop and no ``async with`` semaphore wrap;
     # the try sits at the top of the function body (the semaphore is
-    # held by ``SemaphoreMiddleware`` higher up the chain).
+    # held by ``CallSupervisor`` outside the chain).
     def _find_first_try(parent: ast.AST) -> ast.Try | None:
         for child in ast.iter_child_nodes(parent):
             if isinstance(child, ast.Try):

@@ -23,7 +23,6 @@ import pytest
 
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
-from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm._web.notes import NoteRowKind, NoteService
 from notebooklm.exceptions import DecodingError, RPCError
 from notebooklm.rpc import RPCMethod
@@ -283,7 +282,6 @@ class TestCreateNoteCancellation:
     async def test_finalize_child_is_root_accounted_until_settled(self) -> None:
         supervisor = CallSupervisor(
             metrics=ClientMetrics(),
-            drain_tracker=TransportDrainTracker(),
             max_concurrent_rpcs=None,
         )
         loop = asyncio.get_running_loop()
@@ -325,7 +323,6 @@ class TestCreateNoteCancellation:
     async def test_root_drain_leaves_registered_finalize_work_running(self) -> None:
         supervisor = CallSupervisor(
             metrics=ClientMetrics(),
-            drain_tracker=TransportDrainTracker(),
             max_concurrent_rpcs=None,
         )
         loop = asyncio.get_running_loop()

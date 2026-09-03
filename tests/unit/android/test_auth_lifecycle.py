@@ -91,7 +91,7 @@ def _provider(
 async def _activate(provider: BearerProvider, epoch: int = 1) -> None:
     provider.set_bound_loop(asyncio.get_running_loop())
     provider.reset_after_open()
-    await provider.activate(epoch)
+    await provider.activate_for_epoch(epoch)
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +180,7 @@ async def test_a_failed_mint_task_result_is_consumed_without_raising() -> None:
 
 
 # ---------------------------------------------------------------------------
-# activate(): profile read failures
+# activate_for_epoch(): profile read failures
 # ---------------------------------------------------------------------------
 
 
@@ -191,7 +191,7 @@ async def test_activate_rejects_a_profile_without_a_master_token() -> None:
     provider.reset_after_open()
 
     with pytest.raises(ConfigurationError) as caught:
-        await provider.activate(1)
+        await provider.activate_for_epoch(1)
 
     assert MASTER_SECRET not in str(caught.value)
 
@@ -204,7 +204,7 @@ async def test_a_failing_profile_read_is_treated_as_no_token() -> None:
     provider.reset_after_open()
 
     with pytest.raises(ConfigurationError) as caught:
-        await provider.activate(1)
+        await provider.activate_for_epoch(1)
 
     assert "unreadable" not in str(caught.value)
 
@@ -222,7 +222,7 @@ async def test_interpreter_exits_during_the_profile_read_propagate(
     provider.reset_after_open()
 
     with pytest.raises(type(error)):
-        await provider.activate(1)
+        await provider.activate_for_epoch(1)
 
 
 @pytest.mark.asyncio
@@ -241,7 +241,7 @@ async def test_a_non_master_token_record_is_rejected() -> None:
     provider.reset_after_open()
 
     with pytest.raises(ConfigurationError):
-        await provider.activate(1)
+        await provider.activate_for_epoch(1)
 
 
 # ---------------------------------------------------------------------------
@@ -417,13 +417,13 @@ async def test_consuming_a_still_pending_task_result_does_not_raise() -> None:
 
 @pytest.mark.asyncio
 async def test_cancelling_the_profile_read_propagates_rather_than_clearing_the_token() -> None:
-    """A cancelled ``activate`` is not 'this profile has no token'."""
+    """A cancelled activation is not 'this profile has no token'."""
     provider = _provider(profile=_Profile(error=asyncio.CancelledError()))
     provider.set_bound_loop(asyncio.get_running_loop())
     provider.reset_after_open()
 
     with pytest.raises(asyncio.CancelledError):
-        await provider.activate(1)
+        await provider.activate_for_epoch(1)
 
 
 @pytest.mark.asyncio
@@ -482,7 +482,7 @@ async def test_a_successful_mint_is_dropped_if_the_session_ended_while_waiting()
     await lock.acquire()
     minter.release.set()
     await asyncio.sleep(0)
-    provider._active_session_epoch = 999
+    provider.activate(999)
     lock.release()
 
     with pytest.raises(RuntimeError, match="not active for this client generation"):
@@ -564,9 +564,25 @@ async def test_prepare_close_fences_credentials_and_drains_the_mint_task() -> No
     assert provider._mint_waiters == 0
     assert provider._master_token is None
     assert provider._cached is None
-    assert provider._active_session_epoch is None
+    assert provider._active_epoch is None
+    assert provider._closing is True
     pending.cancel()
     await asyncio.gather(pending, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_epoch_fence_preserves_the_exact_stale_and_closed_diagnostic() -> None:
+    provider = _provider()
+    await _activate(provider, epoch=7)
+
+    with pytest.raises(RuntimeError) as stale:
+        await provider.get(6)
+    assert str(stale.value) == "Android authentication is not active for this client generation."
+
+    await provider.prepare_close()
+    with pytest.raises(RuntimeError) as closed:
+        await provider.get(7)
+    assert str(closed.value) == "Android authentication is not active for this client generation."
 
 
 @pytest.mark.asyncio

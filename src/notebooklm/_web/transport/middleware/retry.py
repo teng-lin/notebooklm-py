@@ -188,9 +188,9 @@ class RetryMiddleware:
         Reads ``log_label`` and ``disable_internal_retries`` from
         ``request.context``. A missing ``log_label`` falls back to a
         defensive sentinel so a ``__new__``-built fixture driving the
-        chain raw doesn't trip on a ``KeyError`` (matches DrainMiddleware's
-        same fallback). ``disable_internal_retries`` defaults to ``False``
-        — the production path always populates it from
+        chain raw doesn't trip on a ``KeyError``.
+        ``disable_internal_retries`` defaults to ``False`` — the production
+        path always populates it from
         :func:`_web.policy.resolve_effective_disable_internal_retries`.
         """
         log_label = request.context.get(RPC_CONTEXT_LOG_LABEL, "<unknown-chain-call>")

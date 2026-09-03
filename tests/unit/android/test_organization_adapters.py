@@ -35,7 +35,6 @@ from notebooklm._client_metrics import ClientMetrics
 from notebooklm._collections import CollectionsAPI
 from notebooklm._labels import LabelsAPI
 from notebooklm._runtime.call_supervisor import CallSupervisor
-from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.exceptions import (
     AuthError,
     CollectionError,
@@ -923,7 +922,6 @@ async def test_status_five_maps_to_public_miss_and_retired_epoch_stops_later_io(
 async def test_real_supervisor_outer_lease_keeps_create_alive_during_graceful_drain() -> None:
     supervisor = CallSupervisor(
         metrics=ClientMetrics(),
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=None,
     )
     loop = asyncio.get_running_loop()

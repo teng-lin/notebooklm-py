@@ -7,13 +7,16 @@ and source polling.
 
 from __future__ import annotations
 
+import asyncio
+import math
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeVar, cast
 
 Monotonic = Callable[[], float]
 Sleep = Callable[[float], Awaitable[Any]]
+_T = TypeVar("_T")
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,18 @@ class RuntimeDeadline:
             started_at=resolved_monotonic(),
             monotonic=resolved_monotonic,
         )
+
+    @classmethod
+    def from_timeout(
+        cls,
+        timeout: float | None,
+        *,
+        monotonic: Monotonic | None = None,
+    ) -> RuntimeDeadline | None:
+        """Start a deadline unless ``timeout`` disables the aggregate budget."""
+        if timeout is None or not math.isfinite(float(timeout)):
+            return None
+        return cls.start(float(timeout), monotonic=monotonic)
 
     def now(self) -> float:
         """Return the current monotonic timestamp."""
@@ -63,4 +78,32 @@ class RuntimeDeadline:
         return f"{operation} timed out after {self.timeout:.1f}s"
 
 
-__all__ = ["Monotonic", "RuntimeDeadline", "Sleep"]
+async def await_with_deadline(
+    awaitable: Awaitable[_T],
+    deadline: RuntimeDeadline | None,
+    *,
+    on_timeout: Callable[[], BaseException],
+) -> _T:
+    """Await within ``deadline`` and normalize timeout translation.
+
+    An already-expired budget closes coroutine objects before refusing them,
+    avoiding an unawaited-coroutine warning while leaving non-closeable
+    awaitables such as caller-owned futures untouched.
+    """
+    if deadline is None:
+        return await awaitable
+    remaining = deadline.remaining()
+    if remaining <= 0.0:
+        close = getattr(awaitable, "close", None)
+        if callable(close):
+            cast(Callable[[], object], close)()
+        raise on_timeout() from None
+    try:
+        return await asyncio.wait_for(awaitable, timeout=remaining)
+    except asyncio.TimeoutError:
+        # Python 3.10 keeps asyncio.TimeoutError separate from the built-in
+        # spelling used by the runtime's public timeout policy.
+        raise on_timeout() from None
+
+
+__all__ = ["Monotonic", "RuntimeDeadline", "Sleep", "await_with_deadline"]

@@ -138,7 +138,7 @@ async def test_prepare_close_raises_an_ordinary_keepalive_failure_after_the_fenc
     assert task is not None
 
     # Retire the generation out from under the running keepalive.
-    fixture.kernel.fence_epoch(7)
+    fixture.kernel.fence()
     await _await_task_completion(task)
 
     with pytest.raises(RuntimeError, match="generation is retired"):

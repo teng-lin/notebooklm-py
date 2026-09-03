@@ -18,7 +18,6 @@ from notebooklm._android.auth import BearerCredential
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._runtime.lifecycle import TransportLifecycle
-from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.exceptions import ArtifactDownloadError, AuthError, UnsupportedOperationError
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"synthetic-png-body"
@@ -183,7 +182,6 @@ class BlockingCloseClient(FakeClient):
 def _supervisor() -> CallSupervisor:
     return CallSupervisor(
         metrics=ClientMetrics(),
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=2,
     )
 
@@ -1257,7 +1255,7 @@ async def test_a_retired_or_closing_generation_fails_the_epoch_fence(
     service._active_epoch = active_epoch
 
     with pytest.raises(RuntimeError, match="retired resource generation") as raised:
-        service._assert_epoch(expected)
+        service.assert_epoch(expected)
 
     assert f"expected={expected}" in str(raised.value)
     assert f"active={active_epoch}" in str(raised.value)
@@ -1268,7 +1266,7 @@ async def test_the_matching_open_generation_passes_the_epoch_fence() -> None:
     """Guards the test above from passing because the fence rejects everything."""
     service, _, _ = await _open_service(FakeClient([]), epoch=4)
 
-    assert service._assert_epoch(4) is None
+    assert service.assert_epoch(4) is None
 
 
 @pytest.mark.asyncio
