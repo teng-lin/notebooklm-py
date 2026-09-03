@@ -91,12 +91,17 @@ class TestArtifactList:
         assert result.exit_code == 0
         assert "Mind Map" in result.output
 
-    @pytest.mark.filterwarnings("ignore::notebooklm.types.UnknownTypeWarning")
     def test_artifact_list_json_output(self, runner, mock_auth):
         mock_client = create_mock_client()
         mock_client.artifacts.list = AsyncMock(
             return_value=[
-                Artifact(id="art_1", title="Test Artifact", _artifact_type=4, status=3),
+                Artifact(
+                    id="art_1",
+                    title="Test Artifact",
+                    _artifact_type=4,
+                    _variant=2,
+                    status=3,
+                ),
             ]
         )
         mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
@@ -117,6 +122,7 @@ class TestArtifactList:
         assert data["notebook_title"] == "Test Notebook"
         assert "artifacts" in data
         assert data["count"] == 1
+        assert data["artifacts"][0]["type"] == "Quiz"
         assert list(data["artifacts"][0]) == [
             "index",
             "id",
@@ -307,18 +313,26 @@ class TestArtifactList:
 
 
 class TestArtifactGet:
-    @pytest.mark.filterwarnings("ignore::notebooklm.types.UnknownTypeWarning")
     def test_artifact_get(self, runner, mock_auth):
         mock_client = create_mock_client()
         # Mock list for partial ID resolution
         mock_client.artifacts.list = AsyncMock(
-            return_value=[Artifact(id="art_123", title="Test Artifact", _artifact_type=4, status=3)]
+            return_value=[
+                Artifact(
+                    id="art_123",
+                    title="Test Artifact",
+                    _artifact_type=4,
+                    _variant=2,
+                    status=3,
+                )
+            ]
         )
         mock_client.artifacts.get_or_none = AsyncMock(
             return_value=Artifact(
                 id="art_123",
                 title="Test Artifact",
                 _artifact_type=4,
+                _variant=2,
                 status=3,
                 created_at=datetime(2024, 1, 1),
             )
@@ -335,6 +349,7 @@ class TestArtifactGet:
         assert result.exit_code == 0
         assert "Test Artifact" in result.output
         assert "art_123" in result.output
+        assert "Quiz" in result.output
 
     def test_artifact_get_not_found(self, runner, mock_auth):
         mock_client = create_mock_client()
@@ -360,13 +375,22 @@ class TestArtifactGet:
         """`artifact get --json` emits structured JSON mirroring the Artifact."""
         mock_client = create_mock_client()
         mock_client.artifacts.list = AsyncMock(
-            return_value=[Artifact(id="art_123", title="Test Artifact", _artifact_type=4, status=3)]
+            return_value=[
+                Artifact(
+                    id="art_123",
+                    title="Test Artifact",
+                    _artifact_type=4,
+                    _variant=2,
+                    status=3,
+                )
+            ]
         )
         mock_client.artifacts.get_or_none = AsyncMock(
             return_value=Artifact(
                 id="art_123",
                 title="Test Artifact",
                 _artifact_type=4,
+                _variant=2,
                 status=3,
                 created_at=datetime(2024, 1, 1),
             )
@@ -391,7 +415,7 @@ class TestArtifactGet:
         # so cached responses share one schema across the two commands.
         assert data["notebook_id"] == "nb_123"
         # type / status / created_at keys must be present for automation
-        assert "type" in data
+        assert data["type"] == "Quiz"
         assert "status" in data
         assert "created_at" in data
 
