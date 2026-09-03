@@ -550,6 +550,8 @@ async def verify_journal(
         if len(candidates) != 1:
             raise JournalError("unmatched started operation could not be uniquely reconciled")
         unmatched_candidates.remove(candidates.pop())
+    if unmatched_candidates:
+        raise JournalError("inventory artifact has no matching journal start")
     accepted_count = len(accepted_operations) + len(unjournaled_ids)
     if accepted_count == 0:
         raise EmptyArtifactsError("journal/inventory has no accepted producer operations")

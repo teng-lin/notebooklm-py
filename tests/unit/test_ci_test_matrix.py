@@ -382,6 +382,7 @@ def test_verify_package_live_checks_published_wheel_android_and_keeps_web_e2e() 
     assert "import gpsoauth" in command
     assert "read_pb2.GetProjectRequest.DESCRIPTOR.full_name" in command
     assert 'NotebookLMClient.from_storage(backend="android")' in command
+    assert 'set(client.backends.values()) != {"android"}' in command
     assert "client.notebooks.get(notebook_id)" in command
 
     steps = job["steps"]

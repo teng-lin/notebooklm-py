@@ -296,6 +296,8 @@ jobs:
                 raise RuntimeError("Published wheel has an invalid generated GetProject proto")
             notebook_id = os.environ["NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID"]
             async with NotebookLMClient.from_storage(backend="android") as client:
+                if set(client.backends.values()) != {"android"}:
+                    raise RuntimeError("Published wheel has a mixed Android backend graph")
                 notebook = await client.notebooks.get(notebook_id)
                 if notebook.id != notebook_id:
                     raise RuntimeError("Android preflight returned the wrong managed copy")
