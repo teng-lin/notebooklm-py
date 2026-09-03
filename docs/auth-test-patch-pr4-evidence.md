@@ -21,7 +21,7 @@ worktree against isolated NotebookLM profile
 
 ```bash
 cdp_ws_path=$(sed -n '2p' \
-  '/Users/blackmyth/Library/Application Support/Google/Chrome/DevToolsActivePort')
+  "$HOME/Library/Application Support/Google/Chrome/DevToolsActivePort")
 NOTEBOOKLM_PROFILE=agent-auth-patch-pr4 \
 NOTEBOOKLM_HEADLESS_REAUTH=1 \
 NOTEBOOKLM_HEADLESS_REAUTH_REQUIRE_SUCCESS=1 \
