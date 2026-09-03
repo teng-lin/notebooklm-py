@@ -2788,3 +2788,79 @@ def test_artifact_source_uses_the_imported_exact_package_source_id() -> None:
         ),
     )
     assert request.artifact.sources[0].source_id.id == "source-1"
+
+
+# ===========================================================================
+# Input admission before any RPC is dispatched
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_audio_generation_requires_at_least_one_source() -> None:
+    session, _nb, _mm, _assets, api = _graph()
+
+    with pytest.raises(ValidationError, match="at least one source id"):
+        await api.generate_audio("notebook-1", source_ids=[])
+
+    assert session.calls == []
+
+
+@pytest.mark.asyncio
+async def test_audio_instructions_must_be_text() -> None:
+    session, _nb, _mm, _assets, api = _graph()
+
+    with pytest.raises(ValidationError, match="instructions must be a string or None"):
+        await api.generate_audio("notebook-1", source_ids=["s1"], instructions=7)
+
+    assert session.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "label"),
+    [
+        pytest.param("generate_video", "Video", id="video"),
+        pytest.param("generate_report", "Report", id="report"),
+    ],
+)
+async def test_a_supported_family_requires_at_least_one_source(method: str, label: str) -> None:
+    """An explicitly empty list is a caller error; ``None`` means "all sources"."""
+    session, _nb, _mm, _assets, api = _graph()
+
+    with pytest.raises(ValidationError, match=f"{label} generation requires at least one"):
+        await getattr(api, method)("notebook-1", source_ids=[])
+
+    assert session.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "output_format",
+    [pytest.param("docx", id="unsupported"), pytest.param("PDF", id="wrong-case")],
+)
+async def test_a_slide_deck_download_rejects_an_unknown_format(output_format: str) -> None:
+    session, _nb, _mm, _assets, api = _graph()
+
+    with pytest.raises(ValidationError, match="Must be 'pdf' or 'pptx'"):
+        await api.download_slide_deck("notebook-1", "deck.out", "slides", output_format)
+
+    assert session.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "method",
+    [
+        pytest.param("download_quiz", id="quiz"),
+        pytest.param("download_flashcards", id="flashcards"),
+    ],
+)
+async def test_an_interactive_app_download_rejects_an_unknown_output_format(
+    method: str,
+) -> None:
+    session, _nb, _mm, _assets, api = _graph()
+
+    with pytest.raises(ValidationError, match="Use one of: json, markdown, html"):
+        await getattr(api, method)("notebook-1", "out.txt", "app-1", "pdf")
+
+    assert session.calls == []
