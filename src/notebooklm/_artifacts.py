@@ -868,7 +868,6 @@ class ArtifactsAPI(ABC):
             warning_logger=logger,
         )
 
-    @abstractmethod
     async def get_customization_choices(
         self, notebook_id: str | None = None
     ) -> ArtifactCustomizationChoices:
@@ -887,6 +886,14 @@ class ArtifactsAPI(ABC):
 
         .. versionadded:: 0.9.0
         """
+        return await self._read_customization_choices(notebook_id)
+
+    @abstractmethod
+    async def _read_customization_choices(
+        self, notebook_id: str | None = None
+    ) -> ArtifactCustomizationChoices:
+        """Read and decode the selected backend's customization table."""
+        raise NotImplementedError
 
 
 __all__ = ["ArtifactsAPI"]

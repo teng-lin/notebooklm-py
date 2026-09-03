@@ -47,6 +47,7 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
         abstract_methods=frozenset(
             {
                 "_list_studio",
+                "_read_customization_choices",
                 "_send_copy",
                 "_send_create_artifact",
                 "_send_export",
@@ -61,7 +62,6 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
                 "download_slide_deck",
                 "download_video",
                 "generate_mind_map",
-                "get_customization_choices",
                 "get_prompt",
                 "list",
                 "rename",
@@ -70,7 +70,14 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
                 "suggest_reports",
             }
         ),
-        wire_hooks=frozenset({"_send_copy", "_send_create_artifact", "_send_export"}),
+        wire_hooks=frozenset(
+            {
+                "_read_customization_choices",
+                "_send_copy",
+                "_send_create_artifact",
+                "_send_export",
+            }
+        ),
     ),
     _AbstractContract(
         module="notebooklm._notebooks",
@@ -289,6 +296,7 @@ _ANDROID_INHERITED_WORKFLOWS = {
             "generate_study_guide",
             "generate_video",
             "get",
+            "get_customization_choices",
             "get_or_none",
             "list_audio",
             "list_data_tables",
@@ -402,6 +410,7 @@ _WIRE_HOOK_NAMES = frozenset(
     {
         "_cancel_generation",
         "_get_session_status",
+        "_read_customization_choices",
         "_list_studio_mind_map_rows",
         "_read_interactive_tree",
         "_start_interactive_mind_map",
@@ -507,6 +516,7 @@ def test_artifact_workflow_ownership_and_docstrings_are_preserved() -> None:
         "generate_study_guide",
         "generate_video",
         "get",
+        "get_customization_choices",
         "get_or_none",
         "list_audio",
         "list_data_tables",
@@ -524,6 +534,7 @@ def test_artifact_workflow_ownership_and_docstrings_are_preserved() -> None:
         "_send_copy",
         "_send_create_artifact",
         "_send_export",
+        "_read_customization_choices",
     }
 
     for name in inherited_workflows:
@@ -537,7 +548,7 @@ def test_artifact_workflow_ownership_and_docstrings_are_preserved() -> None:
         assert base_doc
         assert web_doc == base_doc, f"WebArtifactsAPI.{name} docstring drifted"
 
-    assert WebArtifactsAPI.get_customization_choices is not ArtifactsAPI.get_customization_choices
+    assert WebArtifactsAPI.get_customization_choices is ArtifactsAPI.get_customization_choices
 
 
 def test_artifact_class_constructor_docstrings_and_web_signature_are_pinned() -> None:
