@@ -395,3 +395,29 @@ async def test_unary_cancellation_is_not_reclassified_as_decoding_failure() -> N
 
     with pytest.raises(asyncio.CancelledError):
         await raw.unary(descriptor, _Request(b"request"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage", ["request", "response"])
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_codec_cancellation_is_not_reclassified(
+    stage: str,
+    streaming: bool,
+) -> None:
+    def cancel(_value: Any) -> Any:
+        raise asyncio.CancelledError
+
+    descriptor_type = GrpcUnaryStreamMethod if streaming else GrpcUnaryMethod
+    descriptor = descriptor_type(
+        METHOD,
+        request_serializer=cancel if stage == "request" else lambda request: request.payload,
+        response_deserializer=cancel if stage == "response" else _Response.FromString,
+    )
+    raw = AndroidRawAPI(_FakeAndroidSession())  # type: ignore[arg-type]
+
+    with pytest.raises(asyncio.CancelledError):
+        if streaming:
+            async for _item in raw.unary_stream(descriptor, _Request(b"request")):  # type: ignore[arg-type]
+                pass
+        else:
+            await raw.unary(descriptor, _Request(b"request"))  # type: ignore[arg-type]

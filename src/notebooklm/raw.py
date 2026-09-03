@@ -14,6 +14,7 @@ compatibility surface of this package.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass
@@ -168,7 +169,7 @@ def _serialize_request(
         if type(payload) is not bytes:
             raise TypeError("request serializer must return bytes")
         return payload
-    except (KeyboardInterrupt, SystemExit):
+    except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
         raise
     except BaseException as error:
         raise _codec_failure(path=method.path, stage="request serialization", error=error) from None
@@ -185,7 +186,7 @@ def _deserialize_response(
         deserializer = cast(ResponseDeserializer[ResponseT], cast(Any, response_type).FromString)
     try:
         return deserializer(payload)
-    except (KeyboardInterrupt, SystemExit):
+    except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
         raise
     except BaseException as error:
         raise _codec_failure(
