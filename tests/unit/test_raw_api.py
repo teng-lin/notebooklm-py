@@ -264,6 +264,45 @@ async def test_caller_codec_exceptions_become_sanitized_decoding_errors(stage: s
 
 
 @pytest.mark.asyncio
+async def test_unary_stream_failure_does_not_retain_wire_secrets_in_traceback_locals() -> None:
+    metadata_secret = "stream-metadata-secret"
+    request_secret = b"stream-request-secret"
+    response_secret = b"stream-response-secret"
+
+    def fail_response(payload: bytes) -> _Response:
+        assert payload == response_secret
+        raise RuntimeError("decode failed")
+
+    session = _FakeAndroidSession()
+    session.stream_responses = [response_secret]
+    raw = AndroidRawAPI(session)  # type: ignore[arg-type]
+    descriptor = GrpcUnaryStreamMethod[
+        _Request,
+        _Response,
+    ](METHOD, response_deserializer=fail_response)
+
+    with pytest.raises(DecodingError) as caught:
+        async for _item in raw.unary_stream(
+            descriptor,
+            _Request(request_secret),
+            metadata=[("x-stream-secret", metadata_secret)],
+        ):
+            pass
+
+    frame = caught.value.__traceback__
+    inspected_raw_frame = False
+    while frame is not None:
+        if frame.tb_frame.f_code.co_filename.endswith("/notebooklm/raw.py"):
+            inspected_raw_frame = True
+            local_values = tuple(frame.tb_frame.f_locals.values())
+            assert metadata_secret not in repr(local_values)
+            assert request_secret not in local_values
+            assert response_secret not in local_values
+        frame = frame.tb_next
+    assert inspected_raw_frame
+
+
+@pytest.mark.asyncio
 async def test_unary_stream_is_bounded_and_uses_constant_telemetry() -> None:
     session = _FakeAndroidSession()
     raw = AndroidRawAPI(session)  # type: ignore[arg-type]

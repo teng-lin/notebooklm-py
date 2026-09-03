@@ -289,6 +289,9 @@ class AndroidRawAPI:
         session = self._transport
         iterator: AsyncIterator[bytes] | None = None
         failure: BaseException | None = None
+        safe_metadata: tuple[tuple[str, str | bytes], ...] | None = None
+        wire_request: bytes | None = None
+        wire_response: bytes | None = None
         try:
             if max_response_bytes is not None and max_response_bytes < 1:
                 raise ValueError("max_response_bytes must be >= 1 when supplied")
@@ -325,6 +328,16 @@ class AndroidRawAPI:
                 except BaseException as error:
                     if failure is None:
                         failure = sanitize_escaping_exception(error)
-            del self, session, iterator, request, method, metadata
+            del (
+                self,
+                session,
+                iterator,
+                request,
+                method,
+                metadata,
+                safe_metadata,
+                wire_request,
+                wire_response,
+            )
         if failure is not None:
             raise failure from None
