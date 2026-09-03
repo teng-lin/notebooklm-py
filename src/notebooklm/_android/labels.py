@@ -47,6 +47,7 @@ class AndroidLabelsAPI(LabelsAPI):
     _delete_method_id = DELETE_LABELS_METHOD
     _verify_writes = True
     _filter_existing_on_delete = True
+    _dedupe_deletes = True
 
     @asynccontextmanager
     async def _operation_scope(self, label: str) -> AsyncIterator[OperationLease]:

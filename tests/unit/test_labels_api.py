@@ -326,6 +326,14 @@ async def test_delete_empty_list_issues_no_rpc() -> None:
     assert rpc.calls == []
 
 
+async def test_delete_preserves_duplicate_ids_for_web_wire_compatibility() -> None:
+    api, rpc, _ = _api({RPCMethod.DELETE_LABEL: []})
+
+    await api.delete("nb", ["l1", "l1"])
+
+    assert rpc.calls[0].params[2] == ["l1", "l1"]
+
+
 # -- sources join ------------------------------------------------------------
 
 

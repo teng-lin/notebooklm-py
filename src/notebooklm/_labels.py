@@ -36,6 +36,7 @@ class LabelsAPI(ABC):
     _delete_method_id = ""
     _verify_writes = False
     _filter_existing_on_delete = False
+    _dedupe_deletes = False
 
     def _operation_scope(
         self, label: str
@@ -262,7 +263,8 @@ class LabelsAPI(ABC):
     async def delete(self, notebook_id: str, label_ids: str | builtins.list[str]) -> None:
         """Delete one or more labels without deleting their sources."""
         requested = [label_ids] if isinstance(label_ids, str) else list(label_ids)
-        requested = list(dict.fromkeys(requested))
+        if self._dedupe_deletes:
+            requested = list(dict.fromkeys(requested))
         if not requested:
             return
         async with self._operation_scope("labels.delete"):
