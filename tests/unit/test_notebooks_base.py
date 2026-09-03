@@ -127,20 +127,20 @@ async def test_create_recovers_through_transport_neutral_hook_and_probe() -> Non
 
 @pytest.mark.asyncio
 async def test_copy_validates_then_returns_the_single_hook_result() -> None:
-    copied = Notebook(id="nb-copy", title="Copy")
+    copied = Notebook(id="nb-copy", title="  Copy  ")
     api = _FakeNotebooksAPI(
         list_results=[],
         create_results=[],
         copy_results=[copied],
     )
 
-    assert await api.copy("nb-source", "Copy") is copied
-    assert api.sent_copies == [("nb-source", "Copy")]
+    assert await api.copy("nb-source", "  Copy  ") is copied
+    assert api.sent_copies == [("nb-source", "  Copy  ")]
 
     for notebook_id, title in (("", "Copy"), ("nb-source", ""), ("nb-source", "  ")):
         with pytest.raises(ValidationError):
             await api.copy(notebook_id, title)
-    assert api.sent_copies == [("nb-source", "Copy")]
+    assert api.sent_copies == [("nb-source", "  Copy  ")]
 
 
 @pytest.mark.asyncio

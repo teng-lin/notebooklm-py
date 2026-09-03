@@ -500,6 +500,7 @@ async def test_copy_lost_response_is_ambiguous_and_never_replayed() -> None:
     assert caught.value.rpc_code == 14
     assert caught.value is not failure
     assert caught.value.__cause__ is None
+    assert caught.value.__suppress_context__ is True
     assert len(transport.calls) == 1
     assert transport.calls[0][2]["replay_safe"] is False
 
