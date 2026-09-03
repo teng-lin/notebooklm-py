@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -68,7 +69,8 @@ def test_oauth_capture_adapter_scrubs_failure_frame(monkeypatch) -> None:
         frame_info.frame
         for frame_info in inspect.getinnerframes(caught.value.__traceback__)
         if frame_info.frame.f_code.co_name == "capture_oauth_token"
-        and frame_info.frame.f_code.co_filename.endswith("cli/services/login/master_token.py")
+        and Path(frame_info.frame.f_code.co_filename).parts[-4:]
+        == ("cli", "services", "login", "master_token.py")
     ]
     assert len(adapter_frames) == 1
     assert {"browser", "cdp_url", "timeout_s"}.isdisjoint(adapter_frames[0].f_locals)
