@@ -202,112 +202,68 @@ class TestFromStorage:
                 assert real_storage_path.stat().st_mtime_ns == real_storage_mtime
 
     @pytest.mark.asyncio
-    async def test_from_storage_uses_auth_storage_path_for_explicit_path(
-        self, tmp_path, monkeypatch
+    @pytest.mark.parametrize(
+        "case",
+        ["explicit-path", "profile", "file-baseline", "inline-auth"],
+    )
+    async def test_from_storage_projects_loaded_auth_and_registers_file_baseline(
+        self,
+        tmp_path,
+        monkeypatch,
+        case,
     ):
-        """Explicit paths keep the AuthTokens storage path unchanged."""
+        """One adapter probe covers every closed loaded-auth projection."""
         import notebooklm.paths as paths_mod
 
-        monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
         explicit_path = tmp_path / "storage_state.json"
-        calls = []
-
-        async def fake_load_stored_auth(*, path, profile, policy, auth_type):
-            calls.append((path, profile))
-            auth = self._auth(path)
-            assert path is not None
-            return _auth_tokens.FileLoadedAuth(auth, ProfileStore(path), CookieJar())
-
-        def fail_get_storage_path(*args, **kwargs):
-            raise AssertionError("from_storage should use auth.storage_path")
-
-        monkeypatch.setattr(_auth_tokens, "_load_stored_auth", fake_load_stored_auth)
-        monkeypatch.setattr(paths_mod, "get_storage_path", fail_get_storage_path)
-
-        client = await self.CapturingClient.from_storage(str(explicit_path))._build()
-
-        assert calls == [(explicit_path, None)]
-        assert client.captured_auth.storage_path == explicit_path
-        assert client.captured_kwargs["storage_path"] == explicit_path
-
-    @pytest.mark.asyncio
-    async def test_from_storage_uses_auth_storage_path_for_profile(self, tmp_path, monkeypatch):
-        """Profile resolution is owned by AuthTokens.from_storage."""
-        import notebooklm.paths as paths_mod
-
-        monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
-        profile_storage_path = tmp_path / "profiles" / "work" / "storage_state.json"
-        calls = []
-
-        async def fake_load_stored_auth(*, path, profile, policy, auth_type):
-            calls.append((path, profile))
-            auth = self._auth(profile_storage_path)
-            return _auth_tokens.FileLoadedAuth(
-                auth, ProfileStore(profile_storage_path), CookieJar()
-            )
-
-        def fail_get_storage_path(*args, **kwargs):
-            raise AssertionError("from_storage should not re-resolve profile storage")
-
-        monkeypatch.setattr(_auth_tokens, "_load_stored_auth", fake_load_stored_auth)
-        monkeypatch.setattr(paths_mod, "get_storage_path", fail_get_storage_path)
-
-        client = await self.CapturingClient.from_storage(profile="work")._build()
-
-        assert calls == [(None, "work")]
-        assert client.captured_auth.storage_path == profile_storage_path
-        assert client.captured_kwargs["storage_path"] == profile_storage_path
-
-    @pytest.mark.asyncio
-    async def test_from_storage_registers_exact_file_store_and_baseline(
-        self, tmp_path, monkeypatch
-    ):
-        """A normal client consumes the closed FileLoadedAuth pair without rereading it."""
-        explicit_path = tmp_path / "storage_state.json"
-        auth = self._auth(explicit_path)
-        store = ProfileStore(explicit_path)
+        profile_path = tmp_path / "profiles" / "work" / "storage_state.json"
+        requested_path = explicit_path if case in {"explicit-path", "file-baseline"} else None
+        requested_profile = "work" if case == "profile" else None
+        auth_path = profile_path if case == "profile" else requested_path
+        auth = self._auth(auth_path)
+        store = ProfileStore(auth_path) if auth_path is not None else None
         baseline = CookieJar()
+        calls = []
 
         async def fake_load_stored_auth(*, path, profile, policy, auth_type):
-            assert path == explicit_path
-            assert profile is None
+            calls.append((path, profile))
+            assert auth_type is AuthTokens
+            if case == "inline-auth":
+                return _auth_tokens.InlineLoadedAuth(auth)
+            assert store is not None
             return _auth_tokens.FileLoadedAuth(auth, store, baseline)
 
-        monkeypatch.setattr(_auth_tokens, "_load_stored_auth", fake_load_stored_auth)
-
-        client = await NotebookLMClient.from_storage(str(explicit_path))._build()
-        persistence = client._collaborators.cookie_persistence
-        state = persistence._states[store.ordering_key]
-
-        assert persistence._default_store is store
-        assert isinstance(state.baseline, ReadyBaseline)
-        assert state.baseline.value == baseline
-        assert persistence.loaded_cookie_snapshot == {}
-        assert client.auth is auth
-
-    @pytest.mark.asyncio
-    async def test_from_storage_preserves_none_storage_path_for_auth_json(self, monkeypatch):
-        """Inline auth JSON remains fileless."""
-        import notebooklm.paths as paths_mod
-
-        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", '{"cookies": []}')
-        calls = []
-
-        async def fake_load_stored_auth(*, path, profile, policy, auth_type):
-            calls.append((path, profile))
-            return _auth_tokens.InlineLoadedAuth(self._auth(None))
-
         def fail_get_storage_path(*args, **kwargs):
-            raise AssertionError("from_storage should not resolve file paths for auth JSON")
+            raise AssertionError("client composition must use the loaded auth storage path")
 
         monkeypatch.setattr(_auth_tokens, "_load_stored_auth", fake_load_stored_auth)
         monkeypatch.setattr(paths_mod, "get_storage_path", fail_get_storage_path)
+        if case == "inline-auth":
+            monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", '{"cookies": []}')
+        else:
+            monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
 
-        client = await self.CapturingClient.from_storage()._build()
+        client_type = NotebookLMClient if case == "file-baseline" else self.CapturingClient
+        builder = client_type.from_storage(
+            str(requested_path) if requested_path is not None else None,
+            profile=requested_profile,
+        )
+        client = await builder._build()
 
-        assert calls == [(None, None)]
-        assert client.captured_auth.storage_path is None
-        assert client.captured_kwargs["storage_path"] is None
+        assert calls == [(requested_path, requested_profile)]
+        if case == "file-baseline":
+            assert client.auth is auth
+            assert store is not None
+            persistence = client._collaborators.cookie_persistence
+            state = persistence._states[store.ordering_key]
+            assert persistence._default_store is store
+            assert isinstance(state.baseline, ReadyBaseline)
+            assert state.baseline.value == baseline
+            assert persistence.loaded_cookie_snapshot == {}
+        else:
+            assert client.captured_auth is auth
+            assert client.captured_auth.storage_path == auth_path
+            assert client.captured_kwargs["storage_path"] == auth_path
 
 
 # =============================================================================
