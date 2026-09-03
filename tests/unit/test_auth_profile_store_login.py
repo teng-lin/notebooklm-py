@@ -256,27 +256,20 @@ def test_request_rejects_alien_values_and_copy_failure_before_store_activity() -
 @pytest.mark.parametrize("lock_state", [LockState.CONTENDED, LockState.UNAVAILABLE])
 def test_unheld_lock_reports_without_entering_transaction_body(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     lock_state: LockState,
 ) -> None:
+    class BodySentinelDocument(ProfileDocument):
+        def to_json(self) -> dict[str, object]:
+            pytest.fail("lock miss must not enter the transaction body")
+
     locks = RecordingLocks(lock_state)
-    called: list[str] = []
-    monkeypatch.setattr(
-        profile_store,
-        "filter_storage_state_cookies_by_domain_policy",
-        lambda *args, **kwargs: called.append("filter"),
-    )
-    monkeypatch.setattr(
-        profile_store,
-        "_commit_profile_json",
-        lambda *args, **kwargs: called.append("commit"),
-    )
+    source = BodySentinelDocument.decode({"cookies": [], "origins": []})
 
     path = tmp_path / "custom" / "A.json"
-    result = ProfileStore(path, locks=locks).replace_from_login(_request())
+    result = ProfileStore(path, locks=locks).replace_from_login(_request(source=source))
 
     assert result == ReplaceResult(ReplaceStatus.LOCK_UNAVAILABLE)
-    assert called == []
+    assert not path.exists()
     assert locks.events == ["enter", "exit"]
     assert len(locks.requests) == 1
     request = locks.requests[0]

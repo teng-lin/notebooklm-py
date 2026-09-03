@@ -243,34 +243,22 @@ def test_store_uses_one_exact_raw_bounded_lock_and_never_orders_io(
 @pytest.mark.parametrize("state", [LockState.CONTENDED, LockState.UNAVAILABLE])
 def test_store_lock_miss_raises_exactly_before_every_held_operation(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
     state: LockState,
 ) -> None:
+    class FilterSentinelDomain(str):
+        def startswith(self, *args: object, **kwargs: object) -> bool:
+            pytest.fail("lock miss must not enter the transaction body")
+
     path = tmp_path / "custom.json"
     locks = RecordingLocks(state)
     store = ProfileStore(path, locks=locks)  # type: ignore[arg-type]
-    monkeypatch.setattr(
-        store,
-        "read_document",
-        lambda: pytest.fail("lock miss must not read"),
-    )
-    monkeypatch.setattr(
-        profile_store,
-        "filter_storage_state_cookies_by_domain_policy",
-        lambda state: pytest.fail("lock miss must not filter"),
-    )
-    monkeypatch.setattr(
-        profile_store,
-        "_commit_profile_json",
-        lambda path, payload: pytest.fail("lock miss must not commit"),
-    )
-
+    request = _request(cookies=CookieJar((_cookie(domain=FilterSentinelDomain(".google.com")),)))
     with (
         caplog.at_level(logging.DEBUG, logger="notebooklm.auth"),
         pytest.raises(LockUnavailableError) as raised,
     ):
-        store.replace_minted_session(_request())
+        store.replace_minted_session(request)
     assert str(raised.value) == (
         f"persist_minted_jar: storage lock unavailable at {tmp_path / '.custom.json.lock'}"
     )
@@ -282,20 +270,18 @@ def test_store_lock_miss_raises_exactly_before_every_held_operation(
 @pytest.mark.parametrize("raw", ["{", "[]"])
 def test_corrupt_existing_destination_is_unknown_and_refused_without_filter(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     raw: str,
 ) -> None:
+    class FilterSentinelDomain(str):
+        def startswith(self, *args: object, **kwargs: object) -> bool:
+            pytest.fail("owner refusal must precede filtering")
+
     path = tmp_path / "A.json"
     path.write_text(raw, encoding="utf-8")
     original = path.read_bytes()
-    monkeypatch.setattr(
-        profile_store,
-        "filter_storage_state_cookies_by_domain_policy",
-        lambda state: pytest.fail("owner refusal must precede filtering"),
-    )
-
+    request = _request(cookies=CookieJar((_cookie(domain=FilterSentinelDomain(".google.com")),)))
     with pytest.raises(_MintedSessionOwnershipRefused) as raised:
-        ProfileStore(path, locks=RecordingLocks()).replace_minted_session(_request())  # type: ignore[arg-type]
+        ProfileStore(path, locks=RecordingLocks()).replace_minted_session(request)  # type: ignore[arg-type]
     assert str(raised.value) == UNKNOWN_OWNER_MESSAGE
     assert raised.value.__cause__ is None
     assert raised.value.__context__ is None
