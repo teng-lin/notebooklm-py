@@ -7,6 +7,7 @@ import contextlib
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from ._artifact import formatters as _artifact_formatters  # noqa: F401
@@ -34,7 +35,7 @@ from ._types.enums import (
     VideoStyle,
 )
 from ._types.research import MindMapResult
-from .exceptions import ArtifactNotFoundError, ValidationError
+from .exceptions import ArtifactNotFoundError, DecodingError, ValidationError
 from .types import (
     Artifact,
     ArtifactCustomizationChoices,
@@ -48,6 +49,16 @@ if TYPE_CHECKING:
     from ._runtime.call_supervisor import CallSupervisor
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _ArtifactCopyResult:
+    """Decoded copy mappings plus backend-specific failure diagnostics."""
+
+    items: builtins.list[CopiedArtifact]
+    method_id: str
+    malformed_count: int = 0
+    raw_response: str | None = None
 
 
 def __getattr__(name: str) -> Any:
@@ -752,7 +763,6 @@ class ArtifactsAPI(ABC):
             is_quiz,
         )
 
-    @abstractmethod
     async def export_report(
         self,
         notebook_id: str,
@@ -761,14 +771,14 @@ class ArtifactsAPI(ABC):
         export_type: ExportType = ExportType.DOCS,
     ) -> Any:
         """Export a report to Google Docs (``export_type`` selects DOCS/SHEETS)."""
+        return await self.export(notebook_id, artifact_id, title, export_type)
 
-    @abstractmethod
     async def export_data_table(
         self, notebook_id: str, artifact_id: str, title: str = "Export"
     ) -> Any:
         """Export a data table to Google Sheets."""
+        return await self.export(notebook_id, artifact_id, title, ExportType.SHEETS)
 
-    @abstractmethod
     async def export(
         self,
         notebook_id: str,
@@ -779,12 +789,40 @@ class ArtifactsAPI(ABC):
         content: str | None = None,
     ) -> Any:
         """Export any artifact to Drive; exactly one of ``artifact_id=``/``content=`` (``export_type`` picks Docs/Sheets)."""
+        _artifact_validation.check_exactly_one_export_target(artifact_id, content)
+        return await self._send_export(
+            notebook_id,
+            artifact_id,
+            title,
+            export_type,
+            content=content,
+        )
+
+    @abstractmethod
+    async def _send_export(
+        self,
+        notebook_id: str,
+        artifact_id: str | None,
+        title: str,
+        export_type: ExportType,
+        *,
+        content: str | None,
+    ) -> Any:
+        """Send one backend-specific Drive export request."""
 
     @abstractmethod
     async def suggest_reports(self, notebook_id: str) -> builtins.list[ReportSuggestion]:
         """Get AI-suggested report formats for a notebook."""
 
     @abstractmethod
+    async def _send_copy(
+        self,
+        notebook_id: str,
+        artifact_ids: builtins.list[str],
+        target_notebook_id: str,
+    ) -> _ArtifactCopyResult:
+        """Copy artifacts and return decoded mappings plus wire diagnostics."""
+
     async def copy(
         self,
         notebook_id: str,
@@ -806,6 +844,36 @@ class ArtifactsAPI(ABC):
 
         .. versionadded:: 0.9.0
         """
+        if not artifact_ids:
+            raise ValidationError("artifact_ids must not be empty")
+        if any(not artifact_id for artifact_id in artifact_ids):
+            raise ValidationError("artifact_ids must not contain empty entries")
+        if not target_notebook_id:
+            raise ValidationError("target_notebook_id must not be empty")
+
+        transfer = await self._send_copy(notebook_id, artifact_ids, target_notebook_id)
+        copied = transfer.items
+        if not copied:
+            if transfer.malformed_count:
+                raise DecodingError(
+                    "CopyArtifactsAsync returned only malformed mapping entries",
+                    raw_response=transfer.raw_response,
+                    method_id=transfer.method_id,
+                )
+            raise ArtifactNotFoundError(
+                ", ".join(artifact_ids),
+                method_id=transfer.method_id,
+            )
+        missing = set(artifact_ids) - {item.original_id for item in copied}
+        if missing:
+            logger.warning(
+                "CopyArtifactsAsync copied %d of %d artifact(s) into %s; not copied: %s",
+                len(copied),
+                len(artifact_ids),
+                target_notebook_id,
+                ", ".join(sorted(missing)),
+            )
+        return copied
 
     @abstractmethod
     async def get_customization_choices(

@@ -47,8 +47,9 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
         abstract_methods=frozenset(
             {
                 "_list_studio",
+                "_send_copy",
                 "_send_create_artifact",
-                "copy",
+                "_send_export",
                 "delete",
                 "download_audio",
                 "download_data_table",
@@ -59,9 +60,6 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
                 "download_report",
                 "download_slide_deck",
                 "download_video",
-                "export",
-                "export_data_table",
-                "export_report",
                 "generate_mind_map",
                 "get_customization_choices",
                 "get_prompt",
@@ -72,7 +70,7 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
                 "suggest_reports",
             }
         ),
-        wire_hooks=frozenset({"_send_create_artifact"}),
+        wire_hooks=frozenset({"_send_copy", "_send_create_artifact", "_send_export"}),
     ),
     _AbstractContract(
         module="notebooklm._notebooks",
@@ -276,6 +274,10 @@ _ANDROID_IMPLEMENTATIONS = {
 _ANDROID_INHERITED_WORKFLOWS = {
     "ArtifactsAPI": frozenset(
         {
+            "copy",
+            "export",
+            "export_data_table",
+            "export_report",
             "generate_audio",
             "generate_cinematic_video",
             "generate_data_table",
@@ -481,6 +483,10 @@ def test_artifact_workflow_ownership_and_docstrings_are_preserved() -> None:
     from notebooklm._web.artifacts import WebArtifactsAPI
 
     inherited_workflows = {
+        "copy",
+        "export",
+        "export_data_table",
+        "export_report",
         "generate_audio",
         "generate_cinematic_video",
         "generate_data_table",
@@ -506,7 +512,9 @@ def test_artifact_workflow_ownership_and_docstrings_are_preserved() -> None:
     }
     web_overrides = ArtifactsAPI.__abstractmethods__ - {
         "_list_studio",
+        "_send_copy",
         "_send_create_artifact",
+        "_send_export",
     }
 
     for name in inherited_workflows:
@@ -519,6 +527,8 @@ def test_artifact_workflow_ownership_and_docstrings_are_preserved() -> None:
         web_doc = getattr(WebArtifactsAPI, name).__doc__
         assert base_doc
         assert web_doc == base_doc, f"WebArtifactsAPI.{name} docstring drifted"
+
+    assert WebArtifactsAPI.get_customization_choices is not ArtifactsAPI.get_customization_choices
 
 
 def test_artifact_class_constructor_docstrings_and_web_signature_are_pinned() -> None:
@@ -605,6 +615,34 @@ def test_chat_shared_workflows_call_only_their_single_wire_hook() -> None:
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and (node.func.attr.startswith("_send_") or node.func.attr == "_stream_answer")
+        }
+        assert hooks == expected_hooks
+
+
+def test_artifact_shared_workflows_call_only_their_single_wire_hook() -> None:
+    """Pin the protected adapter hook used by each shared artifact workflow."""
+    path = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_artifacts.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    artifacts = next(
+        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ArtifactsAPI"
+    )
+    expected = {
+        "copy": {"_send_copy"},
+        "export": {"_send_export"},
+    }
+    for method_name, expected_hooks in expected.items():
+        method = next(
+            node
+            for node in artifacts.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == method_name
+        )
+        hooks = {
+            node.func.attr
+            for node in ast.walk(method)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr.startswith("_send_")
         }
         assert hooks == expected_hooks
 

@@ -17,8 +17,8 @@ import builtins
 import logging
 from typing import Any
 
+from .._artifacts import _ArtifactCopyResult
 from .._idempotency import call_unconfirmed_on_transport_loss
-from ..exceptions import ArtifactNotFoundError, DecodingError, ValidationError
 from ..types import (
     ArtifactCustomizationChoices,
     CopiedArtifact,
@@ -55,12 +55,12 @@ class AndroidArtifactTransferMixin:
 
     _transport: AndroidSession
 
-    async def copy(
+    async def _send_copy(
         self,
         notebook_id: str,
         artifact_ids: builtins.list[str],
         target_notebook_id: str,
-    ) -> builtins.list[CopiedArtifact]:
+    ) -> _ArtifactCopyResult:
         """Copy ``artifact_ids`` into ``target_notebook_id`` (``CopyArtifactsAsync``).
 
         Request: context #1, bare-string artifact ids #2, target project #3
@@ -70,12 +70,6 @@ class AndroidArtifactTransferMixin:
         so an empty mapping raises :class:`ArtifactNotFoundError`.
         """
         del notebook_id  # The route is addressed by artifact ids + target alone.
-        if not artifact_ids:
-            raise ValidationError("artifact_ids must not be empty")
-        if any(not artifact_id for artifact_id in artifact_ids):
-            raise ValidationError("artifact_ids must not contain empty entries")
-        if not target_notebook_id:
-            raise ValidationError("target_notebook_id must not be empty")
         request = _PROTO.CopyArtifactsAsyncRequest(
             request_context=_request_context(),
             artifact_ids=list(artifact_ids),
@@ -109,25 +103,11 @@ class AndroidArtifactTransferMixin:
                 logger.warning("CopyArtifactsAsync returned a malformed mapping entry")
                 continue
             copied.append(CopiedArtifact(original_id=entry.source_artifact_id, artifact=artifact))
-        if not copied:
-            if malformed:
-                raise DecodingError(
-                    "CopyArtifactsAsync returned only malformed mapping entries",
-                    method_id=COPY_ARTIFACTS_ASYNC_METHOD,
-                )
-            raise ArtifactNotFoundError(
-                ", ".join(artifact_ids), method_id=COPY_ARTIFACTS_ASYNC_METHOD
-            )
-        missing = set(artifact_ids) - {item.original_id for item in copied}
-        if missing:
-            logger.warning(
-                "CopyArtifactsAsync copied %d of %d artifact(s) into %s; not copied: %s",
-                len(copied),
-                len(artifact_ids),
-                target_notebook_id,
-                ", ".join(sorted(missing)),
-            )
-        return copied
+        return _ArtifactCopyResult(
+            copied,
+            COPY_ARTIFACTS_ASYNC_METHOD,
+            malformed_count=malformed,
+        )
 
     async def get_customization_choices(
         self, notebook_id: str | None = None

@@ -12,9 +12,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .._artifact import polling as _artifact_polling
-from .._artifact import validation as _artifact_validation
 from .._artifact.downloads import AssetDownloadService
-from .._artifacts import ArtifactsAPI
+from .._artifacts import ArtifactsAPI, _ArtifactCopyResult
 from .._idempotency import call_unconfirmed_on_transport_loss, unresolved_commit_error
 from .._notebook_metadata import NotebookSourceIdProvider
 from .._types.enums import (
@@ -24,12 +23,10 @@ from .._types.enums import (
 from .._types.research import MindMapResult
 from ..exceptions import (
     ArtifactNotFoundError,
-    DecodingError,
     NetworkError,
     RateLimitError,
     RPCError,
     ServerError,
-    ValidationError,
 )
 from ..rpc import RPCMethod
 from ..types import (
@@ -467,60 +464,16 @@ class WebArtifactsAPI(ArtifactsAPI):
     # Export Operations
     # =========================================================================
 
-    async def export_report(
+    async def _send_export(
         self,
         notebook_id: str,
-        artifact_id: str,
-        title: str = "Export",
-        export_type: ExportType = ExportType.DOCS,
-    ) -> Any:
-        """Export a report to Google Docs (``export_type`` selects DOCS/SHEETS)."""
-        params = [None, artifact_id, None, title, int(export_type)]
-        return await call_unconfirmed_on_transport_loss(
-            lambda: self._rpc.rpc_call(
-                RPCMethod.EXPORT_ARTIFACT,
-                params,
-                source_path=f"/notebook/{notebook_id}",
-                allow_null=True,
-                # #2290: a status-tagged null is a server rejection, not an empty success.
-                raise_on_null_status=True,
-            ),
-            method=RPCMethod.EXPORT_ARTIFACT,
-            what="the artifact export",
-        )
-
-    async def export_data_table(
-        self,
-        notebook_id: str,
-        artifact_id: str,
-        title: str = "Export",
-    ) -> Any:
-        """Export a data table to Google Sheets."""
-        params = [None, artifact_id, None, title, int(ExportType.SHEETS)]
-        return await call_unconfirmed_on_transport_loss(
-            lambda: self._rpc.rpc_call(
-                RPCMethod.EXPORT_ARTIFACT,
-                params,
-                source_path=f"/notebook/{notebook_id}",
-                allow_null=True,
-                # #2290: a status-tagged null is a server rejection, not an empty success.
-                raise_on_null_status=True,
-            ),
-            method=RPCMethod.EXPORT_ARTIFACT,
-            what="the data-table export",
-        )
-
-    async def export(
-        self,
-        notebook_id: str,
-        artifact_id: str | None = None,
-        title: str = "Export",
-        export_type: ExportType = ExportType.DOCS,
+        artifact_id: str | None,
+        title: str,
+        export_type: ExportType,
         *,
-        content: str | None = None,
+        content: str | None,
     ) -> Any:
-        """Export any artifact to Drive; exactly one of ``artifact_id=``/``content=`` (``export_type`` picks Docs/Sheets)."""
-        _artifact_validation.check_exactly_one_export_target(artifact_id, content)
+        """Send one ``EXPORT_ARTIFACT`` request through the Web frontend."""
         params = [None, artifact_id, content, title, int(export_type)]
         return await call_unconfirmed_on_transport_loss(
             lambda: self._rpc.rpc_call(
@@ -573,34 +526,13 @@ class WebArtifactsAPI(ArtifactsAPI):
             if row.is_well_formed
         ]
 
-    async def copy(
+    async def _send_copy(
         self,
         notebook_id: str,
         artifact_ids: builtins.list[str],
         target_notebook_id: str,
-    ) -> builtins.list[CopiedArtifact]:
-        """Copy Studio artifacts into another notebook (``CopyArtifactsAsync``).
-
-        Returns one :class:`~notebooklm.types.CopiedArtifact` per copied
-        artifact, pairing the original id with the full new row (verified live
-        by re-listing the target). Raises
-        ``ArtifactNotFoundError`` when none of the requested ids were copied —
-        the server answers unknown ids with an empty mapping rather than
-        ``NOT_FOUND``. A partial result is returned with a warning because the
-        copies it names have already committed.
-
-        The sync twin ``CopyArtifacts`` (``zVGIdd``) accepts any ids, copies
-        nothing and reports success; it is deliberately not modelled (#2283).
-
-        .. versionadded:: 0.9.0
-        """
-        if not artifact_ids:
-            raise ValidationError("artifact_ids must not be empty")
-        if any(not artifact_id for artifact_id in artifact_ids):
-            raise ValidationError("artifact_ids must not contain empty entries")
-        if not target_notebook_id:
-            raise ValidationError("target_notebook_id must not be empty")
-
+    ) -> _ArtifactCopyResult:
+        """Send ``CopyArtifactsAsync`` and decode its committed mappings."""
         try:
             result = await self._rpc.rpc_call(
                 RPCMethod.COPY_ARTIFACTS,
@@ -649,26 +581,12 @@ class WebArtifactsAPI(ArtifactsAPI):
                 continue
             copied.append(CopiedArtifact(original_id=row.original_id, artifact=artifact))
 
-        if not copied:
-            if malformed:
-                raise DecodingError(
-                    "CopyArtifactsAsync returned only malformed mapping entries",
-                    raw_response=reprlib.repr(rows),
-                    method_id=RPCMethod.COPY_ARTIFACTS.value,
-                )
-            raise ArtifactNotFoundError(
-                ", ".join(artifact_ids), method_id=RPCMethod.COPY_ARTIFACTS.value
-            )
-        missing = set(artifact_ids) - {item.original_id for item in copied}
-        if missing:
-            logger.warning(
-                "CopyArtifactsAsync copied %d of %d artifact(s) into %s; not copied: %s",
-                len(copied),
-                len(artifact_ids),
-                target_notebook_id,
-                ", ".join(sorted(missing)),
-            )
-        return copied
+        return _ArtifactCopyResult(
+            copied,
+            RPCMethod.COPY_ARTIFACTS.value,
+            malformed_count=malformed,
+            raw_response=reprlib.repr(rows) if malformed else None,
+        )
 
     async def get_customization_choices(
         self, notebook_id: str | None = None

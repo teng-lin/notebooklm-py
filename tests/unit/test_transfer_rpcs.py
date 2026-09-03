@@ -472,8 +472,9 @@ class TestCopyArtifacts:
 
     @pytest.mark.asyncio
     async def test_empty_mapping_is_not_found(self) -> None:
-        with pytest.raises(ArtifactNotFoundError):
+        with pytest.raises(ArtifactNotFoundError) as raised:
             await _artifacts(AsyncMock(return_value=[])).copy(NB, [ART_A], TARGET)
+        assert raised.value.method_id == RPCMethod.COPY_ARTIFACTS.value
 
     @pytest.mark.asyncio
     async def test_partial_warns_and_malformed_fails_closed(
@@ -485,18 +486,29 @@ class TestCopyArtifacts:
             ).copy(NB, [ART_A, "art-b"], TARGET)
         assert [c.original_id for c in copied] == [ART_A]
         assert "art-b" in caplog.text
-        with pytest.raises(DecodingError):
+        with pytest.raises(DecodingError) as raised:
             await _artifacts(AsyncMock(return_value=[[[ART_A]]])).copy(NB, [ART_A], TARGET)
+        assert raised.value.method_id == RPCMethod.COPY_ARTIFACTS.value
+        assert raised.value.raw_response is not None
 
     @pytest.mark.asyncio
     async def test_validation_and_transport_loss(self) -> None:
-        api = _artifacts(AsyncMock(side_effect=NetworkError("x")))
+        rpc_call = AsyncMock()
+        api = _artifacts(rpc_call)
         with pytest.raises(ValidationError):
             await api.copy(NB, [], TARGET)
         with pytest.raises(ValidationError):
             await api.copy(NB, [ART_A], "")
-        with pytest.raises(RPCError, match="CopyArtifactsAsync may have committed"):
+        rpc_call.assert_not_awaited()
+
+        error = NetworkError("x")
+        rpc_call.side_effect = error
+        with pytest.raises(RPCError, match="CopyArtifactsAsync may have committed") as raised:
             await api.copy(NB, [ART_A], TARGET)
+        assert raised.value is not error
+        assert raised.value.__cause__ is error
+        assert raised.value.method_id == RPCMethod.COPY_ARTIFACTS.value
+        rpc_call.assert_awaited_once()
 
 
 class TestCustomizationChoices:
