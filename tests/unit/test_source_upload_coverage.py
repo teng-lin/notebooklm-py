@@ -1836,30 +1836,36 @@ async def test_a_child_task_failing_outside_its_own_catch_still_loses_to_the_can
         async_client_factory=MagicMock(return_value=client),
     )
     # The done-callback reads the same failed result; keep it off stderr.
+    # The handler is process-wide loop state, so it is saved and restored in a
+    # ``finally``: leaving it installed means pytest-asyncio's own teardown
+    # appends any later unhandled task exception to ``loop_errors`` after this
+    # test's assertions have run, silently discarding it.
     loop_errors: list[dict[str, Any]] = []
-    asyncio.get_running_loop().set_exception_handler(
-        lambda _loop, context: loop_errors.append(context)
-    )
+    loop = asyncio.get_running_loop()
+    previous_handler = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, context: loop_errors.append(context))
+    try:
+        task = asyncio.create_task(
+            pipeline.upload_file_streaming(_UPLOAD_URL, payload, logger=logger, expected_epoch=1)
+        )
+        await posting.wait()
+        task.cancel()
+        await asyncio.sleep(0)
+        release.set()
 
-    task = asyncio.create_task(
-        pipeline.upload_file_streaming(_UPLOAD_URL, payload, logger=logger, expected_epoch=1)
-    )
-    await posting.wait()
-    task.cancel()
-    await asyncio.sleep(0)
-    release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
-    with pytest.raises(asyncio.CancelledError):
-        await task
-
-    logged = [
-        call.args[1]
-        for call in logger.debug.call_args_list
-        if "failed before cancellation propagated" in call.args[0]
-    ]
-    assert len(logged) == 1
-    assert isinstance(logged[0], RuntimeError)
-    assert str(logged[0]) == "child settlement failed"
+        logged = [
+            call.args[1]
+            for call in logger.debug.call_args_list
+            if "failed before cancellation propagated" in call.args[0]
+        ]
+        assert len(logged) == 1
+        assert isinstance(logged[0], RuntimeError)
+        assert str(logged[0]) == "child settlement failed"
+    finally:
+        loop.set_exception_handler(previous_handler)
 
 
 class _HangingSecondSpawnSupervisor(_Supervisor):

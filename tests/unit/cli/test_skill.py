@@ -1068,9 +1068,15 @@ class TestSkillPackage:
     @pytest.mark.parametrize(
         ("source", "reason"),
         [
-            pytest.param("# Body only, no frontmatter at all", "absent", id="no-frontmatter"),
+            # Each input embeds an OVER-LIMIT description so the test can tell
+            # "the check was skipped" apart from "the check ran and passed".
             pytest.param(
-                "---\nname: notebooklm\ndescription: unterminated",
+                f"description: {'x' * 1100}\n# Body only, no frontmatter at all",
+                "absent",
+                id="no-frontmatter",
+            ),
+            pytest.param(
+                f"---\nname: notebooklm\ndescription: {'x' * 1100}",
                 "unclosed",
                 id="unterminated-frontmatter",
             ),

@@ -482,10 +482,13 @@ def test_fanout_warns_once_and_keeps_the_first_profiles_cookies_for_a_shared_ema
 
     assert [account.email for account in aggregated] == ["dup@example.com", "solo@example.com"]
     assert [account.browser_profile for account in aggregated] == ["Default", "Profile 1"]
-    assert io.emitted[-1] == (
+    # Compare EVERY warning line, not just the last: a duplicate emitted before
+    # the final one would otherwise slip through, and one warning per collision
+    # is the actual contract.
+    assert [line for line in io.emitted if "warning:" in line] == [
         "  [yellow]warning: dup@example.com also appears in 'Work'; "
         "using cookies from 'Default'[/yellow]"
-    )
+    ]
     # Both jars are retained: 'Profile 1' still contributed ``solo@example.com``.
     assert sorted(per_profile_cookies) == ["Default", "Profile 1"]
 

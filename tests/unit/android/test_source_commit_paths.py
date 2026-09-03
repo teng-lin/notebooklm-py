@@ -20,6 +20,7 @@ from typing import Any, cast
 
 import pytest
 
+import notebooklm._android.sources as sources_module
 from notebooklm._android.phenotype import PhenotypeTokenProvider
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
     read_pb2,
@@ -767,21 +768,35 @@ async def test_rename_rejects_a_mutation_echo_naming_a_different_source() -> Non
 
 
 @pytest.mark.asyncio
-async def test_rename_with_return_object_false_skips_decoding_the_echo() -> None:
+async def test_rename_with_return_object_false_skips_decoding_the_echo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """``return_object=False`` still validates identity but hands back nothing.
 
     The id check must happen first: a caller that ignores the return value
-    still needs a wrong-source rename to raise.
+    still needs a wrong-source rename to raise. The echo here is fully
+    decodable, so a ``None`` result alone cannot tell "never decoded" apart
+    from "decoded and discarded" — hence the spy.
     """
     transport = FakeTransport()
     transport.handlers[MUTATE_SOURCE_METHOD] = sources_pb2.MutateSourceResponse(
         source=_source(SOURCE_A, title="Renamed")
     )
 
+    decodes: list[str] = []
+    real_decode_source = sources_module.decode_source
+
+    def _spy(row: Any, **kwargs: Any) -> Any:
+        decodes.append(kwargs.get("method_id", ""))
+        return real_decode_source(row, **kwargs)
+
+    monkeypatch.setattr(sources_module, "decode_source", _spy)
+
     assert (
         await _api(transport).rename(NOTEBOOK_ID, SOURCE_A, "Renamed", return_object=False) is None
     )
 
+    assert decodes == [], "the echo was decoded despite return_object=False"
     assert GET_PROJECT_METHOD in [call[0] for call in transport.calls]
     assert [call[0] for call in transport.calls].count(GET_PROJECT_METHOD) == 1
 

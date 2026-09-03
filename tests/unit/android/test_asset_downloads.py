@@ -1309,10 +1309,14 @@ async def test_prepare_close_never_cancels_the_task_that_called_it() -> None:
 
     assert await asyncio.create_task(_closes_from_inside()) == "survived"
 
-    assert bystander.cancelled() or bystander.cancelling(), "the other transfer is cancelled"
-    bystander.cancel()
+    # ``Task.cancelling()`` is 3.11+, and ``cancelled()`` is still False right
+    # after ``cancel()`` because the task has not been resumed yet. Awaiting is
+    # version-agnostic AND stronger: the previous form cancelled the bystander
+    # itself first, so it passed even if ``prepare_close`` had cancelled nothing.
+    # If the cancel never arrived, ``_never()`` waits forever and the timeout
+    # fails the test rather than hanging it.
     with pytest.raises(asyncio.CancelledError):
-        await bystander
+        await asyncio.wait_for(bystander, timeout=5)
 
 
 @pytest.mark.asyncio

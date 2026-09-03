@@ -291,29 +291,37 @@ async def test_a_prematurely_resolved_shared_future_is_reported_as_a_bug_not_swa
 
     handled: list[dict[str, object]] = []
     loop = asyncio.get_running_loop()
+    # The handler is process-wide loop state. Save the previous one and restore
+    # it in a ``finally``: unconditionally clearing to ``None`` at the end both
+    # discards a handler the runner installed and leaks this one to later tests
+    # whenever an assertion below fails first.
+    previous_handler = loop.get_exception_handler()
     loop.set_exception_handler(lambda _loop, ctx: handled.append(ctx))
+    try:
+        leader = asyncio.create_task(
+            service.wait_for_completion("nb1", "task1", poll_status=poll_status)
+        )
+        entry = None
+        while entry is None:
+            await asyncio.sleep(0)
+            entry = supervisor.poll_registry.get(key)
+        shared_future = entry[0]
+        poll_task = await _await_attached_poll_task(supervisor, key)
 
-    leader = asyncio.create_task(
-        service.wait_for_completion("nb1", "task1", poll_status=poll_status)
-    )
-    entry = None
-    while entry is None:
+        # Resolve the shared future out from under the still-running poll task.
+        shared_future.set_result(smuggled)
+        assert await leader is smuggled
+
+        release.set()
+        assert await poll_task is polled
         await asyncio.sleep(0)
-        entry = supervisor.poll_registry.get(key)
-    shared_future = entry[0]
-    poll_task = await _await_attached_poll_task(supervisor, key)
 
-    # Resolve the shared future out from under the still-running poll task.
-    shared_future.set_result(smuggled)
-    assert await leader is smuggled
-
-    release.set()
-    assert await poll_task is polled
-    await asyncio.sleep(0)
-
-    assert [type(ctx.get("exception")) for ctx in handled] == [RuntimeError]
-    assert "BUG: future resolved before poll task done-callback" in str(handled[0].get("exception"))
-    loop.set_exception_handler(None)
+        assert [type(ctx.get("exception")) for ctx in handled] == [RuntimeError]
+        assert "BUG: future resolved before poll task done-callback" in str(
+            handled[0].get("exception")
+        )
+    finally:
+        loop.set_exception_handler(previous_handler)
 
 
 # ---------------------------------------------------------------------------
