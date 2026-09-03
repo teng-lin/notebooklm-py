@@ -82,6 +82,7 @@ from ._web.transport.seams import ClientSeams
 from ._web.transport.seams import resolve_client_seams as resolve_client_seams  # noqa: F401
 from .auth import AuthTokens
 from .exceptions import AuthExtractionError as AuthExtractionError
+from .raw import AndroidRawAPI, WebRawAPI
 
 __all__ = ["NotebookLMClient"]
 
@@ -103,6 +104,7 @@ class NotebookLMClient:
     - sharing: Manage notebook sharing and permissions
     - labels: AI-group sources into topic labels (auto-label / reorganize)
     - collections: Group notebooks into account-level collections
+    - raw: Advanced backend-selected Web or Android wire access
 
     Usage:
         # Create from saved authentication (canonical idiom)
@@ -126,6 +128,7 @@ class NotebookLMClient:
         sharing: SharingAPI for notebook sharing
         labels: LabelsAPI for source labels (topic grouping)
         collections: CollectionsAPI for account-level notebook collections
+        raw: Backend-selected advanced wire access
         auth: The AuthTokens used for authentication
     """
 
@@ -155,6 +158,7 @@ class NotebookLMClient:
     sharing: SharingAPI
     labels: LabelsAPI
     collections: CollectionsAPI
+    raw: WebRawAPI | AndroidRawAPI
 
     def _require_web_runtime(self) -> WebRuntime:
         """Return the web bundle or fail before a web-only operation."""

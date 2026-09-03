@@ -34,6 +34,7 @@ from notebooklm.exceptions import (
     RPCTimeoutError,
     ServerError,
 )
+from notebooklm.raw import AndroidRawAPI, GrpcUnaryMethod, GrpcUnaryStreamMethod, ReplayPolicy
 
 METHOD = (
     "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject"
@@ -173,7 +174,10 @@ class _Channel:
         def invoke(request, *, metadata, timeout):
             payload = request_serializer(request)
             self.invocations.append((method, payload, metadata, timeout))
-            outcomes = self.stream_outcomes.pop(0)
+            outcomes = [
+                response_deserializer(outcome) if isinstance(outcome, bytes) else outcome
+                for outcome in self.stream_outcomes.pop(0)
+            ]
             call = _StreamCall(outcomes)
             self.stream_calls.append(call)
             return call
@@ -275,6 +279,50 @@ async def test_open_is_lazy_and_unary_uses_fixed_tls_channel_and_metadata() -> N
     assert snapshot.rpc_calls_started == 1
     assert snapshot.rpc_calls_succeeded == 1
     assert [event.method for event in events] == [METHOD]
+
+
+@pytest.mark.asyncio
+async def test_raw_calls_use_fixed_session_auth_codecs_and_constant_telemetry() -> None:
+    raw_method = "/example.raw.Service/GetThing"
+    raw_stream_method = "/example.raw.Service/WatchThings"
+    events = []
+    channel = _Channel()
+    channel.unary_outcomes = [b"raw-response"]
+    channel.stream_outcomes = [[b"one", b"two"]]
+    session, _, _, grpc, supervisor = await _open(
+        channel=channel,
+        supervisor=_supervisor(events=events),
+    )
+    raw = AndroidRawAPI(session)
+
+    unary = GrpcUnaryMethod(
+        raw_method,
+        response_type=_Message,
+        replay_policy=ReplayPolicy.SAFE_READ,
+    )
+    assert await raw.unary(
+        unary,
+        _Message(b"raw-request"),
+        metadata=(("x-caller", "value"),),
+    ) == _Message(b"raw-response")
+
+    stream = GrpcUnaryStreamMethod(raw_stream_method, response_type=_Message)
+    assert [item async for item in raw.unary_stream(stream, _Message(b"stream-request"))] == [
+        _Message(b"one"),
+        _Message(b"two"),
+    ]
+
+    assert grpc.targets[0][0] == ANDROID_GRPC_TARGET
+    assert channel.invocations[0][1:3] == (
+        b"raw-request",
+        (("authorization", f"Bearer {BEARER}"), ("x-caller", "value")),
+    )
+    assert channel.invocations[1][1:3] == (
+        b"stream-request",
+        (("authorization", f"Bearer {BEARER}"),),
+    )
+    assert [event.method for event in events] == ["raw.unary", "raw.unary_stream"]
+    assert supervisor._metrics.snapshot().rpc_calls_succeeded == 2
 
 
 @pytest.mark.asyncio

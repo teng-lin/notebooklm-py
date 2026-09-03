@@ -70,6 +70,7 @@ from ._web.transport.init import compose_client_internals
 from ._web.transport.lifecycle import CookieRotator, CookieSaver
 from ._web.transport.seams import resolve_client_seams
 from .auth import AuthTokens
+from .raw import AndroidRawAPI, WebRawAPI
 
 if TYPE_CHECKING:
     from .client import NotebookLMClient
@@ -382,6 +383,7 @@ def _assemble_client(
     client._web_runtime = internals.web_runtime
     web = internals.web_runtime
     shared = internals.collaborators
+    client.raw = WebRawAPI(web.executor)
     # Per ADR-0014 Rule 3: simple features take their RpcCaller dependency
     # directly from the composition root's executor.
     client.sources = WebSourcesAPI(
@@ -499,6 +501,7 @@ def _assemble_client(
         )
         client._android_bearer_provider = android_bearer_provider
         client._android_session = android_session
+        client.raw = AndroidRawAPI(android_session)
         android_asset_downloads = AndroidAssetDownloadService(
             bearer_provider=android_bearer_provider,
             supervisor=shared.call_supervisor,

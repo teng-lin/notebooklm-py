@@ -49,6 +49,7 @@ from notebooklm._web.sharing import WebSharingAPI
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
+from notebooklm.raw import WebRawAPI
 from tests._helpers.client_factory import build_client_shell_for_tests
 
 
@@ -265,6 +266,10 @@ def test_shared_wiring_identities_hold_on_both_paths() -> None:
         )
         assert client.auth is client._auth, (
             f"{label}: the public auth property must alias the client-owned AuthTokens"
+        )
+        assert type(client.raw) is WebRawAPI
+        assert getattr(client.raw, "_rpc", _missing) is client._web_runtime.executor, (
+            f"{label}: raw Web calls must dispatch through the client's shared RpcExecutor"
         )
 
 
