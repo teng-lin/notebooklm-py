@@ -278,14 +278,17 @@ class TestAddUrlsAsync:
             [[_stub_source(SRC_A), 0], [_stub_source(SRC_B, "https://youtu.be/abc"), 0]],
         ]
         rpc = _rpc(payload)
-        sources = await SourceTransferService().add_urls_async(
+        transfer = await SourceTransferService().add_urls_async(
             NB,
             [URL, "https://youtu.be/abc"],
             rpc=rpc,
             extract_youtube_video_id=lambda url: "abc" if "youtu" in url else None,
             logger=_LOGGER,
         )
+        sources = transfer.items
         assert [s.id for s in sources] == [SRC_A, SRC_B]
+        assert transfer.method_id == RPCMethod.ADD_SOURCES_ASYNC.value
+        assert transfer.raw_response == repr(payload)
         # Stub rows carry no status block; the contract is "still processing".
         assert all(s.status is SourceStatus.PROCESSING for s in sources)
         method, params = rpc.rpc_call.await_args.args[:2]
@@ -316,8 +319,9 @@ class TestAddUrlsAsync:
     async def test_no_rows_is_a_decode_failure_not_success(self) -> None:
         rpc = _rpc([[], None, []])
         api, _ = _sources(rpc)
-        with pytest.raises(DecodingError):
+        with pytest.raises(DecodingError) as raised:
             await api.add_urls_async(NB, [URL])
+        assert raised.value.raw_response is not None
 
     @pytest.mark.asyncio
     async def test_transport_loss_is_unconfirmed_not_retried(self) -> None:
@@ -335,9 +339,10 @@ class TestAddUrlsAsync:
     ) -> None:
         rpc = _rpc([[_stub_source(SRC_A)], None, [[_stub_source(SRC_A), 3]]])
         with caplog.at_level(logging.WARNING, logger=_LOGGER.name):
-            sources = await SourceTransferService().add_urls_async(
+            transfer = await SourceTransferService().add_urls_async(
                 NB, [URL], rpc=rpc, extract_youtube_video_id=lambda _u: None, logger=_LOGGER
             )
+        sources = transfer.items
         assert [s.id for s in sources] == [SRC_A]
         assert "status 3" in caplog.text
 
@@ -377,8 +382,10 @@ class TestCopySources:
     @pytest.mark.asyncio
     async def test_maps_original_to_copy(self) -> None:
         rpc = _rpc([[[[SRC_A], _source_entry(SRC_NEW, "Python Programming")]]])
-        copied = await SourceTransferService().copy(NB, [SRC_A], TARGET, **_service_kwargs(rpc))
+        transfer = await SourceTransferService().copy(NB, [SRC_A], TARGET, **_service_kwargs(rpc))
+        copied = transfer.items
         assert copied == [CopiedSource(original_id=SRC_A, source=copied[0].source)]
+        assert transfer.method_id == RPCMethod.COPY_SOURCES.value
         assert copied[0].source.id == SRC_NEW
         assert copied[0].source.title == "Python Programming"
         method, params = rpc.rpc_call.await_args.args[:2]
@@ -604,9 +611,10 @@ class TestMalformedRowsAndGuards:
     ) -> None:
         rows = [[[SRC_A], _source_entry(SRC_NEW, "Copy")], [[SRC_B]], [["x"], [[""], "no id"]]]
         with caplog.at_level(logging.WARNING, logger=_LOGGER.name):
-            copied = await SourceTransferService().copy(
+            transfer = await SourceTransferService().copy(
                 NB, [SRC_A, SRC_B], TARGET, **_service_kwargs(_rpc([rows]))
             )
+        copied = transfer.items
         assert [c.original_id for c in copied] == [SRC_A]
         assert caplog.text.count("malformed mapping entry") == 2
         with pytest.raises(DecodingError):
@@ -633,8 +641,9 @@ class TestMalformedRowsAndGuards:
 
         idless_rpc = _rpc([[[[""], URL, [None, None, None, None, 5]]], None, []])
         idless_api, _ = _sources(idless_rpc)
-        with pytest.raises(DecodingError):
+        with pytest.raises(DecodingError) as raised:
             await idless_api.add_urls_async(NB, [URL])
+        assert raised.value.raw_response is not None
 
     def test_row_guards_on_non_list_and_bool_slots(self) -> None:
         assert CopiedSourceRow(None).original_id is None

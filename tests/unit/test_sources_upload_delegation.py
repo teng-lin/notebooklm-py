@@ -339,7 +339,7 @@ def test_sources_upload_helpers_are_pure_delegators() -> None:
         "_start_resumable_upload": "start_resumable_upload",
         "_upload_file_streaming": "upload_file_streaming",
         "_cancel_upload_session": "cancel_upload_session",
-        "_send_upload": "add_file",
+        "add_file": "add_file",
     }
 
     # Completeness guard: ``expected`` must be an exhaustive allowlist of the
@@ -351,7 +351,7 @@ def test_sources_upload_helpers_are_pure_delegators() -> None:
     # reads the ``self._uploader.live_cookies`` seam to authenticate the Drive
     # fetch — it does not re-implement or delegate a resumable-upload operation
     # (its upload leg goes through the public ``self.add_file`` and selected
-    # ``_send_upload`` hook, already covered).
+    # public ``add_file`` method, already covered).
     _uploader_seam_only = {"__init__", "add_drive_file", "add_url", "_add_urls_batch"}
     uploader_methods = {
         node.name

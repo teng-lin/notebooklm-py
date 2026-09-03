@@ -8,9 +8,10 @@ import contextlib
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Collection, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
-from typing import Any, Literal
+from typing import Any, Generic, Literal, TypeVar
 
 from ._lookup import unwrap_or_raise
 from ._runtime.call_supervisor import OperationLease
@@ -29,6 +30,17 @@ from .types import (
 )
 
 logger = logging.getLogger(__name__)
+
+_TransferItem = TypeVar("_TransferItem")
+
+
+@dataclass(frozen=True)
+class _TransferResult(Generic[_TransferItem]):
+    """Decoded rows plus backend-specific diagnostics for neutral policy."""
+
+    items: builtins.list[_TransferItem]
+    method_id: str
+    raw_response: str | None = None
 
 
 def _validate_add_text_idempotency(idempotent: bool) -> None:
@@ -402,6 +414,7 @@ class SourcesAPI(ABC):
         """Add copied text to a notebook."""
         raise NotImplementedError
 
+    @abstractmethod
     async def add_file(
         self,
         notebook_id: str,
@@ -446,29 +459,6 @@ class SourcesAPI(ABC):
                 registration retains its backend-specific ``source_id`` and
                 ``stage`` diagnostics.
         """
-        return await self._send_upload(
-            notebook_id,
-            file_path,
-            mime_type,
-            wait=wait,
-            wait_timeout=wait_timeout,
-            title=title,
-            on_progress=on_progress,
-        )
-
-    @abstractmethod
-    async def _send_upload(
-        self,
-        notebook_id: str,
-        file_path: str | Path,
-        mime_type: str | None = None,
-        *,
-        wait: bool = False,
-        wait_timeout: float = 120.0,
-        title: str | None = None,
-        on_progress: Callable[[int, int], object] | None = None,
-    ) -> Source:
-        """Run the backend-selected upload pipeline."""
         raise NotImplementedError
 
     @abstractmethod
@@ -575,7 +565,7 @@ class SourcesAPI(ABC):
         self,
         notebook_id: str,
         urls: builtins.list[str],
-    ) -> tuple[builtins.list[Source], str]:
+    ) -> _TransferResult[Source]:
         """Queue URL sources and return decoded rows plus the wire method id."""
         raise NotImplementedError
 
@@ -597,7 +587,7 @@ class SourcesAPI(ABC):
         notebook_id: str,
         source_ids: builtins.list[str],
         target_notebook_id: str,
-    ) -> tuple[builtins.list[CopiedSource], str]:
+    ) -> _TransferResult[CopiedSource]:
         """Copy sources and return decoded mappings plus the wire method id."""
         raise NotImplementedError
 
@@ -619,16 +609,19 @@ class SourcesAPI(ABC):
         if any(not url or not url.strip() for url in urls):
             raise ValidationError("urls must not contain empty entries")
         async with self._operation_scope("source.add_urls_async"):
-            sources, method_id = await self._send_add_urls_async(notebook_id, urls)
+            transfer = await self._send_add_urls_async(notebook_id, urls)
+        sources = transfer.items
         if not sources:
             raise DecodingError(
                 "AddSourcesAsync returned no queued source rows",
-                method_id=method_id,
+                raw_response=transfer.raw_response,
+                method_id=transfer.method_id,
             )
         if any(not source.id for source in sources):
             raise DecodingError(
                 "AddSourcesAsync returned a queued source row without an id",
-                method_id=method_id,
+                raw_response=transfer.raw_response,
+                method_id=transfer.method_id,
             )
         if len(sources) != len(urls):
             logger.warning(
@@ -682,13 +675,14 @@ class SourcesAPI(ABC):
         if not target_notebook_id:
             raise ValidationError("target_notebook_id must not be empty")
         async with self._operation_scope("source.copy"):
-            copied, method_id = await self._send_copy(
+            transfer = await self._send_copy(
                 notebook_id,
                 source_ids,
                 target_notebook_id,
             )
+        copied = transfer.items
         if not copied:
-            raise SourceNotFoundError(", ".join(source_ids), method_id=method_id)
+            raise SourceNotFoundError(", ".join(source_ids), method_id=transfer.method_id)
         missing = set(source_ids) - {item.original_id for item in copied}
         if missing:
             logger.warning(

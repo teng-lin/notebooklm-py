@@ -156,7 +156,9 @@ class MindMapsAPI(ABC):
         for both kinds — note-backed via ``GENERATE_MIND_MAP`` and interactive at
         the ``[9][1][2]`` prompt slot of ``CREATE_ARTIFACT`` (the same slot
         quiz/flashcards use; the server honours it for variant 4, verified live).
-        ``language`` applies to the note-backed payload only.
+        ``language`` applies to note-backed payloads on both backends and to
+        Android interactive generation; the web interactive payload has no
+        language slot and ignores it.
 
         Raises:
             ArtifactFeatureUnavailableError: if the interactive
@@ -168,7 +170,7 @@ class MindMapsAPI(ABC):
                 null-create contract (ADR-0019; issue #1359).
         """
         async with self._operation_scope("mind_maps.generate"):
-            if kind is MindMapKind.NOTE_BACKED:
+            if kind == MindMapKind.NOTE_BACKED:
                 result = await self._artifacts.generate_mind_map(
                     notebook_id,
                     source_ids,

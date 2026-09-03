@@ -1260,7 +1260,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/labels.py` | Concrete `WebLabelsAPI` implementation; keeps the historical `notebooklm._labels` logger key |
 | `_web/collections.py` | Concrete `WebCollectionsAPI` implementation over type-3 label RPCs; keeps the historical `notebooklm._collections` logger key |
 | `_settings.py` | Backend-neutral abstract `SettingsAPI` contract |
-| `_mind_maps_api.py` | Backend-neutral abstract `MindMapsAPI`; owns unified lookup/list/rename/delete composition over base-typed `ArtifactsAPI` and `NotesAPI` dependencies. `list_note_backed`, `generate`, `get_tree`, and the narrow exact-content `_send_rename_note_backed` hook remain frontend-specific (#1256). |
+| `_mind_maps_api.py` | Backend-neutral abstract `MindMapsAPI`; owns unified lookup/list/generate/get-tree/rename/delete composition over base-typed `ArtifactsAPI` and `NotesAPI` dependencies. `list_note_backed` and narrow typed read/write hooks remain frontend-specific (#1256). |
 | `_artifact/downloads.py` | Backend-neutral asset transfer service: guarded streaming, rejection, staging, and atomic publication |
 | `_artifact/_guarded_transfer.py` | Backend-neutral representation transfer loop: explicit redirect cap, application redirects, content/signature/byte limits, and atomic publication |
 | `_artifact/_redirect_guard.py` | Per-redirect-hop host/scheme revalidation and credential-policy application for downloads — rejects off-allowlist / non-HTTPS redirect targets before the request is sent (#1521) |

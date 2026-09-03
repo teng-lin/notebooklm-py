@@ -18,6 +18,7 @@ from dataclasses import replace
 from typing import Any, cast
 
 from .._idempotency import call_unconfirmed_on_transport_loss
+from .._sources import _TransferResult
 from .._url_utils import is_youtube_url
 from ..exceptions import DecodingError
 from ..types import CopiedSource, Source, SourceStatus
@@ -84,7 +85,7 @@ class AndroidSourceTransferMixin:
         self,
         notebook_id: str,
         urls: builtins.list[str],
-    ) -> tuple[builtins.list[Source], str]:
+    ) -> _TransferResult[Source]:
         """Queue ``urls`` with one ``AddSourcesAsync`` call and return the stub rows.
 
         Request is the exact ``AddSourcesRequest`` shape (``AddSources`` and
@@ -122,7 +123,7 @@ class AndroidSourceTransferMixin:
                     ack.status,
                     notebook_id,
                 )
-        return sources, ADD_SOURCES_ASYNC_METHOD
+        return _TransferResult(sources, ADD_SOURCES_ASYNC_METHOD)
 
     async def _send_append_text(
         self,
@@ -158,7 +159,7 @@ class AndroidSourceTransferMixin:
         notebook_id: str,
         source_ids: builtins.list[str],
         target_notebook_id: str,
-    ) -> tuple[builtins.list[CopiedSource], str]:
+    ) -> _TransferResult[CopiedSource]:
         """Copy ``source_ids`` into ``target_notebook_id`` (``CopySourcesAsync``).
 
         The reply maps each original ``SourceId`` (#1) to the new ``Source`` row
@@ -205,7 +206,7 @@ class AndroidSourceTransferMixin:
                 "CopySourcesAsync returned only malformed mapping entries",
                 method_id=COPY_SOURCES_ASYNC_METHOD,
             )
-        return copied, COPY_SOURCES_ASYNC_METHOD
+        return _TransferResult(copied, COPY_SOURCES_ASYNC_METHOD)
 
 
 __all__ = [

@@ -56,7 +56,6 @@ class _ConcreteSources(SourcesAPI):
     _send_add_urls_async = _unsupported
     _send_append_text = _unsupported
     _send_copy = _unsupported
-    _send_upload = _unsupported
 
 
 @pytest.mark.asyncio
@@ -101,7 +100,6 @@ def test_web_facade_inherits_every_neutral_concrete_workflow() -> None:
         "get",
         "get_or_none",
         "add_urls_async",
-        "add_file",
         "append_text",
         "copy",
         "wait_until_ready",

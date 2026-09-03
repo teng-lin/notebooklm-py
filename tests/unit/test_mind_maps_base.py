@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -98,6 +99,28 @@ async def test_list_composes_note_backed_and_interactive_maps() -> None:
 
     assert [item.id for item in result] == ["note-map", "interactive"]
     artifacts.list.assert_awaited_once_with("nb")
+
+
+@pytest.mark.asyncio
+async def test_generate_preserves_string_enum_compatibility_for_note_backed_kind() -> None:
+    api, artifacts, _ = _api()
+    artifacts.generate_mind_map = AsyncMock(
+        return_value=SimpleNamespace(
+            note_id="note-map",
+            created_at=None,
+            mind_map={"name": "Legacy string kind"},
+        )
+    )
+
+    result = await api.generate(
+        "nb",
+        ["source"],
+        kind=cast(Any, "note_backed"),
+    )
+
+    assert result.id == "note-map"
+    assert result.kind == MindMapKind.NOTE_BACKED
+    artifacts.generate_mind_map.assert_awaited_once_with("nb", ["source"], "en", None)
 
 
 @pytest.mark.asyncio

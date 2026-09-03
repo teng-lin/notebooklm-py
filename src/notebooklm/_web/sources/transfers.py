@@ -28,6 +28,7 @@ from dataclasses import replace
 from typing import cast
 
 from ..._idempotency import unresolved_commit_error
+from ..._sources import _TransferResult
 from ...exceptions import (
     DecodingError,
     NetworkError,
@@ -80,7 +81,7 @@ class SourceTransferService:
         rpc: RpcCaller,
         extract_youtube_video_id: Callable[[str], str | None],
         logger: logging.Logger,
-    ) -> builtins.list[Source]:
+    ) -> _TransferResult[Source]:
         """Queue ``urls`` with one ``AddSourcesAsync`` call.
 
         The reply carries the stub rows at ``[0]`` and a per-source
@@ -121,7 +122,11 @@ class SourceTransferService:
                     ack.status,
                     notebook_id,
                 )
-        return sources
+        return _TransferResult(
+            sources,
+            RPCMethod.ADD_SOURCES_ASYNC.value,
+            raw_response=repr(payload),
+        )
 
     async def append_text(
         self,
@@ -158,7 +163,7 @@ class SourceTransferService:
         *,
         rpc: RpcCaller,
         logger: logging.Logger,
-    ) -> builtins.list[CopiedSource]:
+    ) -> _TransferResult[CopiedSource]:
         """Copy ``source_ids`` into ``target_notebook_id`` with ``CopySourcesAsync``.
 
         An unknown source id or target notebook is answered with ``NOT_FOUND``
@@ -206,4 +211,4 @@ class SourceTransferService:
                 raw_response=repr(rows)[:400],
                 method_id=RPCMethod.COPY_SOURCES.value,
             )
-        return copied
+        return _TransferResult(copied, RPCMethod.COPY_SOURCES.value)

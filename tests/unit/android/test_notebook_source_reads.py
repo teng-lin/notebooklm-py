@@ -223,7 +223,7 @@ def test_exact_abstract_sets_and_android_adapters_are_concrete() -> None:
             "_send_add_urls_async",
             "_send_append_text",
             "_send_copy",
-            "_send_upload",
+            "add_file",
             "add_drive",
             "add_drive_file",
             "add_play_book",

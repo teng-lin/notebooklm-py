@@ -12,7 +12,7 @@ import httpx
 
 from ..._runtime.call_supervisor import CallSupervisor, OperationLease
 from ..._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
-from ..._sources import SourcesAPI, _validate_add_text_idempotency, validate_search
+from ..._sources import SourcesAPI, _TransferResult, _validate_add_text_idempotency, validate_search
 from ..._types.research import SourceGuide
 from ..._types.sources import _EXPERT_INTELLIGENCE_TYPE_CODE
 from ..._url_utils import is_youtube_url
@@ -418,7 +418,7 @@ class WebSourcesAPI(SourcesAPI):
                 logger=logger,
             )
 
-    async def _send_upload(
+    async def add_file(
         self,
         notebook_id: str,
         file_path: str | Path,
@@ -994,16 +994,15 @@ class WebSourcesAPI(SourcesAPI):
         self,
         notebook_id: str,
         urls: builtins.list[str],
-    ) -> tuple[builtins.list[Source], str]:
+    ) -> _TransferResult[Source]:
         """Send and decode one batchexecute URL-queue operation."""
-        added = await self._transfers.add_urls_async(
+        return await self._transfers.add_urls_async(
             notebook_id,
             urls,
             rpc=self._rpc,
             extract_youtube_video_id=self._extract_youtube_video_id,
             logger=logger,
         )
-        return added, RPCMethod.ADD_SOURCES_ASYNC.value
 
     async def _send_append_text(
         self,
@@ -1023,16 +1022,15 @@ class WebSourcesAPI(SourcesAPI):
         notebook_id: str,
         source_ids: builtins.list[str],
         target_notebook_id: str,
-    ) -> tuple[builtins.list[CopiedSource], str]:
+    ) -> _TransferResult[CopiedSource]:
         """Send and decode one batchexecute source-copy operation."""
-        copied = await self._transfers.copy(
+        return await self._transfers.copy(
             notebook_id,
             source_ids,
             target_notebook_id,
             rpc=self._rpc,
             logger=logger,
         )
-        return copied, RPCMethod.COPY_SOURCES.value
 
 
 __all__ = ["WebSourcesAPI"]
