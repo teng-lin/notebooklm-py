@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "title_regex": "^notebooklm-py E2E template v1(?:$|[ -].*)",
+  "reserved_title_prefix": "notebooklm-py-ci/",
+  "sources": {
+    "minimum_ready": 3,
+    "minimum_distinct_titles": 3,
+    "require_text_addressable": true
+  },
+  "artifacts": {
+    "required_completed_families": [
+      "audio",
+      "video",
+      "report",
+      "quiz",
+      "flashcards",
+      "mind_map",
+      "infographic",
+      "slide_deck",
+      "data_table"
+    ],
+    "require_interactive_mind_map": true
+  },
+  "content_policy": {
+    "private_personal_licensed_or_unstable_web_content_allowed": false,
+    "copy_permission_required_for_all_ci_slots": true
+  }
+}
