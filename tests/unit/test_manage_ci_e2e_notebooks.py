@@ -333,7 +333,7 @@ class FakeClient:
 
 class RecordingStore(AtomicJSONStore):
     def __init__(self, path: Path, *, fail_when: str | None = None) -> None:
-        super().__init__(path)
+        super().__init__(path, runner_temp=path.parent)
         self.snapshots: list[dict[str, Any]] = []
         self.fail_when = fail_when
 
@@ -373,7 +373,7 @@ def _manager(
 ) -> tuple[NotebookLifecycleManager, FakeClient, AtomicJSONStore, FakeClock]:
     client = client or FakeClient()
     clock = clock or FakeClock()
-    store = store or AtomicJSONStore(tmp_path / "manifest.json")
+    store = store or AtomicJSONStore(tmp_path / "manifest.json", runner_temp=tmp_path)
     nonce_values = iter(nonces or [f"{index:032x}" for index in range(1, 20)])
     manager = NotebookLifecycleManager(
         client,
@@ -476,6 +476,7 @@ def test_manifest_rejects_duplicate_role_ids() -> None:
         validate_manifest(manifest, template_id=TEMPLATE_ID)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode contract")
 def test_atomic_store_enforces_posix_modes_and_fsyncs_parent(tmp_path: Path) -> None:
     fsynced: list[int] = []
     store = AtomicJSONStore(tmp_path / "private" / "manifest.json", fsync=fsynced.append)
@@ -495,6 +496,7 @@ def test_atomic_store_enforces_posix_modes_and_fsyncs_parent(tmp_path: Path) -> 
     assert store.read(template_id=TEMPLATE_ID) == manifest
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode contract")
 def test_atomic_store_never_chmods_an_existing_caller_owned_parent(tmp_path: Path) -> None:
     parent = tmp_path / "shared"
     parent.mkdir()
@@ -1553,7 +1555,7 @@ def test_store_refuses_symlink_manifest(tmp_path: Path) -> None:
         link.symlink_to(target)
     except OSError:
         pytest.skip("symlinks unavailable")
-    store = AtomicJSONStore(link)
+    store = AtomicJSONStore(link, runner_temp=tmp_path)
     manifest = new_manifest(
         run_id="1",
         run_attempt="1",
@@ -1563,7 +1565,7 @@ def test_store_refuses_symlink_manifest(tmp_path: Path) -> None:
         backend="web",
         template_fingerprint=FINGERPRINT,
     )
-    with pytest.raises(ManifestError, match="regular"):
+    with pytest.raises(ManifestError, match="regular|reparse"):
         store.write(manifest)
 
 
