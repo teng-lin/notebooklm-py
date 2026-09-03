@@ -86,7 +86,7 @@
     },
     {
       "attribute": "build_httpx_cookies_from_storage",
-      "count": 3,
+      "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "cookies"
     },
@@ -284,93 +284,27 @@
     },
     {
       "attribute": "_try_headless_reauth_result",
-      "count": 7,
+      "count": 2,
       "idiom": "monkeypatch.setattr",
       "module": "recovery"
     },
     {
       "attribute": "_try_master_token_reauth_result",
-      "count": 6,
+      "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "recovery"
-    },
-    {
-      "attribute": "coalesced_cold_recovery",
-      "count": 2,
-      "idiom": "monkeypatch.setattr",
-      "module": "recovery"
-    },
-    {
-      "attribute": "_coalesced_run_refresh_cmd",
-      "count": 12,
-      "idiom": "monkeypatch.setattr",
-      "module": "refresh"
-    },
-    {
-      "attribute": "_fetch_tokens_with_exact_baseline",
-      "count": 6,
-      "idiom": "monkeypatch.setattr",
-      "module": "refresh"
     },
     {
       "attribute": "_fetch_tokens_with_jar",
-      "count": 17,
-      "idiom": "monkeypatch.setattr",
-      "module": "refresh"
-    },
-    {
-      "attribute": "_fetch_tokens_with_refresh_core",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "refresh"
-    },
-    {
-      "attribute": "_poke_session",
       "count": 2,
-      "idiom": "monkeypatch.setattr",
-      "module": "refresh"
-    },
-    {
-      "attribute": "_replace_cookie_jar",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "refresh"
-    },
-    {
-      "attribute": "_resolve_token_route_kwargs",
-      "count": 3,
-      "idiom": "monkeypatch.setattr",
-      "module": "refresh"
-    },
-    {
-      "attribute": "_run_refresh_cmd",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "refresh"
-    },
-    {
-      "attribute": "build_httpx_cookies_from_storage",
-      "count": 11,
       "idiom": "monkeypatch.setattr",
       "module": "refresh"
     },
     {
       "attribute": "get_storage_path",
-      "count": 8,
+      "count": 6,
       "idiom": "monkeypatch.setattr",
       "module": "refresh"
-    },
-    {
-      "attribute": "snapshot_cookie_jar",
-      "count": 9,
-      "idiom": "monkeypatch.setattr",
-      "module": "refresh"
-    },
-    {
-      "attribute": "read_success_epoch",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "single_flight"
     },
     {
       "attribute": "LegacyAccountMigrator",
@@ -447,9 +381,9 @@
   ],
   "summary": {
     "TOTAL": {
-      "private": 144,
-      "public": 99,
-      "total": 243
+      "private": 93,
+      "public": 72,
+      "total": 165
     },
     "account": {
       "private": 2,
@@ -473,8 +407,8 @@
     },
     "cookies": {
       "private": 3,
-      "public": 7,
-      "total": 10
+      "public": 5,
+      "total": 8
     },
     "credential_io": {
       "private": 3,
@@ -512,19 +446,14 @@
       "total": 19
     },
     "recovery": {
-      "private": 13,
-      "public": 2,
-      "total": 15
+      "private": 3,
+      "public": 0,
+      "total": 3
     },
     "refresh": {
-      "private": 43,
-      "public": 28,
-      "total": 71
-    },
-    "single_flight": {
-      "private": 0,
-      "public": 1,
-      "total": 1
+      "private": 2,
+      "public": 6,
+      "total": 8
     },
     "storage": {
       "private": 2,
