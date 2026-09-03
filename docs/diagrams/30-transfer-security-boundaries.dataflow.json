@@ -247,8 +247,12 @@
       "id": "web-response-verify",
       "from": "webresponse",
       "to": "webverify",
-      "label": "stream + verify",
-      "classification": "context-managed",
+      "label": "receive + verify",
+      "classification": "buffered or streamed",
+      "labelAt": [
+        853,
+        205
+      ],
       "route": "straight"
     },
     {

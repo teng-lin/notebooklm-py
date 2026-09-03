@@ -29,7 +29,7 @@ system overview at the [Pages site root](https://teng-lin.github.io/notebooklm-p
 | 27 | Capability contracts | Which implementations satisfy the RPC, loop, and single-consumer contracts? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/27-capability-contracts.html) · [Source](./27-capability-contracts.architecture.json) |
 | 28 | Profile, auth, and backend selection | Which auth, runtime, raw adapter, and compatibility resources does each backend construct? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/28-profile-auth-backend-selection.workflow.html) · [Source](./28-profile-auth-backend-selection.workflow.json) |
 | 29 | Organization and sharing | How do notebooks, sharing, settings, labels, and collections divide their scopes? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/29-organization-and-sharing.architecture.html) · [Source](./29-organization-and-sharing.architecture.json) |
-| 30 | Transfer security boundaries | How does the neutral guarded-transfer plane fence URLs, credentials, cleanup, and publication? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/30-transfer-security-boundaries.dataflow.html) · [Source](./30-transfer-security-boundaries.dataflow.json) |
+| 30 | Transfer security boundaries | How do the Web and Android transfer planes fence URLs, credentials, cleanup, and publication? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/30-transfer-security-boundaries.dataflow.html) · [Source](./30-transfer-security-boundaries.dataflow.json) |
 
 ## Authentication
 
