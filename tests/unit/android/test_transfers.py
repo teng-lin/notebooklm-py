@@ -181,7 +181,6 @@ async def test_add_urls_async_sends_add_sources_request_and_decodes_stub_rows() 
     assert kwargs == {
         "replay_safe": False,
         "response_type": sources_pb2.AddSourcesAsyncResponse,
-        "expected_epoch": 7,
     }
     assert transport.scopes == ["source.add_urls_async"]
 
@@ -216,7 +215,7 @@ async def test_append_text_sends_doubly_nested_plain_text() -> None:
     assert request.source_id.id == SRC_A
     assert request.content.plain_text.header == "H"
     assert request.content.plain_text.body == "more text"
-    assert kwargs == {"replay_safe": False, "response_type": empty_pb2.Empty, "expected_epoch": 7}
+    assert kwargs == {"replay_safe": False, "response_type": empty_pb2.Empty}
     # Byte-level pin of the live-proven layout: {2: SourceId{1: id}, 4: {2: {1: h, 2: b}}}.
     assert request.SerializeToString() == (
         b"\x12\x07\n\x05src-a\x22\x10\x12\x0e\n\x01H\x12\x09more text"

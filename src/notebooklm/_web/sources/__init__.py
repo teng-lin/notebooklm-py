@@ -983,83 +983,44 @@ class WebSourcesAPI(SourcesAPI):
     # Transfers (#2283): AddSourcesAsync / AppendSource / CopySourcesAsync
     # =========================================================================
 
-    async def add_urls_async(
+    async def _send_transfer(
         self,
+        operation: Literal["add_urls_async", "append_text", "copy"],
         notebook_id: str,
-        urls: builtins.list[str],
-    ) -> builtins.list[Source]:
-        """Queue URL sources with one non-blocking ``AddSourcesAsync`` call.
-
-        Same request as the batch ``ADD_SOURCE`` path, but the server answers
-        as soon as the sources are queued (~0.65 s for two URLs versus ~2 s per
-        synchronous add in the #2283 web probe) with stub rows — id, url and type only, status
-        still processing. Poll :meth:`wait_until_ready` / :meth:`list` for the
-        ingested rows.
-
-        Never replayed on a transport failure: an unknown subset may have
-        committed, so the error is marked unconfirmed for the caller to
-        reconcile against :meth:`list`.
-
-        .. versionadded:: 0.9.0
-        """
-        async with self._supervisor.operation_scope("source.add_urls_async"):
-            return await self._transfers.add_urls_async(
+        *,
+        urls: builtins.list[str] | None = None,
+        source_id: str | None = None,
+        text: str | None = None,
+        header: str = "",
+        source_ids: builtins.list[str] | None = None,
+        target_notebook_id: str | None = None,
+    ) -> tuple[builtins.list[Source] | builtins.list[CopiedSource] | None, str]:
+        """Send one batchexecute source-transfer operation."""
+        if operation == "add_urls_async":
+            assert urls is not None
+            added = await self._transfers.add_urls_async(
                 notebook_id,
                 urls,
                 rpc=self._rpc,
                 extract_youtube_video_id=self._extract_youtube_video_id,
                 logger=logger,
             )
-
-    async def append_text(
-        self,
-        notebook_id: str,
-        source_id: str,
-        text: str,
-        *,
-        header: str = "",
-    ) -> None:
-        """Append a plain-text block to an existing source (``AppendSource``).
-
-        ``text`` is appended at the very end of the source's fulltext (verified
-        live: a 61-character pasted-text source grew to 86 characters ending in
-        the appended block). ``header`` is accepted by the backend but does not
-        appear in the fulltext. Success is an empty reply; a rejected call raises
-        ``RPCError`` with the server status.
-
-        .. versionadded:: 0.9.0
-        """
-        async with self._supervisor.operation_scope("source.append_text"):
+            return added, RPCMethod.ADD_SOURCES_ASYNC.value
+        if operation == "append_text":
+            assert source_id is not None and text is not None
             await self._transfers.append_text(
                 notebook_id, source_id, text, header=header, rpc=self._rpc
             )
-
-    async def copy(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str],
-        target_notebook_id: str,
-    ) -> builtins.list[CopiedSource]:
-        """Copy sources into another notebook (``CopySourcesAsync``).
-
-        Returns one :class:`~notebooklm.types.CopiedSource` per copied source,
-        pairing the original id with the new row in ``target_notebook_id``
-        (verified live by re-listing the target). An unknown source id or target
-        notebook draws ``NOT_FOUND`` (``RPCError``); an empty mapping on success
-        raises ``SourceNotFoundError`` so a no-op never reads as a copy. A partial
-        result is returned with a warning because those copies have already
-        committed.
-
-        .. versionadded:: 0.9.0
-        """
-        async with self._supervisor.operation_scope("source.copy"):
-            return await self._transfers.copy(
-                notebook_id,
-                source_ids,
-                target_notebook_id,
-                rpc=self._rpc,
-                logger=logger,
-            )
+            return None, RPCMethod.APPEND_SOURCE.value
+        assert source_ids is not None and target_notebook_id is not None
+        copied = await self._transfers.copy(
+            notebook_id,
+            source_ids,
+            target_notebook_id,
+            rpc=self._rpc,
+            logger=logger,
+        )
+        return copied, RPCMethod.COPY_SOURCES.value
 
 
 __all__ = ["WebSourcesAPI"]

@@ -10,14 +10,14 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Collection, Sequence
 from pathlib import Path
 from time import monotonic
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from ._lookup import unwrap_or_raise
 from ._runtime.call_supervisor import OperationLease
 from ._source.batch import SourceUrlBatchItem
 from ._source.polling import SourcePoller, SourceWaitResult
 from ._types.research import SourceGuide
-from .exceptions import NonIdempotentRetryError, SourceNotFoundError, ValidationError
+from .exceptions import DecodingError, NonIdempotentRetryError, SourceNotFoundError, ValidationError
 from .types import (
     CopiedSource,
     PlayBook,
@@ -517,6 +517,21 @@ class SourcesAPI(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def _send_transfer(
+        self,
+        operation: Literal["add_urls_async", "append_text", "copy"],
+        notebook_id: str,
+        *,
+        urls: builtins.list[str] | None = None,
+        source_id: str | None = None,
+        text: str | None = None,
+        header: str = "",
+        source_ids: builtins.list[str] | None = None,
+        target_notebook_id: str | None = None,
+    ) -> tuple[builtins.list[Source] | builtins.list[CopiedSource] | None, str]:
+        """Send one source-transfer wire operation and decode its result."""
+        raise NotImplementedError
+
     async def add_urls_async(
         self,
         notebook_id: str,
@@ -530,9 +545,36 @@ class SourcesAPI(ABC):
         subset, so it is surfaced as an unconfirmed error for the caller to
         reconcile against :meth:`list`.
         """
-        raise NotImplementedError
+        if not urls:
+            return []
+        if any(not url or not url.strip() for url in urls):
+            raise ValidationError("urls must not contain empty entries")
+        async with self._operation_scope("source.add_urls_async"):
+            transfer_result, method_id = await self._send_transfer(
+                "add_urls_async",
+                notebook_id,
+                urls=urls,
+            )
+        sources = cast(builtins.list[Source], transfer_result)
+        if not sources:
+            raise DecodingError(
+                "AddSourcesAsync returned no queued source rows",
+                method_id=method_id,
+            )
+        if any(not source.id for source in sources):
+            raise DecodingError(
+                "AddSourcesAsync returned a queued source row without an id",
+                method_id=method_id,
+            )
+        if len(sources) != len(urls):
+            logger.warning(
+                "AddSourcesAsync queued %d source(s) for %d URL(s) in notebook %s",
+                len(sources),
+                len(urls),
+                notebook_id,
+            )
+        return sources
 
-    @abstractmethod
     async def append_text(
         self,
         notebook_id: str,
@@ -546,9 +588,19 @@ class SourcesAPI(ABC):
         ``text`` lands at the very end of the source's fulltext; ``header`` is
         accepted by the backend but does not appear in the fulltext.
         """
-        raise NotImplementedError
+        if not source_id:
+            raise ValidationError("source_id must not be empty")
+        if not text:
+            raise ValidationError("text must not be empty")
+        async with self._operation_scope("source.append_text"):
+            await self._send_transfer(
+                "append_text",
+                notebook_id,
+                source_id=source_id,
+                text=text,
+                header=header,
+            )
 
-    @abstractmethod
     async def copy(
         self,
         notebook_id: str,
@@ -560,7 +612,32 @@ class SourcesAPI(ABC):
         Returns one :class:`CopiedSource` per copied source, pairing the
         original id with the new row in the target notebook.
         """
-        raise NotImplementedError
+        if not source_ids:
+            raise ValidationError("source_ids must not be empty")
+        if any(not source_id for source_id in source_ids):
+            raise ValidationError("source_ids must not contain empty entries")
+        if not target_notebook_id:
+            raise ValidationError("target_notebook_id must not be empty")
+        async with self._operation_scope("source.copy"):
+            transfer_result, method_id = await self._send_transfer(
+                "copy",
+                notebook_id,
+                source_ids=source_ids,
+                target_notebook_id=target_notebook_id,
+            )
+        copied = cast(builtins.list[CopiedSource], transfer_result)
+        if not copied:
+            raise SourceNotFoundError(", ".join(source_ids), method_id=method_id)
+        missing = set(source_ids) - {item.original_id for item in copied}
+        if missing:
+            logger.warning(
+                "CopySourcesAsync copied %d of %d source(s) into %s; not copied: %s",
+                len(copied),
+                len(source_ids),
+                target_notebook_id,
+                ", ".join(sorted(missing)),
+            )
+        return copied
 
 
 __all__ = ["SourcesAPI"]

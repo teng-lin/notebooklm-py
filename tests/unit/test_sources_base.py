@@ -53,9 +53,7 @@ class _ConcreteSources(SourcesAPI):
     check_freshness = _unsupported
     get_guide = _unsupported
     get_fulltext = _unsupported
-    add_urls_async = _unsupported
-    append_text = _unsupported
-    copy = _unsupported
+    _send_transfer = _unsupported
 
 
 @pytest.mark.asyncio
@@ -99,6 +97,9 @@ def test_web_facade_inherits_every_neutral_concrete_workflow() -> None:
     for name in (
         "get",
         "get_or_none",
+        "add_urls_async",
+        "append_text",
+        "copy",
         "wait_until_ready",
         "wait_all_until_ready",
         "wait_until_registered",
