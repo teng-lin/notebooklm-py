@@ -52,12 +52,11 @@ import pytest
 from rich.console import Console, ConsoleDimensions
 
 import notebooklm._app.login_browser as login_browser
+import notebooklm._app.profile as app_profile
 import notebooklm._browser.browser_capture as _bc
 import notebooklm.auth as auth_module
 import notebooklm.cli.services.playwright_login as _pl
 import notebooklm.cli.session_cmd as session_cmd_module
-from notebooklm._auth import account as _auth_account
-from notebooklm._auth import cookies as _auth_cookies
 from notebooklm._auth.profile_store import ReplaceResult, ReplaceStatus
 from notebooklm._env import PERSONAL_BASE_HOST
 from notebooklm.notebooklm_cli import cli
@@ -307,20 +306,17 @@ def _drive_login(
 def _drive_refresh(
     runner,
     *,
-    enumerate_accounts: Any,
+    repair_result: object,
     args: list[str],
     storage_path: Path,
 ):
     """Drive the real ``auth refresh`` keepalive path against synthetic storage.
     The keepalive-only path (no ``--browser-cookies``) fetches tokens, then —
     when the on-disk account metadata is missing / malformed — runs the real
-    ``repair_playwright_account_metadata`` so its render lines are captured. The
-    storage path is a filesystem-free :func:`_fake_path` (``_STORAGE``): the
-    token fetch, ``read_account_metadata`` (returns ``{}`` → repair runs), and
-    the repair's ``build_httpx_cookies_from_storage`` / ``write_account_metadata``
-    / ``clear_account_metadata`` / ``extract_email_from_html`` are all mocked, so
-    nothing is read from / written to disk. Only ``enumerate_accounts`` varies
-    per test to drive the repair branches.
+    ``repair_playwright_account_metadata`` so its render lines are captured.
+    The app-owned repair projection is covered directly in
+    ``test_app_profile.py``; these command-boundary tests inject its typed
+    public-result input and vary only that result to drive rendering branches.
     """
     storage_path.write_text(json.dumps(_required_cookie_state()), encoding="utf-8")
     storage = storage_path
@@ -333,20 +329,12 @@ def _drive_refresh(
         )
         mock_fetch.return_value = ("csrf_ok", "session_ok")
         stack.enter_context(patch.object(auth_module, "read_account_metadata", return_value={}))
-        # Retain the historical network seams while exercising the real typed
-        # profile store against a temporary storage document.
+
+        async def repair() -> object:
+            return repair_result
+
         stack.enter_context(
-            patch.object(_auth_account, "enumerate_accounts", new=enumerate_accounts)
-        )
-        stack.enter_context(
-            patch.object(
-                _auth_cookies,
-                "build_httpx_cookies_from_storage",
-                return_value=MagicMock(),
-            )
-        )
-        stack.enter_context(
-            patch.object(_auth_account, "extract_email_from_html", return_value=None)
+            patch.object(app_profile, "_repair_playwright_account", lambda request: repair())
         )
         return runner.invoke(cli, args)
 
@@ -647,26 +635,20 @@ class TestLoginProgressSuccess:
     @pytest.mark.requires_playwright
     def test_single_account_metadata_is_written(self, runner, tmp_path):
         """End-to-end success including the real metadata-repair render lines.
-        The repair runs for real (``patch_repair=False``) so its
-        ``Identifying Google account...`` / ``Account: <email>`` lines are
-        snapshotted, but its filesystem-touching ``auth`` collaborators are
-        stubbed so nothing is read from / written to the synthetic ``_STORAGE``.
+        The CLI and app render path runs for real (``patch_repair=False``), while
+        the already-directly-tested app repair projection supplies a typed
+        success input without private auth-module patches.
         """
-        from notebooklm.auth import Account
 
-        async def _enum(*args, **kwargs):
-            return [Account(authuser=0, email="alice@example.com", is_default=True)]
+        async def repair() -> object:
+            return SimpleNamespace(written=True, email="alice@example.com", error=None)
 
         storage = tmp_path / "storage.json"
         storage.write_text(json.dumps(_required_cookie_state()), encoding="utf-8")
-        with (
-            patch.object(_auth_account, "enumerate_accounts", new=_enum),
-            patch.object(
-                _auth_cookies,
-                "build_httpx_cookies_from_storage",
-                return_value=MagicMock(),
-            ),
-            patch.object(_auth_account, "extract_email_from_html", return_value=None),
+        with patch.object(
+            app_profile,
+            "_repair_playwright_account",
+            lambda request: repair(),
         ):
             result, _ = _drive_login(
                 runner,
@@ -975,15 +957,14 @@ class TestLoginErrorRender:
 # ---------------------------------------------------------------------------
 class TestAuthRefreshRepair:
     def test_repair_success_writes_account_line(self, runner, tmp_path):
-        from notebooklm.auth import Account
-
-        async def _enum(*args, **kwargs):
-            return [Account(authuser=0, email="alice@example.com", is_default=True)]
-
         storage = tmp_path / "storage.json"
         result = _drive_refresh(
             runner,
-            enumerate_accounts=_enum,
+            repair_result=SimpleNamespace(
+                written=True,
+                email="alice@example.com",
+                error=None,
+            ),
             args=["auth", "refresh"],
             storage_path=storage,
         )
@@ -993,14 +974,13 @@ class TestAuthRefreshRepair:
         )
 
     def test_repair_quiet_silences_all_output(self, runner, tmp_path):
-        from notebooklm.auth import Account
-
-        async def _enum(*args, **kwargs):
-            return [Account(authuser=0, email="alice@example.com", is_default=True)]
-
         result = _drive_refresh(
             runner,
-            enumerate_accounts=_enum,
+            repair_result=SimpleNamespace(
+                written=True,
+                email="alice@example.com",
+                error=None,
+            ),
             args=["auth", "refresh", "--quiet"],
             storage_path=tmp_path / "storage.json",
         )
@@ -1008,18 +988,18 @@ class TestAuthRefreshRepair:
         assert result.output == ""
 
     def test_repair_ambiguous_clears_metadata_with_warning(self, runner, tmp_path):
-        from notebooklm.auth import Account
-
-        async def _enum(*args, **kwargs):
-            return [
-                Account(authuser=0, email="a@example.com", is_default=True),
-                Account(authuser=1, email="b@example.com", is_default=False),
-            ]
-
         storage = tmp_path / "storage.json"
         result = _drive_refresh(
             runner,
-            enumerate_accounts=_enum,
+            repair_result=SimpleNamespace(
+                written=False,
+                email=None,
+                error=None,
+                ambiguity_reason=(
+                    "multiple Google accounts were discovered but the active page email "
+                    "was unavailable"
+                ),
+            ),
             args=["auth", "refresh"],
             storage_path=storage,
         )
@@ -1034,13 +1014,15 @@ class TestAuthRefreshRepair:
         )
 
     def test_repair_exception_clears_metadata_with_warning(self, runner, tmp_path):
-        async def _enum(*args, **kwargs):
-            raise RuntimeError("network down")
-
         storage = tmp_path / "storage.json"
         result = _drive_refresh(
             runner,
-            enumerate_accounts=_enum,
+            repair_result=SimpleNamespace(
+                written=False,
+                email=None,
+                error="network down",
+                ambiguity_reason=None,
+            ),
             args=["auth", "refresh"],
             storage_path=storage,
         )

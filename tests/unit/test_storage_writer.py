@@ -544,11 +544,23 @@ def test_replace_from_login_fails_closed_on_lock_unavailable(
         ),
     ],
 )
-def test_replace_from_login_is_one_typed_store_delegation_and_exhaustive_projection(
+@pytest.mark.parametrize(
+    ("account", "mode", "authuser", "email"),
+    [
+        (storage_mod.KEEP_ACCOUNT, "keep", None, None),
+        (storage_mod.CLEAR_ACCOUNT, "clear", None, None),
+        (storage_mod.AccountRecord(7, "user@example.com"), "set", 7, "user@example.com"),
+    ],
+)
+def test_replace_from_login_is_one_typed_delegation_and_exhaustive_projection(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     result: ReplaceResult,
     expected: storage_mod.LoginWriteOutcome,
+    account: storage_mod.AccountArg,
+    mode: str,
+    authuser: int | None,
+    email: str | None,
 ) -> None:
     path = tmp_path / "custom.json"
     state = _login_state()
@@ -565,12 +577,19 @@ def test_replace_from_login_is_one_typed_store_delegation_and_exhaustive_project
         state,
         include_domains={"mail"},
         include_optional="truthy",  # type: ignore[arg-type]
-        account=storage_mod.CLEAR_ACCOUNT,
+        account=account,
         backup="truthy",  # type: ignore[arg-type]
         io_policy=object(),
     )
+    default_outcome = storage_mod.replace_from_login(
+        path,
+        state,
+        include_domains=None,
+        account=account,
+    )
 
     assert outcome == expected
+    assert default_outcome == expected
     assert calls == [
         (
             path,
@@ -578,52 +597,24 @@ def test_replace_from_login_is_one_typed_store_delegation_and_exhaustive_project
             {
                 "include_domains": {"mail"},
                 "include_optional": "truthy",
-                "account_mode": "clear",
-                "account_authuser": None,
-                "account_email": None,
+                "account_mode": mode,
+                "account_authuser": authuser,
+                "account_email": email,
                 "backup": "truthy",
             },
-        )
-    ]
-
-
-@pytest.mark.parametrize(
-    ("account", "mode", "authuser", "email"),
-    [
-        (storage_mod.KEEP_ACCOUNT, "keep", None, None),
-        (storage_mod.CLEAR_ACCOUNT, "clear", None, None),
-        (storage_mod.AccountRecord(7, "user@example.com"), "set", 7, "user@example.com"),
-    ],
-)
-def test_replace_from_login_compatibility_account_translation_is_exact(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    account: storage_mod.AccountArg,
-    mode: str,
-    authuser: int | None,
-    email: str | None,
-) -> None:
-    calls: list[dict[str, object]] = []
-
-    def native(*args: object, **kwargs: object) -> ReplaceResult:
-        calls.append(kwargs)
-        return ReplaceResult(ReplaceStatus.APPLIED)
-
-    monkeypatch.setattr(storage_mod, "replace_profile_from_login", native)
-    state = _login_state()
-
-    assert storage_mod.replace_from_login(
-        tmp_path / "A.json", state, include_domains=None, account=account
-    ).ok
-    assert calls == [
-        {
-            "include_domains": None,
-            "include_optional": False,
-            "account_mode": mode,
-            "account_authuser": authuser,
-            "account_email": email,
-            "backup": False,
-        }
+        ),
+        (
+            path,
+            state,
+            {
+                "include_domains": None,
+                "include_optional": False,
+                "account_mode": mode,
+                "account_authuser": authuser,
+                "account_email": email,
+                "backup": False,
+            },
+        ),
     ]
 
 
