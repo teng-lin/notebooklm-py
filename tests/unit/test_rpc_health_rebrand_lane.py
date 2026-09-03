@@ -106,6 +106,16 @@ def test_previous_and_current_state_live_in_separate_files() -> None:
     )
 
 
+def test_rebrand_state_cache_is_isolated_by_selected_account_slot() -> None:
+    slot = "${{ needs.plan-live-lanes.outputs.web_account_slot }}"
+    restore = _step("Restore rebrand-host lane state")["with"]
+    save = _step("Save rebrand-host lane state")["with"]
+
+    assert restore["key"] == f"rpc-rebrand-state-main-{slot}-"
+    assert restore["restore-keys"].strip() == f"rpc-rebrand-state-main-{slot}-"
+    assert save["key"] == f"rpc-rebrand-state-main-{slot}-${{{{ github.run_id }}}}"
+
+
 def test_nightly_never_forces_a_base_url() -> None:
     """The scheduled run must stay on the default host.
 
@@ -269,7 +279,7 @@ def _run_step(
         "PATH": f"{_stub_bin(workdir)}{os.pathsep}{os.environ['PATH']}",
         "UV_STUB_PYTHON": sys.executable,
         "GITHUB_REPOSITORY": "teng-lin/notebooklm-py",
-        "GITHUB_SHA": "deadbeef",
+        "CHECKED_SHA": "deadbeef",
         "GITHUB_OUTPUT": str(workdir / "step-output"),
         "GITHUB_STEP_SUMMARY": str(workdir / "step-summary"),
         "GH_STUB_LOG": str(workdir / "gh-calls.jsonl"),

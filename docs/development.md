@@ -552,7 +552,7 @@ lock sibling and the two invocations never contend.
    green run that never exercised the adapter surface. Add both extras
    (CI installs `--extra mcp --extra server --extra impersonate`) to run them.
 
-   CI runs the same lint gate with `uv run pre-commit run --all-files`, so local hook results should match the `quality` job. The ordinary suite then runs in a reduced 7-cell compatibility matrix on every PR: Python 3.10–3.14 on Ubuntu, plus one Python 3.12 cell each on macOS and Windows. The full 15-cell matrix (all three OSes crossed with Python 3.10–3.14) runs nightly against one resolved commit before the dedicated coverage and two full Windows live-E2E jobs, one each for the Web and Android backends. Manual nightly dispatches also run the full compatibility matrix by default; untick `run_compatibility` for a quick E2E-only rerun.
+   CI runs the same lint gate with `uv run pre-commit run --all-files`, so local hook results should match the `quality` job. The ordinary suite then runs in a reduced 7-cell compatibility matrix on every PR: Python 3.10–3.14 on Ubuntu, plus one Python 3.12 cell each on macOS and Windows. The full 15-cell matrix (all three OSes crossed with Python 3.10–3.14) runs nightly against one resolved commit before dedicated coverage and three live-E2E jobs: full Web on Ubuntu, full Android on macOS, and read-only Web on Windows. Manual nightly dispatches also run the full compatibility matrix by default; untick `run_compatibility` for a quick E2E-only rerun.
 
 2. **Authenticate:**
    ```bash
@@ -586,7 +586,7 @@ uv run pytest tests/unit tests/integration -m "not repo_lint"
 # E2E tests (requires auth + test notebook)
 uv run pytest tests/e2e -m readonly        # Read-only tests only
 uv run pytest tests/e2e -m "not variants"  # Skip parameter variants
-uv run pytest tests/e2e --include-variants # All tests including variants
+uv run pytest tests/e2e --include-variants # Includes costly cinematic-video generation
 
 # Select a profile for E2E tests
 uv run pytest tests/e2e -m e2e --profile work
@@ -790,6 +790,67 @@ needs to be set; if you switch profiles often, override it inline:
 NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID=<work-nb-id> \
   uv run pytest tests/e2e -m e2e --profile work
 ```
+
+### Disposable E2E copy qualification
+
+Canonical live CI treats accounts as opaque slots (`A`, `B`, and `C`) and writable E2E notebooks
+as disposable copies. Before deploying the workflow cutover, complete the external operations gate
+in [issue #2331](https://github.com/teng-lin/notebooklm-py/issues/2331): configure the protected
+Environment, qualify the template under each enabled account/backend, and start the repository
+variable at `NOTEBOOKLM_CI_ACCOUNT_SLOTS=A`. Release verification must dispatch `rpc-health.yml`
+and `verify-package.yml` with `--ref main`; release and feature refs cannot reach their protected
+authenticated jobs.
+
+The canonical template describes only state the copy API promises to preserve: ready sources and
+Studio artifacts. Its checked-in shape is `tests/fixtures/e2e_template_contract.json`. Notes and
+chat history are deliberately absent from that contract. Provisioning creates and validates those
+on the disposable `reference` copy using
+`tests/fixtures/e2e_prepared_role_contract.json`.
+
+To qualify a template locally, use a dedicated profile and keep the template ID in the documented
+environment variable so it never appears on the command line:
+
+```bash
+export NOTEBOOKLM_PROFILE=agent-e2e-slot-A-web
+export NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID='<template-id>'
+export GITHUB_RUN_ID=1 GITHUB_RUN_ATTEMPT=1
+export GITHUB_REPOSITORY=teng-lin/notebooklm-py
+export RUNNER_TEMP="$(mktemp -d)"
+
+uv run python scripts/manage_ci_e2e_notebooks.py validate \
+  --backend web \
+  --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+  --contract tests/fixtures/e2e_template_contract.json
+
+uv run python scripts/manage_ci_e2e_notebooks.py provision \
+  --backend web \
+  --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+  --contract tests/fixtures/e2e_template_contract.json \
+  --mode full --lane nightly-web-ubuntu --account-slot A \
+  --manifest "$RUNNER_TEMP/notebooklm-e2e.json" \
+  --github-env "$RUNNER_TEMP/github-env"
+
+# Run pytest only after exporting the generated github-env entries.
+uv run python scripts/manage_ci_e2e_notebooks.py cleanup \
+  --backend web \
+  --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+  --manifest "$RUNNER_TEMP/notebooklm-e2e.json"
+```
+
+Cleanup is mandatory even when validation or pytest fails. Managed full mode publishes three
+distinct role IDs (`reference`, `generation`, and `multi-source`); managed read-only mode publishes
+only `reference`. Both publish the activation flag last. With that flag present, pytest never
+consults profile cache files, creates a role notebook, cleans copied children on first use, or
+deletes a workflow-owned copy during teardown. `temp_notebook` and other function-level CRUD
+fixtures retain their existing lifecycle.
+
+Before workflow cutover, maintainers must create and validate the immutable template, grant every
+enabled account copy access, upload one independently revocable master-token secret per enabled
+slot, set `NOTEBOOKLM_CI_ACCOUNT_SLOTS=A`, and audit the real `protected-readonly` Environment so
+only `main` deployments are allowed. Add `B` and `C` only after each passes Web and Android
+qualification. Slot aliases, never account emails or token fields, are the only identity recorded
+in logs. Account-wide concurrency is designed to queue at most GitHub's documented 100 pending
+jobs per slot; check that queue before bulk manual dispatch.
 
 ### Test Structure
 
@@ -1394,10 +1455,10 @@ The `RedactingFilter` preserves `record.exc_info` (the live exception object) so
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `test.yml` | Push/PR | Reduced 7-cell compatibility matrix (Ubuntu × Python 3.10–3.14, plus macOS/Windows on 3.12), linting, type checking |
-| `nightly.yml` | Daily 6 AM UTC (`main`), manual dispatch for `release/*` | Full 3-OS × 5-Python compatibility matrix, coverage floors, repository lint, and E2E tests with the real API |
-| `rpc-health.yml` | Daily 7 AM UTC (`main`), manual dispatch for `release/*` | RPC method ID monitoring (see [stability.md](stability.md#automated-rpc-health-check)) plus the [Android gRPC canary](#android-grpc-canary) |
+| `nightly.yml` | Daily 6 AM UTC (`main`), manual dispatch on `main` | Full compatibility/coverage plus managed-copy full Web/Ubuntu, full Android/macOS, and read-only Web/Windows E2E; the full Web lane settles its generation journal before cleanup |
+| `rpc-health.yml` | Daily 7 AM UTC (`main`), manual dispatch on `main` | RPC monitoring on a disposable fallback copy plus the template-read-only [Android gRPC canary](#android-grpc-canary) |
 | `testpypi-publish.yml` | Manual dispatch | Publish to TestPyPI |
-| `verify-package.yml` | Manual dispatch | Verify TestPyPI or PyPI install + E2E |
+| `verify-package.yml` | Manual dispatch on `main` | Verify TestPyPI or PyPI install plus managed-copy E2E; artifact inventory is advisory |
 | `publish.yml` | Tag push | Publish to PyPI |
 
 The test and both publish workflows build the wheel and run
@@ -1415,10 +1476,8 @@ the same schedule and `workflow_dispatch`. It runs `scripts/android_grpc_canary.
 a read-only probe of the private Android gRPC backend kept deliberately separate
 from the heavy Android E2E lane in `nightly.yml`. The script opens
 `NotebookLMClient.from_storage(backend="android")`, mints a bearer and forces one
-refresh (the generation must advance; the re-mint is retried once after 5 s
-because the Web `health-check` job mints from the same master token at the same
-minute, and a re-mint that still fails is the distinct `FAIL bearer refresh-mint …`
-verdict), calls unary `GetProject` and
+refresh (the generation must advance, and a re-mint that fails is the distinct
+`FAIL bearer refresh-mint …` verdict), calls unary `GetProject` and
 `ListChatSessions` through the public API, then re-issues both raw — `GetProject`
 decoded with the full recovered `GetProjectResponse`, as `sources.list` does —
 and prints per RPC a `SHAPE <rpc> <sha256>` fingerprint of the populated
@@ -1451,67 +1510,139 @@ It never writes the baseline, fixtures, cassettes, or the evidence ledger; a
 changed `SHAPE`/`UNKNOWN` value is a prompt to re-capture, review, and update the
 baseline by hand, not something the canary fixes.
 
-### Setting Up Nightly E2E Tests
+### Managed-copy live CI
 
-1. Bootstrap a master token once: `notebooklm login --master-token --account <you@gmail.com>`
-   (needs the `[headless]` extra; see
-   [installation.md → master-token auth](installation.md#alternative-master-token-auth-no-cookie-file-to-ship-survives-expiry)).
-2. Add GitHub secrets:
-   - `NOTEBOOKLM_MASTER_TOKEN_JSON` (**required**): contents of
-     `~/.notebooklm/profiles/default/master_token.json`. The workflows exit `1`
-     when it is empty — it is the only credential they ship.
-   - `NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID`: Your test notebook ID
+Canonical CI never points pytest or full RPC health at the immutable template.
+Each authenticated lane selects one opaque account slot, materializes only that
+slot's master token, and creates role-specific copies. Full lanes prepare
+separate `reference`, `generation`, and `multi-source` copies; Web RPC health
+uses one `rpc` fallback copy. The Android RPC canary is the only lane that reads
+the template directly, and it performs no notebook mutation.
 
-   `NOTEBOOKLM_AUTH_JSON` is **no longer used by any workflow**. Any other
-   active client supersedes a cookie snapshot within ~10 minutes (the ~600 s
-   rotation cadence), and a *superseded* value has been observed failing
-   within roughly half an hour — so a snapshot exported on a workstation was
-   routinely dead before a scheduled run started (see the
-   [cookie lifetime observations](auth-cookie-lifecycle.md#25-four-timers-people-confuse)).
+The contracts are checked in at `tests/fixtures/e2e_template_contract.json` and
+`tests/fixtures/e2e_prepared_role_contract.json`. Provisioning seeds the
+reference copy's note and persisted Q&A, removes inherited writable children
+from the other roles, and publishes the managed fixture bindings only after all
+roles pass. Cleanup runs under `always()` after verification, while the next
+selected run also sweeps owned, reserved-prefix copies older than 24 hours.
 
-The live-E2E workflows (`verify-package.yml`, `nightly.yml`, `rpc-health.yml`,
-`verify-artifacts.yml`) ship no inline credential at all. Their "Materialize
-auth profile" step writes `master_token.json` to a real on-disk profile (mode
-`0600`) because the layer-4 re-mint only engages when the token sits beside the
-profile's `storage_state.json` — env-var auth bypasses it entirely. The step
-then runs `notebooklm login --master-token-refresh`, which **bootstraps**
-`storage_state.json` from the token, preserving a deterministic fresh-jar CI
-setup;
-ordinary file-backed cold loading now also reaches layer 4 after a confirmed
-login redirect, and layer 4 continues to cover mid-run expiry. So as long as
-the pre-mint succeeds, a cookie secret that Google has rotated no longer fails
-the run. The pre-mint is non-fatal: on failure (e.g. a revoked master
-token) the step logs a `::warning::` and falls back to the cookie snapshot,
-which then must still be live for the run to pass. Without the master-token
-secret, behavior degrades to the old cookie-only mode.
+For a local managed-copy run, use an isolated profile and runner-style scratch
+directory. Never use the template ID as a pytest fixture binding:
 
-Scheduled canaries target `main` only. Release canaries are manual: dispatch
-`nightly.yml` or `rpc-health.yml` with `custom_branch=release/vX.Y.Z`.
+```bash
+export NOTEBOOKLM_PROFILE=agent-e2e-local
+export RUNNER_TEMP="$(mktemp -d)"
+export NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID=<template-id>
+export GITHUB_RUN_ID=1 GITHUB_RUN_ATTEMPT=1
+export GITHUB_REPOSITORY=teng-lin/notebooklm-py
+uv run python scripts/manage_ci_e2e_notebooks.py provision \
+  --backend web --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+  --contract tests/fixtures/e2e_template_contract.json --mode full \
+  --lane verify-package --account-slot A \
+  --manifest "$RUNNER_TEMP/notebooklm-e2e.json" --github-env "$RUNNER_TEMP/e2e.env"
+set -a; source "$RUNNER_TEMP/e2e.env"; set +a
+NOTEBOOKLM_E2E_GENERATION_JOURNAL_MODE=off uv run pytest tests/e2e -m "not variants"
+uv run python scripts/manage_ci_e2e_notebooks.py cleanup \
+  --backend web --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+  --manifest "$RUNNER_TEMP/notebooklm-e2e.json"
+```
 
-### Maintaining Secrets
+Local runs without `NOTEBOOKLM_E2E_MANAGED_COPIES=1` retain the existing
+environment/profile-cache/auto-create behavior described above.
 
-| Task | Frequency |
-|------|-----------|
-| Refresh credentials | Every 1-2 weeks (cookie-only); rarely needed once `NOTEBOOKLM_MASTER_TOKEN_JSON` is set — the master token survives cookie rotation until revoked |
-| Check nightly results | Daily |
+#### Account pool setup
+
+The `protected-readonly` Environment contains one independent opaque token per
+enabled slot and one template handle:
+
+```text
+NOTEBOOKLM_MASTER_TOKEN_JSON_A
+NOTEBOOKLM_MASTER_TOKEN_JSON_B
+NOTEBOOKLM_MASTER_TOKEN_JSON_C
+NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID
+```
+
+Bootstrap each authorized account in a separate local profile and upload its
+token without printing it. Upload the template ID through stdin as well:
+
+```bash
+NOTEBOOKLM_PROFILE=ci-bootstrap-a notebooklm login --master-token --account <account-a>
+gh secret set --repo teng-lin/notebooklm-py --env protected-readonly \
+  NOTEBOOKLM_MASTER_TOKEN_JSON_A \
+  < ~/.notebooklm/profiles/ci-bootstrap-a/master_token.json
+printf '%s' "$NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID" | \
+  gh secret set --repo teng-lin/notebooklm-py --env protected-readonly \
+  NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID
+gh variable set --repo teng-lin/notebooklm-py NOTEBOOKLM_CI_ACCOUNT_SLOTS --body A
+```
+
+Qualify A through Web/Ubuntu, Android/macOS, and read-only Web/Windows before adding B,
+then C. The ordered repository variable accepts only `A`, `B`, and `C`; start at `A`, then
+use `A,B` and finally `A,B,C` after the documented soak. Do not reorder it to
+prefer an account. Manual dispatch input `account_rotation_base` overrides the
+daily base, while stable lane offsets still shard matrix lanes.
+
+Every authenticated job uses `notebooklm-account-<slot>` concurrency with
+`queue: max` and no cancellation. This queue has GitHub's documented maximum of
+100 waiting jobs per group; check queued account jobs before a bulk manual
+dispatch. It is not an unbounded durable queue.
+
+The full Web/Ubuntu nightly producer uses one runner-temp append-only journal across the
+primary pytest process, the cooldown retry, and the in-lane verifier. Filtered
+nightly runs, the Android/macOS lane, the read-only Windows lane, and Verify Package
+explicitly set journal mode to `off`. The removed detached `verify-artifacts.yml` workflow and its persistent
+generation notebook are no longer part of CI.
+
+An unfiltered nightly run includes all three live lanes. A manual dispatch with
+`test_filter` runs the requested node only on the two full lanes and omits the Windows
+read-only lane, because an arbitrary node ID is not guaranteed to carry the `readonly` marker.
+
+#### Operations runbooks
+
+- Disable a failing slot by removing it from `NOTEBOOKLM_CI_ACCOUNT_SLOTS`;
+  never rewrite the variable from a workflow. Re-bootstrap and replace only
+  that slot's Environment secret for authentication failures.
+- Rotate the template by creating a replacement, validating copies under every
+  enabled slot and both backends, then replacing the template secret. Keep the
+  previous template until one scheduled cycle succeeds; never mutate it in CI.
+- For cleanup alerts, account for the lane offset when choosing
+  `account_rotation_base`. In the ordered enabled-slot list, use the affected
+  slot for offset-0 lanes (`nightly-web-ubuntu` and `verify-package`), the
+  previous slot cyclically for `nightly-android-macos` (offset 1), two slots
+  before it for `nightly-readonly-windows` and `rpc-health-web` (offset 2), and
+  three slots before it for
+  `rpc-health-android` (offset 3). With only one enabled slot every base is that
+  slot. Confirm the intended slot in the workflow's account-plan summary before
+  its authenticated job starts. Inspect account-owned titles under the exact
+  `notebooklm-py-ci/` prefix in the UI for resources omitted by recent-project
+  listing; delete only after checking exact title and ownership.
+- For broad lifecycle failure, set the slot variable back to `A` or disable the
+  scheduled workflows. During the seven-day rollback window, revert the pool
+  cutover commit to restore the legacy workflows; legacy secrets remain stored
+  but unused until post-soak cleanup.
 
 ### Workflow secret gates
 
-Every workflow that consumes user-provided secrets (`secrets.NOTEBOOKLM_AUTH_JSON`,
-`secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID`, `secrets.CLAUDE_CODE_OAUTH_TOKEN`, …)
-is wrapped in at least one of three gates so that a non-maintainer cannot exfiltrate
-credentials by dispatching a workflow on a feature branch:
+Every generic workflow secret is protected by an approved Environment or an
+allowlisted actor/ref gate. Pool credentials are stricter: every live job must
+simultaneously bind literal `environment: protected-readonly`, test
+`github.repository == 'teng-lin/notebooklm-py'`, and consume
+`needs.resolve-target.outputs.is_standard == 'true'`. The resolver accepts only
+`refs/heads/main`, publishes its immutable SHA, and every planner and
+secret-bearing checkout uses that SHA.
 
 | Gate | Where | Mechanism |
 |------|-------|-----------|
 | `environment: protected-readonly` | Job-level | GitHub Environment hosting the canonical secret values. Bind it **unconditionally** (`environment: protected-readonly`) so every trigger — scheduled `cron` and `workflow_dispatch` alike — sees the same secret. **Note:** the earlier conditional form (`${{ github.event_name == 'workflow_dispatch' && 'protected-readonly' \|\| '' }}`) silently broke scheduled crons once the secrets stopped existing at repo level (issue #1009); the same env binding is now the single source of truth. If you want to block `workflow_dispatch` behind manual approval, add a **required reviewers** rule on the environment — but be aware scheduled runs will then queue at the same gate. |
-| `needs.<job>.outputs.is_standard == 'true'` | Job/step-level `if:` | Pin secret-using jobs or steps to standard branches (`main` / `release/*` / scheduled cron). Non-standard branches skip outright — no secret values land in the runner env. |
+| `needs.resolve-target.outputs.is_standard == 'true'` plus canonical repository equality | Job-level `if:` | Pool jobs accept only a resolved `refs/heads/main`; releases, tags, and feature refs cannot reach the Environment job. |
 | `github.event.sender.login == 'teng-lin'` | Job-level `if:` | Pin webhook-triggered workflows (e.g. `claude.yml`) to a specific maintainer actor. Any other actor's trigger never reaches the secret-bearing steps. |
 
 `scripts/check_workflow_secret_gates.py` (wired into the `test.yml` quality job)
-asserts every workflow file in `.github/workflows/` satisfies at least one of
-the above gates for every `secrets.*` reference (except `secrets.GITHUB_TOKEN`,
-which is covered separately by `scripts/check_workflow_permissions.py`).
+asserts the generic gate for every `secrets.*` reference except
+`secrets.GITHUB_TOKEN`. For `NOTEBOOKLM_MASTER_TOKEN_JSON` and the template ID,
+it additionally requires both pool gates, step scope, dynamic secret detection,
+and no more than one selected master token per job. The checker rejects the
+legacy bundled token name and misspelled/dynamic Environment bindings.
 
 The checker also **rejects the conditional `environment:` shape** outright:
 
@@ -1527,31 +1658,30 @@ The empty-string fallback in the expression form means "no environment", so
 secrets that live only in environments resolve to empty under that branch.
 Binding the environment unconditionally is the single source of truth.
 
-Additionally, **every job that consumes `NOTEBOOKLM_AUTH_JSON` runs a
-fail-fast preflight** (`if [ -z "$NOTEBOOKLM_AUTH_JSON" ]; then exit 1`)
-before the test/script step — in the live-E2E workflows this lives at the top
-of the "Materialize auth profile" step. Without the preflight, an empty secret
-would let pytest skip every auth-requiring test silently and the job would land
-green with 0 tests run (issue #1009). The preflight surfaces an `::error::`
-annotation linked to the secret-config misconfig so the failure is visible
-in the GitHub UI rather than hidden behind "0 passed".
+The account selector constructs only an allowlisted
+`NOTEBOOKLM_MASTER_TOKEN_JSON_<slot>` name. GitHub resolves the dynamic
+`secrets[...]` expression only at the materializer step, so the runner never
+receives the other slot tokens. Token and template values never cross job
+outputs, matrices, caches, artifacts, or summaries.
 
 #### One-time GitHub Environment setup
 
 The `protected-readonly` environment must be configured in the GitHub repository
-settings before any workflow that references it can run **with an approval gate**.
+settings before any workflow that references it can safely use the pool. Its
+exact-`main` deployment policy is mandatory; required reviewers are optional
+because they also pause scheduled runs.
 
 > **Important — silent auto-creation**: GitHub Actions silently creates a
 > referenced environment that doesn't exist, with **no protection rules**, the
 > first time a workflow references it. A typo in the environment name (e.g.
 > `protectd-readonly`) or a never-configured environment would therefore
-> bypass maintainer approval at runtime even though the workflow YAML appears
-> to gate on it. The static checker `scripts/check_workflow_secret_gates.py`
+> bypass GitHub-side branch and reviewer policy even though the workflow YAML
+> appears to gate on it. The static checker `scripts/check_workflow_secret_gates.py`
 > pins the accepted environment names to an explicit allow-list
 > (`_APPROVED_ENVIRONMENTS`) to prevent typos from passing CI — but the
 > *runtime* gate still depends on the manual setup below being done correctly.
-> Verify by triggering a `workflow_dispatch` and confirming the run pauses at
-> "Waiting for review" before any secret is exposed.
+> Inventory the actual Environment rules and confirm its only allowed deployment
+> branch is `main` before enabling the pool.
 
 This is a manual UI/API step — Pull Requests cannot create environments on
 their own.
@@ -1561,21 +1691,17 @@ their own.
 2. Name the environment **`protected-readonly`** (exact spelling — the workflow
    YAML files match this string verbatim, and the checker enforces the same
    spelling).
-3. Under **Deployment protection rules**, enable **Required reviewers** and add
-   the maintainer GitHub account (e.g. `teng-lin`) to the reviewer list.
-4. Leave **Wait timer** at `0` minutes (manual approval is the gate; we don't
-   need a cool-down).
-5. Save. The environment is now ready; the next `workflow_dispatch` against
-   `verify-package.yml`, `verify-artifacts.yml`, `rpc-health.yml`, or
-   `nightly.yml` will pause at the maintainer-approval prompt before any
-   secret resolves.
-6. **Smoke-test the gate.** Dispatch one of the workflows above from a
-   non-maintainer account (or from the maintainer account if no second
-   account is available — the approval prompt should still fire) and
-   confirm the run pauses at "Waiting for review" instead of immediately
-   acquiring secrets. If the run does not pause, the environment was not
-   configured correctly; do not rely on the gate until this smoke-test
-   passes.
+3. Restrict deployment branches/tags to a custom rule matching exactly
+   `main`; do not use a `release/*` wildcard.
+4. Review whether Required reviewers is appropriate for scheduled runs (it
+   queues schedules too) and leave the wait timer at zero.
+5. Save. The environment is ready for `verify-package.yml`, `rpc-health.yml`,
+   and `nightly.yml`.
+6. **Smoke-test the gate.** Dispatch one of the workflows above on `main` and
+   verify the live job records a `protected-readonly` deployment. If required
+   reviewers are configured, also confirm it pauses at "Waiting for review".
+   Dispatching a feature/tag ref must stop in `resolve-target` before any
+   Environment job is created. Do not enable the pool until both checks pass.
 
 For automation-driven setup (e.g. infrastructure-as-code), the same configuration
 can be applied via the GitHub REST API:
@@ -1583,9 +1709,13 @@ can be applied via the GitHub REST API:
 ```bash
 gh api -X PUT \
   /repos/teng-lin/notebooklm-py/environments/protected-readonly \
-  -f 'wait_timer=0' \
-  -f 'reviewers[][type]=User' \
-  -F 'reviewers[][id]=<github-user-id-for-teng-lin>'
+  -F wait_timer=0 \
+  -F prevent_self_review=false \
+  -F deployment_branch_policy[protected_branches]=false \
+  -F deployment_branch_policy[custom_branch_policies]=true
+gh api -X POST \
+  /repos/teng-lin/notebooklm-py/environments/protected-readonly/deployment-branch-policies \
+  -f name=main -f type=branch
 ```
 
 #### Adding a new secret-bearing workflow
@@ -1593,7 +1723,10 @@ gh api -X PUT \
 When introducing a workflow that touches `secrets.*`:
 
 1. Pick the gate shape that matches the trigger surface:
-   - `workflow_dispatch` only → job-level `environment: protected-readonly`.
+   - Pool authentication → literal Environment plus canonical repository and
+     exact-main `is_standard` job gates; resolve and checkout the SHA before
+     dynamically selecting one step-scoped token.
+   - Other `workflow_dispatch` only → job-level `environment: protected-readonly`.
    - `workflow_dispatch` + `schedule` → also job-level `environment: protected-readonly`
      (unconditional — issue #1009). Pair with an upstream `is_standard`
      gate so a non-maintainer's feature-branch dispatch can't reach the
@@ -1674,21 +1807,28 @@ the `notebooklm login --master-token` bootstrap and updating both secrets.
 
 #### Multiple accounts in CI/CD
 
-Use separate secrets and set `NOTEBOOKLM_AUTH_JSON` per job:
+Use the opaque slot pool described in [Managed-copy live CI](#managed-copy-live-ci).
+Do not bundle credentials or inject all accounts into one job. The selection
+matrix may carry only the slot alias and allowlisted secret name:
 
 ```yaml
 jobs:
-  account-1:
+  live:
+    environment: protected-readonly
+    concurrency:
+      group: notebooklm-account-${{ matrix.account_slot }}
+      queue: max
+      cancel-in-progress: false
     env:
-      NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_ACCOUNT1 }}
+      NOTEBOOKLM_PROFILE: ci-${{ matrix.account_slot }}-${{ matrix.lane }}
     steps:
-      - run: notebooklm list
-
-  account-2:
-    env:
-      NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_ACCOUNT2 }}
-    steps:
-      - run: notebooklm list
+      - name: Materialize selected account
+        env:
+          NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.master_token_secret_name] }}
+        run: >-
+          python scripts/materialize_ci_auth.py
+          --account-slot "${{ matrix.account_slot }}"
+          --profile "$NOTEBOOKLM_PROFILE"
 ```
 
 #### Debugging CI/CD auth issues

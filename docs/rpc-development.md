@@ -518,8 +518,8 @@ async def validate_root_rpc_call(method_name: str, params: list):
 
 ## RPC Health Check Triage Policy
 
-The `rpc-health.yml` workflow runs daily for `main` (07:00 UTC). Release branch
-health checks are manual via `custom_branch=release/vX.Y.Z`. The workflow opens
+The `rpc-health.yml` workflow runs daily for `main` (07:00 UTC) and accepts
+manual dispatches only on `refs/heads/main`. The workflow opens
 an issue on any detected RPC ID mismatch, auth failure, or non-transient RPC
 error:
 

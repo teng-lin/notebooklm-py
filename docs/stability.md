@@ -1,7 +1,7 @@
 # API Stability and Versioning
 
 **Status:** Active
-**Last Updated:** 2026-08-14
+**Last Updated:** 2026-09-03
 
 This document describes the stability guarantees and versioning policy for `notebooklm-py`.
 
@@ -449,7 +449,8 @@ if artifact.is_flashcards:
 When Google changes their internal APIs:
 
 1. **Detection**: Automated RPC health check runs nightly for `main`; release
-   branch checks run manually during release prep (see below)
+   candidates are checked by manually dispatching the workflow on protected
+   `main` after the release PR is merged (see below)
 2. **Investigation**: Identify changed method IDs using browser devtools
 3. **Fix**: Update `rpc/types.py` with new method IDs
 4. **Release**: Push patch release as soon as possible
@@ -457,8 +458,9 @@ When Google changes their internal APIs:
 ### Automated RPC Health Check
 
 A nightly GitHub Action (`rpc-health.yml`) monitors all 48 RPC methods for ID
-changes on `main`. Release branches use the same workflow through manual
-dispatch.
+changes on `main`. Release candidates use the same workflow through a manual
+dispatch on protected `main` after their release PR is merged; non-`main` refs
+are intentionally rejected.
 
 **What it verifies:**
 - The RPC method ID we send matches the ID returned in the response envelope
@@ -478,7 +480,7 @@ dispatch.
 - GitHub Issue auto-created with `bug`, `rpc-breakage`, and `automated` labels
 - Report shows expected vs actual IDs and which `RPCMethod` entries need updating
 
-**Manual trigger:** `gh workflow run rpc-health.yml -f custom_branch=release/vX.Y.Z`
+**Manual trigger:** `gh workflow run rpc-health.yml --ref main -f account_rotation_base=auto`
 
 ### How to Report API Breakage
 

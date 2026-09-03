@@ -26,7 +26,12 @@ from notebooklm import (
     VideoStyle,
 )
 
-from .conftest import assert_generation_started, read_back_option_pair, requires_auth
+from ._generation_helpers import generate_note_mind_map
+from .conftest import (
+    assert_generation_started,
+    read_back_option_pair,
+    requires_auth,
+)
 
 # Live CREATE_ARTIFACT coverage — monitored by the nightly generation coverage
 # floor (tests/e2e/conftest.py, #1819): a fully-throttled run where every marked
@@ -176,11 +181,14 @@ class TestVideoGeneration:
 
 
 @requires_auth
+@pytest.mark.variants
 class TestCinematicVideoGeneration:
     """Cinematic video generation tests.
 
     Cinematic videos use Veo 3 AI for documentary-style footage.
     Requires Google AI Ultra subscription. Generation takes ~30-40 minutes.
+    The whole class is opt-in because each request is materially more expensive
+    than a standard video generation.
     """
 
     @pytest.mark.asyncio
@@ -190,7 +198,6 @@ class TestCinematicVideoGeneration:
         assert_generation_started(result)
 
     @pytest.mark.asyncio
-    @pytest.mark.variants
     async def test_generate_cinematic_video_with_instructions(self, client, generation_notebook_id):
         """Test cinematic video generation with custom instructions."""
         result = await client.artifacts.generate_cinematic_video(
@@ -200,7 +207,6 @@ class TestCinematicVideoGeneration:
         assert_generation_started(result)
 
     @pytest.mark.asyncio
-    @pytest.mark.variants
     async def test_generate_cinematic_video_with_language(self, client, generation_notebook_id):
         """Test cinematic video generation with explicit language."""
         result = await client.artifacts.generate_cinematic_video(
@@ -433,21 +439,43 @@ class TestMindMapGeneration:
     """Mind map generation tests."""
 
     @pytest.mark.asyncio
-    async def test_generate_mind_map(self, client, generation_notebook_id):
+    async def test_generate_mind_map(self, client, generation_notebook_id, generation_journal):
         """Mind map generation is fast (~5-10s), not slow."""
         # Clean up old mind maps to prevent accumulation from nightly runs
         existing_mind_maps = await client.notes.list_mind_maps(generation_notebook_id)
         for mm in existing_mind_maps:
+            recovery = generation_journal.recovery_operation(
+                resource_id=mm[0],
+                notebook_id=generation_notebook_id,
+                family="mind_map",
+                surface="client",
+                id_kind="note_mind_map",
+                reason="retry_preclean",
+            )
             await client.notes.delete_mind_map(generation_notebook_id, mm[0])
+            remaining = {
+                row[0] for row in await client.notes.list_mind_maps(generation_notebook_id)
+            }
+            assert mm[0] not in remaining
+            recovery.delete_confirmed(mm[0], reason="retry_preclean")
 
-        result = await client.artifacts.generate_mind_map(generation_notebook_id)
+        operation = generation_journal.operation(
+            notebook_id=generation_notebook_id,
+            family="mind_map",
+            surface="client",
+            id_kind="note_mind_map",
+            lifecycle="settle",
+        )
+        result = await generate_note_mind_map(client, generation_notebook_id, operation)
         assert result is not None
         assert result.note_id is not None
+        operation.persisted(result.note_id)
         # Verify mind map structure
         mind_map = result.mind_map
         assert isinstance(mind_map, dict)
         assert "name" in mind_map
         assert "children" in mind_map
+        operation.completed(result.note_id)
 
 
 @requires_auth

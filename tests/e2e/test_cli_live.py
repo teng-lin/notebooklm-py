@@ -35,6 +35,21 @@ def _is_rate_limited(proc) -> bool:
     return any(phrase in blob for phrase in ("rate limit", "rate-limited", "429"))
 
 
+def _is_typed_generation_rejection(proc) -> bool:
+    """Require the CLI's structured typed quota envelope, not message text."""
+    if proc.returncode == 0:
+        return False
+    try:
+        payload = json.loads(proc.stdout)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return (
+        isinstance(payload, dict)
+        and payload.get("code") == "RATE_LIMITED"
+        and not payload.get("task_id")
+    )
+
+
 @requires_auth
 class TestCliLive:
     """The CLI binary against the live account."""
@@ -118,8 +133,15 @@ class TestCliLive:
         assert error.get("error") or error.get("code") or error.get("message")
 
     @pytest.mark.variants
-    def test_generate_through_cli_wiring(self, generation_notebook_id):
+    def test_generate_through_cli_wiring(self, generation_notebook_id, generation_journal):
         """One generate-through-CLI wiring smoke (returns an id; no poll-to-done)."""
+        operation = generation_journal.operation(
+            notebook_id=generation_notebook_id,
+            family="report",
+            surface="cli",
+            id_kind="studio_task",
+            lifecycle="settle",
+        )
         proc = run_cli(
             "generate",
             "report",
@@ -128,8 +150,11 @@ class TestCliLive:
             generation_notebook_id,
             "--json",
         )
-        if proc.returncode != 0 and _is_rate_limited(proc):
-            pytest.skip(f"generation rate-limited: {proc.stdout or proc.stderr}")
-        assert proc.returncode == 0, proc.stderr
+        if _is_typed_generation_rejection(proc):
+            operation.rate_limited_rejected()
+            pytest.skip("generation rate-limited (typed CLI rejection)")
+        assert proc.returncode == 0, "CLI generation failed before returning a typed task ID"
         payload = json.loads(proc.stdout)
         assert isinstance(payload, dict)
+        assert payload.get("task_id"), "CLI generation returned no task ID"
+        operation.accepted(payload["task_id"])

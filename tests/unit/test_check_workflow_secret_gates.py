@@ -169,6 +169,456 @@ def test_environment_unconditional_passes(tmp_path, monkeypatch, capsys, script)
     assert rc == 0
 
 
+def test_ci_pool_secret_requires_environment_and_job_gate(tmp_path, monkeypatch, capsys, script):
+    _write_workflow(
+        tmp_path,
+        "bad_pool.yml",
+        """
+        name: bad-pool
+        on: workflow_dispatch
+        jobs:
+          live:
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            - name: auth
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.secret_name] }}
+              run: python auth.py
+        """,
+    )
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+    assert rc == 1
+    assert "canonical repository" in err
+
+
+def test_ci_pool_dynamic_secret_with_both_literal_gates_passes(
+    tmp_path, monkeypatch, capsys, script
+):
+    _write_workflow(
+        tmp_path,
+        "ok_pool.yml",
+        """
+        name: ok-pool
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            concurrency:
+              group: notebooklm-account-${{ matrix.account_slot }}
+              queue: max
+              cancel-in-progress: false
+            steps:
+            - name: auth
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.master_token_secret_name] }}
+              run: python auth.py
+        """,
+    )
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+    assert rc == 0, err
+
+
+def test_ci_pool_rejects_unapproved_dynamic_selector_and_missing_concurrency(
+    tmp_path, monkeypatch, capsys, script
+):
+    _write_workflow(
+        tmp_path,
+        "bad_unapproved_selector.yml",
+        """
+        name: bad-unapproved-selector
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            - name: auth
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[inputs.secret_name] }}
+              run: python auth.py
+        """,
+    )
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+    assert rc == 1
+    assert "selected dynamic" in err
+    assert "approved planner output" in err
+    assert "account-wide concurrency" in err
+
+
+@pytest.mark.parametrize(
+    "quoted_key",
+    ['"NOTEBOOKLM_MASTER_TOKEN_JSON"', "'NOTEBOOKLM_MASTER_TOKEN_JSON'"],
+)
+def test_ci_pool_recognizes_quoted_token_binding(quoted_key, tmp_path, monkeypatch, capsys, script):
+    body = """
+        name: bad-quoted-selector
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            - name: auth
+              env:
+                TOKEN_KEY: ${{ secrets[inputs.secret_name] }}
+              run: python auth.py
+        """.replace("TOKEN_KEY", quoted_key)
+    _write_workflow(tmp_path, "bad_quoted_selector.yml", body)
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "selected dynamic" in err
+    assert "account-wide concurrency" in err
+
+
+@pytest.mark.parametrize(
+    "quoted_key",
+    ['"NOTEBOOKLM_MASTER_TOKEN_JSON"', "'NOTEBOOKLM_MASTER_TOKEN_JSON'"],
+)
+def test_ci_pool_accepts_quoted_token_binding_with_approved_selector(
+    quoted_key, tmp_path, monkeypatch, capsys, script
+):
+    body = """
+        name: ok-quoted-selector
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            concurrency:
+              group: notebooklm-account-${{ matrix.account_slot }}
+              queue: max
+              cancel-in-progress: false
+            steps:
+            - name: auth
+              env:
+                TOKEN_KEY: ${{ secrets[matrix.master_token_secret_name] }}
+              run: python auth.py
+        """.replace("TOKEN_KEY", quoted_key)
+    _write_workflow(tmp_path, "ok_quoted_selector.yml", body)
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 0, err
+
+
+def test_ci_pool_rejects_is_standard_from_untrusted_producer(tmp_path, monkeypatch, capsys, script):
+    _write_workflow(
+        tmp_path,
+        "bad_untrusted_resolver.yml",
+        """
+        name: bad-untrusted-resolver
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.permissive.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            concurrency:
+              group: notebooklm-account-${{ matrix.account_slot }}
+              queue: max
+              cancel-in-progress: false
+            steps:
+            - name: auth
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.master_token_secret_name] }}
+              run: python auth.py
+        """,
+    )
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "exact-SHA is_standard job gate" in err
+
+
+@pytest.mark.parametrize(
+    "quoted_key",
+    ['"NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID"', "'NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID'"],
+)
+def test_quoted_template_binding_still_requires_strict_ci_gate(
+    quoted_key, tmp_path, monkeypatch, capsys, script
+):
+    body = """
+        name: bad-quoted-template
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            - name: template
+              env:
+                TEMPLATE_KEY: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
+              run: python validate.py
+        """.replace("TEMPLATE_KEY", quoted_key)
+    _write_workflow(tmp_path, "bad_quoted_template.yml", body)
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "canonical repository" in err
+
+
+def test_template_secret_alias_still_requires_strict_ci_gate(tmp_path, monkeypatch, capsys, script):
+    _write_workflow(
+        tmp_path,
+        "bad_template_alias.yml",
+        """
+        name: bad-template-alias
+        on: workflow_dispatch
+        jobs:
+          live:
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            env:
+              TEMPLATE_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
+            steps:
+            - run: python validate.py
+        """,
+    )
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "canonical repository" in err
+    assert "exact consumer step" in err
+
+
+def test_trailing_job_env_is_not_mistaken_for_the_last_step(tmp_path, monkeypatch, capsys, script):
+    _write_workflow(
+        tmp_path,
+        "bad_trailing_job_env.yml",
+        """
+        name: bad-trailing-job-env
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            - run: python validate.py
+            env:
+              NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
+        """,
+    )
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "exact consumer step" in err
+
+
+@pytest.mark.parametrize(
+    ("flow_step", "continuation"),
+    [
+        (
+            '- env: {NOTEBOOKLM_MASTER_TOKEN_JSON: "${{ secrets[inputs.secret_name] }}"}',
+            "  run: python auth.py",
+        ),
+        (
+            '- {name: auth, "env": {NOTEBOOKLM_MASTER_TOKEN_JSON: "${{ secrets[inputs.secret_name] }}"}, run: python auth.py}',
+            "",
+        ),
+    ],
+)
+def test_ci_pool_rejects_flow_style_token_binding(
+    flow_step, continuation, tmp_path, monkeypatch, capsys, script
+):
+    _write_workflow(
+        tmp_path,
+        "bad_flow_env.yml",
+        """
+        name: bad-flow-env
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            FLOW_STEP
+            CONTINUATION
+        """.replace("FLOW_STEP", flow_step).replace("CONTINUATION", continuation),
+    )
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "block-style `env:` mapping" in err
+    assert "account-wide concurrency" in err
+
+
+def test_ci_pool_rejects_concurrency_from_unrelated_output(tmp_path, monkeypatch, capsys, script):
+    _write_workflow(
+        tmp_path,
+        "bad_concurrency_output.yml",
+        """
+        name: bad-concurrency-output
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            concurrency:
+              group: notebooklm-account-${{ needs.unrelated.outputs.account_slot }}
+              queue: max
+              cancel-in-progress: false
+            steps:
+            - name: auth
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[needs.plan-account.outputs.master_token_secret_name] }}
+              run: python auth.py
+        """,
+    )
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "does not couple account concurrency to the selected token" in err
+
+
+def test_multiline_protected_binding_is_rejected_and_strictly_gated(
+    tmp_path, monkeypatch, capsys, script
+):
+    _write_workflow(
+        tmp_path,
+        "bad_multiline_binding.yml",
+        """
+        name: bad-multiline-binding
+        on: workflow_dispatch
+        jobs:
+          live:
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            - name: template
+              env:
+                NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: >-
+                  ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
+              run: python validate.py
+        """,
+    )
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "single-line scalar" in err
+    assert "canonical repository" in err
+
+
+def test_ci_pool_rejects_multiple_master_tokens_in_one_job(tmp_path, monkeypatch, capsys, script):
+    _write_workflow(
+        tmp_path,
+        "bad_multi_token.yml",
+        """
+        name: bad-multi-token
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            - name: auth-a
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.master_token_secret_name] }}
+              run: python auth.py
+            - name: auth-b
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.master_token_secret_name] }}
+              run: python auth.py
+        """,
+    )
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+    assert rc == 1
+    assert "must inject exactly one selected master-token secret" in err
+
+
+def test_legacy_bundled_ci_secret_is_forbidden(tmp_path, monkeypatch, capsys, script):
+    _write_workflow(
+        tmp_path,
+        "bad_legacy.yml",
+        """
+        name: bad-legacy
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            - name: auth
+              env:
+                TOKEN: ${{ secrets.NOTEBOOKLM_MASTER_TOKEN_JSON }}
+              run: python auth.py
+        """,
+    )
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+    assert rc == 1
+    assert "legacy or pooled CI secret" in err
+
+
+@pytest.mark.parametrize("slot", ["A", "B", "C"])
+def test_direct_slot_secret_bypasses_selector_and_is_forbidden(
+    slot, tmp_path, monkeypatch, capsys, script
+):
+    _write_workflow(
+        tmp_path,
+        "bad_direct_slot.yml",
+        f"""
+        name: bad-direct-slot
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            - name: auth
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{{{ secrets.NOTEBOOKLM_MASTER_TOKEN_JSON_{slot} }}}}
+              run: python auth.py
+        """,
+    )
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+    assert rc == 1
+    assert "selected dynamic" in err
+    assert "legacy or pooled CI secret" in err
+
+
 def test_step_if_with_is_standard_passes(tmp_path, monkeypatch, capsys, script):
     _write_workflow(
         tmp_path,
@@ -808,3 +1258,258 @@ def test_real_repo_workflows_pass(monkeypatch, capsys, script):
     )
     rc = script.main()
     assert rc == 0, capsys.readouterr().err
+
+
+def test_future_pooled_dynamic_secret_job_requires_full_account_envelope(tmp_path, script) -> None:
+    _write_workflow(
+        tmp_path,
+        "pool.yml",
+        """
+        name: pool
+        on:
+          workflow_dispatch:
+        jobs:
+          live:
+            if: github.repository == 'teng-lin/notebooklm-py' && needs.resolve-target.outputs.is_standard == 'true'
+            environment: protected-readonly
+            concurrency:
+              group: notebooklm-account-${{ matrix.account_slot }}
+              cancel-in-progress: false
+              queue: max
+            runs-on: ubuntu-latest
+            steps:
+            - name: auth
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.master_token_secret_name] }}
+              run: python scripts/materialize_ci_auth.py
+        """,
+    )
+    assert script._scan_pooled_account_jobs(tmp_path / "pool.yml") == []
+
+
+def test_quoted_job_key_cannot_inherit_previous_security_envelope(
+    tmp_path, monkeypatch, capsys, script
+) -> None:
+    _write_workflow(
+        tmp_path,
+        "quoted-job.yml",
+        """
+        name: quoted-job
+        on: workflow_dispatch
+        jobs:
+          safe:
+            if: github.repository == 'teng-lin/notebooklm-py' && needs.resolve-target.outputs.is_standard == 'true'
+            environment: protected-readonly
+            concurrency:
+              group: notebooklm-account-${{ matrix.account_slot }}
+              cancel-in-progress: false
+              queue: max
+            runs-on: ubuntu-latest
+          "live":
+            runs-on: ubuntu-latest
+            steps:
+            - name: auth
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.master_token_secret_name] }}
+              run: python scripts/materialize_ci_auth.py
+        """,
+    )
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "pooled secret job 'live'" in err
+    assert "lacks the conjunctive standard-repository" in err
+    assert "lacks the literal protected-readonly Environment" in err
+
+
+def test_quoted_top_level_jobs_key_is_audited(tmp_path, monkeypatch, capsys, script) -> None:
+    _write_workflow(
+        tmp_path,
+        "quoted-jobs.yml",
+        """
+        name: quoted-jobs
+        on: workflow_dispatch
+        "jobs":
+          live:
+            runs-on: ubuntu-latest
+            steps:
+            - name: auth
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[inputs.secret_name] }}
+              run: python scripts/materialize_ci_auth.py
+        """,
+    )
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "pooled secret job 'live'" in err
+    assert "lacks the conjunctive standard-repository" in err
+
+
+def test_flow_style_job_declaration_fails_closed(tmp_path, monkeypatch, capsys, script) -> None:
+    _write_workflow(
+        tmp_path,
+        "flow-job.yml",
+        """
+        name: flow-job
+        on: workflow_dispatch
+        jobs:
+          live: {runs-on: ubuntu-latest, steps: [{run: echo ${{ secrets.MY_SECRET }}}]}
+        """,
+    )
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "job declarations must use a block-style" in err
+    assert "parser identified no jobs" in err
+
+
+def test_pooled_scanner_accepts_jobs_header_with_trailing_comment(tmp_path, script) -> None:
+    workflow = tmp_path / "pool.yml"
+    workflow.write_text(
+        """name: pool
+on: workflow_dispatch
+jobs:  # authenticated lanes
+  live:
+    if: github.repository == 'teng-lin/notebooklm-py' && needs.resolve-target.outputs.is_standard == 'true'
+    environment: protected-readonly
+    concurrency:
+      group: notebooklm-account-${{ matrix.account_slot }}
+      cancel-in-progress: false
+      queue: max
+    runs-on: ubuntu-latest
+    steps:
+    - env:
+        NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.master_token_secret_name] }}
+      run: echo ready
+"""
+    )
+    assert script._scan_pooled_account_jobs(workflow) == []
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        ("queue: max", "queue: latest", "queue: max"),
+        ("cancel-in-progress: false", "cancel-in-progress: true", "disable concurrency"),
+        ("environment: protected-readonly", "environment: typo", "protected-readonly"),
+        ("github.repository ==", "github.repository !=", "standard-repository"),
+        ("is_standard == 'true'", "is_standard != 'true'", "exact-SHA"),
+        ("notebooklm-account-${{", "workflow-${{", "account-wide concurrency"),
+        (
+            "matrix.account_slot }}",
+            "matrix.account_slot || 'shared' }}",
+            "account-wide concurrency",
+        ),
+    ],
+)
+def test_future_pooled_job_rejects_weakened_envelope(
+    tmp_path, script, old: str, new: str, message: str
+) -> None:
+    workflow = tmp_path / "pool.yml"
+    workflow.write_text(
+        """name: pool
+on: workflow_dispatch
+jobs:
+  live:
+    if: github.repository == 'teng-lin/notebooklm-py' && needs.resolve-target.outputs.is_standard == 'true'
+    environment: protected-readonly
+    concurrency:
+      group: notebooklm-account-${{ matrix.account_slot }}
+      cancel-in-progress: false
+      queue: max
+    runs-on: ubuntu-latest
+    steps:
+    - run: echo ${{ secrets[matrix.master_token_secret_name] }}
+""".replace(old, new)
+    )
+    assert any(message in error for error in script._scan_pooled_account_jobs(workflow))
+
+
+def test_pooled_scanner_rejects_concurrency_strings_inside_a_step(tmp_path, script) -> None:
+    workflow = tmp_path / "pool.yml"
+    workflow.write_text(
+        """name: pool
+on: workflow_dispatch
+jobs:
+  live:
+    if: github.repository == 'teng-lin/notebooklm-py' && needs.resolve-target.outputs.is_standard == 'true'
+    environment: protected-readonly
+    runs-on: ubuntu-latest
+    steps:
+    - name: misleading strings
+      run: |
+        echo 'group: notebooklm-account-${{ matrix.account_slot }}'
+        echo 'queue: max'
+        echo 'cancel-in-progress: false'
+    - run: echo ${{ secrets[matrix.master_token_secret_name] }}
+"""
+    )
+    violations = script._scan_pooled_account_jobs(workflow)
+    assert any("account-wide concurrency" in violation for violation in violations)
+    assert any("queue: max" in violation for violation in violations)
+    assert any("disable concurrency" in violation for violation in violations)
+
+
+def test_trusted_guard_requires_exact_github_identifiers(script) -> None:
+    assert not script._expression_is_trusted_guard("evil_is_standard == 'true'")
+    assert not script._expression_is_trusted_guard("event.sender.login == 'teng-lin'")
+    assert not script._expression_is_trusted_guard("other.github.actor == 'teng-lin'")
+    assert script._expression_is_trusted_guard("needs.target.outputs.is_standard == 'true'")
+
+
+def test_ci_pool_guard_requires_exact_repository_and_standard_output(script) -> None:
+    repository = "github.repository == 'teng-lin/notebooklm-py'"
+    standard = "needs.resolve-target.outputs.is_standard == 'true'"
+    assert script._expression_is_ci_pool_guard(f"{repository} && {standard}")
+    assert script._expression_is_ci_pool_guard(f"(({standard})) && ({repository})")
+    assert not script._expression_is_ci_pool_guard(f"{repository} || {standard}")
+    assert not script._expression_is_ci_pool_guard(f"!({repository}) && {standard}")
+    assert not script._expression_is_ci_pool_guard(f"{repository} && !({standard})")
+    assert not script._expression_is_ci_pool_guard(f"contains('{repository}', 'x') && {standard}")
+    assert not script._expression_is_ci_pool_guard(f"true && {repository} && {standard}")
+    assert not script._expression_is_ci_pool_guard(f"{repository} && evil_is_standard == 'true'")
+    assert not script._expression_is_ci_pool_guard(
+        f"other.github.repository == 'teng-lin/notebooklm-py' && {standard}"
+    )
+    assert not script._expression_is_ci_pool_guard(
+        f"{repository} && needs.permissive.outputs.is_standard == 'true'"
+    )
+
+
+def test_mismatched_environment_quotes_are_not_approved(script) -> None:
+    assert not script._environment_value_is_approved("'protected-readonly\"")
+
+
+def test_pooled_token_must_be_single_and_step_scoped(tmp_path, script) -> None:
+    workflow = tmp_path / "pool.yml"
+    workflow.write_text(
+        """name: pool
+on: workflow_dispatch
+jobs:
+  live:
+    if: github.repository == 'teng-lin/notebooklm-py' && needs.resolve-target.outputs.is_standard == 'true'
+    environment: protected-readonly
+    concurrency:
+      group: notebooklm-account-${{ matrix.account_slot }}
+      cancel-in-progress: false
+      queue: max
+    env:
+      NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.master_token_secret_name] }}
+    steps:
+    - run: echo ready
+"""
+    )
+    violations = script._scan_pooled_account_jobs(workflow)
+    assert any("one step only" in violation for violation in violations)
+
+    source = workflow.read_text().replace(
+        "    steps:\n",
+        "    steps:\n    - env:\n        OLD: ${{ secrets.NOTEBOOKLM_MASTER_TOKEN_JSON }}\n      run: echo old\n",
+    )
+    workflow.write_text(source)
+    violations = script._scan_pooled_account_jobs(workflow)
+    assert any("exactly one" in violation for violation in violations)

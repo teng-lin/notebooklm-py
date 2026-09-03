@@ -6,82 +6,148 @@ on:
     - cron: '0 7 * * *'
   workflow_dispatch:
     inputs:
-      custom_branch:
-        description: 'Override branch to test (leave empty to test the branch you triggered from)'
-        required: false
-        default: ''
+      account_rotation_base:
+        description: 'Account-rotation base; lane offsets still apply'
+        required: true
+        type: choice
+        default: auto
+        options: [auto, A, B, C]
 
 permissions:
   contents: read
 
 jobs:
-  # Determine which branch to test
-  resolve-branch:
+  resolve-target:
     runs-on: ubuntu-latest
     if: github.repository == 'teng-lin/notebooklm-py'
     outputs:
       branch: ${{ steps.resolve.outputs.branch }}
       is_standard: ${{ steps.resolve.outputs.is_standard }}
+      sha: ${{ steps.target.outputs.sha }}
     steps:
-      - name: Resolve target branch
+      - name: Resolve trusted target
         id: resolve
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          CUSTOM_BRANCH: ${{ inputs.custom_branch }}
-          REF_NAME: ${{ github.ref_name }}
+          GITHUB_REF_VALUE: ${{ github.ref }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = "schedule" ]; then
-            # Scheduled runs test main only. Release branches are manual.
-            TARGET="main"
+          echo "branch=main" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_VALUE" = refs/heads/main ]; then
+            echo "is_standard=true" >> "$GITHUB_OUTPUT"
           else
-            if [ -n "$CUSTOM_BRANCH" ]; then
-              TARGET="$CUSTOM_BRANCH"
-            else
-              TARGET="$REF_NAME"
-            fi
+            echo "is_standard=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Authenticated RPC health accepts only refs/heads/main"
+            exit 1
           fi
-          echo "branch=$TARGET" >> "$GITHUB_OUTPUT"
-          case "$TARGET" in
-            main|release/*)
-              echo "is_standard=true" >> "$GITHUB_OUTPUT"
-              ;;
-            *)
-              echo "is_standard=false" >> "$GITHUB_OUTPUT"
-              ;;
-          esac
-          echo "Resolved branch: $TARGET"
+      - uses: actions/checkout@v7
+        if: steps.resolve.outputs.is_standard == 'true'
+        with:
+          ref: refs/heads/main
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Resolve immutable commit
+        id: target
+        if: steps.resolve.outputs.is_standard == 'true'
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  plan-live-lanes:
+    needs: resolve-target
+    if: >-
+      github.repository == 'teng-lin/notebooklm-py' &&
+      needs.resolve-target.outputs.is_standard == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      web_account_slot: ${{ steps.plan.outputs.web_account_slot }}
+      web_secret_name: ${{ steps.plan.outputs.web_secret_name }}
+      android_account_slot: ${{ steps.plan.outputs.android_account_slot }}
+      android_secret_name: ${{ steps.plan.outputs.android_secret_name }}
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.resolve-target.outputs.sha }}
+        fetch-depth: 1
+        persist-credentials: false
+    - name: Select health account slots
+      id: plan
+      env:
+        ENABLED_SLOTS: ${{ vars.NOTEBOOKLM_CI_ACCOUNT_SLOTS }}
+        MANUAL_BASE: ${{ inputs.account_rotation_base || 'auto' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        day=$(date -u +%F)
+        python scripts/select_ci_account.py --enabled-slots "$ENABLED_SLOTS" \
+          --lane rpc-health-web --rotation-day "$day" --manual-base "$MANUAL_BASE" \
+          --github-output "$RUNNER_TEMP/web-slot.out"
+        python scripts/select_ci_account.py --enabled-slots "$ENABLED_SLOTS" \
+          --lane rpc-health-android --rotation-day "$day" --manual-base "$MANUAL_BASE" \
+          --github-output "$RUNNER_TEMP/android-slot.out"
+        python - <<'PY'
+        import os
+        from pathlib import Path
+        root = Path(os.environ["RUNNER_TEMP"])
+        def read(name):
+            return dict(line.split("=", 1) for line in (root / name).read_text().splitlines())
+        web = read("web-slot.out")
+        android = read("android-slot.out")
+        with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as stream:
+            stream.write(f"web_account_slot={web['account_slot']}\n")
+            stream.write(f"web_secret_name={web['master_token_secret_name']}\n")
+            stream.write(f"android_account_slot={android['account_slot']}\n")
+            stream.write(f"android_secret_name={android['master_token_secret_name']}\n")
+            stream.write(f"rotation_day={web['rotation_day']}\n")
+        PY
+    - name: Summarize safe health-lane selection
+      env:
+        ENABLED_SLOTS: ${{ vars.NOTEBOOKLM_CI_ACCOUNT_SLOTS }}
+        SELECTION_MODE: ${{ (inputs.account_rotation_base == '' || inputs.account_rotation_base == 'auto') && 'automatic' || 'manual base' }}
+      shell: bash
+      run: |
+        IFS=, read -ra enabled_slots <<< "$ENABLED_SLOTS"
+        enabled_count=${#enabled_slots[@]}
+        {
+          echo "### RPC health account plan"
+          echo "Rotation day: ${{ steps.plan.outputs.rotation_day }}; enabled slot count: $enabled_count"
+          echo "| Lane | Backend | Slot | Selection |"
+          echo "| --- | --- | --- | --- |"
+          echo "| rpc-health-web | web | ${{ steps.plan.outputs.web_account_slot }} | $SELECTION_MODE |"
+          echo "| rpc-health-android | android | ${{ steps.plan.outputs.android_account_slot }} | $SELECTION_MODE |"
+        } >> "$GITHUB_STEP_SUMMARY"
 
   health-check:
-    name: RPC Health Check (${{ needs.resolve-branch.outputs.branch }})
-    needs: resolve-branch
-    if: needs.resolve-branch.outputs.is_standard == 'true'
+    name: RPC Health Check (${{ needs.plan-live-lanes.outputs.web_account_slot }})
+    needs: [resolve-target, plan-live-lanes]
+    if: >-
+      github.repository == 'teng-lin/notebooklm-py' &&
+      needs.resolve-target.outputs.is_standard == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
     concurrency:
-      group: rpc-health-${{ needs.resolve-branch.outputs.branch }}
-      cancel-in-progress: true
-    # Secret-bearing job. ``NOTEBOOKLM_MASTER_TOKEN_JSON`` and friends live only in
-    # the ``protected-readonly`` GitHub Environment (issue #1009: relying on
-    # repo-level fallback for the scheduled-cron branch broke when those
-    # secrets were migrated env-only). Binding the env unconditionally is
-    # what gives every trigger — scheduled cron, workflow_dispatch from a
-    # maintainer, etc. — access to the same secret values. Workflow_dispatch
-    # is still hard-gated by ``needs.resolve-branch.outputs.is_standard``
-    # above so a feature-branch dispatch never reaches this job at all.
-    # Add a ``required reviewers`` rule on the environment if you want to
-    # block workflow_dispatch behind manual approval; scheduled runs would
-    # then queue too, so today this env carries no protection rules.
-    # See docs/development.md → "Workflow secret gates".
+      group: notebooklm-account-${{ needs.plan-live-lanes.outputs.web_account_slot }}
+      queue: max
+      cancel-in-progress: false
+    # The protected Environment and the literal repository/is_standard job
+    # gate are both load-bearing. Only the selected slot secret is injected.
     environment: protected-readonly
+    timeout-minutes: 180
+    env:
+      NOTEBOOKLM_PROFILE: ci-${{ needs.plan-live-lanes.outputs.web_account_slot }}-rpc-health-web
 
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: ${{ needs.resolve-branch.outputs.branch }}
+        ref: ${{ needs.resolve-target.outputs.sha }}
+        fetch-depth: 1
         persist-credentials: false
+
+    - name: Configure runner-local paths
+      run: |
+        {
+          echo "NOTEBOOKLM_HOME=$RUNNER_TEMP/notebooklm-home"
+          echo "CI_E2E_MANIFEST=$RUNNER_TEMP/notebooklm-e2e/manifest.json"
+        } >> "$GITHUB_ENV"
 
     - name: Set up Python
       uses: actions/setup-python@v7
@@ -114,66 +180,91 @@ jobs:
           attempt=$((attempt + 1))
         done
 
-    # Fail-fast preflight + profile materialization. The empty-secret check
-    # surfaces ``::error::`` annotations linked to the secret-config misconfig
-    # before the ``continue-on-error`` step swallows the exit code (issue
-    # #1009). The write-to-disk part replaces the old inline-env auth: env-var
-    # auth never engages the layer-4 master-token re-mint (it only fires when
-    # master_token.json sits BESIDE the profile's storage_state.json —
-    # src/notebooklm/_auth/session.py), so a rotated cookie secret used to
-    # hard-fail the run. The master token is now MANDATORY (empty secret or
-    # 3 failed mints both exit 1) — it is the only credential shipped, so
-    # there is no snapshot to degrade onto.
-    - name: Materialize auth profile
+    - name: Materialize selected account
+      id: auth
+      if: >-
+        needs.resolve-target.outputs.is_standard == 'true' &&
+        github.repository == 'teng-lin/notebooklm-py'
+      continue-on-error: true
       env:
-        NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets.NOTEBOOKLM_MASTER_TOKEN_JSON }}
-        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
-      shell: bash
+        NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[needs.plan-live-lanes.outputs.web_secret_name] }}
+      run: >-
+        uv run python scripts/materialize_ci_auth.py
+        --account-slot "${{ needs.plan-live-lanes.outputs.web_account_slot }}"
+        --profile "$NOTEBOOKLM_PROFILE"
+
+    - name: Sweep stale RPC copies
+      id: sweep
+      if: steps.auth.outcome == 'success'
+      continue-on-error: true
+      env:
+        NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
       run: |
-        if [ -z "${NOTEBOOKLM_MASTER_TOKEN_JSON:-}" ]; then
-          echo "::error::NOTEBOOKLM_MASTER_TOKEN_JSON resolved to empty. Env binding or secret config is broken — see docs/development.md → Workflow secret gates."
-          exit 1
-        fi
-        if [ -z "${NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID:-}" ]; then
-          echo "::error::NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID resolved to empty."
-          exit 1
-        fi
-        umask 077
-        mkdir -p ~/.notebooklm/profiles/default
-        printf '%s' "$NOTEBOOKLM_MASTER_TOKEN_JSON" > ~/.notebooklm/profiles/default/master_token.json
-        chmod 600 ~/.notebooklm/profiles/default/master_token.json
-        # The master token is now the ONLY credential shipped. A cookie
-        # snapshot cannot be: Google supersedes __Secure-1PSIDTS on a ~600 s
-        # cadence and a superseded value is rejected shortly after, so a
-        # secret minted on a workstation is routinely dead before the run
-        # starts. A master token does not rotate, so it cannot go stale.
-        # The health/drift scripts fetch tokens eagerly, which is exactly why
-        # the mint runs here rather than relying on in-run recovery; it also
-        # bootstraps storage_state.json when none exists. `unset` is
-        # load-bearing: `login` refuses to run while inline env auth is set,
-        # and the secret is already on disk.
-        unset NOTEBOOKLM_MASTER_TOKEN_JSON
-        minted=""
-        for attempt in 1 2 3; do
-          if uv run notebooklm login --master-token-refresh; then
-            minted=1
-            break
-          fi
-          echo "::warning::master-token mint attempt ${attempt} failed."
-          if [ "$attempt" -lt 3 ]; then
-            # Jitter: nightly's ubuntu/windows legs mint concurrently from the
-            # same token, so a fixed backoff would have them retry in lockstep
-            # and collide again on whatever throttled the first attempt.
-            sleep $((attempt * 15 + RANDOM % 20))
-          fi
-        done
-        # Fatal, unlike before: there is no cookie snapshot left to fall back
-        # to, so a failed mint means the job has no credentials at all.
-        if [ -z "$minted" ]; then
-          echo "::error::master-token mint failed after 3 attempts — no auth available."
-          exit 1
-        fi
-        echo "Auth profile materialized (master token; fresh cookies minted)."
+        result=$(uv run python scripts/manage_ci_e2e_notebooks.py sweep \
+          --backend web --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+          --manifest "$CI_E2E_MANIFEST")
+        printf '%s\n' "$result"
+        printf '### RPC copy lifecycle\n%s\n' "$result" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Provision RPC fallback copy
+      id: provision
+      if: steps.auth.outcome == 'success' && steps.sweep.outcome == 'success'
+      continue-on-error: true
+      env:
+        NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
+        SUMMARY_SLOT: ${{ needs.plan-live-lanes.outputs.web_account_slot }}
+      run: |
+        uv run python scripts/manage_ci_e2e_notebooks.py provision \
+          --backend web --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+          --contract tests/fixtures/e2e_template_contract.json \
+          --prepared-contract tests/fixtures/e2e_prepared_role_contract.json \
+          --mode rpc --lane rpc-health-web \
+          --account-slot "${{ needs.plan-live-lanes.outputs.web_account_slot }}" \
+          --manifest "$CI_E2E_MANIFEST" --github-env "$GITHUB_ENV"
+        python - <<'PY'
+        import json
+        import os
+        import re
+        from pathlib import Path
+
+        manifest = json.loads(Path(os.environ["CI_E2E_MANIFEST"]).read_text(encoding="utf-8"))
+        expected = {
+            "backend": "web",
+            "lane": "rpc-health-web",
+            "account_slot": os.environ["SUMMARY_SLOT"],
+            "mode": "rpc",
+        }
+        if any(manifest.get(key) != value for key, value in expected.items()):
+            raise RuntimeError("manifest summary metadata mismatch")
+        copies = manifest.get("copies")
+        if not isinstance(copies, list) or len(copies) != 1 or not isinstance(copies[0], dict):
+            raise RuntimeError("manifest summary role count mismatch")
+        row = copies[0]
+        if row.get("role") != "rpc" or row.get("status") not in {"confirmed", "reconciled"}:
+            raise RuntimeError("manifest summary copy outcome mismatch")
+        if row.get("prepared") is not True:
+            raise RuntimeError("manifest summary contains an unprepared role")
+        fingerprint = manifest.get("template_fingerprint")
+        if not isinstance(fingerprint, str) or re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None:
+            raise RuntimeError("manifest summary fingerprint is malformed")
+        lines = [
+            "### Prepared RPC copy",
+            f"- Lane/backend/slot: rpc-health-web / web / {expected['account_slot']}",
+            f"- Template contract: version=1 fingerprint={fingerprint}",
+            f"- Copy outcomes: total=1 confirmed={int(row['status'] == 'confirmed')} reconciled={int(row['status'] == 'reconciled')}",
+            "- Clean-role residuals: rpc=0",
+        ]
+        with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as stream:
+            stream.write("\n".join(lines) + "\n")
+        PY
+
+    - name: Validate RPC fallback bindings
+      id: preflight
+      if: steps.provision.outcome == 'success'
+      continue-on-error: true
+      run: |
+        test -n "${NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID:-}"
+        test "$NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID" = "$NOTEBOOKLM_GENERATION_NOTEBOOK_ID"
 
     # Rebrand-host lane state, carried between nightly runs so the lane can
     # report a *state change* rather than re-announcing the same observation
@@ -186,12 +277,13 @@ jobs:
     # disappeared; a contrary live observation is still reported as new.
     - name: Restore rebrand-host lane state
       uses: actions/cache/restore@v6
+      if: steps.preflight.outcome == 'success'
       continue-on-error: true
       with:
         path: rebrand-state.json
-        key: rpc-rebrand-state-${{ needs.resolve-branch.outputs.branch }}-
+        key: rpc-rebrand-state-main-${{ needs.plan-live-lanes.outputs.web_account_slot }}-
         restore-keys: |
-          rpc-rebrand-state-${{ needs.resolve-branch.outputs.branch }}-
+          rpc-rebrand-state-main-${{ needs.plan-live-lanes.outputs.web_account_slot }}-
 
     # The restored document is the PREVIOUS run's, and it carries a run-scoped
     # ``changed`` flag. Move it into its own slot so it can never be read as
@@ -201,6 +293,7 @@ jobs:
     # failure writes no state at all) would leave yesterday's document in place
     # and the detect step would replay yesterday's transition (#2062).
     - name: Move restored rebrand state into the previous-run slot
+      if: steps.preflight.outcome == 'success'
       shell: bash
       run: |
         if [ -f rebrand-state.json ]; then
@@ -209,6 +302,7 @@ jobs:
 
     - name: Run RPC Health Check
       id: health
+      if: steps.preflight.outcome == 'success'
       # Auth comes from the profile materialized above (no inline env-var
       # credential is shipped at all) so the layer-4 re-mint can engage.
       #
@@ -226,17 +320,15 @@ jobs:
       continue-on-error: true
       shell: bash
       env:
-        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
-        NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
-        TARGET_BRANCH: ${{ needs.resolve-branch.outputs.branch }}
+        TARGET_BRANCH: main
       run: |
         echo "Testing branch: $TARGET_BRANCH"
         set +e
         uv run python scripts/check_rpc_health.py --full \
           --rebrand-state-file rebrand-state.json \
           --rebrand-previous-state-file rebrand-state-prev.json \
-          --rebrand-run-id "${GITHUB_RUN_ID}" 2>&1 | tee health-report.txt
-        exit_code=${PIPESTATUS[0]}
+          --rebrand-run-id "${GITHUB_RUN_ID}" > health-report.txt 2>&1
+        exit_code=$?
         echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
         exit "$exit_code"
 
@@ -254,6 +346,7 @@ jobs:
           echo "::warning::health-report.txt not produced; skipping scrub."
           exit 0
         fi
+        trap 'rm -f health-report.txt' ERR
         uv run python - <<'PY'
         from pathlib import Path
         from notebooklm._logging import scrub_secrets
@@ -274,6 +367,7 @@ jobs:
         else:
             print("No secret-shaped substrings detected in health-report.txt.")
         PY
+        trap - ERR
 
     - name: Add Summary
       if: always()
@@ -298,6 +392,7 @@ jobs:
       # carries no domain, so every cookie is sent to every host in the
       # redirect chain regardless of which auth source fed it — issue #2019.
       continue-on-error: true
+      if: steps.preflight.outcome == 'success'
       shell: bash
       env:
         HEALTH_EXIT_CODE: ${{ steps.health.outputs.exit_code }}
@@ -315,9 +410,8 @@ jobs:
         fi
         rm -f bundle-outcome.txt
         uv run python scripts/capture_rpc_registry.py --check --check-enums \
-          --outcome-file bundle-outcome.txt 2>&1 \
-          | tee bundle-drift-report.txt
-        raw_exit_code=${PIPESTATUS[0]}
+          --outcome-file bundle-outcome.txt > bundle-drift-report.txt 2>&1
+        raw_exit_code=$?
         if [ -f bundle-outcome.txt ]; then
           read -r outcome < bundle-outcome.txt || outcome=""
         else
@@ -354,6 +448,7 @@ jobs:
           echo "::warning::bundle-drift-report.txt not produced; skipping scrub."
           exit 0
         fi
+        trap 'rm -f bundle-drift-report.txt' ERR
         uv run python - <<'PY'
         from pathlib import Path
         from notebooklm._logging import scrub_secrets
@@ -367,6 +462,7 @@ jobs:
         else:
             print("No secret-shaped substrings detected in bundle-drift-report.txt.")
         PY
+        trap - ERR
 
     - name: Check for existing bundle drift issue
       if: steps.bundle.outputs.outcome == 'drift'
@@ -499,6 +595,8 @@ jobs:
         && steps.dup_error.outputs.open == '0'
       id: error_details
       shell: bash
+      env:
+        CHECKED_SHA: ${{ needs.resolve-target.outputs.sha }}
       run: |
         # Pull the affected-methods list out of the RESULT line emitted by the script.
         affected=$(grep -m1 "non-transient ERROR detected in methods:" health-report.txt \
@@ -511,7 +609,7 @@ jobs:
           echo ""
           echo "**Affected methods:** ${affected}"
           echo ""
-          echo "**Commit:** ${GITHUB_SHA}"
+          echo "**Commit:** ${CHECKED_SHA}"
           echo ""
           echo "Full report attached below (rate-limit / \`RESOURCE_EXHAUSTED\` errors"
           echo "are filtered out — anything listed here is a real failure that needs"
@@ -672,6 +770,7 @@ jobs:
       shell: bash
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        CHECKED_SHA: ${{ needs.resolve-target.outputs.sha }}
       run: |
         set -uo pipefail
         failed=false
@@ -697,7 +796,7 @@ jobs:
           {
             echo "## Rebrand host (notebook.google.com): \`${capability}\` ${from_state} -> ${to_state}"
             echo ""
-            echo "**Commit:** ${GITHUB_SHA}"
+            echo "**Commit:** ${CHECKED_SHA}"
             echo ""
             echo "This is the rebrand-host lane of the nightly RPC health check. It"
             echo "carries NO exit code and is independent of the exit-coded main signal;"
@@ -755,21 +854,76 @@ jobs:
         # Run-scoped key: cache entries are immutable, so a fixed key would
         # freeze the first night's answer forever. The restore step matches
         # this by prefix and picks the most recent.
-        key: rpc-rebrand-state-${{ needs.resolve-branch.outputs.branch }}-${{ github.run_id }}
+        key: rpc-rebrand-state-main-${{ needs.plan-live-lanes.outputs.web_account_slot }}-${{ github.run_id }}
 
     - name: Upload Report
-      if: always()
+      id: report_upload
+      if: always() && (steps.health.outcome == 'success' || steps.health.outcome == 'failure')
+      continue-on-error: true
       uses: actions/upload-artifact@v7
       with:
         name: rpc-health-report
         path: health-report.txt
         retention-days: 30
 
-    - name: Fail if health check failed
-      if: steps.health.outcome == 'failure'
+    - name: Capture report and issue-handling outcomes
+      id: report
+      if: always() && (steps.health.outcome == 'success' || steps.health.outcome == 'failure')
+      continue-on-error: true
+      env:
+        PRIOR_JOB_STATUS: ${{ job.status }}
+        REPORT_UPLOAD_OUTCOME: ${{ steps.report_upload.outcome }}
+        REBRAND_REPORT_FAILED: ${{ steps.rebrand_report.outputs.report_failed }}
       run: |
-        echo "RPC Health Check failed (exit code: ${{ steps.health.outputs.exit_code }}). See report above."
-        exit 1
+        if [ "$PRIOR_JOB_STATUS" != success ] || \
+           [ "$REPORT_UPLOAD_OUTCOME" != success ] || \
+           [ "$REBRAND_REPORT_FAILED" = true ]; then
+          echo "::error::RPC report or issue handling failed"
+          exit 1
+        fi
+
+    - name: Cleanup RPC fallback copy
+      id: cleanup
+      if: always()
+      continue-on-error: true
+      env:
+        NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
+      run: |
+        result=$(uv run python scripts/manage_ci_e2e_notebooks.py cleanup \
+          --backend web --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+          --manifest "$CI_E2E_MANIFEST")
+        printf '%s\n' "$result"
+        printf '### RPC copy cleanup\n%s\n' "$result" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Purge RPC health credentials and manifest
+      id: purge
+      if: always()
+      continue-on-error: true
+      run: |
+        python - <<'PY'
+        import os
+        import shutil
+        from pathlib import Path
+        home = Path(os.environ["NOTEBOOKLM_HOME"])
+        if home.exists():
+            shutil.rmtree(home)
+        Path(os.environ["CI_E2E_MANIFEST"]).unlink(missing_ok=True)
+        PY
+
+    - name: Aggregate Web RPC health outcomes
+      id: aggregate
+      if: always()
+      run: >-
+        python scripts/aggregate_ci_e2e_outcomes.py
+        --lane rpc-health-web --mode rpc --producer required
+        --phase auth=${{ steps.auth.outcome == 'success' && 'success' || 'failure' }}
+        --phase sweep=${{ steps.auth.outcome == 'success' && (steps.sweep.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase provision=${{ steps.sweep.outcome == 'success' && (steps.provision.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase preflight=${{ steps.provision.outcome == 'success' && (steps.preflight.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase health=${{ steps.preflight.outcome == 'success' && (steps.health.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase report=${{ (steps.health.outcome == 'success' || steps.health.outcome == 'failure') && (steps.report.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase cleanup=${{ steps.cleanup.outcome == 'success' && 'success' || 'failure' }}
+        --phase purge=${{ steps.purge.outcome == 'success' && 'success' || 'failure' }}
 
   # ------------------------------------------------------------------
   # Android gRPC canary — a light, READ-ONLY probe of the private Android
@@ -787,17 +941,20 @@ jobs:
   # The step summary carries the OK/FAIL/SHAPE lines for triage.
   # ------------------------------------------------------------------
   android-grpc-health:
-    name: Android gRPC Canary (${{ needs.resolve-branch.outputs.branch }})
-    needs: resolve-branch
-    if: needs.resolve-branch.outputs.is_standard == 'true'
+    name: Android gRPC Canary (${{ needs.plan-live-lanes.outputs.android_account_slot }})
+    needs: [resolve-target, plan-live-lanes]
+    if: >-
+      github.repository == 'teng-lin/notebooklm-py' &&
+      needs.resolve-target.outputs.is_standard == 'true'
     runs-on: ubuntu-latest
     # A hung gpsoauth mint or gRPC connect must not burn the 6 h default.
-    timeout-minutes: 15
+    timeout-minutes: 45
     permissions:
       contents: read
     concurrency:
-      group: android-grpc-health-${{ needs.resolve-branch.outputs.branch }}
-      cancel-in-progress: true
+      group: notebooklm-account-${{ needs.plan-live-lanes.outputs.android_account_slot }}
+      queue: max
+      cancel-in-progress: false
     # Explicit: a red canary must surface as a red job, never be absorbed.
     continue-on-error: false
     # Same unconditional environment binding as ``health-check`` (#1009);
@@ -805,12 +962,18 @@ jobs:
     # the ``is_standard`` gate above. See docs/development.md → "Workflow
     # secret gates".
     environment: protected-readonly
+    env:
+      NOTEBOOKLM_PROFILE: ci-${{ needs.plan-live-lanes.outputs.android_account_slot }}-rpc-health-android
 
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: ${{ needs.resolve-branch.outputs.branch }}
+        ref: ${{ needs.resolve-target.outputs.sha }}
+        fetch-depth: 1
         persist-credentials: false
+
+    - name: Configure runner-local paths
+      run: echo "NOTEBOOKLM_HOME=$RUNNER_TEMP/notebooklm-home" >> "$GITHUB_ENV"
 
     - name: Set up Python
       uses: actions/setup-python@v7
@@ -841,53 +1004,34 @@ jobs:
           attempt=$((attempt + 1))
         done
 
-    # Identical to the nightly Android lane's profile materialization: the
-    # master token is the only credential shipped, and the Android bearer
-    # is minted from it (src/notebooklm/_android/auth.py) via gpsoauth.
-    # The ``login --master-token-refresh`` mint also bootstraps
-    # storage_state.json, which ``from_storage`` requires to exist even
-    # though the Android backend never sends those cookies.
-    - name: Materialize auth profile
+    - name: Materialize selected account
+      id: auth
+      if: >-
+        needs.resolve-target.outputs.is_standard == 'true' &&
+        github.repository == 'teng-lin/notebooklm-py'
+      continue-on-error: true
       env:
-        NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets.NOTEBOOKLM_MASTER_TOKEN_JSON }}
-        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
-      shell: bash
-      run: |
-        if [ -z "${NOTEBOOKLM_MASTER_TOKEN_JSON:-}" ]; then
-          echo "::error::NOTEBOOKLM_MASTER_TOKEN_JSON resolved to empty. Env binding or secret config is broken — see docs/development.md → Workflow secret gates."
-          exit 1
-        fi
-        if [ -z "${NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID:-}" ]; then
-          echo "::error::NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID resolved to empty."
-          exit 1
-        fi
-        umask 077
-        mkdir -p ~/.notebooklm/profiles/default
-        printf '%s' "$NOTEBOOKLM_MASTER_TOKEN_JSON" > ~/.notebooklm/profiles/default/master_token.json
-        chmod 600 ~/.notebooklm/profiles/default/master_token.json
-        # `unset` is load-bearing: `login` refuses to run while inline env
-        # auth is set, and the secret is already on disk.
-        unset NOTEBOOKLM_MASTER_TOKEN_JSON
-        minted=""
-        for attempt in 1 2 3; do
-          if uv run notebooklm login --master-token-refresh; then
-            minted=1
-            break
-          fi
-          echo "::warning::master-token mint attempt ${attempt} failed."
-          if [ "$attempt" -lt 3 ]; then
-            # Jitter: the Web health-check job mints concurrently from the
-            # same token, so a fixed backoff would retry in lockstep.
-            sleep $((attempt * 15 + RANDOM % 20))
-          fi
-        done
-        if [ -z "$minted" ]; then
-          echo "::error::master-token mint failed after 3 attempts — no auth available."
-          exit 1
-        fi
-        echo "Auth profile materialized (master token; fresh cookies minted)."
+        NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[needs.plan-live-lanes.outputs.android_secret_name] }}
+      run: >-
+        uv run python scripts/materialize_ci_auth.py
+        --account-slot "${{ needs.plan-live-lanes.outputs.android_account_slot }}"
+        --profile "$NOTEBOOKLM_PROFILE"
+
+    - name: Validate immutable template through Android
+      id: template_validate
+      if: steps.auth.outcome == 'success'
+      continue-on-error: true
+      env:
+        NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
+      run: >-
+        uv run python scripts/manage_ci_e2e_notebooks.py validate
+        --backend android --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID
+        --contract tests/fixtures/e2e_template_contract.json
 
     - name: Run Android gRPC canary
+      id: health
+      if: steps.template_validate.outcome == 'success'
+      continue-on-error: true
       # Auth comes from the profile materialized above. The script prints
       # one ``OK``/``FAIL`` line per step plus ``SHAPE <rpc> <sha256>``
       # fingerprints (populated field paths + wire types only — no values,
@@ -905,15 +1049,15 @@ jobs:
       # FAILs the job so the drift check cannot stay inert indefinitely.
       shell: bash
       env:
-        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
-        TARGET_BRANCH: ${{ needs.resolve-branch.outputs.branch }}
+        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
+        TARGET_BRANCH: main
       run: |
         echo "Testing branch: $TARGET_BRANCH"
         set +e
         uv run python scripts/android_grpc_canary.py \
           --baseline tests/fixtures/android/canary_baseline.json \
-          --missing-baseline-grace-until 2026-09-14 2>&1 | tee android-canary-report.txt
-        exit_code=${PIPESTATUS[0]}
+          --missing-baseline-grace-until 2026-09-14 > android-canary-report.txt 2>&1
+        exit_code=$?
         # Diagnostic mode is green by design, so without this annotation an
         # inert drift check would never be visible from the run list. It does
         # not touch the exit code.
@@ -923,6 +1067,7 @@ jobs:
         exit "$exit_code"
 
     - name: Scrub secrets from android-canary-report.txt
+      id: scrub_report
       # Defence-in-depth, same posture as the Web report scrub above: the
       # script prints only sanitized class names and hashes, but the report
       # is re-scrubbed before the summary step reads it. Idempotent.
@@ -933,6 +1078,7 @@ jobs:
           echo "::warning::android-canary-report.txt not produced; skipping scrub."
           exit 0
         fi
+        trap 'rm -f android-canary-report.txt' ERR
         uv run python - <<'PY'
         from pathlib import Path
         from notebooklm._logging import scrub_secrets
@@ -946,13 +1092,16 @@ jobs:
         else:
             print("No secret-shaped substrings detected in android-canary-report.txt.")
         PY
+        trap - ERR
 
     # Summary only — no artifact upload. The OK/FAIL/WARN/SHAPE/UNKNOWN
     # grammar is the entire useful output and it lives in the run's step
     # summary; the SHAPE/UNKNOWN lines are what a reviewer copies into the
     # baseline file.
     - name: Add Summary
-      if: always()
+      id: report
+      if: always() && (steps.health.outcome == 'success' || steps.health.outcome == 'failure')
+      continue-on-error: true
       shell: bash
       run: |
         {
@@ -962,3 +1111,33 @@ jobs:
           grep -E '^(OK|FAIL|WARN|SHAPE|UNKNOWN) ' android-canary-report.txt 2>/dev/null || echo "(no canary output)"
           echo '```'
         } >> "$GITHUB_STEP_SUMMARY"
+        if [ "${{ steps.scrub_report.outcome }}" != success ]; then
+          echo "::error::Android report scrubbing failed"
+          exit 1
+        fi
+
+    - name: Purge Android health credentials
+      id: purge
+      if: always()
+      continue-on-error: true
+      run: |
+        python - <<'PY'
+        import os
+        import shutil
+        from pathlib import Path
+        home = Path(os.environ["NOTEBOOKLM_HOME"])
+        if home.exists():
+            shutil.rmtree(home)
+        PY
+
+    - name: Aggregate Android RPC health outcomes
+      id: aggregate
+      if: always()
+      run: >-
+        python scripts/aggregate_ci_e2e_outcomes.py
+        --lane rpc-health-android --mode template --producer required
+        --phase auth=${{ steps.auth.outcome == 'success' && 'success' || 'failure' }}
+        --phase template_validate=${{ steps.auth.outcome == 'success' && (steps.template_validate.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase health=${{ steps.template_validate.outcome == 'success' && (steps.health.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase report=${{ (steps.health.outcome == 'success' || steps.health.outcome == 'failure') && (steps.report.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase purge=${{ steps.purge.outcome == 'success' && 'success' || 'failure' }}

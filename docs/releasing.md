@@ -1,7 +1,7 @@
 # Release Checklist
 
 **Status:** Active
-**Last Updated:** 2026-09-02
+**Last Updated:** 2026-09-03
 
 Checklist for releasing a new version of `notebooklm-py`.
 
@@ -31,14 +31,13 @@ Release Plan for vX.Y.Z:
 5. Commit changes
 6. ⏸️ CONFIRM: Create PR to main?
 7. Wait for CI to pass on PR
-8. Run E2E and RPC health checks on release branch
+8. Merge the release PR, then run E2E and RPC health checks on protected main
 9. ⏸️ CONFIRM: Publish to TestPyPI?
 10. Verify TestPyPI package
-11. Merge PR to main
-12. ⏸️ CONFIRM: Create and push tag vX.Y.Z?
-13. Wait for PyPI publish
-14. Create GitHub release (add `--prerelease` for a pre-release — see [Pre-releases](#pre-releases-alpha--beta--rc))
-15. Clean up worktree
+11. ⏸️ CONFIRM: Create and push tag vX.Y.Z?
+12. Wait for PyPI publish
+13. Create GitHub release (add `--prerelease` for a pre-release — see [Pre-releases](#pre-releases-alpha--beta--rc))
+14. Clean up worktree
 
 Proceed with release preparation?
 ```
@@ -250,29 +249,31 @@ no break against the baseline) is a CI failure, not silent cruft.
   - Type checking
   - Unit and integration tests in the reduced 7-cell PR matrix: Python
     3.10-3.14 on Ubuntu plus Python 3.12 on macOS and Windows
+- [ ] Merge the release PR to `main`.
 
-### E2E Tests on Release Branch
+### Authenticated E2E on protected main
 
 - [ ] Go to **Actions** → **Nightly E2E Tests**
-- [ ] Click **Run workflow**, set **custom_branch** to `release/vX.Y.Z`
+- [ ] After the release PR is merged, dispatch the workflow on `main`; choose
+      `account_rotation_base=auto` unless reproducing a slot-specific failure
 - [ ] Leave **run_compatibility** enabled (the default): the PR gate only ran
       the reduced 7-cell matrix, so this dispatch is what proves the release
       commit on the full 15-cell Ubuntu/macOS/Windows × Python 3.10-3.14 matrix.
 - [ ] Wait for the compatibility matrix, coverage, repository-lint, and both
       full Windows E2E jobs (Web and Android) to pass
 - [ ] If E2E tests fail:
-  1. Fix issues in the release worktree
-  2. Commit and push
+  1. Fix issues in a new release-fix PR against `main`
+  2. Merge that PR
   3. Re-run E2E tests
 
-### RPC Health Check on Release Branch
+### RPC Health Check on protected main
 
 - [ ] Go to **Actions** → **RPC Health Check**
-- [ ] Click **Run workflow**, set **custom_branch** to `release/vX.Y.Z`
+- [ ] Dispatch on `main` with `account_rotation_base=auto`
 - [ ] Wait for RPC health check to pass
 - [ ] If RPC health check fails:
-  1. Fix issues in the release worktree
-  2. Commit and push
+  1. Fix issues in a new release-fix PR
+  2. Merge that PR
   3. Re-run RPC health check
 
 ### MCP connector smoke (manual, per release)
@@ -316,7 +317,8 @@ python scripts/mcp_live_smoke.py \
 
 - [ ] **⏸️ CONFIRM:** Ask user "Ready to publish to TestPyPI?"
 - [ ] Go to **Actions** → **Publish to TestPyPI**
-- [ ] Click **Run workflow**, select the **release/vX.Y.Z** branch
+- [ ] Click **Run workflow**, select **main** (the release PR has already been
+      merged and all authenticated gates above ran against this protected ref)
 - [ ] Wait for upload to complete
 - [ ] Verify package appears: https://test.pypi.org/project/notebooklm-py/
 
@@ -328,11 +330,15 @@ python scripts/mcp_live_smoke.py \
 - [ ] Click **Run workflow** with **source**: `testpypi`
 - [ ] Wait for all tests to pass (unit, integration, E2E)
 - [ ] If verification fails:
-  1. Fix issues in the release worktree
-  2. Bump patch version in `pyproject.toml` (for a pre-release, bump the
+  1. Create a new release-fix worktree and branch from the latest `main`
+  2. Fix the issue there
+  3. Bump patch version in `pyproject.toml` (for a pre-release, bump the
      pre-release serial, e.g. `0.8.0a1 → 0.8.0a2`)
-  3. Update `CHANGELOG.md` with fix
-  4. Commit, push, and re-run **Publish to TestPyPI**
+  4. Update `CHANGELOG.md` with the fix
+  5. Commit, push, and create a release-fix PR against `main`
+  6. Wait for CI, merge the release-fix PR, and rerun the authenticated E2E and
+     RPC health gates on protected `main`
+  7. Re-run **Publish to TestPyPI** from `main`
 
 #### How the verify chain works
 
@@ -347,16 +353,14 @@ The `Publish to PyPI` step in `publish.yml` also opts into **PEP 740 attestation
 
 ---
 
-## Merge to Main
+## Confirm Main State
 
-- [ ] Once TestPyPI verification passes, merge the PR:
-  ```bash
-  gh pr merge --squash --delete-branch
-  ```
-- [ ] Pull latest main (in main repo):
+- [ ] The release PR (and any release-fix PR) was merged before the protected
+      E2E, RPC, and TestPyPI gates. Pull that verified state in the main repo;
+      there is no second release-PR merge at this stage:
   ```bash
   cd /path/to/notebooklm-py
-  git pull origin main
+  git pull --ff-only origin main
   ```
 
 ---
@@ -571,7 +575,7 @@ them to normal users. Follow the normal checklist above, with these differences:
 8. **Gates still apply; none are optional.** The public-API audit,
    pre-commit/mypy/pytest, CI on PR, TestPyPI, and Verify Package all run
    unchanged. Verify Package reads the version from the checked-out ref, so
-   dispatch it on the pre-release branch. Because Verify Package runs E2E, there is
+   dispatch it on protected `main` after the release PR lands. Because Verify Package runs E2E, there is
    no "skip E2E for a pre-release" shortcut.
 9. **GitHub release must be flagged as a pre-release, and the notes must extract
    the aggregate heading** (not a per-pre-release one, which would yield empty
