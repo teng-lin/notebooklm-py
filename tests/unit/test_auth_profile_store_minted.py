@@ -722,6 +722,7 @@ def test_adapter_composition_contract(
 
     constructed: list[Path] = []
     captured: list[tuple[Path, MintedSessionWriteRequest]] = []
+    snapshot_email = MutableEmail("owner@example.com", ["before"])
 
     class FakeStore:
         def __init__(self, path: Path) -> None:
@@ -744,7 +745,6 @@ def test_adapter_composition_contract(
     path = tmp_path / "missing" / "A.json"
     if mode == "snapshot":
         live = LiveJar()
-        snapshot_email = MutableEmail("owner@example.com", ["before"])
         assert storage.persist_minted_jar(path, live, email=snapshot_email) is None  # type: ignore[arg-type]
         assert live.iterations == 1
         assert constructed == [path]

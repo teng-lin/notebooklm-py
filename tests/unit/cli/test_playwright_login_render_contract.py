@@ -52,11 +52,11 @@ import pytest
 from rich.console import Console, ConsoleDimensions
 
 import notebooklm._app.login_browser as login_browser
-import notebooklm._app.profile as app_profile
 import notebooklm._browser.browser_capture as _bc
 import notebooklm.auth as auth_module
 import notebooklm.cli.services.playwright_login as _pl
 import notebooklm.cli.session_cmd as session_cmd_module
+from notebooklm._app.profile import ProfileRepairOutcome
 from notebooklm._auth.profile_store import ReplaceResult, ReplaceStatus
 from notebooklm._env import PERSONAL_BASE_HOST
 from notebooklm.notebooklm_cli import cli
@@ -306,7 +306,7 @@ def _drive_login(
 def _drive_refresh(
     runner,
     *,
-    repair_result: object,
+    repair_result: ProfileRepairOutcome,
     args: list[str],
     storage_path: Path,
 ):
@@ -330,12 +330,10 @@ def _drive_refresh(
         mock_fetch.return_value = ("csrf_ok", "session_ok")
         stack.enter_context(patch.object(auth_module, "read_account_metadata", return_value={}))
 
-        async def repair() -> object:
+        async def repair(_request: object) -> ProfileRepairOutcome:
             return repair_result
 
-        stack.enter_context(
-            patch.object(app_profile, "_repair_playwright_account", lambda request: repair())
-        )
+        stack.enter_context(patch.object(login_browser, "repair_playwright_account", repair))
         return runner.invoke(cli, args)
 
 
@@ -640,16 +638,12 @@ class TestLoginProgressSuccess:
         success input without private auth-module patches.
         """
 
-        async def repair() -> object:
-            return SimpleNamespace(written=True, email="alice@example.com", error=None)
+        async def repair(_request: object) -> ProfileRepairOutcome:
+            return ProfileRepairOutcome(status="WRITTEN", email="alice@example.com")
 
         storage = tmp_path / "storage.json"
         storage.write_text(json.dumps(_required_cookie_state()), encoding="utf-8")
-        with patch.object(
-            app_profile,
-            "_repair_playwright_account",
-            lambda request: repair(),
-        ):
+        with patch.object(login_browser, "repair_playwright_account", repair):
             result, _ = _drive_login(
                 runner,
                 patch_repair=False,
@@ -960,11 +954,7 @@ class TestAuthRefreshRepair:
         storage = tmp_path / "storage.json"
         result = _drive_refresh(
             runner,
-            repair_result=SimpleNamespace(
-                written=True,
-                email="alice@example.com",
-                error=None,
-            ),
+            repair_result=ProfileRepairOutcome(status="WRITTEN", email="alice@example.com"),
             args=["auth", "refresh"],
             storage_path=storage,
         )
@@ -976,11 +966,7 @@ class TestAuthRefreshRepair:
     def test_repair_quiet_silences_all_output(self, runner, tmp_path):
         result = _drive_refresh(
             runner,
-            repair_result=SimpleNamespace(
-                written=True,
-                email="alice@example.com",
-                error=None,
-            ),
+            repair_result=ProfileRepairOutcome(status="WRITTEN", email="alice@example.com"),
             args=["auth", "refresh", "--quiet"],
             storage_path=tmp_path / "storage.json",
         )
@@ -991,11 +977,9 @@ class TestAuthRefreshRepair:
         storage = tmp_path / "storage.json"
         result = _drive_refresh(
             runner,
-            repair_result=SimpleNamespace(
-                written=False,
-                email=None,
-                error=None,
-                ambiguity_reason=(
+            repair_result=ProfileRepairOutcome(
+                status="AMBIGUOUS",
+                detail=(
                     "multiple Google accounts were discovered but the active page email "
                     "was unavailable"
                 ),
@@ -1017,12 +1001,7 @@ class TestAuthRefreshRepair:
         storage = tmp_path / "storage.json"
         result = _drive_refresh(
             runner,
-            repair_result=SimpleNamespace(
-                written=False,
-                email=None,
-                error="network down",
-                ambiguity_reason=None,
-            ),
+            repair_result=ProfileRepairOutcome(status="ERROR", detail="network down"),
             args=["auth", "refresh"],
             storage_path=storage,
         )
