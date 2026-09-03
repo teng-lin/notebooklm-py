@@ -269,7 +269,7 @@ def _run_step(
         "PATH": f"{_stub_bin(workdir)}{os.pathsep}{os.environ['PATH']}",
         "UV_STUB_PYTHON": sys.executable,
         "GITHUB_REPOSITORY": "teng-lin/notebooklm-py",
-        "GITHUB_SHA": "deadbeef",
+        "CHECKED_SHA": "deadbeef",
         "GITHUB_OUTPUT": str(workdir / "step-output"),
         "GITHUB_STEP_SUMMARY": str(workdir / "step-summary"),
         "GH_STUB_LOG": str(workdir / "gh-calls.jsonl"),
