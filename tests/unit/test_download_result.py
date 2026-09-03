@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import logging
+import traceback
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -294,6 +295,28 @@ async def test_download_batch_error_details_redact_userinfo(mock_artifacts_api, 
     assert "Authentication failed (HTTP 403)" in message
     assert "user:pass" not in message
     assert "storage.googleapis.com/file.mp4" in message
+
+
+@pytest.mark.asyncio
+async def test_download_batch_auth_cause_does_not_retain_signed_url(mock_artifacts_api, tmp_path):
+    """A chained HTTP cause must not expose capability tokens in a traceback."""
+    api, _ = mock_artifacts_api
+    url = f"{TRUSTED_URL_PREFIX}file.mp4?capability_token=LEAKY"
+    request = httpx.Request("GET", url)
+    response = httpx.Response(403, request=request)
+
+    with _patched_httpx_client([response]), pytest.raises(AuthError) as captured:
+        await api._download_urls_batch([(url, str(tmp_path / "file.mp4"))])
+
+    cause = captured.value.__cause__
+    assert isinstance(cause, httpx.HTTPStatusError)
+    assert str(cause) == "HTTP 403"
+    assert cause.response.status_code == 403
+    assert str(cause.request.url) == "https://download.invalid/"
+    assert captured.value.__context__ is None
+    assert cause.__context__ is None
+    formatted = "".join(traceback.format_exception(captured.type, captured.value, captured.tb))
+    assert "LEAKY" not in formatted
 
 
 @pytest.mark.asyncio

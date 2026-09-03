@@ -137,6 +137,17 @@ def _reject_empty_download(total_bytes: int) -> None:
         )
 
 
+def _scrubbed_http_status_error(status_code: int) -> httpx.HTTPStatusError:
+    """Build a cause that preserves status semantics without retaining a signed URL."""
+    request = httpx.Request("GET", "https://download.invalid/")
+    response = httpx.Response(status_code, request=request)
+    return httpx.HTTPStatusError(
+        f"HTTP {status_code}",
+        request=request,
+        response=response,
+    )
+
+
 class AssetDownloadService:
     """Shared streaming, rejection, staging, and atomic-replace asset plane."""
 
@@ -204,25 +215,12 @@ class AssetDownloadService:
 
                     response = await _guarded_get(url)
                     if response.status_code in (401, 403):
-                        try:
-                            response.raise_for_status()
-                        except httpx.HTTPStatusError as error:
-                            cause = error
-                        else:
-                            cause = httpx.HTTPStatusError(
-                                f"HTTP {response.status_code}",
-                                request=httpx.Request("GET", url),
-                                response=httpx.Response(
-                                    response.status_code,
-                                    request=httpx.Request("GET", url),
-                                ),
-                            )
                         auth_error = AuthError(
                             f"Authentication failed (HTTP {response.status_code}) "
                             f"on {display_host}{parsed.path}; run `notebooklm login`."
                         )
                         if self._chain:
-                            raise auth_error from cause
+                            raise auth_error from _scrubbed_http_status_error(response.status_code)
                         raise auth_error from None
                     response.raise_for_status()
 
@@ -356,6 +354,7 @@ class AssetDownloadService:
             cookies = await asyncio.to_thread(self._cookie_loader, self._storage_path)
             credential_for = self._credential_policy_factory(cookies)
             timeout = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=30.0)
+            auth_failure_status: int | None = None
 
             try:
                 # Transport selection is inlined here (rather than via
@@ -521,25 +520,32 @@ class AssetDownloadService:
                         return output_path
             except httpx.HTTPStatusError as e:
                 if e.response.status_code in (401, 403):
-                    auth_error = AuthError(
-                        f"Authentication failed (HTTP {e.response.status_code}) on "
-                        f"{display_host}{parsed.path}; run `notebooklm login`."
-                    )
-                    if self._chain:
-                        raise auth_error from e
-                    raise auth_error from None
-                raise ArtifactDownloadError(
-                    "media",
-                    details=f"HTTP error downloading {display_host}{parsed.path}",
-                    cause=e,
-                    status_code=e.response.status_code,
-                ) from e
+                    # Defer the public raise until after this handler exits so
+                    # Python cannot retain the signed-request exception as the
+                    # new AuthError's implicit ``__context__``.
+                    auth_failure_status = e.response.status_code
+                else:
+                    raise ArtifactDownloadError(
+                        "media",
+                        details=f"HTTP error downloading {display_host}{parsed.path}",
+                        cause=e,
+                        status_code=e.response.status_code,
+                    ) from e
             except httpx.RequestError as e:
                 raise ArtifactDownloadError(
                     "media",
                     details=f"Network error downloading {display_host}{parsed.path}",
                     cause=e,
                 ) from e
+
+            if auth_failure_status is not None:
+                auth_error = AuthError(
+                    f"Authentication failed (HTTP {auth_failure_status}) on "
+                    f"{display_host}{parsed.path}; run `notebooklm login`."
+                )
+                if self._chain:
+                    raise auth_error from _scrubbed_http_status_error(auth_failure_status)
+                raise auth_error from None
         except BaseException:
             temp_file.unlink(missing_ok=True)
             raise

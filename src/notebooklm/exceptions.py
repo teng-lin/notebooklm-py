@@ -1154,7 +1154,8 @@ class ArtifactDownloadError(ArtifactError):
         details: Additional error details.
         cause: The underlying exception.
         status_code: HTTP status code from the failed response, when the
-            failure was an HTTP-level error (e.g. 401, 403, 500). ``None`` for
+            failure was an HTTP-level error (e.g. 404 or 500). Authentication
+            failures (401 or 403) raise :class:`AuthError` instead. ``None`` for
             transport-level failures (timeouts, DNS, connection resets) where
             no response was received.
     """

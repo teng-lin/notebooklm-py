@@ -4,6 +4,7 @@ import asyncio
 import inspect
 import os
 import tempfile
+import traceback
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -20,6 +21,7 @@ from notebooklm._artifact.downloads import AssetDownloadService
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._web.artifact import downloads as artifact_downloads
 from notebooklm._web.artifacts import WebArtifactsAPI
+from notebooklm.exceptions import AuthError
 from notebooklm.types import (
     ArtifactDownloadError,
     ArtifactNotFoundError,
@@ -621,6 +623,48 @@ class TestDownloadUrl:
             # Verify file was written with streaming content
             with open(output_path, "rb") as f:
                 assert f.read() == content
+
+    @pytest.mark.asyncio
+    async def test_download_url_auth_cause_does_not_retain_signed_url(
+        self, mock_artifacts_api, monkeypatch, tmp_path
+    ):
+        """A chained streaming HTTP cause must not retain a signed query string."""
+        api, _ = mock_artifacts_api
+        url = "https://storage.googleapis.com/file.mp4?capability_token=LEAKY"
+        request = httpx.Request("GET", url)
+        response = httpx.Response(403, request=request)
+        raw_error = httpx.HTTPStatusError(
+            "Forbidden response for signed URL",
+            request=request,
+            response=response,
+        )
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status.side_effect = raw_error
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_client = AsyncMock()
+        mock_client.stream = MagicMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        monkeypatch.setattr(asset_downloads, "load_httpx_cookies", MagicMock(return_value={}))
+        with (
+            patch.object(httpx, "AsyncClient", return_value=mock_client),
+            pytest.raises(AuthError) as captured,
+        ):
+            await api._download_url(url, str(tmp_path / "file.mp4"))
+
+        cause = captured.value.__cause__
+        assert isinstance(cause, httpx.HTTPStatusError)
+        assert str(cause) == "HTTP 403"
+        assert cause.response.status_code == 403
+        assert str(cause.request.url) == "https://download.invalid/"
+        assert captured.value.__context__ is None
+        assert cause.__context__ is None
+        formatted = "".join(traceback.format_exception(captured.type, captured.value, captured.tb))
+        assert "LEAKY" not in formatted
 
     @pytest.mark.asyncio
     async def test_download_url_empty_response_raises(self, mock_artifacts_api, monkeypatch):

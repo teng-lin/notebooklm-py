@@ -5053,7 +5053,7 @@
         <path data-edge-from="webasseturl" data-edge-to="webredirect" data-edge-label="validate hop" data-edge-key="4" data-edge-id="web-url-policy" data-composition-points="156,271;259,271" d="M 156 271 L 259 271" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
         <path data-edge-from="webredirect" data-edge-to="webcookies" data-edge-label="select cookies" data-edge-key="5" data-edge-id="web-policy-creds" data-composition-points="371,271;474,271" d="M 371 271 L 474 271" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
         <path data-edge-from="webcookies" data-edge-to="webresponse" data-edge-label="GET" data-edge-key="6" data-edge-id="web-creds-response" data-composition-points="586,271;689,271" d="M 586 271 L 689 271" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="webresponse" data-edge-to="webverify" data-edge-label="stream + verify" data-edge-key="7" data-edge-id="web-response-verify" data-composition-points="801,271;904,271" d="M 801 271 L 904 271" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="webresponse" data-edge-to="webverify" data-edge-label="receive + verify" data-edge-key="7" data-edge-id="web-response-verify" data-composition-points="801,271;904,271" d="M 801 271 L 904 271" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <path data-edge-from="asseturl" data-edge-to="hoppolicy" data-edge-label="enter fence" data-edge-key="8" data-edge-id="url-policy" data-composition-points="156,385;259,385" d="M 156 385 L 259 385" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
         <path data-edge-from="hoppolicy" data-edge-to="downloadcreds" data-edge-label="await policy" data-edge-key="9" data-edge-id="policy-download-creds" data-composition-points="371,385;474,385" d="M 371 385 L 474 385" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
         <path data-edge-from="downloadcreds" data-edge-to="response" data-edge-label="GET" data-edge-key="10" data-edge-id="creds-response" data-composition-points="586,385;689,385" d="M 586 385 L 689 385" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
@@ -5270,10 +5270,10 @@
           <text x="637.5" y="261" class="t-muted" font-size="8" text-anchor="middle">GET</text>
         <text data-detail="fine" x="637.5" y="272" class="t-dim" font-size="7" text-anchor="middle">credential scoped</text>
         </g>
-        <g data-detail="context" data-edge-from="webresponse" data-edge-to="webverify" data-edge-label="stream + verify" data-edge-key="7" data-edge-id="web-response-verify">
-          <rect x="809.75" y="250" width="85.5" height="27" rx="4" class="c-mask"/>
-          <text x="852.5" y="261" class="t-muted" font-size="8" text-anchor="middle">stream + verify</text>
-        <text data-detail="fine" x="852.5" y="272" class="t-dim" font-size="7" text-anchor="middle">context-managed</text>
+        <g data-detail="context" data-edge-from="webresponse" data-edge-to="webverify" data-edge-label="receive + verify" data-edge-key="7" data-edge-id="web-response-verify">
+          <rect x="798" y="194" width="110" height="27" rx="4" class="c-mask"/>
+          <text x="853" y="205" class="t-muted" font-size="8" text-anchor="middle">receive + verify</text>
+        <text data-detail="fine" x="853" y="216" class="t-dim" font-size="7" text-anchor="middle">buffered or streamed</text>
         </g>
         <g data-detail="context" data-edge-from="asseturl" data-edge-to="hoppolicy" data-edge-label="enter fence" data-edge-key="8" data-edge-id="url-policy">
           <rect x="162.8" y="417" width="90.4" height="27" rx="4" class="c-mask"/>
