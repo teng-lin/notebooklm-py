@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -14,6 +15,7 @@ from .._artifact._guarded_transfer import (
 )
 from .._artifact._guarded_transfer import (
     TransferFailure,
+    _await_advisory_cleanup,
     guarded_transfer,
 )
 from .._artifact._guarded_transfer import (
@@ -471,15 +473,17 @@ class AndroidAssetDownloadService(EpochFenced, AssetDownloadService):
                 prepared=True,
             )
         finally:
-            if client is not None:
-                try:
-                    await client.aclose()
-                except (KeyboardInterrupt, SystemExit):
-                    raise
-                except BaseException:
-                    pass
-                self._clients.discard(client)
-            del client, policy, representation_url
+            pending_error = sys.exc_info()[1]
+            try:
+                if client is not None:
+                    await _await_advisory_cleanup(
+                        client.aclose(),
+                        pending_error=pending_error,
+                    )
+            finally:
+                if client is not None:
+                    self._clients.discard(client)
+                del client, pending_error, policy, representation_url
 
     async def _transfer_on_client(
         self,
@@ -583,15 +587,18 @@ class AndroidAssetDownloadService(EpochFenced, AssetDownloadService):
                     failure_for=lambda outcome: self._public_transfer_error(policy, outcome),
                 )
             finally:
-                if client is not None:
-                    try:
-                        await client.aclose()
-                    except (KeyboardInterrupt, SystemExit):
-                        raise
-                    except BaseException:
-                        pass
-                    self._clients.discard(client)
-                self._tasks.discard(task)
+                pending_error = sys.exc_info()[1]
+                try:
+                    if client is not None:
+                        await _await_advisory_cleanup(
+                            client.aclose(),
+                            pending_error=pending_error,
+                        )
+                finally:
+                    if client is not None:
+                        self._clients.discard(client)
+                    self._tasks.discard(task)
+                    del client, pending_error
 
     @staticmethod
     def _public_transfer_error(

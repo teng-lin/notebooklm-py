@@ -19,6 +19,7 @@ strings without importing either backend package.
 from __future__ import annotations
 
 import logging
+import traceback
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
@@ -203,14 +204,33 @@ async def call_unconfirmed_on_transport_loss(
 
     if chain not in ("exc", None):
         raise ValueError("chain must be 'exc' or None")
+    failure: BaseException | None = None
     try:
         return await call()
     except AMBIGUOUS_WRITE_ERRORS as exc:
-        del method, what
         mark_unconfirmed(exc)
-        if chain is None:
-            raise exc from None
-        raise
+        if chain == "exc":
+            del call, method, what
+            raise
+        failure = exc
+
+    assert failure is not None
+    captured = failure.__traceback__
+    failure.__traceback__ = None
+    failure.__cause__ = None
+    failure.__context__ = None
+    failure.__suppress_context__ = True
+    completed = captured
+    while (
+        completed is not None
+        and completed.tb_frame.f_code is call_unconfirmed_on_transport_loss.__code__
+    ):
+        completed = completed.tb_next
+    if completed is not None:
+        traceback.clear_frames(completed)
+    del call, method, what
+    del captured, completed
+    raise failure from None
 
 
 async def idempotent_create(

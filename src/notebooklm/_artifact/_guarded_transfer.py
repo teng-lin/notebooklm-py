@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -62,6 +63,54 @@ def _clear_client_cookies(client: Any) -> None:
         clear = getattr(cookies, "clear", None)
         if callable(clear):
             clear()
+
+
+async def _capture_advisory_cleanup(cleanup: Awaitable[Any]) -> BaseException | None:
+    """Observe every cleanup outcome without leaving an unhandled task error."""
+
+    try:
+        await cleanup
+    except BaseException as error:
+        return error
+    return None
+
+
+async def _await_advisory_cleanup(
+    cleanup: Awaitable[Any],
+    *,
+    pending_error: BaseException | None,
+) -> None:
+    """Finish advisory cleanup while preserving cancellation and exit precedence."""
+
+    cleanup_task = asyncio.create_task(_capture_advisory_cleanup(cleanup))
+    cancellation: asyncio.CancelledError | None = None
+    while True:
+        try:
+            cleanup_error = await asyncio.shield(cleanup_task)
+            break
+        except asyncio.CancelledError as error:
+            if cancellation is None:
+                cancellation = error
+
+    process_exit = (
+        cleanup_error if isinstance(cleanup_error, (KeyboardInterrupt, SystemExit)) else None
+    )
+    cleanup_cancellation = (
+        cleanup_error if isinstance(cleanup_error, asyncio.CancelledError) else None
+    )
+    preserve_pending = isinstance(
+        pending_error,
+        (asyncio.CancelledError, KeyboardInterrupt, SystemExit),
+    )
+    del cleanup, cleanup_error, cleanup_task, pending_error
+    if process_exit is not None:
+        raise process_exit
+    if preserve_pending:
+        return
+    if cancellation is not None:
+        raise cancellation
+    if cleanup_cancellation is not None:
+        raise cleanup_cancellation
 
 
 def _single_location(headers: Any) -> str | None:
@@ -267,15 +316,16 @@ async def guarded_transfer(
             except BaseException:
                 return TransferFailure("transport", host, hop)
             finally:
-                if response_cm is not None:
-                    try:
-                        await response_cm.__aexit__(None, None, None)
-                    except (KeyboardInterrupt, SystemExit):
-                        raise
-                    except BaseException:
-                        pass
-                _clear_client_cookies(client)
-                del credentials, response, response_cm
+                pending_error = sys.exc_info()[1]
+                try:
+                    if response_cm is not None:
+                        await _await_advisory_cleanup(
+                            response_cm.__aexit__(None, None, None),
+                            pending_error=pending_error,
+                        )
+                finally:
+                    _clear_client_cookies(client)
+                    del credentials, pending_error, response, response_cm
             if lifecycle_failure is not None:
                 raise lifecycle_failure
         return TransferFailure("too_many_hops", safe_host(current_url or ""), max_redirects)
