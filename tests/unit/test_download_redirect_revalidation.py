@@ -43,7 +43,6 @@ from notebooklm._artifact._redirect_guard import redirect_revalidation_hooks
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._hop_credentials import HopCredentials
 from notebooklm._runtime.call_supervisor import CallSupervisor
-from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm.exceptions import ArtifactDownloadError, AuthError
 
@@ -131,7 +130,6 @@ async def _android_service(
 ) -> AndroidAssetDownloadService:
     supervisor = CallSupervisor(
         metrics=ClientMetrics(),
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=2,
     )
     loop = asyncio.get_running_loop()

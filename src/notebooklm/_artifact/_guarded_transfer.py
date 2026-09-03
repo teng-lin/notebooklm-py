@@ -155,6 +155,7 @@ async def guarded_transfer(
 
             response_cm: Any | None = None
             response: Any | None = None
+            lifecycle_failure: BaseException | None = None
             try:
                 _clear_client_cookies(client)
                 headers = {} if credentials is None else dict(credentials.headers)
@@ -245,11 +246,18 @@ async def guarded_transfer(
                     for signature, offset in signatures
                 ):
                     return TransferFailure("signature", host, hop)
-                assert_active()
-                os.replace(staging, destination)
-                staging = None
-                _fsync_directory(destination.parent)
-                return TransferSuccess(str(destination), total)
+                try:
+                    assert_active()
+                except BaseException as error:
+                    # Lifecycle fences are not transport failures. Defer the
+                    # raise until the response has been closed and credentials
+                    # have been deleted by the hop finalizer below.
+                    lifecycle_failure = error
+                if lifecycle_failure is None:
+                    os.replace(staging, destination)
+                    staging = None
+                    _fsync_directory(destination.parent)
+                    return TransferSuccess(str(destination), total)
             except asyncio.CancelledError:
                 raise
             except (KeyboardInterrupt, SystemExit):
@@ -268,6 +276,8 @@ async def guarded_transfer(
                         pass
                 _clear_client_cookies(client)
                 del credentials, response, response_cm
+            if lifecycle_failure is not None:
+                raise lifecycle_failure
         return TransferFailure("too_many_hops", safe_host(current_url or ""), max_redirects)
     finally:
         if staging is not None:

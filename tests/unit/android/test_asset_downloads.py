@@ -1290,6 +1290,30 @@ async def test_retirement_during_bearer_await_preserves_the_lifecycle_failure(
     assert client.requests == []
 
 
+@pytest.mark.asyncio
+async def test_retirement_after_streaming_preserves_the_lifecycle_failure(
+    tmp_path: Path,
+) -> None:
+    """The pre-publish fence must not be relabeled as a transport error."""
+    response = _png_response(chunks=[PNG])
+    client = FakeClient([response])
+    service, _, _ = await _open_service(client)
+    destination = tmp_path / "out.png"
+
+    async def _retire_after_body():
+        yield PNG
+        service._active_epoch = 2
+
+    response.aiter_bytes = _retire_after_body  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await service.download_url(INITIAL, str(destination))
+
+    assert not destination.exists()
+    assert list(tmp_path.glob(".*.part")) == []
+    assert client.contexts[0].exits == 1
+
+
 def test_android_downloads_disable_exception_cause_chaining_at_construction() -> None:
     """Neither Android single nor batch transfers should build a URL-bearing cause."""
     service = AndroidAssetDownloadService(
