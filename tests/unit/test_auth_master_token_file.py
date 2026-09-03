@@ -10,7 +10,7 @@ import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -24,7 +24,7 @@ from notebooklm.exceptions import LockUnavailableError
 _MALFORMED = "master_token.json is malformed or an unsupported version."
 
 
-class RecordingLocks:
+class RecordingLocks(StorageLockManager):
     def __init__(
         self,
         state: LockState = LockState.HELD,
@@ -88,7 +88,7 @@ def test_value_file_and_private_pair_shapes_are_exact(tmp_path: Path) -> None:
     )
 
     locks = RecordingLocks()
-    token_file = MasterTokenFile(tmp_path / "token.json", locks=cast(StorageLockManager, locks))
+    token_file = MasterTokenFile(tmp_path / "token.json", locks=locks)
     assert vars(token_file) == {"_path": tmp_path / "token.json", "_locks": locks}
     pair = _MasterTokenRead(_token(), _record())
     assert "secret" not in repr(pair)
@@ -284,7 +284,7 @@ def test_public_present_read_probes_constructs_reads_parses_and_decodes_once(
     def construct(candidate: Path) -> MasterTokenFile:
         assert candidate == path
         events.append("construct")
-        return MasterTokenFile(candidate, locks=cast(StorageLockManager, RecordingLocks()))
+        return MasterTokenFile(candidate, locks=RecordingLocks())
 
     def read_text(candidate: Path, *args: object, **kwargs: object) -> str:
         assert candidate == path
@@ -513,7 +513,7 @@ def test_write_order_request_payload_and_release_are_exact(tmp_path: Path) -> No
 
     locks = RecordingLocks(events=events, on_enter=observe_enter, on_exit=observe_exit)
 
-    MasterTokenFile(path, locks=cast(StorageLockManager, locks)).write(_token())
+    MasterTokenFile(path, locks=locks).write(_token())
 
     assert events == ["lock-enter", "lock-exit"]
     assert path.read_bytes() == (
@@ -538,7 +538,7 @@ def test_write_fails_closed_for_both_nonheld_states(
     path = tmp_path / "master_token.json"
     locks = RecordingLocks(state)
     with pytest.raises(LockUnavailableError) as captured:
-        MasterTokenFile(path, locks=cast(StorageLockManager, locks)).write(_token())
+        MasterTokenFile(path, locks=locks).write(_token())
 
     assert str(captured.value) == (
         f"write_master_token: storage lock unavailable at {tmp_path / '.master_token.json.lock'}"
@@ -561,10 +561,7 @@ def test_commit_failure_escapes_and_releases_lock(
     monkeypatch.setattr(master_token_file, "_commit_master_token_json", commit)
 
     with pytest.raises(RuntimeError) as captured:
-        MasterTokenFile(
-            tmp_path / "master_token.json",
-            locks=cast(StorageLockManager, locks),
-        ).write(_token())
+        MasterTokenFile(tmp_path / "master_token.json", locks=locks).write(_token())
 
     assert captured.value is error
     assert events == ["lock-enter", "commit", "lock-exit"]
@@ -572,11 +569,13 @@ def test_commit_failure_escapes_and_releases_lock(
 
 def test_non_token_rejection_precedes_parent_lock_and_commit(tmp_path: Path) -> None:
     path = tmp_path / "missing" / "master_token.json"
+    locks = RecordingLocks()
 
     with pytest.raises(TypeError) as captured:
-        MasterTokenFile(path).write(cast(MasterToken, object()))
+        MasterTokenFile(path, locks=locks).write(object())  # type: ignore[arg-type]
 
     assert captured.value.args == ("token must be an exact MasterToken instance",)
+    assert locks.requests == []
     assert not path.parent.exists()
 
 
@@ -630,7 +629,7 @@ def test_arbitrary_relative_path_is_never_canonicalized(
     path = tmp_path / "relative" / ".." / "custom-token.json"
     locks = RecordingLocks()
 
-    MasterTokenFile(path, locks=cast(StorageLockManager, locks)).write(_token())
+    MasterTokenFile(path, locks=locks).write(_token())
 
     assert json.loads(path.read_text(encoding="utf-8")) == _record()
     assert locks.requests[0].path == tmp_path / "relative" / ".." / ".custom-token.json.lock"
@@ -667,7 +666,7 @@ def test_profile_store_derives_lazily_uses_same_locks_and_retains_no_file(
 
     monkeypatch.setattr(profile_store._notebooklm_paths, "master_token_path_for", derive)
     monkeypatch.setattr(profile_store, "MasterTokenFile", FakeTokenFile)
-    store = ProfileStore(storage_path, locks=cast(StorageLockManager, locks))
+    store = ProfileStore(storage_path, locks=locks)
 
     assert store.read_master_token() == _token()
     store.write_master_token(_token())

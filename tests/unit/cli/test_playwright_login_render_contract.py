@@ -973,7 +973,7 @@ class TestAuthRefreshRepair:
         assert result.exit_code == 0
         assert result.output == ""
 
-    def test_repair_ambiguous_clears_metadata_with_warning(self, runner, tmp_path):
+    def test_repair_ambiguous_outcome_renders_warning(self, runner, tmp_path):
         storage = tmp_path / "storage.json"
         result = _drive_refresh(
             runner,
@@ -997,7 +997,7 @@ class TestAuthRefreshRepair:
             f"ok refreshed: {storage}\n"
         )
 
-    def test_repair_exception_clears_metadata_with_warning(self, runner, tmp_path):
+    def test_repair_error_outcome_renders_warning(self, runner, tmp_path):
         storage = tmp_path / "storage.json"
         result = _drive_refresh(
             runner,

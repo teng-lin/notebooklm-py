@@ -366,10 +366,11 @@ def test_required_rejection_uses_late_policy_attributes_and_precedes_destination
     assert "B" not in policy_projection
 
 
-def test_set_projection_uses_a_second_shared_memo_copy_and_never_aliases_commit(
+def test_set_projection_uses_a_second_shared_memo_copy_and_persists_isolated_json(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The request copy and both write-time projections preserve shared identity."""
     shared: list[object] = [{"nested": [1]}]
     real_deepcopy = copy.deepcopy
     calls: list[object] = []

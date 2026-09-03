@@ -309,7 +309,7 @@ def test_filter_failure_escapes_after_release(tmp_path: Path) -> None:
         def to_json(self) -> dict[str, object]:
             raise TypeError("filter input")
 
-    source = BrokenSource._from_snapshot({"cookies": [_row()], "origins": []})  # noqa: SLF001
+    source = BrokenSource.decode({"cookies": [_row()], "origins": []})
     locks = RecordingLocks()
     with pytest.raises(TypeError, match="filter input"):
         ProfileStore(tmp_path / "A.json", locks=locks).replace_from_remint(

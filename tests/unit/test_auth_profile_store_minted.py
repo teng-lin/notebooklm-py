@@ -522,6 +522,8 @@ def test_non_owner_failures_escape_unchanged_in_exact_order(
     real_read = store.read_document
 
     class ObservedDomain(str):
+        # Sanitization asks the raw domain once whether it is dotted; the
+        # normalized plain string then flows through the remaining policy.
         def __deepcopy__(self, memo: dict[int, object]) -> ObservedDomain:
             return self
 
