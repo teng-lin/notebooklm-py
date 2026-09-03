@@ -179,6 +179,39 @@ class BlockingCloseClient(FakeClient):
             raise RuntimeError("raw close failure")
 
 
+class BlockingExitContext(FakeResponseContext):
+    def __init__(self, outcome: FakeResponse | BaseException) -> None:
+        super().__init__(outcome)
+        self.exit_started = asyncio.Event()
+        self.exit_release = asyncio.Event()
+        self.exit_finished = asyncio.Event()
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        self.exits += 1
+        self.exit_started.set()
+        await self.exit_release.wait()
+        self.exit_finished.set()
+
+
+class BlockingExitClient(FakeClient):
+    def __init__(self, outcome: FakeResponse | BaseException) -> None:
+        super().__init__([outcome])
+        self.context = BlockingExitContext(outcome)
+
+    def stream(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str],
+        follow_redirects: bool,
+    ) -> FakeResponseContext:
+        self.requests.append((method, url, dict(headers), follow_redirects))
+        self.outcomes.pop(0)
+        self.contexts.append(self.context)
+        return self.context
+
+
 def _supervisor() -> CallSupervisor:
     return CallSupervisor(
         metrics=ClientMetrics(),
@@ -1451,6 +1484,96 @@ async def test_a_second_close_cancellation_does_not_displace_the_first() -> None
     assert raised.value.args == (("first",) if sys.version_info >= (3, 11) else ())
     assert raised.value.args != ("second",)
     assert client.closed == 1
+
+
+@pytest.mark.asyncio
+async def test_transfer_cancellation_waits_for_response_exit_and_preserves_first_request(
+    tmp_path: Path,
+) -> None:
+    client = BlockingExitClient(_png_response())
+    service, _, _ = await _open_service(client)
+    destination = tmp_path / "published-before-response-exit.png"
+
+    transfer = asyncio.create_task(service.download_url(INITIAL, str(destination)))
+    await client.context.exit_started.wait()
+    assert destination.read_bytes() == PNG, "publication precedes advisory response teardown"
+
+    transfer.cancel("first")
+    await asyncio.sleep(0)
+    transfer.cancel("second")
+    await asyncio.sleep(0)
+    assert not transfer.done(), "response teardown remains strongly retained"
+
+    client.context.exit_release.set()
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await transfer
+
+    assert raised.value.args == (("first",) if sys.version_info >= (3, 11) else ())
+    assert raised.value.args != ("second",)
+    assert client.context.exit_finished.is_set()
+    assert client.context.exits == 1
+    assert client.closed == 1
+    assert service._clients == set()
+    assert service._tasks == set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("batch", [False, True], ids=["single", "batch"])
+async def test_transfer_cancellation_waits_for_client_close_and_preserves_first_request(
+    tmp_path: Path,
+    batch: bool,
+) -> None:
+    client = BlockingCloseClient()
+    client.outcomes.append(_png_response())
+    service, _, _ = await _open_service(client)
+    destination = tmp_path / f"published-before-{'batch' if batch else 'single'}-close.png"
+
+    if batch:
+        transfer = asyncio.create_task(service.download_urls_batch([(INITIAL, str(destination))]))
+    else:
+        transfer = asyncio.create_task(service.download_url(INITIAL, str(destination)))
+    await client.close_started.wait()
+    assert destination.read_bytes() == PNG, "publication precedes advisory client teardown"
+
+    transfer.cancel("first")
+    await asyncio.sleep(0)
+    transfer.cancel("second")
+    await asyncio.sleep(0)
+    assert not transfer.done(), "client teardown remains strongly retained"
+
+    client.close_release.set()
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await transfer
+
+    assert raised.value.args == (("first",) if sys.version_info >= (3, 11) else ())
+    assert raised.value.args != ("second",)
+    assert client.closed == 1
+    assert service._clients == set()
+    assert service._tasks == set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("origin", ["response", "client"])
+async def test_cleanup_originated_cancellation_is_not_advisory(
+    tmp_path: Path,
+    origin: str,
+) -> None:
+    cancellation = asyncio.CancelledError(f"{origin} cleanup cancelled")
+    if origin == "response":
+        client: FakeClient = ExitFailingClient([_png_response()], error=cancellation)
+    else:
+        client = CloseFailingClient([_png_response()], error=cancellation)
+    service, _, _ = await _open_service(client)
+    destination = tmp_path / f"published-before-{origin}-cancellation.png"
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await service.download_url(INITIAL, str(destination))
+
+    assert raised.value is cancellation
+    assert destination.read_bytes() == PNG
+    assert client.closed == 1
+    assert service._clients == set()
+    assert service._tasks == set()
 
 
 # ---------------------------------------------------------------------------
