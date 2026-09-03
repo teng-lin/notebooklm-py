@@ -9,7 +9,7 @@ Scope: implements the slice of ``httpx.AsyncClient`` the authenticated surface u
 — ``.cookies``, ``.get()``, ``.post()``, ``.stream()``, ``.aclose()`` — plus
 ``.stream_upload()`` (low-level libcurl streaming upload, no full-file buffer).
 Selected at runtime via ``NOTEBOOKLM_TRANSPORT=curl_cffi`` (see
-``_runtime/init._resolve_async_client_factory`` / ``resolve_transport_factory``).
+``_web/transport/init._resolve_async_client_factory`` / ``resolve_transport_factory``).
 
 ponytail: PoC, deliberately minimal. Known gaps: httpx ``limits`` ignored
 (curl_cffi pools internally); the 4-slot

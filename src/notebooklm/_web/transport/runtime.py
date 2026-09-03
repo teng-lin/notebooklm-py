@@ -25,7 +25,7 @@ retry-delay directly — the retry/backoff budget for the refresh path
 is owned by ``AuthRefreshMiddleware`` and by
 ``RpcExecutor.try_refresh_and_retry``, both of which read
 ``chain_host._refresh_retry_delay`` live through provider lambdas wired
-in ``_runtime.init.wire_middleware_chain``. Integration tests that
+in ``_web.transport.init.wire_middleware_chain``. Integration tests that
 assign ``client._web_runtime.composed.chain_host._refresh_retry_delay = 0`` keep
 steering the live delay.
 
