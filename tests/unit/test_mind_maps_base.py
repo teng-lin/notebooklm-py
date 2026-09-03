@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -10,7 +11,7 @@ import pytest
 from notebooklm._android.mind_maps import AndroidMindMapsAPI
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._web.mind_maps import WebMindMapsAPI
-from notebooklm.types import Artifact, ArtifactType, MindMap, MindMapKind
+from notebooklm.types import Artifact, MindMap, MindMapKind
 
 
 class _FakeMindMapsAPI(MindMapsAPI):
@@ -30,24 +31,23 @@ class _FakeMindMapsAPI(MindMapsAPI):
     async def list_note_backed(self, notebook_id: str) -> list[MindMap]:
         return list(self._note_backed)
 
-    async def generate(
+    async def _list_studio_mind_map_rows(self, notebook_id: str) -> list[Artifact]:
+        return await self._artifacts.list(notebook_id)
+
+    async def _start_interactive_mind_map(
         self,
         notebook_id: str,
-        source_ids: list[str] | None = None,
+        source_ids: list[str] | None,
         *,
-        kind: MindMapKind,
-        language: str | None = "en",
-        instructions: str | None = None,
-        wait: bool = True,
-    ) -> MindMap:
+        language: str | None,
+        instructions: str | None,
+    ) -> str:
         raise NotImplementedError
 
-    async def get_tree(
+    async def _read_interactive_tree(
         self,
         notebook_id: str,
         mind_map_id: str,
-        *,
-        kind: MindMapKind | None = None,
     ) -> dict[str, Any] | None:
         raise NotImplementedError
 
@@ -98,7 +98,29 @@ async def test_list_composes_note_backed_and_interactive_maps() -> None:
     result = await api.list("nb")
 
     assert [item.id for item in result] == ["note-map", "interactive"]
-    artifacts.list.assert_awaited_once_with("nb", ArtifactType.MIND_MAP)
+    artifacts.list.assert_awaited_once_with("nb")
+
+
+@pytest.mark.asyncio
+async def test_generate_preserves_string_enum_compatibility_for_note_backed_kind() -> None:
+    api, artifacts, _ = _api()
+    artifacts.generate_mind_map = AsyncMock(
+        return_value=SimpleNamespace(
+            note_id="note-map",
+            created_at=None,
+            mind_map={"name": "Legacy string kind"},
+        )
+    )
+
+    result = await api.generate(
+        "nb",
+        ["source"],
+        kind=cast(Any, "note_backed"),
+    )
+
+    assert result.id == "note-map"
+    assert result.kind == MindMapKind.NOTE_BACKED
+    artifacts.generate_mind_map.assert_awaited_once_with("nb", ["source"], "en", None)
 
 
 @pytest.mark.asyncio
@@ -129,7 +151,7 @@ async def test_delete_dispatches_through_neutral_notes_and_artifacts() -> None:
 
 
 def test_web_backend_inherits_every_base_concrete_workflow_and_its_docs() -> None:
-    concrete = {"list", "get", "get_or_none", "rename", "delete"}
+    concrete = {"list", "get", "get_or_none", "generate", "get_tree", "rename", "delete"}
     for method_name in concrete:
         assert method_name not in WebMindMapsAPI.__dict__
         assert getattr(WebMindMapsAPI, method_name) is getattr(MindMapsAPI, method_name)
@@ -138,7 +160,7 @@ def test_web_backend_inherits_every_base_concrete_workflow_and_its_docs() -> Non
             == getattr(MindMapsAPI, method_name).__doc__
         )
 
-    for method_name in {"list_note_backed", "generate", "get_tree"}:
+    for method_name in {"list_note_backed"}:
         assert (
             getattr(WebMindMapsAPI, method_name).__doc__
             == getattr(MindMapsAPI, method_name).__doc__
@@ -149,18 +171,28 @@ def test_web_backend_inherits_every_base_concrete_workflow_and_its_docs() -> Non
 
 def test_exact_abstract_set_and_frontends_are_concrete() -> None:
     assert MindMapsAPI.__abstractmethods__ == frozenset(
-        {"_send_rename_note_backed", "generate", "list_note_backed"}
+        {
+            "_list_studio_mind_map_rows",
+            "_read_interactive_tree",
+            "_send_rename_note_backed",
+            "_start_interactive_mind_map",
+            "list_note_backed",
+        }
     )
     assert WebMindMapsAPI.__abstractmethods__ == frozenset()
     assert AndroidMindMapsAPI.__abstractmethods__ == frozenset()
 
 
-def test_android_backend_wraps_only_behavioral_aggregate_workflow() -> None:
-    assert "list" in AndroidMindMapsAPI.__dict__
-    assert AndroidMindMapsAPI.list is not MindMapsAPI.list
-    for method_name in {"delete", "get", "get_or_none", "get_tree", "rename"}:
+def test_android_backend_inherits_neutral_workflows() -> None:
+    for method_name in {"delete", "generate", "get", "get_or_none", "get_tree", "list", "rename"}:
         assert method_name not in AndroidMindMapsAPI.__dict__
         assert getattr(AndroidMindMapsAPI, method_name) is getattr(MindMapsAPI, method_name)
+
+
+def test_interactive_wait_failure_policy_preserves_each_backend_contract() -> None:
+    assert MindMapsAPI._reject_unsuccessful_interactive_wait is False
+    assert WebMindMapsAPI._reject_unsuccessful_interactive_wait is False
+    assert AndroidMindMapsAPI._reject_unsuccessful_interactive_wait is True
 
 
 def test_android_rename_inherits_the_scoped_base_workflow() -> None:

@@ -18,8 +18,9 @@ from dataclasses import replace
 from typing import Any, cast
 
 from .._idempotency import call_unconfirmed_on_transport_loss
+from .._sources import _TransferResult
 from .._url_utils import is_youtube_url
-from ..exceptions import DecodingError, SourceNotFoundError, ValidationError
+from ..exceptions import DecodingError
 from ..types import CopiedSource, Source, SourceStatus
 from .codecs.sources import decode_source
 from .session import AndroidSession
@@ -71,15 +72,20 @@ def _as_processing(source: Source) -> Source:
 
 
 class AndroidSourceTransferMixin:
-    """``AddSourcesAsync`` / ``AppendSource`` / ``CopySourcesAsync`` over gRPC."""
+    """``AddSourcesAsync`` / ``AppendSource`` / ``CopySourcesAsync`` over gRPC.
+
+    ``AndroidSourcesAPI._operation_scope`` binds a lease epoch task-locally
+    before calling these hooks. ``AndroidSession.unary`` resolves each omitted
+    ``expected_epoch`` from that binding before dispatch.
+    """
 
     _transport: AndroidSession
 
-    async def add_urls_async(
+    async def _send_add_urls_async(
         self,
         notebook_id: str,
         urls: builtins.list[str],
-    ) -> builtins.list[Source]:
+    ) -> _TransferResult[Source]:
         """Queue ``urls`` with one ``AddSourcesAsync`` call and return the stub rows.
 
         Request is the exact ``AddSourcesRequest`` shape (``AddSources`` and
@@ -87,52 +93,29 @@ class AndroidSourceTransferMixin:
         rows at #1 and a per-source ``{source, status}`` acknowledgement list at
         #3. Live the source landed ``READY`` a few seconds later.
         """
-        if not urls:
-            return []
-        if any(not url or not url.strip() for url in urls):
-            raise ValidationError("urls must not contain empty entries")
         proto = _write_proto()
         request = proto.AddSourcesRequest(
             user_content=[_url_user_content(url) for url in urls],
             project_id=notebook_id,
             request_context=_request_context(),
         )
-        async with self._transport.operation_scope("source.add_urls_async") as lease:
-            response = await call_unconfirmed_on_transport_loss(
-                lambda: self._transport.unary(
-                    ADD_SOURCES_ASYNC_METHOD,
-                    request,
-                    replay_safe=False,
-                    response_type=proto.AddSourcesAsyncResponse,
-                    expected_epoch=lease.epoch,
-                ),
-                method=ADD_SOURCES_ASYNC_METHOD,
-                what="AddSourcesAsync",
-                chain=None,
-            )
+        response = await call_unconfirmed_on_transport_loss(
+            lambda: self._transport.unary(
+                ADD_SOURCES_ASYNC_METHOD,
+                request,
+                replay_safe=False,
+                response_type=proto.AddSourcesAsyncResponse,
+            ),
+            method=ADD_SOURCES_ASYNC_METHOD,
+            what="AddSourcesAsync",
+            chain=None,
+        )
         rows = list(response.sources)
-        if not rows:
-            raise DecodingError(
-                "AddSourcesAsync returned no queued source rows",
-                method_id=ADD_SOURCES_ASYNC_METHOD,
-            )
         # Queued stub rows carry no settings/status block (read as UNKNOWN by the
         # generic codec); by contract they are still processing.
         sources = [
             _as_processing(decode_source(row, method_id=ADD_SOURCES_ASYNC_METHOD)) for row in rows
         ]
-        if any(not source.id for source in sources):
-            raise DecodingError(
-                "AddSourcesAsync returned a queued source row without an id",
-                method_id=ADD_SOURCES_ASYNC_METHOD,
-            )
-        if len(sources) != len(urls):
-            logger.warning(
-                "AddSourcesAsync queued %d source(s) for %d URL(s) in notebook %s",
-                len(sources),
-                len(urls),
-                notebook_id,
-            )
         for ack in response.acknowledgements:
             if ack.status != 0:
                 logger.warning(
@@ -140,9 +123,9 @@ class AndroidSourceTransferMixin:
                     ack.status,
                     notebook_id,
                 )
-        return sources
+        return _TransferResult(sources, ADD_SOURCES_ASYNC_METHOD)
 
-    async def append_text(
+    async def _send_append_text(
         self,
         notebook_id: str,
         source_id: str,
@@ -152,10 +135,6 @@ class AndroidSourceTransferMixin:
     ) -> None:
         """Append ``text`` to ``source_id`` in place (``AppendSource``; empty reply)."""
         del notebook_id  # The route is addressed by source id alone.
-        if not source_id:
-            raise ValidationError("source_id must not be empty")
-        if not text:
-            raise ValidationError("text must not be empty")
         proto = _write_proto()
         request = proto.AppendSourceRequest(
             source_id=_read_proto().SourceId(id=source_id),
@@ -163,61 +142,49 @@ class AndroidSourceTransferMixin:
                 plain_text=proto.PlainTextSourceContent(header=header, body=text)
             ),
         )
-        async with self._transport.operation_scope("source.append_text") as lease:
-            await call_unconfirmed_on_transport_loss(
-                lambda: self._transport.unary(
-                    APPEND_SOURCE_METHOD,
-                    request,
-                    replay_safe=False,
-                    response_type=_empty_type(),
-                    expected_epoch=lease.epoch,
-                ),
-                method=APPEND_SOURCE_METHOD,
-                what="AppendSource",
-                chain=None,
-            )
+        await call_unconfirmed_on_transport_loss(
+            lambda: self._transport.unary(
+                APPEND_SOURCE_METHOD,
+                request,
+                replay_safe=False,
+                response_type=_empty_type(),
+            ),
+            method=APPEND_SOURCE_METHOD,
+            what="AppendSource",
+            chain=None,
+        )
 
-    async def copy(
+    async def _send_copy(
         self,
         notebook_id: str,
         source_ids: builtins.list[str],
         target_notebook_id: str,
-    ) -> builtins.list[CopiedSource]:
+    ) -> _TransferResult[CopiedSource]:
         """Copy ``source_ids`` into ``target_notebook_id`` (``CopySourcesAsync``).
 
         The reply maps each original ``SourceId`` (#1) to the new ``Source`` row
         (#2). An unknown source id or target project draws ``NOT_FOUND``
-        (live-verified); an empty mapping on success is treated as
-        :class:`SourceNotFoundError` so a no-op never reads as a copy. A partial
-        mapping is returned with a warning because those copies have already
-        committed.
+        (live-verified). The neutral facade interprets empty and partial
+        mappings after this wire decoder returns.
         """
         del notebook_id  # The route is addressed by source ids + target alone.
-        if not source_ids:
-            raise ValidationError("source_ids must not be empty")
-        if any(not source_id for source_id in source_ids):
-            raise ValidationError("source_ids must not contain empty entries")
-        if not target_notebook_id:
-            raise ValidationError("target_notebook_id must not be empty")
         proto = _write_proto()
         read_proto = _read_proto()
         request = proto.CopySourcesAsyncRequest(
             source_ids=[read_proto.SourceId(id=source_id) for source_id in source_ids],
             target_project_id=target_notebook_id,
         )
-        async with self._transport.operation_scope("source.copy") as lease:
-            response = await call_unconfirmed_on_transport_loss(
-                lambda: self._transport.unary(
-                    COPY_SOURCES_ASYNC_METHOD,
-                    request,
-                    replay_safe=False,
-                    response_type=proto.CopySourcesAsyncResponse,
-                    expected_epoch=lease.epoch,
-                ),
-                method=COPY_SOURCES_ASYNC_METHOD,
-                what="CopySourcesAsync",
-                chain=None,
-            )
+        response = await call_unconfirmed_on_transport_loss(
+            lambda: self._transport.unary(
+                COPY_SOURCES_ASYNC_METHOD,
+                request,
+                replay_safe=False,
+                response_type=proto.CopySourcesAsyncResponse,
+            ),
+            method=COPY_SOURCES_ASYNC_METHOD,
+            what="CopySourcesAsync",
+            chain=None,
+        )
         # Malformed entries are skipped, not fatal: the well-formed ones are the
         # only proof of copies that have already committed.
         copied: builtins.list[CopiedSource] = []
@@ -234,23 +201,12 @@ class AndroidSourceTransferMixin:
                 logger.warning("CopySourcesAsync returned a malformed mapping entry")
                 continue
             copied.append(CopiedSource(original_id=original_id, source=source))
-        if not copied:
-            if malformed:
-                raise DecodingError(
-                    "CopySourcesAsync returned only malformed mapping entries",
-                    method_id=COPY_SOURCES_ASYNC_METHOD,
-                )
-            raise SourceNotFoundError(", ".join(source_ids), method_id=COPY_SOURCES_ASYNC_METHOD)
-        missing = set(source_ids) - {item.original_id for item in copied}
-        if missing:
-            logger.warning(
-                "CopySourcesAsync copied %d of %d source(s) into %s; not copied: %s",
-                len(copied),
-                len(source_ids),
-                target_notebook_id,
-                ", ".join(sorted(missing)),
+        if not copied and malformed:
+            raise DecodingError(
+                "CopySourcesAsync returned only malformed mapping entries",
+                method_id=COPY_SOURCES_ASYNC_METHOD,
             )
-        return copied
+        return _TransferResult(copied, COPY_SOURCES_ASYNC_METHOD)
 
 
 __all__ = [

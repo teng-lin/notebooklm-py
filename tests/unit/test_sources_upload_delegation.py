@@ -350,7 +350,8 @@ def test_sources_upload_helpers_are_pure_delegators() -> None:
     # upload operation to it. ``add_drive_file`` (#1884) is excluded too: it only
     # reads the ``self._uploader.live_cookies`` seam to authenticate the Drive
     # fetch — it does not re-implement or delegate a resumable-upload operation
-    # (its upload leg goes through the public ``self.add_file``, already covered).
+    # (its upload leg goes through the public ``self.add_file`` and selected
+    # public ``add_file`` method, already covered).
     _uploader_seam_only = {"__init__", "add_drive_file", "add_url", "_add_urls_batch"}
     uploader_methods = {
         node.name

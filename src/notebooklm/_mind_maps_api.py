@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, Any
 from ._lookup import unwrap_or_raise
 from ._runtime.call_supervisor import OperationLease
 from ._types.mind_maps import MindMap, MindMapKind
-from .exceptions import MindMapNotFoundError
-from .types import ArtifactType
+from .exceptions import ArtifactNotReadyError, MindMapNotFoundError
+from .types import Artifact
 
 if TYPE_CHECKING:
     from ._artifacts import ArtifactsAPI
@@ -20,6 +20,8 @@ if TYPE_CHECKING:
 
 class MindMapsAPI(ABC):
     """``client.mind_maps`` — one surface over both mind-map backends."""
+
+    _reject_unsuccessful_interactive_wait = False
 
     def _operation_scope(
         self, label: str
@@ -58,21 +60,22 @@ class MindMapsAPI(ABC):
         not "empty" — call :meth:`get_tree` with ``kind=INTERACTIVE`` to fetch
         an individual interactive tree.
         """
-        # Shallow-copy so appending interactive entries can never mutate a list
-        # a (future) caching/overriding list_note_backed might share.
-        result: builtins.list[MindMap] = list(await self.list_note_backed(notebook_id))
-        for art in await self._artifacts.list(notebook_id, ArtifactType.MIND_MAP):
-            if art.is_interactive_mind_map:
-                result.append(
-                    MindMap(
-                        id=art.id,
-                        notebook_id=notebook_id,
-                        title=art.title,
-                        kind=MindMapKind.INTERACTIVE,
-                        created_at=art.created_at,
+        async with self._operation_scope("mind_maps.list"):
+            # Shallow-copy so appending interactive entries can never mutate a list
+            # a (future) caching/overriding list_note_backed might share.
+            result: builtins.list[MindMap] = list(await self.list_note_backed(notebook_id))
+            for art in await self._list_studio_mind_map_rows(notebook_id):
+                if art.is_interactive_mind_map:
+                    result.append(
+                        MindMap(
+                            id=art.id,
+                            notebook_id=notebook_id,
+                            title=art.title,
+                            kind=MindMapKind.INTERACTIVE,
+                            created_at=art.created_at,
+                        )
                     )
-                )
-        return result
+            return result
 
     async def get(self, notebook_id: str, mind_map_id: str) -> MindMap:
         """Return the mind map with ``mind_map_id``.
@@ -125,7 +128,6 @@ class MindMapsAPI(ABC):
     # for a ``None``-on-miss lookup rather than the raising ``get()`` (#1358).
     _get_or_none = get_or_none
 
-    @abstractmethod
     async def generate(
         self,
         notebook_id: str,
@@ -145,11 +147,18 @@ class MindMapsAPI(ABC):
         a uniform surface). With ``wait=False`` it returns a pending
         :class:`MindMap` whose ``tree`` is ``None`` until completed.
 
+        The historical terminal-failure behavior remains backend-specific:
+        Android raises :class:`ArtifactNotReadyError` when a waited interactive
+        task finishes failed or removed, while web continues hydration after
+        its completion wait without adding that extra rejection.
+
         ``instructions`` is a free-text prompt that steers generation; it is sent
         for both kinds — note-backed via ``GENERATE_MIND_MAP`` and interactive at
         the ``[9][1][2]`` prompt slot of ``CREATE_ARTIFACT`` (the same slot
         quiz/flashcards use; the server honours it for variant 4, verified live).
-        ``language`` applies to the note-backed payload only.
+        ``language`` applies to note-backed payloads on both backends and to
+        Android interactive generation; the web interactive payload has no
+        language slot and ignores it.
 
         Raises:
             ArtifactFeatureUnavailableError: if the interactive
@@ -160,6 +169,62 @@ class MindMapsAPI(ABC):
                 async kickoff with the sibling ``generate_*`` / ``retry_failed``
                 null-create contract (ADR-0019; issue #1359).
         """
+        async with self._operation_scope("mind_maps.generate"):
+            if kind == MindMapKind.NOTE_BACKED:
+                result = await self._artifacts.generate_mind_map(
+                    notebook_id,
+                    source_ids,
+                    language,
+                    instructions,
+                )
+                tree = result.mind_map if isinstance(result.mind_map, dict) else None
+                return MindMap(
+                    id=result.note_id or "",
+                    notebook_id=notebook_id,
+                    title=_tree_title(tree),
+                    kind=MindMapKind.NOTE_BACKED,
+                    created_at=result.created_at,
+                    tree=tree,
+                )
+
+            new_id = await self._start_interactive_mind_map(
+                notebook_id,
+                source_ids,
+                language=language,
+                instructions=instructions,
+            )
+            if wait:
+                terminal = await self._artifacts.wait_for_completion(notebook_id, new_id)
+                if self._reject_unsuccessful_interactive_wait and (
+                    terminal.is_failed or terminal.is_removed
+                ):
+                    raise ArtifactNotReadyError(
+                        "mind_map",
+                        artifact_id=new_id,
+                        status=str(terminal.status),
+                    )
+            artifact = await self._find_interactive(
+                notebook_id,
+                new_id,
+                allow_unclassified=True,
+            )
+            tree = (
+                await self.get_tree(
+                    notebook_id,
+                    new_id,
+                    kind=MindMapKind.INTERACTIVE,
+                )
+                if wait
+                else None
+            )
+            return MindMap(
+                id=new_id,
+                notebook_id=notebook_id,
+                title=artifact.title if artifact is not None else "Mind Map",
+                kind=MindMapKind.INTERACTIVE,
+                created_at=artifact.created_at if artifact is not None else None,
+                tree=tree,
+            )
 
     async def rename(
         self,
@@ -354,11 +419,8 @@ class MindMapsAPI(ABC):
             #1355).
         """
         async with self._operation_scope("mind_maps.get_tree"):
-            read_interactive = getattr(self._artifacts, "_get_interactive_mind_map_tree", None)
-            if read_interactive is None or not callable(read_interactive):
-                raise TypeError("artifacts must provide the interactive tree seam")
             if kind is MindMapKind.INTERACTIVE:
-                return await read_interactive(notebook_id, mind_map_id)
+                return await self._read_interactive_tree(notebook_id, mind_map_id)
 
             for mind_map in await self.list_note_backed(notebook_id):
                 if mind_map.id == mind_map_id:
@@ -367,7 +429,7 @@ class MindMapsAPI(ABC):
                 return None
 
             if await self._find_interactive(notebook_id, mind_map_id) is not None:
-                return await read_interactive(notebook_id, mind_map_id)
+                return await self._read_interactive_tree(notebook_id, mind_map_id)
             return None
 
     async def _detect_kind(self, notebook_id: str, mind_map_id: str) -> MindMapKind:
@@ -418,12 +480,35 @@ class MindMapsAPI(ABC):
         ``variant=None`` type-4 row is *excluded* from the ``MIND_MAP`` filter
         and would otherwise be invisible during the settling window.
         """
-        for art in await self._artifacts.list(notebook_id):
+        for art in await self._list_studio_mind_map_rows(notebook_id):
             if art.id != artifact_id:
                 continue
             if art.is_interactive_mind_map or (allow_unclassified and art.is_unclassified_type4):
                 return art
         return None
+
+    @abstractmethod
+    async def _list_studio_mind_map_rows(self, notebook_id: str) -> builtins.list[Artifact]:
+        """Return unfiltered Studio rows used to classify interactive maps."""
+
+    @abstractmethod
+    async def _start_interactive_mind_map(
+        self,
+        notebook_id: str,
+        source_ids: builtins.list[str] | None,
+        *,
+        language: str | None,
+        instructions: str | None,
+    ) -> str:
+        """Start an interactive mind map and return its artifact id."""
+
+    @abstractmethod
+    async def _read_interactive_tree(
+        self,
+        notebook_id: str,
+        mind_map_id: str,
+    ) -> dict[str, Any] | None:
+        """Read one interactive mind map's tree."""
 
     @abstractmethod
     async def _send_rename_note_backed(
@@ -433,3 +518,12 @@ class MindMapsAPI(ABC):
         new_title: str,
     ) -> None:
         """Rename a note-backed mind map through the active backend."""
+
+
+def _tree_title(tree: dict[str, Any] | None, default: str = "Mind Map") -> str:
+    """Return the non-empty string title from a decoded tree."""
+    if tree is not None:
+        name = tree.get("name")
+        if isinstance(name, str) and name:
+            return name
+    return default

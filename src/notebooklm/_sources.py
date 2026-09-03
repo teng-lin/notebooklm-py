@@ -8,16 +8,17 @@ import contextlib
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Collection, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
-from typing import Any, Literal
+from typing import Any, Generic, Literal, TypeVar
 
 from ._lookup import unwrap_or_raise
 from ._runtime.call_supervisor import OperationLease
 from ._source.batch import SourceUrlBatchItem
 from ._source.polling import SourcePoller, SourceWaitResult
 from ._types.research import SourceGuide
-from .exceptions import NonIdempotentRetryError, SourceNotFoundError, ValidationError
+from .exceptions import DecodingError, NonIdempotentRetryError, SourceNotFoundError, ValidationError
 from .types import (
     CopiedSource,
     PlayBook,
@@ -29,6 +30,17 @@ from .types import (
 )
 
 logger = logging.getLogger(__name__)
+
+_TransferItem = TypeVar("_TransferItem")
+
+
+@dataclass(frozen=True)
+class _TransferResult(Generic[_TransferItem]):
+    """Decoded rows plus backend-specific diagnostics for neutral policy."""
+
+    items: builtins.list[_TransferItem]
+    method_id: str
+    raw_response: str | None = None
 
 
 def _validate_add_text_idempotency(idempotent: bool) -> None:
@@ -414,7 +426,39 @@ class SourcesAPI(ABC):
         title: str | None = None,
         on_progress: Callable[[int, int], object] | None = None,
     ) -> Source:
-        """Add a file source to a notebook."""
+        """Add a file source using the backend's resumable upload pipeline.
+
+        Registers the source, opens an upload session, streams the file body,
+        and applies a requested display title after upload. Uploads are
+        memory-efficient and bounded by the backend's upload semaphore. The web
+        pipeline resolves the path before semaphore admission, opens it only
+        after admission, and may briefly wait for registration before applying
+        a custom title because an early rename would no-op. Backend failures
+        after registration retain their ``source_id`` and ``stage`` attributes.
+
+        Args:
+            notebook_id: The notebook ID.
+            file_path: Path to the file to upload.
+            mime_type: Content type for the upload handshake; inferred from the
+                filename extension when omitted.
+            title: Optional display title. Whitespace is stripped and an empty
+                title is rejected. A failed best-effort rename keeps the
+                upstream filename title.
+            wait: If true, wait for the source to be fully ready.
+            wait_timeout: Maximum seconds for readiness or title-registration
+                waiting.
+            on_progress: Optional sync or async callback receiving bytes sent
+                and total bytes.
+
+        Returns:
+            The created source; when ``wait`` is false it may still be processing.
+
+        Raises:
+            ValidationError: If the path is not a regular file, the title is
+                empty, or the file type is unsupported. A failure after
+                registration retains its backend-specific ``source_id`` and
+                ``stage`` diagnostics.
+        """
         raise NotImplementedError
 
     @abstractmethod
@@ -517,6 +561,36 @@ class SourcesAPI(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def _send_add_urls_async(
+        self,
+        notebook_id: str,
+        urls: builtins.list[str],
+    ) -> _TransferResult[Source]:
+        """Queue URL sources and return decoded rows plus the wire method id."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def _send_append_text(
+        self,
+        notebook_id: str,
+        source_id: str,
+        text: str,
+        *,
+        header: str,
+    ) -> None:
+        """Append one text block through the selected backend."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def _send_copy(
+        self,
+        notebook_id: str,
+        source_ids: builtins.list[str],
+        target_notebook_id: str,
+    ) -> _TransferResult[CopiedSource]:
+        """Copy sources and return decoded mappings plus the wire method id."""
+        raise NotImplementedError
+
     async def add_urls_async(
         self,
         notebook_id: str,
@@ -530,9 +604,34 @@ class SourcesAPI(ABC):
         subset, so it is surfaced as an unconfirmed error for the caller to
         reconcile against :meth:`list`.
         """
-        raise NotImplementedError
+        if not urls:
+            return []
+        if any(not url or not url.strip() for url in urls):
+            raise ValidationError("urls must not contain empty entries")
+        async with self._operation_scope("source.add_urls_async"):
+            transfer = await self._send_add_urls_async(notebook_id, urls)
+        sources = transfer.items
+        if not sources:
+            raise DecodingError(
+                "AddSourcesAsync returned no queued source rows",
+                raw_response=transfer.raw_response,
+                method_id=transfer.method_id,
+            )
+        if any(not source.id for source in sources):
+            raise DecodingError(
+                "AddSourcesAsync returned a queued source row without an id",
+                raw_response=transfer.raw_response,
+                method_id=transfer.method_id,
+            )
+        if len(sources) != len(urls):
+            logger.warning(
+                "AddSourcesAsync queued %d source(s) for %d URL(s) in notebook %s",
+                len(sources),
+                len(urls),
+                notebook_id,
+            )
+        return sources
 
-    @abstractmethod
     async def append_text(
         self,
         notebook_id: str,
@@ -546,9 +645,18 @@ class SourcesAPI(ABC):
         ``text`` lands at the very end of the source's fulltext; ``header`` is
         accepted by the backend but does not appear in the fulltext.
         """
-        raise NotImplementedError
+        if not source_id:
+            raise ValidationError("source_id must not be empty")
+        if not text:
+            raise ValidationError("text must not be empty")
+        async with self._operation_scope("source.append_text"):
+            await self._send_append_text(
+                notebook_id,
+                source_id,
+                text,
+                header=header,
+            )
 
-    @abstractmethod
     async def copy(
         self,
         notebook_id: str,
@@ -560,7 +668,31 @@ class SourcesAPI(ABC):
         Returns one :class:`CopiedSource` per copied source, pairing the
         original id with the new row in the target notebook.
         """
-        raise NotImplementedError
+        if not source_ids:
+            raise ValidationError("source_ids must not be empty")
+        if any(not source_id for source_id in source_ids):
+            raise ValidationError("source_ids must not contain empty entries")
+        if not target_notebook_id:
+            raise ValidationError("target_notebook_id must not be empty")
+        async with self._operation_scope("source.copy"):
+            transfer = await self._send_copy(
+                notebook_id,
+                source_ids,
+                target_notebook_id,
+            )
+        copied = transfer.items
+        if not copied:
+            raise SourceNotFoundError(", ".join(source_ids), method_id=transfer.method_id)
+        missing = set(source_ids) - {item.original_id for item in copied}
+        if missing:
+            logger.warning(
+                "CopySourcesAsync copied %d of %d source(s) into %s; not copied: %s",
+                len(copied),
+                len(source_ids),
+                target_notebook_id,
+                ", ".join(sorted(missing)),
+            )
+        return copied
 
 
 __all__ = ["SourcesAPI"]

@@ -28,14 +28,13 @@ from dataclasses import replace
 from typing import cast
 
 from ..._idempotency import unresolved_commit_error
+from ..._sources import _TransferResult
 from ...exceptions import (
     DecodingError,
     NetworkError,
     RateLimitError,
     RPCError,
     ServerError,
-    SourceNotFoundError,
-    ValidationError,
 )
 from ...rpc import RPCMethod
 from ...types import CopiedSource, Source, SourceStatus
@@ -67,7 +66,12 @@ def _as_processing(source: Source) -> Source:
 
 
 class SourceTransferService:
-    """Issue and decode the three source transfer RPCs."""
+    """Issue and decode the three source transfer RPCs.
+
+    The public ``SourcesAPI`` facade owns input validation, empty-result
+    policy, and partial-result warnings; this service keeps only request,
+    transport-loss, and wire-decoding behavior.
+    """
 
     async def add_urls_async(
         self,
@@ -77,7 +81,7 @@ class SourceTransferService:
         rpc: RpcCaller,
         extract_youtube_video_id: Callable[[str], str | None],
         logger: logging.Logger,
-    ) -> builtins.list[Source]:
+    ) -> _TransferResult[Source]:
         """Queue ``urls`` with one ``AddSourcesAsync`` call.
 
         The reply carries the stub rows at ``[0]`` and a per-source
@@ -85,11 +89,6 @@ class SourceTransferService:
         on every live observation, so a non-zero value is logged (it is not
         understood) and the row is still returned.
         """
-        if not urls:
-            return []
-        if any(not url or not url.strip() for url in urls):
-            raise ValidationError("urls must not contain empty entries")
-
         params = build_add_sources_async_params(
             [_url_spec(url, youtube=extract_youtube_video_id(url) is not None) for url in urls],
             notebook_id,
@@ -107,12 +106,6 @@ class SourceTransferService:
 
         view = AddSourcesAsyncResponseRow(payload)
         entries = view.source_entries
-        if not entries:
-            raise DecodingError(
-                "AddSourcesAsync returned no queued source rows",
-                raw_response=repr(payload),
-                method_id=RPCMethod.ADD_SOURCES_ASYNC.value,
-            )
         # The stub rows carry no settings/status block (the sources are queued,
         # not ingested), which the generic decoder reads as UNKNOWN. Project the
         # documented contract — the returned rows are still processing.
@@ -122,19 +115,6 @@ class SourceTransferService:
             )
             for entry in entries
         ]
-        if any(not source.id for source in sources):
-            raise DecodingError(
-                "AddSourcesAsync returned a queued source row without an id",
-                raw_response=repr(payload),
-                method_id=RPCMethod.ADD_SOURCES_ASYNC.value,
-            )
-        if len(sources) != len(urls):
-            logger.warning(
-                "AddSourcesAsync queued %d source(s) for %d URL(s) in notebook %s",
-                len(sources),
-                len(urls),
-                notebook_id,
-            )
         for ack in view.ack_rows:
             if ack.status is not None and not ack.is_ok:
                 logger.warning(
@@ -142,7 +122,11 @@ class SourceTransferService:
                     ack.status,
                     notebook_id,
                 )
-        return sources
+        return _TransferResult(
+            sources,
+            RPCMethod.ADD_SOURCES_ASYNC.value,
+            raw_response=repr(payload),
+        )
 
     async def append_text(
         self,
@@ -159,10 +143,6 @@ class SourceTransferService:
         call (a ``null`` payload carrying a gRPC status) from being read as
         that empty success — the #2290 swallow.
         """
-        if not source_id:
-            raise ValidationError("source_id must not be empty")
-        if not text:
-            raise ValidationError("text must not be empty")
         try:
             await rpc.rpc_call(
                 RPCMethod.APPEND_SOURCE,
@@ -183,23 +163,13 @@ class SourceTransferService:
         *,
         rpc: RpcCaller,
         logger: logging.Logger,
-    ) -> builtins.list[CopiedSource]:
+    ) -> _TransferResult[CopiedSource]:
         """Copy ``source_ids`` into ``target_notebook_id`` with ``CopySourcesAsync``.
 
         An unknown source id or target notebook is answered with ``NOT_FOUND``
-        (live-verified) and surfaces as ``RPCError``. An *empty* mapping on a
-        successful reply is not a documented server behaviour; it is treated as
-        :class:`SourceNotFoundError` so a silent no-op can never read as a copy.
-        A partial mapping is returned as-is with a warning, because the copies
-        it names have already committed.
+        (live-verified) and surfaces as ``RPCError``. The neutral facade
+        interprets empty and partial mappings after this wire decoder returns.
         """
-        if not source_ids:
-            raise ValidationError("source_ids must not be empty")
-        if any(not source_id for source_id in source_ids):
-            raise ValidationError("source_ids must not contain empty entries")
-        if not target_notebook_id:
-            raise ValidationError("target_notebook_id must not be empty")
-
         try:
             result = await rpc.rpc_call(
                 RPCMethod.COPY_SOURCES,
@@ -235,21 +205,10 @@ class SourceTransferService:
                 continue
             copied.append(CopiedSource(original_id=row.original_id, source=source))
 
-        if not copied:
-            if malformed:
-                raise DecodingError(
-                    "CopySourcesAsync returned only malformed mapping entries",
-                    raw_response=repr(rows)[:400],
-                    method_id=RPCMethod.COPY_SOURCES.value,
-                )
-            raise SourceNotFoundError(", ".join(source_ids), method_id=RPCMethod.COPY_SOURCES.value)
-        missing = set(source_ids) - {item.original_id for item in copied}
-        if missing:
-            logger.warning(
-                "CopySourcesAsync copied %d of %d source(s) into %s; not copied: %s",
-                len(copied),
-                len(source_ids),
-                target_notebook_id,
-                ", ".join(sorted(missing)),
+        if not copied and malformed:
+            raise DecodingError(
+                "CopySourcesAsync returned only malformed mapping entries",
+                raw_response=repr(rows)[:400],
+                method_id=RPCMethod.COPY_SOURCES.value,
             )
-        return copied
+        return _TransferResult(copied, RPCMethod.COPY_SOURCES.value)

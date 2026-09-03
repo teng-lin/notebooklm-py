@@ -45,6 +45,7 @@ from notebooklm._web.rows.transfers import (
     SourceAckRow,
     unwrap_mapping_rows,
 )
+from notebooklm._web.sources import WebSourcesAPI
 from notebooklm._web.sources.transfers import SourceTransferService
 from notebooklm.exceptions import (
     ArtifactNotFoundError,
@@ -260,6 +261,14 @@ def _service_kwargs(rpc: MagicMock) -> dict[str, Any]:
     return {"rpc": rpc, "logger": _LOGGER}
 
 
+def _sources(rpc: MagicMock) -> tuple[WebSourcesAPI, Any]:
+    supervisor = make_fake_core()
+    return (
+        WebSourcesAPI(rpc, supervisor=supervisor, uploader=MagicMock()),
+        supervisor,
+    )
+
+
 class TestAddUrlsAsync:
     @pytest.mark.asyncio
     async def test_queues_urls_and_returns_stub_rows(self) -> None:
@@ -269,14 +278,17 @@ class TestAddUrlsAsync:
             [[_stub_source(SRC_A), 0], [_stub_source(SRC_B, "https://youtu.be/abc"), 0]],
         ]
         rpc = _rpc(payload)
-        sources = await SourceTransferService().add_urls_async(
+        transfer = await SourceTransferService().add_urls_async(
             NB,
             [URL, "https://youtu.be/abc"],
             rpc=rpc,
             extract_youtube_video_id=lambda url: "abc" if "youtu" in url else None,
             logger=_LOGGER,
         )
+        sources = transfer.items
         assert [s.id for s in sources] == [SRC_A, SRC_B]
+        assert transfer.method_id == RPCMethod.ADD_SOURCES_ASYNC.value
+        assert transfer.raw_response == repr(payload)
         # Stub rows carry no status block; the contract is "still processing".
         assert all(s.status is SourceStatus.PROCESSING for s in sources)
         method, params = rpc.rpc_call.await_args.args[:2]
@@ -297,25 +309,19 @@ class TestAddUrlsAsync:
     @pytest.mark.asyncio
     async def test_empty_and_blank_inputs(self) -> None:
         rpc = _rpc()
-        assert (
-            await SourceTransferService().add_urls_async(
-                NB, [], rpc=rpc, extract_youtube_video_id=lambda _u: None, logger=_LOGGER
-            )
-            == []
-        )
+        api, _ = _sources(rpc)
+        assert await api.add_urls_async(NB, []) == []
         rpc.rpc_call.assert_not_awaited()
         with pytest.raises(ValidationError):
-            await SourceTransferService().add_urls_async(
-                NB, [URL, " "], rpc=rpc, extract_youtube_video_id=lambda _u: None, logger=_LOGGER
-            )
+            await api.add_urls_async(NB, [URL, " "])
 
     @pytest.mark.asyncio
     async def test_no_rows_is_a_decode_failure_not_success(self) -> None:
         rpc = _rpc([[], None, []])
-        with pytest.raises(DecodingError):
-            await SourceTransferService().add_urls_async(
-                NB, [URL], rpc=rpc, extract_youtube_video_id=lambda _u: None, logger=_LOGGER
-            )
+        api, _ = _sources(rpc)
+        with pytest.raises(DecodingError) as raised:
+            await api.add_urls_async(NB, [URL])
+        assert raised.value.raw_response is not None
 
     @pytest.mark.asyncio
     async def test_transport_loss_is_unconfirmed_not_retried(self) -> None:
@@ -333,9 +339,10 @@ class TestAddUrlsAsync:
     ) -> None:
         rpc = _rpc([[_stub_source(SRC_A)], None, [[_stub_source(SRC_A), 3]]])
         with caplog.at_level(logging.WARNING, logger=_LOGGER.name):
-            sources = await SourceTransferService().add_urls_async(
+            transfer = await SourceTransferService().add_urls_async(
                 NB, [URL], rpc=rpc, extract_youtube_video_id=lambda _u: None, logger=_LOGGER
             )
+        sources = transfer.items
         assert [s.id for s in sources] == [SRC_A]
         assert "status 3" in caplog.text
 
@@ -357,10 +364,11 @@ class TestAppendText:
     @pytest.mark.asyncio
     async def test_validation(self) -> None:
         rpc = _rpc(None)
+        api, _ = _sources(rpc)
         with pytest.raises(ValidationError):
-            await SourceTransferService().append_text(NB, "", "x", header="", rpc=rpc)
+            await api.append_text(NB, "", "x", header="")
         with pytest.raises(ValidationError):
-            await SourceTransferService().append_text(NB, SRC_A, "", header="", rpc=rpc)
+            await api.append_text(NB, SRC_A, "", header="")
         rpc.rpc_call.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -374,8 +382,10 @@ class TestCopySources:
     @pytest.mark.asyncio
     async def test_maps_original_to_copy(self) -> None:
         rpc = _rpc([[[[SRC_A], _source_entry(SRC_NEW, "Python Programming")]]])
-        copied = await SourceTransferService().copy(NB, [SRC_A], TARGET, **_service_kwargs(rpc))
+        transfer = await SourceTransferService().copy(NB, [SRC_A], TARGET, **_service_kwargs(rpc))
+        copied = transfer.items
         assert copied == [CopiedSource(original_id=SRC_A, source=copied[0].source)]
+        assert transfer.method_id == RPCMethod.COPY_SOURCES.value
         assert copied[0].source.id == SRC_NEW
         assert copied[0].source.title == "Python Programming"
         method, params = rpc.rpc_call.await_args.args[:2]
@@ -386,22 +396,22 @@ class TestCopySources:
     @pytest.mark.asyncio
     async def test_empty_mapping_is_not_found(self) -> None:
         for payload in (None, [], [[]]):
+            api, _ = _sources(_rpc(payload))
             with pytest.raises(SourceNotFoundError):
-                await SourceTransferService().copy(
-                    NB, [SRC_A], TARGET, **_service_kwargs(_rpc(payload))
-                )
+                await api.copy(NB, [SRC_A], TARGET)
 
     @pytest.mark.asyncio
     async def test_partial_mapping_returns_and_warns(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         rpc = _rpc([[[[SRC_A], _source_entry(SRC_NEW, "Copy")]]])
+        api, supervisor = _sources(rpc)
         with caplog.at_level(logging.WARNING, logger=_LOGGER.name):
-            copied = await SourceTransferService().copy(
-                NB, [SRC_A, SRC_B], TARGET, **_service_kwargs(rpc)
-            )
+            copied = await api.copy(NB, [SRC_A, SRC_B], TARGET)
         assert [c.original_id for c in copied] == [SRC_A]
         assert SRC_B in caplog.text
+        assert caplog.text.count("CopySourcesAsync copied") == 1
+        supervisor.operation_scope.assert_called_once_with("source.copy")
 
     @pytest.mark.asyncio
     async def test_malformed_entry_fails_closed(self) -> None:
@@ -415,11 +425,12 @@ class TestCopySources:
     @pytest.mark.asyncio
     async def test_validation_and_transport_loss(self) -> None:
         rpc = _rpc()
+        api, _ = _sources(rpc)
         for bad in ([], [""]):
             with pytest.raises(ValidationError):
-                await SourceTransferService().copy(NB, bad, TARGET, **_service_kwargs(rpc))
+                await api.copy(NB, bad, TARGET)
         with pytest.raises(ValidationError):
-            await SourceTransferService().copy(NB, [SRC_A], "", **_service_kwargs(rpc))
+            await api.copy(NB, [SRC_A], "")
         rpc.rpc_call.assert_not_awaited()
         with pytest.raises(RPCError, match="CopySourcesAsync may have committed"):
             await SourceTransferService().copy(
@@ -600,9 +611,10 @@ class TestMalformedRowsAndGuards:
     ) -> None:
         rows = [[[SRC_A], _source_entry(SRC_NEW, "Copy")], [[SRC_B]], [["x"], [[""], "no id"]]]
         with caplog.at_level(logging.WARNING, logger=_LOGGER.name):
-            copied = await SourceTransferService().copy(
+            transfer = await SourceTransferService().copy(
                 NB, [SRC_A, SRC_B], TARGET, **_service_kwargs(_rpc([rows]))
             )
+        copied = transfer.items
         assert [c.original_id for c in copied] == [SRC_A]
         assert caplog.text.count("malformed mapping entry") == 2
         with pytest.raises(DecodingError):
@@ -618,23 +630,20 @@ class TestMalformedRowsAndGuards:
     async def test_add_urls_async_count_mismatch_and_idless_stub(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        kwargs = {"extract_youtube_video_id": lambda _u: None, "logger": _LOGGER}
+        rpc = _rpc([[_stub_source(SRC_A)], None, []])
+        api, supervisor = _sources(rpc)
         with caplog.at_level(logging.WARNING, logger=_LOGGER.name):
-            sources = await SourceTransferService().add_urls_async(
-                NB,
-                [URL, "https://b.example/"],
-                rpc=_rpc([[_stub_source(SRC_A)], None, []]),
-                **kwargs,
-            )
+            sources = await api.add_urls_async(NB, [URL, "https://b.example/"])
         assert len(sources) == 1
         assert "queued 1 source(s) for 2 URL(s)" in caplog.text
-        with pytest.raises(DecodingError):
-            await SourceTransferService().add_urls_async(
-                NB,
-                [URL],
-                rpc=_rpc([[[[""], URL, [None, None, None, None, 5]]], None, []]),
-                **kwargs,
-            )
+        assert caplog.text.count("queued 1 source(s) for 2 URL(s)") == 1
+        supervisor.operation_scope.assert_called_once_with("source.add_urls_async")
+
+        idless_rpc = _rpc([[[[""], URL, [None, None, None, None, 5]]], None, []])
+        idless_api, _ = _sources(idless_rpc)
+        with pytest.raises(DecodingError) as raised:
+            await idless_api.add_urls_async(NB, [URL])
+        assert raised.value.raw_response is not None
 
     def test_row_guards_on_non_list_and_bool_slots(self) -> None:
         assert CopiedSourceRow(None).original_id is None

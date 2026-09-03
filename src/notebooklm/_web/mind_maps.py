@@ -23,7 +23,7 @@ from ..exceptions import (
     MindMapNotFoundError,
 )
 from ..rpc import RPCMethod, safe_index
-from ..types import ArtifactType
+from ..types import Artifact, ArtifactType
 from .notes import NoteRowKind, NoteService
 from .rows.artifacts import extract_interactive_tree_leaf
 from .rows.notes import NoteRow
@@ -44,20 +44,6 @@ __all__ = ["NoteBackedMindMapService", "WebMindMapsAPI"]
 # (see ``_new_artifact_id``).
 _CREATE_ARTIFACT_ENVELOPE_POS = 0
 _CREATE_ARTIFACT_ID_POS = 0
-
-
-def _tree_title(tree: dict[str, Any] | None, default: str = "Mind Map") -> str:
-    """Return a mind-map title from ``tree["name"]`` only when it is a non-empty ``str``.
-
-    The frozen :class:`MindMap.title` is typed ``str``; a malformed tree with a
-    ``null``/numeric ``name`` would otherwise smuggle a non-``str`` into it
-    (issue #1270). Falls back to ``default`` for any non-string / empty name.
-    """
-    if tree is not None:
-        name = tree.get("name")
-        if isinstance(name, str) and name:
-            return name
-    return default
 
 
 def _parse_tree(content: Any) -> dict[str, Any] | None:
@@ -227,55 +213,20 @@ class WebMindMapsAPI(MindMapsAPI):
         """Rename a note-backed mind map through the web note-row service."""
         await self._mind_maps.rename_mind_map(notebook_id, mind_map_id, new_title)
 
-    async def generate(
+    async def _list_studio_mind_map_rows(self, notebook_id: str) -> builtins.list[Artifact]:
+        """Return unfiltered Studio rows for interactive-map classification."""
+        return await self._artifacts.list(notebook_id)
+
+    async def _start_interactive_mind_map(
         self,
         notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
+        source_ids: builtins.list[str] | None,
         *,
-        kind: MindMapKind,
-        language: str | None = "en",
-        instructions: str | None = None,
-        wait: bool = True,
-    ) -> MindMap:
-        """Generate a mind map of the requested ``kind``.
-
-        ``NOTE_BACKED`` is synchronous (``GENERATE_MIND_MAP`` returns the tree).
-        ``INTERACTIVE`` is async (``CREATE_ARTIFACT`` returns a pending artifact);
-        with ``wait=True`` this polls to completion and then fetches the node
-        tree (so the returned :class:`MindMap` carries ``tree`` for both kinds,
-        a uniform surface). With ``wait=False`` it returns a pending
-        :class:`MindMap` whose ``tree`` is ``None`` until completed.
-
-        ``instructions`` is a free-text prompt that steers generation; it is sent
-        for both kinds — note-backed via ``GENERATE_MIND_MAP`` and interactive at
-        the ``[9][1][2]`` prompt slot of ``CREATE_ARTIFACT`` (the same slot
-        quiz/flashcards use; the server honours it for variant 4, verified live).
-        ``language`` applies to the note-backed payload only.
-
-        Raises:
-            ArtifactFeatureUnavailableError: if the interactive
-                ``CREATE_ARTIFACT`` call returns no artifact id (null or
-                unexpected response shape) — no generation task was created.
-                A subclass of :class:`~notebooklm.exceptions.ArtifactError`, so
-                ``except ArtifactError`` still catches it; aligns the interactive
-                async kickoff with the sibling ``generate_*`` / ``retry_failed``
-                null-create contract (ADR-0019; issue #1359).
-        """
-        if kind == MindMapKind.NOTE_BACKED:
-            res = await self._artifacts.generate_mind_map(
-                notebook_id, source_ids, language, instructions
-            )
-            tree = res.mind_map if isinstance(res.mind_map, dict) else None
-            title = _tree_title(tree)
-            return MindMap(
-                id=res.note_id or "",
-                notebook_id=notebook_id,
-                title=title,
-                kind=MindMapKind.NOTE_BACKED,
-                created_at=res.created_at,
-                tree=tree,
-            )
-
+        language: str | None,
+        instructions: str | None,
+    ) -> str:
+        """Start the web ``CREATE_ARTIFACT`` interactive-map operation."""
+        del language  # Interactive web payloads have no language slot.
         if source_ids is None:
             source_ids = await self._notebooks.get_source_ids(notebook_id)
         # Imported lazily to keep the web mind-map facade import-safe while
@@ -311,90 +262,14 @@ class WebMindMapsAPI(MindMapsAPI):
                 ArtifactType.MIND_MAP.value,
                 method_id=RPCMethod.CREATE_ARTIFACT.value,
             )
-        if wait:
-            await self._artifacts.wait_for_completion(notebook_id, new_id)
-        # ``allow_unclassified=True``: we hold the concrete id from
-        # CREATE_ARTIFACT, so id-match a settling type-4 row whose variant slot
-        # has not yet filled rather than degrading to the placeholder MindMap.
-        art = await self._find_interactive(notebook_id, new_id, allow_unclassified=True)
-        # After completion, fetch the tree so interactive maps return the same
-        # populated ``MindMap.tree`` as note-backed ones. Skip when not waiting
-        # (still pending) — ``get_tree`` would have nothing to read yet.
-        tree = (
-            await self.get_tree(
-                notebook_id, art.id if art is not None else new_id, kind=MindMapKind.INTERACTIVE
-            )
-            if wait
-            else None
-        )
-        if art is not None:
-            return MindMap(
-                id=art.id,
-                notebook_id=notebook_id,
-                title=art.title,
-                kind=MindMapKind.INTERACTIVE,
-                created_at=art.created_at,
-                tree=tree,
-            )
-        return MindMap(
-            id=new_id,
-            notebook_id=notebook_id,
-            title="Mind Map",
-            kind=MindMapKind.INTERACTIVE,
-            tree=tree,
-        )
+        return new_id
 
-    async def get_tree(
+    async def _read_interactive_tree(
         self,
         notebook_id: str,
         mind_map_id: str,
-        *,
-        kind: MindMapKind | None = None,
     ) -> dict[str, Any] | None:
-        """Return the ``{"name", "children"}`` node tree for a mind map.
-
-        Note-backed maps parse the tree from their note content; interactive maps
-        fetch it via ``GET_INTERACTIVE_HTML`` (the tree is at ``[0][9][3]``).
-
-        Omitting ``kind`` triggers an extra list RPC (and possibly a second
-        ``LIST_ARTIFACTS`` call) to auto-detect the backing; pass ``kind`` to skip it.
-
-        As a derived read (ADR-0019), this does **not** police parent existence:
-        a missing mind map and an existing-but-unpopulated (not-ready) one both
-        return ``None``. Use :meth:`get` to distinguish absence from emptiness.
-        Shape-drift in the interactive payload still raises
-        :class:`~notebooklm.exceptions.UnknownRPCMethodError` (issue #1270).
-
-        .. note::
-            The ``kind=None`` (auto-detect) and ``kind=NOTE_BACKED`` paths
-            enforce the ``None``-on-missing contract client-side (they confirm
-            the id exists before reading). The explicit
-            ``kind=MindMapKind.INTERACTIVE`` path instead **delegates absence
-            detection to the RPC**: it does no pre-validation and passes the id
-            straight to ``GET_INTERACTIVE_HTML`` (with ``allow_null=True``), so a
-            missing id's value is server-dependent — the server returns null
-            today, which flows through to ``None``, but that is not enforced
-            client-side. Skipping the pre-validation avoids an extra
-            ``LIST_ARTIFACTS`` round-trip on the explicit-kind fast path (issue
-            #1355).
-        """
-        if kind is None:
-            # Auto-detect inline so the note-backed list is fetched once rather
-            # than twice (a separate ``_detect_kind`` call would re-issue
-            # ``list_mind_maps``). Precedence matches ``_detect_kind``: note-backed
-            # first (return its parsed tree), then interactive (fall through to the
-            # RPC). A miss in both backings returns ``None`` rather than raising —
-            # derived reads return the uniform-empty value on a missing parent.
-            for row in await self._mind_maps.list_mind_maps(notebook_id):
-                if NoteRow(row).id == mind_map_id:
-                    return _parse_tree(self._mind_maps.extract_content(row))
-            if await self._find_interactive(notebook_id, mind_map_id) is None:
-                return None
-        elif kind == MindMapKind.NOTE_BACKED:
-            for row in await self._mind_maps.list_mind_maps(notebook_id):
-                if NoteRow(row).id == mind_map_id:
-                    return _parse_tree(self._mind_maps.extract_content(row))
-            return None
+        """Read one interactive map through ``GET_INTERACTIVE_HTML``."""
         result = await self._rpc.rpc_call(
             RPCMethod.GET_INTERACTIVE_HTML,
             [mind_map_id],

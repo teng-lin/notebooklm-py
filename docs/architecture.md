@@ -1248,7 +1248,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/wire/safe_index.py` | Strict bounds-checked positional access for decoded web payloads, compatibility-re-exported as `notebooklm.rpc.safe_index` |
 | `artifacts.py`, `research.py`, `utils.py` | Public helper modules for artifact retry, research citation/report utilities, and common async helpers |
 | `_notebooks.py` | Backend-neutral abstract `NotebooksAPI`; owns shared create idempotency, lookup/update conveniences, metadata composition, and share-URL semantics |
-| `_sources.py` | Backend-neutral abstract `SourcesAPI`; owns source identity lookup, search validation/global ranking, and the four polling workflows over neutral `SourcePoller` |
+| `_sources.py` | Backend-neutral abstract `SourcesAPI`; owns source identity lookup, search validation/global ranking, the `add_urls_async` / `append_text` / `copy` transfer workflows, and the four polling workflows over neutral `SourcePoller`; `add_file` remains backend-specific pending its full post-upload choreography hoist |
 | `_artifacts.py` | Backend-neutral abstract `ArtifactsAPI`; owns artifact generation orchestration, decoded polling, family lists, lookup, neutral formatting, and asset transfer |
 | `_chat.py` | Backend-neutral abstract `ChatAPI`; owns locks, cache, deleted-conversation tracking, ID recovery, authoritative turn counting, modes, and shared ask/delete/save-note orchestration over three protected adapter hooks plus the typed `_list_turn_roles` read boundary |
 | `_research.py` | Thin lazy compatibility shim for the moved `ResearchAPI` implementation |
@@ -1260,7 +1260,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/labels.py` | Concrete `WebLabelsAPI` implementation; keeps the historical `notebooklm._labels` logger key |
 | `_web/collections.py` | Concrete `WebCollectionsAPI` implementation over type-3 label RPCs; keeps the historical `notebooklm._collections` logger key |
 | `_settings.py` | Backend-neutral abstract `SettingsAPI` contract |
-| `_mind_maps_api.py` | Backend-neutral abstract `MindMapsAPI`; owns unified lookup/list/rename/delete composition over base-typed `ArtifactsAPI` and `NotesAPI` dependencies. `list_note_backed`, `generate`, `get_tree`, and the narrow exact-content `_send_rename_note_backed` hook remain frontend-specific (#1256). |
+| `_mind_maps_api.py` | Backend-neutral abstract `MindMapsAPI`; owns unified lookup/list/generate/get-tree/rename/delete composition over base-typed `ArtifactsAPI` and `NotesAPI` dependencies. `list_note_backed` and narrow typed read/write hooks remain frontend-specific (#1256). |
 | `_artifact/downloads.py` | Backend-neutral asset transfer service: guarded streaming, rejection, staging, and atomic publication |
 | `_artifact/_guarded_transfer.py` | Backend-neutral representation transfer loop: explicit redirect cap, application redirects, content/signature/byte limits, and atomic publication |
 | `_artifact/_redirect_guard.py` | Per-redirect-hop host/scheme revalidation and credential-policy application for downloads — rejects off-allowlist / non-HTTPS redirect targets before the request is sent (#1521) |
