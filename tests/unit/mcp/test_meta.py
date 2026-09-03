@@ -395,4 +395,24 @@ async def test_server_info_survives_a_failed_lazy_client_open(tmp_path, monkeypa
     assert account["available"] is False
     assert account["email"] is None
     assert account["authuser"] is None
+    assert "session expired" in account["reason"]
     assert "AAAA1111secret" not in account["reason"]
+
+
+async def test_server_info_hides_unexpected_lazy_client_open_details(tmp_path, monkeypatch) -> None:
+    """Unexpected open failures degrade without echoing arbitrary exception text."""
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    _write_authed_storage()
+
+    @contextlib.asynccontextmanager
+    async def failing_factory():
+        raise RuntimeError("internal host tenant_secret=not-a-known-token-shape")
+        yield  # pragma: no cover - unreachable, keeps this an async generator
+
+    async with Client(create_server(client_factory=failing_factory)) as client:
+        result = await client.call_tool("server_info", {"include_account": True})
+
+    account = result.structured_content["account"]
+    assert account["available"] is False
+    assert account["reason"] == "An unexpected internal error occurred."
+    assert "tenant_secret" not in account["reason"]

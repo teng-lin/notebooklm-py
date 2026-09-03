@@ -171,7 +171,7 @@ class ClientProvider:
         exc_type: type[BaseException] | None = None,
         exc: BaseException | None = None,
         tb: TracebackType | None = None,
-    ) -> None:
+    ) -> bool | None:
         """Close the client if it was opened, cancelling any in-flight open.
 
         Idempotent. After this the provider refuses to hand out a client.
@@ -181,7 +181,8 @@ class ClientProvider:
         ``NotebookLMClient.__aexit__`` arbitrates on it: when the lifespan body
         raised, a failure to close is demoted to a WARNING so it cannot mask the
         original cause. Passing ``(None, None, None)`` unconditionally would claim
-        the body succeeded and let a close error bury a real lifespan failure.
+        the body succeeded and let a close error bury a real lifespan failure. The
+        context manager's suppression result is returned to the lifespan unchanged.
         """
         self._closed = True
         # Cancel while the task is still registered so the done-callback clears
@@ -195,4 +196,5 @@ class ClientProvider:
         cm, self._cm = self._cm, None
         self._client = None
         if cm is not None:
-            await cm.__aexit__(exc_type, exc, tb)
+            return await cm.__aexit__(exc_type, exc, tb)
+        return None

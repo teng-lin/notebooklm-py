@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator
+from types import TracebackType
 from typing import cast
 from unittest.mock import MagicMock
 
@@ -322,13 +323,18 @@ async def test_a_stale_failure_is_retrieved_even_when_the_slot_moved_on() -> Non
     provider = ClientProvider(factory)
 
     stale = provider._ensure_open_task()
-    with contextlib.suppress(RuntimeError):
-        await stale
+    # Keep the exception genuinely unretrieved until the callback under test runs.
+    # Awaiting the task directly (even under suppress) would consume it and make
+    # this regression pass before _on_open_done did any work.
+    assert stale.remove_done_callback(provider._on_open_done) == 1
+    done, pending = await asyncio.wait({stale})
+    assert done == {stale}
+    assert not pending
+    assert getattr(stale, "_log_traceback", False)
     # Simulate the race the callback guards: something else claimed the slot.
     provider._open_task = None
     provider._on_open_done(stale)
 
-    assert stale.exception() is not None
     # The real assertion: the exception was consumed, so asyncio will not later
     # report it as "never retrieved" (which is what bypasses redaction).
     assert not getattr(stale, "_log_traceback", False)
@@ -407,6 +413,37 @@ async def test_shutdown_reports_a_clean_exit_as_clean() -> None:
 
     await _shutdown_clean(state, provider)
     assert seen == [None]
+
+
+async def test_lifespan_honors_client_context_manager_suppression() -> None:
+    """The lazy provider preserves the factory CM's normal suppression contract."""
+
+    class SuppressingManager:
+        def __init__(self) -> None:
+            self.client = cast("NotebookLMClient", MagicMock())
+            self.seen: list[tuple[type[BaseException] | None, BaseException | None]] = []
+
+        async def __aenter__(self) -> NotebookLMClient:
+            return self.client
+
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: TracebackType | None,
+        ) -> bool:
+            self.seen.append((exc_type, exc))
+            return True
+
+    manager = SuppressingManager()
+    server = create_server(client_factory=lambda: manager)
+    lifespan = server._lifespan(server)
+    state = await lifespan.__aenter__()
+    await state.client_provider.get()  # ensure the background open has landed
+
+    boom = RuntimeError("lifespan body failed")
+    assert await lifespan.__aexit__(type(boom), boom, boom.__traceback__) is True
+    assert manager.seen == [(RuntimeError, boom)]
 
 
 async def _shutdown_clean(state: AppState, provider: ClientProvider) -> None:

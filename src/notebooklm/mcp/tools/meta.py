@@ -30,7 +30,7 @@ from ...exceptions import NotebookLMError
 from ...paths import get_storage_path, resolve_profile
 from .._confirm import READ_ONLY
 from .._context import get_chat_tasks, get_client
-from .._errors import mcp_errors, redact
+from .._errors import mcp_errors, redact, tool_error_payload
 from ..server import SERVER_NAME
 
 
@@ -72,9 +72,18 @@ async def _account_block(ctx: Context, *, authenticated: bool) -> dict[str, Any]
     """
     try:
         client = await get_client(ctx)
-    except Exception as exc:  # noqa: BLE001 - degrade, never sink the whole response
-        # No client → no identity to report; the reason carries the (scrubbed) cause.
+    except NotebookLMError as exc:
+        # Expected library failures retain their useful, scrubbed diagnostic.
         return {"email": None, "authuser": None, "available": False, "reason": redact(exc)}
+    except Exception as exc:  # noqa: BLE001 - degrade, never sink the whole response
+        # Unexpected exception text can contain arbitrary secrets/host details that
+        # a denylist cannot reliably scrub. Reuse the MCP boundary's fixed message.
+        return {
+            "email": None,
+            "authuser": None,
+            "available": False,
+            "reason": tool_error_payload(exc)["message"],
+        }
     # Identity from a single source (the client). Never raises. ``live_fallback`` is
     # gated on ``authenticated`` — suppress the live WIZ probe when the session is
     # already known stale (it would just fail), so the unauth path stays network-free.

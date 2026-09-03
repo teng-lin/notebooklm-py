@@ -21,7 +21,6 @@ Design highlights:
 from __future__ import annotations
 
 import asyncio
-import sys
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from types import TracebackType
@@ -111,15 +110,16 @@ async def _shutdown(
     exc_type: type[BaseException] | None,
     exc: BaseException | None,
     tb: TracebackType | None,
-) -> None:
+) -> bool | None:
     """Tear the lifespan down, forwarding the body's exception (if any) to the client.
 
     Detached chat asks are cancelled BEFORE the provider closes the client, so no
     server-owned task ever touches a closing client (see ``ChatTaskRegistry.aclose``).
+    The client context manager's suppression result is returned to the lifespan.
     """
     await state.chat_tasks.aclose()
     state.chat_tasks.set_bound_loop(None)
-    await provider.aclose(exc_type, exc, tb)
+    return await provider.aclose(exc_type, exc, tb)
 
 
 def create_server(
@@ -195,14 +195,16 @@ def create_server(
             provider.start()
             try:
                 yield state
-            finally:
-                # ``sys.exc_info()`` carries the in-flight exception while a
-                # ``finally`` unwinds (and is ``(None, None, None)`` on the clean
-                # path), so the triple reaches the client context manager exactly as
-                # the `async with factory()` this replaced delivered it —
-                # NotebookLMClient arbitrates on it, demoting a close failure to a
-                # WARNING rather than letting it mask the real cause.
-                await _shutdown(state, provider, *sys.exc_info())
+            except BaseException as exc:
+                # Forward the exact exception triple, then honor the client context
+                # manager's suppression result just as ``async with factory()`` did.
+                # NotebookLMClient normally returns false, but injected/embedded
+                # factories may deliberately suppress a lifespan exception.
+                suppressed = await _shutdown(state, provider, type(exc), exc, exc.__traceback__)
+                if not suppressed:
+                    raise
+            else:
+                await _shutdown(state, provider, None, None, None)
         finally:
             set_active_profile(previous_profile)
 

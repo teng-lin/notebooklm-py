@@ -1720,6 +1720,47 @@ async def test_source_add_missing_input_is_validation_error(mcp_call, mock_clien
     assert "VALIDATION" in str(excinfo.value)
 
 
+@pytest.mark.parametrize(
+    ("args", "detail"),
+    [
+        ({"urls": []}, "at least one URL"),
+        ({"urls": ["https://example.com"], "wait": True}, "single-mode only"),
+        (
+            {"source_type": "drive", "document_id": "drive-1", "mime_type": "bogus"},
+            "Invalid mime_type",
+        ),
+        ({"source_type": "drive", "mime_type": "google-doc"}, "document_id"),
+        (
+            {"source_type": "url", "url": "https://example.com", "wait": True, "timeout": -1},
+            "timeout",
+        ),
+        ({"source_type": "file", "bytes_base64": "%%%"}, "not valid base64"),
+    ],
+)
+async def test_source_add_local_validation_precedes_lazy_open_failure(args, detail) -> None:
+    """Malformed input stays VALIDATION even when the lazy client cannot authenticate."""
+    import contextlib
+
+    from fastmcp import Client
+
+    from notebooklm.exceptions import AuthError
+    from notebooklm.mcp.server import create_server
+
+    @contextlib.asynccontextmanager
+    async def failing_factory():
+        raise AuthError("expired credentials that must not mask validation")
+        yield  # pragma: no cover - unreachable, keeps this an async generator
+
+    async with Client(create_server(client_factory=failing_factory)) as client:
+        with pytest.raises(ToolError) as excinfo:
+            await client.call_tool("source_add", {"notebook": NB_ID, **args})
+
+    message = str(excinfo.value)
+    assert message.startswith("VALIDATION:"), message
+    assert detail in message
+    assert "expired credentials" not in message
+
+
 async def test_source_add_drive_bad_mime_is_validation_error(mcp_call, mock_client) -> None:
     """A bogus drive mime_type projects as VALIDATION (not UNEXPECTED)."""
     mock_client.sources.add_drive = AsyncMock(return_value=FakeSource(id=SRC_ID))
