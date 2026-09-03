@@ -705,7 +705,10 @@ def test_phase9_closed_values_and_paired_compatibility_owners_are_exact() -> Non
             [("live", "httpx.Cookies", False), ("baseline", "CookieJar", False)],
             False,
         ),
-        tokens.LoadPolicy: ([("allow_headless", "bool", True)], True),
+        tokens.LoadPolicy: (
+            [("allow_headless", "bool", True), ("heal_psidts", "bool", True)],
+            True,
+        ),
         tokens.TokenAcquisition: (
             [
                 ("csrf_token", "str", False),

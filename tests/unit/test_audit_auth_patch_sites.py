@@ -253,9 +253,9 @@ def test_live_replacement_patch_contract_and_scorecard_are_exact(script):
     sites = script.collect_sites(REPO_ROOT / "tests", REPO_ROOT / "src/notebooklm/_auth")
     projection = script.build_projection(sites)
     assert projection["summary"]["TOTAL"] == {
-        "public": 99,
-        "private": 144,
-        "total": 243,
+        "public": 100,
+        "private": 146,
+        "total": 246,
     }
     relevant = {
         (row["module"], row["attribute"], row["idiom"]): row["count"]
@@ -348,7 +348,7 @@ def test_live_replacement_patch_contract_and_scorecard_are_exact(script):
         ("recovery", "_try_headless_reauth_result", "monkeypatch.setattr"): 7,
         ("recovery", "_try_master_token_reauth_result", "monkeypatch.setattr"): 6,
         ("recovery", "coalesced_cold_recovery", "monkeypatch.setattr"): 2,
-        ("refresh", "_fetch_tokens_with_exact_baseline", "monkeypatch.setattr"): 6,
+        ("refresh", "_fetch_tokens_with_exact_baseline", "monkeypatch.setattr"): 7,
         ("storage", "get_account_email_for_storage", "monkeypatch.setattr"): 1,
         ("tokens", "_load_stored_auth", "monkeypatch.setattr"): 6,
         ("tokens", "resolve_auth_json_env", "monkeypatch.setattr"): 1,

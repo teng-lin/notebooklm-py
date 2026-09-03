@@ -76,10 +76,17 @@ class SessionSeed:
 @dataclass(frozen=True, slots=True)
 class LoadPolicy:
     allow_headless: bool = False
+    # False is the Android NAME_ONLY contract: load stored cookie names and
+    # permit the read-only homepage token acquisition needed to populate the
+    # compatibility AuthTokens object, but never enter the Web recovery/poke
+    # ladder or merge that acquisition's cookie observation back to disk.
+    heal_psidts: bool = True
 
     def __post_init__(self) -> None:
         if type(self.allow_headless) is not bool:
             raise TypeError("allow_headless must be a boolean")
+        if type(self.heal_psidts) is not bool:
+            raise TypeError("heal_psidts must be a boolean")
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -519,8 +526,22 @@ class SessionSeedLoader:
             raise TypeError("policy must be a LoadPolicy")
 
         def load_sync() -> _auth_cookies._LoadedCookiePair:
+            heal_policy = (
+                _auth_psidts_recovery.HealPolicy.HEAL_THEN_NAME_ONLY
+                if policy.heal_psidts
+                else _auth_psidts_recovery.HealPolicy.NAME_ONLY
+            )
             if isinstance(source, FileAuthSource):
-                return _auth_cookies._build_cookie_pair_from_storage(source.store.path)
+                if heal_policy is _auth_psidts_recovery.HealPolicy.NAME_ONLY:
+                    return _auth_cookies._load_cookie_pair_pure(
+                        source.store.path,
+                        require_routable=False,
+                    )
+                return _auth_psidts_recovery.load_with_recovery(
+                    source.store.path,
+                    heal_policy,
+                    load=_auth_cookies._load_cookie_pair_pure,
+                )
 
             def load_captured(
                 _path: Path | None,
@@ -539,9 +560,11 @@ class SessionSeedLoader:
                 )
                 return False
 
+            if heal_policy is _auth_psidts_recovery.HealPolicy.NAME_ONLY:
+                return load_captured(None, require_routable=False)
             return _auth_psidts_recovery.load_with_recovery(
                 None,
-                _auth_psidts_recovery.HealPolicy.HEAL_THEN_NAME_ONLY,
+                heal_policy,
                 load=load_captured,
                 heal=decline_inline,
             )
@@ -638,6 +661,27 @@ class _ProductionTokenAcquirer:
 
         storage_path = source.store.path if isinstance(source, FileAuthSource) else None
         profile = source.profile if isinstance(source, FileAuthSource) else None
+        if not policy.heal_psidts:
+            # Android only needs its master-token/bearer route.  Keep the
+            # historical AuthTokens bootstrap available for the deprecated
+            # lazy Web sidecar, but make that bootstrap strictly read-only:
+            # no PSIDTS poke, refresh command, headless/master-token cookie
+            # recovery, or cookie-store merge.  Set-Cookie observations remain
+            # in ``seed.live`` and become persistable only if the Web sidecar is
+            # later materialised and assumes lifecycle ownership.
+            csrf, session_id = await _auth_refresh._fetch_tokens_with_jar(
+                seed.live,
+                storage_path,
+                poke=False,
+                **await resolve_route(storage_path),
+            )
+            return TokenAcquisition(
+                csrf,
+                session_id,
+                seed.live,
+                seed.baseline,
+                final_account,
+            )
         csrf, session_id, baseline = await _auth_refresh._fetch_tokens_with_exact_baseline(
             seed.live,
             storage_path,
@@ -721,7 +765,7 @@ class StoredAuthLoader:
             policy=policy,
         )
         selected_baseline = acquired.baseline_before_fetch_mutations
-        if isinstance(source, FileAuthSource):
+        if isinstance(source, FileAuthSource) and policy.heal_psidts:
             store: ProfileStore = source.store
             observation = CookieJar.from_httpx(acquired.live)
             merge = await asyncio.to_thread(

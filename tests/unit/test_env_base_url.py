@@ -149,7 +149,7 @@ async def test_invalid_rpc_base_url_keeps_pre_chain_accounting(monkeypatch) -> N
     monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://evil.example")
     try:
         with pytest.raises(ValueError, match="NOTEBOOKLM_BASE_URL"):
-            await client.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+            await client.raw.call(RPCMethod.LIST_NOTEBOOKS, [])
     finally:
         await client.close(drain=False)
 

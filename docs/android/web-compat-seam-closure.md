@@ -21,9 +21,11 @@ actually gaps, and what remains.
 asserts the complete inventory of remaining Web bindings. It is now **empty**:
 an Android-selected namespace graph holds no Web operation collaborator, and
 typed Android operations do not fall back to batchexecute. The composition root
-still constructs the Web/raw-RPC infrastructure, and `client.rpc_call(...)`
-remains Web-specific; this report is about the installed typed namespace graph,
-not removal of every Web-owned object from `NotebookLMClient`.
+now constructs only `AndroidRuntime` for normal Android use. The deprecated
+`client.rpc_call(...)` wrapper remains Web-specific and pre-registers an inert
+lifecycle proxy, but constructs its no-keepalive Web compatibility sidecar only
+on first use; this report is about the installed typed namespace graph, not that
+explicit v0.x compatibility exception.
 
 ## `sharing.set_view_level` — wrong service
 

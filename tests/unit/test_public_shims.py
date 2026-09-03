@@ -247,14 +247,15 @@ async def test_client_rpc_call_forwards_supported_kwargs() -> None:
     fake = make_fake_core(rpc_call=AsyncMock(return_value={"ok": True}))
     client._web_runtime = dataclasses.replace(client._web_runtime, executor=fake.rpc_executor)
 
-    result = await client.rpc_call(
-        RPCMethod.CREATE_NOTEBOOK,
-        ["My Notebook"],
-        allow_null=True,
-        disable_internal_retries=True,
-        read_timeout=45.0,
-        raise_on_null_status=True,
-    )
+    with pytest.warns(DeprecationWarning, match=r"client\.raw\.call"):
+        result = await client.rpc_call(
+            RPCMethod.CREATE_NOTEBOOK,
+            ["My Notebook"],
+            allow_null=True,
+            disable_internal_retries=True,
+            read_timeout=45.0,
+            raise_on_null_status=True,
+        )
 
     assert result == {"ok": True}
     fake.rpc_executor.rpc_call.assert_awaited_once_with(
@@ -269,7 +270,7 @@ async def test_client_rpc_call_forwards_supported_kwargs() -> None:
 
 @pytest.mark.asyncio
 async def test_client_rpc_call_forwards_default_arguments() -> None:
-    """The default-shape call forwards minimal kwargs and inherits executor defaults."""
+    """The deprecated default-shape call retains its executor defaults."""
     from notebooklm import NotebookLMClient
     from notebooklm.auth import AuthTokens
     from notebooklm.rpc import RPCMethod
@@ -288,7 +289,8 @@ async def test_client_rpc_call_forwards_default_arguments() -> None:
     fake = make_fake_core(rpc_call=AsyncMock(return_value=[]))
     client._web_runtime = dataclasses.replace(client._web_runtime, executor=fake.rpc_executor)
 
-    result = await client.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+    with pytest.warns(DeprecationWarning, match=r"client\.raw\.call"):
+        result = await client.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
     assert result == []
     # The wrapper forwards only the kwargs it owns; the rest of

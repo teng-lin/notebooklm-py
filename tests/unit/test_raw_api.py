@@ -119,7 +119,8 @@ def test_client_installs_raw_namespace_for_each_backend() -> None:
     assert type(web.raw) is WebRawAPI
     assert web.raw._rpc is web._web_runtime.executor
     assert type(android.raw) is AndroidRawAPI
-    assert android.raw._transport is android._android_session
+    assert android._android_runtime is not None
+    assert android.raw._transport is android._android_runtime.session
 
 
 def test_android_descriptor_defaults_fail_closed_and_rejects_target_shaped_paths() -> None:

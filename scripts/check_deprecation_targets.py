@@ -79,6 +79,8 @@ _REGISTERED_SPEC_KEYS = frozenset(
         "auth_tokens_flat_cookies",
         "auth_tokens_from_storage",
         "auth_tokens_sync_storage_construction",
+        "client_rpc_call_android",
+        "client_rpc_call_web",
     }
 )
 _SEMVER = re.compile(r"^[0-9]+\.[0-9]+(?:\.[0-9]+)?$")
@@ -268,8 +270,19 @@ def _replacement_resolves(replacement: str) -> bool:
     if len(parts) < 2 or parts[0] != "notebooklm" or any(not part for part in parts):
         return False
 
+    # Prefer the longest concrete public module prefix.  Most historical
+    # replacements start from a symbol re-exported by ``notebooklm.__init__``;
+    # backend-selected raw replacements intentionally start from the public
+    # ``notebooklm.raw`` module instead.
     module_parts: tuple[str, ...] = ()
-    symbol_name = parts[1]
+    symbol_index = 1
+    for index in range(len(parts) - 1, 1, -1):
+        candidate = tuple(parts[1:index])
+        if _module_source(candidate) is not None:
+            module_parts = candidate
+            symbol_index = index
+            break
+    symbol_name = parts[symbol_index]
     visited_reexports: set[tuple[tuple[str, ...], str]] = set()
     while True:
         visit = (module_parts, symbol_name)
@@ -298,7 +311,7 @@ def _replacement_resolves(replacement: str) -> bool:
             return False
         module_parts = resolved_parts
 
-    for attribute in parts[2:]:
+    for attribute in parts[symbol_index + 1 :]:
         if not isinstance(target, ast.ClassDef):
             return False
         target = next(

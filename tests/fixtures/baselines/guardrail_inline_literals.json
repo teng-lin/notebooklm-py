@@ -61,7 +61,7 @@
   },
   "tests/_guardrails/test_auth_stored_auth_boundary.py": {
     "_FORBIDDEN_TOKEN_CAPABILITIES": 35,
-    "_VALUE_FIELDS": 22
+    "_VALUE_FIELDS": 23
   },
   "tests/_guardrails/test_authtokens_jar_sync.py": {
     "_COOKIE_SHADOW_INVENTORY": 96,

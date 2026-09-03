@@ -233,6 +233,8 @@ def test_closed_values_validate_carriers_copy_baselines_and_redact_secrets(tmp_p
         SessionSeed(object(), baseline)  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="allow_headless"):
         LoadPolicy(allow_headless=1)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="heal_psidts"):
+        LoadPolicy(heal_psidts=1)  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="token acquisition fields"):
         TokenAcquisition("csrf", "session", _live(), baseline, object())  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="file loaded auth fields"):

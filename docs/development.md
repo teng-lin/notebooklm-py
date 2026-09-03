@@ -105,8 +105,8 @@ src/notebooklm/
 └───────────────────────────┬─────────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────────┐
-│           Raw Web RPC Facade (`rpc/`, Web-specific)         │
-│                __init__.py, types.py (RPCMethod)            │
+│          Raw facades (`raw.py`; `rpc/` IDs are Web-only)    │
+│     WebRawAPI.call or AndroidRawAPI.unary/unary_stream      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -136,7 +136,9 @@ a narrow Protocol surface so it can be unit-tested against a stub:
 | Module | Class | Responsibility |
 |---|---|---|
 | `_runtime/init.py` | `SharedRuntime` helpers | Validates constructor args and builds the backend-neutral metrics/supervisor bundle. It imports no backend implementation. |
-| `_web/transport/init.py` | `WebRuntime` helpers | Builds request-id/auth/kernel/persistence/transport, wires middleware, and returns the web bundle including executor and uploader. |
+| `_web/transport/init.py` | `WebRuntime` helpers | Builds request-id/auth/kernel/persistence/transport only for Web selection or first deprecated sidecar use, wires middleware, and returns the web bundle including executor and uploader. |
+| `_android/runtime.py` | `AndroidRuntime` | Immutable owner bundle for the bearer provider, gRPC session, upload/asset transports, and Phenotype provider. |
+| `_web/transport/sidecar.py` | `LazyWebSidecar` | Pre-registered inert Android lifecycle proxy for deprecated root `rpc_call`; owns one-time Web materialisation, close-race serialization, reopen, and phase delegation without a drain hook or keepalive. |
 | `_web/transport/composed.py` | `ClientComposed` | Write-once holder for web transport, executor, chain host, middleware metadata, and the shared runtime bundle. It owns no loop primitive or RPC semaphore. |
 | `_client_metrics.py` | `ClientMetrics` | `ClientMetricsSnapshot` counters, queue-wait recorders, `on_rpc_event` async callback. |
 | `_transport_drain.py` | `TransportDrainTracker` | Transitional in-flight bookkeeping owned by `CallSupervisor`; it is not the public drain-policy or generation owner. |
@@ -203,8 +205,9 @@ The architecture tests encode the current layer contract:
   update the manifest in the same PR so public API drift is intentional and
   reviewable. The behavioral half of the public-shim suite (the
   `select_cited_sources` / `ResearchAPI` back-compat delegations, the
-  `UnknownTypeWarning` filter behaviour, and `NotebookLMClient.rpc_call`
-  forwarding) stays in `tests/unit/test_public_shims.py`.
+  `UnknownTypeWarning` filter behaviour, and the deprecated
+  `NotebookLMClient.rpc_call` forwarding/warning contract) stays in
+  `tests/unit/test_public_shims.py`.
 - `tests/_guardrails/test_cli_boundary.py` parses `src/notebooklm/cli/**/*.py`
   and rejects CLI imports from `notebooklm._*`, `notebooklm.rpc.*`, or
   `_private` names exposed by public modules. Promote needed symbols through a
@@ -239,9 +242,12 @@ wins over `NOTEBOOKLM_BACKEND`; otherwise Web is the default. Android selection
 installs Android adapters for all eleven typed namespaces together, and
 `client.backends` reports that immutable installed graph. The current Android
 namespace objects have no Web operation collaborators. `client.rpc_call(...)`
-is not backend-neutral: `RPCMethod` values are batchexecute IDs, so that raw
-escape hatch remains Web-specific. See the Android [entry point](android/README.md)
-and [architecture flow](architecture.md#android-grpc-path).
+is deprecated and not backend-neutral: `RPCMethod` values are batchexecute IDs,
+so Android preserves it through a lazy, no-keepalive Web sidecar only during the
+0.x warning window. New code uses the backend-selected `client.raw` property:
+`raw.call(...)` on Web and `raw.unary(...)` / `unary_stream(...)` on Android.
+See the Android [entry point](android/README.md) and
+[architecture flow](architecture.md#android-grpc-path).
 
 **Naming conventions.** See [`docs/conventions.md`](./conventions.md) for the
 canonical tiebreakers on waiting/polling verbs (`poll_X` / `wait_for_X` /

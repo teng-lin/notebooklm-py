@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from .types import ClientMetricsSnapshot, ConnectionLimits, RpcTelemetryEvent
 
 # Keep feature/collaborator types importable for runtime type-hint introspection.
+from ._android.runtime import AndroidRuntime
 from ._artifacts import ArtifactsAPI
 from ._auth import tokens as _auth_tokens
 from ._auth.account import _probe_authuser
@@ -51,7 +52,7 @@ from ._client_assembly import (
     resolve_backend_preference,
 )
 from ._collections import CollectionsAPI
-from ._deprecation import warn_deprecated
+from ._deprecation import warn_deprecated, warn_registered_deprecation
 from ._env import get_base_url as get_base_url
 from ._labels import LabelsAPI
 from ._mind_maps_api import MindMapsAPI
@@ -80,6 +81,7 @@ from ._web.transport.init import compose_client_internals as compose_client_inte
 from ._web.transport.lifecycle import CookieRotator, CookieSaver
 from ._web.transport.seams import ClientSeams
 from ._web.transport.seams import resolve_client_seams as resolve_client_seams  # noqa: F401
+from ._web.transport.sidecar import LazyWebSidecar
 from .auth import AuthTokens
 from .exceptions import AuthExtractionError as AuthExtractionError
 from .raw import AndroidRawAPI, WebRawAPI
@@ -143,10 +145,11 @@ class NotebookLMClient:
     _seams: ClientSeams
     _collaborators: SharedRuntime
     _web_runtime: WebRuntime | None
+    _web_sidecar: LazyWebSidecar | None
+    _android_runtime: AndroidRuntime | None
     _backend_preference: BackendPreference
     _backends: Mapping[str, BackendName]
-    _android_bearer_provider: Any
-    _android_session: Any
+    _rpc_call_deprecation_warned: bool
     sources: SourcesAPI
     notebooks: NotebooksAPI
     artifacts: ArtifactsAPI
@@ -158,7 +161,7 @@ class NotebookLMClient:
     sharing: SharingAPI
     labels: LabelsAPI
     collections: CollectionsAPI
-    raw: WebRawAPI | AndroidRawAPI
+    _raw: WebRawAPI | AndroidRawAPI
 
     def _require_web_runtime(self) -> WebRuntime:
         """Return the web bundle or fail before a web-only operation."""
@@ -166,6 +169,12 @@ class NotebookLMClient:
         if runtime is None:
             raise RuntimeError("The web runtime is not available for this client.")
         return runtime
+
+    @property
+    def raw(self) -> WebRawAPI | AndroidRawAPI:
+        """Return the advanced wire adapter selected for this client backend."""
+
+        return self._raw
 
     def __init__(
         self,
@@ -379,16 +388,21 @@ class NotebookLMClient:
         """Read-only mapping of namespaces to their installed adapter backend.
 
         Explicit Android selection installs Android adapters for all public
-        namespaces, so every mapping value is ``"android"``. The Web-specific
-        root :meth:`rpc_call` escape hatch is outside this namespace mapping.
+        namespaces, so every mapping value is ``"android"``. The deprecated
+        Web-shaped root :meth:`rpc_call` wrapper and its lazy compatibility
+        sidecar are outside this namespace mapping.
         """
         return self._backends
 
     async def __aenter__(self) -> NotebookLMClient:
         """Open the client connection."""
         logger.debug("Opening NotebookLM client")
-        # Preserve the historical fail-fast check that composition is complete.
-        _ = self._require_web_runtime().composed.transport
+        # Preserve the historical fail-fast check that primary transport
+        # composition is complete, without requiring a Web bundle on Android.
+        if self._backend_preference.preferred == "web":
+            _ = self._require_web_runtime().composed.transport
+        elif self._android_runtime is None:  # pragma: no cover - assembly invariant
+            raise RuntimeError("The Android runtime is not available for this client.")
         await self._collaborators.lifecycle.open()
         return self
 
@@ -471,15 +485,18 @@ class NotebookLMClient:
         read_timeout: float | None = None,
         raise_on_null_status: bool = False,
     ) -> Any:
-        """Make a raw NotebookLM RPC call.
+        """Make a deprecated raw Web NotebookLM RPC call.
 
-        This is the public escape hatch for advanced callers who need an
-        undocumented RPC before a typed API exists. Prefer the namespaced APIs
-        (``client.notebooks``, ``client.sources``, etc.) when possible. Import
-        ``RPCMethod`` from ``notebooklm.rpc``. ``RPCMethod`` contains Web
-        ``batchexecute`` identifiers, so selecting ``backend="android"`` does
-        not change this root escape hatch; only the typed namespace APIs follow
-        the Android backend selection.
+        Deprecated since v0.9 and removed in v1.0. Web callers should migrate
+        to :meth:`notebooklm.raw.WebRawAPI.call`. Android callers should use
+        :meth:`notebooklm.raw.AndroidRawAPI.unary` or ``unary_stream`` for
+        Android wire methods, or create a Web-selected client and use its
+        ``raw.call`` method when Web ``RPCMethod`` access is still required.
+
+        During the 0.x warning window this method retains its historical Web
+        behavior under both backend selections. On Android it materialises a
+        lazy Web compatibility sidecar on first use. The sidecar never starts a
+        Web keepalive task.
 
         The wrapper forwards to :meth:`RpcExecutor.rpc_call` on the
         executor that was bound during :meth:`__init__` (and that every
@@ -502,14 +519,36 @@ class NotebookLMClient:
             were removed (see :doc:`/deprecations`). The default-shape
             call (``client.rpc_call(method, params)``) is unchanged.
         """
-        return await self._require_web_runtime().executor.rpc_call(
-            method=method,
-            params=params,
-            allow_null=allow_null,
-            disable_internal_retries=disable_internal_retries,
-            read_timeout=read_timeout,
-            raise_on_null_status=raise_on_null_status,
-        )
+        if self._backend_preference.preferred == "web":
+            if not self._rpc_call_deprecation_warned:
+                warn_registered_deprecation("client_rpc_call_web")
+                self._rpc_call_deprecation_warned = True
+            executor = self._require_web_runtime().executor
+            return await executor.rpc_call(
+                method=method,
+                params=params,
+                allow_null=allow_null,
+                disable_internal_retries=disable_internal_retries,
+                read_timeout=read_timeout,
+                raise_on_null_status=raise_on_null_status,
+            )
+
+        if not self._rpc_call_deprecation_warned:
+            warn_registered_deprecation("client_rpc_call_android")
+            self._rpc_call_deprecation_warned = True
+        sidecar = self._web_sidecar
+        if sidecar is None:  # pragma: no cover - assembly invariant
+            raise RuntimeError("The deprecated Web compatibility sidecar is unavailable.")
+        async with self._collaborators.call_supervisor.operation_scope("rpc_call.sidecar") as lease:
+            runtime = await sidecar.materialize(lease.epoch)
+            return await runtime.executor.rpc_call(
+                method=method,
+                params=params,
+                allow_null=allow_null,
+                disable_internal_retries=disable_internal_retries,
+                read_timeout=read_timeout,
+                raise_on_null_status=raise_on_null_status,
+            )
 
     @property
     def is_connected(self) -> bool:
@@ -659,24 +698,23 @@ class NotebookLMClient:
         )
 
     async def refresh_auth(self, *, allow_headless: bool = False) -> AuthTokens:
-        """Refresh authentication tokens by fetching the NotebookLM homepage.
+        """Refresh the selected backend's authentication state.
 
-        This helps prevent 'Session Expired' errors by obtaining a fresh CSRF
-        token (SNlM0e) and session ID (FdrFJe).
+        Web refreshes the NotebookLM homepage to obtain a fresh CSRF token
+        (SNlM0e) and session ID (FdrFJe). Android re-mints its bearer token;
+        when the deprecated Web compatibility sidecar has been materialised,
+        its cookies are refreshed best-effort through that sidecar's own Web
+        ladder as well.
 
-        This call site uses explicit collaborators sourced from
-        ``self._auth`` and ``self._web_runtime``. The five kwargs mirror
-        the :func:`refresh_auth_session` signature: ``auth`` is the
-        client-owned :class:`AuthTokens` instance (the Auth Instance
-        Invariant guarantees this is the same object every auth consumer
-        observes), and the remaining four come from the collaborator
-        bundle the composition root produced
-        (:func:`notebooklm._web.transport.init.compose_client_internals`). The
-        ``tests/_helpers/client_factory.build_client_shell_for_tests``
-        helper wires ``_auth`` and the runtime bundles through the same
-        :func:`notebooklm._client_assembly._assemble_client` seam this
-        constructor delegates to, so test shells observe the same
-        resolution path.
+        The Web path uses explicit collaborators sourced from ``self._auth``
+        and the applicable :class:`WebRuntime`. The five kwargs mirror the
+        :func:`refresh_auth_session` signature: ``auth`` is the client-owned
+        :class:`AuthTokens` instance (the Auth Instance Invariant guarantees
+        every auth consumer observes it), and the remaining four come from
+        the bundle the composition root produced. The canonical test helper
+        wires ``_auth`` and both runtime variants through the same
+        :func:`notebooklm._client_assembly._assemble_client` seam, so test
+        shells observe the production resolution path.
 
         Args:
             allow_headless: Opt in to **layer-3 headless re-auth** when the
@@ -691,11 +729,14 @@ class NotebookLMClient:
                 byte-identical to before. (A *mid-RPC* auto-fire is separately
                 gated on ``NOTEBOOKLM_HEADLESS_REAUTH=1``.)
 
+                On Android this applies only to an already-materialised Web
+                compatibility sidecar; bearer re-minting does not use a browser.
+
                 SECURITY: the persistent profile is an account-equivalent
                 credential (a live Google session). L3 is local-unattended-only
                 and must NOT be the auth path for a remote / hosted MCP server.
 
-        Coordinator single-flight + join-then-rerun (caller-side):
+        Web coordinator single-flight + join-then-rerun (caller-side):
 
             The base-policy refresh (``allow_headless=False``) is BOTH the
             coordinator's single-flight callback (the mid-RPC 401 path runs it
@@ -741,18 +782,16 @@ class NotebookLMClient:
                 expected_epoch=expected_epoch,
             )
 
-        provider = self._android_bearer_provider
-        if provider is None:  # pragma: no cover - assembly invariant
+        android = self._android_runtime
+        if android is None:  # pragma: no cover - assembly invariant
             raise RuntimeError("Android bearer provider is not configured.")
-        await provider.refresh(expected_epoch)
+        await android.bearer_provider.refresh(expected_epoch)
 
-        # Until backend-conditional assembly lands, Android clients still own
-        # the web compatibility bundle used by ``rpc_call``. Refresh only that
-        # bundle after the bearer. In particular, the coordinator callback is
-        # web-only, so an allow_headless join cannot re-enter this Android
-        # branch and mint a second bearer.
+        sidecar = self._web_sidecar
+        if sidecar is None or not sidecar.is_materialized:
+            return self._auth
         try:
-            return await self._refresh_web_auth_for_epoch(
+            return await self._refresh_sidecar_auth_for_epoch(
                 allow_headless=allow_headless,
                 expected_epoch=expected_epoch,
             )
@@ -773,7 +812,39 @@ class NotebookLMClient:
     ) -> AuthTokens:
         """Run only the compatibility web recovery ladder for one epoch."""
 
-        web = self._require_web_runtime()
+        return await self._refresh_web_runtime_auth_for_epoch(
+            self._require_web_runtime(),
+            allow_headless=allow_headless,
+            expected_epoch=expected_epoch,
+        )
+
+    async def _refresh_sidecar_auth_for_epoch(
+        self,
+        *,
+        allow_headless: bool = False,
+        expected_epoch: int,
+    ) -> AuthTokens:
+        """Refresh an already-materialised compatibility Web bundle."""
+
+        sidecar = self._web_sidecar
+        web = None if sidecar is None else sidecar.runtime
+        if web is None:
+            raise RuntimeError("The deprecated Web compatibility sidecar is not materialised.")
+        return await self._refresh_web_runtime_auth_for_epoch(
+            web,
+            allow_headless=allow_headless,
+            expected_epoch=expected_epoch,
+        )
+
+    async def _refresh_web_runtime_auth_for_epoch(
+        self,
+        web: WebRuntime,
+        *,
+        allow_headless: bool = False,
+        expected_epoch: int,
+    ) -> AuthTokens:
+        """Run the Web recovery ladder for an explicit Web bundle."""
+
         coord = web.auth_coord
         if not allow_headless or not coord.has_refresh_callback:
             # Base policy — also the coordinator's single-flight callback body,
@@ -819,6 +890,10 @@ class NotebookLMClient:
     async def get_account_email(self, *, live_fallback: bool = True) -> str | None:
         """Return the signed-in Google account email, or ``None`` if undiscoverable.
 
+        On Android this returns ``AuthTokens.account_email`` only and never
+        constructs or probes a Web transport. The resolution ladder below is
+        the Web-backend contract.
+
         Resolution order (first two are network-free):
 
         1. The in-memory :class:`AuthTokens` (``account_email``) — set at
@@ -835,6 +910,11 @@ class NotebookLMClient:
         path requires lifecycle admission, so a closed or draining client raises
         the same operation-admission error as other network work.
         """
+        # Android profiles carry no Web identity probe. The durable account
+        # route from AuthTokens is the complete network-free answer.
+        if self._backend_preference.preferred == "android":
+            return self._auth.account_email
+
         # Resolve every network-free source first.  This preserves the public
         # pre-open/post-close diagnostic behavior without granting a live probe
         # a path around client-wide admission.
@@ -928,7 +1008,10 @@ class _FromStorageContext:
         loaded = await _auth_tokens._load_stored_auth(
             path=Path(path) if path else None,
             profile=profile,
-            policy=_auth_tokens.LoadPolicy(allow_headless=kwargs["allow_headless"]),
+            policy=_auth_tokens.LoadPolicy(
+                allow_headless=kwargs["allow_headless"],
+                heal_psidts=kwargs["backend_preference"].preferred == "web",
+            ),
             auth_type=AuthTokens,
         )
         match loaded:

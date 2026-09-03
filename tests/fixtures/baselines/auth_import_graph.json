@@ -798,7 +798,7 @@
       "path": "src/notebooklm/_auth/storage_lock.py"
     },
     {
-      "lines": 894,
+      "lines": 938,
       "name": "tokens",
       "path": "src/notebooklm/_auth/tokens.py"
     }
@@ -811,7 +811,7 @@
     "function_local_edges": 12,
     "module_edges": 115,
     "modules": 33,
-    "total_lines": 13915,
+    "total_lines": 13959,
     "unique_edges": 127
   },
   "version": 1

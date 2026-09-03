@@ -1,7 +1,7 @@
 # Deprecations
 
 **Status:** Active
-**Last Updated:** 2026-08-14
+**Last Updated:** 2026-09-03
 
 This page is the **single source of truth** for currently-deprecated APIs in
 `notebooklm-py`. Each row lists what is deprecated, the recommended
@@ -23,6 +23,7 @@ the broader stability policy (semver promise, supported Python versions, the
 
 | Deprecated | Replacement | Since | Removal | Notes |
 |------------|-------------|-------|---------|-------|
+| `NotebookLMClient.rpc_call(...)` | Web: `client.raw.call(...)`; Android: `client.raw.unary(...)` / `unary_stream(...)`, or a separate Web-selected client's `raw.call(...)` | v0.9.0 | v1.0 | Warns once per client at the call boundary. During v0.x, an Android client preserves the historical Web call by lazily materialising a Web compatibility sidecar; the sidecar requires Web cookies and never starts keepalive. |
 | `AuthTokens.from_storage(...)` | `async with NotebookLMClient.from_storage(...) as client:` then use `client.auth` inside the managed lifecycle | v0.8.1 | v1.0 | The compatibility loader keeps its signature, return, error, and cancellation behavior through v0.x but now emits `DeprecationWarning` when awaited. |
 | `AuthTokens(..., storage_path=..., cookie_jar=None)` synchronous storage fallback | Use `NotebookLMClient.from_storage(...)`, or supply `cookie_jar=` when constructing tokens directly | v0.8.1 | v1.0 | Only the implicit synchronous-I/O branch warns; construction without `storage_path`, with a supplied jar, or failing cookie normalization stays silent. |
 | `AuthTokens.flat_cookies` | `AuthTokens.jar` for bootstrap-cookie questions; managed `NotebookLMClient` request APIs for HTTP | v0.8.1 | v1.0 | Direct property access emits one caller-attributed `DeprecationWarning`. It is a lossy name-only projection and cannot preserve domain/path siblings. `NOTEBOOKLM_QUIET_DEPRECATIONS=1` suppresses the warning. |
@@ -138,10 +139,11 @@ migration for each is in
 * Every deprecated surface emits a `DeprecationWarning` from the call site
   the user wrote, so the warning's `filename`/`lineno` point at user code
   rather than at the library internals.
-* Default-shape calls remain silent. A deprecation only fires when the
-  caller actually passes the deprecated argument or surface.
+* Deprecations fire only when the caller reaches the deprecated argument or
+  surface. `NotebookLMClient.rpc_call(...)` warns once per client; the generic
+  helper otherwise emits on each invocation.
 * `NOTEBOOKLM_QUIET_DEPRECATIONS=1` suppresses **every** deprecation warning
-  this project emits. The three registered auth runways are immutable
+  this project emits. The registered auth and raw-call runways are immutable
   `DeprecationSpec` entries routed through `warn_registered_deprecation`; other
   one-off warnings use `warn_deprecated`. All mechanics live in
   `src/notebooklm/_deprecation.py`; ADR-0018 forbids inline

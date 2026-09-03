@@ -233,11 +233,11 @@ async def test_rpc_call_wraps_execute_once_with_metrics_and_request_id(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_public_rpc_call_before_open_preserves_error_and_zero_metrics() -> None:
+async def test_public_raw_call_before_open_preserves_error_and_zero_metrics() -> None:
     client = build_client_shell_for_tests(_auth_tokens())
 
     with pytest.raises(RuntimeError) as raised:
-        await client.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+        await client.raw.call(RPCMethod.LIST_NOTEBOOKS, [])
 
     assert str(raised.value) == "Client not initialized. Use 'async with' context."
     snapshot = client.metrics_snapshot()

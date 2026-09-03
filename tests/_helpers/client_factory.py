@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from notebooklm._client_assembly import _assemble_client
+from notebooklm._client_assembly import BackendName, _assemble_client
 from notebooklm._runtime.config import (
     DEFAULT_CHAT_RESPONSE_MAX_BYTES,
     DEFAULT_CONNECT_TIMEOUT,
@@ -45,6 +45,7 @@ def build_client_shell_for_tests(
     cookie_rotator: CookieRotator | None = None,
     chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES,
     *,
+    backend: BackendName | None = None,
     decode_response: Callable[..., Any] | None = None,
     sleep: Callable[[float], Awaitable[Any]] | None = None,
     is_auth_error: Callable[[Exception], bool] | None = None,
@@ -100,6 +101,7 @@ def build_client_shell_for_tests(
         cookie_saver=cookie_saver,
         cookie_rotator=cookie_rotator,
         chat_response_max_bytes=chat_response_max_bytes,
+        backend=backend,
         decode_response=decode_response,
         sleep=sleep,
         is_auth_error=is_auth_error,
