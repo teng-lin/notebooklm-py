@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from tests.e2e import conftest as e2e
+from tests.e2e.test_downloads import _completed_interactive_mind_maps
 
 MANAGED = {
     "NOTEBOOKLM_E2E_MANAGED_COPIES": "1",
@@ -65,6 +68,16 @@ async def test_managed_role_fixtures_do_not_touch_cache_create_cleanup_or_client
 def test_read_only_fixture_uses_managed_reference(monkeypatch) -> None:
     install(monkeypatch)
     assert e2e.read_only_notebook_id.__wrapped__() == "reference-role"
+
+
+def test_managed_mind_map_download_selects_only_completed_interactive_artifacts() -> None:
+    processing = SimpleNamespace(is_interactive_mind_map=True, is_completed=False)
+    completed = SimpleNamespace(is_interactive_mind_map=True, is_completed=True)
+    completed_other_kind = SimpleNamespace(is_interactive_mind_map=False, is_completed=True)
+
+    assert _completed_interactive_mind_maps([processing, completed, completed_other_kind]) == [
+        completed
+    ]
 
 
 def test_unmanaged_configuration_preserves_legacy_path(monkeypatch) -> None:
