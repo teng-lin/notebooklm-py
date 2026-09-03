@@ -621,7 +621,20 @@ def test_research_neutral_helpers_are_inherited_without_a_web_import_cycle() -> 
     assert not any(
         isinstance(node, ast.ImportFrom)
         and node.module is not None
-        and (node.module == "_web" or node.module.startswith("_web."))
+        and (node.module in {"_web", "_android"} or node.module.startswith(("_web.", "_android.")))
+        for node in ast.walk(tree)
+    )
+    assert not any(isinstance(node, ast.AsyncFunctionDef) for node in ast.walk(tree))
+    assert not any(
+        (
+            isinstance(node, ast.Import)
+            and any(alias.name in {"asyncio", "logging"} for alias in node.names)
+        )
+        or (
+            isinstance(node, ast.ImportFrom)
+            and node.module is not None
+            and node.module.split(".", maxsplit=1)[0] in {"asyncio", "logging"}
+        )
         for node in ast.walk(tree)
     )
 
