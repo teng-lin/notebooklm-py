@@ -571,11 +571,10 @@ def test_manifest_requires_unique_confirmed_generation_role(tmp_path) -> None:
         verify.generation_id_from_manifest(manifest, "generation")
 
 
-def test_scheduled_workflow_uses_inventory_compat_script() -> None:
-    workflow = (
-        Path(__file__).resolve().parents[2] / ".github" / "workflows" / "verify-artifacts.yml"
-    ).read_text()
+def test_package_telemetry_uses_inventory_compat_after_detached_workflow_removal() -> None:
+    workflow_dir = Path(__file__).resolve().parents[2] / ".github" / "workflows"
+    assert not (workflow_dir / "verify-artifacts.yml").exists()
+    workflow = (workflow_dir / "verify-package.yml").read_text()
     assert "scripts/verify_ci_artifacts.py" in workflow
     assert "--mode inventory-compat" in workflow
     assert "NOTEBOOKLM_GENERATION_NOTEBOOK_ID" in workflow
-    assert "python -c" not in workflow

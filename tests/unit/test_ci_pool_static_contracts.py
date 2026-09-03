@@ -1,4 +1,4 @@
-"""Future-facing guardrails for the inert PR-1 CI account-pool tooling."""
+"""Static guardrails for the CI account-pool tooling and workflow cutover."""
 
 from __future__ import annotations
 
@@ -53,10 +53,10 @@ def test_journal_and_verifier_are_runner_local_and_do_not_log_ids() -> None:
     assert "--notebook-id-env" in verifier
 
 
-def test_pr1_keeps_detached_workflow_on_explicit_compatibility_mode() -> None:
+def test_cutover_removes_detached_workflow_but_keeps_package_compatibility_mode() -> None:
     path = ROOT / ".github" / "workflows" / "verify-artifacts.yml"
-    source = path.read_text()
-    assert path.is_file()
+    assert not path.exists()
+    source = (ROOT / ".github" / "workflows" / "verify-package.yml").read_text()
     assert "--mode inventory-compat" in source
     assert "scripts/verify_ci_artifacts.py" in source
 
