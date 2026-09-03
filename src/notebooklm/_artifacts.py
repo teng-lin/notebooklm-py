@@ -272,23 +272,23 @@ class ArtifactsAPI(ABC):
         style_prompt: str | None = None,
     ) -> GenerationStatus:
         """Generate a Video Overview."""
+        language = self._resolve_language(language)
+        normalized_style_prompt = style_prompt.strip() if style_prompt is not None else None
+        if video_format == VideoFormat.CINEMATIC and normalized_style_prompt:
+            raise ValidationError("style_prompt is not supported for cinematic videos")
+        if video_format == VideoFormat.SHORT and (
+            (video_style is not None and video_style != VideoStyle.AUTO_SELECT)
+            or normalized_style_prompt
+        ):
+            raise ValidationError(
+                "video_style and style_prompt are not supported for short videos "
+                "(short has a fixed visual style)"
+            )
+        if video_style == VideoStyle.CUSTOM and not normalized_style_prompt:
+            raise ValidationError("style_prompt is required when video_style is CUSTOM")
+        if normalized_style_prompt and video_style != VideoStyle.CUSTOM:
+            raise ValidationError("style_prompt requires video_style=VideoStyle.CUSTOM")
         async with self._operation_scope("artifacts.generate_video"):
-            language = self._resolve_language(language)
-            normalized_style_prompt = style_prompt.strip() if style_prompt is not None else None
-            if video_format == VideoFormat.CINEMATIC and normalized_style_prompt:
-                raise ValidationError("style_prompt is not supported for cinematic videos")
-            if video_format == VideoFormat.SHORT and (
-                (video_style is not None and video_style != VideoStyle.AUTO_SELECT)
-                or normalized_style_prompt
-            ):
-                raise ValidationError(
-                    "video_style and style_prompt are not supported for short videos "
-                    "(short has a fixed visual style)"
-                )
-            if video_style == VideoStyle.CUSTOM and not normalized_style_prompt:
-                raise ValidationError("style_prompt is required when video_style is CUSTOM")
-            if normalized_style_prompt and video_style != VideoStyle.CUSTOM:
-                raise ValidationError("style_prompt requires video_style=VideoStyle.CUSTOM")
             source_ids = await self._resolve_source_ids(notebook_id, source_ids)
             return await self._send_create_artifact(
                 notebook_id,

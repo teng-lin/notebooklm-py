@@ -26,13 +26,13 @@
         "id": "web-download",
         "label": "Web download",
         "focus": [
-          "asseturl",
-          "hoppolicy",
-          "downloadcreds",
-          "response",
-          "verify"
+          "webasseturl",
+          "webredirect",
+          "webcookies",
+          "webresponse",
+          "webverify"
         ],
-        "note": "Neutral guarded transfer keeps one sticky asynchronous CredentialPolicy per URL and revalidates every redirect hop."
+        "note": "Web downloads use _redirect_guard or httpx redirect hooks to revalidate each hop before attaching cookie credentials."
       },
       {
         "id": "android-download",
@@ -44,7 +44,7 @@
           "response",
           "verify"
         ],
-        "note": "A mid-chain 401 raises AuthError and invalidates the observed Android bearer generation inside the per-URL fence."
+        "note": "Android guarded_transfer keeps one sticky bearer policy per URL; a mid-chain 401 invalidates the observed generation."
       }
     ]
   },
@@ -104,16 +104,54 @@
       "row": 0
     },
     {
+      "id": "webasseturl",
+      "type": "frontend",
+      "label": "Web Asset URL",
+      "stage": 0,
+      "row": 1
+    },
+    {
+      "id": "webredirect",
+      "type": "security",
+      "label": "Web Redirect Guard",
+      "stage": 1,
+      "row": 1,
+      "tag": "every redirect"
+    },
+    {
+      "id": "webcookies",
+      "type": "security",
+      "label": "Cookie Policy",
+      "stage": 2,
+      "row": 1,
+      "tag": "per URL"
+    },
+    {
+      "id": "webresponse",
+      "type": "cloud",
+      "label": "Web Media Response",
+      "stage": 3,
+      "row": 1
+    },
+    {
+      "id": "webverify",
+      "type": "backend",
+      "label": "Verify & Publish",
+      "stage": 4,
+      "row": 1,
+      "tag": "single-file staging"
+    },
+    {
       "id": "asseturl",
       "type": "frontend",
-      "label": "Asset URL",
+      "label": "Android Asset URL",
       "stage": 0,
       "row": 2
     },
     {
       "id": "hoppolicy",
       "type": "security",
-      "label": "Neutral Guard Plane",
+      "label": "Android Guard Plane",
       "stage": 1,
       "row": 2,
       "tag": "every redirect"
@@ -176,11 +214,49 @@
       "variant": "dashed"
     },
     {
+      "id": "web-url-policy",
+      "from": "webasseturl",
+      "to": "webredirect",
+      "label": "validate hop",
+      "classification": "_redirect_guard · hooks",
+      "labelAt": [
+        208,
+        314
+      ],
+      "route": "straight",
+      "variant": "security"
+    },
+    {
+      "id": "web-policy-creds",
+      "from": "webredirect",
+      "to": "webcookies",
+      "label": "select cookies",
+      "classification": "CredentialPolicy",
+      "route": "straight",
+      "variant": "security"
+    },
+    {
+      "id": "web-creds-response",
+      "from": "webcookies",
+      "to": "webresponse",
+      "label": "GET",
+      "classification": "credential scoped",
+      "route": "straight"
+    },
+    {
+      "id": "web-response-verify",
+      "from": "webresponse",
+      "to": "webverify",
+      "label": "stream + verify",
+      "classification": "context-managed",
+      "route": "straight"
+    },
+    {
       "id": "url-policy",
       "from": "asseturl",
       "to": "hoppolicy",
       "label": "enter fence",
-      "classification": "neutral guarded plane",
+      "classification": "guarded_transfer",
       "labelAt": [
         208,
         428
@@ -222,27 +298,27 @@
   "cards": [
     {
       "dot": "cyan",
-      "title": "Neutral download plane",
+      "title": "Backend-selected download planes",
       "items": [
-        "_artifact/_guarded_transfer.py owns redirect, credential, response, and cleanup fencing",
-        "WebRuntime or AndroidRuntime supplies the backend credential policy"
+        "Web uses _make_download_client, _redirect_guard, or httpx redirect hooks",
+        "Android uses _artifact/_guarded_transfer.py with a sticky bearer policy"
       ]
     },
     {
       "dot": "rose",
       "title": "No credential drift",
       "items": [
-        "One sticky asynchronous CredentialPolicy is held for each URL chain",
-        "Mid-chain 401 or 403 raises AuthError and invalidates the observed bearer generation"
+        "Both paths validate each redirect before attaching credentials",
+        "Android 401 or 403 raises AuthError and invalidates the observed bearer generation"
       ]
     },
     {
       "dot": "emerald",
       "title": "Cleanup and publication",
       "items": [
-        "_await_advisory_cleanup shields response exit, per-URL close, and batch task cleanup",
+        "Android _await_advisory_cleanup shields response exit, per-URL close, and batch task cleanup",
         "Exit precedence is process exit, pending cancellation, current cancellation, then cleanup cancellation",
-        "Verified bytes replace a same-directory staging file only after a complete transfer"
+        "Single-file downloads replace same-directory staging only after a complete transfer"
       ]
     }
   ]

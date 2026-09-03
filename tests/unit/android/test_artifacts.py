@@ -907,6 +907,23 @@ async def test_cinematic_video_rejects_style_prompt_before_io() -> None:
 
 
 @pytest.mark.asyncio
+async def test_video_style_validation_precedes_closed_runtime_admission() -> None:
+    transport = SupervisedAndroidTransport()
+    await transport.supervisor.stop_accepting(1)
+    api = _supervised_graph(transport)
+
+    with pytest.raises(ValidationError, match="cinematic"):
+        await api.generate_video(
+            "notebook-1",
+            video_format=VideoFormat.CINEMATIC,
+            video_style=VideoStyle.CUSTOM,
+            style_prompt="Use hand-drawn diagrams",
+        )
+
+    assert transport.calls == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("study_guide", "expected_title", "directive_fragment"),
     [

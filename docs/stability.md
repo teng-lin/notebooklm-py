@@ -119,6 +119,9 @@ NotebookError, NotebookNotFoundError
     ArtifactNotReadyError,
     ArtifactParseError,
 )
+# Artifact download HTTP 401/403 responses raise AuthError directly so callers
+# can trigger reauthentication. Other download transport, policy, content, and
+# status failures continue to raise ArtifactDownloadError.
 ArtifactTimeoutError, ArtifactPendingTimeoutError, ArtifactInProgressTimeoutError
 (
     ResearchError,

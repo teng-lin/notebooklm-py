@@ -20,7 +20,7 @@
           "completed",
           "downloaded"
         ],
-        "note": "After generation completes, the neutral guarded-transfer plane verifies and publishes the local file."
+        "note": "After generation completes, the selected backend resolves or decodes the artifact and publishes it through its format-specific file path."
       },
       {
         "id": "polling",
@@ -99,7 +99,7 @@
       "id": "downloaded",
       "type": "success",
       "label": "Published",
-      "sublabel": "neutral guarded transfer",
+      "sublabel": "backend-selected transfer",
       "lane": "main",
       "col": 4,
       "step": "05",
@@ -208,7 +208,7 @@
       "title": "Main path",
       "items": [
         "Five ordered phases from generate to a published file",
-        "After COMPLETED, AssetDownloadService routes bytes through _artifact/_guarded_transfer.py"
+        "After COMPLETED, the selected backend resolves or decodes the artifact and publishes it through its format-specific path"
       ]
     },
     {

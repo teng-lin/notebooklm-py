@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 import warnings
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +20,16 @@ from notebooklm._web.transport.sidecar import LazyWebSidecar
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import RPCMethod
+
+
+def _assert_republished_cancel_message(error: asyncio.CancelledError, expected: str) -> None:
+    """Assert first-cancel precedence across supported asyncio versions.
+
+    Python 3.10 drops the optional cancellation message when cancellation is
+    caught and republished through shielded lifecycle cleanup. Python 3.11+
+    preserves it; neither version may replace it with a later message.
+    """
+    assert error.args == ((expected,) if sys.version_info >= (3, 11) else ())
 
 
 class _Participant:
@@ -202,7 +213,7 @@ async def test_sidecar_first_open_cancellation_waits_for_candidate_retirement() 
     with pytest.raises(asyncio.CancelledError) as raised:
         await materialize
 
-    assert str(raised.value) == "first cancellation"
+    _assert_republished_cancel_message(raised.value, "first cancellation")
     assert sidecar._candidate_retirement is None
     assert sidecar.runtime is None
     assert runtime.web_transport.closed == 1
@@ -237,7 +248,7 @@ async def test_sidecar_recancellation_detaches_but_root_close_joins_retirement(
             with pytest.raises(asyncio.CancelledError) as raised:
                 await materialize
 
-        assert str(raised.value) == "first cancellation"
+        _assert_republished_cancel_message(raised.value, "first cancellation")
         sidecar = client._web_sidecar
         assert sidecar is not None
         retirement = sidecar._candidate_retirement

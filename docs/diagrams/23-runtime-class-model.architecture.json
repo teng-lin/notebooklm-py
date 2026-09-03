@@ -22,7 +22,7 @@
         "id": "android",
         "label": "Android classes",
         "focus": ["assembly", "androidruntime", "session", "epoch"],
-        "note": "AndroidRuntime owns the selected transport participants and session-scoped workflow epoch propagation."
+        "note": "AndroidRuntime owns the selected transport participants; namespace operation scopes propagate task-local workflow epochs."
       }
     ]
   },
@@ -56,7 +56,7 @@
     {"id": "composed-chain", "from": "composed", "to": "chainhost", "label": "owns chain"},
     {"id": "assembly-android", "from": "assembly", "to": "androidruntime", "label": "backend=android", "variant": "dashed", "labelAt": [367, 405]},
     {"id": "android-session", "from": "androidruntime", "to": "session", "label": "owns"},
-    {"id": "session-epoch", "from": "session", "to": "epoch", "label": "binds workflow tag", "variant": "dashed", "labelAt": [760, 558]}
+    {"id": "session-epoch", "from": "session", "to": "epoch", "label": "reads task-local tag", "variant": "dashed", "labelAt": [760, 558]}
   ],
   "cards": [
     {
@@ -81,7 +81,7 @@
       "dot": "rose",
       "title": "Android compatibility",
       "items": [
-        "epoch.py propagates one session-tagged ContextVar through nested Android workflows",
+        "Namespace operation scopes bind an epoch.py session-tagged ContextVar for nested Android calls",
         "LazyWebSidecar is inert until deprecated rpc_call is used on an Android client",
         "A materialised sidecar owns close and reopen but never installs keepalive"
       ]
