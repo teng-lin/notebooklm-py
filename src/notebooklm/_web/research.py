@@ -10,14 +10,25 @@ import asyncio
 import logging
 import time
 from collections.abc import Sequence
-from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-from .. import _research as _research_base
-from .. import research as _research_pub
 from .._idempotency import call_unconfirmed_on_transport_loss, mark_unconfirmed
 from .._notebook_metadata import NotebookSourceLister
 from .._research import BaseResearchAPI, validate_discover
+from .._research_import import (
+    _coerce_research_sources,
+    _import_research_read_timeout,
+    _imported_result,
+    _is_import_research_failed_precondition,
+    _is_importable_report_source,
+    _merge_imported_sources,
+    _no_import_verification_url_entry_count,
+    _normalize_import_verification_url,
+    _partition_requested_sources,
+    _reconcile_import_probe,
+    _requested_import_verification_urls,
+    _validate_research_task_provenance,
+)
 from .._runtime.config import (
     AUTO_READ_TIMEOUT,
     DEFAULT_TIMEOUT,
@@ -33,7 +44,6 @@ from .._types.research import (
     ResearchTask,
 )
 from ..exceptions import (
-    AmbiguousResearchTaskError,
     AuthError,
     DecodingError,
     NetworkError,
@@ -48,19 +58,6 @@ from ..rpc import RPCMethod
 from ..types import CitedSourceSelection
 from .contracts import RpcCaller
 from .notebooks import create_default_source_lister
-from .research_import import (
-    _import_research_read_timeout,
-    _imported_result,
-    _is_import_research_failed_precondition,
-    _is_importable_report_source,
-    _merge_imported_sources,
-    _no_import_verification_url_entry_count,
-    _normalize_import_verification_url,
-    _partition_requested_sources,
-    _reconcile_import_probe,
-    _requested_import_verification_urls,
-    _validate_research_task_provenance,
-)
 from .rows.research import ImportedSourceRow, ResearchStartRow, unwrap_import_rows
 from .rows.research_task import parse_discover_task, parse_research_task_models
 
@@ -79,24 +76,6 @@ __all__ = [
 
 # Preserve the historical logger key across the whole-module move.
 logger = logging.getLogger("notebooklm._research")
-
-# Sentinel for "``initial_interval`` not passed" in ``wait_for_completion``. Kept
-# as ``object()`` (not literal ``5.0``) so the public-API compat default-repr
-# check sees no changed-default break; unset resolves to the default below.
-_INITIAL_INTERVAL_UNSET: Any = object()
-
-# Default poll cadence (seconds) when ``initial_interval`` is unset.
-_DEFAULT_RESEARCH_POLL_INTERVAL = 5.0
-
-
-def _coerce_research_source(source: ResearchSourceInput) -> ResearchSource:
-    if isinstance(source, ResearchSource):
-        return source
-    return ResearchSource.from_public_dict(source)
-
-
-def _coerce_research_sources(sources: Sequence[ResearchSourceInput]) -> list[ResearchSource]:
-    return [_coerce_research_source(source) for source in sources]
 
 
 def _is_deep_start_null_result_error(exc: RPCError) -> bool:
@@ -151,7 +130,7 @@ class WebResearchAPI(BaseResearchAPI):
             base_timeout: The owning client's configured ``timeout=``. The
                 batch-scaled IMPORT_RESEARCH window is floored at it so a
                 caller's larger explicit budget is never silently shortened
-                (#2205). Standalone ``ResearchAPI(rpc)`` keeps the historical
+                (#2205). Standalone ``WebResearchAPI(rpc)`` keeps the historical
                 behavior via the shared 30 s default.
             import_research_timeout: Per-attempt read window for
                 IMPORT_RESEARCH, read exactly like ``chat_timeout``: unset
@@ -163,7 +142,7 @@ class WebResearchAPI(BaseResearchAPI):
                 source IDs before the import call and probe sources on
                 timeout. When omitted, a default lister is built from
                 ``rpc`` — mirrors the ``WebNotebooksAPI`` wiring pattern, so
-                ``ResearchAPI(rpc)`` works standalone with no cross-API
+                ``WebResearchAPI(rpc)`` works standalone with no cross-API
                 dependency.
         """
         self._rpc = rpc
@@ -186,7 +165,7 @@ class WebResearchAPI(BaseResearchAPI):
     ) -> Any:
         """Delegate through the current RPC caller for late-bound overrides.
 
-        Mirrors :meth:`WebNotebooksAPI._rpc_call` so direct ResearchAPI RPC paths
+        Mirrors :meth:`WebNotebooksAPI._rpc_call` so direct WebResearchAPI RPC paths
         pick up post-construction changes to the underlying caller's
         ``rpc_call`` method (advanced tests / instrumentation).
         """
@@ -210,37 +189,6 @@ class WebResearchAPI(BaseResearchAPI):
         """Build a standard web-source import entry used by IMPORT_RESEARCH."""
         return [None, None, [url, title], None, None, None, None, None, None, None, 2]
 
-    @staticmethod
-    def _normalize_url(url: str) -> str:
-        """Normalize source/report URLs for citation matching.
-
-        Thin wrapper retained for backward compatibility. Delegates to
-        :func:`notebooklm.research.normalize_url`.
-        """
-        return _research_pub.normalize_url(url)
-
-    @classmethod
-    def _web_extract_report_urls(cls, report: str) -> set[str]:
-        """Extract normalized URLs from research report markdown/text.
-
-        Thin wrapper retained for backward compatibility. Delegates to
-        :func:`notebooklm.research.extract_report_urls`.
-        """
-        return _research_pub.extract_report_urls(report)
-
-    @classmethod
-    def _web_select_cited_sources(
-        cls,
-        sources: Sequence[ResearchSourceInput],
-        report: str,
-    ) -> CitedSourceSelection:
-        """Return research sources cited by the completed report.
-
-        Thin wrapper retained for backward compatibility. Delegates to
-        :func:`notebooklm.research.select_cited_sources`.
-        """
-        return _research_pub.select_cited_sources(sources, report)
-
     async def _poll_task_models(self, notebook_id: str) -> list[ResearchTask]:
         params = [None, None, notebook_id]
         result = await self._rpc.rpc_call(
@@ -249,40 +197,6 @@ class WebResearchAPI(BaseResearchAPI):
             source_path=f"/notebook/{notebook_id}",
         )
         return parse_research_task_models(result)
-
-    @staticmethod
-    def _select_polled_tasks(
-        parsed_tasks: list[ResearchTask],
-        *,
-        notebook_id: str,
-        task_id: str | None,
-        raise_on_ambiguous: bool,
-    ) -> list[ResearchTask]:
-        # Task-id discriminator: when supplied, filter parsed_tasks down to
-        # the matched task so callers iterating ``tasks`` don't see siblings.
-        # When omitted but multiple tasks are in flight, the selection is
-        # ambiguous (which task did the caller mean?), so raise instead of
-        # silently guessing the latest task (ADR-0019: "ambiguous -> raise,
-        # never silently guess"). A single in-flight task with no task_id is
-        # unambiguous and still returned silently for convenience.
-        if task_id is not None:
-            return [task for task in parsed_tasks if task.task_id == task_id]
-        if raise_on_ambiguous and len(parsed_tasks) > 1:
-            raise AmbiguousResearchTaskError(
-                notebook_id=notebook_id,
-                task_ids=[task.task_id for task in parsed_tasks],
-            )
-        return parsed_tasks
-
-    @staticmethod
-    def _public_poll_result(
-        selected_task: ResearchTask,
-        parsed_tasks: list[ResearchTask],
-    ) -> ResearchTask:
-        # Carry the sibling tasks on the selected task's ``tasks`` field. The
-        # sub-tasks themselves leave ``tasks`` empty (their default), matching
-        # the historical nested-dict shape.
-        return replace(selected_task, tasks=tuple(parsed_tasks))
 
     async def start(
         self,
@@ -1018,10 +932,7 @@ class WebResearchAPI(BaseResearchAPI):
                 attempt += 1
 
 
-# Backward-compatible private-module spelling. Composition imports the explicit
-# backend class; existing direct imports keep resolving to the Web implementation.
+# Backward-compatible private Web-module spelling. Composition imports the
+# explicit backend class; existing direct imports keep resolving to the Web
+# implementation without making the neutral base import this module.
 ResearchAPI = WebResearchAPI
-
-# Restore the historical ``notebooklm._research.ResearchAPI`` identity after
-# this module has completed the circular-safe definition of the Web adapter.
-_research_base.ResearchAPI = ResearchAPI  # type: ignore[assignment]

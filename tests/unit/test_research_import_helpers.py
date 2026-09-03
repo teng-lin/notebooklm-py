@@ -1,9 +1,8 @@
 """Tests for the pure IMPORT_RESEARCH helpers added for #2187.
 
 ``_import_research_read_timeout``, ``_is_import_research_failed_precondition``,
-and ``_reconcile_import_probe`` live in ``_web/research_import.py`` (ADR-0008
-module-size ratchet keeps free functions out of ``_web/research.py`` where
-possible). Behavioral coverage of how ``ResearchAPI.import_sources_with_verification``
+and ``_reconcile_import_probe`` live in ``_research_import.py``. Behavioral
+coverage of how ``WebResearchAPI.import_sources_with_verification``
 actually uses them (retry/raise/log decisions) lives in
 ``test_research_import_with_verification.py``; these tests cover the pure
 functions in isolation.
@@ -15,18 +14,44 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from notebooklm._research_import import (
+    _coerce_research_sources,
+    _import_research_read_timeout,
+    _imported_result,
+    _is_import_research_failed_precondition,
+    _reconcile_import_probe,
+)
 from notebooklm._runtime.config import (
     DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT,
 )
 from notebooklm._types.research import ResearchSource
-from notebooklm._web.research_import import (
-    _import_research_read_timeout,
-    _is_import_research_failed_precondition,
-    _reconcile_import_probe,
-)
 from notebooklm.exceptions import RPCError
+
+
+def test_neutral_helper_module_owns_the_base_compatibility_seams() -> None:
+    import notebooklm._research as research_base
+    import notebooklm._research_import as research_import
+
+    assert research_base._imported_result is research_import._imported_result
+    assert (
+        research_base._normalize_import_verification_url
+        is research_import._normalize_import_verification_url
+    )
+
+    result = _imported_result([], [{"id": "existing", "title": "A", "url": "https://a"}])
+    assert type(result).__module__ == "notebooklm._research_import"
+    assert result.already_present == [{"id": "existing", "title": "A", "url": "https://a"}]
+
+
+def test_neutral_source_coercion_preserves_order_and_typed_identity() -> None:
+    typed = ResearchSource(url="https://a", title="A")
+
+    assert _coerce_research_sources([typed, {"url": "https://b", "title": "B"}]) == [
+        typed,
+        ResearchSource(url="https://b", title="B"),
+    ]
 
 
 class TestImportResearchReadTimeout:

@@ -598,6 +598,34 @@ def test_logger_names_survive_web_module_moves() -> None:
     assert actual == expected
 
 
+def test_research_neutral_helpers_are_inherited_without_a_web_import_cycle() -> None:
+    """Research sharing stays neutral and keeps compatibility in the Web leaf."""
+    from notebooklm._research import BaseResearchAPI
+    from notebooklm._web.research import ResearchAPI, WebResearchAPI
+
+    assert ResearchAPI is WebResearchAPI
+
+    for name in ("_normalize_url", "_select_polled_tasks", "_public_poll_result"):
+        assert name not in WebResearchAPI.__dict__
+        assert inspect.getattr_static(WebResearchAPI, name) is inspect.getattr_static(
+            BaseResearchAPI, name
+        )
+    assert "_web_extract_report_urls" not in WebResearchAPI.__dict__
+    assert "_web_select_cited_sources" not in WebResearchAPI.__dict__
+
+    root = Path(__file__).resolve().parents[2]
+    neutral_path = root / "src" / "notebooklm" / "_research_import.py"
+    assert neutral_path.is_file()
+    assert not (root / "src" / "notebooklm" / "_web" / "research_import.py").exists()
+    tree = ast.parse(neutral_path.read_text(encoding="utf-8"))
+    assert not any(
+        isinstance(node, ast.ImportFrom)
+        and node.module is not None
+        and (node.module == "_web" or node.module.startswith("_web."))
+        for node in ast.walk(tree)
+    )
+
+
 def test_chat_shared_workflows_call_only_their_single_wire_hook() -> None:
     """Pin the one protected-adapter hook used by each shared Chat workflow."""
     path = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_chat.py"

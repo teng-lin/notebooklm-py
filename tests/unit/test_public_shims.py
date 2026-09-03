@@ -6,15 +6,17 @@ guards, the facade-delegates-via-reflection checks, and the auth first-party
 seam manifest — moved to ``tests/_guardrails/test_public_surface_manifest.py``
 as part of the test-guardrail consolidation. What remains here are the
 functions that *exercise runtime behaviour* through the public surface: the
-``select_cited_sources`` / ``ResearchAPI`` back-compat delegations, the
-``UnknownTypeWarning`` filter behaviour, and the ``NotebookLMClient.rpc_call``
-kwarg-forwarding path.
+``select_cited_sources`` delegations, the research implementation split and
+Web-only compatibility alias, the ``UnknownTypeWarning`` filter behaviour, and
+the ``NotebookLMClient.rpc_call`` kwarg-forwarding path.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import importlib
+import subprocess
+import sys
 import warnings
 from unittest.mock import AsyncMock
 
@@ -23,12 +25,12 @@ import pytest
 pytestmark = pytest.mark.repo_lint
 
 
-def test_research_base_web_split_preserves_logger_and_backend_alias() -> None:
+def test_research_base_web_split_preserves_logger_and_web_only_alias() -> None:
     base = importlib.import_module("notebooklm._research")
     implementation = importlib.import_module("notebooklm._web.research")
 
     assert issubclass(implementation.WebResearchAPI, base.BaseResearchAPI)
-    assert base.ResearchAPI is implementation.WebResearchAPI
+    assert not hasattr(base, "ResearchAPI")
     assert implementation.ResearchAPI is implementation.WebResearchAPI
     assert implementation.logger.name == "notebooklm._research"
 
@@ -36,8 +38,40 @@ def test_research_base_web_split_preserves_logger_and_backend_alias() -> None:
         async def rpc_call(self, *_args, **_kwargs):
             raise AssertionError("constructor compatibility must not dispatch")
 
-    direct = base.ResearchAPI(_Rpc())
+    direct = implementation.ResearchAPI(_Rpc())
     assert isinstance(direct, implementation.WebResearchAPI)
+
+
+@pytest.mark.parametrize(
+    "module_order",
+    [
+        ("notebooklm._research", "notebooklm._web.research"),
+        ("notebooklm._web.research", "notebooklm._research"),
+    ],
+)
+def test_research_import_order_preserves_only_web_alias(
+    module_order: tuple[str, str],
+) -> None:
+    code = "\n".join(
+        [
+            "import importlib",
+            *(f'importlib.import_module("{name}")' for name in module_order),
+            'base = importlib.import_module("notebooklm._research")',
+            'web = importlib.import_module("notebooklm._web.research")',
+            'assert not hasattr(base, "ResearchAPI")',
+            "assert web.ResearchAPI is web.WebResearchAPI",
+            'assert web.logger.name == "notebooklm._research"',
+        ]
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -55,21 +89,19 @@ def test_research_select_cited_sources_returns_public_dataclass():
     assert result.used_fallback is True
 
 
-def test_research_api_backward_compat_classmethod_delegates():
-    """notebooklm._research.ResearchAPI.select_cited_sources still works."""
-    from notebooklm._research import ResearchAPI
+def test_research_base_select_cited_sources_delegates():
+    from notebooklm._research import BaseResearchAPI
     from notebooklm.types import CitedSourceSelection
 
-    result = ResearchAPI.select_cited_sources([], "")
+    result = BaseResearchAPI.select_cited_sources([], "")
     assert isinstance(result, CitedSourceSelection)
 
 
-def test_research_api_extract_report_urls_backward_compat_classmethod_delegates(
+def test_research_base_extract_report_urls_delegates(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """notebooklm._research.ResearchAPI.extract_report_urls still works."""
     import notebooklm.research as research_module
-    from notebooklm._research import ResearchAPI
+    from notebooklm._research import BaseResearchAPI
 
     report = "See [Example](https://Example.com/path/)."
     sentinel = {"delegated"}
@@ -81,7 +113,7 @@ def test_research_api_extract_report_urls_backward_compat_classmethod_delegates(
 
     monkeypatch.setattr(research_module, "extract_report_urls", fake_extract_report_urls)
 
-    assert ResearchAPI.extract_report_urls(report) is sentinel
+    assert BaseResearchAPI.extract_report_urls(report) is sentinel
     assert calls == [report]
 
 

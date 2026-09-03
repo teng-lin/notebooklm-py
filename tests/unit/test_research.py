@@ -20,7 +20,7 @@ from notebooklm import (
     ResearchTask,
     RPCError,
 )
-from notebooklm._web.research import ResearchAPI
+from notebooklm._web.research import WebResearchAPI
 from notebooklm.research import extract_report_urls, normalize_citation_url, select_cited_sources
 from notebooklm.rpc import RPCMethod
 
@@ -48,14 +48,14 @@ class TestBuildImportEntries:
     """Tests for import entry builder static methods."""
 
     def test_build_report_import_entry(self):
-        entry = ResearchAPI._build_report_import_entry("Title", "# Markdown")
+        entry = WebResearchAPI._build_report_import_entry("Title", "# Markdown")
         assert entry[1] == ["Title", "# Markdown"]
         assert entry[3] == 3
         assert entry[10] == 3
         assert entry[0] is None
 
     def test_build_web_import_entry(self):
-        entry = ResearchAPI._build_web_import_entry("https://example.com", "Example")
+        entry = WebResearchAPI._build_web_import_entry("https://example.com", "Example")
         assert entry[2] == ["https://example.com", "Example"]
         assert entry[10] == 2
         assert entry[0] is None
@@ -136,7 +136,7 @@ class TestCitedSourceSelection:
 
     @pytest.mark.parametrize(
         "selector",
-        [select_cited_sources, ResearchAPI.select_cited_sources],
+        [select_cited_sources, WebResearchAPI.select_cited_sources],
         ids=["public_function", "research_api_wrapper"],
     )
     def test_select_cited_sources_accepts_typed_task_sources(self, selector):
@@ -195,7 +195,7 @@ class TestCitedSourceSelection:
     def test_select_cited_sources_source_annotations_accept_research_source(self):
         selector_sources_hints = [
             get_type_hints(select_cited_sources)["sources"],
-            get_type_hints(ResearchAPI.select_cited_sources)["sources"],
+            get_type_hints(WebResearchAPI.select_cited_sources)["sources"],
         ]
 
         for sources_hint in selector_sources_hints:
@@ -1621,7 +1621,7 @@ class TestResearch:
 
 
 class TestResearchCancel:
-    """Tests for ``ResearchAPI.cancel`` (CancelDiscoverSourcesJob / Zbrupe)."""
+    """Tests for ``WebResearchAPI.cancel`` (CancelDiscoverSourcesJob / Zbrupe)."""
 
     @pytest.mark.asyncio
     async def test_cancel_sends_run_id_in_field_three(

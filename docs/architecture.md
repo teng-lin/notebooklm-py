@@ -1255,9 +1255,9 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_sources.py` | Backend-neutral abstract `SourcesAPI`; owns source identity lookup, search validation/global ranking, the `add_urls_async` / `append_text` / `copy` transfer workflows, file-upload title normalization/finalization over `_send_upload`, and the four polling workflows over neutral `SourcePoller` |
 | `_artifacts.py` | Backend-neutral abstract `ArtifactsAPI`; owns artifact generation orchestration, copy/export workflows, decoded polling, family lists, lookup, neutral formatting, and asset transfer; customization choices remain a backend read |
 | `_chat.py` | Backend-neutral abstract `ChatAPI`; owns locks, cache, deleted-conversation tracking, ID recovery, authoritative turn counting, modes, and shared ask/delete/save-note orchestration over protected adapter hooks plus backend-owned `get_settings` and typed `_list_turn_roles` read boundaries |
-| `_research.py` | Thin lazy compatibility shim for the moved `ResearchAPI` implementation |
-| `_web/research.py` | Web implementation of `client.research`; keeps the historical `notebooklm._research` logger key |
-| `_web/research_import.py` | Web-only free-function helpers for `ResearchAPI` source import + verification: URL normalization, report-source predicates, imported-entry merging, and the #1961 idempotency pre-filter |
+| `_research.py` | Backend-neutral abstract `BaseResearchAPI`; owns polling helpers and the Android-safe import-verification workflow over abstract backend reads/mutations |
+| `_research_import.py` | Backend-neutral research import classification and reconciliation helpers: typed input coercion, structured-URL normalization, provenance checks, imported-result carriers, idempotency partitioning, probe outcomes, and read-timeout resolution |
+| `_web/research.py` | Web implementation of `client.research`; keeps Web wire construction/decoding and its established import-verification policy while preserving the historical `notebooklm._research` logger key |
 | `_notes.py` | Backend-neutral abstract `NotesAPI` contract |
 | `_sharing.py` | Backend-neutral abstract `SharingAPI`; owns the shared `add_user` / `update_user` workflows |
 | `_labels.py`, `_collections.py` | Backend-neutral abstract `LabelsAPI` / `CollectionsAPI` contracts and their narrow membership-join callable types |
@@ -1671,7 +1671,6 @@ src/notebooklm/
 │   ├── labels.py                # WebLabelsAPI (historical logger preserved)
 │   ├── collections.py           # WebCollectionsAPI (historical logger preserved)
 │   ├── research.py              # WebResearchAPI (historical logger preserved)
-│   ├── research_import.py       # Research import/verification helpers
 │   ├── sources/                 # WebSourcesAPI + web source services
 │   │   ├── __init__.py          # WebSourcesAPI facade
 │   │   ├── add.py               # Source addition coordinator
@@ -1714,7 +1713,8 @@ src/notebooklm/
 ├── _notebooks.py                # Backend-neutral NotebooksAPI + share-URL builder
 ├── _sources.py                  # Backend-neutral abstract SourcesAPI
 ├── _artifacts.py                # Backend-neutral abstract ArtifactsAPI
-├── _research.py                 # Lazy ResearchAPI compatibility shim
+├── _research.py                 # Backend-neutral BaseResearchAPI + shared workflows
+├── _research_import.py          # Neutral import classification/reconciliation helpers
 ├── _notes.py                    # Backend-neutral abstract NotesAPI
 ├── _sharing.py                  # Backend-neutral abstract SharingAPI
 ├── _settings.py                 # Backend-neutral abstract SettingsAPI

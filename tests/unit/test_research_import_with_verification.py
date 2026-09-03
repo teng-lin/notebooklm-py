@@ -1,7 +1,7 @@
-"""Tests for ``ResearchAPI.import_sources_with_verification``.
+"""Tests for ``WebResearchAPI.import_sources_with_verification``.
 
 The retry-with-verification logic for ``IMPORT_RESEARCH`` timeouts lives
-on ``ResearchAPI`` as of issue #315. These tests were originally in
+on ``WebResearchAPI`` as of issue #315. These tests were originally in
 ``tests/unit/cli/test_helpers.py::TestImportWithRetry`` (the logic used to
 live in ``cli/research_import.py``); they were moved here when the policy
 became a library-layer concern so Python API users get the same fix the
@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import notebooklm._research as _research_mod
-from notebooklm._web.research import ResearchAPI
+from notebooklm._web.research import WebResearchAPI
 from notebooklm.exceptions import (
     NetworkError,
     ResearchTaskMismatchError,
@@ -85,19 +85,19 @@ class _Advance:
         self.then = then
 
 
-def _make_research() -> tuple[ResearchAPI, MagicMock, MagicMock]:
-    """Build a ``ResearchAPI`` with a mocked source-lister seam.
+def _make_research() -> tuple[WebResearchAPI, MagicMock, MagicMock]:
+    """Build a ``WebResearchAPI`` with a mocked source-lister seam.
 
     Returns ``(research, mock_rpc, mock_source_lister)``. Override
     ``research.import_sources`` / ``mock_source_lister.list`` per test.
 
-    ResearchAPI now mirrors ``NotebooksAPI``'s default-builder pattern, so
+    WebResearchAPI mirrors ``NotebooksAPI``'s default-builder pattern, so
     injecting a mock lister bypasses the cross-API dependency entirely —
     the test does not need a SourcesAPI handle.
     """
     mock_rpc = MagicMock()
     mock_source_lister = MagicMock()
-    research = ResearchAPI(mock_rpc, source_lister=mock_source_lister)
+    research = WebResearchAPI(mock_rpc, source_lister=mock_source_lister)
     return research, mock_rpc, mock_source_lister
 
 
@@ -192,7 +192,7 @@ class TestImportSourcesWithVerification:
         )
         mock_source_lister = MagicMock()
         mock_source_lister.list = AsyncMock(return_value=[])
-        research = ResearchAPI(fake_rpc, source_lister=mock_source_lister)
+        research = WebResearchAPI(fake_rpc, source_lister=mock_source_lister)
 
         with (
             patch.object(_research_mod.time, "monotonic", side_effect=lambda: clock["now"]),
@@ -234,7 +234,7 @@ class TestImportSourcesWithVerification:
         )
         mock_source_lister = MagicMock()
         mock_source_lister.list = AsyncMock(return_value=[])
-        research = ResearchAPI(fake_rpc, source_lister=mock_source_lister)
+        research = WebResearchAPI(fake_rpc, source_lister=mock_source_lister)
 
         with (
             patch.object(_research_mod.time, "monotonic", side_effect=lambda: clock["now"]),
@@ -264,7 +264,7 @@ class TestImportSourcesWithVerification:
         fake_rpc = _RecordingRpc([[[["src_1"], "Source 1"]]])
         mock_source_lister = MagicMock()
         mock_source_lister.list = AsyncMock(return_value=[])
-        research = ResearchAPI(fake_rpc, source_lister=mock_source_lister)
+        research = WebResearchAPI(fake_rpc, source_lister=mock_source_lister)
 
         imported = await research.import_sources_with_verification(
             "nb_123",
@@ -666,7 +666,7 @@ class TestImportSourcesWithVerification:
         be dropped from the retry batch.
 
         Reports are appended first in the IMPORT_RESEARCH payload (see
-        ``_build_report_import_entry`` usage in ``ResearchAPI.import_sources``),
+        ``_build_report_import_entry`` usage in ``WebResearchAPI.import_sources``),
         so a verified URL implies the report committed too. Retrying the
         report on each subsequent timeout would create duplicate report
         sources server-side (gemini-code-assist review on PR #882).
@@ -1650,15 +1650,17 @@ class TestResearchPublicHelperDelegation:
 
         raw = "HTTPS://Example.COM/a/../b?utm_source=x"
 
-        assert ResearchAPI._normalize_url(raw) == research_pub.normalize_url(raw)
+        assert WebResearchAPI._normalize_url(raw) == research_pub.normalize_url(raw)
 
     def test_extract_report_urls_matches_the_public_helper(self) -> None:
         from notebooklm import research as research_pub
 
         report = "See https://a.example/one and https://b.example/two for detail."
 
-        assert ResearchAPI.extract_report_urls(report) == research_pub.extract_report_urls(report)
-        assert ResearchAPI.extract_report_urls(report) == {
+        assert WebResearchAPI.extract_report_urls(report) == research_pub.extract_report_urls(
+            report
+        )
+        assert WebResearchAPI.extract_report_urls(report) == {
             "https://a.example/one",
             "https://b.example/two",
         }

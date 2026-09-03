@@ -44,7 +44,7 @@ Forbidden patterns
 
    .. code-block:: python
 
-       mock.patch("notebooklm._research.ResearchAPI._poll", fake)
+       mock.patch("notebooklm._web.research.WebResearchAPI._poll", fake)
        patch("notebooklm._artifact.downloads.httpx", fake)
 
 5. **Deep-leaf ``unittest.mock`` string-target patches into private

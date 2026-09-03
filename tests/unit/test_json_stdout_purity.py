@@ -495,7 +495,7 @@ def _customize_research_wait(client: MagicMock) -> None:
 
 
 class _ImportedResearchSourcesStub(list):
-    """Mirrors ``notebooklm._web.research_import._ImportedResearchSources``: a ``list``
+    """Mirrors ``notebooklm._research_import._ImportedResearchSources``: a ``list``
     of newly-imported entries carrying the ``already_present`` side channel."""
 
     def __init__(self, items, already_present=()):

@@ -49,7 +49,7 @@ from notebooklm._labels import LabelsAPI
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._notes import NotesAPI
-from notebooklm._research import ResearchAPI
+from notebooklm._research import BaseResearchAPI
 from notebooklm._settings import SettingsAPI
 from notebooklm._sharing import SharingAPI
 from notebooklm._sources import SourcesAPI
@@ -65,7 +65,7 @@ NAMESPACES: dict[str, type] = {
     "labels": LabelsAPI,
     "collections": CollectionsAPI,
     "chat": ChatAPI,
-    "research": ResearchAPI,
+    "research": BaseResearchAPI,
     "sharing": SharingAPI,
     "settings": SettingsAPI,
 }
