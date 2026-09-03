@@ -119,11 +119,15 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
                 "refresh",
                 "rename",
                 "search",
-                "_send_transfer",
+                "_send_add_urls_async",
+                "_send_append_text",
+                "_send_copy",
                 "_send_upload",
             }
         ),
-        wire_hooks=frozenset({"_send_transfer", "_send_upload"}),
+        wire_hooks=frozenset(
+            {"_send_add_urls_async", "_send_append_text", "_send_copy", "_send_upload"}
+        ),
     ),
     _AbstractContract(
         module="notebooklm._chat",

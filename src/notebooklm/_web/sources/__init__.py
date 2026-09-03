@@ -990,36 +990,41 @@ class WebSourcesAPI(SourcesAPI):
     # Transfers (#2283): AddSourcesAsync / AppendSource / CopySourcesAsync
     # =========================================================================
 
-    async def _send_transfer(
+    async def _send_add_urls_async(
         self,
-        operation: Literal["add_urls_async", "append_text", "copy"],
         notebook_id: str,
+        urls: builtins.list[str],
+    ) -> tuple[builtins.list[Source], str]:
+        """Send and decode one batchexecute URL-queue operation."""
+        added = await self._transfers.add_urls_async(
+            notebook_id,
+            urls,
+            rpc=self._rpc,
+            extract_youtube_video_id=self._extract_youtube_video_id,
+            logger=logger,
+        )
+        return added, RPCMethod.ADD_SOURCES_ASYNC.value
+
+    async def _send_append_text(
+        self,
+        notebook_id: str,
+        source_id: str,
+        text: str,
         *,
-        urls: builtins.list[str] | None = None,
-        source_id: str | None = None,
-        text: str | None = None,
-        header: str = "",
-        source_ids: builtins.list[str] | None = None,
-        target_notebook_id: str | None = None,
-    ) -> tuple[builtins.list[Source] | builtins.list[CopiedSource] | None, str]:
-        """Send one batchexecute source-transfer operation."""
-        if operation == "add_urls_async":
-            assert urls is not None
-            added = await self._transfers.add_urls_async(
-                notebook_id,
-                urls,
-                rpc=self._rpc,
-                extract_youtube_video_id=self._extract_youtube_video_id,
-                logger=logger,
-            )
-            return added, RPCMethod.ADD_SOURCES_ASYNC.value
-        if operation == "append_text":
-            assert source_id is not None and text is not None
-            await self._transfers.append_text(
-                notebook_id, source_id, text, header=header, rpc=self._rpc
-            )
-            return None, RPCMethod.APPEND_SOURCE.value
-        assert source_ids is not None and target_notebook_id is not None
+        header: str,
+    ) -> None:
+        """Send one batchexecute append operation."""
+        await self._transfers.append_text(
+            notebook_id, source_id, text, header=header, rpc=self._rpc
+        )
+
+    async def _send_copy(
+        self,
+        notebook_id: str,
+        source_ids: builtins.list[str],
+        target_notebook_id: str,
+    ) -> tuple[builtins.list[CopiedSource], str]:
+        """Send and decode one batchexecute source-copy operation."""
         copied = await self._transfers.copy(
             notebook_id,
             source_ids,

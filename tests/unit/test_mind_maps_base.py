@@ -166,6 +166,12 @@ def test_android_backend_inherits_neutral_workflows() -> None:
         assert getattr(AndroidMindMapsAPI, method_name) is getattr(MindMapsAPI, method_name)
 
 
+def test_interactive_wait_failure_policy_preserves_each_backend_contract() -> None:
+    assert MindMapsAPI._reject_unsuccessful_interactive_wait is False
+    assert WebMindMapsAPI._reject_unsuccessful_interactive_wait is False
+    assert AndroidMindMapsAPI._reject_unsuccessful_interactive_wait is True
+
+
 def test_android_rename_inherits_the_scoped_base_workflow() -> None:
     assert "rename" not in AndroidMindMapsAPI.__dict__
     assert AndroidMindMapsAPI.rename is MindMapsAPI.rename

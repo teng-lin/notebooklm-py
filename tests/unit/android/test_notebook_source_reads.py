@@ -220,7 +220,9 @@ def test_exact_abstract_sets_and_android_adapters_are_concrete() -> None:
     )
     assert SourcesAPI.__abstractmethods__ == frozenset(
         {
-            "_send_transfer",
+            "_send_add_urls_async",
+            "_send_append_text",
+            "_send_copy",
             "_send_upload",
             "add_drive",
             "add_drive_file",

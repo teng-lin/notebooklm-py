@@ -147,6 +147,11 @@ class MindMapsAPI(ABC):
         a uniform surface). With ``wait=False`` it returns a pending
         :class:`MindMap` whose ``tree`` is ``None`` until completed.
 
+        The historical terminal-failure behavior remains backend-specific:
+        Android raises :class:`ArtifactNotReadyError` when a waited interactive
+        task finishes failed or removed, while web continues hydration after
+        its completion wait without adding that extra rejection.
+
         ``instructions`` is a free-text prompt that steers generation; it is sent
         for both kinds — note-backed via ``GENERATE_MIND_MAP`` and interactive at
         the ``[9][1][2]`` prompt slot of ``CREATE_ARTIFACT`` (the same slot

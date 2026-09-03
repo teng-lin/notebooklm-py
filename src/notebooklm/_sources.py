@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Collection, Sequence
 from pathlib import Path
 from time import monotonic
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from ._lookup import unwrap_or_raise
 from ._runtime.call_supervisor import OperationLease
@@ -417,7 +417,11 @@ class SourcesAPI(ABC):
 
         Registers the source, opens an upload session, streams the file body,
         and applies a requested display title after upload. Uploads are
-        memory-efficient and bounded by the backend's upload semaphore.
+        memory-efficient and bounded by the backend's upload semaphore. The web
+        pipeline resolves the path before semaphore admission, opens it only
+        after admission, and may briefly wait for registration before applying
+        a custom title because an early rename would no-op. Backend failures
+        after registration retain their ``source_id`` and ``stage`` attributes.
 
         Args:
             notebook_id: The notebook ID.
@@ -567,19 +571,34 @@ class SourcesAPI(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def _send_transfer(
+    async def _send_add_urls_async(
         self,
-        operation: Literal["add_urls_async", "append_text", "copy"],
         notebook_id: str,
+        urls: builtins.list[str],
+    ) -> tuple[builtins.list[Source], str]:
+        """Queue URL sources and return decoded rows plus the wire method id."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def _send_append_text(
+        self,
+        notebook_id: str,
+        source_id: str,
+        text: str,
         *,
-        urls: builtins.list[str] | None = None,
-        source_id: str | None = None,
-        text: str | None = None,
-        header: str = "",
-        source_ids: builtins.list[str] | None = None,
-        target_notebook_id: str | None = None,
-    ) -> tuple[builtins.list[Source] | builtins.list[CopiedSource] | None, str]:
-        """Send one source-transfer wire operation and decode its result."""
+        header: str,
+    ) -> None:
+        """Append one text block through the selected backend."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def _send_copy(
+        self,
+        notebook_id: str,
+        source_ids: builtins.list[str],
+        target_notebook_id: str,
+    ) -> tuple[builtins.list[CopiedSource], str]:
+        """Copy sources and return decoded mappings plus the wire method id."""
         raise NotImplementedError
 
     async def add_urls_async(
@@ -600,12 +619,7 @@ class SourcesAPI(ABC):
         if any(not url or not url.strip() for url in urls):
             raise ValidationError("urls must not contain empty entries")
         async with self._operation_scope("source.add_urls_async"):
-            transfer_result, method_id = await self._send_transfer(
-                "add_urls_async",
-                notebook_id,
-                urls=urls,
-            )
-        sources = cast(builtins.list[Source], transfer_result)
+            sources, method_id = await self._send_add_urls_async(notebook_id, urls)
         if not sources:
             raise DecodingError(
                 "AddSourcesAsync returned no queued source rows",
@@ -643,11 +657,10 @@ class SourcesAPI(ABC):
         if not text:
             raise ValidationError("text must not be empty")
         async with self._operation_scope("source.append_text"):
-            await self._send_transfer(
-                "append_text",
+            await self._send_append_text(
                 notebook_id,
-                source_id=source_id,
-                text=text,
+                source_id,
+                text,
                 header=header,
             )
 
@@ -669,13 +682,11 @@ class SourcesAPI(ABC):
         if not target_notebook_id:
             raise ValidationError("target_notebook_id must not be empty")
         async with self._operation_scope("source.copy"):
-            transfer_result, method_id = await self._send_transfer(
-                "copy",
+            copied, method_id = await self._send_copy(
                 notebook_id,
-                source_ids=source_ids,
-                target_notebook_id=target_notebook_id,
+                source_ids,
+                target_notebook_id,
             )
-        copied = cast(builtins.list[CopiedSource], transfer_result)
         if not copied:
             raise SourceNotFoundError(", ".join(source_ids), method_id=method_id)
         missing = set(source_ids) - {item.original_id for item in copied}

@@ -15,7 +15,7 @@ from __future__ import annotations
 import builtins
 import logging
 from dataclasses import replace
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 from .._idempotency import call_unconfirmed_on_transport_loss
 from .._url_utils import is_youtube_url
@@ -71,46 +71,20 @@ def _as_processing(source: Source) -> Source:
 
 
 class AndroidSourceTransferMixin:
-    """``AddSourcesAsync`` / ``AppendSource`` / ``CopySourcesAsync`` over gRPC."""
+    """``AddSourcesAsync`` / ``AppendSource`` / ``CopySourcesAsync`` over gRPC.
+
+    ``AndroidSourcesAPI._operation_scope`` binds a lease epoch task-locally
+    before calling these hooks. ``AndroidSession.unary`` resolves each omitted
+    ``expected_epoch`` from that binding before dispatch.
+    """
 
     _transport: AndroidSession
-
-    async def _send_transfer(
-        self,
-        operation: Literal["add_urls_async", "append_text", "copy"],
-        notebook_id: str,
-        *,
-        urls: builtins.list[str] | None = None,
-        source_id: str | None = None,
-        text: str | None = None,
-        header: str = "",
-        source_ids: builtins.list[str] | None = None,
-        target_notebook_id: str | None = None,
-    ) -> tuple[builtins.list[Source] | builtins.list[CopiedSource] | None, str]:
-        """Send one Android source-transfer operation.
-
-        The enclosing ``AndroidSourcesAPI._operation_scope`` binds its lease
-        epoch task-locally; ``AndroidSession.unary`` resolves the omitted
-        ``expected_epoch`` from that binding before dispatch.
-        """
-        if operation == "add_urls_async":
-            assert urls is not None
-            return await self._send_add_urls_async(notebook_id, urls), ADD_SOURCES_ASYNC_METHOD
-        if operation == "append_text":
-            assert source_id is not None and text is not None
-            await self._send_append_text(source_id, text, header=header)
-            return None, APPEND_SOURCE_METHOD
-        assert source_ids is not None and target_notebook_id is not None
-        return (
-            await self._send_copy(source_ids, target_notebook_id),
-            COPY_SOURCES_ASYNC_METHOD,
-        )
 
     async def _send_add_urls_async(
         self,
         notebook_id: str,
         urls: builtins.list[str],
-    ) -> builtins.list[Source]:
+    ) -> tuple[builtins.list[Source], str]:
         """Queue ``urls`` with one ``AddSourcesAsync`` call and return the stub rows.
 
         Request is the exact ``AddSourcesRequest`` shape (``AddSources`` and
@@ -148,16 +122,18 @@ class AndroidSourceTransferMixin:
                     ack.status,
                     notebook_id,
                 )
-        return sources
+        return sources, ADD_SOURCES_ASYNC_METHOD
 
     async def _send_append_text(
         self,
+        notebook_id: str,
         source_id: str,
         text: str,
         *,
         header: str = "",
     ) -> None:
         """Append ``text`` to ``source_id`` in place (``AppendSource``; empty reply)."""
+        del notebook_id  # The route is addressed by source id alone.
         proto = _write_proto()
         request = proto.AppendSourceRequest(
             source_id=_read_proto().SourceId(id=source_id),
@@ -179,18 +155,18 @@ class AndroidSourceTransferMixin:
 
     async def _send_copy(
         self,
+        notebook_id: str,
         source_ids: builtins.list[str],
         target_notebook_id: str,
-    ) -> builtins.list[CopiedSource]:
+    ) -> tuple[builtins.list[CopiedSource], str]:
         """Copy ``source_ids`` into ``target_notebook_id`` (``CopySourcesAsync``).
 
         The reply maps each original ``SourceId`` (#1) to the new ``Source`` row
         (#2). An unknown source id or target project draws ``NOT_FOUND``
-        (live-verified); an empty mapping on success is treated as
-        :class:`SourceNotFoundError` so a no-op never reads as a copy. A partial
-        mapping is returned with a warning because those copies have already
-        committed.
+        (live-verified). The neutral facade interprets empty and partial
+        mappings after this wire decoder returns.
         """
+        del notebook_id  # The route is addressed by source ids + target alone.
         proto = _write_proto()
         read_proto = _read_proto()
         request = proto.CopySourcesAsyncRequest(
@@ -229,7 +205,7 @@ class AndroidSourceTransferMixin:
                 "CopySourcesAsync returned only malformed mapping entries",
                 method_id=COPY_SOURCES_ASYNC_METHOD,
             )
-        return copied
+        return copied, COPY_SOURCES_ASYNC_METHOD
 
 
 __all__ = [

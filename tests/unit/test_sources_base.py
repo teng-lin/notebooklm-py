@@ -53,7 +53,9 @@ class _ConcreteSources(SourcesAPI):
     check_freshness = _unsupported
     get_guide = _unsupported
     get_fulltext = _unsupported
-    _send_transfer = _unsupported
+    _send_add_urls_async = _unsupported
+    _send_append_text = _unsupported
+    _send_copy = _unsupported
     _send_upload = _unsupported
 
 
