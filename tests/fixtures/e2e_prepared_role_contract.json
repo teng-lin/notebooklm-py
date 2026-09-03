@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "reference": {
+    "note_title": "notebooklm-py CI prepared reference marker",
+    "note_body": "This deterministic note marks a disposable notebook prepared for notebooklm-py CI.",
+    "question": "Which distinct topics are represented by this notebook's sources? Answer briefly.",
+    "require_readable_note": true,
+    "require_conversation_id": true,
+    "require_nonempty_history_pair": true,
+    "conversation_turn_limit": 2
+  },
+  "clean_roles": {
+    "roles": ["generation", "multi-source", "rpc"],
+    "minimum_ready_sources": 3,
+    "disallowed": ["artifacts", "notes", "mind_maps"],
+    "empty_chat_roles": ["multi-source", "rpc"],
+    "poll_interval_seconds": 30,
+    "quiet_period_seconds": 90,
+    "preparation_deadline_seconds": 300
+  }
+}
