@@ -709,7 +709,10 @@ Some features have daily/hourly quotas:
 
 ### Download Requirements
 
-Artifact downloads (audio, video, images) use `httpx` with cookies from your storage state. **Playwright is NOT required for downloads**—only for the initial `notebooklm login`.
+Artifact downloads (audio, video, images) use `httpx` with cookies from your
+storage state. **Playwright is not required for downloads themselves**—it is
+used only by interactive `notebooklm login` or, when explicitly enabled, the
+optional layer-3 browser recovery path.
 
 If downloads fail with authentication errors:
 
@@ -752,7 +755,11 @@ playwright install-deps chromium
 
 **`playwright install chromium` fails with `TypeError: onExit is not a function`:**
 
-This is an environment-specific Playwright install failure that has been observed with some newer Playwright builds on Linux. `notebooklm-py` only needs a working browser install for `notebooklm login`; the workaround is to install a known-good Playwright version in a clean virtual environment.
+This is an environment-specific Playwright install failure that has been observed
+with some newer Playwright builds on Linux. `notebooklm-py` needs a working
+browser install for interactive `notebooklm login` and for explicitly enabled
+layer-3 browser recovery; the workaround is to install a known-good Playwright
+version in a clean virtual environment.
 
 **Workaround** (intentionally uses `pip` rather than the canonical `uv sync --frozen` flow from [installation.md#e-contributor](installation.md#e-contributor) — this workaround needs to *override* the `playwright>=1.40.0` constraint to a specific older version, which `uv sync --frozen` would refuse):
 ```bash
@@ -952,6 +959,28 @@ into `source_add(bytes_base64=…)` (and `studio_get_prompt` into
 `studio_list(item=…)`), the removed tool names failed with `Unknown tool`, but
 `source_add` with the new `bytes_base64` argument reached the upgraded server and
 worked without a reconnect.
+
+### MCP server `CONNECT_TIMEOUT` on connect ("connection timed out after 30000ms")
+
+**Cause (fixed in the version that shipped #2330):** the server used to open its
+`NotebookLMClient` — cookie rotation plus the CSRF fetch, and the cold-recovery
+ladder when those fail — *before* answering the MCP `initialize` handshake. That
+auth work has a larger budget (a 15 s `RotateCookies` poke plus a 30 s CSRF
+fetch, more on the recovery rungs) than the 30 s deadline hosts give the
+handshake, so a slow or rate-limited Google looked to the host like a dead
+server: `CONNECT_TIMEOUT`, with no way to tell "still working" from "stuck".
+Each retry spawned a fresh process that redid the same work, which is why it
+took several attempts (and, once cookies were warm, eventually succeeded).
+
+The client is now opened **lazily and in the background**: the handshake answers
+immediately, and the first tool call awaits the auth round-trip instead. An auth
+problem now arrives as a normal tool error (`AUTH: …`) naming the real cause, and
+the next call retries the open — so re-running `notebooklm login` recovers a
+running server without restarting it.
+
+**If you still see `CONNECT_TIMEOUT`:** you are on an older server. Upgrade, and
+check the host's MCP logs (the server logs to stderr) for the real error. It is
+not an auth problem in the client — the handshake never reaches auth.
 
 ## Getting Help
 

@@ -43,7 +43,7 @@ _MODULE_HASHES = {
     "profile_migration.py": "ea6408a76890563c6f0f948e8031038436687611c0dd832b19c07b0177ede582",
     "profile_store.py": "26d63e626a6bf5333bb5e73f371177bff7c41baa6e11206ae8fbe5151a65b793",
     "psidts_recovery.py": "cde36fed0fcdc319a3e1d3a165c33d2a05385141b318667d4ce8c2c54ff7e51f",
-    "recovery.py": "b396b441096ef4a4a961cccec8bf846eeb5aa1e11848927d1e3de8118e55e1e1",
+    "recovery.py": "7a728071e7f763b13f68639b86be263c200c1c88c338599df0a692d00f15b4f7",
     "refresh.py": "99bc87088b997b534c1ce9e12844d6103a223b4fddf459df00d5812501ed866f",
     "single_flight.py": "8e298fe515dd667a3dfc95449165ab45345d327381951e98474aafa67510f246",
     "storage.py": "7c106fc41e4945c82d95fd57c7e29855b7e862e02d8d81db931df3df133f8b1e",

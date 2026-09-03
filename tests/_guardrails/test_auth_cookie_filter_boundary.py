@@ -8,8 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm._auth import _browser_cookie_filter, browser_capture, cookie_filter, storage
-from notebooklm.cli.services import playwright_login
+import notebooklm.auth as auth
+from notebooklm._auth import cookie_filter, storage
+from notebooklm._browser import browser_capture
 
 pytestmark = pytest.mark.repo_lint
 
@@ -164,8 +165,7 @@ def test_compatibility_aliases_and_logger_are_exact() -> None:
     assert browser_capture._safe_cookie_shape is storage._safe_cookie_shape
     assert storage.filter_storage_state_cookies_by_domain_policy is canonical
     assert browser_capture.filter_storage_state_cookies_by_domain_policy is canonical
-    assert _browser_cookie_filter.filter_storage_state_cookies_by_domain_policy is canonical
-    assert playwright_login.filter_storage_state_cookies_by_domain_policy is canonical
+    assert auth.filter_storage_state_cookies_by_domain_policy is canonical
     assert cookie_filter.logger is logging.getLogger("notebooklm.auth")
 
 
@@ -200,9 +200,8 @@ _PROVIDERS = {
     "notebooklm._auth.cookie_filter",
     "notebooklm._auth.profile_store",
     "notebooklm._auth.storage",
-    "notebooklm._auth.browser_capture",
-    "notebooklm._auth._browser_cookie_filter",
-    "notebooklm.cli.services.playwright_login",
+    "notebooklm._browser.browser_capture",
+    "notebooklm.auth",
 }
 
 
@@ -304,7 +303,7 @@ def _filter_escapes(path: Path, tree: ast.AST) -> set[Caller]:
     return collector.escapes
 
 
-def test_filter_behavior_callers_are_exactly_six() -> None:
+def test_filter_behavior_callers_are_exact() -> None:
     actual: set[Caller] = set()
     escapes: set[Caller] = set()
     for path in sorted(SRC_ROOT.rglob("*.py")):
@@ -315,10 +314,13 @@ def test_filter_behavior_callers_are_exactly_six() -> None:
         ("_auth/profile_store.py", "ProfileStore.replace_from_login"),
         ("_auth/profile_store.py", "ProfileStore.replace_from_remint"),
         ("_auth/profile_store.py", "ProfileStore.replace_minted_session"),
-        ("_auth/browser_capture.py", "run_browser_capture"),
-        ("_auth/browser_capture.py", "run_cdp_capture"),
+        ("_browser/browser_capture.py", "run_browser_capture"),
+        ("_browser/browser_capture.py", "run_cdp_capture"),
     }
-    assert escapes == {("cli/_cookie_import.py", "_import_cookie_json")}
+    assert escapes == {
+        ("auth.py", "<module>"),
+        ("cli/_cookie_import.py", "_import_cookie_json"),
+    }
 
 
 def test_alias_detectors_bite_and_a_seventh_caller_is_visible() -> None:
@@ -357,17 +359,12 @@ def test_alias_detectors_bite_and_a_seventh_caller_is_visible() -> None:
             "    return provider.filter_storage_state_cookies_by_domain_policy(state)\n"
         ),
         (
-            "import notebooklm._auth.browser_capture as provider\n"
+            "import notebooklm._browser.browser_capture as provider\n"
             "def seventh(state):\n"
             "    return provider.filter_storage_state_cookies_by_domain_policy(state)\n"
         ),
         (
-            "from notebooklm._auth import _browser_cookie_filter as provider\n"
-            "def seventh(state):\n"
-            "    return provider.filter_storage_state_cookies_by_domain_policy(state)\n"
-        ),
-        (
-            "from notebooklm.cli.services import playwright_login as provider\n"
+            "import notebooklm.auth as provider\n"
             "def seventh(state):\n"
             "    return provider.filter_storage_state_cookies_by_domain_policy(state)\n"
         ),

@@ -51,8 +51,8 @@ def register(mcp: Any) -> None:
           replaces the body). A ref that doesn't resolve is a not-found error, NEVER
           a stray create. Returns ``status="updated"``.
         """
-        client = get_client(ctx)
         with mcp_errors():
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             if note is None:
                 if not title or not content:

@@ -6,9 +6,9 @@
   },
   "budget": 1500,
   "shrink_locked_ceilings": {
-    "_auth/browser_capture.py": 1445,
     "_auth/psidts_recovery.py": 1214,
     "_auth/refresh.py": 1184,
-    "_auth/storage.py": 1089
+    "_auth/storage.py": 1089,
+    "_browser/browser_capture.py": 1439
   }
 }

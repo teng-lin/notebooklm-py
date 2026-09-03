@@ -355,12 +355,12 @@ class TestIsNotebookLMAppHost:
     def test_alias_host_agrees_with_browser_capture(self):
         """The alias must match the one ``browser_capture`` already recognises.
 
-        ``_auth/browser_capture.url_matches_base_host`` treats
+        ``_browser/browser_capture.url_matches_base_host`` treats
         ``notebook.google.com`` as the personal-app alias. Two independent
         notions of "is this the app?" that disagree is how a valid app response
         gets reported as an environment problem, so pin them together.
         """
-        from notebooklm._auth.browser_capture import url_matches_base_host
+        from notebooklm._browser.browser_capture import url_matches_base_host
 
         url = "https://notebook.google.com/"
         assert url_matches_base_host(url) is True

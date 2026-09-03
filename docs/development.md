@@ -32,6 +32,8 @@ src/notebooklm/
 ├── auth.py              # Public auth facade
 ├── types.py             # Dataclasses and type definitions
 ├── _app/                # Transport-neutral business logic shared by adapters
+│   └── login_browser.py # Markup-free browser-login plan and orchestration
+├── _browser/            # Optional Playwright-backed credential acquisition
 ├── _client_composed.py  # Client-owned composition holder
 ├── _runtime/            # Neutral runtime contracts, config, helpers, init, lifecycle
 ├── _web/contracts.py    # Web-only Kernel and RpcCaller Protocols
@@ -626,7 +628,7 @@ results:
 | `_auth/refresh.py` custom refresh command | Classification/security contract only; the command is operator-supplied, so there is no fixed third-party output contract. |
 | Auth refresh composition (`AuthRefreshCoordinator` → `NotebookLMClient.refresh_auth` → `_auth/session.py`) | `tests/unit/test_auth_refresh_seam.py` crosses the production assembly with a deterministic homepage response; the existing VCR test covers the stale-RPC → homepage-refresh → retry path. No live reality probe is used because it would require mutable authenticated external state and would not provide a stable CI contract. |
 | `_version_info.py` git lookup | Local-tool lookup with fallback behavior; synthetic and fallback tests are sufficient. |
-| `scripts/` subprocesses | Audited `audit_public_api_compat.py`, `regen_baselines.py`, and `audit_test_suite.py`: each invokes a local developer/CI tool, not a product boundary. Their wrappers are covered by `tests/unit/test_ci_audit_scripts.py` and related audit tests; no external-output reality probe is claimed. |
+| `scripts/` subprocesses | Audited `audit_public_api_compat.py`, `regen_baselines.py`, `audit_test_suite.py`, and `check_base_wheel.py`: each invokes a local developer/CI tool, not a product boundary. The wheel check creates isolated environments and exercises real package installation/import behavior; wrappers and workflow placement are covered by the CI audit tests. |
 
 The bounded MCP seam-matrix slice is
 [`tests/integration/mcp_vcr/test_notebooks.py::test_mcp_notebook_list_crosses_adapter_to_client_boundary`](../tests/integration/mcp_vcr/test_notebooks.py).
@@ -878,7 +880,7 @@ A representative slice (run `ls tests/_guardrails/` for the full set):
 | `test_module_size_ratchet.py` | No module grows past the size budget (ADR-0008) — a burn-down ratchet |
 | `test_v080_release_gate.py` | The v0.8.0 breaking-change set flips in lockstep at the version bump |
 | `test_adr_reference_format.py` | ADR references are 4-digit and resolve to a real `docs/adr/NNNN-*.md` |
-| `test_cli_boundary.py` | CLI modules import only public `notebooklm` surface — no `notebooklm._*` / `notebooklm.rpc.*` / `_private` reach-in |
+| `test_cli_boundary.py` | CLI modules import only public `notebooklm` surface plus the single `_app` core exception — no direct `_browser`, other `notebooklm._*`, `notebooklm.rpc.*`, or `_private` reach-in |
 | `test_no_facade_reach_in.py` | Feature APIs and service modules don't reach into Session internals or runtime-import facade APIs |
 | `test_public_surface_manifest.py` | The documented public-import manifest + re-export identity pins for `notebooklm` / `auth` / `types` / shims stay intact |
 
@@ -991,6 +993,8 @@ surface change is a deliberate, diff-visible act. These **regenerable baselines*
 | `cli_contract` | `build_cli_contract()` | `tests/fixtures/cli_contract_baseline.json` |
 | `auth_import_graph` | static direct imports under `notebooklm._auth` | `tests/fixtures/baselines/auth_import_graph.json` |
 | `auth_patch_sites` | auth test patch-site audit | `tests/fixtures/baselines/auth_patch_sites.json` |
+| `browser_import_graph` | package-aware imports under `notebooklm._browser` | `tests/fixtures/baselines/browser_import_graph.json` |
+| `browser_patch_sites` | browser test patch-site audit | `tests/fixtures/baselines/browser_patch_sites.json` |
 | `module_size` | live over-budget and ADR-0033 shrink-locked LOC | `tests/fixtures/baselines/module_size.json` |
 | `storage_transaction_policy` | AST-derived lock-policy callers | `tests/fixtures/baselines/storage_transaction_policy.json` |
 | `guardrail_inline_literals` | grandfathered large guardrail literals | `tests/fixtures/baselines/guardrail_inline_literals.json` |
@@ -1366,6 +1370,14 @@ The `RedactingFilter` preserves `record.exc_info` (the live exception object) so
 | `testpypi-publish.yml` | Manual dispatch | Publish to TestPyPI |
 | `verify-package.yml` | Manual dispatch | Verify TestPyPI or PyPI install + E2E |
 | `publish.yml` | Tag push | Publish to PyPI |
+
+The test and both publish workflows build the wheel and run
+`scripts/check_base_wheel.py`. The smoke inspects wheel contents and metadata,
+then proves in clean environments that the base install imports and exposes CLI
+help without Playwright while installing the same wheel's `[browser]` extra does
+provide Playwright. `verify-package.yml` repeats the check against the exact
+wheel downloaded from the selected package index before installing the broader
+verification extras.
 
 #### Android gRPC canary
 

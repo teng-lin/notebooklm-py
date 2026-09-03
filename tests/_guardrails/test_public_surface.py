@@ -87,16 +87,22 @@ EXPECTED_AUTH_ALL: list[str] = [
 # prefer routing new CLI needs through ``_app/`` service functions instead.
 AUTH_CROSS_BOUNDARY_NAMES: list[str] = [
     "Account",
+    "app_host_scope_note",
     "assert_account_writable",
     "bootstrap_missing_storage_from_master_token",
+    "browser_login_channels",
     "build_cookie_jar",
     "build_httpx_cookies_from_storage",
+    "capture_browser_oauth_token",
+    "check_headless_reauth_readiness",
     "cookie_names_from_storage",
+    "ensure_browser_login_available",
     "enumerate_accounts",
     "extract_cookies_from_storage",
     "extract_cookies_with_domains",
     "fetch_tokens_passive",
     "fetch_tokens_with_domains",
+    "filter_storage_state_cookies_by_domain_policy",
     "GOOGLE_REGIONAL_CCTLDS",
     "master_token_bootstrap",
     "master_token_remint",
@@ -108,6 +114,7 @@ AUTH_CROSS_BOUNDARY_NAMES: list[str] = [
     "ReplaceResult",
     "replace_profile_from_login",
     "resolve_account_identity",
+    "run_browser_login_capture",
     "validate_with_recovery",
 ]
 

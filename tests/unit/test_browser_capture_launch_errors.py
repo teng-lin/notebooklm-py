@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from notebooklm._auth.browser_launch_errors import (
+from notebooklm._browser.browser_launch_errors import (
     BUNDLED_CHROMIUM_MISSING_HELP,
     BUNDLED_SPAWN_VETO_HELP,
     CHANNEL_SPAWN_VETO_HELP,

@@ -28,6 +28,11 @@ Security Notes:
 
 import logging
 import subprocess  # noqa: F401  # re-exported for tests that patch ``auth.subprocess.run``
+from collections.abc import Awaitable as _Awaitable
+from collections.abc import Callable as _Callable
+from pathlib import Path as _Path
+from typing import Any as _Any
+from typing import NoReturn as _NoReturn
 from typing import TypeAlias
 
 import httpx
@@ -39,6 +44,7 @@ from ._auth import extraction as _auth_extraction
 from ._auth import keepalive as _auth_keepalive
 from ._auth import paths as _auth_paths
 from ._auth import psidts_recovery as _auth_psidts_recovery
+from ._auth import recovery_rungs as _auth_recovery_rungs
 from ._auth import refresh as _auth_refresh
 from ._auth import storage as _auth_storage
 from ._auth import tokens as _auth_tokens
@@ -104,6 +110,114 @@ from ._auth.tokens import AuthTokens
 from .exceptions import LockUnavailableError  # noqa: F401
 from .paths import get_storage_path  # noqa: F401  # kept as a module-level compat alias
 
+
+def _default_headless_rung(
+    *,
+    storage_path: _Path,
+    allow_headless: bool,
+) -> _auth_recovery_rungs.HeadlessRungOutcome:
+    """Load the optional browser implementation only when L3 actually fires."""
+    from ._browser.headless_reauth import headless_rung
+
+    return headless_rung(storage_path=storage_path, allow_headless=allow_headless)
+
+
+_auth_recovery_rungs.install_headless_rung(_default_headless_rung)
+
+
+class _BrowserFacadeIO:
+    """Adapt first-party callbacks to the private browser IO protocol."""
+
+    def __init__(
+        self,
+        emit: _Callable[..., None],
+        fail: _Callable[[int], _NoReturn],
+    ) -> None:
+        self._emit = emit
+        self._fail = fail
+
+    def emit(self, *args: _Any, **kwargs: _Any) -> None:
+        self._emit(*args, **kwargs)
+
+    def fail(self, code: int) -> _NoReturn:
+        self._fail(code)
+
+    def run_async(self, coro: _Awaitable[_Any]) -> _Any:
+        raise AssertionError("browser capture must not invoke the facade IO async bridge")
+
+
+def browser_login_channels() -> tuple[tuple[str, str], ...]:
+    """Return immutable ``(channel, display label)`` pairs for first-party login UI."""
+    from ._browser.browser_launch_errors import CHANNEL_BROWSERS
+
+    return tuple(
+        (channel, display_label) for channel, (display_label, *_) in CHANNEL_BROWSERS.items()
+    )
+
+
+def ensure_browser_login_available(
+    browser: str,
+    *,
+    emit: _Callable[..., None],
+    fail: _Callable[[int], _NoReturn],
+) -> None:
+    """Fail with the browser-extra hint before first-party login emits a banner."""
+    from ._browser.browser_capture import ensure_playwright_available
+
+    ensure_playwright_available(_BrowserFacadeIO(emit, fail), browser=browser)
+
+
+def run_browser_login_capture(
+    *,
+    browser: str,
+    browser_profile: _Path,
+    storage_path: _Path,
+    include_domains: set[str] | None,
+    login_timeout_s: int,
+    emit: _Callable[..., None],
+    fail: _Callable[[int], _NoReturn],
+) -> str | None:
+    """Run headed browser capture and return only the page HTML needed for repair."""
+    from ._browser.browser_capture import BrowserCapturePlan, run_browser_capture
+
+    result = run_browser_capture(
+        BrowserCapturePlan(
+            browser=browser,
+            browser_profile=browser_profile,
+            storage_path=storage_path,
+            include_domains=include_domains,
+            login_timeout_s=login_timeout_s,
+        ),
+        _BrowserFacadeIO(emit, fail),
+        headless=False,
+        interactive=True,
+    )
+    return result.page_html
+
+
+def check_headless_reauth_readiness(*, browser_profile: _Path) -> tuple[bool, str]:
+    """Return a transport-neutral readiness projection for the optional L3 rung."""
+    from ._browser.headless_reauth import headless_reauth_readiness
+
+    result = headless_reauth_readiness(browser_profile=browser_profile)
+    return result.available, result.detail
+
+
+def capture_browser_oauth_token(
+    *,
+    browser: str = "chromium",
+    cdp_url: str | None = None,
+    timeout_s: float = 300.0,
+) -> str:
+    """Capture the single-use OAuth token through the optional browser implementation."""
+    from ._browser.oauth_token import capture_oauth_token
+
+    try:
+        return capture_oauth_token(browser=browser, cdp_url=cdp_url, timeout_s=timeout_s)
+    finally:
+        del browser, cdp_url, timeout_s
+
+
 logger = logging.getLogger(__name__)
 
 CookieKey: TypeAlias = _auth_cookies.CookieKey
@@ -139,6 +253,9 @@ snapshot_cookie_jar = _auth_storage.snapshot_cookie_jar
 advance_cookie_snapshot_after_save = _auth_storage.advance_cookie_snapshot_after_save
 _cookie_save_return = _auth_storage._cookie_save_return
 save_cookies_to_storage = _auth_storage.save_cookies_to_storage
+filter_storage_state_cookies_by_domain_policy = (
+    _auth_storage.filter_storage_state_cookies_by_domain_policy
+)
 _merge_cookies_legacy = _auth_storage._merge_cookies_legacy
 _merge_cookies_with_snapshot = _auth_storage._merge_cookies_with_snapshot
 _cookie_snapshot_key_variants = _auth_storage._cookie_snapshot_key_variants
@@ -152,6 +269,7 @@ OPTIONAL_COOKIE_DOMAINS = _cookie_policy.OPTIONAL_COOKIE_DOMAINS
 ALLOWED_COOKIE_DOMAINS = _cookie_policy.ALLOWED_COOKIE_DOMAINS
 GOOGLE_REGIONAL_CCTLDS = _cookie_policy.GOOGLE_REGIONAL_CCTLDS
 MINIMUM_REQUIRED_COOKIES = _cookie_policy.MINIMUM_REQUIRED_COOKIES
+app_host_scope_note = _cookie_policy.app_host_scope_note
 _EXTRACTION_HINT = _cookie_policy._EXTRACTION_HINT
 _SECONDARY_BINDING_WARNED = _cookie_policy._SECONDARY_BINDING_WARNED
 _has_valid_secondary_binding = _cookie_policy._has_valid_secondary_binding
@@ -284,9 +402,9 @@ authuser_query = _auth_account.authuser_query
 write_account_metadata = _auth_storage.write_account_metadata
 clear_account_metadata = _auth_storage.clear_account_metadata
 # ``write_account_metadata`` / ``clear_account_metadata`` / ``extract_email_from_html``
-# above: their last cli/_app facade importer
-# (``cli/services/playwright_login.py::repair_playwright_account_metadata``)
-# switched to ``repair_account_metadata_from_playwright_storage`` (auth
+# above: the remaining first-party composition path lives in
+# ``_app/profile.py::_repair_playwright_account`` and uses the coarse
+# ``repair_account_metadata_from_playwright_storage`` operation (auth
 # cross-boundary ledger shrink, follow-up to #2103); all three stay importable
 # here for the frozen first-party compatibility manifest
 # (``_AUTH_FIRST_PARTY_COMPATIBILITY_NAMES``) and existing test callers.

@@ -180,7 +180,6 @@ def register(mcp: Any) -> None:
         suggested questions without asking anything. When omitted/``False`` the
         result never contains a ``suggested_prompts`` key.
         """
-        client = get_client(ctx)
         with mcp_errors():
             # A whitespace-only question counts as "no question" (recall path), so
             # a blank string can't slip past the guard into client.chat.ask.
@@ -192,6 +191,7 @@ def register(mcp: Any) -> None:
                     "Provide a question to ask, history>0 to recall prior turns, "
                     "or suggest_followups=true for suggested questions."
                 )
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             # Resolve source refs ONCE up front so both the ask path and the
             # suggest path share the same ids. Tolerate ``source_ids`` sent as a
@@ -337,10 +337,10 @@ def register(mcp: Any) -> None:
         then ``chat_status`` reports ``unknown``.
         """
         with mcp_errors():
-            client = get_client(ctx)
             question = question.strip()
             if not question:
                 raise ValidationError("chat_start needs a non-empty question.")
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             # Same source-scoping contract as chat_ask: tolerant input shapes,
             # resolved ONCE up front; omitted/empty stays None (=> all sources).
@@ -433,7 +433,7 @@ def register(mcp: Any) -> None:
                     raise ValidationError(
                         "chat_status accepts either notebook or task_id, not both."
                     )
-                client = get_client(ctx)
+                client = await get_client(ctx)
                 nb_id = await resolve_notebook(client, notebook)
                 resolved_id = conversation_id or await client.chat.get_conversation_id(nb_id)
                 if resolved_id is None:
@@ -498,7 +498,7 @@ def register(mcp: Any) -> None:
         An unknown task ID or one belonging to another notebook is rejected.
         """
         with mcp_errors():
-            client = get_client(ctx)
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             registry = get_chat_tasks(ctx)
             entry = registry.status(task_id) if task_id is not None else None
@@ -573,7 +573,6 @@ def register(mcp: Any) -> None:
           omitted field is preserved. Only a bare call (no preset, neither field)
           is rejected, as it would reset every setting to its default.
         """
-        client = get_client(ctx)
         with mcp_errors():
             # A partial custom config now merges (read-modify-write in
             # execute_configure), so goal/response_length are NO LONGER required
@@ -596,6 +595,7 @@ def register(mcp: Any) -> None:
             # mutual-exclusion (chat_mode cannot be combined with goal/response_length)
             # is enforced transport-neutrally in ``execute_configure`` so the CLI and
             # this tool share one rule.
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             result = await core.execute_configure(
                 client,
@@ -633,8 +633,8 @@ def register(mcp: Any) -> None:
         suggestions inline with a question (ask + follow-ups in one call); this tool
         is the standalone selector across every surface.
         """
-        client = get_client(ctx)
         with mcp_errors():
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             # Tolerate source_ids as a JSON-array string / comma string / scalar,
             # then resolve each ref (id/prefix/title). Omitted/empty stays None

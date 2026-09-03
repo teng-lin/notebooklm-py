@@ -30,9 +30,11 @@ silently breaks callers who imported from a private module.
 The codebase already resolves this with a consistent pattern, but it is
 undocumented as a decision: short public modules that re-export from one or
 more underscore-prefixed implementation modules. `auth.py` is the most
-developed example — its body is almost pure re-exports forwarding to the
-`_auth/` package (see [ADR-0003](0003-auth-facade-write-through.md) and the
-`auth.py` row in `docs/architecture.md`).
+developed example — its body is primarily re-exports, with narrow lazy
+capability operations where import-time optionality requires them (see
+[ADR-0003](0003-auth-facade-write-through.md),
+[ADR-0036](0036-browser-acquisition-package.md), and the `auth.py` row in
+`docs/architecture.md`).
 
 ## Decision
 
@@ -52,7 +54,7 @@ source tree) are:
 | `io.py`       | `_atomic_io.py`        |
 | `log.py`      | `_logging.py`          |
 | `research.py` | `_web/rows/research_task.py` (plus public helpers) |
-| `auth.py`     | `_auth/` package       |
+| `auth.py`     | `_auth/` package plus lazy `_browser/` capabilities |
 
 Single-purpose public helper modules (`artifacts.py`, `utils.py`,
 `migration.py`) follow the same shape: a stable public name backed by private
@@ -61,8 +63,8 @@ collaborators.
 The rules:
 
 1. **Public modules are facades where practical.** A public module's body is
-   usually re-exports (with at most a thin binding, e.g.
-   `auth.enumerate_accounts`). Small public helper modules such as
+   usually re-exports (with at most thin bindings or lazy capability adapters,
+   e.g. `auth.enumerate_accounts` and its browser-extra operations). Small public helper modules such as
    `artifacts.py`, `utils.py`, and `migration.py` may contain public helper
    logic directly when that is the stable API.
 2. **Callers import from the facade.** Importing from an underscore-prefixed

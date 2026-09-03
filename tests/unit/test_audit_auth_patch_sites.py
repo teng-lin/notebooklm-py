@@ -208,6 +208,29 @@ def test_private_and_public_are_split(script, tmp_path):
     assert summary["TOTAL"] == {"public": 1, "private": 1, "total": 2}
 
 
+def test_parameterized_package_counts_browser_patch_sites(script, tmp_path):
+    browser_dir = tmp_path / "_browser"
+    browser_dir.mkdir()
+    (browser_dir / "__init__.py").write_text("", encoding="utf-8")
+    (browser_dir / "capture.py").write_text(_MODULE_BODY, encoding="utf-8")
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_browser.py").write_text(
+        "from notebooklm._browser import capture\n"
+        "def test_x(monkeypatch):\n"
+        "    monkeypatch.setattr(capture, 'SEAM', 1)\n",
+        encoding="utf-8",
+    )
+
+    sites = script.collect_sites(
+        tests_dir,
+        browser_dir,
+        package_dotted="notebooklm._browser",
+    )
+
+    assert [(site.module, site.attribute) for site in sites] == [("capture", "SEAM")]
+
+
 def test_real_function_local_import_sites_are_not_dropped(script):
     sites = script.collect_sites(REPO_ROOT / "tests", REPO_ROOT / "src" / "notebooklm" / "_auth")
     actual = {(site.path, site.module, site.attribute) for site in sites}
@@ -230,9 +253,9 @@ def test_live_replacement_patch_contract_and_scorecard_are_exact(script):
     sites = script.collect_sites(REPO_ROOT / "tests", REPO_ROOT / "src/notebooklm/_auth")
     projection = script.build_projection(sites)
     assert projection["summary"]["TOTAL"] == {
-        "public": 135,
-        "private": 161,
-        "total": 296,
+        "public": 99,
+        "private": 144,
+        "total": 243,
     }
     relevant = {
         (row["module"], row["attribute"], row["idiom"]): row["count"]
@@ -240,7 +263,6 @@ def test_live_replacement_patch_contract_and_scorecard_are_exact(script):
         if (row["module"], row["attribute"])
         in {
             ("account_email", "_write_account_metadata_if_document_unchanged"),
-            ("browser_capture", "replace_captured_profile"),
             ("profile_migration", "FileLock"),
             ("profile_migration", "atomic_write_json"),
             ("master_token", "MasterTokenFile"),
@@ -285,7 +307,6 @@ def test_live_replacement_patch_contract_and_scorecard_are_exact(script):
             "_write_account_metadata_if_document_unchanged",
             "monkeypatch.setattr",
         ): 2,
-        ("browser_capture", "replace_captured_profile", "patch.object"): 1,
         ("profile_migration", "FileLock", "monkeypatch.setattr"): 5,
         ("profile_migration", "atomic_write_json", "monkeypatch.setattr"): 2,
         ("master_token", "MasterTokenFile", "monkeypatch.setattr"): 4,

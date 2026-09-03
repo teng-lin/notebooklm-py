@@ -2,11 +2,6 @@
   "edges": [
     {
       "scope": "module",
-      "source": "_browser_cookie_filter",
-      "target": "storage"
-    },
-    {
-      "scope": "module",
       "source": "account",
       "target": "account_repair"
     },
@@ -77,61 +72,6 @@
     },
     {
       "scope": "module",
-      "source": "browser_capture",
-      "target": "browser_launch_errors"
-    },
-    {
-      "scope": "module",
-      "source": "browser_capture",
-      "target": "cookie_policy"
-    },
-    {
-      "scope": "module",
-      "source": "browser_capture",
-      "target": "cookies"
-    },
-    {
-      "scope": "module",
-      "source": "browser_capture",
-      "target": "navigation_errors"
-    },
-    {
-      "scope": "module",
-      "source": "browser_capture",
-      "target": "profile_account"
-    },
-    {
-      "scope": "module",
-      "source": "browser_capture",
-      "target": "profile_document"
-    },
-    {
-      "scope": "module",
-      "source": "browser_capture",
-      "target": "profile_store"
-    },
-    {
-      "scope": "module",
-      "source": "browser_capture",
-      "target": "psidts_recovery"
-    },
-    {
-      "scope": "module",
-      "source": "browser_capture",
-      "target": "storage"
-    },
-    {
-      "scope": "module",
-      "source": "browser_cookie_recovery",
-      "target": "psidts_recovery"
-    },
-    {
-      "scope": "module",
-      "source": "browser_state_validation",
-      "target": "browser_capture"
-    },
-    {
-      "scope": "module",
       "source": "cookie_filter",
       "target": "cookie_policy"
     },
@@ -197,11 +137,6 @@
     },
     {
       "scope": "module",
-      "source": "headless_reauth",
-      "target": "browser_capture"
-    },
-    {
-      "scope": "module",
       "source": "keepalive",
       "target": "mint_service"
     },
@@ -214,11 +149,6 @@
       "scope": "module",
       "source": "keepalive",
       "target": "storage_lock"
-    },
-    {
-      "scope": "module",
-      "source": "login_wait_trace",
-      "target": "browser_capture"
     },
     {
       "scope": "function",
@@ -468,11 +398,6 @@
     {
       "scope": "function",
       "source": "recovery",
-      "target": "headless_reauth"
-    },
-    {
-      "scope": "function",
-      "source": "recovery",
       "target": "master_token"
     },
     {
@@ -489,6 +414,11 @@
       "scope": "module",
       "source": "recovery",
       "target": "profile_migration"
+    },
+    {
+      "scope": "function",
+      "source": "recovery",
+      "target": "recovery_rungs"
     },
     {
       "scope": "module",
@@ -652,16 +582,6 @@
     },
     {
       "scope": "module",
-      "source": "storage_transaction",
-      "target": "storage"
-    },
-    {
-      "scope": "module",
-      "source": "storage_writer",
-      "target": "storage"
-    },
-    {
-      "scope": "module",
       "source": "tokens",
       "target": "account"
     },
@@ -723,11 +643,6 @@
       "path": "src/notebooklm/_auth/__init__.py"
     },
     {
-      "lines": 29,
-      "name": "_browser_cookie_filter",
-      "path": "src/notebooklm/_auth/_browser_cookie_filter.py"
-    },
-    {
       "lines": 252,
       "name": "account",
       "path": "src/notebooklm/_auth/account.py"
@@ -746,26 +661,6 @@
       "lines": 50,
       "name": "account_types",
       "path": "src/notebooklm/_auth/account_types.py"
-    },
-    {
-      "lines": 1445,
-      "name": "browser_capture",
-      "path": "src/notebooklm/_auth/browser_capture.py"
-    },
-    {
-      "lines": 37,
-      "name": "browser_cookie_recovery",
-      "path": "src/notebooklm/_auth/browser_cookie_recovery.py"
-    },
-    {
-      "lines": 151,
-      "name": "browser_launch_errors",
-      "path": "src/notebooklm/_auth/browser_launch_errors.py"
-    },
-    {
-      "lines": 21,
-      "name": "browser_state_validation",
-      "path": "src/notebooklm/_auth/browser_state_validation.py"
     },
     {
       "lines": 96,
@@ -808,19 +703,9 @@
       "path": "src/notebooklm/_auth/extraction.py"
     },
     {
-      "lines": 886,
-      "name": "headless_reauth",
-      "path": "src/notebooklm/_auth/headless_reauth.py"
-    },
-    {
       "lines": 438,
       "name": "keepalive",
       "path": "src/notebooklm/_auth/keepalive.py"
-    },
-    {
-      "lines": 30,
-      "name": "login_wait_trace",
-      "path": "src/notebooklm/_auth/login_wait_trace.py"
     },
     {
       "lines": 469,
@@ -846,11 +731,6 @@
       "lines": 304,
       "name": "mint_service",
       "path": "src/notebooklm/_auth/mint_service.py"
-    },
-    {
-      "lines": 113,
-      "name": "navigation_errors",
-      "path": "src/notebooklm/_auth/navigation_errors.py"
     },
     {
       "lines": 239,
@@ -883,9 +763,14 @@
       "path": "src/notebooklm/_auth/psidts_recovery.py"
     },
     {
-      "lines": 710,
+      "lines": 712,
       "name": "recovery",
       "path": "src/notebooklm/_auth/recovery.py"
+    },
+    {
+      "lines": 60,
+      "name": "recovery_rungs",
+      "path": "src/notebooklm/_auth/recovery_rungs.py"
     },
     {
       "lines": 1184,
@@ -913,16 +798,6 @@
       "path": "src/notebooklm/_auth/storage_lock.py"
     },
     {
-      "lines": 32,
-      "name": "storage_transaction",
-      "path": "src/notebooklm/_auth/storage_transaction.py"
-    },
-    {
-      "lines": 56,
-      "name": "storage_writer",
-      "path": "src/notebooklm/_auth/storage_writer.py"
-    },
-    {
       "lines": 894,
       "name": "tokens",
       "path": "src/notebooklm/_auth/tokens.py"
@@ -934,10 +809,10 @@
   },
   "summary": {
     "function_local_edges": 12,
-    "module_edges": 131,
-    "modules": 42,
-    "total_lines": 16653,
-    "unique_edges": 143
+    "module_edges": 115,
+    "modules": 33,
+    "total_lines": 13915,
+    "unique_edges": 127
   },
   "version": 1
 }

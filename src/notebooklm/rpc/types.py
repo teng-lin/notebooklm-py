@@ -133,7 +133,7 @@ class RPCMethod(str, Enum):
     # AddTentativeSources is a discover-sources op. Treat the real method as
     # unconfirmed; do not relabel from the suspect pairing.
     ADD_SOURCE_FILE = "o4cbdc"  # Register uploaded file as source (live /Method unconfirmed)
-    DELETE_SOURCE = "tGMBJ"  # -> DeleteSources (batch-capable; we send a single source)
+    DELETE_SOURCE = "tGMBJ"  # -> DeleteSources (batch: [[[id1], [id2], ...]])
     GET_SOURCE = "hizoJc"  # -> LoadSource
     REFRESH_SOURCE = "FLmJqe"  # -> RefreshSource
     CHECK_SOURCE_FRESHNESS = "yR9Yof"  # -> CheckSourceFreshness

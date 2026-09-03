@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm._auth import profile_store, storage, storage_transaction
+from notebooklm._auth import profile_store, storage
 from notebooklm._auth.profile_store import ProfileStore
 from notebooklm._auth.storage_lock import LockState
 from notebooklm.exceptions import LockUnavailableError
@@ -87,7 +87,7 @@ def _called_members(node: ast.AST) -> list[str]:
     ]
 
 
-def test_transaction_definition_and_compatibility_identities_are_exact() -> None:
+def test_transaction_definition_and_storage_aliases_are_exact() -> None:
     definitions = {
         path.name
         for path in AUTH_ROOT.glob("*.py")
@@ -99,15 +99,9 @@ def test_transaction_definition_and_compatibility_identities_are_exact() -> None
     }
     assert definitions == {"profile_store.py"}
     assert storage.in_storage_transaction is profile_store.in_storage_transaction
-    assert storage_transaction.in_storage_transaction is profile_store.in_storage_transaction
     assert storage.raise_on_lock_unavailable is profile_store.raise_on_lock_unavailable
     assert storage.skip_on_lock_unavailable is profile_store.skip_on_lock_unavailable
     assert storage.report_on_lock_unavailable is profile_store.report_on_lock_unavailable
-    assert storage_transaction.raise_on_lock_unavailable is profile_store.raise_on_lock_unavailable
-    assert storage_transaction.skip_on_lock_unavailable is profile_store.skip_on_lock_unavailable
-    assert (
-        storage_transaction.report_on_lock_unavailable is profile_store.report_on_lock_unavailable
-    )
 
 
 def _top_level_callers(path: Path, target: str) -> set[str]:

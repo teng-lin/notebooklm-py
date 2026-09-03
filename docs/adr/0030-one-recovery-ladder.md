@@ -29,6 +29,14 @@ Companion to [ADR-0029](0029-canonical-storage-writer.md) (refactor (b), the
 single canonical `storage_state.json` writer). Where ADR-0029 unifies the
 **write** side, this ADR unifies the **recovery/refresh** side.
 
+**Amended 2026-09-02 (installed L3 rung):** `_auth/recovery_rungs.py` now owns
+the browser-neutral closed L3 outcome and installed-rung registry. The recovery
+coordinator keeps its name, keyword shape, and `asyncio.to_thread` boundary, but
+invokes only the registered protocol. `auth.py` installs a lazy default adapter
+to `_browser/headless_reauth.py`; when no rung is installed the result is
+explicitly unavailable. `_auth` therefore owns ladder policy without importing
+the optional browser implementation or Playwright. See ADR-0036.
+
 ## Context
 
 The cookie/auth audit found the refresh/recovery surface split into **two

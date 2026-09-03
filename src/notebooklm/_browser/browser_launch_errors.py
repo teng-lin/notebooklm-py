@@ -1,4 +1,4 @@
-"""Friendly triage for Playwright browser-launch failures.
+"""Friendly triage for browser-launch failures.
 
 Transport-neutral leaf (ADR-0021): no CLI, no Playwright, no I/O. Takes the
 resolved browser channel plus the exception text and returns Rich-markup help,

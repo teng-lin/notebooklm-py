@@ -284,8 +284,8 @@ be audited from one location.
 | `NOTEBOOKLM_REFRESH_STORAGE_PATH` | Child env var injected into `NOTEBOOKLM_REFRESH_CMD`; points to the `storage_state.json` file the command must rewrite before exiting `0`. Refresh scripts may read it, but setting it in the parent shell does not select storage. | Set by `auth` refresh-spawn helper from the explicit storage path or profile-aware storage path. | `auth._run_refresh_cmd` |
 | `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE` | When `1`, disable the proactive `accounts.google.com/RotateCookies` poke that refreshes `__Secure-1PSIDTS` ahead of expiry. Useful when running behind a proxy that rejects the extra request, or in offline test fixtures. | Process env on every keepalive check. | `auth` keepalive guards (constant `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV` in `notebooklm.auth`) |
 | `NOTEBOOKLM_PROMOTION_EXIT_TIMEOUT` | Seconds the process waits at exit for an in-flight one-time migration of a pre-`v0.x` `context.json` account into `storage_state.json`. A ceiling shared by all outstanding writers, not a delay — a finished migration exits immediately. `0` never waits. Unset, empty, or whitespace-only falls back to the default; non-numeric, negative, and non-finite (`inf`/`nan`) values are refused with a `WARNING` and the default is used; a finite value above `threading.TIMEOUT_MAX` is clamped. An incomplete wait is always reported at `WARNING` (so `--quiet`, which forces `ERROR`, suppresses it). | Process env, read once per process at exit → `30.0` | `_auth.profile_migration._promotion_exit_timeout` |
-| `NOTEBOOKLM_HEADLESS_REAUTH` | Opt in to layer-3 headless re-auth for cold construction and automatic refresh paths. Explicit Python/CLI `allow_headless` flags do not require the env var. | Literal `1` enables; all other values disabled. | `_auth.headless_reauth.headless_reauth_env_enabled` |
-| `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL` | Optional Chrome DevTools Protocol endpoint for layer-3 headless re-auth. Must be loopback (`127.0.0.1`, `::1`, or `localhost`); remote endpoints are ignored because CDP is account-equivalent. | Explicit function argument → env var → no CDP arm. | `_auth.headless_reauth.resolve_cdp_url` |
+| `NOTEBOOKLM_HEADLESS_REAUTH` | Opt in to layer-3 headless re-auth for cold construction and automatic refresh paths. Explicit Python/CLI `allow_headless` flags do not require the env var. | Literal `1` enables; all other values disabled. | `_browser.headless_reauth.headless_reauth_env_enabled` |
+| `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL` | Optional Chrome DevTools Protocol endpoint for layer-3 headless re-auth. Must be loopback (`127.0.0.1`, `::1`, or `localhost`); remote endpoints are ignored because CDP is account-equivalent. | Explicit function argument → env var → no CDP arm. | `_browser.headless_reauth.resolve_cdp_url` |
 | `NOTEBOOKLM_MCP_TRANSPORT` | Default transport for `notebooklm-mcp`: `stdio` or `http`. CLI `--transport` wins. | `--transport` flag → env var → `stdio` | `mcp.__main__._build_parser` |
 | `NOTEBOOKLM_MCP_HOST` | HTTP bind host for `notebooklm-mcp --transport http`. Non-loopback refused unless `NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND=1`. | `--host` flag → env var → `127.0.0.1` | `mcp.__main__._build_parser` / `_serving.check_bind_allowed` |
 | `NOTEBOOKLM_MCP_PORT` | HTTP bind port for `notebooklm-mcp --transport http`. | `--port` flag → env var → `9420` | `mcp.__main__._build_parser` / `_resolve_port` |
@@ -858,6 +858,9 @@ Browser login opens in the Windows host browser. The storage file is saved in th
 
 ### Headless Servers & Containers
 
-**Playwright is only required for the `notebooklm login` command.** All other operations use standard HTTP requests via `httpx`.
+**Playwright is required only for interactive `notebooklm login` and the optional,
+explicitly enabled layer-3 browser recovery path.** Ordinary RPC operations use
+standard HTTP requests via `httpx`; a base install with supplied storage state
+does not import Playwright.
 
 For the install + auth-bootstrap recipe (run `notebooklm login` on a workstation, copy `storage_state.json` to the server, set `NOTEBOOKLM_AUTH_JSON`), see the canonical Persona D guide: [docs/installation.md#d-headless-server-or-ci](installation.md#d-headless-server-or-ci).

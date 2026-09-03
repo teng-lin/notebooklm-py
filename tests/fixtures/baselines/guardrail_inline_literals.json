@@ -13,7 +13,7 @@
     "ALLOWLIST": 21
   },
   "tests/_guardrails/test_auth_cold_recovery_coordinator_boundary.py": {
-    "_EXPECTED_IMPORTS": 225
+    "_EXPECTED_IMPORTS": 215
   },
   "tests/_guardrails/test_auth_cookie_docs.py": {
     "AUTH_COOKIE_DEPRECATION_ROWS": 25
@@ -50,8 +50,8 @@
     "_NATIVE_REPLACE_CALLER_TESTS": 33
   },
   "tests/_guardrails/test_auth_storage_compatibility.py": {
-    "EXPECTED_ALIAS_CALLERS": 55,
-    "EXPECTED_DIRECT_CALLERS": 54,
+    "EXPECTED_ALIAS_CALLERS": 61,
+    "EXPECTED_DIRECT_CALLERS": 62,
     "EXPECTED_SIGNATURES": 561,
     "FACADE_INVENTORY_IDENTITIES": 23,
     "LIVE_SIGNATURES": 61
@@ -107,7 +107,7 @@
     "CARVE_OUT_MODULES": 21
   },
   "tests/_guardrails/test_public_surface.py": {
-    "AUTH_CROSS_BOUNDARY_NAMES": 23,
+    "AUTH_CROSS_BOUNDARY_NAMES": 30,
     "_AUTH_DEBLESSED_KEEP_IMPORTABLE": 40
   },
   "tests/_guardrails/test_public_surface_manifest.py": {

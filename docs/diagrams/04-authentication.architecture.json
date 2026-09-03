@@ -86,7 +86,7 @@
       "id": "headless",
       "type": "backend",
       "label": "Headless Re-auth",
-      "sublabel": "_auth/headless_reauth",
+      "sublabel": "_browser/headless_reauth",
       "tag": "opt-in",
       "pos": [
         544,
@@ -144,7 +144,7 @@
       "id": "cold",
       "type": "backend",
       "label": "Cold Recovery",
-      "sublabel": "L2.5 → L3 → L4",
+      "sublabel": "_auth/recovery + rung registry",
       "tag": "one shot",
       "pos": [
         544,
@@ -293,7 +293,7 @@
       "id": "cold-to-headless",
       "from": "cold",
       "to": "headless",
-      "label": "L3 headless"
+      "label": "installed L3 rung"
     },
     {
       "id": "cold-to-mastertoken",
@@ -376,7 +376,7 @@
       "title": "Recovery ladder",
       "items": [
         "L2 inline PSIDTS heal runs outside the cold single flight",
-        "L3 headless re-auth is opt-in and never the remote or MCP auth path",
+        "The installed opt-in L3 rung keeps _auth free of _browser imports",
         "L4 remints from a stored gpsoauth master token"
       ]
     },

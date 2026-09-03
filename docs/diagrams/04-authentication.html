@@ -5038,7 +5038,7 @@
         <path data-edge-from="refresh" data-edge-to="psidts" data-edge-label="inline heal" data-edge-key="2" data-edge-id="refresh-to-psidts" data-composition-points="367,260;367,144" d="M 367 260 L 367 144" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="refresh" data-edge-to="cold" data-edge-label="escalate" data-edge-key="3" data-edge-id="refresh-to-cold" data-composition-points="452,305;544,305" d="M 452 305 L 544 305" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="refresh" data-edge-to="tokens" data-edge-label="mutate in place" data-edge-key="4" data-edge-id="refresh-to-tokens" data-composition-points="367,350;367,460" d="M 367 350 L 367 460" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="cold" data-edge-to="headless" data-edge-label="L3 headless" data-edge-key="5" data-edge-id="cold-to-headless" data-composition-points="629,260;629,144" d="M 629 260 L 629 144" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="cold" data-edge-to="headless" data-edge-label="installed L3 rung" data-edge-key="5" data-edge-id="cold-to-headless" data-composition-points="629,260;629,144" d="M 629 260 L 629 144" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="cold" data-edge-to="mastertoken" data-edge-label="L4 remint" data-edge-key="6" data-edge-id="cold-to-mastertoken" data-composition-points="714,305;806,305" d="M 714 305 L 806 305" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="cold" data-edge-to="store" data-edge-label="typed merge" data-edge-key="7" data-edge-id="cold-to-store" data-composition-points="629,350;629,460" d="M 629 350 L 629 460" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="mastertoken" data-edge-to="mint" data-edge-label="gpsoauth" data-edge-key="8" data-edge-id="mastertoken-to-mint" data-composition-points="971,305;1063,305" d="M 971 305 L 1063 305" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
@@ -5073,15 +5073,15 @@
         <text data-detail="fine" x="367" y="136" class="t-backend" font-size="7" text-anchor="middle">L2 inline</text>
         </g>
 
-        <g id="node-headless" data-node-id="headless" data-node-label="Headless Re-auth" tabindex="0" role="button" aria-label="Focus Headless Re-auth, _auth/headless_reauth, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="_auth/headless_reauth" data-node-tag="opt-in" data-node-context="Architecture component">
-          <title>Headless Re-auth · _auth/headless_reauth · Architecture component · opt-in</title>
+        <g id="node-headless" data-node-id="headless" data-node-label="Headless Re-auth" tabindex="0" role="button" aria-label="Focus Headless Re-auth, _browser/headless_reauth, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="_browser/headless_reauth" data-node-tag="opt-in" data-node-context="Architecture component">
+          <title>Headless Re-auth · _browser/headless_reauth · Architecture component · opt-in</title>
           <rect x="544" y="60" width="170" height="84" rx="6" class="c-mask"/>
           <rect x="544" y="60" width="170" height="84" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(550 66) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="629" y="100" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Headless Re-auth</text>
-        <text data-detail="context" x="629" y="116" class="t-muted" font-size="9" text-anchor="middle">_auth/headless_reauth</text>
+        <text data-detail="context" x="629" y="116" class="t-muted" font-size="9" text-anchor="middle">_browser/headless_reauth</text>
         <text data-detail="fine" x="629" y="136" class="t-backend" font-size="7" text-anchor="middle">opt-in</text>
         </g>
 
@@ -5120,15 +5120,15 @@
         <text data-detail="fine" x="367" y="342" class="t-backend" font-size="7" text-anchor="middle">single flight</text>
         </g>
 
-        <g id="node-cold" data-node-id="cold" data-node-label="Cold Recovery" tabindex="0" role="button" aria-label="Focus Cold Recovery, L2.5 → L3 → L4, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="L2.5 → L3 → L4" data-node-tag="one shot" data-node-context="Architecture component">
-          <title>Cold Recovery · L2.5 → L3 → L4 · Architecture component · one shot</title>
+        <g id="node-cold" data-node-id="cold" data-node-label="Cold Recovery" tabindex="0" role="button" aria-label="Focus Cold Recovery, _auth/recovery + rung registry, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="_auth/recovery + rung registry" data-node-tag="one shot" data-node-context="Architecture component">
+          <title>Cold Recovery · _auth/recovery + rung registry · Architecture component · one shot</title>
           <rect x="544" y="260" width="170" height="90" rx="6" class="c-mask"/>
           <rect x="544" y="260" width="170" height="90" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(550 266) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="629" y="303" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Cold Recovery</text>
-        <text data-detail="context" x="629" y="319" class="t-muted" font-size="9" text-anchor="middle">L2.5 → L3 → L4</text>
+        <text data-detail="context" x="629" y="319" class="t-muted" font-size="9" text-anchor="middle">_auth/recovery + rung registry</text>
         <text data-detail="fine" x="629" y="342" class="t-backend" font-size="7" text-anchor="middle">one shot</text>
         </g>
 
@@ -5224,9 +5224,9 @@
           <rect x="326" y="388" width="82" height="14" rx="3" class="c-mask"/>
           <text x="367" y="398" class="t-muted" font-size="8" text-anchor="middle">mutate in place</text>
         </g>
-        <g data-detail="context" data-edge-from="cold" data-edge-to="headless" data-edge-label="L3 headless" data-edge-key="5" data-edge-id="cold-to-headless">
-          <rect x="597.6" y="240" width="62.8" height="14" rx="3" class="c-mask"/>
-          <text x="629" y="250" class="t-muted" font-size="8" text-anchor="middle">L3 headless</text>
+        <g data-detail="context" data-edge-from="cold" data-edge-to="headless" data-edge-label="installed L3 rung" data-edge-key="5" data-edge-id="cold-to-headless">
+          <rect x="583.2" y="240" width="91.6" height="14" rx="3" class="c-mask"/>
+          <text x="629" y="250" class="t-muted" font-size="8" text-anchor="middle">installed L3 rung</text>
         </g>
         <g data-detail="context" data-edge-from="cold" data-edge-to="mastertoken" data-edge-label="L4 remint" data-edge-key="6" data-edge-id="cold-to-mastertoken">
           <rect x="733.4" y="285" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
@@ -5496,7 +5496,7 @@
         </div>
         <ul>
           <li>&bull; L2 inline PSIDTS heal runs outside the cold single flight</li>
-          <li>&bull; L3 headless re-auth is opt-in and never the remote or MCP auth path</li>
+          <li>&bull; The installed opt-in L3 rung keeps _auth free of _browser imports</li>
           <li>&bull; L4 remints from a stored gpsoauth master token</li>
         </ul>
       </div>

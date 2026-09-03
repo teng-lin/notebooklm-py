@@ -9,7 +9,10 @@ service retains just interactive ``capture_oauth_token`` browser I/O.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
+from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -21,9 +24,56 @@ from notebooklm._app.master_token import (
     MasterTokenLoginSuccess,
     MasterTokenRemintSuccess,
 )
-from notebooklm._auth import browser_capture
+from notebooklm._browser import browser_capture
 from notebooklm.notebooklm_cli import cli
 from notebooklm.paths import get_storage_path
+
+
+def test_oauth_capture_adapter_delegates_to_auth_facade(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def capture(**kwargs: Any) -> str:
+        captured.update(kwargs)
+        return "oauth-token"
+
+    monkeypatch.setattr(mt_service, "capture_browser_oauth_token", capture)
+
+    assert (
+        mt_service.capture_oauth_token(
+            browser="chrome",
+            cdp_url="http://localhost:9222",
+            timeout_s=19.0,
+        )
+        == "oauth-token"
+    )
+    assert captured == {
+        "browser": "chrome",
+        "cdp_url": "http://localhost:9222",
+        "timeout_s": 19.0,
+    }
+
+
+def test_oauth_capture_adapter_scrubs_failure_frame(monkeypatch) -> None:
+    secret_endpoint = "http://user:secret@localhost:9222"
+    error = RuntimeError("capture failed")
+
+    def fail_capture(**kwargs: Any) -> str:
+        assert kwargs["cdp_url"] == secret_endpoint
+        raise error
+
+    monkeypatch.setattr(mt_service, "capture_browser_oauth_token", fail_capture)
+    with pytest.raises(RuntimeError) as caught:
+        mt_service.capture_oauth_token(cdp_url=secret_endpoint)
+
+    adapter_frames = [
+        frame_info.frame
+        for frame_info in inspect.getinnerframes(caught.value.__traceback__)
+        if frame_info.frame.f_code.co_name == "capture_oauth_token"
+        and Path(frame_info.frame.f_code.co_filename).parts[-4:]
+        == ("cli", "services", "login", "master_token.py")
+    ]
+    assert len(adapter_frames) == 1
+    assert {"browser", "cdp_url", "timeout_s"}.isdisjoint(adapter_frames[0].f_locals)
 
 
 def _seed_profile_account(monkeypatch, tmp_path, email):

@@ -231,7 +231,7 @@ def register_upload_widget(mcp: FastMCP, config: FileTransferConfig | None) -> N
             cfg = get_file_transfer(ctx)
             if cfg is None:
                 return {"error": "file transfer not configured"}
-            nb_id = await resolve_notebook(get_client(ctx), notebook)
+            nb_id = await resolve_notebook(await get_client(ctx), notebook)
             # A POOL of independent single-use tokens — one per file the user may pick (each
             # cfg.upload_url() mints a fresh jti). The widget uploads file[i] to upload_urls[i], so
             # multi-file needs NO change to the /files/ul route or ADR-0024's single-use invariant;

@@ -128,7 +128,7 @@ If the agent is in a no-display sandbox and `[cookies]` isn't installed, ask the
 
 **Claude Cowork** (Anthropic's sandboxed desktop agent for non-developers) and similar no-display sandboxes are a special case of the headless path above: there is no browser for `notebooklm login`, and the sandbox resets between sessions. Two adjustments make everything except `login` work:
 
-- **Bootstrap each session** with the base install — `[browser]`/Playwright is *not* needed here, only for `login` (which you run elsewhere, once):
+- **Bootstrap each session** with the base install — `[browser]`/Playwright is *not* needed for ordinary RPC use. It is needed only for interactive `login` or the explicitly enabled browser-backed L3 recovery path:
   <!-- not mirrored: Cowork per-session bootstrap; not part of the contributor flow -->
   ```bash
   pip install notebooklm-py    # queries/generation/download need no extras
@@ -207,7 +207,7 @@ Embedding `notebooklm-py` in a Python application.
 
 **Post-install:** None for runtime use. To programmatically run interactive login from your app, add `[browser]` and run `playwright install chromium`.
 
-**Why no extras by default:** all RPC traffic uses `httpx`; auth is cookie-based (`src/notebooklm/auth.py`). Apps can ship a pre-generated `storage_state.json` and never touch Playwright.
+**Why no extras by default:** all RPC traffic uses `httpx`; auth is cookie-based (`src/notebooklm/auth.py`). Apps can ship a pre-generated `storage_state.json` and never touch Playwright. The optional browser-backed L3 recovery rung is unavailable unless `[browser]` is installed and explicitly enabled.
 
 **Verify:**
 
@@ -223,7 +223,7 @@ print(notebooklm.__version__)
 
 **Recommended:** `pip install notebooklm-py`
 
-**Post-install (3-step recipe — Playwright is *not* required on the server):**
+**Post-install (3-step recipe — Playwright is *not* required on the server unless you explicitly opt into browser-backed L3 recovery):**
 
 1. **On a workstation with a display**, install with `[browser]` and log in once:
    <!-- not mirrored: headless-server bootstrap step 1 (Persona D); not part of contributor flow -->
@@ -496,8 +496,8 @@ curl -H "Authorization: Bearer $TOKEN" -F 'file=@./notes.pdf' \
 
 ### `playwright install chromium` — when required, when auto-installed
 
-- **Required**: when you'll use `notebooklm login` (the interactive Playwright flow), unless the CLI auto-installs Chromium for you (it does — see `ensure_chromium_installed()` in `cli/services/playwright_login.py`, which runs `python -m playwright install chromium` on first login if Chromium is missing).
-- **Not required**: for headless servers (Persona D), library use (Persona C), or `--browser-cookies`-based auth (Persona A/F with `[cookies]`).
+- **Required**: when you'll use `notebooklm login` (the interactive Playwright flow) or explicitly enable browser-backed layer-3 recovery. Login auto-installs Chromium when it is missing; the probe lives in `cli/services/playwright_login.py` and runs `python -m playwright install chromium`.
+- **Not required**: for headless servers (Persona D) and library users (Persona C) that supply storage state without opting into L3, or for `--browser-cookies`-based auth (Persona A/F with `[cookies]`).
 
 ### `playwright install-deps chromium` — Linux system libraries
 

@@ -30,7 +30,7 @@ from ...exceptions import NotebookLMError
 from ...paths import get_storage_path, resolve_profile
 from .._confirm import READ_ONLY
 from .._context import get_chat_tasks, get_client
-from .._errors import mcp_errors, redact
+from .._errors import mcp_errors, redact, tool_error_payload
 from ..server import SERVER_NAME
 
 
@@ -62,8 +62,28 @@ async def _account_block(ctx: Context, *, authenticated: bool) -> dict[str, Any]
     can still hit an expired session. Rather than sink the whole ``server_info``
     response, that degrades to ``available: False`` with a short (scrubbed) reason
     (identity still included) — keeping the diagnostic useful.
+
+    Acquiring the client can itself fail now that it is opened lazily (#2330), and
+    that degrades the same way rather than propagating. ``server_info`` is the tool
+    an agent reaches for when something is *already* wrong, so a broken session must
+    not sink the version + local-auth diagnostics — which need no client at all and
+    are the very fields that say what broke. An exception escaping to
+    ``server_info``'s own ``mcp_errors()`` would discard exactly those.
     """
-    client = get_client(ctx)
+    try:
+        client = await get_client(ctx)
+    except NotebookLMError as exc:
+        # Expected library failures retain their useful, scrubbed diagnostic.
+        return {"email": None, "authuser": None, "available": False, "reason": redact(exc)}
+    except Exception as exc:  # noqa: BLE001 - degrade, never sink the whole response
+        # Unexpected exception text can contain arbitrary secrets/host details that
+        # a denylist cannot reliably scrub. Reuse the MCP boundary's fixed message.
+        return {
+            "email": None,
+            "authuser": None,
+            "available": False,
+            "reason": tool_error_payload(exc)["message"],
+        }
     # Identity from a single source (the client). Never raises. ``live_fallback`` is
     # gated on ``authenticated`` — suppress the live WIZ probe when the session is
     # already known stale (it would just fail), so the unauth path stays network-free.

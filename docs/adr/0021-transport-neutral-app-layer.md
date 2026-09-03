@@ -24,9 +24,21 @@ client.* (public domain API) → _app/ (neutral) → cli/ (Click) + mcp/ (FastMC
 - **Patch-seam discipline.** Command modules are **not** moved; anything a test stubs is read at call time or injected — never closed over at import (the trap documented at `tests/unit/cli/conftest.py`). *Amended #1481 (2026-06-08):* the per-command `patch("...<x>_cmd.NotebookLMClient")` client seams are **retired**. Command bodies resolve the client via `cli.auth_runtime.resolve_client_factory(ctx)`, injected through Click's `ctx.obj["client_factory"]`; tests substitute a fake with `runner.invoke(..., obj=inject_client(mock_client))`, and a recurrence gate (`tests/_guardrails/test_no_cli_client_patch_surface.py`) forbids re-exposing the name on any `*_cmd` module. The eight pure re-export `cli/services/*` shells that survived only to preserve import / call-time seams were collapsed into their `_app/` cores. Note `ctx.obj["client_factory"]` is the CLI **adapter's** client seam — a second front-end (MCP / HTTP) injects its client through the neutral `execute_<verb>(plan, client)` signature, not this Click-specific key.
 - **Cassette invariance.** The relocation preserves the RPC call set/order/body-shape and the full-id fast paths, so the existing VCR cassettes (matched on `rpcids` + decoded body shape, blind to code path) stay valid **without re-recording**.
 
+**Amended 2026-09-02 (browser login):** `_app/login_browser.py` owns the
+markup-free interactive-login plan, flag validation, path preparation, typed
+events, and the order availability → preflight → capture → account repair. The
+CLI still owns Rich rendering, exits, and the subprocess Chromium preflight,
+which it injects as a bound zero-argument callable. `_app` reaches browser
+acquisition only through coarse `notebooklm.auth` operations; it does not import
+`_browser`, Playwright, Click, or Rich. See ADR-0036.
+
 ## What stays in the adapter (not relocated)
 
-The "would a headless server call this?" test decides. Presentation/interactive code stays in `cli/`: Rich rendering, `--json` envelope assembly, exit-code policy, interactive login (playwright / browser-cookie / prompts). Two illustrative calls:
+The "would a headless server call this?" test decides. Presentation and human
+interaction stay in `cli/`; transport-neutral ordering may live in `_app`.
+Rich rendering, `--json` envelope assembly, exit-code policy, Chromium
+installation, browser-cookie prompting, and login event rendering therefore
+remain adapter concerns. Two illustrative calls:
 
 - `cli/resolve.py` stays a rich **adapter** over the pure `_app/resolve.py` **core** — it adds `ClickException` (not `ValidationError`), console `emit_status`, `entity_name`/`list_command` message hints, the `allow_full_id_passthrough` flag, and a pluggable `error_factory`. It is a justified adapter/core split, not duplication, so it was **not** collapsed.
 - `agent show` stays pure presentation (no neutral core — nothing a headless caller would invoke).
@@ -36,10 +48,11 @@ server call this?" test, applied outside `_app/` proper — the master-token
 bootstrap / re-mint / ownership-guard transaction relocated into the private
 client-runtime package `_auth/master_token.py` (a headless server or a
 direct library caller of `notebooklm.auth.master_token_bootstrap` needs the
-whole transaction, not just its own copy), while `capture_oauth_token`
-(launching a *visible*, interactive browser for Directive B's sign-in step)
-stayed in `cli/services/login/master_token.py` — no headless caller could
-ever invoke it. Confirms the test generalizes past `_app/` specifically: it
+whole transaction, not just its own copy), while the small
+`capture_oauth_token` CLI adapter retains the human-driven decision and
+delegates the visible implementation to `_browser/oauth_token.py` through
+`notebooklm.auth` (ADR-0036). No headless caller invokes that adapter. This
+confirms the test generalizes past `_app/` specifically: it
 is about what a caller needs, not which package happens to be the
 relocation target.
 

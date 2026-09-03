@@ -265,7 +265,7 @@ class HeadlessReauthError(NotebookLMError):
     """Base for layer-3 headless re-auth (silent browser re-mint) failures.
 
     Raised by the headless arm of the browser-capture core and the
-    :mod:`notebooklm._auth.headless_reauth` decision layer. Distinct from
+    :mod:`notebooklm._browser.headless_reauth` decision layer. Distinct from
     :class:`AuthError` (an RPC-protocol auth failure) because L3 is a *recovery*
     step that drives a real browser, not a decoded batchexecute error.
     """

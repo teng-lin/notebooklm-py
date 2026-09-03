@@ -606,7 +606,10 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     registry.register(
         RPCMethod.DELETE_SOURCE,
         IdempotencyPolicy.IDEMPOTENT_SET_OP,
-        notes="server-side delete is idempotent (set-op semantics)",
+        notes=(
+            "server-side delete is idempotent (set-op semantics); "
+            "batch multi-id uses the same method"
+        ),
     )
     registry.register(
         RPCMethod.DELETE_ARTIFACT,

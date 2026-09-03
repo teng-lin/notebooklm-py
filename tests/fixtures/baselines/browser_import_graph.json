@@ -1,0 +1,143 @@
+{
+  "edges": [
+    {
+      "scope": "module",
+      "source": "browser_capture",
+      "target": "_auth.cookie_policy"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
+      "target": "_auth.cookies"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
+      "target": "_auth.profile_account"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
+      "target": "_auth.profile_document"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
+      "target": "_auth.profile_store"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
+      "target": "_auth.psidts_recovery"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
+      "target": "_auth.storage"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
+      "target": "_env"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
+      "target": "browser_launch_errors"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
+      "target": "config"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
+      "target": "exceptions"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
+      "target": "navigation_errors"
+    },
+    {
+      "scope": "module",
+      "source": "headless_reauth",
+      "target": "_auth.recovery_rungs"
+    },
+    {
+      "scope": "module",
+      "source": "headless_reauth",
+      "target": "browser_capture"
+    },
+    {
+      "scope": "module",
+      "source": "headless_reauth",
+      "target": "exceptions"
+    },
+    {
+      "scope": "function",
+      "source": "headless_reauth",
+      "target": "paths"
+    },
+    {
+      "scope": "module",
+      "source": "headless_reauth",
+      "target": "paths"
+    },
+    {
+      "scope": "module",
+      "source": "oauth_token",
+      "target": "_auth.master_token_types"
+    },
+    {
+      "scope": "module",
+      "source": "oauth_token",
+      "target": "browser_capture"
+    }
+  ],
+  "modules": [
+    {
+      "lines": 1,
+      "name": "__init__",
+      "path": "src/notebooklm/_browser/__init__.py"
+    },
+    {
+      "lines": 1439,
+      "name": "browser_capture",
+      "path": "src/notebooklm/_browser/browser_capture.py"
+    },
+    {
+      "lines": 151,
+      "name": "browser_launch_errors",
+      "path": "src/notebooklm/_browser/browser_launch_errors.py"
+    },
+    {
+      "lines": 906,
+      "name": "headless_reauth",
+      "path": "src/notebooklm/_browser/headless_reauth.py"
+    },
+    {
+      "lines": 113,
+      "name": "navigation_errors",
+      "path": "src/notebooklm/_browser/navigation_errors.py"
+    },
+    {
+      "lines": 163,
+      "name": "oauth_token",
+      "path": "src/notebooklm/_browser/oauth_token.py"
+    }
+  ],
+  "sccs": {
+    "all_scopes": [],
+    "module_level": []
+  },
+  "summary": {
+    "function_local_edges": 1,
+    "module_edges": 18,
+    "modules": 6,
+    "total_lines": 2773,
+    "unique_edges": 19
+  },
+  "version": 1
+}

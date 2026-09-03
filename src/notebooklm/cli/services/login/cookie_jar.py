@@ -36,12 +36,7 @@ from ...._app.login_cookie import (
     _browser_cookie_validation_failure,
     probe_browser_cookie_jar,
 )
-
-# ``browser_capture`` is the one ``_auth`` module the CLI-boundary guardrail
-# sanctions (ADR-0021); it re-exports ``app_host_scope_note`` so this advice and
-# the library-side hints share a single copy of the cookie-scope caveat.
-from ...._auth.browser_capture import app_host_scope_note
-from ....auth import validate_with_recovery
+from ....auth import app_host_scope_note, validate_with_recovery
 from ....config import get_base_host
 from .io_seam import resolve_login_io
 from .outcomes import (

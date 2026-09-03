@@ -61,7 +61,7 @@ def _headless_reauth_check() -> dict[str, str]:
     Uses the real readiness probe pointed at the per-test browser-profile dir,
     so these app-level tests exercise the same mapping the CLI forwards.
     """
-    from notebooklm._auth.headless_reauth import headless_reauth_readiness
+    from notebooklm._browser.headless_reauth import headless_reauth_readiness
 
     readiness = headless_reauth_readiness(browser_profile=paths.get_browser_profile_dir())
     return {
@@ -589,7 +589,7 @@ def test_headless_reauth_pass_when_profile_and_playwright(
     _write_json(home / "config.json", {"default_profile": "default"})
     # The ``browser`` extra is installed in CI; pin it so the test is robust
     # regardless of the runner's extras.
-    from notebooklm._auth import headless_reauth as hr
+    from notebooklm._browser import headless_reauth as hr
 
     monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
 
@@ -606,7 +606,7 @@ def test_headless_reauth_warns_without_browser_profile(
 ) -> None:
     """No persistent browser profile → warn (optional fallback unavailable)."""
     _make_profile(home)
-    from notebooklm._auth import headless_reauth as hr
+    from notebooklm._browser import headless_reauth as hr
 
     monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
 
@@ -625,7 +625,7 @@ def test_headless_reauth_warn_does_not_force_failure(
     profile_dir = _make_profile(home)
     _write_json(profile_dir / "storage_state.json", _storage([{"name": "SID", "value": "x"}]))
     _write_json(home / "config.json", {"default_profile": "default"})
-    from notebooklm._auth import headless_reauth as hr
+    from notebooklm._browser import headless_reauth as hr
 
     monkeypatch.setattr(hr, "_playwright_installed", lambda: False)
 

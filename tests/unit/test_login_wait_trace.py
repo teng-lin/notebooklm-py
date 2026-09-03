@@ -27,7 +27,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from notebooklm._auth.browser_capture import (
+from notebooklm._browser.browser_capture import (
     BrowserCapturePlan,
     accepted_login_hosts,
     log_observed_navigations,
@@ -45,8 +45,8 @@ from notebooklm._auth.browser_capture import (
 # constants because the assertions they gate mean different things: TRACE_LOGGER
 # marks "emitted by the tracing helpers", CAPTURE_LOGGER "emitted by the capture
 # core around the wait".
-TRACE_LOGGER = "notebooklm._auth.browser_capture"
-CAPTURE_LOGGER = "notebooklm._auth.browser_capture"
+TRACE_LOGGER = "notebooklm._browser.browser_capture"
+CAPTURE_LOGGER = "notebooklm._browser.browser_capture"
 
 
 class _FakePage:

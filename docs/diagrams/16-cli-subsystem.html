@@ -5030,7 +5030,7 @@
         <rect width="100%" height="100%" fill="url(#grid)" />
 
         <!-- Boundaries (behind everything) -->
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="0" data-composition-frame-label="cli/ · imports no notebooklm._* except _app and browser_capture" x="0" y="30" width="1001" height="534" rx="12" class="c-region" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="0" data-composition-frame-label="cli/ · imports no notebooklm._* except _app" x="0" y="30" width="1001" height="534" rx="12" class="c-region" stroke-width="1"/>
 
         <!-- Connection paths (before components for correct z-order) -->
         <path data-edge-from="root" data-edge-to="command" data-edge-label="dispatch" data-edge-key="0" data-edge-id="root-command" data-composition-points="190,305;282,305" d="M 190 305 L 282 305" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
@@ -5043,11 +5043,11 @@
         <path data-edge-from="command" data-edge-to="errors" data-edge-label="raises" data-edge-key="7" data-edge-id="command-errors" data-composition-points="367,350;367,460" d="M 367 350 L 367 460" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="command" data-edge-to="render" data-edge-label="stdout" data-edge-key="8" data-edge-id="command-render" data-composition-points="452,312;498,312;498,502;544,502" d="M 452 312 L 490 312 Q 498 312 498 320 L 498 494 Q 498 502 506 502 L 544 502" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="services" data-edge-to="login" data-edge-label="login flow" data-edge-key="9" data-edge-id="services-login" data-composition-points="888.5,350;888.5,460" d="M 888.5 350 L 888.5 460" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="login" data-edge-to="capture" data-edge-label="capture" data-edge-key="10" data-edge-id="login-capture" data-composition-points="971,502;1063,502" d="M 971 502 L 1063 502" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
+        <path data-edge-from="login" data-edge-to="capture" data-edge-label="typed plan" data-edge-key="10" data-edge-id="login-capture" data-composition-points="971,502;1063,502" d="M 971 502 L 1063 502" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
 
         <!-- Components -->
-        <g id="node-authsrc" data-node-id="authsrc" data-node-label="AuthSource" tabindex="0" role="button" aria-label="Focus AuthSource, precedence resolver, cli/ · imports no notebooklm._* except _app and browser_capture" aria-pressed="false" data-node-kind="security" data-node-sublabel="precedence resolver" data-node-context="cli/ · imports no notebooklm._* except _app and browser_capture">
-          <title>AuthSource · precedence resolver · cli/ · imports no notebooklm._* except _app and browser_capture</title>
+        <g id="node-authsrc" data-node-id="authsrc" data-node-label="AuthSource" tabindex="0" role="button" aria-label="Focus AuthSource, precedence resolver, cli/ · imports no notebooklm._* except _app" aria-pressed="false" data-node-kind="security" data-node-sublabel="precedence resolver" data-node-context="cli/ · imports no notebooklm._* except _app">
+          <title>AuthSource · precedence resolver · cli/ · imports no notebooklm._* except _app</title>
           <rect x="282" y="60" width="170" height="84" rx="6" class="c-mask"/>
           <rect x="282" y="60" width="170" height="84" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(288 66) scale(0.6875)">
@@ -5058,8 +5058,8 @@
         <text data-detail="context" x="367" y="116" class="t-muted" font-size="9" text-anchor="middle">precedence resolver</text>
         </g>
 
-        <g id="node-context" data-node-id="context" data-node-label="CLI Context" tabindex="0" role="button" aria-label="Focus CLI Context, context.json, cli/ · imports no notebooklm._* except _app and browser_capture" aria-pressed="false" data-node-kind="database" data-node-sublabel="context.json" data-node-tag="active notebook" data-node-context="cli/ · imports no notebooklm._* except _app and browser_capture">
-          <title>CLI Context · context.json · cli/ · imports no notebooklm._* except _app and browser_capture · active notebook</title>
+        <g id="node-context" data-node-id="context" data-node-label="CLI Context" tabindex="0" role="button" aria-label="Focus CLI Context, context.json, cli/ · imports no notebooklm._* except _app" aria-pressed="false" data-node-kind="database" data-node-sublabel="context.json" data-node-tag="active notebook" data-node-context="cli/ · imports no notebooklm._* except _app">
+          <title>CLI Context · context.json · cli/ · imports no notebooklm._* except _app · active notebook</title>
           <rect x="544" y="60" width="170" height="84" rx="6" class="c-mask"/>
           <rect x="544" y="60" width="170" height="84" rx="6" class="c-database" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(550 66) scale(0.6875)">
@@ -5071,8 +5071,8 @@
         <text data-detail="fine" x="629" y="136" class="t-database" font-size="7" text-anchor="middle">active notebook</text>
         </g>
 
-        <g id="node-resolve" data-node-id="resolve" data-node-label="ID Resolver" tabindex="0" role="button" aria-label="Focus ID Resolver, partial-id match, cli/ · imports no notebooklm._* except _app and browser_capture" aria-pressed="false" data-node-kind="backend" data-node-sublabel="partial-id match" data-node-context="cli/ · imports no notebooklm._* except _app and browser_capture">
-          <title>ID Resolver · partial-id match · cli/ · imports no notebooklm._* except _app and browser_capture</title>
+        <g id="node-resolve" data-node-id="resolve" data-node-label="ID Resolver" tabindex="0" role="button" aria-label="Focus ID Resolver, partial-id match, cli/ · imports no notebooklm._* except _app" aria-pressed="false" data-node-kind="backend" data-node-sublabel="partial-id match" data-node-context="cli/ · imports no notebooklm._* except _app">
+          <title>ID Resolver · partial-id match · cli/ · imports no notebooklm._* except _app</title>
           <rect x="806" y="60" width="165" height="84" rx="6" class="c-mask"/>
           <rect x="806" y="60" width="165" height="84" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(812 66) scale(0.6875)">
@@ -5082,8 +5082,8 @@
         <text data-detail="context" x="888.5" y="116" class="t-muted" font-size="9" text-anchor="middle">partial-id match</text>
         </g>
 
-        <g id="node-root" data-node-id="root" data-node-label="Root Group" tabindex="0" role="button" aria-label="Focus Root Group, notebooklm_cli.py, cli/ · imports no notebooklm._* except _app and browser_capture" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="notebooklm_cli.py" data-node-tag="SectionedGroup" data-node-context="cli/ · imports no notebooklm._* except _app and browser_capture">
-          <title>Root Group · notebooklm_cli.py · cli/ · imports no notebooklm._* except _app and browser_capture · SectionedGroup</title>
+        <g id="node-root" data-node-id="root" data-node-label="Root Group" tabindex="0" role="button" aria-label="Focus Root Group, notebooklm_cli.py, cli/ · imports no notebooklm._* except _app" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="notebooklm_cli.py" data-node-tag="SectionedGroup" data-node-context="cli/ · imports no notebooklm._* except _app">
+          <title>Root Group · notebooklm_cli.py · cli/ · imports no notebooklm._* except _app · SectionedGroup</title>
           <rect x="30" y="260" width="160" height="90" rx="6" class="c-mask"/>
           <rect x="30" y="260" width="160" height="90" rx="6" class="c-frontend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(36 266) scale(0.6875)">
@@ -5097,8 +5097,8 @@
         <text data-detail="fine" x="110" y="342" class="t-frontend" font-size="7" text-anchor="middle">SectionedGroup</text>
         </g>
 
-        <g id="node-command" data-node-id="command" data-node-label="Click Command" tabindex="0" role="button" aria-label="Focus Click Command, cli/*_cmd.py, cli/ · imports no notebooklm._* except _app and browser_capture" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="cli/*_cmd.py" data-node-context="cli/ · imports no notebooklm._* except _app and browser_capture">
-          <title>Click Command · cli/*_cmd.py · cli/ · imports no notebooklm._* except _app and browser_capture</title>
+        <g id="node-command" data-node-id="command" data-node-label="Click Command" tabindex="0" role="button" aria-label="Focus Click Command, cli/*_cmd.py, cli/ · imports no notebooklm._* except _app" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="cli/*_cmd.py" data-node-context="cli/ · imports no notebooklm._* except _app">
+          <title>Click Command · cli/*_cmd.py · cli/ · imports no notebooklm._* except _app</title>
           <rect x="282" y="260" width="170" height="90" rx="6" class="c-mask"/>
           <rect x="282" y="260" width="170" height="90" rx="6" class="c-frontend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(288 266) scale(0.6875)">
@@ -5111,8 +5111,8 @@
         <text data-detail="context" x="367" y="319" class="t-muted" font-size="9" text-anchor="middle">cli/*_cmd.py</text>
         </g>
 
-        <g id="node-authrt" data-node-id="authrt" data-node-label="Auth Runtime" tabindex="0" role="button" aria-label="Focus Auth Runtime, one asyncio.run, cli/ · imports no notebooklm._* except _app and browser_capture" aria-pressed="false" data-node-kind="backend" data-node-sublabel="one asyncio.run" data-node-tag="ADR-0004" data-node-context="cli/ · imports no notebooklm._* except _app and browser_capture">
-          <title>Auth Runtime · one asyncio.run · cli/ · imports no notebooklm._* except _app and browser_capture · ADR-0004</title>
+        <g id="node-authrt" data-node-id="authrt" data-node-label="Auth Runtime" tabindex="0" role="button" aria-label="Focus Auth Runtime, one asyncio.run, cli/ · imports no notebooklm._* except _app" aria-pressed="false" data-node-kind="backend" data-node-sublabel="one asyncio.run" data-node-tag="ADR-0004" data-node-context="cli/ · imports no notebooklm._* except _app">
+          <title>Auth Runtime · one asyncio.run · cli/ · imports no notebooklm._* except _app · ADR-0004</title>
           <rect x="544" y="260" width="170" height="90" rx="6" class="c-mask"/>
           <rect x="544" y="260" width="170" height="90" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(550 266) scale(0.6875)">
@@ -5123,8 +5123,8 @@
         <text data-detail="fine" x="629" y="342" class="t-backend" font-size="7" text-anchor="middle">ADR-0004</text>
         </g>
 
-        <g id="node-services" data-node-id="services" data-node-label="CLI Services" tabindex="0" role="button" aria-label="Focus CLI Services, plans · retry · wait, cli/ · imports no notebooklm._* except _app and browser_capture" aria-pressed="false" data-node-kind="backend" data-node-sublabel="plans · retry · wait" data-node-tag="ADR-0008" data-node-context="cli/ · imports no notebooklm._* except _app and browser_capture">
-          <title>CLI Services · plans · retry · wait · cli/ · imports no notebooklm._* except _app and browser_capture · ADR-0008</title>
+        <g id="node-services" data-node-id="services" data-node-label="CLI Services" tabindex="0" role="button" aria-label="Focus CLI Services, plans · retry · wait, cli/ · imports no notebooklm._* except _app" aria-pressed="false" data-node-kind="backend" data-node-sublabel="plans · retry · wait" data-node-tag="ADR-0008" data-node-context="cli/ · imports no notebooklm._* except _app">
+          <title>CLI Services · plans · retry · wait · cli/ · imports no notebooklm._* except _app · ADR-0008</title>
           <rect x="806" y="260" width="165" height="90" rx="6" class="c-mask"/>
           <rect x="806" y="260" width="165" height="90" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(812 266) scale(0.6875)">
@@ -5146,8 +5146,8 @@
         <text data-detail="context" x="1140.5" y="319" class="t-muted" font-size="9" text-anchor="middle">opened per command</text>
         </g>
 
-        <g id="node-errors" data-node-id="errors" data-node-label="Error Handler" tabindex="0" role="button" aria-label="Focus Error Handler, exit-code policy, cli/ · imports no notebooklm._* except _app and browser_capture" aria-pressed="false" data-node-kind="security" data-node-sublabel="exit-code policy" data-node-tag="ADR-0015" data-node-context="cli/ · imports no notebooklm._* except _app and browser_capture">
-          <title>Error Handler · exit-code policy · cli/ · imports no notebooklm._* except _app and browser_capture · ADR-0015</title>
+        <g id="node-errors" data-node-id="errors" data-node-label="Error Handler" tabindex="0" role="button" aria-label="Focus Error Handler, exit-code policy, cli/ · imports no notebooklm._* except _app" aria-pressed="false" data-node-kind="security" data-node-sublabel="exit-code policy" data-node-tag="ADR-0015" data-node-context="cli/ · imports no notebooklm._* except _app">
+          <title>Error Handler · exit-code policy · cli/ · imports no notebooklm._* except _app · ADR-0015</title>
           <rect x="282" y="460" width="170" height="84" rx="6" class="c-mask"/>
           <rect x="282" y="460" width="170" height="84" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(288 466) scale(0.6875)">
@@ -5159,8 +5159,8 @@
         <text data-detail="fine" x="367" y="536" class="t-security" font-size="7" text-anchor="middle">ADR-0015</text>
         </g>
 
-        <g id="node-render" data-node-id="render" data-node-label="Rendering" tabindex="0" role="button" aria-label="Focus Rendering, rich · text · JSON, cli/ · imports no notebooklm._* except _app and browser_capture" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="rich · text · JSON" data-node-context="cli/ · imports no notebooklm._* except _app and browser_capture">
-          <title>Rendering · rich · text · JSON · cli/ · imports no notebooklm._* except _app and browser_capture</title>
+        <g id="node-render" data-node-id="render" data-node-label="Rendering" tabindex="0" role="button" aria-label="Focus Rendering, rich · text · JSON, cli/ · imports no notebooklm._* except _app" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="rich · text · JSON" data-node-context="cli/ · imports no notebooklm._* except _app">
+          <title>Rendering · rich · text · JSON · cli/ · imports no notebooklm._* except _app</title>
           <rect x="544" y="460" width="170" height="84" rx="6" class="c-mask"/>
           <rect x="544" y="460" width="170" height="84" rx="6" class="c-frontend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(550 466) scale(0.6875)">
@@ -5173,8 +5173,8 @@
         <text data-detail="context" x="629" y="516" class="t-muted" font-size="9" text-anchor="middle">rich · text · JSON</text>
         </g>
 
-        <g id="node-login" data-node-id="login" data-node-label="Login Services" tabindex="0" role="button" aria-label="Focus Login Services, interactive · cookies · token, cli/ · imports no notebooklm._* except _app and browser_capture" aria-pressed="false" data-node-kind="backend" data-node-sublabel="interactive · cookies · token" data-node-context="cli/ · imports no notebooklm._* except _app and browser_capture">
-          <title>Login Services · interactive · cookies · token · cli/ · imports no notebooklm._* except _app and browser_capture</title>
+        <g id="node-login" data-node-id="login" data-node-label="Login Services" tabindex="0" role="button" aria-label="Focus Login Services, interactive · cookies · token, cli/ · imports no notebooklm._* except _app" aria-pressed="false" data-node-kind="backend" data-node-sublabel="interactive · cookies · token" data-node-context="cli/ · imports no notebooklm._* except _app">
+          <title>Login Services · interactive · cookies · token · cli/ · imports no notebooklm._* except _app</title>
           <rect x="806" y="460" width="165" height="84" rx="6" class="c-mask"/>
           <rect x="806" y="460" width="165" height="84" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(812 466) scale(0.6875)">
@@ -5184,17 +5184,17 @@
         <text data-detail="context" x="888.5" y="516" class="t-muted" font-size="9" text-anchor="middle">interactive · cookies · token</text>
         </g>
 
-        <g id="node-capture" data-node-id="capture" data-node-label="Credential Sources" tabindex="0" role="button" aria-label="Focus Credential Sources, browser · cookies · OAuth, Architecture component" aria-pressed="false" data-node-kind="security" data-node-sublabel="browser · cookies · OAuth" data-node-tag="sanctioned import" data-node-context="Architecture component">
-          <title>Credential Sources · browser · cookies · OAuth · Architecture component · sanctioned import</title>
+        <g id="node-capture" data-node-id="capture" data-node-label="Browser Login App" tabindex="0" role="button" aria-label="Focus Browser Login App, _app/login_browser.py, Architecture component" aria-pressed="false" data-node-kind="security" data-node-sublabel="_app/login_browser.py" data-node-tag="neutral orchestration" data-node-context="Architecture component">
+          <title>Browser Login App · _app/login_browser.py · Architecture component · neutral orchestration</title>
           <rect x="1063" y="460" width="155" height="84" rx="6" class="c-mask"/>
           <rect x="1063" y="460" width="155" height="84" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(1069 466) scale(0.6875)">
             <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
             <path d="m5.8 8 1.5 1.5 3-3"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="1140.5" y="500" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Credential Sources</text>
-        <text data-detail="context" x="1140.5" y="516" class="t-muted" font-size="9" text-anchor="middle">browser · cookies · OAuth</text>
-        <text data-detail="fine" x="1140.5" y="536" class="t-security" font-size="7" text-anchor="middle">sanctioned import</text>
+          <text data-node-label="" data-detail-anchor="" x="1140.5" y="500" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Browser Login App</text>
+        <text data-detail="context" x="1140.5" y="516" class="t-muted" font-size="9" text-anchor="middle">_app/login_browser.py</text>
+        <text data-detail="fine" x="1140.5" y="536" class="t-security" font-size="7" text-anchor="middle">neutral orchestration</text>
         </g>
 
         <!-- Connection labels -->
@@ -5238,15 +5238,15 @@
           <rect x="859.5" y="388" width="58" height="14" rx="3" class="c-mask"/>
           <text x="888.5" y="398" class="t-messagebus" font-size="8" text-anchor="middle">login flow</text>
         </g>
-        <g data-detail="context" data-edge-from="login" data-edge-to="capture" data-edge-label="capture" data-edge-key="10" data-edge-id="login-capture">
-          <rect x="995.2" y="482" width="43.6" height="14" rx="3" class="c-mask"/>
-          <text x="1017" y="492" class="t-security" font-size="8" text-anchor="middle">capture</text>
+        <g data-detail="context" data-edge-from="login" data-edge-to="capture" data-edge-label="typed plan" data-edge-key="10" data-edge-id="login-capture">
+          <rect x="988" y="482" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="1017" y="492" class="t-security" font-size="8" text-anchor="middle">typed plan</text>
         </g>
 
         <!-- Boundary labels (foreground masks keep routes out of titles) -->
-        <g data-graph-role="structural-frame-label" data-composition-frame-id="0" data-composition-frame-kind="region" data-composition-frame-label="cli/ · imports no notebooklm._* except _app and browser_capture">
-          <rect data-graph-role="structural-frame-label-mask" x="4" y="40" width="350.2" height="16" rx="3" class="c-mask"/>
-          <text data-boundary-label="" x="8" y="53" class="t-cloud" font-size="9" font-weight="600">cli/ · imports no notebooklm._* except _app and browser_capture</text>
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="0" data-composition-frame-kind="region" data-composition-frame-label="cli/ · imports no notebooklm._* except _app">
+          <rect data-graph-role="structural-frame-label-mask" x="4" y="40" width="242.2" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="8" y="53" class="t-cloud" font-size="9" font-weight="600">cli/ · imports no notebooklm._* except _app</text>
         </g>
 
         <!-- Legend -->
@@ -5462,6 +5462,7 @@
         </div>
         <ul>
           <li>&bull; Commands own Click options, rendering and exit codes; services own workflows</li>
+          <li>&bull; Browser orchestration lives in _app and reaches _browser through auth.py</li>
           <li>&bull; The CLI never builds batchexecute payloads or imports rpc/</li>
         </ul>
       </div>

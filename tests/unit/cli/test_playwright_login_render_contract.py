@@ -51,11 +51,11 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 import pytest
 from rich.console import Console, ConsoleDimensions
 
-import notebooklm._auth.browser_capture as _bc
+import notebooklm._app.login_browser as login_browser
+import notebooklm._browser.browser_capture as _bc
 import notebooklm.auth as auth_module
 import notebooklm.cli.services.playwright_login as _pl
 import notebooklm.cli.session_cmd as session_cmd_module
-import notebooklm.paths as paths_module
 from notebooklm._auth import account as _auth_account
 from notebooklm._auth import cookies as _auth_cookies
 from notebooklm._auth.profile_store import ReplaceResult, ReplaceStatus
@@ -234,7 +234,9 @@ def _drive_login(
             )
         stack.enter_context(
             patch.object(
-                _pl, "shutil", _wrapped_module(shutil, rmtree=MagicMock(side_effect=rmtree_side))
+                login_browser,
+                "shutil",
+                _wrapped_module(shutil, rmtree=MagicMock(side_effect=rmtree_side)),
             )
         )
         # ``time`` (retry backoff) moved into the neutral browser-capture core,
@@ -242,16 +244,18 @@ def _drive_login(
         stack.enter_context(patch.object(_bc, "time", _wrapped_module(time, sleep=MagicMock())))
         mock_pw = stack.enter_context(patch("playwright.sync_api.sync_playwright"))
         effective_storage = storage_path if storage_path is not None else _fake_path(_STORAGE)
-        stack.enter_context(patch.object(_pl, "get_storage_path", return_value=effective_storage))
+        stack.enter_context(
+            patch.object(login_browser, "get_storage_path", return_value=effective_storage)
+        )
         stack.enter_context(
             patch.object(
-                _pl,
+                login_browser,
                 "get_browser_profile_dir",
                 return_value=_fake_path(profile_dir, exists=fresh_profile_exists),
             )
         )
         stack.enter_context(
-            patch.object(paths_module, "resolve_profile", return_value=_PROFILE_NAME)
+            patch.object(login_browser, "resolve_profile", return_value=_PROFILE_NAME)
         )
         # Pin the base host so ``connection_error_help()`` (which reads
         # ``NOTEBOOKLM_BASE_URL`` via ``get_base_host()``) renders the default
@@ -261,7 +265,7 @@ def _drive_login(
         stack.enter_context(patch.object(_bc, "get_base_host", return_value=_BASE_HOST))
         stack.enter_context(patch_session_login_dual("_sync_server_language_to_config"))
         if patch_repair:
-            stack.enter_context(patch.object(_pl, "repair_playwright_account_metadata"))
+            stack.enter_context(patch.object(login_browser, "repair_playwright_account_metadata"))
         # The synthetic ``_STORAGE`` path is never created on disk; stub the
         # persist so the success paths don't touch the filesystem. The persist
         # step moved into the neutral browser-capture core and now routes through
@@ -321,7 +325,6 @@ def _drive_refresh(
     storage_path.write_text(json.dumps(_required_cookie_state()), encoding="utf-8")
     storage = storage_path
     with ExitStack() as stack:
-        stack.enter_context(patch.object(_pl, "get_storage_path", return_value=storage))
         stack.enter_context(
             patch.object(session_cmd_module, "get_storage_path", return_value=storage)
         )

@@ -838,6 +838,221 @@ async def test_source_delete_with_confirm_deletes(mcp_call, mock_client) -> None
 
 
 # ---------------------------------------------------------------------------
+# source_delete — bulk-mode tests (#1995). ``sources`` (list | comma/JSON str)
+# deletes a bound set in one DELETE_SOURCE RPC. Confirm must pass the
+# previewed ids (no-arg confirm is rejected so a later-added source cannot
+# sneak in). not_found is derived from one source-list snapshot — unknown
+# UUIDs are never reported as deleted. The single-id ``source=`` path keeps
+# the legacy wire shape.
+# ---------------------------------------------------------------------------
+
+
+async def test_source_delete_bulk_preview_lists_every_resolved_source(
+    mcp_call, mock_client
+) -> None:
+    mock_client.sources.list = AsyncMock(
+        return_value=[
+            FakeSource(id=SRC_ID, title="First"),
+            FakeSource(id=SRC2_ID, title="Second"),
+        ]
+    )
+    mock_client.sources.delete_many = AsyncMock(return_value=None)
+    result = await mcp_call(
+        "source_delete",
+        {
+            "notebook": NB_ID,
+            "sources": [SRC_ID, SRC2_ID],
+        },
+    )
+    assert result.structured_content == {
+        "status": "needs_confirmation",
+        "preview": {
+            "action": "delete_sources",
+            "notebook_id": NB_ID,
+            "count": 2,
+            "sources": [
+                {"source_id": SRC_ID, "title": "First"},
+                {"source_id": SRC2_ID, "title": "Second"},
+            ],
+        },
+    }
+    mock_client.sources.delete.assert_not_called()
+    mock_client.sources.delete_many.assert_not_called()
+
+
+async def test_source_delete_bulk_comma_string_parsed_like_source_wait(
+    mcp_call, mock_client
+) -> None:
+    """``sources='id1,id2'`` (the comma-string form source_wait accepts) must
+    also work for source_delete — same shape, same coercion path."""
+    mock_client.sources.list = AsyncMock(return_value=[FakeSource(id=SRC2_ID, title="Second")])
+    result = await mcp_call(
+        "source_delete",
+        {"notebook": NB_ID, "sources": f"{SRC_ID},{SRC2_ID}"},
+    )
+    preview = result.structured_content["preview"]
+    assert preview["count"] == 1
+    assert preview["sources"] == [{"source_id": SRC2_ID, "title": "Second"}]
+    assert preview["not_found"][0]["source_id"] == SRC_ID
+    mock_client.sources.delete.assert_not_called()
+
+
+async def test_source_delete_bulk_confirm_returns_per_id_buckets(mcp_call, mock_client) -> None:
+    """Unknown UUID is not_found from the snapshot; members are deleted once."""
+    mock_client.sources.list = AsyncMock(
+        return_value=[
+            FakeSource(id=SRC_ID, title="First"),
+        ]
+    )
+    mock_client.sources.delete_many = AsyncMock(return_value=None)
+    result = await mcp_call(
+        "source_delete",
+        {"notebook": NB_ID, "sources": [SRC_ID, SRC2_ID], "confirm": True},
+    )
+    assert result.structured_content == {
+        "status": "deleted",
+        "notebook_id": NB_ID,
+        "deleted": [{"source_id": SRC_ID}],
+        "deleted_count": 1,
+        "not_found": [{"source_id": SRC2_ID, "error": str(SourceNotFoundError(SRC2_ID))}],
+        "not_found_count": 1,
+        "total_count": 2,
+    }
+    mock_client.sources.delete_many.assert_awaited_once_with(NB_ID, [SRC_ID])
+    mock_client.sources.delete.assert_not_called()
+
+
+async def test_source_delete_bulk_all_sources_preview_when_neither_source_nor_sources(
+    mcp_call, mock_client
+) -> None:
+    """No ``source`` / ``sources`` previews every source in the notebook."""
+    mock_client.sources.list = AsyncMock(
+        return_value=[
+            FakeSource(id=SRC_ID, title="First"),
+            FakeSource(id=SRC2_ID, title="Second"),
+        ]
+    )
+    mock_client.sources.delete_many = AsyncMock(return_value=None)
+    result = await mcp_call("source_delete", {"notebook": NB_ID})
+    preview = result.structured_content["preview"]
+    assert preview["count"] == 2
+    assert {s["source_id"] for s in preview["sources"]} == {SRC_ID, SRC2_ID}
+    mock_client.sources.delete_many.assert_not_called()
+
+
+async def test_source_delete_bulk_confirm_without_ids_is_rejected(mcp_call, mock_client) -> None:
+    """confirm=True with neither source nor sources must not re-list."""
+    with pytest.raises(ToolError) as ei:
+        await mcp_call("source_delete", {"notebook": NB_ID, "confirm": True})
+    assert "previewed" in str(ei.value).lower()
+    mock_client.sources.list.assert_not_called()
+    mock_client.sources.delete.assert_not_called()
+
+
+async def test_source_delete_bulk_confirm_does_not_expand_past_previewed_ids(
+    mcp_call, mock_client
+) -> None:
+    """A source added after preview is not deleted when confirm submits the
+    original ids (teng-lin #2262 P1)."""
+    mock_client.sources.list = AsyncMock(
+        return_value=[
+            FakeSource(id=SRC_ID, title="First"),
+            FakeSource(id=SRC2_ID, title="Second"),
+        ]
+    )
+    mock_client.sources.delete_many = AsyncMock(return_value=None)
+    result = await mcp_call(
+        "source_delete",
+        {"notebook": NB_ID, "sources": [SRC_ID], "confirm": True},
+    )
+    assert result.structured_content["deleted"] == [{"source_id": SRC_ID}]
+    mock_client.sources.delete_many.assert_awaited_once_with(NB_ID, [SRC_ID])
+
+
+async def test_source_delete_bulk_confirm_rejects_title_that_can_retarget(
+    mcp_call, mock_client
+) -> None:
+    """Confirmation must submit the canonical ids returned by the preview."""
+    mock_client.sources.list = AsyncMock(return_value=[FakeSource(id=SRC_ID, title="Report")])
+    mock_client.sources.delete_many = AsyncMock(return_value=None)
+
+    preview = await mcp_call(
+        "source_delete",
+        {"notebook": NB_ID, "sources": ["Report"]},
+    )
+    assert preview.structured_content["preview"]["sources"] == [
+        {"source_id": SRC_ID, "title": "Report"}
+    ]
+
+    # The same mutable title now identifies a different source. Reject it before
+    # re-listing rather than silently deleting a source that was never previewed.
+    mock_client.sources.list.return_value = [
+        FakeSource(id=SRC_ID, title="Renamed"),
+        FakeSource(id=SRC2_ID, title="Report"),
+    ]
+    with pytest.raises(ToolError) as ei:
+        await mcp_call(
+            "source_delete",
+            {"notebook": NB_ID, "sources": ["Report"], "confirm": True},
+        )
+    assert "canonical source ids" in str(ei.value).lower()
+    mock_client.sources.list.assert_awaited_once_with(NB_ID)
+    mock_client.sources.delete_many.assert_not_called()
+
+
+async def test_source_delete_bulk_network_error_is_not_status_deleted(
+    mcp_call, mock_client
+) -> None:
+    mock_client.sources.list = AsyncMock(return_value=[FakeSource(id=SRC_ID, title="First")])
+    mock_client.sources.delete_many = AsyncMock(side_effect=NetworkError("boom"))
+    with pytest.raises(ToolError) as ei:
+        await mcp_call(
+            "source_delete",
+            {"notebook": NB_ID, "sources": [SRC_ID], "confirm": True},
+        )
+    assert "boom" in str(ei.value).lower() or "network" in str(ei.value).lower()
+    mock_client.sources.delete_many.assert_awaited_once()
+
+
+async def test_source_delete_bulk_mutually_exclusive_source_and_sources(
+    mcp_call, mock_client
+) -> None:
+    """Passing BOTH ``source`` and ``sources`` is a ValidationError — guard
+    must fire BEFORE any I/O so the error is deterministic."""
+    with pytest.raises(ToolError) as ei:
+        await mcp_call(
+            "source_delete",
+            {"notebook": NB_ID, "source": SRC_ID, "sources": [SRC2_ID]},
+        )
+    assert "pass either" in str(ei.value)
+    mock_client.sources.list.assert_not_called()
+    mock_client.sources.delete.assert_not_called()
+
+
+async def test_source_delete_bulk_empty_sources_rejected(mcp_call, mock_client) -> None:
+    """An explicit empty ``sources=[]`` must NOT be coerced to "delete every
+    source" — that path needs an explicit "no arg" call, matching source_wait."""
+    with pytest.raises(ToolError) as ei:
+        await mcp_call("source_delete", {"notebook": NB_ID, "sources": []})
+    assert "empty" in str(ei.value).lower()
+    mock_client.sources.list.assert_not_called()
+
+
+async def test_source_delete_bulk_over_cap_rejected_before_resolution(
+    mcp_call, mock_client
+) -> None:
+    """The cap (shared with source_wait's MAX_WAIT_SOURCE_IDS) must fire on
+    raw input length so a bad ref can't mask it."""
+    from notebooklm._app.source_wait import MAX_WAIT_SOURCE_IDS
+
+    over_cap_ids = [f"fake-{i:04d}" for i in range(MAX_WAIT_SOURCE_IDS + 1)]
+    with pytest.raises(ToolError) as ei:
+        await mcp_call("source_delete", {"notebook": NB_ID, "sources": over_cap_ids})
+    assert str(MAX_WAIT_SOURCE_IDS) in str(ei.value)
+    mock_client.sources.list.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # source_wait — both modes share ONE aggregate contract:
 #   {notebook_id, ok, ready, timed_out, failed, not_found,
 #    ready_count, timed_out_count, failed_count, not_found_count, total_count}
@@ -1718,6 +1933,47 @@ async def test_source_add_missing_input_is_validation_error(mcp_call, mock_clien
     with pytest.raises(ToolError) as excinfo:
         await mcp_call("source_add", {"notebook": NB_ID, "source_type": "url"})
     assert "VALIDATION" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    ("args", "detail"),
+    [
+        ({"urls": []}, "at least one URL"),
+        ({"urls": ["https://example.com"], "wait": True}, "single-mode only"),
+        (
+            {"source_type": "drive", "document_id": "drive-1", "mime_type": "bogus"},
+            "Invalid mime_type",
+        ),
+        ({"source_type": "drive", "mime_type": "google-doc"}, "document_id"),
+        (
+            {"source_type": "url", "url": "https://example.com", "wait": True, "timeout": -1},
+            "timeout",
+        ),
+        ({"source_type": "file", "bytes_base64": "%%%"}, "not valid base64"),
+    ],
+)
+async def test_source_add_local_validation_precedes_lazy_open_failure(args, detail) -> None:
+    """Malformed input stays VALIDATION even when the lazy client cannot authenticate."""
+    import contextlib
+
+    from fastmcp import Client
+
+    from notebooklm.exceptions import AuthError
+    from notebooklm.mcp.server import create_server
+
+    @contextlib.asynccontextmanager
+    async def failing_factory():
+        raise AuthError("expired credentials that must not mask validation")
+        yield  # pragma: no cover - unreachable, keeps this an async generator
+
+    async with Client(create_server(client_factory=failing_factory)) as client:
+        with pytest.raises(ToolError) as excinfo:
+            await client.call_tool("source_add", {"notebook": NB_ID, **args})
+
+    message = str(excinfo.value)
+    assert message.startswith("VALIDATION:"), message
+    assert detail in message
+    assert "expired credentials" not in message
 
 
 async def test_source_add_drive_bad_mime_is_validation_error(mcp_call, mock_client) -> None:

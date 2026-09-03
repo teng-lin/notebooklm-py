@@ -24,8 +24,7 @@ from .._app.login_cookie import (
     has_usable_secondary_binding,
     import_cookie_payload,
 )
-from ..auth import replace_profile_from_login
-from .services.playwright_login import filter_storage_state_cookies_by_domain_policy
+from ..auth import filter_storage_state_cookies_by_domain_policy, replace_profile_from_login
 
 __all__ = ["_import_cookie_json", "_read_auth_json_input"]
 

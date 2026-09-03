@@ -609,14 +609,13 @@ remaining multi-step and cross-scope relationships.
 
 ## Authentication subpackage
 
-[`auth.py`](../src/notebooklm/auth.py) is a thin public facade that
-re-exports the canonical implementations under
-[`_auth/`](../src/notebooklm/_auth). ADR-0014 closed ADR-0003's deferred
-flat-re-export goal: `AuthTokens` and `load_auth_from_storage()` now live
-in `_auth.tokens`, `_validate_required_cookies` is a direct
-`_auth.cookie_policy` re-export, and `async def enumerate_accounts` is the
-only remaining `auth.py` function body because it binds `_poke_session` as
-the default dependency.
+[`auth.py`](../src/notebooklm/auth.py) is the public capability facade over
+canonical implementations under [`_auth/`](../src/notebooklm/_auth) and the
+optional browser-acquisition package. Most names are direct, identity-preserving
+aliases. Its small function layer owns `enumerate_accounts`, installs a neutral
+default L3 recovery rung, and lazily imports `_browser` for first-party login,
+readiness, and OAuth-capture capabilities. Importing the base package therefore
+loads neither `_browser` nor Playwright.
 
 Three visuals separate concerns that are easy to conflate: the
 [authentication architecture](https://teng-lin.github.io/notebooklm-py/diagrams/04-authentication.html) shows ownership,
@@ -639,21 +638,17 @@ ADR-0033 constrains consolidation; and ADR-0034 defines the current storage obje
 | [`_auth/profile_store.py`](../src/notebooklm/_auth/profile_store.py) | Path-owned synchronous document/session reads, derived typed master-token access, blocking cookie transactions, typed in-band account read/update/clear, and typed browser/remint, login/import, and minted-session replacement. Token methods resolve the sibling path at call time and share the store's lock manager. Minted replacement owns the same-lock latest-owner gate, default raw filter, lossless destination preservation/rebind, and one commit. Its repr-hidden request snapshots raw master-token cookie fields (`same_site="None"`) and runtime-permissive email together before path/lock work; it intentionally does not use filtering/SameSite-lossy `CookieJar.from_httpx()`. Owns no cache, baseline, live HTTP jar, legacy scheduler, or network policy. |
 | [`_auth/profile_migration.py`](../src/notebooklm/_auth/profile_migration.py) | Concrete legacy-account ownership plus the path-shaped native login replacement operation: primitive keep/clear/set inputs become dependency-bottom directives, one `ProfileStore`/request/writer composition returns `ReplaceResult`, and post-login reconciliation stays outside the store lock. Also owns lossless two-read resolution, `context.json` read/scrub, only-if-absent embed-before-scrub promotion, and canonical retryable single-flight daemon scheduling with bounded exit drain. It depends downward on `ProfileStore` and account values; no loader, network, runtime, CLI, or token orchestration. |
 | [`_auth/storage.py`](../src/notebooklm/_auth/storage.py) | Shrinking v0.x persistence policy/compatibility facade. Retains raw signatures/results, lock and cookie adapters, the minted live-jar snapshot adapter, and a thin arbitrary-path token writer over `MasterTokenFile`. Remint/login wrappers use exhaustive maps to project native `ReplaceResult`/`CookieMergeResult` statuses into their legacy return types; first-party capture, app, CLI, runtime, and recovery paths consume native results instead. Filter names and transaction functions remain exact compatibility aliases. |
-| [`_auth/storage_writer.py`](../src/notebooklm/_auth/storage_writer.py) | **Shim** — re-exports the writer API from `_auth/storage.py`; defines nothing. Removed at the next major. |
-| [`_auth/storage_transaction.py`](../src/notebooklm/_auth/storage_transaction.py) | **Shim** — re-exports `in_storage_transaction` + the lock-failure policies through `_auth/storage.py`; their definitions live in `_auth/profile_store.py`. Removed at the next major. |
 | [`_auth/extraction.py`](../src/notebooklm/_auth/extraction.py) | Cookie/token extraction from browser sessions. |
 | [`_auth/cookies.py`](../src/notebooklm/_auth/cookies.py) | Cookie maps, `_update_cookie_input`, the network-free pure storage loaders, and thin recovery-composition adapters. Each successfully converted live cookie supplies identity/value/runtime fields while SameSite comes from that same sanitized raw row, preserving first-successful duplicate behavior in the typed baseline. |
 | [`_auth/cookie_policy.py`](../src/notebooklm/_auth/cookie_policy.py) | Domain allowlist, cookie-domain builder (`build_cookie_domain_allowlist`), and cookie policy decisions. |
 | [`_auth/cookie_semantics.py`](../src/notebooklm/_auth/cookie_semantics.py) | Shared cookie-shape and expiry semantics used by sanitized auth loaders and persistence boundaries. |
 | [`_auth/cookie_types.py`](../src/notebooklm/_auth/cookie_types.py) | The canonical `Cookie` / `CookieJar` types (ADR-0031 Stage 1): constructors from every input shape, converters to httpx/storage-state, and the cookie-set policy questions as methods. A delegating wrapper — policy still lives in `cookie_policy`/`cookies`. |
-| [`_auth/browser_cookie_recovery.py`](../src/notebooklm/_auth/browser_cookie_recovery.py) | **Shim** — re-exports `validate` / `heal` / `validate_with_recovery` + `ValidationResult` from `_auth/psidts_recovery.py`; defines nothing. Removed at the next major. |
-| [`_auth/browser_state_validation.py`](../src/notebooklm/_auth/browser_state_validation.py) | **Shim** — re-exports `heal_captured_state` from `_auth/browser_capture.py`; defines nothing. Removed at the next major. |
-| [`_auth/browser_capture.py`](../src/notebooklm/_auth/browser_capture.py) | **One deep module for the browser launch→navigate→capture→filter→heal→persist core** (ADR-0033 sanctioned merge — absorbed `browser_state_validation.py` and `login_wait_trace.py`), lazy `playwright`; shared by the interactive CLI login adapter and the layer-3 headless re-auth layer (ADR-0021). Both capture arms construct `RemintWriteRequest` and consume `ProfileStore.replace_from_remint() -> ReplaceResult` directly. The headless arm classifies the landing URL (authenticated→capture, redirected-to-login→`HeadlessLoginRequiredError`). `run_cdp_capture` is an alternative credential source: attach to an operator-pointed already-running Chrome over CDP (`connect_over_cdp`, disconnect-only teardown) using the SAME landing classification + cookie-domain allowlist. Absorbed sections: (1) **login-wait DEBUG tracing** — `log_observed_navigations` logs each main-frame navigation observed during the five-minute interactive wait at DEBUG so `notebooklm -vv login` is self-diagnosing when a login never lands; inert unless DEBUG is enabled (no listener attached) and it swallows every listener exception, so it can never destabilise the wait. Redaction goes through its own `trace_url`, which keeps **only** scheme + host — deliberately stricter than `extraction._safe_url` (which preserves the path outside a Google-OAuth allowlist), because this traces arbitrary SSO redirects where a federated IdP can carry a one-time assertion in the path. The two redactors are **kept distinct on purpose**. (2) **captured-state heal** — `heal_captured_state`, a best-effort in-memory PSIDTS heal for Playwright-captured state that preserves cookie attributes, returns `(state, error)` and never raises, so a failed heal cannot discard a completed sign-in. `browser_launch_errors.py` stays a separate leaf for cohesion — a channel registry plus a pure classifier, testable without a browser. (It has ONE consumer: the CLI reaches `classify_launch_failure` through this module's re-export, since the CLI-boundary guardrail sanctions only `_auth/browser_capture`.) |
-| [`_auth/_browser_cookie_filter.py`](../src/notebooklm/_auth/_browser_cookie_filter.py) | **Shim** — re-exports the `storage.py` compatibility alias of `cookie_filter.filter_storage_state_cookies_by_domain_policy`; defines nothing. Removed at the next major. |
-| [`_auth/navigation_errors.py`](../src/notebooklm/_auth/navigation_errors.py) | Transport-neutral leaf for `browser_capture`: classifies a Playwright navigation failure from its message. `navigation_error_code` extracts the `net::ERR_*` token (anchored, so it cannot return arbitrary text after a stray `net::`) — used to LOG a failure without logging the credential-bearing URL Playwright embeds in it. The two predicates deliberately disagree about the same error depending on who issued the navigation: `is_navigation_race` (narrow — `ERR_ABORTED` plus the prose interruptions) guards the sites where *we* navigate, so `ERR_CONNECTION_REFUSED`/`ERR_INVALID_URL` still surface; `is_navigation_failure` (broad — the whole `net::ERR_*` family plus a beforeunload cancellation) guards only the interactive login wait, where we are watching a *human* navigate and a failed hop says nothing about their sign-in (#2257). Pure string-in/bool-out — no Playwright, no I/O, no CLI. |
-| [`_auth/browser_launch_errors.py`](../src/notebooklm/_auth/browser_launch_errors.py) | Transport-neutral leaf for `browser_capture`: the `CHANNEL_BROWSERS` channel registry plus `classify_launch_failure`, which maps a Playwright launch failure to actionable help (system browser not installed, bundled Chromium not downloaded, or a Windows `spawn UNKNOWN` execution veto from AppLocker/WDAC/Defender) or to `None` so the original exception propagates. Pure string-in/string-out — no Playwright, no I/O, no CLI. |
-| [`_auth/login_wait_trace.py`](../src/notebooklm/_auth/login_wait_trace.py) | **Shim** — re-exports `log_observed_navigations` / `safe_page_url` / `trace_url` from `_auth/browser_capture.py`; defines nothing. Removed at the next major. |
-| [`_auth/headless_reauth.py`](../src/notebooklm/_auth/headless_reauth.py) | Layer-3 (deepest) auth recovery: when first-party cookies are dead, drive a headless browser against the persistent profile to silently re-mint cookies. Typed honest outcomes (`HeadlessReauthStatus` UNAVAILABLE/FAILED/SUCCESS — never silent `None`). Opt-in only (`refresh_auth(allow_headless=True)` or `NOTEBOOKLM_HEADLESS_REAUTH=1`); local-unattended-only, never the remote/MCP auth path. Alternative credential source: `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL` (or `attempt_headless_reauth(cdp_url=...)`) attaches to an operator-pointed running Chrome instead of the dedicated profile (freshness mitigation). Also exposes `headless_reauth_readiness()` — a credential-free, browser-free probe (profile present + playwright installed) surfaced by `doctor`. |
+| [`_browser/browser_capture.py`](../src/notebooklm/_browser/browser_capture.py) | **One deep module for the browser launch→navigate→capture→filter→heal→persist core** (ADR-0033 sanctioned merge — absorbed `browser_state_validation.py` and `login_wait_trace.py`), lazy `playwright`; shared by the interactive `_app/login_browser.py` flow and the layer-3 headless re-auth layer (ADR-0021/ADR-0036). Both capture arms construct `RemintWriteRequest` and consume `ProfileStore.replace_from_remint() -> ReplaceResult` directly. The headless arm classifies the landing URL (authenticated→capture, redirected-to-login→`HeadlessLoginRequiredError`). `run_cdp_capture` is an alternative credential source: attach to an operator-pointed already-running Chrome over CDP (`connect_over_cdp`, disconnect-only teardown) using the SAME landing classification + cookie-domain allowlist. Absorbed sections: (1) **login-wait DEBUG tracing** — `log_observed_navigations` logs each main-frame navigation observed during the five-minute interactive wait at DEBUG so `notebooklm -vv login` is self-diagnosing when a login never lands; inert unless DEBUG is enabled (no listener attached) and it swallows every listener exception, so it can never destabilise the wait. Redaction goes through its own `trace_url`, which keeps **only** scheme + host — deliberately stricter than `extraction._safe_url` (which preserves the path outside a Google-OAuth allowlist), because this traces arbitrary SSO redirects where a federated IdP can carry a one-time assertion in the path. The two redactors are **kept distinct on purpose**. (2) **captured-state heal** — `heal_captured_state`, a best-effort in-memory PSIDTS heal for Playwright-captured state that preserves cookie attributes, returns `(state, error)` and never raises, so a failed heal cannot discard a completed sign-in. `browser_launch_errors.py` stays a separate leaf for cohesion — a channel registry plus a pure classifier, testable without a browser. |
+| [`_browser/navigation_errors.py`](../src/notebooklm/_browser/navigation_errors.py) | Transport-neutral leaf for `browser_capture`: classifies a Playwright navigation failure from its message. `navigation_error_code` extracts the `net::ERR_*` token (anchored, so it cannot return arbitrary text after a stray `net::`) — used to log a failure without logging the credential-bearing URL Playwright embeds in it. |
+| [`_browser/browser_launch_errors.py`](../src/notebooklm/_browser/browser_launch_errors.py) | Transport-neutral leaf for `browser_capture`: the `CHANNEL_BROWSERS` channel registry plus `classify_launch_failure`, which maps a Playwright launch failure to actionable help or to `None` so the original exception propagates. |
+| [`_browser/headless_reauth.py`](../src/notebooklm/_browser/headless_reauth.py) | Layer-3 browser recovery implementation. It maps its browser-specific result onto `_auth.recovery_rungs`, resolves explicit storage paths to their own persistent browser profile, and remains opt-in/local-unattended-only. |
+| [`_browser/oauth_token.py`](../src/notebooklm/_browser/oauth_token.py) | Visible EmbeddedSetup browser capture for the single-use OAuth cookie, returning only a token string or canonical `MasterTokenError`. |
+| [`_auth/recovery_rungs.py`](../src/notebooklm/_auth/recovery_rungs.py) | Neutral process-level registry and closed outcome for the optional blocking L3 implementation. The public auth facade installs a lazy default; recovery reads only this leaf and never imports browser implementation code. |
 | [`_auth/recovery.py`](../src/notebooklm/_auth/recovery.py) | Client-neutral recovery composition and exact paired replacement provenance. A network- and write-free mid-session adapter can reload changed file-backed cookies before external recovery while preserving a concurrently refreshed live jar. One-shot `ColdRecoveryCoordinator` owns the explicit L2.5 → L3 → L4 ladder and scrubs all eleven injected callbacks on every exit. `ColdRecoveryState` owns synchronized weak-loop path locks and success generations; class-owned `_drive_cold`/`_coalesce_cold` are the sole ladder/flight bodies, while the exact-signature legacy functions are thin process-default adapters. |
 | [`_auth/single_flight.py`](../src/notebooklm/_auth/single_flight.py) | `SingleFlight` owns one cross-loop flight registry, strong leader-task set, and per-canonical-path success epochs. A leader task mirrors into a `concurrent.futures.Future`; followers use shielded settle-before-propagate bridging, so waiter cancellation never cancels shared work. Claim plus stale-epoch comparison is atomic, settled slots prompt-pop, and quiescent-only reset refuses live work. Exact module functions remain process-default adapters. |
 | [`_auth/account_types.py`](../src/notebooklm/_auth/account_types.py) | Dependency-neutral immutable `Account` and `PlaywrightAccountRepairResult` values. Both retain historical `notebooklm._auth.account` module/pickle/repr identity. |
@@ -797,7 +792,7 @@ The cross-command helpers form a small internal CLI stack:
 |--------|------|
 | [`cli/runtime.py`](../src/notebooklm/cli/runtime.py) | Leaf runtime helpers: root `--quiet` lookup and the single `asyncio.run(...)` bridge for sync Click handlers. |
 | [`cli/auth_runtime.py`](../src/notebooklm/cli/auth_runtime.py) | Shared auth bootstrap, command-body error wrapping, and optional opened-client workflow helper. |
-| [`cli/master_token_login.py`](../src/notebooklm/cli/master_token_login.py) | Command driver for `notebooklm login --master-token[-refresh]`: resolves paths and renders the outcome over the public `master_token_bootstrap` / `master_token_remint` / `assert_account_writable` adapters. Coordination lives in `_auth/master_token_bootstrap.py`; only interactive browser `oauth_token` capture ([`cli/services/login/master_token.py`](../src/notebooklm/cli/services/login/master_token.py)) stays CLI-side (ADR-0023/ADR-0034). |
+| [`cli/master_token_login.py`](../src/notebooklm/cli/master_token_login.py) | Command driver for `notebooklm login --master-token[-refresh]`: resolves paths and renders the outcome over the public `master_token_bootstrap` / `master_token_remint` / `assert_account_writable` adapters. Coordination lives in `_auth/master_token_bootstrap.py`; the CLI-side OAuth adapter delegates interactive capture through the lazy `auth.py` capability and scrubs credential-bearing arguments from failure frames (ADR-0023/ADR-0036). |
 | [`cli/services/auth_refresh.py`](../src/notebooklm/cli/services/auth_refresh.py) | Pure re-export of `notebooklm.auth.bootstrap_missing_storage_from_master_token` for `auth refresh`'s missing-storage preflight. `_auth/master_token_bootstrap.py` owns the four-state machine; `_auth/master_token.py` owns the v0.x enum-to-bool collapse. |
 | [`cli/services/auth_source.py`](../src/notebooklm/cli/services/auth_source.py) | Single resolver for CLI auth-source precedence (`--storage`, `NOTEBOOKLM_AUTH_JSON`, active profile). |
 | [`cli/context.py`](../src/notebooklm/cli/context.py) | Profile/storage-scoped `context.json` persistence for active notebook and conversation state. Account metadata now lives unified in-band in `storage_state.json` (`_auth/storage.py`); `context.json` is only its pre-v0.5.0 legacy source, promoted in-band on read and no longer written here (#2103 PR-0). |
@@ -811,16 +806,13 @@ The boundary is enforced statically by
 [`tests/_guardrails/test_cli_boundary.py`](../tests/_guardrails/test_cli_boundary.py):
 CLI modules may import public `notebooklm` modules and their own
 intra-CLI private helpers, but not `notebooklm._*`, `notebooklm.rpc.*`,
-or private names from public modules. **Two sanctioned exceptions** to the
-`notebooklm._*` rule are whitelisted in that gate: `notebooklm._app`
-(the transport-neutral business-logic layer every adapter consumes) and the
-single module `notebooklm._auth.browser_capture` (the transport-neutral
-browser launch→capture→filter→persist core that the Playwright login adapter
-[`cli/services/playwright_login.py`](../src/notebooklm/cli/services/playwright_login.py)
-sits over, per ADR-0021 — interactive presentation stays in `cli/` while the
-neutral core moves down to `_auth`, reachable by the client runtime and the
-shipped opt-in layer-3 headless re-auth path). No other `_auth.*` module may be imported by
-the CLI — the rest stays behind the `auth.py` facade. The same test keeps
+or private names from public modules. The sole sanctioned private-package
+exception is `notebooklm._app`, the transport-neutral business-logic layer
+every adapter consumes. Browser login coordination lives in
+[`_app/login_browser.py`](../src/notebooklm/_app/login_browser.py); its injected
+capabilities cross the lazy `auth.py` facade into `_browser`, so no CLI module
+imports `notebooklm._browser` directly. No `_auth.*` module may be imported by
+the CLI either. The same test keeps
 low-level helpers (`runtime`, `context`, `resolve`, `rendering`,
 `auth_runtime`, `options`) from growing upward dependencies on command modules
 or the `cli.helpers` compatibility facade.
@@ -831,7 +823,16 @@ The MCP server is a second thin adapter beside `cli/`, opt-in behind the `mcp`
 extra and **experimental** (preview). `create_server()` builds a FastMCP server
 that exposes the `_app/` cores as MCP tools driving a single long-lived
 `NotebookLMClient`; run it with the `notebooklm-mcp` console script (stdio or
-loopback HTTP). It imports no `click` / `rich` / `cli` — like the CLI, it is built
+loopback HTTP). That client is opened **lazily**, behind a
+[`ClientProvider`](../src/notebooklm/mcp/_clientprovider.py): the lifespan starts
+the open in the background and yields immediately, so the MCP `initialize`
+handshake never waits on Google's auth round-trip — whose budget (a 15 s
+`RotateCookies` poke plus a 30 s CSRF fetch, more when the cold-recovery ladder
+runs) can exceed the 30 s deadline clients give the handshake, which surfaced as
+an opaque `CONNECT_TIMEOUT` (#2330). The first tool call awaits the open instead,
+where an auth failure is reported as a normal categorized tool error and the
+next call retries it — so a mid-session `notebooklm login` recovers the server
+without a restart. It imports no `click` / `rich` / `cli` — like the CLI, it is built
 on the `_app/` cores only (enforced by `tests/_guardrails/test_mcp_boundary.py`).
 Failures surface as `CODE: message` strings projected from `_app.errors.classify`,
 and mutating tools are confirmation-gated (they return a `needs_confirmation`
@@ -1262,7 +1263,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/transport/middleware/chain.py` | Constructs the middleware chain in the canonical ADR-0009 order |
 | `_web/transport/middleware/*.py` | Production web middlewares (`retry`, `auth`, `error_injection`, `tracing`) plus retained historical drain/metrics/semaphore modules that are no longer wired after the supervisor migration |
 | `rpc/types.py` | RPC method IDs (source of truth) |
-| `auth.py` | Authentication facade — **almost pure re-exports** (the only remaining function body is `async def enumerate_accounts`, which binds `_poke_session` as a default dependency; ADR-0003 records the optional-`async` audit command). Every other top-level name forwards from the relevant `_auth/*` module: `auth._validate_required_cookies` is identity-equal to `_auth.cookie_policy._validate_required_cookies`, and `load_auth_from_storage` / `AuthTokens` live in `_auth/tokens.py`. **ADR-0003's flat-re-export goal was closed by ADR-0014.** Tests that need to rebind policy names patch `_auth.cookie_policy.X` directly. |
+| `auth.py` | Authentication facade — primarily eager `_auth/*` aliases, plus a deliberately small lazy capability boundary. `enumerate_accounts` retains its bound `_poke_session` dependency; the browser helpers lazily import `_browser` only when invoked, and module initialization installs `_default_headless_rung` into `_auth.recovery_rungs` without importing the browser implementation. Base imports therefore remain browser-free. Policy/storage aliases remain identity-equal to their owners, including `filter_storage_state_cookies_by_domain_policy` and `app_host_scope_note`. These internal-ledger names are intentionally absent from public `__all__`. |
 | `_auth/paths.py` | Storage paths and filesystem helpers |
 | `_auth/extraction.py` | Cookie/token extraction from browser sessions |
 | `_auth/cookies.py` | Compatibility cookie loaders/converters and logging boundaries over the pure codecs + `_update_cookie_input` |
@@ -1281,13 +1282,12 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_auth/profile_store.py` | Path-owned fresh document/session/account/derived-token reads, token/account writes, blocking cookie transactions, and bounded remint/login/minted replacement; minted owns latest-owner/filter/rebind/commit (ADR-0034) |
 | `_auth/profile_migration.py` | Legacy account context, lossless two-read resolution, promotion, retryable single-flight scheduler/exit drain, and login/account reconciliation (ADR-0034) |
 | `_auth/account_email.py` | Generation-safe persisted/live account-email matching, probing, cache results, and exact-document CAS self-heal |
-| `_auth/browser_cookie_recovery.py` | Shim: re-exports the captured-cookie validate/heal seam from `psidts_recovery.py` (removed at next major) |
-| `_auth/browser_state_validation.py` | Shim: re-exports `heal_captured_state` from `browser_capture.py` (removed at next major) |
-| `_auth/browser_capture.py` | One deep module for the browser launch→capture→filter→heal→persist core (ADR-0033 merge: absorbed `browser_state_validation.py` + `login_wait_trace.py`), lazy `playwright`; shared by the interactive CLI login adapter (`cli/services/playwright_login.py`) and the layer-3 headless re-auth layer (ADR-0021). Carries the login-wait DEBUG tracing (host-only `trace_url`, inert when DEBUG is off) and the never-raising `heal_captured_state` |
-| `_auth/_browser_cookie_filter.py` | Shim: re-exports `storage.py`'s exact alias of the canonical `cookie_filter` function (removed at next major) |
-| `_auth/navigation_errors.py` | `net::ERR_*` extraction + the narrow/broad navigation-failure predicates (`is_navigation_race` vs `is_navigation_failure`); pure leaf of `browser_capture.py` (ADR-0008, #2257) |
-| `_auth/browser_launch_errors.py` | `CHANNEL_BROWSERS` registry + `classify_launch_failure` launch-failure triage (not-installed / bundled-Chromium-missing / Windows `spawn UNKNOWN` execution veto); pure leaf of `browser_capture.py` (ADR-0008) |
-| `_auth/headless_reauth.py` | Layer-3 headless re-auth decision layer: opt-in/profile-gated, typed honest outcomes (`HeadlessReauthStatus`); drives `run_browser_capture(headless=True, interactive=False)`. Local-unattended-only |
+| `_browser/browser_capture.py` | One deep browser launch→capture→filter→heal→persist implementation, lazy Playwright; depends downward on typed `_auth` storage/policy owners |
+| `_browser/navigation_errors.py` | Pure `net::ERR_*` and navigation-race/failure classification leaf |
+| `_browser/browser_launch_errors.py` | Pure browser-channel registry and launch-failure triage leaf |
+| `_browser/headless_reauth.py` | Opt-in layer-3 browser recovery implementation behind `_auth.recovery_rungs` |
+| `_browser/oauth_token.py` | Visible EmbeddedSetup OAuth-cookie capture implementation |
+| `_auth/recovery_rungs.py` | Neutral process registry + closed outcome for the optional blocking L3 implementation; keeps recovery independent of browser code |
 | `cli/label_cmd.py` | `label` command group (list/sources/generate/create/rename/emoji/add/remove/delete); thin Click shells over `client.labels`, `_app.labels`, and the label-listing service (ADR-0008/0021) |
 | `cli/collection_cmd.py` | `collection` command group (list/notebooks/create/rename/add/remove/delete); account-level (no `--notebook` option); thin Click shells over `client.collections` + `_app.collections` (ADR-0008/0021) |
 | `cli/services/label_listing.py` | `label` CLI service: the `label list` members→source-titles join (`execute_label_list`/`LabelListPlan`). Re-exports `resolve_label_id` + `LabelResolutionError` from `_app/labels.py` (the composite `<id\|name>` resolver moved to the neutral layer; the re-export keeps `from .services.label_listing import resolve_label_id` resolving for the command layer + tests) |
@@ -1299,7 +1299,7 @@ src/notebooklm/
 ├── __init__.py                  # Public exports
 ├── __main__.py                  # `python -m notebooklm` entry point
 ├── client.py                    # NotebookLMClient
-├── auth.py                      # Authentication facade — almost pure re-exports (`enumerate_accounts` exception; ADR-0003 flat-re-export goal closed by ADR-0014; see file table above)
+├── auth.py                      # Authentication facade — eager auth aliases + narrow lazy browser capabilities (see file table above)
 ├── types.py                     # Dataclasses
 ├── artifacts.py                 # Public artifact-generation retry helpers
 ├── config.py                    # Public config facade over _env
@@ -1354,6 +1354,7 @@ src/notebooklm/
 │   ├── labels.py                # Click-free label core: create/sources/generate/rename/emoji/add/remove/delete + the composite resolve_label_id (<id|name>) resolver + LabelResolutionError (injected notebook/source resolvers; members→titles JOIN render stays in cli/services/label_listing.py)
 │   ├── collections.py           # Click-free collection core: list/notebooks/create/rename/add/remove/delete + the composite resolve_collection_id (<id|name>) resolver + CollectionResolutionError (account-level; no notebook scope)
 │   ├── language.py              # Click-free language core: SUPPORTED_LANGUAGES catalog + is_supported_language + LanguageConfigStore (injected config-path/home/atomic-update; get/save/get_language/set_language)
+│   ├── login_browser.py         # Markup-free browser-login plan/orchestration: conflict validation, path preparation, event stream, capture ordering, and account repair over injected public-auth capabilities
 │   ├── login_cookie.py          # Click-free login/cookie-import operations: request validation, browser-jar probing, account projection, and profile-write orchestration over call-time public auth capabilities
 │   ├── master_token.py          # Click-free master-token operations: bootstrap/remint/status plans and results with bounded credential-bearing context, narrow status errors, and call-time public auth capabilities
 │   ├── mcp_install.py           # Click-free `mcp install <client>` core: supported-client catalog (claude-desktop/claude-code/cursor/windsurf) + per-OS resolve_config_path + uvx build_server_block + merge_server_config read-modify-merge into mcpServers (created/updated/unchanged; never clobbers unrelated keys); UnsupportedClientError. CLI owns the atomic write (cli/mcp_cmd.py)
@@ -1583,22 +1584,13 @@ src/notebooklm/
 │   ├── profile_store.py         # Path-owned reads + cookie/account/remint/login/minted transactions (ADR-0034)
 │   ├── profile_migration.py     # Legacy account resolution/promotion/scheduler/write composition (ADR-0034)
 │   ├── storage_lock.py          # Process-default raw-path registry + platform lock gateway + bounded retry (ADR-0034)
-│   ├── browser_cookie_recovery.py # Shim: re-exports validate/heal/validate_with_recovery from psidts_recovery.py (removed at next major)
-│   ├── browser_state_validation.py # Shim: re-exports heal_captured_state from browser_capture.py (removed at next major)
-│   ├── browser_capture.py       # One browser launch→capture→filter→heal→persist core (ADR-0033 merge; lazy playwright)
-│   ├── _browser_cookie_filter.py # Shim: re-exports storage's canonical cookie_filter alias (removed at next major)
-│   ├── browser_launch_errors.py # Channel registry + launch-failure triage (pure leaf of browser_capture)
-│   ├── navigation_errors.py    # net:: classification: navigation race vs failure (pure leaf of browser_capture)
-│   ├── login_wait_trace.py      # Shim: re-exports the login-wait tracing from browser_capture.py (removed at next major)
-│   ├── headless_reauth.py       # Layer-3 headless re-auth (opt-in; typed outcomes; local-unattended-only)
+│   ├── recovery_rungs.py        # Neutral registry + closed result for the optional blocking L3 rung
 │   ├── account_types.py         # Dependency-neutral Account/Playwright repair-result values with historical identity
 │   ├── account_repair.py        # One-shot typed Playwright account-repair operation + call-time composition
 │   ├── account.py               # Account network probing/selection + compatibility repair adapter
 │   ├── account_email.py         # Generation-safe account-email matching, probing, caching, and CAS self-heal
 │   ├── session.py               # Auth-session refresh implementation via `refresh_auth_session()` and explicit collaborators
 │   ├── storage.py               # v0.x facade; raw adapters + minted snapshot/error + token policy
-│   ├── storage_writer.py        # Shim: re-exports the writer API from storage.py (removed at next major)
-│   ├── storage_transaction.py   # Shim: re-exports transaction aliases through storage.py (removed at next major)
 │   ├── keepalive.py             # Keepalive/PSIDTS rotation policy + raw-wire re-exports
 │   ├── psidts_recovery.py       # Inline PSIDTS recovery (issue #865) + the one load→heal→retry composition + the captured-cookie validate/heal seam
 │   ├── master_token_types.py    # Dependency-bottom MasterTokenError/value + pure legacy-record codec
@@ -1610,6 +1602,13 @@ src/notebooklm/
 │   ├── single_flight.py         # Cross-loop flight/leader-task/success-epoch owner
 │   ├── refresh.py               # Token driver + late-bound cold-coordinator adapter and L2.5 policy
 │   └── tokens.py                # AuthTokens container + load_auth_from_storage loader
+├── _browser/                    # Optional browser-backed credential acquisition
+│   ├── __init__.py
+│   ├── browser_capture.py       # Browser launch→capture→filter→heal→persist core; lazy Playwright
+│   ├── browser_launch_errors.py # Channel registry + launch-failure triage
+│   ├── navigation_errors.py     # Pure navigation-race/failure classification
+│   ├── headless_reauth.py       # Opt-in L3 implementation behind the neutral auth rung
+│   └── oauth_token.py           # Visible EmbeddedSetup OAuth-cookie capture
 ├── _types/                      # Dataclass implementation package re-exported by types.py
 │   ├── __init__.py
 │   ├── artifact_content.py       # Typed artifact media, slide/infographic content, and per-user state records (#2135, #2136)
@@ -1685,7 +1684,7 @@ src/notebooklm/
 ├── mcp/                         # MCP server (opt-in `mcp` extra) — transport-neutral adapter over _app/, sibling to cli/
 │   ├── __init__.py              # Re-exports create_server / SERVER_NAME / SERVER_INSTRUCTIONS
 │   ├── __main__.py              # `notebooklm-mcp` entrypoint: argparse (--profile/--transport/--host/--port/--log-level), stderr logging, loopback HTTP bind guard + fail-closed auth guard (non-loopback bind requires a bearer token AND/OR self-hosted OAuth); composes the auth provider (build_auth) and passes it to create_server on the http path
-│   ├── server.py                # create_server(profile, client_factory, auth): FastMCP server; lifespan binds one NotebookLMClient; register_all tool-registration seam; auth passed explicitly (never reads the token env)
+│   ├── server.py                # create_server(profile, client_factory, auth): FastMCP server; lifespan binds one NotebookLMClient behind a ClientProvider and warms it in the background (never gating the handshake, #2330); register_all tool-registration seam; auth passed explicitly (never reads the token env)
 │   ├── _auth.py                 # Remote-transport bearer auth: McpBearerAuthProvider(TokenVerifier) with constant-time hmac.compare_digest over NOTEBOOKLM_MCP_TOKEN (env-only, never logged/repr'd); build_auth_provider/get_configured_token; build_auth(token, oauth) composes bearer | OAuth | MultiAuth | None (IdP-agnostic) — mirrors server/_auth.py, NOT fastmcp StaticTokenVerifier
 │   ├── _oauth.py                # Optional self-hosted OAuth 2.1 AS for claude.ai (OAuth-only connector UI): SelfHostedOAuthProvider(InMemoryOAuthProvider) + a password-gated /login (override authorize()→stash SDK-validated (client,params) under a single-use sid→/login→InMemoryOAuthProvider.authorize); scrypt password digest + per-IP throttle, capped DCR + evict-oldest pending stash, atomic 0600 persistence of clients+tokens; get_oauth_config/build_oauth_provider (env NOTEBOOKLM_MCP_OAUTH_PASSWORD + _BASE_URL). Composed with the bearer via MultiAuth
 │   ├── _host_guard.py           # LoopbackHostGuardMiddleware: ASGI guard that rejects HTTP requests with a non-loopback Host header (403; DNS-rebinding guard, #1869) on the loopback-bound HTTP transport via _serving.host_header_is_loopback; skipped when allow_external (REST-parity bearer/OAuth auth is mandatory there) — mirrors server/_auth
@@ -1694,7 +1693,8 @@ src/notebooklm/
 │   ├── _fileroutes.py           # register_file_routes(mcp, config): the /files/{dl,ul} custom routes mounted on the FastMCP http app (ADR-0024). GET /files/dl streams the artifact (download core → FileResponse, meaningful filename, inside-tempdir assert, BackgroundTask cleanup); GET /files/ul = minimal upload page (file picker + raw-body fetch POST); POST|PUT /files/ul streams request.stream() into a 0600 temp under a running byte cap (real DoS guard) + Content-Length early 413 → neutral source_add core. Signed token is the sole auth (custom routes bypass the bearer gate); HTML pages set no-referrer/no-store/DENY; local _safe_upload_name (no server/ import)
 │   ├── _uploadwidget.py         # register_upload_widget(mcp, config): OPT-IN in-app MCP-App upload widget (ADR-0027, NOTEBOOKLM_MCP_UPLOAD_WIDGET=1 → also auto-enables stateless HTTP). ONE ui:// resource (file-picker HTML, profile=mcp-app mime) + source_add_widget tool; both ui/resourceUri (claude.ai) and openai/outputTemplate (ChatGPT) point at it. Emits the render gates via FastMCP meta=/app=: _meta.ui.domain = sha256("<public-url>/mcp")[:32] + ".claudemcpcontent.com", flat ui/resourceUri, ui.csp; the widget POSTs bytes to /files/ul (reuses ADR-0024). Off the default surface unless enabled
 │   ├── _chattasks.py            # Detached chat asks for chat_start/chat_status (ADR-0024-shaped in-process state): ChatTaskRegistry (bounded + TTL-swept; idempotency-keyed via compute_chat_task_key; asyncio.create_task detachment so the remote transport's ~60s watchdog cancelling the start call cannot kill the generation; lifespan aclose) + ChatTaskEntry/ChatTaskCapacityError
-│   ├── _context.py              # AppState dataclass (client + optional file_transfer + cancelled_research + chat_tasks) + get_client(ctx) / get_file_transfer(ctx) / get_cancelled_research(ctx) / get_chat_tasks(ctx) (lifespan-bound) + get_client_from_app(request) (the guarded private-attr accessor for the bare-Request custom routes)
+│   ├── _clientprovider.py       # ClientProvider: lazy, single-flight ownership of the process-wide NotebookLMClient (#2330). The lifespan start()s the open in the BACKGROUND and yields at once, so MCP initialize is never gated on the auth round-trip (15s RotateCookies poke + 30s CSRF fetch + cold-recovery ladder > the client's 30s handshake deadline → CONNECT_TIMEOUT); get() joins the in-flight open under asyncio.shield (a cancelled waiter never aborts it), a failed open is retried by the next call (mid-session re-login recovers), aclose() cancels/closes
+│   ├── _context.py              # AppState dataclass (client_provider + optional file_transfer + cancelled_research + chat_tasks) + async get_client(ctx) (awaits the lazy open) / get_file_transfer(ctx) / get_cancelled_research(ctx) / get_chat_tasks(ctx) (lifespan-bound) + async get_client_from_app(request) (the guarded private-attr accessor for the bare-Request custom routes)
 │   ├── _errors.py               # Structured tool-error projection (CATEGORY_TABLE/ERROR_CODES/mcp_errors/to_tool_error/tool_error_payload) over _app.errors.classify
 │   ├── _resolve.py              # resolve_notebook/resolve_source/resolve_note/resolve_artifact — name + partial-id resolution over _app.resolve plus exact-title matching
 │   ├── _confirm.py              # needs_confirmation() both-mode envelope + READ_ONLY/DESTRUCTIVE ToolAnnotations
@@ -1755,7 +1755,7 @@ src/notebooklm/
     ├── notebook_cmd.py          # list, create, delete, rename
     ├── note_cmd.py              # note commands
     ├── options.py               # Shared CLI option decorators
-    ├── playwright_login_io.py   # Command-side LoginIO sink + wrappers for the Playwright login service (#1391)
+    ├── playwright_login_io.py   # Command-side LoginIO sink + thin wrappers over the browser-login app core (#1391)
     ├── polling_ui.py            # Command-layer UI helpers for long-running polling
     ├── profile_cmd.py           # Profile management CLI commands
     ├── rendering.py             # CLI rendering helpers
@@ -1787,12 +1787,12 @@ src/notebooklm/
         │   ├── exceptions.py
         │   ├── firefox_accounts.py
         │   ├── io_seam.py        # Caller-injected LoginIO Protocol + resolver (#1393)
-        │   ├── master_token.py   # Interactive oauth_token capture only (coordination in _auth/master_token_bootstrap.py; v0.x adapters in _auth/master_token.py)
+        │   ├── master_token.py   # Thin, frame-scrubbing delegate to the auth facade's interactive OAuth-capture capability
         │   ├── outcomes.py
         │   ├── profile_targets.py
         │   ├── refresh.py
         │   └── rookie_cookies_errors.py
-        ├── playwright_login.py  # Playwright-driven Google login service
+        ├── playwright_login.py  # CLI-only Chromium preflight, Rich event rendering, and thin invocation wrappers over `_app/login_browser.py`
         ├── playwright_redaction.py # Subprocess-output redaction helpers for the Playwright login service
         ├── polling.py           # Shared polling helpers for CLI wait commands
         ├── research.py          # `research wait` CLI adapter over `_app/research.py` — re-exports plan/result/outcome; injects cli.resolve.resolve_notebook_id + cli.research_import.import_research_sources defaults (preserves their patch seams)
@@ -1828,7 +1828,7 @@ src/notebooklm/
 
 - [ADR-0001](./adr/0001-layered-core-seams-and-property-bridge-policy.md) — Layered seams + property-bridge policy (superseded; shims retired).
 - [ADR-0002](./adr/0002-capability-protocol-pattern.md) — Capability Protocol pattern (Superseded by ADR-0013).
-- [ADR-0003](./adr/0003-auth-facade-write-through.md) — `auth.py` write-through facade (Superseded — closed by [ADR-0014](./adr/0014-feature-local-runtime-adapters.md); `auth.py` is now almost pure re-exports with `enumerate_accounts` as the sole function-body exception).
+- [ADR-0003](./adr/0003-auth-facade-write-through.md) — `auth.py` write-through facade (Superseded — closed by [ADR-0014](./adr/0014-feature-local-runtime-adapters.md); ADR-0036 later added a narrow lazy browser-capability boundary without making Playwright import-time mandatory).
 - [ADR-0004](./adr/0004-loop-affinity-contract.md) — Loop-affinity contract (Accepted; enforced by `_loop_affinity.assert_bound_loop`).
 - [ADR-0005](./adr/0005-idempotency-taxonomy.md) — Mutating-RPC idempotency taxonomy (Accepted; enforced by `_web.policy.IdempotencyRegistry`).
 - [ADR-0006](./adr/0006-vcr-scrubber-strategy.md) — VCR cassette scrubber strategy (Accepted).
@@ -1861,6 +1861,7 @@ src/notebooklm/
 - [ADR-0033](./adr/0033-auth-consolidation-policy.md) — `_auth` consolidation ceilings and function-granular write boundary (Accepted; amended by ADR-0034).
 - [ADR-0034](./adr/0034-auth-storage-object-model.md) — Current auth storage object model and owner extraction (Accepted; Phase 12C complete).
 - [ADR-0035](./adr/0035-mobile-resilience-transport.md) — Explicit Android backend as a resilience transport (Accepted; all eleven namespaces now close their former Web compatibility seams).
+- [ADR-0036](./adr/0036-browser-acquisition-package.md) — Browser acquisition package and neutral login orchestration (Accepted; browser implementation isolated behind lazy auth capabilities).
 
 ## See also
 

@@ -42,12 +42,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
+import notebooklm._app.login_browser as login_browser_module
 import notebooklm.auth as auth_module
 import notebooklm.cli.context as context_module
 import notebooklm.cli.helpers as helpers_module
 import notebooklm.cli.resolve as resolve_module
 import notebooklm.cli.services.auth_source as auth_source_module
-import notebooklm.cli.services.playwright_login as playwright_login_module
 import notebooklm.cli.services.session_context as session_context_module
 import notebooklm.cli.session_cmd as session_cmd
 import notebooklm.paths as paths_module
@@ -128,11 +128,7 @@ def char_storage_file(tmp_path, monkeypatch):
             return_value=storage_file,
             create=True,
         ),
-        patch.object(
-            playwright_login_module,
-            "get_storage_path",
-            return_value=storage_file,
-        ),
+        patch.object(login_browser_module, "get_storage_path", return_value=storage_file),
     ):
         yield storage_file
 

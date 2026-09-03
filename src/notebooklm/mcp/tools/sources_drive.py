@@ -54,8 +54,8 @@ def register(mcp: Any) -> None:
         step. Processed ASYNCHRONOUSLY; pass ``wait=true`` to block until READY (else
         confirm via ``source_wait`` / ``source_list(status="error")``).
         """
-        client = get_client(ctx)
         with mcp_errors():
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             result = await mut_core.execute_source_add_drive_file(
                 client,

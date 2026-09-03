@@ -14,6 +14,21 @@
 > tables below are the **v0.5.0 as-shipped** names, not the current tree — see
 > [`docs/architecture.md`](architecture.md) for the current module map.
 
+> **2026-09-02 compatibility note:** Six deprecated private `_auth` consolidation shims were
+> removed in v0.8.x by explicit maintainer decision, earlier than their documented next-major
+> window. Replace `_auth._browser_cookie_filter` with `_auth.cookie_filter`,
+> `_auth.browser_cookie_recovery` with `_auth.psidts_recovery`, both
+> `_auth.browser_state_validation` and `_auth.login_wait_trace` with `_browser.browser_capture`,
+> `_auth.storage_transaction` with `_auth.profile_store`, and `_auth.storage_writer` with
+> `_auth.storage`. No transitional replacement shims were added.
+>
+> **2026-09-02 browser boundary note:** Playwright-backed acquisition now lives
+> in `_browser/`, while `_auth/recovery_rungs.py` owns the browser-neutral L3
+> registry. Interactive login is coordinated by `_app/login_browser.py`; CLI
+> code supplies preflight and rendering and reaches browser capabilities only
+> through lazy `notebooklm.auth` functions. This keeps the base import and CLI
+> help paths Playwright-free without splitting the work across multiple PRs.
+
 This document is the historical record of the Tier 12 / Tier 13 refactor arc.
 It exists for two audiences:
 

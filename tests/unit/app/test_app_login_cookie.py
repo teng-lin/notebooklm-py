@@ -463,17 +463,16 @@ def test_quiet_network_error_is_reraised_same_object(monkeypatch: pytest.MonkeyP
     assert caught.value is error
 
 
-#: ``cookie_import`` was re-pinned when the three helpers left unreferenced by
-#: the ``_app/login_cookie`` extraction (``_coerce_cookie_json_to_storage_state``,
-#: ``_normalize_imported_cookie``, ``_nonempty_cookie_names``) were deleted; the
-#: live logic behind them is unchanged and still lives in ``_app/login_cookie``.
+#: ``cookie_import`` and ``cookie_jar`` were re-pinned when their canonical
+#: cookie-policy calls were routed through identity-equal ``auth`` facade
+#: aliases, preserving the CLI boundary without changing their behavior.
 _SEMANTIC_HASHES = {
     "login_cookie": "ba6c11e67a09365d017b9ec46aed5e37eb7173f864ba45746ca289fc49bed2dd",
-    "cookie_import": "80135a3c19f81812c3486bfab695b9348d63514901e51ac8978bbab00ba6d254",
+    "cookie_import": "eae4f81f14a18dadfb980155145f9b77b00fd856f9f04fb4e21c654dbb466021",
     "browser_accounts": "0b4278d9971e3522be70481aa98d0dde869455be703aa8f24e61840fb16e79ed",
     "chromium_accounts": "3f7241d07681f66823c212bb3b8292caa59b65a402d022537b134ca3e6995c92",
     "cookie_domains": "a09898adcc9d4e9cba6308fd4bd8a13d36ca9a17bc462834eb27f5854d1e65c3",
-    "cookie_jar": "7c90f535d9d380b6879a884133395ec996f484fb868d428990c8652e5e5ea4ca",
+    "cookie_jar": "7fc28ec2055d19cfdb708659b22050a7752c97c873f82a231d47c9a7be2b5b83",
 }
 
 

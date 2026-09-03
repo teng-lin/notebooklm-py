@@ -870,6 +870,7 @@ def test_auth_cookie_policy_facade_delegates_to_private_module() -> None:
     assert auth.ALLOWED_COOKIE_DOMAINS is cookie_policy.ALLOWED_COOKIE_DOMAINS
     assert auth.GOOGLE_REGIONAL_CCTLDS is cookie_policy.GOOGLE_REGIONAL_CCTLDS
     assert auth.MINIMUM_REQUIRED_COOKIES is cookie_policy.MINIMUM_REQUIRED_COOKIES
+    assert auth.app_host_scope_note is cookie_policy.app_host_scope_note
     assert auth._auth_domain_priority is cookie_policy._auth_domain_priority
     assert auth._is_google_domain is cookie_policy._is_google_domain
     assert auth._is_allowed_auth_domain is cookie_policy._is_allowed_auth_domain
@@ -1311,6 +1312,8 @@ def test_baseline_registry_is_non_trivial() -> None:
     assert {
         "auth_import_graph",
         "auth_patch_sites",
+        "browser_import_graph",
+        "browser_patch_sites",
         "guardrail_inline_literals",
         "module_size",
         "storage_transaction_policy",
@@ -1459,79 +1462,3 @@ def test_public_shim_all_contract(shim_name: str, internal_name: str) -> None:
     assert len(all_list) == len(declared), (
         f"{shim_name}.__all__ contains duplicates: {sorted(all_list)}"
     )
-
-
-def test_consolidation_shims_are_identity_reexports() -> None:
-    """Every ADR-0033 merge shim must keep re-exporting the real objects.
-
-    The consolidation merges turn the absorbed modules into re-export shims for
-    one release. Nothing in ``src/``, ``tests/`` or ``scripts/`` imports them any
-    more, so their ``from .<canonical> import (...)`` blocks have **zero**
-    coverage: a later consolidation PR that renames one of these names would break
-    the shim with an ``ImportError`` raised only at import time, and no test would
-    notice. A further such PR is scheduled (the account-record relocation), so
-    this pins each shim to the canonical objects until they are removed at the
-    next major.
-
-    Add a ``(shim, canonical)`` pair here in the same PR as each new merge shim.
-    """
-    import notebooklm._auth._browser_cookie_filter as cookie_filter_shim
-    import notebooklm._auth.browser_cookie_recovery as browser_cookie_recovery_shim
-    import notebooklm._auth.psidts_recovery as psidts_recovery
-    import notebooklm._auth.storage as storage
-    import notebooklm._auth.storage_transaction as transaction_shim
-    import notebooklm._auth.storage_writer as writer_shim
-
-    pairs = [
-        # the persistence merge
-        (writer_shim, storage),
-        (transaction_shim, storage),
-        # the load-composition merge
-        (browser_cookie_recovery_shim, psidts_recovery),
-        # the write-side cookie-filter relocation (PR 4.2)
-        (cookie_filter_shim, storage),
-    ]
-
-    for shim, canonical in pairs:
-        exported = getattr(shim, "__all__", None)
-        assert exported, f"{shim.__name__} must declare __all__ so this gate can bite"
-        for name in exported:
-            assert hasattr(shim, name), f"{shim.__name__} re-exports missing name {name!r}"
-            assert hasattr(canonical, name), (
-                f"{shim.__name__} re-exports {name!r}, which no longer exists on "
-                f"{canonical.__name__} — the shim is broken"
-            )
-            assert getattr(shim, name) is getattr(canonical, name), (
-                f"{shim.__name__}.{name} is not the canonical {canonical.__name__}.{name} object"
-            )
-
-
-def test_browser_cluster_shims_are_identity_reexports() -> None:
-    """``browser_state_validation`` / ``login_wait_trace`` must re-export the real objects.
-
-    Same reasoning as :func:`test_consolidation_shims_are_identity_reexports`,
-    for the browser-cluster merge (ADR-0033 PR 4.1). Both modules existed only to
-    keep ``browser_capture`` under the ADR-0008 line cap, and both are now
-    one-line re-export shims. Nothing in ``src/``, ``tests/`` or ``scripts/``
-    imports them any more, so their ``from .browser_capture import (...)`` blocks
-    have **zero** coverage: renaming ``trace_url`` or ``heal_captured_state`` in a
-    later PR would break the shim with an ``ImportError`` raised only at import
-    time, and no test would notice. This pins the shims until they are removed at
-    the next major.
-    """
-    import notebooklm._auth.browser_capture as canonical
-    import notebooklm._auth.browser_state_validation as validation_shim
-    import notebooklm._auth.login_wait_trace as trace_shim
-
-    for shim in (validation_shim, trace_shim):
-        exported = getattr(shim, "__all__", None)
-        assert exported, f"{shim.__name__} must declare __all__ so this gate can bite"
-        for name in exported:
-            assert hasattr(shim, name), f"{shim.__name__} re-exports missing name {name!r}"
-            assert hasattr(canonical, name), (
-                f"{shim.__name__} re-exports {name!r}, which no longer exists on "
-                f"{canonical.__name__} — the shim is broken"
-            )
-            assert getattr(shim, name) is getattr(canonical, name), (
-                f"{shim.__name__}.{name} is not the canonical {canonical.__name__}.{name} object"
-            )

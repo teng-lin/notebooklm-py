@@ -2,11 +2,14 @@
 
 Design highlights:
 
-- **One client per process, bound at lifespan.** The FastMCP lifespan opens a
-  single :class:`~notebooklm.client.NotebookLMClient` via
-  ``from_storage(profile=..., keepalive=600.0)`` inside the server loop
-  (satisfies the ADR-0004 loop-affinity contract) and keeps it for the process
-  lifetime. Its keepalive task gives long sessions cookie rotation for free.
+- **One client per process, opened lazily.** The FastMCP lifespan binds a
+  :class:`~notebooklm.mcp._clientprovider.ClientProvider` over
+  ``from_storage(profile=..., keepalive=600.0)``, starts the open in the
+  background, and yields *immediately* — the MCP ``initialize`` handshake is
+  never gated on Google's auth round-trip (#2330). The open runs on the server
+  loop, so the client still satisfies the ADR-0004 loop-affinity contract, and
+  is kept for the process lifetime; its keepalive task gives long sessions
+  cookie rotation for free.
 - **Transport-neutral.** Tools are thin adapters over the ``_app/`` cores; this
   package imports NO ``click`` / ``rich`` / ``cli`` (enforced by
   ``tests/_guardrails/test_mcp_boundary.py``).
@@ -20,6 +23,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from types import TracebackType
 from typing import Literal, cast
 
 from fastmcp import FastMCP
@@ -28,6 +32,7 @@ from fastmcp.server.auth import AuthProvider
 from .._runtime.config import DEFAULT_SERVER_KEEPALIVE_INTERVAL
 from ..client import NotebookLMClient
 from ..paths import get_active_profile, resolve_profile, set_active_profile
+from ._clientprovider import ClientProvider
 from ._context import AppState
 from ._filelink import FileTransferConfig
 
@@ -99,6 +104,24 @@ def register_all(mcp: FastMCP) -> None:
     register_file_tools(mcp)
 
 
+async def _shutdown(
+    state: AppState,
+    provider: ClientProvider,
+    exc_type: type[BaseException] | None,
+    exc: BaseException | None,
+    tb: TracebackType | None,
+) -> bool | None:
+    """Tear the lifespan down, forwarding the body's exception (if any) to the client.
+
+    Detached chat asks are cancelled BEFORE the provider closes the client, so no
+    server-owned task ever touches a closing client (see ``ChatTaskRegistry.aclose``).
+    The client context manager's suppression result is returned to the lifespan.
+    """
+    await state.chat_tasks.aclose()
+    state.chat_tasks.set_bound_loop(None)
+    return await provider.aclose(exc_type, exc, tb)
+
+
 def create_server(
     *,
     profile: str | None = None,
@@ -162,18 +185,26 @@ def create_server(
         previous_profile = get_active_profile()
         set_active_profile(resolve_profile(profile))
         try:
-            async with factory() as client:
-                state = AppState(client=client, file_transfer=file_transfer)
-                state.chat_tasks.set_bound_loop(asyncio.get_running_loop())
-                state.chat_tasks.reset_after_open()
-                try:
-                    yield state
-                finally:
-                    # Cancel any detached chat asks BEFORE the factory context
-                    # closes the client, so no server-owned task ever touches a
-                    # closing client (see ChatTaskRegistry.aclose).
-                    await state.chat_tasks.aclose()
-                    state.chat_tasks.set_bound_loop(None)
+            provider = ClientProvider(factory)
+            state = AppState(client_provider=provider, file_transfer=file_transfer)
+            state.chat_tasks.set_bound_loop(asyncio.get_running_loop())
+            state.chat_tasks.reset_after_open()
+            # Warm the client on the server loop WITHOUT awaiting it: the auth
+            # round-trip can outlast the client's handshake deadline, and gating
+            # ``initialize`` on it is what surfaced as CONNECT_TIMEOUT (#2330).
+            provider.start()
+            try:
+                yield state
+            except BaseException as exc:
+                # Forward the exact exception triple, then honor the client context
+                # manager's suppression result just as ``async with factory()`` did.
+                # NotebookLMClient normally returns false, but injected/embedded
+                # factories may deliberately suppress a lifespan exception.
+                suppressed = await _shutdown(state, provider, type(exc), exc, exc.__traceback__)
+                if not suppressed:
+                    raise
+            else:
+                await _shutdown(state, provider, None, None, None)
         finally:
             set_active_profile(previous_profile)
 

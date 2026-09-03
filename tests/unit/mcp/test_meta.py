@@ -361,3 +361,58 @@ async def test_server_info_include_account_degraded_reason_is_scrubbed(
     # The OS username segment is masked; the rest of the message survives.
     assert "secretuser" not in reason
     assert "/home/***/" in reason
+
+
+async def test_server_info_survives_a_failed_lazy_client_open(tmp_path, monkeypatch) -> None:
+    """A failed lazy open (#2330) must degrade the ``account`` block, not sink the call.
+
+    ``server_info`` is the tool an agent reaches for when something is already wrong,
+    so the version + local-auth diagnostics — which need no client — must still come
+    back. Letting the open failure reach ``server_info``'s ``mcp_errors()`` would turn
+    the whole call into an AUTH error and discard exactly the fields that say what broke.
+    """
+    import contextlib
+
+    from notebooklm.exceptions import AuthError
+
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    _write_authed_storage()
+
+    @contextlib.asynccontextmanager
+    async def failing_factory():
+        raise AuthError("session expired: cookie SID=AAAA1111secret")
+        yield  # pragma: no cover - unreachable, keeps this an async generator
+
+    async with Client(create_server(client_factory=failing_factory)) as client:
+        result = await client.call_tool("server_info", {"include_account": True})
+
+    payload = result.structured_content
+    # The client-free diagnostics survived.
+    assert payload["version"]
+    assert payload["auth"]["profile"]
+    # The account block degraded rather than sinking the response.
+    account = payload["account"]
+    assert account["available"] is False
+    assert account["email"] is None
+    assert account["authuser"] is None
+    assert "session expired" in account["reason"]
+    assert "AAAA1111secret" not in account["reason"]
+
+
+async def test_server_info_hides_unexpected_lazy_client_open_details(tmp_path, monkeypatch) -> None:
+    """Unexpected open failures degrade without echoing arbitrary exception text."""
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    _write_authed_storage()
+
+    @contextlib.asynccontextmanager
+    async def failing_factory():
+        raise RuntimeError("internal host tenant_secret=not-a-known-token-shape")
+        yield  # pragma: no cover - unreachable, keeps this an async generator
+
+    async with Client(create_server(client_factory=failing_factory)) as client:
+        result = await client.call_tool("server_info", {"include_account": True})
+
+    account = result.structured_content["account"]
+    assert account["available"] is False
+    assert account["reason"] == "An unexpected internal error occurred."
+    assert "tenant_secret" not in account["reason"]

@@ -26,7 +26,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from notebooklm._auth.browser_capture import (
+from notebooklm._browser.browser_capture import (
     INSTANT_FAILURE_SECONDS,
     MAX_TOLERATED_NAVIGATION_FAILURES,
     TARGET_CLOSED_ERROR,
@@ -39,7 +39,7 @@ from notebooklm._auth.browser_capture import (
 
 pytest.importorskip("playwright")
 
-CAPTURE_LOGGER = "notebooklm._auth.browser_capture"
+CAPTURE_LOGGER = "notebooklm._browser.browser_capture"
 
 LANDED = "https://notebooklm.google.com/"
 SIGNING_IN = "https://accounts.google.com/signin/v2/challenge"
@@ -713,7 +713,7 @@ def test_interactive_login_survives_an_aborted_navigation(tmp_path: Any) -> None
     from pathlib import Path
     from unittest.mock import patch
 
-    from notebooklm._auth.browser_capture import BrowserCapturePlan, run_browser_capture
+    from notebooklm._browser.browser_capture import BrowserCapturePlan, run_browser_capture
 
     profile = Path(tmp_path) / "browser_profile"
     profile.mkdir()
@@ -790,7 +790,7 @@ def test_headless_reauth_never_trusts_a_stale_url_after_failed_navigations() -> 
 
     from playwright.sync_api import Error as PlaywrightError
 
-    from notebooklm._auth.browser_capture import BrowserCapturePlan, run_browser_capture
+    from notebooklm._browser.browser_capture import BrowserCapturePlan, run_browser_capture
 
     with TemporaryDirectory() as tmp:
         profile = Path(tmp) / "browser_profile"
@@ -845,7 +845,7 @@ def test_a_restored_tab_url_is_not_treated_as_proof_of_login() -> None:
     from tempfile import TemporaryDirectory
     from unittest.mock import patch
 
-    from notebooklm._auth.browser_capture import BrowserCapturePlan, run_browser_capture
+    from notebooklm._browser.browser_capture import BrowserCapturePlan, run_browser_capture
 
     with TemporaryDirectory() as tmp:
         profile = Path(tmp) / "browser_profile"

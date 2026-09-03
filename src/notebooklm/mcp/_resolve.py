@@ -67,6 +67,7 @@ if TYPE_CHECKING:
     from ..client import NotebookLMClient
 
 __all__ = [
+    "partition_source_refs",
     "reject_non_canonical_id",
     "resolve_artifact",
     "resolve_note",
@@ -392,6 +393,42 @@ async def resolve_sources(
         return _resolve_by_title(ref, items, not_found=SourceNotFoundError)
 
     return [match(ref) for ref in validated]
+
+
+def partition_source_refs(
+    refs: Sequence[str], items: Sequence[Any]
+) -> tuple[list[str], list[dict[str, str]]]:
+    """Resolve refs against one source-list snapshot without aborting the batch.
+
+    Full UUIDs must be members of ``items`` — an unknown UUID is ``not_found``,
+    never trusted (``sources.delete`` silently no-ops missing ids). Missing
+    title/prefix refs accumulate in ``not_found`` instead of raising. Empty
+    refs and ambiguous matches still raise.
+    """
+    validated = [validate_id(ref, "source") for ref in refs]
+    for ref in validated:
+        reject_non_canonical_id(ref, "source")
+    id_set = {item.id for item in items}
+    resolved: list[str] = []
+    not_found: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for ref in validated:
+        try:
+            if FULL_ID_PATTERN.fullmatch(ref):
+                if ref not in id_set:
+                    raise SourceNotFoundError(ref)
+                sid = ref
+            elif _HEX_ISH.match(ref):
+                sid = _resolve_hex(ref, items, not_found=SourceNotFoundError)
+            else:
+                sid = _resolve_by_title(ref, items, not_found=SourceNotFoundError)
+        except SourceNotFoundError as exc:
+            not_found.append({"source_id": ref, "error": str(exc)})
+            continue
+        if sid not in seen:
+            seen.add(sid)
+            resolved.append(sid)
+    return resolved, not_found
 
 
 async def resolve_note(client: NotebookLMClient, notebook_id: str, ref: str) -> str:

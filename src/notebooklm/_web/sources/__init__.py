@@ -584,11 +584,23 @@ class WebSourcesAPI(SourcesAPI):
             now returns ``None`` (issue #1211). ``if await source.delete(...):``
             no longer enters its block.
         """
-        logger.debug("Deleting source %s from notebook %s", source_id, notebook_id)
-        params = [[[source_id]]]
+        await self.delete_many(notebook_id, [source_id])
+
+    async def delete_many(self, notebook_id: str, source_ids: Sequence[str]) -> None:
+        """Delete sources in one ``DELETE_SOURCE`` RPC.
+
+        Wire shape is a list of single-id lists: ``[[[id1], [id2], ...]]``.
+        An empty ``source_ids`` is a no-op. Unknown ids are a silent no-op
+        on the backend — callers that need ``not_found`` must resolve against
+        a source-list snapshot first.
+        """
+        ids = list(dict.fromkeys(source_ids))
+        if not ids:
+            return
+        logger.debug("Deleting %d source(s) from notebook %s", len(ids), notebook_id)
         await self._rpc.rpc_call(
             RPCMethod.DELETE_SOURCE,
-            params,
+            [[[sid] for sid in ids]],
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )

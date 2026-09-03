@@ -1,9 +1,9 @@
-"""Classification of Playwright navigation failures.
+"""Classification of browser navigation failures.
 
 A cohesive pure classifier leaf, in the same spirit as
 ``browser_launch_errors.py``: no CLI, no I/O, no Playwright import. It answers
 one question — what KIND of failure is this Playwright error message — for the
-browser-capture core, which re-exports the names its CLI adapter needs.
+browser-capture core, which re-exports the names for private import continuity.
 
 Split out of ``browser_capture.py`` (ADR-0008 module-size budget) when #2257
 added the navigation-failure tolerance. Deliberately does NOT take the

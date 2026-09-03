@@ -23,7 +23,6 @@ import notebooklm.auth as auth
 from notebooklm import NotebookLMClient
 from notebooklm._auth import (
     account,
-    browser_capture,
     cookies,
     keepalive,
     master_token,
@@ -34,12 +33,11 @@ from notebooklm._auth import (
     recovery,
     refresh,
     storage,
-    storage_transaction,
-    storage_writer,
     tokens,
 )
 from notebooklm._auth.storage_lock import LockState, StorageLockManager
 from notebooklm._auth.tokens import AuthTokens
+from notebooklm._browser import browser_capture
 from notebooklm._runtime import lifecycle
 from notebooklm._web.transport.cookie_persistence import CookiePersistence
 
@@ -64,10 +62,10 @@ _EXPECTED_LEGACY_RESULT_DEPENDENCIES = {
     "CookieSaveResult": frozenset(
         {"_auth/storage.py", "_web/transport/cookie_persistence.py", "auth.py"}
     ),
-    "LoginWriteOutcome": frozenset({"_auth/storage.py", "_auth/storage_writer.py", "auth.py"}),
-    "LoginWriteStatus": frozenset({"_auth/storage.py", "_auth/storage_writer.py"}),
-    "WriteOutcome": frozenset({"_auth/storage.py", "_auth/storage_writer.py"}),
-    "WriteStatus": frozenset({"_auth/storage.py", "_auth/storage_writer.py"}),
+    "LoginWriteOutcome": frozenset({"_auth/storage.py", "auth.py"}),
+    "LoginWriteStatus": frozenset({"_auth/storage.py"}),
+    "WriteOutcome": frozenset({"_auth/storage.py"}),
+    "WriteStatus": frozenset({"_auth/storage.py"}),
 }
 
 
@@ -681,21 +679,10 @@ def test_result_projections_and_compatibility_value_identities() -> None:
     assert storage.CookieSaveResult.__module__ == "notebooklm._auth.storage"
     assert storage.CookieSaveResult.__qualname__ == "CookieSaveResult"
     assert storage.CookieSaveResult.__dataclass_params__.frozen is True
-    assert storage_writer.merge_cookie_delta is storage.merge_cookie_delta
-    assert storage_writer.persist_minted_jar is storage.persist_minted_jar
-    assert storage_writer.replace_from_remint is storage.replace_from_remint
-    assert storage_writer.update_account_metadata is storage.update_account_metadata
-    assert storage_writer.clear_in_band_account is storage.clear_in_band_account
     assert storage.in_storage_transaction is profile_store.in_storage_transaction
     assert storage.raise_on_lock_unavailable is profile_store.raise_on_lock_unavailable
     assert storage.report_on_lock_unavailable is profile_store.report_on_lock_unavailable
     assert storage.skip_on_lock_unavailable is profile_store.skip_on_lock_unavailable
-    assert storage_transaction.in_storage_transaction is profile_store.in_storage_transaction
-    assert storage_transaction.raise_on_lock_unavailable is profile_store.raise_on_lock_unavailable
-    assert (
-        storage_transaction.report_on_lock_unavailable is profile_store.report_on_lock_unavailable
-    )
-    assert storage_transaction.skip_on_lock_unavailable is profile_store.skip_on_lock_unavailable
     assert not hasattr(browser_capture, "storage")
     assert browser_capture.ReplaceResult is profile_store.ReplaceResult
     assert not hasattr(refresh, "save_cookies_to_storage")
@@ -703,7 +690,6 @@ def test_result_projections_and_compatibility_value_identities() -> None:
     assert not hasattr(auth, "ProfileStore")
     assert not hasattr(auth, "ProfileAccount")
     assert "MintedSessionWriteRequest" not in storage.__all__
-    assert "MintedSessionWriteRequest" not in storage_writer.__all__
     assert not hasattr(auth, "MintedSessionWriteRequest")
     assert storage.MintedSessionWriteRequest is profile_store.MintedSessionWriteRequest
 
@@ -844,10 +830,8 @@ def test_cookie_save_delegate_remains_same_module_and_late_bound() -> None:
 
 def test_minted_facade_identities_and_master_wrapper_late_lookup_are_exact() -> None:
     assert auth.persist_minted_jar is master_token.persist_minted_jar
-    assert storage_writer.persist_minted_jar is storage.persist_minted_jar
     assert master_token.persist_minted_jar is not storage.persist_minted_jar
     assert auth.write_master_token is master_token.write_master_token
-    assert storage_writer.write_master_token is storage.write_master_token
     assert master_token.write_master_token is not storage.write_master_token
 
     source = ast.parse(inspect.getsource(master_token.persist_minted_jar))
@@ -971,11 +955,6 @@ def test_legacy_account_facade_shim_and_default_identities_are_exact() -> None:
     assert auth.KEEP_ACCOUNT is storage.KEEP_ACCOUNT
     assert auth.CLEAR_ACCOUNT is storage.CLEAR_ACCOUNT
     assert auth.replace_from_login is storage.replace_from_login
-    assert storage_writer.AccountRecord is storage.AccountRecord
-    assert storage_writer.AccountArg is storage.AccountArg
-    assert storage_writer.KEEP_ACCOUNT is storage.KEEP_ACCOUNT
-    assert storage_writer.CLEAR_ACCOUNT is storage.CLEAR_ACCOUNT
-    assert storage_writer.replace_from_login is storage.replace_from_login
     assert storage._drop_legacy_account_key is profile_migration._drop_legacy_account_key
     assert auth.drop_legacy_account_key is profile_migration._drop_legacy_account_key
 
@@ -994,7 +973,6 @@ def test_legacy_account_facade_shim_and_default_identities_are_exact() -> None:
         "PromotionFailed",
     }
     assert internal_components.isdisjoint(storage.__all__)
-    assert internal_components.isdisjoint(storage_writer.__all__)
     assert all(not hasattr(auth, name) for name in internal_components)
 
     account_default = inspect.signature(storage.replace_from_login).parameters["account"].default
@@ -1019,9 +997,7 @@ def test_legacy_result_dependency_inventory_bites_on_aliases_and_dynamic_access(
         "facade.__dict__['CookieSaveResult']\n",
         encoding="utf-8",
     )
-    (package / "star.py").write_text(
-        "from notebooklm._auth.storage_writer import *\n", encoding="utf-8"
-    )
+    (package / "star.py").write_text("from notebooklm._auth.storage import *\n", encoding="utf-8")
 
     inventory = _legacy_result_dependency_paths(package)
     assert inventory["WriteOutcome"] == frozenset({"aliases.py", "star.py"})
@@ -1148,6 +1124,7 @@ EXPECTED_DIRECT_CALLERS = {
         "src/notebooklm/_app/master_token.py",
         "src/notebooklm/cli/session_cmd.py",
     ],
+    "app_host_scope_note": ["src/notebooklm/cli/services/login/cookie_jar.py"],
     "build_cookie_jar": ["src/notebooklm/_web/transport/kernel.py"],
     "build_httpx_cookies_from_storage": ["src/notebooklm/cli/auth_runtime.py"],
     "cookie_names_from_storage": [
@@ -1155,6 +1132,8 @@ EXPECTED_DIRECT_CALLERS = {
         "src/notebooklm/cli/services/login/cookie_writes.py",
         "src/notebooklm/cli/services/login/refresh.py",
     ],
+    "capture_browser_oauth_token": ["src/notebooklm/cli/services/login/master_token.py"],
+    "check_headless_reauth_readiness": ["src/notebooklm/cli/doctor_cmd.py"],
     "fetch_tokens_passive": [
         "src/notebooklm/_app/auth_check.py",
         "src/notebooklm/cli/playwright_login_io.py",
@@ -1167,6 +1146,7 @@ EXPECTED_DIRECT_CALLERS = {
         "src/notebooklm/cli/services/login/refresh.py",
         "src/notebooklm/cli/session_cmd.py",
     ],
+    "filter_storage_state_cookies_by_domain_policy": ["src/notebooklm/cli/_cookie_import.py"],
     "missing_cookies_hint": [
         "src/notebooklm/cli/services/login/cookie_writes.py",
         "src/notebooklm/cli/services/login/refresh.py",
@@ -1217,6 +1197,7 @@ EXPECTED_ALIAS_CALLERS = {
     ],
     "assert_account_writable": ["src/notebooklm/_app/master_token.py"],
     "bootstrap_missing_storage_from_master_token": ["src/notebooklm/_app/master_token.py"],
+    "browser_login_channels": ["src/notebooklm/_app/login_browser.py"],
     "build_cookie_jar": [
         "src/notebooklm/_app/login_cookie.py",
         "src/notebooklm/cli/helpers.py",
@@ -1224,6 +1205,7 @@ EXPECTED_ALIAS_CALLERS = {
     "convert_rookiepy_cookies_to_storage_state": ["src/notebooklm/_app/login_cookie.py"],
     "cookie_names_from_storage": ["src/notebooklm/_app/login_cookie.py"],
     "enumerate_accounts": ["src/notebooklm/_app/login_cookie.py"],
+    "ensure_browser_login_available": ["src/notebooklm/_app/login_browser.py"],
     "extract_cookies_from_storage": [
         "src/notebooklm/_app/auth_check.py",
         "src/notebooklm/_app/login_cookie.py",
@@ -1234,6 +1216,7 @@ EXPECTED_ALIAS_CALLERS = {
     "master_token_remint": ["src/notebooklm/_app/master_token.py"],
     "missing_cookies_hint": ["src/notebooklm/_app/login_cookie.py"],
     "read_master_token": ["src/notebooklm/_app/master_token.py"],
+    "run_browser_login_capture": ["src/notebooklm/_app/login_browser.py"],
 }
 
 
@@ -2209,12 +2192,12 @@ def test_first_party_facade_callers_are_frozen_in_both_import_idioms() -> None:
     assert aliases == EXPECTED_ALIAS_CALLERS
     union = {(name, path) for name, paths in direct.items() for path in paths}
     union |= {(name, path) for name, paths in aliases.items() for path in paths}
-    assert len(direct) == 14
-    assert sum(map(len, direct.values())) == 40
-    assert len(aliases) == 25
-    assert sum(map(len, aliases.values())) == 30
-    assert len({name for name, _path in union}) == 35
-    assert len(union) == 70
+    assert len(direct) == 18
+    assert sum(map(len, direct.values())) == 44
+    assert len(aliases) == 28
+    assert sum(map(len, aliases.values())) == 33
+    assert len({name for name, _path in union}) == 42
+    assert len(union) == 77
 
 
 @pytest.mark.skipif(not hasattr(ast, "TryStar"), reason="exception-group AST requires 3.11+")

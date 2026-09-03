@@ -14,7 +14,7 @@ headless=True`` are supported. Automatic headless recovery remains opt-in via
 
 ADR-0033 folded the login-wait trace and captured-state heal bridge into this
 module. ``browser_launch_errors.py`` remains a cohesive pure classifier leaf and
-is re-exported here for the CLI boundary.
+is re-exported here for existing private import continuity.
 """
 
 from __future__ import annotations
@@ -31,6 +31,29 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 from urllib.parse import urlparse
 
+# Collaborators of :func:`heal_captured_state` (absorbed from
+# ``browser_state_validation.py``, ADR-0033 PR 4.1): the sanitiser that shapes
+# captured rows for the rookiepy contract, and the shared PSIDTS recovery that
+# contract runs. These were already on this module's import path transitively,
+# via the leaf that used to hold the bridge.
+from .._auth import cookies as _auth_cookies
+from .._auth import psidts_recovery as _psidts_recovery
+
+# ``app_host_scope_note`` owns the both-personal-hosts cookie-scope caveat that
+# every "open the app in your browser" instruction needs (it is appended to the
+# binding-related hints in ``cookie_policy.missing_cookies_hint``). It is
+# retained here as a private-package compatibility re-export. First-party
+# adapters reach the canonical identity through the ``notebooklm.auth`` facade.
+from .._auth.cookie_policy import app_host_scope_note
+from .._auth.profile_account import DomainSelection
+from .._auth.profile_document import ProfileDocument
+from .._auth.profile_store import ProfileStore, RemintWriteRequest, ReplaceResult
+
+# The storage-state cookie filter is WRITE-time policy and lives beside the
+# writers applying it (ADR-0033 PR 4.2); retained for private compatibility.
+from .._auth.storage import _safe_cookie_shape as _safe_cookie_shape
+from .._auth.storage import filter_storage_state_cookies_by_domain_policy
+
 # ``PERSONAL_APP_HOSTS`` is imported from ``_env`` rather than ``config``
 # deliberately: it is not part of ``config.__all__``, and re-exporting it there
 # just to reach it here would add a public export for an internal host fact.
@@ -40,31 +63,14 @@ from .._env import PERSONAL_APP_HOSTS
 from ..config import get_base_host, get_base_url
 from ..exceptions import HeadlessLoginRequiredError, LockUnavailableError
 
-# Collaborators of :func:`heal_captured_state` (absorbed from
-# ``browser_state_validation.py``, ADR-0033 PR 4.1): the sanitiser that shapes
-# captured rows for the rookiepy contract, and the shared PSIDTS recovery that
-# contract runs. These were already on this module's import path transitively,
-# via the leaf that used to hold the bridge.
-from . import cookies as _auth_cookies
-from . import psidts_recovery as _psidts_recovery
-
 # ``CHANNEL_BROWSERS`` and the launch-failure triage live in the
 # ``browser_launch_errors`` leaf (ADR-0008). ``CHANNEL_BROWSERS`` is re-exported
-# below because this module has always been its import site for the CLI adapter
-# (``cli/services/playwright_login.py``) and the launch banner.
+# below because the capture implementation consumes it directly and existing
+# private importers may still resolve it here. CLI discovery uses the auth facade.
 from .browser_launch_errors import CHANNEL_BROWSERS, classify_launch_failure
 
-# ``app_host_scope_note`` owns the both-personal-hosts cookie-scope caveat that
-# every "open the app in your browser" instruction needs (it is appended to the
-# binding-related hints in ``cookie_policy.missing_cookies_hint``). It is
-# re-exported here because ``browser_capture`` is the only ``_auth`` module the
-# CLI-boundary guardrail sanctions as an import site, and the CLI's own
-# cookie-refresh advice (``cli/services/login/cookie_jar.py``) must not grow a
-# second, drifting copy of that caveat.
-from .cookie_policy import app_host_scope_note
-
 # Navigation-failure classification lives in its own pure leaf (ADR-0008); these
-# are re-exported below because this module is the sanctioned CLI import site.
+# remain re-exported below for private compatibility.
 from .navigation_errors import (
     TARGET_CLOSED_ERROR,
     is_navigation_failure,
@@ -72,14 +78,6 @@ from .navigation_errors import (
     is_navigation_race,
     navigation_error_code,
 )
-from .profile_account import DomainSelection
-from .profile_document import ProfileDocument
-from .profile_store import ProfileStore, RemintWriteRequest, ReplaceResult
-
-# The storage-state cookie filter is WRITE-time policy and lives beside the
-# writers applying it (ADR-0033 PR 4.2); re-exported here, the CLI's import site.
-from .storage import _safe_cookie_shape as _safe_cookie_shape
-from .storage import filter_storage_state_cookies_by_domain_policy
 
 if TYPE_CHECKING:
     from playwright.sync_api import BrowserContext, Page
@@ -90,17 +88,15 @@ logger = logging.getLogger(__name__)
 class BrowserCaptureIO(Protocol):
     """Caller-injected sink for the neutral browser-capture core's side effects.
 
-    Identical in shape to the CLI's ``LoginIO`` so the interactive adapter can
-    pass its concrete sink straight through. ``emit`` forwards a presentation
-    line (``*args, **kwargs`` pass through verbatim, incl. ``markup=False``);
-    ``fail`` aborts the flow (the CLI maps it to ``SystemExit`` via
-    ``exit_with_code``); ``run_async`` drives an awaitable to completion.
+    ``emit`` forwards a presentation line (``*args, **kwargs`` pass through
+    verbatim, incl. ``markup=False``); ``fail`` aborts the flow according to the
+    injected adapter. First-party interactive callers arrive through the auth
+    facade's private callback bridge, not through a direct CLI import.
 
     Note: :func:`run_browser_capture` itself never calls ``run_async`` — only
-    the adapter's post-capture ``repair_playwright_account_metadata`` does.
-    ``run_async`` stays on this Protocol purely to keep it shape-compatible with
-    ``LoginIO``. Non-interactive sinks that never reach account-metadata repair
-    can provide a trivial or loudly-failing implementation.
+    post-capture app orchestration drives account repair. ``run_async`` remains
+    on this private Protocol for structural compatibility; first-party capture
+    bridges provide a loudly failing implementation.
     """
 
     def emit(self, *args: Any, **kwargs: Any) -> None: ...
@@ -812,8 +808,9 @@ def run_browser_capture(
     include_domains = plan.include_domains
 
     # Fail fast with the install hint when the ``browser`` extra is absent. The
-    # CLI adapter runs this earlier (before its banner); calling it again here
-    # is cheap and keeps the contract intact for any direct ``_auth`` caller.
+    # app flow reaches the facade's availability capability earlier (before its
+    # banner); calling it again here is cheap and keeps the contract intact for
+    # any private caller.
     ensure_playwright_available(io, browser=browser)
     from playwright.sync_api import Error as PlaywrightError
     from playwright.sync_api import TimeoutError as PlaywrightTimeout
@@ -1407,13 +1404,13 @@ def run_cdp_capture(
 
 
 # What is NOT here, and why. This list was hand-simulating a package interface:
-# several entries existed only so a CLI caller had one sanctioned import site for
-# a name defined in some other ``_auth`` leaf. ADR-0033 PR 4.1 absorbed two of
+# several entries once existed only so callers had one import site for a name
+# defined in another leaf. ADR-0033 PR 4.1 absorbed two of
 # those leaves, so ``log_observed_navigations`` / ``safe_page_url`` / ``trace_url``
 # (login-wait tracing) and ``heal_captured_state`` are now ordinary definitions of
 # this module with no consumer outside it — nothing re-exports them, so they are
 # not advertised here. The entries that remain are either owned here or are the
-# deliberate one-import-site re-exports annotated below.
+# compatibility re-exports annotated below.
 __all__ = [
     "BROWSER_CLOSED_HELP",
     "CHANNEL_BROWSERS",
@@ -1425,12 +1422,9 @@ __all__ = [
     "BrowserCapturePlan",
     "CaptureResult",
     "accepted_login_hosts",
-    # Re-exported from the cookie_policy leaf so the CLI's cookie-refresh advice
-    # shares one copy of the both-hosts scope caveat (see the import comment).
+    # Re-exported from the cookie_policy leaf for private compatibility.
     "app_host_scope_note",
-    # Re-exported from the browser_launch_errors leaf: browser_capture is the
-    # only _auth module the CLI-boundary guardrail sanctions, so CLI-side
-    # callers (the --master-token bootstrap) must reach it through here.
+    # Re-exported from the browser_launch_errors leaf for private compatibility.
     "classify_launch_failure",
     "connection_error_help",
     "ensure_playwright_available",

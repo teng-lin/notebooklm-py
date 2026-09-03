@@ -30,8 +30,10 @@ from notebooklm._web.sources.drive_import import (
     DriveFetcher,
     DriveImportService,
     DriveRef,
+    _default_streaming_client,
     _filename_from_disposition,
     _find_confirm_params,
+    _read_capped_text,
     extract_drive_file_id,
     parse_drive_ref,
 )
@@ -574,3 +576,224 @@ class TestDriveImportService:
         with pytest.raises(ValidationError):
             await service.add_drive_file("nb_1", "not-a-valid-id")
         assert fetched is False
+
+
+# ---------------------------------------------------------------------------
+# _filename_from_disposition — RFC 5987 precedence and misses
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("disposition", "expected"),
+    [
+        pytest.param('attachment; filename="paper.pdf"', "paper.pdf", id="quoted"),
+        pytest.param("attachment; filename=paper.pdf", "paper.pdf", id="unquoted"),
+        pytest.param("ATTACHMENT; FILENAME=paper.pdf", "paper.pdf", id="case-insensitive"),
+        pytest.param(
+            "attachment; filename=\"ascii.pdf\"; filename*=UTF-8''r%C3%A9sum%C3%A9.pdf",
+            "résumé.pdf",
+            id="rfc5987-wins-over-plain",
+        ),
+        pytest.param(
+            "attachment; filename*=UTF-8'en'file%20name.pdf",
+            "file name.pdf",
+            id="rfc5987-with-language-tag",
+        ),
+        pytest.param("", "", id="empty-header"),
+        pytest.param("attachment", "", id="no-filename-parameter"),
+        pytest.param("inline", "", id="inline-without-filename"),
+    ],
+)
+def test_filename_from_disposition(disposition: str, expected: str) -> None:
+    assert _filename_from_disposition(disposition) == expected
+
+
+# ---------------------------------------------------------------------------
+# _read_capped_text — never buffer more than the sniff cap
+# ---------------------------------------------------------------------------
+
+
+class _BodyOnly:
+    """Minimal response exposing only the streamed-body surface."""
+
+    def __init__(self, body: bytes, chunk: int) -> None:
+        self._body = body
+        self._chunk = chunk
+        self.chunks_yielded = 0
+
+    async def aiter_bytes(self, chunk_size: int = 65536) -> Any:
+        del chunk_size
+        for start in range(0, len(self._body), self._chunk):
+            self.chunks_yielded += 1
+            yield self._body[start : start + self._chunk]
+
+
+@pytest.mark.asyncio
+async def test_a_short_body_is_read_whole() -> None:
+    response = _BodyOnly(b"<html>hi</html>", chunk=4)
+
+    assert await _read_capped_text(response, 1024) == "<html>hi</html>"
+
+
+@pytest.mark.asyncio
+async def test_reading_stops_at_the_cap_without_pulling_a_whole_extra_chunk() -> None:
+    """A body far larger than the cap must not drag in another 64 KiB."""
+    response = _BodyOnly(b"x" * 4096, chunk=1000)
+
+    text = await _read_capped_text(response, 1500)
+
+    assert len(text) == 1500
+    # 1000 + 1000 sliced to 1500 — the third chunk is never requested.
+    assert response.chunks_yielded == 2
+
+
+@pytest.mark.asyncio
+async def test_a_body_exactly_at_the_cap_stops_without_another_read() -> None:
+    response = _BodyOnly(b"y" * 2000, chunk=1000)
+
+    text = await _read_capped_text(response, 2000)
+
+    assert len(text) == 2000
+    assert response.chunks_yielded == 2
+
+
+@pytest.mark.asyncio
+async def test_undecodable_bytes_degrade_rather_than_raise() -> None:
+    """The sniff only needs to classify; a decode error must not fail the fetch."""
+    response = _BodyOnly(b"\xff\xfe<html>", chunk=16)
+
+    assert "<html>" in await _read_capped_text(response, 1024)
+
+
+# ---------------------------------------------------------------------------
+# _reject_oversize_header — the pre-body size gate
+# ---------------------------------------------------------------------------
+
+
+def _header_only(headers: dict[str, str]) -> Any:
+    return httpx.Response(200, headers=headers)
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        pytest.param({}, id="no-content-length"),
+        pytest.param({"content-length": "not-a-number"}, id="non-numeric"),
+        pytest.param({"content-length": "1024"}, id="under-cap"),
+    ],
+)
+def test_an_unusable_or_small_content_length_passes_the_size_gate(
+    headers: dict[str, str],
+) -> None:
+    """An unreadable header is not treated as over-cap; the stream cap still applies."""
+    fetcher = _fetcher(max_bytes=2048)
+
+    fetcher._reject_oversize_header(_header_only(headers), _FILE_ID)
+
+
+def test_a_declared_size_over_the_cap_is_refused_before_the_body() -> None:
+    fetcher = _fetcher(max_bytes=1024)
+
+    with pytest.raises(ValidationError, match="over the"):
+        fetcher._reject_oversize_header(_header_only({"content-length": "2048"}), _FILE_ID)
+
+
+@pytest.mark.asyncio
+async def test_a_non_html_client_error_is_a_hard_caller_error(tmp_path: Path) -> None:
+    """A 403/404 that is not the HTML interstitial cannot be retried into success."""
+    response = _FakeResponse(
+        status_code=403,
+        headers={"content-type": "application/octet-stream"},
+    )
+
+    with pytest.raises(ValidationError, match="confirm the"):
+        await _fetcher(response, temp_dir=tmp_path)(DriveRef(_FILE_ID))
+
+
+# ---------------------------------------------------------------------------
+# _drain_to_temp — the writer thread's failure surfaces to the caller
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_writer_thread_failure_is_reraised_on_the_event_loop(
+    tmp_path: Path,
+) -> None:
+    """The write happens off-loop, so its exception has to be carried back.
+
+    A directory at the destination makes ``open(..., "wb")`` fail
+    deterministically inside the writer thread. Without the one-slot exception
+    box the caller would see a silent truncated download instead.
+
+    The assertion is on ``OSError``, not a specific subclass: POSIX raises
+    ``IsADirectoryError`` and Windows raises ``PermissionError`` for the same
+    call. Which errno the platform picks is not the contract — that the
+    writer's failure reaches the caller at all is.
+    """
+    fetcher = _fetcher(temp_dir=tmp_path)
+    destination = tmp_path / "occupied-by-a-directory"
+    destination.mkdir()
+    response = _BodyOnly(b"x" * 64, chunk=8)
+
+    with pytest.raises(OSError):
+        await fetcher._drain_to_temp(response, destination, "paper.pdf")
+
+
+@pytest.mark.asyncio
+async def test_the_producer_stops_feeding_a_failed_writer(tmp_path: Path) -> None:
+    """It must not keep draining the response into a queue nobody reads."""
+    fetcher = _fetcher(temp_dir=tmp_path)
+    destination = tmp_path / "occupied"
+    destination.mkdir()
+    # Far more chunks than the writer queue holds, so the producer would block
+    # forever if it did not observe ``writer_failed``.
+    response = _BodyOnly(b"y" * 8192, chunk=16)
+
+    with pytest.raises(OSError):
+        await asyncio.wait_for(
+            fetcher._drain_to_temp(response, destination, "paper.pdf"), timeout=10
+        )
+    # Not a ValidationError from the cap or the empty-body guard — the writer's
+    # own failure is what surfaced.
+
+    assert response.chunks_yielded < 8192 // 16
+
+
+@pytest.mark.asyncio
+async def test_an_empty_body_is_refused_rather_than_written_as_a_zero_byte_file(
+    tmp_path: Path,
+) -> None:
+    fetcher = _fetcher(temp_dir=tmp_path)
+    destination = tmp_path / "out.bin"
+
+    with pytest.raises(ValidationError, match="0 bytes"):
+        await fetcher._drain_to_temp(_BodyOnly(b"", chunk=8), destination, "paper.pdf")
+
+
+@pytest.mark.asyncio
+async def test_a_body_over_the_cap_aborts_mid_stream(tmp_path: Path) -> None:
+    """The cap is enforced producer-side, before the bytes reach disk."""
+    fetcher = _fetcher(max_bytes=64, temp_dir=tmp_path)
+    destination = tmp_path / "out.bin"
+    response = _BodyOnly(b"z" * 4096, chunk=32)
+
+    with pytest.raises(ValidationError, match="cap"):
+        await fetcher._drain_to_temp(response, destination, "paper.pdf")
+
+    assert response.chunks_yielded < 4096 // 32
+
+
+@pytest.mark.asyncio
+async def test_the_default_streaming_client_revalidates_every_redirect_hop() -> None:
+    """Redirects ARE followed — the #1521 protection is the per-hop event hook.
+
+    Auto-follow without that hook is the SSRF shape the hook exists to close,
+    so the two must be asserted together rather than assuming "no redirects".
+    """
+    client = _default_streaming_client(httpx.Cookies(), httpx.Timeout(30.0))
+
+    try:
+        assert client.follow_redirects is True
+        assert client.event_hooks["response"], "no redirect-revalidation hook installed"
+    finally:
+        await client.aclose()

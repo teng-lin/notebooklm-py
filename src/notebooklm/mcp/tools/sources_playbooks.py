@@ -47,8 +47,8 @@ def register(mcp: Any) -> None:
         be added), plus ``cover_url`` / ``store_url``. Empty for an account with no
         Play Books library. Web backend only.
         """
-        client = get_client(ctx)
         with mcp_errors():
+            client = await get_client(ctx)
             books = await fetch_play_books(client)
             page, meta = paginate([play_book_summary(b) for b in books], limit, offset)
             return {"play_books": page, **meta}
@@ -67,8 +67,8 @@ def register(mcp: Any) -> None:
         name or ID. Reads back as an ``expert_intelligence`` source. Processed
         asynchronously; pass ``wait=true`` to block until READY. Web backend only.
         """
-        client = get_client(ctx)
         with mcp_errors():
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             result = await execute_source_add_play_book(
                 client,

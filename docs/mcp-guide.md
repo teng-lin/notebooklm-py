@@ -614,7 +614,9 @@ gate the destructive ones.
 ## Troubleshooting
 
 - **`AUTH` errors / "not authenticated".** Run `notebooklm login` (or `notebooklm -p <profile> login`)
-  in a terminal, then restart the server. Check with the `server_info` tool, which reports auth health.
+  in a terminal. If the server never managed to authenticate, no restart is needed: it starts opening
+  its client in the background at startup and retries a failed open on the next tool call, so it picks
+  up the refreshed credentials. Check with the `server_info` tool, which reports auth health.
 - **`uvx` / `uv` not found.** Install uv: `curl -LsSf https://astral.sh/uv/install.sh | sh` (macOS/Linux)
   or `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"` (Windows). The desktop launcher also
   searches common install dirs beyond `PATH`.
@@ -630,6 +632,11 @@ gate the destructive ones.
   `NOTEBOOKLM_PROFILE`. See [configuration.md](configuration.md#multiple-accounts).
 - **`RATE_LIMITED`.** NotebookLM enforces per-account quotas; the error is `retriable=true` — back off
   and retry.
+- **`CONNECT_TIMEOUT` / "connection timed out after 30000ms" on connect.** Fixed: the server used to
+  finish Google's auth round-trip before answering the MCP handshake, so slow or rate-limited auth
+  looked like a dead server. The client is now opened lazily in the background — the handshake answers
+  immediately and auth problems arrive as `AUTH` tool errors instead. Upgrade the server if you still
+  see it. See [troubleshooting.md](troubleshooting.md#mcp-server-connect_timeout-on-connect-connection-timed-out-after-30000ms).
 
 ## See also
 

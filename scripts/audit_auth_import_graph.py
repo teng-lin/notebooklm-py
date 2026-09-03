@@ -12,12 +12,22 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_AUTH_DIR = REPO_ROOT / "src" / "notebooklm" / "_auth"
+DEFAULT_PACKAGE_PREFIX = "notebooklm._auth"
 
 
 class _ImportCollector(ast.NodeVisitor):
-    def __init__(self, source: str, nodes: set[str]) -> None:
+    def __init__(
+        self,
+        source: str,
+        nodes: set[str],
+        *,
+        package_prefix: str = DEFAULT_PACKAGE_PREFIX,
+        include_external: bool = False,
+    ) -> None:
         self.source = source
         self.nodes = nodes
+        self.package_prefix = package_prefix
+        self.include_external = include_external
         self.function_depth = 0
         self.edges: set[tuple[str, str, str]] = set()
 
@@ -26,7 +36,8 @@ class _ImportCollector(ast.NodeVisitor):
         return "function" if self.function_depth else "module"
 
     def _add(self, target: str) -> None:
-        if target in self.nodes and target != self.source:
+        is_local = target in self.nodes
+        if (is_local or self.include_external) and target != self.source:
             self.edges.add((self.source, target, self.scope))
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
@@ -38,9 +49,11 @@ class _ImportCollector(ast.NodeVisitor):
 
     def visit_Import(self, node: ast.Import) -> None:
         for item in node.names:
-            prefix = "notebooklm._auth."
+            prefix = f"{self.package_prefix}."
             if item.name.startswith(prefix):
                 self._add(item.name[len(prefix) :].split(".", 1)[0])
+            elif self.include_external and item.name.startswith("notebooklm."):
+                self._add(item.name.removeprefix("notebooklm."))
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         module = node.module or ""
@@ -51,13 +64,29 @@ class _ImportCollector(ast.NodeVisitor):
                 for item in node.names:
                     self._add(item.name.split(".", 1)[0])
             return
+        if node.level == 2 and self.include_external:
+            if module == "_auth":
+                for item in node.names:
+                    self._add(f"_auth.{item.name.split('.', 1)[0]}")
+            elif module:
+                self._add(module)
+            else:
+                for item in node.names:
+                    self._add(item.name.split(".", 1)[0])
+            return
         if node.level:
             return
-        if module == "notebooklm._auth":
+        if module == self.package_prefix:
             for item in node.names:
                 self._add(item.name.split(".", 1)[0])
-        elif module.startswith("notebooklm._auth."):
-            self._add(module.removeprefix("notebooklm._auth.").split(".", 1)[0])
+        elif module.startswith(f"{self.package_prefix}."):
+            self._add(module.removeprefix(f"{self.package_prefix}.").split(".", 1)[0])
+        elif self.include_external:
+            if module == "notebooklm":
+                for item in node.names:
+                    self._add(item.name.split(".", 1)[0])
+            elif module.startswith("notebooklm."):
+                self._add(module.removeprefix("notebooklm."))
 
 
 def _strong_components(nodes: set[str], edges: set[tuple[str, str]]) -> list[list[str]]:
@@ -101,7 +130,11 @@ def _strong_components(nodes: set[str], edges: set[tuple[str, str]]) -> list[lis
 
 
 def build_projection(
-    auth_dir: Path = DEFAULT_AUTH_DIR, *, repo_root: Path = REPO_ROOT
+    auth_dir: Path = DEFAULT_AUTH_DIR,
+    *,
+    repo_root: Path = REPO_ROOT,
+    package_prefix: str = DEFAULT_PACKAGE_PREFIX,
+    include_external: bool = False,
 ) -> dict[str, object]:
     """Build the deterministic module/edge/SCC projection for a direct package directory."""
     paths = sorted(auth_dir.glob("*.py"))
@@ -115,15 +148,22 @@ def build_projection(
         except ValueError:
             relative = path.as_posix()
         modules.append({"name": path.stem, "path": relative, "lines": len(text.splitlines())})
-        collector = _ImportCollector(path.stem, nodes)
+        collector = _ImportCollector(
+            path.stem,
+            nodes,
+            package_prefix=package_prefix,
+            include_external=include_external,
+        )
         collector.visit(ast.parse(text, filename=str(path)))
         all_edges.update(collector.edges)
     edges = [
         {"source": source, "target": target, "scope": scope}
         for source, target, scope in sorted(all_edges)
     ]
-    module_pairs = {(s, t) for s, t, scope in all_edges if scope == "module"}
-    all_pairs = {(s, t) for s, t, _scope in all_edges}
+    module_pairs = {
+        (s, t) for s, t, scope in all_edges if scope == "module" and s in nodes and t in nodes
+    }
+    all_pairs = {(s, t) for s, t, _scope in all_edges if s in nodes and t in nodes}
     return {
         "version": 1,
         "modules": modules,
@@ -145,11 +185,17 @@ def build_projection(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--auth-dir", type=Path, default=DEFAULT_AUTH_DIR)
+    parser.add_argument("--package-prefix", default=DEFAULT_PACKAGE_PREFIX)
+    parser.add_argument("--include-external", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     if not args.auth_dir.is_dir():
         parser.error(f"not a directory: {args.auth_dir}")
-    projection = build_projection(args.auth_dir)
+    projection = build_projection(
+        args.auth_dir,
+        package_prefix=args.package_prefix,
+        include_external=args.include_external,
+    )
     if args.json:
         json.dump(projection, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")

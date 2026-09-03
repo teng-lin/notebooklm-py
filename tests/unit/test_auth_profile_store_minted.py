@@ -17,7 +17,7 @@ import pytest
 
 import notebooklm.auth as public_auth
 from notebooklm import _auth
-from notebooklm._auth import master_token, profile_store, storage, storage_writer
+from notebooklm._auth import master_token, profile_store, storage
 from notebooklm._auth.cookie_types import Cookie, CookieJar
 from notebooklm._auth.profile_document import ProfileDocument
 from notebooklm._auth.profile_store import (
@@ -178,7 +178,6 @@ def test_request_shape_validation_redaction_and_non_exports_are_exact() -> None:
             MintedSessionWriteRequest(invalid, None)  # type: ignore[arg-type]
 
     assert "MintedSessionWriteRequest" not in storage.__all__
-    assert not hasattr(storage_writer, "MintedSessionWriteRequest")
     assert not hasattr(public_auth, "MintedSessionWriteRequest")
     assert not hasattr(_auth, "MintedSessionWriteRequest")
 

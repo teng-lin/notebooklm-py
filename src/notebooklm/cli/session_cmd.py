@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 import click
 import httpx
 
+from .._app.login_browser import BrowserLoginPlan, browser_login_channels
 from .._app.views import notebook_viewed_keys
 from ..auth import MasterTokenError as _MasterTokenError
 from ..exceptions import AuthError, NotebookNotFoundError
@@ -72,12 +73,6 @@ from .services.login import (
 from .services.login import cookie_domains as _cookie_domains
 from .services.login.exceptions import LoginConfigurationError
 from .services.login.outcomes import BrowserCookieOutcome, NetworkFailure
-from .services.playwright_login import (
-    CHANNEL_BROWSERS as _CHANNEL_BROWSERS,
-)
-from .services.playwright_login import (
-    PlaywrightLoginPlan,
-)
 from .services.session_context import (
     UseNotebookResult,
     execute_logout,
@@ -89,6 +84,8 @@ if TYPE_CHECKING:
     from ..client import NotebookLMClient
 
 logger = logging.getLogger(__name__)
+
+_CHANNEL_BROWSERS = dict(browser_login_channels())
 
 
 async def fetch_tokens_with_domains(*args: Any, **kwargs: Any) -> Any:
@@ -129,7 +126,7 @@ def _run_playwright_login(
     browser_timeout: int = 300,
 ) -> None:
     """Backward-compat wrapper around :func:`run_login`."""
-    plan = PlaywrightLoginPlan(
+    plan = BrowserLoginPlan(
         browser=browser,
         browser_profile=browser_profile,
         storage_path=storage_path,

@@ -196,6 +196,14 @@ capture) is driven by the CLI. Both produce the same session jar and persist
 through the same writer. What crosses the facade boundary is the shared
 vocabulary — types and named tier operations — never a mode's internals.
 
+**Amended 2026-09-02:** ADR-0036 applies that principle without reviving the
+deferred Stage-5 mode-package rewrite inside `_auth`. Browser acquisition is a
+separate `_browser` implementation package; interactive ordering is
+`_app/login_browser.py`; and first-party consumers receive only five coarse
+lazy operations plus two canonical policy aliases through `auth.py`. Browser
+plan/result/protocol types remain private to their owners and never cross the
+facade.
+
 ## Consequences
 
 - A protocol change to Google's rotation contract now lands in one place;

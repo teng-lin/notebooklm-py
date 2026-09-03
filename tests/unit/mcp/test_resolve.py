@@ -28,6 +28,7 @@ from notebooklm.exceptions import (  # noqa: E402 - after importorskip guard
     ValidationError,
 )
 from notebooklm.mcp._resolve import (  # noqa: E402 - after importorskip guard
+    partition_source_refs,
     resolve_artifact,
     resolve_note,
     resolve_notebook,
@@ -597,3 +598,16 @@ async def test_strict_off_still_resolves_names() -> None:
     """Without the env var, name resolution is unchanged (the default contract)."""
     client = _client(notebooks=[_NB(FULL_A, "Alpha")])
     assert await resolve_notebook(client, "Alpha") == FULL_A
+
+
+def test_partition_source_refs_unknown_uuid_is_not_found_not_trusted() -> None:
+    resolved, missing = partition_source_refs([FULL_A, FULL_B], [_Src(FULL_A, "Alpha")])
+    assert resolved == [FULL_A]
+    assert missing == [{"source_id": FULL_B, "error": str(SourceNotFoundError(FULL_B))}]
+
+
+def test_partition_source_refs_missing_title_does_not_abort_siblings() -> None:
+    resolved, missing = partition_source_refs(["Alpha", "Nope"], [_Src(FULL_A, "Alpha")])
+    assert resolved == [FULL_A]
+    assert len(missing) == 1
+    assert missing[0]["source_id"] == "Nope"

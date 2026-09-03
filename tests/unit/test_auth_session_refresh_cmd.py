@@ -27,8 +27,8 @@ import pytest
 
 import notebooklm._auth.refresh as refresh_mod
 import notebooklm._auth.session as session_mod
-from notebooklm._auth.headless_reauth import HeadlessReauthResult, HeadlessReauthStatus
 from notebooklm._auth.session import refresh_auth_session
+from notebooklm._browser.headless_reauth import HeadlessReauthResult, HeadlessReauthStatus
 from notebooklm.auth import AuthTokens
 
 REFRESH_HTML = '"SNlM0e":"new_csrf_token_123" "FdrFJe":"new_session_id_456"'
@@ -323,7 +323,7 @@ async def test_midsession_ladder_skips_rung_without_opt_in(
     _patch_refresh_cmd_machinery(monkeypatch, calls, heal=state)
 
     # L3/L4 are unavailable so the dead-cookie ValueError stands when L2.5 is off.
-    import notebooklm._auth.headless_reauth as hr
+    import notebooklm._browser.headless_reauth as hr
 
     monkeypatch.setattr(
         hr,

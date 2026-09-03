@@ -250,7 +250,6 @@ def register(mcp: Any) -> None:
           no match is NOT_FOUND. ``limit`` / ``offset`` / ``detail`` are ignored with
           ``item``; ``kind`` scopes resolution.
         """
-        client = get_client(ctx)
         with mcp_errors():
             # Validate pagination bounds unconditionally (inside ``mcp_errors`` so
             # the VALIDATION wire-contract applies) — ``studio_list(item=x,
@@ -262,6 +261,7 @@ def register(mcp: Any) -> None:
             # ``kind`` is a ``Literal`` — FastMCP/Pydantic rejects an unknown value at
             # the schema boundary, so no runtime membership check is needed (same as
             # ``studio_generate``'s ``artifact_type``).
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             if item is not None:
                 # Single fetch by ref over the merged list; the resolved item's full
@@ -418,7 +418,6 @@ def register(mcp: Any) -> None:
         (including ``mind-map``). ``language`` (optional) is a language code,
         e.g. ``en``/``ja``/``zh_Hans``.
         """
-        client = get_client(ctx)
         with mcp_errors():
             # Tolerate ``source_ids`` sent as a JSON-array string / comma string /
             # scalar (some MCP clients + LLM tool-callers do); normalize to a
@@ -478,6 +477,7 @@ def register(mcp: Any) -> None:
                     )
                 overrides[key] = value
 
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             # Resolve each source ref the same way every other source-accepting tool
             # does (full-UUID fast-path, 12-char prefix, exact title) instead of
@@ -527,8 +527,8 @@ def register(mcp: Any) -> None:
         ``url`` / ``error`` / ``is_complete`` / ``media_ready``; poll until done. A
         pending ``url`` is provisional — trust it only if ``media_ready``.
         """
-        client = get_client(ctx)
         with mcp_errors():
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             status = await artifact_core.poll_artifact(client, nb_id, task_id)
             view = artifact_core.status_view(status)
@@ -565,8 +565,8 @@ def register(mcp: Any) -> None:
         connector an explicit ``artifact_id`` (and ``output_format``) is validated up
         front — an unknown/ambiguous id fails immediately, not as a 400 when opened.
         """
-        client = get_client(ctx)
         with mcp_errors():
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             # Title of the resolved target, when known cheaply (the ref path and the
             # explicit-id pre-validation both already list, so they capture it) —
@@ -773,9 +773,9 @@ def register(mcp: Any) -> None:
         Returns ``item_id`` / ``type`` plus the applied ``new_title`` and
         ``is_mind_map``.
         """
-        client = get_client(ctx)
         with mcp_errors():
             item = item.strip()
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             try:
                 resolved = await resolve_studio_item(client, nb_id, item)
@@ -830,8 +830,8 @@ def register(mcp: Any) -> None:
         ``status``; poll ``studio_status(notebook, task_id)`` until complete. A
         synchronous refusal (rate limit / quota / not-retryable) surfaces as an error.
         """
-        client = get_client(ctx)
         with mcp_errors():
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             art_id = await resolve_artifact(client, nb_id, artifact)
             try:
@@ -913,9 +913,9 @@ def register(mcp: Any) -> None:
         full id is idempotent (no error) — it routes down the artifact path (a
         present note would have been found in the list).
         """
-        client = get_client(ctx)
         with mcp_errors():
             item = item.strip()
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             try:
                 resolved = await resolve_studio_item(client, nb_id, item)

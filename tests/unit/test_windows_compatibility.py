@@ -17,10 +17,10 @@ from unittest.mock import patch
 
 import pytest
 
-from notebooklm._auth.browser_capture import (
+from notebooklm._browser.browser_capture import (
     sync_playwright_context as _sync_playwright_context,
 )
-from notebooklm.cli.services.playwright_login import (
+from notebooklm._browser.browser_capture import (
     windows_playwright_event_loop as _windows_playwright_event_loop,
 )
 

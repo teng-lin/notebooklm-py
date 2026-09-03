@@ -445,6 +445,18 @@ class SourcesAPI(ABC):
         """Delete a source from a notebook."""
         raise NotImplementedError
 
+    async def delete_many(self, notebook_id: str, source_ids: Sequence[str]) -> None:
+        """Delete sources. Default: one :meth:`delete` per id.
+
+        Web overrides this with a single ``DELETE_SOURCE`` RPC
+        (``[[[id1], [id2], ...]]``). An empty ``source_ids`` is a no-op.
+        Unknown ids are a silent no-op on the backend — callers that need
+        ``not_found`` must resolve against a source-list snapshot first.
+        """
+        ids = list(dict.fromkeys(source_ids))
+        for sid in ids:
+            await self.delete(notebook_id, sid)
+
     @abstractmethod
     async def rename(
         self,

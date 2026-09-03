@@ -19,6 +19,7 @@ import pytest
 pytest.importorskip("fastmcp")
 
 from notebooklm.mcp import _uploadwidget  # noqa: E402
+from notebooklm.mcp._clientprovider import ClientProvider  # noqa: E402
 from notebooklm.mcp._filelink import (  # noqa: E402
     UPLOAD_TTL,
     WIDGET_UPLOAD_TTL,
@@ -159,7 +160,9 @@ async def test_widget_tool_returns_single_use_token_pool(monkeypatch) -> None:
     monkeypatch.setattr(_uploadwidget, "resolve_notebook", AsyncMock(return_value="nb-123"))
     ctx = SimpleNamespace(
         request_context=SimpleNamespace(
-            lifespan_context=SimpleNamespace(client=MagicMock(), file_transfer=cfg)
+            lifespan_context=SimpleNamespace(
+                client_provider=ClientProvider.of(MagicMock()), file_transfer=cfg
+            )
         )
     )
 
@@ -184,7 +187,9 @@ async def test_widget_tool_returns_auto_confirm_contract(monkeypatch) -> None:
     monkeypatch.setattr(_uploadwidget, "resolve_notebook", AsyncMock(return_value="nb-123"))
     ctx = SimpleNamespace(
         request_context=SimpleNamespace(
-            lifespan_context=SimpleNamespace(client=MagicMock(), file_transfer=cfg)
+            lifespan_context=SimpleNamespace(
+                client_provider=ClientProvider.of(MagicMock()), file_transfer=cfg
+            )
         )
     )
 
@@ -210,7 +215,9 @@ async def test_widget_pool_tokens_carry_the_longer_widget_ttl(monkeypatch) -> No
     monkeypatch.setattr(_uploadwidget, "resolve_notebook", AsyncMock(return_value="nb-123"))
     ctx = SimpleNamespace(
         request_context=SimpleNamespace(
-            lifespan_context=SimpleNamespace(client=MagicMock(), file_transfer=cfg)
+            lifespan_context=SimpleNamespace(
+                client_provider=ClientProvider.of(MagicMock()), file_transfer=cfg
+            )
         )
     )
 

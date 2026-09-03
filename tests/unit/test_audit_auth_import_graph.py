@@ -57,6 +57,35 @@ def test_resolves_relative_absolute_aliased_and_package_imports(audit, tmp_path)
     assert result["modules"][0]["name"] == "__init__"
 
 
+def test_parameterized_package_records_external_notebooklm_edges(audit, tmp_path):
+    browser_dir = tmp_path / "src" / "notebooklm" / "_browser"
+    browser_dir.mkdir(parents=True)
+    (browser_dir / "capture.py").write_text(
+        "from . import errors\n"
+        "from .._auth import storage\n"
+        "from .._auth.cookie_policy import app_host_scope_note\n"
+        "from notebooklm import paths\n"
+        "def lazy():\n    from notebooklm.exceptions import AuthError\n",
+        encoding="utf-8",
+    )
+    (browser_dir / "errors.py").write_text("class Error(Exception):\n    pass\n", encoding="utf-8")
+
+    result = audit.build_projection(
+        browser_dir,
+        repo_root=tmp_path,
+        package_prefix="notebooklm._browser",
+        include_external=True,
+    )
+
+    assert result["edges"] == [
+        {"source": "capture", "target": "_auth.cookie_policy", "scope": "module"},
+        {"source": "capture", "target": "_auth.storage", "scope": "module"},
+        {"source": "capture", "target": "errors", "scope": "module"},
+        {"source": "capture", "target": "exceptions", "scope": "function"},
+        {"source": "capture", "target": "paths", "scope": "module"},
+    ]
+
+
 def test_scope_duplicate_self_and_scc_rules(audit, tmp_path):
     result = _project(
         audit,
@@ -91,10 +120,10 @@ def test_scope_duplicate_self_and_scc_rules(audit, tmp_path):
 def test_live_projection_is_the_frozen_scorecard(audit):
     result = audit.build_projection()
     assert result["summary"] == {
-        "modules": 42,
-        "total_lines": 16653,
-        "unique_edges": 143,
-        "module_edges": 131,
+        "modules": 33,
+        "total_lines": 13915,
+        "unique_edges": 127,
+        "module_edges": 115,
         "function_local_edges": 12,
     }
     assert result["sccs"] == {
@@ -125,7 +154,6 @@ def test_live_projection_is_the_frozen_scorecard(audit):
     assert {edge for edge in edges if "profile_account" in edge[:2]} == {
         ("account_email", "profile_account", "module"),
         ("account_repair", "profile_account", "module"),
-        ("browser_capture", "profile_account", "module"),
         ("profile_account", "cookie_types", "module"),
         ("profile_document", "profile_account", "module"),
         ("profile_migration", "profile_account", "module"),
@@ -135,7 +163,6 @@ def test_live_projection_is_the_frozen_scorecard(audit):
     }
     assert {edge for edge in edges if "profile_document" in edge[:2]} == {
         ("account_email", "profile_document", "module"),
-        ("browser_capture", "profile_document", "module"),
         ("cookie_merge", "profile_document", "module"),
         ("profile_migration", "profile_document", "module"),
         ("psidts_recovery", "profile_document", "module"),
@@ -201,7 +228,6 @@ def test_live_projection_is_the_frozen_scorecard(audit):
     assert {edge for edge in edges if "profile_store" in edge[:2]} == {
         ("account_email", "profile_store", "module"),
         ("account_repair", "profile_store", "module"),
-        ("browser_capture", "profile_store", "module"),
         ("master_token", "profile_store", "module"),
         ("master_token_bootstrap", "profile_store", "module"),
         ("profile_migration", "profile_store", "module"),
@@ -262,7 +288,7 @@ def test_live_projection_is_the_frozen_scorecard(audit):
         ("recovery", "cookies", "module"),
         ("recovery", "extraction", "function"),
         ("recovery", "extraction", "module"),
-        ("recovery", "headless_reauth", "function"),
+        ("recovery", "recovery_rungs", "function"),
         ("recovery", "master_token", "function"),
         ("recovery", "paths", "module"),
         ("recovery", "profile_migration", "function"),
@@ -273,9 +299,10 @@ def test_live_projection_is_the_frozen_scorecard(audit):
         ("refresh", "recovery", "module"),
         ("session", "recovery", "module"),
     }
+    assert {edge for edge in edges if "recovery_rungs" in edge[:2]} == {
+        ("recovery", "recovery_rungs", "function"),
+    }
     assert {edge for edge in edges if "psidts_recovery" in edge[:2]} == {
-        ("browser_capture", "psidts_recovery", "module"),
-        ("browser_cookie_recovery", "psidts_recovery", "module"),
         ("cookies", "psidts_recovery", "function"),
         ("psidts_recovery", "cookie_merge", "module"),
         ("psidts_recovery", "cookie_policy", "module"),
