@@ -418,52 +418,18 @@ class WebSourcesAPI(SourcesAPI):
                 logger=logger,
             )
 
-    async def add_file(
+    async def _send_upload(
         self,
         notebook_id: str,
         file_path: str | Path,
-        mime_type: str | None = None,
+        mime_type: str | None,
         *,
-        wait: bool = False,
-        wait_timeout: float = 120.0,
-        title: str | None = None,
-        on_progress: Callable[[int, int], object] | None = None,
+        wait: bool,
+        wait_timeout: float,
+        title: str | None,
+        on_progress: Callable[[int, int], object] | None,
     ) -> Source:
-        """Add a file source to a notebook using Google's resumable upload.
-
-        Registers the source, opens an upload session, streams the file body (memory-efficient for
-        large files), and — if a custom ``title`` is given — issues a follow-up ``UPDATE_SOURCE``
-        rename (the file-add RPC has no title slot). Uploads run under the Sources-owned semaphore
-        (``max_concurrent_uploads``, default 4), which also caps open descriptors; the path is
-        resolved before admission but opened after it, so a swap while queued still lands.
-
-        Args:
-            notebook_id: The notebook ID.
-            file_path: Path to the file to upload.
-            mime_type: Content type for the upload handshake; inferred from the
-                filename extension when omitted.
-            title: Optional display title. When set and different from the
-                filename, a rename is issued after upload (whitespace stripped;
-                empty rejected). A non-default title forces a brief registration
-                wait before the rename even when ``wait=False`` — UPDATE_SOURCE
-                no-ops against an unregistered source (#388); a failed rename is
-                logged and the filename title is kept.
-            wait: If True, wait for the source to be fully ready before returning.
-            wait_timeout: Max seconds to wait if ``wait=True`` (also bounds the
-                narrow registration wait above). Default: 120.
-            on_progress: Optional sync/async ``on_progress(bytes_sent, total)``
-                callback during the upload body; its exceptions abort the upload.
-
-        Returns:
-            The created Source object; if wait=False, status may be PROCESSING.
-
-        Raises:
-            ValidationError: If the path is not a regular file, the title is
-                empty, or the file is an HTML-family type the upload endpoint
-                rejects (convert to text/Markdown/PDF first). A failure *after*
-                registration raises its real type unwrapped, carrying
-                ``source_id`` / ``stage`` attributes naming the retained row.
-        """
+        """Run the web resumable-upload pipeline around shared finalization."""
         return await self._uploader.add_file(
             notebook_id,
             file_path,
@@ -472,6 +438,7 @@ class WebSourcesAPI(SourcesAPI):
             wait_timeout=wait_timeout,
             title=title,
             on_progress=on_progress,
+            finalize_uploaded=SourcesAPI._finalize_uploaded_file,
         )
 
     async def add_drive(

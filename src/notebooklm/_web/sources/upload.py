@@ -7,7 +7,7 @@ import logging
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 from typing import IO, TYPE_CHECKING, Any, Protocol
@@ -29,7 +29,6 @@ from ..._runtime.config import (
     normalize_max_concurrent_uploads,
 )
 from ..._source.polling import SourcePoller
-from ..._types.enums import SourceStatus
 from ...exceptions import (
     AuthError,
     NetworkError,
@@ -100,6 +99,7 @@ from .listing import SourceLister
 
 if TYPE_CHECKING:
     from ..._runtime.call_supervisor import CallSupervisor
+    from ..._sources import _UploadedSourceFinalizer
 
 
 class AuthMetadata(Protocol):
@@ -550,12 +550,9 @@ class SourceUploadPipeline(EpochFenced):
         title: str | None = None,
         on_progress: Callable[[int, int], object] | None = None,
         upload_index: int = 0,
+        finalize_uploaded: _UploadedSourceFinalizer,
     ) -> Source:
         """Add a file while holding admission through reconciliation and rename."""
-        if title is not None:
-            title = title.strip()
-            if not title:
-                raise ValidationError("Title cannot be empty or whitespace-only")
         # Pure argument/MIME rejection stays outside admission. In particular,
         # a drained client must still report an unsupported HTML upload as an
         # input error. The filesystem-backed resolve/stat remains inside the
@@ -575,6 +572,7 @@ class SourceUploadPipeline(EpochFenced):
                 upload_index=upload_index,
                 _mime_type=mime_type,
                 _expected_epoch=epoch,
+                finalize_uploaded=finalize_uploaded,
             )
 
     async def _add_file_admitted(
@@ -589,6 +587,7 @@ class SourceUploadPipeline(EpochFenced):
         upload_index: int = 0,
         _mime_type: str | None,
         _expected_epoch: int,
+        finalize_uploaded: _UploadedSourceFinalizer,
     ) -> Source:
         """Add a file source to a notebook using resumable upload.
 
@@ -669,46 +668,53 @@ class SourceUploadPipeline(EpochFenced):
                 if not handed_off:
                     file_obj.close()
 
-        needs_title_rename = title is not None and title != filename
-        if wait:
-            source = await self.wait_until_ready(
-                notebook_id,
-                source_id,
-                timeout=wait_timeout,
+        async def _wait_until_ready(
+            target_notebook_id: str,
+            target_source_id: str,
+            timeout: float,
+        ) -> Source:
+            return await self.wait_until_ready(
+                target_notebook_id,
+                target_source_id,
+                timeout=timeout,
                 transient_error_types=transient_error_types,
             )
-        elif needs_title_rename:
-            source = await self.wait_until_registered(
-                notebook_id,
-                source_id,
-                timeout=wait_timeout,
+
+        async def _wait_until_registered(
+            target_notebook_id: str,
+            target_source_id: str,
+            timeout: float,
+        ) -> Source:
+            return await self.wait_until_registered(
+                target_notebook_id,
+                target_source_id,
+                timeout=timeout,
                 transient_error_types=transient_error_types,
             )
-        else:
-            source = Source(
-                id=source_id,
-                title=filename,
-                status=SourceStatus.PROCESSING,
-                _type_code=None,
+
+        async def _rename_uploaded(
+            target_notebook_id: str,
+            target_source_id: str,
+            requested_title: str,
+        ) -> str | None:
+            renamed = await self.rename(
+                target_notebook_id,
+                target_source_id,
+                requested_title,
             )
+            return renamed.title if renamed is not None else None
 
-        if needs_title_rename:
-            try:
-                assert title is not None
-                renamed = await self.rename(notebook_id, source_id, title)
-                # ``renamed`` is ``None`` when the rename RPC echoes nothing;
-                # fall back to the requested title (the source was just
-                # uploaded, so it exists — only the echo is absent).
-                source = replace(source, title=(renamed.title if renamed else None) or title)
-            except (RPCError, NetworkError):
-                module_logger.warning(
-                    "Source %s uploaded but rename to %r failed",
-                    source_id,
-                    title,
-                    exc_info=True,
-                )
-
-        return source
+        return await finalize_uploaded(
+            notebook_id,
+            source_id,
+            filename,
+            wait=wait,
+            wait_timeout=wait_timeout,
+            title=title,
+            wait_until_ready=_wait_until_ready,
+            wait_until_registered=_wait_until_registered,
+            rename_uploaded=_rename_uploaded,
+        )
 
     async def register_file_source(
         self,

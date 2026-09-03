@@ -11,7 +11,7 @@ import pytest
 
 from notebooklm._sources import SourcesAPI
 from notebooklm._web.sources import WebSourcesAPI
-from notebooklm.exceptions import RPCError, SourceNotFoundError
+from notebooklm.exceptions import RPCError, SourceNotFoundError, ValidationError
 from notebooklm.types import Source, SourceStatus, SourceType
 
 
@@ -22,6 +22,7 @@ class _ConcreteSources(SourcesAPI):
         self.list_calls: list[
             tuple[str, bool, Collection[SourceStatus] | None, Collection[SourceType] | None]
         ] = []
+        self.upload_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
     async def list(
         self,
@@ -39,10 +40,33 @@ class _ConcreteSources(SourcesAPI):
     async def _unsupported(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
+    async def _send_upload(
+        self,
+        notebook_id: str,
+        file_path: str | Path,
+        mime_type: str | None,
+        *,
+        wait: bool,
+        wait_timeout: float,
+        title: str | None,
+        on_progress: Any,
+    ) -> Source:
+        self.upload_calls.append(
+            (
+                (notebook_id, file_path, mime_type),
+                {
+                    "wait": wait,
+                    "wait_timeout": wait_timeout,
+                    "title": title,
+                    "on_progress": on_progress,
+                },
+            )
+        )
+        return Source(id="uploaded", title=title)
+
     add_url = _unsupported
     search = _unsupported
     add_text = _unsupported
-    add_file = _unsupported
     add_drive = _unsupported
     add_drive_file = _unsupported
     list_play_books = _unsupported
@@ -89,6 +113,48 @@ async def test_get_or_none_propagates_list_failures() -> None:
 
 
 @pytest.mark.asyncio
+async def test_add_file_normalizes_title_and_calls_the_single_upload_hook() -> None:
+    api = _ConcreteSources([])
+
+    def progress(_sent: int, _total: int) -> None:
+        return None
+
+    result = await api.add_file(
+        "nb_1",
+        Path("report.pdf"),
+        "application/pdf",
+        wait=True,
+        wait_timeout=42.0,
+        title="  Quarterly report  ",
+        on_progress=progress,
+    )
+
+    assert result == Source(id="uploaded", title="Quarterly report")
+    assert api.upload_calls == [
+        (
+            ("nb_1", Path("report.pdf"), "application/pdf"),
+            {
+                "wait": True,
+                "wait_timeout": 42.0,
+                "title": "Quarterly report",
+                "on_progress": progress,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("title", ["", "   "])
+async def test_add_file_rejects_blank_title_before_the_upload_hook(title: str) -> None:
+    api = _ConcreteSources([])
+
+    with pytest.raises(ValidationError, match="Title cannot be empty"):
+        await api.add_file("nb_1", "missing.pdf", title=title)
+
+    assert api.upload_calls == []
+
+
+@pytest.mark.asyncio
 async def test_batch_adapter_seam_is_typed_nonabstract_and_unsupported_by_default() -> None:
     assert "_add_urls_batch" not in SourcesAPI.__abstractmethods__
     with pytest.raises(NotImplementedError):
@@ -99,6 +165,7 @@ def test_web_facade_inherits_every_neutral_concrete_workflow() -> None:
     for name in (
         "get",
         "get_or_none",
+        "add_file",
         "add_urls_async",
         "append_text",
         "copy",

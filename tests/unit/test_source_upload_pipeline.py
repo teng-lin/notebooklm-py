@@ -17,6 +17,7 @@ import pytest
 
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
+from notebooklm._sources import SourcesAPI
 from notebooklm._web.sources.upload import (
     SourceUploadPipeline,
     _extract_register_file_source_id,
@@ -490,6 +491,7 @@ async def test_add_file_uses_pipeline_steps_and_finishes_transport(
     source = await service.add_file(
         "nb_123",
         file_path,
+        finalize_uploaded=SourcesAPI._finalize_uploaded_file,
     )
 
     assert source.id == "src_123"
@@ -541,7 +543,9 @@ async def test_add_file_surfaces_registered_source_when_upload_fails(
     )
 
     with pytest.raises(ValidationError) as exc_info:
-        await service.add_file("nb_123", file_path)
+        await service.add_file(
+            "nb_123", file_path, finalize_uploaded=SourcesAPI._finalize_uploaded_file
+        )
 
     error = exc_info.value
     # Unwrapped: the real cause propagates directly, with recovery context
@@ -590,7 +594,9 @@ async def test_transport_failure_is_typed_as_network_error_not_input_rejection(
     )
 
     with pytest.raises(NetworkError) as exc_info:
-        await service.add_file("nb_123", file_path)
+        await service.add_file(
+            "nb_123", file_path, finalize_uploaded=SourcesAPI._finalize_uploaded_file
+        )
 
     error = exc_info.value
     assert error.source_id == "src_123"  # type: ignore[attr-defined]
@@ -615,7 +621,9 @@ async def test_add_file_does_not_wrap_registration_failure(
     monkeypatch.setattr(service, "start_resumable_upload", start)
 
     with pytest.raises(SourceAddError) as exc_info:
-        await service.add_file("nb_123", file_path)
+        await service.add_file(
+            "nb_123", file_path, finalize_uploaded=SourcesAPI._finalize_uploaded_file
+        )
 
     assert exc_info.value is failure
     assert not hasattr(exc_info.value, "source_id")
@@ -645,7 +653,9 @@ async def test_add_file_does_not_wrap_cancellation_after_registration(
     )
 
     with pytest.raises(asyncio.CancelledError) as exc_info:
-        await service.add_file("nb_123", file_path)
+        await service.add_file(
+            "nb_123", file_path, finalize_uploaded=SourcesAPI._finalize_uploaded_file
+        )
 
     # The contract is that cancellation stays cancellation — ``except Exception``
     # in the partial-upload wrap must not see it (``CancelledError`` is a
@@ -716,7 +726,12 @@ async def test_add_file_rejects_html_before_registering_source(
     monkeypatch.setattr(service, "upload_file_streaming", AsyncMock())
 
     with pytest.raises(ValidationError, match="HTML file uploads are not supported"):
-        await service.add_file("nb_123", file_path, mime_type=mime_type)
+        await service.add_file(
+            "nb_123",
+            file_path,
+            mime_type=mime_type,
+            finalize_uploaded=SourcesAPI._finalize_uploaded_file,
+        )
 
     register_file_source.assert_not_awaited()
     start_resumable_upload.assert_not_awaited()
@@ -730,11 +745,19 @@ async def test_full_workflow_validates_mime_before_admission_but_resolves_path_i
     service = make_pipeline(runtime, supervisor=runtime)
 
     with pytest.raises(ValidationError, match="HTML file uploads are not supported"):
-        await service.add_file("nb_123", tmp_path / "missing.html")
+        await service.add_file(
+            "nb_123",
+            tmp_path / "missing.html",
+            finalize_uploaded=SourcesAPI._finalize_uploaded_file,
+        )
     assert runtime.labels == []
 
     with pytest.raises(FileNotFoundError, match="File not found"):
-        await service.add_file("nb_123", tmp_path / "missing.pdf")
+        await service.add_file(
+            "nb_123",
+            tmp_path / "missing.pdf",
+            finalize_uploaded=SourcesAPI._finalize_uploaded_file,
+        )
     assert runtime.labels == ["upload:0"]
     assert runtime.finished == ["upload:0"]
 
@@ -776,6 +799,7 @@ async def test_add_file_operation_scope_wraps_sources_semaphore_wait(
         return await service.add_file(
             "nb_123",
             path,
+            finalize_uploaded=SourcesAPI._finalize_uploaded_file,
         )
 
     first_task = asyncio.create_task(add(first_file))
@@ -826,8 +850,9 @@ async def test_add_file_custom_title_waits_for_registration_before_rename(
     source = await service.add_file(
         "nb_123",
         file_path,
-        title="  Custom  ",
+        title="Custom",
         wait_timeout=45.0,
+        finalize_uploaded=SourcesAPI._finalize_uploaded_file,
     )
 
     assert source == Source(id="src_123", title="Custom", _type_code=7, url="https://source")

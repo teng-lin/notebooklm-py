@@ -129,24 +129,6 @@ class ArtifactGenerationService:
         """Generate a Video Overview."""
         if language is None:
             language = get_default_language()
-        normalized_style_prompt = style_prompt.strip() if style_prompt is not None else None
-        if video_format == VideoFormat.CINEMATIC and normalized_style_prompt:
-            raise ValidationError("style_prompt is not supported for cinematic videos")
-        # Short videos have a FIXED visual style — the server silently ignores any
-        # style code (live-verified: anime vs watercolor render identically). Reject
-        # an explicit style/style_prompt rather than pretend it takes effect (#1805).
-        if video_format == VideoFormat.SHORT and (
-            (video_style is not None and video_style != VideoStyle.AUTO_SELECT)
-            or normalized_style_prompt
-        ):
-            raise ValidationError(
-                "video_style and style_prompt are not supported for short videos "
-                "(short has a fixed visual style)"
-            )
-        if video_style == VideoStyle.CUSTOM and not normalized_style_prompt:
-            raise ValidationError("style_prompt is required when video_style is CUSTOM")
-        if normalized_style_prompt and video_style != VideoStyle.CUSTOM:
-            raise ValidationError("style_prompt requires video_style=VideoStyle.CUSTOM")
 
         if source_ids is None:
             source_ids = await self._notebooks.get_source_ids(notebook_id)
@@ -158,7 +140,7 @@ class ArtifactGenerationService:
             instructions=instructions,
             video_format=video_format,
             video_style=video_style,
-            style_prompt=normalized_style_prompt,
+            style_prompt=style_prompt,
         )
         return await self._call_generate(
             notebook_id,

@@ -48,16 +48,16 @@ class _ParitySources(AndroidSourcesAPI):
         )
         self.uploads: list[tuple[str, Path, str | None, bool, float]] = []
 
-    async def add_file(
+    async def _send_upload(
         self,
         notebook_id: str,
         file_path: str | Path,
-        mime_type: str | None = None,
+        mime_type: str | None,
         *,
-        wait: bool = False,
-        wait_timeout: float = 120.0,
-        title: str | None = None,
-        on_progress: Callable[[int, int], object] | None = None,
+        wait: bool,
+        wait_timeout: float,
+        title: str | None,
+        on_progress: Callable[[int, int], object] | None,
     ) -> Source:
         del mime_type, on_progress
         path = Path(file_path)

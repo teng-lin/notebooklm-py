@@ -2,15 +2,15 @@
 
 Issue #1326 consolidated all resumable-upload / streaming / file-registration
 logic into :class:`notebooklm._web.sources.upload.SourceUploadPipeline`. The public
-``WebSourcesAPI`` surface keeps only *thin delegators* that forward verbatim to the
-pipeline; it must never re-grow a parallel implementation of the Scotty upload
-protocol.
+``WebSourcesAPI`` keeps only thin private upload hooks that forward verbatim to
+the pipeline; it must never re-grow a parallel implementation of the Scotty
+upload protocol.
 
 These tests pin three things:
 
 1. ``WebSourcesAPI._uploader`` is built from ``_web/sources/upload.py`` — the upload
    implementation collaborator.
-2. Every ``WebSourcesAPI`` upload entry point (``add_file`` and the private
+2. Every ``WebSourcesAPI`` upload entry point (``_send_upload`` and the private
    ``_register_file_source`` / ``_start_resumable_upload`` /
    ``_upload_file_streaming`` / ``_cancel_upload_session`` helpers) forwards its
    arguments unchanged to the matching ``SourceUploadPipeline`` method — verified
@@ -33,6 +33,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import notebooklm._web.sources as sources_module
+from notebooklm._sources import SourcesAPI
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm._web.sources.upload import SourceUploadPipeline
 from tests._fixtures.fake_core import make_fake_core
@@ -144,14 +145,14 @@ async def test_uploader_is_the_pipeline() -> None:
 
 
 @pytest.mark.asyncio
-async def test_add_file_delegates_to_pipeline() -> None:
-    """WebSourcesAPI.add_file forwards its args verbatim to the pipeline."""
+async def test_send_upload_delegates_to_pipeline() -> None:
+    """WebSourcesAPI._send_upload forwards its args verbatim to the pipeline."""
     api, pipeline = _make_api_with_recording_pipeline()
 
     def progress(_done: int, _total: int) -> None:
         return None
 
-    result = await api.add_file(
+    result = await api._send_upload(
         "nb-1",
         "/tmp/report.pdf",
         "application/pdf",
@@ -162,8 +163,9 @@ async def test_add_file_delegates_to_pipeline() -> None:
     )
 
     assert result == "<add_file-result>"
-    # WebSourcesAPI.add_file forwards notebook_id / file_path positionally and
-    # mime_type / wait / wait_timeout / title / on_progress as keywords.
+    # WebSourcesAPI._send_upload forwards notebook_id / file_path positionally and
+    # mime_type / wait / wait_timeout / title / on_progress and the neutral
+    # finalizer as keywords.
     args, kwargs = pipeline.calls["add_file"]
     assert args == ("nb-1", "/tmp/report.pdf")
     assert kwargs == {
@@ -172,6 +174,7 @@ async def test_add_file_delegates_to_pipeline() -> None:
         "wait_timeout": 42.0,
         "title": "Report",
         "on_progress": progress,
+        "finalize_uploaded": SourcesAPI._finalize_uploaded_file,
     }
     # The public surface intentionally does NOT expose the pipeline's
     # ``upload_index`` knob; guard against it being forwarded by accident.
@@ -339,7 +342,7 @@ def test_sources_upload_helpers_are_pure_delegators() -> None:
         "_start_resumable_upload": "start_resumable_upload",
         "_upload_file_streaming": "upload_file_streaming",
         "_cancel_upload_session": "cancel_upload_session",
-        "add_file": "add_file",
+        "_send_upload": "add_file",
     }
 
     # Completeness guard: ``expected`` must be an exhaustive allowlist of the
@@ -350,8 +353,8 @@ def test_sources_upload_helpers_are_pure_delegators() -> None:
     # upload operation to it. ``add_drive_file`` (#1884) is excluded too: it only
     # reads the ``self._uploader.live_cookies`` seam to authenticate the Drive
     # fetch — it does not re-implement or delegate a resumable-upload operation
-    # (its upload leg goes through the public ``self.add_file`` and selected
-    # public ``add_file`` method, already covered).
+    # (its upload leg goes through the inherited public ``self.add_file`` and
+    # selected private hook, already covered).
     _uploader_seam_only = {"__init__", "add_drive_file", "add_url", "_add_urls_batch"}
     uploader_methods = {
         node.name
