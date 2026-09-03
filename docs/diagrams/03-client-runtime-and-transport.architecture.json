@@ -22,7 +22,7 @@
         "id": "compatibility",
         "label": "Deprecated rpc_call",
         "focus": ["client", "deprecated", "webruntime", "sidecar"],
-        "note": "Web delegates directly; Android materialises a no-keepalive Web sidecar inside an operation scope."
+        "note": "Web delegates directly; Android materialises a no-keepalive Web sidecar inside an operation scope and retains it until root close."
       }
     ]
   },
@@ -182,7 +182,7 @@
       "title": "Compatibility sidecar",
       "items": [
         "rpc_call is deprecated and remains a Web RPCMethod wrapper",
-        "Android materialises LazyWebSidecar inside operation_scope; it closes there and has no keepalive"
+        "Android materialises LazyWebSidecar inside operation_scope; root lifecycle closes it and it has no keepalive"
       ]
     }
   ]
