@@ -6,6 +6,7 @@ alongside the deletion of ``_AuthFacadeModule``; see ADR-0003
 (superseded) and ADR-0007 (test-monkeypatch policy) for the rationale.
 """
 
+import asyncio
 import json
 import os
 import shlex
@@ -231,9 +232,6 @@ class TestFetchTokens:
     async def test_fetch_tokens_redirect_to_login_strips_query_and_fragment(self, monkeypatch):
         """Redirect error must not expose query params or fragments from final_url."""
 
-        async def fake_poke_session(client, storage_path):
-            return None
-
         class FakeAsyncClient:
             def __init__(self, *args, **kwargs):
                 self.cookies = httpx.Cookies()
@@ -251,10 +249,7 @@ class TestFetchTokens:
                 )
                 return httpx.Response(200, content=b"<html>Login</html>", request=request)
 
-        # Seam-aliased object-attribute patches (ADR-0007): patches the owning
-        # ``_auth.refresh`` module so bare-name lookups inside
-        # ``_fetch_tokens_with_jar`` observe the fakes.
-        monkeypatch.setattr(_auth_refresh, "_poke_session", fake_poke_session)
+        monkeypatch.setenv("NOTEBOOKLM_DISABLE_KEEPALIVE_POKE", "1")
         monkeypatch.setattr(_auth_refresh.httpx, "AsyncClient", FakeAsyncClient)
 
         with pytest.raises(ValueError) as excinfo:
@@ -488,13 +483,19 @@ class TestFetchTokensPassive:
         httpx_mock.add_response(url="https://notebook.google.com/", content=html.encode())
         route_threads: list[int] = []
         event_loop_thread = threading.get_ident()
-        real_resolve = _auth_refresh._resolve_token_route_kwargs
+        real_to_thread = asyncio.to_thread
 
-        def record_route_thread(*args, **kwargs):
-            route_threads.append(threading.get_ident())
-            return real_resolve(*args, **kwargs)
+        async def record_route_dispatch(func, /, *args, **kwargs):
+            if func is _auth_refresh._resolve_token_route_kwargs:
 
-        monkeypatch.setattr(_auth_refresh, "_resolve_token_route_kwargs", record_route_thread)
+                def observed_call():
+                    route_threads.append(threading.get_ident())
+                    return func(*args, **kwargs)
+
+                return await real_to_thread(observed_call)
+            return await real_to_thread(func, *args, **kwargs)
+
+        monkeypatch.setattr(asyncio, "to_thread", record_route_dispatch)
 
         csrf, session_id = await fetch_tokens_passive(storage_file)
 
@@ -502,26 +503,26 @@ class TestFetchTokensPassive:
         assert session_id == "sess_passive"
         assert route_threads and all(thread_id != event_loop_thread for thread_id in route_threads)
 
+    @pytest.mark.no_default_keepalive_mock
     @pytest.mark.asyncio
-    async def test_passive_skips_keepalive_poke(self, tmp_path, monkeypatch, httpx_mock: HTTPXMock):
+    async def test_passive_skips_keepalive_poke(self, tmp_path, httpx_mock: HTTPXMock):
         """The layer-1 rotation poke must never fire on the passive path."""
         storage_file = self._storage_with_sid(tmp_path)
         html = '"SNlM0e":"csrf" "FdrFJe":"sess"'
         httpx_mock.add_response(url="https://notebook.google.com/", content=html.encode())
 
-        poke_calls = 0
-
-        async def spy_poke(client, storage_path=None):
-            nonlocal poke_calls
-            poke_calls += 1
-
-        # Seam-aliased patch (ADR-0007): patch the owning ``_auth.refresh``
-        # module so the bare-name call inside ``_fetch_tokens_with_jar`` is seen.
-        monkeypatch.setattr(_auth_refresh, "_poke_session", spy_poke)
+        # Make the file old enough that the active path would issue its
+        # RotateCookies POST. No POST response is registered, so this test
+        # fails if the passive entry ever stops passing ``poke=False``.
+        os.utime(storage_file, (0, 0))
 
         await fetch_tokens_passive(storage_file)
 
-        assert poke_calls == 0
+        requests = httpx_mock.get_requests()
+        assert [(request.method, str(request.url)) for request in requests] == [
+            ("GET", "https://notebook.google.com/")
+        ]
+        assert not any(request.method == "POST" for request in requests)
 
     @pytest.mark.asyncio
     async def test_passive_does_not_write_storage(self, tmp_path, httpx_mock: HTTPXMock):

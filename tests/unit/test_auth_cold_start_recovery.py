@@ -16,10 +16,17 @@ from notebooklm._auth import master_token as mt
 from notebooklm._auth import recovery as recovery_mod
 from notebooklm._auth import refresh as refresh_mod
 from notebooklm._auth import session as session_mod
+from notebooklm._auth import single_flight as single_flight_mod
 from notebooklm._auth.cookie_types import CookieJar
-from notebooklm._auth.cookies import _LoadedCookiePair
+from notebooklm._auth.cookies import (
+    _build_cookie_pair_from_storage,
+    _clone_cookie_jar,
+    _LoadedCookiePair,
+    _replace_cookie_jar,
+)
 from notebooklm._auth.extraction import _LoginRedirectError
 from notebooklm._auth.mint_service import MintService
+from notebooklm._auth.storage import snapshot_cookie_jar
 from notebooklm._browser.headless_reauth import HeadlessReauthResult, HeadlessReauthStatus
 from notebooklm._env import PERSONAL_APP_HOSTS
 from notebooklm.auth import AuthTokens, fetch_tokens_with_domains
@@ -59,6 +66,56 @@ def _write_storage(path, *, sid: str) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def _direct_coordinator(
+    *,
+    should_try_refresh,
+    resolve_refresh_path,
+    run_refresh_attempt,
+    run_headless_attempt,
+    run_master_token_attempt,
+    validate_recovered,
+    fetch_recovered,
+) -> recovery_mod.ColdRecoveryCoordinator:
+    """Build one recovery operation with fresh state and real storage adapters."""
+    return recovery_mod.ColdRecoveryCoordinator(
+        state=recovery_mod.ColdRecoveryState(),
+        single_flight=single_flight_mod.SingleFlight(),
+        should_try_refresh=should_try_refresh,
+        resolve_refresh_path=resolve_refresh_path,
+        run_refresh_attempt=run_refresh_attempt,
+        load_cookie_pair=_build_cookie_pair_from_storage,
+        run_headless_attempt=run_headless_attempt,
+        run_master_token_attempt=run_master_token_attempt,
+        validate_recovered=validate_recovered,
+        fetch_recovered=fetch_recovered,
+        replace_cookie_jar=_replace_cookie_jar,
+        snapshot_cookie_jar=snapshot_cookie_jar,
+        clone_cookie_jar=_clone_cookie_jar,
+    )
+
+
+async def _recover_direct(
+    coordinator: recovery_mod.ColdRecoveryCoordinator,
+    initial_error: ValueError,
+    *,
+    cookie_jar: httpx.Cookies,
+    storage_path,
+    allow_headless: bool = False,
+):
+    """Keep the original exception active for the coordinator's bare re-raise."""
+    try:
+        raise initial_error
+    except ValueError as active_error:
+        return await coordinator.recover(
+            initial_error=active_error,
+            cookie_jar=cookie_jar,
+            storage_path=storage_path,
+            env_auth=False,
+            allow_headless=allow_headless,
+            baseline=None,
+        )
 
 
 def _stub_dead_then_fresh(
@@ -594,7 +651,9 @@ async def test_headless_retry_that_still_redirects_falls_through_to_l4(
 
 
 @pytest.mark.asyncio
-async def test_cold_ladder_runs_refresh_cmd_before_the_remint_rungs(tmp_path, monkeypatch) -> None:
+async def test_cold_ladder_runs_refresh_cmd_before_the_remint_rungs(
+    tmp_path,
+) -> None:
     """Cold start walks ADR-0030's documented order: L2.5 → L3 → L4.
 
     Behavior change (ADR-0030, amended 2026-08-07): this pinned L3 → L4 → L2.5
@@ -612,47 +671,59 @@ async def test_cold_ladder_runs_refresh_cmd_before_the_remint_rungs(tmp_path, mo
     _write_storage(storage, sid="stale")
     jar = httpx.Cookies()
     order: list[str] = []
-    fetch_calls = 0
 
-    async def fetch(*_args, **_kwargs):
-        nonlocal fetch_calls
-        fetch_calls += 1
+    async def refresh_cmd(_path):
+        assert _path == storage
+        order.append("L2.5")
+        raise _LoginRedirectError("L2.5 retry still redirected")
+
+    async def headless(path, allow_headless):
+        assert path == storage
+        assert allow_headless is False
+        order.append("L3")
+        return None
+
+    async def master(path):
+        assert path == storage
+        order.append("L4")
+        _write_storage(storage, sid="master")
+        return await asyncio.to_thread(_build_cookie_pair_from_storage, storage)
+
+    async def validate_recovered(recovered):
+        order.append("validate")
+        assert recovered.get("SID", domain=".google.com") == "master"
+
+    async def fetch_recovered(recovered):
         order.append("fetch")
-        if fetch_calls <= 3:
-            raise _LoginRedirectError(f"Authentication expired or invalid. attempt={fetch_calls}")
+        assert recovered.get("SID", domain=".google.com") == "master"
         return "csrf", "session"
 
-    async def refresh_cmd(*_args, **_kwargs):
-        order.append("L2.5")
-
-    async def headless(**_kwargs):
-        order.append("L3")
-        return _recovery_pair()
-
-    async def master(**_kwargs):
-        order.append("L4")
-        return _recovery_pair()
-
-    monkeypatch.setenv(refresh_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "refresh-auth")
-    monkeypatch.setattr(refresh_mod, "_fetch_tokens_with_jar", fetch)
-    monkeypatch.setattr(refresh_mod, "_coalesced_run_refresh_cmd", refresh_cmd)
-    monkeypatch.setattr(recovery_mod, "_try_headless_reauth_result", headless)
-    monkeypatch.setattr(recovery_mod, "_try_master_token_reauth_result", master)
-
-    csrf, session, refreshed, _snapshot = await refresh_mod._fetch_tokens_with_refresh(
-        jar,
-        storage,
-        allow_headless=True,
+    coordinator = _direct_coordinator(
+        should_try_refresh=lambda _error, _env_auth: True,
+        resolve_refresh_path=lambda _error: storage,
+        run_refresh_attempt=refresh_cmd,
+        run_headless_attempt=headless,
+        run_master_token_attempt=master,
+        validate_recovered=validate_recovered,
+        fetch_recovered=fetch_recovered,
+    )
+    csrf, session, refreshed, _snapshot, baseline = await _recover_direct(
+        coordinator,
+        _LoginRedirectError("Authentication expired or invalid."),
+        cookie_jar=jar,
+        storage_path=storage,
+        allow_headless=False,
     )
 
     assert (csrf, session, refreshed) == ("csrf", "session", True)
-    # fetch, L2.5, retry-fetch, L3, validate-fetch, L4, validate-fetch, retry-fetch
-    assert order == ["fetch", "L2.5", "fetch", "L3", "fetch", "L4", "fetch", "fetch"]
+    assert baseline is not None
+    assert jar.get("SID", domain=".google.com") == "master"
+    assert order == ["L2.5", "L3", "L4", "validate", "fetch"]
     assert order.count("L2.5") == 1, "the rung must not also re-run as a post-ladder backstop"
 
 
 @pytest.mark.asyncio
-async def test_failing_refresh_cmd_still_reaches_the_remint_rungs(tmp_path, monkeypatch) -> None:
+async def test_failing_refresh_cmd_still_reaches_the_remint_rungs(tmp_path) -> None:
     """A broken ``NOTEBOOKLM_REFRESH_CMD`` must not MASK L3/L4 now that it runs first.
 
     The cold arm used to be terminal, which was safe only while it ran LAST. With
@@ -662,25 +733,25 @@ async def test_failing_refresh_cmd_still_reaches_the_remint_rungs(tmp_path, monk
     storage = tmp_path / "storage_state.json"
     _write_storage(storage, sid="stale")
     jar = httpx.Cookies()
-    fetch = AsyncMock(
-        side_effect=[
-            _LoginRedirectError("Authentication expired or invalid."),
-            ("csrf", "session"),
-            ("csrf", "session"),
-        ]
-    )
     broken_refresh_cmd = AsyncMock(side_effect=RuntimeError("NOTEBOOKLM_REFRESH_CMD exited 2"))
     headless = AsyncMock(return_value=None)
     master = AsyncMock(return_value=_recovery_pair())
-    monkeypatch.setenv(refresh_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "refresh-auth")
-    monkeypatch.setattr(refresh_mod, "_fetch_tokens_with_jar", fetch)
-    monkeypatch.setattr(refresh_mod, "_coalesced_run_refresh_cmd", broken_refresh_cmd)
-    monkeypatch.setattr(recovery_mod, "_try_headless_reauth_result", headless)
-    monkeypatch.setattr(recovery_mod, "_try_master_token_reauth_result", master)
-
-    csrf, session, refreshed, _snapshot = await refresh_mod._fetch_tokens_with_refresh(
-        jar,
-        storage,
+    validate = AsyncMock(return_value=None)
+    fetch_recovered = AsyncMock(return_value=("csrf", "session"))
+    coordinator = _direct_coordinator(
+        should_try_refresh=lambda _error, _env_auth: True,
+        resolve_refresh_path=lambda _error: storage,
+        run_refresh_attempt=broken_refresh_cmd,
+        run_headless_attempt=headless,
+        run_master_token_attempt=master,
+        validate_recovered=validate,
+        fetch_recovered=fetch_recovered,
+    )
+    csrf, session, refreshed, _snapshot, _baseline = await _recover_direct(
+        coordinator,
+        _LoginRedirectError("Authentication expired or invalid."),
+        cookie_jar=jar,
+        storage_path=storage,
         allow_headless=True,
     )
 
@@ -692,7 +763,7 @@ async def test_failing_refresh_cmd_still_reaches_the_remint_rungs(tmp_path, monk
 
 @pytest.mark.asyncio
 async def test_exhausted_cold_ladder_runs_the_refresh_cmd_exactly_once(
-    tmp_path, monkeypatch
+    tmp_path,
 ) -> None:
     """The ladder-exhausted path must not re-enter L2.5 (that would be subprocess #2).
 
@@ -705,25 +776,32 @@ async def test_exhausted_cold_ladder_runs_the_refresh_cmd_exactly_once(
     storage = tmp_path / "storage_state.json"
     _write_storage(storage, sid="stale")
     jar = httpx.Cookies()
-    fetch = AsyncMock(side_effect=_LoginRedirectError("Authentication expired or invalid."))
     broken_refresh_cmd = AsyncMock(side_effect=RuntimeError("refresh-cmd boom"))
-    monkeypatch.setenv(refresh_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "refresh-auth")
-    monkeypatch.setattr(refresh_mod, "_fetch_tokens_with_jar", fetch)
-    monkeypatch.setattr(refresh_mod, "_coalesced_run_refresh_cmd", broken_refresh_cmd)
-    monkeypatch.setattr(recovery_mod, "_try_headless_reauth_result", AsyncMock(return_value=None))
-    monkeypatch.setattr(
-        recovery_mod, "_try_master_token_reauth_result", AsyncMock(return_value=None)
+    coordinator = _direct_coordinator(
+        should_try_refresh=lambda _error, _env_auth: True,
+        resolve_refresh_path=lambda _error: storage,
+        run_refresh_attempt=broken_refresh_cmd,
+        run_headless_attempt=AsyncMock(return_value=None),
+        run_master_token_attempt=AsyncMock(return_value=None),
+        validate_recovered=AsyncMock(return_value=None),
+        fetch_recovered=AsyncMock(return_value=("unused", "unused")),
     )
 
     with pytest.raises(RuntimeError, match="refresh-cmd boom"):
-        await refresh_mod._fetch_tokens_with_refresh(jar, storage, allow_headless=True)
+        await _recover_direct(
+            coordinator,
+            _LoginRedirectError("Authentication expired or invalid."),
+            cookie_jar=jar,
+            storage_path=storage,
+            allow_headless=True,
+        )
 
     assert broken_refresh_cmd.await_count == 1
 
 
 @pytest.mark.asyncio
 async def test_recovered_but_still_redirecting_does_not_rerun_the_refresh_cmd(
-    tmp_path, monkeypatch
+    tmp_path,
 ) -> None:
     """Site B of the retired backstop: a re-mint whose revalidation still redirects.
 
@@ -742,34 +820,38 @@ async def test_recovered_but_still_redirecting_does_not_rerun_the_refresh_cmd(
     storage = tmp_path / "storage_state.json"
     _write_storage(storage, sid="stale")
     jar = httpx.Cookies()
-    fetch = AsyncMock(
-        side_effect=[
-            _LoginRedirectError("Authentication expired or invalid. initial"),
-            _LoginRedirectError("Authentication expired or invalid. l2.5-retry"),
-            ("csrf", "session"),
-            _LoginRedirectError("Authentication expired or invalid. outer-retry"),
-        ]
+    refresh_cmd = AsyncMock(
+        side_effect=_LoginRedirectError("Authentication expired or invalid. l2.5-retry")
     )
-    refresh_cmd = AsyncMock(return_value=None)
-    monkeypatch.setenv(refresh_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "refresh-auth")
-    monkeypatch.setattr(refresh_mod, "_fetch_tokens_with_jar", fetch)
-    monkeypatch.setattr(refresh_mod, "_coalesced_run_refresh_cmd", refresh_cmd)
-    monkeypatch.setattr(
-        recovery_mod,
-        "_try_headless_reauth_result",
-        AsyncMock(return_value=_recovery_pair()),
+    validate_recovered = AsyncMock(return_value=None)
+    post_recovery_fetch = AsyncMock(
+        side_effect=_LoginRedirectError("Authentication expired or invalid. outer-retry")
     )
-    monkeypatch.setattr(
-        recovery_mod, "_try_master_token_reauth_result", AsyncMock(return_value=None)
+    coordinator = _direct_coordinator(
+        should_try_refresh=lambda _error, _env_auth: True,
+        resolve_refresh_path=lambda _error: storage,
+        run_refresh_attempt=refresh_cmd,
+        run_headless_attempt=AsyncMock(return_value=_recovery_pair()),
+        run_master_token_attempt=AsyncMock(return_value=None),
+        validate_recovered=validate_recovered,
+        fetch_recovered=post_recovery_fetch,
     )
 
     with pytest.raises(_LoginRedirectError):
-        await refresh_mod._fetch_tokens_with_refresh(jar, storage, allow_headless=True)
+        await _recover_direct(
+            coordinator,
+            _LoginRedirectError("Authentication expired or invalid. initial"),
+            cookie_jar=jar,
+            storage_path=storage,
+            allow_headless=True,
+        )
 
     assert refresh_cmd.await_count == 1, (
         "the retired post-ladder backstop must not re-enter L2.5 when a rung "
         "recovered but its revalidation still redirects (site B)"
     )
+    validate_recovered.assert_awaited_once()
+    post_recovery_fetch.assert_awaited_once_with(jar)
 
 
 @pytest.mark.asyncio
@@ -883,7 +965,7 @@ async def test_mixed_headless_permissions_serialize_and_reuse_l4_success(
 
 @pytest.mark.asyncio
 async def test_stronger_permission_retries_after_weaker_recovery_fails(
-    tmp_path, monkeypatch
+    tmp_path,
 ) -> None:
     """A failed weak ladder does not suppress a queued stronger L3 attempt."""
     storage = tmp_path / "storage_state.json"
@@ -893,7 +975,7 @@ async def test_stronger_permission_retries_after_weaker_recovery_fails(
     release = asyncio.Event()
     permissions: list[bool] = []
 
-    async def try_headless(*, allow_headless, **kwargs):
+    async def try_headless(_path, allow_headless):
         permissions.append(allow_headless)
         if not allow_headless:
             started.set()
@@ -903,29 +985,28 @@ async def test_stronger_permission_retries_after_weaker_recovery_fails(
 
     validate = AsyncMock(return_value=None)
     master = AsyncMock(return_value=None)
-    monkeypatch.setattr(
-        recovery_mod,
-        "_try_headless_reauth_result",
-        AsyncMock(side_effect=try_headless),
-    )
-    monkeypatch.setattr(recovery_mod, "_try_master_token_reauth_result", master)
-    weak = asyncio.create_task(
-        recovery_mod.coalesced_cold_recovery(
+    state = recovery_mod.ColdRecoveryState()
+    single_flight = single_flight_mod.SingleFlight()
+
+    async def recover(allow_headless):
+        return await recovery_mod.ColdRecoveryCoordinator._coalesce_cold(
+            state=state,
+            single_flight=single_flight,
             storage_path=storage,
-            allow_headless=False,
-            validate=validate,
+            allow_headless=allow_headless,
+            load_cookie_pair=_build_cookie_pair_from_storage,
+            run_headless_attempt=try_headless,
+            run_master_token_attempt=master,
+            validate_recovered=validate,
+            snapshot_cookie_jar=snapshot_cookie_jar,
+            clone_cookie_jar=_clone_cookie_jar,
+            raise_on_exhaustion=True,
             initial_error=redirect,
         )
-    )
+
+    weak = asyncio.create_task(recover(False))
     await started.wait()
-    strong = asyncio.create_task(
-        recovery_mod.coalesced_cold_recovery(
-            storage_path=storage,
-            allow_headless=True,
-            validate=validate,
-            initial_error=redirect,
-        )
-    )
+    strong = asyncio.create_task(recover(True))
     await asyncio.sleep(0)
     release.set()
     weak_result, strong_result = await asyncio.gather(
@@ -950,45 +1031,97 @@ async def test_stronger_permission_retries_after_weaker_recovery_fails(
         "CSRF token not found in HTML.",
     ],
 )
-async def test_non_login_failures_never_enter_cold_recovery(tmp_path, message, monkeypatch) -> None:
+async def test_non_login_failures_never_enter_cold_recovery(tmp_path, message) -> None:
     """Only the private typed login redirect can trigger L3/L4."""
     jar = httpx.Cookies()
     storage = tmp_path / "storage_state.json"
     _write_storage(storage, sid="stale")
 
-    fetch = AsyncMock(side_effect=ValueError(message))
-    recover = AsyncMock()
-    monkeypatch.setattr(refresh_mod, "_fetch_tokens_with_jar", fetch)
-    monkeypatch.setattr(recovery_mod, "coalesced_cold_recovery", recover)
+    run_refresh = AsyncMock(side_effect=AssertionError("refresh must not run"))
+    headless = AsyncMock(side_effect=AssertionError("headless must not run"))
+    master = AsyncMock(side_effect=AssertionError("master token must not run"))
+    coordinator = _direct_coordinator(
+        should_try_refresh=lambda _error, _env_auth: False,
+        resolve_refresh_path=lambda _error: storage,
+        run_refresh_attempt=run_refresh,
+        run_headless_attempt=headless,
+        run_master_token_attempt=master,
+        validate_recovered=AsyncMock(return_value=None),
+        fetch_recovered=AsyncMock(return_value=("unused", "unused")),
+    )
 
     with pytest.raises(ValueError, match=re.escape(message)):
-        await refresh_mod._fetch_tokens_with_refresh(jar, storage)
+        await _recover_direct(
+            coordinator,
+            ValueError(message),
+            cookie_jar=jar,
+            storage_path=storage,
+        )
 
-    recover.assert_not_awaited()
+    run_refresh.assert_not_awaited()
+    headless.assert_not_awaited()
+    master.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_cookie_mismatch_skips_l3_l4_but_preserves_legacy_l5(tmp_path, monkeypatch) -> None:
+async def test_cookie_mismatch_skips_l3_l4_but_preserves_legacy_l5(
+    tmp_path,
+    monkeypatch,
+    httpx_mock: HTTPXMock,
+) -> None:
     """The new typed gate must not narrow the existing refresh-command matcher."""
     storage = tmp_path / "storage_state.json"
     _write_storage(storage, sid="stale")
     jar = httpx.Cookies()
-    mismatch = ValueError(
-        "Google reported CookieMismatch. Run 'notebooklm login' to re-authenticate."
+    monkeypatch.setenv(refresh_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "injected-refresh")
+    httpx_mock.add_response(
+        url=_PERSONAL_HOMEPAGE_PATTERN,
+        status_code=302,
+        headers={"Location": "https://accounts.google.com/CookieMismatch"},
+        is_reusable=True,
     )
-    fetch = AsyncMock(side_effect=[mismatch, ("csrf", "session")])
-    run_l5 = AsyncMock(return_value=None)
-    recover = AsyncMock()
-    monkeypatch.setenv(refresh_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "refresh-auth")
-    monkeypatch.setattr(refresh_mod, "_fetch_tokens_with_jar", fetch)
-    monkeypatch.setattr(refresh_mod, "_coalesced_run_refresh_cmd", run_l5)
-    monkeypatch.setattr(recovery_mod, "coalesced_cold_recovery", recover)
+    httpx_mock.add_response(
+        url="https://accounts.google.com/CookieMismatch",
+        status_code=302,
+        headers={"Location": "https://support.google.com/accounts/answer/32050"},
+        is_reusable=True,
+    )
+    httpx_mock.add_response(
+        url="https://support.google.com/accounts/answer/32050",
+        content=b"<html>Cookie mismatch</html>",
+        is_reusable=True,
+    )
 
-    csrf, session, refreshed, _snapshot = await refresh_mod._fetch_tokens_with_refresh(jar, storage)
+    with pytest.raises(ValueError, match="CookieMismatch") as initial:
+        await refresh_mod._fetch_tokens_with_jar(jar, storage, poke=False)
+    assert refresh_mod._should_try_refresh(initial.value), (
+        "the legacy refresh-command matcher must continue to accept CookieMismatch"
+    )
 
-    assert (csrf, session, refreshed) == ("csrf", "session", True)
-    recover.assert_not_awaited()
-    run_l5.assert_awaited_once()
+    run_l5 = AsyncMock(side_effect=initial.value)
+    headless = AsyncMock(side_effect=AssertionError("L3 must be gated"))
+    master = AsyncMock(side_effect=AssertionError("L4 must be gated"))
+    coordinator = _direct_coordinator(
+        should_try_refresh=lambda error, _env_auth: refresh_mod._should_try_refresh(error),
+        resolve_refresh_path=lambda _error: storage,
+        run_refresh_attempt=run_l5,
+        run_headless_attempt=headless,
+        run_master_token_attempt=master,
+        validate_recovered=AsyncMock(side_effect=AssertionError("validation must be gated")),
+        fetch_recovered=AsyncMock(side_effect=AssertionError("fetch must be gated")),
+    )
+
+    with pytest.raises(ValueError, match="CookieMismatch"):
+        await _recover_direct(
+            coordinator,
+            initial.value,
+            cookie_jar=jar,
+            storage_path=storage,
+        )
+
+    run_l5.assert_awaited_once_with(storage)
+    headless.assert_not_awaited()
+    master.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1003,21 +1136,33 @@ async def test_shared_adapter_exception_fans_out_and_later_call_retries(
 
     headless = AsyncMock(side_effect=RuntimeError("browser adapter failed"))
     master = AsyncMock()
+    # Minimal composition probes: the public wrappers deliberately resolve
+    # these two rungs at call time, and the assertions below pin their exact
+    # traceback frames. Owner behavior is exercised through the fresh state.
     monkeypatch.setattr(recovery_mod, "_try_headless_reauth_result", headless)
     monkeypatch.setattr(recovery_mod, "_try_master_token_reauth_result", master)
+    state = recovery_mod.ColdRecoveryState()
+    single_flight = single_flight_mod.SingleFlight()
+
+    async def recover():
+        return await recovery_mod.ColdRecoveryCoordinator._coalesce_cold(
+            state=state,
+            single_flight=single_flight,
+            storage_path=storage,
+            allow_headless=True,
+            load_cookie_pair=_build_cookie_pair_from_storage,
+            run_headless_attempt=headless,
+            run_master_token_attempt=master,
+            validate_recovered=validate,
+            snapshot_cookie_jar=snapshot_cookie_jar,
+            clone_cookie_jar=_clone_cookie_jar,
+            raise_on_exhaustion=True,
+            initial_error=redirect,
+        )
+
     first, second = await asyncio.gather(
-        recovery_mod.coalesced_cold_recovery(
-            storage_path=storage,
-            allow_headless=True,
-            validate=validate,
-            initial_error=redirect,
-        ),
-        recovery_mod.coalesced_cold_recovery(
-            storage_path=storage,
-            allow_headless=True,
-            validate=validate,
-            initial_error=redirect,
-        ),
+        recover(),
+        recover(),
         return_exceptions=True,
     )
     assert isinstance(first, RuntimeError)
@@ -1029,12 +1174,7 @@ async def test_shared_adapter_exception_fans_out_and_later_call_retries(
     headless.return_value = None
     master.return_value = None
     with pytest.raises(_LoginRedirectError):
-        await recovery_mod.coalesced_cold_recovery(
-            storage_path=storage,
-            allow_headless=True,
-            validate=validate,
-            initial_error=redirect,
-        )
+        await recover()
 
     assert headless.await_count == 2
     master.assert_awaited_once()

@@ -18,6 +18,8 @@ Pins:
 
 from __future__ import annotations
 
+import json
+import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -27,9 +29,11 @@ import pytest
 
 import notebooklm._auth.refresh as refresh_mod
 import notebooklm._auth.session as session_mod
+from notebooklm._auth import single_flight as single_flight_mod
 from notebooklm._auth.session import refresh_auth_session
 from notebooklm._browser.headless_reauth import HeadlessReauthResult, HeadlessReauthStatus
 from notebooklm.auth import AuthTokens
+from tests._fixtures import platform_command
 
 REFRESH_HTML = '"SNlM0e":"new_csrf_token_123" "FdrFJe":"new_session_id_456"'
 LOGIN_REDIRECT = "https://accounts.google.com/signin/v2/identifier"
@@ -78,6 +82,11 @@ class _RecordingAuthCoord:
 
     def assert_epoch(self, expected_epoch: int) -> None:
         assert expected_epoch == TEST_EPOCH
+
+    async def install_profile_session(self, **kwargs: Any) -> bool:
+        """Decline L2 so the tests can observe the later L2.5 rung."""
+        assert kwargs["expected_epoch"] == TEST_EPOCH
+        return False
 
     async def update_auth_tokens(
         self,
@@ -132,11 +141,15 @@ def _redirect_then_ok_handler(state: dict[str, int]):
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "accounts.google.com":
             return httpx.Response(200, text="<html>sign in</html>", request=request)
-        if state.get("healed"):
+        if state.get("healed") or "SID=refreshed" in request.headers.get("cookie", ""):
             return httpx.Response(200, text=REFRESH_HTML, request=request)
         return httpx.Response(302, headers={"Location": LOGIN_REDIRECT}, request=request)
 
     return handler
+
+
+def _single_flight_epoch(storage: Path) -> int:
+    return single_flight_mod.read_success_epoch(str(storage.expanduser().resolve()))
 
 
 @pytest.fixture
@@ -147,31 +160,40 @@ def _clean_refresh_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(refresh_mod.NOTEBOOKLM_REFRESH_CMD_MIDSESSION_ENV, raising=False)
 
 
-def _patch_refresh_cmd_machinery(
-    monkeypatch: pytest.MonkeyPatch, calls: list[str], *, heal: dict[str, int] | None = None
-) -> None:
-    """Patch the shared cold-start machinery the rung reuses (no subprocess)."""
+def _refresh_cmd_deps(
+    calls: list[str], *, heal: dict[str, int] | None = None
+) -> refresh_mod.RefreshCmdDeps:
+    """Inject only the refresh command while retaining real coalescing."""
 
-    async def _fake_coalesced(
-        refresh_key: str,
-        resolved_path: Path,
-        profile: str | None,
-        *,
-        deps: refresh_mod.RefreshCmdDeps | None = None,
-    ) -> None:
-        calls.append(refresh_key)
+    async def run_refresh_cmd(path: Path, profile: str | None) -> None:
+        calls.append(str(path))
         if heal is not None:
             heal["healed"] = 1
 
-    import notebooklm._auth.cookies as cookies_mod
+    return refresh_mod.RefreshCmdDeps(
+        run_refresh_cmd=run_refresh_cmd,
+        derive_refresh_lock_path=lambda _path: None,
+    )
 
-    monkeypatch.setattr(refresh_mod, "_coalesced_run_refresh_cmd", _fake_coalesced)
-    # The rung reload resolves ``build_httpx_cookies_from_storage`` via the
-    # refresh-module alias; ``AuthTokens`` construction (and the L3 reload) resolve
-    # it via the cookies module. Patch BOTH so an empty on-disk storage file does
-    # not trip cookie validation.
-    monkeypatch.setattr(refresh_mod, "build_httpx_cookies_from_storage", lambda p: httpx.Cookies())
-    monkeypatch.setattr(cookies_mod, "build_httpx_cookies_from_storage", lambda p: httpx.Cookies())
+
+def _write_storage(path: Path, *, sid: str = "refreshed") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {"name": "SID", "value": sid, "domain": ".google.com"},
+                    {
+                        "name": "__Secure-1PSIDTS",
+                        "value": f"{sid}-ts",
+                        "domain": ".google.com",
+                    },
+                ],
+                "origins": [],
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -187,13 +209,13 @@ async def test_rung_declines_without_opt_in(
     monkeypatch.setenv(refresh_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "refresh.sh")
     # NOTEBOOKLM_REFRESH_CMD_MIDSESSION deliberately unset.
     calls: list[str] = []
-    _patch_refresh_cmd_machinery(monkeypatch, calls)
+    deps = _refresh_cmd_deps(calls)
 
     kernel = _magic_kernel()
-    ok = await session_mod._try_refresh_cmd_reauth(
-        auth=_auth(storage_path=tmp_path / "storage_state.json"),
-        kernel=kernel,
-        expected_epoch=TEST_EPOCH,
+    ok = await refresh_mod.try_refresh_cmd_reauth(
+        storage_path=tmp_path / "storage_state.json",
+        cookie_jar=kernel.get_http_client(expected_epoch=TEST_EPOCH).cookies,
+        deps=deps,
     )
     assert ok is False
     assert calls == [], "cold-start machinery must NOT run without the opt-in"
@@ -207,12 +229,15 @@ async def test_rung_invoked_with_opt_in(
     monkeypatch.setenv(refresh_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "refresh.sh")
     monkeypatch.setenv(refresh_mod.NOTEBOOKLM_REFRESH_CMD_MIDSESSION_ENV, "1")
     calls: list[str] = []
-    _patch_refresh_cmd_machinery(monkeypatch, calls)
+    deps = _refresh_cmd_deps(calls)
 
     kernel = _magic_kernel()
     storage = tmp_path / "storage_state.json"
-    ok = await session_mod._try_refresh_cmd_reauth(
-        auth=_auth(storage_path=storage), kernel=kernel, expected_epoch=TEST_EPOCH
+    _write_storage(storage)
+    ok = await refresh_mod.try_refresh_cmd_reauth(
+        storage_path=storage,
+        cookie_jar=kernel.get_http_client(expected_epoch=TEST_EPOCH).cookies,
+        deps=deps,
     )
     assert ok is True
     assert len(calls) == 1, "the coalesced refresh-cmd machinery must run once"
@@ -226,13 +251,13 @@ async def test_rung_declines_without_command(
     """Opt-in set but no NOTEBOOKLM_REFRESH_CMD → nothing to run."""
     monkeypatch.setenv(refresh_mod.NOTEBOOKLM_REFRESH_CMD_MIDSESSION_ENV, "1")
     calls: list[str] = []
-    _patch_refresh_cmd_machinery(monkeypatch, calls)
+    deps = _refresh_cmd_deps(calls)
 
     kernel = _magic_kernel()
-    ok = await session_mod._try_refresh_cmd_reauth(
-        auth=_auth(storage_path=tmp_path / "storage_state.json"),
-        kernel=kernel,
-        expected_epoch=TEST_EPOCH,
+    ok = await refresh_mod.try_refresh_cmd_reauth(
+        storage_path=tmp_path / "storage_state.json",
+        cookie_jar=kernel.get_http_client(expected_epoch=TEST_EPOCH).cookies,
+        deps=deps,
     )
     assert ok is False
     assert calls == []
@@ -246,10 +271,12 @@ async def test_rung_declines_without_storage_path(
     monkeypatch.setenv(refresh_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "refresh.sh")
     monkeypatch.setenv(refresh_mod.NOTEBOOKLM_REFRESH_CMD_MIDSESSION_ENV, "1")
     calls: list[str] = []
-    _patch_refresh_cmd_machinery(monkeypatch, calls)
+    deps = _refresh_cmd_deps(calls)
 
-    ok = await session_mod._try_refresh_cmd_reauth(
-        auth=_auth(storage_path=None), kernel=_magic_kernel(), expected_epoch=TEST_EPOCH
+    ok = await refresh_mod.try_refresh_cmd_reauth(
+        storage_path=None,
+        cookie_jar=_magic_kernel().get_http_client(expected_epoch=TEST_EPOCH).cookies,
+        deps=deps,
     )
     assert ok is False
     assert calls == []
@@ -264,13 +291,13 @@ async def test_rung_declines_under_recursion_guard(
     monkeypatch.setenv(refresh_mod.NOTEBOOKLM_REFRESH_CMD_MIDSESSION_ENV, "1")
     monkeypatch.setenv(refresh_mod._REFRESH_ATTEMPTED_ENV, "1")  # child-process guard
     calls: list[str] = []
-    _patch_refresh_cmd_machinery(monkeypatch, calls)
+    deps = _refresh_cmd_deps(calls)
 
     kernel = _magic_kernel()
-    ok = await session_mod._try_refresh_cmd_reauth(
-        auth=_auth(storage_path=tmp_path / "storage_state.json"),
-        kernel=kernel,
-        expected_epoch=TEST_EPOCH,
+    ok = await refresh_mod.try_refresh_cmd_reauth(
+        storage_path=tmp_path / "storage_state.json",
+        cookie_jar=kernel.get_http_client(expected_epoch=TEST_EPOCH).cookies,
+        deps=deps,
     )
     assert ok is False
     assert calls == []
@@ -289,11 +316,13 @@ async def test_midsession_ladder_reaches_rung_with_opt_in(
     monkeypatch.setenv(refresh_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "refresh.sh")
     monkeypatch.setenv(refresh_mod.NOTEBOOKLM_REFRESH_CMD_MIDSESSION_ENV, "1")
     storage = tmp_path / "storage_state.json"
-    storage.write_text('{"cookies": [], "origins": []}', encoding="utf-8")
+    _write_storage(storage)
 
     state: dict[str, int] = {}
-    calls: list[str] = []
-    _patch_refresh_cmd_machinery(monkeypatch, calls, heal=state)
+    monkeypatch.setenv(
+        refresh_mod.NOTEBOOKLM_REFRESH_CMD_ENV,
+        platform_command([sys.executable, "-c", "pass"]),
+    )
 
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(_redirect_then_ok_handler(state)),
@@ -303,9 +332,9 @@ async def test_midsession_ladder_reaches_rung_with_opt_in(
         result = await refresh_auth_session(allow_headless=False, **_bundle(http_client, auth))
 
     assert result is auth
-    assert len(calls) == 1, "the L2.5 rung must fire mid-session under the opt-in"
     assert auth.csrf_token == "new_csrf_token_123"
     assert auth.session_id == "new_session_id_456"
+    assert _single_flight_epoch(storage) == 1, "the real coalescer must run exactly once"
 
 
 @pytest.mark.asyncio
@@ -316,11 +345,9 @@ async def test_midsession_ladder_skips_rung_without_opt_in(
     monkeypatch.setenv(refresh_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "refresh.sh")
     # NOTEBOOKLM_REFRESH_CMD_MIDSESSION deliberately unset (default off).
     storage = tmp_path / "storage_state.json"
-    storage.write_text('{"cookies": [], "origins": []}', encoding="utf-8")
+    _write_storage(storage)
 
     state: dict[str, int] = {}
-    calls: list[str] = []
-    _patch_refresh_cmd_machinery(monkeypatch, calls, heal=state)
 
     # L3/L4 are unavailable so the dead-cookie ValueError stands when L2.5 is off.
     import notebooklm._browser.headless_reauth as hr
@@ -339,7 +366,9 @@ async def test_midsession_ladder_skips_rung_without_opt_in(
         with pytest.raises(ValueError, match="Authentication expired"):
             await refresh_auth_session(allow_headless=False, **_bundle(http_client, auth))
 
-    assert calls == [], "the L2.5 rung must NOT fire without the opt-in (default off)"
+    assert _single_flight_epoch(storage) == 0, (
+        "the L2.5 rung must NOT fire without the opt-in (default off)"
+    )
 
 
 @pytest.mark.asyncio
@@ -359,25 +388,20 @@ async def test_rung_threads_work_profile_from_storage_path(
     # Point the home at tmp so the storage path resolves under profiles/work.
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     work_storage = tmp_path / "profiles" / "work" / "storage_state.json"
-    work_storage.parent.mkdir(parents=True)
-    work_storage.write_text('{"cookies": [], "origins": []}', encoding="utf-8")
+    _write_storage(work_storage)
 
-    captured: dict[str, str | None] = {}
-
-    async def _fake_coalesced(
-        refresh_key: str,
-        resolved_path: Path,
-        profile: str | None,
-        *,
-        deps: refresh_mod.RefreshCmdDeps | None = None,
-    ) -> None:
-        captured["profile"] = profile
-
-    import notebooklm._auth.cookies as cookies_mod
-
-    monkeypatch.setattr(refresh_mod, "_coalesced_run_refresh_cmd", _fake_coalesced)
-    monkeypatch.setattr(refresh_mod, "build_httpx_cookies_from_storage", lambda p: httpx.Cookies())
-    monkeypatch.setattr(cookies_mod, "build_httpx_cookies_from_storage", lambda p: httpx.Cookies())
+    capture = tmp_path / "captured-profile.txt"
+    script = tmp_path / "capture_profile.py"
+    script.write_text(
+        "import os, pathlib, sys\n"
+        "pathlib.Path(sys.argv[1]).write_text("
+        "os.environ.get('NOTEBOOKLM_REFRESH_PROFILE', '<missing>'), encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(
+        refresh_mod.NOTEBOOKLM_REFRESH_CMD_ENV,
+        platform_command([sys.executable, str(script), str(capture)]),
+    )
 
     kernel = _magic_kernel()
     ok = await session_mod._try_refresh_cmd_reauth(
@@ -385,7 +409,7 @@ async def test_rung_threads_work_profile_from_storage_path(
     )
 
     assert ok is True
-    assert captured["profile"] == "work", (
+    assert capture.read_text(encoding="utf-8") == "work", (
         "mid-session rung must thread the work profile derived from storage_path, "
-        f"got {captured['profile']!r}"
+        f"got {capture.read_text(encoding='utf-8')!r}"
     )

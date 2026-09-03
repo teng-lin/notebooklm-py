@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import ctypes
 import subprocess
-from typing import Any
 
 import httpx
 import pytest
@@ -285,7 +284,7 @@ class TestSettleCallbackCancel:
 
 
 class TestFetchTokensCancelPropagation:
-    """``_fetch_tokens_with_refresh`` propagates caller-side cancellation.
+    """The refresh-command owner propagates cancellation without success.
 
     c-PR2 removed the hand-rolled cancel/settle inspection dance from
     ``_fetch_tokens_with_refresh`` (the observed_inflight / prior_inflight
@@ -295,81 +294,73 @@ class TestFetchTokensCancelPropagation:
     propagate, and no success epoch is bumped for a cancelled attempt.
     """
 
-    def _common_patches(self, monkeypatch, storage):
-        async def fake_fetch_tokens_with_jar(cookie_jar, storage_path=None, **route_kwargs):
-            raise ValueError("Authentication expired. Redirected to login.")
-
-        monkeypatch.setenv(_auth_refresh.NOTEBOOKLM_REFRESH_CMD_ENV, "echo hi")
-        monkeypatch.setattr(_auth_refresh, "get_storage_path", lambda profile=None: storage)
-        monkeypatch.setattr(_auth_refresh, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
-
     @pytest.mark.asyncio
-    async def test_cancel_propagates_without_epoch_bump(self, monkeypatch, tmp_path):
+    async def test_cancel_propagates_without_epoch_bump(self, tmp_path):
         storage = tmp_path / "storage_state.json"
         storage.write_text("{}", encoding="utf-8")
-        self._common_patches(monkeypatch, storage)
         path_key = str(storage.expanduser().resolve())
 
-        async def fake_coalesced(key, resolved_storage_path, profile, *, deps=None):
+        async def cancelled_runner(resolved_storage_path, profile):
             raise asyncio.CancelledError()
 
-        monkeypatch.setattr(_auth_refresh, "_coalesced_run_refresh_cmd", fake_coalesced)
+        deps = _auth_refresh.RefreshCmdDeps(
+            run_refresh_cmd=cancelled_runner,
+            derive_refresh_lock_path=lambda _path: None,
+        )
         with pytest.raises(asyncio.CancelledError):
-            await _auth_refresh._fetch_tokens_with_refresh(httpx.Cookies(), storage, None)
+            await _auth_refresh._coalesced_run_refresh_cmd(
+                path_key,
+                storage.resolve(),
+                None,
+                deps=deps,
+            )
         assert _single_flight.read_success_epoch(path_key) == 0
 
 
 class TestPostRefreshRetryRouteKwargs:
-    """Post-refresh retry forwards account_email / force_authuser_query (637, 639)."""
+    """The refresh entry preserves explicit account selection on retry."""
 
     @pytest.mark.asyncio
     async def test_retry_forwards_account_email_and_force_authuser(self, monkeypatch, tmp_path):
         storage = tmp_path / "storage_state.json"
-        storage.write_text("{}", encoding="utf-8")
-        # First fetch raises an auth-expiry ValueError to trigger refresh; the
-        # retry fetch records the route kwargs it received.
-        calls: list[dict[str, Any]] = []
-        state = {"first": True}
+        storage.write_text(
+            '{"cookies": ['
+            '{"name": "SID", "value": "fresh", "domain": ".google.com"},'
+            '{"name": "__Secure-1PSIDTS", "value": "fresh-ts", '
+            '"domain": ".google.com"}'
+            '], "origins": []}',
+            encoding="utf-8",
+        )
+        observed_routes: list[dict[str, object]] = []
 
-        async def fake_fetch_tokens_with_jar(cookie_jar, storage_path=None, **route_kwargs):
-            if state["first"]:
-                state["first"] = False
+        async def fetch(_jar, _path=None, **route_kwargs):
+            observed_routes.append(route_kwargs)
+            if len(observed_routes) == 1:
                 raise ValueError("Authentication expired. Redirected to login.")
-            calls.append(route_kwargs)
             return "csrf_after", "sess_after"
 
-        async def fake_coalesced(refresh_key, resolved_storage_path, profile, *, deps=None):
+        async def run_refresh_cmd(_path, _profile):
             return None
 
-        def fake_build_jar(path):
-            return httpx.Cookies()
+        monkeypatch.setenv(_auth_refresh.NOTEBOOKLM_REFRESH_CMD_ENV, "injected-refresh")
+        monkeypatch.setattr(_auth_refresh, "_fetch_tokens_with_jar", fetch)
+        deps = _auth_refresh.RefreshCmdDeps(
+            run_refresh_cmd=run_refresh_cmd,
+            derive_refresh_lock_path=lambda _path: None,
+        )
 
-        def fake_replace(target, source):
-            return None
-
-        def fake_snapshot(jar):
-            return None
-
-        monkeypatch.setenv(_auth_refresh.NOTEBOOKLM_REFRESH_CMD_ENV, "echo hi")
-        monkeypatch.setattr(_auth_refresh, "get_storage_path", lambda profile=None: storage)
-        monkeypatch.setattr(_auth_refresh, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
-        monkeypatch.setattr(_auth_refresh, "_coalesced_run_refresh_cmd", fake_coalesced)
-        monkeypatch.setattr(_auth_refresh, "build_httpx_cookies_from_storage", fake_build_jar)
-        monkeypatch.setattr(_auth_refresh, "_replace_cookie_jar", fake_replace)
-        monkeypatch.setattr(_auth_refresh, "snapshot_cookie_jar", fake_snapshot)
-        csrf, session_id, refreshed, _snap = await _auth_refresh._fetch_tokens_with_refresh(
+        result = await _auth_refresh._fetch_tokens_with_refresh(
             httpx.Cookies(),
             storage,
-            None,
             authuser=0,
             account_email="bob@example.com",
             force_authuser_query=True,
+            deps=deps,
         )
-        assert refreshed is True
-        assert csrf == "csrf_after"
-        assert session_id == "sess_after"
-        assert calls, "retry fetch was not invoked"
-        retry_kwargs = calls[0]
-        assert retry_kwargs["account_email"] == "bob@example.com"
-        assert retry_kwargs["force_authuser_query"] is True
-        assert retry_kwargs["authuser"] == 0
+        assert result[:3] == ("csrf_after", "sess_after", True)
+        assert len(observed_routes) == 2, "the post-refresh fetch was not reached"
+        assert observed_routes[1] == {
+            "account_email": "bob@example.com",
+            "authuser": 0,
+            "force_authuser_query": True,
+        }

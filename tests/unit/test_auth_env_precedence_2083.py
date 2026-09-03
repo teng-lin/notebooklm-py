@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from pathlib import Path
 
@@ -27,7 +28,7 @@ from notebooklm.cli.services.auth_source import AuthSource
 _ENV = "NOTEBOOKLM_AUTH_JSON"
 
 
-def _state(sid: str) -> dict:
+def _state(sid: str, *, authuser: int | None = None, email: str | None = None) -> dict:
     expires = time.time() + 86400
     rows = [
         ("SID", sid),
@@ -36,13 +37,19 @@ def _state(sid: str) -> dict:
         ("LSID", "lsid"),
         ("__Secure-1PSIDTS", "psidts"),
     ]
-    return {
+    state = {
         "cookies": [
             {"name": n, "value": v, "domain": ".google.com", "path": "/", "expires": expires}
             for n, v in rows
         ],
         "origins": [],
     }
+    if authuser is not None or email is not None:
+        state["notebooklm"] = {
+            "version": 1,
+            "account": {"authuser": authuser, "email": email},
+        }
+    return state
 
 
 @pytest.fixture
@@ -53,7 +60,16 @@ def profiled_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
     work = get_storage_path(profile="work")
     work.parent.mkdir(parents=True, exist_ok=True)
-    work.write_text(json.dumps(_state("sid-from-profile-file")), encoding="utf-8")
+    work.write_text(
+        json.dumps(
+            _state(
+                "sid-from-profile-file",
+                authuser=7,
+                email="profile@example.com",
+            )
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setenv(_ENV, json.dumps(_state("sid-from-env-var")))
     return work
 
@@ -104,6 +120,7 @@ def test_library_and_authsource_agree_on_env_over_profile(profiled_home: Path) -
 async def test_token_fetch_and_cookie_jar_read_the_same_account(
     profiled_home: Path,
     monkeypatch: pytest.MonkeyPatch,
+    httpx_mock: HTTPXMock,
 ) -> None:
     """``get_client``'s two halves must not disagree.
 
@@ -112,43 +129,24 @@ async def test_token_fetch_and_cookie_jar_read_the_same_account(
     is ``None``; before the fix the profile argument made only the first half
     re-resolve to the profile file.
     """
-    seen: dict[str, object] = {}
-
-    async def fake_fetch(
-        cookie_jar,
-        storage_path,
-        profile,
-        *,
-        initial_baseline,
-        resolve_route,
-        allow_headless,
-        env_auth,
-    ):
-        seen.update(
-            path=storage_path,
-            profile=profile,
-            env_auth=env_auth,
-            allow_headless=allow_headless,
-            route=await resolve_route(storage_path),
-            sid=next(cookie.value for cookie in initial_baseline if cookie.name == "SID"),
-            live_sid=next(cookie.value for cookie in cookie_jar.jar if cookie.name == "SID"),
-        )
-        return "csrf", "session", initial_baseline
-
-    monkeypatch.setattr(refresh, "_fetch_tokens_with_exact_baseline", fake_fetch)
+    monkeypatch.setenv("NOTEBOOKLM_DISABLE_KEEPALIVE_POKE", "1")
+    httpx_mock.add_response(
+        url="https://notebook.google.com/",
+        content=b'"SNlM0e":"csrf" "FdrFJe":"session"',
+    )
 
     assert await refresh.fetch_tokens_with_domains(None, "work") == ("csrf", "session")
 
-    assert seen["path"] is None, "token fetch must not re-resolve the profile file"
-    assert seen == {
-        "path": None,
-        "profile": "work",
-        "env_auth": True,
-        "allow_headless": False,
-        "route": {"authuser": 0},
-        "sid": "sid-from-env-var",
-        "live_sid": "sid-from-env-var",
-    }
+    request = httpx_mock.get_request()
+    assert request is not None
+    assert cookies.resolve_auth_storage_path(None, "work") is None
+    profile_account = json.loads(profiled_home.read_text(encoding="utf-8"))["notebooklm"]["account"]
+    assert profile_account == {"authuser": 7, "email": "profile@example.com"}
+    cookie_header = request.headers.get("cookie", "")
+    assert "SID=sid-from-env-var" in cookie_header
+    assert "sid-from-profile-file" not in cookie_header
+    assert str(request.url) == "https://notebook.google.com/"
+    assert request.url.params.get("authuser") is None
     assert tokens.load_auth_from_storage(None)["SID"] == "sid-from-env-var"
 
 
@@ -233,7 +231,7 @@ async def test_explicit_cookies_still_refresh_when_env_var_is_merely_present(
     # Two rounds: the initial fetch, then the post-refresh retry.
     for _ in range(2):
         httpx_mock.add_response(
-            url=f"{get_base_url()}/",
+            url=re.compile(rf"^{re.escape(get_base_url())}/(?:\?.*)?$"),
             status_code=302,
             headers={"Location": "https://accounts.google.com/signin"},
         )

@@ -21,11 +21,13 @@ disk; sibling-process writes survive.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import httpx
 import pytest
+from pytest_httpx import HTTPXMock
 
 import notebooklm._atomic_io as _atomic_io
 import notebooklm._auth.refresh as _auth_refresh
@@ -48,6 +50,7 @@ from notebooklm.auth import (
     AuthTokens,
     build_httpx_cookies_from_storage,
 )
+from tests._fixtures import platform_command
 from tests._helpers.client_factory import build_client_shell_for_tests
 
 
@@ -67,6 +70,20 @@ def _cookie_value(storage_path: Path, name: str, domain: str, path: str = "/") -
 def _write_storage(storage_path: Path, cookies: list[dict]) -> None:
     """Helper: write a Playwright-shaped storage_state.json."""
     storage_path.write_text(json.dumps({"cookies": cookies}), encoding="utf-8")
+
+
+def _refresh_command(tmp_path: Path, cookies: list[dict]) -> str:
+    """Create a real refresh command that replaces the selected storage file."""
+    script = tmp_path / "replace_auth_storage.py"
+    payload = json.dumps({"cookies": cookies})
+    script.write_text(
+        "import os\n"
+        "from pathlib import Path\n"
+        f"Path(os.environ['NOTEBOOKLM_REFRESH_STORAGE_PATH']).write_text({payload!r}, "
+        "encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    return platform_command([sys.executable, str(script)])
 
 
 def _stored_cookie(name: str, value: str, **overrides) -> dict:
@@ -896,7 +913,7 @@ class TestRefreshCmdReplacementBaseline:
 
     @pytest.mark.asyncio
     async def test_fetch_tokens_with_domains_uses_exact_replacement_baseline(
-        self, tmp_path, monkeypatch
+        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
     ):
         from notebooklm import auth as auth_mod
 
@@ -909,29 +926,32 @@ class TestRefreshCmdReplacementBaseline:
             ],
         )
 
-        replacement_baseline = None
-
-        async def fake_fetch_with_exact_baseline(cookie_jar, storage_path, profile, **kwargs):
-            nonlocal replacement_baseline
-            # Simulate the wholesale jar swap: clear & repopulate with new values.
-            cookie_jar.jar.clear()
-            cookie_jar.set("SID", "post", domain=".google.com", path="/")
-            cookie_jar.set("__Secure-1PSIDTS", "post_refresh", domain=".google.com", path="/")
-            _write_storage(
-                storage,
+        monkeypatch.setenv(
+            _auth_refresh.NOTEBOOKLM_REFRESH_CMD_ENV,
+            _refresh_command(
+                tmp_path,
                 [
                     _stored_cookie("SID", "post"),
                     _stored_cookie("__Secure-1PSIDTS", "post_refresh"),
                 ],
-            )
-            replacement_baseline = CookieJar.from_httpx(cookie_jar)
-            _set_cookie_value(cookie_jar, "__Secure-1PSIDTS", "post_retry_rotation")
-            return "csrf", "sid", replacement_baseline
-
-        monkeypatch.setattr(
-            _auth_refresh,
-            "_fetch_tokens_with_exact_baseline",
-            fake_fetch_with_exact_baseline,
+            ),
+        )
+        monkeypatch.setenv("NOTEBOOKLM_DISABLE_KEEPALIVE_POKE", "1")
+        httpx_mock.add_response(
+            url="https://notebook.google.com/",
+            status_code=302,
+            headers={"Location": "https://accounts.google.com/signin"},
+        )
+        httpx_mock.add_response(
+            url="https://accounts.google.com/signin",
+            content=b"<html>Login</html>",
+        )
+        httpx_mock.add_response(
+            url="https://notebook.google.com/",
+            content=b'"SNlM0e":"csrf" "FdrFJe":"sid"',
+            headers={
+                "Set-Cookie": ("__Secure-1PSIDTS=post_retry_rotation; Domain=.google.com; Path=/")
+            },
         )
 
         captured: list[tuple[CookieJar, CookieJar]] = []
@@ -952,7 +972,6 @@ class TestRefreshCmdReplacementBaseline:
 
         assert len(captured) == 1
         observation, baseline = captured[0]
-        assert baseline is replacement_baseline
         assert next(cookie.value for cookie in baseline if cookie.name == "__Secure-1PSIDTS") == (
             "post_refresh"
         )
@@ -962,7 +981,9 @@ class TestRefreshCmdReplacementBaseline:
         assert _cookie_value(storage, "__Secure-1PSIDTS", ".google.com") == ("post_retry_rotation")
 
     @pytest.mark.asyncio
-    async def test_auth_tokens_from_storage_re_snapshots_after_refresh(self, tmp_path, monkeypatch):
+    async def test_auth_tokens_from_storage_re_snapshots_after_refresh(
+        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
+    ):
         from notebooklm import auth as auth_mod
 
         storage = tmp_path / "storage_state.json"
@@ -974,18 +995,29 @@ class TestRefreshCmdReplacementBaseline:
             ],
         )
 
-        async def fake_fetch_with_exact_baseline(
-            cookie_jar, storage_path, profile, *, initial_baseline, **kwargs
-        ):
-            cookie_jar.jar.clear()
-            cookie_jar.set("SID", "post", domain=".google.com", path="/")
-            cookie_jar.set("__Secure-1PSIDTS", "post_refresh", domain=".google.com", path="/")
-            return ("csrf", "sid", CookieJar.from_httpx(cookie_jar))
-
-        # ``AuthTokens.from_storage`` lives in ``_auth.tokens`` and resolves the
-        # token fetch through the private owner module.
-        monkeypatch.setattr(
-            _auth_refresh, "_fetch_tokens_with_exact_baseline", fake_fetch_with_exact_baseline
+        monkeypatch.setenv(
+            _auth_refresh.NOTEBOOKLM_REFRESH_CMD_ENV,
+            _refresh_command(
+                tmp_path,
+                [
+                    _stored_cookie("SID", "post"),
+                    _stored_cookie("__Secure-1PSIDTS", "post_refresh"),
+                ],
+            ),
+        )
+        monkeypatch.setenv("NOTEBOOKLM_DISABLE_KEEPALIVE_POKE", "1")
+        httpx_mock.add_response(
+            url="https://notebook.google.com/",
+            status_code=302,
+            headers={"Location": "https://accounts.google.com/signin"},
+        )
+        httpx_mock.add_response(
+            url="https://accounts.google.com/signin",
+            content=b"<html>Login</html>",
+        )
+        httpx_mock.add_response(
+            url="https://notebook.google.com/",
+            content=b'"SNlM0e":"csrf" "FdrFJe":"sid"',
         )
 
         auth = await auth_mod.AuthTokens.from_storage(path=storage)
@@ -1180,7 +1212,7 @@ class TestBaselineNotAdvancedOnSaveFailure:
 
     @pytest.mark.asyncio
     async def test_auth_tokens_from_storage_carries_failed_save_baseline(
-        self, tmp_path, monkeypatch
+        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
     ):
         """Pre-client fetch rotations must be retried if their save fails."""
         from notebooklm import auth as auth_mod
@@ -1194,12 +1226,6 @@ class TestBaselineNotAdvancedOnSaveFailure:
             ],
         )
 
-        async def fake_fetch_with_exact_baseline(
-            cookie_jar, storage_path, profile, *, initial_baseline, **kwargs
-        ):
-            _set_cookie_value(cookie_jar, "__Secure-1PSIDTS", "mutated")
-            return ("csrf", "session", initial_baseline)
-
         def failed_merge(self, observation, *, baseline, recovery_observation=None):
             return CookieMergeResult(
                 CookieMergeDisposition.HARD_FAILURE,
@@ -1207,9 +1233,11 @@ class TestBaselineNotAdvancedOnSaveFailure:
                 committed=None,
             )
 
-        # ``AuthTokens.from_storage`` resolves through the private owner modules.
-        monkeypatch.setattr(
-            _auth_refresh, "_fetch_tokens_with_exact_baseline", fake_fetch_with_exact_baseline
+        monkeypatch.setenv("NOTEBOOKLM_DISABLE_KEEPALIVE_POKE", "1")
+        httpx_mock.add_response(
+            url="https://notebook.google.com/",
+            content=b'"SNlM0e":"csrf" "FdrFJe":"session"',
+            headers={"Set-Cookie": "__Secure-1PSIDTS=mutated; Domain=.google.com; Path=/"},
         )
         monkeypatch.setattr(ProfileStore, "merge_cookie_observation", failed_merge)
 
@@ -1488,7 +1516,7 @@ class TestCASVariantAware:
 
     @pytest.mark.asyncio
     async def test_variant_aware_cas_rejection_then_recovery_through_real_plumbing(
-        self, tmp_path, monkeypatch
+        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
     ):
         """Composition of variant-aware CAS + variant-aware baseline through real plumbing.
 
@@ -1530,26 +1558,39 @@ class TestCASVariantAware:
             ],
         )
 
-        async def fake_fetch_with_exact_baseline(
-            cookie_jar, storage_path, profile, *, initial_baseline, **kwargs
-        ):
-            # Drop the bare-host OSID from the jar and re-key it on the
-            # leading-dot variant so the in-memory jar diverges from disk on
-            # domain shape — the exact variance the variant-aware CAS lookup
-            # has to bridge.
-            cookie_jar.delete("OSID", domain="accounts.google.com")
-            cookie_jar.set("OSID", "OURS", domain=".accounts.google.com", path="/")
+        def rotate_on_accounts(request: httpx.Request) -> httpx.Response:
             # Sibling-process write between snapshot and our save.
-            cookies = _read_cookies(storage_path)
+            cookies = _read_cookies(storage)
             for cookie in cookies:
                 if cookie["name"] == "OSID":
                     cookie["value"] = "SIBLING"
-            _write_storage(storage_path, cookies)
-            return ("csrf", "session", initial_baseline)
+            _write_storage(storage, cookies)
+            return httpx.Response(
+                302,
+                headers=[
+                    ("Location", "https://notebook.google.com/ready"),
+                    (
+                        "Set-Cookie",
+                        "OSID=; Max-Age=0; Domain=accounts.google.com; Path=/",
+                    ),
+                    ("Set-Cookie", "OSID=OURS; Domain=.accounts.google.com; Path=/"),
+                ],
+                request=request,
+            )
 
-        # ``AuthTokens.from_storage`` resolves through the private refresh owner.
-        monkeypatch.setattr(
-            _auth_refresh, "_fetch_tokens_with_exact_baseline", fake_fetch_with_exact_baseline
+        monkeypatch.setenv("NOTEBOOKLM_DISABLE_KEEPALIVE_POKE", "1")
+        httpx_mock.add_response(
+            url="https://notebook.google.com/",
+            status_code=302,
+            headers={"Location": "https://accounts.google.com/rotate"},
+        )
+        httpx_mock.add_callback(
+            rotate_on_accounts,
+            url="https://accounts.google.com/rotate",
+        )
+        httpx_mock.add_response(
+            url="https://notebook.google.com/ready",
+            content=b'"SNlM0e":"csrf" "FdrFJe":"session"',
         )
 
         # Pre-client save runs through the real save_cookies_to_storage; the
@@ -1596,12 +1637,10 @@ class TestCASVariantAware:
             # Set-Cookie aligns the in-memory dotted OSID with what disk now
             # holds. Run the second save through the real lifecycle plumbing.
             assert core._collaborators.kernel.http_client is not None
-            _set_cookie_value(
-                core._collaborators.kernel.get_http_client().cookies, "OSID", "SIBLING"
-            )
-            await core._collaborators.web_transport.save_cookies(
-                core._collaborators.kernel.get_http_client().cookies
-            )
+            live = core._collaborators.kernel.get_http_client().cookies
+            live.delete("OSID", domain="accounts.google.com", path="/")
+            _set_cookie_value(live, "OSID", "SIBLING")
+            await core._collaborators.web_transport.save_cookies(live)
 
             assert _cookie_value(storage, "OSID", "accounts.google.com") == "SIBLING", (
                 "Second save must not re-clobber the sibling write — the "
@@ -1814,19 +1853,19 @@ class TestRefreshCmdBaselineCapturedBeforeRetryFetch:
             ],
         )
 
-        monkeypatch.setenv(auth_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "dummy-refresh")
-        # c-PR2: the refresh success epoch relocated from ``_REFRESH_GENERATIONS``
-        # into the single_flight core; reset it for hermetic setup.
-        _auth_refresh._single_flight._reset_for_tests()
-
-        async def fake_run_refresh_cmd(storage_path, profile):
-            _write_storage(
-                storage_path,
+        monkeypatch.setenv(
+            auth_mod.NOTEBOOKLM_REFRESH_CMD_ENV,
+            _refresh_command(
+                tmp_path,
                 [
                     _stored_cookie("SID", "from_refresh_cmd"),
                     _stored_cookie("__Secure-1PSIDTS", "from_refresh_cmd"),
                 ],
-            )
+            ),
+        )
+        # c-PR2: the refresh success epoch relocated from ``_REFRESH_GENERATIONS``
+        # into the single_flight core; reset it for hermetic setup.
+        _auth_refresh._single_flight._reset_for_tests()
 
         fetch_calls = 0
 
@@ -1838,7 +1877,6 @@ class TestRefreshCmdBaselineCapturedBeforeRetryFetch:
             _set_cookie_value(cookie_jar, "__Secure-1PSIDTS", "post_retry_rotation")
             return ("csrf", "sid")
 
-        monkeypatch.setattr(_auth_refresh, "_run_refresh_cmd", fake_run_refresh_cmd)
         monkeypatch.setattr(_auth_refresh, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
 
         await auth_mod.fetch_tokens_with_domains(path=storage)
