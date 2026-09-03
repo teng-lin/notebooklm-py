@@ -436,10 +436,10 @@ class TestLoginWindowsPermissions:
         assert len(chmod_700) >= 2, f"Expected ≥2 chmod(0o700) calls on Unix, got {len(chmod_700)}"
 
     def test_windows_storage_chmod_skipped(self, tmp_path, monkeypatch):
-        """On Windows the canonical writer skips all POSIX permission mutation.
+        """On Windows the profile-store owner skips all POSIX permission mutation.
 
         Behavior test (not a source grep): since b-PR3 the ``storage_state.json``
-        save path funnels through ``_auth.storage``, whose parent-dir
+        save path funnels through ``ProfileStore``, whose parent-dir
         ``0700`` and backup ``0600`` chmods (and the file-mode ``fchmod``) are
         POSIX-only and guarded on ``sys.platform``. With the platform forced to
         ``win32`` a real ``storage_state.json`` write through the canonical
@@ -500,7 +500,7 @@ class TestLoginWindowsPermissions:
         # ``backup`` deliberately omitted: shutil.copy2 replicates the source mode
         # via its OWN os.chmod (unrelated to the writer's win32-guarded chmod),
         # which would be noise here. The parent-dir 0700 chmod and the file-mode
-        # fchmod are the writer/_atomic_io permission bits under test.
+        # fchmod are the profile-store/_atomic_io permission bits under test.
         outcome = ProfileStore(path, locks=HeldLocks()).replace_from_login(
             LoginWriteRequest(
                 source=ProfileDocument.decode(state),

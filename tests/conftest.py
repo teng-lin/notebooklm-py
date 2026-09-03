@@ -142,8 +142,8 @@ def _isolate_backend_preference(
 def _reset_poke_state():
     """Reset process-owned auth lifecycle state between tests.
 
-    The ``notebooklm.auth`` rotation throttle keeps two pieces of module-global
-    state that persist across tests and would otherwise leak:
+    The process-default rotation owner keeps two pieces of state that persist
+    across tests and would otherwise leak:
 
     1. ``_LAST_POKE_ATTEMPT_MONOTONIC`` (``dict[Path | None, float]``) — keyed
        per-profile. Without clearing, the first test to poke any profile sets

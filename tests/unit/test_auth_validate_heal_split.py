@@ -108,6 +108,7 @@ class TestValidateIsPure:
         _, result = recovery.validate(rows)
         assert result.ok is False
         assert rows == before
+        assert httpx_mock.get_requests() == []
 
 
 class TestWrapperComposition:
@@ -127,6 +128,7 @@ class TestWrapperComposition:
         rows = _rows(*_COMPLETE)
         _, error = recovery.validate_with_recovery(rows)
         assert error is None
+        assert httpx_mock.get_requests() == []
 
     @pytest.mark.no_default_keepalive_mock
     def test_successful_heal_clears_the_error_and_mutates_in_place(
@@ -154,6 +156,11 @@ class TestWrapperComposition:
 
     @pytest.mark.no_default_keepalive_mock
     def test_declined_heal_preserves_the_original_error(self, httpx_mock: HTTPXMock) -> None:
+        """Missing secondary bindings decline healing before any HTTP request.
+
+        The pre-heal validator has already selected ``psidts_unroutable``;
+        declining the heal must preserve that original typed reason and rows.
+        """
         rows = _rows("SID")
         rows.append(
             {
