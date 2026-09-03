@@ -225,7 +225,15 @@ def test_nightly_full_copy_journal_and_cleanup_dag_is_explicit() -> None:
 
 def test_rpc_and_package_lanes_have_their_designated_lifecycles() -> None:
     rpc = _load("rpc-health.yml")["jobs"]
+    assert "${GITHUB_SHA}" not in str(rpc)
     web = rpc["health-check"]
+    for step_name in (
+        "Extract failing methods for ERROR issue",
+        "Report rebrand-host state changes",
+    ):
+        step = next(item for item in _steps(web) if item.get("name") == step_name)
+        assert step["env"]["CHECKED_SHA"] == "${{ needs.resolve-target.outputs.sha }}"
+        assert "${CHECKED_SHA}" in str(step["run"])
     assert "--mode rpc" in str(_step(web, "provision")["run"])
     assert _step(web, "health")["if"] == "steps.preflight.outcome == 'success'"
     assert _step(web, "cleanup")["if"] == "always()"

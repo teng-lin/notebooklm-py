@@ -595,6 +595,8 @@ jobs:
         && steps.dup_error.outputs.open == '0'
       id: error_details
       shell: bash
+      env:
+        CHECKED_SHA: ${{ needs.resolve-target.outputs.sha }}
       run: |
         # Pull the affected-methods list out of the RESULT line emitted by the script.
         affected=$(grep -m1 "non-transient ERROR detected in methods:" health-report.txt \
@@ -607,7 +609,7 @@ jobs:
           echo ""
           echo "**Affected methods:** ${affected}"
           echo ""
-          echo "**Commit:** ${GITHUB_SHA}"
+          echo "**Commit:** ${CHECKED_SHA}"
           echo ""
           echo "Full report attached below (rate-limit / \`RESOURCE_EXHAUSTED\` errors"
           echo "are filtered out — anything listed here is a real failure that needs"
@@ -768,6 +770,7 @@ jobs:
       shell: bash
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        CHECKED_SHA: ${{ needs.resolve-target.outputs.sha }}
       run: |
         set -uo pipefail
         failed=false
@@ -793,7 +796,7 @@ jobs:
           {
             echo "## Rebrand host (notebook.google.com): \`${capability}\` ${from_state} -> ${to_state}"
             echo ""
-            echo "**Commit:** ${GITHUB_SHA}"
+            echo "**Commit:** ${CHECKED_SHA}"
             echo ""
             echo "This is the rebrand-host lane of the nightly RPC health check. It"
             echo "carries NO exit code and is independent of the exit-coded main signal;"
