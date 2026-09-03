@@ -1,27 +1,15 @@
 {
   "files": [
     {
-      "count": 3,
-      "path": "tests/unit/app/test_app_doctor.py"
-    },
-    {
-      "count": 3,
-      "path": "tests/unit/cli/test_playwright_login_render_contract.py"
-    },
-    {
       "count": 4,
       "path": "tests/unit/test_auth_browser_facade.py"
     },
     {
-      "count": 5,
+      "count": 3,
       "path": "tests/unit/test_auth_cold_start_recovery.py"
     },
     {
-      "count": 36,
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 2,
+      "count": 1,
       "path": "tests/unit/test_auth_recovery_rungs.py"
     },
     {
@@ -49,26 +37,6 @@
       "path": "tests/unit/test_auth_browser_facade.py"
     },
     {
-      "attribute": "get_base_host",
-      "count": 1,
-      "idiom": "patch.object",
-      "module": "browser_capture",
-      "owner_kind": "helper",
-      "owner_qualname": "_drive_login",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/cli/test_playwright_login_render_contract.py"
-    },
-    {
-      "attribute": "replace_captured_profile",
-      "count": 1,
-      "idiom": "patch.object",
-      "module": "browser_capture",
-      "owner_kind": "helper",
-      "owner_qualname": "_drive_login",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/cli/test_playwright_login_render_contract.py"
-    },
-    {
       "attribute": "run_browser_capture",
       "count": 1,
       "idiom": "monkeypatch.setattr",
@@ -77,186 +45,6 @@
       "owner_qualname": "test_capture_delegates_plan_and_projects_page_html",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_auth_browser_facade.py"
-    },
-    {
-      "attribute": "time",
-      "count": 1,
-      "idiom": "patch.object",
-      "module": "browser_capture",
-      "owner_kind": "helper",
-      "owner_qualname": "_drive_login",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/cli/test_playwright_login_render_contract.py"
-    },
-    {
-      "attribute": "_get_drive_record",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_follower_does_not_report_false_success_when_leader_failed",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "_playwright_installed",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_headless_reauth_pass_when_profile_and_playwright",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/app/test_app_doctor.py"
-    },
-    {
-      "attribute": "_playwright_installed",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_headless_reauth_warn_does_not_force_failure",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/app/test_app_doctor.py"
-    },
-    {
-      "attribute": "_playwright_installed",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_headless_reauth_warns_without_browser_profile",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/app/test_app_doctor.py"
-    },
-    {
-      "attribute": "_playwright_installed",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_auth_tokens_cold_start_headless_recovery_honors_env",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_cold_start_recovery.py"
-    },
-    {
-      "attribute": "_playwright_installed",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_cdp_off_host_maps_to_failed",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "_playwright_installed",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_cdp_opt_in_still_required",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "_playwright_installed",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_cdp_path_skips_profile_gate_and_drives_cdp",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "_playwright_installed",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_cdp_playwright_missing_is_unavailable",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "_playwright_installed",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_cdp_url_from_env_routes_to_cdp",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "_playwright_installed",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_readiness_never_drives_a_browser",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "_playwright_installed",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_readiness_ready_when_profile_present_and_playwright",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "_playwright_installed",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_readiness_reports_both_missing",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "_playwright_installed",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_readiness_unavailable_without_playwright",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "_playwright_installed",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_readiness_unavailable_without_profile",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "_playwright_installed",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_remote_cdp_url_does_not_route_to_cdp",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "_playwright_installed",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_typed_capture_abort_from_cdp_uses_same_safe_mapping",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
     },
     {
       "attribute": "attempt_headless_reauth",
@@ -359,16 +147,6 @@
       "path": "tests/unit/test_auth_session_refresh_cmd.py"
     },
     {
-      "attribute": "get_browser_profile_dir",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_browser_adapter_maps_status_and_uses_explicit_storage_profile",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_recovery_rungs.py"
-    },
-    {
       "attribute": "headless_reauth_readiness",
       "count": 1,
       "idiom": "monkeypatch.setattr",
@@ -377,246 +155,6 @@
       "owner_qualname": "test_readiness_is_projected_to_a_transport_neutral_tuple",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_auth_browser_facade.py"
-    },
-    {
-      "attribute": "run_browser_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_auth_tokens_cold_start_headless_recovery_honors_env",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_cold_start_recovery.py"
-    },
-    {
-      "attribute": "run_browser_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_cdp_path_skips_profile_gate_and_drives_cdp",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_browser_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_concurrent_explicit_attempts_coalesce_to_one_browser",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_browser_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_env_optin_drives_browser_without_explicit_flag",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_browser_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_failed_on_unexpected_capture_error",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_browser_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_failed_when_profile_session_also_dead",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_browser_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_follower_does_not_report_false_success_when_leader_failed",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_browser_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_optin_off_even_with_profile_is_unavailable",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_browser_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_optin_off_is_unavailable_and_never_launches",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_browser_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_optin_on_empty_profile_dir_is_unavailable",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_browser_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_optin_on_no_profile_dir_is_unavailable",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_browser_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_readiness_never_drives_a_browser",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_browser_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_remote_cdp_url_does_not_route_to_cdp",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_browser_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_stale_outcome_from_previous_cycle_is_not_coalesced",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_browser_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_success_when_capture_succeeds",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_browser_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_typed_capture_abort_maps_to_safe_infrastructure_reason",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_browser_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_unavailable_when_playwright_missing",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_cdp_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_cdp_off_host_maps_to_failed",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_cdp_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_cdp_opt_in_still_required",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_cdp_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_cdp_path_skips_profile_gate_and_drives_cdp",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_cdp_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_cdp_playwright_missing_is_unavailable",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_cdp_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_cdp_url_from_env_routes_to_cdp",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_cdp_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_remote_cdp_url_does_not_route_to_cdp",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "attribute": "run_cdp_capture",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth",
-      "owner_kind": "test",
-      "owner_qualname": "test_typed_capture_abort_from_cdp_uses_same_safe_mapping",
-      "package": "notebooklm._browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
     },
     {
       "attribute": "capture_oauth_token",
@@ -703,30 +241,6 @@
     {
       "count": 1,
       "owner_kind": "test",
-      "owner_qualname": "test_headless_reauth_pass_when_profile_and_playwright",
-      "path": "tests/unit/app/test_app_doctor.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_headless_reauth_warn_does_not_force_failure",
-      "path": "tests/unit/app/test_app_doctor.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_headless_reauth_warns_without_browser_profile",
-      "path": "tests/unit/app/test_app_doctor.py"
-    },
-    {
-      "count": 3,
-      "owner_kind": "helper",
-      "owner_qualname": "_drive_login",
-      "path": "tests/unit/cli/test_playwright_login_render_contract.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
       "owner_qualname": "test_availability_delegates_through_facade_io",
       "path": "tests/unit/test_auth_browser_facade.py"
     },
@@ -749,12 +263,6 @@
       "path": "tests/unit/test_auth_browser_facade.py"
     },
     {
-      "count": 2,
-      "owner_kind": "test",
-      "owner_qualname": "test_auth_tokens_cold_start_headless_recovery_honors_env",
-      "path": "tests/unit/test_auth_cold_start_recovery.py"
-    },
-    {
       "count": 1,
       "owner_kind": "test",
       "owner_qualname": "test_auth_tokens_cold_start_headless_recovery_is_explicit",
@@ -773,157 +281,7 @@
       "path": "tests/unit/test_auth_cold_start_recovery.py"
     },
     {
-      "count": 2,
-      "owner_kind": "test",
-      "owner_qualname": "test_cdp_off_host_maps_to_failed",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 2,
-      "owner_kind": "test",
-      "owner_qualname": "test_cdp_opt_in_still_required",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 3,
-      "owner_kind": "test",
-      "owner_qualname": "test_cdp_path_skips_profile_gate_and_drives_cdp",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 2,
-      "owner_kind": "test",
-      "owner_qualname": "test_cdp_playwright_missing_is_unavailable",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 2,
-      "owner_kind": "test",
-      "owner_qualname": "test_cdp_url_from_env_routes_to_cdp",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
       "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_concurrent_explicit_attempts_coalesce_to_one_browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_env_optin_drives_browser_without_explicit_flag",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_failed_on_unexpected_capture_error",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_failed_when_profile_session_also_dead",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 2,
-      "owner_kind": "test",
-      "owner_qualname": "test_follower_does_not_report_false_success_when_leader_failed",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_optin_off_even_with_profile_is_unavailable",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_optin_off_is_unavailable_and_never_launches",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_optin_on_empty_profile_dir_is_unavailable",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_optin_on_no_profile_dir_is_unavailable",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 2,
-      "owner_kind": "test",
-      "owner_qualname": "test_readiness_never_drives_a_browser",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_readiness_ready_when_profile_present_and_playwright",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_readiness_reports_both_missing",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_readiness_unavailable_without_playwright",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_readiness_unavailable_without_profile",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 3,
-      "owner_kind": "test",
-      "owner_qualname": "test_remote_cdp_url_does_not_route_to_cdp",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_stale_outcome_from_previous_cycle_is_not_coalesced",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_success_when_capture_succeeds",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 2,
-      "owner_kind": "test",
-      "owner_qualname": "test_typed_capture_abort_from_cdp_uses_same_safe_mapping",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_typed_capture_abort_maps_to_safe_infrastructure_reason",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_unavailable_when_playwright_missing",
-      "path": "tests/unit/test_auth_headless_reauth.py"
-    },
-    {
-      "count": 2,
       "owner_kind": "test",
       "owner_qualname": "test_browser_adapter_maps_status_and_uses_explicit_storage_profile",
       "path": "tests/unit/test_auth_recovery_rungs.py"
@@ -1016,34 +374,10 @@
       "module": "browser_capture"
     },
     {
-      "attribute": "get_base_host",
-      "count": 1,
-      "idiom": "patch.object",
-      "module": "browser_capture"
-    },
-    {
-      "attribute": "replace_captured_profile",
-      "count": 1,
-      "idiom": "patch.object",
-      "module": "browser_capture"
-    },
-    {
       "attribute": "run_browser_capture",
       "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "browser_capture"
-    },
-    {
-      "attribute": "time",
-      "count": 1,
-      "idiom": "patch.object",
-      "module": "browser_capture"
-    },
-    {
-      "attribute": "_playwright_installed",
-      "count": 4,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth"
     },
     {
       "attribute": "attempt_headless_reauth",
@@ -1052,19 +386,7 @@
       "module": "headless_reauth"
     },
     {
-      "attribute": "get_browser_profile_dir",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth"
-    },
-    {
       "attribute": "headless_reauth_readiness",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth"
-    },
-    {
-      "attribute": "run_browser_capture",
       "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "headless_reauth"
@@ -1084,19 +406,19 @@
   ],
   "summary": {
     "TOTAL": {
-      "private": 4,
-      "public": 26,
-      "total": 30
+      "private": 0,
+      "public": 21,
+      "total": 21
     },
     "browser_capture": {
       "private": 0,
-      "public": 5,
-      "total": 5
+      "public": 2,
+      "total": 2
     },
     "headless_reauth": {
-      "private": 4,
-      "public": 13,
-      "total": 17
+      "private": 0,
+      "public": 11,
+      "total": 11
     },
     "oauth_token": {
       "private": 0,

@@ -62,6 +62,27 @@ This is a static count, so two things can move it without the coupling changing:
   happened to be a genuine module-level name — the ``mock.return_value`` shape,
   and 44 of the original 262 sites.
 
+Supported grammar — this is a repository ratchet, not a Python interpreter
+-------------------------------------------------------------------------
+The collector intentionally recognizes the finite forms used by this repository:
+explicit family imports and lexical aliases; direct attribute/item/namespace
+mutation through the idioms above; literal names, mappings, and finite literal
+loops/containers without unpacking; and direct local helper calls whose explicit
+arguments resolve to a finite target set. Direct finite arguments to the
+syntactic ``list(...)`` form used by the suite are inspected only far enough to
+prevent a resolved family target being hidden inside one. Other constructor and
+unpacking forms are outside this grammar.
+
+This script does not promise arbitrary Python control-flow or pytest fixture
+semantics. Within the supported grammar, a resolved family target is counted, a
+proven-fresh/non-family target is excluded, and an unresolved family-related
+target raises ``AuditError``. Unsupported syntax is not evidence of a coupling
+reduction: make the target statically resolvable or keep the existing projected
+row. Dynamic attributes or keys against an already-resolved family module also
+fail closed. Unknown ownership is conservative only when reached from a
+statically resolved family value within this grammar; the audit is not a proof
+over every value Python could produce at runtime.
+
 Deliberate exclusions
 ---------------------
 * **String targets** (``monkeypatch.setattr("notebooklm._auth.refresh.x", …)``)
@@ -1225,6 +1246,35 @@ def _forwarded_parameter_context(
     }
     if not direct_used:
         return {}
+
+    def finite_container_cells(node: ast.AST) -> tuple[ast.AST, ...] | None:
+        if isinstance(node, ast.Tuple | ast.List | ast.Set):
+            return tuple(node.elts)
+        if isinstance(node, ast.Dict):
+            return (*filter(None, node.keys), *node.values)
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "list"
+        ):
+            return (*node.args, *(keyword.value for keyword in node.keywords))
+        return None
+
+    def finite_container_values(node: ast.AST, call: ast.Call) -> tuple[set[str], bool]:
+        resolved = resolve_argument(node, call)
+        if resolved is not None:
+            return {resolved}, False
+        cells = finite_container_cells(node)
+        if cells is None:
+            return set(), not isinstance(node, ast.Constant)
+        found: set[str] = set()
+        opaque = False
+        for cell in cells:
+            child_values, child_opaque = finite_container_values(cell, call)
+            found.update(child_values)
+            opaque |= child_opaque
+        return found, opaque
+
     by_leaf: dict[str, set[str]] = defaultdict(set)
     for name in functions:
         by_leaf[name.rsplit(".", 1)[-1]].add(name)
@@ -1307,8 +1357,17 @@ def _forwarded_parameter_context(
                 edges.append((source, destination))
             else:
                 unresolved.add(destination)
-        elif not isinstance(argument, ast.Constant | ast.Dict | ast.List | ast.Set | ast.Tuple):
-            unresolved.add(destination)
+        else:
+            cells = finite_container_cells(argument)
+            if cells is not None:
+                container_values, opaque = finite_container_values(argument, call)
+                values[destination].update(container_values)
+                if container_values or opaque:
+                    # The container identity is not the contained family owner.
+                    # Retain the family evidence, then reject the ambiguity.
+                    unresolved.add(destination)
+            elif not isinstance(argument, ast.Constant):
+                unresolved.add(destination)
     for candidate in ambiguous:
         unresolved.update(key for key in used if key[0] == candidate)
     changed = True

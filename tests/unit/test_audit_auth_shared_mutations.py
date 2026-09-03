@@ -225,6 +225,43 @@ def test_fresh_nonfamily_shared_helper_target_is_excluded(audit, tmp_path):
     assert _collect(audit, tmp_path, body) == []
 
 
+def test_list_call_cannot_launder_shared_owner(audit, tmp_path):
+    body = (
+        "from notebooklm._auth.state import Owner\n"
+        "def helper(monkeypatch, targets):\n"
+        "    monkeypatch.setattr(targets[0], '_flag', True)\n"
+        "def test_x(monkeypatch):\n"
+        "    helper(monkeypatch, list([Owner]))\n"
+    )
+    with pytest.raises(audit.AuditError, match="not finitely resolved"):
+        _collect(audit, tmp_path, body)
+
+
+def test_list_call_with_fresh_local_remains_excluded(audit, tmp_path):
+    body = (
+        "def helper(targets):\n"
+        "    targets[0].append(1)\n"
+        "def test_x():\n"
+        "    local = []\n"
+        "    helper(list([local]))\n"
+    )
+    assert _collect(audit, tmp_path, body) == []
+
+
+def test_list_shared_value_stays_visible_through_local_forwarder(audit, tmp_path):
+    body = (
+        "from notebooklm._auth.state import Owner\n"
+        "def inner(monkeypatch, targets):\n"
+        "    monkeypatch.setattr(targets[0], '_flag', True)\n"
+        "def outer(monkeypatch, targets):\n"
+        "    inner(monkeypatch, targets)\n"
+        "def test_x(monkeypatch):\n"
+        "    outer(monkeypatch, list([Owner]))\n"
+    )
+    with pytest.raises(audit.AuditError, match="not finitely resolved"):
+        _collect(audit, tmp_path, body)
+
+
 def test_nested_shared_containers_retain_stable_literal_key_identity(audit, tmp_path):
     body = (
         "from notebooklm._auth import state\n"

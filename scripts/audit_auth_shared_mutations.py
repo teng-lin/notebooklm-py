@@ -6,6 +6,17 @@ The module-patch scorecard cannot see a patch moved from ``module._STATE`` to
 therefore freezes those shared-object operations, including their lexical
 owner.  Unknown/dynamic mutation names against a resolved owner fail closed.
 Fresh instances assigned inside a test do not resolve as shared owners.
+
+This is a repository-specific shrink-only ratchet, not a general Python or
+pytest analyzer. It supports explicit family imports/aliases, direct
+attribute/item/namespace mutation, literal finite names and containers without
+unpacking, the suite-used syntactic ``list(...)`` wrapper, and direct local
+helper forwarding with explicit finite arguments. A resolved
+shared owner is counted, a proven-fresh/non-family value is excluded, and an
+unresolved family-related target fails closed. Unsupported syntax cannot
+justify a metric decrease; make it statically resolvable or preserve the
+existing projected row. Unknown ownership is treated conservatively only when
+reached from a statically resolved family/shared owner within this grammar.
 """
 
 from __future__ import annotations

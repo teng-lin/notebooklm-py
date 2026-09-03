@@ -243,9 +243,13 @@ def test_real_function_local_import_sites_are_not_dropped(script):
     sites = script.collect_sites(REPO_ROOT / "tests", REPO_ROOT / "src" / "notebooklm" / "_auth")
     actual = {(site.path, site.module, site.attribute) for site in sites}
     assert {
-        ("tests/unit/test_warning_dedupe.py", "profile_store", "_STORAGE_LOCKS"),
-        ("tests/unit/test_profile_atomic_write.py", "profile_store", "_STORAGE_LOCKS"),
-        ("tests/unit/test_auth_account_coverage.py", "profile_store", "_STORAGE_LOCKS"),
+        (
+            "tests/integration/concurrency/test_upload_timeout_config.py",
+            "tokens",
+            "_load_stored_auth",
+        ),
+        ("tests/unit/test_auth_refresh.py", "psidts_recovery", "_recover_psidts_inline"),
+        ("tests/unit/test_runtime_lifecycle.py", "keepalive", "_rotate_cookies"),
     } <= actual
     account_commit_sites = [
         site
@@ -601,6 +605,43 @@ def test_module_literal_constant_rebound_through_global_fails_closed(script, tmp
 def test_fresh_nonfamily_helper_target_is_excluded(script, tmp_path):
     body = "def helper(target):\n    target.SEAM = 1\ndef test_x():\n    helper(object())\n"
     assert _sites(script, tmp_path, body, auth_module="storage", module_body=_MODULE_BODY) == []
+
+
+def test_list_call_cannot_launder_family_module(script, tmp_path):
+    body = (
+        "from notebooklm._auth import storage\n"
+        "def helper(monkeypatch, targets):\n"
+        "    monkeypatch.setattr(targets[0], 'SEAM', 1)\n"
+        "def test_x(monkeypatch):\n"
+        "    helper(monkeypatch, list([storage]))\n"
+    )
+    with pytest.raises(script.AuditError, match="not finitely resolved"):
+        _sites(script, tmp_path, body, auth_module="storage", module_body=_MODULE_BODY)
+
+
+def test_list_call_with_fresh_local_remains_excluded(script, tmp_path):
+    body = (
+        "def helper(monkeypatch, targets):\n"
+        "    monkeypatch.setattr(targets[0], 'SEAM', 1)\n"
+        "def test_x(monkeypatch):\n"
+        "    local = object()\n"
+        "    helper(monkeypatch, list([local]))\n"
+    )
+    assert _sites(script, tmp_path, body, auth_module="storage", module_body=_MODULE_BODY) == []
+
+
+def test_list_family_value_stays_visible_through_local_forwarder(script, tmp_path):
+    body = (
+        "from notebooklm._auth import storage\n"
+        "def inner(monkeypatch, targets):\n"
+        "    monkeypatch.setattr(targets[0], 'SEAM', 1)\n"
+        "def outer(monkeypatch, targets):\n"
+        "    inner(monkeypatch, targets)\n"
+        "def test_x(monkeypatch):\n"
+        "    outer(monkeypatch, list([storage]))\n"
+    )
+    with pytest.raises(script.AuditError, match="not finitely resolved"):
+        _sites(script, tmp_path, body, auth_module="storage", module_body=_MODULE_BODY)
 
 
 def test_bulk_and_namespace_mutations_expand_literal_keys(script, tmp_path):

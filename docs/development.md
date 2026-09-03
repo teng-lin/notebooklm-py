@@ -1024,6 +1024,16 @@ python scripts/regen_baselines.py --allow-growth
 Auth mutation projections are schema-v2 shrink-only ratchets. Review full
 package/target/path/lexical-owner rows and total counts alongside the
 private-name column; a non-underscore target is not necessarily public API.
+They intentionally implement a finite repository grammar, not general Python
+dataflow or pytest fixture discovery: use explicit family imports, direct
+mutation idioms, literal finite names/containers without unpacking, the
+suite-used syntactic `list(...)` wrapper, and direct local helpers with statically
+resolvable arguments. If a family-related target is reported as
+unresolved, simplify it until the audit can resolve it. Do not use unsupported
+control flow, dynamic registries, closure capture, or fixture/plugin discovery
+to justify a lower measurement; retain the prior row unless the coupling was
+removed in a supported, reviewable form. Proven-fresh or proven-non-family
+targets remain excluded.
 Authored scenario, lifecycle-cleanup, and coverage-allowance policies live in
 `tests/fixtures/policies/` and are never emitted by baseline regeneration.
 Every in-scope pull request also runs the always-present Ubuntu

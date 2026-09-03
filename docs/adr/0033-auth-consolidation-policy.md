@@ -26,6 +26,27 @@ fail-closed collector expands that constant. The shared-lifetime companion
 projection starts at 188 operations (32 private-name, 46 in fixture/helper
 bodies, zero direct assignments).
 
+**Measurement boundary.** These projections are repository-specific ratchets,
+not general Python dataflow or pytest-fixture analyzers. Their supported grammar
+is deliberately finite: explicit family imports and lexical aliases; direct
+attribute, item, namespace, and bulk mutation; literal mutation names and finite
+literal loops/containers without unpacking; the suite-used syntactic `list(...)`
+wrapper; and direct local helper forwarding whose explicit arguments resolve to a
+finite target set. The three outcomes inside that grammar
+are: count a resolved family/shared target, exclude a proven-fresh or
+proven-non-family target, or reject an unresolved family-related target. The
+last outcome is opaque debt with a baseline of zero, not an invitation to
+approximate more of Python.
+
+Consequently, arbitrary control flow, closure capture, runtime registries,
+descriptor behavior, and pytest plugin/fixture discovery are known limits. A
+rewrite using such a form cannot be offered as proof that coupling decreased:
+it must be rewritten into the supported grammar or retain the prior projected
+row. Review findings about unsupported semantics are blocking only when they
+reproduce current repository behavior or demonstrate a simple laundering
+rewrite within the supported grammar. Dynamic names or keys against an
+already-resolved family/shared owner always fail closed.
+
 **Amended 2026-08-12 (module-size budget raise):** `MODULE_SIZE_BUDGET` moved 1000 → 1500 under
 ADR-0008. This ADR's sanctioned-merge machinery is unaffected in substance, but one mechanical
 consequence needed handling: the shrink-lock guarantee below was carried by
