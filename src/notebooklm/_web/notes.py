@@ -28,6 +28,7 @@ import logging
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
+from .._idempotency import call_unconfirmed_on_transport_loss
 from .._lookup import unwrap_or_raise
 from .._notes import NotesAPI
 from ..exceptions import DecodingError, NoteNotFoundError, RPCError
@@ -293,11 +294,15 @@ class NoteService:
         cancel intent without leaving an orphan row behind.
         """
         params = [notebook_id, "", [1], None, title]
-        result = await self._rpc.rpc_call(
-            RPCMethod.CREATE_NOTE,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            operation_variant=operation_variant,
+        result = await call_unconfirmed_on_transport_loss(
+            lambda: self._rpc.rpc_call(
+                RPCMethod.CREATE_NOTE,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                operation_variant=operation_variant,
+            ),
+            method=RPCMethod.CREATE_NOTE,
+            what="CreateNote",
         )
 
         note_id: str | None = None

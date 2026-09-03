@@ -14,7 +14,7 @@ import pytest
 from notebooklm._app import source_add as cli_source_add
 from notebooklm._app.errors import ErrorCategory, classify
 from notebooklm._idempotency import _CreateResultKind, _IdempotentCreateResult
-from notebooklm._sources import SourcesAPI
+from notebooklm._sources import SourcesAPI, _validate_add_text_idempotency
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm._web.sources.add import SourceAddService, honor_requested_title_if_fresh
 from notebooklm.exceptions import (
@@ -514,21 +514,9 @@ async def test_add_text_wraps_generic_rpc_error(
     assert "Failed to add text source 'Title'" in str(exc_info.value)
 
 
-@pytest.mark.asyncio
-async def test_add_text_refuses_idempotent_flag(
-    service: SourceAddService,
-    logger: logging.Logger,
-) -> None:
+def test_add_text_refuses_idempotent_flag_before_service_admission() -> None:
     with pytest.raises(NonIdempotentRetryError):
-        await service.add_text(
-            "nb_1",
-            "Title",
-            "content",
-            idempotent=True,
-            rpc=SimpleNamespace(rpc_call=AsyncMock()),
-            wait_until_ready=AsyncMock(),
-            logger=logger,
-        )
+        _validate_add_text_idempotency(True)
 
 
 @pytest.mark.asyncio

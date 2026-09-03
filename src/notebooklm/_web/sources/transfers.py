@@ -25,8 +25,9 @@ import builtins
 import logging
 from collections.abc import Callable
 from dataclasses import replace
+from typing import cast
 
-from ..._idempotency import mark_unconfirmed
+from ..._idempotency import unresolved_commit_error
 from ...exceptions import (
     DecodingError,
     NetworkError,
@@ -53,22 +54,9 @@ from .batch import _url_spec
 
 __all__ = ["SourceTransferService"]
 
-_UNRESOLVED_HINT = (
-    "Do not blindly retry; list the notebook's sources and reconcile first. "
-    "No automatic retry was attempted."
-)
-
 
 def _unconfirmed(method: RPCMethod, what: str, exc: Exception) -> RPCError:
-    rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
-    return mark_unconfirmed(
-        RPCError(
-            f"UNRESOLVED — {what} may have committed before its response was lost. "
-            f"{_UNRESOLVED_HINT} {exc}",
-            method_id=method.value,
-            rpc_code=rpc_code,
-        )
-    )
+    return cast(RPCError, unresolved_commit_error(method, what, exc))
 
 
 def _as_processing(source: Source) -> Source:

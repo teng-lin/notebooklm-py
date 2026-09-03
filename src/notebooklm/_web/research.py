@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from .. import _research as _research_base
 from .. import research as _research_pub
-from .._idempotency import mark_unconfirmed
+from .._idempotency import call_unconfirmed_on_transport_loss, mark_unconfirmed
 from .._notebook_metadata import NotebookSourceLister
 from .._research import BaseResearchAPI, validate_discover
 from .._runtime.config import (
@@ -349,10 +349,14 @@ class WebResearchAPI(BaseResearchAPI):
             rpc_id = RPCMethod.START_DEEP_RESEARCH
 
         try:
-            result = await self._rpc.rpc_call(
-                rpc_id,
-                params,
-                source_path=f"/notebook/{notebook_id}",
+            result = await call_unconfirmed_on_transport_loss(
+                lambda: self._rpc.rpc_call(
+                    rpc_id,
+                    params,
+                    source_path=f"/notebook/{notebook_id}",
+                ),
+                method=rpc_id,
+                what=f"research.start ({mode_lower})",
             )
         except (AuthError, RateLimitError, ServerError, NetworkError):
             raise

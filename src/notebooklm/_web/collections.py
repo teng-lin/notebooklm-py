@@ -21,6 +21,7 @@ import logging
 from typing import Any
 
 from .._collections import CollectionsAPI, ListNotebooks
+from .._idempotency import call_unconfirmed_on_transport_loss
 from .._lookup import unwrap_or_raise
 from ..exceptions import CollectionError, CollectionNotFoundError, UnknownRPCMethodError
 from ..rpc import RPCMethod
@@ -167,15 +168,23 @@ class WebCollectionsAPI(CollectionsAPI):
         one later in the UI if desired.
         """
         before_ids = {collection.id for collection in await self.list()}
-        await self._rpc.rpc_call(
-            RPCMethod.CREATE_LABEL,
-            build_create_collection_params(name),
-            source_path=_ACCOUNT_PATH,
-            allow_null=True,
-            # #2290: a status-tagged null is a server rejection, not an empty success.
-            raise_on_null_status=True,
+
+        async def create_and_readback() -> builtins.list[Collection]:
+            await self._rpc.rpc_call(
+                RPCMethod.CREATE_LABEL,
+                build_create_collection_params(name),
+                source_path=_ACCOUNT_PATH,
+                allow_null=True,
+                # #2290: a status-tagged null is a server rejection, not an empty success.
+                raise_on_null_status=True,
+            )
+            return await self.list()
+
+        after = await call_unconfirmed_on_transport_loss(
+            create_and_readback,
+            method=RPCMethod.CREATE_LABEL,
+            what="the collection create and required list readback",
         )
-        after = await self.list()
         new = [collection for collection in after if collection.id not in before_ids]
         if len(new) != 1:
             raise CollectionError(

@@ -10,10 +10,12 @@ from notebooklm._idempotency import (
     _CreateResultKind,
     _IdempotentCreateResult,
     idempotent_create,
+    unresolved_commit_error,
 )
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm._web.sources.add import SourceAddService
-from notebooklm.exceptions import NetworkError
+from notebooklm.exceptions import NetworkError, RPCError
+from notebooklm.rpc import RPCMethod
 from notebooklm.types import Source
 
 
@@ -60,6 +62,44 @@ async def test_idempotent_create_reraises_last_exception_by_identity() -> None:
         await idempotent_create(create, AsyncMock(return_value=None))
 
     assert raised.value is error
+
+
+def test_unresolved_commit_error_does_not_trust_upstream_message_prefix() -> None:
+    error = NetworkError("UNRESOLVED upstream proxy response", method_id="upstream")
+
+    wrapped = unresolved_commit_error("web-method", "the test write", error)
+
+    assert type(wrapped) is RPCError
+    assert wrapped is not error
+    assert wrapped.method_id == "web-method"
+    assert "the test write may have committed" in str(wrapped)
+    assert "UNRESOLVED upstream proxy response" in str(wrapped)
+    assert getattr(wrapped, "unconfirmed", False) is True
+
+
+def test_unresolved_commit_error_preserves_domain_error_only_when_explicit() -> None:
+    domain_error = RPCError("domain-specific reconciliation guidance", method_id="domain")
+
+    preserved = unresolved_commit_error(
+        "unused-method",
+        "unused write",
+        domain_error,
+        preserve_exception=True,
+    )
+
+    assert preserved is domain_error
+    assert getattr(preserved, "unconfirmed", False) is True
+
+
+def test_unresolved_commit_error_normalizes_rpc_method_id_to_builtin_str() -> None:
+    wrapped = unresolved_commit_error(
+        RPCMethod.COPY_SOURCES,
+        "the source copy",
+        NetworkError("response lost"),
+    )
+
+    assert wrapped.method_id == RPCMethod.COPY_SOURCES.value
+    assert type(wrapped.method_id) is str
 
 
 @pytest.mark.asyncio

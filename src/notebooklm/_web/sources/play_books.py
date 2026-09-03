@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 
-from ..._idempotency import mark_unconfirmed
+from ..._idempotency import unresolved_commit_error
 from ..._types.sources import PlayBook
 from ...exceptions import (
     DecodingError,
@@ -49,14 +49,17 @@ def _unconfirmed_add(exc: Exception) -> RPCError:
     as "not added" and retry, which would duplicate the source (#2292).
     """
     rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
-    return mark_unconfirmed(
+    return unresolved_commit_error(
+        RPCMethod.ADD_SOURCES_ASYNC,
+        "the Play Book add",
         RPCError(
             "UNRESOLVED — the Play Book add may have committed before its response "
             "could be confirmed. Do not blindly retry; list the notebook's sources "
             f"and reconcile first. No automatic retry was attempted. {exc}",
             method_id=RPCMethod.ADD_SOURCES_ASYNC.value,
             rpc_code=rpc_code,
-        )
+        ),
+        preserve_exception=True,
     )
 
 

@@ -37,6 +37,7 @@ from .errors import (
     raise_grpc_status,
     sanitize_escaping_exception,
 )
+from .retry_policy import replay_safe_for
 
 ReqT = TypeVar("ReqT")
 RespT = TypeVar("RespT")
@@ -117,18 +118,19 @@ def _resolve_replay_safe(
     operation_variant: str | None,
     raw_replay: _RawReplayClassification | None,
 ) -> bool:
-    if raw_replay is None:
-        policy_replay_safe = _method_allows_replay(method, operation_variant)
-    else:
+    if raw_replay is not None:
         if raw_replay.capability is not _RAW_REPLAY_CAPABILITY:
             raise ValueError("invalid raw replay classification")
         policy_replay_safe = raw_replay.replay_safe
-    if replay_safe is not policy_replay_safe:
-        raise ValueError(
-            f"Android RPC replay_safe={replay_safe} disagrees with policy "
-            f"{policy_replay_safe} for {method}"
-        )
-    return policy_replay_safe
+        if replay_safe is not policy_replay_safe:
+            raise ValueError(
+                f"Android RPC replay_safe={replay_safe} disagrees with raw classification "
+                f"{policy_replay_safe} for {method}"
+            )
+        return policy_replay_safe
+
+    del operation_variant
+    return replay_safe_for(method, replay_safe)
 
 
 _GRPC_RETRY_CLASS = {
@@ -137,183 +139,6 @@ _GRPC_RETRY_CLASS = {
     14: _RetryClass.SERVER,
     16: _RetryClass.AUTH,
 }
-
-
-class _SessionIdempotencyPolicy(str, Enum):
-    """Temporary Android mirror of the web idempotency taxonomy.
-
-    PR-5 replaces this transport-local table with the shared operation
-    manifest.  Until then, keeping the same policy names makes the parity
-    test mechanical without importing the web registry into Android.
-    """
-
-    PROBE_THEN_CREATE = "probe_then_create"
-    IDEMPOTENT_SET_OP = "idempotent_set_op"
-    AT_LEAST_ONCE_ACCEPTED = "at_least_once_accepted"
-    NON_IDEMPOTENT_NO_RETRY = "non_idempotent_no_retry"
-
-
-@dataclass(frozen=True)
-class _MethodIdempotency:
-    default: _SessionIdempotencyPolicy
-    variants: dict[str, _SessionIdempotencyPolicy] | None = None
-
-
-_ORCHESTRATION_SERVICE = (
-    "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/"
-)
-_SHARING_SERVICE = "/labs.language.tailwind.sharing.LabsTailwindSharingService/"
-
-
-def _method_rows(
-    service: str,
-    names: tuple[str, ...],
-    policy: _SessionIdempotencyPolicy,
-) -> dict[str, _MethodIdempotency]:
-    return {f"{service}{name}": _MethodIdempotency(policy) for name in names}
-
-
-# One interim, fail-closed source of truth for every Android gRPC method used
-# by the handwritten adapters.  The classifications mirror
-# ``_web.policy.IDEMPOTENCY_REGISTRY`` 1:1; tests compare every row to that
-# registry and scan every Android unary/stream call for totality.  The streamed
-# chat method has no batchexecute enum row and is classified independently as a
-# non-idempotent turn creation.
-_ANDROID_IDEMPOTENCY_POLICIES: dict[str, _MethodIdempotency] = {
-    **_method_rows(
-        _ORCHESTRATION_SERVICE,
-        (
-            "ActOnSources",
-            "AddTentativeSources",
-            "CreateArtifact",
-            "CreateProject",
-        ),
-        _SessionIdempotencyPolicy.PROBE_THEN_CREATE,
-    ),
-    **_method_rows(
-        _SHARING_SERVICE,
-        ("ShareProject",),
-        _SessionIdempotencyPolicy.PROBE_THEN_CREATE,
-    ),
-    **_method_rows(
-        _ORCHESTRATION_SERVICE,
-        (
-            "AddSources",
-            "AddSourcesAsync",
-            "AppendSource",
-            "CopyArtifactsAsync",
-            "CopyProject",
-            "CopySourcesAsync",
-            "CreateLabel",
-            "CreateNote",
-            "DeleteLabels",
-            "DeriveArtifact",
-            "DiscoverSources",
-            "DiscoverSourcesAsync",
-            "DiscoverSourcesManifold",
-            "ExportToDrive",
-            "FinishDiscoverSourcesRun",
-            "GenerateArtifact",
-            "GenerateFreeFormStreamed",
-        ),
-        _SessionIdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
-    ),
-    **_method_rows(
-        _ORCHESTRATION_SERVICE,
-        (
-            "CancelDiscoverSourcesJob",
-            "CancelGeneration",
-            "CheckSourceFreshness",
-            "DeleteArtifact",
-            "DeleteChatTurns",
-            "DeleteNotes",
-            "DeleteProjects",
-            "DeleteSources",
-            "GenerateDocumentGuides",
-            "GenerateNotebookGuide",
-            "GeneratePromptSuggestions",
-            "GenerateReportSuggestions",
-            "GetArtifact",
-            "GetArtifactCustomizationChoices",
-            "GetChatSessionStatus",
-            "GetLabels",
-            "GetNotes",
-            "GetOrCreateAccount",
-            "GetProject",
-            "ListArtifacts",
-            "ListChatSessions",
-            "ListChatTurns",
-            "ListDiscoverSourcesJob",
-            "ListExpertIntelligenceContent",
-            "ListRecentlyViewedProjects",
-            "LoadSource",
-            "MutateAccount",
-            "MutateLabel",
-            "MutateNote",
-            "MutateProject",
-            "MutateSource",
-            "NextStepSuggestions",
-            "RemoveRecentlyViewedProject",
-            "RetrieveRelevantChunks",
-            "UpdateArtifact",
-        ),
-        _SessionIdempotencyPolicy.IDEMPOTENT_SET_OP,
-    ),
-    **_method_rows(
-        _SHARING_SERVICE,
-        ("GetProjectDetails",),
-        _SessionIdempotencyPolicy.IDEMPOTENT_SET_OP,
-    ),
-    **_method_rows(
-        _ORCHESTRATION_SERVICE,
-        ("RefreshSource",),
-        _SessionIdempotencyPolicy.AT_LEAST_ONCE_ACCEPTED,
-    ),
-}
-
-_MUTATE_LABEL_METHOD = f"{_ORCHESTRATION_SERVICE}MutateLabel"
-_ANDROID_IDEMPOTENCY_POLICIES[_MUTATE_LABEL_METHOD] = _MethodIdempotency(
-    _SessionIdempotencyPolicy.IDEMPOTENT_SET_OP,
-    variants={
-        "add_sources": _SessionIdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
-        "remove_sources": _SessionIdempotencyPolicy.IDEMPOTENT_SET_OP,
-        "add_notebooks": _SessionIdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
-        "remove_notebooks": _SessionIdempotencyPolicy.IDEMPOTENT_SET_OP,
-    },
-)
-
-_REPLAY_SAFE_POLICIES = frozenset(
-    {
-        _SessionIdempotencyPolicy.IDEMPOTENT_SET_OP,
-        _SessionIdempotencyPolicy.AT_LEAST_ONCE_ACCEPTED,
-    }
-)
-
-
-def _resolve_android_idempotency_policy(
-    method: str,
-    operation_variant: str | None = None,
-) -> _SessionIdempotencyPolicy:
-    """Resolve one Android method/variant, rejecting unclassified drift."""
-
-    try:
-        row = _ANDROID_IDEMPOTENCY_POLICIES[method]
-    except KeyError:
-        raise ValueError(f"Android RPC method has no idempotency policy: {method}") from None
-    if operation_variant is not None and row.variants is not None:
-        try:
-            return row.variants[operation_variant]
-        except KeyError:
-            known = sorted(row.variants)
-            raise ValueError(
-                f"Unknown Android RPC operation_variant {operation_variant!r} for "
-                f"{method}; known variants: {known}"
-            ) from None
-    return row.default
-
-
-def _method_allows_replay(method: str, operation_variant: str | None = None) -> bool:
-    return _resolve_android_idempotency_policy(method, operation_variant) in _REPLAY_SAFE_POLICIES
 
 
 class _DeadlineSignal(Exception):

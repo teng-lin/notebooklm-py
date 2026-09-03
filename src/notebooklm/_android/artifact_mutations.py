@@ -7,7 +7,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .._artifact import validation as _artifact_validation
-from .._idempotency import mark_unconfirmed
+from .._idempotency import call_unconfirmed_on_transport_loss, mark_unconfirmed
 from .._types.artifacts import _status_from_code
 from .._types.enums import ExportType
 from ..exceptions import (
@@ -21,11 +21,11 @@ from .artifact_proto import ARTIFACTS_PROTO as _PROTO
 from .artifact_proto import empty_response_type
 from .codecs.artifacts import decode_artifact
 from .session import AndroidSession
-from .write_safety import call_unconfirmed_on_transport_loss
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 GENERATE_ARTIFACT_METHOD = f"/{_SERVICE}/GenerateArtifact"
 EXPORT_TO_DRIVE_METHOD = f"/{_SERVICE}/ExportToDrive"
+DELETE_ARTIFACT_METHOD = f"/{_SERVICE}/DeleteArtifact"
 
 
 def android_request_context() -> Any:
@@ -57,7 +57,10 @@ async def retry_failed_artifact(
                 replay_safe=False,
                 response_type=_PROTO.GenerateArtifactResponse,
                 expected_epoch=lease.epoch,
-            )
+            ),
+            method=GENERATE_ARTIFACT_METHOD,
+            what="GenerateArtifact",
+            chain=None,
         )
     try:
         if not response.HasField("artifact") or not response.artifact.artifact_id:
@@ -82,8 +85,6 @@ async def delete_artifact(
     list_studio: Callable[..., Awaitable[list[Artifact]]],
     notebook_id: str,
     artifact_id: str,
-    *,
-    method: str,
 ) -> None:
     """Delete only after proving the global artifact id belongs to the notebook."""
 
@@ -93,9 +94,9 @@ async def delete_artifact(
             return
         try:
             await session.unary(
-                method,
+                DELETE_ARTIFACT_METHOD,
                 _PROTO.DeleteArtifactRequest(artifact_id=artifact_id),
-                replay_safe=True,
+                replay_safe=False,
                 response_type=empty_response_type(),
                 expected_epoch=lease.epoch,
             )
@@ -143,7 +144,10 @@ async def export_to_drive(
                 replay_safe=False,
                 response_type=_PROTO.ExportToDriveResponse,
                 expected_epoch=lease.epoch,
-            )
+            ),
+            method=EXPORT_TO_DRIVE_METHOD,
+            what="ExportToDrive",
+            chain=None,
         )
     parsed = urlsplit(response.url)
     if parsed.scheme != "https" or not parsed.hostname:
@@ -157,6 +161,7 @@ async def export_to_drive(
 
 
 __all__ = [
+    "DELETE_ARTIFACT_METHOD",
     "EXPORT_TO_DRIVE_METHOD",
     "GENERATE_ARTIFACT_METHOD",
     "delete_artifact",

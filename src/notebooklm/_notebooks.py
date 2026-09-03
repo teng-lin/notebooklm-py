@@ -9,7 +9,7 @@ from typing import Any
 from urllib.parse import quote
 
 from ._env import get_base_url
-from ._idempotency import idempotent_create
+from ._idempotency import idempotent_create, unresolved_commit_error
 from ._idempotency import mark_unconfirmed as _unconfirmed
 from ._notebook_metadata import NotebookMetadataService, NotebookSourceLister
 from ._runtime.call_supervisor import OperationLease
@@ -263,7 +263,9 @@ class NotebooksAPI(ABC):
                     type(exc).__name__,
                     exc_info=True,
                 )
-                raise _unconfirmed(
+                raise unresolved_commit_error(
+                    self._create_method_id,
+                    "the notebook create",
                     RPCError(
                         # Action first — the MCP/REST surfaces truncate messages at
                         # 300 characters, which cut the closing instruction off.
@@ -276,7 +278,8 @@ class NotebooksAPI(ABC):
                         "happen — but an earlier attempt in this call may also have "
                         "committed.",
                         method_id=self._create_method_id,
-                    )
+                    ),
+                    preserve_exception=True,
                 ) from exc
             matches = [nb for nb in current if nb.title == title]
             if baseline_ids is not None:

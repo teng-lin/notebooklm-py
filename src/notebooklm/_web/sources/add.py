@@ -13,6 +13,7 @@ from ..._idempotency import (
     _CreateResultKind,
     _IdempotentCreateResult,
     idempotent_create,
+    unresolved_commit_error,
 )
 from ..._idempotency import (
     mark_unconfirmed as _unconfirmed,
@@ -20,7 +21,6 @@ from ..._idempotency import (
 from ...exceptions import (
     AuthError,
     NetworkError,
-    NonIdempotentRetryError,
     RateLimitError,
     ServerError,
     SourceAddError,
@@ -39,18 +39,6 @@ ParseUrl = Callable[[str], Any]
 ExtractVideoId = Callable[[Any, str], str | None]
 ValidateVideoId = Callable[[str], bool]
 YoutubeDetector = Callable[[str], bool]
-
-
-def _validate_add_text_idempotency(idempotent: bool) -> None:
-    """Reject an unsupported text idempotency promise before admission."""
-    if idempotent:
-        raise NonIdempotentRetryError(
-            "add_text cannot be marked idempotent: text sources have no "
-            "reliable server-side dedupe key (titles non-unique, content "
-            "not exposed). For idempotent text imports, embed a UUID in "
-            "the title and dedupe client-side. See "
-            "docs/python-api.md#idempotency."
-        )
 
 
 def _validate_drive_file_id(file_id: str) -> None:
@@ -376,7 +364,9 @@ class SourceAddService:
                     type(exc).__name__,
                     exc_info=True,
                 )
-                raise _unconfirmed(
+                raise unresolved_commit_error(
+                    RPCMethod.ADD_SOURCE,
+                    "the URL-source add",
                     SourceAddError(
                         url,
                         cause=exc,
@@ -394,7 +384,8 @@ class SourceAddService:
                             "duplicates happen — but an earlier attempt in this call "
                             "may also have committed."
                         ),
-                    )
+                    ),
+                    preserve_exception=True,
                 ) from exc
             matches = [source for source in sources if source.url == url]
             if baseline_ids is not None:
@@ -405,7 +396,9 @@ class SourceAddService:
                 # Both halves of the ambiguity are worth stating: the match may
                 # predate the add, or it may BE the add, in which case the create
                 # landed and the caller will otherwise never learn its id.
-                raise _unconfirmed(
+                raise unresolved_commit_error(
+                    RPCMethod.ADD_SOURCE,
+                    "the URL-source add",
                     SourceAddError(
                         url,
                         cause=baseline_error,
@@ -418,13 +411,16 @@ class SourceAddService:
                             f"{_describe_sources(matches)} may either predate this add or be "
                             "the source it just created."
                         ),
-                    )
+                    ),
+                    preserve_exception=True,
                 )
             if len(matches) == 1:
                 (match,) = matches  # exactly one (len==1 guard); unpack, not matches[0]
                 return match
             if len(matches) > 1:
-                raise _unconfirmed(
+                raise unresolved_commit_error(
+                    RPCMethod.ADD_SOURCE,
+                    "the URL-source add",
                     SourceAddError(
                         url,
                         message=(
@@ -435,7 +431,8 @@ class SourceAddService:
                             f"{len(matches)} new sources with this URL after a transport "
                             f"failure ({_describe_sources(matches)})."
                         ),
-                    )
+                    ),
+                    preserve_exception=True,
                 )
             return None
 
@@ -466,7 +463,6 @@ class SourceAddService:
         logger: logging.Logger,
     ) -> Source:
         """Add a text source to a notebook."""
-        _validate_add_text_idempotency(idempotent)
         logger.debug("Adding text source to notebook %s: %s", notebook_id, title)
         # Nested template block per the Gemini-3.5 wire migration (#1546): the
         # text spec grew from 8 to 11 elements (slot 3 None -> 2, trailing 1) and
@@ -729,7 +725,9 @@ class SourceAddService:
                     type(exc).__name__,
                     exc_info=True,
                 )
-                raise _unconfirmed(
+                raise unresolved_commit_error(
+                    RPCMethod.ADD_SOURCE,
+                    "the Drive-source add",
                     SourceAddError(
                         title,
                         cause=exc,
@@ -744,7 +742,8 @@ class SourceAddService:
                             "retrying on an unanswered probe is how duplicates happen — "
                             "but an earlier attempt in this call may also have committed."
                         ),
-                    )
+                    ),
+                    preserve_exception=True,
                 ) from exc
             matches = [source for source in sources if source.drive_document_id == file_id]
             if baseline_ids is not None:

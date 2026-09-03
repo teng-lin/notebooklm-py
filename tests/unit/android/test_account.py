@@ -224,7 +224,7 @@ async def test_adapter_uses_one_outer_epoch_lease_and_conservative_non_replay() 
     assert method == GET_OR_CREATE_ACCOUNT_METHOD
     assert request.HasField("request_context")
     assert kwargs == {
-        "replay_safe": True,
+        "replay_safe": False,
         "response_type": account_pb2.GetOrCreateAccountResponse,
         "expected_epoch": session.epoch,
     }

@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
-from .._idempotency import mark_unconfirmed
+from .._idempotency import mark_unconfirmed, unresolved_commit_error
 from .._notebook_metadata import NotebookSourceLister
 from .._notebooks import NotebooksAPI
 from .._runtime.call_supervisor import OperationLease
@@ -266,15 +266,18 @@ class AndroidNotebooksAPI(NotebooksAPI):
             )
         except (NetworkError, RateLimitError, ServerError) as exc:
             rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
-            raise mark_unconfirmed(
+            raise unresolved_commit_error(
+                COPY_PROJECT_METHOD,
+                "CopyProject",
                 RPCError(
                     "UNRESOLVED — CopyProject may have committed before its response was "
                     "lost. Do not blindly retry; list notebooks and resolve copies "
                     "manually first.",
                     method_id=COPY_PROJECT_METHOD,
                     rpc_code=rpc_code,
-                )
-            ) from exc
+                ),
+                preserve_exception=True,
+            ) from None
         try:
             notebook = _notebook_codec().decode_project(response, method_id=COPY_PROJECT_METHOD)
             if notebook.id == notebook_id:
@@ -381,7 +384,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
             await self._transport.unary(
                 DELETE_PROJECTS_METHOD,
                 notebook_proto.DeleteProjectsRequest(project_ids=[notebook_id]),
-                replay_safe=True,
+                replay_safe=False,
                 response_type=empty_type,
             )
         except RPCError as exc:
@@ -416,7 +419,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
         response = await self._transport.unary(
             MUTATE_PROJECT_METHOD,
             request,
-            replay_safe=True,
+            replay_safe=False,
             response_type=_read_proto().Project,
         )
         _notebook_codec().validate_project_identity(
@@ -462,7 +465,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
         return await self._transport.unary(
             GENERATE_NOTEBOOK_GUIDE_METHOD,
             notebook_proto.GenerateNotebookGuideRequest(project_id=notebook_id),
-            replay_safe=True,
+            replay_safe=False,
             response_type=wire_proto.WireGenerateNotebookGuideResponse,
         )
 
@@ -490,7 +493,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
                     project_id=notebook_id,
                     request_context=_android_request_context(),
                 ),
-                replay_safe=True,
+                replay_safe=False,
                 response_type=empty_type,
             )
         except RPCError as exc:

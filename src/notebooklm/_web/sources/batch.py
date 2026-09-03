@@ -14,10 +14,10 @@ import re
 from collections import Counter, defaultdict, deque
 from collections.abc import Awaitable, Callable, Sequence
 from ipaddress import IPv6Address, ip_address
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit, urlunsplit
 
-from ..._idempotency import mark_unconfirmed
+from ..._idempotency import unresolved_commit_error
 from ..._source.batch import SourceUrlBatchItem
 from ..._types.enums import GrpcStatusCode, SourceStatus, normalize_rpc_code
 from ...exceptions import (
@@ -106,15 +106,21 @@ def _unresolved_batch_error(urls: Sequence[str], message: str, cause: Exception)
     preview = ", ".join(repr(url) for url in urls[:3])
     if len(urls) > 3:
         preview += f", … ({len(urls)} total)"
-    return mark_unconfirmed(
-        SourceAddError(
-            preview,
-            cause=cause,
-            message=(
-                "UNRESOLVED — do not blindly retry; check the notebook source list and "
-                f"reconcile these URLs first: {preview}. {message}"
+    return cast(
+        SourceAddError,
+        unresolved_commit_error(
+            RPCMethod.ADD_SOURCE,
+            "the batch URL add",
+            SourceAddError(
+                preview,
+                cause=cause,
+                message=(
+                    "UNRESOLVED — do not blindly retry; check the notebook source list and "
+                    f"reconcile these URLs first: {preview}. {message}"
+                ),
             ),
-        )
+            preserve_exception=True,
+        ),
     )
 
 
@@ -169,11 +175,16 @@ class SourceBatchAddService:
             # Preserve the typed transport exception (ADR-0019) while making
             # the write-uncertainty dominate retry classification (#2220).
             original = str(exc)
-            mark_unconfirmed(exc)
             exc.args = (
                 "UNRESOLVED — do not blindly retry; check the notebook source list and "
                 "reconcile the batch URLs first. The batch transport failed and an "
                 f"unknown subset may have committed; no automatic retry was attempted. {original}",
+            )
+            unresolved_commit_error(
+                RPCMethod.ADD_SOURCE,
+                "the batch URL add",
+                exc,
+                preserve_exception=True,
             )
             raise
         except RPCError as exc:
@@ -183,12 +194,17 @@ class SourceBatchAddService:
             # committed, so fail closed instead of pretending every item failed.
             if normalize_rpc_code(exc.rpc_code) != GrpcStatusCode.FAILED_PRECONDITION.value:
                 original = str(exc)
-                mark_unconfirmed(exc)
                 exc.args = (
                     "UNRESOLVED — do not blindly retry; check the notebook source list and "
                     "reconcile the batch URLs first. The batch RPC failed without the "
                     "documented all-rejected status, so its committed subset is unknown; "
                     f"no automatic retry was attempted. {original}",
+                )
+                unresolved_commit_error(
+                    RPCMethod.ADD_SOURCE,
+                    "the batch URL add",
+                    exc,
+                    preserve_exception=True,
                 )
                 raise
             # Preserve the existing per-item adapter contract instead of

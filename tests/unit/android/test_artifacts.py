@@ -827,7 +827,7 @@ async def test_create_artifact_lost_response_is_unconfirmed_and_never_replayed(
     assert getattr(caught.value, "unconfirmed", False) is True
     assert caught.value.method_id == CREATE_ARTIFACT_METHOD
     assert caught.value.rpc_code == getattr(error, "rpc_code", None)
-    assert caught.value.__cause__ is error
+    assert caught.value.__cause__ is None
     assert [call[0] for call in session.calls] == [CREATE_ARTIFACT_METHOD]
     assert session.calls[0][2]["replay_safe"] is False
 
@@ -2319,7 +2319,7 @@ async def test_delete_preflights_ownership_and_is_idempotent_after_that_proof() 
     assert method == DELETE_ARTIFACT_METHOD
     assert request == _PROTO.DeleteArtifactRequest(artifact_id="artifact-1")
     assert kwargs == {
-        "replay_safe": True,
+        "replay_safe": False,
         "response_type": empty_pb2.Empty,
         "expected_epoch": 7,
     }
@@ -2368,7 +2368,7 @@ async def test_rename_preflights_etag_updates_once_and_reads_back() -> None:
     assert list(request.update_mask.paths) == ["title"]
     assert request.etag == "etag-before"
     assert kwargs == {
-        "replay_safe": True,
+        "replay_safe": False,
         "response_type": _PROTO.Artifact,
         "expected_epoch": 7,
     }
@@ -2406,7 +2406,7 @@ async def test_rename_rejects_wrong_bare_update_identity_without_replay() -> Non
         UPDATE_ARTIFACT_METHOD,
     ]
     assert session.calls[1][2] == {
-        "replay_safe": True,
+        "replay_safe": False,
         "response_type": _PROTO.Artifact,
         "expected_epoch": 7,
     }

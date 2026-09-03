@@ -17,7 +17,7 @@ from notebooklm._android.epoch import (
     reset_workflow_epoch,
     workflow_epoch_for,
 )
-from notebooklm._android.notebooks import AndroidNotebooksAPI
+from notebooklm._android.notebooks import GET_PROJECT_METHOD, AndroidNotebooksAPI
 from notebooklm._android.session import (
     ANDROID_GRPC_MAX_RECEIVE_MESSAGE_BYTES,
     ANDROID_GRPC_TARGET,
@@ -332,18 +332,18 @@ async def test_raw_calls_use_fixed_session_auth_codecs_and_constant_telemetry() 
 
 
 @pytest.mark.asyncio
-async def test_unary_rejects_stale_replay_literal_before_wire_dispatch() -> None:
+async def test_unary_accepts_explicit_replay_opt_out_for_safe_method() -> None:
     session, _, channel, _, _ = await _open()
 
-    with pytest.raises(ValueError, match="disagrees with policy"):
-        await session.unary(
-            METHOD,
-            _Message(b"request"),
-            replay_safe=False,
-            response_type=_Message,
-        )
+    result = await session.unary(
+        METHOD,
+        _Message(b"request"),
+        replay_safe=False,
+        response_type=_Message,
+    )
 
-    assert channel.invocations == []
+    assert result == _Message(b"response")
+    assert len(channel.invocations) == 1
 
 
 @pytest.mark.asyncio
@@ -481,7 +481,7 @@ async def test_safe_read_replays_unauthenticated_once_and_mutation_never_replays
         refresh_retry_delay=0,
     )
     assert await session.unary(
-        METHOD,
+        GET_PROJECT_METHOD,
         _Message(b"request"),
         replay_safe=True,
         response_type=_Message,
@@ -517,7 +517,7 @@ async def test_safe_read_replays_unavailable_once_and_mutation_never_replays() -
     session, _, _, _, supervisor = await _open(channel=channel, timeout=5.0, sleep=sleep)
 
     assert await session.unary(
-        METHOD,
+        GET_PROJECT_METHOD,
         _Message(b"request"),
         replay_safe=True,
         response_type=_Message,
@@ -589,6 +589,23 @@ async def test_mutating_rpc_never_replays_new_retry_classes(status: _Status) -> 
     snapshot = supervisor._metrics.snapshot()
     assert snapshot.rpc_rate_limit_retries == 0
     assert snapshot.rpc_server_error_retries == 0
+
+
+@pytest.mark.asyncio
+async def test_unknown_method_is_single_attempt_even_when_declared_replay_safe() -> None:
+    channel = _Channel()
+    channel.unary_outcomes = [_RawRpcError(_Status.UNAVAILABLE), b"must-not-run"]
+    session, _, _, _, _ = await _open(channel=channel)
+
+    with pytest.raises(ServerError):
+        await session.unary(
+            "/package.Service/Method",
+            _Message(b"request"),
+            replay_safe=True,
+            response_type=_Message,
+        )
+
+    assert len(channel.invocations) == 1
 
 
 @pytest.mark.parametrize(

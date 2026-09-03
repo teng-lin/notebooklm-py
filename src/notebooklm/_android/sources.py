@@ -16,10 +16,10 @@ from pathlib import Path
 from typing import Any, Literal, Protocol, TypeVar, cast
 
 from .._deadline import RuntimeDeadline
-from .._idempotency import mark_unconfirmed
+from .._idempotency import mark_unconfirmed, unresolved_commit_error
 from .._runtime.call_supervisor import OperationLease
 from .._source.batch import SourceUrlBatchItem
-from .._sources import SourcesAPI, validate_search
+from .._sources import SourcesAPI, _validate_add_text_idempotency, validate_search
 from .._types.documents import StructuredDocument
 from .._types.research import SourceGuide
 from .._url_utils import is_youtube_url
@@ -28,7 +28,6 @@ from ..exceptions import (
     ConfigurationError,
     DecodingError,
     NetworkError,
-    NonIdempotentRetryError,
     PlayBookNotExportableError,
     RateLimitError,
     RPCError,
@@ -115,10 +114,9 @@ REFRESH_SOURCE_METHOD = f"/{_SERVICE}/RefreshSource"
 _FilterValue = TypeVar("_FilterValue")
 _CORRELATION_PREFIX = "nblm-"
 _CANONICAL_ID_LENGTH = 36
-# Post-upload readiness polling: sleep between GetProject looks, and the
-# smallest wire budget a single look may be handed (capped by the caller's
-# own ``wait_timeout``) so a deadline that reads as spent on the very tick it
-# was started still gets a real request out.
+# Post-upload readiness polling sleeps between GetProject looks. The smallest wire budget
+# a single look may be handed is capped by ``wait_timeout`` so a deadline that reads as spent
+# on its first tick still gets a real request out.
 _POLL_INTERVAL = 0.5
 _POLL_WIRE_FLOOR = 1.0
 
@@ -199,28 +197,23 @@ def _unresolved_add_error(
     cause: Exception | None = None,
     kind: str = "URL",
 ) -> SourceAddError:
-    return mark_unconfirmed(
-        SourceAddError(
-            subject,
-            cause=cause,
-            message=(
-                "UNRESOLVED — check the notebook source list before retrying. "
-                f"The Android {kind} add could not prove {stage} for {subject!r}; neither write "
-                "was replayed and no cleanup delete was sent."
+    return cast(
+        SourceAddError,
+        unresolved_commit_error(
+            ADD_SOURCES_METHOD,
+            f"the Android {kind} add",
+            SourceAddError(
+                subject,
+                cause=cause,
+                message=(
+                    "UNRESOLVED — check the notebook source list before retrying. "
+                    f"The Android {kind} add could not prove {stage} for {subject!r}; neither write "
+                    "was replayed and no cleanup delete was sent."
+                ),
             ),
-        )
+            preserve_exception=True,
+        ),
     )
-
-
-def _validate_add_text_idempotency(idempotent: bool) -> None:
-    if idempotent:
-        raise NonIdempotentRetryError(
-            "add_text cannot be marked idempotent: text sources have no "
-            "reliable server-side dedupe key (titles non-unique, content "
-            "not exposed). For idempotent text imports, embed a UUID in "
-            "the title and dedupe client-side. See "
-            "docs/python-api.md#idempotency."
-        )
 
 
 def _validate_drive_file_id(file_id: str) -> None:
@@ -683,7 +676,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                 ],
                 request_context=android_request_context(),
             ),
-            replay_safe=True,
+            replay_safe=False,
             response_type=_write_proto().MutateSourceResponse,
             expected_epoch=expected_epoch,
         )
@@ -1333,7 +1326,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                 await self._transport.unary(
                     DELETE_SOURCES_METHOD,
                     request,
-                    replay_safe=True,
+                    replay_safe=False,
                     response_type=_empty_type(),
                     expected_epoch=lease.epoch,
                 )
@@ -1371,7 +1364,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                 response = await self._transport.unary(
                     MUTATE_SOURCE_METHOD,
                     request,
-                    replay_safe=True,
+                    replay_safe=False,
                     response_type=_write_proto().MutateSourceResponse,
                     expected_epoch=lease.epoch,
                 )
@@ -1437,7 +1430,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                     source_id=_read_proto().SourceId(id=source_id),
                     request_context=android_request_context(),
                 ),
-                replay_safe=True,
+                replay_safe=False,
                 response_type=_write_proto().RefreshSourceResponse,
                 expected_epoch=lease.epoch,
             )
@@ -1472,20 +1465,25 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         *,
         expected_epoch: int | None = None,
     ) -> bool:
-        unary_options: dict[str, Any] = {
-            "replay_safe": True,
-            "response_type": _write_proto().CheckSourceFreshnessResponse,
-        }
-        if expected_epoch is not None:
-            unary_options["expected_epoch"] = expected_epoch
-        response = await self._transport.unary(
-            CHECK_SOURCE_FRESHNESS_METHOD,
-            _write_proto().CheckSourceFreshnessRequest(
-                source_id=_read_proto().SourceId(id=source_id),
-                request_context=android_request_context(),
-            ),
-            **unary_options,
+        request = _write_proto().CheckSourceFreshnessRequest(
+            source_id=_read_proto().SourceId(id=source_id),
+            request_context=android_request_context(),
         )
+        if expected_epoch is None:
+            response = await self._transport.unary(
+                CHECK_SOURCE_FRESHNESS_METHOD,
+                request,
+                replay_safe=True,
+                response_type=_write_proto().CheckSourceFreshnessResponse,
+            )
+        else:
+            response = await self._transport.unary(
+                CHECK_SOURCE_FRESHNESS_METHOD,
+                request,
+                replay_safe=True,
+                response_type=_write_proto().CheckSourceFreshnessResponse,
+                expected_epoch=expected_epoch,
+            )
         if not response.HasField("source_freshness"):
             return True
         freshness = response.source_freshness

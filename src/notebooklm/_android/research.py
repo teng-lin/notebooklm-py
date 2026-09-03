@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
-from .._idempotency import mark_unconfirmed
+from .._idempotency import call_unconfirmed_on_transport_loss, mark_unconfirmed
 from .._notebook_metadata import NotebookSourceLister
 from .._research import BaseResearchAPI, validate_discover
 from .._runtime.call_supervisor import OperationLease
@@ -42,7 +42,6 @@ from .codecs.research import (
 from .epoch import bind_workflow_epoch, reset_workflow_epoch
 from .session import AndroidSession
 from .upload import android_request_context
-from .write_safety import call_unconfirmed_on_transport_loss
 
 
 def _proto() -> Any:
@@ -155,7 +154,10 @@ class AndroidResearchAPI(BaseResearchAPI):
                     replay_safe=False,
                     response_type=_proto().DiscoverSourcesResponse,
                     expected_epoch=lease.epoch,
-                )
+                ),
+                method=DISCOVER_SOURCES_METHOD,
+                what="DiscoverSources",
+                chain=None,
             )
             try:
                 task_id = response.discover_sources_feedback_key.discover_sources_id
@@ -208,7 +210,10 @@ class AndroidResearchAPI(BaseResearchAPI):
                         replay_safe=False,
                         response_type=_proto().DiscoverSourcesManifoldResponse,
                         expected_epoch=lease.epoch,
-                    )
+                    ),
+                    method=START_FAST_METHOD,
+                    what="DiscoverSourcesManifold",
+                    chain=None,
                 )
                 try:
                     run_id = _canonical_uuid(
@@ -229,7 +234,10 @@ class AndroidResearchAPI(BaseResearchAPI):
                     replay_safe=False,
                     response_type=_proto().DiscoverSourcesAsyncResponse,
                     expected_epoch=lease.epoch,
-                )
+                ),
+                method=START_DEEP_METHOD,
+                what="DiscoverSourcesAsync",
+                chain=None,
             )
             try:
                 run_id = _canonical_uuid(
@@ -284,7 +292,7 @@ class AndroidResearchAPI(BaseResearchAPI):
                         request_context=android_request_context(),
                         source_discovery_job_id=run_id,
                     ),
-                    replay_safe=True,
+                    replay_safe=False,
                     response_type=_empty_type(),
                     expected_epoch=lease.epoch,
                 )

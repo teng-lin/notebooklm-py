@@ -5,7 +5,7 @@ import logging
 import reprlib
 from typing import Any
 
-from .._idempotency import mark_unconfirmed
+from .._idempotency import unresolved_commit_error
 from .._notebook_metadata import (
     NotebookMetadataService,
     NotebookSourceLister,
@@ -638,14 +638,17 @@ class WebNotebooksAPI(NotebooksAPI):
             )
         except (NetworkError, RateLimitError, ServerError) as exc:
             rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
-            raise mark_unconfirmed(
+            raise unresolved_commit_error(
+                RPCMethod.COPY_NOTEBOOK,
+                "CopyProject",
                 RPCError(
                     "UNRESOLVED — CopyProject may have committed before its response was "
                     "lost. Do not blindly retry; list notebooks and resolve copies "
                     "manually first.",
                     method_id=RPCMethod.COPY_NOTEBOOK.value,
                     rpc_code=rpc_code,
-                )
+                ),
+                preserve_exception=True,
             ) from exc
         notebook = Notebook.from_api_response(result)
         if not notebook.id:

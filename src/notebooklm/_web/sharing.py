@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
 
+from .._idempotency import call_unconfirmed_on_transport_loss
 from .._sharing import SharingAPI
 from .._types.enums import ShareAccess, SharePermission, ShareViewLevel
 from ..rpc import RPCMethod
@@ -64,6 +65,30 @@ class WebSharingAPI(SharingAPI):
         )
         return ShareStatus.from_api_response(result, notebook_id)
 
+    async def _share_and_readback(
+        self,
+        notebook_id: str,
+        params: list,
+        *,
+        what: str,
+    ) -> ShareStatus:
+        """Apply one share mutation and include its status readback in the outcome boundary."""
+
+        async def mutate_and_readback() -> ShareStatus:
+            await self._rpc.rpc_call(
+                RPCMethod.SHARE_NOTEBOOK,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+            )
+            return await self.get_status(notebook_id)
+
+        return await call_unconfirmed_on_transport_loss(
+            mutate_and_readback,
+            method=RPCMethod.SHARE_NOTEBOOK,
+            what=what,
+        )
+
     async def set_public(
         self,
         notebook_id: str,
@@ -91,13 +116,11 @@ class WebSharingAPI(SharingAPI):
             None,
             [2],
         ]
-        await self._rpc.rpc_call(
-            RPCMethod.SHARE_NOTEBOOK,
+        return await self._share_and_readback(
+            notebook_id,
             params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
+            what="ShareNotebook public-access update and status readback",
         )
-        return await self.get_status(notebook_id)
 
     async def set_view_level(
         self,
@@ -249,18 +272,16 @@ class WebSharingAPI(SharingAPI):
             [(email, permission.name) for email, permission in grants],
         )
 
-        await self._rpc.rpc_call(
-            RPCMethod.SHARE_NOTEBOOK,
+        return await self._share_and_readback(
+            notebook_id,
             self._share_params(
                 notebook_id,
                 grants,
                 notify=notify,
                 message_block=[0 if welcome_message else 1, welcome_message],
             ),
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
+            what="ShareNotebook user grant and status readback",
         )
-        return await self.get_status(notebook_id)
 
     async def remove_user(
         self,
@@ -292,13 +313,11 @@ class WebSharingAPI(SharingAPI):
             notify=False,
             message_block=[0, ""],
         )
-        await self._rpc.rpc_call(
-            RPCMethod.SHARE_NOTEBOOK,
+        return await self._share_and_readback(
+            notebook_id,
             params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
+            what="ShareNotebook user removal and status readback",
         )
-        return await self.get_status(notebook_id)
 
 
 class ShareManager:

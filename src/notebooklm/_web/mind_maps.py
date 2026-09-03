@@ -15,6 +15,7 @@ import builtins
 import json
 from typing import TYPE_CHECKING, Any
 
+from .._idempotency import call_unconfirmed_on_transport_loss
 from .._mind_maps_api import MindMapsAPI
 from .._types.mind_maps import MindMap, MindMapKind
 from ..exceptions import (
@@ -281,18 +282,22 @@ class WebMindMapsAPI(MindMapsAPI):
         # ``_artifact`` re-exports its injected note-backed service identity.
         from .params.artifacts import build_interactive_mind_map_artifact_params
 
-        # CREATE_ARTIFACT is classified in ``_idempotency.py``. ``operation_variant=None``
+        # CREATE_ARTIFACT is classified in ``_web.policy``. ``operation_variant=None``
         # is passed explicitly to match the other CREATE_ARTIFACT / GENERATE_MIND_MAP
         # call sites (the registry resolves the same entry either way; the explicit
         # kwarg documents the no-variant default).
-        create_response = await self._rpc.rpc_call(
-            RPCMethod.CREATE_ARTIFACT,
-            build_interactive_mind_map_artifact_params(
-                notebook_id, source_ids, instructions=instructions
+        create_response = await call_unconfirmed_on_transport_loss(
+            lambda: self._rpc.rpc_call(
+                RPCMethod.CREATE_ARTIFACT,
+                build_interactive_mind_map_artifact_params(
+                    notebook_id, source_ids, instructions=instructions
+                ),
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                operation_variant=None,
             ),
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-            operation_variant=None,
+            method=RPCMethod.CREATE_ARTIFACT,
+            what="CreateArtifact interactive mind map",
         )
         new_id = _new_artifact_id(create_response)
         if new_id is None:

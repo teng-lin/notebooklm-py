@@ -10,9 +10,10 @@ baseline-diff; ``add_url``: url-match + baseline-diff; ``add_drive``:
 Drive ``documentId``-match + baseline-diff; ``add_text``: no probe
 possible — see :class:`~notebooklm.exceptions.NonIdempotentRetryError`).
 
-The web executor's RPC classification registry is intentionally separate in
-``notebooklm._web.policy``. This module has no dependency on the web backend or
-the RPC method vocabulary.
+The web executor's RPC classification registry remains separate in
+``notebooklm._web.policy``. This module owns only backend-neutral outcome
+helpers; it accepts both web RPC method enum values and Android gRPC method
+strings without importing either backend package.
 """
 
 from __future__ import annotations
@@ -21,11 +22,12 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Generic, TypeVar
+from typing import Generic, Literal, Protocol, TypeVar
 
 from .exceptions import (
     NetworkError,
     RateLimitError,
+    RPCError,
     ServerError,
 )
 
@@ -73,6 +75,8 @@ _RETRYABLE_TRANSPORT_ERRORS: tuple[type[BaseException], ...] = (
     ServerError,
     NetworkError,
 )
+
+AMBIGUOUS_WRITE_ERRORS = _RETRYABLE_TRANSPORT_ERRORS
 
 
 _E = TypeVar("_E", bound=BaseException)
@@ -130,6 +134,83 @@ def mark_unconfirmed(exc: _E) -> _E:
     """
     exc.unconfirmed = True  # type: ignore[attr-defined]
     return exc
+
+
+class _MethodIdentifier(Protocol):
+    """Structural method identity shared by web enums and Android strings."""
+
+    @property
+    def value(self) -> str: ...
+
+
+_Method = _MethodIdentifier | str
+
+
+def _method_id(method: _Method) -> str:
+    # ``RPCMethod`` is also a ``str`` subclass. Resolve its enum value before
+    # the generic string case so exception metadata never retains an enum
+    # instance where callers expect a built-in ``str``.
+    value = getattr(method, "value", None)
+    return str(value) if isinstance(value, str) else str(method)
+
+
+def unresolved_commit_error(
+    method: _Method,
+    what: str,
+    exc: _E,
+    *,
+    preserve_exception: bool = False,
+) -> _E | RPCError:
+    """Build or tag an error for a write whose commit outcome is unknown.
+
+    ``preserve_exception=True`` explicitly preserves an already-rendered
+    domain-specific exception type and guidance. Transport exceptions receive
+    the shared generic ``RPCError`` used by web call sites that do not have a
+    more specific domain wrapper. Exception text is deliberately not used to
+    select between those contracts: upstream transport messages are untrusted.
+    """
+
+    if preserve_exception:
+        return mark_unconfirmed(exc)
+
+    rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
+    return mark_unconfirmed(
+        RPCError(
+            f"UNRESOLVED — {what} may have committed before its response was lost. "
+            "Do not blindly retry; list the notebook's sources and reconcile first. "
+            f"No automatic retry was attempted. {exc}",
+            method_id=_method_id(method),
+            rpc_code=rpc_code,
+        )
+    )
+
+
+async def call_unconfirmed_on_transport_loss(
+    call: Callable[[], Awaitable[T]],
+    *,
+    method: _Method,
+    what: str,
+    chain: Literal["exc"] | None = "exc",
+) -> T:
+    """Run one non-replayed write and mark transport-loss ambiguity.
+
+    The original exception object, class, and message are preserved. ``method``
+    and ``what`` make the write identity explicit at every call site and are
+    consumed by guardrails. Web callers retain normal exception context;
+    Android callers pass ``chain=None`` so bearer-owning transport frames stay
+    outside the escaping exception chain.
+    """
+
+    if chain not in ("exc", None):
+        raise ValueError("chain must be 'exc' or None")
+    try:
+        return await call()
+    except AMBIGUOUS_WRITE_ERRORS as exc:
+        del method, what
+        mark_unconfirmed(exc)
+        if chain is None:
+            raise exc from None
+        raise
 
 
 async def idempotent_create(
@@ -249,4 +330,10 @@ async def idempotent_create(
     raise last_error
 
 
-__all__ = ["idempotent_create", "mark_unconfirmed"]
+__all__ = [
+    "AMBIGUOUS_WRITE_ERRORS",
+    "call_unconfirmed_on_transport_loss",
+    "idempotent_create",
+    "mark_unconfirmed",
+    "unresolved_commit_error",
+]

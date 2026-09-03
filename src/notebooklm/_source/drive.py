@@ -20,11 +20,26 @@ class DriveRef:
     resource_key: str | None = None
 
 
+# Preserve the exact host families accepted by the web Drive parser before it
+# moved here. The old parser deliberately reused the artifact-download policy:
+# ordinary Drive/Docs links live under google.com, while download/share links
+# can be served from googleusercontent.com or googleapis.com.
+_TRUSTED_GOOGLE_DOMAINS = (".google.com", ".googleusercontent.com", ".googleapis.com")
+
+
 def _trusted_google_host(host: str | None) -> bool:
     if host is None:
         return False
-    normalized = host.rstrip(".").lower()
-    return normalized == "google.com" or normalized.endswith(".google.com")
+    normalized = host.lower()
+    # Match the exact hostname the transport parsed. Percent-decoding could
+    # turn an attacker-controlled raw host into a trusted-looking suffix, and
+    # neither slash form is valid in a real Google hostname.
+    if "%" in normalized or "\\" in normalized or "/" in normalized:
+        return False
+    return any(
+        normalized == domain.lstrip(".") or normalized.endswith(domain)
+        for domain in _TRUSTED_GOOGLE_DOMAINS
+    )
 
 
 def parse_drive_ref(id_or_url: str) -> DriveRef:

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._artifact import validation as _artifact_validation
-from .._idempotency import mark_unconfirmed
+from .._idempotency import unresolved_commit_error
 from .._types.enums import (
     ArtifactTypeCode,
     InfographicDetail,
@@ -26,6 +26,9 @@ from .artifact_proto import ARTIFACT_WIRE_PROTO as _WIRE_PROTO
 from .artifact_proto import ARTIFACTS_PROTO as _PROTO
 from .artifact_proto import READ_PROTO as _READ_PROTO
 from .session import AndroidSession
+
+_SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
+CREATE_ARTIFACT_METHOD = f"/{_SERVICE}/CreateArtifact"
 
 _REPORT_CONFIGS: dict[ReportFormat, tuple[str, str, str]] = {
     ReportFormat.BRIEFING_DOC: (
@@ -73,7 +76,6 @@ async def create_artifact_once(
     session: AndroidSession,
     request: Any,
     *,
-    method: str,
     expected_epoch: int | None = None,
 ) -> Any:
     """Send ``CreateArtifact`` once and preserve an ambiguous commit outcome."""
@@ -83,7 +85,7 @@ async def create_artifact_once(
     )
     try:
         return await session.unary(
-            method,
+            CREATE_ARTIFACT_METHOD,
             request,
             replay_safe=False,
             response_type=_PROTO.CreateArtifactResponse,
@@ -91,14 +93,17 @@ async def create_artifact_once(
         )
     except (NetworkError, RateLimitError, ServerError) as exc:
         rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
-        raise mark_unconfirmed(
+        raise unresolved_commit_error(
+            CREATE_ARTIFACT_METHOD,
+            "CreateArtifact",
             RPCError(
                 "UNRESOLVED — CreateArtifact may have committed before its response was lost. "
                 "Do not blindly retry; list artifacts and resolve the outcome manually first.",
-                method_id=method,
+                method_id=CREATE_ARTIFACT_METHOD,
                 rpc_code=rpc_code,
-            )
-        ) from exc
+            ),
+            preserve_exception=True,
+        ) from None
 
 
 def _enum_code(value: Any, enum_type: type[Any], parameter: str, default: int) -> int:
@@ -448,6 +453,7 @@ def build_create_artifact_plan(
 
 
 __all__ = [
+    "CREATE_ARTIFACT_METHOD",
     "CreateArtifactPlan",
     "build_create_artifact_plan",
     "create_artifact_once",

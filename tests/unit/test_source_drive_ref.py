@@ -2,8 +2,8 @@
 
 ``parse_drive_ref`` is an input boundary: it decides which strings become a
 Drive file id the client will later fetch. The host check is the interesting
-part — a share URL is only trusted on ``google.com`` and its subdomains, so a
-look-alike host must fall through to the rejection rather than yield an id.
+part — it preserves the web parser's exact Google download-domain families, so
+a look-alike host must fall through to rejection rather than yield an id.
 """
 
 from __future__ import annotations
@@ -68,9 +68,14 @@ KEY = "0-AbCdEf"
             id="uppercase-host",
         ),
         pytest.param(
-            f"https://drive.google.com./file/d/{FILE_ID}/view",
+            f"https://lh3.googleusercontent.com/file/d/{FILE_ID}/view",
             DriveRef(FILE_ID),
-            id="fully-qualified-trailing-dot",
+            id="googleusercontent-family-preserved",
+        ),
+        pytest.param(
+            f"https://storage.googleapis.com/file/d/{FILE_ID}/view",
+            DriveRef(FILE_ID),
+            id="googleapis-family-preserved",
         ),
     ],
 )
@@ -92,6 +97,18 @@ def test_admitted_drive_references(value: str, expected: DriveRef) -> None:
         pytest.param("https://drive.google.com/file/d/short/view", id="path-id-too-short"),
         pytest.param("https://drive.google.com/open?id=short", id="query-id-too-short"),
         pytest.param("https://drive.google.com/", id="no-id-anywhere"),
+        pytest.param(
+            f"https://drive.google.com./file/d/{FILE_ID}/view",
+            id="trailing-dot-preserves-prior-rejection",
+        ),
+        pytest.param(
+            f"https://evil%2egoogle.com/file/d/{FILE_ID}/view",
+            id="percent-encoded-host",
+        ),
+        pytest.param(
+            f"https://drive.google.com\\evil.test/file/d/{FILE_ID}/view",
+            id="backslash-host",
+        ),
     ],
 )
 def test_rejected_drive_references(value: str) -> None:
@@ -111,8 +128,15 @@ def test_a_null_reference_is_rejected_without_raising_a_type_error() -> None:
     [
         pytest.param("google.com", True, id="apex"),
         pytest.param("drive.google.com", True, id="subdomain"),
+        pytest.param("googleusercontent.com", True, id="usercontent-apex"),
+        pytest.param("lh3.googleusercontent.com", True, id="usercontent-subdomain"),
+        pytest.param("googleapis.com", True, id="apis-apex"),
+        pytest.param("storage.googleapis.com", True, id="apis-subdomain"),
         pytest.param("GOOGLE.COM", True, id="uppercase"),
-        pytest.param("google.com.", True, id="trailing-dot"),
+        pytest.param("google.com.", False, id="trailing-dot"),
+        pytest.param("evil%2egoogle.com", False, id="percent-encoding"),
+        pytest.param("drive.google.com\\evil.test", False, id="backslash"),
+        pytest.param("drive.google.com/evil.test", False, id="slash"),
         pytest.param(None, False, id="absent"),
         pytest.param("", False, id="empty"),
         pytest.param("notgoogle.com", False, id="suffix-without-the-dot"),

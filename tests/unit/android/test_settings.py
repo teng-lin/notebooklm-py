@@ -65,13 +65,13 @@ class _FakeSession:
         assert kwargs["expected_epoch"] == self.epoch
         assert request.HasField("request_context")
         if method == GET_OR_CREATE_ACCOUNT_METHOD:
-            assert kwargs["replay_safe"] is True
+            assert kwargs["replay_safe"] is False
             assert kwargs["response_type"] is account_pb2.GetOrCreateAccountResponse
             if self.omit_account:
                 return account_pb2.GetOrCreateAccountResponse()
             return account_pb2.GetOrCreateAccountResponse(account=self._account())
         if method == MUTATE_ACCOUNT_METHOD:
-            assert kwargs["replay_safe"] is True
+            assert kwargs["replay_safe"] is False
             assert kwargs["response_type"] is account_pb2.Account
             (mutation,) = request.mutations
             assert mutation.WhichOneof("mutation") == "change_property"

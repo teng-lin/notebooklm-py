@@ -486,7 +486,7 @@ async def test_waiting_branches_use_one_exact_read_then_optional_no_readback_tit
     assert methods.count(MUTATE_SOURCE_METHOD) == int(expect_mutation)
     if expect_mutation:
         assert methods[-1] == MUTATE_SOURCE_METHOD
-        assert session.calls[-1][2]["replay_safe"] is True
+        assert session.calls[-1][2]["replay_safe"] is False
         assert session.calls[-1][2]["expected_epoch"] == 7
 
 

@@ -8,13 +8,13 @@ language, config block — and the response is what surfaces a server-allocated
 ``artifact_id`` (``ArtifactsAPI._parse_generation_result`` in
 ``_artifacts.py`` reads ``result[0][0]``). Without a token slot,
 the only safe retry policy is
-:attr:`~notebooklm._web.policy.IdempotencyPolicy.PROBE_THEN_CREATE`, which
+:attr:`~notebooklm._web.policy.IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY`, which
 forces the transport's inner retry loop OFF so a 5xx after server-side
 commit cannot trigger a duplicate write.
 
 This file exercises that classification end-to-end:
 
-1. The registry classifies both methods as PROBE_THEN_CREATE.
+1. The registry classifies both methods as NON_IDEMPOTENT_NO_RETRY.
 2. A 503 on the first POST surfaces as a single ``ServerError`` to the
    caller — i.e. the shared transport does NOT silently re-POST.
    This is the "commit-lost-response" safety property.
@@ -149,7 +149,7 @@ def _rpc_id_in_request(request: httpx.Request) -> str | None:
 
 
 class TestRegistryClassification:
-    """Both methods MUST register as PROBE_THEN_CREATE at the (method, None) slot.
+    """Both methods disable retries without claiming an unimplemented probe.
 
     This is the contract that lets ``RpcExecutor`` resolve
     ``effective_disable_internal_retries=True`` for the call sites that
@@ -157,34 +157,34 @@ class TestRegistryClassification:
     GENERATE_MIND_MAP caller in ``_artifacts.py``).
     """
 
-    def test_create_artifact_classified_as_probe_then_create(self) -> None:
+    def test_create_artifact_classified_as_non_idempotent_no_retry(self) -> None:
         entry = IDEMPOTENCY_REGISTRY.get_entry(RPCMethod.CREATE_ARTIFACT)
-        assert entry.policy is IdempotencyPolicy.PROBE_THEN_CREATE
+        assert entry.policy is IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY
 
-    def test_generate_mind_map_classified_as_probe_then_create(self) -> None:
+    def test_generate_mind_map_classified_as_non_idempotent_no_retry(self) -> None:
         entry = IDEMPOTENCY_REGISTRY.get_entry(RPCMethod.GENERATE_MIND_MAP)
-        assert entry.policy is IdempotencyPolicy.PROBE_THEN_CREATE
+        assert entry.policy is IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY
 
     def test_create_artifact_variant_none_explicit(self) -> None:
         """Passing ``operation_variant=None`` (the b1 plumbed call-site
-        kwarg) resolves to the same (method, None) PROBE_THEN_CREATE entry.
+        kwarg) resolves to the same (method, None) NON_IDEMPOTENT_NO_RETRY entry.
 
         This guards against a future variant table being added for
-        CREATE_ARTIFACT and silently masking the PROBE_THEN_CREATE
+        CREATE_ARTIFACT and silently masking the NON_IDEMPOTENT_NO_RETRY
         classification for the no-variant path.
         """
         entry = IDEMPOTENCY_REGISTRY.get_entry(
             RPCMethod.CREATE_ARTIFACT,
             operation_variant=None,
         )
-        assert entry.policy is IdempotencyPolicy.PROBE_THEN_CREATE
+        assert entry.policy is IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY
 
     def test_generate_mind_map_variant_none_explicit(self) -> None:
         entry = IDEMPOTENCY_REGISTRY.get_entry(
             RPCMethod.GENERATE_MIND_MAP,
             operation_variant=None,
         )
-        assert entry.policy is IdempotencyPolicy.PROBE_THEN_CREATE
+        assert entry.policy is IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +199,7 @@ async def test_create_artifact_503_does_not_re_post(auth_tokens) -> None:
     CREATE_ARTIFACT on the 5xx, duplicating the
     server-side commit (the original audit P0-3 failure mode).
 
-    After classification (PROBE_THEN_CREATE):
+    After classification (NON_IDEMPOTENT_NO_RETRY):
     ``effective_disable_internal_retries=True`` is forced by the registry,
     so the first 5xx surfaces immediately. Exactly ONE CREATE_ARTIFACT
     POST hits the wire — no naive re-POST.
@@ -228,7 +228,7 @@ async def test_create_artifact_503_does_not_re_post(auth_tokens) -> None:
         await client.close()
 
     # Exactly ONE CREATE_ARTIFACT POST despite ``server_error_max_retries=3``
-    # being configured: the PROBE_THEN_CREATE policy forced retries off.
+    # being configured: the NON_IDEMPOTENT_NO_RETRY policy forced retries off.
     assert create_count == 1, f"expected 1 CREATE_ARTIFACT POST, got {create_count}"
     # Sanity-check the source-fetch did happen exactly once (pre-flight,
     # unaffected by classification).
@@ -241,7 +241,7 @@ async def test_create_artifact_429_does_not_re_post(auth_tokens) -> None:
     ``RuntimeTransport.perform_authed_post`` shares the same
     ``disable_internal_retries`` short-circuit for both 429 and 5xx paths
     through ``RetryMiddleware``.
-    The PROBE_THEN_CREATE
+    The NON_IDEMPOTENT_NO_RETRY
     classification must therefore prevent rate-limit retries from
     silently re-issuing a committed-but-throttled-response request.
     """
@@ -273,7 +273,7 @@ async def test_generate_mind_map_503_does_not_re_post(auth_tokens) -> None:
 
     Symmetric to ``test_create_artifact_503_does_not_re_post``. The
     GENERATE_MIND_MAP call site in ``ArtifactsAPI.generate_mind_map``
-    (``_artifacts.py``) must inherit the PROBE_THEN_CREATE classification
+    (``_artifacts.py``) must inherit the NON_IDEMPOTENT_NO_RETRY classification
     and disable the transport's inner retry loop.
     """
     mind_map_count = 0
@@ -308,7 +308,7 @@ async def test_generate_mind_map_503_does_not_re_post(auth_tokens) -> None:
 
 
 async def test_create_artifact_happy_path_still_returns_artifact(auth_tokens) -> None:
-    """A clean 200 response under PROBE_THEN_CREATE classification still works.
+    """A clean 200 response under NON_IDEMPOTENT_NO_RETRY classification still works.
 
     Guards against a regression where forcing
     ``disable_internal_retries=True`` somehow changes the success path
@@ -340,7 +340,7 @@ async def test_create_artifact_happy_path_still_returns_artifact(auth_tokens) ->
 
 
 async def test_generate_mind_map_happy_path_still_returns_mind_map(auth_tokens) -> None:
-    """A clean 200 response under PROBE_THEN_CREATE for GENERATE_MIND_MAP works.
+    """A clean 200 response under NON_IDEMPOTENT_NO_RETRY for GENERATE_MIND_MAP works.
 
     Symmetric guard to ``test_create_artifact_happy_path_still_returns_artifact``.
 

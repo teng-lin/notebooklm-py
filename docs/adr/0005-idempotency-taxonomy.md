@@ -26,6 +26,19 @@ together in `src/notebooklm/_web/policy.py`, which owns the single import-time
 seed. The neutral `src/notebooklm/_idempotency.py` retains only create probing
 and the unconfirmed-write marker.
 
+Amended on 2026-09-03 to make ambiguous-write outcomes and Android replay
+classes mechanical across both backends. The neutral idempotency module now
+also owns `call_unconfirmed_on_transport_loss()` and
+`unresolved_commit_error()`. The former marks an existing transport exception
+without changing its type or message; Android selects its cause-scrubbing
+mode, while web keeps normal chaining. The latter constructs or preserves the
+domain-specific `RPCError` used by operations that already surfaced an
+`UNRESOLVED` reconciliation message. Preservation is selected explicitly with
+`preserve_exception=True`; transport text is never treated as a discriminator.
+The Drive-reference parser moved to the neutral source plane with the web
+parser's exact `google.com`, `googleusercontent.com`, and `googleapis.com` host
+families and its raw-host `%`, backslash, and slash rejection intact.
+
 ## Context
 
 The NotebookLM RPC surface is `batchexecute` over HTTPS, and any mutating call (create, delete, refresh, share, generate, …) is susceptible to a *commit-lost* failure: the server commits the write, then the response is lost in transit. A naive retry produces a duplicate write — a duplicate notebook, a duplicate source, an extra LLM inference, a re-sent invite email — depending on the RPC.
@@ -66,6 +79,36 @@ The classification rules are:
 
 The completed production classifications are recorded in `_web/policy.py` (with the per-RPC rationale captured at the registration site). Future classifications continue to land in the same module without changes to the executor; the registry is intentionally extensible.
 
+Three operations previously labelled `PROBE_THEN_CREATE` did not own a probe:
+artifact creation, mind-map generation, and notebook sharing. They are
+`NON_IDEMPOTENT_NO_RETRY`; their call sites mark transport loss unconfirmed
+instead of advertising a reconciliation guarantee they cannot provide. The
+sharing outcome boundary includes its mandatory status readback, because that
+read can fail after the invitation or access mutation has committed. The
+registry no longer carries the unused `probe_key_fn` field.
+
+The same behavioural contract covers every public route over the other
+non-replayed mutation families shared by the backends: failed-artifact retry,
+slide revision, all three artifact export entry points, automatic/manual label
+creation, and collection creation (including the collection's required
+post-create list readback).
+
+Android's exact gRPC method names have a checked replay-safety manifest derived
+from the corresponding web registry entries: retriable reads are replay-safe;
+mutations, paid inference, and operations whose web policy disables internal
+retries are not. Android session dispatch reads this manifest rather than
+trusting an independently maintained call-site classification. A complete AST
+guardrail resolves local and imported method constants, fails closed on every
+unresolved unary/stream expression, compares every replay literal with the
+manifest, and includes negative self-tests that flip local and imported-constant
+sites. Runtime lookup also fails closed: a method absent from the production
+manifest is always single-attempt even when a generic caller declares it
+replay-safe. A second, behavioural
+manifest resolves mutating public methods through both backend MROs, injects
+transport loss through their normal test fakes, and requires both outcomes to
+carry `unconfirmed=True`; it also pins Android's cause scrubbing and proves a
+plain unwrapped raise is rejected.
+
 The five-policy axis is *closed*. Adding a sixth policy requires updating this ADR and the executor in lock-step.
 
 ## Consequences
@@ -73,6 +116,8 @@ The five-policy axis is *closed*. Adding a sixth policy requires updating this A
 **Wanted:**
 
 - Retry safety is now a *property of the RPC*, not a property of the call site. New call sites inherit the safe behavior without re-deriving it.
+- Ambiguous mutation outcomes share one programmatic marker across the web and Android backends, while preserving each backend's established exception type, message, and chaining policy.
+- The Android replay manifest and its derivation guardrail prevent a call-site literal from drifting away from the web registry's classification.
 - The executor's retry logic is small and local; the policy decisions live in the registry where they can be reviewed in isolation.
 - The taxonomy is small enough (five policies) that a reviewer can hold it in mind during a code review. A sixth policy would push past that threshold and is rejected by design.
 
