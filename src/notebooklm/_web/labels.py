@@ -15,10 +15,9 @@ from typing import Any, Literal
 
 from .._idempotency import call_unconfirmed_on_transport_loss
 from .._labels import LabelsAPI, ListSources
-from .._lookup import unwrap_or_raise
-from ..exceptions import LabelError, LabelNotFoundError, UnknownRPCMethodError
+from ..exceptions import LabelError, UnknownRPCMethodError
 from ..rpc import RPCMethod
-from ..types import Label, Source
+from ..types import Label
 from .contracts import RpcCaller
 from .params.labels import (
     build_create_label_params,
@@ -47,13 +46,17 @@ class WebLabelsAPI(LabelsAPI):
             await client.labels.delete(nb, [mine.id])
     """
 
+    _list_method_id = RPCMethod.LIST_LABELS.value
+    _mutation_method_id = RPCMethod.UPDATE_LABEL.value
+    _delete_method_id = RPCMethod.DELETE_LABEL.value
+
     def __init__(self, rpc: RpcCaller, *, list_sources: ListSources) -> None:
         """``list_sources`` is ``client.sources.list`` (wired in ``_client_assembly.py``
         after the ``SourcesAPI`` is constructed) — needed for the
         membership→Source join in ``sources()``. Same client/bound loop, so no
         loop-affinity concern (ADR-0004)."""
+        super().__init__(list_sources=list_sources)
         self._rpc = rpc
-        self._list_sources = list_sources
 
     # -- internal -----------------------------------------------------------
 
@@ -100,34 +103,6 @@ class WebLabelsAPI(LabelsAPI):
         return self._labels_from_envelope(
             result, notebook_id=notebook_id, method_id=RPCMethod.LIST_LABELS.value, index=0
         )
-
-    async def get_or_none(self, notebook_id: str, label_id: str) -> Label | None:
-        """Get a label by id, returning ``None`` when absent (sanctioned None-on-miss)."""
-        for label in await self.list(notebook_id):
-            if label.id == label_id:
-                return label
-        return None
-
-    async def get(self, notebook_id: str, label_id: str) -> Label:
-        """Get a label by id; raises ``LabelNotFoundError`` on miss (ADR-0019)."""
-        return unwrap_or_raise(
-            await self.get_or_none(notebook_id, label_id),
-            LabelNotFoundError(label_id, method_id=RPCMethod.LIST_LABELS.value),
-        )
-
-    async def sources(self, notebook_id: str, label_id: str) -> builtins.list[Source]:
-        """Expand a label to its ``Source`` objects — the group-as-collection accessor.
-
-        Read-only convenience: one ``get(label)`` + one
-        ``self._list_sources(nb)``, joined client-side (two reads, not N+1). Raises
-        ``LabelNotFoundError`` if the label is absent. Order follows the label's
-        ``source_ids`` (membership order), not notebook order. A member id missing
-        from the source list (concurrent deletion between the two reads) is
-        skipped, not raised — a benign race, not schema drift.
-        """
-        label = await self.get(notebook_id, label_id)
-        by_id = {source.id: source for source in await self._list_sources(notebook_id)}
-        return [by_id[sid] for sid in label.source_ids if sid in by_id]
 
     # -- generate / create --------------------------------------------------
 
@@ -206,31 +181,28 @@ class WebLabelsAPI(LabelsAPI):
 
     # -- mutate (all UPDATE_LABEL) ------------------------------------------
 
-    async def update(
+    async def _send_update(
         self,
+        operation: Literal["properties", "delete"],
         notebook_id: str,
-        label_id: str,
+        label_ids: builtins.list[str],
         *,
         name: str | None = None,
         emoji: str | None = None,
-        return_object: bool = True,
-    ) -> Label | None:
-        """Set name and/or emoji (``UPDATE_LABEL``).
-
-        Raises ``ValueError`` if BOTH ``name`` and ``emoji`` are ``None`` (no-op
-        fieldmask) BEFORE issuing any RPC. The existence preflight runs in both
-        ``return_object`` modes and raises ``LabelNotFoundError`` on a missing
-        target (ADR-0019). When only ``name`` is given, the current emoji is
-        carried over from the preflight so a rename never clobbers the emoji.
-        """
-        if name is None and emoji is None:
-            raise ValueError("update requires name and/or emoji")
-        current = await self.get_or_none(notebook_id, label_id)
-        if current is None:
-            raise LabelNotFoundError(label_id, method_id=RPCMethod.UPDATE_LABEL.value)
+        current: Label | None = None,
+    ) -> None:
+        if operation == "delete":
+            await self._rpc.rpc_call(
+                RPCMethod.DELETE_LABEL,
+                build_delete_labels_params(notebook_id, label_ids),
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+            )
+            return
+        (label_id,) = label_ids
+        assert current is not None
         effective_emoji = emoji
         if name is not None and emoji is None:
-            # Preserve the existing emoji (preflight-derived) — see rpc.md §15.
             effective_emoji = current.emoji or ""
         await self._rpc.rpc_call(
             RPCMethod.UPDATE_LABEL,
@@ -241,147 +213,28 @@ class WebLabelsAPI(LabelsAPI):
             raise_on_null_status=True,
             operation_variant=None,  # default IDEMPOTENT_SET_OP (not "add_sources")
         )
-        if not return_object:
-            return None
-        return await self.get(notebook_id, label_id)
 
-    async def rename(
-        self, notebook_id: str, label_id: str, name: str, *, return_object: bool = True
-    ) -> Label | None:
-        """Rename a label (``UPDATE_LABEL``); preserves the existing emoji."""
-        return await self.update(notebook_id, label_id, name=name, return_object=return_object)
-
-    async def set_emoji(
-        self, notebook_id: str, label_id: str, emoji: str, *, return_object: bool = True
-    ) -> Label | None:
-        """Set a label's emoji (``UPDATE_LABEL``)."""
-        return await self.update(notebook_id, label_id, emoji=emoji, return_object=return_object)
-
-    async def add_sources(
+    async def _send_mutate_member(
         self,
         notebook_id: str,
         label_id: str,
-        source_ids: builtins.list[str],
+        source_id: str,
         *,
-        return_object: bool = True,
-    ) -> Label | None:
-        """Add source(s) to a label (``UPDATE_LABEL``, variant ``'add_sources'``).
-
-        APPEND semantics: existing members preserved; pass only the IDs to add.
-        Does NOT remove the sources from any other label (labels may overlap).
-
-        Raises ``ValueError`` on an empty ``source_ids`` BEFORE issuing any RPC.
-
-        Issues **one ``le8sX`` call per source id** — the server honours only the
-        first id of ``sources_add`` per call (confirmed 2026-06-07, rpc.md), so a
-        single multi-id call would silently add only the first source. After all
-        per-id writes, a single contract-load-bearing ``get_or_none`` re-fetch
-        backs the ADR-0019 return/not-found contract (``le8sX`` echoes ``[]``,
-        carrying no label; the existence check must raise on a missing label even
-        when ``return_object=False``). The re-fetch is NOT removable — the label
-        wire gives no return payload.
-
-        **Not atomic across ids:** each id is a separate write, so a mid-loop RPC
-        failure leaves the already-written ids assigned and then raises (this
-        variant is ``NON_IDEMPOTENT_NO_RETRY`` — the transport does not auto-retry).
-        The caller can re-issue with the remaining ids.
-        """
-        if not source_ids:
-            raise ValueError("add_sources requires at least one source id")
-        # Dedupe (order-preserving): one le8sX per id, so duplicates would be
-        # redundant round-trips (and append-twice on the wire).
-        unique_ids = list(dict.fromkeys(source_ids))
-        logger.debug("Adding %d source(s) to label %s", len(unique_ids), label_id)
-        for source_id in unique_ids:
-            await self._rpc.rpc_call(
-                RPCMethod.UPDATE_LABEL,
-                build_update_label_params(notebook_id, label_id, add_source_id=source_id),
-                source_path=f"/notebook/{notebook_id}",
-                allow_null=True,
-                # #2290: a status-tagged null is a server rejection, not an empty success.
-                raise_on_null_status=True,
-                operation_variant="add_sources",  # → NON_IDEMPOTENT_NO_RETRY (§4)
-            )
-        label = await self.get_or_none(notebook_id, label_id)
-        if label is None:
-            raise LabelNotFoundError(label_id, method_id=RPCMethod.UPDATE_LABEL.value)
-        return label if return_object else None
-
-    async def remove_sources(
-        self,
-        notebook_id: str,
-        label_id: str,
-        source_ids: builtins.list[str],
-        *,
-        return_object: bool = True,
-    ) -> Label | None:
-        """Un-assign source(s) from a label (``UPDATE_LABEL``, variant
-        ``'remove_sources'``).
-
-        Removal is **label-scoped un-assignment**: it removes the membership only,
-        it does NOT delete the source from the notebook, and a source that also
-        belongs to another label stays in that other label (overlap preserved).
-        Removing a source that is not a member is a silent no-op (set-op
-        semantics, confirmed 2026-06-07, rpc.md).
-
-        Raises ``ValueError`` on an empty ``source_ids`` BEFORE issuing any RPC.
-
-        Issues **one ``le8sX`` call per source id** — the server honours only the
-        first id of ``sources_remove`` per call, so a single multi-id call would
-        silently remove only the first source. After all per-id writes, a single
-        contract-load-bearing ``get_or_none`` re-fetch backs the ADR-0019
-        return/not-found contract (``le8sX`` echoes ``[]``, carrying no label; the
-        existence check must raise on a missing label even when
-        ``return_object=False``).
-
-        **Not atomic across ids**, but ``remove_sources`` is ``IDEMPOTENT_SET_OP``,
-        so a mid-loop failure is safely recovered by re-calling with the full set
-        (removing an already-absent member is a no-op).
-        """
-        if not source_ids:
-            raise ValueError("remove_sources requires at least one source id")
-        # Dedupe (order-preserving): one le8sX per id, so duplicates are
-        # redundant round-trips.
-        unique_ids = list(dict.fromkeys(source_ids))
-        logger.debug("Removing %d source(s) from label %s", len(unique_ids), label_id)
-        for source_id in unique_ids:
-            await self._rpc.rpc_call(
-                RPCMethod.UPDATE_LABEL,
-                build_update_label_params(notebook_id, label_id, remove_source_id=source_id),
-                source_path=f"/notebook/{notebook_id}",
-                allow_null=True,
-                # #2290: a status-tagged null is a server rejection, not an empty success.
-                raise_on_null_status=True,
-                operation_variant="remove_sources",  # → IDEMPOTENT_SET_OP (§4)
-            )
-        label = await self.get_or_none(notebook_id, label_id)
-        if label is None:
-            raise LabelNotFoundError(label_id, method_id=RPCMethod.UPDATE_LABEL.value)
-        return label if return_object else None
-
-    # -- delete -------------------------------------------------------------
-
-    async def delete(self, notebook_id: str, label_ids: str | builtins.list[str]) -> None:
-        """Delete one or more labels (``DELETE_LABEL``, batch). Accepts a single id
-        or a list. Deleting a label does NOT delete its sources (they become
-        unlabeled).
-
-        An absent target is an idempotent no-op returning ``None`` (consistent
-        with ``sources.delete``/``notebooks.delete`` and ADR-0019). This is a
-        separate axis from the transport-retry idempotency class, which stays
-        ``NON_IDEMPOTENT_NO_RETRY`` (conservative; already-absent retry behavior is
-        wire-unverified, §15).
-        """
-        ids = [label_ids] if isinstance(label_ids, str) else list(label_ids)
-        if not ids:
-            return None
+        operation: Literal["add_sources", "remove_sources"],
+    ) -> None:
         await self._rpc.rpc_call(
-            RPCMethod.DELETE_LABEL,
-            build_delete_labels_params(notebook_id, ids),
+            RPCMethod.UPDATE_LABEL,
+            build_update_label_params(
+                notebook_id,
+                label_id,
+                add_source_id=source_id if operation == "add_sources" else None,
+                remove_source_id=source_id if operation == "remove_sources" else None,
+            ),
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
+            raise_on_null_status=True,
+            operation_variant=operation,
         )
-        return None
 
 
 __all__ = ["WebLabelsAPI"]
