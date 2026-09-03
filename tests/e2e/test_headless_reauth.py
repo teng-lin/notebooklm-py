@@ -32,6 +32,7 @@ import os
 import pytest
 
 from notebooklm._browser.headless_reauth import (
+    NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL_ENV,
     HeadlessReauthStatus,
     attempt_headless_reauth,
     headless_reauth_readiness,
@@ -104,6 +105,10 @@ def test_headless_reauth_against_live_profile() -> None:
         assert os.environ.get("NOTEBOOKLM_HEADLESS_REAUTH") == "1", (
             "strict headless re-auth requires NOTEBOOKLM_HEADLESS_REAUTH=1"
         )
+        assert not os.environ.get(NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL_ENV), (
+            "strict reusable-profile validation requires "
+            "NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL to be unset"
+        )
         assert _profile_is_reusable(), (
             "strict headless re-auth requires a non-empty reusable profile; "
             "run 'notebooklm login' first"
@@ -112,8 +117,10 @@ def test_headless_reauth_against_live_profile() -> None:
         launchable, detail = _chromium_launchable()
         assert launchable, f"strict headless re-auth requires launchable Chromium ({detail})"
 
+    storage_path = get_storage_path()
+    before_mtime_ns = storage_path.stat().st_mtime_ns if storage_path.exists() else None
     result = attempt_headless_reauth(
-        storage_path=get_storage_path(),
+        storage_path=storage_path,
         allow_headless=True,
     )
 
@@ -122,8 +129,12 @@ def test_headless_reauth_against_live_profile() -> None:
             f"strict headless re-auth did not succeed: {result.status.value} ({result.reason})"
         )
         assert result.succeeded is True
-        assert result.storage_path == get_storage_path()
-        assert get_storage_path().exists()
+        assert result.storage_path == storage_path
+        assert storage_path.exists()
+        if before_mtime_ns is not None:
+            assert storage_path.stat().st_mtime_ns != before_mtime_ns, (
+                "strict headless re-auth succeeded without replacing the persisted storage file"
+            )
         return
 
     assert result.status in {

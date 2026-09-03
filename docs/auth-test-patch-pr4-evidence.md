@@ -15,7 +15,8 @@ Base: `6aabddad7dac2386608b5e0e0e0f8eb66f454c5c`
 
 ## Supplemental strict local-CDP smoke
 
-The strict-mode alternate-source smoke ran on 2026-09-03 against isolated NotebookLM profile
+The strict-mode alternate-source smoke ran on 2026-09-03 from the pre-commit implementation
+worktree against isolated NotebookLM profile
 `agent-auth-patch-pr4` and the operator's authenticated local Chrome CDP endpoint:
 
 ```bash
@@ -31,9 +32,10 @@ uv run pytest -q tests/e2e/test_headless_reauth.py --no-cov
 Result: `1 passed in 11.74s`; zero skips. Strict mode asserted
 `HeadlessReauthStatus.SUCCESS` and the persisted-path outcome unconditionally.
 
-This proves the strict gate and local-CDP capture arm, but it does not replace the plan-required
-dedicated reusable-profile run. The isolated profile's Google session is currently expired. Before
-this slice is merge-ready, re-authenticate `agent-auth-patch-pr4`, unset
+This proves the local-CDP capture arm, but it does not replace the plan-required dedicated
+reusable-profile run and is not claimed as final-SHA evidence. The isolated profile's Google
+session is currently expired. Before this slice is merge-ready, re-authenticate
+`agent-auth-patch-pr4`, unset
 `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL`, and record `1 passed` with zero skips from:
 
 ```bash
