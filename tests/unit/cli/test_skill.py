@@ -469,6 +469,43 @@ class TestSkillInstallProjectHardening:
         assert len(calls) == 1
         assert calls[0][1] == target
 
+    def test_atomic_write_text_removes_its_temp_file_when_the_replace_fails(self, tmp_path):
+        """A failed replace must not strand a ``.SKILL.md.*.tmp`` sibling.
+
+        Driven by a real collision -- the destination is an existing directory,
+        which ``os.replace`` refuses on every platform -- so the cleanup path
+        runs against the real replace helper rather than a stub.
+        """
+        blocked = tmp_path / "SKILL.md"
+        blocked.mkdir()
+
+        with pytest.raises(OSError):
+            skill_module.atomic_write_text(blocked, "content")
+
+        # The temp file is a sibling of the destination, so it would show up here.
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["SKILL.md"]
+        assert blocked.is_dir()
+
+    def test_atomic_write_text_reraises_the_write_error_when_cleanup_also_fails(
+        self, tmp_path, monkeypatch
+    ):
+        """Temp-file cleanup is best effort and must never mask the real failure.
+
+        The replace helper swaps the temp file for a directory before failing,
+        so the follow-up ``unlink`` raises too; the caller must still see the
+        original write error, not the cleanup one.
+        """
+
+        def fake_replace(temp_path: Path, path: Path) -> None:
+            temp_path.unlink()
+            temp_path.mkdir()  # unlink() on a directory fails on every platform
+            raise OSError("replace exploded")
+
+        monkeypatch.setattr(skill_module, "replace_file_atomically", fake_replace)
+
+        with pytest.raises(OSError, match="replace exploded"):
+            skill_module.atomic_write_text(tmp_path / "SKILL.md", "content")
+
 
 class TestSkillStatus:
     """Tests for skill status command."""
@@ -992,6 +1029,73 @@ class TestSkillPackage:
         assert target.read_bytes() == b"content"
         assert len(calls) == 1
         assert calls[0][1] == target
+
+    def test_atomic_write_bytes_removes_its_temp_file_when_the_replace_fails(self, tmp_path):
+        """A failed archive replace must not strand a ``.skill.zip.*.tmp`` sibling.
+
+        Same real collision as the text twin: the destination is an existing
+        directory, which ``os.replace`` refuses on every platform.
+        """
+        blocked = tmp_path / "skill.zip"
+        blocked.mkdir()
+
+        with pytest.raises(OSError):
+            skill_module.atomic_write_bytes(blocked, b"content")
+
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["skill.zip"]
+        assert blocked.is_dir()
+
+    def test_atomic_write_bytes_reraises_the_write_error_when_cleanup_also_fails(
+        self, tmp_path, monkeypatch
+    ):
+        """Temp-file cleanup is best effort and must never mask the real failure.
+
+        The replace helper swaps the temp file for a directory before failing,
+        so the follow-up ``unlink`` raises too; the caller must still see the
+        original write error, which is what ``package`` turns into WRITE_FAILED.
+        """
+
+        def fake_replace(temp_path: Path, path: Path) -> None:
+            temp_path.unlink()
+            temp_path.mkdir()  # unlink() on a directory fails on every platform
+            raise OSError("replace exploded")
+
+        monkeypatch.setattr(skill_module, "replace_file_atomically", fake_replace)
+
+        with pytest.raises(OSError, match="replace exploded"):
+            skill_module.atomic_write_bytes(tmp_path / "skill.zip", b"content")
+
+    @pytest.mark.parametrize(
+        ("source", "reason"),
+        [
+            # Each input embeds an OVER-LIMIT description so the test can tell
+            # "the check was skipped" apart from "the check ran and passed".
+            pytest.param(
+                f"description: {'x' * 1100}\n# Body only, no frontmatter at all",
+                "absent",
+                id="no-frontmatter",
+            ),
+            pytest.param(
+                f"---\nname: notebooklm\ndescription: {'x' * 1100}",
+                "unclosed",
+                id="unterminated-frontmatter",
+            ),
+        ],
+    )
+    def test_package_skips_the_description_check_when_frontmatter_is_unparseable(
+        self, runner, tmp_path, source, reason
+    ):
+        """No parseable frontmatter means no description to length-check.
+
+        The over-limit warning is skipped rather than guessed at, and packaging
+        still succeeds with the stamped body verbatim.
+        """
+        target = tmp_path / "skill.zip"
+        result = self._invoke(runner, "--output", str(target), "--json", source=source)
+
+        assert result.exit_code == 0, result.output
+        assert result.stderr == "", f"unexpected warning for {reason} frontmatter"
+        assert self._read_entry(target) == self._stamped(source)
 
     def test_package_write_failure_emits_envelope(self, runner, tmp_path, monkeypatch):
         """An OSError from the archive write surfaces as WRITE_FAILED, not a traceback."""
