@@ -21,8 +21,10 @@ Design highlights:
 from __future__ import annotations
 
 import asyncio
+import sys
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from types import TracebackType
 from typing import Literal, cast
 
 from fastmcp import FastMCP
@@ -103,6 +105,23 @@ def register_all(mcp: FastMCP) -> None:
     register_file_tools(mcp)
 
 
+async def _shutdown(
+    state: AppState,
+    provider: ClientProvider,
+    exc_type: type[BaseException] | None,
+    exc: BaseException | None,
+    tb: TracebackType | None,
+) -> None:
+    """Tear the lifespan down, forwarding the body's exception (if any) to the client.
+
+    Detached chat asks are cancelled BEFORE the provider closes the client, so no
+    server-owned task ever touches a closing client (see ``ChatTaskRegistry.aclose``).
+    """
+    await state.chat_tasks.aclose()
+    state.chat_tasks.set_bound_loop(None)
+    await provider.aclose(exc_type, exc, tb)
+
+
 def create_server(
     *,
     profile: str | None = None,
@@ -177,12 +196,13 @@ def create_server(
             try:
                 yield state
             finally:
-                # Cancel any detached chat asks BEFORE the provider closes the
-                # client, so no server-owned task ever touches a closing client
-                # (see ChatTaskRegistry.aclose).
-                await state.chat_tasks.aclose()
-                state.chat_tasks.set_bound_loop(None)
-                await provider.aclose()
+                # ``sys.exc_info()`` carries the in-flight exception while a
+                # ``finally`` unwinds (and is ``(None, None, None)`` on the clean
+                # path), so the triple reaches the client context manager exactly as
+                # the `async with factory()` this replaced delivered it —
+                # NotebookLMClient arbitrates on it, demoting a close failure to a
+                # WARNING rather than letting it mask the real cause.
+                await _shutdown(state, provider, *sys.exc_info())
         finally:
             set_active_profile(previous_profile)
 

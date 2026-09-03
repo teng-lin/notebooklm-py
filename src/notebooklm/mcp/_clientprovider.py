@@ -38,6 +38,7 @@ import contextlib
 import logging
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
+from types import TracebackType
 from typing import TYPE_CHECKING
 
 from .._redact import redact
@@ -122,15 +123,24 @@ class ClientProvider:
         return task
 
     def _on_open_done(self, task: asyncio.Task[NotebookLMClient]) -> None:
-        """Clear the slot after a failed/cancelled open so the next call retries."""
-        if self._open_task is not task:
-            return
+        """Clear the slot after a failed/cancelled open so the next call retries.
+
+        The failure is retrieved FIRST and the identity check only guards the slot
+        mutation. A callback runs a tick after its task settles, by which time a
+        retry (or ``aclose``) may already own the slot — and returning early there
+        would leave the exception unretrieved, so asyncio would later log it through
+        its default handler with the raw ``repr``, routing around the ``redact``
+        below. The identity check still has to exist: without it this callback would
+        clear a *newer* task's slot and strand its waiters.
+        """
         if task.cancelled():
-            self._open_task = None
+            if self._open_task is task:
+                self._open_task = None
             return
         error = task.exception()
         if error is not None:
-            self._open_task = None
+            if self._open_task is task:
+                self._open_task = None
             # Warm-up has no awaiter, so log here to both retrieve the exception
             # (no "never retrieved" warning) and leave a breadcrumb on stderr. A
             # tool call that joined this task still receives the real exception.
@@ -156,10 +166,22 @@ class ClientProvider:
         self._client = client
         return client
 
-    async def aclose(self) -> None:
+    async def aclose(
+        self,
+        exc_type: type[BaseException] | None = None,
+        exc: BaseException | None = None,
+        tb: TracebackType | None = None,
+    ) -> None:
         """Close the client if it was opened, cancelling any in-flight open.
 
         Idempotent. After this the provider refuses to hand out a client.
+
+        The exception triple is forwarded verbatim to the factory context manager,
+        exactly as the ``async with factory()`` this replaced used to do.
+        ``NotebookLMClient.__aexit__`` arbitrates on it: when the lifespan body
+        raised, a failure to close is demoted to a WARNING so it cannot mask the
+        original cause. Passing ``(None, None, None)`` unconditionally would claim
+        the body succeeded and let a close error bury a real lifespan failure.
         """
         self._closed = True
         # Cancel while the task is still registered so the done-callback clears
@@ -173,4 +195,4 @@ class ClientProvider:
         cm, self._cm = self._cm, None
         self._client = None
         if cm is not None:
-            await cm.__aexit__(None, None, None)
+            await cm.__aexit__(exc_type, exc, tb)

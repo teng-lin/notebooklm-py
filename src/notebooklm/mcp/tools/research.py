@@ -127,11 +127,11 @@ def register(mcp: Any) -> None:
         (default) or ``deep`` (deep is web-only).
         """
         with mcp_errors():
-            client = await get_client(ctx)
             # ``deep`` mode is web-only — reject the invalid combination at the tool
             # boundary (the independent Literals can't express this cross-field rule).
             if source == "drive" and mode == "deep":
                 raise ValidationError("mode 'deep' is web-only; use source 'web' for deep research")
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             result = await client.research.start(nb_id, query, source, mode)
             # ``poll_task_id`` is the one id status/import/cancel drive off, chosen
@@ -194,7 +194,6 @@ def register(mcp: Any) -> None:
         ``not_found``. ``task_id`` is a deprecated alias (removed in v0.9.0).
         """
         with mcp_errors():
-            client = await get_client(ctx)
             # Fold the deprecated ``task_id`` pin into ``poll_task_id`` (#1789).
             poll_task_id, deprecation = _resolve_poll_task_id(
                 "research_status", "task_id", poll_task_id, task_id
@@ -218,6 +217,7 @@ def register(mcp: Any) -> None:
             # backend as a spurious mismatch.
             poll_task_id = poll_task_id.strip() if poll_task_id is not None else None
 
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             result = await research_core.poll_and_classify(client, nb_id, poll_task_id)
 
@@ -349,7 +349,6 @@ def register(mcp: Any) -> None:
         ``research_status`` afterward to confirm.
         """
         with mcp_errors():
-            client = await get_client(ctx)
             # Fold the deprecated ``run_id`` alias into ``poll_task_id`` (#1789).
             poll_task_id, deprecation = _resolve_poll_task_id(
                 "research_cancel", "run_id", poll_task_id, run_id
@@ -360,6 +359,7 @@ def register(mcp: Any) -> None:
             if not poll_task_id or not poll_task_id.strip():
                 raise ValidationError("poll_task_id is required to cancel a research run")
             poll_task_id = poll_task_id.strip()
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             # Preflight (``poll_task_id`` as the discriminator → typed NOT_FOUND
             # sentinel, never raises). Only an already-TERMINAL run
@@ -430,7 +430,6 @@ def register(mcp: Any) -> None:
         ``max_sources`` caps the count.
         """
         with mcp_errors():
-            client = await get_client(ctx)
             # Fold the deprecated ``task_id`` alias into ``poll_task_id`` (#1789).
             poll_task_id, deprecation = _resolve_poll_task_id(
                 "research_import", "task_id", poll_task_id, task_id
@@ -445,6 +444,7 @@ def register(mcp: Any) -> None:
             if max_sources is not None and max_sources < 1:
                 raise ValidationError("max_sources must be >= 1 (omit it to import all)")
             poll_task_id = poll_task_id.strip()
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             # Poll FOR THE REQUESTED task (via the shared importable-state guard,
             # which forwards ``poll_task_id`` to ``poll`` as the discriminator) so

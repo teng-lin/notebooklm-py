@@ -251,7 +251,6 @@ def register(mcp: Any) -> None:
           ``item``; ``kind`` scopes resolution.
         """
         with mcp_errors():
-            client = await get_client(ctx)
             # Validate pagination bounds unconditionally (inside ``mcp_errors`` so
             # the VALIDATION wire-contract applies) — ``studio_list(item=x,
             # limit=0)`` errors even though they're ignored on the single-fetch path.
@@ -262,6 +261,7 @@ def register(mcp: Any) -> None:
             # ``kind`` is a ``Literal`` — FastMCP/Pydantic rejects an unknown value at
             # the schema boundary, so no runtime membership check is needed (same as
             # ``studio_generate``'s ``artifact_type``).
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             if item is not None:
                 # Single fetch by ref over the merged list; the resolved item's full
@@ -419,7 +419,6 @@ def register(mcp: Any) -> None:
         e.g. ``en``/``ja``/``zh_Hans``.
         """
         with mcp_errors():
-            client = await get_client(ctx)
             # Tolerate ``source_ids`` sent as a JSON-array string / comma string /
             # scalar (some MCP clients + LLM tool-callers do); normalize to a
             # ``list[str]`` up front. ``None`` stays ``None`` (=> all sources, the
@@ -478,6 +477,7 @@ def register(mcp: Any) -> None:
                     )
                 overrides[key] = value
 
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             # Resolve each source ref the same way every other source-accepting tool
             # does (full-UUID fast-path, 12-char prefix, exact title) instead of
@@ -774,8 +774,8 @@ def register(mcp: Any) -> None:
         ``is_mind_map``.
         """
         with mcp_errors():
-            client = await get_client(ctx)
             item = item.strip()
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             try:
                 resolved = await resolve_studio_item(client, nb_id, item)
@@ -914,8 +914,8 @@ def register(mcp: Any) -> None:
         present note would have been found in the list).
         """
         with mcp_errors():
-            client = await get_client(ctx)
             item = item.strip()
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             try:
                 resolved = await resolve_studio_item(client, nb_id, item)

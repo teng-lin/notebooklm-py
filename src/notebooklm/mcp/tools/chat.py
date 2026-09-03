@@ -181,7 +181,6 @@ def register(mcp: Any) -> None:
         result never contains a ``suggested_prompts`` key.
         """
         with mcp_errors():
-            client = await get_client(ctx)
             # A whitespace-only question counts as "no question" (recall path), so
             # a blank string can't slip past the guard into client.chat.ask.
             question = question.strip()
@@ -192,6 +191,7 @@ def register(mcp: Any) -> None:
                     "Provide a question to ask, history>0 to recall prior turns, "
                     "or suggest_followups=true for suggested questions."
                 )
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             # Resolve source refs ONCE up front so both the ask path and the
             # suggest path share the same ids. Tolerate ``source_ids`` sent as a
@@ -337,10 +337,10 @@ def register(mcp: Any) -> None:
         then ``chat_status`` reports ``unknown``.
         """
         with mcp_errors():
-            client = await get_client(ctx)
             question = question.strip()
             if not question:
                 raise ValidationError("chat_start needs a non-empty question.")
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             # Same source-scoping contract as chat_ask: tolerant input shapes,
             # resolved ONCE up front; omitted/empty stays None (=> all sources).
@@ -574,7 +574,6 @@ def register(mcp: Any) -> None:
           is rejected, as it would reset every setting to its default.
         """
         with mcp_errors():
-            client = await get_client(ctx)
             # A partial custom config now merges (read-modify-write in
             # execute_configure), so goal/response_length are NO LONGER required
             # together — the omitted field is preserved. The one call still worth
@@ -596,6 +595,7 @@ def register(mcp: Any) -> None:
             # mutual-exclusion (chat_mode cannot be combined with goal/response_length)
             # is enforced transport-neutrally in ``execute_configure`` so the CLI and
             # this tool share one rule.
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             result = await core.execute_configure(
                 client,

@@ -62,8 +62,19 @@ async def _account_block(ctx: Context, *, authenticated: bool) -> dict[str, Any]
     can still hit an expired session. Rather than sink the whole ``server_info``
     response, that degrades to ``available: False`` with a short (scrubbed) reason
     (identity still included) — keeping the diagnostic useful.
+
+    Acquiring the client can itself fail now that it is opened lazily (#2330), and
+    that degrades the same way rather than propagating. ``server_info`` is the tool
+    an agent reaches for when something is *already* wrong, so a broken session must
+    not sink the version + local-auth diagnostics — which need no client at all and
+    are the very fields that say what broke. An exception escaping to
+    ``server_info``'s own ``mcp_errors()`` would discard exactly those.
     """
-    client = await get_client(ctx)
+    try:
+        client = await get_client(ctx)
+    except Exception as exc:  # noqa: BLE001 - degrade, never sink the whole response
+        # No client → no identity to report; the reason carries the (scrubbed) cause.
+        return {"email": None, "authuser": None, "available": False, "reason": redact(exc)}
     # Identity from a single source (the client). Never raises. ``live_fallback`` is
     # gated on ``authenticated`` — suppress the live WIZ probe when the session is
     # already known stale (it would just fail), so the unauth path stays network-free.

@@ -297,7 +297,6 @@ def register(mcp: Any) -> None:
         querying large sources rather than pulling the whole body.
         """
         with mcp_errors():
-            client = await get_client(ctx)
             # Validate windowing args unconditionally — a bad value must error even
             # in ``summary`` mode (where they are ignored), never silently pass.
             # (``execute_source_read`` re-validates for the full path; this keeps the
@@ -306,6 +305,7 @@ def register(mcp: Any) -> None:
                 raise ValidationError(f"max_chars must be >= 0; got {max_chars}")
             if offset < 0:
                 raise ValidationError(f"offset must be >= 0; got {offset}")
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             src_id = await resolve_source(client, nb_id, source)
 
@@ -441,7 +441,6 @@ def register(mcp: Any) -> None:
         failed / slow (which lands in a bucket).
         """
         with mcp_errors():
-            client = await get_client(ctx)
             # Non-finite + range guards (shared with the REST route so the two
             # can't drift); fail-fast before any I/O.
             wait_core.validate_wait_bounds(timeout, interval)
@@ -466,6 +465,7 @@ def register(mcp: Any) -> None:
                     f"got {len(coerced)}. Wait on a smaller subset."
                 )
 
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
 
             if coerced is not None:
@@ -580,7 +580,6 @@ def register(mcp: Any) -> None:
         valid with ``urls``; ``allow_internal`` applies to every entry.
         """
         with mcp_errors():
-            client = await get_client(ctx)
             # Mode selection (fail-closed) BEFORE any notebook I/O, so a malformed
             # call never reaches notebooks.list. Exactly one of source_type / urls.
             if urls is not None and source_type is not None:
@@ -589,6 +588,7 @@ def register(mcp: Any) -> None:
                 )
             if urls is None and source_type is None:
                 raise ValidationError("provide 'source_type' (single add) or 'urls' (batch)")
+            client = await get_client(ctx)
             if urls is not None:
                 # Batch mode: reject single-mode scalars, then resolve + dispatch.
                 if wait:

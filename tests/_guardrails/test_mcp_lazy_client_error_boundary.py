@@ -90,6 +90,19 @@ def _violations(source: str, rel: str) -> list[str]:
     found: list[str] = []
 
     def walk(node: ast.AST, *, in_boundary: bool, in_try: bool, func: str) -> None:
+        if isinstance(node, ast.Try):
+            # ONLY ``Try.body`` is covered by the handlers. ``orelse`` runs after the
+            # body succeeded and ``finalbody`` during unwinding — an exception from
+            # either escapes this ``except`` entirely, so protection must not leak
+            # into them (nor into ``handlers``, where a raise also escapes).
+            guarded = in_try or _guarded_by_except_exception(node)
+            for stmt in node.body:
+                walk(stmt, in_boundary=in_boundary, in_try=guarded, func=func)
+            for branch in (node.handlers, node.orelse, node.finalbody):
+                for stmt in branch:
+                    walk(stmt, in_boundary=in_boundary, in_try=in_try, func=func)
+            return
+
         for child in ast.iter_child_nodes(node):
             child_boundary, child_try, child_func = in_boundary, in_try, func
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -98,8 +111,6 @@ def _violations(source: str, rel: str) -> list[str]:
             elif isinstance(child, (ast.With, ast.AsyncWith)):
                 if any(_is_call_to(item.context_expr, boundary_names) for item in child.items):
                     child_boundary = True
-            elif isinstance(child, ast.Try):
-                child_try = _guarded_by_except_exception(child)
             elif _is_call_to(child, client_names) and not in_boundary:
                 if (rel, func) not in _WRAPPED_BY_CALLER:
                     found.append(f"{rel}:{child.lineno} {func}() — outside `with mcp_errors():`")
@@ -213,6 +224,54 @@ async def route(request):
 """
 
 
+_ROUTE_ELSE = """
+from ._context import get_client_from_app
+
+async def route(request):
+    try:
+        pass
+    except Exception:
+        return None
+    else:
+        return await get_client_from_app(request)
+"""
+
+_ROUTE_FINALLY = """
+from ._context import get_client_from_app
+
+async def route(request):
+    try:
+        pass
+    except Exception:
+        return None
+    finally:
+        await get_client_from_app(request)
+"""
+
+_ROUTE_HANDLER = """
+from ._context import get_client_from_app
+
+async def route(request):
+    try:
+        pass
+    except Exception:
+        return await get_client_from_app(request)
+"""
+
+_TOOL_TRY_DOES_NOT_SUBSTITUTE = """
+from ._context import get_client
+from ._errors import mcp_errors
+
+async def tool(ctx):
+    try:
+        client = await get_client(ctx)
+    except Exception:
+        raise
+    with mcp_errors():
+        return client
+"""
+
+
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
@@ -223,6 +282,14 @@ async def route(request):
         pytest.param(_NESTED_DEF, True, id="enclosing-with-does-not-cover-a-nested-def"),
         pytest.param(_ROUTE_NARROW, True, id="except-RuntimeError-is-too-narrow"),
         pytest.param(_ROUTE_WIDE, False, id="except-Exception-is-accepted"),
+        pytest.param(_ROUTE_ELSE, True, id="try-else-is-not-covered-by-the-handler"),
+        pytest.param(_ROUTE_FINALLY, True, id="try-finally-is-not-covered-by-the-handler"),
+        pytest.param(_ROUTE_HANDLER, True, id="the-handler-suite-is-not-covered-by-itself"),
+        pytest.param(
+            _TOOL_TRY_DOES_NOT_SUBSTITUTE,
+            True,
+            id="a-try-block-is-not-a-substitute-for-mcp_errors",
+        ),
     ],
 )
 def test_detector_self_checks(source: str, expected: bool) -> None:

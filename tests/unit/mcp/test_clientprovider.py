@@ -24,6 +24,7 @@ from fastmcp import Client  # noqa: E402 - after importorskip guard
 
 from notebooklm.client import NotebookLMClient  # noqa: E402
 from notebooklm.mcp._clientprovider import ClientProvider  # noqa: E402
+from notebooklm.mcp._context import AppState  # noqa: E402
 from notebooklm.mcp.server import create_server  # noqa: E402
 
 
@@ -309,3 +310,106 @@ async def test_the_warm_up_log_is_scrubbed_at_the_source(
     assert "client open failed" in caplog.text
     assert "AAAA1111secret" not in caplog.text
     await provider.aclose()
+
+
+async def test_a_stale_failure_is_retrieved_even_when_the_slot_moved_on() -> None:
+    """A done-callback runs a tick late — by then a retry may own the slot. The
+    failure must still be retrieved, or asyncio logs it through its own handler
+    with the raw ``repr``, routing around ``redact`` (#2330 review)."""
+    factory = _SlowFactory()
+    factory.error = RuntimeError("expired cookies")
+    factory.gate.set()
+    provider = ClientProvider(factory)
+
+    stale = provider._ensure_open_task()
+    with contextlib.suppress(RuntimeError):
+        await stale
+    # Simulate the race the callback guards: something else claimed the slot.
+    provider._open_task = None
+    provider._on_open_done(stale)
+
+    assert stale.exception() is not None
+    # The real assertion: the exception was consumed, so asyncio will not later
+    # report it as "never retrieved" (which is what bypasses redaction).
+    assert not getattr(stale, "_log_traceback", False)
+    await provider.aclose()
+
+
+async def test_aclose_forwards_the_lifespan_exception_to_the_client() -> None:
+    """``NotebookLMClient.__aexit__`` demotes a close failure to a WARNING only when
+    the body raised. Passing (None, None, None) would claim success and let a close
+    error bury the real cause, which the `async with factory()` this replaced never
+    did (#2330 review)."""
+    seen: list[tuple[object, object]] = []
+
+    @contextlib.asynccontextmanager
+    async def factory():
+        try:
+            yield MagicMock()
+        except BaseException as exc:  # what `async with` hands the CM
+            seen.append((type(exc), exc))
+            raise
+
+    provider = ClientProvider(factory)
+    await provider.get()
+
+    boom = ValueError("lifespan blew up")
+    await provider.aclose(type(boom), boom, boom.__traceback__)
+
+    assert seen == [(ValueError, boom)]
+
+
+async def test_shutdown_forwards_the_in_flight_exception() -> None:
+    """The lifespan reads ``sys.exc_info()`` in its ``finally`` and hands the triple
+    to ``_shutdown``; this pins that it reaches the client context manager."""
+    from notebooklm.mcp.server import _shutdown
+
+    seen: list[BaseException] = []
+
+    @contextlib.asynccontextmanager
+    async def factory() -> AsyncIterator[NotebookLMClient]:
+        try:
+            yield cast("NotebookLMClient", MagicMock())
+        except BaseException as exc:
+            seen.append(exc)
+            raise
+
+    provider = ClientProvider(factory)
+    await provider.get()
+    state = AppState(client_provider=provider)
+
+    boom = RuntimeError("host went away")
+    # ``_shutdown`` does not re-raise: contextlib's ``__aexit__`` returns False when
+    # the generator re-raises the exception it was handed, leaving propagation to the
+    # ``finally`` that is already unwinding. What matters is that the client SAW it.
+    await _shutdown(state, provider, type(boom), boom, boom.__traceback__)
+
+    assert seen == [boom]
+
+
+async def test_shutdown_reports_a_clean_exit_as_clean() -> None:
+    """The same path on the happy exit must NOT claim the body raised."""
+    seen: list[BaseException | None] = []
+
+    @contextlib.asynccontextmanager
+    async def factory() -> AsyncIterator[NotebookLMClient]:
+        try:
+            yield cast("NotebookLMClient", MagicMock())
+        except BaseException as exc:  # pragma: no cover - clean path takes the else
+            seen.append(exc)
+            raise
+        else:
+            seen.append(None)
+
+    provider = ClientProvider(factory)
+    await provider.get()
+    state = AppState(client_provider=provider)
+
+    await _shutdown_clean(state, provider)
+    assert seen == [None]
+
+
+async def _shutdown_clean(state: AppState, provider: ClientProvider) -> None:
+    from notebooklm.mcp.server import _shutdown
+
+    await _shutdown(state, provider, None, None, None)
