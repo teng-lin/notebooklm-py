@@ -192,11 +192,6 @@ _TRUSTED_GUARD_PATTERNS = (
     ),
 )
 
-_CANONICAL_REPOSITORY_GUARD_RE = re.compile(
-    r"github\.repository\s*==\s*['\"]teng-lin/notebooklm-py['\"]",
-    re.IGNORECASE,
-)
-
 
 def _expression_is_trusted_guard(expr: str) -> bool:
     return any(p.search(expr) for p in _TRUSTED_GUARD_PATTERNS)
@@ -204,10 +199,7 @@ def _expression_is_trusted_guard(expr: str) -> bool:
 
 def _expression_is_ci_pool_guard(expr: str) -> bool:
     """Return whether a job guard pins both repository and trusted target."""
-    return bool(
-        _CANONICAL_REPOSITORY_GUARD_RE.search(expr)
-        and re.search(r"is_standard\s*==\s*['\"]true['\"]", expr, re.IGNORECASE)
-    )
+    return bool(_REPOSITORY_GUARD_RE.search(expr) and _IS_STANDARD_GUARD_RE.search(expr))
 
 
 def _environment_value_is_approved(value: str) -> bool:

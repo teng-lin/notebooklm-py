@@ -1014,6 +1014,16 @@ def test_trusted_guard_requires_exact_github_identifiers(script) -> None:
     assert script._expression_is_trusted_guard("needs.target.outputs.is_standard == 'true'")
 
 
+def test_ci_pool_guard_requires_exact_repository_and_standard_output(script) -> None:
+    repository = "github.repository == 'teng-lin/notebooklm-py'"
+    standard = "needs.target.outputs.is_standard == 'true'"
+    assert script._expression_is_ci_pool_guard(f"{repository} && {standard}")
+    assert not script._expression_is_ci_pool_guard(f"{repository} && evil_is_standard == 'true'")
+    assert not script._expression_is_ci_pool_guard(
+        f"other.github.repository == 'teng-lin/notebooklm-py' && {standard}"
+    )
+
+
 def test_mismatched_environment_quotes_are_not_approved(script) -> None:
     assert not script._environment_value_is_approved("'protected-readonly\"")
 
