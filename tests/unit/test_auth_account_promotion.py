@@ -424,8 +424,25 @@ class TestRetryableSingleFlight:
         monkeypatch.setattr(ProfileStore, "update_account", _count)
 
         readers = 8
-        with ThreadPoolExecutor(max_workers=readers) as executor:
-            results = list(executor.map(read_account_metadata, [storage] * readers))
+        start = threading.Barrier(readers)
+        entered = threading.local()
+
+        class GatedPath(type(storage)):
+            def read_text(self, *args, **kwargs):
+                if threading.current_thread().name.startswith("account-read") and not getattr(
+                    entered, "value", False
+                ):
+                    entered.value = True
+                    start.wait(timeout=30)
+                return super().read_text(*args, **kwargs)
+
+        gated_storage = GatedPath(storage)
+
+        # The stateful path gates each worker inside the mapped production call.
+        # No auth operation is hidden in a nested helper, and the context manager
+        # still joins every worker if an assertion or read fails.
+        with ThreadPoolExecutor(max_workers=readers, thread_name_prefix="account-read") as executor:
+            results = list(executor.map(read_account_metadata, [gated_storage] * readers))
 
         _drain_promotions_for_tests()
 

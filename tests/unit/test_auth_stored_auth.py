@@ -13,6 +13,8 @@ import httpx
 import pytest
 
 import notebooklm._auth.tokens as _auth_tokens
+from notebooklm._auth import cookie_semantics as _cookie_semantics
+from notebooklm._auth import cookies as _auth_cookies
 from notebooklm._auth.cookie_types import Cookie, CookieJar
 from notebooklm._auth.cookies import (
     _build_cookie_pair_from_storage_state,
@@ -116,6 +118,48 @@ def test_paired_cookie_projection_skips_malformed_first_without_reserving_identi
         "ForwardCompatible",
     )
     assert pair.live.get("SID", domain=".google.com") == "survivor"
+
+
+def test_paired_cookie_projection_sanitizes_and_converts_each_row_once(monkeypatch) -> None:
+    """One source pass, policy revalidation, and conversion occur per row.
+
+    These pure, idempotent operations leave no distinct result-state signal for
+    duplicate calls, so lexical spies retain the invocation-count contract
+    without moving the patches into a shared helper or fixture.
+    """
+    state = {
+        "cookies": [
+            _row("SID", "sid"),
+            _row("__Secure-1PSIDTS", "ts"),
+        ]
+    }
+    source_sanitize_calls = 0
+    policy_revalidation_calls = 0
+    convert_calls = 0
+    original_sanitize = _cookie_semantics.sanitize_cookie_entry
+    original_convert = _auth_cookies._cookie_from_normalized_entry
+
+    def count_sanitize(entry, *, check_value=True):
+        nonlocal policy_revalidation_calls, source_sanitize_calls
+        if isinstance(entry, _auth_cookies._SanitizedCookieEntry):
+            policy_revalidation_calls += 1
+        else:
+            source_sanitize_calls += 1
+        return original_sanitize(entry, check_value=check_value)
+
+    def count_convert(normalized, *, http_only_key):
+        nonlocal convert_calls
+        convert_calls += 1
+        return original_convert(normalized, http_only_key=http_only_key)
+
+    monkeypatch.setattr(_cookie_semantics, "sanitize_cookie_entry", count_sanitize)
+    monkeypatch.setattr(_auth_cookies, "_cookie_from_normalized_entry", count_convert)
+
+    _build_cookie_pair_from_storage_state(state, require_routable=True)
+
+    assert source_sanitize_calls == 2
+    assert policy_revalidation_calls == 2
+    assert convert_calls == 2
 
 
 def test_loaded_cookie_pair_is_frozen_redacted_and_copies_typed_baseline() -> None:

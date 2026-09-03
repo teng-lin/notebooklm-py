@@ -17,6 +17,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -287,11 +288,24 @@ def test_cold_recovery_mint_patches_are_owned_by_tests():
                 and node.args[1].value == "mint"
             ):
                 assert self.functions and self.functions[-1].startswith("test_")
-                owners.append(self.functions[-1])
+                owners.append(f"tests/unit/test_auth_cold_start_recovery.py::{self.functions[-1]}")
             self.generic_visit(node)
 
     Visitor().visit(tree)
-    assert len(owners) == 10
+    assert Counter(owners) == Counter(
+        {
+            "tests/unit/test_auth_cold_start_recovery.py::test_auth_tokens_cold_start_remints_from_sibling_master_token": 1,
+            "tests/unit/test_auth_cold_start_recovery.py::test_client_factory_reaches_cold_master_token_recovery": 1,
+            "tests/unit/test_auth_cold_start_recovery.py::test_concurrent_cold_start_coalesces_one_master_token_mint": 1,
+            "tests/unit/test_auth_cold_start_recovery.py::test_cancelled_waiter_does_not_cancel_shared_master_token_mint": 1,
+            "tests/unit/test_auth_cold_start_recovery.py::test_cancelled_direct_l4_waiter_does_not_cancel_shared_mint": 1,
+            "tests/unit/test_auth_cold_start_recovery.py::test_shared_l4_failure_fans_out_and_later_call_retries": 1,
+            "tests/unit/test_auth_cold_start_recovery.py::test_cold_and_live_l4_recovery_share_one_master_token_mint": 1,
+            "tests/unit/test_auth_cold_start_recovery.py::test_headless_retry_that_still_redirects_falls_through_to_l4": 1,
+            "tests/unit/test_auth_cold_start_recovery.py::test_same_path_callers_keep_their_explicit_account_routes": 1,
+            "tests/unit/test_auth_cold_start_recovery.py::test_mixed_headless_permissions_serialize_and_reuse_l4_success": 1,
+        }
+    )
 
 
 def test_live_replacement_patch_contract_and_scorecard_are_exact(script):
