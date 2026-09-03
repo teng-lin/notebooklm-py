@@ -124,6 +124,27 @@ def test_unknown_contract_tag_and_extra_schema_field_fail() -> None:
         validate_policy({"version": 1, "scenarios": [row]}, collection, collection)
 
 
+@pytest.mark.parametrize(
+    "bad_path",
+    [
+        "src/notebooklm/_auth/*.py",
+        "src/notebooklm/_auth/../refresh.py",
+        "src/notebooklm/_auth",
+    ],
+)
+def test_affected_paths_must_be_exact_normalized_source_files(bad_path: str) -> None:
+    collection = _collection("tests/unit/test_x.py::test_x")
+    row = _row(
+        ["tests/unit/test_x.py::test_x"],
+        ["tests/unit/test_x.py::test_x"],
+        [{"base": "tests/unit/test_x.py::test_x", "head": ["tests/unit/test_x.py::test_x"]}],
+    )
+    row["affected_paths"] = [bad_path]
+
+    with pytest.raises(PolicyError, match="exact normalized production files"):
+        validate_policy({"version": 1, "scenarios": [row]}, collection, collection)
+
+
 def test_scenario_evidence_must_exactly_match_decreased_joint_rows() -> None:
     base = _collection("tests/unit/test_x.py::test_old")
     head = _collection("tests/unit/test_x.py::test_new")
@@ -154,6 +175,94 @@ def test_scenario_evidence_must_exactly_match_decreased_joint_rows() -> None:
             base_policy={"version": 1, "scenarios": []},
             required_base_mutations=required,
         )
+
+
+def test_plural_lifecycle_evidence_matches_every_decreased_joint_row() -> None:
+    collection = _collection()
+    module_mutation = {
+        "package": "notebooklm._auth",
+        "module": "cookie_policy",
+        "attribute": "_WARNED",
+        "idiom": "assignment",
+        "path": "tests/conftest.py",
+        "owner_qualname": "reset",
+        "owner_kind": "fixture",
+        "count": 2,
+    }
+    shared_mutation = {
+        "package": "notebooklm._auth",
+        "owner": "notebooklm._auth.keepalive.State.process_default().cache",
+        "attribute": "clear",
+        "idiom": "mutator",
+        "path": "tests/conftest.py",
+        "owner_qualname": "reset",
+        "owner_kind": "fixture",
+        "count": 2,
+    }
+    lifecycle_row = {
+        "path": "tests/conftest.py",
+        "replaced_base_mutations": [module_mutation, shared_mutation],
+    }
+    validate_policy(
+        {"version": 1, "scenarios": []},
+        collection,
+        collection,
+        base_policy={"version": 1, "scenarios": []},
+        required_base_mutations=[module_mutation, shared_mutation],
+        lifecycle_policy={"version": 1, "operations": [lifecycle_row]},
+        base_lifecycle_policy={"version": 1, "operations": []},
+    )
+
+
+@pytest.mark.parametrize("evidence_counts", [[1, 1], [1, 2]])
+def test_final_evidence_rejects_duplicate_and_split_count_rows(
+    evidence_counts: list[int],
+) -> None:
+    collection = _collection()
+    required = {
+        "package": "notebooklm._auth",
+        "module": "cookie_policy",
+        "attribute": "_WARNED",
+        "idiom": "assignment",
+        "path": "tests/conftest.py",
+        "owner_qualname": "reset",
+        "owner_kind": "fixture",
+        "count": sum(evidence_counts),
+    }
+    lifecycle_row = {
+        "path": "tests/conftest.py",
+        "replaced_base_mutations": [{**required, "count": count} for count in evidence_counts],
+    }
+
+    with pytest.raises(PolicyError, match="exactly match"):
+        validate_policy(
+            {"version": 1, "scenarios": []},
+            collection,
+            collection,
+            base_policy={"version": 1, "scenarios": []},
+            required_base_mutations=[required],
+            lifecycle_policy={"version": 1, "operations": [lifecycle_row]},
+            base_lifecycle_policy={"version": 1, "operations": []},
+        )
+
+
+def test_lifecycle_schema_rename_does_not_make_existing_rows_new_evidence() -> None:
+    collection = _collection()
+    validate_policy(
+        {"version": 1, "scenarios": []},
+        collection,
+        collection,
+        base_policy={"version": 1, "scenarios": []},
+        required_base_mutations=[],
+        lifecycle_policy={
+            "version": 1,
+            "operations": [{"path": "tests/conftest.py", "replaced_base_mutations": []}],
+        },
+        base_lifecycle_policy={
+            "version": 1,
+            "operations": [{"path": "tests/conftest.py", "replaced_base_mutation": None}],
+        },
+    )
 
 
 def test_existing_scenario_is_immutable_and_only_head_nodes_must_remain() -> None:
@@ -221,3 +330,65 @@ def test_helper_alias_call_is_marked_unresolved_and_fails_closed(tmp_path) -> No
         "tests/test_x.py::helper",
         "tests/test_x.py::test_nested._run",
     ]
+
+
+def _pinned_unresolved_helper_scenario():
+    nodes = [
+        "tests/unit/test_storage_writer.py::test_clear_in_band_account_swallows_lock_unavailable",
+        "tests/unit/test_storage_writer.py::test_persist_minted_jar_fails_closed_on_lock_unavailable",
+        "tests/unit/test_storage_writer.py::test_replace_from_login_failed_write_leaves_legacy_account_untouched",
+        "tests/unit/test_storage_writer.py::test_replace_from_login_fails_closed_on_lock_unavailable",
+        "tests/unit/test_storage_writer.py::test_replace_from_remint_takes_storage_lock",
+        "tests/unit/test_storage_writer.py::test_update_account_metadata_fails_closed_on_lock_unavailable",
+    ]
+    collection = _collection(*nodes)
+    helper = "tests/unit/test_storage_writer.py::_patch_lock_unavailable"
+    collection["unresolved_helpers"] = [helper]
+    collection["helper_consumers"][helper] = []
+    row = _row(
+        list(nodes),
+        list(nodes),
+        [{"base": node, "head": [node]} for node in nodes],
+        owner_kind="helper",
+    )
+    row["base_mutations"] = [
+        {
+            "package": "notebooklm._auth",
+            "module": "profile_store",
+            "attribute": "_STORAGE_LOCKS",
+            "idiom": "monkeypatch.setattr",
+            "path": "tests/unit/test_storage_writer.py",
+            "owner_qualname": "_patch_lock_unavailable",
+            "owner_kind": "helper",
+            "count": 1,
+        }
+    ]
+    return collection, row
+
+
+def test_pinned_base_helper_mutation_may_use_authored_exact_mapping() -> None:
+    collection, row = _pinned_unresolved_helper_scenario()
+
+    validate_policy({"version": 1, "scenarios": [row]}, collection, collection)
+
+
+def test_pinned_base_helper_mutation_rejects_an_unrelated_extra_selector() -> None:
+    collection, row = _pinned_unresolved_helper_scenario()
+    extra = "tests/unit/test_storage_writer.py::test_unrelated"
+    collection["items"].append(
+        {"nodeid": extra, "canonical_node": extra, "fixtures": ["reset_auth"]}
+    )
+    row["base_selectors"].append(extra)
+    row["replacement_selectors"].append(extra)
+    row["node_mapping"].append({"base": extra, "head": [extra]})
+
+    with pytest.raises(PolicyError, match="helper/fixture consumers"):
+        validate_policy({"version": 1, "scenarios": [row]}, collection, collection)
+
+
+def test_unresolved_helper_exception_rejects_an_exact_row_near_miss() -> None:
+    collection, row = _pinned_unresolved_helper_scenario()
+    row["base_mutations"][0]["count"] = 2
+
+    with pytest.raises(PolicyError, match="unresolved dynamic callers"):
+        validate_policy({"version": 1, "scenarios": [row]}, collection, collection)

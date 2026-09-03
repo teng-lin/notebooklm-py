@@ -18,7 +18,12 @@ from scripts.audit_auth_shared_mutations import collect_mutations
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 POLICY = REPO_ROOT / "tests/fixtures/policies/auth_lifecycle_cleanup.json"
-METHODS = {"_reset_for_tests", "drain", "join", "quiesce", "reset"}
+COOKIE_WARNING_RESET = "_reset_secondary_binding_warning_for_tests"
+METHODS = {COOKIE_WARNING_RESET, "_reset_for_tests", "drain", "join", "quiesce", "reset"}
+EXACT_COOKIE_WARNING_FIXTURES = {
+    ("tests/conftest.py", "_reset_poke_state"),
+    ("tests/unit/test_warning_dedupe.py", "_reset_warning_flags"),
+}
 
 
 class LifecyclePolicyError(RuntimeError):
@@ -27,6 +32,7 @@ class LifecyclePolicyError(RuntimeError):
 
 def live_operations(tests_dir: Path) -> list[dict[str, Any]]:
     yields: dict[tuple[str, str], int] = {}
+    exact_cookie_operations: list[dict[str, Any]] = []
     project_root = tests_dir.parent if tests_dir.name == "tests" else REPO_ROOT
     for path in tests_dir.rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -52,6 +58,60 @@ def live_operations(tests_dir: Path) -> list[dict[str, Any]]:
                 ]
                 if direct_yields:
                     yields[(self.relative_path, qualname)] = min(direct_yields)
+
+                if (self.relative_path, qualname) in EXACT_COOKIE_WARNING_FIXTURES:
+                    scoped_nodes: list[ast.AST] = []
+
+                    def walk_scope(current: ast.AST) -> None:
+                        scoped_nodes.append(current)
+                        for child in ast.iter_child_nodes(current):
+                            if isinstance(
+                                child,
+                                ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.Lambda,
+                            ):
+                                continue
+                            walk_scope(child)
+
+                    for statement in node.body:
+                        walk_scope(statement)
+                    cookie_aliases = {
+                        alias.asname or alias.name
+                        for child in scoped_nodes
+                        if isinstance(child, ast.ImportFrom) and child.module == "notebooklm._auth"
+                        for alias in child.names
+                        if alias.name == "cookie_policy"
+                    }
+                    rebound = {
+                        child.id
+                        for child in scoped_nodes
+                        if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store)
+                    }
+                    cookie_aliases -= rebound
+                    for child in scoped_nodes:
+                        if not (
+                            isinstance(child, ast.Call)
+                            and isinstance(child.func, ast.Attribute)
+                            and child.func.attr == COOKIE_WARNING_RESET
+                            and isinstance(child.func.value, ast.Name)
+                            and child.func.value.id in cookie_aliases
+                        ):
+                            continue
+                        boundary = min(direct_yields) if direct_yields else None
+                        exact_cookie_operations.append(
+                            {
+                                "path": self.relative_path,
+                                "owner_qualname": qualname,
+                                "owner_kind": "fixture",
+                                "production_owner": "notebooklm._auth.cookie_policy",
+                                "method": COOKIE_WARNING_RESET,
+                                "count": 1,
+                                "phase": (
+                                    "setup"
+                                    if boundary is not None and child.lineno < boundary
+                                    else "teardown"
+                                ),
+                            }
+                        )
                 self.stack.append(node.name)
                 self.generic_visit(node)
                 self.stack.pop()
@@ -63,6 +123,17 @@ def live_operations(tests_dir: Path) -> list[dict[str, Any]]:
 
     grouped: dict[tuple[str, ...], dict[str, Any]] = {}
     phases: dict[tuple[str, ...], set[str]] = defaultdict(set)
+    for operation in exact_cookie_operations:
+        identity = (
+            operation["path"],
+            operation["owner_qualname"],
+            operation["owner_kind"],
+            operation["production_owner"],
+            operation["method"],
+        )
+        row = grouped.setdefault(identity, {**operation, "count": 0})
+        row["count"] += 1
+        phases[identity].add(operation["phase"])
     for mutation in collect_mutations(tests_dir):
         if (
             mutation.owner_kind not in {"fixture", "helper"}
@@ -122,7 +193,7 @@ def validate_policy(policy: dict[str, Any], live: list[dict[str, Any]]) -> None:
         required = {
             *identity,
             "affected_paths",
-            "replaced_base_mutation",
+            "replaced_base_mutations",
             "verification_node_prefixes",
         }
         if set(row) != required:
@@ -135,6 +206,19 @@ def validate_policy(policy: dict[str, Any], live: list[dict[str, Any]]) -> None:
             raise LifecyclePolicyError("lifecycle row has an invalid method or phase")
         if not row["affected_paths"] or not row["verification_node_prefixes"]:
             raise LifecyclePolicyError("lifecycle rows require SUT paths and verification nodes")
+        if not isinstance(row["replaced_base_mutations"], list):
+            raise LifecyclePolicyError("lifecycle replaced_base_mutations must be a list")
+        from scripts.check_auth_behavior_scenario_policy import PolicyError, _validate_mutation
+
+        try:
+            replacements = [
+                _validate_mutation(mutation, "lifecycle replaced_base_mutations")
+                for mutation in row["replaced_base_mutations"]
+            ]
+        except PolicyError as exc:
+            raise LifecyclePolicyError(str(exc)) from exc
+        if len({json.dumps(row, sort_keys=True) for row in replacements}) != len(replacements):
+            raise LifecyclePolicyError("duplicate lifecycle replaced_base_mutations")
         if not all(
             isinstance(path, str)
             and path.startswith("src/notebooklm/")
@@ -170,17 +254,6 @@ def validate_verification_nodes(policy: dict[str, Any], collection: dict[str, An
             if expanded & matches:
                 raise LifecyclePolicyError("duplicate lifecycle verification-node coverage")
             expanded.update(matches)
-        replaced = row["replaced_base_mutation"]
-        if replaced is not None:
-            from scripts.check_auth_behavior_scenario_policy import (
-                PolicyError,
-                _validate_mutation,
-            )
-
-            try:
-                _validate_mutation(replaced, "lifecycle replaced_base_mutation")
-            except PolicyError as exc:
-                raise LifecyclePolicyError(str(exc)) from exc
 
 
 def main(argv: list[str] | None = None) -> int:

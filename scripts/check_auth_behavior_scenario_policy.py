@@ -13,7 +13,7 @@ import os
 import subprocess
 import sys
 from collections import Counter
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -315,6 +315,22 @@ def _expand(selectors: list[str], collection: dict[str, Any], label: str) -> set
     return expanded
 
 
+def _is_normalized_affected_path(value: Any) -> bool:
+    if not isinstance(value, str) or any(
+        token in value for token in ("*", "?", "[", "]", "{", "}", "\\")
+    ):
+        return False
+    path = PurePosixPath(value)
+    return (
+        value == path.as_posix()
+        and path.parts[:2] == ("src", "notebooklm")
+        and len(path.parts) >= 3
+        and path.suffix == ".py"
+        and "." not in path.parts
+        and ".." not in path.parts
+    )
+
+
 def _validate_mutation(row: Any, label: str) -> dict[str, Any]:
     if not isinstance(row, dict) or set(row) not in {
         frozenset(MODULE_MUTATION_FIELDS),
@@ -333,10 +349,286 @@ def _mutation_identity(row: dict[str, Any]) -> tuple[Any, ...]:
     return tuple(row[field] for field in sorted(fields - {"count"}))
 
 
+def _unresolved_helper_mutation_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    target_field = "module" if "module" in row else "owner"
+    return (
+        row["package"],
+        target_field,
+        row[target_field],
+        row["attribute"],
+        row["idiom"],
+        row["path"],
+        row["owner_qualname"],
+        row["owner_kind"],
+        row["count"],
+    )
+
+
+# These are the complete unresolved helper rows in the pinned integration-base
+# decrease ledger. Their scenario selectors and concrete mappings remain exact,
+# and the global mutation counter still requires each full row and count. This
+# exception does not authorize any other unresolved helper identity.
+_PINNED_UNRESOLVED_HELPER_MUTATIONS: frozenset[tuple[Any, ...]] = frozenset(
+    {
+        (
+            "notebooklm._auth",
+            "module",
+            "profile_store",
+            "_STORAGE_LOCKS",
+            "monkeypatch.setattr",
+            "tests/unit/test_storage_writer.py",
+            "_patch_lock_unavailable",
+            "helper",
+            1,
+        ),
+        (
+            "notebooklm._auth",
+            "owner",
+            "notebooklm._auth.profile_store.ProfileStore",
+            "read_master_token",
+            "patch.object",
+            "tests/unit/test_auth_master_token_bootstrap.py",
+            "test_public_malformed_projection_preserves_ordinary_context.invoke",
+            "helper",
+            1,
+        ),
+        (
+            "notebooklm._auth",
+            "owner",
+            "notebooklm._auth.single_flight.SingleFlight.process_default()",
+            "claim",
+            "gateway-method-or-unknown",
+            "tests/unit/test_refresh_lock_registry.py",
+            "TestDoubleCancelDoesNotDetonateBridge.test_second_cancel_while_pending_preserves_bridge_and_siblings._run",
+            "helper",
+            1,
+        ),
+        (
+            "notebooklm._auth",
+            "owner",
+            "notebooklm._auth.single_flight.SingleFlight.process_default()",
+            "claim",
+            "gateway-method-or-unknown",
+            "tests/unit/test_refresh_lock_registry.py",
+            "TestPromptPopRetention.test_registry_does_not_accumulate_across_cycles._run",
+            "helper",
+            1,
+        ),
+        (
+            "notebooklm._auth",
+            "owner",
+            "notebooklm._auth.single_flight.SingleFlight.process_default()",
+            "claim",
+            "gateway-method-or-unknown",
+            "tests/unit/test_auth_headless_reauth.py",
+            "test_single_flight_is_unreachable_from_the_sync_drive_entry._drive_in_worker_thread._claim_from_worker",
+            "helper",
+            1,
+        ),
+        (
+            "notebooklm._auth",
+            "owner",
+            "notebooklm._auth.single_flight.SingleFlight.process_default()",
+            "claim",
+            "gateway-method-or-unknown",
+            "tests/unit/test_refresh_lock_registry.py",
+            "TestFlightClaimIdentity.test_distinct_keys_get_distinct_flights._run",
+            "helper",
+            2,
+        ),
+        (
+            "notebooklm._auth",
+            "owner",
+            "notebooklm._auth.single_flight.SingleFlight.process_default()",
+            "claim",
+            "gateway-method-or-unknown",
+            "tests/unit/test_refresh_lock_registry.py",
+            "TestFlightClaimIdentity.test_second_claim_same_key_follows_leader._run",
+            "helper",
+            2,
+        ),
+        (
+            "notebooklm._auth",
+            "owner",
+            "notebooklm._auth.single_flight.SingleFlight.process_default()",
+            "claim",
+            "gateway-method-or-unknown",
+            "tests/unit/test_refresh_lock_registry.py",
+            "TestFlightClaimIdentity.test_settled_flight_is_overwritable_by_next_leader._run",
+            "helper",
+            2,
+        ),
+        (
+            "notebooklm._auth",
+            "owner",
+            "notebooklm._auth.single_flight.SingleFlight.process_default()",
+            "claim_if_epoch_current",
+            "gateway-method-or-unknown",
+            "tests/unit/test_refresh_lock_registry.py",
+            "TestClaimIfEpochCurrent.test_claims_when_epoch_unchanged._run",
+            "helper",
+            1,
+        ),
+        (
+            "notebooklm._auth",
+            "owner",
+            "notebooklm._auth.single_flight.SingleFlight.process_default()",
+            "claim_if_epoch_current",
+            "gateway-method-or-unknown",
+            "tests/unit/test_refresh_lock_registry.py",
+            "TestClaimIfEpochCurrent.test_skips_when_epoch_already_advanced._run",
+            "helper",
+            1,
+        ),
+        (
+            "notebooklm._auth",
+            "owner",
+            "notebooklm._auth.single_flight.SingleFlight.process_default()",
+            "note_success",
+            "gateway-method-or-unknown",
+            "tests/unit/test_refresh_lock_registry.py",
+            "TestClaimIfEpochCurrent.test_skips_when_epoch_already_advanced._run",
+            "helper",
+            1,
+        ),
+        (
+            "notebooklm._auth",
+            "owner",
+            "notebooklm._auth.storage_lock.StorageLockManager",
+            "process_default",
+            "monkeypatch.setattr",
+            "tests/unit/test_storage_writer.py",
+            "_patch_master_token_lock_unavailable",
+            "helper",
+            1,
+        ),
+        (
+            "notebooklm._auth",
+            "owner",
+            "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+            "schedule",
+            "gateway-method-or-unknown",
+            "tests/unit/test_auth_account_promotion.py",
+            "TestRetryableSingleFlight.test_concurrent_reads_of_one_profile_promote_exactly_once._read",
+            "helper",
+            1,
+        ),
+    }
+)
+
+
+_PINNED_UNRESOLVED_HELPER_CONSUMERS: dict[tuple[str, str], frozenset[str]] = {
+    ("tests/unit/test_storage_writer.py", "_patch_lock_unavailable"): frozenset(
+        {
+            "tests/unit/test_storage_writer.py::test_clear_in_band_account_swallows_lock_unavailable",
+            "tests/unit/test_storage_writer.py::test_persist_minted_jar_fails_closed_on_lock_unavailable",
+            "tests/unit/test_storage_writer.py::test_replace_from_login_failed_write_leaves_legacy_account_untouched",
+            "tests/unit/test_storage_writer.py::test_replace_from_login_fails_closed_on_lock_unavailable",
+            "tests/unit/test_storage_writer.py::test_replace_from_remint_takes_storage_lock",
+            "tests/unit/test_storage_writer.py::test_update_account_metadata_fails_closed_on_lock_unavailable",
+        }
+    ),
+    (
+        "tests/unit/test_auth_master_token_bootstrap.py",
+        "test_public_malformed_projection_preserves_ordinary_context.invoke",
+    ): frozenset(
+        {
+            "tests/unit/test_auth_master_token_bootstrap.py::test_public_malformed_projection_preserves_ordinary_context[False]",
+            "tests/unit/test_auth_master_token_bootstrap.py::test_public_malformed_projection_preserves_ordinary_context[True]",
+        }
+    ),
+    (
+        "tests/unit/test_refresh_lock_registry.py",
+        "TestDoubleCancelDoesNotDetonateBridge.test_second_cancel_while_pending_preserves_bridge_and_siblings._run",
+    ): frozenset(
+        {
+            "tests/unit/test_refresh_lock_registry.py::TestDoubleCancelDoesNotDetonateBridge::test_second_cancel_while_pending_preserves_bridge_and_siblings"
+        }
+    ),
+    (
+        "tests/unit/test_refresh_lock_registry.py",
+        "TestPromptPopRetention.test_registry_does_not_accumulate_across_cycles._run",
+    ): frozenset(
+        {
+            "tests/unit/test_refresh_lock_registry.py::TestPromptPopRetention::test_registry_does_not_accumulate_across_cycles"
+        }
+    ),
+    (
+        "tests/unit/test_auth_headless_reauth.py",
+        "test_single_flight_is_unreachable_from_the_sync_drive_entry._drive_in_worker_thread._claim_from_worker",
+    ): frozenset(
+        {
+            "tests/unit/test_auth_headless_reauth.py::test_single_flight_is_unreachable_from_the_sync_drive_entry"
+        }
+    ),
+    (
+        "tests/unit/test_refresh_lock_registry.py",
+        "TestFlightClaimIdentity.test_distinct_keys_get_distinct_flights._run",
+    ): frozenset(
+        {
+            "tests/unit/test_refresh_lock_registry.py::TestFlightClaimIdentity::test_distinct_keys_get_distinct_flights"
+        }
+    ),
+    (
+        "tests/unit/test_refresh_lock_registry.py",
+        "TestFlightClaimIdentity.test_second_claim_same_key_follows_leader._run",
+    ): frozenset(
+        {
+            "tests/unit/test_refresh_lock_registry.py::TestFlightClaimIdentity::test_second_claim_same_key_follows_leader"
+        }
+    ),
+    (
+        "tests/unit/test_refresh_lock_registry.py",
+        "TestFlightClaimIdentity.test_settled_flight_is_overwritable_by_next_leader._run",
+    ): frozenset(
+        {
+            "tests/unit/test_refresh_lock_registry.py::TestFlightClaimIdentity::test_settled_flight_is_overwritable_by_next_leader"
+        }
+    ),
+    (
+        "tests/unit/test_refresh_lock_registry.py",
+        "TestClaimIfEpochCurrent.test_claims_when_epoch_unchanged._run",
+    ): frozenset(
+        {
+            "tests/unit/test_refresh_lock_registry.py::TestClaimIfEpochCurrent::test_claims_when_epoch_unchanged"
+        }
+    ),
+    (
+        "tests/unit/test_refresh_lock_registry.py",
+        "TestClaimIfEpochCurrent.test_skips_when_epoch_already_advanced._run",
+    ): frozenset(
+        {
+            "tests/unit/test_refresh_lock_registry.py::TestClaimIfEpochCurrent::test_skips_when_epoch_already_advanced"
+        }
+    ),
+    ("tests/unit/test_storage_writer.py", "_patch_master_token_lock_unavailable"): frozenset(
+        {
+            "tests/unit/test_storage_writer.py::test_write_master_token_fails_closed_on_lock_unavailable"
+        }
+    ),
+    (
+        "tests/unit/test_auth_account_promotion.py",
+        "TestRetryableSingleFlight.test_concurrent_reads_of_one_profile_promote_exactly_once._read",
+    ): frozenset(
+        {
+            "tests/unit/test_auth_account_promotion.py::TestRetryableSingleFlight::test_concurrent_reads_of_one_profile_promote_exactly_once"
+        }
+    ),
+}
+
+
 def _mutation_counter(rows: list[dict[str, Any]]) -> Counter[tuple[Any, ...]]:
     result: Counter[tuple[Any, ...]] = Counter()
     for row in rows:
         result[_mutation_identity(row)] += int(row["count"])
+    return result
+
+
+def _mutation_row_counter(rows: list[dict[str, Any]]) -> Counter[tuple[Any, ...]]:
+    result: Counter[tuple[Any, ...]] = Counter()
+    for row in rows:
+        fields = MODULE_MUTATION_FIELDS if "module" in row else SHARED_MUTATION_FIELDS
+        result[tuple(row[field] for field in sorted(fields))] += 1
     return result
 
 
@@ -468,10 +760,15 @@ def validate_policy(
         is_new = row["id"] not in previous
         if not is_new and row != previous[row["id"]]:
             raise PolicyError(f"{row['id']}: existing scenario rows are immutable")
-        if not row["affected_paths"] or not all(
-            str(path).startswith("src/notebooklm/") for path in row["affected_paths"]
+        if (
+            not isinstance(row["affected_paths"], list)
+            or not row["affected_paths"]
+            or not all(_is_normalized_affected_path(path) for path in row["affected_paths"])
+            or len(row["affected_paths"]) != len(set(row["affected_paths"]))
         ):
-            raise PolicyError(f"{row['id']}: affected_paths must name production source")
+            raise PolicyError(
+                f"{row['id']}: affected_paths must name exact normalized production files"
+            )
         if not row["contracts"] or not set(row["contracts"]) <= CONTRACT_TAGS:
             raise PolicyError(f"{row['id']}: unknown or empty contract tags")
         mutations = [
@@ -503,27 +800,61 @@ def validate_policy(
                 f"{row['id']}: replacement node reused; encode a split/merge as one group row"
             )
         replacement_users.update(new_nodes)
-        if is_new and old_nodes != _expected_consumers(mutations, base, row["id"]):
-            raise PolicyError(
-                f"{row['id']}: selectors do not exactly cover helper/fixture consumers"
-            )
+        if is_new:
+            unresolved_keys = set(base.get("unresolved_helpers", []))
+            unresolved = [
+                mutation
+                for mutation in mutations
+                if mutation["owner_kind"] == "helper"
+                and f"{mutation['path']}::{mutation['owner_qualname']}" in unresolved_keys
+            ]
+            unexpected = [
+                mutation
+                for mutation in unresolved
+                if _unresolved_helper_mutation_key(mutation)
+                not in _PINNED_UNRESOLVED_HELPER_MUTATIONS
+            ]
+            if unexpected:
+                mutation = unexpected[0]
+                key = f"{mutation['path']}::{mutation['owner_qualname']}"
+                raise PolicyError(f"{row['id']}: unresolved dynamic callers for {key}")
+            resolvable = [mutation for mutation in mutations if mutation not in unresolved]
+            expected = _expected_consumers(resolvable, base, row["id"])
+            for mutation in unresolved:
+                expected.update(
+                    _PINNED_UNRESOLVED_HELPER_CONSUMERS[
+                        (mutation["path"], mutation["owner_qualname"])
+                    ]
+                )
+            if old_nodes != expected:
+                raise PolicyError(
+                    f"{row['id']}: selectors do not exactly cover helper/fixture consumers"
+                )
         if is_new:
             new_evidence.extend(mutations)
     removed_ids = set(previous) - ids
     if removed_ids:
         raise PolicyError(f"scenario rows cannot be deleted: {sorted(removed_ids)}")
     if required_base_mutations is not None:
+
+        def normalize_lifecycle_row(row: dict[str, Any]) -> str:
+            normalized = dict(row)
+            legacy = normalized.pop("replaced_base_mutation", None)
+            if "replaced_base_mutations" not in normalized:
+                normalized["replaced_base_mutations"] = [] if legacy is None else [legacy]
+            return json.dumps(normalized, sort_keys=True)
+
         old_lifecycle_rows = {
-            json.dumps(row, sort_keys=True)
+            normalize_lifecycle_row(row)
             for row in (base_lifecycle_policy or {}).get("operations", [])
         }
         lifecycle_evidence = [
-            _validate_mutation(row["replaced_base_mutation"], "lifecycle replacement")
+            _validate_mutation(mutation, "lifecycle replacement")
             for row in (lifecycle_policy or {}).get("operations", [])
-            if row.get("replaced_base_mutation") is not None
-            and json.dumps(row, sort_keys=True) not in old_lifecycle_rows
+            if normalize_lifecycle_row(row) not in old_lifecycle_rows
+            for mutation in row.get("replaced_base_mutations", [])
         ]
-        if _mutation_counter([*new_evidence, *lifecycle_evidence]) != _mutation_counter(
+        if _mutation_row_counter([*new_evidence, *lifecycle_evidence]) != _mutation_row_counter(
             required_base_mutations
         ):
             raise PolicyError(
