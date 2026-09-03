@@ -142,7 +142,7 @@ if loaded_web:
 
 def test_runtime_package_tree_has_no_web_imports() -> None:
     """Neutral runtime modules must never acquire a direct web dependency."""
-    for path in sorted((SRC_ROOT / "_runtime").glob("*.py")):
+    for path in sorted((SRC_ROOT / "_runtime").rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         imports = [
             node
@@ -153,8 +153,10 @@ def test_runtime_package_tree_has_no_web_imports() -> None:
             )
             or (
                 isinstance(node, ast.ImportFrom)
-                and node.module is not None
-                and "_web" in node.module.split(".")
+                and (
+                    (node.module is not None and "_web" in node.module.split("."))
+                    or any(alias.name.split(".")[0] == "_web" for alias in node.names)
+                )
             )
         ]
         assert imports == [], path

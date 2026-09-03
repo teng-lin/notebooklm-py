@@ -107,7 +107,17 @@ def build_runtime_transport(
     chain_host: MiddlewareChainHost,
     logger: logging.Logger,
 ) -> RuntimeTransport:
-    """Construct the web request transport around shared supervision."""
+    """Construct the web request transport around shared supervision.
+
+    This runs after the shared and web leaf collaborators exist but before
+    middleware wiring. The transport reads the live chain slot through
+    ``chain_host`` on every authenticated POST, so tests and recovery paths
+    may replace the chain without rebuilding the transport. Authentication
+    snapshots always use the client-owned ``AuthTokens`` instance through
+    ``AuthRefreshCoordinator``; loop and admission checks remain owned by the
+    neutral ``CallSupervisor``. The supplied logger deliberately preserves
+    the historical session logger namespace.
+    """
     return RuntimeTransport(
         kernel=kernel,
         snapshot_provider=lambda expected_epoch: auth_coord.snapshot(
@@ -131,7 +141,14 @@ def wire_middleware_chain(
     is_auth_error: Callable[[Exception], bool],
     timeout: float,
 ) -> WiredMiddleware:
-    """Build and connect the four-middleware ADR-0009 web chain."""
+    """Build and connect the four-middleware ADR-0009 web chain.
+
+    Retry tunables and the refresh entry point are live bindings on
+    ``chain_host``. The auth snapshot closure captures the client-owned
+    ``AuthTokens`` object by reference; production refresh mutates that same
+    object in place. ``is_auth_error`` is likewise passed as a live-binding
+    callable so a test seam reassignment remains observable after assembly.
+    """
     chain_builder = MiddlewareChainBuilder(
         metrics=collaborators.metrics,
         rate_limit_max_retries_provider=lambda: chain_host._rate_limit_max_retries,
@@ -165,12 +182,21 @@ def _build_web_transport(
     cookie_rotator: CookieRotator | None,
 ) -> tuple[ReqidCounter, AuthRefreshCoordinator, Kernel, CookiePersistence, WebTransportLifecycle]:
     """Build the web-only leaf collaborators in dependency order."""
+    # ReqidCounter captures this bound method so metrics must exist first.
     reqid = ReqidCounter(on_lock_wait=shared.metrics.record_lock_wait)
+    # Snapshot serialization is intentionally distinct from the refresh lock;
+    # combining them would reintroduce refresh reentrancy ambiguity.
     auth_coord = AuthRefreshCoordinator(
         refresh_callback=refresh_callback,
         metrics=shared.metrics,
     )
+    # ADR-0032 bootstrap hand-off: after construction, first-party live and
+    # closed-state readers use the kernel-owned jar rather than AuthTokens'
+    # public compatibility shadows.
     kernel = Kernel(auth=auth, async_client_factory=config.async_client_factory)
+    # Preserve only the load-time snapshot. Re-reading a newer profile at open
+    # could let this process's older live jar overwrite a sibling writer's
+    # intervening cookie update during the eventual three-way merge.
     cookie_persistence = CookiePersistence._from_store(
         ProfileStore(auth.storage_path) if auth.storage_path is not None else None,
         initial_snapshot=auth.cookie_snapshot,
@@ -304,6 +330,9 @@ def compose_client_internals(
     )
     composed.bind_executor(executor)
 
+    # ADR-0014 Rule 2: construct the uploader from its narrow collaborators.
+    # ADR-0016's Auth Instance Invariant requires this exact client-owned
+    # ``auth`` object so refresh-time in-place mutation remains visible.
     source_uploader = SourceUploadPipeline(
         rpc=executor,
         supervisor=shared.call_supervisor,

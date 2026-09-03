@@ -523,7 +523,7 @@ the executor on direct collaborator dependencies.
         | _web_runtime: WebRuntime | None  |
         +----------------------------------+
         | reqid | auth_coord | kernel      |
-        | cookie persistence | lifecycle   |
+        | cookie persistence | web transport|
         | executor | source uploader       |
         | composed: ClientComposed         |
         +----------------------------------+
@@ -1509,8 +1509,8 @@ src/notebooklm/
 │       ├── cookie_persistence.py # Cookie-jar persistence + __Secure-1PSIDTS rotation
 │       ├── error_injection.py   # Synthetic-error env-var resolver + startup guard
 │       ├── errors.py            # Transport exceptions and raw POST error mapping
-│       ├── init.py              # WebRuntime construction + middleware wiring
 │       ├── executor.py          # Batchexecute RPC dispatcher
+│       ├── init.py              # WebRuntime construction + middleware wiring
 │       ├── kernel.py            # Concrete Kernel transport core
 │       ├── lifecycle.py         # Web resource open/prepare-close/close phases
 │       ├── reqid_counter.py     # Chat request-id counter

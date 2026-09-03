@@ -39,9 +39,10 @@ class ValidatedSessionConfig:
     Everything in here is either a value the caller supplied that passed
     validation, a normalized form (e.g. the keepalive interval clamped
     to the minimum-interval floor), or a seam callable resolved through
-    the canonical module-attribute lookup that ``None`` defaults trigger
-    (where applicable — see the module docstring for which seams are
-    resolved here vs. in the public client constructor).
+    the canonical module-attribute lookup that ``None`` defaults trigger.
+    Web-only defaults are resolved by
+    :func:`notebooklm._web.transport.init.compose_client_internals` before
+    this neutral configuration is built.
     """
 
     timeout: float
@@ -110,9 +111,9 @@ def validate_constructor_args(
     Mirrors the original validation/normalization behavior one-for-one:
     same ``ValueError`` messages, same order of checks. The seam callables
     (``decode_response`` / ``sleep`` / ``is_auth_error`` /
-    ``async_client_factory``) are already resolved by the caller against
-    the final client-side seam bindings; see the module docstring for why
-    the seam-resolution boundary stops here.
+    ``async_client_factory``) are already resolved by the web composition
+    caller against the final client-side seam bindings; this neutral helper
+    only validates and normalizes the resulting values.
     The returned :class:`ValidatedSessionConfig` is consumed by
     :func:`build_collaborators` and :func:`wire_middleware_chain`.
 
