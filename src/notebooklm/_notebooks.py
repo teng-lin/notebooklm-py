@@ -105,13 +105,14 @@ class NotebooksAPI(ABC):
             source_lister=self._sources,
         )
         self._share_url_builder = share_url_builder
+        # CREATE_NOTEBOOK/COPY_PROJECT may volunteer a chat-session id that
+        # ChatAPI consumes once before falling back to a backend read. Producers
+        # and any eviction/cleanup policy stay backend-owned.
+        self._created_chat_session_ids: dict[str, str] = {}
 
     def _take_created_chat_session_id(self, notebook_id: str) -> str | None:
-        """Return no volunteered chat session by default.
-
-        Backends whose create response carries a session hint override this method.
-        """
-        return None
+        """Consume a create/copy response's volunteered chat-session id once."""
+        return self._created_chat_session_ids.pop(notebook_id, None)
 
     @abstractmethod
     async def get_source_ids(self, notebook_id: str) -> builtins.list[str]:

@@ -798,6 +798,20 @@ def test_notebook_copy_calls_only_its_single_wire_hook() -> None:
     assert AndroidNotebooksAPI._copy_failure_chain == "suppress"
 
 
+def test_created_chat_session_hint_storage_and_consumer_have_one_base_owner() -> None:
+    from notebooklm._android.notebooks import AndroidNotebooksAPI
+    from notebooklm._notebooks import NotebooksAPI
+    from notebooklm._web.notebooks import WebNotebooksAPI
+
+    assert "_take_created_chat_session_id" in NotebooksAPI.__dict__
+    assert "_take_created_chat_session_id" not in WebNotebooksAPI.__dict__
+    assert "_take_created_chat_session_id" not in AndroidNotebooksAPI.__dict__
+
+    for implementation in (WebNotebooksAPI, AndroidNotebooksAPI):
+        source = inspect.getsource(implementation.__init__)
+        assert "_created_chat_session_ids" not in source
+
+
 def test_chat_settings_and_turn_role_reads_remain_backend_owned() -> None:
     """Do not replace transport-specific reads with vacuous send hooks."""
     from notebooklm._android.chat import AndroidChatAPI

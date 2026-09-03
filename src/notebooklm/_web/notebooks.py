@@ -259,17 +259,6 @@ class WebNotebooksAPI(NotebooksAPI):
                 self._rpc,
                 share_url_builder=default_share_url,
             )
-        # CREATE_NOTEBOOK volunteers its newly-created ChatSession, while
-        # GET_NOTEBOOK omits it. Keep that one-shot hint until ChatAPI consumes
-        # it so the first ask need not immediately re-fetch the same id through
-        # hPTbtc (#2133). The cache is scoped to this client instance and each
-        # entry is popped on first use; closing the client releases any hints
-        # from notebooks that were created without a subsequent ask.
-        self._created_chat_session_ids: dict[str, str] = {}
-
-    def _take_created_chat_session_id(self, notebook_id: str) -> str | None:
-        """Consume CREATE_NOTEBOOK's volunteered current chat-session id."""
-        return self._created_chat_session_ids.pop(notebook_id, None)
 
     async def _rpc_call(
         self,

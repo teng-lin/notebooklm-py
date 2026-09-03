@@ -126,12 +126,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
         sources_api: NotebookSourceLister,
     ) -> None:
         self._transport = session
-        self._created_chat_session_ids: dict[str, str] = {}
         super().__init__(sources_api)
-
-    def _take_created_chat_session_id(self, notebook_id: str) -> str | None:
-        """Consume the exact chat-session hint volunteered by a create response."""
-        return self._created_chat_session_ids.pop(notebook_id, None)
 
     def _remember_created_chat_session(self, notebook: Notebook) -> None:
         if notebook.id and notebook.chat_sessions:
