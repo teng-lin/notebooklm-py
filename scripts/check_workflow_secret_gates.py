@@ -83,7 +83,15 @@ _APPROVED_ENVIRONMENTS = frozenset({"protected-readonly"})
 _CI_SECRET_BINDINGS = frozenset(
     {"NOTEBOOKLM_MASTER_TOKEN_JSON", "NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID"}
 )
-_FORBIDDEN_CI_SECRET_NAMES = frozenset({"NOTEBOOKLM_MASTER_TOKEN_JSON", "NOTEBOOKLM_ACCOUNTS_JSON"})
+_FORBIDDEN_CI_SECRET_NAMES = frozenset(
+    {
+        "NOTEBOOKLM_MASTER_TOKEN_JSON",
+        "NOTEBOOKLM_MASTER_TOKEN_JSON_A",
+        "NOTEBOOKLM_MASTER_TOKEN_JSON_B",
+        "NOTEBOOKLM_MASTER_TOKEN_JSON_C",
+        "NOTEBOOKLM_ACCOUNTS_JSON",
+    }
+)
 
 # Secret reference shapes:
 #   * Dot notation:    ``${{ secrets.MY_SECRET }}`` — the canonical form
@@ -471,9 +479,13 @@ def _scan_workflow(path: Path) -> list[str]:
 
         binding_match = _ENV_SECRET_BINDING_RE.match(searchable)
         if binding_match and binding_match.group(1) in _CI_SECRET_BINDINGS:
-            ci_secret_hits.append(
-                (i, binding_match.group(1), current_step_index if in_step else -1)
-            )
+            binding = binding_match.group(1)
+            ci_secret_hits.append((i, binding, current_step_index if in_step else -1))
+            if binding == "NOTEBOOKLM_MASTER_TOKEN_JSON" and "secrets[" not in searchable:
+                violations.append(
+                    f"{path}:{i}: master-token materialization must use selected dynamic "
+                    "`secrets[...]` indexing."
+                )
 
         # ``secrets: inherit`` on a reusable-workflow call passes every
         # caller secret to the called workflow. Treat as a non-bypassable

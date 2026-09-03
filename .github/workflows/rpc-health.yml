@@ -28,12 +28,11 @@ jobs:
       - name: Resolve trusted target
         id: resolve
         env:
-          EVENT_NAME: ${{ github.event_name }}
           GITHUB_REF_VALUE: ${{ github.ref }}
         run: |
           set -euo pipefail
           echo "branch=main" >> "$GITHUB_OUTPUT"
-          if [ "$EVENT_NAME" = schedule ] || [ "$GITHUB_REF_VALUE" = refs/heads/main ]; then
+          if [ "$GITHUB_REF_VALUE" = refs/heads/main ]; then
             echo "is_standard=true" >> "$GITHUB_OUTPUT"
           else
             echo "is_standard=false" >> "$GITHUB_OUTPUT"
@@ -95,7 +94,24 @@ jobs:
             stream.write(f"web_secret_name={web['master_token_secret_name']}\n")
             stream.write(f"android_account_slot={android['account_slot']}\n")
             stream.write(f"android_secret_name={android['master_token_secret_name']}\n")
+            stream.write(f"rotation_day={web['rotation_day']}\n")
         PY
+    - name: Summarize safe health-lane selection
+      env:
+        ENABLED_SLOTS: ${{ vars.NOTEBOOKLM_CI_ACCOUNT_SLOTS }}
+        SELECTION_MODE: ${{ (inputs.account_rotation_base == '' || inputs.account_rotation_base == 'auto') && 'automatic' || 'manual base' }}
+      shell: bash
+      run: |
+        IFS=, read -ra enabled_slots <<< "$ENABLED_SLOTS"
+        enabled_count=${#enabled_slots[@]}
+        {
+          echo "### RPC health account plan"
+          echo "Rotation day: ${{ steps.plan.outputs.rotation_day }}; enabled slot count: $enabled_count"
+          echo "| Lane | Backend | Slot | Selection |"
+          echo "| --- | --- | --- | --- |"
+          echo "| rpc-health-web | web | ${{ steps.plan.outputs.web_account_slot }} | $SELECTION_MODE |"
+          echo "| rpc-health-android | android | ${{ steps.plan.outputs.android_account_slot }} | $SELECTION_MODE |"
+        } >> "$GITHUB_STEP_SUMMARY"
 
   health-check:
     name: RPC Health Check (${{ needs.plan-live-lanes.outputs.web_account_slot }})
@@ -110,6 +126,7 @@ jobs:
     concurrency:
       group: notebooklm-account-${{ needs.plan-live-lanes.outputs.web_account_slot }}
       queue: max
+      cancel-in-progress: false
     # The protected Environment and the literal repository/is_standard job
     # gate are both load-bearing. Only the selected slot secret is injected.
     environment: protected-readonly
@@ -176,10 +193,12 @@ jobs:
       continue-on-error: true
       env:
         NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
-      run: >-
-        uv run python scripts/manage_ci_e2e_notebooks.py sweep
-        --backend web --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID
-        --manifest "$CI_E2E_MANIFEST"
+      run: |
+        result=$(uv run python scripts/manage_ci_e2e_notebooks.py sweep \
+          --backend web --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+          --manifest "$CI_E2E_MANIFEST")
+        printf '%s\n' "$result"
+        printf '### RPC copy lifecycle\n%s\n' "$result" >> "$GITHUB_STEP_SUMMARY"
 
     - name: Provision RPC fallback copy
       id: provision
@@ -187,14 +206,51 @@ jobs:
       continue-on-error: true
       env:
         NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
-      run: >-
-        uv run python scripts/manage_ci_e2e_notebooks.py provision
-        --backend web --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID
-        --contract tests/fixtures/e2e_template_contract.json
-        --prepared-contract tests/fixtures/e2e_prepared_role_contract.json
-        --mode rpc --lane rpc-health-web
-        --account-slot "${{ needs.plan-live-lanes.outputs.web_account_slot }}"
-        --manifest "$CI_E2E_MANIFEST" --github-env "$GITHUB_ENV"
+        SUMMARY_SLOT: ${{ needs.plan-live-lanes.outputs.web_account_slot }}
+      run: |
+        uv run python scripts/manage_ci_e2e_notebooks.py provision \
+          --backend web --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+          --contract tests/fixtures/e2e_template_contract.json \
+          --prepared-contract tests/fixtures/e2e_prepared_role_contract.json \
+          --mode rpc --lane rpc-health-web \
+          --account-slot "${{ needs.plan-live-lanes.outputs.web_account_slot }}" \
+          --manifest "$CI_E2E_MANIFEST" --github-env "$GITHUB_ENV"
+        python - <<'PY'
+        import json
+        import os
+        import re
+        from pathlib import Path
+
+        manifest = json.loads(Path(os.environ["CI_E2E_MANIFEST"]).read_text(encoding="utf-8"))
+        expected = {
+            "backend": "web",
+            "lane": "rpc-health-web",
+            "account_slot": os.environ["SUMMARY_SLOT"],
+            "mode": "rpc",
+        }
+        if any(manifest.get(key) != value for key, value in expected.items()):
+            raise RuntimeError("manifest summary metadata mismatch")
+        copies = manifest.get("copies")
+        if not isinstance(copies, list) or len(copies) != 1 or not isinstance(copies[0], dict):
+            raise RuntimeError("manifest summary role count mismatch")
+        row = copies[0]
+        if row.get("role") != "rpc" or row.get("status") not in {"confirmed", "reconciled"}:
+            raise RuntimeError("manifest summary copy outcome mismatch")
+        if row.get("prepared") is not True:
+            raise RuntimeError("manifest summary contains an unprepared role")
+        fingerprint = manifest.get("template_fingerprint")
+        if not isinstance(fingerprint, str) or re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None:
+            raise RuntimeError("manifest summary fingerprint is malformed")
+        lines = [
+            "### Prepared RPC copy",
+            f"- Lane/backend/slot: rpc-health-web / web / {expected['account_slot']}",
+            f"- Template contract: version=1 fingerprint={fingerprint}",
+            f"- Copy outcomes: total=1 confirmed={int(row['status'] == 'confirmed')} reconciled={int(row['status'] == 'reconciled')}",
+            "- Clean-role residuals: rpc=0",
+        ]
+        with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as stream:
+            stream.write("\n".join(lines) + "\n")
+        PY
 
     - name: Validate RPC fallback bindings
       id: preflight
@@ -265,8 +321,8 @@ jobs:
         uv run python scripts/check_rpc_health.py --full \
           --rebrand-state-file rebrand-state.json \
           --rebrand-previous-state-file rebrand-state-prev.json \
-          --rebrand-run-id "${GITHUB_RUN_ID}" 2>&1 | tee health-report.txt
-        exit_code=${PIPESTATUS[0]}
+          --rebrand-run-id "${GITHUB_RUN_ID}" > health-report.txt 2>&1
+        exit_code=$?
         echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
         exit "$exit_code"
 
@@ -284,6 +340,7 @@ jobs:
           echo "::warning::health-report.txt not produced; skipping scrub."
           exit 0
         fi
+        trap 'rm -f health-report.txt' ERR
         uv run python - <<'PY'
         from pathlib import Path
         from notebooklm._logging import scrub_secrets
@@ -304,6 +361,7 @@ jobs:
         else:
             print("No secret-shaped substrings detected in health-report.txt.")
         PY
+        trap - ERR
 
     - name: Add Summary
       if: always()
@@ -346,9 +404,8 @@ jobs:
         fi
         rm -f bundle-outcome.txt
         uv run python scripts/capture_rpc_registry.py --check --check-enums \
-          --outcome-file bundle-outcome.txt 2>&1 \
-          | tee bundle-drift-report.txt
-        raw_exit_code=${PIPESTATUS[0]}
+          --outcome-file bundle-outcome.txt > bundle-drift-report.txt 2>&1
+        raw_exit_code=$?
         if [ -f bundle-outcome.txt ]; then
           read -r outcome < bundle-outcome.txt || outcome=""
         else
@@ -385,6 +442,7 @@ jobs:
           echo "::warning::bundle-drift-report.txt not produced; skipping scrub."
           exit 0
         fi
+        trap 'rm -f bundle-drift-report.txt' ERR
         uv run python - <<'PY'
         from pathlib import Path
         from notebooklm._logging import scrub_secrets
@@ -398,6 +456,7 @@ jobs:
         else:
             print("No secret-shaped substrings detected in bundle-drift-report.txt.")
         PY
+        trap - ERR
 
     - name: Check for existing bundle drift issue
       if: steps.bundle.outputs.outcome == 'drift'
@@ -789,8 +848,8 @@ jobs:
         key: rpc-rebrand-state-main-${{ github.run_id }}
 
     - name: Upload Report
-      id: report
-      if: always()
+      id: report_upload
+      if: always() && (steps.health.outcome == 'success' || steps.health.outcome == 'failure')
       continue-on-error: true
       uses: actions/upload-artifact@v7
       with:
@@ -798,16 +857,34 @@ jobs:
         path: health-report.txt
         retention-days: 30
 
+    - name: Capture report and issue-handling outcomes
+      id: report
+      if: always() && (steps.health.outcome == 'success' || steps.health.outcome == 'failure')
+      continue-on-error: true
+      env:
+        PRIOR_JOB_STATUS: ${{ job.status }}
+        REPORT_UPLOAD_OUTCOME: ${{ steps.report_upload.outcome }}
+        REBRAND_REPORT_FAILED: ${{ steps.rebrand_report.outputs.report_failed }}
+      run: |
+        if [ "$PRIOR_JOB_STATUS" != success ] || \
+           [ "$REPORT_UPLOAD_OUTCOME" != success ] || \
+           [ "$REBRAND_REPORT_FAILED" = true ]; then
+          echo "::error::RPC report or issue handling failed"
+          exit 1
+        fi
+
     - name: Cleanup RPC fallback copy
       id: cleanup
       if: always()
       continue-on-error: true
       env:
         NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
-      run: >-
-        uv run python scripts/manage_ci_e2e_notebooks.py cleanup
-        --backend web --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID
-        --manifest "$CI_E2E_MANIFEST"
+      run: |
+        result=$(uv run python scripts/manage_ci_e2e_notebooks.py cleanup \
+          --backend web --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+          --manifest "$CI_E2E_MANIFEST")
+        printf '%s\n' "$result"
+        printf '### RPC copy cleanup\n%s\n' "$result" >> "$GITHUB_STEP_SUMMARY"
 
     - name: Purge RPC health credentials and manifest
       id: purge
@@ -825,9 +902,10 @@ jobs:
         PY
 
     - name: Aggregate Web RPC health outcomes
+      id: aggregate
       if: always()
       run: >-
-        uv run python scripts/aggregate_ci_e2e_outcomes.py
+        python scripts/aggregate_ci_e2e_outcomes.py
         --lane rpc-health-web --mode rpc --producer required
         --phase auth=${{ steps.auth.outcome == 'success' && 'success' || 'failure' }}
         --phase sweep=${{ steps.auth.outcome == 'success' && (steps.sweep.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
@@ -867,6 +945,7 @@ jobs:
     concurrency:
       group: notebooklm-account-${{ needs.plan-live-lanes.outputs.android_account_slot }}
       queue: max
+      cancel-in-progress: false
     # Explicit: a red canary must surface as a red job, never be absorbed.
     continue-on-error: false
     # Same unconditional environment binding as ``health-check`` (#1009);
@@ -966,8 +1045,8 @@ jobs:
         set +e
         uv run python scripts/android_grpc_canary.py \
           --baseline tests/fixtures/android/canary_baseline.json \
-          --missing-baseline-grace-until 2026-09-14 2>&1 | tee android-canary-report.txt
-        exit_code=${PIPESTATUS[0]}
+          --missing-baseline-grace-until 2026-09-14 > android-canary-report.txt 2>&1
+        exit_code=$?
         # Diagnostic mode is green by design, so without this annotation an
         # inert drift check would never be visible from the run list. It does
         # not touch the exit code.
@@ -977,6 +1056,7 @@ jobs:
         exit "$exit_code"
 
     - name: Scrub secrets from android-canary-report.txt
+      id: scrub_report
       # Defence-in-depth, same posture as the Web report scrub above: the
       # script prints only sanitized class names and hashes, but the report
       # is re-scrubbed before the summary step reads it. Idempotent.
@@ -987,6 +1067,7 @@ jobs:
           echo "::warning::android-canary-report.txt not produced; skipping scrub."
           exit 0
         fi
+        trap 'rm -f android-canary-report.txt' ERR
         uv run python - <<'PY'
         from pathlib import Path
         from notebooklm._logging import scrub_secrets
@@ -1000,6 +1081,7 @@ jobs:
         else:
             print("No secret-shaped substrings detected in android-canary-report.txt.")
         PY
+        trap - ERR
 
     # Summary only — no artifact upload. The OK/FAIL/WARN/SHAPE/UNKNOWN
     # grammar is the entire useful output and it lives in the run's step
@@ -1018,6 +1100,10 @@ jobs:
           grep -E '^(OK|FAIL|WARN|SHAPE|UNKNOWN) ' android-canary-report.txt 2>/dev/null || echo "(no canary output)"
           echo '```'
         } >> "$GITHUB_STEP_SUMMARY"
+        if [ "${{ steps.scrub_report.outcome }}" != success ]; then
+          echo "::error::Android report scrubbing failed"
+          exit 1
+        fi
 
     - name: Purge Android health credentials
       id: purge
@@ -1034,9 +1120,10 @@ jobs:
         PY
 
     - name: Aggregate Android RPC health outcomes
+      id: aggregate
       if: always()
       run: >-
-        uv run python scripts/aggregate_ci_e2e_outcomes.py
+        python scripts/aggregate_ci_e2e_outcomes.py
         --lane rpc-health-android --mode template --producer required
         --phase auth=${{ steps.auth.outcome == 'success' && 'success' || 'failure' }}
         --phase template_validate=${{ steps.auth.outcome == 'success' && (steps.template_validate.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}

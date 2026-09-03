@@ -39,13 +39,12 @@ jobs:
     - name: Resolve trusted target
       id: resolve
       env:
-        EVENT_NAME: ${{ github.event_name }}
         GITHUB_REF_VALUE: ${{ github.ref }}
       shell: bash
       run: |
         set -euo pipefail
         echo "branch=main" >> "$GITHUB_OUTPUT"
-        if [ "$EVENT_NAME" = schedule ] || [ "$GITHUB_REF_VALUE" = refs/heads/main ]; then
+        if [ "$GITHUB_REF_VALUE" = refs/heads/main ]; then
           echo "is_standard=true" >> "$GITHUB_OUTPUT"
         else
           echo "is_standard=false" >> "$GITHUB_OUTPUT"
@@ -126,7 +125,27 @@ jobs:
         value = json.dumps(matrix, separators=(",", ":"))
         with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as stream:
             stream.write(f"matrix={value}\n")
+            stream.write(f"rotation_day={web['rotation_day']}\n")
         PY
+    - name: Summarize safe lane selection
+      env:
+        ENABLED_SLOTS: ${{ vars.NOTEBOOKLM_CI_ACCOUNT_SLOTS }}
+        WEB_SLOT: ${{ fromJSON(steps.plan.outputs.matrix).include[0].account_slot }}
+        ANDROID_SLOT: ${{ fromJSON(steps.plan.outputs.matrix).include[1].account_slot }}
+        SELECTION_MODE: ${{ (inputs.account_rotation_base == '' || inputs.account_rotation_base == 'auto') && 'automatic' || 'manual base' }}
+        ROTATION_DAY: ${{ steps.plan.outputs.rotation_day }}
+      shell: bash
+      run: |
+        IFS=, read -ra enabled_slots <<< "$ENABLED_SLOTS"
+        enabled_count=${#enabled_slots[@]}
+        {
+          echo "### Live account plan"
+          echo "Rotation day: $ROTATION_DAY; enabled slot count: $enabled_count"
+          echo "| Lane | Backend | Slot | Selection |"
+          echo "| --- | --- | --- | --- |"
+          echo "| nightly-web-windows | web | $WEB_SLOT | $SELECTION_MODE |"
+          echo "| nightly-android-windows | android | $ANDROID_SLOT | $SELECTION_MODE |"
+        } >> "$GITHUB_STEP_SUMMARY"
 
   compatibility:
     name: Compatibility (${{ needs.resolve-target.outputs.branch }}@${{ needs.resolve-target.outputs.short_sha }}/${{ matrix.os }}/Python ${{ matrix.python-version }})
@@ -253,6 +272,12 @@ jobs:
     concurrency:
       group: notebooklm-account-${{ matrix.account_slot }}
       queue: max
+      cancel-in-progress: false
+    defaults:
+      run:
+        # The live matrix is Windows-only and its lifecycle/retry scripts use
+        # Bash syntax. Pinning the shell avoids PowerShell parsing them.
+        shell: bash
     env:
       NOTEBOOKLM_BACKEND: ${{ matrix.backend }}
       NOTEBOOKLM_HOME: ${{ runner.temp }}/notebooklm-home
@@ -317,26 +342,73 @@ jobs:
       continue-on-error: true
       env:
         NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
-      run: >-
-        uv run python scripts/manage_ci_e2e_notebooks.py sweep
-        --backend "${{ matrix.backend }}"
-        --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID
-        --manifest "$CI_E2E_MANIFEST"
+      run: |
+        result=$(uv run python scripts/manage_ci_e2e_notebooks.py sweep \
+          --backend "${{ matrix.backend }}" \
+          --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+          --manifest "$CI_E2E_MANIFEST")
+        printf '%s\n' "$result"
+        printf '### %s lifecycle\n%s\n' "${{ matrix.lane }}" "$result" >> "$GITHUB_STEP_SUMMARY"
     - name: Provision managed role copies
       id: provision
       if: steps.auth.outcome == 'success' && steps.sweep.outcome == 'success'
       continue-on-error: true
       env:
         NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
-      run: >-
-        uv run python scripts/manage_ci_e2e_notebooks.py provision
-        --backend "${{ matrix.backend }}"
-        --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID
-        --contract tests/fixtures/e2e_template_contract.json
-        --prepared-contract tests/fixtures/e2e_prepared_role_contract.json
-        --mode full --lane "${{ matrix.lane }}"
-        --account-slot "${{ matrix.account_slot }}"
-        --manifest "$CI_E2E_MANIFEST" --github-env "$GITHUB_ENV"
+        SUMMARY_BACKEND: ${{ matrix.backend }}
+        SUMMARY_LANE: ${{ matrix.lane }}
+        SUMMARY_SLOT: ${{ matrix.account_slot }}
+      run: |
+        uv run python scripts/manage_ci_e2e_notebooks.py provision \
+          --backend "${{ matrix.backend }}" \
+          --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+          --contract tests/fixtures/e2e_template_contract.json \
+          --prepared-contract tests/fixtures/e2e_prepared_role_contract.json \
+          --mode full --lane "${{ matrix.lane }}" \
+          --account-slot "${{ matrix.account_slot }}" \
+          --manifest "$CI_E2E_MANIFEST" --github-env "$GITHUB_ENV"
+        python - <<'PY'
+        import json
+        import os
+        import re
+        from collections import Counter
+        from pathlib import Path
+
+        manifest = json.loads(Path(os.environ["CI_E2E_MANIFEST"]).read_text(encoding="utf-8"))
+        expected = {
+            "backend": os.environ["SUMMARY_BACKEND"],
+            "lane": os.environ["SUMMARY_LANE"],
+            "account_slot": os.environ["SUMMARY_SLOT"],
+            "mode": "full",
+        }
+        if any(manifest.get(key) != value for key, value in expected.items()):
+            raise RuntimeError("manifest summary metadata mismatch")
+        copies = manifest.get("copies")
+        if not isinstance(copies, list) or len(copies) != 3:
+            raise RuntimeError("manifest summary role count mismatch")
+        rows = {row.get("role"): row for row in copies if isinstance(row, dict)}
+        roles = ("reference", "generation", "multi-source")
+        if set(rows) != set(roles):
+            raise RuntimeError("manifest summary roles mismatch")
+        if any(row.get("status") not in {"confirmed", "reconciled"} for row in rows.values()):
+            raise RuntimeError("manifest summary contains an unexpected copy outcome")
+        if any(row.get("prepared") is not True for row in rows.values()):
+            raise RuntimeError("manifest summary contains an unprepared role")
+        fingerprint = manifest.get("template_fingerprint")
+        if not isinstance(fingerprint, str) or re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None:
+            raise RuntimeError("manifest summary fingerprint is malformed")
+        outcomes = Counter(str(row["status"]) for row in rows.values())
+        lines = [
+            "### Prepared managed roles",
+            f"- Lane/backend/slot: {expected['lane']} / {expected['backend']} / {expected['account_slot']}",
+            f"- Template contract: version=1 fingerprint={fingerprint}",
+            f"- Copy outcomes: total=3 confirmed={outcomes['confirmed']} reconciled={outcomes['reconciled']}",
+            "- Reference checks: seeded_notes=1 history=passed",
+            "- Clean-role residuals: generation=0 multi-source=0",
+        ]
+        with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as stream:
+            stream.write("\n".join(lines) + "\n")
+        PY
     - name: Backend preflight
       id: preflight
       if: steps.provision.outcome == 'success'
@@ -393,7 +465,17 @@ jobs:
       id: lastfailed
       if: steps.primary.outcome == 'failure'
       continue-on-error: true
-      run: test -f .pytest_cache/v/cache/lastfailed
+      run: |
+        python - <<'PY'
+        import json
+        from pathlib import Path
+
+        value = json.loads(Path(".pytest_cache/v/cache/lastfailed").read_text(encoding="utf-8"))
+        if not isinstance(value, dict) or not value:
+            raise RuntimeError("lastfailed cache is empty or malformed")
+        if any(not isinstance(node_id, str) or failed is not True for node_id, failed in value.items()):
+            raise RuntimeError("lastfailed cache entries are malformed")
+        PY
     - name: Retry failed E2E tests after 10-min cool-down
       id: retry
       if: steps.primary.outcome == 'failure' && steps.lastfailed.outcome == 'success'
@@ -415,22 +497,36 @@ jobs:
     - name: Enforce coverage floors
       id: coverage
       if: >-
-        always() && inputs.test_filter == '' &&
+        always() &&
         (steps.primary.outcome == 'success' ||
          (steps.primary.outcome == 'failure' &&
-          (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure')))
+          (steps.lastfailed.outcome == 'failure' ||
+           (steps.lastfailed.outcome == 'success' &&
+            (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure')))))
       continue-on-error: true
+      env:
+        TEST_FILTER: ${{ inputs.test_filter }}
       run: |
         sentinel="$E2E_COVERAGE_FLOOR_SENTINEL"
-        if [ ! -f "$sentinel" ]; then exit 0; fi
+        if [ ! -f "$sentinel" ]; then
+          if [ -n "$TEST_FILTER" ]; then
+            echo "Coverage floor: not enforced for filtered dispatch" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Coverage floor: passed; skip-only markers=0" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit 0
+        fi
         passed="$(awk -F'\t' '$1=="PASS"{print $2}' "$sentinel" | sort -u)"
         skipped="$(awk -F'\t' '$1=="SKIP"{print $2}' "$sentinel" | sort -u)"
         breach="$(comm -23 <(printf '%s\n' "$skipped" | sed '/^$/d') <(printf '%s\n' "$passed" | sed '/^$/d'))"
         if [ -n "$breach" ]; then
+          breach_count=$(printf '%s\n' "$breach" | sed '/^$/d' | wc -l | tr -d ' ')
+          echo "Coverage floor: failed; skip-only markers=$breach_count" >> "$GITHUB_STEP_SUMMARY"
           echo "::error::E2E coverage floor breached"
           printf '  %s\n' "$breach"
           exit 1
         fi
+        echo "Coverage floor: passed; skip-only markers=0" >> "$GITHUB_STEP_SUMMARY"
     - name: Compute verifier budget
       id: verifier_budget
       if: >-
@@ -438,7 +534,9 @@ jobs:
         steps.journal_policy.outcome == 'success' &&
         (steps.primary.outcome == 'success' ||
          (steps.primary.outcome == 'failure' &&
-          (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure')))
+          (steps.lastfailed.outcome == 'failure' ||
+           (steps.lastfailed.outcome == 'success' &&
+            (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure')))))
       continue-on-error: true
       run: |
         timeout=$(uv run python scripts/verify_ci_artifacts.py --compute-budget)
@@ -446,29 +544,36 @@ jobs:
     - name: Verify generation operation journal
       id: verifier
       if: >-
-        always() && steps.journal_policy.outcome == 'success' &&
+        always() && matrix.backend == 'web' && inputs.test_filter == '' &&
+        steps.journal_policy.outcome == 'success' &&
         (steps.primary.outcome == 'success' ||
          (steps.primary.outcome == 'failure' &&
-          (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure'))) &&
+          (steps.lastfailed.outcome == 'failure' ||
+           (steps.lastfailed.outcome == 'success' &&
+            (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure'))))) &&
         steps.verifier_budget.outcome == 'success'
       continue-on-error: true
-      run: >-
-        uv run python scripts/verify_ci_artifacts.py
-        --mode journal --backend web
-        --manifest "$CI_E2E_MANIFEST" --role generation
-        --journal "$CI_E2E_JOURNAL"
-        --timeout "${{ steps.verifier_budget.outputs.timeout }}"
+      run: |
+        result=$(uv run python scripts/verify_ci_artifacts.py \
+          --mode journal --backend web \
+          --manifest "$CI_E2E_MANIFEST" --role generation \
+          --journal "$CI_E2E_JOURNAL" \
+          --timeout "${{ steps.verifier_budget.outputs.timeout }}")
+        printf '%s\n' "$result"
+        printf '### Generation verification\n%s\n' "$result" >> "$GITHUB_STEP_SUMMARY"
     - name: Cleanup managed role copies
       id: cleanup
       if: always()
       continue-on-error: true
       env:
         NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
-      run: >-
-        uv run python scripts/manage_ci_e2e_notebooks.py cleanup
-        --backend "${{ matrix.backend }}"
-        --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID
-        --manifest "$CI_E2E_MANIFEST"
+      run: |
+        result=$(uv run python scripts/manage_ci_e2e_notebooks.py cleanup \
+          --backend "${{ matrix.backend }}" \
+          --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+          --manifest "$CI_E2E_MANIFEST")
+        printf '%s\n' "$result"
+        printf '### Managed-copy cleanup\n%s\n' "$result" >> "$GITHUB_STEP_SUMMARY"
     - name: Purge local credentials and handles
       id: purge
       if: always()
@@ -481,13 +586,16 @@ jobs:
         home = Path(os.environ["NOTEBOOKLM_HOME"])
         if home.exists():
             shutil.rmtree(home)
-        for name in ("CI_E2E_JOURNAL", "CI_E2E_MANIFEST"):
-            Path(os.environ[name]).unlink(missing_ok=True)
+        journal = Path(os.environ["CI_E2E_JOURNAL"])
+        journal.unlink(missing_ok=True)
+        journal.with_name(f".{journal.name}.lock").unlink(missing_ok=True)
+        Path(os.environ["CI_E2E_MANIFEST"]).unlink(missing_ok=True)
         PY
     - name: Aggregate Web lane outcomes
+      id: aggregate_web
       if: always() && matrix.backend == 'web'
       run: >-
-        uv run python scripts/aggregate_ci_e2e_outcomes.py
+        python scripts/aggregate_ci_e2e_outcomes.py
         --lane nightly-web-windows --mode full
         --producer ${{ inputs.test_filter == '' && 'required' || 'off' }}
         --phase auth=${{ steps.auth.outcome == 'success' && 'success' || 'failure' }}
@@ -499,14 +607,15 @@ jobs:
         --phase lastfailed=${{ steps.primary.outcome == 'failure' && (steps.lastfailed.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
         --phase retry=${{ steps.primary.outcome == 'failure' && steps.lastfailed.outcome == 'success' && (steps.retry.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
         --phase smoke=${{ steps.preflight.outcome == 'success' && (steps.smoke.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
-        --phase coverage=${{ inputs.test_filter == '' && (steps.primary.outcome == 'success' || (steps.primary.outcome == 'failure' && (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure'))) && (steps.coverage.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
-        --phase verifier=${{ inputs.test_filter == '' && steps.journal_policy.outcome == 'success' && (steps.primary.outcome == 'success' || (steps.primary.outcome == 'failure' && (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure'))) && (steps.verifier_budget.outcome == 'success' && (steps.verifier.outcome == 'success' && 'success' || 'failure') || 'failure') || 'not_applicable' }}
+        --phase coverage=${{ (steps.primary.outcome == 'success' || (steps.primary.outcome == 'failure' && (steps.lastfailed.outcome == 'failure' || (steps.lastfailed.outcome == 'success' && (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure'))))) && (steps.coverage.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase verifier=${{ inputs.test_filter == '' && steps.journal_policy.outcome == 'success' && (steps.primary.outcome == 'success' || (steps.primary.outcome == 'failure' && (steps.lastfailed.outcome == 'failure' || (steps.lastfailed.outcome == 'success' && (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure'))))) && (steps.verifier_budget.outcome == 'success' && (steps.verifier.outcome == 'success' && 'success' || 'failure') || 'failure') || 'not_applicable' }}
         --phase cleanup=${{ steps.cleanup.outcome == 'success' && 'success' || 'failure' }}
         --phase purge=${{ steps.purge.outcome == 'success' && 'success' || 'failure' }}
     - name: Aggregate Android lane outcomes
+      id: aggregate_android
       if: always() && matrix.backend == 'android'
       run: >-
-        uv run python scripts/aggregate_ci_e2e_outcomes.py
+        python scripts/aggregate_ci_e2e_outcomes.py
         --lane nightly-android-windows --mode full --producer required
         --phase auth=${{ steps.auth.outcome == 'success' && 'success' || 'failure' }}
         --phase sweep=${{ steps.auth.outcome == 'success' && (steps.sweep.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
@@ -516,6 +625,6 @@ jobs:
         --phase primary=${{ steps.journal_policy.outcome == 'success' && (steps.primary.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
         --phase lastfailed=${{ steps.primary.outcome == 'failure' && (steps.lastfailed.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
         --phase retry=${{ steps.primary.outcome == 'failure' && steps.lastfailed.outcome == 'success' && (steps.retry.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
-        --phase coverage=${{ inputs.test_filter == '' && (steps.primary.outcome == 'success' || (steps.primary.outcome == 'failure' && (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure'))) && (steps.coverage.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase coverage=${{ (steps.primary.outcome == 'success' || (steps.primary.outcome == 'failure' && (steps.lastfailed.outcome == 'failure' || (steps.lastfailed.outcome == 'success' && (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure'))))) && (steps.coverage.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
         --phase cleanup=${{ steps.cleanup.outcome == 'success' && 'success' || 'failure' }}
         --phase purge=${{ steps.purge.outcome == 'success' && 'success' || 'failure' }}

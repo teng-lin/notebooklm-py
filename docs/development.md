@@ -1715,6 +1715,7 @@ jobs:
     concurrency:
       group: notebooklm-account-${{ matrix.account_slot }}
       queue: max
+      cancel-in-progress: false
     env:
       NOTEBOOKLM_PROFILE: ci-${{ matrix.account_slot }}-${{ matrix.lane }}
     steps:

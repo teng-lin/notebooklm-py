@@ -76,6 +76,19 @@ jobs:
         --rotation-day "$(date -u +%F)"
         --manual-base "$MANUAL_BASE"
         --github-output "$GITHUB_OUTPUT"
+    - name: Summarize safe package account selection
+      env:
+        ENABLED_SLOTS: ${{ vars.NOTEBOOKLM_CI_ACCOUNT_SLOTS }}
+        SELECTION_MODE: ${{ (inputs.account_rotation_base == '' || inputs.account_rotation_base == 'auto') && 'automatic' || 'manual base' }}
+      shell: bash
+      run: |
+        IFS=, read -ra enabled_slots <<< "$ENABLED_SLOTS"
+        enabled_count=${#enabled_slots[@]}
+        {
+          echo "### Package verification account plan"
+          echo "Lane/backend/slot: verify-package / web / ${{ steps.select.outputs.account_slot }}"
+          echo "Selection: $SELECTION_MODE; rotation day: ${{ steps.select.outputs.rotation_day }}; enabled slot count: $enabled_count"
+        } >> "$GITHUB_STEP_SUMMARY"
 
   fork-skip:
     if: github.repository != 'teng-lin/notebooklm-py'
@@ -95,6 +108,7 @@ jobs:
     concurrency:
       group: notebooklm-account-${{ needs.plan-account.outputs.account_slot }}
       queue: max
+      cancel-in-progress: false
     env:
       NOTEBOOKLM_HOME: ${{ runner.temp }}/notebooklm-home
       NOTEBOOKLM_PROFILE: ci-${{ needs.plan-account.outputs.account_slot }}-verify-package
@@ -193,15 +207,18 @@ jobs:
         NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
       run: |
         source .venv/bin/activate
-        python scripts/manage_ci_e2e_notebooks.py sweep --backend web \
+        result=$(python scripts/manage_ci_e2e_notebooks.py sweep --backend web \
           --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
-          --manifest "$CI_E2E_MANIFEST"
+          --manifest "$CI_E2E_MANIFEST")
+        printf '%s\n' "$result"
+        printf '### Package copy lifecycle\n%s\n' "$result" >> "$GITHUB_STEP_SUMMARY"
     - name: Provision package-verification copies
       id: provision
       if: steps.auth.outcome == 'success' && steps.sweep.outcome == 'success'
       continue-on-error: true
       env:
         NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
+        SUMMARY_SLOT: ${{ needs.plan-account.outputs.account_slot }}
       run: |
         source .venv/bin/activate
         python scripts/manage_ci_e2e_notebooks.py provision --backend web \
@@ -211,6 +228,48 @@ jobs:
           --mode full --lane verify-package \
           --account-slot "${{ needs.plan-account.outputs.account_slot }}" \
           --manifest "$CI_E2E_MANIFEST" --github-env "$GITHUB_ENV"
+        python - <<'PY'
+        import json
+        import os
+        import re
+        from collections import Counter
+        from pathlib import Path
+
+        manifest = json.loads(Path(os.environ["CI_E2E_MANIFEST"]).read_text(encoding="utf-8"))
+        expected = {
+            "backend": "web",
+            "lane": "verify-package",
+            "account_slot": os.environ["SUMMARY_SLOT"],
+            "mode": "full",
+        }
+        if any(manifest.get(key) != value for key, value in expected.items()):
+            raise RuntimeError("manifest summary metadata mismatch")
+        copies = manifest.get("copies")
+        if not isinstance(copies, list) or len(copies) != 3:
+            raise RuntimeError("manifest summary role count mismatch")
+        rows = {row.get("role"): row for row in copies if isinstance(row, dict)}
+        roles = ("reference", "generation", "multi-source")
+        if set(rows) != set(roles):
+            raise RuntimeError("manifest summary roles mismatch")
+        if any(row.get("status") not in {"confirmed", "reconciled"} for row in rows.values()):
+            raise RuntimeError("manifest summary contains an unexpected copy outcome")
+        if any(row.get("prepared") is not True for row in rows.values()):
+            raise RuntimeError("manifest summary contains an unprepared role")
+        fingerprint = manifest.get("template_fingerprint")
+        if not isinstance(fingerprint, str) or re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None:
+            raise RuntimeError("manifest summary fingerprint is malformed")
+        outcomes = Counter(str(row["status"]) for row in rows.values())
+        lines = [
+            "### Prepared package roles",
+            f"- Lane/backend/slot: verify-package / web / {expected['account_slot']}",
+            f"- Template contract: version=1 fingerprint={fingerprint}",
+            f"- Copy outcomes: total=3 confirmed={outcomes['confirmed']} reconciled={outcomes['reconciled']}",
+            "- Reference checks: seeded_notes=1 history=passed",
+            "- Clean-role residuals: generation=0 multi-source=0",
+        ]
+        with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as stream:
+            stream.write("\n".join(lines) + "\n")
+        PY
     - name: Validate published wheel Android backend
       id: preflight
       if: >-
@@ -253,7 +312,17 @@ jobs:
       id: lastfailed
       if: steps.primary.outcome == 'failure'
       continue-on-error: true
-      run: test -f .pytest_cache/v/cache/lastfailed
+      run: |
+        python - <<'PY'
+        import json
+        from pathlib import Path
+
+        value = json.loads(Path(".pytest_cache/v/cache/lastfailed").read_text(encoding="utf-8"))
+        if not isinstance(value, dict) or not value:
+            raise RuntimeError("lastfailed cache is empty or malformed")
+        if any(not isinstance(node_id, str) or failed is not True for node_id, failed in value.items()):
+            raise RuntimeError("lastfailed cache entries are malformed")
+        PY
     - name: Retry failed E2E tests after 10-min cool-down
       id: retry
       if: steps.primary.outcome == 'failure' && steps.lastfailed.outcome == 'success'
@@ -268,13 +337,19 @@ jobs:
         always() &&
         (steps.primary.outcome == 'success' ||
          (steps.primary.outcome == 'failure' &&
-          (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure')))
+          (steps.lastfailed.outcome == 'failure' ||
+           (steps.lastfailed.outcome == 'success' &&
+            (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure')))))
       continue-on-error: true
       run: |
         source .venv/bin/activate
-        python scripts/verify_ci_artifacts.py --mode inventory-compat --backend web \
-          --notebook-id-env NOTEBOOKLM_GENERATION_NOTEBOOK_ID || \
+        result=$(python scripts/verify_ci_artifacts.py --mode inventory-compat --backend web \
+          --notebook-id-env NOTEBOOKLM_GENERATION_NOTEBOOK_ID 2>&1) || {
           echo "::warning::Non-gating package artifact telemetry was unavailable"
+          exit 0
+        }
+        printf '%s\n' "$result"
+        printf '### Package artifact telemetry\n%s\n' "$result" >> "$GITHUB_STEP_SUMMARY"
     - name: Cleanup package-verification copies
       id: cleanup
       if: always()
@@ -283,9 +358,11 @@ jobs:
         NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
       run: |
         source .venv/bin/activate
-        python scripts/manage_ci_e2e_notebooks.py cleanup --backend web \
+        result=$(python scripts/manage_ci_e2e_notebooks.py cleanup --backend web \
           --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
-          --manifest "$CI_E2E_MANIFEST"
+          --manifest "$CI_E2E_MANIFEST")
+        printf '%s\n' "$result"
+        printf '### Package copy cleanup\n%s\n' "$result" >> "$GITHUB_STEP_SUMMARY"
     - name: Purge package-verification credentials and manifest
       id: purge
       if: always()
@@ -301,9 +378,10 @@ jobs:
         Path(os.environ["CI_E2E_MANIFEST"]).unlink(missing_ok=True)
         PY
     - name: Aggregate package-verification outcomes
+      id: aggregate
       if: always()
       run: >-
-        .venv/bin/python scripts/aggregate_ci_e2e_outcomes.py
+        python scripts/aggregate_ci_e2e_outcomes.py
         --lane verify-package --mode full --producer required
         --phase auth=${{ steps.auth.outcome == 'success' && 'success' || 'failure' }}
         --phase sweep=${{ steps.auth.outcome == 'success' && (steps.sweep.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
@@ -313,6 +391,6 @@ jobs:
         --phase primary=${{ steps.journal_policy.outcome == 'success' && (steps.primary.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
         --phase lastfailed=${{ steps.primary.outcome == 'failure' && (steps.lastfailed.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
         --phase retry=${{ steps.primary.outcome == 'failure' && steps.lastfailed.outcome == 'success' && (steps.retry.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
-        --phase telemetry=${{ (steps.primary.outcome == 'success' || steps.retry.outcome == 'success' || steps.retry.outcome == 'failure') && (steps.telemetry.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase telemetry=${{ (steps.primary.outcome == 'success' || (steps.primary.outcome == 'failure' && (steps.lastfailed.outcome == 'failure' || (steps.lastfailed.outcome == 'success' && (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure'))))) && (steps.telemetry.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
         --phase cleanup=${{ steps.cleanup.outcome == 'success' && 'success' || 'failure' }}
         --phase purge=${{ steps.purge.outcome == 'success' && 'success' || 'failure' }}

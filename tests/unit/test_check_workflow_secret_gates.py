@@ -275,6 +275,36 @@ def test_legacy_bundled_ci_secret_is_forbidden(tmp_path, monkeypatch, capsys, sc
     assert "legacy or pooled CI secret" in err
 
 
+@pytest.mark.parametrize("slot", ["A", "B", "C"])
+def test_direct_slot_secret_bypasses_selector_and_is_forbidden(
+    slot, tmp_path, monkeypatch, capsys, script
+):
+    _write_workflow(
+        tmp_path,
+        "bad_direct_slot.yml",
+        f"""
+        name: bad-direct-slot
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            - name: auth
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{{{ secrets.NOTEBOOKLM_MASTER_TOKEN_JSON_{slot} }}}}
+              run: python auth.py
+        """,
+    )
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+    assert rc == 1
+    assert "selected dynamic" in err
+    assert "legacy or pooled CI secret" in err
+
+
 def test_step_if_with_is_standard_passes(tmp_path, monkeypatch, capsys, script):
     _write_workflow(
         tmp_path,

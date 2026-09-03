@@ -299,6 +299,7 @@ def test_nightly_e2e_runs_explicit_web_and_android_backends() -> None:
     assert job["concurrency"] == {
         "group": "notebooklm-account-${{ matrix.account_slot }}",
         "queue": "max",
+        "cancel-in-progress": False,
     }
     assert job["environment"] == "protected-readonly"
     assert job["timeout-minutes"] == 360

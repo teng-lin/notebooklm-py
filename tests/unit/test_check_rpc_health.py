@@ -283,6 +283,15 @@ class _TimingOutClient:
         raise httpx.ReadTimeout("")
 
 
+class _LeakyRequestClient:
+    async def post(self, url: str, *, content: str, headers: dict[str, str]) -> httpx.Response:
+        request = httpx.Request("POST", url)
+        raise httpx.ConnectError(
+            "failed request for /notebook/disposable-resource-handle",
+            request=request,
+        )
+
+
 @pytest.fixture
 def timing_out_auth() -> check_rpc_health.AuthTokens:
     return check_rpc_health.AuthTokens(
@@ -304,6 +313,22 @@ async def test_make_rpc_request_surfaces_class_name_for_empty_message_errors(
     )
     assert response_text is None
     assert error == "ReadTimeout"
+
+
+@pytest.mark.asyncio
+async def test_make_rpc_request_withholds_url_and_resource_handle(
+    timing_out_auth: check_rpc_health.AuthTokens,
+) -> None:
+    response_text, error = await make_rpc_request(
+        _LeakyRequestClient(),
+        timing_out_auth,
+        check_rpc_health.RPCMethod.GET_SUGGESTED_REPORTS,
+        [[2], "disposable-resource-handle"],
+        source_path="/notebook/disposable-resource-handle",
+    )
+    assert response_text is None
+    assert error == "ConnectError"
+    assert "disposable-resource-handle" not in error
 
 
 @pytest.mark.asyncio
@@ -721,7 +746,8 @@ async def test_chat_probe_ok_on_rate_limit_frame(monkeypatch: pytest.MonkeyPatch
     result = await check_rpc_health.check_chat_query(client, _chat_auth(), "nb_123")
     assert result.status is CheckStatus.OK
     assert "Server declined (recognized frame)" in (result.error or "")
-    assert "rate limit reached" in (result.error or "")
+    assert "RateLimitError" in (result.error or "")
+    assert "rate limit reached" not in (result.error or "")
 
 
 @pytest.mark.asyncio
@@ -1966,10 +1992,13 @@ async def test_fetch_app_shell_gives_up_on_a_redirect_loop() -> None:
 
 @pytest.mark.asyncio
 async def test_fetch_app_shell_reports_a_transport_error() -> None:
-    client = _ShellClient(raises=httpx.ConnectError("connection refused"))
+    client = _ShellClient(
+        raises=httpx.ConnectError("connection refused for disposable-resource-handle")
+    )
     html, detail = await fetch_app_shell(client, "https://notebook.google.com/")
     assert html is None
-    assert "connection refused" in detail
+    assert detail == "ConnectError"
+    assert "disposable-resource-handle" not in detail
 
 
 @pytest.mark.asyncio

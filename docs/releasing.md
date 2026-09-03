@@ -34,11 +34,10 @@ Release Plan for vX.Y.Z:
 8. Merge the release PR, then run E2E and RPC health checks on protected main
 9. ⏸️ CONFIRM: Publish to TestPyPI?
 10. Verify TestPyPI package
-11. Merge PR to main
-12. ⏸️ CONFIRM: Create and push tag vX.Y.Z?
-13. Wait for PyPI publish
-14. Create GitHub release (add `--prerelease` for a pre-release — see [Pre-releases](#pre-releases-alpha--beta--rc))
-15. Clean up worktree
+11. ⏸️ CONFIRM: Create and push tag vX.Y.Z?
+12. Wait for PyPI publish
+13. Create GitHub release (add `--prerelease` for a pre-release — see [Pre-releases](#pre-releases-alpha--beta--rc))
+14. Clean up worktree
 
 Proceed with release preparation?
 ```
@@ -250,6 +249,7 @@ no break against the baseline) is a CI failure, not silent cruft.
   - Type checking
   - Unit and integration tests in the reduced 7-cell PR matrix: Python
     3.10-3.14 on Ubuntu plus Python 3.12 on macOS and Windows
+- [ ] Merge the release PR to `main`.
 
 ### Authenticated E2E on protected main
 
@@ -262,8 +262,8 @@ no break against the baseline) is a CI failure, not silent cruft.
 - [ ] Wait for the compatibility matrix, coverage, repository-lint, and both
       full Windows E2E jobs (Web and Android) to pass
 - [ ] If E2E tests fail:
-  1. Fix issues in the release worktree
-  2. Commit and push
+  1. Fix issues in a new release-fix PR against `main`
+  2. Merge that PR
   3. Re-run E2E tests
 
 ### RPC Health Check on protected main
@@ -272,8 +272,8 @@ no break against the baseline) is a CI failure, not silent cruft.
 - [ ] Dispatch on `main` with `account_rotation_base=auto`
 - [ ] Wait for RPC health check to pass
 - [ ] If RPC health check fails:
-    1. Fix issues in a new release-fix PR
-  2. Commit and push
+  1. Fix issues in a new release-fix PR
+  2. Merge that PR
   3. Re-run RPC health check
 
 ### MCP connector smoke (manual, per release)
