@@ -17,6 +17,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -254,6 +255,47 @@ def test_real_function_local_import_sites_are_not_dropped(script):
         and site.attribute == "_commit_profile_json"
     ]
     assert len(account_commit_sites) == 2
+
+
+def test_cold_recovery_mint_patch_helper_consumers_do_not_grow():
+    """The legacy class-patch helper stays confined to its ten base consumers."""
+    path = REPO_ROOT / "tests/unit/test_auth_cold_start_recovery.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    consumers: list[str] = []
+
+    class Visitor(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.functions: list[str] = []
+
+        def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+            self.functions.append(node.name)
+            self.generic_visit(node)
+            self.functions.pop()
+
+        visit_FunctionDef = _visit_function
+        visit_AsyncFunctionDef = _visit_function
+
+        def visit_Call(self, node: ast.Call) -> None:
+            if isinstance(node.func, ast.Name) and node.func.id == "_patch_mint":
+                assert self.functions, "_patch_mint must remain owned by a collected test"
+                consumers.append(self.functions[-1])
+            self.generic_visit(node)
+
+    Visitor().visit(tree)
+    assert Counter(consumers) == Counter(
+        {
+            "test_auth_tokens_cold_start_remints_from_sibling_master_token": 1,
+            "test_client_factory_reaches_cold_master_token_recovery": 1,
+            "test_concurrent_cold_start_coalesces_one_master_token_mint": 1,
+            "test_cancelled_waiter_does_not_cancel_shared_master_token_mint": 1,
+            "test_cancelled_direct_l4_waiter_does_not_cancel_shared_mint": 1,
+            "test_shared_l4_failure_fans_out_and_later_call_retries": 1,
+            "test_cold_and_live_l4_recovery_share_one_master_token_mint": 1,
+            "test_headless_retry_that_still_redirects_falls_through_to_l4": 1,
+            "test_same_path_callers_keep_their_explicit_account_routes": 1,
+            "test_mixed_headless_permissions_serialize_and_reuse_l4_success": 1,
+        }
+    )
 
 
 def test_live_replacement_patch_contract_and_scorecard_are_exact(script):
