@@ -49,6 +49,9 @@ def parse_enabled_slots(value: str | None) -> tuple[str, ...]:
         raise ConfigurationError("enabled slots must be an ordered subset of A,B,C")
     if len(set(slots)) != len(slots):
         raise ConfigurationError("enabled slots must be distinct")
+    canonical_order = tuple(slot for slot in ALLOWED_SLOTS if slot in slots)
+    if tuple(slots) != canonical_order:
+        raise ConfigurationError("enabled slots must preserve A,B,C order")
     return tuple(slots)
 
 

@@ -49,6 +49,7 @@ jobs:
         else
           echo "is_standard=false" >> "$GITHUB_OUTPUT"
           echo "::error::Authenticated nightly runs accept only refs/heads/main"
+          exit 1
         fi
     - uses: actions/checkout@v7
       if: steps.resolve.outputs.is_standard == 'true'
@@ -293,7 +294,7 @@ jobs:
       run: |
         {
           echo "NOTEBOOKLM_HOME=$RUNNER_TEMP/notebooklm-home"
-          echo "CI_E2E_MANIFEST=$RUNNER_TEMP/notebooklm-e2e.json"
+          echo "CI_E2E_MANIFEST=$RUNNER_TEMP/notebooklm-e2e/manifest.json"
           echo "CI_E2E_JOURNAL=$RUNNER_TEMP/notebooklm-generation.jsonl"
         } >> "$GITHUB_ENV"
     - name: Record job budget origin

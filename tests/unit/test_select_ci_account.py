@@ -73,7 +73,21 @@ def test_manual_base_preserves_lane_offset() -> None:
 
 @pytest.mark.parametrize(
     "slots",
-    [None, "", "A,A", "a", "D", "A, B", "A,", ",A", "A,B,C,A", "ABC"],
+    [
+        None,
+        "",
+        "A,A",
+        "a",
+        "D",
+        "A, B",
+        "A,",
+        ",A",
+        "A,B,C,A",
+        "ABC",
+        "B,A",
+        "C,B",
+        "C,A",
+    ],
 )
 def test_malformed_pool_is_rejected(slots: str | None) -> None:
     with pytest.raises(selector.ConfigurationError):

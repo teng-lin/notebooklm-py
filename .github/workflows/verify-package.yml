@@ -37,6 +37,7 @@ jobs:
         else
           echo "is_standard=false" >> "$GITHUB_OUTPUT"
           echo "::error::Verify Package accepts only refs/heads/main"
+          exit 1
         fi
     - uses: actions/checkout@v7
       if: steps.trust.outputs.is_standard == 'true'
@@ -121,7 +122,7 @@ jobs:
       run: |
         {
           echo "NOTEBOOKLM_HOME=$RUNNER_TEMP/notebooklm-home"
-          echo "CI_E2E_MANIFEST=$RUNNER_TEMP/notebooklm-verify-package.json"
+          echo "CI_E2E_MANIFEST=$RUNNER_TEMP/notebooklm-e2e/manifest.json"
         } >> "$GITHUB_ENV"
     - name: Set up Python 3.12
       uses: actions/setup-python@v7

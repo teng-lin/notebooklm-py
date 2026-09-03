@@ -352,17 +352,22 @@ class AtomicJSONStore:
     def write(self, manifest: Mapping[str, Any], *, template_id: str | None = None) -> None:
         checked = validate_manifest(dict(manifest), template_id=template_id)
         parent = self.path.parent
-        # Reject an escaped runner path before creating or chmod'ing its
-        # parent.  The full type/mode check follows directory creation.
+        # Reject an escaped runner path before creating its parent. Existing
+        # caller-owned directories are validated but never chmod'ed.
         if self.windows and self.runner_temp is None:
             raise ManifestError("RUNNER_TEMP is required on Windows")
         _validate_runner_temp_location(self.path, self.runner_temp)
-        parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        try:
+            parent.mkdir(mode=0o700, parents=True, exist_ok=False)
+            parent_created = True
+        except FileExistsError:
+            parent_created = False
         if not self.windows:
             parent_mode = parent.lstat().st_mode
             if stat.S_ISLNK(parent_mode) or not stat.S_ISDIR(parent_mode):
                 raise ManifestError("manifest parent must be a real directory")
-            os.chmod(parent, 0o700)
+            if parent_created:
+                os.chmod(parent, 0o700)
         validate_local_path(
             self.path,
             runner_temp=self.runner_temp,

@@ -495,6 +495,27 @@ def test_atomic_store_enforces_posix_modes_and_fsyncs_parent(tmp_path: Path) -> 
     assert store.read(template_id=TEMPLATE_ID) == manifest
 
 
+def test_atomic_store_never_chmods_an_existing_caller_owned_parent(tmp_path: Path) -> None:
+    parent = tmp_path / "shared"
+    parent.mkdir()
+    parent.chmod(0o750)
+    store = AtomicJSONStore(parent / "manifest.json", windows=False)
+    manifest = new_manifest(
+        run_id="1",
+        run_attempt="1",
+        lane="nightly-web-windows",
+        mode="full",
+        account_slot="A",
+        backend="web",
+        template_fingerprint=FINGERPRINT,
+    )
+
+    with pytest.raises(ManifestError, match="parent mode must be 0700"):
+        store.write(manifest, template_id=TEMPLATE_ID)
+
+    assert stat.S_IMODE(parent.stat().st_mode) == 0o750
+
+
 def test_windows_store_rejects_escape_and_accepts_isolated_regular_file(tmp_path: Path) -> None:
     manifest = new_manifest(
         run_id="1",
@@ -1365,6 +1386,27 @@ async def test_preparation_unready_sources_hit_exact_five_minute_deadline(
     with pytest.raises(ContractError, match="stable clean"):
         await manager.prepare_clean_role(notebook_id, "generation")
     assert clock.value == 300
+
+
+@pytest.mark.asyncio
+async def test_clean_role_accepts_minimum_ready_sources_with_unready_extra(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+) -> None:
+    manager, client, _store, _clock = _manager(tmp_path, contracts)
+    notebook_id = "clean-target"
+    client.sources.by_notebook[notebook_id] = [
+        _source(1),
+        _source(2),
+        _source(3),
+        _source(4, ready=False),
+    ]
+
+    prepared = await manager.prepare_clean_role(notebook_id, "generation")
+    validated = await manager.validate_prepared_role(notebook_id, "generation")
+
+    assert prepared["ready_sources"] == 3
+    assert validated["ready_sources"] == 3
 
 
 @pytest.mark.asyncio

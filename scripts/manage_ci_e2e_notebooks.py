@@ -572,9 +572,8 @@ class NotebookLifecycleManager:
                 last_nonempty = self.clock()
             else:
                 consecutive_empty += 1
-            ready = len(sources) >= clean["minimum_ready_sources"] and all(
-                getattr(source, "is_ready", False) for source in sources
-            )
+            ready_count = sum(bool(getattr(source, "is_ready", False)) for source in sources)
+            ready = ready_count >= clean["minimum_ready_sources"]
             quiet = now - last_nonempty >= policy.quiet_period
             if not current.ids and consecutive_empty >= 3 and quiet and ready:
                 final_inventory = await self._inventory(notebook_id)
@@ -586,11 +585,9 @@ class NotebookLifecycleManager:
                     consecutive_empty = 0
                     await self._delete_inventory(notebook_id, final_inventory)
                     last_nonempty = self.clock()
-                elif (
-                    len(final_sources) >= clean["minimum_ready_sources"]
-                    and all(getattr(source, "is_ready", False) for source in final_sources)
-                    and not (snapshot.ids & final_inventory.ids)
-                ):
+                elif sum(
+                    bool(getattr(source, "is_ready", False)) for source in final_sources
+                ) >= clean["minimum_ready_sources"] and not (snapshot.ids & final_inventory.ids):
                     if role in clean["empty_chat_roles"]:
                         history = await self._read(
                             lambda: self.client.chat.get_history(notebook_id)
@@ -605,7 +602,9 @@ class NotebookLifecycleManager:
                         "removed_artifacts": len(snapshot.artifacts),
                         "removed_notes": len(snapshot.notes),
                         "removed_mind_maps": len(snapshot.mind_maps),
-                        "ready_sources": len(final_sources),
+                        "ready_sources": sum(
+                            bool(getattr(source, "is_ready", False)) for source in final_sources
+                        ),
                     }
             now = self.clock()
             if now >= deadline:
@@ -721,15 +720,14 @@ class NotebookLifecycleManager:
         minimum = self.prepared_contract["clean_roles"]["minimum_ready_sources"]
         if inventory.ids:
             raise ContractError("prepared clean role has residual children")
-        if len(sources) < minimum or not all(
-            getattr(source, "is_ready", False) for source in sources
-        ):
+        ready_count = sum(bool(getattr(source, "is_ready", False)) for source in sources)
+        if ready_count < minimum:
             raise ContractError("prepared clean role has unready sources")
         if role in self.prepared_contract["clean_roles"]["empty_chat_roles"]:
             history = await self._read(lambda: self.client.chat.get_history(notebook_id))
             if history:
                 raise ContractError("prepared clean role inherited conversation state")
-        return {"ready_sources": len(sources), **inventory.counts}
+        return {"ready_sources": ready_count, **inventory.counts}
 
     def _persist_manifest(self, manifest: dict[str, Any]) -> None:
         try:

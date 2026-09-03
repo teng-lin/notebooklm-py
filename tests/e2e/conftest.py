@@ -38,6 +38,7 @@ from notebooklm._auth.tokens import load_auth_from_storage
 from notebooklm.auth import AuthTokens
 from notebooklm.exceptions import ChatError, RateLimitError
 from notebooklm.paths import get_profile_dir
+from tests.e2e._generation_helpers import _TYPED_RATE_LIMIT_ATTR
 from tests.e2e._generation_journal import (
     JournalConfigurationError,
     journal_from_environment,
@@ -97,7 +98,6 @@ _GENERATION_SKIP_TARGETS = {
     # and research already tolerates throttling via @pytest.mark.xfail. Don't lump
     # them in on theory; add here (with evidence) only if one actually hard-fails CI.
 }
-_TYPED_RATE_LIMIT_ATTR = "_notebooklm_typed_rate_limit"
 _RATE_LIMIT_METHOD_ATTR = "_notebooklm_rate_limit_method_id"
 
 

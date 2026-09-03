@@ -41,6 +41,19 @@ def test_job_level_env_never_uses_step_only_runner_context() -> None:
             assert "${{ runner." not in str(job.get("env", {})), f"{name}:{job_name}"
 
 
+def test_manifest_paths_use_a_store_owned_private_child_directory() -> None:
+    jobs = (
+        _load("nightly.yml")["jobs"]["e2e"],
+        _load("rpc-health.yml")["jobs"]["health-check"],
+        _load("verify-package.yml")["jobs"]["verify"],
+    )
+    for job in jobs:
+        configure = next(
+            step for step in _steps(job) if step.get("name") == "Configure runner-local paths"
+        )
+        assert "CI_E2E_MANIFEST=$RUNNER_TEMP/notebooklm-e2e/manifest.json" in str(configure["run"])
+
+
 def test_live_workflows_resolve_only_main_before_planning_or_secrets() -> None:
     for name in LIVE_NAMES:
         workflow = _load(name)
@@ -95,7 +108,7 @@ def test_trusted_target_shell_accepts_only_exact_main(
             "GITHUB_OUTPUT": str(output),
         },
     )
-    assert completed.returncode == 0
+    assert completed.returncode == (0 if expected == "true" else 1)
     values = dict(
         line.split("=", 1)
         for line in output.read_text(encoding="utf-8").splitlines()

@@ -18,7 +18,8 @@ import pytest
 
 from notebooklm.types import MindMapKind
 
-from .conftest import _RATE_LIMIT_METHOD_ATTR, _TYPED_RATE_LIMIT_ATTR
+from ._generation_helpers import _TYPED_RATE_LIMIT_ATTR
+from .conftest import _RATE_LIMIT_METHOD_ATTR
 
 # Live CREATE_ARTIFACT coverage — monitored by the nightly generation coverage
 # floor so a fully-throttled run (every generation skipped) reds the nightly

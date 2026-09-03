@@ -60,7 +60,7 @@ def test_required_journal_appends_versioned_transitions_without_printing_ids(
 
 @pytest.mark.asyncio
 async def test_note_mind_map_typed_quota_closes_manual_operation() -> None:
-    from tests.e2e.test_generation import _generate_note_mind_map
+    from tests.e2e._generation_helpers import generate_note_mind_map
 
     events: list[str] = []
 
@@ -73,7 +73,7 @@ async def test_note_mind_map_typed_quota_closes_manual_operation() -> None:
 
     operation = SimpleNamespace(rate_limited_rejected=lambda: events.append("rejected"))
     with pytest.raises(pytest.skip.Exception, match="typed quota"):
-        await _generate_note_mind_map(
+        await generate_note_mind_map(
             SimpleNamespace(artifacts=Artifacts()), "generation-role", operation
         )
     assert events == ["rejected"]
