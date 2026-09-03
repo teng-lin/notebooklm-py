@@ -791,6 +791,65 @@ NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID=<work-nb-id> \
   uv run pytest tests/e2e -m e2e --profile work
 ```
 
+### Opt-in disposable E2E copies
+
+The repository includes first-stage tooling for treating CI accounts as opaque slots (`A`, `B`,
+and `C`) and writable E2E notebooks as disposable copies. This is currently an **opt-in local and
+qualification path**: scheduled workflows still use the legacy single credential and persistent
+notebook bindings until the operations gate in
+[issue #2331](https://github.com/teng-lin/notebooklm-py/issues/2331) is completed and the workflow
+cutover lands. Merging the tooling does not enable account rotation or require a new GitHub
+setting.
+
+The canonical template describes only state the copy API promises to preserve: ready sources and
+Studio artifacts. Its checked-in shape is `tests/fixtures/e2e_template_contract.json`. Notes and
+chat history are deliberately absent from that contract. Provisioning creates and validates those
+on the disposable `reference` copy using
+`tests/fixtures/e2e_prepared_role_contract.json`.
+
+To qualify a template locally, use a dedicated profile and keep the template ID in the documented
+environment variable so it never appears on the command line:
+
+```bash
+export NOTEBOOKLM_PROFILE=agent-e2e-slot-A-web
+export NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID='<template-id>'
+export GITHUB_RUN_ID=1 GITHUB_RUN_ATTEMPT=1
+export RUNNER_TEMP="$(mktemp -d)"
+
+uv run python scripts/manage_ci_e2e_notebooks.py validate \
+  --backend web \
+  --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+  --contract tests/fixtures/e2e_template_contract.json
+
+uv run python scripts/manage_ci_e2e_notebooks.py provision \
+  --backend web \
+  --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+  --contract tests/fixtures/e2e_template_contract.json \
+  --mode full --lane nightly-web-windows --account-slot A \
+  --manifest "$RUNNER_TEMP/notebooklm-e2e.json" \
+  --github-env "$RUNNER_TEMP/github-env"
+
+# Run pytest only after exporting the generated github-env entries.
+uv run python scripts/manage_ci_e2e_notebooks.py cleanup \
+  --backend web \
+  --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+  --manifest "$RUNNER_TEMP/notebooklm-e2e.json"
+```
+
+Cleanup is mandatory even when validation or pytest fails. Managed mode publishes three distinct
+role IDs (`reference`, `generation`, and `multi-source`) and the activation flag last. With that
+flag present, pytest never consults profile cache files, creates a role notebook, cleans copied
+children on first use, or deletes a workflow-owned copy during teardown. `temp_notebook` and other
+function-level CRUD fixtures retain their existing lifecycle.
+
+Before workflow cutover, maintainers must create and validate the immutable template, grant every
+enabled account copy access, upload one independently revocable master-token secret per enabled
+slot, set `NOTEBOOKLM_CI_ACCOUNT_SLOTS=A`, and audit the real `protected-readonly` Environment so
+only `main` deployments are allowed. Add `B` and `C` only after each passes Web and Android
+qualification. Slot aliases, never account emails or token fields, are the only identity recorded
+in logs. Account-wide concurrency is designed to queue at most GitHub's documented 100 pending
+jobs per slot; check that queue before bulk manual dispatch.
+
 ### Test Structure
 
 ```
@@ -1423,6 +1482,10 @@ changed `SHAPE`/`UNKNOWN` value is a prompt to re-capture, review, and update th
 baseline by hand, not something the canary fixes.
 
 ### Setting Up Nightly E2E Tests
+
+> **Staged migration:** the disposable-copy/account-slot tools above are inert in PR 1. The
+> scheduled workflows described here continue to use the legacy configuration until the explicit
+> workflow cutover. Do not remove the legacy secrets during this stage.
 
 1. Bootstrap a master token once: `notebooklm login --master-token --account <you@gmail.com>`
    (needs the `[headless]` extra; see

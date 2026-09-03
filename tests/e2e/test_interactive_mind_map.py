@@ -12,8 +12,6 @@ Run: ``uv run pytest tests/e2e/test_interactive_mind_map.py -m e2e``
 
 from __future__ import annotations
 
-import contextlib
-
 import pytest
 
 from notebooklm.types import MindMapKind
@@ -52,19 +50,42 @@ async def swept_interactive_mind_maps(client, generation_notebook_id):
     exactly the state a throttled settling ``_find_interactive`` LIST leaves
     behind — so the sweep must tolerate it too, or that narrowest window leaks.
     """
-    yield
-    with contextlib.suppress(Exception):
-        for art in await client.artifacts.list(generation_notebook_id):
-            if art.is_interactive_mind_map or art.is_unclassified_type4:
-                with contextlib.suppress(Exception):
-                    await client.artifacts.delete(generation_notebook_id, art.id)
+    baseline = {
+        art.id
+        for art in await client.artifacts.list(generation_notebook_id)
+        if art.is_interactive_mind_map or art.is_unclassified_type4
+    }
+    state = {"baseline": baseline, "operation": None, "quota": False}
+    yield state
+    operation = state["operation"]
+    current = [
+        art
+        for art in await client.artifacts.list(generation_notebook_id)
+        if art.is_interactive_mind_map or art.is_unclassified_type4
+    ]
+    created = [art for art in current if art.id not in baseline]
+    if operation is not None and state["quota"] and not created:
+        operation.quota_no_commit_observed()
+    if operation is not None and len(created) > 1:
+        pytest.fail("interactive mind-map reconciliation found multiple new rows")
+    for art in created:
+        if operation is not None and state["quota"]:
+            operation.discovered_accepted(art.id, reason="post_create_quota")
+        await client.artifacts.delete(generation_notebook_id, art.id)
+        remaining = {row.id for row in await client.artifacts.list(generation_notebook_id)}
+        assert art.id not in remaining
+        if operation is not None:
+            operation.delete_confirmed(
+                art.id,
+                reason="post_create_quota" if state["quota"] else "test_teardown",
+            )
 
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
 @pytest.mark.timeout(360)
 async def test_interactive_mind_map_full_lifecycle(
-    client, generation_notebook_id, swept_interactive_mind_maps
+    client, generation_notebook_id, swept_interactive_mind_maps, generation_journal
 ):
     nb_id = generation_notebook_id
     source_ids = await client.notebooks.get_source_ids(nb_id)
@@ -77,9 +98,25 @@ async def test_interactive_mind_map_full_lifecycle(
     # returns and binds mind_map. The swept_interactive_mind_maps fixture is
     # the leak guard for that case; the try/finally below cleans up promptly on
     # the normal path and on an assertion failure (#1937).
-    mind_map = await client.mind_maps.generate(
-        nb_id, source_ids, kind=MindMapKind.INTERACTIVE, wait=True
+    operation = generation_journal.operation(
+        notebook_id=nb_id,
+        family="mind_map",
+        surface="client",
+        id_kind="studio_task",
+        lifecycle="test_owned",
     )
+    swept_interactive_mind_maps["operation"] = operation
+    try:
+        mind_map = await client.mind_maps.generate(
+            nb_id, source_ids, kind=MindMapKind.INTERACTIVE, wait=True
+        )
+    except BaseException as exc:
+        swept_interactive_mind_maps["quota"] = any(
+            phrase in str(exc).lower()
+            for phrase in ("rate limit", "rate limited", "rate-limited", "429", "quota")
+        )
+        raise
+    operation.accepted(mind_map.id)
     try:
         assert mind_map.kind == MindMapKind.INTERACTIVE
         assert mind_map.id, "generate() must return a non-empty interactive artifact id"
@@ -100,10 +137,18 @@ async def test_interactive_mind_map_full_lifecycle(
         )
         renamed = next(m for m in await client.mind_maps.list(nb_id) if m.id == mind_map.id)
         assert renamed.title == "E2E Interactive Mind Map"
+        operation.completed(mind_map.id)
     finally:
         # --- delete (DELETE_ARTIFACT) ---
         if mind_map.id:
             await client.mind_maps.delete(nb_id, mind_map.id, kind=MindMapKind.INTERACTIVE)
+            remaining = [
+                m.id
+                for m in await client.mind_maps.list(nb_id)
+                if m.kind == MindMapKind.INTERACTIVE
+            ]
+            assert mind_map.id not in remaining
+            operation.delete_confirmed(mind_map.id, reason="test_teardown")
 
     remaining = [
         m.id for m in await client.mind_maps.list(nb_id) if m.kind == MindMapKind.INTERACTIVE

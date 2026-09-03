@@ -808,3 +808,64 @@ def test_real_repo_workflows_pass(monkeypatch, capsys, script):
     )
     rc = script.main()
     assert rc == 0, capsys.readouterr().err
+
+
+def test_future_pooled_dynamic_secret_job_requires_full_account_envelope(tmp_path, script) -> None:
+    _write_workflow(
+        tmp_path,
+        "pool.yml",
+        """
+        name: pool
+        on:
+          workflow_dispatch:
+        jobs:
+          live:
+            if: github.repository == 'teng-lin/notebooklm-py' && needs.target.outputs.is_standard == 'true'
+            environment: protected-readonly
+            concurrency:
+              group: notebooklm-account-${{ matrix.account_slot }}
+              cancel-in-progress: false
+              queue: max
+            runs-on: ubuntu-latest
+            steps:
+            - name: auth
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.master_token_secret_name] }}
+              run: python scripts/materialize_ci_auth.py
+        """,
+    )
+    assert script._scan_pooled_account_jobs(tmp_path / "pool.yml") == []
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        ("queue: max", "queue: latest", "queue: max"),
+        ("cancel-in-progress: false", "cancel-in-progress: true", "disable concurrency"),
+        ("environment: protected-readonly", "environment: typo", "protected-readonly"),
+        ("github.repository ==", "github.repository !=", "standard-repository"),
+        ("is_standard == 'true'", "is_standard != 'true'", "exact-SHA"),
+        ("notebooklm-account-${{", "workflow-${{", "account-wide concurrency"),
+    ],
+)
+def test_future_pooled_job_rejects_weakened_envelope(
+    tmp_path, script, old: str, new: str, message: str
+) -> None:
+    workflow = tmp_path / "pool.yml"
+    workflow.write_text(
+        """name: pool
+on: workflow_dispatch
+jobs:
+  live:
+    if: github.repository == 'teng-lin/notebooklm-py' && needs.target.outputs.is_standard == 'true'
+    environment: protected-readonly
+    concurrency:
+      group: notebooklm-account-${{ matrix.account_slot }}
+      cancel-in-progress: false
+      queue: max
+    runs-on: ubuntu-latest
+    steps:
+    - run: echo ${{ secrets[matrix.master_token_secret_name] }}
+""".replace(old, new)
+    )
+    assert any(message in error for error in script._scan_pooled_account_jobs(workflow))

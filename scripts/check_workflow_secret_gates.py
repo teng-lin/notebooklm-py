@@ -211,6 +211,7 @@ def main() -> int:
     workflow_files = sorted(list(workflow_dir.glob("*.yml")) + list(workflow_dir.glob("*.yaml")))
     for path in workflow_files:
         violations.extend(_scan_workflow(path))
+        violations.extend(_scan_pooled_account_jobs(path))
 
     if violations:
         for v in violations:
@@ -454,6 +455,67 @@ def _scan_workflow(path: Path) -> list[str]:
                 "to silently pass — please review or extend the checker."
             )
 
+    return violations
+
+
+def _scan_pooled_account_jobs(path: Path) -> list[str]:
+    """Enforce the future pooled-token job envelope when one is introduced.
+
+    PR 1 contains no pooled workflow consumers, so this is inert until the
+    cutover. Keeping it here ensures the first dynamic selected-secret job is
+    reviewed with the account-wide concurrency and exact trust gates intact.
+    """
+    lines = path.read_text().splitlines()
+    jobs_started = False
+    chunks: list[tuple[str, int, list[str]]] = []
+    current: tuple[str, int, list[str]] | None = None
+    for line_number, line in enumerate(lines, 1):
+        if line == "jobs:":
+            jobs_started = True
+            continue
+        if not jobs_started:
+            continue
+        match = _JOB_HEADER_RE.match(line)
+        if match:
+            if current is not None:
+                chunks.append(current)
+            current = (match.group(1), line_number, [])
+        elif current is not None:
+            current[2].append(line)
+    if current is not None:
+        chunks.append(current)
+
+    violations: list[str] = []
+    pooled_secret = re.compile(
+        r"secrets\s*(?:\.NOTEBOOKLM_MASTER_TOKEN_JSON_[ABC]"
+        r"|\[[^\]]*master_token_secret_name[^\]]*\])"
+    )
+    for job, line_number, body in chunks:
+        text = "\n".join(body)
+        if "NOTEBOOKLM_ACCOUNTS_JSON" in text:
+            violations.append(
+                f"{path}:{line_number}: job '{job}' uses forbidden bundled account secret"
+            )
+        matches = pooled_secret.findall(text)
+        if not matches:
+            continue
+        prefix = f"{path}:{line_number}: pooled secret job '{job}'"
+        if len(matches) != 1:
+            violations.append(f"{prefix} must inject exactly one selected master-token secret")
+        if "github.repository == 'teng-lin/notebooklm-py'" not in text:
+            violations.append(f"{prefix} lacks the standard-repository job gate")
+        if "is_standard == 'true'" not in text:
+            violations.append(f"{prefix} lacks the exact-SHA is_standard job gate")
+        if "environment: protected-readonly" not in text:
+            violations.append(f"{prefix} lacks the literal protected-readonly Environment")
+        if "group: notebooklm-account-${{" not in text or "account_slot" not in text:
+            violations.append(f"{prefix} lacks account-wide concurrency")
+        if "queue: max" not in text:
+            violations.append(f"{prefix} lacks queue: max")
+        if "cancel-in-progress: false" not in text:
+            violations.append(f"{prefix} must disable concurrency cancellation")
+        if "cancel-in-progress: true" in text:
+            violations.append(f"{prefix} enables forbidden concurrency cancellation")
     return violations
 
 

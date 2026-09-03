@@ -8,7 +8,7 @@ import os
 import subprocess
 import sys
 import warnings
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
@@ -38,6 +38,10 @@ from notebooklm._auth.tokens import load_auth_from_storage
 from notebooklm.auth import AuthTokens
 from notebooklm.exceptions import ChatError, RateLimitError
 from notebooklm.paths import get_profile_dir
+from tests.e2e._generation_journal import (
+    JournalConfigurationError,
+    journal_from_environment,
+)
 
 # Substrings in ChatError / skip messages that mark a server-side rate-limit
 # or quota rejection rather than a client bug. Covers both the explicit
@@ -193,6 +197,53 @@ def _install_generation_rate_limit_skip(client: NotebookLMClient) -> None:
             setattr(namespace, name, _wrap(original))
 
 
+_JOURNALED_STUDIO_METHODS = {
+    "generate_audio": "audio",
+    "generate_video": "video",
+    "generate_cinematic_video": "video",
+    "generate_report": "report",
+    "generate_quiz": "quiz",
+    "generate_flashcards": "flashcards",
+    "generate_infographic": "infographic",
+    "generate_slide_deck": "slide_deck",
+    "generate_data_table": "data_table",
+    "generate_study_guide": "study_guide",
+}
+
+
+def _install_generation_journal(client: NotebookLMClient, journal) -> None:
+    """Journal direct Studio calls that target the managed generation role."""
+    managed_id = getattr(journal, "notebook_id", None)
+    if managed_id is None:
+        return
+
+    for method_name, family in _JOURNALED_STUDIO_METHODS.items():
+        original = getattr(client.artifacts, method_name)
+
+        async def _journaled(*args, __original=original, __family=family, **kwargs):
+            notebook_id = args[0] if args else kwargs.get("notebook_id")
+            if notebook_id != managed_id:
+                return await __original(*args, **kwargs)
+            operation = journal.operation(
+                notebook_id=notebook_id,
+                family=__family,
+                surface=journal.surface,
+                id_kind="studio_task",
+                lifecycle="settle",
+            )
+            try:
+                result = await __original(*args, **kwargs)
+            except BaseException as exc:
+                if any(phrase in str(exc).lower() for phrase in _RATE_LIMIT_PHRASES):
+                    operation.rate_limited_rejected()
+                raise
+            if result is not None and getattr(result, "task_id", None):
+                operation.accepted(result.task_id)
+            return result
+
+        setattr(client.artifacts, method_name, _journaled)
+
+
 def _emit_auth_route_diagnostic(auth_tokens: AuthTokens) -> None:
     """Emit non-secret auth-routing context for CI debugging."""
     source = (
@@ -292,6 +343,15 @@ GENERATION_TEST_DELAY = 15.0
 CHAT_TEST_DELAY = 5.0
 E2E_TEST_DIR = Path(__file__).resolve().parent
 
+_MANAGED_FLAG_ENV = "NOTEBOOKLM_E2E_MANAGED_COPIES"
+_MANAGED_MODE_ENV = "NOTEBOOKLM_E2E_MANAGED_MODE"
+_MANAGED_REFERENCE_READY_ENV = "NOTEBOOKLM_E2E_REFERENCE_PREPARED"
+_MANAGED_ROLE_ENVS = (
+    "NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID",
+    "NOTEBOOKLM_GENERATION_NOTEBOOK_ID",
+    "NOTEBOOKLM_MULTI_SOURCE_NOTEBOOK_ID",
+)
+
 
 def _is_path_under(path: Path, directory: Path) -> bool:
     """Return True when path resolves under directory."""
@@ -300,6 +360,33 @@ def _is_path_under(path: Path, directory: Path) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _managed_bindings() -> dict[str, str] | None:
+    """Validate and return workflow-owned full-mode notebook bindings."""
+    activation = os.environ.get(_MANAGED_FLAG_ENV)
+    if activation is None:
+        return None
+    if activation != "1":
+        raise ValueError(f"{_MANAGED_FLAG_ENV} must be exactly 1 when present")
+    if os.environ.get(_MANAGED_MODE_ENV) != "full":
+        raise ValueError(f"{_MANAGED_MODE_ENV} must be full for pytest E2E")
+    bindings = {name: os.environ.get(name, "") for name in _MANAGED_ROLE_ENVS}
+    missing = [name for name, value in bindings.items() if not value]
+    if missing:
+        raise ValueError("managed full mode is missing role bindings: " + ", ".join(missing))
+    if len(set(bindings.values())) != len(bindings):
+        raise ValueError("managed full-mode role bindings must be distinct")
+    if os.environ.get(_MANAGED_REFERENCE_READY_ENV) != "1":
+        raise ValueError("managed reference preparation marker is missing")
+    return bindings
+
+
+def skip_or_fail_missing_reference(message: str) -> None:
+    """Turn missing prepared reference state into a hard managed-mode failure."""
+    if _managed_bindings() is not None:
+        pytest.fail(f"managed reference contract violation: {message}", pytrace=False)
+    pytest.skip(message)
 
 
 def assert_generation_started(result, artifact_type: str = "Artifact") -> None:
@@ -325,6 +412,46 @@ def assert_generation_started(result, artifact_type: str = "Artifact") -> None:
         "pending",
         "in_progress",
     ), f"Unexpected {artifact_type.lower()} status: {result.status}"
+
+
+def journal_generation_started(result, operation, artifact_type: str = "Artifact") -> None:
+    """Validate a Studio generation response and persist its accepted ID first."""
+    assert result is not None, f"{artifact_type} generation returned None"
+    if result.is_rate_limited:
+        operation.rate_limited_rejected()
+        pytest.skip("Rate limited by API")
+    if result.task_id:
+        operation.accepted(result.task_id)
+    assert_generation_started(result, artifact_type)
+
+
+async def journal_studio_generation(
+    generation_journal,
+    awaitable: Awaitable[Any],
+    *,
+    notebook_id: str,
+    family: str,
+    surface: str = "client",
+):
+    """Journal ``started`` before awaiting one Studio generation mutation."""
+    operation = generation_journal.operation(
+        notebook_id=notebook_id,
+        family=family,
+        surface=surface,
+        id_kind="studio_task",
+        lifecycle="settle",
+    )
+    try:
+        result = await awaitable
+    except BaseException as exc:
+        # Direct Studio generate methods only raise the typed quota skip before
+        # returning an accepted ID. Interactive generation, which has post-
+        # create reads, owns a stronger reconciliation fixture separately.
+        if any(phrase in str(exc).lower() for phrase in _RATE_LIMIT_PHRASES):
+            operation.rate_limited_rejected()
+        raise
+    journal_generation_started(result, operation)
+    return result
 
 
 async def read_back_option_pair(
@@ -455,11 +582,20 @@ def pytest_configure(config):
     profile = config.getoption("--profile")
     if profile:
         _apply_profile(profile)
+    try:
+        _managed_bindings()
+        # Validate journal policy before collection. A per-test helper reopens
+        # the same append-only file with that test's node ID.
+        journal_from_environment(node_id="collection-preflight")
+    except (ValueError, JournalConfigurationError) as exc:
+        raise pytest.UsageError(f"invalid managed E2E configuration: {exc}") from exc
 
 
 def pytest_unconfigure(config):
     """Restore the original ``NOTEBOOKLM_PROFILE`` if we mutated it."""
-    global _PROFILE_PRIOR
+    global _PROFILE_PRIOR, _generation_cleanup_done, _multi_source_cleanup_done
+    _generation_cleanup_done = False
+    _multi_source_cleanup_done = False
     if _PROFILE_PRIOR is None:
         return
     was_set, prev = _PROFILE_PRIOR
@@ -763,11 +899,21 @@ def auth_tokens() -> AuthTokens:
 
 
 @pytest.fixture
-async def client(auth_tokens) -> AsyncGenerator[NotebookLMClient, None]:
+async def client(auth_tokens, generation_journal) -> AsyncGenerator[NotebookLMClient, None]:
     async with NotebookLMClient(auth_tokens, storage_path=auth_tokens.storage_path) as c:
         _install_chat_rate_limit_skip(c)
         _install_generation_rate_limit_skip(c)
+        _install_generation_journal(c, generation_journal)
         yield c
+
+
+@pytest.fixture
+def generation_journal(request):
+    """Return a node-bound operation journal (a no-op unless explicitly enabled)."""
+    try:
+        return journal_from_environment(node_id=request.node.nodeid)
+    except JournalConfigurationError as exc:
+        pytest.fail(f"invalid generation journal configuration: {exc}", pytrace=False)
 
 
 @pytest.fixture
@@ -783,7 +929,12 @@ def read_only_notebook_id():
 
     See docs/development.md for setup instructions.
     """
-    notebook_id = os.environ.get("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID")
+    managed = _managed_bindings()
+    notebook_id = (
+        managed["NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID"]
+        if managed is not None
+        else os.environ.get("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID")
+    )
     if not notebook_id:
         pytest.exit(
             "\n\nERROR: NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID environment variable is not set.\n\n"
@@ -1025,6 +1176,13 @@ async def generation_notebook_id(client):
     Use for: artifact generation tests (audio, video, quiz, etc.)
     Do NOT use for: CRUD tests (use temp_notebook instead)
     """
+    managed = _managed_bindings()
+    if managed is not None:
+        # Provision already verified existence, source readiness, and a clean
+        # child inventory. Workflow cleanup owns the notebook across retries.
+        yield managed["NOTEBOOKLM_GENERATION_NOTEBOOK_ID"]
+        return
+
     auto_created = False
     source = None  # Track where notebook ID came from for debugging
 
@@ -1222,6 +1380,11 @@ async def multi_source_notebook_id(client):
     All IDs are verified to exist before use.
     Artifacts are cleaned before tests. Sources are preserved.
     """
+    managed = _managed_bindings()
+    if managed is not None:
+        yield managed["NOTEBOOKLM_MULTI_SOURCE_NOTEBOOK_ID"]
+        return
+
     auto_created = False
     source = None
 

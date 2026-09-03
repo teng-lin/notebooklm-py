@@ -40,7 +40,7 @@ class TestSourceIdsContract:
 
     @pytest.mark.asyncio
     async def test_omitted_and_empty_source_ids_both_generate_from_all(
-        self, client, generation_notebook_id
+        self, client, generation_notebook_id, generation_journal
     ):
         """Both omitting ``source_ids`` and passing ``[]`` start generation and
         return a ``task_id`` — the tool collapses ``[]`` → ``None`` (all sources),
@@ -50,11 +50,12 @@ class TestSourceIdsContract:
         collapsing ``[]`` would surface here (the ``[]`` call would fail with the
         backend's "… generation is unavailable") while passing every mock.
         """
-        omitted = await _call(
-            client,
-            "studio_generate",
-            {"notebook": generation_notebook_id, "artifact_type": "report"},
-        )
+        with generation_journal.producer_surface("mcp"):
+            omitted = await _call(
+                client,
+                "studio_generate",
+                {"notebook": generation_notebook_id, "artifact_type": "report"},
+            )
         assert omitted.get("task_id"), f"omitted source_ids did not generate: {omitted}"
 
         # Brief pause so the second submit isn't racing the first on the same
@@ -64,15 +65,16 @@ class TestSourceIdsContract:
         # resolution, not concurrent submits.
         await asyncio.sleep(3)
 
-        empty = await _call(
-            client,
-            "studio_generate",
-            {
-                "notebook": generation_notebook_id,
-                "artifact_type": "report",
-                "source_ids": [],
-            },
-        )
+        with generation_journal.producer_surface("mcp"):
+            empty = await _call(
+                client,
+                "studio_generate",
+                {
+                    "notebook": generation_notebook_id,
+                    "artifact_type": "report",
+                    "source_ids": [],
+                },
+            )
         assert empty.get("task_id"), f"empty source_ids did not generate: {empty}"
 
 

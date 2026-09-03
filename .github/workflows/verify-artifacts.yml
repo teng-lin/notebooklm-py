@@ -98,96 +98,12 @@ jobs:
     - name: Verify artifacts exist
       # Auth comes from the profile materialized above (no inline env-var
       # credential is shipped at all) so the layer-4 re-mint can engage.
+      # PR 1 keeps this detached schedule and its exact historical thresholds;
+      # PR 2 will switch the producer lane to the stronger journal mode.
       env:
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
-      run: |
-        uv run python -c "
-        import asyncio
-        import os
-        import sys
-        from notebooklm import NotebookLMClient
-
-        # Type ID to display name mapping
-        TYPE_NAMES = {
-            1: 'Audio',
-            2: 'Report',  # Study Guide, Briefing Doc, Blog Post
-            3: 'Video',
-            4: 'Quiz/Flashcards',
-            5: 'Mind Map',
-            7: 'Infographic',
-            8: 'Slide Deck',
-            9: 'Data Table',
-        }
-
-        # Expected type IDs from generation tests
-        # Note: Type 2 is Reports (study guide), Type 4 is Quiz+Flashcards
-        EXPECTED_TYPES = {1, 2, 3, 4, 5, 7, 8, 9}
-
-        async def verify():
-            async with await NotebookLMClient.from_storage() as client:
-                nb_id = os.environ['NOTEBOOKLM_GENERATION_NOTEBOOK_ID']
-                print(f'Checking notebook: {nb_id}')
-
-                # List artifacts
-                artifacts = await client.artifacts.list(nb_id)
-                print(f'\nTotal artifacts: {len(artifacts)}')
-
-                # Group by type and status
-                by_type = {}
-                for a in artifacts:
-                    key = a._artifact_type
-                    if key not in by_type:
-                        by_type[key] = []
-                    by_type[key].append(a)
-
-                print('\nArtifacts by type:')
-                for t in sorted(by_type.keys()):
-                    items = by_type[t]
-                    type_name = TYPE_NAMES.get(t, f'Unknown({t})')
-                    print(f'  {type_name} (type {t}): {len(items)}')
-                    for a in items:
-                        status = a.status_str
-                        variant_info = f', variant={a._variant}' if a._variant else ''
-                        print(f'    - {a.title} ({status}{variant_info})')
-
-                # Check expected types
-                found = set(by_type.keys())
-                missing = EXPECTED_TYPES - found
-
-                print(f'\nExpected types: {len(EXPECTED_TYPES)}')
-                print(f'Found types: {len(found)}')
-
-                if missing:
-                    missing_names = [TYPE_NAMES.get(t, str(t)) for t in missing]
-                    print(f'\nWARNING: Missing artifact types: {missing_names}')
-
-                # Check for completed artifacts
-                completed = sum(1 for a in artifacts if a.is_completed)
-                processing = sum(1 for a in artifacts if a.is_processing)
-                failed = sum(1 for a in artifacts if a.is_failed)
-
-                print(f'\nStatus summary:')
-                print(f'  Completed: {completed}')
-                print(f'  Processing: {processing}')
-                print(f'  Failed: {failed}')
-
-                # List notes
-                notes = await client.notes.list(nb_id)
-                print(f'\nTotal notes: {len(notes)}')
-                for n in notes[:10]:
-                    print(f'  - {n.title or \"(untitled)\"}')
-                if len(notes) > 10:
-                    print(f'  ... and {len(notes) - 10} more')
-
-                # Fail if too many failures or no artifacts at all
-                if len(artifacts) == 0:
-                    print('\nERROR: No artifacts found!')
-                    sys.exit(1)
-                if failed > len(artifacts) // 2:
-                    print(f'\nERROR: Too many failed artifacts ({failed}/{len(artifacts)})')
-                    sys.exit(1)
-
-                print('\nVerification complete!')
-
-        asyncio.run(verify())
-        "
+      run: >-
+        uv run python scripts/verify_ci_artifacts.py
+        --mode inventory-compat
+        --backend web
+        --notebook-id-env NOTEBOOKLM_GENERATION_NOTEBOOK_ID

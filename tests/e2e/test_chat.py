@@ -8,7 +8,11 @@ import pytest
 
 from notebooklm import AskResult, ChatReference
 
-from .conftest import requires_auth, reset_current_chat_conversation
+from .conftest import (
+    requires_auth,
+    reset_current_chat_conversation,
+    skip_or_fail_missing_reference,
+)
 
 
 @pytest.mark.e2e
@@ -192,7 +196,9 @@ class TestChatHistoryE2E:
         """get_conversation_turns returns Q&A turns for an existing conversation."""
         conv_id = await client.chat.get_conversation_id(read_only_notebook_id)
         if not conv_id:
-            pytest.skip("No conversation history available in read-only notebook")
+            skip_or_fail_missing_reference(
+                "No conversation history available in read-only notebook"
+            )
 
         turns_data = await client.chat.get_conversation_turns(
             read_only_notebook_id,
@@ -211,7 +217,7 @@ class TestChatHistoryE2E:
             turn_types = [turn.observed_event_type for turn in turns]
         else:
             if not turns_data:
-                pytest.skip(
+                skip_or_fail_missing_reference(
                     "Read-only notebook has a conversation but no chat turns — "
                     "cannot verify turn structure. Seed the notebook with chat messages to enable this test."
                 )
@@ -221,7 +227,7 @@ class TestChatHistoryE2E:
         if not turns and client.backends["chat"] == "android":
             pytest.fail("Seeded conversation exists but Android ListChatTurns decoded no turns")
         if not turns:
-            pytest.skip(
+            skip_or_fail_missing_reference(
                 "Read-only notebook has a conversation but no chat turns — "
                 "cannot verify turn structure. Seed the notebook with chat messages to enable this test."
             )
@@ -234,7 +240,9 @@ class TestChatHistoryE2E:
         """get_conversation_turns includes question text in an existing conversation."""
         conv_id = await client.chat.get_conversation_id(read_only_notebook_id)
         if not conv_id:
-            pytest.skip("No conversation history available in read-only notebook")
+            skip_or_fail_missing_reference(
+                "No conversation history available in read-only notebook"
+            )
 
         turns_data = await client.chat.get_conversation_turns(
             read_only_notebook_id,
@@ -253,7 +261,7 @@ class TestChatHistoryE2E:
             questions = [turn.user_query_text for turn in turns if turn.user_query_text]
         else:
             if not turns_data:
-                pytest.skip(
+                skip_or_fail_missing_reference(
                     "Read-only notebook has a conversation but no chat turns — "
                     "cannot verify question text. Seed the notebook with chat messages to enable this test."
                 )
@@ -266,7 +274,7 @@ class TestChatHistoryE2E:
         if not turns and client.backends["chat"] == "android":
             pytest.fail("Seeded conversation exists but Android ListChatTurns decoded no turns")
         if not turns:
-            pytest.skip(
+            skip_or_fail_missing_reference(
                 "Read-only notebook has a conversation but no chat turns — "
                 "cannot verify question text. Seed the notebook with chat messages to enable this test."
             )
@@ -280,7 +288,9 @@ class TestChatHistoryE2E:
         """get_conversation_turns includes AI answer text in an existing conversation."""
         conv_id = await client.chat.get_conversation_id(read_only_notebook_id)
         if not conv_id:
-            pytest.skip("No conversation history available in read-only notebook")
+            skip_or_fail_missing_reference(
+                "No conversation history available in read-only notebook"
+            )
 
         turns_data = await client.chat.get_conversation_turns(
             read_only_notebook_id,
@@ -306,7 +316,7 @@ class TestChatHistoryE2E:
             ]
         else:
             if not turns_data:
-                pytest.skip(
+                skip_or_fail_missing_reference(
                     "Read-only notebook has a conversation but no chat turns — "
                     "cannot verify answer text. Seed the notebook with chat messages to enable this test."
                 )
@@ -318,14 +328,14 @@ class TestChatHistoryE2E:
         if not turns and client.backends["chat"] == "android":
             pytest.fail("Seeded conversation exists but Android ListChatTurns decoded no turns")
         if not turns:
-            pytest.skip(
+            skip_or_fail_missing_reference(
                 "Read-only notebook has a conversation but no chat turns — "
                 "cannot verify answer text. Seed the notebook with chat messages to enable this test."
             )
         assert answers, "No answer turn found in response"
         answer_text = next((answer for answer in answers if answer), "")
         if not answer_text:
-            pytest.skip(
+            skip_or_fail_missing_reference(
                 "Conversation history has answer turns but no completed answer text — "
                 "cannot verify answer content. Quota-rejected asks can leave this partial "
                 "record; seed a completed chat response to enable this test."
@@ -339,7 +349,9 @@ class TestChatHistoryE2E:
         """get_conversation_id returns an existing conversation ID."""
         conv_id = await client.chat.get_conversation_id(read_only_notebook_id)
         if not conv_id:
-            pytest.skip("No conversation history available in read-only notebook")
+            skip_or_fail_missing_reference(
+                "No conversation history available in read-only notebook"
+            )
 
         assert isinstance(conv_id, str)
         assert len(conv_id) > 0
@@ -352,14 +364,16 @@ class TestChatHistoryE2E:
         if not qa_pairs and client.backends["chat"] == "android":
             pytest.fail("Seeded Android conversation decoded no Q&A pairs")
         if not qa_pairs:
-            pytest.skip("No conversation history available in read-only notebook")
+            skip_or_fail_missing_reference(
+                "No conversation history available in read-only notebook"
+            )
 
         # Quota-rejected asks can leave an incomplete question with an empty
         # answer in server history. Verify the most recent completed pair
         # instead of treating that expected partial record as decoder drift.
         completed = next(((q, a) for q, a in reversed(qa_pairs) if q and a), None)
         if completed is None:
-            pytest.skip("Conversation history has no completed Q&A pair")
+            skip_or_fail_missing_reference("Conversation history has no completed Q&A pair")
         q, a = completed
         assert isinstance(q, str) and q, "Question should be non-empty string"
         assert isinstance(a, str) and a, "Answer should be non-empty string"

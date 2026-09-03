@@ -9,6 +9,13 @@ limits, not usage counters. See [#1825](https://github.com/teng-lin/notebooklm-p
 the research trail. This document is therefore **prose reference, not shipped code** (see
 [Why this lives in docs](#why-this-lives-in-docs-not-code)).
 
+The rotating CI account pool proposed in
+[#2331](https://github.com/teng-lin/notebooklm-py/issues/2331) is load distribution across
+authorized, independently managed accounts—not quota telemetry and not an attempt to infer or
+circumvent provider limits. Selection happens before authentication and never switches identity
+after a test lane starts. Operators must still treat typed quota responses as the authoritative
+signal and wait for the rolling reset or explicitly choose another approved slot.
+
 > ⚠️ **Captured from Google's public pages on the dates noted below. Every table Google publishes is
 > headed "Usage Limits (Subject to Change)".** Google restructured consumer tiers as recently as
 > May 2026 and has changed *enforced* limits without updating the published tables (see

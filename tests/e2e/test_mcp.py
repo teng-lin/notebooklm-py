@@ -482,15 +482,16 @@ class TestMcpArtifacts:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_report_wiring(self, client, generation_notebook_id):
+    async def test_generate_report_wiring(self, client, generation_notebook_id, generation_journal):
         """Wiring smoke: ``studio_generate`` threads through and returns a
         ``task_id``; one ``studio_status`` poll dispatches. Does NOT poll to
         completion (the RPC health of generation is proven by ``test_generation``)."""
-        generated = await _call(
-            client,
-            "studio_generate",
-            {"notebook": generation_notebook_id, "artifact_type": "report"},
-        )
+        with generation_journal.producer_surface("mcp"):
+            generated = await _call(
+                client,
+                "studio_generate",
+                {"notebook": generation_notebook_id, "artifact_type": "report"},
+            )
         task_id = generated.get("task_id")
         assert task_id, f"studio_generate returned no task_id: {generated}"
 

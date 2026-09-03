@@ -433,21 +433,43 @@ class TestMindMapGeneration:
     """Mind map generation tests."""
 
     @pytest.mark.asyncio
-    async def test_generate_mind_map(self, client, generation_notebook_id):
+    async def test_generate_mind_map(self, client, generation_notebook_id, generation_journal):
         """Mind map generation is fast (~5-10s), not slow."""
         # Clean up old mind maps to prevent accumulation from nightly runs
         existing_mind_maps = await client.notes.list_mind_maps(generation_notebook_id)
         for mm in existing_mind_maps:
+            recovery = generation_journal.recovery_operation(
+                resource_id=mm[0],
+                notebook_id=generation_notebook_id,
+                family="mind_map",
+                surface="client",
+                id_kind="note_mind_map",
+                reason="retry_preclean",
+            )
             await client.notes.delete_mind_map(generation_notebook_id, mm[0])
+            remaining = {
+                row[0] for row in await client.notes.list_mind_maps(generation_notebook_id)
+            }
+            assert mm[0] not in remaining
+            recovery.delete_confirmed(mm[0], reason="retry_preclean")
 
+        operation = generation_journal.operation(
+            notebook_id=generation_notebook_id,
+            family="mind_map",
+            surface="client",
+            id_kind="note_mind_map",
+            lifecycle="settle",
+        )
         result = await client.artifacts.generate_mind_map(generation_notebook_id)
         assert result is not None
         assert result.note_id is not None
+        operation.persisted(result.note_id)
         # Verify mind map structure
         mind_map = result.mind_map
         assert isinstance(mind_map, dict)
         assert "name" in mind_map
         assert "children" in mind_map
+        operation.completed(result.note_id)
 
 
 @requires_auth

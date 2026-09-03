@@ -118,8 +118,15 @@ class TestCliLive:
         assert error.get("error") or error.get("code") or error.get("message")
 
     @pytest.mark.variants
-    def test_generate_through_cli_wiring(self, generation_notebook_id):
+    def test_generate_through_cli_wiring(self, generation_notebook_id, generation_journal):
         """One generate-through-CLI wiring smoke (returns an id; no poll-to-done)."""
+        operation = generation_journal.operation(
+            notebook_id=generation_notebook_id,
+            family="report",
+            surface="cli",
+            id_kind="studio_task",
+            lifecycle="settle",
+        )
         proc = run_cli(
             "generate",
             "report",
@@ -129,7 +136,10 @@ class TestCliLive:
             "--json",
         )
         if proc.returncode != 0 and _is_rate_limited(proc):
+            operation.rate_limited_rejected()
             pytest.skip(f"generation rate-limited: {proc.stdout or proc.stderr}")
         assert proc.returncode == 0, proc.stderr
         payload = json.loads(proc.stdout)
         assert isinstance(payload, dict)
+        assert payload.get("task_id"), f"generate returned no task_id: {payload}"
+        operation.accepted(payload["task_id"])

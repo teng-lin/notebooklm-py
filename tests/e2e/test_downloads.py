@@ -7,7 +7,7 @@ import pytest
 
 from notebooklm.exceptions import ArtifactNotReadyError
 
-from .conftest import requires_auth
+from .conftest import _managed_bindings, requires_auth, skip_or_fail_missing_reference
 
 # Large artifact transfers can be hundreds of MiB and need several minutes on
 # Windows runners. The HTTP client's 60-second read timeout still catches a
@@ -193,11 +193,20 @@ class TestDownloadMindMap:
     @pytest.mark.readonly
     async def test_download_mind_map(self, client, read_only_notebook_id):
         """Downloads existing mind map as JSON - read-only."""
+        artifact_id = None
+        if _managed_bindings() is not None:
+            artifacts = await client.artifacts.list(read_only_notebook_id)
+            interactive = [artifact for artifact in artifacts if artifact.is_interactive_mind_map]
+            if not interactive:
+                skip_or_fail_missing_reference(
+                    "copied reference has no Studio-backed interactive mind map"
+                )
+            artifact_id = interactive[0].id
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "mindmap.json")
             try:
                 result = await client.artifacts.download_mind_map(
-                    read_only_notebook_id, output_path
+                    read_only_notebook_id, output_path, artifact_id=artifact_id
                 )
                 assert result == output_path
                 assert os.path.exists(output_path)
@@ -209,7 +218,7 @@ class TestDownloadMindMap:
                     data = json.load(f)
                 assert "name" in data, "Mind map JSON should have 'name' field"
             except ArtifactNotReadyError:
-                pytest.skip("No mind map artifact available")
+                skip_or_fail_missing_reference("No mind map artifact available")
 
 
 @requires_auth
