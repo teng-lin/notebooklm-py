@@ -194,8 +194,8 @@ done.
    `project.urls`, fancy-pypi-readme substitutions, badges, the OCI source
    label, the TestPyPI summary URL, and **every** `github.repository ==`
    guard — `publish-docker.yml`, `publish-mcpb.yml`,
-   `verify-package.yml:150,158`, `nightly.yml`, `rpc-health.yml`, and
-   `verify-artifacts.yml` (string compares don't get redirects; after a
+   `verify-package.yml`, `nightly.yml`, and `rpc-health.yml` (string compares
+   don't get redirects; after a
    rename those jobs silently skip). A new repo-wide guardrail test fails CI
    on any stale `github.repository` / `teng-lin/notebooklm-py` literal
    outside historical records (CHANGELOG, ADRs), so no future guard can go

@@ -31,7 +31,7 @@ Release Plan for vX.Y.Z:
 5. Commit changes
 6. ⏸️ CONFIRM: Create PR to main?
 7. Wait for CI to pass on PR
-8. Run E2E and RPC health checks on release branch
+8. Merge the release PR, then run E2E and RPC health checks on protected main
 9. ⏸️ CONFIRM: Publish to TestPyPI?
 10. Verify TestPyPI package
 11. Merge PR to main
@@ -251,10 +251,11 @@ no break against the baseline) is a CI failure, not silent cruft.
   - Unit and integration tests in the reduced 7-cell PR matrix: Python
     3.10-3.14 on Ubuntu plus Python 3.12 on macOS and Windows
 
-### E2E Tests on Release Branch
+### Authenticated E2E on protected main
 
 - [ ] Go to **Actions** → **Nightly E2E Tests**
-- [ ] Click **Run workflow**, set **custom_branch** to `release/vX.Y.Z`
+- [ ] After the release PR is merged, dispatch the workflow on `main`; choose
+      `account_rotation_base=auto` unless reproducing a slot-specific failure
 - [ ] Leave **run_compatibility** enabled (the default): the PR gate only ran
       the reduced 7-cell matrix, so this dispatch is what proves the release
       commit on the full 15-cell Ubuntu/macOS/Windows × Python 3.10-3.14 matrix.
@@ -265,13 +266,13 @@ no break against the baseline) is a CI failure, not silent cruft.
   2. Commit and push
   3. Re-run E2E tests
 
-### RPC Health Check on Release Branch
+### RPC Health Check on protected main
 
 - [ ] Go to **Actions** → **RPC Health Check**
-- [ ] Click **Run workflow**, set **custom_branch** to `release/vX.Y.Z`
+- [ ] Dispatch on `main` with `account_rotation_base=auto`
 - [ ] Wait for RPC health check to pass
 - [ ] If RPC health check fails:
-  1. Fix issues in the release worktree
+    1. Fix issues in a new release-fix PR
   2. Commit and push
   3. Re-run RPC health check
 
@@ -571,7 +572,7 @@ them to normal users. Follow the normal checklist above, with these differences:
 8. **Gates still apply; none are optional.** The public-API audit,
    pre-commit/mypy/pytest, CI on PR, TestPyPI, and Verify Package all run
    unchanged. Verify Package reads the version from the checked-out ref, so
-   dispatch it on the pre-release branch. Because Verify Package runs E2E, there is
+   dispatch it on protected `main` after the release PR lands. Because Verify Package runs E2E, there is
    no "skip E2E for a pre-release" shortcut.
 9. **GitHub release must be flagged as a pre-release, and the notes must extract
    the aggregate heading** (not a per-pre-release one, which would yield empty

@@ -169,6 +169,112 @@ def test_environment_unconditional_passes(tmp_path, monkeypatch, capsys, script)
     assert rc == 0
 
 
+def test_ci_pool_secret_requires_environment_and_job_gate(tmp_path, monkeypatch, capsys, script):
+    _write_workflow(
+        tmp_path,
+        "bad_pool.yml",
+        """
+        name: bad-pool
+        on: workflow_dispatch
+        jobs:
+          live:
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            - name: auth
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.secret_name] }}
+              run: python auth.py
+        """,
+    )
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+    assert rc == 1
+    assert "canonical repository" in err
+
+
+def test_ci_pool_dynamic_secret_with_both_literal_gates_passes(
+    tmp_path, monkeypatch, capsys, script
+):
+    _write_workflow(
+        tmp_path,
+        "ok_pool.yml",
+        """
+        name: ok-pool
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            - name: auth
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.secret_name] }}
+              run: python auth.py
+        """,
+    )
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+    assert rc == 0, err
+
+
+def test_ci_pool_rejects_multiple_master_tokens_in_one_job(tmp_path, monkeypatch, capsys, script):
+    _write_workflow(
+        tmp_path,
+        "bad_multi_token.yml",
+        """
+        name: bad-multi-token
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            - name: auth-a
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets.SLOT_A }}
+              run: python auth.py
+            - name: auth-b
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets.SLOT_B }}
+              run: python auth.py
+        """,
+    )
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+    assert rc == 1
+    assert "injects 2 master-token secrets" in err
+
+
+def test_legacy_bundled_ci_secret_is_forbidden(tmp_path, monkeypatch, capsys, script):
+    _write_workflow(
+        tmp_path,
+        "bad_legacy.yml",
+        """
+        name: bad-legacy
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            - name: auth
+              env:
+                TOKEN: ${{ secrets.NOTEBOOKLM_MASTER_TOKEN_JSON }}
+              run: python auth.py
+        """,
+    )
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+    assert rc == 1
+    assert "legacy or pooled CI secret" in err
+
+
 def test_step_if_with_is_standard_passes(tmp_path, monkeypatch, capsys, script):
     _write_workflow(
         tmp_path,

@@ -147,9 +147,9 @@ def test_nightly_runs_full_sha_pinned_compatibility_matrix() -> None:
     workflow = yaml.safe_load(NIGHTLY_WORKFLOW.read_text(encoding="utf-8"))
     job = workflow["jobs"]["compatibility"]
 
-    assert job["needs"] == "resolve-branch"
+    assert job["needs"] == "resolve-target"
     assert job["if"] == (
-        "needs.resolve-branch.outputs.is_standard == 'true' && "
+        "needs.resolve-target.outputs.is_standard == 'true' && "
         "(github.event_name == 'schedule' || inputs.run_compatibility)"
     )
     assert job["runs-on"] == "${{ matrix.os }}"
@@ -177,7 +177,7 @@ def test_nightly_runs_full_sha_pinned_compatibility_matrix() -> None:
         step for step in job["steps"] if str(step.get("uses", "")).startswith("actions/checkout@")
     )
     assert checkout["with"] == {
-        "ref": "${{ needs.resolve-branch.outputs.sha }}",
+        "ref": "${{ needs.resolve-target.outputs.sha }}",
         "fetch-depth": 1,
         "persist-credentials": False,
     }
@@ -206,21 +206,21 @@ def test_nightly_coverage_is_sha_pinned_secret_free_and_enforces_floors() -> Non
     triggers = workflow.get("on", workflow.get(True))
     assert set(triggers) == {"schedule", "workflow_dispatch"}
 
-    resolve_job = workflow["jobs"]["resolve-branch"]
+    resolve_job = workflow["jobs"]["resolve-target"]
     resolve_checkout = next(
         step
         for step in resolve_job["steps"]
         if str(step.get("uses", "")).startswith("actions/checkout@")
     )
     assert resolve_checkout["with"] == {
-        "ref": "refs/heads/${{ steps.resolve.outputs.branch }}",
+        "ref": "refs/heads/main",
         "fetch-depth": 1,
         "persist-credentials": False,
     }
 
     job = workflow["jobs"]["coverage"]
-    assert job["needs"] == "resolve-branch"
-    assert job["if"] == "needs.resolve-branch.outputs.is_standard == 'true'"
+    assert job["needs"] == "resolve-target"
+    assert job["if"] == "needs.resolve-target.outputs.is_standard == 'true'"
     assert job["runs-on"] == "ubuntu-latest"
     assert "environment" not in job
     assert "secrets." not in str(job)
@@ -230,7 +230,7 @@ def test_nightly_coverage_is_sha_pinned_secret_free_and_enforces_floors() -> Non
     )
     assert checkout["uses"] == "actions/checkout@v7"
     assert checkout["with"] == {
-        "ref": "${{ needs.resolve-branch.outputs.sha }}",
+        "ref": "${{ needs.resolve-target.outputs.sha }}",
         "fetch-depth": 1,
         "persist-credentials": False,
     }
@@ -289,69 +289,58 @@ def test_nightly_coverage_is_sha_pinned_secret_free_and_enforces_floors() -> Non
 
 
 def test_nightly_e2e_runs_explicit_web_and_android_backends() -> None:
-    """Authenticated nightly coverage cannot silently remain Web-only."""
+    """The account planner keeps exactly the two managed Windows lanes."""
     workflow = yaml.safe_load(NIGHTLY_WORKFLOW.read_text(encoding="utf-8"))
     job = workflow["jobs"]["e2e"]
+    planner = workflow["jobs"]["plan-live-lanes"]
 
-    assert "${{ matrix.backend }}" in job["name"]
-    assert job["strategy"]["matrix"]["include"] == [
-        {"os": "windows-latest", "backend": "web", "generation_notebook": "shared"},
-        {"os": "windows-latest", "backend": "android", "generation_notebook": "scratch"},
-    ]
+    assert job["strategy"]["matrix"] == "${{ fromJSON(needs.plan-live-lanes.outputs.matrix) }}"
     assert job["env"]["NOTEBOOKLM_BACKEND"] == "${{ matrix.backend }}"
-    assert "${{ matrix.backend }}" in job["concurrency"]["group"]
+    assert job["concurrency"] == {
+        "group": "notebooklm-account-${{ matrix.account_slot }}",
+        "queue": "max",
+    }
+    assert job["environment"] == "protected-readonly"
+    assert job["timeout-minutes"] == 360
+
+    planner_run = str(_step(planner, "Select live account slots")["run"])
+    assert "--lane nightly-web-windows" in planner_run
+    assert "--lane nightly-android-windows" in planner_run
+    assert planner_run.count('"os": "windows-latest"') == 2
+    assert '"backend": "web"' in planner_run
+    assert '"backend": "android"' in planner_run
 
     install = str(_step(job, "Install dependencies")["run"])
     assert "uv sync --frozen" in install
     assert "--extra android" in install
 
-    preflight = _step(job, "Assert Android dependencies and live auth")
-    assert preflight["if"] == "matrix.backend == 'android'"
+    auth = _step(job, "Materialize selected account")
+    assert auth["env"] == {
+        "NOTEBOOKLM_MASTER_TOKEN_JSON": "${{ secrets[matrix.master_token_secret_name] }}"
+    }
+    assert "materialize_ci_auth.py" in str(auth["run"])
+
+    provision = _step(job, "Provision managed role copies")
+    assert provision["if"] == "steps.auth.outcome == 'success' && steps.sweep.outcome == 'success'"
+    provision_command = str(provision["run"])
+    assert "manage_ci_e2e_notebooks.py provision" in provision_command
+    assert "--mode full" in provision_command
+    assert "--github-env" in provision_command
+
+    preflight = _step(job, "Backend preflight")
+    assert preflight["if"] == "steps.provision.outcome == 'success'"
     preflight_command = str(preflight["run"])
     assert "import grpc" in preflight_command
     assert "import gpsoauth" in preflight_command
-    assert 'backend="android"' in preflight_command
     assert "client.notebooks.get(notebook_id)" in preflight_command
 
-    bind_generation = _step(job, "Bind shared Web generation notebook")
-    assert bind_generation["if"] == "matrix.generation_notebook == 'shared'"
-    assert bind_generation["env"] == {
-        "NOTEBOOKLM_GENERATION_NOTEBOOK_ID": ("${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}")
-    }
-    assert "GITHUB_ENV" in str(bind_generation["run"])
+    journal = _step(job, "Configure generation journal policy")
+    journal_command = str(journal["run"])
+    assert "NOTEBOOKLM_E2E_GENERATION_JOURNAL_MODE=required" in journal_command
+    assert "NOTEBOOKLM_E2E_GENERATION_JOURNAL_MODE=off" in journal_command
 
-    create_scratch = _step(job, "Create isolated Android generation notebook")
-    assert create_scratch["if"] == "matrix.generation_notebook == 'scratch'"
-    create_command = str(create_scratch["run"])
-    assert "NOTEBOOKLM_GENERATION_NOTEBOOK_ID" in create_command
-    assert "GITHUB_ENV" in create_command
-    assert 'NotebookLMClient.from_storage(backend="android")' in create_command
-    assert "client.notebooks.create" in create_command
-    assert "client.sources.add_text" in create_command
-    assert "client.notebooks.delete" in create_command
-    assert "os.fsync" in create_command
-    assert "os.replace" in create_command
-    assert create_command.index("persist_notebook_id(id_path, notebook.id)") < create_command.index(
-        "client.sources.add_text"
-    )
-    assert "preserving the original persistence failure" in create_command
-    assert "inline deletion " in create_command
-    assert "was unconfirmed; the finalizer will retry" in create_command
-    assert create_command.count("id_path.unlink(missing_ok=True)") == 1
-
-    cleanup_scratch = _step(job, "Delete isolated Android generation notebook")
-    assert cleanup_scratch["if"] == "${{ always() && matrix.generation_notebook == 'scratch' }}"
-    cleanup_command = str(cleanup_scratch["run"])
-    assert 'NotebookLMClient.from_storage(backend="android")' in cleanup_command
-    assert "client.notebooks.delete" in cleanup_command
-    assert job["steps"].index(cleanup_scratch) > job["steps"].index(
-        _step(job, "Enforce coverage floors")
-    )
-
-    primary = _step(job, "Run E2E tests")
+    primary = _step(job, "Run primary E2E tests")
     retry = _step(job, "Retry failed E2E tests after 10-min cool-down")
-    for step in (primary, retry):
-        assert "NOTEBOOKLM_GENERATION_NOTEBOOK_ID" not in step["env"]
     assert retry["env"]["TEST_FILTER"] == "${{ inputs.test_filter }}"
     retry_command = str(retry["run"])
     assert 'if [ -n "$TEST_FILTER" ]' in retry_command
@@ -362,10 +351,16 @@ def test_nightly_e2e_runs_explicit_web_and_android_backends() -> None:
     assert 'tests/e2e -m "not variants"' in primary_command
     assert "readonly and not variants" not in primary_command
 
-    curl_smoke = _step(job, "curl_cffi transport smoke (live, minimal)")
+    curl_smoke = _step(job, "curl_cffi transport smoke")
     assert "matrix.backend == 'web'" in str(curl_smoke["if"])
-    assert "ubuntu-latest" not in str(curl_smoke["if"])
-    assert "NOTEBOOKLM_GENERATION_NOTEBOOK_ID" not in curl_smoke["env"]
+
+    verifier = _step(job, "Verify generation operation journal")
+    assert "--mode journal" in str(verifier["run"])
+    assert job["steps"].index(verifier) < job["steps"].index(
+        _step(job, "Cleanup managed role copies")
+    )
+    assert _step(job, "Cleanup managed role copies")["if"] == "always()"
+    assert _step(job, "Purge local credentials and handles")["if"] == "always()"
 
 
 def test_verify_package_live_checks_published_wheel_android_and_keeps_web_e2e() -> None:
@@ -377,7 +372,8 @@ def test_verify_package_live_checks_published_wheel_android_and_keeps_web_e2e() 
     assert "--extra android" in install
 
     android = _step(job, "Validate published wheel Android backend")
-    assert android["if"] == "github.repository == 'teng-lin/notebooklm-py'"
+    assert "github.repository == 'teng-lin/notebooklm-py'" in android["if"]
+    assert "steps.provision.outcome == 'success'" in android["if"]
     command = str(android["run"])
     assert "import grpc" in command
     assert "import gpsoauth" in command
@@ -386,14 +382,13 @@ def test_verify_package_live_checks_published_wheel_android_and_keeps_web_e2e() 
     assert "client.notebooks.get(notebook_id)" in command
 
     steps = job["steps"]
-    assert steps.index(android) > steps.index(_step(job, "Materialize auth profile"))
+    assert steps.index(android) > steps.index(_step(job, "Materialize selected account"))
     assert steps.index(android) > steps.index(
         _step(job, "Install published wheel from TestPyPI (--no-deps)")
     )
 
-    web_e2e = _step(job, "Run E2E tests")
+    web_e2e = _step(job, "Run primary E2E tests")
     assert "NOTEBOOKLM_BACKEND" not in job.get("env", {})
-    assert "NOTEBOOKLM_BACKEND" not in web_e2e["env"]
     assert 'pytest tests/e2e -m "not variants"' in str(web_e2e["run"])
 
 
@@ -462,8 +457,8 @@ def test_repository_lint_is_scheduled_once_in_nightly() -> None:
     workflow = yaml.safe_load(NIGHTLY_WORKFLOW.read_text(encoding="utf-8"))
     job = workflow["jobs"]["repo-lint"]
 
-    assert job["needs"] == "resolve-branch"
-    assert job["if"] == "needs.resolve-branch.outputs.is_standard == 'true'"
+    assert job["needs"] == "resolve-target"
+    assert job["if"] == "needs.resolve-target.outputs.is_standard == 'true'"
     assert job["runs-on"] == "ubuntu-latest"
     assert "environment" not in job
     assert "secrets." not in str(job)
@@ -471,7 +466,7 @@ def test_repository_lint_is_scheduled_once_in_nightly() -> None:
     checkout = next(
         step for step in job["steps"] if str(step.get("uses", "")).startswith("actions/checkout@")
     )
-    assert checkout["with"]["ref"] == "${{ needs.resolve-branch.outputs.sha }}"
+    assert checkout["with"]["ref"] == "${{ needs.resolve-target.outputs.sha }}"
 
     command = str(_step(job, "Run repository lint tests")["run"])
     assert "-m repo_lint" in command
