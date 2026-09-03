@@ -40,6 +40,8 @@ from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from typing import TYPE_CHECKING
 
+from .._redact import redact
+
 if TYPE_CHECKING:
     from ..client import NotebookLMClient
 
@@ -132,7 +134,15 @@ class ClientProvider:
             # Warm-up has no awaiter, so log here to both retrieve the exception
             # (no "never retrieved" warning) and leave a breadcrumb on stderr. A
             # tool call that joined this task still receives the real exception.
-            logger.warning("NotebookLM client open failed (will retry on next use): %s", error)
+            #
+            # Scrubbed at the SOURCE, not left to the logging pipeline: an open
+            # failure is an auth error more often than not, so its text can carry
+            # cookie values or the on-disk storage path — and ``mcp.__main__``
+            # configures stderr with a bare ``logging.basicConfig``, whose root
+            # handler carries no ``RedactingFilter``.
+            logger.warning(
+                "NotebookLM client open failed (will retry on next use): %s", redact(error)
+            )
 
     async def _open(self) -> NotebookLMClient:
         cm = self._factory()

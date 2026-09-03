@@ -263,3 +263,49 @@ async def test_a_stale_done_callback_does_not_clobber_a_newer_open() -> None:
     factory.gate.set()
     assert await asyncio.wait_for(live, timeout=5) is factory.client
     await provider.aclose()
+
+
+async def test_a_failed_open_reaches_the_agent_as_a_categorized_auth_error() -> None:
+    """The whole point of #2330: an auth failure must arrive as a real, actionable
+    tool error, not an opaque transport timeout — and not a generic UNEXPECTED,
+    which is what happens if the lazy open resolves outside ``mcp_errors()``."""
+    from fastmcp.exceptions import ToolError
+
+    from notebooklm.exceptions import AuthError
+
+    factory = _SlowFactory()
+    factory.error = AuthError("session expired: cookie SID=AAAA1111secret")
+    factory.gate.set()
+
+    async with Client(create_server(client_factory=factory)) as client:
+        with pytest.raises(ToolError) as excinfo:
+            await client.call_tool("notebook_list", {})
+
+    message = str(excinfo.value)
+    assert message.startswith("AUTH:"), message
+    assert "retriable" in message
+    assert "AAAA1111secret" not in message  # scrubbed on the way out
+
+
+async def test_the_warm_up_log_is_scrubbed_at_the_source(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """``mcp.__main__`` configures stderr with a bare ``logging.basicConfig``, whose
+    root handler carries no ``RedactingFilter`` — so this line scrubs itself."""
+    from notebooklm.exceptions import AuthError
+
+    factory = _SlowFactory()
+    factory.error = AuthError("session expired: cookie SID=AAAA1111secret")
+    factory.gate.set()
+    provider = ClientProvider(factory)
+
+    with caplog.at_level("WARNING", logger="notebooklm.mcp._clientprovider"):
+        provider.start()
+        for _ in range(100):
+            if "client open failed" in caplog.text:
+                break
+            await asyncio.sleep(0.01)
+
+    assert "client open failed" in caplog.text
+    assert "AAAA1111secret" not in caplog.text
+    await provider.aclose()

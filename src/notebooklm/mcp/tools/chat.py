@@ -180,8 +180,8 @@ def register(mcp: Any) -> None:
         suggested questions without asking anything. When omitted/``False`` the
         result never contains a ``suggested_prompts`` key.
         """
-        client = await get_client(ctx)
         with mcp_errors():
+            client = await get_client(ctx)
             # A whitespace-only question counts as "no question" (recall path), so
             # a blank string can't slip past the guard into client.chat.ask.
             question = question.strip()
@@ -573,8 +573,8 @@ def register(mcp: Any) -> None:
           omitted field is preserved. Only a bare call (no preset, neither field)
           is rejected, as it would reset every setting to its default.
         """
-        client = await get_client(ctx)
         with mcp_errors():
+            client = await get_client(ctx)
             # A partial custom config now merges (read-modify-write in
             # execute_configure), so goal/response_length are NO LONGER required
             # together — the omitted field is preserved. The one call still worth
@@ -633,8 +633,8 @@ def register(mcp: Any) -> None:
         suggestions inline with a question (ask + follow-ups in one call); this tool
         is the standalone selector across every surface.
         """
-        client = await get_client(ctx)
         with mcp_errors():
+            client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             # Tolerate source_ids as a JSON-array string / comma string / scalar,
             # then resolve each ref (id/prefix/title). Omitted/empty stays None
