@@ -477,19 +477,28 @@ async def verify_journal(
     }
     if authorized_deleted & by_id.keys():
         raise JournalError("delete-confirmed resource is still present")
+    tracked = {operation.resource_id: operation for operation in accepted_operations}
+    tracked.pop(None, None)
+    untracked_artifacts = [
+        artifact for resource_id, artifact in by_id.items() if resource_id not in tracked
+    ]
     unresolved_test_owned = [
         operation
         for operation in operations.values()
         if operation.lifecycle == "test_owned"
-        and not (
-            operation.event_names
-            & {"delete_confirmed", "rate_limited_rejected", "quota_no_commit_observed"}
+        and not (operation.event_names & {"delete_confirmed", "rate_limited_rejected"})
+        and (
+            "quota_no_commit_observed" not in operation.event_names
+            or any(
+                _family(artifact)
+                == ("report" if operation.family == "study_guide" else operation.family)
+                and _public_id_kind(artifact) == operation.id_kind
+                for artifact in untracked_artifacts
+            )
         )
     ]
     if unresolved_test_owned:
         raise JournalError("test-owned operation has no verified deletion")
-    tracked = {operation.resource_id: operation for operation in accepted_operations}
-    tracked.pop(None, None)
     for resource_id, operation in tracked.items():
         if resource_id in authorized_deleted:
             continue

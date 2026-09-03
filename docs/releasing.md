@@ -1,7 +1,7 @@
 # Release Checklist
 
 **Status:** Active
-**Last Updated:** 2026-09-02
+**Last Updated:** 2026-09-03
 
 Checklist for releasing a new version of `notebooklm-py`.
 
@@ -317,7 +317,8 @@ python scripts/mcp_live_smoke.py \
 
 - [ ] **⏸️ CONFIRM:** Ask user "Ready to publish to TestPyPI?"
 - [ ] Go to **Actions** → **Publish to TestPyPI**
-- [ ] Click **Run workflow**, select the **release/vX.Y.Z** branch
+- [ ] Click **Run workflow**, select **main** (the release PR has already been
+      merged and all authenticated gates above ran against this protected ref)
 - [ ] Wait for upload to complete
 - [ ] Verify package appears: https://test.pypi.org/project/notebooklm-py/
 
@@ -329,11 +330,15 @@ python scripts/mcp_live_smoke.py \
 - [ ] Click **Run workflow** with **source**: `testpypi`
 - [ ] Wait for all tests to pass (unit, integration, E2E)
 - [ ] If verification fails:
-  1. Fix issues in the release worktree
-  2. Bump patch version in `pyproject.toml` (for a pre-release, bump the
+  1. Create a new release-fix worktree and branch from the latest `main`
+  2. Fix the issue there
+  3. Bump patch version in `pyproject.toml` (for a pre-release, bump the
      pre-release serial, e.g. `0.8.0a1 → 0.8.0a2`)
-  3. Update `CHANGELOG.md` with fix
-  4. Commit, push, and re-run **Publish to TestPyPI**
+  4. Update `CHANGELOG.md` with the fix
+  5. Commit, push, and create a release-fix PR against `main`
+  6. Wait for CI, merge the release-fix PR, and rerun the authenticated E2E and
+     RPC health gates on protected `main`
+  7. Re-run **Publish to TestPyPI** from `main`
 
 #### How the verify chain works
 
@@ -348,16 +353,14 @@ The `Publish to PyPI` step in `publish.yml` also opts into **PEP 740 attestation
 
 ---
 
-## Merge to Main
+## Confirm Main State
 
-- [ ] Once TestPyPI verification passes, merge the PR:
-  ```bash
-  gh pr merge --squash --delete-branch
-  ```
-- [ ] Pull latest main (in main repo):
+- [ ] The release PR (and any release-fix PR) was merged before the protected
+      E2E, RPC, and TestPyPI gates. Pull that verified state in the main repo;
+      there is no second release-PR merge at this stage:
   ```bash
   cd /path/to/notebooklm-py
-  git pull origin main
+  git pull --ff-only origin main
   ```
 
 ---

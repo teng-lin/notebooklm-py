@@ -491,6 +491,42 @@ async def test_started_only_test_owned_operation_cannot_adopt_discovered_artifac
 
 
 @pytest.mark.asyncio
+async def test_late_quota_created_artifact_still_requires_verified_deletion(tmp_path) -> None:
+    journal = tmp_path / "journal.jsonl"
+    operation_id = str(uuid.uuid4())
+    write_journal(
+        journal,
+        [
+            row(
+                operation_id,
+                "started",
+                family="mind_map",
+                lifecycle="test_owned",
+            ),
+            row(
+                operation_id,
+                "quota_no_commit_observed",
+                family="mind_map",
+                lifecycle="test_owned",
+                reason="post_create_reconciliation",
+            ),
+        ],
+    )
+    late_artifact = Artifact("late-interactive", "mind_map", interactive=True)
+
+    with pytest.raises(verify.JournalError, match="test-owned operation has no verified deletion"):
+        await verify.verify_journal(
+            Client([[late_artifact]]),
+            notebook_id="generation-role",
+            journal_path=journal,
+            timeout=240,
+            minimum_discovery_window=0,
+            quiet_polls=1,
+            poll_interval=0,
+        )
+
+
+@pytest.mark.asyncio
 async def test_unmatched_started_requires_matching_public_backing(tmp_path) -> None:
     journal = tmp_path / "journal.jsonl"
     operation_id = str(uuid.uuid4())

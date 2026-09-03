@@ -52,6 +52,9 @@ from notebooklm import (  # noqa: E402
     ServerError,
     SharePermission,
 )
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (  # noqa: E402
+    chat_pb2,
+)
 
 TEMPLATE_ID = "template-id"
 TEMPLATE_TITLE = "notebooklm-py E2E template v1"
@@ -293,6 +296,7 @@ class FakeChat:
         self.seeded: set[str] = set()
         self.questions: dict[str, str] = {}
         self.ask_error: BaseException | None = None
+        self.turns_response: object | None = None
 
     async def ask(self, notebook_id: str, question: str) -> SimpleNamespace:
         assert question
@@ -313,9 +317,11 @@ class FakeChat:
         notebook_id: str,
         conversation_id: str,
         limit: int,
-    ) -> list[dict[str, str]]:
+    ) -> object:
         assert limit == 2
         if notebook_id in self.seeded and conversation_id:
+            if self.turns_response is not None:
+                return self.turns_response
             return [{"question": "seed question"}, {"answer": "seed answer"}]
         return []
 
@@ -624,6 +630,26 @@ async def test_full_mode_uses_three_distinct_roles_on_both_windows_backends(
     assert manifest["backend"] == backend
     assert len(client.notebooks.copy_calls) == 3
     assert len({row["notebook_id"] for row in manifest["copies"]}) == 3
+
+
+@pytest.mark.asyncio
+async def test_android_protobuf_turns_prepare_and_validate_reference_role(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+) -> None:
+    manager, client, _store, _clock = _manager(tmp_path, contracts)
+    notebook_id = "reference-copy"
+    response = chat_pb2.ListChatTurnsResponse()
+    response.chat_turns.add(observed_event_type=1, user_query_text="seed question")
+    answer = response.chat_turns.add(observed_event_type=2)
+    answer.act_on_sources_response.response.response = "seed answer"
+    client.chat.turns_response = response
+
+    prepared = await manager.prepare_reference(notebook_id)
+    validated = await manager.validate_prepared_role(notebook_id, "reference")
+
+    assert prepared == {"seeded_notes": 1, "history_pairs": 1}
+    assert validated == prepared
 
 
 @pytest.mark.asyncio

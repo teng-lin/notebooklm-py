@@ -350,7 +350,7 @@ def _kind_value(value: object) -> str:
 def _turn_has_content(value: object) -> bool:
     if isinstance(value, str):
         return bool(value.strip())
-    for field in ("query", "question", "answer", "text", "content"):
+    for field in ("query", "question", "answer", "text", "content", "user_query_text"):
         child = getattr(value, field, None)
         if isinstance(child, str) and child.strip():
             return True
@@ -360,7 +360,13 @@ def _turn_has_content(value: object) -> bool:
                 return True
     if isinstance(value, (list, tuple)):
         return any(_turn_has_content(child) for child in value)
-    return False
+    chat_turns = getattr(value, "chat_turns", None)
+    if chat_turns is not None and any(_turn_has_content(child) for child in chat_turns):
+        return True
+    act_on_sources = getattr(value, "act_on_sources_response", None)
+    answer = getattr(act_on_sources, "response", None)
+    generated = getattr(answer, "response", None)
+    return isinstance(generated, str) and bool(generated.strip())
 
 
 def _matching_history_pairs(history: object, question: str) -> int:
