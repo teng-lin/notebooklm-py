@@ -356,7 +356,7 @@ class CurlCffiAsyncClient:
                 hop_kwargs = dict(kwargs)
                 credentials = None
                 if credential_for is not None:
-                    credentials = credential_for(current)
+                    credentials = await credential_for(current)
                     if credentials is not None:
                         managed_header_names.update(name.lower() for name in credentials.headers)
 

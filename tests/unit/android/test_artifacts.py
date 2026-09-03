@@ -146,7 +146,7 @@ class FakeAssets:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
         self.representation_calls: list[tuple[str, str, str]] = []
-        self.error: ArtifactDownloadError | None = None
+        self.error: BaseException | None = None
 
     async def download_url(self, url: str, output_path: str) -> str:
         self.calls.append((url, output_path))
@@ -2289,6 +2289,38 @@ async def test_infographic_wraps_transfer_error_without_capability_or_cause() ->
             continue
         assert secret_url not in repr(frame.f_locals)
         assert api not in frame.f_locals.values()
+
+
+@pytest.mark.asyncio
+async def test_infographic_preserves_auth_error_type_without_cause() -> None:
+    secret_url = "https://lh3.googleusercontent.com/object?secret=capability"
+    _, _, _, assets, api = _graph([_artifact("image-1", url=secret_url)])
+    assets.error = AuthError("authentication expired")
+
+    with pytest.raises(AuthError) as raised:
+        await api.download_infographic("notebook-1", "out.png")
+
+    assert raised.value is assets.error
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+
+
+@pytest.mark.asyncio
+async def test_media_representation_preserves_auth_error_type_without_cause() -> None:
+    raw = _artifact("audio", type_code=_PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW)
+    raw.audio_overview.media_urls.add(
+        url="https://lh3.googleusercontent.com/audio?secret=capability",
+        type=_PROTO.MEDIA_STREAMING_TYPE_DOWNLOAD,
+    )
+    _, _, _, assets, api = _graph([raw])
+    assets.error = AuthError("authentication expired")
+
+    with pytest.raises(AuthError) as raised:
+        await api.download_audio("notebook-1", "audio.mp4")
+
+    assert raised.value is assets.error
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
 
 
 @pytest.mark.asyncio

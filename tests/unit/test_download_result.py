@@ -15,7 +15,7 @@ import pytest
 
 import notebooklm._artifact.downloads as _downloads
 from notebooklm._artifacts import DownloadResult
-from notebooklm.exceptions import ArtifactDownloadError
+from notebooklm.exceptions import ArtifactDownloadError, AuthError
 
 # A trusted-domain prefix accepted by `_download_urls_batch`'s domain check.
 TRUSTED_URL_PREFIX = "https://storage.googleapis.com/"
@@ -287,16 +287,35 @@ async def test_download_batch_error_details_redact_userinfo(mock_artifacts_api, 
     response = _mock_response(b"")
     response.status_code = 403
 
-    with _patched_httpx_client([response]):
-        result = await api._download_urls_batch([(url, str(tmp_path / "file.mp4"))])
+    with _patched_httpx_client([response]), pytest.raises(AuthError) as captured:
+        await api._download_urls_batch([(url, str(tmp_path / "file.mp4"))])
 
-    assert result.succeeded == []
-    assert len(result.failed) == 1
-    _, failed_exc = result.failed[0]
-    message = str(failed_exc)
+    message = str(captured.value)
     assert "Authentication failed (HTTP 403)" in message
     assert "user:pass" not in message
     assert "storage.googleapis.com/file.mp4" in message
+
+
+@pytest.mark.asyncio
+async def test_download_batch_calls_auth_hook_before_attempting_next_url(tmp_path: Path) -> None:
+    first = _mock_response(b"")
+    first.status_code = 401
+    second = _mock_response(b"")
+    second.status_code = 403
+    observed: list[str] = []
+
+    async def on_auth_error(url: str, _error: AuthError) -> None:
+        observed.append(url)
+
+    urls = [f"{TRUSTED_URL_PREFIX}{name}.mp4" for name in ("first", "second")]
+    service = _downloads.AssetDownloadService(storage_path=tmp_path / "storage.json")
+    with _patched_httpx_client([first, second]), pytest.raises(AuthError):
+        await service.download_urls_batch(
+            [(url, str(tmp_path / f"{index}.mp4")) for index, url in enumerate(urls)],
+            on_auth_error=on_auth_error,
+        )
+
+    assert observed == urls
 
 
 @pytest.mark.asyncio

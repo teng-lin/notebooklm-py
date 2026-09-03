@@ -8,7 +8,7 @@ import os
 import queue
 import tempfile
 import threading
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -19,11 +19,17 @@ import httpx
 from .._auth.cookies import load_httpx_cookies
 from .._curl_cffi_transport import resolve_transport_factory
 from .._hop_credentials import CredentialPolicy, HopCredentials
-from ..exceptions import ArtifactDownloadError
+from ..exceptions import ArtifactDownloadError, AuthError
 from ._download_client import (
     _download_display_host,
     _is_trusted_download_host,
     _make_download_client,
+)
+from ._guarded_transfer import (
+    MAX_DOWNLOAD_REDIRECTS,
+    TransferFailure,
+    TransferPolicy,
+    guarded_transfer,
 )
 from ._redirect_guard import redirect_revalidation_hooks
 
@@ -35,7 +41,7 @@ def _credential_policy(cookies: Any) -> CredentialPolicy:
     """Return the web default: the jar on trusted hops, otherwise no credential."""
     cookie_jar = cookies if isinstance(cookies, httpx.Cookies) else httpx.Cookies(cookies)
 
-    def credential_for(url: str) -> HopCredentials | None:
+    async def credential_for(url: str) -> HopCredentials | None:
         parsed = urlparse(url)
         if parsed.scheme == "https" and _is_trusted_download_host(parsed.hostname):
             return HopCredentials(cookies=cookie_jar)
@@ -140,23 +146,46 @@ class AssetDownloadService:
         storage_path: Path | None = None,
         cookie_loader: Callable[[Any], Any] = _load_httpx_cookies,
         credential_policy_factory: Callable[[Any], CredentialPolicy] = _credential_policy,
+        trusted_host: Callable[[str | None], bool] = _is_trusted_download_host,
+        chain: bool = True,
+        on_auth_error: Callable[[str, AuthError], Awaitable[None]] | None = None,
     ) -> None:
         self._storage_path = storage_path
         self._cookie_loader = cookie_loader
         self._credential_policy_factory = credential_policy_factory
+        self._trusted_host = trusted_host
+        self._chain = chain
+        self._on_auth_error = on_auth_error
 
-    async def download_urls_batch(self, urls_and_paths: list[tuple[str, str]]) -> DownloadResult:
+    async def download_urls_batch(
+        self,
+        urls_and_paths: list[tuple[str, str]],
+        *,
+        credential_policy_factory: Callable[[Any], CredentialPolicy] | None = None,
+        on_auth_error: Callable[[str, AuthError], Awaitable[None]] | None = None,
+    ) -> DownloadResult:
         """Download multiple files using httpx with proper cookie handling."""
         result = DownloadResult()
+        policy_factory = credential_policy_factory or self._credential_policy_factory
+        auth_error_hook = on_auth_error or self._on_auth_error
 
         cookies = await asyncio.to_thread(self._cookie_loader, self._storage_path)
-        credential_for = self._credential_policy_factory(cookies)
+        credential_for: CredentialPolicy | None = None
+
+        async def selected_credential_for(url: str) -> HopCredentials | None:
+            assert credential_for is not None
+            return await credential_for(url)
 
         client, _guarded_get = _make_download_client(
-            cookies, timeout=60.0, credential_for=credential_for
+            cookies,
+            timeout=60.0,
+            credential_for=selected_credential_for,
+            trusted_host=self._trusted_host,
         )
+        first_auth_error: AuthError | None = None
         async with client:
             for url, output_path in urls_and_paths:
+                credential_for = policy_factory(cookies)
                 display_host = ""
                 parsed_path = ""
                 try:
@@ -167,7 +196,7 @@ class AssetDownloadService:
                         raise ArtifactDownloadError(
                             "media", details=f"Download URL must use HTTPS: {url[:80]}"
                         )
-                    if not _is_trusted_download_host(parsed.hostname):
+                    if not self._trusted_host(parsed.hostname):
                         raise ArtifactDownloadError(
                             "media",
                             details=f"Untrusted download domain: {display_host}",
@@ -175,13 +204,26 @@ class AssetDownloadService:
 
                     response = await _guarded_get(url)
                     if response.status_code in (401, 403):
-                        raise ArtifactDownloadError(
-                            "media",
-                            details=(
-                                f"Authentication failed (HTTP {response.status_code}) "
-                                f"on {display_host}{parsed.path}"
-                            ),
+                        try:
+                            response.raise_for_status()
+                        except httpx.HTTPStatusError as error:
+                            cause = error
+                        else:
+                            cause = httpx.HTTPStatusError(
+                                f"HTTP {response.status_code}",
+                                request=httpx.Request("GET", url),
+                                response=httpx.Response(
+                                    response.status_code,
+                                    request=httpx.Request("GET", url),
+                                ),
+                            )
+                        auth_error = AuthError(
+                            f"Authentication failed (HTTP {response.status_code}) "
+                            f"on {display_host}{parsed.path}; run `notebooklm login`."
                         )
+                        if self._chain:
+                            raise auth_error from cause
+                        raise auth_error from None
                     response.raise_for_status()
 
                     content_type = response.headers.get("content-type", "")
@@ -201,6 +243,12 @@ class AssetDownloadService:
                         len(response.content),
                     )
 
+                except AuthError as error:
+                    if auth_error_hook is not None:
+                        await auth_error_hook(url, error)
+                    if first_auth_error is None:
+                        first_auth_error = error
+                    result.failed.append((url, AuthError(str(error))))
                 except (httpx.HTTPError, ValueError, ArtifactDownloadError) as e:
                     # ``ArtifactDownloadError`` covers the policy violations
                     # raised earlier in this block (non-HTTPS scheme,
@@ -222,6 +270,63 @@ class AssetDownloadService:
                     )
                     result.failed.append((url, e))
 
+        if first_auth_error is not None:
+            raise first_auth_error
+        return result
+
+    async def _download_guarded_urls_batch(
+        self,
+        client: Any,
+        urls_and_paths: list[tuple[str, str]],
+        *,
+        policy: TransferPolicy,
+        credential_policy_factory: Callable[[Any], CredentialPolicy],
+        on_auth_error: Callable[[str, AuthError], Awaitable[None]] | None,
+        prepare_url: Callable[[str, TransferPolicy], str | None],
+        validate_url: Callable[[str], str | None],
+        safe_host: Callable[[str], str],
+        assert_active: Callable[[], None],
+        failure_for: Callable[[TransferFailure], Exception],
+    ) -> DownloadResult:
+        """Run the neutral manual-transfer batch with fresh credentials per URL."""
+
+        result = DownloadResult()
+        first_auth_error: AuthError | None = None
+        for url, output_path in urls_and_paths:
+            credential_for = credential_policy_factory(None)
+            try:
+                prepared_url = prepare_url(url, policy)
+                outcome = (
+                    TransferFailure("url_policy", safe_host(url), 0)
+                    if prepared_url is None
+                    else await guarded_transfer(
+                        client,
+                        prepared_url,
+                        output_path,
+                        policy=policy,
+                        credential_for=credential_for,
+                        validate_url=validate_url,
+                        safe_host=safe_host,
+                        assert_active=assert_active,
+                        chain=self._chain,
+                    )
+                )
+                if isinstance(outcome, TransferFailure):
+                    result.failed.append((url, failure_for(outcome)))
+                else:
+                    result.succeeded.append(outcome.output_path)
+            except AuthError as error:
+                if on_auth_error is not None:
+                    await on_auth_error(url, error)
+                if first_auth_error is None:
+                    first_auth_error = error
+                # Receipts must not retain a raw response or a cause-bearing error.
+                result.failed.append((url, AuthError(str(error))))
+
+        if first_auth_error is not None:
+            if self._chain:
+                raise first_auth_error
+            raise first_auth_error from None
         return result
 
     async def download_url(self, url: str, output_path: str) -> str:
@@ -230,7 +335,7 @@ class AssetDownloadService:
         display_host = _download_display_host(parsed)
         if parsed.scheme != "https":
             raise ArtifactDownloadError("media", details=f"Download URL must use HTTPS: {url[:80]}")
-        if not _is_trusted_download_host(parsed.hostname):
+        if not self._trusted_host(parsed.hostname):
             raise ArtifactDownloadError(
                 "media",
                 details=f"Untrusted download domain: {display_host}",
@@ -269,8 +374,9 @@ class AssetDownloadService:
                     ) as client:
                         response = await client.get_guarded(
                             url,
-                            is_trusted_host=_is_trusted_download_host,
+                            is_trusted_host=self._trusted_host,
                             credential_for=credential_for,
+                            max_redirects=MAX_DOWNLOAD_REDIRECTS,
                         )
                         response.raise_for_status()
                         _reject_html_download(response)
@@ -287,9 +393,10 @@ class AssetDownloadService:
                 async with httpx.AsyncClient(  # noqa: SIM117
                     cookies=cookies,
                     follow_redirects=True,
+                    max_redirects=MAX_DOWNLOAD_REDIRECTS,
                     timeout=timeout,
                     event_hooks=redirect_revalidation_hooks(
-                        _is_trusted_download_host, credential_for
+                        self._trusted_host, credential_for
                     ),  # #1521 + per-hop credentials
                 ) as client:
                     async with client.stream("GET", url) as response:
@@ -414,15 +521,13 @@ class AssetDownloadService:
                         return output_path
             except httpx.HTTPStatusError as e:
                 if e.response.status_code in (401, 403):
-                    raise ArtifactDownloadError(
-                        "media",
-                        details=(
-                            f"Authentication required for {display_host}{parsed.path}"
-                            " -- try `notebooklm login`"
-                        ),
-                        cause=e,
-                        status_code=e.response.status_code,
-                    ) from e
+                    auth_error = AuthError(
+                        f"Authentication failed (HTTP {e.response.status_code}) on "
+                        f"{display_host}{parsed.path}; run `notebooklm login`."
+                    )
+                    if self._chain:
+                        raise auth_error from e
+                    raise auth_error from None
                 raise ArtifactDownloadError(
                     "media",
                     details=f"HTTP error downloading {display_host}{parsed.path}",

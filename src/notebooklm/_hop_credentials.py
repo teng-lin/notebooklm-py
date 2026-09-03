@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 
 import httpx
@@ -25,7 +25,7 @@ class HopCredentials:
             raise ValueError("HopCredentials.headers must not contain a flat Cookie header")
 
 
-CredentialPolicy = Callable[[str], HopCredentials | None]
+CredentialPolicy = Callable[[str], Awaitable[HopCredentials | None]]
 
 
 __all__ = ["CredentialPolicy", "HopCredentials"]

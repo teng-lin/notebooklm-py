@@ -19,6 +19,7 @@ from .._deadline import RuntimeDeadline
 from .._idempotency import mark_unconfirmed, unresolved_commit_error
 from .._runtime.call_supervisor import OperationLease
 from .._source.batch import SourceUrlBatchItem
+from .._source.polling import SourcePoller
 from .._sources import SourcesAPI, _validate_add_text_idempotency, validate_search
 from .._types.documents import StructuredDocument
 from .._types.research import SourceGuide
@@ -34,8 +35,6 @@ from ..exceptions import (
     ServerError,
     SourceAddError,
     SourceNotFoundError,
-    SourceProcessingError,
-    SourceTimeoutError,
     ValidationError,
 )
 from ..types import PlayBook, RelevantChunk, Source, SourceFulltext, SourceStatus, SourceType
@@ -402,6 +401,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         self._add_file_compat = add_file_compat
         self._phenotype = phenotype or PhenotypeTokenProvider()
         self._monotonic = monotonic
+        self._poller = SourcePoller()
         native_drive_download = getattr(upload_pipeline, "drive_download_scope", None)
         self._drive_download = drive_download or (
             native_drive_download if callable(native_drive_download) else None
@@ -562,24 +562,12 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         ready: bool,
     ) -> Source:
         deadline = RuntimeDeadline.start(timeout, monotonic=self._monotonic)
-        last_status: int | None = None
-        if deadline.timeout <= 0.0:
-            # An explicit zero budget means "do not wait", not "look once".
-            raise SourceTimeoutError(source_id, timeout, last_status)
-        while True:
-            # Poll *before* consulting the deadline. A positive budget always
-            # buys one look at the server, even when the clock has already
-            # crossed it between ``RuntimeDeadline.start()`` and here — one
-            # coarse tick on Windows before 3.13, or an OS stall. Without this
-            # a source the server had already marked ERROR was reported as a
-            # timeout with ``last_status=None``.
-            # The wire budget is floored for the same reason: ``remaining()``
-            # can read ``0.0`` on that same tick, and the session turns that
-            # into an ``RPCTimeoutError`` before any bytes are sent.
+
+        async def get_source(project_id: str, expected_source_id: str) -> Source | None:
             response = await self._transport.unary(
                 GET_PROJECT_METHOD,
                 _read_proto().GetProjectRequest(
-                    project_id=notebook_id,
+                    project_id=project_id,
                     include_audio_overview_ids=True,
                 ),
                 replay_safe=True,
@@ -587,7 +575,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                 expected_epoch=expected_epoch,
                 timeout=max(deadline.remaining(), min(deadline.timeout, _POLL_WIRE_FLOOR)),
             )
-            validate_project_identity(response.project, notebook_id, method_id=GET_PROJECT_METHOD)
+            validate_project_identity(response.project, project_id, method_id=GET_PROJECT_METHOD)
             decode_project(response.project, method_id=GET_PROJECT_METHOD)
             matches = []
             for row in response.project.sources:
@@ -595,37 +583,45 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                     raw_id = row.source_id.id if row.HasField("source_id") else ""
                 except Exception:
                     continue
-                if raw_id == source_id:
+                if raw_id == expected_source_id:
                     matches.append(row)
             if len(matches) > 1:
                 raise DecodingError(
                     "Android upload polling returned duplicate source ids",
                     method_id=GET_PROJECT_METHOD,
                 )
-            if matches:
-                row = next(iter(matches))
-                last_status = row.settings.status if row.HasField("settings") else 0
-                if last_status == _settings_proto().SOURCE_STATUS_ERROR:
-                    raise SourceProcessingError(source_id, status=last_status)
-                accepted = (
-                    last_status == _settings_proto().SOURCE_STATUS_COMPLETE
-                    if ready
-                    else last_status
-                    in {
-                        _settings_proto().SOURCE_STATUS_PENDING,
-                        _settings_proto().SOURCE_STATUS_COMPLETE,
-                    }
-                )
-                if accepted:
-                    return decode_source(row, method_id=GET_PROJECT_METHOD)
-            if deadline.expired():
-                break
-            await asyncio.sleep(deadline.clamp_sleep(_POLL_INTERVAL))
-            if deadline.expired():
-                # Re-check after sleeping: the clamp can spend the whole budget,
-                # and only the *first* look may bypass the deadline.
-                break
-        raise SourceTimeoutError(source_id, timeout, last_status)
+            return (
+                None
+                if not matches
+                else decode_source(next(iter(matches)), method_id=GET_PROJECT_METHOD)
+            )
+
+        common: dict[str, Any] = {
+            "timeout": timeout,
+            "initial_interval": _POLL_INTERVAL,
+            "max_interval": _POLL_INTERVAL,
+            "backoff_factor": 1.0,
+            "transient_error_types": (),
+            "look_first": True,
+            "deadline": deadline,
+            "get_source": get_source,
+            "sleep": asyncio.sleep,
+            "monotonic": self._monotonic,
+            "logger": logger,
+        }
+        if ready:
+            return await self._poller.wait_until_ready(
+                notebook_id,
+                source_id,
+                missing_is_pending=True,
+                **common,
+            )
+        return await self._poller.wait_until_registered(
+            notebook_id,
+            source_id,
+            accept=lambda source: source.status in {SourceStatus.PROCESSING, SourceStatus.READY},
+            **common,
+        )
 
     async def _wait_uploaded_registered(
         self,

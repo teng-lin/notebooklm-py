@@ -79,7 +79,7 @@ def redirect_revalidation_hooks(
         if credential_for is None:
             return
 
-        credentials = credential_for(str(request.url))
+        credentials = await credential_for(str(request.url))
         request.extensions[cookie_jar_extension] = (
             credentials.cookies if credentials is not None else None
         )
