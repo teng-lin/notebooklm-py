@@ -540,6 +540,9 @@ class _StubResponse:
         self._chunks = chunks
         self.acloses = 0
         self.aborts = 0
+        #: Chunks actually pulled from the body — lets a test assert that a
+        #: header-only refusal never touched the stream.
+        self.reads = 0
 
     def json(self) -> Any:
         if self._json_error is not None:
@@ -548,6 +551,7 @@ class _StubResponse:
 
     async def aiter_bytes(self) -> AsyncIterator[bytes]:
         for chunk in self._chunks:
+            self.reads += 1
             yield chunk
 
 
@@ -716,7 +720,9 @@ async def test_a_declared_oversize_body_is_refused_before_a_single_byte_is_read(
             _deadline(),
         )
 
-    assert response.aborts == 0
+    # The point of the test: refused from the Content-Length alone. Without
+    # this the assertions passed even when the body was fully drained first.
+    assert response.reads == 0, "the body was read despite a header-only refusal"
     assert stream.exit_args is not None
     assert stream.exit_args[0] is ValidationError
 
@@ -1275,7 +1281,10 @@ async def test_a_start_leg_transport_failure_is_reported_and_the_queue_wait_reco
     assert "failed during start: request failed" in str(excinfo.value)
     assert excinfo.value.source_id == SOURCE_ID
     assert state.stage == "start"
-    assert len(waits) == 1 and waits[0] >= 0.0
+    assert len(waits) == 1
+    # Elapsed queue wait, not an absolute clock reading — see the web twin in
+    # tests/unit/test_source_upload_coverage.py. ``>= 0.0`` accepted both.
+    assert 0.0 <= waits[0] < 1.0
     assert pipeline._open_files == set()
     assert not pipeline._upload_slot().locked()
 

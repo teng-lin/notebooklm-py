@@ -1151,7 +1151,11 @@ async def test_upload_slot_holds_a_permit_and_records_the_wait_only_when_wired(
     assert semaphore._value == free_permits
     assert len(waits) == (1 if with_recorder else 0)
     if with_recorder:
-        assert waits[0] >= 0.0
+        # An ELAPSED wait, not an absolute clock reading. ``>= 0.0`` passed
+        # either way, so a recorder that reported ``monotonic()`` instead of
+        # ``monotonic() - start`` went undetected; an uncontended slot settles
+        # in microseconds, so any wall-clock timestamp blows this bound.
+        assert 0.0 <= waits[0] < 1.0
 
 
 def test_get_download_semaphore_is_cached_and_separate_from_the_upload_pool() -> None:

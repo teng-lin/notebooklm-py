@@ -226,14 +226,34 @@ def _assert_library_traceback_is_secret_free(
     assert error.cause is None
     assert error.__cause__ is None
     assert error.__context__ is None
+
+    inspected: list[str] = []
+    leaked_secret_in: list[str] = []
+    leaked_object_in: list[str] = []
     for frame, _line in traceback.walk_tb(error.__traceback__):
-        if "/src/notebooklm/" not in frame.f_code.co_filename:
+        # Normalise separators before matching: ``co_filename`` uses backslashes
+        # on Windows, where a "/"-joined substring matched nothing and silently
+        # scanned zero frames — disarming this whole assertion. ``PurePath``
+        # does NOT help here, because it only treats "\\" as a separator when
+        # the test itself runs on Windows.
+        source_path = frame.f_code.co_filename.replace("\\", "/")
+        if "/src/notebooklm/" not in source_path:
             continue
-        frame_text = repr(frame.f_locals)
-        for secret in secrets:
-            assert secret not in frame_text
-        for raw in raw_objects:
-            assert raw not in frame.f_locals.values()
+        inspected.append(frame.f_code.co_name)
+        locals_text = repr(frame.f_locals)
+        if any(secret in locals_text for secret in secrets):
+            leaked_secret_in.append(frame.f_code.co_name)
+        if any(raw in frame.f_locals.values() for raw in raw_objects):
+            leaked_object_in.append(frame.f_code.co_name)
+
+    # Without this the helper passes vacuously when the traceback shape changes
+    # (or on a platform where the path match fails), which is exactly how the
+    # Windows bug hid.
+    assert inspected, "no notebooklm frame was inspected; the scan proved nothing"
+    # Report frame NAMES, never ``repr(f_locals)`` — this module's frames hold
+    # the capability URL and bearer, and a failure message must not print them.
+    assert not leaked_secret_in, f"secret survived in library frames: {leaked_secret_in}"
+    assert not leaked_object_in, f"raw object survived in library frames: {leaked_object_in}"
 
 
 @pytest.mark.asyncio
