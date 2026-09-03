@@ -33,16 +33,31 @@ Result: `1 passed in 11.74s`; zero skips. Strict mode asserted
 `HeadlessReauthStatus.SUCCESS` and the persisted-path outcome unconditionally.
 
 This proves the local-CDP capture arm, but it does not replace the plan-required dedicated
-reusable-profile run and is not claimed as final-SHA evidence. The isolated profile's Google
-session is currently expired. Before this slice is merge-ready, re-authenticate
-`agent-auth-patch-pr4`, unset
-`NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL`, and record `1 passed` with zero skips from:
+reusable-profile run and is not claimed as final-code evidence.
+
+## Required strict reusable-profile smoke
+
+The isolated `agent-auth-patch-pr4` profile was refreshed on 2026-09-03 by importing cookies that
+the production browser-cookie login flow verified, then loading those cookies into only that
+profile's persistent Chromium directory. No default NotebookLM profile was read or changed. The
+strict profile arm then ran against implementation SHA
+`6494328a192ae6af46924dff5cd9add83cefcb46`; the only subsequent branch change is this evidence
+record.
+
+The CDP environment variable was explicitly removed from the command environment:
 
 ```bash
+env -u NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL \
 NOTEBOOKLM_PROFILE=agent-auth-patch-pr4 \
 NOTEBOOKLM_HEADLESS_REAUTH=1 \
 NOTEBOOKLM_HEADLESS_REAUTH_REQUIRE_SUCCESS=1 \
 uv run pytest -q tests/e2e/test_headless_reauth.py --no-cov
 ```
+
+Result at 2026-09-03 03:06 EDT: `1 passed in 1.51s`; zero skips. Strict mode asserted the CDP
+variable was absent, Chromium was launchable, the production readiness check accepted the
+dedicated reusable profile, the outcome was `HeadlessReauthStatus.SUCCESS`, the persisted path was
+the active isolated profile's `storage_state.json`, and its modification time changed after the
+capture.
 
 No cassette, dependency, lockfile, credential format, or remote-CDP capability changed.
