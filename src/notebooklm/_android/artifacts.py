@@ -285,7 +285,7 @@ class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin
         source_ids: builtins.list[str],
         **options: Any,
     ) -> GenerationStatus:
-        if family in {"audio", "quiz"} and not source_ids:
+        if family == "audio" and not source_ids:
             label = family.replace("_", " ").title()
             raise ValidationError(f"{label} generation requires at least one source id")
         if family == "audio":
@@ -341,9 +341,6 @@ class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin
                 source_ids,
                 **options,
             )
-            if not source_ids:
-                label = family.replace("_", " ").title()
-                raise ValidationError(f"{label} generation requires at least one source id")
             request = plan.request
             expected_type = plan.expected_type
             expected_variant = plan.expected_variant
